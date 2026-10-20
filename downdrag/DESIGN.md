@@ -518,21 +518,38 @@ GEC-12's is the named option:
   the top 10b of a stiff or very stiff clay directly under soft clay takes
   Eq 6-9, the unit side resistance at least the soft clay's at the boundary;
   directly under a cohesionless layer α 1.0. The zone's base is a grid
-  boundary (α jumps there). Firm clay gets no zone and a warning (p. 417).
+  boundary (α jumps there). The zone runs 10b from the top of the stiff
+  clay however the clay is split into sublayers (UFC p. 415 allows the
+  split; review 2026-10-20), each sublayer's Eq 6-9 on its own su. Firm
+  clay gets no zone and a warning (p. 417); a Beta clay above that gives
+  no su cannot be called soft, and a warning says no zone was taken.
 - `alpha_chart="gec12_fig_7_17"` with `fig_7_17_curve`
   (`concrete_timber_corrugated` or `smooth_steel`, required where a clay
   reads the chart): Ca off Fig. 7-17 as drawn, the reading `axial_pile`
   uses (GM-229), moved to `geotech_common` for both. Past the curves' end
-  Ca is held there with a warning naming API α (give α to use it). Fig.
-  7-18 (the stratigraphy cases) is not offered here.
+  Ca is held there with a warning naming API α (give α to use it); below
+  D/b 10 the D = 10b curve, with a warning. Fig. 7-18 (the stratigraphy
+  cases) is not offered here: a stiff clay under sand or soft clay gets a
+  warning that GEC-12 p. 246 recommends it.
 - A given α is kept, and has its own entry in `choices`.
+- `alpha_chart` other than the default, `fig_7_17_curve` and
+  `alpha_transition_zone` are refused where no clay along the pile reads
+  its α off a chart, and `alpha_transition_zone` where no zone falls
+  (GM-179: an input that changes nothing is refused with its reason).
 
 Choices left to the engineer (warned or stated, not settled by the print):
 linear interpolation in Z/b between curves B and A (the figure gives two
-curves only); curve B held below Z/b 10, which overstates α there (p. 415),
-with a warning; α held at the curves' end past su/Pa 2.36 (5,000 psf), with
-a warning (Table 6-16 runs to 6,000 psf); the transition zone on by default;
-firm clay under soft clay or sand read off Fig 6-14 throughout.
+curves only, and UFC p. 415 says "engineering judgment should be exercised
+for how to consider length effects"); curve B held below Z/b 10, which
+overstates α there (p. 415), with a warning; α held at the curves' end past
+su/Pa 2.36 (5,000 psf), with a warning (Table 6-16 runs to 6,000 psf); the
+transition zone on by default (as UFC's own drag example takes it); firm
+clay under soft clay or sand read off Fig 6-14 throughout. The α choice's
+basis states whichever of the first three a run made, with UFC's words, and
+its alternatives name the zone switch and a given α, with UFC's note that a
+higher α is conservative for negative skin friction (§6-7.4 step 2, p. 476).
+The default lowers the drag force wherever a firm to very stiff clay settles
+(the soft-over-stiff case below: 1,148 to 789 kN).
 
 `choices` gives the α each clay took, with its depths and source ("alpha
 1.00 at 0-6 m (Table 6-16, soft clay); 0.28 at 6-10 m (Eq 6-9, transition
@@ -552,7 +569,8 @@ Numbers (`dd_numbers` on the tool path, before / after):
 Found on the way (not fixed here): geotech-references
 `dm7_2/chapter6.py::alpha_tomlinson_transition` codes Eq 6-9 with the
 exponents swapped, 0.44 (su/Pa)^-0.28, and cites p. 454; UFC prints 0.28
-(su/Pa)^-0.44 on p. 416.
+(su/Pa)^-0.44 on p. 416. BACKLOG REF-43; fixed on the references' master
+(2e8ad84), not yet in the submodule pin.
 
 ## UFC Equation Coverage
 

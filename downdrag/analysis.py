@@ -189,9 +189,16 @@ def _alpha_text(spans: list, sources: bool = False) -> str:
             src = s["source"]
             if s.get("Z_over_b") is not None and src != UFC_TABLE_SOFT:
                 ratio = "D/b" if src.startswith("Fig. 7-17") else "Z/b"
-                src += f", {ratio} {s['Z_over_b']:.0f}"
+                src += f", {ratio} {round(s['Z_over_b'], 1):g}"
+                if s["Z_over_b"] < 10.0:
+                    # below the shallowest curve, which is read (a warning
+                    # says so)
+                    src += (" (the D = 10b curve)" if ratio == "D/b"
+                            else " (curve B)")
             if s.get("floor"):
                 src += "; fs at least the soft clay's"
+            if s.get("no_zone"):
+                src += f"; {s['no_zone']}"
             text += f" ({src})"
         parts.append(text)
     if len({round(s["alpha"], 2) for s in spans}) == 1 and not sources:
@@ -578,6 +585,27 @@ class DowndragAnalysis:
                     f"alpha_transition_zone must be True, False or None (as "
                     f"the chart's source prints it), got {zone!r}")
             self.alpha_transition_zone = bool(zone)
+        # an alpha input that would change nothing (GM-179)
+        unused = [name for name, given in (
+            ("alpha_chart", self.alpha_chart != "ufc_fig_6_14"),
+            ("fig_7_17_curve", curve is not None),
+            ("alpha_transition_zone", zone is not None)) if given]
+        if unused and not self._chart_layers():
+            raise ValueError(
+                f"This run does not take {' or '.join(unused)}: no cohesive "
+                f"layer along the pile leaves alpha out for the Alpha method "
+                f"(each gives alpha or takes skin_friction_method 'beta', or "
+                f"the soil is cohesionless), so no alpha is read off a "
+                f"chart. Leave {' and '.join(unused)} out.")
+        if zone is not None and not any(
+                s["source"] in _ZONE_SOURCES
+                for s in self.alpha_readings(zones=True)["spans"]):
+            raise ValueError(
+                "This run does not take alpha_transition_zone: no stiff or "
+                "very stiff clay (su 1500 psf or more) that leaves alpha out "
+                "lies directly under soft clay or sand along the pile, where "
+                "UFC 3-220-20 pp. 416-417 put a transition zone. Leave "
+                "alpha_transition_zone out.")
 
     def _chart_layers(self) -> list:
         """The cohesive layers along the pile whose alpha is read off
@@ -599,29 +627,36 @@ class DowndragAnalysis:
             return self.alpha_chart == "ufc_fig_6_14"
         return self.alpha_transition_zone
 
-    def alpha_readings(self) -> dict:
+    def alpha_readings(self, zones: Optional[bool] = None) -> dict:
         """alpha along the pile in each clay that takes the Alpha method
-        (GM-255): ``{"spans": [...], "notes": [...]}``.
+        (GM-255): ``{"spans": [...], "notes": [...]}``. ``zones`` overrides
+        whether the transition zone is taken (None: as the run takes it).
 
         Each span is a dict: ``top_m``, ``bottom_m``, ``layer`` (its index),
         ``alpha``, ``given`` (the layer gave it), ``source`` (where a chart
         reading comes from: :data:`_ALPHA_CHART_NAME`'s figure or table, or
-        a transition zone), ``Z_over_b`` (a chart reading's Z/b) and
-        ``floor`` (a transition zone under soft clay: the unit side
-        resistance is at least the soft clay's, UFC p. 417). ``notes``:
-        what a reading held or could not settle, for the result's warnings.
+        a transition zone), ``Z_over_b`` (a chart reading's Z/b), ``floor``
+        (a transition zone under soft clay: the unit side resistance is at
+        least the soft clay's, UFC p. 417, ``over_layer`` being that clay)
+        and ``no_zone`` (why a chart reading under soft clay or sand took
+        no transition zone). ``notes``: what a reading held or could not
+        settle, for the result's warnings.
         """
         L, b = self.pile_length, self.pile_diameter
         tol = 1e-9 * max(L, 1.0)
         layers = self.soil.layers
-        zones_on = self._transition_zone_on()
+        zones_on = self._transition_zone_on() if zones is None else zones
         spans, notes = [], []
         top = 0.0
+        # a transition zone that runs on into the next layer of the same
+        # stiff clay (a clay split into sublayers): (end depth, zone span)
+        carry = None
         for i, layer in enumerate(layers):
             bottom = top + layer.thickness
             if top >= L - tol:
                 break
             if layer.soil_type != "cohesive" or layer.fs_method != "alpha":
+                carry = None
                 top = bottom
                 continue
             bot = min(bottom, L)
@@ -629,21 +664,56 @@ class DowndragAnalysis:
                 spans.append(dict(top_m=top, bottom_m=bot, layer=i,
                                   alpha=float(layer.alpha), given=True,
                                   source="given"))
+                carry = None
                 top = bottom
                 continue
-            z0 = top
-            zone = (self._transition_zone(i, top, bot, notes) if zones_on
-                    else None)
+            z0, no_zone, zone, zone_end = top, None, None, None
+            if carry is not None:
+                zone_end, last = carry
+                if ufc_consistency(layer.cu) not in ("soft", "firm"):
+                    zone = dict(last, top_m=top, bottom_m=min(zone_end, bot),
+                                layer=i)
+                    if last["source"] == UFC_EQ_6_9:
+                        zone["alpha"] = alpha_ufc_eq_6_9(layer.cu)
+            else:
+                over = self._zone_case(i, top, bot, notes)
+                if over is not None and ufc_consistency(layer.cu) == "firm":
+                    no_zone = f"no transition zone: firm clay under {over}"
+                    notes.append(
+                        f"Alpha method, the clay at {top:g}-{bot:g} m: UFC "
+                        f"3-220-20 p. 417 gives no transition zone for "
+                        f"{over} over firm clay (Tomlinson 1994 gives no "
+                        f"guidance; 'judgment should be applied'): Fig 6-14 "
+                        f"was read throughout. Give alpha to change it.")
+                elif over is not None and ufc_consistency(layer.cu) != "soft":
+                    if zones_on:
+                        zone = self._transition_zone(i, top, bot, over)
+                        zone_end = top + 10.0 * b
+                    elif self.alpha_chart == "gec12_fig_7_17":
+                        notes.append(
+                            f"Alpha method, the clay at {top:g}-{bot:g} m: "
+                            f"stiff clay under {over}, where FHWA GEC-12 "
+                            f"p. 246 recommends Figure 7-18 (and the smaller "
+                            f"of Figs. 7-17 and 7-18 for the inexperienced "
+                            f"user); this tool reads Fig. 7-17 only. Give "
+                            f"alpha off Fig. 7-18 to use it, or "
+                            f"alpha_transition_zone true for UFC 3-220-20's "
+                            f"transition zone (pp. 416-417).")
+            carry = None
             if zone is not None:
                 spans.append(zone)
                 z0 = zone["bottom_m"]
+                if zone_end > bottom + tol and bottom < L - tol:
+                    carry = (zone_end, zone)
             if z0 < bot - tol:
                 Z_over_b = bot / b
                 alpha, source = self._chart_alpha(layer, top, bot, Z_over_b,
                                                   notes)
-                spans.append(dict(top_m=z0, bottom_m=bot, layer=i,
-                                  alpha=alpha, given=False, source=source,
-                                  Z_over_b=Z_over_b))
+                span = dict(top_m=z0, bottom_m=bot, layer=i, alpha=alpha,
+                            given=False, source=source, Z_over_b=Z_over_b)
+                if no_zone:
+                    span["no_zone"] = no_zone
+                spans.append(span)
             top = bottom
         return {"spans": spans, "notes": notes}
 
@@ -673,6 +743,11 @@ class DowndragAnalysis:
             return alpha, source
         curve = self.fig_7_17_curve
         end = CHART_END_KSF[curve] * KSF
+        if Z_over_b < 10.0:
+            notes.append(
+                f"Alpha method, {where}: D/b = {Z_over_b:.1f} is less than "
+                f"the 10 of FHWA GEC-12 Fig. 7-17's shallowest curves; Ca "
+                f"was read off the D = 10b curve.")
         if layer.cu <= end:
             ca = adhesion_fig_7_17(layer.cu, Z_over_b, curve)
             return ca / layer.cu, "Fig. 7-17"
@@ -686,39 +761,45 @@ class DowndragAnalysis:
             f"(§7.2.1.3.3): give alpha to use it.")
         return ca / layer.cu, "Fig. 7-17, held at the curve's end"
 
-    def _transition_zone(self, i: int, top: float, bot: float,
-                         notes: list) -> Optional[dict]:
-        """The transition zone at the top of layer ``i`` (UFC 3-220-20 pp.
-        416-417), or None: the top 10b of a stiff or very stiff clay under
-        soft clay (Eq 6-9, at least the soft clay's unit side resistance)
-        or under sand or gravel (alpha 1.0)."""
+    def _zone_case(self, i: int, top: float, bot: float,
+                   notes: list) -> Optional[str]:
+        """What lies directly over the clay of layer ``i`` where UFC
+        3-220-20 pp. 416-417 give a transition zone at its top: "sand"
+        (a cohesionless layer: sand or gravel) or "soft clay" (su below
+        800 psf, Table 6-16); None otherwise. A clay above that gives no su
+        (a Beta-method clay) cannot be called soft, and a note says so."""
         if i == 0:
             return None
-        layer, above = self.soil.layers[i], self.soil.layers[i - 1]
+        above = self.soil.layers[i - 1]
         if above.soil_type == "cohesionless":
-            over = "sand"
-        elif above.cu > 0 and ufc_consistency(above.cu) == "soft":
-            over = "soft clay"
-        else:
-            return None
-        kind = ufc_consistency(layer.cu)
-        if kind == "firm":
+            return "sand"
+        if above.cu > 0:
+            return ("soft clay" if ufc_consistency(above.cu) == "soft"
+                    else None)
+        if ufc_consistency(self.soil.layers[i].cu) not in ("soft", "firm"):
             notes.append(
-                f"Alpha method, the clay at {top:g}-{bot:g} m: UFC 3-220-20 "
-                f"p. 417 gives no transition zone for {over} over firm clay "
-                f"(Tomlinson 1994 gives no guidance; 'judgment should be "
-                f"applied'): Fig 6-14 was read throughout. Give alpha to "
-                f"change it.")
-            return None
-        if kind == "soft":
-            return None
+                f"Alpha method, the clay at {top:g}-{bot:g} m: the clay "
+                f"above it gives no su, so whether it is soft clay (UFC "
+                f"3-220-20 Table 6-16), with a transition zone at the top of "
+                f"this clay (pp. 416-417), is not known; none was taken. "
+                f"Give the clay above its cu to settle it.")
+        return None
+
+    def _transition_zone(self, i: int, top: float, bot: float,
+                         over: str) -> dict:
+        """The transition zone at the top of the stiff clay of layer ``i``
+        under ``over`` (UFC 3-220-20 pp. 416-417), to 10b below its top or
+        the layer's base: under soft clay Eq 6-9, the unit side resistance
+        at least the soft clay's (``over_layer``); under sand or gravel
+        alpha 1.0."""
         zone_bot = min(top + 10.0 * self.pile_diameter, bot)
         if over == "sand":
             return dict(top_m=top, bottom_m=zone_bot, layer=i, alpha=1.0,
                         given=False, source=UFC_SAND_ZONE)
         return dict(top_m=top, bottom_m=zone_bot, layer=i,
-                    alpha=alpha_ufc_eq_6_9(layer.cu), given=False,
-                    source=UFC_EQ_6_9, floor=True)
+                    alpha=alpha_ufc_eq_6_9(self.soil.layers[i].cu),
+                    given=False, source=UFC_EQ_6_9, floor=True,
+                    over_layer=i - 1)
 
     def _weight_per_m(self) -> float:
         """The pile's own weight per metre in the load curve (kN/m): zero
@@ -1549,21 +1630,22 @@ class DowndragAnalysis:
             if span.get("floor"):
                 # UFC 3-220-20 p. 417: the soft clay's unit side resistance
                 # where that is higher
-                fs[i] = max(fs[i], self._soft_clay_fs(
-                    span, spans, float(np.interp(span["top_m"], z_nodes,
-                                                 sigma_v))))
+                fs[i] = max(fs[i], self._soft_clay_fs(span, spans, z_nodes,
+                                                      sigma_v))
         return fs
 
-    def _soft_clay_fs(self, zone: dict, spans: list,
-                      sigma_v_top: float) -> float:
+    def _soft_clay_fs(self, zone: dict, spans: list, z_nodes: np.ndarray,
+                      sigma_v: np.ndarray) -> float:
         """The unit side resistance of the soft clay over a transition zone
         (``zone``), at its base: the floor UFC 3-220-20 p. 417 puts under
         Eq 6-9."""
-        above = self.soil.layers[zone["layer"] - 1]
+        k = zone["over_layer"]
+        above = self.soil.layers[k]
         if above.fs_method == "beta":
+            base = sum(layer.thickness for layer in self.soil.layers[:k + 1])
             beta = above.beta if above.beta is not None else 0.3
-            return beta * sigma_v_top
-        own = [s for s in spans if s["layer"] == zone["layer"] - 1]
+            return beta * float(np.interp(base, z_nodes, sigma_v))
+        own = [s for s in spans if s["layer"] == k]
         return (own[-1]["alpha"] if own else 1.0) * above.cu
 
     def _compute_stress_change(self, z_nodes: np.ndarray) -> np.ndarray:
@@ -2593,17 +2675,40 @@ class DowndragAnalysis:
             "; the top 10b of a stiff clay under soft clay Eq 6-9, alpha = "
             "0.28 (su/Pa)^-0.44, the unit side resistance at least the soft "
             "clay's, and under sand alpha 1.0 (pp. 416-417)" if zones else "")
-        if self.alpha_chart == "ufc_fig_6_14":
+        # where the chart leaves the reading to the module: between and
+        # beyond its two embedment curves, and past their end
+        charted = [s for s in read if s.get("Z_over_b") is not None
+                   and s["source"] not in _ZONE_SOURCES + (UFC_TABLE_SOFT,)]
+        ufc_chart = self.alpha_chart == "ufc_fig_6_14"
+        ratio, low, high = (("Z/b", "curve B", "curve A") if ufc_chart else
+                            ("D/b", "the D = 10b curve", "the D = 40b curve"))
+        calls = []
+        if any(10.0 < s["Z_over_b"] < 40.0 for s in charted):
+            calls.append(f"between {ratio} 10 and 40 alpha is interpolated "
+                         f"linearly in {ratio} between {low} and {high}")
+        if any(s["Z_over_b"] < 10.0 for s in charted):
+            calls.append(f"below {ratio} 10 {low} is read"
+                         + (", which overstates alpha there (p. 415)"
+                            if ufc_chart else ""))
+        if any("held" in s["source"] for s in charted):
+            calls.append("past the end of the curves the reading is held at "
+                         "their end")
+        if ufc_chart:
             basis = (
                 "The module's default; its headline procedure is UFC "
                 "3-220-20's. UFC 3-220-20 §6-5.4.2 (pp. 415-417): alpha 1 "
-                "in soft clay "
-                "(su below 800 psf, Table 6-16); in firm to very stiff clay "
-                "Fig 6-14, curve A at Z/b 40 or more and B at Z/b 10, linear "
-                "between, Z to the clay's base or the pile toe and b the "
-                "pile width" + zone_text + ". UFC's drag example reads it so "
-                "(App. B-5.4, pp. 636-637: alpha 1.0 in soft clay, 0.5 in "
-                "stiff clay, Eq 6-9 in the transition zone).")
+                "in soft clay (su below 800 psf, Table 6-16); in firm to "
+                "very stiff clay Fig 6-14, curve A for Z of 40b or more and "
+                "curve B for Z = 10b, Z from the ground surface to the "
+                "clay's base or the pile toe and b the pile width"
+                + zone_text + ". UFC's drag example reads it so (App. B-5.4, "
+                "pp. 636-637: alpha 1.0 in soft clay, 0.5 in stiff clay, Eq "
+                "6-9 in the transition zone).")
+            if calls:
+                basis += (" UFC prints only curves A and B and says "
+                          "'engineering judgment should be exercised for how "
+                          "to consider length effects' (p. 415): "
+                          + "; ".join(calls) + ".")
             alts = [f"{_ALPHA_CHART_NAME['gec12_fig_7_17']}: alpha_chart "
                     f"'gec12_fig_7_17' with fig_7_17_curve; Ca by su, D/b "
                     f"and pile type, as drawn (GEC-12 §7.2.1.3.2 Step 1, "
@@ -2613,15 +2718,24 @@ class DowndragAnalysis:
                 "FHWA GEC-12 §7.2.1.3.2 Step 1 (p. 250): Ca off Fig. 7-17 "
                 f"by su, D/b and the curves for "
                 f"{FIG_7_17_CURVES[self.fig_7_17_curve]}, as drawn (Ca may "
-                "exceed su)" + zone_text + ".")
+                "exceed su), D from the ground surface to the clay's base "
+                "or the pile toe (p. 246)" + zone_text + ".")
+            if calls:
+                basis += (" Fig. 7-17 has curves for D = 10b and D of 40b or "
+                          "more only: " + "; ".join(calls) + ".")
             alts = [f"{ufc} (alpha_chart 'ufc_fig_6_14'), the module's "
                     f"default"]
-        if not self._transition_zone_on() and                 self.alpha_chart == "ufc_fig_6_14":
+        if zones:
+            alts.append("no transition zone (alpha_transition_zone false): "
+                        "the chart from the top of the stiff clay")
+        elif ufc_chart and not self._transition_zone_on():
             alts.append("the transition zone of UFC 3-220-20 pp. 416-417 "
                         "(alpha_transition_zone true)")
+        alts.append("alpha given on the layer; a higher alpha is "
+                    "conservative for negative skin friction, a lower one "
+                    "for resistance (UFC 3-220-20 §6-7.4 step 2, p. 476)")
         out.append(choice(f"{ALPHA_CHOICE}, {_depths(read)}",
-                          _alpha_text(read, sources=True), how, basis,
-                          alts + ["alpha given on the layer"]))
+                          _alpha_text(read, sources=True), how, basis, alts))
         return out
 
     def _unrated_below_toe(self, toe_force: float) -> List[tuple]:

@@ -199,6 +199,93 @@ class TestTheGEC12Option:
             _two_clays(20.0, 100.0, **kw)
 
 
+class TestReviewFixes:
+    """The GM-255 review (2026-10-20)."""
+
+    def test_the_zone_runs_on_through_sublayers_of_the_stiff_clay(self):
+        """UFC p. 415 lets a clay be split into sublayers; the zone is 10b
+        from the top of the stiff clay however it is split (4 m here)."""
+        split = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=6.0, soil_type="cohesive",
+                              unit_weight=16.0, cu=20.0, settling=True,
+                              Cc=0.5, e0=1.3)] + [
+            DowndragSoilLayer(thickness=t, soil_type="cohesive",
+                              unit_weight=19.0, cu=100.0)
+            for t in (2.0, 2.0, 2.0, 24.0)], gwt_depth=1.0)
+        a = _two_clays(20.0, 100.0, soil=split)
+        zone = [s for s in a.alpha_readings()["spans"]
+                if s["source"] == am.UFC_EQ_6_9]
+        assert [(s["top_m"], s["bottom_m"]) for s in zone] == [
+            (6.0, 8.0), (8.0, 10.0)]
+        assert all(s["floor"] and s["over_layer"] == 0 for s in zone)
+        r = a.compute()
+        assert _fs_at(r, 9.0) == pytest.approx(
+            am.alpha_ufc_eq_6_9(100.0) * 100.0)
+        assert _fs_at(r, 10.5) == pytest.approx(
+            am.alpha_ufc(100.0, 12.0 / 0.4)[0] * 100.0)
+
+    def test_the_choice_names_the_length_calls_and_the_way_back(self):
+        """Z/b 30 lies between curves B and A: interpolated, said with
+        UFC's own words (p. 415); the zone's off switch and a given alpha
+        (p. 476) are the alternatives."""
+        r = _two_clays(20.0, 100.0, pile_length=12.0).compute()
+        (c,) = _alpha_choices(r)
+        assert "Z/b 30" in c["chosen"]
+        assert ("'engineering judgment should be exercised for how to "
+                "consider length effects' (p. 415)") in c["basis"]
+        assert "interpolated linearly in Z/b" in c["basis"]
+        assert any("alpha_transition_zone false" in a
+                   for a in c["alternatives"])
+        assert "p. 476" in c["alternatives"][-1]
+
+    @pytest.mark.parametrize("kw", [
+        dict(alpha_chart="gec12_fig_7_17", fig_7_17_curve="smooth_steel"),
+        dict(alpha_transition_zone=True)])
+    def test_alpha_inputs_refused_where_no_clay_reads_a_chart(self, kw):
+        """A sand, and a clay that gives its alpha."""
+        for layer in (
+                DowndragSoilLayer(thickness=30.0, soil_type="cohesionless",
+                                  unit_weight=19.0, phi=32.0),
+                DowndragSoilLayer(thickness=30.0, soil_type="cohesive",
+                                  unit_weight=19.0, cu=100.0, alpha=0.6)):
+            soil = DowndragSoilProfile(layers=[layer], gwt_depth=1.0)
+            with pytest.raises(ValueError, match="This run does not take"):
+                DowndragAnalysis(soil=soil, pile_length=12.0,
+                                 pile_diameter=0.4, **kw)
+
+    def test_the_zone_switch_refused_where_no_zone_falls(self):
+        """Firm clay under soft clay takes no zone (p. 417)."""
+        with pytest.raises(ValueError, match="does not take "
+                           "alpha_transition_zone"):
+            _two_clays(20.0, 55.0, alpha_transition_zone=False)
+
+    def test_a_beta_clay_above_with_no_su_is_said(self):
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=6.0, soil_type="cohesive",
+                              unit_weight=16.0, skin_friction_method="beta",
+                              beta=0.25, settling=True, Cc=0.5, e0=1.3),
+            DowndragSoilLayer(thickness=30.0, soil_type="cohesive",
+                              unit_weight=19.0, cu=100.0)], gwt_depth=1.0)
+        r = _two_clays(20.0, 100.0, soil=soil).compute()
+        assert any("gives no su, so whether it is soft clay" in w
+                   for w in r.warnings)
+
+    def test_gec12_names_fig_7_18_and_its_shallowest_curve(self):
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=2.0, soil_type="cohesionless",
+                              unit_weight=18.0, phi=30.0),
+            DowndragSoilLayer(thickness=10.0, soil_type="cohesive",
+                              unit_weight=19.0, cu=100.0)], gwt_depth=1.0)
+        r = DowndragAnalysis(soil=soil, pile_length=3.0, pile_diameter=0.4,
+                             Q_dead=100.0, alpha_chart="gec12_fig_7_17",
+                             fig_7_17_curve="smooth_steel").compute()
+        text = " ".join(r.warnings)
+        assert "GEC-12 p. 246 recommends Figure 7-18" in text
+        assert "D/b = 7.5 is less than the 10" in text
+        (c,) = _alpha_choices(r)
+        assert "D/b 7.5 (the D = 10b curve)" in c["chosen"]
+
+
 def test_the_calc_package_shows_alpha_as_read():
     r = _two_clays(20.0, 100.0)
     rows = next(t for t in get_tables(r.compute(), r)
