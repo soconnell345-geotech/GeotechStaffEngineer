@@ -1,28 +1,33 @@
 """
-The alpha-method for driven piles in cohesive soils (total stress).
+The alpha method for driven piles in cohesive soils (total stress), GEC-12
+Sec. 7.2.1.3.2 (printed pp. 245-250).
 
-Unit side resistance fs = Ca = alpha su (GEC-12 Eq. 7-10), with the pile
-adhesion Ca read from GEC-12 Figure 7-17 (after Tomlinson 1979) by the
-undrained shear strength su, the pile surface and D/b (GEC-12 Sec.
-7.2.1.3.2, Step 1, printed pp. 246-250):
+Unit side resistance fs = Ca = alpha su (Eq. 7-10). Step 1 (p. 250) reads
+the pile adhesion Ca off Figure 7-17 (after Tomlinson 1979, p. 248) by the
+undrained shear strength su, the pile type and D/b:
 
-* solid curves: concrete, timber and corrugated steel piles; H-piles use
-  the corrugated curve on the "box" area (p. 247);
+* solid curves: concrete, timber and corrugated steel piles; an H-pile
+  takes the corrugated pile curve times its "box" area (p. 247);
 * dashed curves: smooth steel piles;
-* D/b = 10 and D/b = 40, where D is the distance from the ground surface to
-  the bottom of the clay layer, or to the pile toe if less (p. 246 and the
-  figure's legend);
-* where su exceeds the chart (highly overconsolidated clays) GEC-12
-  recommends alpha from API RP 2A, Eqs. 7-13 to 7-15 (pp. 247, 250-252);
-  :func:`adhesion` holds Ca at the curve's end by default, as GEC-12's
-  worked example does (Vol 3, Table D-100), or takes API alpha;
-* Ca is at most su (alpha <= 1): API RP 2A's alpha is at most 1.0 (p. 252)
-  and p. 247 takes su on an H-pile's soil-to-soil faces, while Figure 7-17
-  as drawn passes above Ca = su at low su.
+* curves for D = 10b and D = 40b, where D runs from the ground surface to
+  the bottom of the clay layer, or to the pile toe if that is less (p. 246
+  and the figure's legend).
 
-Toe resistance qp = 9 su (Eq. 7-11). Figure 7-17 was measured off the
-printed figure (GEC 12 Vol 1, pdf page 293) on 2026-10-18 by tracing each
-curve between the fitted gridlines. Units are SI (kPa, m, kN).
+Ca is read as drawn: the alpha method's steps take Ca from the figure
+with no limit, and the D = 40b concrete, timber and corrugated curve passes
+above Ca = su below about 1.5 ksf (alpha about 1.1 at su = 1.0 ksf).
+
+Where su exceeds the figure's curves, p. 247 and Step 1 recommend the
+adhesion factor of API RP 2A (Sec. 7.2.1.3.3, Eqs. 7-13 to 7-15, p. 251)
+for highly overconsolidated clays. :func:`adhesion` takes API alpha there
+(``beyond_chart="api"``) or holds Ca at the curve's end
+(``"chart_end"``, as GEC-12's worked example, Vol 3 Table D-100, did);
+which clays count as highly overconsolidated is the engineer's call, made
+in :class:`~axial_pile.capacity.AxialPileAnalysis`. API alpha is at most
+1.0, API RP 2A's own limit, so it applies on that route only.
+
+Toe resistance qp = 9 su (Eq. 7-11). Figure 7-17's curves were measured off
+the printed figure on 2026-10-18. Units are SI (kPa, m, kN).
 
 References:
     Tomlinson, M.J. (1979) -- Pile Design and Construction Practice
@@ -77,8 +82,9 @@ _FIG_7_17 = {
     DASHED: (_SU_DASHED, _DASHED_10, _SU_DASHED, _DASHED_40),
 }
 
-#: Where each family's curves end (ksf): beyond, GEC-12 p. 247 recommends
-#: API alpha; :func:`adhesion` holds Ca at the end by default.
+#: Where each family's curves end (ksf). Past them GEC-12 recommends API
+#: alpha for highly overconsolidated clays (alpha method, p. 247 and Step
+#: 1); :func:`adhesion` takes it or holds Ca at the curve's end.
 CHART_END_KSF = {SOLID: 3.45, DASHED: 3.05}
 
 
@@ -99,13 +105,14 @@ def _one_curve(su_ksf: float, su_nodes, ca_nodes, lower=None) -> float:
 
 def adhesion_fig_7_17(su: float, D_over_b: float, curve: str = SOLID,
                       notes: Optional[list] = None) -> float:
-    """Pile adhesion Ca (kPa) from GEC-12 Figure 7-17.
+    """Pile adhesion Ca (kPa) from GEC-12 Figure 7-17 (alpha method, Step
+    1), as drawn.
 
     Linear along each curve in su, then linear in D/b between the D = 10b
     and D = 40b curves; D/b below 10 takes the 10b curve and above 40 the
-    40b curve. Below the chart's start (0.25 ksf) Ca = su times the
-    curve's starting alpha, at most 1. Above the curve's end the value is
-    held there. The chart as drawn: :func:`adhesion` limits Ca to su.
+    40b curve. Below the curves' start (0.25 ksf) Ca = su times the
+    curve's alpha there. Above the curve's end the value is held there;
+    :func:`adhesion` decides what to do past it.
     """
     if curve not in _FIG_7_17:
         raise ValueError(f"curve must be one of {list(_FIG_7_17)}, got "
@@ -113,8 +120,8 @@ def adhesion_fig_7_17(su: float, D_over_b: float, curve: str = SOLID,
     su_ksf = su / KSF
     s10, c10, s40, c40 = _FIG_7_17[curve]
     if su_ksf < s10[0]:
-        a10 = min(c10[0] / s10[0], 1.0)
-        a40 = min((c40[0] if s40[0] == s10[0] else c10[0]) / s10[0], 1.0)
+        a10 = c10[0] / s10[0]
+        a40 = (c40[0] if s40[0] == s10[0] else c10[0]) / s10[0]
         ca10, ca40 = a10 * su_ksf, a40 * su_ksf
     else:
         ca10 = _one_curve(su_ksf, s10, c10)
@@ -124,10 +131,11 @@ def adhesion_fig_7_17(su: float, D_over_b: float, curve: str = SOLID,
 
 
 def api_alpha(su: float, sigma_v: float) -> float:
-    """Adhesion factor alpha of API RP 2A (GEC-12 Eqs. 7-13 to 7-15):
-    0.5 psi^-0.5 for psi <= 1, 0.5 psi^-0.25 for psi > 1, psi = su /
-    sigma'vo; at most 1.0 (GEC-12 p. 252 recommends 1.0 for
-    unconsolidated clays)."""
+    """Adhesion factor alpha of the API method (GEC-12 Sec. 7.2.1.3.3,
+    Eqs. 7-13 to 7-15, p. 251): 0.5 psi^-0.5 for psi <= 1.0 and
+    0.5 psi^-0.25 for psi > 1.0, psi = su / sigma'vo. At most 1.0, API RP
+    2A's limit (GEC-12 p. 252: "An alpha value of 1.0 is recommended for
+    unconsolidated clays")."""
     if sigma_v <= 0:
         return 1.0
     psi = su / sigma_v
@@ -135,32 +143,27 @@ def api_alpha(su: float, sigma_v: float) -> float:
     return min(a, 1.0)
 
 
-#: The source :func:`adhesion` gives where Figure 7-17 passes above su.
-AT_MOST_SU = "Fig. 7-17, at most su"
-
-
 def adhesion(su: float, D_over_b: float, curve: str = SOLID,
              sigma_v: Optional[float] = None,
              beyond_chart: str = "chart_end",
              notes: Optional[list] = None) -> Tuple[float, str]:
-    """(Ca in kPa, its source) for one clay segment: Figure 7-17 within the
-    chart, at most su (alpha <= 1); beyond the curve's end, ``beyond_chart``
-    = "chart_end" (default) holds Ca at the curve's end value, and "api"
-    takes API alpha (GEC-12 p. 247, Step 1) with ``sigma_v``."""
+    """(Ca in kPa, its source) for one clay segment by the alpha method,
+    Step 1: Figure 7-17 as drawn within its curves (Ca may exceed su).
+    Past the curve's end, ``beyond_chart`` = "chart_end" (default) holds Ca
+    at the curve's end value and "api" takes API alpha with ``sigma_v``
+    (GEC-12 p. 247 and Step 1 recommend it for highly overconsolidated
+    clays)."""
     if beyond_chart not in ("api", "chart_end"):
         raise ValueError("beyond_chart must be 'api' or 'chart_end', got "
                          f"'{beyond_chart}'")
     end = CHART_END_KSF[curve] * KSF
     if su <= end:
-        ca = adhesion_fig_7_17(su, D_over_b, curve, notes)
-        if ca > su:
-            return su, AT_MOST_SU
-        return ca, "Fig. 7-17"
+        return adhesion_fig_7_17(su, D_over_b, curve, notes), "Fig. 7-17"
     if beyond_chart == "api" and sigma_v is not None:
         return api_alpha(su, sigma_v) * su, "API alpha"
     ca = adhesion_fig_7_17(end, D_over_b, curve, notes)
-    msg = (f"su = {su / KSF:.2f} ksf is beyond GEC-12 Figure 7-17's "
-           f"{CURVES[curve]} curves (they end near {end / KSF:.2f} ksf); "
+    msg = (f"alpha method: su = {su / KSF:.2f} ksf is past the end of GEC-12 "
+           f"Figure 7-17's curves for {CURVES[curve]} ({end / KSF:.2f} ksf); "
            f"Ca was held at the curve's end value.")
     if notes is None:
         warnings.warn(msg, stacklevel=2)
@@ -173,7 +176,9 @@ def alpha_tomlinson(cu: float, pile_type: str = "steel",
                     D_over_b: float = 10.0,
                     sigma_v: Optional[float] = None,
                     beyond_chart: str = "chart_end") -> float:
-    """Adhesion factor alpha = Ca / su from GEC-12 Figure 7-17.
+    """Adhesion factor alpha = Ca / su from GEC-12 Figure 7-17 (alpha
+    method, Step 1), as drawn: up to about 1.1 where a curve passes above
+    Ca = su.
 
     Parameters
     ----------
@@ -344,11 +349,12 @@ def adhesion_fig_7_18(su: float, D_over_b: float, case: str,
                       sigma_v: Optional[float] = None,
                       beyond_chart: str = "chart_end",
                       notes: Optional[list] = None) -> Tuple[float, str]:
-    """(Ca in kPa, its source) from GEC-12 Figure 7-18: alpha su within
-    the chart. Past the curves' end (highly overconsolidated clays, GEC-12
-    p. 247) ``beyond_chart`` = "chart_end" (default) holds Ca at the
-    chart's end value, as :func:`adhesion` does for Figure 7-17, and "api"
-    takes API alpha with ``sigma_v``."""
+    """(Ca in kPa, its source) from GEC-12 Figure 7-18 (alpha method, Step
+    1): alpha su within the chart. Past the curves' end ``beyond_chart`` =
+    "chart_end" (default) holds Ca at the chart's end value, as
+    :func:`adhesion` does for Figure 7-17, and "api" takes API alpha with
+    ``sigma_v`` (p. 247 recommends it for highly overconsolidated
+    clays)."""
     if beyond_chart not in ("api", "chart_end"):
         raise ValueError("beyond_chart must be 'api' or 'chart_end', got "
                          f"'{beyond_chart}'")
@@ -359,9 +365,9 @@ def adhesion_fig_7_18(su: float, D_over_b: float, case: str,
         return api_alpha(su, sigma_v) * su, "API alpha"
     ca = alpha_fig_7_18(end, D_over_b, case, notes) * end
     _note(notes, (
-        f"su = {su / KSF:.2f} ksf is beyond GEC-12 Figure 7-18's "
-        f"{FIG_7_18_CASES[case]} curves (they end near {end / KSF:.2f} ksf); "
-        f"Ca was held at the chart's end value."))
+        f"alpha method: su = {su / KSF:.2f} ksf is past the end of GEC-12 "
+        f"Figure 7-18's {FIG_7_18_CASES[case]} curves ({end / KSF:.2f} "
+        f"ksf); Ca was held at the chart's end value."))
     return ca, "Fig. 7-18 end"
 
 

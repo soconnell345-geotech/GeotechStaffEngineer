@@ -59,9 +59,11 @@ def _versions_check() -> dict:
     import importlib.metadata as md
     import sys
     parts = [f"python {sys.version.split()[0]}"]
-    for pkg in ("geotech-staff-engineer", "geotech-references", "streamlit",
-                "langchain", "langchain-openai", "langchain-anthropic",
-                "deepagents", "websockets"):
+    # numpy: the app needs 2.x (np.trapezoid); Foundry's transforms repo
+    # ran 1.26.4 (INF-25).
+    for pkg in ("geotech-staff-engineer", "geotech-references", "planlens",
+                "numpy", "streamlit", "langchain", "langchain-openai",
+                "langchain-anthropic", "deepagents", "websockets"):
         try:
             parts.append(f"{pkg} {md.version(pkg)}")
         except Exception:
@@ -98,7 +100,8 @@ def _env_check() -> dict:
     envs = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
             "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
             "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
-            "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE")
+            "GEOTECH_FOUNDRY_DISABLE_STREAMING",
+            "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE")
     if engine_config.is_tinyapps_deployment():
         # The Tiny Apps engine settings, named as CfA names them; the key
         # (and the per-tester key mapping) itself only ever as a length.
@@ -115,7 +118,8 @@ def _env_check() -> dict:
         if v is None or not str(v).strip():
             parts.append(f"{e}=unset")
         elif e in ("GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
-                   "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE",
+                   "GEOTECH_FOUNDRY_DISABLE_STREAMING",
+                   "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE",
                    "PROMPTER_URL", "PROMPTER_MODEL",
                    "PROMPTER_SHARED_KEY_FALLBACK",
                    "GEOTECH_PROMPTER_DISABLE_STREAMING"):

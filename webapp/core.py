@@ -1579,7 +1579,9 @@ MODEL_CHOICES = [
 #: Env listing Foundry model RIDs for the picker, comma-separated; each entry
 #: is either a bare RID or "Label=RID" (e.g. "GPT 5.2=ri.language-model-
 #: service..language-model.gpt-5-2"). Set in the Foundry workspace so new RIDs
-#: (e.g. Claude once enabled) plug in with no code change.
+#: (e.g. Claude once enabled) plug in with no code change. An id may carry its
+#: model family, "Opus 5.5=anthropic:ri.…", for a Claude RID that does not say
+#: so (``engine_config.split_model_family``).
 FOUNDRY_MODELS_ENV = "GEOTECH_FOUNDRY_MODELS"
 
 

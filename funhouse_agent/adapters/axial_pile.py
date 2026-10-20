@@ -6,7 +6,7 @@ from dataclasses import replace
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
 from axial_pile.capacity import (
-    COHESIVE_NT, INSIDE_FRICTION_RATIO, OPEN_PIPE_TOE_LIMIT,
+    API_IF_HIGHLY_OC, COHESIVE_NT, INSIDE_FRICTION_RATIO, OPEN_PIPE_TOE_LIMIT,
     UPLIFT_SKIN_FRACTION, _TOE_STRESS_LIMIT,
 )
 from axial_pile.soil_profile import FIG_7_18_LAYER_CASES
@@ -40,7 +40,9 @@ _GEC12_OPTIONS = {
     "cohesive_Nt": COHESIVE_NT,
     "h_pile_toe_area": "box",
     "adhesion_curve": "auto",
-    "adhesion_beyond_chart": "chart_end",
+    "adhesion_beyond_chart": API_IF_HIGHLY_OC,
+    # GM-229: the engineer's line for API alpha past the charts
+    "highly_overconsolidated_su_ratio": None,
     "displaced_volume": None,
     # GM-144: the rest of GEC-12 chapter 7
     "adhesion_chart": "fig_7_17",
@@ -354,7 +356,8 @@ METHOD_INFO = {
             "cohesive_Nt": {"type": "float", "required": False, "default": COHESIVE_NT, "description": "method='beta': Nt of a cohesive toe layer. Default 3 (GEC-12: a relatively low Nt in clays unless local correlations suggest higher; Table 7-9 clay 3-30). A layer's own Nt wins."},
             "h_pile_toe_area": {"type": "str", "required": False, "default": "box", "allowed_values": ["box", "steel"], "description": "H-pile toe area: 'box' (depth x flange width, GEC-12 Sec. 7.10.7) or 'steel'. GEC-12 Step 9 leaves it to past experience and local load tests."},
             "adhesion_curve": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "concrete_timber_corrugated", "smooth_steel"], "description": "alpha-method: GEC-12 Fig. 7-17 curves. 'auto' = smooth steel for pipe piles, the concrete/timber/corrugated curve for H-piles (GEC-12 p. 247) and concrete or timber piles."},
-            "adhesion_beyond_chart": {"type": "str", "required": False, "default": "chart_end", "allowed_values": ["chart_end", "api"], "description": "alpha-method where su exceeds Fig. 7-17: 'chart_end' (Ca held at the curve's end, as GEC-12's worked example, Vol 3 Table D-100) or 'api' (alpha from API RP 2A, which GEC-12 p. 247 recommends for highly overconsolidated clays; Ca jumps at the chart's end). Within the chart Ca is at most su."},
+            "adhesion_beyond_chart": {"type": "str", "required": False, "default": API_IF_HIGHLY_OC, "allowed_values": [API_IF_HIGHLY_OC, "chart_end", "api"], "description": "alpha method where a clay layer's su is past the end of the chart's curves (Fig. 7-17, or 7-18 where read); GEC-12 p. 247 and alpha-method Step 1 recommend API RP 2A's alpha there for highly overconsolidated clays. 'api_if_highly_overconsolidated': API alpha in a layer whose su / sigma'vo is at or above highly_overconsolidated_su_ratio, Ca held at the curve's end below it; 'chart_end': Ca held at the curve's end in every such layer (GEC-12's worked example, Vol 3 Table D-100); 'api': API alpha in every such layer. Within the curves Ca is read off Fig. 7-17 as drawn (it can exceed su)."},
+            "highly_overconsolidated_su_ratio": {"type": "float", "required": False, "description": "alpha method: the su / sigma'vo at and above which a clay is highly overconsolidated, for adhesion_beyond_chart 'api_if_highly_overconsolidated'. GEC-12 gives no value; it is the engineer's judgment, so a run with a clay layer whose su is past the chart's curves is refused until this (or adhesion_beyond_chart 'chart_end' or 'api') is given. Ask the user, or state the value taken as a judgment call."},
             "displaced_volume": {"type": "float", "required": False, "description": "Nordlund displaced volume V per unit length (m3/m). Default: the steel area of an H-pile, the gross area of other piles (an open pipe as a closed pipe; its steel area, if it drives unplugged, is below GEC-12 Fig. 7-9)."},
         },
         "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Skin friction.", "Q_tip_kN": "Tip resistance.", "Q_allowable_kN": "Allowable capacity.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},

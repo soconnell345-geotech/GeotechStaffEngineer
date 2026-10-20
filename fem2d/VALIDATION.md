@@ -278,12 +278,46 @@ Basis changes: the staggered column's `surface_settlement_m_by_time` /
 they used to include self-weight); a staged phase's `reset_displacements`
 flag now works (reporting only — it used to zero u in the solver, which
 re-converged to the same total, so it did nothing). `max_displacement_*` of a
-staged phase stays cumulative. Fill flagged in the consolidation column must
-lie above the water table (refused otherwise: water standing on the soil in
-place before an underwater fill is not modelled). Observation, not changed:
-with θ = 0.5 a ±5 kPa Crank–Nicolson ringing persists at the drained boundary
-long after U → 1 (max |excess| 4.96 kPa at Tv = 16; θ = 1 gives 0), so
-`max_excess_pore_pressure_kPa_by_time` carries it at late times.
+staged phase stays cumulative. Fill flagged in the consolidation column may
+lie under water since 2026-10-20 (GM-09, below). The θ = 0.5 ringing noted
+here is fixed by a Rannacher start-up (GM-07, below).
+
+**Crank–Nicolson start-up (2026-10-20, BACKLOG GM-07).** With θ = 0.5 the
+undrained excess, which jumps to 0 at the drained boundary at t = 0, rang
+(± with every step) for the rest of the run whenever the first step was long
+next to the boundary element's h²/c: Crank–Nicolson damps those components
+by (1 − λΔt/2)/(1 + λΔt/2) → −1 per step. The first `startup_steps`
+(default 2) steps are now each taken as two backward-Euler half-steps
+(Rannacher 1984), then θ is used; `startup_steps=0` restores the old
+stepping; θ = 1 is unchanged. V-023 column (ny = 40, P0 = 83.92 kPa),
+`fem2d/tests/test_consolidation_startup_fill.py`:
+
+| Case | before (no start-up) | after |
+|---|---|---|
+| output Tv = 1, 2, 4, 16: min excess at Tv = 16 (U = 1) | −1.40 kPa (isochrone error 1.40 kPa) | 0.00 |
+| 20 m column, one output time 1e8 s: max \|excess\| at U = 1 | 41.7 kPa (± alternating) | 0.000 |
+| fill column (2 m fill on 18 m), one output time 1e8 s | 41.5 kPa | 0.000 |
+| uniform steps to Tv = 0.3, error vs 2,560 steps at 10 / 20 / 40 steps | 27.9 / 9.4 / 0.57 kPa | 0.124 / 0.031 / 0.0077 kPa (ratio 4.0: second order) |
+| U(Tv) vs Terzaghi, Tv 0.05–2 (dense output) | within 0.006 | identical (the fine schedule did not ring) |
+| isochrones p(z,t), z ≥ 0.5 m, Tv 0.05–16 | ≤ 1.45 kPa | ≤ 0.04 kPa |
+
+**Fill placed under water (2026-10-20, BACKLOG GM-09).** Before, a fill layer
+with any pore pressure in or under it was refused. Now the water standing on
+the soil in place before placement is part of the initial stage (a pressure
+on the fill / soil interface carrying any ponded water too), and the load
+stage takes the fill's weight with the hydrostatic water force on it, so
+below the water table the fill loads the soil by its buoyant unit weight
+γ − γw (FHWA NHI-06-088, 2006, Eq. 2-7, p. 2-6); the ponded water then stands
+on the fill's top. Both schemes; stated in the result's `choices`. Hand check:
+2 m fill (γ 20) on 18 m clay (γ 18), same E 529,412 kPa, ν 0.3235
+(M_oed 766,670 kPa), q 100 kPa; s_initial = γ'_clay·18²/(2M) and
+s_load = [20q + ∫σ'_fill dz + (fill load)·18]/M:
+
+| gwt (m) | fill load on clay (kPa) | s_initial hand / fem2d (mm) | s_load hand / fem2d (mm) | p0 in clay hand / fem2d (kPa) |
+|---|---|---|---|---|
+| +1 (ponded) | 2·10.19 = 20.38 | 1.731 / 1.731 | 3.114 / 3.114 | 101.02 / 101.02 |
+| −1 (top metre dry) | 20 + 10.19 = 30.19 | 1.731 / 1.731 | 3.364 / 3.364 | 109.25 / 109.25 |
+| −2 (dry, as before) | 40 | 1.731 / 1.731 | 3.600 / 3.600 | 117.48 / 117.48 |
 
 **Load steps within a stage (2026-10-14, BACKLOG GM-08).** Until then every
 stage — the first (gravity) stage too — was applied in ONE step whatever its

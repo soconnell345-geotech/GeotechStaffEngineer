@@ -1204,7 +1204,11 @@ class TestBaseInterfaceOverrides:
                           phi_foundation=33.0, c_foundation=6.0,
                           pressure_method="coulomb")
         assert r["delta_base_deg"] == pytest.approx(22.0, abs=0.01)
-        assert r["base_adhesion_kPa"] == pytest.approx(4.0, abs=0.01)
+        # GM-212: the drained rule counts no adhesion (GEC-6 Eq. 5-38; EN
+        # 1997-1 6.5.3(10)); before it, ca = 2/3 c = 4.0 kPa on B
+        assert r["sliding_cohesion"] == "drained"
+        assert r["base_adhesion_kPa"] == 0.0
+        assert r["adhesion_width_m"] is None
 
     def test_base_adhesion_override_direct(self):
         from retaining_walls.cantilever import check_sliding
@@ -1212,11 +1216,25 @@ class TestBaseInterfaceOverrides:
                              phi_foundation=33.0, c_foundation=0.0)
         r = check_sliding(self._geom(), 15.0, 33.0,
                           phi_foundation=33.0, c_foundation=0.0,
-                          base_adhesion=10.0)
+                          base_adhesion=10.0,
+                          sliding_cohesion="friction_plus_adhesion")
         assert r["base_adhesion_kPa"] == 10.0
-        extra = 10.0 * 3.5  # ca * B
+        # GM-212: on Be = B - 2e (UFC 3-220-20 Fig. 4-27), not B
+        assert 0.0 < r["adhesion_width_m"] < 3.5
+        extra = 10.0 * r["adhesion_width_m"]  # Ca * Be
         assert (r["resisting_force_kN_per_m"]
                 == pytest.approx(base["resisting_force_kN_per_m"] + extra, abs=0.2))
+        # the undrained rule: ca B alone, no friction (GEC-6 Eq. 5-39)
+        r = check_sliding(self._geom(), 15.0, 33.0,
+                          phi_foundation=33.0, base_adhesion=10.0,
+                          sliding_cohesion="undrained")
+        assert r["delta_base_deg"] is None
+        assert r["resisting_force_kN_per_m"] == pytest.approx(10.0 * 3.5,
+                                                              abs=0.05)
+        # the drained rule counts none, so it refuses one given
+        with pytest.raises(ValueError, match="friction_plus_adhesion"):
+            check_sliding(self._geom(), 15.0, 33.0, phi_foundation=33.0,
+                          base_adhesion=10.0)
 
     def test_analyze_wall_passes_overrides_through(self):
         from retaining_walls.cantilever import analyze_cantilever_wall

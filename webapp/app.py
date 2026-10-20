@@ -623,11 +623,26 @@ with st.sidebar:
                  "API name (e.g. GPT_5_1) uses the in-platform palantir_models "
                  "SDK — no proxy or token needed (see docs/FOUNDRY.md). "
                  "Applies to this conversation going forward.")
+        # Which proxy shape the model speaks. Auto reads it off the id; a
+        # Claude RID that does not say so needs "Anthropic" (INF-25). The
+        # choice travels with the id as a prefix (engine_config).
+        _fams = {"auto": "Auto (from the id)",
+                 "anthropic": "Anthropic (Claude)",
+                 "openai": "OpenAI (GPT)"}
+        _fam = st.selectbox(
+            "Model family", list(_fams), format_func=_fams.get,
+            key=f"custom_family_{ss.thread_id}",
+            help="Auto: an id naming Anthropic, Claude, Opus, Sonnet, Haiku or "
+                 "Fable goes to the "
+                 "Anthropic-messages proxy; anything else to the OpenAI proxy "
+                 "(an 'ri.…' RID) or the palantir_models SDK (an API name). "
+                 "Choose Anthropic for a Claude RID that does not say so.")
         if st.button("Use this model", key=f"use_custom_{ss.thread_id}") \
                 and _rid.strip():
-            _resolve_and_build(_rid.strip())
+            _mid = engine_config.with_model_family(_rid.strip(), _fam)
+            _resolve_and_build(_mid)
             if core.load_meta(ss.thread_id) is not None:
-                core.touch_conversation(ss.thread_id, model=_rid.strip())
+                core.touch_conversation(ss.thread_id, model=_mid)
             st.rerun()
 
     if _foundry_mode:

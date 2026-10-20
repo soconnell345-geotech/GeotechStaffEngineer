@@ -63,7 +63,7 @@ def _profile_with_rock():
     layers = [
         SoilLayer(0, 5, "Sand", gamma=18.0, phi=30, uscs="SP"),
         SoilLayer(5, 10, "Weathered rock", gamma=23.0, is_rock=True,
-                  qu=5000, RQD=60),
+                  qu=5000, RQD=60, Es=750000),
     ]
     gw = GroundwaterCondition(depth=3.0)
     return SoilProfile(layers=layers, groundwater=gw)
@@ -489,6 +489,43 @@ class TestLateralPileAdapter:
         rock_layer = [l for l in layers if "rock" in l["description"].lower()][0]
         assert rock_layer["py_model_type"] == "WeakRock"
         assert rock_layer["py_model_params"]["qu"] == 5000
+        assert rock_layer["py_model_params"]["Er"] == 750000
+        assert rock_layer["py_model_params"]["RQD"] == 60
+
+    def test_weak_rock_needs_qu_and_rock_mass_modulus(self):
+        """GM-161: GEC 9 App. A.5 (p. 231) and GEC 10 9.3.3.4.4 print no
+        default for qu or E_m, so the profile refuses a rock layer without
+        them (it used to take qu 1000 kPa and E_r 200 qu silently)."""
+        for kw, names in ((dict(qu=5000), ["Es"]), (dict(Es=7.5e5), ["qu"]),
+                          ({}, ["qu", "Es"])):
+            prof = SoilProfile(layers=[
+                SoilLayer(0, 5, "Sand", gamma=18.0, phi=30, uscs="SP"),
+                SoilLayer(5, 10, "Weathered rock", gamma=23.0,
+                          is_rock=True, **kw)],
+                groundwater=GroundwaterCondition(depth=3.0))
+            with pytest.raises(ValueError) as e:
+                prof.to_lateral_pile_input(pile_length=8.0, pile_diameter=0.6)
+            for n in names:
+                assert f"give {n}" in str(e.value) or f"and {n}" in str(e.value)
+            assert "p. 231" in str(e.value)
+
+    def test_weak_rock_rqd_default_is_stated(self):
+        """RQD not given: 100 %, the smallest printed alpha_r (GEC 9 p. 231),
+        stated in choices; E_m from the layer's Es is stated as given."""
+        prof = SoilProfile(layers=[
+            SoilLayer(0, 5, "Sand", gamma=18.0, phi=30, uscs="SP"),
+            SoilLayer(5, 10, "Weathered rock", gamma=23.0, is_rock=True,
+                      qu=5000, Es=7.5e5)],
+            groundwater=GroundwaterCondition(depth=3.0))
+        r = prof.to_lateral_pile_input(pile_length=8.0, pile_diameter=0.6)
+        rock = [l for l in r["layers"] if l["py_model_type"] == "WeakRock"][0]
+        assert rock["py_model_params"]["RQD"] == 100.0
+        ch = {c["what"]: c for c in r["choices"]}
+        rqd = ch["RQD 5-8 m (%)"]
+        assert rqd["chosen"] == 100.0 and rqd["how"] == "module"
+        assert "p. 231" in rqd["basis"]
+        em = ch["rock mass modulus E_m 5-8 m"]
+        assert em["chosen"] == 7.5e5 and em["how"] == "given"
 
     def test_cyclic_loading(self):
         profile = _sand_only_profile()
