@@ -14,6 +14,14 @@ Everything lives in the pip package; the Foundry side is one workspace, a
      GPT-family RIDs, `langchain-anthropic` for Claude RIDs).
    - (On 5.8.0 or older, use the old form: `geotech-staff-engineer[deep,full,pdf]`
      plus `streamlit` plus `langchain-openai`.)
+3. **Test wheels** (built from master, not on PyPI; e.g. the INF-25 set in
+   `../foundry_handoff/gse_app_2026-10-20/`): upload the wheel files into the
+   workspace and install them in ONE command naming every file, so the local
+   builds are used and the rest comes from PyPI:
+   `maestro env pip install ./geotech_staff_engineer-*.whl ./geotech_references-*.whl ./planlens-*.whl`.
+   Their versions carry a local label (`5.33.0+foundry.20261020`), which the
+   sidebar footer shows. The app needs numpy 2 (`np.trapezoid`); a fresh
+   install resolves numpy 2.4.x.
 
 ## 2. The app file (the only code that lives in Foundry)
 
@@ -39,17 +47,51 @@ set environment variables for the workspace/app:
 | `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional) | Enables figure read-off, same as Databricks |
 
 Any model id starting with `ri.` routes through the Foundry LLM proxy
-automatically — RIDs containing `anthropic` use the Anthropic-messages proxy,
-everything else uses the OpenAI-chat-completions proxy. **When Claude models
-are enabled later, no code change is needed**: add the RID to
-`GEOTECH_FOUNDRY_MODELS` (or paste it into the app's "Custom model id
-(advanced)" box in the sidebar).
+automatically, by **model family**: a Claude model uses the
+Anthropic-messages proxy, everything else the OpenAI-chat-completions proxy.
+The family is the one the id states, else read off the id:
+
+- **Stated** (since the INF-25 test wheel, 2026-10-20): prefix the id with
+  `anthropic:` or `openai:` — `Opus 5.5=anthropic:ri.…` in
+  `GEOTECH_FOUNDRY_MODELS`, or pick **Model family: Anthropic (Claude)**
+  beside the "Model RID or API name" box in the sidebar. The proxy is sent
+  the id without the prefix. Use this whenever a Claude RID does not say
+  what it is.
+- **Read off the id** (Model family: Auto): an id containing `anthropic`,
+  `claude`, `opus`, `sonnet`, `haiku` or `fable` is a Claude model; anything
+  else is OpenAI-shaped. (Before the INF-25 wheel only `anthropic` counted.)
+
+The sidebar's success line names the route and how the family was decided,
+e.g. "Using the Foundry Anthropic proxy (ri.…; family chosen)", and so does
+**Connection diagnostics**.
+
+### 3a. Claude on Foundry (Opus 5.5 / Sonnet 5.5)
+
+```python
+import os
+os.environ["GEOTECH_FOUNDRY_MODELS"] = (
+    "Opus 5.5=anthropic:<Opus 5.5 RID>,Sonnet 5.5=anthropic:<Sonnet 5.5 RID>")
+from webapp.foundry_entry import main
+main()
+```
+
+The first entry is the default; the sidebar picker switches between them.
+Or leave the env line out and type the RID in the sidebar with Model family
+**Anthropic (Claude)**, then **Use this model**. Claude goes through the
+Anthropic-messages proxy (`/api/v2/llm/proxy/anthropic/v1/messages`) with
+`FOUNDRY_TOKEN` as the bearer; a Claude model **API name** typed instead of
+a RID goes there too, because the `palantir_models` engine below is
+GPT-only. If the proxy refuses (401/403), see the troubleshooting entry
+below; there is no in-platform Claude engine in the app yet.
 
 ### 3b. Alternative engine: the in-platform `palantir_models` SDK (no proxy, no token)
 
 On a Foundry deployment, a model id that is **not** an `ri....` RID is treated
 as a **Palantir model API name** (e.g. `GPT_5_1`) and served through the
-in-platform `palantir_models` SDK instead of the LLM proxy. The workspace
+in-platform `palantir_models` SDK instead of the LLM proxy. This engine speaks
+to **GPT models only** (`OpenAiGptChat…` classes); a Claude API name (family
+Anthropic, stated or read off the name) goes to the Anthropic proxy of §3a
+instead. The workspace
 authenticates the SDK itself — **no token, host, or proxy enrollment is
 involved**, which makes this the route of choice when the proxy returns
 401/403 (`LlmProxyNotEnabled` and friends). Discovered live 2026-07-21: the
@@ -106,11 +148,19 @@ curl -s "https://$FOUNDRY_HOSTNAME/api/v2/llm/proxy/openai/v1/chat/completions" 
   -d '{"model":"ri.language-model-service..language-model.gpt-5-2","messages":[{"role":"user","content":"Say ok."}]}'
 ```
 
+For a Claude RID, the Anthropic shape:
+
+```bash
+curl -s "https://$FOUNDRY_HOSTNAME/api/v2/llm/proxy/anthropic/v1/messages" \
+  -H "Authorization: Bearer $FOUNDRY_TOKEN" -H "Content-Type: application/json" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"<Claude RID>","max_tokens":20,"messages":[{"role":"user","content":"Say ok."}]}'
+```
+
 A JSON reply containing the model's answer = the proxy is enabled and the RID
-is right. (For a Claude RID later, the same test against
-`/api/v2/llm/proxy/anthropic/v1/messages` with the Anthropic request shape.)
-An error page or 404 = the LLM-provider-compatible API isn't enabled on the
-enrollment — ask the platform admin.
+is right. An error page or 404 = the LLM-provider-compatible API isn't enabled
+on the enrollment — ask the platform admin. (If `FOUNDRY_HOSTNAME` already
+carries `http://` or `https://`, drop the `https://` in the URL.)
 
 ## 5. Preview, then publish
 
@@ -128,9 +178,11 @@ The Foundry entry (`webapp/foundry_entry.py`) marks the process as a Foundry
 deployment, and in that mode the app **never reads or mentions the Anthropic
 API key** (enclave-IT requirement): the model surface is Foundry RIDs only —
 the `GEOTECH_FOUNDRY_MODELS` entries populate the picker, and with nothing
-configured the sidebar shows a single **"Model RID or API name"** input (no "advanced"
-expander, no built-in Claude model list, no key references in banners or the
-diagnostics report). Local/dev behaviour is unchanged.
+configured the sidebar shows a single **"Model RID or API name"** input with a
+**Model family** choice beside it (Auto / Anthropic (Claude) / OpenAI (GPT);
+§3) — no "advanced" expander, no built-in Claude model list, no key
+references in banners or the diagnostics report. Local/dev behaviour is
+unchanged.
 
 ## Troubleshooting a live deployment (learned 2026-07-17/18, State gov enclave)
 
@@ -163,7 +215,12 @@ Field notes from the first real publish (PDCS Sandbox, stateobo.palantirgov.com)
   models; (3) what base URL + auth should Code Workspace containers use for
   the LLM proxy in this enclave. Their answer goes into
   `GEOTECH_FOUNDRY_HOST` (explicit `http://`/`https://` schemes are honored)
-  in the app file — no package change needed.
+  in the app file — no package change needed. For Claude this is the only
+  route today (the `palantir_models` engine is GPT-only): if the Anthropic
+  proxy is refused, find out whether `palantir_models.models` has a Claude /
+  Anthropic class and what request type it takes (the AI FDE brief
+  `../foundry_handoff/gse_app_2026-10-20/AI_FDE_BRIEF_GSE_APP.md` asks
+  exactly this), so the SDK engine can gain a Claude leg.
 - **Non-secret config lives in the app file** (there is no env-var panel):
   ```python
   import os
