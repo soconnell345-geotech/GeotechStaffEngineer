@@ -112,6 +112,21 @@ class TestHtmlToPdfLoudFailure:
         with pytest.raises(ValueError, match="html_to_pdf"):
             _generate_html_to_pdf({"html": "<p>x</p>", "renderer": "latex"})
 
+    def test_fills_left_out_are_said(self, tmp_path):
+        """GM-219: the PDF draws no backgrounds, and the caller is told."""
+        pytest.importorskip("fitz")
+        res = _generate_html_to_pdf({
+            "html": _doc('<p>Key: <span style="background:#e41a1c">'
+                         "&nbsp;&nbsp;</span> clay</p>"),
+            "output_path": str(tmp_path / "r.pdf")})
+        assert res["status"] == "success"
+        assert res["fills_not_drawn"].startswith("1 background fill(s)")
+        assert "colour key" in res["fills_not_drawn"]
+        plain = _generate_html_to_pdf({
+            "html": _doc("<p>Bearing 150 kPa.</p>"),
+            "output_path": str(tmp_path / "p.pdf")})
+        assert "fills_not_drawn" not in plain
+
 
 class TestHtmlToPdfEmbedsLocalImages:
     def test_local_png_path_is_inlined(self, tmp_path):

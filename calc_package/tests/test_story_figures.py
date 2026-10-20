@@ -910,3 +910,17 @@ def test_the_css_loses_its_backgrounds_and_its_light_text():
         "border-color:white;background-image:url(a.png)}</style>"
         '<p style="color: #000 !important;background:transparent">'
         "color: white</p><td>x</td>")
+
+
+def test_the_fills_left_out_are_counted():
+    """What ``html_to_pdf`` tells its caller is gone: each background that
+    would show on white paper, not one that leaves it white."""
+    count = latex_renderer._fills_set
+    assert count("<p>plain</p>") == 0
+    assert count("<style>body{background:#fff}td{background-color:"
+                 "transparent !important}p{background:white}</style>"
+                 '<td style="background: rgb(255, 255, 255)">x</td>'
+                 "<td bgcolor=\"#FFFFFF\">y</td>") == 0
+    assert count("<style>th{background:#f0f0f0}.band{background-color:"
+                 "#1f4e79}</style>" '<span style="background:#e41a1c">'
+                 "&nbsp;</span><td bgcolor=red>x</td>") == 4

@@ -464,6 +464,29 @@ def _without_backgrounds(html: str) -> str:
     return html
 
 
+#: A background value that leaves white paper white.
+_NO_FILL = re.compile(
+    r"""["']?\s*(?:transparent|none|white|inherit|initial|unset|#fff(?:fff)?"""
+    r"""|rgba?\(\s*255\s*,\s*255\s*,\s*255\s*(?:,[^)]*)?\))?"""
+    r"""\s*(?:!\s*important)?\s*["']?""", re.IGNORECASE)
+
+
+def _fills_set(html: str) -> int:
+    """How many backgrounds ``html`` sets that would show on white paper
+    (in style sheets, style attributes and ``bgcolor`` attributes): the
+    fills the Story PDF leaves out (:func:`_without_backgrounds`)."""
+    n = 0
+    for m in _STYLE_PARTS.finditer(html):
+        css = m.group(2) if m.group(1) is not None else m.group(5)
+        n += sum(1 for d in _BACKGROUND_DECL.finditer(css)
+                 if not _NO_FILL.fullmatch(d.group(2)))
+    if "bgcolor" in html.lower():
+        for tag in re.finditer(r"<[A-Za-z][^>]*>", html):
+            n += sum(1 for a in _BGCOLOR_ATTR.finditer(tag.group(0))
+                     if not _NO_FILL.fullmatch(a.group(0).split("=", 1)[1]))
+    return n
+
+
 #: Header-column count above which a table is treated as "wide" and compacted.
 _WIDE_TABLE_COLS = 11
 
@@ -1633,7 +1656,9 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     check measured it at). ``figures`` is ``None`` when the pictures drawn
     cannot be matched to the HTML's ``<img>`` tags; then, when fewer
     printed than the HTML holds, ``figures_not_printed`` says how many did
-    not (:func:`figures_not_printed_warning`).
+    not (:func:`figures_not_printed_warning`). ``fills_not_drawn``, when
+    the HTML sets backgrounds that would show on white paper, says how
+    many (none is drawn).
     """
     try:
         import fitz  # PyMuPDF, installed via the [pdf] extra
@@ -1645,6 +1670,7 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
         ) from exc
 
     letterings = _png_letterings(html)
+    fills = _fills_set(html)
     html = _compress_pdf_images(html)
     html = _fit_wide_tables_for_pdf(html)
     html = _without_backgrounds(html)
@@ -1680,6 +1706,8 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
                     row["checked_width_in"] = lt["checked_width_in"]
             figures.append(row)
     out = {"path": str(output_path), "figures": figures}
+    if fills:
+        out["fills_not_drawn"] = fills
     if figures is None:
         try:
             short = len(_figure_marks(html)["spans"]) - len(_story_images(pdf))
