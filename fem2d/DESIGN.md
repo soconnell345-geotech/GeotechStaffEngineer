@@ -718,8 +718,15 @@ transient with `c = k_mob/S`, `S = 1/M + α²/(K+4G/3)`.
   traction γw·gwt on the surface when gwt is above it — without that load the
   hydrostatic pore pressure would lift the soil); stage 1 `load` — `load_q`
   plus the self-weight of any soil layer flagged `'fill': True` (top layers
-  only, above the water table; monolithic: applied UNDRAINED with the load),
-  then consolidation. Linear, so the load stage is solved on its own (the G6
+  only; monolithic: applied UNDRAINED with the load), then consolidation.
+  Fill may be placed under water (GM-09, 2026-10-20): the water standing on
+  the soil in place before placement presses on the fill / soil interface in
+  stage 0 (carrying any ponded water, whose surface traction then moves to
+  stage 1 on the fill's top), and stage 1 takes the fill's weight with the
+  hydrostatic water force on it, i.e. its buoyant weight γ − γw below the
+  water table. With θ < 1 the first `startup_steps` (default 2) steps are
+  two backward-Euler half-steps each (Rannacher start-up, GM-07), so
+  Crank–Nicolson does not ring at the drained boundary. Linear, so the load stage is solved on its own (the G6
   increment) and cumulative = initial + load. `reset_displacements_after`
   (None/`"initial"` default, or `"start"`) picks what `settlements`,
   `surface_settlement_m_by_time` and `max_settlement_m` report: the load stage

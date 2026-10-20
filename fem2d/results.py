@@ -242,6 +242,7 @@ class ConsolidationResult:
     load_stage_displacements: Optional[np.ndarray] = field(
         default=None, repr=False)
     displacement_nodes: Optional[np.ndarray] = field(default=None, repr=False)
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -267,6 +268,9 @@ class ConsolidationResult:
                 f"  Stage {st['stage']} ({st['name']}): this stage "
                 f"{st['surface_settlement_m'] * 1000:.2f} mm, cumulative "
                 f"{st['cumulative_surface_settlement_m'] * 1000:.2f} mm")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -309,6 +313,8 @@ class ConsolidationResult:
             d["scheme"] = self.scheme
         if self.notes:
             d["notes"] = list(self.notes)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:
