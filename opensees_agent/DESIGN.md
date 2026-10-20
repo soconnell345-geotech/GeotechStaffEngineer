@@ -391,6 +391,71 @@ Newton costs 2-17 % more time than KrylovNewton, the most on the
 failures in 77 s before; 134 passed in 86 s after (the two markers off,
 seven tests added).
 
+## GM-80 and GM-79 (2026-10-20): stress-strain curves, solver steps, the fixed inputs
+
+**Curves (GM-80, `curves.py`).** A layer's `curve` picks the backbone of
+its multi-yield material: `opensees` (default, unchanged: the material's own
+hyperbolic backbone, reaching the strength at 10 % strain), `darendeli`
+(Darendeli 2001; `plas_index` 0, `ocr` 1, `freq_hz` 1, `n_cycles` 10 by
+default), `menq` (Menq 2003; `uniformity_coeff` and `diam_mean` required)
+or `user` (`G_Gmax_curve` `{strain_pct, G_Gmax}`, optional `damping_curve`
+`{strain_pct, damping_pct}`). The chosen curve is evaluated at the layer's
+mid-depth mean effective stress (the material's reference pressure) and
+sent as the user-defined backbone: a negative `noYieldSurf` followed by
+(shear strain, secant G/Gmax) pairs at 31 strains from 1e-6 to 10 %. In
+the OpenSees source (`PressureDependMultiYield02::setUpSurfaces`,
+`PressureIndependMultiYield::setUpSurfaces`) the LAST pair sets the
+strength: sand M = sqrt(3) tau_max / p_ref, sin(phi) = 3M / (6 + M); clay
+c = sqrt(3)/2 tau_max. So the fit follows the curve until its stress
+reaches the layer's strength (phi at the reference pressure, or su) and
+puts the last pair there; a curve still below the strength at 10 % gets its
+last pair at the strength at 10 %. The layer keeps its phi (the material
+prints 32.96 deg for 33; the residual pressure term) or su. On the GM-77
+dry sand column Darendeli and Menq (Cu 10) never reach it: the curve is at
+42.8 / 49.0 kPa at 6.8 % against a strength of 91.2 kPa, so the last
+segment stiffens (tangent 67 to 1,521 kPa for Darendeli) and the curve
+below it implies about half the layer's strength. The runs below peak at
+0.35 % strain, far from it; the result's `choices` says which way each
+layer's backbone meets its strength. Stress must
+rise from pair to pair: the material exits the process otherwise, so the
+fit and the user-table checks refuse a falling stress before OpenSees sees
+it.
+
+The equations of the two published curves are not printed in the
+reference library (GEC 5, FHWA-NHI-16-072, Sec. 8.8, p. 8-23, and FEMA
+P-2082, p. 515, cite them only); the constants are pystrata's, and the
+tests check them against pystrata to machine precision. The materials damp
+on Masing's rules and take no damping curve: `layer_curves` reports the
+curve's damping beside the Masing damping of the fitted backbone (for
+Darendeli PI 30 clay at 1 %: 21 % against 43 %), and `damping` stays the
+Rayleigh term.
+
+Measured on the GM-77 dry sand column (20 m, Vs 200 m/s, phi 33, water
+below), synthetic pulse at 0.30 g, 10 elements; equivalent-linear is
+`pystrata_agent` with the same curve at the same mean effective stress:
+
+| curve | nonlinear | equivalent-linear |
+|---|---|---|
+| opensees (default) | 1.817 | -- |
+| darendeli, PI 0 | 0.637 | 0.939 |
+| menq, Cu 10, D50 5 mm | 0.676 | 0.972 |
+| menq, Cu 2, D50 0.4 mm | 1.640 | 1.407 |
+
+At 0.05 g: 2.564 / --, 2.337 / 2.225, 2.272 / 2.111, 2.795 / 3.167.
+
+**Solver steps (GM-79).** `solver_steps` counts the dynamic steps by the
+algorithm that converged at the full step, the steps that needed a
+fallback (`fallback_steps`) and those taken in substeps
+(`substepped_steps`, with their times and a note: substeps moved the PGA
+spike -6 to -20 % on the wiki column).
+
+**Inputs that were fixed (GM-79).** Per layer: `nu` (default 0.3 sand,
+0.495 clay; the wiki total-stress example uses 0.0 for clay), `n_elem`
+(default `n_elem_per_layer`), and for sand the PressureDependMultiYield02
+constants `contrac1..3`, `dilat1..3`, `liquefac1..2` (default the Dr =
+40 % column). Top level: `rayleigh_freqs_hz` (default the site frequency
+and five times it). Each is in the result's `choices`, given or default.
+
 ## Ground Motions
 
 Built-in synthetic motions are provided for testing.  Custom motions can

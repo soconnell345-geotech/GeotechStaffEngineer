@@ -9,18 +9,28 @@ from funhouse_agent.adapters import (
 # default and silently left out, e.g. a sand layer's 'k0' ran at Jaky's
 # 1 - sin(phi) (GM-58).
 _LAYER_COMMON_KEYS = ("thickness", "Vs", "density", "material_type",
-                      "n_surf", "e_init")
+                      "n_surf", "e_init", "n_elem", "nu",
+                      # the stress-strain curve and its keys (GM-80)
+                      "curve", "plas_index", "ocr", "freq_hz", "n_cycles",
+                      "uniformity_coeff", "diam_mean", "G_Gmax_curve",
+                      "damping_curve")
 _MATERIAL_KEYS = {
-    "sand": ("phi", "K0", "PTAng"),
+    "sand": ("phi", "K0", "PTAng", "contrac1", "contrac2", "contrac3",
+             "dilat1", "dilat2", "dilat3", "liquefac1", "liquefac2"),
     "clay": ("su",),
 }
 # Words the near-miss matcher cannot place; only the keys the layer's own
 # material reads are offered. Suggestions only, never renamed.
 _LAYER_KEY_HINTS = {
     "rho": ("density",), "mass_density": ("density",),
-    "cu": ("su",), "cohesion": ("su",), "c": ("su",),
+    "cohesion": ("su",), "c": ("su",),
     "frictionangle": ("phi",), "phaseangle": ("PTAng",),
     "phasetransformationangle": ("PTAng",), "e": ("e_init",),
+    "pi": ("plas_index",), "plasticity_index": ("plas_index",),
+    "cu": ("su", "uniformity_coeff"), "d50": ("diam_mean",),
+    "poisson": ("nu",), "poissons_ratio": ("nu",),
+    "n_elements": ("n_elem",), "model": ("curve",),
+    "soil_model": ("curve",),
     "e0": ("e_init",), "voidratio": ("e_init",), "type": ("material_type",),
     "soiltype": ("material_type",), "h": ("thickness",),
 }
@@ -111,6 +121,7 @@ def _run_site_response_1d(params: dict) -> dict:
         scale_factor=params.get("scale_factor", 1.0),
         n_elem_per_layer=params.get("n_elem_per_layer", 4),
         linear_elastic=bool(params.get("linear_elastic", False)),
+        rayleigh_freqs_hz=params.get("rayleigh_freqs_hz"),
     )
     return clean_result(result.to_dict())
 
@@ -173,7 +184,7 @@ METHOD_INFO = {
         "category": "OpenSees",
         "brief": "1D effective-stress site response analysis (PDMY02/PIMY + Lysmer dashpot).",
         "parameters": {
-            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0, PTAng), 'clay' needs su (kPa, undrained strength in simple shear)."},
+            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0, PTAng and the PressureDependMultiYield02 constants contrac1, contrac2, contrac3, dilat1, dilat2, dilat3, liquefac1, liquefac2, default the OpenSees wiki's Dr = 40 % column), 'clay' needs su (kPa, undrained strength in simple shear). Optional for any layer: n_elem (its element count, default n_elem_per_layer), nu (Poisson's ratio, default 0.3 sand, 0.495 clay), and curve, the modulus-reduction curve the material's backbone follows to the layer's strength: 'opensees' (default, the material's own hyperbolic backbone, much stiffer than laboratory curves in sand), 'darendeli' (Darendeli 2001; optional plas_index 0, ocr 1, freq_hz 1, n_cycles 10), 'menq' (Menq 2003; needs uniformity_coeff Cu and diam_mean D50 in mm) or 'user' (needs G_Gmax_curve {strain_pct: [...], G_Gmax: [...]}; optional damping_curve {strain_pct: [...], damping_pct: [...]}, reported, not imposed)."},
             "motion": {"type": "str", "brief": "Built-in motion name (e.g. 'synthetic_pulse'), taken as a rock outcrop motion.", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},
             "dt": {"type": "float", "brief": "Time step for custom motion (s).", "default": None},
@@ -183,7 +194,8 @@ METHOD_INFO = {
             "bedrock_density": {"type": "float", "brief": "Bedrock mass density (Mg/m3).", "default": 2.4},
             "damping": {"type": "float", "brief": "Target Rayleigh damping ratio.", "default": 0.02},
             "scale_factor": {"type": "float", "brief": "Scale factor for input acceleration.", "default": 1.0},
-            "n_elem_per_layer": {"type": "int", "brief": "Elements per soil layer.", "default": 4},
+            "n_elem_per_layer": {"type": "int", "brief": "Elements per soil layer (a layer's own n_elem overrides it).", "default": 4},
+            "rayleigh_freqs_hz": {"type": "array", "brief": "The two frequencies [f1, f2] (Hz) at which the Rayleigh damping equals damping.", "default": None},
             "linear_elastic": {"type": "bool", "brief": "Keep the soil linear elastic through the shaking (Gmax = rho*Vs^2, Rayleigh damping only): a check of the column, not a design analysis.", "default": False},
         },
         "returns": {
@@ -197,6 +209,10 @@ METHOD_INFO = {
             "amplification_factor": "PGA surface / PGA input.",
             "max_shear_strain_pct": "Peak shear strain in the profile (%).",
             "max_ru": "Peak excess pore pressure ratio in profile.",
+            "solver_steps": "Dynamic steps by algorithm, the steps that needed a fallback algorithm and those taken in substeps (substeps can move a peak).",
+            "layer_curves": "Each layer's curve: G/Gmax and the curve's damping at 0.001-1 % strain, and the Masing damping its fitted backbone gives.",
+            "rayleigh_freqs_hz": "The two Rayleigh damping frequencies used (Hz).",
+            "choices": "What the column was built with (curve, Poisson's ratio, element count, sand constants, Rayleigh frequencies), each with its basis.",
         },
     },
 }
@@ -240,5 +256,10 @@ declare_when_absent(METHOD_INFO, {
     "pm4sand_cyclic_dss": {
         "nu": ("K0 / (1 + K0)", "Poisson's ratio from the at-rest "
                "coefficient K0 given")},
-    "site_response_1d": {"target_pga_g": _UNSCALED},
+    "site_response_1d": {
+        "target_pga_g": _UNSCALED,
+        "rayleigh_freqs_hz": (
+            "the site frequency Vs/(4H) and five times it",
+            "the column's first mode and a higher frequency, so damping "
+            "stays near the target over the band that matters")},
 })

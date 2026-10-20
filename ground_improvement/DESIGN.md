@@ -7,7 +7,8 @@ wick drains, surcharge preloading, and vibro-compaction.
 ## References
 - FHWA GEC-13 (Ground Modification Methods)
 - Barron (1948), Hansbo (1981) — radial consolidation theory
-- Priebe (1995) — stone column improvement factors
+- Priebe (1995) — stone column improvement factors (GEC-13 prints the
+  Priebe curve, Fig. 5-21 curve (4), not the formula)
 
 ## Files
 - `aggregate_piers.py` — area replacement, SRF, composite modulus, bearing improvement
@@ -67,6 +68,23 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
   only the improved bearing (a choice only with q_unreinforced). GEC-13
   has no worked example by these curves (Example 2, p. 5-49, reads the
   Priebe curve).
+- Priebe (GM-221, 2026-10-20): `priebe_improvement_factor` method
+  'formula' (the default, unchanged) is Priebe's basic n0 from phi_column
+  (default 42.5) and nu_soil, no correction for column compressibility or
+  overburden; GEC-13 Vol. I prints no Priebe formula. Method 'fig_5_21'
+  reads GEC-13's printed Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg
+  (`settlement_ratio.PRIEBE_CURVE_4`, A/A_c 1.6 to 8.0, traced and drawn
+  back as the Balaam curves, +/- 0.03), and refuses phi_column and
+  nu_soil. The formula at 37.5 deg is within 1.5 % of the printed curve at
+  A/A_c 2.25 to 3.5, 2 to 7 % above it from 3.75 to 8 and 6 to 31 % above
+  it below 2.25. From A/A_c about 4.0 the printed (4) runs on one line with
+  (5a). Example 2's arrows (Fig. 5-27) are drawn at A/A_sc 3.53, n' 2.63
+  on the curve, labelled 3.6 and 2.7; at 3.61 the curve gives 2.55.
+  The settlement and composite-modulus steps cited "Priebe (1995)": they
+  are GEC-13's stress reduction method (Sec. 4.1.2.6, p. 5-36) with the
+  soil stress by Eq. 5-4 (p. 5-32), on the unit cell under equal strain
+  (Secs. 4.1.2.1, 4.1.2.4); GEC-13 names Priebe (1995) only as a design
+  method (p. 5-27) and for its curve.
 - Feasibility screening (GM-179): the depth to the bottom of the
   treatment, depth_to_top_m + thickness_m, is held against GEC-13's
   printed depth limits: aggregate columns "Typically, the maximum

@@ -28,6 +28,14 @@ from the ratio of the column modulus to the soil modulus, E_c / E_s:
     and 10 is interpolated linearly in E_c/E_s between (5c) and (5b); the
     flexible curve is drawn for E_c/E_s = 10 only. Off the drawn range the
     curves are not extended.
+
+Curve (4), "PRIEBE phi = 37.5°", is the Priebe curve GEC-13 reads in its
+Example 2 (Sec. 4.3.2, Fig. 5-27, p. 5-49) and of which p. 5-37 says "for
+preliminary estimates, the Priebe curve may be used to evaluate the upper
+bound effectiveness". It takes no moduli: :data:`PRIEBE_CURVE_4` holds it,
+read off the page as the Balaam curves were (GM-221), and
+``priebe_improvement_factor`` method 'fig_5_21' reads it. From A/A_c about
+4.0 on, the printed curve (4) runs on one line with curve (5a).
 """
 
 from __future__ import annotations
@@ -55,6 +63,20 @@ BALAAM_FLEXIBLE_10 = {
     6.0: 1.79, 6.5: 1.72, 7.0: 1.65, 7.5: 1.57, 8.0: 1.50, 8.5: 1.42,
 }
 
+#: GEC-13 Fig. 5-21 curve (4): Priebe, phi = 37.5 deg (GM-221). A/A_c ->
+#: n'. Traced and drawn back as the Balaam curves; the table is within 1 %
+#: of the trace between its nodes, and a read is good to about one line
+#: width, +/- 0.03 in n'. Priebe's basic factor n0 at phi_c = 37.5 deg, nu
+#: = 1/3 (``priebe_basic_improvement_factor``) is within 1.5 % of it at
+#: A/A_c 2.25 to 3.5, +2 to +7 % from 3.75 to 8.0, and +6 % at 2.0 rising
+#: to +31 % at 1.6.
+PRIEBE_CURVE_4 = {
+    1.6: 6.01, 1.75: 5.55, 2.0: 4.82, 2.25: 4.26, 2.5: 3.80, 2.75: 3.41,
+    3.0: 3.11, 3.25: 2.85, 3.5: 2.63, 3.75: 2.45, 4.0: 2.30, 4.25: 2.16,
+    4.5: 2.07, 5.0: 1.96, 5.5: 1.86, 6.0: 1.79, 6.5: 1.72, 7.0: 1.65,
+    7.5: 1.58, 8.0: 1.49,
+}
+
 #: What each method is, in GEC-13's words, for a result's choices.
 BASIS = {
     "weighted_modulus": (
@@ -79,7 +101,9 @@ BASIS = {
 }
 
 
-def _on_curve(table: dict, as_ratio: float, name: str) -> float:
+def _on_curve(table: dict, as_ratio: float, name: str,
+              instead: str = "settlement_method 'weighted_modulus' or "
+                             "'stress_ratio'") -> float:
     """n' off one tabulated curve at a_s, linear in a_s between nodes."""
     xs = sorted(table)
     x = 1.0 / as_ratio
@@ -88,7 +112,7 @@ def _on_curve(table: dict, as_ratio: float, name: str) -> float:
             f"GEC-13 Fig. 5-21 draws {name} over A/A_c = {xs[0]:g} to "
             f"{xs[-1]:g} (a_s = {1 / xs[-1]:.3f} to {1 / xs[0]:.3f}); "
             f"a_s = {as_ratio:.4f} is A/A_c = {x:.2f}, off the curve. Use "
-            "settlement_method 'weighted_modulus' or 'stress_ratio'")
+            f"{instead}")
     x = min(max(x, xs[0]), xs[-1])
     for x0, x1 in zip(xs, xs[1:]):
         if x <= x1:
@@ -149,6 +173,16 @@ def balaam_settlement_ratio(as_ratio: float, modular_ratio: float,
     n5 = _on_curve(BALAAM_RIGID_5, as_ratio, name)
     n10 = _on_curve(BALAAM_RIGID_10, as_ratio, name)
     return n5 + (r - 5.0) / 5.0 * (n10 - n5)
+
+
+def priebe_curve_settlement_ratio(as_ratio: float) -> float:
+    """n' off GEC-13 Fig. 5-21 curve (4), Priebe phi = 37.5 deg (GM-221),
+    A/A_c 1.6 to 8.0; refused off the drawn range."""
+    if not 0.0 < as_ratio < 1.0:
+        raise ValueError(
+            f"Area replacement ratio must be in (0, 1), got {as_ratio}")
+    return _on_curve(PRIEBE_CURVE_4, as_ratio, "the Priebe curve (4)",
+                     instead="method 'formula' (Priebe's basic n0)")
 
 
 def settlement_ratio(method: str, as_ratio: float,
