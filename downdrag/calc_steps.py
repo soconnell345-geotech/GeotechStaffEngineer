@@ -175,7 +175,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         depth_bot = depth_top + layer.thickness
         settling = "Yes" if layer.settling else "No"
 
-        if layer.soil_type == "cohesive":
+        if layer.soil_type == "cohesive" and layer.fs_method == "beta":
+            # the Beta method in clay (GM-249)
+            strength = f"β = {layer.beta:.2f} (Beta method)"
+            if layer.cu > 0:
+                strength = f"c_u = {layer.cu:.1f} kPa, " + strength
+        elif layer.soil_type == "cohesive":
             strength = f"c_u = {layer.cu:.1f} kPa"
             if layer.alpha is not None:
                 strength += f", \u03b1 = {layer.alpha:.2f}"
@@ -753,8 +758,10 @@ def get_tables(result, analysis) -> list:
     for i, layer in enumerate(getattr(soil, "layers", None) or [], 1):
         rows.append([i, depth, depth + layer.thickness, layer.soil_type,
                      layer.description, layer.unit_weight, layer.cu,
-                     layer.phi, layer.settling, layer.Cc, layer.Cr,
-                     layer.e0, layer.sigma_p])
+                     layer.phi, layer.fs_method,
+                     layer.beta if layer.fs_method == "beta" else layer.alpha,
+                     layer.settling, layer.Cc, layer.Cr, layer.e0,
+                     layer.sigma_p])
         depth += layer.thickness
     if rows:
         gwt = getattr(soil, "gwt_depth", None)
@@ -763,7 +770,8 @@ def get_tables(result, analysis) -> list:
             columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Soil type",
                      "Description", ("Unit weight γ", "kN/m³"),
                      ("Undrained shear strength c_u", "kPa"),
-                     ("Friction angle φ", "deg"), "Settling", "Cc",
+                     ("Friction angle φ", "deg"),
+                     "Skin friction method", "α or β", "Settling", "Cc",
                      "Cr", "e0", ("σ'p", "kPa")],
             rows=rows,
             note=("The soil layers as input, depths below the ground "

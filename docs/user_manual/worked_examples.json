@@ -1016,8 +1016,7 @@
           "cu": 30.0,
           "Cc": 0.3,
           "e0": 1.0,
-          "settling": true,
-          "beta": 0.3
+          "settling": true
         },
         {
           "thickness": 14.0,
@@ -1039,7 +1038,8 @@
       "neutral_plane_basis": "UFC 3-220-20 \u00a76-7.4 procedure: the load and resistance curves do not intersect with the toe at 100% of its resistance, so the neutral plane is where the pile and the soil settle equally, with the toe force the pile delivers there compatible with the toe penetration it causes (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19; Fellenius 2021). For an end-bearing pile in a stratum stiffer than the compressible soil this is near the top of the bearing layer (\u00a76-7.4 step 5). Unit skin friction (beta layers) and the toe in sand use the final effective stress, sigma'v0 plus the fill / drawdown change (UFC 3-220-20 \u00a76-7.4 step 2). The pile's own weight is left out of the load curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 \u00a77.3.6.1 do (include_pile_weight=False).",
       "methods_range": "The methods give neutral planes from 5.99 m to 18.00 m and drag forces from 226 kN to 969 kN (5 of 7 methods apply).",
       "warnings": [
-        "The load and resistance curves do not intersect: the toe resistance (2386.7 kN, ultimate unless Nt was given as a mobilized value) exceeds everything the pile can carry to its toe (1369.2 kN with the whole shaft in negative skin friction), so full base mobilization is impossible. The neutral plane is placed where the pile and the soil settle equally, with the toe force compatible with the toe penetration (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19): 5.99 m, toe force 0.0 kN. Upper bound if the soil settled relative to the pile down to the toe: neutral plane at the toe, drag load 969.2 kN. To intersect the curves instead, give toe_mobilization or Nt for the MOBILIZED toe resistance (UFC 3-220-20 \u00a76-5.8.4.2: try 0%, 50%, 100%)."
+        "The load and resistance curves do not intersect: the toe resistance (2386.7 kN, ultimate unless Nt was given as a mobilized value) exceeds everything the pile can carry to its toe (1369.2 kN with the whole shaft in negative skin friction), so full base mobilization is impossible. The neutral plane is placed where the pile and the soil settle equally, with the toe force compatible with the toe penetration (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19): 5.99 m, toe force 0.0 kN. Upper bound if the soil settled relative to the pile down to the toe: neutral plane at the toe, drag load 969.2 kN. To intersect the curves instead, give toe_mobilization or Nt for the MOBILIZED toe resistance (UFC 3-220-20 \u00a76-5.8.4.2: try 0%, 50%, 100%).",
+        "The soil below the pile toe has no compressibility in this model (18.00-20.00 m (cohesionless)), so its settlement counts as zero (here 0.0 mm below the toe in all). The fill / drawdown stress increase does not decay with depth: give the profile down to the base of the compressible soil. Give Cc and e0 (or C_ec) for clay, or E_s for sand, to include it, and mark a layer settling if the fill / drawdown compresses it (UFC 3-220-20 Eqs 6-49 to 6-54, the equivalent footing at the toe)."
       ],
       "neutral_plane_comparison": [
         {
@@ -1177,6 +1177,61 @@
         }
       ],
       "pile_weight_basis": "Pile's own weight left out of the load curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 \u00a77.3.6.1 do",
+      "below_toe": {
+        "influence_depth_criterion": "bearing_stress",
+        "criterion": "10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449)",
+        "equivalent_footing_width_m": 0.4,
+        "toe_force_kN": 0.0,
+        "bearing_stress_kPa": 0.0,
+        "toe_load_depth_below_toe_m": 0.0,
+        "toe_load_counted_to_m": 18.0,
+        "toe_load_stopped_by": "no_toe_load",
+        "fill_counted_to_m": 20.0,
+        "fill_settlement_mm": 0.0,
+        "toe_load_compression_mm": 0.0,
+        "settlement_below_toe_mm": 0.0,
+        "depth_m": 20.0,
+        "basis": "Below the toe (18.00 m) the toe carries no load, so only the fill / drawdown can compress the soil there. The fill / drawdown stress increase does not decay with depth, but no layer between the toe and the bottom of the soil profile (20.00 m) is marked settling, so it adds no settlement there.",
+        "other_criterion": {
+          "influence_depth_criterion": "effective_stress",
+          "criterion": "10% of the existing vertical effective stress (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332)",
+          "toe_force_kN": 0.0,
+          "toe_load_depth_below_toe_m": 0.0,
+          "toe_load_counted_to_m": 18.0,
+          "toe_load_stopped_by": "no_toe_load",
+          "settlement_below_toe_mm": 0.0,
+          "neutral_plane_depth_m": 5.994,
+          "pile_settlement_mm": 0.29,
+          "drag_force_kN": 225.97
+        },
+        "rules_disagree": false
+      },
+      "choices": [
+        {
+          "what": "depth to which the settlement below the toe is computed",
+          "chosen": "10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449)",
+          "how": "default",
+          "basis": "The module's default: its headline procedure is UFC 3-220-20's. The other rule's results are reported beside it (below_toe, other_criterion).",
+          "alternatives": [
+            "10% of the existing vertical effective stress (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332)"
+          ]
+        },
+        {
+          "what": "difference between the UFC 3-220-20 and FHWA GEC-12 results that is warned about",
+          "chosen": "pile head settlements or drag forces more than 25 % apart: of the larger of the two",
+          "how": "default",
+          "basis": "The engineer's call, not a reference's figure: neither UFC 3-220-20 nor FHWA GEC-12 says how far two settlement estimates may differ before it matters (the default, 25 %, is a round figure). A check that passes with one rule and fails with the other is always warned about; the rule used is not changed."
+        },
+        {
+          "what": "skin friction method in the cohesive soil, 0-6 m",
+          "chosen": "Alpha method, fs = alpha x cu (UFC 3-220-20 Eq 6-8), alpha 1.0",
+          "how": "default",
+          "basis": "The module's default for cohesive soil: undrained, short-term conditions (UFC 3-220-20 \u00a76-5.4.2, p. 414, and p. 410), as in UFC's drag force example (App. B-5.4, p. 636); FHWA recommends the \u03b1-method in cohesive soils (GEC-12 \u00a77.2.1.2, p. 229). Alpha 1.0 where none is given. Either serves the drag procedures: 'an appropriate static analysis method' (GEC-12 \u00a77.3.6.1 Step 2, p. 342); higher alpha and beta are conservative for negative skin friction (UFC 3-220-20 \u00a76-7.4 step 2, p. 476).",
+          "alternatives": [
+            "Beta method, fs = beta x sigma'v (UFC 3-220-20 Eq 6-7), for long-term, drained conditions (UFC 3-220-20 \u00a76-5.4.1, p. 411; FHWA GEC-12 \u00a77.2.1.3.4, p. 255): skin_friction_method 'beta' with beta (GEC-12 Table 7-9, p. 256: clay 0.15-0.35)"
+          ]
+        }
+      ],
       "dragload_kN": 225.96870612907026,
       "drag_force_kN": 225.96870612907026,
       "max_pile_load_kN": 625.9687061290703,
@@ -1500,7 +1555,24 @@
       "neutral_plane_requested": "auto",
       "toe_mobilization": 1.0,
       "skin_friction_stress": "final",
-      "include_pile_weight": false
+      "include_pile_weight": false,
+      "influence_depth_criterion": "bearing_stress",
+      "influence_depth_warning_percent": 25.0,
+      "defaults_used": {
+        "gw_drawdown": 0.0,
+        "pile_E": 200000000.0,
+        "pile_perimeter": "pi D, from pile_diameter: the perimeter of a circular section",
+        "pile_area": "pi D^2 / 4, from pile_diameter: the solid circle; give the steel area for an H or pipe pile",
+        "Nt": "the ultimate value from the toe layer: Nt from the toe layer's friction angle (Fellenius 1991; GEC-12 Table 7-9), 9 in clay: the ultimate, not the mobilized, toe resistance",
+        "include_pile_weight": false,
+        "n_sublayers": 10,
+        "neutral_plane_method": "auto",
+        "toe_mobilization": 1.0,
+        "skin_friction_stress": "final",
+        "influence_depth_criterion": "bearing_stress",
+        "influence_depth_warning_percent": 25.0,
+        "ground_elevation": "no elevation: the figures plot depth below the ground and say no elevation was given; results are in depth either way"
+      }
     }
   },
   "wave_equation.bearing_graph": {

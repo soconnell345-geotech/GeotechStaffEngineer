@@ -44,7 +44,7 @@ EXAMPLES = [
         Vz=6000.0, Vx=300.0, Mx=800.0)),
     ("downdrag", "downdrag_analysis", dict(
         pile_length=18.0, pile_diameter=0.4,
-        layers=[dict(thickness=6.0, soil_type="cohesive", unit_weight=17.0, cu=30.0, Cc=0.3, e0=1.0, settling=True, beta=0.3),
+        layers=[dict(thickness=6.0, soil_type="cohesive", unit_weight=17.0, cu=30.0, Cc=0.3, e0=1.0, settling=True),
                 dict(thickness=14.0, soil_type="cohesionless", unit_weight=19.0, phi=34.0, settling=False)],
         Q_dead=400.0, fill_thickness=2.0, fill_unit_weight=19.0, gwt_depth=3.0)),
     ("wave_equation", "bearing_graph", dict(

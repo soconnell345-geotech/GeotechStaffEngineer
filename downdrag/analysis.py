@@ -35,7 +35,10 @@ from typing import Optional, List
 
 import numpy as np
 
-from downdrag.soil import DowndragSoilProfile, DowndragSoilLayer
+from downdrag.soil import (
+    BETA_IN_CLAY_CITE, BETA_IN_CLAY_VALUES, DowndragSoilProfile,
+    DowndragSoilLayer,
+)
 from downdrag.results import DowndragResult
 from downdrag.cgpr56 import ENDO_NEUTRAL_PLANE_RATIOS
 
@@ -126,6 +129,19 @@ RULES_WARNING_LEAD = ("UFC 3-220-20 and FHWA GEC-12 take the settlement "
 RULE_CHOICE = "depth to which the settlement below the toe is computed"
 THRESHOLD_CHOICE = ("difference between the UFC 3-220-20 and FHWA GEC-12 "
                     "results that is warned about")
+#: The choice of skin friction method in cohesive soil (GM-249), one entry a
+#: method and how it was chosen: "<this>, <depths>".
+SKIN_FRICTION_CHOICE = "skin friction method in the cohesive soil"
+
+#: The two skin friction methods in cohesive soil: name and equation.
+_ALPHA_NAME = "Alpha method, fs = alpha x cu (UFC 3-220-20 Eq 6-8)"
+_BETA_NAME = "Beta method, fs = beta x sigma'v (UFC 3-220-20 Eq 6-7)"
+#: What both drag procedures say of the method.
+_EITHER_IN_DRAG = (
+    "Either serves the drag procedures: 'an appropriate static analysis "
+    "method' (GEC-12 §7.3.6.1 Step 2, p. 342); higher alpha and beta are "
+    "conservative for negative skin friction (UFC 3-220-20 §6-7.4 step 2, "
+    "p. 476).")
 
 #: Default of ``influence_depth_warning_percent`` (GM-228): how far apart
 #: the two rules' pile head settlements or drag forces may be before the
@@ -383,6 +399,20 @@ class DowndragAnalysis:
             raise ValueError(
                 f"skin_friction_stress must be 'initial' or 'final', got "
                 f"'{self.skin_friction_stress}'")
+        try:
+            tip_layer = self.soil.layer_at_depth(self.pile_length)
+        except ValueError:
+            tip_layer = None
+        if (tip_layer is not None and tip_layer.soil_type == "cohesive"
+                and tip_layer.cu <= 0):
+            # a Beta-method clay need not give cu (GM-249), but the toe in
+            # it takes Nt x cu
+            raise ValueError(
+                "The pile toe is in a cohesive layer with no cu"
+                + (f" ({tip_layer.description})" if tip_layer.description
+                   else "")
+                + ": its toe resistance is Nt x cu x A_toe (9 cu unless Nt "
+                "is given). Give that layer's cu.")
         if not isinstance(self.include_pile_weight, (bool, np.bool_)):
             raise ValueError(
                 f"include_pile_weight must be True or False, got "
@@ -1225,7 +1255,9 @@ class DowndragAnalysis:
             except ValueError:
                 continue
 
-            if layer.soil_type == "cohesionless":
+            # the Beta method in sand, and in clay where the layer asks for
+            # it (GM-249); else the Alpha method
+            if layer.fs_method == "beta":
                 beta = layer.beta if layer.beta is not None else 0.3
                 fs[i] = beta * sigma_v[i]
             else:
@@ -1529,10 +1561,10 @@ class DowndragAnalysis:
 
         if self.Nt is not None:
             Nt = self.Nt
+        elif tip_layer.soil_type == "cohesive":
+            Nt = 9.0  # Nc for deep clay
         elif tip_layer.phi > 0:
             Nt = _Nt_from_phi(tip_layer.phi)
-        elif tip_layer.cu > 0:
-            Nt = 9.0  # Nc for deep clay
         else:
             Nt = 0.0
 
@@ -2167,7 +2199,73 @@ class DowndragAnalysis:
                    "default, 25 %, is a round figure). A check that passes "
                    "with one rule and fails with the other is always warned "
                    "about; the rule used is not changed."),
-        ]
+        ] + self.skin_friction_choices()
+
+    def skin_friction_choices(self) -> list:
+        """The skin friction method of the cohesive layers (GM-249): one
+        entry a method and how it was chosen (default or given), with the
+        depths, its coefficients, its basis and the other method. No entry
+        without cohesive soil (a cohesionless layer takes the Beta method
+        only)."""
+        from geotech_common.choices import choice, how_given
+        groups = {}
+        top = 0.0
+        for layer in self.soil.layers:
+            bottom = top + layer.thickness
+            if layer.soil_type == "cohesive" and top < self.pile_length:
+                how = how_given(layer.skin_friction_method, None,
+                                within="layers")
+                coef = (layer.beta if layer.fs_method == "beta"
+                        else layer.alpha)
+                groups.setdefault((layer.fs_method, how), []).append(
+                    (top, min(bottom, self.pile_length), coef))
+            top = bottom
+        out = []
+        for (method, how), spans in groups.items():
+            # contiguous layers with one coefficient read as one depth range
+            merged = []
+            for a, b, c in spans:
+                if merged and abs(merged[-1][1] - a) < 1e-9 \
+                        and merged[-1][2] == c:
+                    merged[-1][1] = b
+                else:
+                    merged.append([a, b, c])
+            where = ", ".join(f"{a:g}-{b:g} m" for a, b, _ in merged)
+            symbol = "beta" if method == "beta" else "alpha"
+            coefs = sorted({c for _, _, c in merged})
+            coef_text = (f"{symbol} {round(coefs[0], 3)}" if len(coefs) == 1
+                         else ", ".join(f"{symbol} {round(c, 3)} at {a:g}-"
+                                        f"{b:g} m" for a, b, c in merged))
+            if method == "beta":
+                name = _BETA_NAME
+                basis = (
+                    "For long-term, drained conditions (" + BETA_IN_CLAY_CITE
+                    + "; GEC-10 p. 10-48 on drag: 'effective stress analysis "
+                    "for long-term conditions in cohesive soils, where "
+                    "appropriate'). Beta as given (GEC-12 Step 2, p. 257: "
+                    + BETA_IN_CLAY_VALUES + f"); sigma'v "
+                    f"{self.skin_friction_stress} (skin_friction_stress). "
+                    + _EITHER_IN_DRAG)
+                other = (f"{_ALPHA_NAME}, the module's default for cohesive "
+                         f"soil: undrained, short-term conditions (UFC "
+                         f"3-220-20 §6-5.4.2, p. 414)")
+            else:
+                name = _ALPHA_NAME
+                basis = (
+                    ("The module's default for cohesive soil: "
+                     if how != "given" else "")
+                    + "undrained, short-term conditions (UFC 3-220-20 "
+                    "§6-5.4.2, p. 414, and p. 410), as in UFC's drag force "
+                    "example (App. B-5.4, p. 636); FHWA recommends the "
+                    "α-method in cohesive soils (GEC-12 §7.2.1.2, p. 229). "
+                    "Alpha 1.0 where none is given. " + _EITHER_IN_DRAG)
+                other = (f"{_BETA_NAME}, for long-term, drained conditions "
+                         f"({BETA_IN_CLAY_CITE}): skin_friction_method "
+                         f"'beta' with beta (GEC-12 Table 7-9, p. 256: clay "
+                         f"0.15-0.35)")
+            out.append(choice(f"{SKIN_FRICTION_CHOICE}, {where}",
+                              f"{name}, {coef_text}", how, basis, [other]))
+        return out
 
     def _unrated_below_toe(self, toe_force: float) -> List[tuple]:
         """``(top, bottom, soil type)`` of the soil below the toe that has

@@ -426,6 +426,46 @@ and passed only through the toe default.
   where β = (1 - sin φ) · tan φ for NC soil (Fellenius 1991)
 - **Cohesive (alpha method, UFC Eq 6-8)**: `fs = α · cu`
   where α defaults to 1.0 unless overridden
+- **Cohesive with `skin_friction_method="beta"` (GM-249)**: `fs = β · σ'v`,
+  β given (required), σ'v as `skin_friction_stress` sets.
+
+### β in clay: an option, α the default (GM-249, 2026-10-20)
+
+A live test (w15-model-split, F67) had both helpers pass `beta` on a clay
+layer for an effective-stress drag; the module used α·cu and dropped `beta`
+without a word, so they rebuilt the layers by hand (α·cu set equal to β·σ'v).
+
+What the manuals print (each page rendered from the PDF):
+
+| Where | What it prints |
+|---|---|
+| GEC-12 §7.3.6.1 Step 2, p. 342 (the drag procedure) | "Using an appropriate static analysis method for the pile type and subsurface conditions": names neither α nor β |
+| GEC-12 §7.2.1.2, p. 229 | FHWA recommends Nordlund in cohesionless soils and "the α-method in cohesive soils" |
+| GEC-12 §7.2.1.3.4, p. 255 | the effective stress β-method for "cohesionless, cohesive, and layered soils", "developed to model the long term drained shear strength conditions"; Eq. 7-19 fs = β σ'vo |
+| GEC-12 Table 7-9, p. 256; Step 2, p. 257 | β from local experience, else Table 7-9 (Fellenius 2014): clay β 0.15-0.35 for φ' 25-30° |
+| UFC 3-220-20 §6-7.4 step 2, p. 476 (the drag procedure) | "an appropriate SCA method"; "higher α and β is conservative for negative skin friction" |
+| UFC 3-220-20 pp. 409-410, §6-5.4.1 p. 411, §6-5.4.2 p. 414 | Beta "applicable to any soil in a drained condition, e.g., long-term analysis of capacity in clay soils" (Eq 6-7); Alpha "targeted at clay soils ... the undrained condition in the short term" (Eq 6-8); Table 6-15: Fellenius β 0.15-0.35 in clay |
+| UFC 3-220-20 App. B-5.4, p. 636 | the drag force example: Alpha method in the soft and stiff clay (α 1.0 and 0.5) |
+| GEC-10 p. 10-48 (drag on drilled shafts) | "the α-method for short-term undrained conditions in cohesive soils, and effective stress analysis for long-term conditions in cohesive soils, where appropriate" |
+
+Neither drag procedure prints β as the method for clay, so α stays the
+default and β is a named option on the layer: `skin_friction_method="beta"`
+with `beta` given. β is not derived from φ' in clay: the module's sand rule
+(1 - sin φ') tan φ' gives 0.27-0.29 across φ' 25-30°, not Table 7-9's
+0.15-0.35, so the engineer gives β.
+
+Inputs a layer would not use are refused, naming the input that takes
+effect (GM-179 wording, "does not take"): `beta` on a clay with the α
+method; `alpha` on a sand or on a β clay; `phi` on a clay (nothing uses it:
+its toe is Nt x cu, 9 cu by default; until GM-249 a φ on a clay toe gave
+Nt from φ times cu); `skin_friction_method="alpha"` on a sand. A β clay
+needs `cu` only if the pile toe sits in it.
+
+`choices` carries one entry per method and how it was set ("skin friction
+method in the cohesive soil, <depths>"): the method and equation, α or β,
+default or given, the basis and the other method. Cohesionless layers have
+no entry (the Beta method only). In a post-liquefaction run the warning
+that GEC-10 states its 50 % for β side resistance names only α clays.
 
 ## UFC Equation Coverage
 
@@ -1061,8 +1101,26 @@ and settlement parts, the methods each zone lies below (a zone lies below a
 method's plane before the earthquake where its `top_m` is at or below that
 method's `neutral_plane_before_m`) and `after`. Past `MAX_ZONES_LISTED` (6)
 zones it gives their number, total thickness and side resistance before and
-after, the three with the largest reconsolidation settlement in full and
-the depth ranges of the rest.
+after, `shown` (which zones it lists) and in full (`shown_zones`) the ones
+that bear on the drag force and the neutral plane, the other zones above
+the toe as depth ranges and those below the toe as a count and depth range
+(`below_toe`).
+
+**GM-211 (2026-10-20): which zones are listed past six.** Until GM-211 the
+three with the largest reconsolidation settlement were listed; on the noisy
+CPT (seed 7) two of them lay below the toe, where a zone has no side
+resistance and adds no drag (its settlement is already in
+`reconsolidation_below_toe_mm`). The rule now follows what moves the drag
+force and the plane. Three zones are listed: the zone that holds the
+headline plane after the earthquake, and the others above the toe whose
+side resistance liquefaction changes most (`side_resistance_before_kN -
+side_resistance_after_kN`: above the plane that change is drag lost; below
+it, resistance lost, and liquefaction there "will increase the axial
+compression load in the pile as well as result in additional pile
+settlement", GEC-12 §7.4.2.2, pp. 384-385). `shown` says which. Seed 7
+lists 1.19-16.01 m (1,039 -> 520 kN), 16.21-17.41 m (185 -> 92 kN) and
+19.83-20.07 m (the plane after, 19.89 m); its eight zones below the toe
+read "8 zones, 20.15-25.01 m".
 
 **GM-240 (2026-10-20): what a warning or a choice already says, once.**
 GM-228's warning that the UFC 3-220-20 and FHWA GEC-12 rules for the depth
@@ -1104,7 +1162,10 @@ Every neutral plane, drag force and pile settlement stays. Sizes with
 | The same, E_s = 10 to 80 MPa below 10 m (the two rules warned before the earthquake, every seed) | | 11,378-11,758 (seeds 3, 7, 11, 30 MPa) | 9,967-10,393 | 31,680-34,004 (seeds 1-8, 11, 21) |
 
 The largest, 10,393, is seed 30 with E_s = 10 MPa, 107 under the budget;
-the size test runs it with seeds 3, 7 and 11 at 30 MPa. The noisy CPT
+the size test runs it with seeds 3, 7 and 11 at 30 MPa. Since GM-211 (the
+rule's words in `shown`, the zones below the toe as one count) the largest
+is 10,428, seed 8 with E_s = 10 MPa (seed 30: 10,379); the size test runs
+it too. The noisy CPT
 cannot reach 8,000 without losing what only it has: the warnings on a toe
 in a liquefied layer, readings left out and load and resistance curves
 that do not meet, and the choice of the CPT's strain.

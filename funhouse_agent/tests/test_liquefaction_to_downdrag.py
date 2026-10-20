@@ -281,19 +281,36 @@ class TestANoisyCpt:
         for col in ("side_resistance_before_kN", "side_resistance_after_kN"):
             assert summary[col] == pytest.approx(
                 sum(z[col] for z in records), abs=0.06)
-        largest = _rows(summary["largest_settlement"])
-        by_settlement = sorted(records, key=lambda z: -z[
-            "reconsolidation_settlement_mm"])[:3]
-        assert sorted(z["top_m"] for z in largest) == sorted(
-            z["top_m"] for z in by_settlement)
-        for got in largest:
+        # GM-211: listed in full, the zones above the toe whose side
+        # resistance changes most and the one holding the plane after; the
+        # zones below the toe (no side resistance) as a count
+        shown = _rows(summary["shown_zones"])
+        shaft = [z for z in records if z["position"] != "below the pile toe"]
+        below = [z for z in records if z not in shaft]
+        by_change = sorted(shaft, key=lambda z: -(
+            z["side_resistance_before_kN"] - z["side_resistance_after_kN"]))
+        plane = full["neutral_plane_after_m"]
+        holding = [z for z in shaft
+                   if z["top_m"] <= plane <= z["bottom_m"]]
+        assert len(holding) == 1
+        others = [z for z in by_change if z not in holding][:2]
+        assert sorted(z["top_m"] for z in shown) == sorted(
+            z["top_m"] for z in holding + others)
+        assert summary["shown"] == (
+            "the zone holding the plane after, and the 2 others above the "
+            "toe whose side resistance changes most")
+        assert all(z["position"] != "below the pile toe" for z in shown)
+        for got in shown:
             rec = next(z for z in records if z["top_m"] == got["top_m"])
             for col, value in got.items():
                 assert value == rec[col], col
         others = summary["others_m"].split(", ")
-        assert len(others) + len(largest) == len(records)
+        assert len(others) + len(shown) == len(shaft)
         assert others[0] == f"{records[0]['top_m']:g}-" \
             f"{records[0]['bottom_m']:g}"
+        assert below and summary["below_toe"] == (
+            f"{len(below)} zones, {below[0]['top_m']:g}-"
+            f"{below[-1]['bottom_m']:g} m")
         # a zone lies below a method's plane before the earthquake where
         # its top_m is at or below that plane (the returns say so)
         for rec in records:
@@ -309,15 +326,17 @@ class TestANoisyCpt:
         assert len(json.dumps(r)) < RESULT_BUDGET_CHARS
 
     @pytest.mark.parametrize("seed, E_s", [(3, 30000.0), (7, 30000.0),
-                                           (11, 30000.0), (30, 10000.0)])
+                                           (11, 30000.0), (30, 10000.0),
+                                           (8, 10000.0)])
     def test_the_warning_on_the_two_toe_rules_fits_whole(self, seed, E_s):
         """GM-240: with a modulus in the sand below the toe the two rules
         for the depth below the toe disagree before the earthquake (by
         about 27 %) and the warning that says so came to 11,380-11,760
         characters with the two choices it states. The warning stays whole;
         the choices it states and the one on fs_liq_threshold are left to
-        detail='full'. Seed 30 with E_s = 10 MPa is the largest of seeds
-        1-30 with E_s 10 to 80 MPa (10,393)."""
+        detail='full'. Seed 8 with E_s = 10 MPa is the largest of seeds
+        1-30 with E_s 10 to 80 MPa since GM-211 (10,428; before it seed 30,
+        10,393)."""
         layers = [dict(x) for x in _LAYERS]
         layers[2]["E_s"] = E_s
         liq = _noisy_cpt(seed)
