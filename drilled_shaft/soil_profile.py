@@ -65,6 +65,15 @@ class ShaftSoilLayer:
         sandy silts) or "gravel" (Eq. 10-12, sigma'p/pa = 0.15 N60).
     description : str, optional
         Layer description.
+    GSI : float, optional
+        Geological Strength Index of a rock layer's rock mass, 0 to 100
+        (GEC-10 p. 10-23; Table 10-1 lists it among the rock's properties).
+        With ``m_i``, the Hoek-Brown base of a fractured rock mass (Eqs.
+        10-24 to 10-29) when the base is in this layer (GM-251). Rock
+        only.
+    m_i : float, optional
+        Hoek-Brown constant m of the intact rock, by rock type (GEC-10 p.
+        10-24, which points to Table 9-10 of GEC 5). Rock only.
     """
     thickness: float
     soil_type: str
@@ -79,6 +88,8 @@ class ShaftSoilLayer:
     OCR: float = 0.0
     sigma_p_correlation: str = "clean_sand"
     description: str = ""
+    GSI: Optional[float] = None
+    m_i: Optional[float] = None
 
     def __post_init__(self):
         self.soil_type = self.soil_type.lower()
@@ -107,6 +118,18 @@ class ShaftSoilLayer:
                 "Example 10-1)")
         if self.soil_type == "rock" and self.qu <= 0:
             raise ValueError("Rock must have qu (UCS) > 0")
+        # GM-251: the Hoek-Brown parameters of a rock mass
+        given = [n for n in ("GSI", "m_i") if getattr(self, n) is not None]
+        if given and self.soil_type != "rock":
+            raise ValueError(
+                f"{' and '.join(given)} describe a rock mass (GEC-10 Eqs. "
+                "10-24 to 10-29, the Hoek-Brown base): only a rock layer "
+                f"takes them, and this layer is {self.soil_type}")
+        if self.GSI is not None and not 0 <= self.GSI <= 100:
+            raise ValueError(
+                f"GSI must be 0 to 100 (GEC-10 p. 10-23), got {self.GSI}")
+        if self.m_i is not None and not self.m_i > 0:
+            raise ValueError(f"m_i must be positive, got {self.m_i}")
 
 
 @dataclass

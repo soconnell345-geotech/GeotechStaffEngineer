@@ -312,12 +312,18 @@ specific check, the governing reference, and the corrective action.
    `alpha_method='aashto'`); check whether cu was a UC/UU strength
    (`su_test_type`) or taken as su(CIUC). The clay base is Eq. 10-19 with
    Table 10-2's N*c (6.5 to 9.0 by su; Eq. 10-20 where the depth is under
-   3B). The rock base is Eq. 10-23, 2.5 qu, only where the rock to one
-   diameter below the base meets its three conditions (p. 10-22): the call
-   states it (`rock_base_conditions_met`) or is refused when a layer there
-   has RQD below 100 or is soil; check the statement is the engineer's, and
-   that a fractured rock mass is not given 2.5 qu (its Hoek-Brown base is
-   not built). The rock side C is 1.0, Eq. 10-21 for a "normal" socket
+   3B), su the mean of the cohesive soil over 2B below the base (p. 10-19):
+   check the choice names the layers it covers and says where the profile
+   ends short. The rock base is Eq. 10-23, 2.5 qu, only where the rock to
+   one diameter below the base meets its three conditions (p. 10-22); a
+   fractured rock mass takes the Hoek-Brown base, Eqs. 10-24 to 10-29, on
+   the tip rock layer's GSI and m_i, 2.5 qu its upper limit. The call
+   states the conditions (`rock_base_conditions_met`) or gives GSI and m_i,
+   or is refused when a layer there has RQD below 100 or is soil; check the
+   statement is the engineer's, that a fractured rock mass is not given 2.5
+   qu, and where GSI and m_i came from (the core descriptions; m_i by rock
+   type, GEC 5 Table 9-10). The rock side C is 1.0, Eq. 10-21 for a
+   "normal" socket
    (0.65 is Eq. 10-22, where caving is anticipated). The base resistance
    factor is that of the base's own soil (0.40 clay, 0.50 sand and rock).
    GEC-10 (2018) prints no large-base reduction and no bottom zone (Example

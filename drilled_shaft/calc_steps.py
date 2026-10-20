@@ -620,6 +620,32 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             large_base_reduction=analysis.large_base_reduction)
         Nc = u["Nc"]
         if u["method"] == "gec10":
+            # s_u as the mean over 2B below the base (GM-252)
+            from drilled_shaft.capacity import _su_zone_words
+            st = r.base_steps
+            tip_words = ("the tip layer's s_u(CIUC), as for its side "
+                         "resistance (Example 10-3, p. 10-20)"
+                         if st.get("su_from") == "su_ciuc"
+                         else "the tip layer's c_u")
+            clay = [c for c in st["su_layers"] if c["su_kPa"] is not None]
+            thick = sum(c["bottom_m"] - c["top_m"] for c in clay)
+            eb_items.append(CalcStep(
+                title="Base s_u, the Mean over 2B below the Base",
+                equation=("s_u = Σ(s_u,i × Δz_i) / Σ Δz_i over the cohesive "
+                          "soil from the base to 2B below it"),
+                substitution=(
+                    "(" + " + ".join(
+                        f"{c['su_kPa']:.1f} × {c['bottom_m'] - c['top_m']:.2f}"
+                        for c in clay) + f") / {thick:.2f}"
+                    if len(clay) > 1 else f"s_u = {cu:.1f}"),
+                result_name="s_u",
+                result_value=f"{cu:.1f}",
+                result_unit="kPa",
+                reference=("GEC-10 (FHWA-NHI-18-024) p. 10-19: 'mean "
+                           "undrained shear strength of the cohesive soil "
+                           "over a depth of 2B below the base'"),
+                notes=("s_u is " + _su_zone_words(st, tip_words)),
+            ))
             eb_items.append(CalcStep(
                 title="Bearing Capacity Factor N*c (Cohesive Base), Table 10-2",
                 equation=("N*c = 6.5 at s_u = 500 psf, 8.0 at 1,000 psf, 9.0 "
@@ -633,11 +659,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 notes=("s_u is below the table's first row (500 psf); N*c "
                        "is held at 6.5, the engineer's judgment (the "
                        "choices give the alternative)" if u["below_table"]
-                       else ("s_u is the tip layer's s_u(CIUC), as for its "
-                             "side resistance (Example 10-3, p. 10-20)"
-                             if r.base_steps.get("su_from") == "su_ciuc"
-                             else "s_u is the tip layer's c_u")
-                       + "; GEC-10 takes the mean over 2B below the base"),
+                       else ""),
             ))
             if u["equation"] == "10-19":
                 equation = "q_BN = N*c × s_u (Eq. 10-19), D ≥ 3B"
@@ -757,10 +779,71 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     else:  # rock
         RQD = tip_layer.RQD
         qu = tip_layer.qu
-        mult = rock_base_factor(RQD, analysis.rock_base_method)
-        qb = mult * qu
+        hb = (r.base_steps or {}).get("equation") == "10-29"
+        if hb:
+            # the same code as the analysis, unrounded (GM-148)
+            from drilled_shaft.end_bearing import hoek_brown_base
+            st = hoek_brown_base(qu, tip_layer.GSI, tip_layer.m_i,
+                                 soil.effective_stress_at_depth(shaft.length))
+            mult, qb = st["factor"], st["qb"]
+        else:
+            mult = rock_base_factor(RQD, analysis.rock_base_method)
+            qb = mult * qu
 
-        if analysis.rock_base_method == "gec10":
+        if hb:
+            # the Hoek-Brown base of a fractured rock mass (GM-251)
+            ref = "GEC-10 (FHWA-NHI-18-024) Eqs. 10-25 to 10-27 (p. 10-24)"
+            eb_items.append(CalcStep(
+                title="Hoek-Brown Parameters of the Rock Mass",
+                equation=("m_b = m_i exp[(GSI − 100)/28]; s = exp[(GSI − "
+                          "100)/9]; a = 1/2 + (1/6)[exp(−GSI/15) − "
+                          "exp(−20/3)]"),
+                substitution=f"GSI = {st['GSI']:g}, m_i = {st['m_i']:g}",
+                result_name="m_b, s, a",
+                result_value=(f"{st['m_b']:.3f}, {st['s']:.3g}, "
+                              f"{st['a']:.3f}"),
+                reference=ref,
+                notes=("GSI and m_i are the tip rock layer's, the "
+                       "engineer's (m_i by rock type, GEC 5 Table 9-10)"),
+            ))
+            eb_items.append(CalcStep(
+                title="Hoek-Brown Base, Eq. 10-28",
+                equation="A = σ'vb + q_u [m_b (σ'vb / q_u) + s]^a",
+                substitution=(f"A = {st['sigma_vb_kPa']:,.1f} + {qu:,.1f} × "
+                              f"[{st['m_b']:.3f} × ({st['sigma_vb_kPa']:,.1f} "
+                              f"/ {qu:,.1f}) + {st['s']:.3g}]^{st['a']:.3f}"),
+                result_name="A",
+                result_value=f"{st['A_kPa']:,.1f}",
+                result_unit="kPa",
+                reference="GEC-10 (FHWA-NHI-18-024) Eq. 10-28 (p. 10-24)",
+                notes="σ'vb is the vertical effective stress at the base",
+            ))
+            eb_items.append(CalcStep(
+                title="Unit End Bearing (Fractured Rock Mass), GEC-10 Eq. 10-29",
+                equation=("q_BN = A + q_u [m_b (A / q_u) + s]^a, q_BN / q_u "
+                          "≤ 2.5"),
+                substitution=(f"q_BN = {st['A_kPa']:,.1f} + {qu:,.1f} × "
+                              f"[{st['m_b']:.3f} × ({st['A_kPa']:,.1f} / "
+                              f"{qu:,.1f}) + {st['s']:.3g}]^{st['a']:.3f} = "
+                              f"{st['qb_uncapped']:,.1f}"
+                              + (f"; limited to 2.5 × {qu:,.1f}"
+                                 if st["capped"] else "")),
+                result_name="q_b",
+                result_value=f"{qb:,.1f}",
+                result_unit="kPa",
+                reference=("GEC-10 (FHWA-NHI-18-024) Eqs. 10-24 to 10-29 "
+                           "(pp. 10-23, 10-24), Fig. 10-8 (p. 10-25)"),
+                notes=(f"N*cr = q_BN / q_u = {st['Ncr_uncapped']:.3f}"
+                       + ("; 2.5 is the upper-bound limit 'unless local "
+                          "experience or load tests can be used to validate "
+                          "higher values' (p. 10-24)" if st["capped"] else "")
+                       + ("; the rock below the base not stated to meet the "
+                          "conditions of Eq. 10-23 (p. 10-22)"
+                          if analysis.rock_base_conditions_met is None
+                          else "; the rock below the base stated not to "
+                          "meet the conditions of Eq. 10-23 (p. 10-22)")),
+            ))
+        elif analysis.rock_base_method == "gec10":
             eb_items.append(CalcStep(
                 title="Unit End Bearing (Rock Base), GEC-10 Eq. 10-23",
                 equation="q_BN = N*cr \u00d7 q_u, N*cr = 2.5",
@@ -777,7 +860,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                           if analysis.rock_base_conditions_met else
                           "taken as met, not stated")
                        + "; a fractured rock mass takes the Hoek-Brown base, "
-                       "Eqs. 10-24 to 10-29, not computed here"
+                       "Eqs. 10-24 to 10-29 (the choices give it, or the "
+                       "inputs it needs)"
                        + (f"; RQD given as {RQD:.0f}%" if RQD < 100 else "")),
             ))
         else:

@@ -114,8 +114,8 @@ judgment. GM-244 (2026-10-20) moved these:
 |---|---|---|
 | clay side | Eq. 10-18, alpha = 0.30 + 0.17/(su(CIUC)/pa), p. 10-16 | `alpha_method="aashto"`: NHI-06-089 Eqs. 9-37a/b, 0.55 to su/pa 1.5 |
 | clay, bottom of the shaft | side resistance to the base (Example 10-2, p. 10-18) | `bottom_exclusion` (m): NHI-06-089 p. 9-129, the bottom 5 ft; Fig. 9-49 one diameter |
-| clay base | Eq. 10-19 with Table 10-2's N*c (p. 10-19), Eq. 10-20 where D < 3B; su the tip layer's, its su(CIUC) where cu is a UC/UU strength (Example 10-3) | `clay_base_method="oneill_reese"`: NHI-06-089 Eqs. 9-39, 9-40, Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 below 0.5 ksf, q <= 80 ksf |
-| rock base | Eq. 10-23, N*cr = 2.5 (p. 10-22; Example 10-4 with RQD 37 to 100), where its three conditions hold: see below | `rock_base_method="rqd"`: q_b/q_u reduced below RQD 70 (cited to the 2010 edition, not in the reference library; Table 8-4 gives no factor for it) |
+| clay base | Eq. 10-19 with Table 10-2's N*c (p. 10-19), Eq. 10-20 where D < 3B; su the mean of the cohesive soil over 2B below the base (p. 10-19, GM-252), the tip layer at its su(CIUC) where cu is a UC/UU strength (Example 10-3) | `clay_base_method="oneill_reese"`: NHI-06-089 Eqs. 9-39, 9-40, Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 below 0.5 ksf, q <= 80 ksf |
+| rock base | Eq. 10-23, N*cr = 2.5 (p. 10-22; Example 10-4 with RQD 37 to 100), where its three conditions hold; else the Hoek-Brown base, Eqs. 10-24 to 10-29 (GM-251): see below | `rock_base_method="rqd"`: q_b/q_u reduced below RQD 70 (cited to the 2010 edition, not in the reference library; Table 8-4 gives no factor for it) |
 | rock side C | 1.0, Eq. 10-21 for a "normal" socket (pp. 10-20, 10-21) | `rock_side_C=0.65`: Eq. 10-22 with alpha_E = 1.0 |
 | large base | none (Eqs. 10-14, 10-19, 10-20 print none) | `large_base_reduction=True`: O'Neill & Reese 1.27/B in sand (B > 1.27 m), F_r in clay (B > 1.90 m) |
 | top zone in rock | none (Sec. 10.3.5.3; Example 10-4 takes the socket's whole length) | `top_exclusion=1.5` |
@@ -128,25 +128,55 @@ The rock base's conditions (GM-244 review). Eq. 10-23 is recommended
 where the rock below the base is massive or tightly jointed to at least
 one diameter below it, with no solution cavities or voids and a clean base
 (p. 10-22); for a fractured rock mass GEC-10 gives the Hoek-Brown base
-(Eqs. 10-24 to 10-29), not built here. Whether the conditions hold is the
-engineer's judgment, the call's `rock_base_conditions_met`: true takes 2.5
-qu as stated (Example 10-4 does so with RQD 37 to 100 because "Rock coring
-and local experience indicate the rock mass below the socket tip is
-competent"); false is refused, naming the alternatives; left out, the
-conditions are taken as met and said so when every layer within one base
-diameter below the base is rock with RQD 100 (the layer default), and the
-call is refused when any is soil or has a lower RQD, so 2.5 qu is never
-applied silently to fractured rock. No RQD threshold is built: GEC-10
-prints none.
+(Eqs. 10-24 to 10-29). Whether the conditions hold is the engineer's
+judgment, the call's `rock_base_conditions_met`: true takes 2.5 qu as
+stated (Example 10-4 does so with RQD 37 to 100 because "Rock coring and
+local experience indicate the rock mass below the socket tip is
+competent"); false takes the Hoek-Brown base, refused where the tip rock
+layer gives no `GSI` or `m_i`; left out, the Hoek-Brown base where the tip
+rock layer gives `GSI` and `m_i`, else the conditions are taken as met and
+said so when every layer within one base diameter below the base is rock
+with RQD 100 (the layer default), and the call is refused, naming GSI and
+m_i, when any is soil or has a lower RQD, so 2.5 qu is never applied
+silently to fractured rock. No RQD threshold is built: GEC-10 prints none.
+
+The Hoek-Brown base (GM-251) is built as printed: Eq. 10-24 (p. 10-23),
+Eqs. 10-25 to 10-29 (p. 10-24), on the tip rock layer's `qu`, `GSI` and
+`m_i` and sigma'vb, the vertical effective stress at the base, with N*cr =
+q_BN/qu limited to 2.5 (p. 10-24, "unless local experience or load tests
+can be used to validate higher values"; the choices give the unlimited
+value). GEC-10 names GSI only (not RMR) and points to GEC 5 Table 9-10 for
+m_i, so both are the engineer's inputs. No GEC-10 worked example uses
+these equations; the check is Fig. 10-8 (p. 10-25, sigma'vb = 0, m_i 4 to
+33), whose plotted curves the equations match within 0.02 in N*cr from
+GSI 30 to 95 (`tests/test_hoek_brown_base.py`). GEC-10 gives no depth
+below the base over which the rock mass is taken: the tip layer's GSI and
+m_i are used, and the choices list each other rock layer within one base
+diameter below the base on its own. Resistance factor 0.50: p. 10-24 ("The
+recommend resistance factor for application to Equation 10-29 is phi =
+0.50") and Table 8-4 (p. 8-14, "Eq. 10-23 or Eq. 10-29"), which agree.
+
+The clay base's su (GM-252). p. 10-19 defines su in Eqs. 10-19 and 10-20
+as the "mean undrained shear strength of the cohesive soil over a depth of
+2B below the base". The tool takes it by thickness over the base to 2B
+below it (B the base's diameter, the bell's where belled): the tip layer
+at its su as its side resistance took it, each cohesive layer below at its
+cu, made su(CIUC) at the middle of its part within 2B where cu is a UC or
+UU strength. A cohesionless or rock layer within 2B is left out (it has no
+su), and the profile is not carried on below its last layer: where it
+ends short of 2B the mean is over what it gives, said in the choice. The
+tip layer's su alone, this tool's su before GM-252, is the choice's
+alternative. O'Neill and Reese's base (`clay_base_method="oneill_reese"`)
+keeps the tip layer's cu.
 
 Judgment calls the choices name: cu taken as su(CIUC) when `su_test_type`
 is left out; N*c below 500 psf held at 6.5 (Table 10-2 starts there; the
 line through its first two rows is the alternative); su(CIUC)/pa outside
 Fig. 10-6's 0.25 to 5; whether the rock below the base meets Eq. 10-23's
-three conditions; B in Eq. 10-20 taken as the bell's diameter. Not built:
-su as the mean over 2B below the base (the tip layer's is used), the sand
-base's N60 averaged over 2B below the base, and the Hoek-Brown base of a
-fractured rock mass (Eqs. 10-24 to 10-29).
+three conditions; B in Eq. 10-20 taken as the bell's diameter; the
+Hoek-Brown base's GSI and m_i taken as the tip rock layer's; where the
+profile ends short of 2B below a clay base. Not built: the sand base's N60
+averaged over 2B below the base.
 
 ## Side-resistance methods
 
