@@ -29,6 +29,8 @@ is the check for those.
 """
 
 import importlib.util
+import subprocess
+import sys
 
 import pytest
 
@@ -161,3 +163,21 @@ def test_review_page_works_with_gse_modules_blocked():
     assert not failed, (
         f"With every GSE module refused ({run.get('refused')}), "
         f"the review page failed: {failed}")
+
+
+def test_the_blocker_reads_as_not_installed():
+    """A refused module looks as it would with the geotech packages not
+    installed: ``find_spec`` answers None, an import raises."""
+    code = ("import importlib.util\n"
+            "from webapp.tests import page_builds as pb\n"
+            "pb._Blocker().install()\n"
+            "print(importlib.util.find_spec('geotech_common') is None,\n"
+            "      importlib.util.find_spec('funhouse_agent.deep.agent')"
+            " is None,\n"
+            "      importlib.util.find_spec('json') is not None)\n"
+            "import funhouse_agent.deep.agent\n")
+    proc = subprocess.run([sys.executable, "-c", code], cwd=page_builds.REPO,
+                          capture_output=True, text=True, timeout=120)
+    assert proc.stdout.split() == ["True", "True", "True"], proc.stderr
+    assert ("blocked for the boundary test: funhouse_agent.deep.agent"
+            in proc.stderr), proc.stderr

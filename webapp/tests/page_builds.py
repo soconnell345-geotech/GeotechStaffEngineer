@@ -642,6 +642,26 @@ class _Blocker:
                 f"blocked for the boundary test: {fullname}", name=fullname)
         return None
 
+    def install(self) -> None:
+        """First on ``sys.meta_path``; and ``importlib.util.find_spec``
+        answers None for a refused module whose parent is not refused, as
+        it does for a module that is not installed (the finder alone would
+        make it raise)."""
+        import importlib.util
+        real_find_spec = importlib.util.find_spec
+
+        def _find_spec(name, package=None):
+            full = importlib.util.resolve_name(name, package) \
+                if name.startswith(".") else name
+            if is_geotech(full) and not is_geotech(full.rpartition(".")[0]):
+                if full not in self.refused:
+                    self.refused.append(full)
+                return None
+            return real_find_spec(name, package)
+
+        sys.meta_path.insert(0, self)
+        importlib.util.find_spec = _find_spec
+
 
 def _turn_calls(build_name: str):
     """The turn's first model answer: one call of each tool on the page
@@ -705,7 +725,7 @@ def boundary(mode: str, builds: List[str]) -> dict:
         install_import_recorder(edges)
     else:
         blocker = _Blocker()
-        sys.meta_path.insert(0, blocker)
+        blocker.install()
     report: Dict[str, Any] = {"mode": mode, "builds": {}}
     for name in builds:
         try:
