@@ -115,6 +115,18 @@ def test_the_choice_states_the_printed_default_and_the_other_reading():
         "2.0 maximum)")
     assert given["alternatives"][0].startswith(
         "Cu 4, which GEC-11 Vol I p. 3-20 says to assume")
+    assert "note (i)" not in given["chosen"]
+    assert "Table 3-1 for MSE walls is used and Cu >= 4" in given["basis"]
+
+
+def test_a_Cu_below_4_is_computed_and_flagged():
+    """GEC-11 Table 3-6 note (i) (p. 3-17): the empirical F* holds for
+    Table 3-1 fill with Cu >= 4; 'For fill outside these limits, tests
+    must be run'."""
+    c = _choice(analyze_mse_wall(_geom(), 20.0, 34.0,
+                                 RIBBED_STEEL_STRIP_75x4, Cu_backfill=2.5))
+    assert c["chosen"].startswith("F* 1.60 at the top of the wall (Cu 2.5)")
+    assert "tests must be run" in c["chosen"]
 
 
 def test_a_grid_with_no_bar_geometry_says_it_took_the_strip_curve():

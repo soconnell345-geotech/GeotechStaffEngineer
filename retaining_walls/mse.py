@@ -73,7 +73,11 @@ F_STAR_STRIP_BASIS = (
     "(D60/D10). 'If the specific Cu for the wall backfill is unknown at "
     "design time, a Cu = 4 should be assumed (i.e., F* = 1.8 at the top of "
     "the wall) for reinforced fills meeting the requirements of Section "
-    "3.1 of this chapter.' F* is taken linearly between, as Vol II "
+    "3.1 of this chapter.' Table 3-6 note (i) (p. 3-17): the empirical "
+    "values are acceptable 'in the absence of product and backfill "
+    "specific test data, provided granular reinforced fill as specified in "
+    "Table 3-1 for MSE walls is used and Cu >= 4. For fill outside these "
+    "limits, tests must be run.' F* is taken linearly between, as Vol II "
     "Examples E3 and E5 interpolate it, over the same depths as Kr/Ka "
     "(p. 4-49)")
 
@@ -586,6 +590,10 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
               + f"), linear to tan phi' = "
               f"{math.tan(math.radians(phi_backfill)):.3f} at 20 ft "
               f"(6.1 m) and below")
+    if Cu < CU_UNKNOWN:
+        chosen += ("; Cu is below 4, outside the fill for which GEC-11 "
+                   "Table 3-6 note (i) accepts the empirical F*: 'For fill "
+                   "outside these limits, tests must be run'")
     if internal is None:
         internal = check_internal_stability(
             geom, gamma_backfill, phi_backfill, reinforcement,

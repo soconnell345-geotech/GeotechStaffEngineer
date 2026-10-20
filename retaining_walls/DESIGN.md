@@ -483,6 +483,9 @@ no live load on the zone and does not move. Tests:
     says "If the specific Cu for the wall backfill is unknown at design
     time, a Cu = 4 should be assumed (i.e., F* = 1.8 at the top of the
     wall) for reinforced fills meeting the requirements of Section 3.1".
+    Table 3-6 note (i) (p. 3-17) accepts these empirical values only for
+    Table 3-1 granular fill with Cu >= 4: "For fill outside these limits,
+    tests must be run". A Cu below 4 is computed, and the choice says so.
     Every strip took 2.0 before, the value a backfill reaches only at Cu
     6.3 or more (Vol II Examples E3 and E5, Cu 7.0, take it: 1.2 + log 7.0
     = 2.045, use 2.000). `mse_wall` takes `Cu_backfill` (aliases `Cu`,
