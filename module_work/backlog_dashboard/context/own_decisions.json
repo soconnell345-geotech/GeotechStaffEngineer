@@ -1211,5 +1211,42 @@
       "BACKLOG.md OWN-67, GM-183",
       "Caltrans T&S Eq 4-3-14 p. 4-9, Fig 4-7; EN 1997-1 9.5.2(4) Eq 9.2; UFC 3-220-20 Table 4-3 p. 195"
     ]
+  },
+  "OWN-68": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "For lateral pile curves, from what undrained shear strength should a clay count as 'stiff'?",
+    "why": "The soil-profile shortcut picks the soft-clay curve (Matlock) below 100 kPa and a stiff-clay curve from 100 kPa. That 100 kPa is the module's own number, and the FHWA manual it follows calls clays from about 48 kPa stiff, so a 48-96 kPa clay gets the soft-clay curve today.",
+    "background": "FHWA GEC 9 (lateral loads) calls 250-500 psf (12-24 kPa) clays soft (p. 216) and 1,000-2,000 psf (48-96 kPa) clays stiff (p. 219); COM624P prints no boundary, and its stiff-clay tables start at 47.9 kPa. The boundary is now a caller setting (`stiff_clay_cu`), and the result states which curve each layer got and why. Only users of the soil-profile shortcut see the default; a direct call names its curve.",
+    "parts": [
+      {
+        "label": "Default boundary",
+        "options": [
+          {
+            "label": "Keep 100 kPa",
+            "effect": "No result changes; 48-100 kPa clays keep the soft-clay curve."
+          },
+          {
+            "label": "48 kPa, GEC 9's lower bound for stiff clay",
+            "effect": "48-100 kPa clays get the stiff-clay curve (usually less deflection)."
+          },
+          {
+            "label": "No default; ask each time",
+            "effect": "The shortcut refuses until a boundary is named."
+          }
+        ]
+      }
+    ],
+    "recommendation": "48 kPa, as GEC 9 prints it, with the setting kept so an engineer can change it.",
+    "if_no_answer": "The default stays 100 kPa, stated in each result as the module's own number.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-217"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-68, GM-217, GM-215",
+      "FHWA GEC 9 pp. 216, 219; COM624P Table 3.3"
+    ]
   }
 }
