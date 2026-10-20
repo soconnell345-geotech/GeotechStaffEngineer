@@ -98,7 +98,9 @@ def _env_check() -> dict:
     """
     from webapp import engine_config
     envs = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
-            "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
+            "GEOTECH_FOUNDRY_HOST", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL",
+            "FOUNDRY_PROXY_URL", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
+            "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
             "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
             "GEOTECH_FOUNDRY_DISABLE_STREAMING",
             "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE")
@@ -159,8 +161,10 @@ def _resolution_check(model_id: Optional[str], identity: Any = None) -> dict:
         return _check("engine resolution", FAIL,
                       f"{type(exc).__name__}: {exc}")
     status = PASS if eng.ok else FAIL
+    route = getattr(eng, "route", "")
     return _check("engine resolution", status,
-                  f"source={eng.source} model={eng.model_name} — {eng.message}")
+                  f"source={eng.source} model={eng.model_name} — {eng.message}"
+                  + (f" | {route}" if route else ""))
 
 
 def _get_model(model_id: Optional[str], identity: Any = None):
@@ -276,6 +280,15 @@ def _upload_probe_check() -> dict:
                 data=b"x", timeout=5)
             results.append(f"{method} -> {r.status_code}")
         detail = "; ".join(results) + " (localhost, no proxy in path)"
+        from webapp import engine_config
+        if engine_config.is_foundry_deployment():
+            # Measured 2026-10-20 (INF-25/INF-39): PUT 403 / POST 405 here,
+            # and uploads from the browser worked in the published app.
+            return _check("upload endpoint (localhost probe)", PASS,
+                          detail + " — expected on Foundry: this probe "
+                          "carries no browser session, so Streamlit refuses "
+                          "it. Uploading from the browser works in the "
+                          "published app (tested 2026-10-20).")
         if any(s.endswith("403") for s in results):
             return _check("upload endpoint (localhost probe)", WARN,
                           detail + " — 403 WITHOUT the proxy: Streamlit-side "

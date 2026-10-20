@@ -21,6 +21,11 @@ per-token multiplier a model applies, so a tile model, a 2,500-patch model, a
 it and ignores it) all come out of the numbers, for a model no table has heard
 of. Where the numbers are missing the model's name is looked up instead
 (``budget_for_model``); where that fails too, the app's defaults stand.
+Those ratios read OpenAI's ``detail`` levels. Claude has none: it takes every
+image the same way, by its own size limits, so for a Claude model the
+budget comes from its name, never from the ratios (on Foundry the ratios
+labelled Claude Opus 5.5 ``gpt-5.2-high``, an OpenAI budget with OpenAI box
+units; INF-39).
 
 5. When ``original`` is honoured (a budget past 2,048 px), one more image:
    a blank :data:`WIDE_PX` (3072 x 1024) at ``original``. A HOST can shrink
@@ -218,6 +223,20 @@ def _parallel(calls):
     return out
 
 
+def _is_claude(model, answered_by: Optional[str]) -> bool:
+    """A Claude model: the reply names one, or the chat model is an
+    Anthropic one (``ChatAnthropic`` and its Foundry subclass)."""
+    if str(answered_by or "").strip().lower().startswith("claude"):
+        return True
+    return "anthropic" in type(model).__name__.lower()
+
+
+def _claude_budgets(budget_for_model, answered_by: Optional[str]):
+    """The budgets for a Claude model by name, else planlens' general
+    Claude budget."""
+    return budget_for_model(answered_by) or budget_for_model("claude")
+
+
 def probe(model) -> VisionProfile:
     """Measure ``model`` (a LangChain chat model). Never raises.
 
@@ -246,6 +265,15 @@ def probe(model) -> VisionProfile:
                 raise value
         (base, answered), (small, a1), (large, a2) = (v for _, v in got[:3])
         prof.answered_by = answered or a1 or a2
+        if _is_claude(model, prof.answered_by):
+            found = _claude_budgets(budget_for_model, prof.answered_by)
+            if found:
+                if None not in (base, small, large):
+                    prof.image_tokens = {"small_high": small - base,
+                                         "large_high": large - base}
+                prof.general, prof.detailed = found[0].name, found[1].name
+                prof.source = "model name"
+                return prof
         if got[3][0] == "ok":
             orig = got[3][1][0]
         else:                             # refused: original unsupported
@@ -269,7 +297,9 @@ def probe(model) -> VisionProfile:
         prof.error = "the responses carried no token counts"
     except Exception as exc:
         prof.error = f"{type(exc).__name__}: {exc}"[:300]
-    found = budget_for_model(prof.answered_by)
+    found = (_claude_budgets(budget_for_model, prof.answered_by)
+             if _is_claude(model, prof.answered_by)
+             else budget_for_model(prof.answered_by))
     if found:
         prof.general, prof.detailed = found[0].name, found[1].name
         prof.source = "model name"

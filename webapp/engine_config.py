@@ -73,6 +73,9 @@ _MODEL_BUILDER: Optional[Callable[[], object]] = None
 # Foundry exposes provider-compatible proxies on the stack itself:
 #   OpenAI shape:    https://<host>/api/v2/llm/proxy/openai/v1/chat/completions
 #   Anthropic shape: https://<host>/api/v2/llm/proxy/anthropic/v1/messages
+# and, inside a Code Workspace or a published app, through the container's
+# Foundry proxy (https://<proxy>/language-model-service/api/proxy/anthropic
+# and .../openai/v1); foundry_proxy_route picks the one to use (INF-36).
 # Auth is the FOUNDRY token (bearer); the model is a Foundry RID like
 # "ri.language-model-service..language-model.gpt-5-2". A model id starting with
 # "ri." routes here automatically — by model family (stated as an
@@ -121,17 +124,145 @@ def foundry_token() -> Optional[str]:
     return None
 
 
+def _with_scheme(value: str) -> str:
+    """``value`` with ``https://`` added when it has no scheme, no trailing
+    slash."""
+    url = value.strip().rstrip("/")
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    return url
+
+
 def foundry_base_url() -> Optional[str]:
     """The stack base URL (``https://<host>``) from the first set env var,
     normalized (scheme added, trailing slash stripped), else None."""
     for env in FOUNDRY_HOST_ENVS:
         val = os.environ.get(env)
         if val and val.strip():
-            host = val.strip().rstrip("/")
-            if not host.startswith(("http://", "https://")):
-                host = "https://" + host
-            return host
+            return _with_scheme(val)
     return None
+
+
+# --- Which proxy URL a Foundry model request goes to (INF-36) ---------------
+# In a Code Workspace and in a published app, FOUNDRY_HOSTNAME is a data
+# sidecar on localhost that answers every LLM-proxy path with 401 and an empty
+# body (the AI FDE's run of 2026-10-20). The language-model service is reached
+# through the container's Foundry proxy instead: some containers are given the
+# provider base URLs ready-made, and every one seen carries FOUNDRY_PROXY_URL,
+# from which those URLs follow.
+
+#: The provider base URL a Foundry container may be given, by model family.
+FOUNDRY_INJECTED_BASE_ENVS = {"anthropic": "ANTHROPIC_BASE_URL",
+                              "openai": "OPENAI_BASE_URL"}
+#: The container's Foundry proxy (a host and path, usually with no scheme).
+FOUNDRY_PROXY_URL_ENV = "FOUNDRY_PROXY_URL"
+#: The language-model service's provider-shaped doors behind that proxy.
+FOUNDRY_PROXY_PATHS = {
+    "anthropic": "/language-model-service/api/proxy/anthropic",
+    "openai": "/language-model-service/api/proxy/openai/v1"}
+#: The stack's own LLM-proxy paths (``foundry_base_url`` + these).
+FOUNDRY_STACK_PATHS = {"anthropic": "/api/v2/llm/proxy/anthropic",
+                       "openai": "/api/v2/llm/proxy/openai/v1"}
+#: CA bundle files for the proxy's TLS, first existing file wins. The SDKs'
+#: HTTP client reads only SSL_CERT_FILE itself.
+FOUNDRY_CA_ENVS = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
+                   "MAESTRO_CERT_PEM_PATH")
+
+
+@dataclass(frozen=True)
+class FoundryRoute:
+    """Where a Foundry model request goes: the provider base URL and the
+    setting it came from (an env var name)."""
+
+    url: str
+    source: str
+
+    @property
+    def label(self) -> str:
+        """The route as the sidebar says it: never an env var holding a
+        provider's name (a Foundry deployment names no provider setting)."""
+        if self.source in FOUNDRY_INJECTED_BASE_ENVS.values():
+            return "the base URL the container provides"
+        return self.source
+
+    def describe(self) -> str:
+        """``<setting>: <url>`` for Connection diagnostics, the URL without
+        any user part or query (no token is ever in it)."""
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(self.url)
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return (f"{self.source}: "
+                f"{urlunsplit((parts.scheme, host, parts.path, '', ''))}")
+
+
+def foundry_proxy_route(family: str) -> Optional[FoundryRoute]:
+    """The proxy base URL for ``family`` (``anthropic`` / ``openai``), else
+    None. First that is set wins:
+
+    1. ``GEOTECH_FOUNDRY_HOST``, the app's own explicit setting, + the stack
+       path (what an admin or a workspace file names on purpose; a forwarder
+       set there keeps working);
+    2. ``ANTHROPIC_BASE_URL`` / ``OPENAI_BASE_URL``, when the container is
+       given them;
+    3. derived from ``FOUNDRY_PROXY_URL`` + the language-model service path;
+    4. ``FOUNDRY_HOSTNAME`` / ``FOUNDRY_URL`` + the stack path (the route
+       before INF-36).
+    """
+    family = family if family in FOUNDRY_STACK_PATHS else "openai"
+
+    def _env(name: str) -> str:
+        return str(os.environ.get(name) or "").strip()
+
+    explicit = _env("GEOTECH_FOUNDRY_HOST")
+    if explicit:
+        return FoundryRoute(_with_scheme(explicit) + FOUNDRY_STACK_PATHS[family],
+                            "GEOTECH_FOUNDRY_HOST")
+    injected = FOUNDRY_INJECTED_BASE_ENVS[family]
+    if _env(injected):
+        return FoundryRoute(_with_scheme(_env(injected)), injected)
+    if _env(FOUNDRY_PROXY_URL_ENV):
+        return FoundryRoute(_with_scheme(_env(FOUNDRY_PROXY_URL_ENV))
+                            + FOUNDRY_PROXY_PATHS[family],
+                            FOUNDRY_PROXY_URL_ENV)
+    for env in FOUNDRY_HOST_ENVS[1:]:
+        if _env(env):
+            return FoundryRoute(_with_scheme(_env(env))
+                                + FOUNDRY_STACK_PATHS[family], env)
+    return None
+
+
+def foundry_ca_bundle() -> Optional[str]:
+    """The CA bundle file the Foundry proxy's TLS is checked against: the
+    first of :data:`FOUNDRY_CA_ENVS` naming a file that exists, else None
+    (the SDK's own default)."""
+    for env in FOUNDRY_CA_ENVS:
+        path = str(os.environ.get(env) or "").strip()
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+_CA_HTTP_CLIENTS: dict = {}
+
+
+def foundry_http_clients(ca_file: str):
+    """``(sync, async)`` httpx clients that check TLS against ``ca_file``,
+    one pair per file for the process (the SDKs share them)."""
+    pair = _CA_HTTP_CLIENTS.get(ca_file)
+    if pair is None:
+        import ssl
+
+        import httpx
+        timeout = httpx.Timeout(MODEL_REQUEST_TIMEOUT_S, connect=30.0)
+        pair = (httpx.Client(verify=ssl.create_default_context(cafile=ca_file),
+                             timeout=timeout),
+                httpx.AsyncClient(
+                    verify=ssl.create_default_context(cafile=ca_file),
+                    timeout=timeout))
+        _CA_HTTP_CLIENTS[ca_file] = pair
+    return pair
 
 
 #: Model families: which provider shape a Foundry model speaks. A model id may
@@ -262,21 +393,92 @@ def _strip_cache_marks(obj) -> None:
             _strip_cache_marks(value)
 
 
-def foundry_chat_anthropic_class():
-    """``ChatAnthropic`` as the Foundry Anthropic proxy takes it (INF-25).
+class FoundryProxyLimit(ValueError):
+    """A request the Foundry Anthropic proxy is known to refuse, stopped
+    before it is sent, with what to do instead."""
 
-    The agent's prompt-caching middleware (deepagents) adds a TOP-LEVEL
-    ``cache_control`` to every chat turn, a field only Anthropic's own API
-    accepts (langchain-anthropic says so; Bedrock refuses extra keys). The
-    Foundry proxy is not that API, so this class names a non-direct
-    ``_llm_type`` and langchain-anthropic moves the mark onto the last message
-    block, the form every Claude host takes. ``GEOTECH_FOUNDRY_PROMPT_CACHE=0``
-    sends no cache marks at all. Connection diagnostics send none either way:
-    only the agent's own turns carry them.
+
+def sanitize_foundry_anthropic_payload(payload: dict) -> list:
+    """Make a Messages API request one the Foundry Anthropic proxy takes
+    (INF-36), in place; returns what was changed, for the log.
+
+    Measured on the proxy with both Claude 5.5 RIDs (the AI FDE, 2026-10-20),
+    each refusal a 400 whose body names the field:
+
+    - a top-level ``cache_control``: moved onto the last system block (when
+      no system block has a mark yet), where the proxy takes it and caches;
+    - ``cache_control`` on a tool definition: removed (the system and message
+      block marks still cache the prompt);
+    - ``service_tier``: removed;
+    - ``thinking`` of type ``enabled``: sent as ``adaptive`` (the model's own
+      error names adaptive as the form it takes).
+
+    ``tool_choice`` ``any`` or a named tool is refused too, and no rewrite
+    keeps its meaning, so it raises :class:`FoundryProxyLimit` here instead
+    of a 400 from the proxy. Marks on system and message content blocks are
+    accepted and cached, and are left alone. A new refusal names its field
+    in the 400 body: add it here.
+    """
+    changed = []
+    top = payload.pop("cache_control", None)
+    if top is not None:
+        changed.append("cache_control (top level)")
+        system = payload.get("system")
+        if isinstance(system, str) and system:
+            system = payload["system"] = [{"type": "text", "text": system}]
+        if (isinstance(system, list) and system
+                and isinstance(system[-1], dict)
+                and not any(isinstance(b, dict) and "cache_control" in b
+                            for b in system)):
+            system[-1] = {**system[-1], "cache_control": top}
+    for tool in payload.get("tools") or []:
+        if isinstance(tool, dict) and tool.pop("cache_control", None) \
+                is not None:
+            changed.append(f"cache_control (tool {tool.get('name')})")
+    if payload.pop("service_tier", None) is not None:
+        changed.append("service_tier")
+    thinking = payload.get("thinking")
+    if isinstance(thinking, dict) and thinking.get("type") == "enabled":
+        payload["thinking"] = {"type": "adaptive"}
+        changed.append("thinking enabled -> adaptive")
+    choice = payload.get("tool_choice")
+    kind = choice.get("type") if isinstance(choice, dict) else choice
+    if kind in ("any", "tool"):
+        raise FoundryProxyLimit(
+            "The Foundry Anthropic proxy refuses tool_choice "
+            f"'{kind}' (it forces a tool call, which these models do not "
+            "support there); only 'auto' or none is accepted. Bind the tools "
+            "with tool_choice='auto', or ask for structured output with "
+            "method='json_schema'.")
+    return changed
+
+
+def foundry_chat_anthropic_class():
+    """``ChatAnthropic`` as the Foundry Anthropic proxy takes it (INF-25,
+    INF-36).
+
+    The agent's prompt-caching middleware (langchain-anthropic's, which
+    deepagents 0.6 and 0.7 both add) marks the system prompt's last block and
+    the last tool definition, and asks for a TOP-LEVEL ``cache_control``, a
+    field only Anthropic's own API accepts. This class names a non-direct
+    ``_llm_type``, so langchain-anthropic moves that mark onto the last
+    message block, and then every request passes
+    :func:`sanitize_foundry_anthropic_payload` on the final payload, the one
+    step every call takes (plain, streamed, with tools, from any middleware):
+    no tool mark, no ``service_tier``, adaptive thinking, no forced tool.
+    ``GEOTECH_FOUNDRY_PROMPT_CACHE=0`` sends no cache marks at all.
+    Connection diagnostics send none either way: only the agent's own turns
+    carry them. When a CA bundle is named (:func:`foundry_ca_bundle`) the
+    client checks the proxy's TLS against it.
     """
     global _FOUNDRY_CHAT_ANTHROPIC
     if _FOUNDRY_CHAT_ANTHROPIC is None:
+        import logging
+        from functools import cached_property
+
         from langchain_anthropic import ChatAnthropic
+
+        log = logging.getLogger(__name__)
 
         class FoundryChatAnthropic(ChatAnthropic):
             """ChatAnthropic against the Foundry Anthropic-messages proxy."""
@@ -291,7 +493,29 @@ def foundry_chat_anthropic_class():
                 if str(os.environ.get(FOUNDRY_PROMPT_CACHE_ENV, "")).strip() \
                         .lower() in ("0", "off", "false", "no"):
                     _strip_cache_marks(payload)
+                changed = sanitize_foundry_anthropic_payload(payload)
+                if changed:
+                    log.debug("Foundry proxy request: %s", "; ".join(changed))
                 return payload
+
+            @cached_property
+            def _client(self):
+                ca = foundry_ca_bundle()
+                if ca is None:
+                    return super()._client
+                import anthropic
+                return anthropic.Client(**self._client_params,
+                                        http_client=foundry_http_clients(ca)[0])
+
+            @cached_property
+            def _async_client(self):
+                ca = foundry_ca_bundle()
+                if ca is None:
+                    return super()._async_client
+                import anthropic
+                return anthropic.AsyncClient(
+                    **self._client_params,
+                    http_client=foundry_http_clients(ca)[1])
 
         _FOUNDRY_CHAT_ANTHROPIC = FoundryChatAnthropic
     return _FOUNDRY_CHAT_ANTHROPIC
@@ -311,13 +535,15 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
     model_id = split_model_family(model_id)[1]
     how = ("family chosen" if stated != "auto" else "family read off the id")
     token = foundry_token()
-    base = foundry_base_url()
-    if not token or not base:
+    route = foundry_proxy_route(family)
+    if not token or route is None:
         missing = []
         if not token:
             missing.append("token (GEOTECH_FOUNDRY_TOKEN or FOUNDRY_TOKEN)")
-        if not base:
-            missing.append("host (GEOTECH_FOUNDRY_HOST or FOUNDRY_HOSTNAME)")
+        if route is None:
+            missing.append("proxy address (FOUNDRY_PROXY_URL, the provider "
+                           "base URL the container provides, "
+                           "GEOTECH_FOUNDRY_HOST or FOUNDRY_HOSTNAME)")
         what = ("looks like a Foundry RID" if model_id.startswith("ri.")
                 else "is a Claude model, served by the Foundry Anthropic proxy")
         return EngineResolution(
@@ -325,6 +551,8 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             f"Model id '{model_id}' {what}, but the Foundry "
             f"{' and '.join(missing)} env var(s) are not set. See docs/FOUNDRY.md.")
 
+    ca = foundry_ca_bundle()
+    where = f"route: {route.label}" + ("; CA bundle set" if ca else "")
     if family == "anthropic":
         try:
             chat_anthropic = foundry_chat_anthropic_class()
@@ -339,7 +567,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             model = chat_anthropic(
                 model=model_id,
                 max_tokens=_default_max_tokens(),
-                anthropic_api_url=f"{base}/api/v2/llm/proxy/anthropic",
+                anthropic_api_url=route.url,
                 anthropic_api_key=token,
                 default_headers={"Authorization": f"Bearer {token}"},
                 timeout=MODEL_REQUEST_TIMEOUT_S,
@@ -351,7 +579,8 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
                 f"{type(exc).__name__}: {exc}")
         return EngineResolution(
             model, "foundry", model_id,
-            f"Using the Foundry Anthropic proxy ({model_id}; {how}).")
+            f"Using the Foundry Anthropic proxy ({model_id}; {how}; {where}).",
+            route=route.describe())
 
     try:
         from langchain_openai import ChatOpenAI
@@ -376,13 +605,17 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
         _disable_stream = str(os.environ.get(
             "GEOTECH_FOUNDRY_DISABLE_STREAMING", "")).strip().lower() in (
             "1", "true", "yes", "on")
+        _clients = ({} if ca is None else dict(
+            zip(("http_client", "http_async_client"),
+                foundry_http_clients(ca))))
         model = ChatOpenAI(
             model=model_id,
             api_key=token,
-            base_url=f"{base}/api/v2/llm/proxy/openai/v1",
+            base_url=route.url,
             disable_streaming=_disable_stream,
             max_completion_tokens=_default_max_tokens(),
             timeout=MODEL_REQUEST_TIMEOUT_S,
+            **_clients,
         )
     except Exception as exc:
         return EngineResolution(
@@ -391,7 +624,8 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             f"{type(exc).__name__}: {exc}")
     return EngineResolution(
         model, "foundry", model_id,
-        f"Using the Foundry OpenAI proxy ({model_id}; {how}).")
+        f"Using the Foundry OpenAI proxy ({model_id}; {how}; {where}).",
+        route=route.describe())
 
 
 class EngineUnavailable(RuntimeError):
@@ -477,12 +711,17 @@ class EngineResolution:
         class name), for display.
     message : str
         A one-line status/banner message.
+    route : str
+        The Foundry proxy route (setting and URL), for diagnostics.
     """
 
     model: object
     source: str
     model_name: str
     message: str
+    #: Where requests go, for Connection diagnostics: ``<setting>: <URL>``
+    #: on the Foundry proxy routes (never a token), else empty.
+    route: str = ""
 
     @property
     def ok(self) -> bool:

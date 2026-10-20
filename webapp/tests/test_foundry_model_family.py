@@ -35,7 +35,10 @@ needs_anthropic = pytest.mark.skipif(not _HAS_LC_ANTHROPIC,
 
 _CLEAR = ("ANTHROPIC_API_KEY", "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MODEL",
           "GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN", "GEOTECH_FOUNDRY_HOST",
-          "FOUNDRY_HOSTNAME", "FOUNDRY_URL", "GEOTECH_DEPLOYMENT")
+          "FOUNDRY_HOSTNAME", "FOUNDRY_URL", "GEOTECH_DEPLOYMENT",
+          "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "FOUNDRY_PROXY_URL",
+          "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
+          "GEOTECH_FOUNDRY_PROMPT_CACHE")
 
 
 @pytest.fixture
@@ -203,11 +206,46 @@ def _sse(events):
                    for e in events).encode()
 
 
+#: The proxy's two doors: the stack's own path and, inside a Code Workspace
+#: or a published app, the language-model service behind the container's
+#: Foundry proxy (INF-36).
+_MESSAGES_PATHS = ("/api/v2/llm/proxy/anthropic/v1/messages",
+                   "/language-model-service/api/proxy/anthropic/v1/messages")
+
+
+def _refusal(body):
+    """What the Foundry Anthropic proxy answers 400 to, measured with both
+    Claude 5.5 RIDs on 2026-10-20 (INF-36): the field it names, else None."""
+    if "cache_control" in body or any(
+            isinstance(t, dict) and "cache_control" in t
+            for t in body.get("tools") or []):
+        return "{unrecognizedProperty=cache_control}"
+    if "service_tier" in body:
+        return "{unrecognizedProperty=service_tier}"
+    if (body.get("thinking") or {}).get("type") == "enabled":
+        return ('"thinking.type.enabled" is not supported for this model. '
+                'Use "thinking.type.adaptive"')
+    if (body.get("tool_choice") or {}).get("type") in ("any", "tool"):
+        return ('tool_choice: type "tool" and "any" are not supported for '
+                "this model.")
+    return None
+
+
 class _FakeProxy(BaseHTTPRequestHandler):
+    """A stand-in Foundry Anthropic proxy: answers like the real one,
+    refusals included."""
+
     seen: list = []
 
     def log_message(self, *args):                       # quiet
         pass
+
+    def _reply(self, status, payload, ctype="application/json"):
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def do_POST(self):                                  # noqa: N802
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
@@ -215,6 +253,8 @@ class _FakeProxy(BaseHTTPRequestHandler):
         images = [b["source"] for m in body.get("messages") or []
                   if isinstance(m.get("content"), list)
                   for b in m["content"] if b.get("type") == "image"]
+        system = body.get("system")
+        refused = _refusal(body)
         type(self).seen.append({"path": self.path,
                                 "auth": self.headers.get("Authorization"),
                                 "model": body.get("model"),
@@ -222,12 +262,23 @@ class _FakeProxy(BaseHTTPRequestHandler):
                                 "images": images,
                                 "top_cache": "cache_control" in body,
                                 "cache_marks": raw.count(b'"cache_control"'),
+                                "system_cache": isinstance(system, list) and any(
+                                    "cache_control" in b for b in system),
+                                "tool_cache": any(
+                                    "cache_control" in t
+                                    for t in body.get("tools") or []),
+                                "thinking": body.get("thinking"),
                                 "stream": bool(body.get("stream")),
+                                "refused": refused,
                                 "tools": [t.get("name")
                                           for t in body.get("tools") or []]})
-        if not self.path.endswith("/api/v2/llm/proxy/anthropic/v1/messages"):
-            self.send_response(404)
-            self.end_headers()
+        if not self.path.endswith(_MESSAGES_PATHS):
+            self._reply(404, b'{"errorCode":"NOT_FOUND"}')
+            return
+        if refused:
+            self._reply(400, json.dumps({
+                "errorCode": "INVALID_ARGUMENT",
+                "parameters": {"unsafeParams": refused}}).encode())
             return
         last = json.dumps(body.get("messages", [])[-1:])
         if body.get("tools") and "Call the tool" in last:
@@ -242,34 +293,35 @@ class _FakeProxy(BaseHTTPRequestHandler):
                "model": body.get("model"), "content": [block],
                "stop_reason": stop, "stop_sequence": None,
                "usage": {"input_tokens": 5, "output_tokens": 3}}
-        if body.get("stream"):
-            start = dict(msg, content=[], stop_reason=None,
-                         usage={"input_tokens": 5, "output_tokens": 0})
-            events = [{"type": "message_start", "message": start},
-                      {"type": "content_block_start", "index": 0,
-                       "content_block": {"type": "text", "text": ""}},
-                      {"type": "content_block_delta", "index": 0,
-                       "delta": {"type": "text_delta",
-                                 "text": block.get("text", "")}},
-                      {"type": "content_block_stop", "index": 0},
-                      {"type": "message_delta",
-                       "delta": {"stop_reason": stop, "stop_sequence": None},
-                       "usage": {"output_tokens": 3}},
-                      {"type": "message_stop"}]
-            payload, ctype = _sse(events), "text/event-stream"
+        if not body.get("stream"):
+            self._reply(200, json.dumps(msg).encode())
+            return
+        start = dict(msg, content=[], stop_reason=None,
+                     usage={"input_tokens": 5, "output_tokens": 0})
+        if block["type"] == "tool_use":
+            opened = dict(block, input={})
+            delta = {"type": "input_json_delta",
+                     "partial_json": json.dumps(block["input"])}
         else:
-            payload, ctype = json.dumps(msg).encode(), "application/json"
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+            opened = {"type": "text", "text": ""}
+            delta = {"type": "text_delta", "text": block["text"]}
+        events = [{"type": "message_start", "message": start},
+                  {"type": "content_block_start", "index": 0,
+                   "content_block": opened},
+                  {"type": "content_block_delta", "index": 0, "delta": delta},
+                  {"type": "content_block_stop", "index": 0},
+                  {"type": "message_delta",
+                   "delta": {"stop_reason": stop, "stop_sequence": None},
+                   "usage": {"output_tokens": 3}},
+                  {"type": "message_stop"}]
+        self._reply(200, _sse(events), "text/event-stream")
 
 
 @pytest.fixture
 def fake_proxy(foundry):
     _FakeProxy.seen = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeProxy)
+    _FakeProxy.port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     foundry.setenv("FOUNDRY_HOSTNAME",
@@ -373,7 +425,8 @@ def test_prompt_cache_mark_is_never_top_level(fake_proxy, monkeypatch,
 @needs_anthropic
 def test_agent_middleware_marks_reach_the_proxy_on_blocks(fake_proxy):
     """The deep agent's own caching middleware, on a real model request:
-    system, tool and message marks, none at the top level."""
+    system and message marks, none at the top level or on a tool (INF-36:
+    the proxy refuses both)."""
     from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
     from langchain.agents import create_agent
     from langchain_core.tools import tool
@@ -389,5 +442,176 @@ def test_agent_middleware_marks_reach_the_proxy_on_blocks(fake_proxy):
                          middleware=[AnthropicPromptCachingMiddleware()])
     agent.invoke({"messages": [{"role": "user", "content": "Say OK"}]})
     req = fake_proxy[-1]
-    assert req["top_cache"] is False
+    assert req["refused"] is None
+    assert req["top_cache"] is False and req["tool_cache"] is False
+    assert req["system_cache"]
     assert req["cache_marks"] >= 2
+
+
+# ---------------------------------------------------------------------------
+# INF-36: the route the container gives, and the fields the proxy refuses
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def proxy_route(fake_proxy, foundry):
+    """The stand-in reached the way a Code Workspace reaches the proxy:
+    FOUNDRY_PROXY_URL (here with http://, so no scheme is added), with
+    FOUNDRY_HOSTNAME pointing at a sidecar that answers nothing."""
+    foundry.setenv("FOUNDRY_HOSTNAME", "http://127.0.0.1:9")
+    foundry.setenv("FOUNDRY_PROXY_URL",
+                   f"http://127.0.0.1:{_FakeProxy.port}/fp")
+    return fake_proxy
+
+
+@needs_anthropic
+def test_the_proxy_url_route_passes_the_diagnostics(proxy_route):
+    from webapp import diagnostics
+    checks = diagnostics.run_diagnostics(f"anthropic:{PLAIN_RID}")
+    by_name = {c["name"]: c for c in checks}
+    for name in ("engine resolution", "plain request (invoke)",
+                 "streaming request", "tool-calling request"):
+        assert by_name[name]["status"] == "pass", (name, by_name[name])
+    assert {r["path"] for r in proxy_route} == {
+        "/fp/language-model-service/api/proxy/anthropic/v1/messages"}
+    detail = by_name["engine resolution"]["detail"]
+    assert "route: FOUNDRY_PROXY_URL" in detail
+    assert "FOUNDRY_PROXY_URL: http://127.0.0.1:" in detail
+    assert "tok-123" not in detail
+
+
+@needs_anthropic
+def test_a_provided_base_url_wins_over_the_proxy_url(proxy_route, foundry):
+    foundry.setenv("FOUNDRY_PROXY_URL", "http://127.0.0.1:9/nothing")
+    foundry.setenv("ANTHROPIC_BASE_URL",
+                   f"http://127.0.0.1:{_FakeProxy.port}/fp/"
+                   "language-model-service/api/proxy/anthropic/")
+    res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
+    assert "the base URL the container provides" in res.message
+    assert "ANTHROPIC" not in res.message     # Foundry names no provider key
+    assert res.model.invoke("Say OK").content == "OK from the fake proxy"
+    assert proxy_route[-1]["path"].startswith("/fp/language-model-service/")
+
+
+@needs_anthropic
+def test_the_stand_in_refuses_what_the_proxy_refuses(proxy_route):
+    """A plain ChatAnthropic sends service_tier as asked, and the stand-in
+    answers 400 naming the field, as the proxy does."""
+    import anthropic
+    from langchain_anthropic import ChatAnthropic
+    route = engine_config.foundry_proxy_route("anthropic")
+    plain = ChatAnthropic(model=PLAIN_RID, anthropic_api_url=route.url,
+                          anthropic_api_key="tok-123", max_tokens=50,
+                          model_kwargs={"service_tier": "auto"})
+    with pytest.raises(anthropic.BadRequestError, match="service_tier"):
+        plain.invoke("Say OK")
+
+
+@needs_anthropic
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("asked", [
+    {"model_kwargs": {"service_tier": "auto"}},
+    {"thinking": {"type": "enabled", "budget_tokens": 1024}},
+    {"call": {"cache_control": {"type": "ephemeral"}}},
+], ids=["service_tier", "thinking_enabled", "top_level_cache"])
+def test_refused_fields_never_reach_the_proxy(proxy_route, asked, stream):
+    route = engine_config.foundry_proxy_route("anthropic")
+    cls = engine_config.foundry_chat_anthropic_class()
+    kw = {k: v for k, v in asked.items() if k != "call"}
+    model = cls(model=PLAIN_RID, anthropic_api_url=route.url,
+                anthropic_api_key="tok-123", max_tokens=4096,
+                default_headers={"Authorization": "Bearer tok-123"}, **kw)
+    call = asked.get("call", {})
+    if stream:
+        text = "".join(str(c.content) for c in model.stream("Say OK", **call))
+    else:
+        text = model.invoke("Say OK", **call).content
+    assert "OK from the fake proxy" in str(text)
+    req = proxy_route[-1]
+    assert req["refused"] is None and req["stream"] is stream
+    if "thinking" in kw:
+        assert req["thinking"] == {"type": "adaptive"}
+
+
+@needs_anthropic
+def test_a_streamed_tool_round_trip_with_the_caching_middleware(proxy_route):
+    """The agent's shape on Foundry: caching middleware (system, last tool
+    and top-level marks asked for), a tool call and its answer, streamed."""
+    from langchain.agents import create_agent
+    from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+    from langchain_core.tools import tool
+
+    ran = []
+
+    @tool
+    def add_numbers(a: int, b: int) -> int:
+        """Add two numbers."""
+        ran.append((a, b))
+        return a + b
+
+    res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
+    agent = create_agent(res.model, tools=[add_numbers],
+                         system_prompt="You are terse.",
+                         middleware=[AnthropicPromptCachingMiddleware()])
+    chunks = list(agent.stream(
+        {"messages": [{"role": "user", "content": "Call the tool, 2 and 3."}]},
+        stream_mode="messages"))
+    assert chunks and ran == [(2, 3)]
+    assert len(proxy_route) == 2
+    for req in proxy_route:
+        assert req["refused"] is None and req["stream"]
+        assert not req["tool_cache"] and not req["top_cache"]
+        assert req["system_cache"] and req["tools"] == ["add_numbers"]
+
+
+@needs_anthropic
+@pytest.mark.parametrize("choice", ["any", "add_numbers"])
+def test_a_forced_tool_is_stopped_before_the_proxy(proxy_route, choice):
+    from langchain_core.tools import tool
+
+    @tool
+    def add_numbers(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
+    bound = res.model.bind_tools([add_numbers], tool_choice=choice)
+    with pytest.raises(engine_config.FoundryProxyLimit, match="tool_choice"):
+        bound.invoke("Call the tool, 2 and 3.")
+    assert proxy_route == []
+    # auto goes through as before
+    res.model.bind_tools([add_numbers], tool_choice="auto").invoke("Say OK")
+    assert proxy_route[-1]["refused"] is None
+
+
+def test_the_sanitizer_on_a_payload():
+    payload = {
+        "model": "m", "cache_control": {"type": "ephemeral", "ttl": "5m"},
+        "system": "You are terse.", "service_tier": "auto",
+        "thinking": {"type": "enabled", "budget_tokens": 2048},
+        "tools": [{"name": "a"}, {"name": "b",
+                                  "cache_control": {"type": "ephemeral"}}],
+        "tool_choice": {"type": "auto"},
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": "hi",
+             "cache_control": {"type": "ephemeral"}}]}]}
+    changed = engine_config.sanitize_foundry_anthropic_payload(payload)
+    assert "cache_control" not in payload and "service_tier" not in payload
+    assert payload["system"] == [{"type": "text", "text": "You are terse.",
+                                  "cache_control": {"type": "ephemeral",
+                                                    "ttl": "5m"}}]
+    assert payload["tools"] == [{"name": "a"}, {"name": "b"}]
+    assert payload["thinking"] == {"type": "adaptive"}
+    # a message block's mark is accepted by the proxy and stays
+    assert payload["messages"][0]["content"][0]["cache_control"]
+    assert len(changed) == 4
+    # an existing system mark is not doubled
+    payload = {"cache_control": {"type": "ephemeral"},
+               "system": [{"type": "text", "text": "a",
+                           "cache_control": {"type": "ephemeral"}},
+                          {"type": "text", "text": "b"}]}
+    engine_config.sanitize_foundry_anthropic_payload(payload)
+    assert "cache_control" not in payload["system"][1]
+    for choice in ({"type": "any"}, {"type": "tool", "name": "a"}):
+        with pytest.raises(engine_config.FoundryProxyLimit):
+            engine_config.sanitize_foundry_anthropic_payload(
+                {"tool_choice": choice})
