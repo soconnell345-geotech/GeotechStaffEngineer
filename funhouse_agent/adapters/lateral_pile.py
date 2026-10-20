@@ -297,8 +297,8 @@ METHOD_INFO = {
             "diameter": {"type": "float", "required": False, "description": "Concrete diameter (m) — circular reinforced_concrete."},
             "width": {"type": "float", "required": False, "description": "Rectangular concrete breadth (m). Bending about the axis parallel to width (I = width*height^3/12)."},
             "height": {"type": "float", "required": False, "description": "Rectangular concrete depth (m)."},
-            "n_bars": {"type": "int", "required": False, "default": 0, "description": "Number of bars in the circular ring (cased_concrete / circular reinforced_concrete)."},
-            "bar_diameter": {"type": "float", "required": False, "default": 0.0, "description": "Individual reinforcing-bar diameter (m). Use a standard size, e.g. 0.0254 for a #8 bar."},
+            "n_bars": {"type": "int", "required": False, "default": 0, "description": "Number of bars in the circular ring (cased_concrete / circular reinforced_concrete); refused on a filled_pipe (use cased_concrete) and on a rectangular section (use bar_layers)."},
+            "bar_diameter": {"type": "float", "required": False, "default": 0.0, "description": "Individual reinforcing-bar diameter (m); required with n_bars or bar_layers. Use a standard size, e.g. 0.0254 for a #8 bar."},
             "bar_circle_diameter": {"type": "float", "required": False, "description": "Pitch-circle diameter of the bar ring (m) — circular reinforcement."},
             "bar_layers": {"type": "array", "required": False, "description": "Rectangular reinforcement: array of [n_bars, y_from_centroid_m] layers (y signed; symmetric layers keep the neutral axis centred). Requires bar_diameter."},
             "E_bar": {"type": "float", "required": False, "default": 200e6, "description": "Reinforcing-steel modulus (kPa)."},
@@ -312,25 +312,37 @@ declare_aliases(METHOD_INFO, {
 
 # When each default applies (GM-119): the bending axis to an H-pile, f'c
 # to a filled pipe, the casing's modulus to a section with steel outside.
+_RING = [{"section_type": ["cased_concrete"]},
+         {"section_type": ["reinforced_concrete"], "diameter": "set"}]
 declare_applies_when(METHOD_INFO, {
     "lateral_pile_analysis": {
         "axis": {"pile_type": ["h_pile"]},
         "fc": {"pile_type": ["filled_pipe"]},
     },
+    # since GM-184 the bars to the sections that take them: a ring to a
+    # casing or a circular section, layers to a rectangular one; a bar
+    # size is needed with either (its default 0 is no bars)
     "composite_section_ei": {
         "E_steel": {"section_type": ["filled_pipe", "cased_concrete"]},
+        "n_bars": _RING,
+        "bar_diameter": False,
+        "E_bar": [{**c, "n_bars": "set"} for c in _RING]
+                 + [{"section_type": ["reinforced_concrete"],
+                     "bar_layers": "set"}],
     },
     # each p-y model's own optional inputs (J, construction, RQD, krm,
     # rock_top) to the models that read them, n_cycles to cyclic stiff clay
     # above the water table; the weak-rock model takes gamma_r and does not
-    # use it (GEC 9 App. A.5 has no unit weight)
+    # use it (GEC 9 App. A.5 has no unit weight), and its criterion is for
+    # static loading (GEC 9 p. 92), so loading does not apply to it (GM-184)
     "get_py_curve": {
         **{name: {"model": [m for m, keys in _PY_OPTIONAL.items()
                             if name in keys]}
            for name in sorted({k for keys in _PY_OPTIONAL.values()
                                for k in keys})},
         "n_cycles": {"model": ["StiffClayAboveWT"], "loading": ["cyclic"]},
-        "gamma_r": False},
+        "gamma_r": False,
+        "loading": {"model": [m for m in _PY_MODELS if m != "WeakRock"]}},
 })
 
 

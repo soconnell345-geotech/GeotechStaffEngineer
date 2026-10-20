@@ -5,6 +5,8 @@ Implements the Boulanger & Idriss (2014) CPT-based simplified procedure
 with post-triggering strain and index calculations.
 """
 
+import math
+
 import numpy as np
 
 from liquepy_agent.liquepy_utils import import_liquepy_trigger, import_liquepy_field
@@ -28,6 +30,154 @@ PGA_REQUIRED = (
     "default; it comes from the site's seismic hazard. Give the design "
     "value; if none is given, ask, or state the value you assume and give "
     "it.")
+
+
+#: Most rows :func:`depth_profile` gives (BACKLOG GM-201). A CPT has a
+#: reading every few centimetres, hundreds over a pile's length, and the
+#: agent's tool results are kept under 8000 characters
+#: (``funhouse_agent/deep/tools.py`` DEFAULT_MAX_RESULT_CHARS); a longer
+#: CPT comes in depth bands.
+PROFILE_MAX_ROWS = 40
+
+#: FS_liq where the bands split: FHWA GEC-10 §9.4.2.2 (p. 9-42), "layers
+#: predicted to undergo liquefaction (FSliq ≤ 1.0)".
+PROFILE_FS_SPLIT = 1.0
+
+
+def _fs_row(f: float) -> float:
+    """FS to 3 decimals, rounded up, so a reading above
+    :data:`PROFILE_FS_SPLIT` never reads as at or below it."""
+    return math.ceil(f * 1000.0 - 1e-9) / 1000.0
+
+
+def depth_profile(depth, factor_of_safety, volumetric_strain,
+                  max_rows: int = PROFILE_MAX_ROWS):
+    """The CPT's factor of safety against liquefaction and post-liquefaction
+    volumetric strain by depth, as rows a tool result can carry (GM-201).
+
+    Each reading stands for the depth halfway to its neighbours (the first
+    and last half a spacing beyond their reading, the first not above the
+    ground surface), as ``downdrag.liquefied_layers_from_result`` takes a
+    profile. Up to ``max_rows`` readings give one row each. A longer CPT
+    is summarised in depth bands of whole readings:
+
+    - a band never holds readings on both sides of FS_liq = 1.0 (GEC-10
+      §9.4.2.2), so at that threshold the liquefied depths are the
+      readings'; only when the readings cross 1.0 more often than there
+      are rows are the thinnest runs ABOVE 1.0 counted in the liquefied
+      bands around them (the note gives the thickness). A reading at or
+      below 1.0 is never put in a band above it, however thin its layer;
+    - the bands are about equally thick within that;
+    - ``FOS_liq`` is the band's lowest reading on its side of 1.0, and
+      ``volumetric_strain`` the band's average (strain x thickness = the
+      band's reconsolidation settlement).
+
+    Parameters
+    ----------
+    depth, factor_of_safety, volumetric_strain : array_like
+        The readings (m; FS_liq; decimal strain), as
+        :func:`analyze_cpt_liquefaction` returns them.
+    max_rows : int
+        The most rows to give.
+
+    Returns
+    -------
+    (rows, note) : (list of dict, str or None)
+        Rows of ``top_m``, ``bottom_m``, ``FOS_liq`` and
+        ``volumetric_strain``, in depth order; ``note`` says how the bands
+        were made (None for one row per reading).
+    """
+    z = np.asarray(depth, dtype=float).ravel()
+    fs = np.asarray(factor_of_safety, dtype=float).ravel()
+    ev = np.asarray(volumetric_strain, dtype=float).ravel()
+    if not len(z) == len(fs) == len(ev):
+        raise ValueError("depth, factor_of_safety and volumetric_strain "
+                         "must be the same length")
+    n = len(z)
+    if n < 2:
+        raise ValueError("a depth profile needs at least two readings")
+    if max_rows < 1:
+        raise ValueError(f"max_rows must be at least 1, got {max_rows!r}")
+    order = np.argsort(z, kind="stable")
+    z, fs, ev = z[order], fs[order], ev[order]
+    edges = np.empty(n + 1)
+    edges[0] = max(0.0, z[0] - 0.5 * (z[1] - z[0]))
+    edges[1:-1] = 0.5 * (z[:-1] + z[1:])
+    edges[-1] = z[-1] + 0.5 * (z[-1] - z[-2])
+    thick = np.diff(edges)
+    liq = np.isfinite(fs) & (fs <= PROFILE_FS_SPLIT)
+
+    def row(i0, i1, liquefied):
+        th = thick[i0:i1]
+        own = liq[i0:i1] == liquefied
+        f = float(np.min(fs[i0:i1][own] if own.any() else fs[i0:i1]))
+        e = (float(np.sum(ev[i0:i1] * th) / np.sum(th)) if np.sum(th) > 0
+             else float(ev[i0]))
+        # Zhang's curves interpolate a hair below zero where FS is capped
+        return {"top_m": round(float(edges[i0]), 2),
+                "bottom_m": round(float(edges[i1]), 2),
+                "FOS_liq": _fs_row(f),
+                "volumetric_strain": round(max(e, 0.0), 5) + 0.0}
+
+    if n <= max_rows:
+        return [row(i, i + 1, bool(liq[i])) for i in range(n)], None
+
+    # runs of readings on one side of FS_liq = 1.0
+    runs, i0 = [], 0
+    for i in range(1, n + 1):
+        if i == n or liq[i] != liq[i0]:
+            runs.append([i0, i, bool(liq[i0])])
+            i0 = i
+
+    def size(r):
+        return edges[r[1]] - edges[r[0]]
+
+    # more crossings than rows: the thinnest run ABOVE 1.0 goes into the
+    # liquefied runs around it (the three become one liquefied run), never
+    # the other way, so no reading at or below 1.0 is hidden in a band
+    # above it, however thin its layer
+    while len(runs) > max_rows:
+        k = min((j for j in range(len(runs)) if not runs[j][2]),
+                key=lambda j: size(runs[j]))
+        lo, hi = max(k - 1, 0), min(k + 1, len(runs) - 1)
+        runs[lo:hi + 1] = [[runs[lo][0], runs[hi][1], True]]
+    # then the rows left split the runs into bands of about equal thickness
+    pieces = [1] * len(runs)
+    while sum(pieces) < max_rows:
+        can = [j for j, r in enumerate(runs) if r[1] - r[0] > pieces[j]]
+        if not can:
+            break
+        j = max(can, key=lambda j: size(runs[j]) / pieces[j])
+        pieces[j] += 1
+    rows = []
+    for (a, b, kind), m in zip(runs, pieces):
+        for chunk in np.array_split(np.arange(a, b), m):
+            rows.append(row(int(chunk[0]), int(chunk[-1]) + 1, kind))
+    widest = max(size(r) / m for r, m in zip(runs, pieces))
+    split = f"{PROFILE_FS_SPLIT:.1f}"
+    note = (
+        f"{n} readings summarised in {len(rows)} depth bands, up to about "
+        f"{widest:.2g} m thick, to keep the result small. FOS_liq is the "
+        f"band's lowest reading on its side of FS_liq = {split}; "
+        f"volumetric_strain is the band's average, so strain x thickness "
+        f"is its settlement.")
+    dry = sum(float(np.sum(thick[a:b][~liq[a:b]]))
+              for a, b, kind in runs if kind)
+    if dry > 0:
+        note += (
+            f" The readings cross {split} more often than there are rows, "
+            f"so the thinnest runs above {split} are counted in the "
+            f"liquefied bands around them: those bands take in {dry:.2f} m "
+            f"of readings above {split} (their strain is in the band's "
+            f"average), so the liquefied depths are that much thicker than "
+            f"the readings'. Every reading with FS_liq <= {split} is in a "
+            f"liquefied band (GEC-10 §9.4.2.2).")
+    else:
+        note += (
+            f" No band holds readings on both sides of {split} (GEC-10 "
+            f"§9.4.2.2), so at that threshold the liquefied depths are the "
+            f"readings' own.")
+    return rows, note
 
 
 def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):

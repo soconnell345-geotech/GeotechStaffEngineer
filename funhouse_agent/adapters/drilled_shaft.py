@@ -158,7 +158,7 @@ _INFO_RATIONAL = {
 }
 _INFO_SHAFT_GEOM = {
     "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter."},
-    "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
+    "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m). Printed in the calc steps only: the capacity takes rock side resistance over every rock layer within the shaft length, whatever this says."},
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
 }
@@ -193,7 +193,7 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts."},
+        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts; Q_allowable_kN = Q_ultimate_kN / factor_of_safety."},
     },
     "lrfd_capacity": {
         "category": "Drilled Shaft",
@@ -232,10 +232,13 @@ declare_aliases(METHOD_INFO, {
 
 # When each default applies (GM-119): the CIUC transform and the
 # atmospheric pressure go with GEC-10's rational chains only.
+# The socket length is checked and printed, not used (GM-184): rock side
+# resistance comes from the rock layers within the shaft length.
 declare_applies_when(METHOD_INFO, {
     m: {"su_test_type": {"alpha_method": ["rational"]},
         "pa": [{"alpha_method": ["rational"]},
-               {"beta_method": ["rational"]}]}
+               {"beta_method": ["rational"]}],
+        "socket_length": False}
     for m in ("drilled_shaft_capacity", "capacity_vs_depth",
               "lrfd_capacity")})
 

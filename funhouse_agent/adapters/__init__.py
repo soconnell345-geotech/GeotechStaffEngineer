@@ -520,7 +520,7 @@ MODULE_REGISTRY = {
     },
     "liquefaction": {
         "adapter": "funhouse_agent.adapters.liquefaction_adapter",
-        "brief": "Liquefaction triggering by input: CPT -> Boulanger & Idriss 2014 + LPI/LSN/LDI; SPT -> B&I 2014 or NCEER/Youd 2001 (method='nceer2001')",
+        "brief": "Liquefaction triggering: CPT -> Boulanger & Idriss 2014 + LPI/LSN/LDI, FS and strain by depth; SPT -> B&I 2014 or NCEER/Youd 2001 (method='nceer2001'); feeds post-liquefaction downdrag",
     },
     "retaining_walls": {
         "adapter": "funhouse_agent.adapters.retaining_walls",
@@ -556,7 +556,7 @@ MODULE_REGISTRY = {
     },
     "downdrag": {
         "adapter": "funhouse_agent.adapters.downdrag",
-        "brief": "Pile downdrag (Fellenius NP + CGPR-56 methods, groups)",
+        "brief": "Pile downdrag (Fellenius NP + CGPR-56 methods, groups), post-liquefaction downdrag (GEC-10)",
     },
     "soe": {
         "adapter": "funhouse_agent.adapters.soe",

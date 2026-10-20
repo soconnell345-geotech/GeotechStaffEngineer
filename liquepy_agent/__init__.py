@@ -12,13 +12,18 @@ Wraps the liquepy library for B&I-2014 liquefaction triggering:
 Public API
 ----------
 analyze_cpt_liquefaction : Full CPT-based triggering + post-triggering (B&I 2014)
+depth_profile : A CPT's FS and post-liquefaction volumetric strain by depth,
+    as rows a tool result can carry (banded for a long CPT)
 analyze_spt_liquefaction : SPT-based triggering, per-layer FoS (B&I 2014)
 analyze_field_correlations : Vs, Dr, su/σv', permeability from CPT
 has_liquepy : Check if liquepy is installed
 """
 
 from liquepy_agent.liquepy_utils import has_liquepy
-from liquepy_agent.cpt_liquefaction import analyze_cpt_liquefaction
+from liquepy_agent.cpt_liquefaction import (
+    analyze_cpt_liquefaction,
+    depth_profile,
+)
 from liquepy_agent.spt_liquefaction import (
     analyze_spt_liquefaction,
     bi2014_spt_fines_correction,
@@ -33,6 +38,7 @@ from liquepy_agent.results import (
 
 __all__ = [
     "analyze_cpt_liquefaction",
+    "depth_profile",
     "analyze_spt_liquefaction",
     "bi2014_spt_fines_correction",
     "bi2014_spt_msf",

@@ -589,7 +589,7 @@ METHOD_INFO = {
             "poulos_s_equivalent": {"type": "float", "required": False, "description": "Poulos equivalent-pile settlement (m) for the fully mobilized branch."},
             "pile_width": {"type": "float", "required": False, "description": "Enables PILENEG (with bearing_E): pile width D (m)."},
             "bearing_E": {"type": "float", "required": False, "description": "Enables PILENEG: bearing layer modulus Es (kPa)."},
-            "bearing_nu": {"type": "float", "required": False, "default": 0.3, "description": "Bearing layer Poisson's ratio."},
+            "bearing_nu": {"type": "float", "required": False, "default": 0.3, "description": "Bearing layer Poisson's ratio, for the PILENEG row's toe penetration (with pile_width, bearing_E and a settlement profile)."},
             "eq_footing_width": {"type": "float", "required": False, "description": "Fellenius equivalent footing width (m); required with 'consolidation'."},
             "eq_footing_length": {"type": "float", "required": False, "description": "Fellenius equivalent footing length (m)."},
             "eq_footing_load": {"type": "float", "required": False, "description": "Fellenius equivalent footing load (kN). Default Q_static."},
@@ -635,8 +635,8 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         **{name: dict(spec) for name, spec in
            METHOD_INFO["downdrag_analysis"]["parameters"].items()},
         "liquefied_layers": {"type": "array", "required": False, "description": "The layers that liquefy, instead of liquefaction_result: array of {top, bottom (m below the pile head), volumetric_strain (post-liquefaction reconsolidation strain, decimal: 0.03 = 3 %) or settlement (m, the layer's reconsolidation settlement), su_r (kPa, residual undrained strength; optional), N1_60 (optional; su_r by GEC-10 Eq 9-13 when su_r is not given), fs_liq (optional, reported)}. The other inputs (layers, pile, Q_dead, fill, neutral_plane_method, ...) describe the state before the earthquake, as for downdrag_analysis."},
-        "liquefaction_result": {"type": "object", "required": False, "description": "The liquefaction tool's result, instead of liquefied_layers: its layer_results rows (depth_m, FOS_liq, N1_60; the SPT routes), or a profile with depth, factor_of_safety and volumetric_strain arrays. A reading liquefies where FOS_liq <= fs_liq_threshold and stands for the depth halfway to its neighbours, below gwt_depth. The tool's CPT route returns only LPI/LSN/LDI, so for a CPT give liquefied_layers."},
-        "volumetric_strain": {"type": "float", "required": False, "description": "Reconsolidation volumetric strain (decimal) for liquefaction_result's readings: one value for every liquefied reading, or a list with one value per reading in the result's order. Required with liquefaction_result when the result carries no strains (the liquefaction tool's SPT routes compute none). GEC-10 10.7 estimates it by Ishihara and Yoshimine (1992) as described in Idriss and Boulanger (2008)."},
+        "liquefaction_result": {"type": "object", "required": False, "description": "The liquefaction tool's whole result, instead of liquefied_layers: from a CPT its depth_profile rows (top_m, bottom_m, FOS_liq, volumetric_strain: the strains come with it); from SPT its layer_results rows (depth_m, FOS_liq, N1_60; give volumetric_strain); or a profile with depth, factor_of_safety and volumetric_strain arrays. A reading liquefies where FOS_liq <= fs_liq_threshold and stands for its row's top_m to bottom_m, or the depth halfway to its neighbours, below gwt_depth."},
+        "volumetric_strain": {"type": "float", "required": False, "description": "Reconsolidation volumetric strain (decimal) for liquefaction_result's readings: one value for every liquefied reading, or a list with one value per reading in the result's order. Required with liquefaction_result when the result carries no strains: the liquefaction tool's SPT routes compute none, and no reference in the library prints an SPT method (GEC-10 10.7 names Ishihara and Yoshimine (1992) as described in Idriss and Boulanger (2008), without printing it), so say where the value comes from. A CPT result carries its own (Zhang et al. 2002); a value given here replaces them."},
         "fs_liq_threshold": {"type": "float", "required": False, "default": 1.0, "description": "A reading of liquefaction_result liquefies where FOS_liq <= this. 1.0 = GEC-10 9.4.2.2 ('layers predicted to undergo liquefaction (FSliq <= 1.0)'); 1.0 < FSliq <= about 1.5 generates excess pore pressure."},
         "liquefied_side_resistance": {"type": "string", "required": False, "default": "half_pre_earthquake", "description": "Unit side resistance of the liquefied layers after reconsolidation, as drag above the neutral plane and resistance below it, for the headline numbers; every option that can be evaluated is reported in side_resistance_comparison whatever is chosen. 'half_pre_earthquake' (default) = 50 percent of the pre-earthquake (static) side resistance, GEC-10 10.7 p. 10-52 (Rollins et al. 2018); 'zero' = none, GEC-10 p. 10-51 and UFC 3-220-20 Table 6-49 (the state while liquefied); 'residual_strength' = su_r, the lower bound of GEC-10 p. 10-51 and GEC-12 7.4.2.2 (needs su_r or N1_60 for each layer; never more than the static value); 'ratio' = liquefied_side_resistance_ratio x the static value. The other layers keep their static side resistance.", "allowed_values": list(LIQUEFIED_SIDE_RESISTANCE)},
         "liquefied_side_resistance_ratio": {"type": "float", "required": False, "description": "Fraction (0-1) of the pre-earthquake unit side resistance the liquefied layers carry. Required when liquefied_side_resistance='ratio'; given with another option, it adds a 'ratio' row to side_resistance_comparison."},
@@ -662,14 +662,31 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
 }
 
 # When each default applies (GM-119): the pile's unit weight only when its
-# own weight is in the load; the FS_liq threshold only for a liquefaction
-# result.
+# own weight is in the load; since GM-184 the fill's unit weight only
+# under a fill, the Fellenius equivalent footing only when its settlement
+# comes from consolidation parameters (cgpr56.fellenius_method_cgpr56),
+# and the bearing layer's Poisson's ratio only to the PILENEG row, which
+# runs with pile_width, bearing_E and a free-field settlement profile; the
+# FS_liq threshold only for a liquefaction result.
+_EQ_FOOTING = {"consolidation": "set"}
 declare_applies_when(METHOD_INFO, {
     "downdrag_analysis": {
-        "pile_unit_weight": {"include_pile_weight": [True]}},
+        "pile_unit_weight": {"include_pile_weight": [True]},
+        "fill_unit_weight": {"fill_thickness": "set"}},
     "post_liquefaction_downdrag": {
         "pile_unit_weight": {"include_pile_weight": [True]},
-        "fs_liq_threshold": {"liquefaction_result": "set"}}})
+        "fill_unit_weight": {"fill_thickness": "set"},
+        "fs_liq_threshold": {"liquefaction_result": "set"}},
+    "fellenius_cgpr56": {"eq_footing_load": _EQ_FOOTING,
+                         "eq_footing_length": _EQ_FOOTING},
+    "downdrag_method_comparison": {
+        "eq_footing_load": _EQ_FOOTING,
+        "eq_footing_length": _EQ_FOOTING,
+        "bearing_nu": [
+            {"pile_width": "set", "bearing_E": "set",
+             "settlement_profile": "set"},
+            {"pile_width": "set", "bearing_E": "set",
+             "consolidation": "set"}]}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):

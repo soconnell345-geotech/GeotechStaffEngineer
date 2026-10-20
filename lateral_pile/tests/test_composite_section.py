@@ -247,6 +247,26 @@ class TestValidationAndErrors:
         with pytest.raises(ValueError, match="Unknown section_type"):
             composite_section_ei('t_section', fc=30000.0)
 
+    @pytest.mark.parametrize("section, bars, says", [
+        # GM-184: each of these returned the bar-free EI
+        (dict(section_type='filled_pipe', outer_diameter=0.4,
+              wall_thickness=0.02),
+         dict(n_bars=8, bar_diameter=0.025, bar_circle_diameter=0.3),
+         "cased_concrete"),
+        (dict(section_type='cased_concrete', outer_diameter=0.4,
+              wall_thickness=0.02),
+         dict(n_bars=8, bar_circle_diameter=0.3), "bar_diameter"),
+        (dict(section_type='reinforced_concrete', width=0.5, height=0.5),
+         dict(n_bars=8, bar_diameter=0.025, bar_circle_diameter=0.3),
+         "bar_layers"),
+        (dict(section_type='reinforced_concrete', diameter=0.6),
+         dict(bar_layers=[(3, 0.2)], bar_diameter=0.025), "bar ring"),
+    ])
+    def test_bars_the_section_would_leave_out_are_refused(self, section,
+                                                          bars, says):
+        with pytest.raises(ValueError, match=says):
+            composite_section_ei(fc=30000.0, **section, **bars)
+
     def test_reinforced_concrete_needs_geometry(self):
         with pytest.raises(ValueError, match="diameter.*width|width.*height"):
             composite_section_ei('reinforced_concrete', fc=30000.0)

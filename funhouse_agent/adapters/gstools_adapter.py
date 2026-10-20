@@ -508,10 +508,14 @@ declare_aliases(METHOD_INFO, {"conditional_simulation": _COND_ALIASES})
 
 # When each default applies (GM-119): kriging's nugget only when the
 # variogram is not fitted (a fit fits the nugget too), its quantity only
-# with regions.
+# with regions; since GM-184 kriging's cell size only with regions (it
+# sizes the region totals) and the simulation's bounds mode only with
+# bounds.
 declare_applies_when(METHOD_INFO, {
     "kriging": {"nugget": {"fit_variogram": [False]},
-                "quantity": {"regions": "set"}},
+                "quantity": {"regions": "set"},
+                "cell_size": {"regions": "set"}},
+    "conditional_simulation": {"bounds_mode": {"bounds": "set"}},
 })
 
 

@@ -5,7 +5,9 @@ Routes a liquefaction-triggering request to the correct underlying module by
 
     Input type
     ----------
-    * CPT input  (q_c / f_s present)  -> liquepy B&I-2014 CPT (LPI/LSN/LDI).
+    * CPT input  (q_c / f_s present)  -> liquepy B&I-2014 CPT (LPI/LSN/LDI,
+                                         and FS and post-liquefaction
+                                         volumetric strain by depth).
     * SPT input  (N values present)   -> SPT procedure, per ``method``.
 
     Method (SPT only; CPT is always B&I-2014 via liquepy)
@@ -170,6 +172,15 @@ def _run_cpt_bi2014(params: dict) -> dict:
     out = clean_result(result.to_dict())
     out["method"] = "bi2014"
     out["input_type"] = "CPT"
+    # FS and post-liquefaction volumetric strain by depth (GM-201), the
+    # profile downdrag's post_liquefaction_downdrag takes; banded for a
+    # long CPT, and the note says how.
+    from liquepy_agent.cpt_liquefaction import depth_profile
+    rows, note = depth_profile(result.depth, result.factor_of_safety,
+                               result.volumetric_strain)
+    out["depth_profile"] = rows
+    if note:
+        out["depth_profile_note"] = note
     return _routed(out, params, [])
 
 
@@ -266,9 +277,12 @@ METHOD_INFO = {
         "category": "Liquefaction",
         "brief": (
             "Unified liquefaction triggering. Auto-routes by input type: CPT "
-            "(q_c/f_s) -> Boulanger & Idriss 2014 (liquepy, with LPI/LSN/LDI); "
-            "SPT (N160) -> B&I-2014 by default, or NCEER/Youd-2001 via "
-            "method='nceer2001' for code-compliance work."
+            "(q_c/f_s) -> Boulanger & Idriss 2014 (liquepy, with LPI/LSN/LDI "
+            "and a depth_profile of FS and post-liquefaction volumetric "
+            "strain); SPT (N160) -> B&I-2014 by default, or NCEER/Youd-2001 "
+            "via method='nceer2001' for code-compliance work. For "
+            "post-liquefaction downdrag on a pile, give this result to "
+            "downdrag.post_liquefaction_downdrag as liquefaction_result."
         ),
         "parameters": {
             "depth": {"type": "array", "required": True,
@@ -359,7 +373,8 @@ METHOD_INFO = {
             "method": "Triggering method used ('bi2014' or 'nceer2001').",
             "min_fos": "Minimum factor of safety against liquefaction.",
             "n_liquefiable": "Number of liquefiable layers/points.",
-            "layer_results": "Per-layer CSR/CRR/FoS (SPT).",
+            "layer_results": "Per-layer CSR/CRR/FoS (SPT). The SPT routes compute no post-liquefaction volumetric strain: no reference in the library prints an SPT method (GEC-10 10.7 names Ishihara and Yoshimine 1992 without printing it), so post_liquefaction_downdrag then needs volumetric_strain given.",
+            "depth_profile": "CPT only: rows of top_m, bottom_m, FOS_liq and volumetric_strain (post-liquefaction reconsolidation strain, decimal; Zhang et al. 2002 from FS and qc1Ncs, as liquepy computes it). One row per reading, or depth bands for a long CPT that never put a reading with FS <= 1.0 in a band above 1.0, however thin its layer; depth_profile_note then says how. post_liquefaction_downdrag takes the whole result as liquefaction_result.",
             "lpi": "Liquefaction Potential Index (CPT only).",
             "lsn": "Liquefaction Severity Number (CPT only).",
             "ldi_m": "Lateral Displacement Index in m (CPT only).",
@@ -379,13 +394,17 @@ declare_aliases(METHOD_INFO, {"liquefaction_analysis": {
 }})
 
 # When each default applies (GM-119): the CPT settings to a CPT, C0 to the
-# B&I SPT route, gamma_w to the NCEER route.
+# B&I SPT route, gamma_w to the NCEER route; since GM-184 the cone area
+# ratio to a CPT with u2 (q_t = q_c + (1 - a) u2) and the specific gravity
+# to the void-ratio unit weights (liquepy reads it nowhere else).
 _SPELLINGS = {m: [k for k, v in _METHOD_NORMALIZE.items() if v == m]
               for m in ("bi2014", "nceer2001")}
 _CPT = {"q_c": "set", "input_type": [None, "cpt"]}
 declare_applies_when(METHOD_INFO, {"liquefaction_analysis": {
-    **{k: _CPT for k in ("a_ratio", "i_c_limit", "cfc", "unit_wt_method",
-                         "gamma_predrill", "s_g", "p_a")},
+    **{k: _CPT for k in ("i_c_limit", "cfc", "unit_wt_method",
+                         "gamma_predrill", "p_a")},
+    "a_ratio": {**_CPT, "u_2": "set"},
+    "s_g": {**_CPT, "unit_wt_method": ["void_ratio"]},
     "c_0": {"N160": "set", "input_type": [None, "spt"],
             "method": _SPELLINGS["bi2014"]},
     "gamma_w": {"method": _SPELLINGS["nceer2001"]},

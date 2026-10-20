@@ -734,10 +734,18 @@ declare_aliases(METHOD_INFO, {
 })
 
 # When each default applies (GM-119): the assumed SN to flexible load
-# equivalency factors, the assumed slab D to rigid ones.
+# equivalency factors, the assumed slab D to rigid ones; since GM-184 the
+# whole LEF basis (pavement type, SN or D, pt) only to an axle-load
+# spectrum, since truck factors and a base-year total are ESALs already,
+# and the performance period's pt only to the rigid equation (the
+# flexible one takes the serviceability loss alone).
+_AXLES = {"axle_groups": "set"}
 declare_applies_when(METHOD_INFO, {
-    "design_traffic_esals": {"sn": {"pavement_type": ["flexible"]},
-                             "d_in": {"pavement_type": ["rigid"]}}})
+    "design_traffic_esals": {
+        "pavement_type": _AXLES, "pt": _AXLES,
+        "sn": {**_AXLES, "pavement_type": ["flexible"]},
+        "d_in": {**_AXLES, "pavement_type": ["rigid"]}},
+    "performance_period": {"pt": {"pavement_type": ["rigid"]}}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165): the

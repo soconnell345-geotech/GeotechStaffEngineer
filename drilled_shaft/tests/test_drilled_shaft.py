@@ -400,6 +400,11 @@ class TestFullAnalysis:
         assert len(cvd) == 5
         # Capacity should generally increase with depth
         assert cvd[-1]["Q_ultimate_kN"] > cvd[0]["Q_ultimate_kN"]
+        # each row carries the allowable at the factor of safety (GM-184)
+        fs = analysis.factor_of_safety
+        for row in cvd:
+            assert row["Q_allowable_kN"] == pytest.approx(
+                row["Q_ultimate_kN"] / fs, abs=0.1)
 
     def test_summary_and_dict(self):
         shaft, soil = self._mixed_profile()
