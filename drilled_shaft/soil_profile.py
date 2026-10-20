@@ -34,7 +34,8 @@ class ShaftSoilLayer:
     cu : float, optional
         Undrained shear strength (kPa). Required for cohesive.
     phi : float, optional
-        Drained friction angle (degrees). Used for cohesionless.
+        Drained friction angle (degrees). Used for cohesionless; given, it
+        is used, and (N1)60 is not (GM-244).
     N60 : float, optional
         Energy-corrected SPT blow count. Used for sand end bearing.
     qu : float, optional
@@ -43,8 +44,9 @@ class ShaftSoilLayer:
         Rock Quality Designation (%). Default 100.
     N1_60 : float, optional
         Overburden-corrected SPT blow count (N1)60. Only used by the GEC-10
-        rational beta method (``beta_method="rational"``) to seed phi' via
-        phi' = 27.5 + 9.2*log10[(N1)60]. Default 0.0 (unused).
+        rational beta method (``beta_method="rational"``), for phi' =
+        27.5 + 9.2*log10[(N1)60] where no phi is given. Default 0.0
+        (unused).
     sigma_v_ref : float, optional
         Reference effective vertical stress (kPa) for the OCR in the rational
         beta method — the historical / pre-scour maximum stress the layer has
@@ -97,8 +99,12 @@ class ShaftSoilLayer:
 
         if self.soil_type == "cohesive" and self.cu <= 0:
             raise ValueError("Cohesive soil must have cu > 0")
-        if self.soil_type == "cohesionless" and self.phi <= 0:
-            raise ValueError("Cohesionless soil must have friction angle (phi) > 0")
+        if self.soil_type == "cohesionless" and self.phi <= 0 \
+                and self.N1_60 <= 0:
+            raise ValueError(
+                "Cohesionless soil must have friction angle (phi) > 0, or "
+                "(N1)60 (N1_60) for phi' = 27.5 + 9.2 log (N1)60 (GEC-10 "
+                "Example 10-1)")
         if self.soil_type == "rock" and self.qu <= 0:
             raise ValueError("Rock must have qu (UCS) > 0")
 

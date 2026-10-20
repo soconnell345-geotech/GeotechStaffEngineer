@@ -22,9 +22,23 @@ import math
 # Atmospheric pressure (kPa)
 PA = 101.325
 
+#: kPa in one ksf.
+KPA_PER_KSF = 47.8803
+
+#: The limit on the depth beta's unit side resistance (kPa): 'The limiting
+#: value of fsi for shafts in cohesionless soils is 4 ksf (191 kPa)' (FHWA
+#: NHI-06-089 p. 9-133); 4 ksf x 47.88 kPa/ksf = 191.5 kPa.
+DEPTH_BETA_FS_MAX = 4.0 * KPA_PER_KSF
+
 
 def alpha_cohesive(cu: float, pa: float = PA) -> float:
-    """Alpha factor for side resistance in cohesive soil per GEC-10.
+    """Alpha factor of O'Neill and Reese (1999) for side resistance in
+    cohesive soil, as FHWA NHI-06-089 prints it (Eqs. 9-37a, 9-37b, p.
+    9-129): 0.55 for su/pa <= 1.5; 0.55 - 0.1 (su/pa - 1.5) for 1.5 <
+    su/pa <= 2.5. NHI-06-089 prints nothing above su/pa = 2.5; here the
+    line goes on to 0.35 (su/pa = 3.5) and holds there. The AASHTO alpha
+    of ``alpha_method='aashto'``; GEC-10 (2018) recommends Eq. 10-18
+    (:func:`alpha_cohesive_rational`) 'as a revision' to it (p. 10-16).
 
     Parameters
     ----------
@@ -40,8 +54,8 @@ def alpha_cohesive(cu: float, pa: float = PA) -> float:
 
     References
     ----------
-    Brown et al. (2010), GEC-10 (2010 edition) Figure 13-5 / Section 13.3.3.2;
-    the 2018 edition replaces it with the rational alpha, Eq. 10-18 (p. 10-16)
+    FHWA NHI-06-089 Eqs. 9-37a, 9-37b (p. 9-129), O'Neill and Reese (1999);
+    the 2018 edition of GEC-10 replaces it with Eq. 10-18 (p. 10-16)
     """
     ratio = cu / pa
     if ratio <= 1.5:
@@ -190,7 +204,8 @@ def beta_cohesionless(z: float, N60: float = None) -> float:
     same expression (self-consistent digitization error); all corrected
     together against the printed feet-form identity.
 
-    The formula (and the 200 kPa fs cap) presumes N60 >= 15. For looser
+    The formula (and the 4 ksf limit on fs, :data:`DEPTH_BETA_FS_MAX`)
+    presumes N60 >= 15. For looser
     sands (N60 < 15), O'Neill & Reese reduce beta proportionally:
 
         beta_reduced = (N60 / 15) * beta
@@ -403,7 +418,8 @@ def side_resistance_cohesionless(sigma_v: float, beta: float,
                                  segment_thickness: float) -> float:
     """Side resistance for a cohesionless segment.
 
-    fs = beta * sigma_v', capped at 200 kPa
+    fs = beta * sigma_v', limited to 4 ksf = 191.5 kPa (FHWA NHI-06-089
+    p. 9-133, :data:`DEPTH_BETA_FS_MAX`)
     Qs = fs * perimeter * thickness
 
     Parameters
@@ -422,13 +438,13 @@ def side_resistance_cohesionless(sigma_v: float, beta: float,
     float
         Side resistance for this segment (kN).
     """
-    fs = min(beta * sigma_v, 200.0)
+    fs = min(beta * sigma_v, DEPTH_BETA_FS_MAX)
     return fs * shaft_perimeter * segment_thickness
 
 
 def side_resistance_rock(qu: float, shaft_perimeter: float,
                          segment_thickness: float,
-                         C: float = 0.65, alpha_E: float = 1.0) -> float:
+                         C: float = 1.0, alpha_E: float = 1.0) -> float:
     """Side resistance for a rock socket segment.
 
     fs = C * alpha_E * sqrt(qu * pa)
@@ -445,16 +461,16 @@ def side_resistance_rock(qu: float, shaft_perimeter: float,
     segment_thickness : float
         Socket segment height (m).
     C : float, optional
-        Coefficient on pa sqrt(qu / pa). Default 0.65: GEC-10
-        (FHWA-NHI-18-024) Eq. 10-22, the O'Neill and Reese (1999)
-        expression for sockets where caving is anticipated (p. 10-21).
-        GEC-10 Eq. 10-21 takes C = 1.0 for a "normal" socket, recommended
-        for routine design (pp. 10-21, 10-22; Example 10-4, p. 10-28),
-        and C = 1.9 for roughened sockets, to be verified by load tests or
-        local experience (p. 10-22).
+        Coefficient on pa sqrt(qu / pa). Default 1.0: GEC-10
+        (FHWA-NHI-18-024) Eq. 10-21 for a "normal" socket, recommended
+        for routine design (pp. 10-20, 10-21; Example 10-4, p. 10-28;
+        GM-244, was 0.65). C = 0.65 with ``alpha_E`` is Eq. 10-22, the
+        O'Neill and Reese (1999) expression for sockets where caving is
+        anticipated (p. 10-21); C = 1.9 is for roughened sockets, to be
+        verified by load tests or local experience (p. 10-22).
     alpha_E : float, optional
         Joint modification factor of GEC-10 Eq. 10-22 (Table 10-3, by RQD
-        and joint condition). Default 1.0.
+        and joint condition), with C = 0.65. Default 1.0.
 
     Returns
     -------
