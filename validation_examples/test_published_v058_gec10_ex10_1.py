@@ -8,16 +8,23 @@ silty sand layers: Layer 1, 0-15 ft, gamma 115 pcf, (N1)60 14, N60 9; Layer
 27. Printed (p. 10-14): phi' 38 and 41; sigma'p 5,768 and 13,890 psf (Eq.
 10-11 with m = 0.8, silty sands); OCR 6.7 and 6.1; Ko 1.24 and 1.13; beta
 0.97 and 0.98; fSN 837 and 2,248 psf; RSN 197.2 and 635.6 kips; sum 833
-kips. Side resistance is taken from the ground surface.
+kips. Side resistance is taken from the ground surface, as the tool's
+default takes it in sand (top_exclusion left out).
 
-The example rounds beta to two places before fSN = beta sigma'v (0.97 x
-862.5 = 837 psf); the module carries it unrounded (0.967, 834 psf), so
-fSN and RSN agree to 1 %. Its RSN2 line prints '698,659 lb' for 635.6 kips
-(pi x 5 x 18 x 2,248 = 635.6 kips).
+The tool gives 828.1 kips, 0.6 % under the printed 833, and the gap is
+the example's rounding: it carries OCR to one place (6.7 and 6.1, against
+6.69 and 6.07) and Ko to two (1.24 and 1.13, against 1.238 and 1.123),
+and Layer 1's beta to two places (0.97) before fSN = beta sigma'v. Taken
+the same way, Eq. 10-13 gives 837 and 2,248 psf and 833 kips
+(``test_v058_the_printed_rounding_gives_833``). Its RSN2 line prints
+'698,659 lb' for 635.6 kips (pi x 5 x 18 x 2,248 = 635.6 kips), and its
+Layer 2 fSN line '(1.08)' for beta 0.98.
 
 GEC-10 (2018) Eq. 10-13 is the default beta since GM-241; this runs the
-tool's own path with the example's inputs.
+tool's own path with the example's inputs and its defaults.
 """
+
+import math
 
 import pytest
 
@@ -25,7 +32,6 @@ FT, PCF, PSF, KIP = 0.3048, 0.157087, 0.0478803, 4.44822
 
 _PARAMS = {
     "diameter": 5 * FT, "shaft_length": 33 * FT, "gwt_depth": 15 * FT,
-    "top_exclusion": 0.0,
     "layers": [
         {"thickness": 15 * FT, "soil_type": "cohesionless",
          "unit_weight": 115 * PCF, "phi": 38, "N60": 9,
@@ -72,6 +78,27 @@ def test_v058_each_layer_as_printed():
 def test_v058_the_sum_as_printed():
     r = _run(_PARAMS)
     assert r["Q_side_sand_kN"] / KIP == pytest.approx(833, rel=0.01)
+    assert r["Q_side_sand_kN"] / KIP == pytest.approx(828.1, abs=0.1)
+    # the default takes the sand from the ground surface, as the example
+    assert [lb["effective_top_m"] for lb in r["side_resistance_by_layer"]
+            ] == [0.0, pytest.approx(15 * FT, abs=0.01)]
+
+
+def test_v058_the_printed_rounding_gives_833():
+    """Eq. 10-13 (``beta_gec10``) with the example's rounding: OCR to one
+    place, Ko to two, Layer 1's beta to two places before fSN."""
+    from drilled_shaft.side_resistance import beta_gec10
+    tan = lambda phi: math.tan(math.radians(phi))      # noqa: E731
+    ko1 = round(beta_gec10(38, 6.7)["Ko"], 2)
+    ko2 = round(beta_gec10(41, 6.1)["Ko"], 2)
+    assert (ko1, ko2) == (1.24, 1.13)
+    f1 = round(862.5 * round(ko1 * tan(38), 2))         # 837 psf
+    f2 = round(2288.4 * ko2 * tan(41))                  # 2,248 psf
+    assert (f1, f2) == (837, 2248)
+    r1 = round(math.pi * 5 * 15 * f1 / 1000, 1)         # 197.2 kips
+    r2 = round(math.pi * 5 * 18 * f2 / 1000, 1)         # 635.6 kips
+    assert (r1, r2) == (197.2, 635.6)
+    assert round(r1 + r2) == 833
 
 
 def test_v058_phi_from_the_blow_counts():

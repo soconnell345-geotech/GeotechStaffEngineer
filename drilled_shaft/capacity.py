@@ -90,20 +90,29 @@ def side_n60_choice(spans) -> dict:
                       "OCR)"])
 
 
-#: Side resistance left out over the top of the shaft (m) when none is
-#: given: GEC-10's 'top 5 ft' (p. 10-17).
+#: Side resistance left out over the top of the shaft (m) in cohesive soil
+#: and rock when top_exclusion is not given: GEC-10's 'top 5 ft' (p.
+#: 10-17), printed for cohesive soils. Cohesionless soil then takes side
+#: resistance from the ground surface: Sec. 10.3.5.1 prints no such zone,
+#: and Examples 10-1 and 10-5 take the sand's from the surface.
 TOP_EXCLUSION = 1.5
 
-#: GEC-10 (FHWA-NHI-18-024) p. 10-17, as printed.
+#: GEC-10 (FHWA-NHI-18-024) on the top of the shaft, as printed.
 TOP_EXCLUSION_BASIS = (
-    "GEC-10 (FHWA-NHI-18-024) p. 10-17: 'It is common design practice to "
-    "neglect side resistance over the top 5 ft of a drilled shaft, or to "
-    "the depth of seasonal moisture change', for wetting and drying, "
-    "freezing and thawing, or 'gapping' caused by cyclic lateral loading; "
+    "GEC-10 (FHWA-NHI-18-024) p. 10-17, in Sec. 10.3.5.2, Cohesive Soils: "
+    "'It is common design practice to neglect side resistance over the top "
+    "5 ft of a drilled shaft, or to the depth of seasonal moisture "
+    "change', for wetting and drying, freezing and thawing, 'gapping' "
+    "caused by cyclic lateral loading, or any process near the ground "
+    "surface that softens the soil or ends its contact with the shaft; "
     "'This recommendation is subject to modification based on local "
-    "experience and judgment of the designer.' It is printed in Sec. "
-    "10.3.5.2, Cohesive Soils; Example 10-1 (pp. 10-12 to 10-14), in "
-    "sand, takes side resistance from the ground surface")
+    "experience and judgment of the designer.' Sec. 10.3.5.1, "
+    "Cohesionless Soils, prints no such zone, and Examples 10-1 and 10-5 "
+    "(pp. 10-12 to 10-14, 10-29) take the sand's side resistance from the "
+    "ground surface. With top_exclusion left out, the top 1.5 m carries "
+    "none in cohesive soil and rock and cohesionless soil carries side "
+    "resistance from the surface; a top_exclusion given applies in every "
+    "layer. The permanent casing, where deeper, takes its place")
 
 #: The depth (m) at whose sigma'v GEC-10 limits beta near the surface:
 #: 'the value corresponding to a depth of 7.5 ft' (pp. 10-11, 10-12).
@@ -137,10 +146,11 @@ GEC10_BETA_BASIS = (
 DEPTH_BETA_BASIS = (
     "O'Neill and Reese (1999) as printed in FHWA NHI-06-089 Eqs. 9-41 to "
     "9-43 (pp. 9-132, 9-133): beta = 1.5 - 0.135 sqrt(z, ft) = 1.5 - 0.245 "
-    "sqrt(z, m), 0.25 <= beta <= 1.2, z the depth to the layer's centre, "
-    "beta x N60/15 where N60 < 15; f_s = beta sigma'v, limited here to "
-    "200 kPa (NHI-06-089 prints 4 ksf, 191 kPa). GEC-10 (2018) does not "
-    "print this method: its Sec. 10.3.5.1 gives Eq. 10-13")
+    "sqrt(z, m), 0.25 <= beta <= 1.2, z the depth to the layer's centre; "
+    "f_s = beta sigma'v, limited here to 200 kPa (NHI-06-089 prints 4 ksf, "
+    "191 kPa). Where a layer's N60 is under 15, beta x N60/15, from "
+    "O'Neill and Reese (1999), which NHI-06-089 does not print. GEC-10 "
+    "(2018) does not print this method: its Sec. 10.3.5.1 gives Eq. 10-13")
 
 #: GEC-10 (FHWA-NHI-18-024) pp. 10-11 and 10-12 on K/Ko, as printed.
 K_OVER_KO_BASIS = (
@@ -322,8 +332,11 @@ class DrillShaftAnalysis:
         quality is not controlled (p. 10-12). 0 < K/Ko <= 1.
     top_exclusion : float, optional
         Side resistance left out over the top of the shaft (m), in every
-        layer. Default 1.5, GEC-10's 'top 5 ft' (p. 10-17); the permanent
-        casing, where deeper, takes its place.
+        layer. Left out (None): 1.5 m in cohesive soil and rock, GEC-10's
+        'top 5 ft' (p. 10-17, printed for cohesive soils), and none in
+        cohesionless soil (Sec. 10.3.5.1 prints none; Examples 10-1 and
+        10-5 take the sand's side resistance from the ground surface). The
+        permanent casing, where deeper, takes its place.
     alpha_method : str, optional
         Cohesive side-resistance method: "aashto" (default, piecewise 0.55) or
         "rational" (GEC-10 Chen-2011 alpha = 0.30+0.17/(su_CIUC/pa) with the
@@ -359,7 +372,7 @@ class DrillShaftAnalysis:
     pa: float = PA
     rock_side_C: float = ROCK_SIDE_C
     K_over_Ko: float = 1.0
-    top_exclusion: float = TOP_EXCLUSION
+    top_exclusion: Optional[float] = None
 
     def __post_init__(self):
         if self.shaft is None:
@@ -373,7 +386,7 @@ class DrillShaftAnalysis:
                 f"{self.K_over_Ko}: GEC-10 takes K/Ko = 1 (p. 10-11), and 2/3 "
                 "or lower where construction quality is not controlled "
                 "(p. 10-12)")
-        if not self.top_exclusion >= 0:
+        if self.top_exclusion is not None and not self.top_exclusion >= 0:
             raise ValueError(
                 f"top_exclusion must be 0 or more (m), got "
                 f"{self.top_exclusion}")
@@ -463,10 +476,21 @@ class DrillShaftAnalysis:
         sigma_v = self.soil.average_effective_stress(z1, z2)
         return Qs, Qs / (perimeter * (z2 - z1)), sigma_v, steps
 
-    def _top_of_side(self) -> float:
-        """Depth (m) above which no side resistance is taken: the top
-        zone or the permanent casing, whichever is deeper."""
-        return max(self.top_exclusion, self.shaft.casing_depth)
+    def _top_zone(self, soil_type: str) -> float:
+        """The top zone (m) with no side resistance in a layer of
+        ``soil_type``, before the casing: ``top_exclusion`` where given,
+        else 1.5 m in cohesive soil and rock (GEC-10 p. 10-17, printed for
+        cohesive soils) and none in cohesionless soil (Sec. 10.3.5.1;
+        Examples 10-1 and 10-5)."""
+        if self.top_exclusion is not None:
+            return self.top_exclusion
+        return 0.0 if soil_type == "cohesionless" else TOP_EXCLUSION
+
+    def _top_of_side(self, soil_type: str) -> float:
+        """Depth (m) above which a layer of ``soil_type`` takes no side
+        resistance: its top zone or the permanent casing, whichever is
+        deeper."""
+        return max(self._top_zone(soil_type), self.shaft.casing_depth)
 
     def compute(self) -> DrillShaftResult:
         """Run the drilled shaft capacity analysis.
@@ -494,8 +518,7 @@ class DrillShaftAnalysis:
         if tip_layer.soil_type == "cohesionless":
             require_tip_N60(tip_layer, L)
 
-        # Exclusion zones
-        top_exclusion = self._top_of_side()
+        # Exclusion zones: the top zone by soil type (_top_of_side)
         # Bottom exclusion: 1 diameter for cohesive only (applied per-layer)
         # Rock not considered part of the socket (GEC-10 p. 8-15, GM-220)
         not_socket = fractured_rock_zone(shaft, self.soil)
@@ -522,7 +545,7 @@ class DrillShaftAnalysis:
             z_bottom = min(layer_bottom, L)
 
             # Apply top exclusion zone
-            z_top_eff = max(z_top, top_exclusion)
+            z_top_eff = max(z_top, self._top_of_side(layer.soil_type))
 
             # Apply bottom exclusion for cohesive only (bottom 1*D)
             z_bottom_eff = z_bottom
@@ -699,39 +722,84 @@ class DrillShaftAnalysis:
             return f"refused: {exc}"
         return _side_values(r.Q_side_sand, r.Q_ultimate)
 
+    def _top_zone_choice(self, layer_results) -> Optional[dict]:
+        """The choice made for side resistance near the ground surface
+        (GM-241), or None where it changes nothing: with top_exclusion
+        left out, cohesionless soil in the top 1.5 m below the casing
+        keeps its side resistance; given, the top zone takes the layers it
+        reaches below the casing."""
+        from geotech_common.choices import choice, how_given
+        casing = self.shaft.casing_depth
+
+        def reached(lb, bottom):
+            """Whether the layer has a part below the casing and above
+            ``bottom``."""
+            return (max(lb["depth_top_m"], casing)
+                    < min(lb["depth_bottom_m"], bottom))
+
+        def spans(rows, bottom):
+            return ", ".join(f"{max(lb['depth_top_m'], casing):g}-"
+                             f"{min(lb['depth_bottom_m'], bottom):g} m"
+                             for lb in rows)
+
+        if self.top_exclusion is None:
+            sand = [lb for lb in layer_results
+                    if lb["soil_type"] == "cohesionless"
+                    and reached(lb, TOP_EXCLUSION)]
+            if not sand:
+                return None
+            others = [lb for lb in layer_results
+                      if lb["soil_type"] != "cohesionless"
+                      and reached(lb, TOP_EXCLUSION)]
+            chosen = (f"side resistance taken in cohesionless soil within "
+                      f"the top {TOP_EXCLUSION:g} m ({spans(sand, TOP_EXCLUSION)})")
+            if others:
+                chosen += (f"; none in cohesive soil or rock there "
+                           f"({spans(others, TOP_EXCLUSION)})")
+            alternatives = [
+                f"top_exclusion {TOP_EXCLUSION:g}, the top 5 ft of p. 10-17 "
+                "left out in every layer: "
+                + self._alternative(top_exclusion=TOP_EXCLUSION),
+                "top_exclusion the depth of seasonal moisture change or of "
+                "frost, where deeper (p. 10-17)"]
+        else:
+            cut = [lb for lb in layer_results
+                   if reached(lb, self.top_exclusion)]
+            if not cut:
+                return None
+            chosen = (f"none over the top {self.top_exclusion:g} m, in "
+                      f"every layer ({spans(cut, self.top_exclusion)})")
+            left_out = self._alternative(top_exclusion=None)
+            alternatives = [
+                f"top_exclusion left out: none over the top "
+                f"{TOP_EXCLUSION:g} m in cohesive soil and rock, side "
+                "resistance from the ground surface in cohesionless soil: "
+                + left_out]
+            zero = self._alternative(top_exclusion=0.0)
+            if self.top_exclusion != 0 and zero != left_out:
+                alternatives.append(
+                    "top_exclusion 0, side resistance from the ground "
+                    "surface in every layer: " + zero)
+        return choice(
+            "side resistance near the ground surface", chosen,
+            how_given(self.top_exclusion, None, name="top_exclusion"),
+            basis=TOP_EXCLUSION_BASIS, alternatives=alternatives)
+
     def _side_choices(self, layer_results, Qs_sand: float,
                       Q_ultimate: float) -> List[dict]:
         """The choices made for side resistance in cohesionless soil
         (GM-241): the method, and under GEC-10 (2018) K/Ko, sigma'p from
         N60, the limit on beta near the surface and on f_SN; and the top
-        zone where it takes sand. Each lists its alternatives with their
-        values."""
+        zone (:meth:`_top_zone_choice`). Each lists its alternatives with
+        their values."""
         from geotech_common.choices import MODULE, choice, how_given
         sand = [lb for lb in layer_results
                 if lb["soil_type"] == "cohesionless"
                 and lb["method"] != "excluded"]
         out = []
-        top = self._top_of_side()
-        cut = [lb for lb in layer_results
-               if lb["soil_type"] == "cohesionless"
-               and lb["depth_top_m"] < top]
-        if cut and self.top_exclusion > self.shaft.casing_depth:
-            where = ", ".join(f"{lb['depth_top_m']:g}-"
-                              f"{min(lb['depth_bottom_m'], top):g} m"
-                              for lb in cut)
-            out.append(choice(
-                "side resistance near the ground surface",
-                f"none over the top {self.top_exclusion:g} m, which takes "
-                f"cohesionless soil at {where}",
-                how_given(self.top_exclusion, TOP_EXCLUSION,
-                          name="top_exclusion"),
-                basis=TOP_EXCLUSION_BASIS,
-                alternatives=[
-                    "top_exclusion 0, side resistance from the ground "
-                    "surface as in Example 10-1: "
-                    + self._alternative(top_exclusion=0.0),
-                    "top_exclusion the depth of seasonal moisture change, "
-                    "where deeper (p. 10-17)"]))
+        top = self._top_zone_choice(layer_results)
+        if top:
+            out.append(top)
         if not sand:
             return out
         here = _side_values(Qs_sand, Q_ultimate)

@@ -159,7 +159,7 @@ _INFO_FOS = {"type": "float", "required": False, "default": 2.5, "description": 
 _INFO_RATIONAL = {
     "beta_method": {"type": "str", "required": False, "default": "rational", "allowed_values": ["rational", "depth"], "description": "Cohesionless side resistance. 'rational' (default) = GEC-10 (2018) Sec. 10.3.5.1, Eqs. 10-5 to 10-13 (pp. 10-10 to 10-12): f_SN = beta*sigma'v on each layer's average sigma'v, beta = (K/Ko)*Ko*tan(phi'), Ko = (1-sin phi')*OCR^(sin phi') <= Kp, OCR = sigma'p/sigma'v, sigma'p from the layer's N60 (Eq. 10-11 or 10-12), beta limited to its value at 7.5 ft, no limit on f_SN; needs each cohesionless layer's N60 or OCR. 'depth' = O'Neill & Reese (1999) beta = 1.5-0.135*sqrt(z, ft) = 1.5-0.245*sqrt(z, m), 0.25-1.2, x N60/15 where N60 < 15, f_s <= 200 kPa (FHWA NHI-06-089 Eqs. 9-41 to 9-43), which GEC-10 (2018) does not print; the default until GM-241."},
     "K_over_Ko": {"type": "float", "required": False, "default": 1.0, "description": "K/Ko in the GEC-10 beta (beta_method 'rational'): 1 = 'a rational first-order approximation', no stress change from construction (GEC-10 p. 10-11); 2/3 or lower 'when these aspects of construction quality are not controlled properly' or soil caving is allowed (p. 10-12). 0 < K_over_Ko <= 1."},
-    "top_exclusion": {"type": "float", "required": False, "default": 1.5, "description": "Side resistance left out over the top of the shaft (m), in every layer. Default 1.5 = GEC-10's 'top 5 ft' (p. 10-17), 'or to the depth of seasonal moisture change', 'subject to modification based on local experience and judgment of the designer'; it is printed for cohesive soils, and Example 10-1 (sand) takes side resistance from the ground surface (0). casing_depth, where deeper, takes its place."},
+    "top_exclusion": {"type": "float", "required": False, "description": "Side resistance left out over the top of the shaft (m), in every layer, when given. Left out: none over the top 1.5 m in cohesive soil and rock, GEC-10's 'top 5 ft' (p. 10-17, printed in Sec. 10.3.5.2 for cohesive soils, 'or to the depth of seasonal moisture change', 'subject to modification based on local experience and judgment of the designer'), and side resistance from the ground surface in cohesionless soil (Sec. 10.3.5.1 prints no such zone; Examples 10-1 and 10-5 take the sand's from the surface). Give 1.5 to leave the top 5 ft out of sand too (frost, seasonal moisture, gapping from cyclic lateral load), or the depth of seasonal moisture change. casing_depth, where deeper, takes its place."},
     "alpha_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": ["aashto", "rational"], "description": "Cohesive side resistance. 'aashto' = piecewise 0.55 (default). 'rational' = GEC-10 Chen-2011 alpha=0.30+0.17/(su_CIUC/pa), applied to the CIUC-equivalent strength (fs=alpha*su_CIUC)."},
     "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "For alpha_method='rational': the lab test the layer cu represents, for the UU/UC->CIUC transform. 'ciuc' = no transform (default); 'uc'/'uu' = Chen & Kulhawy (1993) transform."},
     "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
@@ -264,17 +264,26 @@ declare_applies_when(METHOD_INFO, {
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):
-# the water table and the rock socket's diameter.
+# the water table, the rock socket's diameter and the top zone by soil
+# type (GM-241).
 from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _NO_WATER = ("no water table",
              "total unit weight throughout: effective stress equals total "
              "stress")
+_TOP_ZONE = ("1.5 m in cohesive soil and rock, 0 in cohesionless soil",
+             "GEC-10 (FHWA-NHI-18-024) p. 10-17 prints the top 5 ft in "
+             "Sec. 10.3.5.2, Cohesive Soils; Sec. 10.3.5.1 prints no such "
+             "zone in cohesionless soil, and Examples 10-1 and 10-5 take "
+             "the sand's side resistance from the ground surface")
 declare_when_absent(METHOD_INFO, {
     "drilled_shaft_capacity": {"gwt_depth": _NO_WATER,
-                               "socket_diameter": "diameter"},
+                               "socket_diameter": "diameter",
+                               "top_exclusion": _TOP_ZONE},
     "capacity_vs_depth": {
         "gwt_depth": _NO_WATER, "socket_diameter": "diameter",
+        "top_exclusion": _TOP_ZONE,
         "depth_max": ("the shaft length or the soil profile depth, "
                       "whichever is less", "the deepest trial shaft")},
-    "lrfd_capacity": {"gwt_depth": _NO_WATER, "socket_diameter": "diameter"},
+    "lrfd_capacity": {"gwt_depth": _NO_WATER, "socket_diameter": "diameter",
+                      "top_exclusion": _TOP_ZONE},
 })

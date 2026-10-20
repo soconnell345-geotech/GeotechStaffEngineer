@@ -141,9 +141,10 @@ class DrillShaftResult:
                 "coefficient (alpha=... for cohesive, beta=... for "
                 "cohesionless, rock socket); 'fs_kPa' is the unit side "
                 "resistance. effective_top_m/effective_bottom_m reflect the "
-                "GEC-10 exclusion zones (the top zone, 1.5 m unless "
-                "top_exclusion is given, or the casing; bottom 1D in "
-                "cohesive layers) that carry no side resistance. Under the "
+                "GEC-10 exclusion zones (the top zone or the casing: unless "
+                "top_exclusion is given, the top 1.5 m in cohesive soil and "
+                "rock and none in cohesionless soil; bottom 1D in cohesive "
+                "layers) that carry no side resistance. Under the "
                 "GEC-10 (2018) beta, 'beta_steps' gives each cohesionless "
                 "layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta."
             )

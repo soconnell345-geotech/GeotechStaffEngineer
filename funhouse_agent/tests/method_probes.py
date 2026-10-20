@@ -130,7 +130,7 @@ _ALL_CLAY = "the probe's profile is all clay: the beta method is for sand"
 _ALL_SAND = "the probe's profile is all sand: the alpha method is for clay"
 _NO_ROCK = "the probe has no rock layer, so there is no socket"
 _CASING = ("0.5 m of casing lies inside the top 1.5 m that GEC-10 already "
-           "leaves out of the side resistance")
+           "leaves out of the side resistance in clay")
 _TOE_LIMIT = ("the probe's toe stress stays below GEC-12 Fig. 7-15's "
               "limiting q_L, which the default takes")
 _ONE_SAND = ("one sand layer: averaging phi over 3b about the toe gives "
@@ -191,15 +191,21 @@ NOT_REACHED = {
         "drilled_shaft|lrfd_capacity",
         "drilled_shaft|lrfd_capacity#sand")
        for n, why in (("socket_diameter", _NO_ROCK),
-                      ("casing_depth", _CASING),
                       ("rock_side_C", _NO_ROCK))},
+    # casing_depth: these probes have clay over the top 1.5 m; the
+    # all-sand probes take side resistance from the ground surface, so
+    # their casing reaches the result (GM-241 review)
+    **{(k, "casing_depth"): _CASING for k in (
+        "drilled_shaft|capacity_vs_depth",
+        "drilled_shaft|drilled_shaft_capacity",
+        "drilled_shaft|drilled_shaft_capacity#sand",
+        "drilled_shaft|lrfd_capacity")},
     ("calc_package|drilled_shaft_package", "rock_side_C"): _NO_ROCK,
     ("calc_package|drilled_shaft_package#sand", "rock_side_C"): _NO_ROCK,
     **{(k, "alpha_method"): _ALL_SAND for k in (
         "drilled_shaft|capacity_vs_depth#sand",
         "drilled_shaft|lrfd_capacity#sand",
         "calc_package|drilled_shaft_package#sand")},
-    ("calc_package|drilled_shaft_package#sand", "casing_depth"): _CASING,
     # GM-221: the rock probe's soil is clay over rock
     **{("drilled_shaft|drilled_shaft_capacity#rock", n):
        "the probe's soil is clay over rock: the beta method is for sand"

@@ -140,13 +140,18 @@ Chen (2011) alpha is opt-in.
   not print it. (Unit-mixing defect FIXED 2026-07-19: the old code applied
   0.245 to feet; the calc package printed that formula until GM-241.)
 
-**Top zone — `top_exclusion`:** no side resistance over the top 1.5 m by
-default, in every layer: GEC-10 p. 10-17, "common design practice to
-neglect side resistance over the top 5 ft of a drilled shaft, or to the
-depth of seasonal moisture change", "subject to modification based on local
-experience and judgment of the designer". It is printed for cohesive soils;
-Example 10-1 takes sand from the surface (`top_exclusion=0`). The casing,
-where deeper, takes its place.
+**Top zone — `top_exclusion`:** left out, no side resistance over the top
+1.5 m in cohesive soil and rock, and side resistance from the ground surface
+in cohesionless soil. GEC-10 p. 10-17 prints the top 5 ft in Sec. 10.3.5.2,
+Cohesive Soils: "common design practice to neglect side resistance over the
+top 5 ft of a drilled shaft, or to the depth of seasonal moisture change",
+"subject to modification based on local experience and judgment of the
+designer". Sec. 10.3.5.1 (cohesionless) prints no such zone, and Examples
+10-1 and 10-5 take the sand's side resistance from the surface. The rock's
+1.5 m is the module's carry-over, not printed for rock. Given, the zone
+applies in every layer (1.5 leaves the top 5 ft out of sand too). The
+casing, where deeper, takes its place. With sand in the top 1.5 m the
+result states the choice and Q_ult with the 1.5 m left out.
 
 **Cohesive — `alpha_method`:**
 - `"aashto"` (default) — piecewise `alpha = 0.55` for cu/pa <= 1.5, decreasing

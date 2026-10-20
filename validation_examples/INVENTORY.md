@@ -1017,7 +1017,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Inputs: B = 5 ft; Layer 1 0-15 ft, gamma 115 pcf, (N1)60 14, N60 9;
   Layer 2 15-33 ft, gamma 125 pcf below the water table at 15 ft, (N1)60 28,
   N60 27; silty sands (m = 0.8 in Eq. 10-11); side resistance from the
-  ground surface.
+  ground surface (the tool's default in sand).
 - Published answer: phi' 38 / 41; sigma'p 5,768 / 13,890 psf; OCR 6.7 /
   6.1; Ko 1.24 / 1.13; beta 0.97 / 0.98; fSN 837 / 2,248 psf; RSN 197.2 /
   635.6 kips; sum 833 kips.

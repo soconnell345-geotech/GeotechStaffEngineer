@@ -120,9 +120,12 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         items.append(InputItem("GWT", "Groundwater depth", soil.gwt_depth, "m"))
 
     # Side resistance settings: the top zone, and in sand the beta (GM-241)
+    from drilled_shaft.capacity import TOP_EXCLUSION
     items.append(InputItem(
         "z_top", "Top zone with no side resistance (or the casing)",
-        analysis.top_exclusion, "m"))
+        (analysis.top_exclusion if analysis.top_exclusion is not None
+         else f"{TOP_EXCLUSION:g} in cohesive soil and rock, 0 in "
+              "cohesionless soil"), "m"))
     if any(lay.soil_type == "cohesionless" for lay in soil.layers):
         gec10 = analysis.beta_method == "rational"
         items.append(InputItem(
@@ -193,24 +196,45 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{shaft.length / shaft.diameter:.1f}",
     ))
 
-    # Exclusion zones
-    top_excl = analysis._top_of_side()
+    # Exclusion zones: the top zone by soil type unless one is given
+    c = shaft.casing_depth
+    if analysis.top_exclusion is not None:
+        top_excl = analysis._top_of_side("cohesive")
+        top_equation = "z_excl_top = max(top zone, casing depth), every layer"
+        top_sub = (f"z_excl_top = max({analysis.top_exclusion:.2f}, "
+                   f"{c:.2f})")
+        top_value = f"{top_excl:.2f}"
+        top_notes = ("Given; GEC-10 prints the top 5 ft for cohesive soils "
+                     "and 'subject to modification based on local "
+                     "experience and judgment of the designer'")
+    else:
+        clay = analysis._top_of_side("cohesive")
+        sand = analysis._top_of_side("cohesionless")
+        top_equation = ("z_excl_top = max(1.5 m, casing depth) in cohesive "
+                        "soil and rock; max(0, casing depth) in "
+                        "cohesionless soil")
+        top_sub = (f"cohesive soil and rock: max(1.50, {c:.2f}) = "
+                   f"{clay:.2f} m; cohesionless soil: max(0, {c:.2f}) = "
+                   f"{sand:.2f} m")
+        top_value = f"{clay:.2f} / {sand:.2f}"
+        top_notes = ("The top 5 ft is printed in Sec. 10.3.5.2, Cohesive "
+                     "Soils, 'subject to modification based on local "
+                     "experience and judgment of the designer'; Sec. "
+                     "10.3.5.1 prints no such zone in cohesionless soil, "
+                     "and Examples 10-1 and 10-5 take the sand's side "
+                     "resistance from the ground surface")
     geom_steps.append(CalcStep(
         title="Top Exclusion Zone",
-        equation="z_excl_top = max(top zone, casing depth)",
-        substitution=(f"z_excl_top = max({analysis.top_exclusion:.2f}, "
-                      f"{shaft.casing_depth:.2f})"),
+        equation=top_equation,
+        substitution=top_sub,
         result_name="z_excl_top",
-        result_value=f"{top_excl:.2f}",
+        result_value=top_value,
         result_unit="m",
         reference=("GEC-10 (FHWA-NHI-18-024) p. 10-17: 'common design "
                    "practice to neglect side resistance over the top 5 ft "
                    "of a drilled shaft, or to the depth of seasonal "
                    "moisture change'"),
-        notes=("Printed for cohesive soils and 'subject to modification "
-               "based on local experience and judgment of the designer'; "
-               "Example 10-1 (pp. 10-12 to 10-14) takes the side "
-               "resistance of sand from the ground surface"),
+        notes=top_notes,
     ))
     geom_steps.append(CalcStep(
         title="Bottom Exclusion Zone (cohesive only)",
@@ -1067,10 +1091,17 @@ def _plot_layer_profile(result, analysis):
     ax.axhline(y=analysis.shaft.length, color="#dc2626", linestyle="--",
                linewidth=1.5, label=f"Shaft tip (L = {analysis.shaft.length:.1f} m)")
 
-    # Exclusion zone shading (top)
-    top_excl = analysis._top_of_side()
-    ax.axhspan(0, top_excl, alpha=0.1, color="#ef4444",
-               label=f"Top exclusion ({top_excl:.1f} m)")
+    # Exclusion zone shading (top), over each layer its zone reaches
+    # (none in cohesionless soil unless top_exclusion is given, GM-241)
+    top_spans = []
+    depth = 0.0
+    for layer in analysis.soil.layers:
+        top, depth = depth, depth + layer.thickness
+        bottom = min(depth, analysis._top_of_side(layer.soil_type),
+                     analysis.shaft.length)
+        if bottom > top:
+            ax.axhspan(top, bottom, alpha=0.1, color="#ef4444")
+            top_spans.append((top, bottom))
     from drilled_shaft.capacity import fractured_rock_zone
     not_socket = fractured_rock_zone(analysis.shaft, analysis.soil)
     if not_socket is not None:
@@ -1106,10 +1137,12 @@ def _plot_layer_profile(result, analysis):
         [0], [0], color="#dc2626", linestyle="--", linewidth=1.5,
         label=f"Shaft tip ({analysis.shaft.length:.1f} m)",
     ))
-    legend_handles.append(mpatches.Patch(
-        color="#ef4444", alpha=0.15,
-        label=f"Top exclusion ({top_excl:.1f} m)",
-    ))
+    if top_spans:
+        legend_handles.append(mpatches.Patch(
+            color="#ef4444", alpha=0.15,
+            label="Top exclusion (" + ", ".join(
+                f"{a:.1f}-{b:.1f} m" for a, b in top_spans) + ")",
+        ))
     if not_socket is not None:
         legend_handles.append(mpatches.Patch(
             facecolor="#ef4444", alpha=0.15, hatch="//",
