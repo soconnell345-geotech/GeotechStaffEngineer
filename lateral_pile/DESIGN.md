@@ -100,9 +100,9 @@ results.summary()
     0.56595 in, where the cyclic curve carries 549.13 lb/in and the static
     668.77 lb/in; and the plateau starts at 16 y50 + 9.6 y50 log N (Fig.
     3.10). `tests/test_stiff_clay_above_wt.py`.
-  - The validation test named `test_com624p_example1_sabine_river` is not
-    the manual's Example 1 (which is the 14HP89 above, and static); where
-    its 34.3 mm comes from is unverified.
+  - The soft-clay case in `validation.py` labelled "COM624P Example 1"
+    is not the manual's Example 1 (which is the 14HP89 above, and
+    static); where its 34.3 mm comes from is unverified (GM-209).
 - **API sand**: tanh model is linear at small loads
 - **SandReese construction (v5.3)**: `SandReese(construction=...)` selects the
   sand p-y curve build. `"simplified"` (**default**, byte-identical to prior):
@@ -172,8 +172,9 @@ results.summary()
 - COM624P Example 1 (printed pp. 101-126, 14HP89 in stiff clay above the
   water table): p-y curves to 0.002 %, head deflection and moment within
   0.2 % (`tests/test_stiff_clay_above_wt.py`)
-- "COM624P Example 1 (Sabine River)" in `validation.py`: 0.3% match to
-  34.3mm, a source that is not the manual's Example 1 (see above)
+- The soft-clay case labelled "COM624P Example 1" in `validation.py`:
+  0.3% match to 34.3mm, a source that is not the manual's Example 1 (see
+  above)
 - Hetenyi closed-form: <2% error
 - Force/moment equilibrium: <0.01% error
 - validation.py (97 tests) + tests/ (12 regression tests) + composite-section

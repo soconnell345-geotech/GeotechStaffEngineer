@@ -169,7 +169,7 @@ def test_cyclic_loading_deflects_more_with_more_cycles():
 
 def test_choices_state_the_number_of_cycles():
     r = _ex1(_clay(loading="cyclic", n_cycles=100))
-    n = next(c for c in r.choices if c["what"].startswith("number of load"))
+    n = next(c for c in r.choices if c["what"].startswith("number of cycles"))
     assert n["chosen"] == "100 (y50 x 2.2)"
     assert n["how"] == "given"
     assert "Eqs. 3.28-3.29" in n["basis"] and "no default" in n["basis"]
@@ -178,7 +178,7 @@ def test_choices_state_the_number_of_cycles():
     loading = r.choices[-1]
     assert loading["what"] == "loading" and loading["chosen"] == (
         "cyclic, every layer")
-    assert not any(c["what"].startswith("number of load")
+    assert not any(c["what"].startswith("number of cycles")
                    for c in _ex1(_clay()).choices)
 
 

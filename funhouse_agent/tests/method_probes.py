@@ -311,10 +311,6 @@ KNOWN = {
     ("slope_stability|analyze_slope", "method"):
         "GM-140: 'bishop' is listed, but a noncircular slip_points surface "
         "runs Spencer",
-    ("lateral_pile|get_py_curve#StiffClayAboveWT", "loading"):
-        "GM-202: the cyclic curve is the static one capped at "
-        "16 y50, where the static one already reaches pu; Reese & Welch's "
-        "cyclic curve needs the number of cycles",
 }
 
 #: Probes the GM-160 guard leaves out, by agent or by probe: why.

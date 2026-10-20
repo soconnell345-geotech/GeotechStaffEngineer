@@ -128,14 +128,16 @@ def _weak_rock_note(model) -> str:
 
 
 def _cycles_choice(model, layer, within: str = "layers") -> dict:
-    """The number of load cycles N of a cyclic stiff-clay layer above the
-    water table (GM-202), always given: the references set no default."""
+    """The number of cycles of load application N of a cyclic stiff-clay
+    layer above the water table (GM-202), always given: the references set
+    no default."""
     from geotech_common.choices import choice, how_given
     n = model.n_cycles
     others = [(n_alt, f"N = {n_alt:g}: y50 x {1 + 0.6 * math.log10(n_alt):.2g}")
               for n_alt in (10.0, 100.0, 1000.0)]
     return choice(
-        f"number of load cycles N {layer.top:g}-{layer.bottom:g} m",
+        f"number of cycles of load application N "
+        f"{layer.top:g}-{layer.bottom:g} m",
         f"{n:g} (y50 x {model.cyclic_factor:.3g})",
         how_given(n, None, within=within),
         "y_c = y_s + y50 C log N, C = 9.6 (p/pu)^4 (Welch & Reese 1972; "

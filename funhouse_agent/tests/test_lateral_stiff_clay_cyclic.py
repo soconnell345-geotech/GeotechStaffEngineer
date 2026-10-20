@@ -24,7 +24,8 @@ def test_cyclic_runs_with_the_number_of_cycles():
     assert cyclic["y_top_m"] > 1.3 * static["y_top_m"]
     assert cyclic["max_moment_kNm"] > static["max_moment_kNm"]
     n = next(c for c in cyclic["choices"]
-             if c["what"].startswith("number of load cycles"))
+             if c["what"].startswith(
+                 "number of cycles of load application"))
     assert n["chosen"] == "100 (y50 x 2.2)" and n["how"] == "given"
 
 
