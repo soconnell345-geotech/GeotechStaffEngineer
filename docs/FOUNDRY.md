@@ -20,8 +20,10 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    builds are used and the rest comes from PyPI:
    `maestro env pip install ./geotech_staff_engineer-*.whl ./geotech_references-*.whl ./planlens-*.whl`.
    Their versions carry a local label (`5.33.0+foundry.20261020`), which the
-   sidebar footer shows. The app needs numpy 2 (`np.trapezoid`); a fresh
-   install resolves numpy 2.4.x.
+   sidebar footer shows. If maestro will not take file paths, ask the AI FDE
+   (the brief beside the wheels asks what works). The app needs numpy 2
+   (`np.trapezoid`); a fresh install of the INF-25 set resolved numpy 2.5.4
+   on Python 3.12 and 2.4.6 on 3.11 (WSL, 2026-10-20).
 
 ## 2. The app file (the only code that lives in Foundry)
 
