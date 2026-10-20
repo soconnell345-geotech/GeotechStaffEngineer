@@ -88,16 +88,16 @@
       "values": [
         {
           "name": "settlement_mm",
-          "value": 18.2,
+          "value": 18.0,
           "rtol": 0.12,
           "alt": [
-            0.0182,
-            1.82,
+            0.018,
+            1.8,
             14.9
           ]
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (settlement.elastic_settlement; alt 14.9 mm = rigid Iw=0.82 variant)"
+      "source": "GEC-6 Table 5-12 rigid square Iw = 0.99: 200 x 2.5 x 0.91 / 25000 x 0.99 = 18.0 mm (settlement.elastic_settlement, GM-203, 2026-10-19; was 18.2 with Iw = 1.0); alt 14.9 mm = the rigid Iw = 0.82 other texts give"
     }
   },
   {

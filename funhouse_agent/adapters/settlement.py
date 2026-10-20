@@ -4,7 +4,11 @@ from funhouse_agent.adapters import (
     apply_aliases, check_nested_list, declare_aliases, declare_applies_when,
     field_keys, reject_unknown_params, require_keys, require_params,
 )
-from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
+from geotech_common.choices import MODULE, choice, how_given
+from settlement.immediate import (
+    GEC6_TABLE_5_12_BASIS, SchmertmannLayer, elastic_settlement,
+    gec6_influence_factor, schmertmann_settlement,
+)
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
 )
@@ -44,18 +48,59 @@ _COMBINED_ALIASES = {
 }
 
 
+_ELASTIC_KEYS = ("q_net", "B", "Es", "nu", "Iw", "shape", "L", "rigidity",
+                 "point")
+
+
+def _elastic_iw_choice(params: dict) -> tuple:
+    """``(Iw, choices entry)``: the influence factor given, or GEC-6 Table
+    5-12's C_d for the footing's shape, rigidity and point with the table's
+    other values for it (GM-203: Iw was 1.0 for every footing, which matches
+    no printed point of a square)."""
+    Iw = params.get("Iw")
+    if Iw is not None:
+        return Iw, choice(
+            "influence factor Iw", f"{Iw:g}", how_given(Iw, None, name="Iw"),
+            "Se = q B (1 - nu^2) Iw / Es (GEC-6 Eq. 5-36)",
+            ["GEC-6 Table 5-12's C_d for the shape, rigidity and point "
+             "(leave Iw out)"])
+    shape = params.get("shape", "square")
+    rigidity = params.get("rigidity", "flexible")
+    point = params.get("point", "center")
+    B, L = params["B"], params.get("L")
+    Iw, where = gec6_influence_factor(shape, rigidity, point, B=B, L=L)
+    others = []
+    for rig, pt, label in (
+            ("rigid", "center", "the footing rigid (rigidity 'rigid')"),
+            ("flexible", "average", "the average over a flexible footing "
+             "(point 'average')"),
+            ("flexible", "corner", "a corner of a flexible footing "
+             "(point 'corner')")):
+        try:
+            v = gec6_influence_factor(shape, rig, pt, B=B, L=L)[0]
+        except ValueError:
+            continue
+        if abs(v - Iw) > 1e-9:
+            others.append(f"{v:.3g} for {label}")
+    return Iw, choice(
+        "influence factor Iw",
+        f"{Iw:.3g}: GEC-6 Table 5-12, {where} (shape '{shape}', rigidity "
+        f"'{rigidity}', point '{point}')",
+        MODULE, GEC6_TABLE_5_12_BASIS, others + ["give Iw (Iw)"])
+
+
 def _run_elastic_settlement(params: dict) -> dict:
     params = apply_aliases(params, _Q_ALIASES)
-    reject_unknown_params(params, ("q_net", "B", "Es", "nu", "Iw", "shape"),
-                          method="elastic_settlement")
+    reject_unknown_params(params, _ELASTIC_KEYS, method="elastic_settlement")
     require_params(params, ["q_net", "B", "Es"], method="elastic_settlement",
-                   valid=["q_net", "B", "Es", "nu", "Iw", "shape"])
-    Se = elastic_settlement(
-        q=params["q_net"], B=params["B"], Es=params["Es"],
-        nu=params.get("nu", 0.3), Iw=params.get("Iw", 1.0),
-        shape=params.get("shape", "square"),
-    )
-    return {"immediate_settlement_m": round(Se, 6), "immediate_settlement_mm": round(Se * 1000, 2), "method": "elastic"}
+                   valid=list(_ELASTIC_KEYS))
+    Iw, entry = _elastic_iw_choice(params)
+    Se = elastic_settlement(q=params["q_net"], B=params["B"],
+                            Es=params["Es"], nu=params.get("nu", 0.3),
+                            Iw=Iw)
+    return {"immediate_settlement_m": round(Se, 6),
+            "immediate_settlement_mm": round(Se * 1000, 2),
+            "Iw": round(Iw, 4), "method": "elastic", "choices": [entry]}
 
 
 def _run_schmertmann_settlement(params: dict) -> dict:
@@ -258,10 +303,15 @@ METHOD_INFO = {
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
             "Es": {"type": "float", "required": True, "description": "Soil elastic modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
-            "Iw": {"type": "float", "required": False, "default": 1.0, "description": "Influence factor for footing rigidity/shape."},
-            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "circular"], "description": "Footing shape, for the record only: not used, since Iw carries the shape and rigidity (Se = q B (1 - nu^2) Iw / Es). Give Iw for the footing, e.g. Schleicher's 1.12 at the centre of a flexible square."},
+            "Iw": {"type": "float", "required": False, "description": "Influence factor in Se = q B (1 - nu^2) Iw / Es. Not given: GEC-6 Table 5-12's shape and rigidity factor C_d for the shape, rigidity and point (1.12 at the centre of a flexible square; 0.99 for a rigid square, 0.79 for a rigid circle)."},
+            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "circular"], "description": "Footing shape, for GEC-6 Table 5-12's Iw when Iw is not given. A strip has no Iw (it grows without limit with L/B): give shape 'rectangular' with L, or Iw."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Required with shape 'rectangular' and no Iw: GEC-6 Table 5-12 by L/B, interpolated in log(L/B) between its printed rows (1.5 to 10,000)."},
+            "rigidity": {"type": "str", "required": False, "default": "flexible", "allowed_values": ["flexible", "rigid"], "description": "Footing rigidity, for GEC-6 Table 5-12's Iw when Iw is not given. Rigid: 0.99 for a square and 0.79 for a circle, the same at every point; the table prints no rigid rectangle (give Iw)."},
+            "point": {"type": "str", "required": False, "default": "center", "allowed_values": ["center", "corner", "mid_short", "mid_long", "average", "edge"], "description": "Where under a flexible footing, for GEC-6 Table 5-12's Iw when Iw is not given: the centre, a corner, the middle of the short or long side, or the average over the area ('edge' for a circle)."},
         },
-        "returns": {"immediate_settlement_mm": "Settlement in mm."},
+        "returns": {"immediate_settlement_mm": "Settlement in mm.",
+                    "Iw": "The influence factor used.",
+                    "choices": "The influence factor: given, or GEC-6 Table 5-12's for the shape, rigidity and point, with the table's other values for the footing. Tell the user."},
     },
     "schmertmann_settlement": {
         "category": "Immediate Settlement",
@@ -359,8 +409,14 @@ declare_aliases(METHOD_INFO, {
 # given, the secondary time to a run with C_alpha (e0_secondary has no
 # default since GM-142: each layer's own e0, stated in the choices).
 declare_applies_when(METHOD_INFO, {
-    # since GM-184: elastic_settlement takes a shape and does not use it
-    "elastic_settlement": {"shape": False},
+    # the shape, rigidity and point pick GEC-6 Table 5-12's Iw when Iw is
+    # not given (GM-203); a rigid footing settles the same at every point
+    "elastic_settlement": {
+        "shape": {"Iw": "unset"},
+        "rigidity": {"Iw": "unset"},
+        "point": {"Iw": "unset", "rigidity": ["flexible"]},
+        "L": {"Iw": "unset", "shape": ["rectangular"]},
+    },
     "consolidation_settlement": {
         "stress_method": {"delta_sigma": "unset", "delta_sigmas": "unset"},
     },
@@ -381,6 +437,10 @@ declare_applies_when(METHOD_INFO, {
 # secondary void ratio.
 from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 declare_when_absent(METHOD_INFO, {
+    "elastic_settlement": {
+        "Iw": ("GEC-6 Table 5-12's C_d for the shape, rigidity and point",
+               "the result's Iw and choices give the value and the "
+               "table's other points (GEC-6 Table 5-12, p. 97)")},
     "schmertmann_settlement": {"L": "B"},
     "consolidation_settlement": {"L": "B"},
     "hough_settlement": {"L": "B"},
