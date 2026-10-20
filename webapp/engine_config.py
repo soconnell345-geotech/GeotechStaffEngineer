@@ -28,6 +28,7 @@ caught and surfaced as ``source="error"`` with a readable message.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -74,9 +75,10 @@ _MODEL_BUILDER: Optional[Callable[[], object]] = None
 #   Anthropic shape: https://<host>/api/v2/llm/proxy/anthropic/v1/messages
 # Auth is the FOUNDRY token (bearer); the model is a Foundry RID like
 # "ri.language-model-service..language-model.gpt-5-2". A model id starting with
-# "ri." routes here automatically — by provider, from the RID text — so new
-# model RIDs (e.g. Claude, once enabled on the enrollment) plug in with NO code
-# change: type the RID in the app or list it in GEOTECH_FOUNDRY_MODELS.
+# "ri." routes here automatically — by model family (stated as an
+# "anthropic:" / "openai:" prefix, else read off the RID text) — so new model
+# RIDs (e.g. Claude) plug in with NO code change: type the RID in the app or
+# list it in GEOTECH_FOUNDRY_MODELS.
 
 FOUNDRY_TOKEN_ENVS = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN")
 FOUNDRY_HOST_ENVS = ("GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL")
@@ -132,9 +134,73 @@ def foundry_base_url() -> Optional[str]:
     return None
 
 
+#: Model families: which provider shape a Foundry model speaks. A model id may
+#: carry its family as a prefix -- ``anthropic:<RID or name>`` or
+#: ``openai:<RID or name>`` -- so the choice travels with the id through the
+#: sidebar box, ``GEOTECH_FOUNDRY_MODELS`` and a resumed conversation. Without
+#: a prefix the family is read off the id (:data:`ANTHROPIC_ID_WORDS`). A
+#: Foundry Claude RID need not name its maker (INF-25), hence the prefix.
+MODEL_FAMILIES = ("anthropic", "openai")
+
+#: Words in a model id that mean a Claude model when no family is stated.
+#: ``anthropic`` counts anywhere in the id (the rule before INF-25); the
+#: others count only as words of the model's name (:func:`_model_name_part`),
+#: with no letter or digit before and no letter after -- "claude-opus-5-5",
+#: "Claude_Opus_5_5" and "opus4" are Claude; "x7opus3k" (a random chunk of
+#: an OpenAI RID) and "magnumopus" are not.
+ANTHROPIC_ID_WORDS = ("anthropic", "claude", "opus", "sonnet", "haiku",
+                      "fable")
+_CLAUDE_NAME_WORD = re.compile(
+    r"(?<![a-z0-9])(?:" + "|".join(ANTHROPIC_ID_WORDS[1:]) + r")(?![a-z])")
+
+
+def _model_name_part(bare_id: str) -> str:
+    """The part of an id that names the model: a Foundry RID's last field
+    (``ri.<service>.<instance>.<type>.<name>``), else the whole id."""
+    if bare_id.startswith("ri."):
+        parts = bare_id.split(".", 4)
+        if len(parts) == 5:
+            return parts[4]
+    return bare_id
+
+
+def split_model_family(model_id: Optional[str]) -> "tuple[str, str]":
+    """``(family, bare id)`` -- family is ``"anthropic"``, ``"openai"`` or
+    ``"auto"`` (no prefix). Anything else before a colon is part of the id."""
+    text = str(model_id or "").strip()
+    head, sep, rest = text.partition(":")
+    if sep and head.strip().lower() in MODEL_FAMILIES and rest.strip():
+        return head.strip().lower(), rest.strip()
+    return "auto", text
+
+
+def with_model_family(model_id: Optional[str], family: Optional[str]) -> str:
+    """The id carrying ``family`` as its prefix (replacing any it had);
+    ``auto`` (or anything not in :data:`MODEL_FAMILIES`) leaves the id as
+    typed, so a prefix typed into the id itself still counts."""
+    fam = str(family or "auto").strip().lower()
+    text = str(model_id or "").strip()
+    if fam not in MODEL_FAMILIES:
+        return text
+    bare = split_model_family(text)[1]
+    return f"{fam}:{bare}" if bare else ""
+
+
+def model_family(model_id: Optional[str]) -> str:
+    """``"anthropic"`` or ``"openai"``: the family the id states, else
+    ``"anthropic"`` when the id names a Claude model, else ``"openai"``."""
+    fam, bare = split_model_family(model_id)
+    if fam != "auto":
+        return fam
+    low = bare.lower()
+    if "anthropic" in low or _CLAUDE_NAME_WORD.search(_model_name_part(low)):
+        return "anthropic"
+    return "openai"
+
+
 def is_foundry_model_id(model_id: Optional[str]) -> bool:
-    """True for a Foundry model RID (``ri.…``)."""
-    return bool(model_id) and str(model_id).startswith("ri.")
+    """True for a Foundry model RID (``ri.…``), with or without a family."""
+    return split_model_family(model_id)[1].startswith("ri.")
 
 
 def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
@@ -177,13 +243,73 @@ def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
         f"Using the in-platform palantir_models SDK ({model_id}).")
 
 
-def _resolve_foundry(model_id: str) -> "EngineResolution":
-    """Build a chat model against the Foundry LLM proxy for a model RID.
+#: Prompt-cache marks on the Foundry Anthropic proxy: on by default, as marks
+#: on content blocks only; ``0`` / ``off`` sends none (see
+#: :func:`foundry_chat_anthropic_class`).
+FOUNDRY_PROMPT_CACHE_ENV = "GEOTECH_FOUNDRY_PROMPT_CACHE"
 
-    Routes by provider inferred from the RID text: ``anthropic`` in the RID →
-    the Anthropic-messages proxy via ``ChatAnthropic``; anything else → the
-    OpenAI-chat-completions proxy via ``ChatOpenAI``. Never raises.
+_FOUNDRY_CHAT_ANTHROPIC = None
+
+
+def _strip_cache_marks(obj) -> None:
+    """Remove every ``cache_control`` key from a request payload, in place."""
+    if isinstance(obj, dict):
+        obj.pop("cache_control", None)
+        for value in obj.values():
+            _strip_cache_marks(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            _strip_cache_marks(value)
+
+
+def foundry_chat_anthropic_class():
+    """``ChatAnthropic`` as the Foundry Anthropic proxy takes it (INF-25).
+
+    The agent's prompt-caching middleware (deepagents) adds a TOP-LEVEL
+    ``cache_control`` to every chat turn, a field only Anthropic's own API
+    accepts (langchain-anthropic says so; Bedrock refuses extra keys). The
+    Foundry proxy is not that API, so this class names a non-direct
+    ``_llm_type`` and langchain-anthropic moves the mark onto the last message
+    block, the form every Claude host takes. ``GEOTECH_FOUNDRY_PROMPT_CACHE=0``
+    sends no cache marks at all. Connection diagnostics send none either way:
+    only the agent's own turns carry them.
     """
+    global _FOUNDRY_CHAT_ANTHROPIC
+    if _FOUNDRY_CHAT_ANTHROPIC is None:
+        from langchain_anthropic import ChatAnthropic
+
+        class FoundryChatAnthropic(ChatAnthropic):
+            """ChatAnthropic against the Foundry Anthropic-messages proxy."""
+
+            @property
+            def _llm_type(self) -> str:
+                return "anthropic-chat-foundry-proxy"
+
+            def _get_request_payload(self, input_, *, stop=None, **kwargs):
+                payload = super()._get_request_payload(
+                    input_, stop=stop, **kwargs)
+                if str(os.environ.get(FOUNDRY_PROMPT_CACHE_ENV, "")).strip() \
+                        .lower() in ("0", "off", "false", "no"):
+                    _strip_cache_marks(payload)
+                return payload
+
+        _FOUNDRY_CHAT_ANTHROPIC = FoundryChatAnthropic
+    return _FOUNDRY_CHAT_ANTHROPIC
+
+
+def _resolve_foundry(model_id: str) -> "EngineResolution":
+    """Build a chat model against the Foundry LLM proxy for a model id.
+
+    Routes by :func:`model_family`: the family the id states
+    (``anthropic:`` / ``openai:``), else read off the id -- a Claude model →
+    the Anthropic-messages proxy via ``ChatAnthropic``; anything else → the
+    OpenAI-chat-completions proxy via ``ChatOpenAI``. The proxy is sent the
+    id without its family prefix. Never raises.
+    """
+    stated = split_model_family(model_id)[0]
+    family = model_family(model_id)
+    model_id = split_model_family(model_id)[1]
+    how = ("family chosen" if stated != "auto" else "family read off the id")
     token = foundry_token()
     base = foundry_base_url()
     if not token or not base:
@@ -192,14 +318,16 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             missing.append("token (GEOTECH_FOUNDRY_TOKEN or FOUNDRY_TOKEN)")
         if not base:
             missing.append("host (GEOTECH_FOUNDRY_HOST or FOUNDRY_HOSTNAME)")
+        what = ("looks like a Foundry RID" if model_id.startswith("ri.")
+                else "is a Claude model, served by the Foundry Anthropic proxy")
         return EngineResolution(
             None, "error", model_id,
-            f"Model id '{model_id}' looks like a Foundry RID, but the Foundry "
+            f"Model id '{model_id}' {what}, but the Foundry "
             f"{' and '.join(missing)} env var(s) are not set. See docs/FOUNDRY.md.")
 
-    if "anthropic" in model_id.lower():
+    if family == "anthropic":
         try:
-            from langchain_anthropic import ChatAnthropic
+            chat_anthropic = foundry_chat_anthropic_class()
         except Exception as exc:
             return EngineResolution(
                 None, "error", model_id,
@@ -208,7 +336,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
         try:
             # The proxy authenticates with "Authorization: Bearer <token>"; the
             # Anthropic client's own x-api-key header is sent too and ignored.
-            model = ChatAnthropic(
+            model = chat_anthropic(
                 model=model_id,
                 max_tokens=_default_max_tokens(),
                 anthropic_api_url=f"{base}/api/v2/llm/proxy/anthropic",
@@ -223,7 +351,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
                 f"{type(exc).__name__}: {exc}")
         return EngineResolution(
             model, "foundry", model_id,
-            f"Using the Foundry Anthropic proxy ({model_id}).")
+            f"Using the Foundry Anthropic proxy ({model_id}; {how}).")
 
     try:
         from langchain_openai import ChatOpenAI
@@ -263,7 +391,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             f"{type(exc).__name__}: {exc}")
     return EngineResolution(
         model, "foundry", model_id,
-        f"Using the Foundry OpenAI proxy ({model_id}).")
+        f"Using the Foundry OpenAI proxy ({model_id}; {how}).")
 
 
 class EngineUnavailable(RuntimeError):
@@ -391,7 +519,8 @@ def resolve_engine(model_id: Optional[str] = None,
     #    an argument gets the picker selection (Prompter model switching); a
     #    zero-arg builder keeps the model deployment-fixed.
     if _MODEL_BUILDER is not None:
-        _picked = model_id or None
+        # A family prefix means nothing to a deployment's own builder.
+        _picked = split_model_family(model_id)[1] or None
         _kw = ({"identity": identity}
                if identity is not None and _builder_takes_identity(_MODEL_BUILDER)
                else {})
@@ -420,8 +549,12 @@ def resolve_engine(model_id: Optional[str] = None,
     # 2b) Foundry deployment, non-RID model id -> the in-platform
     #     palantir_models SDK (model API name, e.g. "GPT_5_1"). No host, token,
     #     or proxy involved — the workspace authenticates the SDK itself.
+    #     That engine speaks to GPT models only, so a Claude model named by
+    #     its API name goes to the Anthropic-messages proxy instead.
     if is_foundry_deployment() and _mid:
-        return _resolve_palantir_sdk(_mid)
+        if model_family(_mid) == "anthropic":
+            return _resolve_foundry(_mid)
+        return _resolve_palantir_sdk(split_model_family(_mid)[1])
 
     # On a Foundry deployment the Anthropic-key path does not exist: the key
     # env is never read and no message references it — the only engine surface
@@ -431,10 +564,12 @@ def resolve_engine(model_id: Optional[str] = None,
             None, "none", "",
             "No model configured. Enter a model in the sidebar ('Model RID or "
             "API name') — an 'ri....' RID uses the LLM proxy, a model API name "
-            "like GPT_5_1 uses the in-platform palantir_models SDK — or set "
-            "GEOTECH_FOUNDRY_MODELS (Label=id, comma-separated) on the "
-            "deployment and republish. The app is running, but cannot answer "
-            "questions until a model is selected.")
+            "like GPT_5_1 uses the in-platform palantir_models SDK, and a "
+            "Claude model (Model family: Anthropic) the Anthropic proxy — or "
+            "set GEOTECH_FOUNDRY_MODELS (Label=id, comma-separated; "
+            "Label=anthropic:id for Claude) on the deployment and republish. "
+            "The app is running, but cannot answer questions until a model is "
+            "selected.")
 
     # 2c) Tiny Apps deployment with no Prompter builder registered: the four
     #     PROMPTER_* settings are missing or incomplete. Name THEM — the
@@ -451,7 +586,8 @@ def resolve_engine(model_id: Optional[str] = None,
 
     # 3) ANTHROPIC_API_KEY -> ChatAnthropic (local / dev path).
     if os.environ.get(KEY_ENV):
-        model_id = model_id or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
+        model_id = split_model_family(
+            model_id or os.environ.get(MODEL_ENV) or DEFAULT_MODEL)[1]
         try:
             from langchain_anthropic import ChatAnthropic
         except Exception as exc:

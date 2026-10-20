@@ -2194,12 +2194,67 @@ def _movement_differs(a, b):
     return any(_material_difference(a[k], b[k]) for k in keys)
 
 
+def _consolidation_choices(gwt, depth, gamma_w, fill_names, fill_wet,
+                           soil_layers, scheme, theta, startup_steps):
+    """The ``choices`` of ``analyze_consolidation`` (GM-09, GM-07)."""
+    from geotech_common.choices import choice, how_given
+    g = float(gwt)
+    if g > 0:
+        where = f"{g:g} m of water ponded above the ground surface"
+    elif g <= -float(depth):
+        where = "at or below the base of the model (no pore water)"
+    elif g == 0:
+        where = "at the ground surface"
+    else:
+        where = f"{-g:g} m below the ground surface"
+    out = [choice("water table elevation gwt (m)", g,
+                  how_given(gwt, 0.0, name='gwt'),
+                  f"{where}; the ground surface is at elevation 0. The "
+                  "initial stage is the soil in place in drained "
+                  "equilibrium with this hydrostatic water table; drained "
+                  "boundary at the ground surface",
+                  ["another gwt elevation (above 0 = ponded water)"])]
+    if fill_names:
+        if fill_wet:
+            gam = sorted({float(sl.get('gamma', 18)) for sl in soil_layers
+                          if sl.get('fill')})
+            gb = ", ".join(f"{x - float(gamma_w):.2f}" for x in gam)
+            out.append(choice(
+                "fill unit weight below the water table", f"{gb} kN/m3",
+                "module",
+                "buoyant unit weight gamma_b = gamma_sat - gamma_w, FHWA "
+                "NHI-06-088 (2006) Eq. 2-7, p. 2-6 (effective stress below "
+                "the water table, p. 2-20); fill layers "
+                f"{fill_names} placed under water, the water standing on "
+                "the soil in place before placement",
+                ["lower gwt to model the fill placed in the dry"]))
+        else:
+            out.append(choice(
+                "fill unit weight", "total unit weight gamma", "module",
+                f"fill layers {fill_names} lie above the water table",
+                []))
+    if scheme == "monolithic" and float(theta) < 1.0:
+        n = max(int(startup_steps or 0), 0)
+        out.append(choice(
+            "time-stepping start-up (steps taken as two fully implicit "
+            "half-steps)", n, how_given(startup_steps, 2,
+                                        name='startup_steps'),
+            "Rannacher (1984) start-up for theta < 1: the undrained excess "
+            "pore pressure jumps to 0 at the drained boundary, which "
+            "Crank-Nicolson alone leaves ringing (+/- every step); fully "
+            "implicit half-steps damp it and keep second-order accuracy",
+            ["0 (plain theta-stepping from the first step)",
+             "theta = 1 (backward Euler throughout, first order)"]))
+    return out
+
+
 def analyze_consolidation(width, depth, soil_layers, k, load_q,
                           time_points, gwt=0.0, gamma_w=9.81,
                           nx=10, ny=20, t=1.0, n_w=2.2e6,
                           layer_polylines=None,
                           consolidation_scheme="staggered", theta=1.0,
-                          reset_displacements_after=None):
+                          reset_displacements_after=None,
+                          startup_steps=2):
     """1D-like consolidation of a loaded soil column.
 
     Sets up rectangular domain, applies surface load, tracks
@@ -2238,7 +2293,10 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     soil_layers : list of dict — soil properties, each with:
         'E', 'nu', 'gamma' (and optionally 'bottom_elevation', and
         'fill': True for a layer placed as fill during construction; fill
-        layers must be the top layers and lie above the water table).
+        layers must be the top layers. Fill may be placed under water
+        (GM-09): below ``gwt`` it loads the soil in place by its buoyant
+        unit weight gamma - gamma_w, and the water that stood on the soil
+        in place before placement is part of the initial stage).
     k : float — hydraulic conductivity (m/s).
     load_q : float — surface load (kPa, positive downward).
     time_points : array-like — OUTPUT times since loading (s); t = 0 (the
@@ -2251,6 +2309,12 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     n_w : float — bulk modulus of water (kPa).
     reset_displacements_after : None, "initial" (or 0), or "start" — see
         above. Default None = after the initial stage.
+    startup_steps : int — monolithic scheme with theta < 1 only: the first
+        ``startup_steps`` internal steps are each taken as two fully
+        implicit half-steps (Rannacher start-up), so Crank-Nicolson does
+        not ring at the drained boundary (GM-07). Default 2; 0 = plain
+        theta-stepping from the first step (the behaviour before
+        2026-10-20).
 
     Returns
     -------
@@ -2363,7 +2427,7 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         pore_pressures_0=pp_0, surface_loads=surface_loads,
         scheme=consolidation_scheme, theta=theta,
         initial_surface_loads=initial_surface_loads,
-        fill_elements=fill_elements)
+        fill_elements=fill_elements, startup_steps=startup_steps)
 
     # Per-stage fields: the initial stage, and the load stage per time.
     u0 = np.asarray(result_dict['initial_stage_displacements'], dtype=float)
@@ -2467,6 +2531,17 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         f"measured from the {measured_from}; stages[] gives each stage's own "
         f"movement and the cumulative movement.",
     ]
+    fill_wet = bool(result_dict.get('fill_under_water')) or bool(
+        fill_names and not weightless and float(gwt) > -depth and any(
+            nodes[elements[fill_elements]].reshape(-1, 2)[:, 1]
+            < float(gwt) - 1e-9))
+    if fill_wet:
+        notes.append(
+            "Fill placed under water: below the water table (elevation "
+            f"{float(gwt):g} m) the fill loads the soil in place by its "
+            "buoyant unit weight gamma - gamma_w, above it by its total "
+            "unit weight; before placement the water stood on the soil in "
+            "place (the initial stage).")
     if consolidation_scheme == "monolithic":
         notes.append(
             "Excess pore pressure comes from the load stage only (the "
@@ -2477,11 +2552,16 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
             "Early-time U is only as good as the mesh at the drained "
             "boundary: elements there should be thinner than sqrt(c t) "
             "(c = k / (1/n_w + 1/M_oed)); refine ny for small times.")
-        if fill_names:
+        if fill_names and not fill_wet:
             notes.append(
                 "Fill layers are saturated like the rest of the column in "
                 "the monolithic scheme: above the water table that "
                 "overstates their excess pore pressure.")
+        elif fill_names:
+            notes.append(
+                "Fill layers are saturated like the rest of the column in "
+                "the monolithic scheme: right below the water table, "
+                "overstated in any part of the fill above it.")
     else:
         notes.append(
             "The staggered scheme does not turn the applied load into excess "
@@ -2490,7 +2570,12 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
             "(k as the mobility m^2/(kPa.s) = hydraulic conductivity / "
             "gamma_w) for consolidation under the load.")
 
+    choices = _consolidation_choices(
+        gwt, depth, gamma_w, fill_names, fill_wet, soil_layers,
+        consolidation_scheme, theta, startup_steps)
+
     return ConsolidationResult(
+        choices=choices,
         n_nodes=len(nodes),
         n_elements=len(elements),
         n_time_steps=len(result_dict['times']),
