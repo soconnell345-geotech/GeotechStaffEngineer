@@ -432,6 +432,10 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
 - Conversations persist under `GEOTECH_WEBAPP_DATA` (default
   `~/.geotech_webapp`). In a published app that is inside the app's own
   container: not visible from the workspace, and lost when the container is
-  rebuilt (BACKLOG INF-38).
+  rebuilt (BACKLOG INF-38). To keep one, use **Download this conversation**
+  in the sidebar: **Prepare download** zips its record (`meta.json`,
+  `activity.jsonl`, transcript), files and figures, leaving out caches and
+  anything that may hold a key; over the 20 MB download limit (§4a) it
+  offers the record alone, with the deliverables that fit.
 - The old `foundry/` wrapper files (tools for the prepackaged AIP agent) are
   RETIRED and unrelated to this deployment.

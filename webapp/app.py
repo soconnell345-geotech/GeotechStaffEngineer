@@ -939,6 +939,66 @@ with st.sidebar:
             except OSError:
                 pass
 
+    # Download this conversation (INF-38): a zip of its record, files and
+    # figures, to keep where the conversations folder is not kept (inside a
+    # published Foundry app's container). Built only when Prepare is pressed
+    # -- on Foundry the bytes travel inside the page (INF-44) -- and dropped
+    # once the conversation moves on, when it is out of date.
+    if _PROFILE.conversation_download and \
+            core.load_meta(ss.thread_id) is not None:
+        st.divider()
+        st.subheader("Download this conversation")
+        _zip_stamp = (ss.thread_id, len(ss.transcript))
+        _zip_cap = file_widgets.download_limit_bytes()
+
+        def _prepare_zip(record_only: bool = False) -> None:
+            from webapp import conversation_export as _cx
+            with st.spinner("Zipping the conversation…"):
+                ss.conv_zip = {"stamp": _zip_stamp, "export": _cx.build(
+                    ss.thread_id, cap=_zip_cap, record_only=record_only)}
+
+        def _zip_size(n: int) -> str:
+            return (f"{n / 1048576:.1f} MB" if n >= 104858
+                    else f"{max(1, round(n / 1024))} KB")
+
+        if st.button("Prepare download", key=f"conv_zip_{ss.thread_id}",
+                     help="Zips this conversation's record, files and "
+                          "figures (caches, and anything that may hold a "
+                          "key, are left out), then shows the download."):
+            _prepare_zip()
+        _zip = ss.get("conv_zip")
+        if _zip and _zip["stamp"] != _zip_stamp:
+            ss.pop("conv_zip", None)
+            _zip = None
+        if _zip:
+            _x = _zip["export"]
+            if _x.data is not None:
+                file_widgets.download_button(
+                    f"Download {_x.name}", _x.data, file_name=_x.name,
+                    mime="application/zip",
+                    key=f"conv_zip_dl_{ss.thread_id}")
+                if _x.record_only:
+                    _n_del = sum(1 for f in _x.files if "/" in f)
+                    st.caption(f"The record and {_n_del} deliverables, "
+                               f"{_zip_size(_x.size)}. LEFT_OUT.txt in the "
+                               "zip names what was left out.")
+                else:
+                    st.caption(f"{len(_x.files)} files, "
+                               f"{_zip_size(_x.size)}.")
+            else:
+                st.caption(
+                    f"The whole conversation ({len(_x.files)} files, "
+                    f"{_zip_size(_x.folder_bytes)} on disk) zips to "
+                    f"more than the {(_x.cap or 0) / 1048576:.3g} MB a "
+                    "download in the Foundry app can carry (raise "
+                    f"{file_widgets.DOWNLOAD_MAX_MB_ENV} in the app file to "
+                    "carry more). The record alone can be downloaded, with "
+                    "the deliverables that fit.")
+                if st.button("Prepare the record alone",
+                             key=f"conv_zip_rec_{ss.thread_id}"):
+                    _prepare_zip(record_only=True)
+                    st.rerun()
+
     # Feedback (owner feedback 2026-09-11): a note from the user, saved WITH
     # the conversation (feedback.jsonl + FEEDBACK.md in the record dir, so
     # the SharePoint mirror carries it up). The agent has the matching

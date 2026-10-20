@@ -52,6 +52,15 @@ def download_cap_bytes() -> int:
     return int(max(0.0, mb) * 1024 * 1024)
 
 
+def download_limit_bytes() -> Optional[int]:
+    """The largest file :func:`download_button` can carry on this host: the
+    Foundry component's limit, or ``None`` where Streamlit's own button
+    serves the file."""
+    if engine_config.is_foundry_deployment():
+        return download_cap_bytes()
+    return None
+
+
 def _js_string(value: str) -> str:
     """A JavaScript string literal that cannot end the script element or
     change how the browser reads it: ``<``, ``>`` and ``&`` are written as

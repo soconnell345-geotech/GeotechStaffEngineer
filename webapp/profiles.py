@@ -169,6 +169,9 @@ class AppProfile:
     #: Whether a fresh upload triggers an automatic orientation turn.
     orientation: bool = False
     orientation_request: str = ORIENTATION_REQUEST
+    #: Whether the sidebar offers "Download this conversation" (a zip of
+    #: its folder; ``webapp.conversation_export``, INF-38).
+    conversation_download: bool = False
     _build_kwargs: Dict[str, object] = field(default_factory=dict)
 
     def build_kwargs(self) -> Dict[str, object]:
@@ -191,6 +194,7 @@ GEOTECH = AppProfile(
     url_path="geotech",
     specialists=True,
     orientation=False,
+    conversation_download=True,
 )
 
 DOCUMENT_REVIEW = AppProfile(
