@@ -243,13 +243,24 @@ _LOCATOR = re.compile(r"\b(Fig(?:ure)?|Table|Eq(?:uation)?|Sec(?:tion)?|"
                       re.IGNORECASE)
 
 
+#: Sub- and superscript digits, signs and letters folded to plain ones, so
+#: "K₀" reads "K0" and "m²" reads "m2" (EV-34: F70 scored K₀ as missing).
+_SCRIPT_FOLD = {ord(c): p for c, p in (
+    list(zip("₀₁₂₃₄₅₆₇₈₉", "0123456789"))
+    + list(zip("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789"))
+    + list(zip("₊₋⁺⁻", "+-+-"))
+    + list(zip("ₐₑₒₓₕₖₗₘₙₚₛₜ",
+               "aeoxhklmnpst"))
+    + list(zip("ᵢⁱⁿ", "iin")))}
+
+
 def _plain(text: str) -> str:
     for a, b in (("‐", "-"), ("‑", "-"), ("‒", "-"),
                  ("–", "-"), ("—", "-"), ("−", "-"),
                  ("′", "'"), ("’", "'"), (" ", " "),
                  (" ", " "), (" ", " "), ("**", "")):
         text = text.replace(a, b)
-    return text
+    return text.translate(_SCRIPT_FOLD)
 
 
 def _search(pattern: str, text: str) -> bool:
