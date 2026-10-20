@@ -890,7 +890,9 @@ def test_a_host_without_the_box_builds_both_pages_without_it(monkeypatch):
     agent_mod.build_deep_agent(model=_Quiet(), enable_calc_subagent=True)
     agent_mod.build_deep_agent(model=_Quiet(),
                                **DOCUMENT_REVIEW.build_kwargs())
-    assert len(builds) == 2
+    # One build per page; a deepagents that leaves out the todo
+    # middleware is rebuilt once with it, so CI's newer stack sees four.
+    assert len(builds) in (2, 4)
     for k in builds:
         helpers = {s.get("name"): s for s in k["subagents"]}
         assert "figure" in helpers
