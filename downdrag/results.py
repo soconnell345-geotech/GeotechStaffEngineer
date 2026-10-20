@@ -142,8 +142,9 @@ class DowndragResult:
         a fill the depths are below the original ground.
     influence_depth_criterion : str
         ``"bearing_stress"`` (UFC 3-220-20 §6-5.8.4.3, default) or
-        ``"effective_stress"`` (FHWA GEC-12 §7.3.5.3): where the toe load
-        stops being counted below the toe.
+        ``"effective_stress"`` (FHWA GEC-12 Vol I step 1c of §7.3.5.3,
+        §7.3.5.5 or §7.3.5.6, by the soil below the toe): where the toe
+        load stops being counted below the toe.
     below_toe : dict
         How deep the settlement below the toe was counted and why it
         stopped: the criterion, the toe force and the equivalent footing's
