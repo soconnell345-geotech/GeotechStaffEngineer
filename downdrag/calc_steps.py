@@ -774,6 +774,26 @@ def _settlement_source_description(analysis) -> str:
     return " + ".join(sources)
 
 
+def _np_note(ax, text, z_np, *, below, x, ha, **kw):
+    """The neutral plane's note on its line, inside the axes at ``x``
+    (axes fraction), just ``below`` the line or above it. Placed in data
+    units off the plane it ran onto the title when the plane was at the
+    pile head (no load), and onto the curves otherwise (GM-194)."""
+    return ax.annotate(text, (x, z_np), xycoords=('axes fraction', 'data'),
+                       xytext=(0, -5 if below else 5),
+                       textcoords='offset points', ha=ha,
+                       va='top' if below else 'bottom', **kw)
+
+
+def _tip_label(ax, pile_length):
+    """The pile tip's label just under its line (written in data units
+    under it, the line ran through it at the printed width; GM-194)."""
+    ax.annotate(f'Pile tip (L = {pile_length:.1f} m)', (0.02, pile_length),
+                xycoords=('axes fraction', 'data'), xytext=(0, -2),
+                textcoords='offset points', va='top', fontsize=7,
+                color='#666')
+
+
 def _plot_axial_load(result, analysis):
     """Create axial load profile Q(z) vs depth with neutral plane annotation."""
     import matplotlib
@@ -808,43 +828,42 @@ def _plot_axial_load(result, analysis):
                alpha=0.8)
     ax.plot(Q_at_np, z_np, 'o', color='#dc2626', markersize=8, zorder=5)
 
-    # NP annotation
-    ax.annotate(
-        f'Neutral Plane\nz = {z_np:.2f} m\nQ = {Q_at_np:.0f} kN',
-        xy=(Q_at_np, z_np),
-        xytext=(Q_at_np * 0.5, z_np - result.pile_length * 0.08),
+    # NP note at the left, on the plane's line: above the plane the load
+    # curve lies right of the plane's load, below it too near the plane
+    _np_note(
+        ax, f'Neutral Plane\nz = {z_np:.2f} m\nQ = {Q_at_np:.0f} kN',
+        z_np, below=z_np < 0.15 * result.pile_length, x=0.02, ha='left',
         fontsize=8, fontweight='bold', color='#dc2626',
-        arrowprops=dict(arrowstyle='->', color='#dc2626', lw=1.2),
         bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                  edgecolor='#dc2626', alpha=0.9),
+                  edgecolor='#dc2626'),
     )
 
-    # Dead load annotation at top
+    # Dead load annotation at top, over the head in the room above it
     ax.plot(result.Q_dead, 0, 's', color='#2563eb', markersize=8, zorder=5)
+    right = result.Q_dead > 0.6 * max(max(Q), 1e-9)
     ax.annotate(f'Q_dead = {result.Q_dead:.0f} kN',
-                xy=(result.Q_dead, 0),
-                xytext=(result.Q_dead + max(Q) * 0.05, -result.pile_length * 0.03),
-                fontsize=8, color='#2563eb')
+                xy=(result.Q_dead, 0), xytext=(-6 if right else 6, 4),
+                textcoords='offset points', va='bottom',
+                ha='right' if right else 'left', fontsize=8,
+                color='#2563eb')
 
     # Pile tip
     ax.axhline(y=result.pile_length, color='#666', linestyle=':',
                linewidth=1, alpha=0.6)
-    ax.text(max(Q) * 0.02, result.pile_length + result.pile_length * 0.01,
-            f'Pile tip (L = {result.pile_length:.1f} m)',
-            fontsize=7, color='#666')
+    _tip_label(ax, result.pile_length)
 
     ax.set_xlabel('Axial Load Q(z) (kN)', fontsize=10)
     ax.set_ylabel('Depth (m)', fontsize=10)
-    # the title clear of the Q_dead note on the axes' top edge (GM-186)
     ax.set_title('Axial Load Profile Along Pile', fontsize=11,
-                 fontweight='bold', pad=16)
+                 fontweight='bold')
     ax.invert_yaxis()
     ax.set_xlim(left=0)
-    ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.03)
-    ax.legend(loc='lower right', fontsize=8)
+    # room over the head for the Q_dead note (GM-194)
+    ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.06)
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax)
     return fig
 
 
@@ -881,14 +900,14 @@ def _plot_skin_friction(result, analysis):
     # Neutral plane line
     ax.axhline(y=z_np, color='#dc2626', linestyle='--', linewidth=1.5,
                alpha=0.8)
-    ax.annotate(
-        f'NP = {z_np:.2f} m',
-        xy=(0, z_np),
-        xytext=(max(abs(fs)) * 0.3, z_np - result.pile_length * 0.04),
+    # NP note at the right, on the plane's line: above the plane the
+    # friction is negative (left of zero)
+    _np_note(
+        ax, f'NP = {z_np:.2f} m', z_np,
+        below=z_np < 0.1 * result.pile_length, x=0.98, ha='right',
         fontsize=8, fontweight='bold', color='#dc2626',
-        arrowprops=dict(arrowstyle='->', color='#dc2626', lw=1.0),
         bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
-                  edgecolor='#dc2626', alpha=0.9),
+                  edgecolor='#dc2626'),
     )
 
     # Zero line
@@ -903,10 +922,10 @@ def _plot_skin_friction(result, analysis):
     ax.set_title('Unit Skin Friction Profile', fontsize=11, fontweight='bold')
     ax.invert_yaxis()
     ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.03)
-    ax.legend(loc='lower right', fontsize=8)
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax)
     return fig
 
 
@@ -939,51 +958,43 @@ def _plot_settlement_profile(result, analysis):
     ax.plot(s_pile, z_np, 's', color='#2563eb', markersize=10, zorder=5,
             label=f'Pile settlement = {s_pile:.2f} mm')
 
-    # Annotations
-    ax.annotate(
-        f'NP: z = {z_np:.2f} m\n'
-        f'S_soil = {s_at_np:.2f} mm\n'
-        f'S_pile = {s_pile:.2f} mm',
-        xy=(s_at_np, z_np),
-        xytext=(max(s_soil) * 0.5 if max(s_soil) > 0 else 1.0,
-                z_np - result.pile_length * 0.10),
+    # NP note at the right, on the plane's line: below the plane the soil
+    # settles less than at it (the curve lies left of the plane's value)
+    _np_note(
+        ax, f'NP: z = {z_np:.2f} m\n'
+            f'S_soil = {s_at_np:.2f} mm\n'
+            f'S_pile = {s_pile:.2f} mm',
+        z_np, below=z_np < 0.85 * result.pile_length, x=0.98, ha='right',
         fontsize=8, fontweight='bold',
-        arrowprops=dict(arrowstyle='->', color='#333', lw=1.0),
         bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                  edgecolor='#333', alpha=0.9),
+                  edgecolor='#333'),
     )
 
     # Pile tip
     ax.axhline(y=result.pile_length, color='#666', linestyle=':',
                linewidth=1, alpha=0.6)
-    ax.text(max(s_soil) * 0.02 if max(s_soil) > 0 else 0.1,
-            result.pile_length + result.pile_length * 0.01,
-            f'Pile tip (L = {result.pile_length:.1f} m)',
-            fontsize=7, color='#666')
+    _tip_label(ax, result.pile_length)
 
-    # Surface settlement annotation
+    # Surface settlement annotation, over the surface left of its point
     if s_soil[0] > 0:
         ax.annotate(
             f'Surface settlement = {s_soil[0]:.1f} mm',
-            xy=(s_soil[0], 0),
-            xytext=(s_soil[0] + max(s_soil) * 0.1, -result.pile_length * 0.03),
-            fontsize=8, color='#d97706',
+            xy=(s_soil[0], 0), xytext=(-6, 4), textcoords='offset points',
+            ha='right', va='bottom', fontsize=8, color='#d97706',
         )
 
     ax.set_xlabel('Settlement (mm)', fontsize=10)
     ax.set_ylabel('Depth (m)', fontsize=10)
-    # the title clear of the surface-settlement note on the axes' top
-    # edge (GM-186)
     ax.set_title('Soil Settlement Profile with Neutral Plane',
-                 fontsize=11, fontweight='bold', pad=16)
+                 fontsize=11, fontweight='bold')
     ax.invert_yaxis()
-    # no settlement at all: the notes sit at x = 1 mm, so the axis runs to
-    # 2 mm (its own range was a hundredth of that, and the notes printed
-    # 80 in off the figure; GM-186)
+    # no settlement at all: the axis runs to 2 mm (its own range was a
+    # hundredth of that; GM-186)
     ax.set_xlim(left=0, right=None if max(s_soil) > 0 else 2.0)
-    ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.03)
-    ax.legend(loc='lower right', fontsize=8)
+    # room over the surface for its note (GM-194)
+    ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.06)
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax)
     return fig

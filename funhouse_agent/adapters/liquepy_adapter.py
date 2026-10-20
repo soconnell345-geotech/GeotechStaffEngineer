@@ -1,7 +1,8 @@
 """liquepy adapter — CPT-based liquefaction triggering and field correlations."""
 
 from funhouse_agent.adapters import (
-    mark_required, apply_aliases, clean_result, declare_aliases, require_params,
+    mark_required, apply_aliases, clean_result, declare_aliases,
+    declare_applies_when, require_params,
 )
 
 
@@ -163,9 +164,9 @@ METHOD_INFO = {
             "gwl": {"type": "float", "brief": "Depth to the water table at the sounding (m below the ground surface). No default: it sets the effective stress that normalises the cone readings, and the groundwater level is a site input."},
             "a_ratio": {"type": "float", "brief": "Cone area ratio.", "default": 0.8},
             "vs_method": {"type": "str", "brief": "Vs correlation method.", "allowed_values": ["mcgann2015", "robertson2009", "andrus2007"], "default": "mcgann2015"},
-            "i_c_limit": {"type": "float", "brief": "Ic limit for sand vs clay classification.", "default": 2.6},
+            "i_c_limit": {"type": "float", "brief": "Ic limit for liquefiable material. Not used by these correlations: it sets only the triggering's CRR, which this tool does not report.", "default": 2.6},
             "p_a": {"type": "float", "brief": "Atmospheric pressure (kPa).", "default": 101.0},
-            "s_g": {"type": "float", "brief": "Specific gravity of solids.", "default": 2.65},
+            "s_g": {"type": "float", "brief": "Specific gravity of solids. Not used here: liquepy reads it only for void-ratio unit weights, and these correlations take Robertson (2009)'s.", "default": 2.65},
             "gamma_predrill": {"type": "float", "brief": "Unit weight above pre-drill depth (kN/m3).", "default": 17.0},
         },
         "returns": {
@@ -187,6 +188,19 @@ mark_required(METHOD_INFO, {
     "field_correlations": ["depth", "q_c", "f_s", "gwl"],
 })
 declare_aliases(METHOD_INFO, {"spt_liquefaction": _SPT_ALIASES})
+
+# When each default applies (GM-184): the cone area ratio only with u2
+# (q_t = q_c + (1 - a) u2), the specific gravity only to void-ratio unit
+# weights; the correlations take neither the Ic limit nor the specific
+# gravity (liquepy's B&I-2014 run reads them for the CRR and void-ratio
+# unit weights, which these correlations never use).
+_U2 = {"u_2": "set"}
+declare_applies_when(METHOD_INFO, {
+    "cpt_liquefaction": {"a_ratio": _U2,
+                         "s_g": {"unit_wt_method": ["void_ratio"]}},
+    "field_correlations": {"a_ratio": _U2, "i_c_limit": False,
+                           "s_g": False},
+})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):

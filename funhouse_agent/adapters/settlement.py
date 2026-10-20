@@ -259,7 +259,7 @@ METHOD_INFO = {
             "Es": {"type": "float", "required": True, "description": "Soil elastic modulus (kPa)."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio."},
             "Iw": {"type": "float", "required": False, "default": 1.0, "description": "Influence factor for footing rigidity/shape."},
-            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "circular"], "description": "Footing shape (for reference; supply Iw for non-default rigidity)."},
+            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "circular"], "description": "Footing shape, for the record only: not used, since Iw carries the shape and rigidity (Se = q B (1 - nu^2) Iw / Es). Give Iw for the footing, e.g. Schleicher's 1.12 at the centre of a flexible square."},
         },
         "returns": {"immediate_settlement_mm": "Settlement in mm."},
     },
@@ -309,7 +309,7 @@ METHOD_INFO = {
         "parameters": {
             "q_applied": {"type": "float", "required": True, "description": "Applied pressure (kPa)."},
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
-            "Es": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa)."},
+            "Es": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa), for the elastic method. Not given: no immediate settlement is computed (0)."},
             "consolidation_layers": {"type": "array", "required": False, "description": "Array of consolidation layer dicts."},
             "schmertmann_layers": {"type": "array", "required": False, "description": "Array of Schmertmann layer dicts."},
             "cv": {"type": "float", "required": False, "description": "Coefficient of consolidation (m2/yr). With consolidation_layers, adds the time curve and t50/t90 to the result."},
@@ -359,11 +359,14 @@ declare_aliases(METHOD_INFO, {
 # given, the secondary time to a run with C_alpha (e0_secondary has no
 # default since GM-142: each layer's own e0, stated in the choices).
 declare_applies_when(METHOD_INFO, {
+    # since GM-184: elastic_settlement takes a shape and does not use it
+    "elastic_settlement": {"shape": False},
     "consolidation_settlement": {
         "stress_method": {"delta_sigma": "unset", "delta_sigmas": "unset"},
     },
     "combined_settlement_analysis": {
         "nu": {"immediate_method": ["elastic"], "Es": "set"},
+        "Es": {"immediate_method": ["elastic"]},
         "time_years_schmertmann": {"immediate_method": ["schmertmann"]},
         "stress_method": {"consolidation_layers": "set"},
         "drainage": {"cv": "set", "consolidation_layers": "set",
@@ -392,5 +395,10 @@ declare_when_absent(METHOD_INFO, {
                "1.12 for a square, growing with L/B; 1.0 for a circle"),
         "e0_secondary": ("each layer's own e0",
                          "the secondary settlement of each consolidation "
-                         "layer uses that layer's void ratio")},
+                         "layer uses that layer's void ratio"),
+        # GM-184: the result's choices already said so
+        "Es": ("no immediate settlement",
+               "the elastic method needs Es, so the immediate settlement "
+               "is not computed (0); give Es, or immediate_method "
+               "'schmertmann' with its layers")},
 })

@@ -9,6 +9,7 @@ Reuses the same preprocessing pipeline as the HTML renderer
 """
 
 import base64
+import math
 import re
 import shutil
 import tempfile
@@ -135,7 +136,8 @@ def _prepare_item(item):
         ns.caption = escape_latex(item.caption)
         ns.image_base64 = item.image_base64
         ns.image_path = ""  # Filled in by _write_figures()
-        ns.width_frac = f"{item.width_percent / 100:.2f}"
+        ns.width_frac = (
+            f"{_printed_width_frac(item.image_base64, item.width_percent):.2f}")
 
     elif itype == "text":
         ns.text = escape_latex(str(item))
@@ -145,6 +147,39 @@ def _prepare_item(item):
 
 #: Column count from which a data table is set compact (see _prepare_item).
 _COMPACT_TABLE_COLS = 7
+
+#: The LaTeX document's text width (inches): a letter page less its 1 in
+#: margins (``latex_template``'s geometry).
+_LATEX_TEXT_WIDTH_IN = 6.5
+
+
+def _printed_width_frac(image_base64: str, width_percent) -> float:
+    """The share of the text width a figure prints at: its
+    ``width_percent``, widened (to the whole text width at most) where that
+    would print its smallest lettering under 7 pt.
+
+    The figure was drawn for the HTML/Story PDF's width
+    (``renderer.FIGURE_PRINT_WIDTH_IN``) and its PNG carries its smallest
+    lettering and the width it was saved at; set at ``width_percent`` of
+    this document's wider text width with no look at that, a figure at 60
+    % printed its 7 pt lettering at about 5.5 pt (BACKLOG GM-195, the rule
+    of GM-186)."""
+    from geotech_common.layout_ink import (LETTERING_KEY, MIN_PRINT_PT,
+                                           parse_lettering, png_texts)
+    frac = width_percent / 100
+    try:
+        found = parse_lettering(png_texts(base64.b64decode(image_base64))
+                                .get(LETTERING_KEY))
+    except Exception:                                      # noqa: BLE001
+        found = {}
+    if not found or found["smallest_pt"] <= 0:
+        return frac
+    at_frac = (found["smallest_pt"] * frac * _LATEX_TEXT_WIDTH_IN
+               / found["saved_width_in"])
+    if at_frac >= MIN_PRINT_PT - 0.05:
+        return frac
+    # rounded up, as the template writes it to two places
+    return min(1.0, math.ceil(frac * MIN_PRINT_PT / at_frac * 100) / 100)
 
 
 def _prepare_sections(sections):

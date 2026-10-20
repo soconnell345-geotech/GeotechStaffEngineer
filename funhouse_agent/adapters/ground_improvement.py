@@ -259,7 +259,7 @@ METHOD_INFO = {
             "N_spt": {"type": "float", "required": False, "description": "Average SPT N in the treatment zone."},
             "cu_kPa": {"type": "float", "required": False, "description": "Average undrained shear strength (kPa)."},
             "thickness_m": {"type": "float", "required": False, "default": 0.0, "description": "Thickness of the compressible/treatable layer (m)."},
-            "depth_to_top_m": {"type": "float", "required": False, "default": 0.0, "description": "Depth to top of the treatable layer (m)."},
+            "depth_to_top_m": {"type": "float", "required": False, "default": 0.0, "description": "Depth to top of the treatable layer (m). Taken and not used by the screening."},
             "required_bearing_kPa": {"type": "float", "required": False, "default": 0.0, "description": "Required bearing capacity (kPa). 0 = not a bearing problem."},
             "current_bearing_kPa": {"type": "float", "required": False, "default": 0.0, "description": "Current (unimproved) bearing capacity (kPa)."},
             "predicted_settlement_mm": {"type": "float", "required": False, "default": 0.0, "description": "Predicted settlement without improvement (mm)."},
@@ -302,5 +302,7 @@ declare_when_absent(METHOD_INFO, {
 for _name in ("cv_m2_per_year", "Hdr_m"):
     METHOD_INFO["feasibility"]["parameters"][_name]["applies_when"] = {
         "time_constraint_months": "set"}
-METHOD_INFO["feasibility"]["parameters"]["gwt_depth_m"]["applies_when"] = \
-    False
+# The water table and, since GM-184, the depth to the treatable layer are
+# taken and not used by the screening.
+for _name in ("gwt_depth_m", "depth_to_top_m"):
+    METHOD_INFO["feasibility"]["parameters"][_name]["applies_when"] = False

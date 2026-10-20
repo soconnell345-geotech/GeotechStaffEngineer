@@ -478,6 +478,57 @@ class TestSaveLatex:
         assert r"\documentclass" in content
 
 
+# ── Figure widths: lettering 7 pt or more as printed (GM-195) ────────
+
+class TestFigurePrintedWidth:
+    """A figure is drawn for the HTML/Story PDF's 5 in and its PNG says its
+    smallest lettering; the LaTeX page (6.5 in text) sets it at its
+    ``width_percent`` unless that prints the lettering under 7 pt."""
+
+    @staticmethod
+    def _figure(width_percent, smallest_pt=None):
+        import base64
+
+        from geotech_common.layout_ink import LETTERING_KEY, png_with_text
+        png = (b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR" + b"\x00" * 17
+               + b"\x00\x00\x00\x00IEND\xaeB`\x82")
+        if smallest_pt is not None:
+            png = png_with_text(png, LETTERING_KEY,
+                                f"smallest {smallest_pt} pt at 5.0 in wide")
+        return FigureData(title="F", image_base64=base64.b64encode(png)
+                          .decode(), width_percent=width_percent)
+
+    def test_narrow_share_widened_to_7_pt(self):
+        # 7 pt at 5 in, set 60 % of 6.5 in = 3.9 in: 5.5 pt as printed
+        frac = float(_prepare_item(self._figure(60, 7.0)).width_frac)
+        assert frac * 6.5 * 7.0 / 5.0 >= 7.0
+        assert frac == pytest.approx(0.77)
+
+    def test_wide_share_kept(self):
+        assert _prepare_item(self._figure(85, 7.0)).width_frac == "0.85"
+
+    def test_no_lettering_record_keeps_the_share(self):
+        assert _prepare_item(self._figure(60)).width_frac == "0.60"
+
+    def test_never_wider_than_the_text(self):
+        assert _prepare_item(self._figure(60, 4.0)).width_frac == "1.00"
+
+    def test_a_package_figure_from_figure_to_base64(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from calc_package.renderer import figure_to_base64
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot([0, 1], [0, 1])
+        ax.set_xlabel("Depth (m)", fontsize=7)
+        b64 = figure_to_base64(fig)
+        plt.close(fig)
+        item = _prepare_item(FigureData(title="F", image_base64=b64,
+                                        width_percent=60))
+        assert float(item.width_frac) > 0.60
+
+
 # ── PDF compilation (conditional) ────────────────────────────────────
 
 _HAS_PDFLATEX = shutil.which("pdflatex") is not None

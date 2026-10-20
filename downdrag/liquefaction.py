@@ -35,6 +35,7 @@ All units SI: m, kN, kPa; volumetric strain as a decimal.
 """
 
 import math
+import re
 from dataclasses import dataclass, field, fields
 from typing import Any, List, Optional, Sequence
 
@@ -61,10 +62,17 @@ DEFAULT_SIDE_RESISTANCE = "half_pre_earthquake"
 #: (FSliq <= 1.0)".
 DEFAULT_FS_LIQ_THRESHOLD = 1.0
 
-#: Each option as its reference words it, where, and what it assumes.
+#: Up to this many liquefied zones are named one by one in the warnings and
+#: the choices (and listed in full in the tool's result); more are counted
+#: (GM-207: a noisy CPT gives twenty, most a few readings thick).
+MAX_ZONES_LISTED = 6
+
+#: Each option as its reference words it, where (``cite``: the short form,
+#: for a choice's basis and a compact table), and what it assumes.
 _SIDE = {
     "half_pre_earthquake": {
         "name": "50 percent of the pre-earthquake side resistance",
+        "cite": "FHWA GEC-10 §10.7, p. 10-52 (Rollins et al. 2018)",
         "source": ("FHWA GEC-10 §10.7, p. 10-52 (Rollins et al. 2018): "
                    "'Drag loads imposed by previously liquefied layers "
                    "should be computed as 50 percent of the pre-earthquake "
@@ -82,6 +90,8 @@ _SIDE = {
     },
     "zero": {
         "name": "Zero side resistance in the liquefied layers",
+        "cite": ("FHWA GEC-10 §10.7, p. 10-51; UFC 3-220-20 Table 6-49 "
+                 "(p. 501)"),
         "source": ("FHWA GEC-10 §10.7, p. 10-51: resistance of liquefied "
                    "soil 'can be taken as zero for practical purposes when "
                    "evaluating the Extreme Event I limit state' (Rollins et "
@@ -96,6 +106,8 @@ _SIDE = {
     },
     "residual_strength": {
         "name": "Post-liquefaction residual strength su,r",
+        "cite": ("FHWA GEC-10 §10.7, p. 10-51; FHWA GEC-12 §7.4.2.2, p. 383; "
+                 "su,r by GEC-10 Eq 9-13 (p. 9-43)"),
         "source": ("FHWA GEC-10 §10.7, p. 10-51: 'A lower bound side "
                    "resistance should be taken as equal to the "
                    "post-liquefaction residual undrained strength of the "
@@ -111,6 +123,7 @@ _SIDE = {
     },
     "ratio": {
         "name": "A fraction of the pre-earthquake side resistance (given)",
+        "cite": "liquefied_side_resistance_ratio as given",
         "source": ("liquefied_side_resistance_ratio as given; GEC-10 §10.7 "
                    "(p. 10-52) uses 0.5"),
         "assumptions": (
@@ -119,6 +132,10 @@ _SIDE = {
             "plane and as resistance below it."),
     },
 }
+
+#: Each option's short citation, for a compact table (the full source is
+#: in its row of ``side_resistance_comparison``).
+SIDE_RESISTANCE_CITES = {k: v["cite"] for k, v in _SIDE.items()}
 
 _GEC10_TOE = ("FHWA GEC-10 §10.7, p. 10-51: 'In no case should a drilled "
               "shaft be designed with its tip bearing immediately above or "
@@ -247,11 +264,15 @@ def liquefied_layer(item: Any) -> LiquefiedLayer:
 
 
 def _readings(result: Any):
-    """``(depth, fs_liq, strain or None, N1_60 or None)`` lists from a
-    liquefaction result: the ``liquefaction`` tool's SPT output
-    (``layer_results`` rows with ``depth_m``, ``FOS_liq`` and ``N1_60`` or
-    ``N160``), or a profile with ``depth`` and ``factor_of_safety`` arrays
-    (and ``volumetric_strain``), as a dict or as the CPT result object."""
+    """``(depth, fs_liq, strain or None, N1_60 or None, bounds or None)``
+    lists from a liquefaction result: the ``liquefaction`` tool's CPT
+    output (``depth_profile`` rows with ``top_m``, ``bottom_m``,
+    ``FOS_liq`` and ``volumetric_strain``: ``bounds`` are then their
+    ``(top, bottom)``), its SPT output (``layer_results`` rows with
+    ``depth_m``, ``FOS_liq`` and ``N1_60`` or ``N160``), either list of
+    rows on its own, or a profile with ``depth`` and ``factor_of_safety``
+    arrays (and ``volumetric_strain``), as a dict or as the CPT result
+    object."""
     def get(name):
         if isinstance(result, dict):
             return result.get(name)
@@ -260,16 +281,38 @@ def _readings(result: Any):
     def num(v):
         return None if v is None else float(v)
 
-    rows = get("layer_results")
+    def fs_of(r):
+        f = num(r.get("FOS_liq", r.get("fos")))
+        return math.nan if f is None else f
+
+    if isinstance(result, (list, tuple)) and result and all(
+            isinstance(r, dict) for r in result):
+        rows = list(result)
+        bands = "top_m" in rows[0]
+    else:
+        bands = bool(get("depth_profile"))
+        rows = get("depth_profile") or get("layer_results")
+    if rows and bands:
+        depth, fs, strain, bounds = [], [], [], []
+        for r in rows:
+            if r.get("top_m") is None or r.get("bottom_m") is None:
+                raise ValueError(
+                    "liquefaction_result: each depth_profile row needs "
+                    "top_m and bottom_m")
+            top, bottom = float(r["top_m"]), float(r["bottom_m"])
+            bounds.append((top, bottom))
+            depth.append(0.5 * (top + bottom))
+            fs.append(fs_of(r))
+            strain.append(num(r.get("volumetric_strain")))
+        return depth, fs, strain, [None] * len(depth), bounds
     if rows:
         depth, fs, strain, n = [], [], [], []
         for r in rows:
             depth.append(float(r["depth_m"]))
-            f = num(r.get("FOS_liq", r.get("fos")))
-            fs.append(math.nan if f is None else f)
+            fs.append(fs_of(r))
             strain.append(num(r.get("volumetric_strain")))
             n.append(num(r.get("N1_60", r.get("N160"))))
-        return depth, fs, strain, n
+        return depth, fs, strain, n, None
     depth = get("depth")
     fos = get("factor_of_safety")
     if fos is None:
@@ -277,9 +320,10 @@ def _readings(result: Any):
     if depth is None or fos is None:
         raise ValueError(
             "liquefaction_result: expected the liquefaction tool's output "
-            "(layer_results with depth_m and FOS_liq) or a profile with "
-            "depth and factor_of_safety; the CPT route of the tool returns "
-            "only LPI/LSN/LDI, so give liquefied_layers for a CPT")
+            "(depth_profile rows with top_m, bottom_m, FOS_liq and "
+            "volumetric_strain from a CPT; layer_results with depth_m and "
+            "FOS_liq from SPT) or a profile with depth and "
+            "factor_of_safety")
     depth = [float(x) for x in np.asarray(depth, dtype=float).ravel()]
     fos = [float(x) for x in np.asarray(fos, dtype=float).ravel()]
     if len(depth) != len(fos):
@@ -290,7 +334,7 @@ def _readings(result: Any):
         strain = [float(x) for x in np.asarray(vs, dtype=float).ravel()]
     else:
         strain = [None] * len(depth)
-    return depth, fos, strain, [None] * len(depth)
+    return depth, fos, strain, [None] * len(depth), None
 
 
 def liquefied_layers_from_result(result: Any, volumetric_strain=None,
@@ -304,15 +348,21 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
     §9.4.2.2, p. 9-42: "layers predicted to undergo liquefaction (FSliq ≤
     1.0)"). Each reading stands for the depth halfway to its neighbours
     (the first and last half a spacing beyond their reading, the first not
-    above the ground surface, the last not below ``profile_depth``), and
-    not above ``water_table``: soil above the water table does not
-    liquefy.
+    above the ground surface, the last not below ``profile_depth``), or,
+    for the ``liquefaction`` tool's CPT ``depth_profile`` rows, for its
+    own ``top_m`` to ``bottom_m`` (the last not below ``profile_depth``);
+    and not above ``water_table``: soil above the water table does not
+    liquefy. A banded row counts by its ``FOS_liq``, the band's lowest
+    reading on its side of 1.0, so at a threshold other than 1.0 a band
+    is all liquefied or all not.
 
     The reconsolidation strain is the result's own (a CPT profile from
     liquepy carries Zhang et al. 2002's) or ``volumetric_strain``: one
-    decimal for every liquefied reading, or one per reading in the
+    decimal for every liquefied reading, or one per reading (row) in the
     result's order, which replaces the result's. The tool's SPT routes
-    compute none, so it must then be given.
+    compute none and no reference in the library prints an SPT method
+    (GEC-10 §10.7 names Ishihara and Yoshimine 1992 without printing it),
+    so it must then be given.
 
     Returns
     -------
@@ -324,12 +374,14 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
     if fs_liq_threshold is None or not fs_liq_threshold > 0:
         raise ValueError(f"fs_liq_threshold must be positive, got "
                          f"{fs_liq_threshold!r}")
-    depth, fs, strain, n160 = _readings(result)
-    if len(depth) < 2:
+    depth, fs, strain, n160, bounds = _readings(result)
+    if bounds is None and len(depth) < 2:
         raise ValueError(
             "liquefaction_result has fewer than two readings, so the depth "
             "each stands for is not known: give liquefied_layers (top, "
             "bottom, volumetric_strain) instead")
+    if not depth:
+        raise ValueError("liquefaction_result has no readings")
     order = sorted(range(len(depth)), key=lambda i: depth[i])
     if volumetric_strain is not None:
         if isinstance(volumetric_strain, (list, tuple, np.ndarray)):
@@ -345,16 +397,27 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
             one = float(volumetric_strain)
             strain = [one if math.isfinite(f) and f <= fs_liq_threshold
                       else None for f in fs]
-    z = [depth[i] for i in order]
-    edges = [max(0.0, z[0] - 0.5 * (z[1] - z[0]))]
-    edges += [0.5 * (a + b) for a, b in zip(z[:-1], z[1:])]
-    last = z[-1] + 0.5 * (z[-1] - z[-2])
-    if profile_depth is not None:
-        last = min(last, float(profile_depth))
-    edges.append(last)
+    if bounds is not None:
+        spans = [list(bounds[i]) for i in order]
+        for (_, b0), (t1, _) in zip(spans[:-1], spans[1:]):
+            if t1 < b0 - 1e-9:
+                raise ValueError(
+                    f"liquefaction_result: depth_profile rows overlap at "
+                    f"{t1:g}-{b0:g} m")
+        if profile_depth is not None and spans[-1][0] < float(profile_depth):
+            spans[-1][1] = min(spans[-1][1], float(profile_depth))
+    else:
+        z = [depth[i] for i in order]
+        edges = [max(0.0, z[0] - 0.5 * (z[1] - z[0]))]
+        edges += [0.5 * (a + b) for a, b in zip(z[:-1], z[1:])]
+        last = z[-1] + 0.5 * (z[-1] - z[-2])
+        if profile_depth is not None:
+            last = min(last, float(profile_depth))
+        edges.append(last)
+        spans = [[a, b] for a, b in zip(edges[:-1], edges[1:])]
     layers, left_out = [], 0.0
     for k, i in enumerate(order):
-        top, bottom = edges[k], edges[k + 1]
+        top, bottom = spans[k]
         if water_table is not None:
             top = max(top, float(water_table))
         if bottom <= top:
@@ -370,15 +433,39 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
             raise ValueError(
                 f"the liquefaction result gives no post-liquefaction "
                 f"volumetric strain at {depth[i]:g} m (FS_liq {f:.2f}); the "
-                f"tool's SPT routes compute none. Give volumetric_strain "
+                f"tool's SPT routes compute none, and no reference in the "
+                f"library prints an SPT method (GEC-10 §10.7 names Ishihara "
+                f"and Yoshimine (1992), as Idriss and Boulanger (2008) "
+                f"describe it, without printing it). Give volumetric_strain "
                 f"(decimal: one value for every liquefied reading, or one "
-                f"per reading), from Ishihara and Yoshimine (1992) as "
-                f"Idriss and Boulanger (2008) describe it (GEC-10 §10.7), "
-                f"or give liquefied_layers")
+                f"per reading) and say where it comes from, or give "
+                f"liquefied_layers; a CPT gives its own (the liquefaction "
+                f"tool's depth_profile)")
         layers.append(LiquefiedLayer(top=top, bottom=bottom,
                                      volumetric_strain=eps, N1_60=n160[i],
                                      fs_liq=f))
     return layers, left_out
+
+
+def _strain_basis(result: Any) -> str:
+    """Where a liquefaction result's own strains come from, as far as the
+    result says: the ``liquefaction`` tool's CPT route (and liquepy's CPT
+    result) computes them by Zhang et al. (2002)."""
+    rows = isinstance(result, dict) and result.get("depth_profile")
+    if (rows or (isinstance(result, (list, tuple)) and result
+                 and isinstance(result[0], dict) and "top_m" in result[0])
+            or hasattr(result, "q_c1n_cs")):
+        out = ("Zhang et al. (2002) (Can. Geotech. J. 39, doi "
+               "10.1139/t02-047) from FS_liq and qc1Ncs, as the "
+               "liquefaction tool's CPT route (liquepy) computes it; GEC-10 "
+               "§10.7 names Ishihara and Yoshimine (1992), as Idriss and "
+               "Boulanger (2008) describe it")
+        note = isinstance(result, dict) and result.get("depth_profile_note")
+        if note:
+            out += (". The CPT profile came in depth bands: "
+                    "each band's strain is its average")
+        return out
+    return "as the liquefaction result gives it"
 
 
 def _zones(layers: Sequence[LiquefiedLayer]) -> List[List[LiquefiedLayer]]:
@@ -437,6 +524,12 @@ class _AfterLiquefaction(DowndragAnalysis):
             lo = z > s.top or (s.top <= tol and z >= -tol)
             hi = z < s.bottom or (s.bottom >= L - tol and z <= L + tol)
             if lo and hi:
+                return s
+        # a node on the boundary between two liquefied layers of one zone
+        # is inside the zone (GM-201: until then it kept its static value)
+        for s in self.liquefied:
+            if abs(z - s.bottom) <= tol and any(
+                    abs(t.top - s.bottom) <= tol for t in self.liquefied):
                 return s
         return None
 
@@ -515,9 +608,26 @@ class _AfterLiquefaction(DowndragAnalysis):
         return max(found) if found else None
 
 
-#: The numbers each before / after row reports.
-_ROW_KEYS = ("neutral_plane_depth_m", "max_pile_load_kN", "dragload_kN",
-             "drag_force_kN", "pile_settlement_mm")
+#: The numbers each side-resistance row reports (the headline method's).
+_ROW_KEYS = ("neutral_plane_depth_m", "drag_force_kN", "max_pile_load_kN",
+             "pile_settlement_mm", "soil_settlement_at_np_mm")
+
+#: The numbers each by_method row reports in both states, as the static
+#: comparison row names them and as by_method names them ({} = the state).
+_BY_METHOD_KEYS = (("neutral_plane_depth_m", "neutral_plane_{}_m"),
+                   ("drag_force_kN", "drag_force_{}_kN"),
+                   ("max_pile_load_kN", "max_pile_load_{}_kN"),
+                   ("pile_settlement_mm", "pile_settlement_{}_mm"))
+
+#: The numbers by_method reports after liquefaction only: the parts of the
+#: neutral plane and settlement of each method.
+_AFTER_ONLY_KEYS = (("toe_force_kN", "toe_force_after_kN"),
+                    ("soil_settlement_at_np_mm",
+                     "soil_settlement_at_np_after_mm"),
+                    ("pile_settlement_at_np_mm",
+                     "pile_settlement_at_np_after_mm"),
+                    ("elastic_compression_above_np_mm",
+                     "elastic_compression_above_np_after_mm"))
 
 
 @dataclass
@@ -534,7 +644,6 @@ class PostLiquefactionResult:
     reconsolidation_settlement: float
     reconsolidation_below_toe: float
     post_liquefaction_basis: str
-    limit_states_note: str
     warnings: list = field(default_factory=list)
     choices: list = field(default_factory=list)
     fs_liq_threshold: Optional[float] = None
@@ -571,13 +680,16 @@ class PostLiquefactionResult:
             "--- Liquefied zones ---",
         ]
         for zrow in self.liquefied_zones:
+            where = zrow["position"]
+            if where != "below the pile toe":
+                where += (f" the neutral plane before the earthquake "
+                          f"({b.neutral_plane_depth:.2f} m)")
             lines.append(
                 f"  {zrow['top_m']:.2f}-{zrow['bottom_m']:.2f} m: strain "
                 f"{zrow['volumetric_strain'] * 100:.2f} %, settlement "
                 f"{zrow['reconsolidation_settlement_mm']:.1f} mm, side "
                 f"resistance {zrow['side_resistance_before_kN']:.0f} -> "
-                f"{zrow['side_resistance_after_kN']:.0f} kN; "
-                f"{zrow['position']}")
+                f"{zrow['side_resistance_after_kN']:.0f} kN; {where}")
         lines += ["", "--- Side resistance of the liquefied layers (each "
                   "option, same headline method) ---"]
         for r in self.side_resistance_comparison:
@@ -616,8 +728,7 @@ class PostLiquefactionResult:
                           f"{'PASS' if a.settlement_ok else 'FAIL'}")
         if checks:
             lines += ["", "--- Limit states after liquefaction ---", *checks]
-        lines += ["", self.limit_states_note, "",
-                  "--- Basis ---", self.post_liquefaction_basis]
+        lines += ["", "--- Basis ---", self.post_liquefaction_basis]
         if self.warnings:
             lines += ["", "--- Warnings ---"]
             lines += [f"* {w}" for w in self.warnings]
@@ -626,6 +737,14 @@ class PostLiquefactionResult:
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
+        """Every number once (GM-207): the headline before and after, then
+        the liquefied zones, each side-resistance option (its source and
+        assumptions), every neutral-plane method in both states
+        (``by_method``: its source and assumptions, and after liquefaction
+        its toe force and the parts of its settlement), the choices, and in
+        ``after`` what only the headline after liquefaction has: the
+        resistance below its plane, the settlement below the toe and the
+        depth profiles."""
         b, a = self.before, self.after
         d = {
             "post_liquefaction_basis": self.post_liquefaction_basis,
@@ -635,45 +754,56 @@ class PostLiquefactionResult:
             "side_resistance_name": self.side_resistance_name,
             "headline_method_before": b.headline_method,
             "headline_method_after": a.headline_method,
-            "neutral_plane_before_m": b.neutral_plane_depth,
-            "neutral_plane_after_m": a.neutral_plane_depth,
-            "drag_force_before_kN": b.drag_force,
-            "drag_force_after_kN": a.drag_force,
-            "max_pile_load_before_kN": b.max_pile_load,
-            "max_pile_load_after_kN": a.max_pile_load,
-            "dragload_after_kN": a.dragload,
-            "pile_settlement_before_mm": b.pile_settlement * 1000.0,
-            "pile_settlement_after_mm": a.pile_settlement * 1000.0,
+            "neutral_plane_before_m": round(b.neutral_plane_depth, 3),
+            "neutral_plane_after_m": round(a.neutral_plane_depth, 3),
+            "drag_force_before_kN": round(b.drag_force, 1),
+            "drag_force_after_kN": round(a.drag_force, 1),
+            "max_pile_load_before_kN": round(b.max_pile_load, 1),
+            "max_pile_load_after_kN": round(a.max_pile_load, 1),
+            "pile_settlement_before_mm": round(b.pile_settlement * 1000.0, 2),
+            "pile_settlement_after_mm": round(a.pile_settlement * 1000.0, 2),
+            "toe_settlement_before_mm": round(b.toe_settlement * 1000.0, 2),
+            "toe_settlement_after_mm": round(a.toe_settlement * 1000.0, 2),
             "reconsolidation_settlement_mm":
-                self.reconsolidation_settlement * 1000.0,
+                round(self.reconsolidation_settlement * 1000.0, 2),
             "reconsolidation_below_toe_mm":
-                self.reconsolidation_below_toe * 1000.0,
-            "liquefied_zones": self.liquefied_zones,
-            "side_resistance_comparison": self.side_resistance_comparison,
-            "by_method": self.by_method,
-            "limit_states_note": self.limit_states_note,
-            "choices": [dict(c) for c in self.choices],
+                round(self.reconsolidation_below_toe * 1000.0, 2),
         }
-        if self.fs_liq_threshold is not None:
-            d["fs_liq_threshold"] = self.fs_liq_threshold
+        if a.include_pile_weight:
+            # the drag force carries the pile weight above the plane
+            d["dragload_before_kN"] = round(b.dragload, 1)
+            d["dragload_after_kN"] = round(a.dragload, 1)
         if a.structural_ok is not None:
             d["structural_ok"] = a.structural_ok
-            d["structural_demand_kN"] = a.structural_demand
+            d["structural_demand_kN"] = round(a.structural_demand, 1)
         if a.geotechnical_ok is not None:
             d["geotechnical_ok"] = a.geotechnical_ok
         if a.settlement_ok is not None:
             d["settlement_ok"] = a.settlement_ok
-        d["before"] = {
-            "neutral_plane_depth_m": b.neutral_plane_depth,
-            "headline_method": b.headline_method,
-            "neutral_plane_basis": b.neutral_plane_basis,
-            "methods_range": b.methods_range,
-            "drag_force_kN": b.drag_force,
-            "max_pile_load_kN": b.max_pile_load,
-            "pile_settlement_m": b.pile_settlement,
-            "warnings": list(b.warnings),
+        d["neutral_plane_basis"] = a.neutral_plane_basis
+        if b.neutral_plane_basis != a.neutral_plane_basis:
+            d["neutral_plane_basis_before"] = b.neutral_plane_basis
+        d["liquefied_zones"] = [dict(z) for z in self.liquefied_zones]
+        d["side_resistance_comparison"] = [
+            dict(r) for r in self.side_resistance_comparison]
+        d["by_method"] = [dict(r) for r in self.by_method]
+        d["choices"] = [dict(c) for c in self.choices]
+        after = {
+            "positive_skin_friction_kN": round(a.positive_skin_friction, 1),
+            "toe_resistance_kN": round(a.toe_resistance, 1),
+            "total_resistance_kN": round(a.total_resistance, 1),
         }
-        d["after"] = a.to_dict()
+        if a.include_pile_weight:
+            after["pile_weight_to_np_kN"] = round(a.pile_weight_to_np, 1)
+        after["below_toe"] = a.below_toe_rounded()
+        for key, values in (("z_m", a.z),
+                            ("axial_load_kN", a.axial_load),
+                            ("soil_settlement_mm",
+                             np.asarray(a.soil_settlement_profile) * 1000.0),
+                            ("unit_skin_friction_kPa",
+                             a.unit_skin_friction)):
+            after[key] = [round(float(v), 3) for v in values]
+        d["after"] = after
         return d
 
 
@@ -699,8 +829,7 @@ _FOLLOW_SETTLEMENT = ("settlement_compatibility", "bearing_layer_top")
 _COUNTS_AS_DRAG = {
     "force_equilibrium": (
         "force equilibrium (UFC 3-220-20 §6-7.4) counts all the friction "
-        "above the intersection of the load and resistance curves as "
-        "negative"),
+        "above the intersection of the load and resistance curves as drag"),
     "pile_toe": ("the plane at the pile toe counts the whole shaft (GEC-12 "
                  "§7.3.5.7: the upper bound)"),
     "endo": ("Endo et al. (1969) sets the plane at a fixed fraction of the "
@@ -710,11 +839,12 @@ _COUNTS_AS_DRAG = {
 
 def _method_spread_notes(before: DowndragResult, after: DowndragResult,
                          after_analysis: DowndragAnalysis,
-                         by_method: list) -> list:
-    """Plain words on why the methods' drag forces differ so much: before
-    the earthquake when nothing settles, and after it when the headline
-    plane lies below the soil that settles."""
-    notes = []
+                         by_method: list) -> tuple:
+    """Plain words, in one note, on why the methods' drag forces differ so
+    much: before the earthquake when nothing settles, and after it when the
+    headline plane lies below the soil that settles. Returns the notes and
+    whether the second was said."""
+    kinds, parts, names = [], [], []
     if not np.any(np.asarray(before.soil_settlement_profile) > 0):
         rows = [r for r in by_method
                 if r["method"] not in _FOLLOW_SETTLEMENT
@@ -723,40 +853,75 @@ def _method_spread_notes(before: DowndragResult, after: DowndragResult,
         if rows:
             kinds = [k for k in _COUNTS_AS_DRAG
                      if any(r["method"] == k for r in rows)]
-            notes.append(
-                "Before the earthquake no soil settles in this model, yet "
-                "these methods give a drag force: "
-                + "; ".join(f"{r['name']} {r['drag_force_before_kN']:.0f} "
-                            f"kN at {r['neutral_plane_before_m']:.2f} m"
-                            for r in rows)
-                + ". They do not follow the soil settlement: "
-                + "; ".join(_COUNTS_AS_DRAG[k] for k in kinds)
-                + ". The methods that follow it give no drag before the "
-                "earthquake. Compare before and after within one method.")
-    if after.neutral_plane_method != "force_equilibrium":
-        return notes
-    z_se = float(after_analysis._state()["z_se"])
-    z_np = float(after.neutral_plane_depth)
-    follow = [r for r in by_method
-              if r["method"] in _FOLLOW_SETTLEMENT and r["applies_after"]
-              and r["drag_force_after_kN"] < after.drag_force - 0.5]
-    if z_np > z_se + 1e-6 and follow:
-        notes.append(
-            f"Why the methods differ so much after liquefaction (how each "
-            f"defines the neutral plane, not an error): the headline, "
-            f"{after.headline_method}, puts the plane where the load and "
-            f"resistance curves meet ({z_np:.2f} m) and counts all the "
-            f"friction above it as drag ({after.drag_force:.0f} kN), "
-            f"{z_np - z_se:.2f} m of it below {z_se:.2f} m, where the soil "
-            f"settles less than the pile: UFC 3-220-20 §6-7.4's "
-            f"conservative assumption for the structural drag force. "
-            + "; ".join(f"{r['name']} gives {r['drag_force_after_kN']:.0f} "
-                        f"kN at {r['neutral_plane_after_m']:.2f} m"
-                        for r in follow)
-            + ": drag only where the soil settles more than the pile. "
-            "GEC-10 §10.7 names the drag of the liquefied layers and of "
-            "the layers above them; it says nothing of the soil below.")
-    return notes
+            parts.append(
+                "Before the earthquake no soil settles in this model, so "
+                "only the others give a drag force.")
+    if after.neutral_plane_method == "force_equilibrium":
+        z_se = float(after_analysis._state()["z_se"])
+        z_np = float(after.neutral_plane_depth)
+        follow = [r for r in by_method
+                  if r["method"] in _FOLLOW_SETTLEMENT and r["applies_after"]
+                  and r["drag_force_after_kN"] < after.drag_force - 0.5]
+        if z_np > z_se + 1e-6 and follow:
+            kinds = [k for k in _COUNTS_AS_DRAG
+                     if k in kinds or k == "force_equilibrium"]
+            names = [r["name"] for r in follow]
+            parts.append(
+                f"After liquefaction {z_np - z_se:.2f} m of the headline "
+                f"method's drag lies below {z_se:.2f} m, where the soil "
+                f"settles less than the pile: UFC 3-220-20 §6-7.4's "
+                f"conservative assumption for the drag force (not for "
+                f"settlement, §6-5.8.4.2: see the 50% and 0% toe "
+                f"mobilization rows). GEC-10 §10.7 names the drag of the "
+                f"liquefied layers and of the layers above them, not of the "
+                f"soil below.")
+    if not parts:
+        return [], False
+    note = (
+        "Why the methods differ so much (how each defines the neutral "
+        "plane, not an error): "
+        + "; ".join(_COUNTS_AS_DRAG[k] for k in kinds)
+        + ", settling or not; the methods that follow the settlement"
+        + (f" ({'; '.join(names)})" if names else "")
+        + " count drag only where the soil settles more than the pile. "
+        + " ".join(parts)
+        + " Compare before and after within one method.")
+    return [note], bool(names)
+
+
+#: How the static analysis's warning on the force-equilibrium plane below
+#: the settling soil begins: the note above says it for the state after
+#: liquefaction, so that warning is not repeated.
+_PLANE_BELOW_SETTLING = ("The neutral plane where the load and resistance "
+                         "curves intersect")
+
+
+def _numbers_out(text: str) -> str:
+    return re.sub(r"\d+(\.\d+)?", "#", text)
+
+
+def _state_warnings(before: DowndragResult, after: DowndragResult,
+                    said_after: bool) -> list:
+    """The static analysis's warnings in each state, each once: one the
+    two states share unprefixed (with the numbers after liquefaction where
+    only its numbers differ), the others prefixed with their state."""
+    b = list(before.warnings)
+    a = [w for w in after.warnings
+         if not (said_after and w.startswith(_PLANE_BELOW_SETTLING))]
+    b_shape = {_numbers_out(w) for w in b}
+    a_shape = {_numbers_out(w) for w in a}
+    out = []
+    for w in a:
+        if w in b:
+            out.append(w)
+        elif _numbers_out(w) in b_shape:
+            out.append(f"Before and after liquefaction (the numbers after): "
+                       f"{w}")
+        else:
+            out.append(f"After liquefaction: {w}")
+    out += [f"Before the earthquake: {w}" for w in b
+            if _numbers_out(w) not in a_shape]
+    return out
 
 
 def post_liquefaction_downdrag(
@@ -782,12 +947,15 @@ def post_liquefaction_downdrag(
         ``volumetric_strain`` or ``settlement``, optional ``su_r``,
         ``N1_60``, ``fs_liq``). Give this or ``liquefaction_result``.
     liquefaction_result : dict or object, optional
-        The ``liquefaction`` tool's output (SPT ``layer_results``) or a
-        profile with ``depth``, ``factor_of_safety`` and
-        ``volumetric_strain`` (liquepy's CPT result).
+        The ``liquefaction`` tool's output (CPT ``depth_profile``, with its
+        strains; SPT ``layer_results``) or a profile with ``depth``,
+        ``factor_of_safety`` and ``volumetric_strain`` (liquepy's CPT
+        result).
     volumetric_strain : float or list, optional
         Reconsolidation strain (decimal) for the readings of
-        ``liquefaction_result``: one value, or one per reading.
+        ``liquefaction_result``: one value, or one per reading. Needed for
+        the SPT routes, which compute none (no reference in the library
+        prints an SPT method).
     fs_liq_threshold : float
         A reading liquefies where FS_liq <= this. Default 1.0 (GEC-10
         §9.4.2.2, p. 9-42).
@@ -818,7 +986,8 @@ def post_liquefaction_downdrag(
         raise ValueError(
             "give the liquefied layers one way: liquefied_layers (top, "
             "bottom, volumetric_strain) or liquefaction_result (the "
-            "liquefaction tool's output, with volumetric_strain)")
+            "liquefaction tool's output: a CPT's carries its strains, an "
+            "SPT's needs volumetric_strain)")
     profile_depth = float(analysis.soil.total_depth)
     left_out = 0.0
     if liquefied_layers is not None:
@@ -877,12 +1046,10 @@ def post_liquefaction_downdrag(
     rows, runs = [], {}
     for key in keys:
         spec = _SIDE[key]
-        row = {"name": spec["name"], "option": key,
+        row = {"option": key, "name": spec["name"],
                "source": spec["source"], "assumptions": spec["assumptions"],
                "applies": False, "used": key == chosen, "reason": "",
-               "headline_method": None,
-               **{k: None for k in _ROW_KEYS},
-               "soil_settlement_at_np_mm": None}
+               **{k: None for k in _ROW_KEYS}}
         rows.append(row)
         why = _available(key, layers, ratio)
         if why:
@@ -904,15 +1071,16 @@ def post_liquefaction_downdrag(
         runs[key] = (after_analysis, res)
         row.update({
             "applies": True,
-            "headline_method": res.headline_method,
             "neutral_plane_depth_m": round(res.neutral_plane_depth, 3),
-            "max_pile_load_kN": round(res.max_pile_load, 1),
-            "dragload_kN": round(res.dragload, 1),
             "drag_force_kN": round(res.drag_force, 1),
+            "max_pile_load_kN": round(res.max_pile_load, 1),
             "pile_settlement_mm": round(res.pile_settlement * 1000.0, 2),
             "soil_settlement_at_np_mm":
                 round(res.soil_settlement_at_np * 1000.0, 2),
         })
+        if res.include_pile_weight:
+            # the drag force carries the pile weight above the plane
+            row["dragload_kN"] = round(res.dragload, 1)
     after_analysis, after = runs[chosen]
 
     # The liquefied zones: settlement, side resistance before and after,
@@ -928,17 +1096,15 @@ def post_liquefaction_downdrag(
         top, bottom = zone[0].top, zone[-1].bottom
         settle = sum(s.settlement for s in zone)
         fs_vals = [s.fs_liq for s in zone if s.fs_liq is not None]
+        # against the headline plane before (neutral_plane_before_m)
         if top >= L - 1e-9:
             where = "below the pile toe"
         elif bottom <= z_np0 + 1e-9:
-            where = (f"above the neutral plane before the earthquake "
-                     f"({z_np0:.2f} m)")
+            where = "above"
         elif top >= z_np0 - 1e-9:
-            where = (f"below the neutral plane before the earthquake "
-                     f"({z_np0:.2f} m)")
+            where = "below"
         else:
-            where = (f"across the neutral plane before the earthquake "
-                     f"({z_np0:.2f} m)")
+            where = "across"
         lo, hi = top, min(bottom, L)
         zones.append({
             "top_m": round(top, 3), "bottom_m": round(bottom, 3),
@@ -960,23 +1126,28 @@ def post_liquefaction_downdrag(
     recon_total = float(sum(s.settlement for s in layers))
     below_toe = after_analysis.reconsolidation_below_toe()
 
-    # Every neutral-plane method, before and after
+    # Every neutral-plane method, before and after: one row a method, its
+    # source and assumptions once (GM-207: no second table in "after")
     by_method = []
     old = {r["name"]: r for r in before.comparison_rows()}
     for r in after.comparison_rows():
         o = old.get(r["name"], {})
         entry = {"name": r["name"], "method": r["method"],
                  "toe_mobilization": r["toe_mobilization"],
+                 "source": r.get("source", ""),
+                 "assumptions": r.get("assumptions", ""),
+                 "used": bool(r.get("used")),
                  "applies_before": bool(o.get("applies")),
                  "applies_after": bool(r["applies"])}
         for state, src in (("before", o), ("after", r)):
-            entry[f"neutral_plane_{state}_m"] = src.get(
-                "neutral_plane_depth_m")
-            entry[f"drag_force_{state}_kN"] = src.get("drag_force_kN")
-            entry[f"pile_settlement_{state}_mm"] = src.get(
-                "pile_settlement_mm")
-            if not src.get("applies"):
-                entry[f"reason_{state}"] = src.get("reason", "")
+            for key, name in _BY_METHOD_KEYS:
+                entry[name.format(state)] = src.get(key)
+            if after.include_pile_weight:
+                entry[f"dragload_{state}_kN"] = src.get("dragload_kN")
+            if src.get("reason"):
+                entry[f"reason_{state}"] = src["reason"]
+        for key, name in _AFTER_ONLY_KEYS:
+            entry[name] = r.get(key)
         by_method.append(entry)
 
     # Basis, warnings, choices
@@ -988,39 +1159,26 @@ def post_liquefaction_downdrag(
         f"soil above them, drags the pile; the drag is largest at the end "
         f"of reconsolidation, when the effective stress is back to about "
         f"its pre-earthquake value. After: the liquefied layers carry "
-        f"{spec['name'].lower()} ({spec['source']}); the other layers keep "
-        f"their static side resistance (GEC-10: 'For geomaterial layers "
-        f"above the zone of liquefaction, drag loads should be based on "
-        f"side resistance values corresponding to static conditions'). "
+        f"{spec['name'].lower()} ({spec['cite']}); the other layers keep "
+        f"their static side resistance, as GEC-10 says for the layers "
+        f"above. "
         f"The soil settles by the reconsolidation settlement of the "
-        f"liquefied layers (volumetric strain x thickness, "
-        f"{recon_total * 1000:.1f} mm in all"
-        + (f", {below_toe * 1000:.1f} mm of it below the toe" if below_toe
-           > 0 else "")
-        + (") on top of the fill / drawdown settlement of the static "
+        f"liquefied layers (volumetric strain x thickness"
+        + ("), on top of the fill / drawdown settlement of the static "
            "analysis" if static else ")")
         + ". The neutral plane, drag force and settlement are then found as "
         "for static downdrag (GEC-10 §10.6.2, which defers to GEC-12 "
         "§7.3.6.1), every method side by side, before and after. FHWA "
         "GEC-12 §7.4.2.2 (pp. 384-385, Fellenius and Siegel 2008): "
-        "'If liquefaction occurs in soil layers above the location of the "
-        "neutral plane before liquefaction, the liquefaction event will "
-        "have limited effect on the pile. If liquefaction occurs in soil "
-        "layers located below the pre-liquefaction location of the neutral "
-        "plane, it will increase the axial compression load in the pile as "
-        "well as result in additional pile settlement.'")
-    limit_note = (
-        "Limit states: GEC-10 §10.7 (p. 10-52) checks post-liquefaction "
-        "drag at the structural strength and service limit states only "
-        "(§10.6), as here (structural: UFC 3-220-20 Eq 6-80 / GEC-12 Eq "
-        "7-70; geotechnical without the drag; settlement). AASHTO (2017), "
-        "as GEC-10 reports it, includes it in Extreme Event I with a load "
-        "factor of 1.0, which GEC-10 calls misguided because "
-        "reconsolidation follows the shaking by hours or days.")
+        "liquefaction above the neutral plane before liquefaction 'will "
+        "have limited effect on the pile'; below it, it 'will increase the "
+        "axial compression load in the pile as well as result in additional "
+        "pile settlement'.")
 
     warnings = [before_note] if before_note else []
-    warnings += _method_spread_notes(before, after, after_analysis,
-                                     by_method)
+    notes, said_after = _method_spread_notes(before, after, after_analysis,
+                                             by_method)
+    warnings += notes
     gwt = float(analysis.soil.gwt_depth)
     dry = [f"{s.top:g}-{s.bottom:g} m" for s in layers if s.top < gwt - 1e-9]
     if dry:
@@ -1055,39 +1213,36 @@ def post_liquefaction_downdrag(
     if under and after.drag_force <= before.drag_force + 1e-6:
         # GEC-12 §7.4.2.2: liquefaction below the plane adds load. Name
         # the methods that follow the reconsolidation settlement.
-        rises = []
-        for r in by_method:
-            if not r["applies_after"]:
-                continue
-            b0 = (r["drag_force_before_kN"] if r["applies_before"]
-                  else None)
-            a1 = r["drag_force_after_kN"]
-            if b0 is None or a1 > b0 + 0.5:
-                rises.append(
-                    f"{r['name']}: {a1:.0f} kN at "
-                    f"{r['neutral_plane_after_m']:.2f} m"
-                    + (f" (before {b0:.0f} kN)" if b0 is not None
-                       else " (none before)"))
-        planes = dict(planes_before)
-        text = "; ".join(
-            f"The liquefied zone {z['top_m']:g}-{z['bottom_m']:g} m lies "
-            f"below the neutral plane these methods give before the "
-            f"earthquake: "
-            + ", ".join(f"{n} ({planes[n]:.2f} m)"
-                        for n in z["below_the_plane_before_of"])
-            for z in under) + "."
+        rises = [r["name"] for r in by_method if r["applies_after"] and (
+            not r["applies_before"]
+            or r["drag_force_after_kN"] > r["drag_force_before_kN"] + 0.5)]
+        names = [n for n, _ in planes_before
+                 if any(n in z["below_the_plane_before_of"] for z in under)]
+        # One sentence for all the zones (GM-207: a noisy CPT gives twenty
+        # zones); by_method has the planes, each zone's record the methods
+        spans = ", ".join(f"{z['top_m']:g}-{z['bottom_m']:g}" for z in under)
+        if len(under) == 1:
+            text = f"The liquefied zone {spans} m lies"
+        elif len(under) <= MAX_ZONES_LISTED:
+            text = f"The liquefied zones {spans} m lie"
+        elif len(under) == len(zones):
+            text = f"All {len(zones)} liquefied zones lie"
+        else:
+            text = f"{len(under)} of the {len(zones)} liquefied zones lie"
+        # not every zone lies below every one of these planes
+        some = any(set(z["below_the_plane_before_of"]) != set(names)
+                   for z in under)
         text += (
-            f" FHWA GEC-12 §7.4.2.2 "
-            f"(Fellenius and Siegel 2008): liquefaction there 'will "
-            f"increase the axial compression load in the pile as well as "
-            f"result in additional pile settlement'. The headline method "
-            f"({after.headline_method}) gives a drag force of "
-            f"{after.drag_force:.0f} kN after against "
-            f"{before.drag_force:.0f} kN before"
+            " below the neutral plane before the earthquake of "
+            + ("one or more of " if some else "")
+            + "; ".join(names)
+            + ". FHWA GEC-12 §7.4.2.2 (post_liquefaction_basis): "
+            "liquefaction there adds axial load and pile settlement. The "
+            "headline method's drag force does not rise"
             + (": it takes the plane from the load and resistance curves, "
                "which the reconsolidation settlement does not move."
                if after.neutral_plane_method == "force_equilibrium"
-               else "."))
+               and not said_after else "."))
         if rises:
             text += (" The methods whose drag force rises: "
                      + "; ".join(rises) + ".")
@@ -1124,24 +1279,27 @@ def post_liquefaction_downdrag(
             f"fs_liq_threshold count as liquefied. GEC-10 §9.4.2.2 (p. "
             f"9-42) treats 1.0 < FSliq ≲ 1.5 as generating excess pore "
             f"pressure.")
-    warnings += [f"After liquefaction: {w}" for w in after.warnings]
+    warnings += _state_warnings(before, after, said_after)
 
     out_choices = [
         choice("side resistance of the liquefied layers", spec["name"],
                how_given(chosen, DEFAULT_SIDE_RESISTANCE,
                          name="liquefied_side_resistance"),
-               spec["source"],
+               spec["cite"],
                [_SIDE[k]["name"] for k in keys if k != chosen]),
     ]
+    zones_text = (
+        "; ".join(f"{z['top_m']:g}-{z['bottom_m']:g} m" for z in zones)
+        if len(zones) <= MAX_ZONES_LISTED else
+        f"{len(zones)} zones from {zones[0]['top_m']:g} to "
+        f"{zones[-1]['bottom_m']:g} m (liquefied_zones)")
     if liquefied_layers is not None:
         out_choices.append(choice(
-            "liquefied layers",
-            "; ".join(f"{z['top_m']:g}-{z['bottom_m']:g} m" for z in zones),
+            "liquefied layers", zones_text,
             how_given(liquefied_layers, None, name="liquefied_layers")))
     else:
         out_choices.append(choice(
-            "liquefied layers",
-            "; ".join(f"{z['top_m']:g}-{z['bottom_m']:g} m" for z in zones),
+            "liquefied layers", zones_text,
             MODULE,
             f"readings of the liquefaction result with FS_liq <= "
             f"{threshold:g}, each standing for the depth halfway to its "
@@ -1167,7 +1325,8 @@ def post_liquefaction_downdrag(
                 "reconsolidation volumetric strain",
                 "the liquefaction result's own",
                 how_given(liquefaction_result, None,
-                          name="liquefaction_result")))
+                          name="liquefaction_result"),
+                _strain_basis(liquefaction_result)))
     if chosen == "residual_strength":
         out_choices.append(choice(
             "residual strength su,r",
@@ -1187,17 +1346,17 @@ def post_liquefaction_downdrag(
         "structural strength and service (GEC-10 §10.7)", MODULE,
         "GEC-10 p. 10-52: 'Post-liquefaction drag loads should therefore "
         "be considered only for structural strength and service limit "
-        "states'",
+        "states'; checked after liquefaction: structural (UFC 3-220-20 "
+        "Eq 6-80), geotechnical without the drag, settlement",
         ["AASHTO (2017) Extreme Event I, load factor 1.0 on the drag"]))
 
     after.below_toe = dict(after.below_toe)
     if below_toe > 0:
-        after.below_toe["reconsolidation_below_toe_mm"] = below_toe * 1000.0
         after.below_toe["basis"] = (
-            after.below_toe.get("basis", "") + f" The liquefied soil below "
-            f"the toe adds {below_toe * 1000:.1f} mm of reconsolidation "
-            f"settlement there (counted with the fill / drawdown "
-            f"settlement above).")
+            after.below_toe.get("basis", "") + " The liquefied soil below "
+            "the toe adds its reconsolidation settlement there "
+            "(reconsolidation_below_toe_mm), counted with the fill / "
+            "drawdown settlement above.")
 
     return PostLiquefactionResult(
         before=before, after=after,
@@ -1208,7 +1367,6 @@ def post_liquefaction_downdrag(
         reconsolidation_settlement=recon_total,
         reconsolidation_below_toe=below_toe,
         post_liquefaction_basis=basis,
-        limit_states_note=limit_note,
         warnings=warnings,
         choices=out_choices,
         fs_liq_threshold=threshold,

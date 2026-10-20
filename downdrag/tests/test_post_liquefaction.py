@@ -10,6 +10,7 @@ computed here in closed form, not read off the module.
 Run with: pytest downdrag/tests/test_post_liquefaction.py -v
 """
 
+import json
 import math
 
 import numpy as np
@@ -20,6 +21,7 @@ from downdrag import (
     LIQUEFIED_SIDE_RESISTANCE, LiquefiedLayer, liquefied_layers_from_result,
     post_liquefaction_downdrag, residual_strength_kramer_wang,
 )
+from downdrag.liquefaction import SIDE_RESISTANCE_CITES
 
 GW = 9.81
 
@@ -175,21 +177,30 @@ class TestHandCheckHC1:
         force: the warnings say both plainly."""
         r = post_liquefaction_downdrag(_hand_check(),
                                        liquefied_layers=_HC1_ZONE)
-        before = next(w for w in r.warnings
-                      if w.startswith("Before the earthquake no soil"))
-        assert "Neutral plane at 100% toe mobilization 1207 kN at " \
-            "17.85 m" in before
-        assert "Compare before and after within one method" in before
-        why = next(w for w in r.warnings
-                   if w.startswith("Why the methods differ"))
-        assert "(18.13 m)" in why and "(1163 kN)" in why
-        assert "8.13 m of it below 10.00 m" in why
-        assert "Mobilized toe resistance compatible with the toe " \
-            "penetration gives 187 kN at 10.00 m" in why
-        # no "before" note where the soil settles before the earthquake
+        why = [w for w in r.warnings
+               if w.startswith("Why the methods differ so much")]
+        assert len(why) == 1                      # one note (GM-207)
+        why = why[0]
+        assert "force equilibrium (UFC 3-220-20 §6-7.4) counts all the " \
+            "friction above the intersection" in why
+        assert "the methods that follow the settlement (Mobilized toe " \
+            "resistance compatible with the toe penetration; Neutral " \
+            "plane at the bearing layer (end-bearing pile)) count" in why
+        assert "Before the earthquake no soil settles in this model" in why
+        assert "After liquefaction 8.13 m of the headline method's drag " \
+            "lies below 10.00 m" in why
+        assert why.endswith("Compare before and after within one method.")
+        # the numbers are by_method's, not repeated in the words
+        assert not any(n in why for n in ("1207", "1163", "187 kN"))
+        # the static analysis's warning on the same plane is not repeated
+        assert not any("The neutral plane where the load and resistance "
+                       "curves intersect" in w for w in r.warnings)
+        # no "before" sentence where the soil settles before the earthquake
         r2 = TestBelowTheStaticNeutralPlane._case()
-        assert not any(w.startswith("Before the earthquake no soil")
+        assert not any("Before the earthquake no soil" in w
                        for w in r2.warnings)
+        assert any(w.startswith("Why the methods differ so much")
+                   for w in r2.warnings)
 
 
 class TestResidualStrength:
@@ -284,6 +295,30 @@ class TestZonesInsideALayer:
                                      + 0.5 * (8.5 ** 2 - 7.0 ** 2) / 2)
         assert row["drag_force_after_kN"] == pytest.approx(hand, abs=0.5)
 
+    def test_a_zone_split_into_layers_is_the_same_zone(self):
+        """GM-201: a node on the boundary between two liquefied layers of
+        one zone kept its static side resistance, so a zone given as
+        several layers (a CPT's bands, an SPT result's readings) gave a
+        different neutral plane from the same zone given whole."""
+        one = post_liquefaction_downdrag(_hand_check(),
+                                         liquefied_layers=_HC1_ZONE)
+        for n in (2, 16):
+            dz = 4.0 / n
+            split = post_liquefaction_downdrag(
+                _hand_check(), liquefied_layers=[
+                    {"top": 6.0 + k * dz, "bottom": 6.0 + (k + 1) * dz,
+                     "volumetric_strain": 0.03} for k in range(n)])
+            z = split.after.z
+            look = DowndragAnalysis._lookup_depths(z)
+            inside = (look > 6.0) & (look < 10.0)
+            np.testing.assert_allclose(
+                split.after.unit_skin_friction[inside],
+                0.5 * _Hand.k1 * z[inside])
+            z1, _ = _Hand.fe_plane(_Hand.s06 + 0.5 * _Hand.s610)
+            assert split.after.neutral_plane_depth == pytest.approx(z1)
+            assert split.after.neutral_plane_depth == pytest.approx(
+                one.after.neutral_plane_depth)
+
     def test_settlement_given_instead_of_strain(self):
         r = post_liquefaction_downdrag(
             _hand_check(), liquefied_layers=[
@@ -330,9 +365,34 @@ class TestBelowTheStaticNeutralPlane:
         r = self._case()
         assert r.after.drag_force <= r.before.drag_force
         w = next(w for w in r.warnings if "GEC-12 §7.4.2.2" in w)
-        assert "will increase the axial compression load" in w
+        assert "liquefaction there adds axial load and pile settlement" in w
+        assert "will increase the axial compression load" in \
+            r.post_liquefaction_basis
         assert "The methods whose drag force rises" in w
         assert "Neutral plane at the bearing layer" in w
+
+    def test_the_zones_below_a_plane_share_one_sentence(self):
+        # GM-207: a noisy CPT gives twenty zones; one sentence names the
+        # zones (counts them past MAX_ZONES_LISTED) and the methods once
+        r = post_liquefaction_downdrag(_hand_check(), liquefied_layers=[
+            {"top": 3.0, "bottom": 4.0, "volumetric_strain": 0.02},
+            {"top": 6.0, "bottom": 10.0, "volumetric_strain": 0.03},
+            {"top": 14.0, "bottom": 15.0, "volumetric_strain": 0.02}])
+        w = next(w for w in r.warnings if "GEC-12 §7.4.2.2" in w)
+        assert r.liquefied_zones[1]["below_the_plane_before_of"] != \
+            r.liquefied_zones[2]["below_the_plane_before_of"]
+        lead = w.split(". ")[0]
+        assert lead.startswith("The liquefied zones 3-4, 6-10, 14-15 m lie "
+                               "below the neutral plane before the "
+                               "earthquake of one or more of ")
+        named = {n for z in r.liquefied_zones
+                 for n in z["below_the_plane_before_of"]}
+        assert named and all(lead.count(n) == 1 for n in named)
+        many = post_liquefaction_downdrag(_hand_check(), liquefied_layers=[
+            {"top": 1.0 + 2 * i, "bottom": 1.5 + 2 * i,
+             "volumetric_strain": 0.02} for i in range(8)])
+        w = next(w for w in many.warnings if "GEC-12 §7.4.2.2" in w)
+        assert w.startswith("All 8 liquefied zones lie below")
 
     def test_fill_settlement_and_reconsolidation_add(self):
         r = self._case()
@@ -359,8 +419,17 @@ class TestToeAndBelowTheToe:
         assert r.after.toe_settlement == pytest.approx(
             r.before.toe_settlement + 0.04, abs=1e-6)
         assert r.after.pile_settlement >= 0.04
-        assert r.after.below_toe["reconsolidation_below_toe_mm"] == \
+        assert r.to_dict()["reconsolidation_below_toe_mm"] == \
             pytest.approx(40.0)
+        assert "(reconsolidation_below_toe_mm)" in \
+            r.after.below_toe["basis"]
+        # GM-207: the static warning both states give, with other numbers,
+        # once (the numbers after)
+        assert r.before.warnings[0] != r.after.warnings[0]
+        same = [w for w in r.warnings if "has no compressibility" in w]
+        assert len(same) == 1 and same[0] == (
+            "Before and after liquefaction (the numbers after): "
+            + r.after.warnings[0])
         assert any("below the pile toe" in w for w in r.warnings)
 
 
@@ -432,6 +501,97 @@ class TestFromALiquefactionResult:
             post_liquefaction_downdrag(
                 _hand_check(), liquefaction_result=self._spt(
                     [1.2, 1.6, 1.5, 1.9, 1.6]), volumetric_strain=0.03)
+
+
+class TestFromACptDepthProfile:
+    """The ``liquefaction`` tool's CPT ``depth_profile`` rows (GM-201): each
+    row stands for its own top_m to bottom_m and carries its strain."""
+
+    ROWS = [
+        {"top_m": 0.0, "bottom_m": 2.0, "FOS_liq": 2.0,
+         "volumetric_strain": 0.0},
+        {"top_m": 2.0, "bottom_m": 6.0, "FOS_liq": 1.3,
+         "volumetric_strain": 0.004},
+        {"top_m": 6.0, "bottom_m": 8.0, "FOS_liq": 0.6,
+         "volumetric_strain": 0.03},
+        {"top_m": 8.0, "bottom_m": 10.0, "FOS_liq": 0.8,
+         "volumetric_strain": 0.03},
+        {"top_m": 10.0, "bottom_m": 30.5, "FOS_liq": 2.0,
+         "volumetric_strain": 0.0},
+    ]
+
+    def test_rows_stand_for_their_own_depths(self):
+        layers, left = liquefied_layers_from_result(
+            {"input_type": "CPT", "depth_profile": self.ROWS})
+        assert [(s.top, s.bottom, s.volumetric_strain) for s in layers] == [
+            (6.0, 8.0, 0.03), (8.0, 10.0, 0.03)]
+        assert [s.fs_liq for s in layers] == [0.6, 0.8]
+        assert left == pytest.approx(0.004 * 4.0)
+
+    def test_the_rows_alone_and_one_row_are_taken(self):
+        layers, _ = liquefied_layers_from_result(self.ROWS)
+        assert len(layers) == 2
+        layers, _ = liquefied_layers_from_result([self.ROWS[2]])
+        assert [(s.top, s.bottom) for s in layers] == [(6.0, 8.0)]
+
+    def test_the_water_table_and_the_profile_bound_them(self):
+        rows = [dict(r, FOS_liq=0.7, volumetric_strain=0.01)
+                for r in self.ROWS]
+        layers, _ = liquefied_layers_from_result(
+            rows, profile_depth=30.0, water_table=1.0)
+        assert layers[0].top == 1.0 and layers[-1].bottom == 30.0
+
+    def test_a_threshold_counts_a_band_by_its_fos(self):
+        layers, _ = liquefied_layers_from_result(self.ROWS,
+                                                 fs_liq_threshold=1.3)
+        assert [(s.top, s.bottom) for s in layers][0] == (2.0, 6.0)
+
+    def test_a_given_strain_replaces_the_rows(self):
+        layers, _ = liquefied_layers_from_result(self.ROWS,
+                                                 volumetric_strain=0.02)
+        assert [s.volumetric_strain for s in layers] == [0.02, 0.02]
+
+    def test_overlapping_rows_refused(self):
+        rows = [dict(self.ROWS[2]), dict(self.ROWS[3], top_m=7.0)]
+        with pytest.raises(ValueError, match="overlap"):
+            liquefied_layers_from_result(rows)
+
+    def test_the_analysis_takes_it_and_says_where_the_strain_came_from(self):
+        r = post_liquefaction_downdrag(
+            _hand_check(), liquefaction_result={
+                "input_type": "CPT", "depth_profile": self.ROWS,
+                "depth_profile_note": "banded"})
+        assert [(z["top_m"], z["bottom_m"]) for z in r.liquefied_zones] == \
+            [(6.0, 10.0)]
+        assert r.reconsolidation_settlement == pytest.approx(0.12)
+        strain = next(c for c in r.choices
+                      if c["what"] == "reconsolidation volumetric strain")
+        assert strain["chosen"] == "the liquefaction result's own"
+        assert "Zhang et al. (2002)" in strain["basis"]
+        assert "depth bands" in strain["basis"]
+        # the HC-1 zone, so the HC-1 numbers
+        given = post_liquefaction_downdrag(_hand_check(),
+                                           liquefied_layers=_HC1_ZONE)
+        assert r.after.neutral_plane_depth == pytest.approx(
+            given.after.neutral_plane_depth)
+
+
+class TestNoSptStrainMethod:
+    """GM-201: no reference in the library prints a post-liquefaction
+    volumetric strain method for SPT (GEC-10 §10.7, p. 10-52, names
+    Ishihara and Yoshimine 1992 as Idriss and Boulanger 2008 describe it;
+    its Fig 9-34 is maximum SHEAR strain; GEC-5 p. 12-23 names Tokimatsu
+    and Seed 1987 for dry or partially saturated sand and defers to a
+    manual not in the library), so the strain stays an input."""
+
+    def test_an_spt_result_without_a_strain_says_so(self):
+        rows = [{"depth_m": d, "FOS_liq": f, "N1_60": 10.0}
+                for d, f in ((3.0, 1.2), (5.0, 0.6), (7.0, 1.4))]
+        with pytest.raises(ValueError) as exc:
+            liquefied_layers_from_result({"layer_results": rows})
+        msg = str(exc.value)
+        assert "no reference in the library prints an SPT method" in msg
+        assert "Give volumetric_strain" in msg
 
 
 class TestInputs:
@@ -507,13 +667,58 @@ class TestReporting:
         assert list(d)[:3] == ["post_liquefaction_basis", "warnings",
                                "methods_range_after"]
         assert d["neutral_plane_after_m"] == pytest.approx(
-            r.after.neutral_plane_depth)
+            r.after.neutral_plane_depth, abs=5e-4)
         assert d["structural_demand_kN"] == pytest.approx(
-            1.25 * 600 + 1.10 * r.after.drag_force)
+            1.25 * 600 + 1.10 * r.after.drag_force, abs=0.05)
         assert "GEC-10 §10.7" in d["post_liquefaction_basis"]
-        assert "Extreme Event I" in d["limit_states_note"]
-        assert d["after"]["neutral_plane_comparison"]
+        limit = next(c for c in d["choices"] if c["what"].startswith(
+            "limit states"))
+        assert "Extreme Event I" in limit["alternatives"][0]
+        # GM-207: one copy of each number. by_method is the one methods
+        # table (no second one in "after"); each option's quoted source
+        # is in its row, the choice and the basis cite it
+        assert set(d["after"]) == {
+            "positive_skin_friction_kN", "toe_resistance_kN",
+            "total_resistance_kN", "below_toe", "z_m",
+            "axial_load_kN", "soil_settlement_mm", "unit_skin_friction_kPa"}
+        # the toe settlement beside the head settlement, both states
+        assert d["toe_settlement_before_mm"] == pytest.approx(
+            r.before.toe_settlement * 1000.0, abs=0.005)
+        assert d["toe_settlement_after_mm"] == pytest.approx(
+            r.after.toe_settlement * 1000.0, abs=0.005)
+        # dragload apart from the drag force only with the pile's weight
+        assert "dragload_after_kN" not in d
+        assert "dragload_after_kN" not in d["by_method"][0]
+        assert "before" not in d and "limit_states_note" not in d
+        row = d["by_method"][0]
+        assert row["used"] and row["toe_force_after_kN"] == pytest.approx(
+            r.after.toe_force_mobilized, abs=0.05)
+        assert row["source"].startswith("UFC 3-220-20 §6-7.4")
+        half = d["side_resistance_comparison"][0]
+        assert "'Drag loads imposed by previously liquefied layers" in \
+            half["source"]
+        quote = "Drag loads imposed"
+        assert sum(json.dumps(v).count(quote) for v in d.values()) == 1
+        assert d["choices"][0]["basis"] == SIDE_RESISTANCE_CITES[
+            "half_pre_earthquake"]
         text = r.summary()
         assert "Post-Liquefaction Downdrag" in text
         assert "Every neutral-plane method, before -> after" in text
         assert "Choices:" in text
+
+    def test_with_the_pile_weight_each_dragload_is_kept(self):
+        # the drag force carries the pile weight above the plane, so the
+        # dragload (friction only) differs from it: each method's and each
+        # option's dragload stays in the result
+        r = post_liquefaction_downdrag(
+            _hand_check(include_pile_weight=True),
+            liquefied_layers=_HC1_ZONE)
+        d = r.to_dict()
+        assert d["dragload_after_kN"] == pytest.approx(r.after.dragload,
+                                                       abs=0.05)
+        row = d["by_method"][0]
+        assert row["dragload_after_kN"] < row["drag_force_after_kN"]
+        assert row["dragload_before_kN"] < row["drag_force_before_kN"]
+        half = d["side_resistance_comparison"][0]
+        assert half["dragload_kN"] == pytest.approx(r.after.dragload,
+                                                    abs=0.05)

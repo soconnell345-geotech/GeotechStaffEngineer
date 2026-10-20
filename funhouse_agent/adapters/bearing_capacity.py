@@ -183,7 +183,7 @@ METHOD_INFO = {
             "eccentricity_L": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along L (m)."},
             "load_inclination": {"type": "float", "required": False, "default": 0.0, "description": "Load inclination from vertical (degrees)."},
             "ground_slope": {"type": "float", "required": False, "default": 0.0, "description": "Ground slope angle (degrees)."},
-            "vertical_load": {"type": "float", "required": False, "default": 0.0, "description": "Applied vertical load (kN) for inclination factors."},
+            "vertical_load": {"type": "float", "required": False, "default": 0.0, "description": "Applied vertical load V (kN) for Vesic's inclination factors, which take H = V tan(load_inclination) (GEC-6 Table 6-4); used only with factor_method 'vesic' and a load_inclination. With V = 0 Meyerhof's angle-based inclination factors are used instead."},
         },
         "returns": {
             "q_ultimate_kPa": "Ultimate bearing capacity.",
@@ -217,7 +217,11 @@ declare_applies_when(METHOD_INFO, {
     "bearing_capacity_analysis": {
         "failure_mode": {"factor_method": ["terzaghi"]},
         "layer2_cohesion": {"layer2_unit_weight": "set"},
-        "layer2_friction_angle": {"layer2_unit_weight": "set"}},
+        "layer2_friction_angle": {"layer2_unit_weight": "set"},
+        # Vesic's inclination factors take H and V; Meyerhof's take the
+        # angle alone, and Terzaghi's take no inclination (GM-184)
+        "vertical_load": {"load_inclination": "set",
+                          "factor_method": ["vesic"]}},
     "bearing_capacity_factors": {
         "ngamma_method": {"method": ["terzaghi"]},
         "failure_mode": {"method": ["terzaghi"]}},
