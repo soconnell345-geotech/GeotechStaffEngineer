@@ -253,15 +253,43 @@ class TestLateralPileAdapter:
         assert layers[0]["py_model_params"]["phi"] == 33
 
     def test_stiff_clay_below_gwt(self):
+        """cu 120 >= 100, the layer 0-10 m, mid 5 m below the water table
+        at 3 m. With the groundwater at depth, GEC 9 p. 219 prefers Welch
+        & Reese "even below groundwater" (GM-215; before, Reese et al.
+        1975), and the result says so as the adapter's choice."""
         profile = _clay_only_profile()
         result = profile.to_lateral_pile_input(pile_length=10.0,
                                                pile_diameter=0.6)
         layers = result["layers"]
-        # cu=120 >= 100, GWT=3m, layer starts at 0
-        # Part above GWT should get StiffClayAboveWT? No — single layer, midpoint checked
-        # Actually the whole layer 0-10, mid = 5 > gwt=3 -> below GWT
-        assert layers[0]["py_model_type"] == "StiffClayBelowWT"
-        assert layers[0]["py_model_params"]["ks"] == 271_400.0
+        assert layers[0]["py_model_type"] == "StiffClayAboveWT"
+        assert layers[0]["py_model_params"]["gamma"] == pytest.approx(
+            20.0 - 9.81)
+        assert "ks" not in layers[0]["py_model_params"]
+        crit = result["choices"][0]
+        assert crit["what"] == "p-y criterion 0-10 m"
+        assert crit["chosen"].startswith("Welch & Reese (1972)")
+        assert crit["how"] == "module"
+        assert "GEC 9 p. 219" in crit["basis"]
+        assert "even below groundwater" in crit["basis"]
+        assert "groundwater is at 3 m" in crit["basis"]
+        assert "free_water_at_surface=True" in crit["basis"]
+        assert any(a.startswith("Reese et al. (1975)")
+                   for a in crit["alternatives"])
+
+    def test_stiff_clay_with_free_water_given(self):
+        """The caller judges free water at or near the ground surface:
+        Reese et al. (1975) with ks from Table 3.2, stated as given."""
+        profile = _clay_only_profile()
+        result = profile.to_lateral_pile_input(
+            pile_length=10.0, pile_diameter=0.6, free_water_at_surface=True)
+        layer = result["layers"][0]
+        assert layer["py_model_type"] == "StiffClayBelowWT"
+        assert layer["py_model_params"]["ks"] == 271_400.0
+        crit, k = result["choices"]
+        assert crit["chosen"].startswith("Reese et al. (1975)")
+        assert crit["how"] == "given"
+        assert k["what"] == "k of the initial line, ks, 0-10 m"
+        assert k["how"] == "module" and "Table 3.2" in k["basis"]
 
     def test_stiff_clay_below_gwt_cyclic_takes_kc(self):
         """Cyclic loading gives the layer kc, not ks (COM624P Table 3.2;
@@ -271,11 +299,124 @@ class TestLateralPileAdapter:
         profile = _clay_only_profile()
         result = profile.to_lateral_pile_input(pile_length=10.0,
                                                pile_diameter=0.6,
-                                               loading="cyclic")
+                                               loading="cyclic",
+                                               free_water_at_surface=True)
         params = result["layers"][0]["py_model_params"]
         assert params["kc"] == 108_600.0 and "ks" not in params
         model = StiffClayBelowWT(**params)
         assert model.k == 108_600.0
+
+    def test_water_at_the_ground_surface_gives_reese_1975(self):
+        """Groundwater at the ground surface: stiff clay with free water,
+        Reese et al. (1975), unless a sand stratum lies above the clay
+        (GEC 9 p. 219: "would normally not be subject to degradation due
+        to free water")."""
+        clay = dict(gamma=19.0, gamma_sat=20.0, cu=150, is_cohesive=True,
+                    eps50=0.005)
+        at_top = SoilProfile(layers=[SoilLayer(0, 12, "Stiff clay", **clay)],
+                             groundwater=GroundwaterCondition(depth=0.0))
+        r = at_top.to_lateral_pile_input(pile_length=12.0, pile_diameter=0.9)
+        assert r["layers"][0]["py_model_type"] == "StiffClayBelowWT"
+        assert r["choices"][0]["how"] == "module"
+        assert "at the ground surface" in r["choices"][0]["basis"]
+        under_sand = SoilProfile(
+            layers=[SoilLayer(0, 3, "Sand", gamma=18.0, gamma_sat=19.5,
+                              phi=32, is_cohesive=False),
+                    SoilLayer(3, 12, "Stiff clay", **clay)],
+            groundwater=GroundwaterCondition(depth=0.0))
+        r = under_sand.to_lateral_pile_input(pile_length=12.0,
+                                             pile_diameter=0.9)
+        assert [l["py_model_type"] for l in r["layers"]] == [
+            "SandAPI", "StiffClayAboveWT"]
+        assert "below a sand stratum" in r["choices"][0]["basis"]
+        assert "unless scour removed" in r["choices"][0]["basis"]
+        r = under_sand.to_lateral_pile_input(
+            pile_length=12.0, pile_diameter=0.9, free_water_at_surface=True)
+        assert r["layers"][1]["py_model_type"] == "StiffClayBelowWT"
+        r = at_top.to_lateral_pile_input(
+            pile_length=12.0, pile_diameter=0.9, free_water_at_surface=False)
+        assert r["layers"][0]["py_model_type"] == "StiffClayAboveWT"
+
+    def test_cyclic_stiff_clay_takes_the_number_of_cycles(self):
+        """GM-209: N reaches every Welch & Reese layer, which then builds,
+        and the result states it."""
+        from lateral_pile.py_curves import StiffClayAboveWT
+        profile = _clay_only_profile()
+        result = profile.to_lateral_pile_input(pile_length=10.0,
+                                               pile_diameter=0.6,
+                                               loading="cyclic",
+                                               n_cycles=100)
+        params = result["layers"][0]["py_model_params"]
+        assert params["n_cycles"] == 100
+        assert StiffClayAboveWT(**params).cyclic_factor == pytest.approx(2.2)
+        n = result["choices"][-1]
+        assert n["what"] == "number of cycles of load application N"
+        assert n["chosen"] == "100 (y50 x 2.2), 0-10 m"
+        assert n["how"] == "given"
+
+    def test_cyclic_stiff_clay_without_n_fails_plainly(self):
+        """GM-209: a cyclic Welch & Reese layer without N fails with the
+        p-y model's own words (GM-202), naming the layer."""
+        from lateral_pile.py_curves import StiffClayAboveWT
+        with pytest.raises(ValueError) as model_err:
+            StiffClayAboveWT(c=120.0, gamma=19.0, eps50=0.005,
+                             loading="cyclic")
+        profile = _clay_only_profile()
+        with pytest.raises(ValueError) as err:
+            profile.to_lateral_pile_input(pile_length=10.0,
+                                          pile_diameter=0.6,
+                                          loading="cyclic")
+        assert str(model_err.value) in str(err.value)
+        assert "'Stiff clay (CL)' 0-10 m" in str(err.value)
+        assert "give n_cycles" in str(err.value)
+
+    def test_n_cycles_refused_with_static_and_below_one(self):
+        profile = _clay_only_profile()
+        with pytest.raises(ValueError, match="cyclic' only"):
+            profile.to_lateral_pile_input(10.0, 0.6, n_cycles=100)
+        with pytest.raises(ValueError, match=">= 1"):
+            profile.to_lateral_pile_input(10.0, 0.6, loading="cyclic",
+                                          n_cycles=0.5)
+
+    def test_n_cycles_not_used_is_said(self):
+        """N given with cyclic loading but no Welch & Reese layer."""
+        result = _sand_only_profile().to_lateral_pile_input(
+            10.0, 0.6, loading="cyclic", n_cycles=10)
+        assert result["choices"][-1]["chosen"] == "10, not used"
+
+    def test_k_py_unused_by_welch_reese_is_said(self):
+        profile = SoilProfile(
+            layers=[SoilLayer(0, 10, "Stiff clay", gamma=19.0,
+                              gamma_sat=20.0, cu=120, is_cohesive=True,
+                              eps50=0.005, k_py=271_400.0)],
+            groundwater=GroundwaterCondition(depth=2.0))
+        result = profile.to_lateral_pile_input(10.0, 0.6)
+        assert result["layers"][0]["py_model_type"] == "StiffClayAboveWT"
+        assert "k_py (271400 kN/m3) is not used" in \
+            result["choices"][0]["basis"]
+        given = profile.to_lateral_pile_input(10.0, 0.6,
+                                              free_water_at_surface=True)
+        assert given["layers"][0]["py_model_params"]["ks"] == 271_400.0
+        assert "is not used" not in given["choices"][0]["basis"]
+
+    def test_eps50_estimated_is_a_stated_choice(self):
+        """An eps50 the adapter estimates is listed with its table; one
+        the layer gives is not."""
+        profile = SoilProfile(
+            layers=[SoilLayer(0, 10, "Stiff clay", gamma=19.0, cu=120,
+                              is_cohesive=True)],
+            groundwater=GroundwaterCondition(depth=20.0))
+        result = profile.to_lateral_pile_input(10.0, 0.6)
+        assert result["layers"][0]["py_model_params"]["eps50"] == 0.005
+        crit, eps = result["choices"]
+        assert crit["chosen"].startswith("Welch & Reese")
+        assert "above the water table" in crit["basis"]
+        assert "alternatives" not in crit
+        assert eps["what"] == "eps50 0-10 m" and eps["how"] == "module"
+        assert "Table 3.3" in eps["basis"] and "Table A-2" in eps["basis"]
+        given = _clay_only_profile().to_lateral_pile_input(10.0, 0.6)
+        assert [c["what"] for c in given["choices"]] == [
+            "p-y criterion 0-10 m"]
 
     def test_rock_gets_weakrock(self):
         profile = _profile_with_rock()

@@ -102,7 +102,13 @@ results.summary()
   the residual pc (0.5 (6 As)^0.5 - 0.411 - 0.75 As) beyond. Cyclic, yp =
   4.1 Ac y50: Ac pc [1 - |(y - 0.45 yp)/(0.45 yp)|^2.5] to 0.6 yp; a line
   of slope -0.085 pc/y50 to 1.8 yp; 0.936 Ac pc - 0.102 pc yp/y50 beyond.
-  The cyclic method has no number of cycles. The initial line holds until
+  The cyclic method has no number of cycles. GEC 9 p. 219 limits this
+  criterion to stiff clay "exposed to free water at or near the ground
+  surface"; with the groundwater at depth, "the Welch and Reese criterion
+  is more appropriate, even below groundwater", and stiff clay below a
+  sand stratum "would normally not be subject to degradation due to free
+  water (unless scour removed the overlying sand)". `SoilProfile` follows
+  that rule and states it (GM-215). The initial line holds until
   it meets the curve and the smaller p holds where they do not meet
   (COM624P notes, pp. 333, 335). Where As < 0.223 (x/b below about 0.08)
   the static residual is negative; p is held at zero.
@@ -175,8 +181,13 @@ results.summary()
     668.77 lb/in; and the plateau starts at 16 y50 + 9.6 y50 log N (Fig.
     3.10). `tests/test_stiff_clay_above_wt.py`.
   - The soft-clay case in `validation.py` labelled "COM624P Example 1"
-    is not the manual's Example 1 (which is the 14HP89 above, and
-    static); where its 34.3 mm comes from is unverified (GM-209).
+    until GM-209 is not the manual's Example 1 (which is the 14HP89
+    above, and static), and no printed source for its 34.3 mm was found
+    (the COM624P manual, Matlock 1970 OTC 1204, GEC 9 and other
+    lateral-pile literature searched): it is now
+    `test_soft_clay_regression_case_source_unknown`, pinned to the
+    module's own 34.4 mm, and `test_com624p_example_1` checks the real
+    Example 1 (p. 126) beside it.
 - **API sand**: tanh model is linear at small loads
 - **SandReese construction (v5.3)**: `SandReese(construction=...)` selects the
   sand p-y curve build. `"simplified"` (**default**, byte-identical to prior):
@@ -249,9 +260,8 @@ results.summary()
 - COM624P Example 1 (printed pp. 101-126, 14HP89 in stiff clay above the
   water table): p-y curves to 0.002 %, head deflection and moment within
   0.2 % (`tests/test_stiff_clay_above_wt.py`)
-- The soft-clay case labelled "COM624P Example 1" in `validation.py`:
-  0.3% match to 34.3mm, a source that is not the manual's Example 1 (see
-  above)
+- `validation.py`'s soft-clay case is a regression case, source unknown
+  (GM-209): not a published check (see above)
 - Hetenyi closed-form: <2% error
 - Force/moment equilibrium: <0.01% error
 - validation.py (97 tests) + tests/ (12 regression tests) + composite-section

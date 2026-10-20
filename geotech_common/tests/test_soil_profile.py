@@ -747,6 +747,15 @@ class TestEdgeCases:
         assert _estimate_eps50(150) == 0.005  # Stiff
         assert _estimate_eps50(300) == 0.004  # Very stiff
 
+    def test_eps50_band_edges_are_the_printed_table(self):
+        """COM624P Table 3.3 (GEC 9 Table A-2): 0.007 / 0.005 / 0.004 for
+        0.5-1 / 1-2 / 2-4 ton/ft^2, i.e. from 47.9, 95.8 and 191.5 kPa
+        (GM-215; before, 50, 100 and 200 kPa)."""
+        for cu, eps in ((47.0, 0.010), (47.9, 0.007), (95.0, 0.007),
+                        (95.8, 0.005), (99.0, 0.005), (191.0, 0.005),
+                        (191.5, 0.004), (199.0, 0.004), (500.0, 0.004)):
+            assert _estimate_eps50(cu) == eps, cu
+
     def test_gamma_estimation_coverage(self):
         # Cohesive with cu
         layer = SoilLayer(0, 5, "Clay", cu=15, is_cohesive=True)
