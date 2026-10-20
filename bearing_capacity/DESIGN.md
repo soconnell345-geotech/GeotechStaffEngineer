@@ -226,7 +226,7 @@ x_c = x_q - (1 - x_q)/(N_c tan phi'), from the printed
 d_q gives d_c = 1 + 2 k (1 - sin phi')^2 (N_q/N_c): twice the increment
 the table prints. The module keeps the note C form (no number changes),
 for three printed reasons: the table's own s_c = 1 + (B/L)(N_q/N_c) cos phi'
-and i_c = (i_q N_q - 1)/(N_q - 1) are that formula exactly; note C names it
+and i_c = (i_q N_q - 1)/(N_q - 1) are that formula term for term; note C names it
 as the source of the c factors; and as phi' goes to 0 it tends to
 1 + 2k/5.14 = 1 + 0.39 k, Table 5-7's 1 + 0.4 k, where the printed form
 tends to 1 + 0.19 k. The depth choice's basis says so, and its

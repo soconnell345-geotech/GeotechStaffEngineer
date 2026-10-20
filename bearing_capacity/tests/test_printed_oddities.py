@@ -3,7 +3,7 @@
 1. UFC 3-220-20 Table 5-8 (p. 296) prints d_c = 1 + k (1 - sin phi')^2
    N_q/N_c, half of what its note C correspondence formula gives from its
    own d_q. The module keeps the note C form (its printed s_c and i_c follow
-   that formula exactly, and at phi -> 0 it meets Table 5-7's 1 + 0.4 k)
+   that formula term for term, and at phi -> 0 it meets Table 5-7's 1 + 0.4 k)
    and lists the printed value as an alternative.
 2. Meyerhof's i_gamma = (1 - theta/phi')^2 (Table 5-6, p. 294) was clamped
    at 0, which does nothing: past phi it grows again, to 1 at 2 phi. The

@@ -237,7 +237,7 @@ DEPTH_FACTOR_BASIS = {
                "1961, de Beer 1970), = 1 + 2 k (1 - sin phi)^2 N_q/N_c; "
                "d_gamma = 1. Table 5-8 prints d_c = 1 + k (1 - sin phi)^2 "
                "N_q/N_c, half of that, while its printed s_c and i_c follow "
-               "the note C formula exactly; the formula's d_c tends to 1 + "
+               "the note C formula term for term; the formula's d_c tends to 1 + "
                "0.39 k as phi goes to 0, Table 5-7's 1 + 0.4 k, the printed "
                "one to 1 + 0.19 k"),
     "gec6": ("FHWA GEC-6 Eq. 5-14 (p. 63): the depth factor on the "
