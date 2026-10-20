@@ -1008,9 +1008,41 @@ class TestAPrintedNThatIsNotANumber:
         assert not ok and any("N printed as 'Refusal'" in d for d in diffs)
 
     def test_a_record_with_nothing_to_write_is_said_not_dropped(self):
-        hole = _hole(spt=[SPT(depth_top=_m(3.0), blows=["WOH"])])
+        hole = _hole(spt=[SPT(depth_top=_m(3.0), blows=["-"])])
         notes = []
         xml = write_diggs([hole], notes=notes)
         assert "DrivenPenetrationTest" not in xml
         assert any("has no N, no drive this file can state" in s
                    for s in notes[0].skipped)
+        assert any("'-'" in s for s in notes[0].skipped)
+
+    def test_weight_of_hammer_is_written_as_zero_blows_and_said(self):
+        hole = _hole(spt=[SPT(depth_top=_m(3.0), blows=["WOH"])])
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert "<diggs_geo:blowCount>0</diggs_geo:blowCount>" in xml
+        assert any("WOH" in s and "0 blows" in s for s in notes[0].assumed)
+
+
+class TestDriveEntriesAreNeverSilentlyDropped:
+    """RI-30: WOH / WOR are 0 blows and said so; '-' is missing and said so."""
+
+    def test_woh_is_zero_blows_and_dash_is_named(self):
+        from report_ingest.diggs_writer import _drive_sets
+        from report_ingest.model import SPT, Quantity
+        rec = SPT(depth_top=Quantity(value=1.5, unit="m"),
+                  blows=["WOH", "-", 4, "WOR", "see note"])
+        assumed, dropped = [], []
+        out = _drive_sets(rec, assumed, dropped)
+        assert [c for c, _ in out] == [0, 4, 0]
+        assert len(assumed) == 2 and "0 blows" in assumed[0]
+        assert any("'-'" in d for d in dropped)
+        assert any("see note" in d for d in dropped)
+
+
+class TestFloorKeepsAPrintedN:
+    def test_refusal_n_pattern(self):
+        from report_ingest.log_floor import _N_PRINTED
+        for text in ("N=>50", "N = 50+", "N: R", "N=Refusal"):
+            assert _N_PRINTED.search(text), text
+        assert not _N_PRINTED.search("N=12")

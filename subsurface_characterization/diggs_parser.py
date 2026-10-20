@@ -301,9 +301,18 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
             srs = node.get("srsName").strip()
             break
 
-    total_depth = _float_text(element, "diggs:totalMeasuredDepth", ns_map)
-    if total_depth == 0.0:
-        total_depth = _float_text(element, ".//diggs:totalDepth", ns_map)
+    # A total depth the file does not give is None, never 0.0.
+    total_depth = None
+    for path in ("diggs:totalMeasuredDepth", ".//diggs:totalDepth"):
+        text = _text(element, path, ns_map)
+        if text:
+            try:
+                value = float(text)
+            except ValueError:
+                continue
+            if value > 0:
+                total_depth = value
+                break
 
     # Lithology observations
     lithology = []

@@ -1504,7 +1504,13 @@ class _Writer:
                 f"unit not in the conversion table")
             return
         bottom = _si(record.depth_bottom)
-        drives = _drive_sets(record)
+        said_assumed: List[str] = []
+        said_dropped: List[str] = []
+        drives = _drive_sets(record, said_assumed, said_dropped)
+        where = (f"{inv.investigation_id}: driven record at {top[0]:.3f} m")
+        self.notes.assumed.extend(f"{where}: {t}" for t in said_assumed)
+        self.notes.skipped.extend(f"{where}: blows entry left out, {t}"
+                                  for t in said_dropped)
         # The N value goes in the result when the log PRINTS one. When it
         # prints only the drives, the result carries the drives themselves
         # rather than an N this writer invented -- and the round-trip gate
@@ -2492,13 +2498,24 @@ class _Values:
         self.number(name, klass, float(value), "", dictionary)
 
 
-def _drive_sets(record: SPT) -> List[Tuple[int, float]]:
+#: Words a log prints for a drive that went by weight alone: the weight of
+#: hammer (WOH) or of the rods (WOR). Zero blows, as DIGGS counts them.
+_WEIGHT_ONLY = ("WOH", "WOR")
+
+
+def _drive_sets(record: SPT, assumed: Optional[List[str]] = None,
+                dropped: Optional[List[str]] = None
+                ) -> List[Tuple[int, float]]:
     """``(blow count, penetration in metres)`` for each increment.
 
     A plain count takes the record's own increment, or the 0.1524 m (6 in)
     every driven-sample standard uses. A refusal -- ``50/5"``, ``100/0.1m`` --
     is split into its count and the distance it actually went, which is what
     DIGGS wants and what the notation means.
+
+    No silent drop (RI-30): ``WOH`` / ``WOR`` (weight of hammer / rods) is 0
+    blows and is named in ``assumed``; ``-`` is a drive nobody recorded and
+    any other text is not a blow count; each is named in ``dropped``.
     """
     default = 0.1524
     increment = record.increment.to_si() if record.increment else None
@@ -2522,8 +2539,19 @@ def _drive_sets(record: SPT) -> List[Tuple[int, float]]:
             got = _convert(distance, unit)
             out.append((count, got[0] if got else distance * 0.0254))
             continue
-        # Anything else -- a word, a range, a note -- is not a blow count and
-        # is left out rather than forced into an integer.
+        if text.upper() in _WEIGHT_ONLY:
+            out.append((0, step))
+            if assumed is not None:
+                assumed.append(f"{text.upper()} (weight of "
+                               f"{'hammer' if text.upper() == 'WOH' else 'rods'}"
+                               f") written as 0 blows")
+            continue
+        # Anything else -- "-", a word, a range, a note -- is not a blow
+        # count and is left out rather than forced into an integer, and
+        # SAID.
+        if dropped is not None:
+            dropped.append("no drive recorded ('-')" if text in ("-", "")
+                           else f"{text!r} is not a blow count")
     return out
 
 
@@ -3003,7 +3031,8 @@ def _compare_header(name: str, want: Investigation, got: Any,
             diffs.append(f"{name}: {axis} came back {back}{unit} not "
                          f"{wanted}{unit}")
     total = _si_value(want.total_depth)
-    if total is not None and not _close(got.total_depth_m, total, dt):
+    if total is not None and (got.total_depth_m is None
+                              or not _close(got.total_depth_m, total, dt)):
         diffs.append(f"{name}: total depth came back {got.total_depth_m} "
                      f"not {total:.4f} m")
 

@@ -251,11 +251,15 @@ class GroundwaterCondition:
         True if piezometric head is above ground surface.
     artesian_head : float, optional
         Piezometric head above ground surface if artesian (m).
+    note : str, optional
+        How the depth was chosen when the source gave none (a stated
+        assumption, not a measurement).
     """
 
     depth: float
     is_artesian: bool = False
     artesian_head: Optional[float] = None
+    note: str = ""
 
     def __post_init__(self):
         check_non_negative(self.depth, "Groundwater depth")

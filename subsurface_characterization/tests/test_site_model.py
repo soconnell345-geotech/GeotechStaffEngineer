@@ -181,3 +181,25 @@ class TestSiteModel:
         assert "Test Site" in s
         assert "Investigations: 2" in s
         assert "Borings: 2" in s
+
+
+class TestUnknownDepthAndWater:
+    """RI-30: nothing is filled in silently."""
+
+    def test_total_depth_is_none_not_zero(self):
+        from subsurface_characterization.site_model import Investigation
+        inv = Investigation(investigation_id="B-1")
+        assert inv.total_depth_m is None
+        assert inv.to_dict()["total_depth_m"] is None
+        assert Investigation.from_dict(inv.to_dict()).total_depth_m is None
+        assert "not given" in inv.summary()
+
+    def test_no_water_table_is_stated_not_30_m(self):
+        from subsurface_characterization.site_model import (
+            Investigation, LithologyInterval)
+        inv = Investigation(investigation_id="B-1", gwl_not_encountered=True,
+                            lithology=[LithologyInterval(
+                                top_depth_m=0, bottom_depth_m=6,
+                                description="sand", uscs="SP")])
+        gw = inv.to_soil_profile().groundwater
+        assert gw.depth == 6 and "not encountered" in gw.note
