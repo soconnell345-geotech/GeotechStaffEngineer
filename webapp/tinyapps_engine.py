@@ -566,8 +566,9 @@ def build_chat_model(model_id: Optional[str] = None, *,
     rate-limit headers go to the activity log
     (:func:`webapp.http_trace.note_response`).
     """
-    import httpx
-    from webapp.engine_config import _default_max_tokens
+    import openai
+    from webapp.engine_config import (_default_max_tokens,
+                                      sdk_http_client_classes)
     from webapp.http_trace import note_response
     ChatOpenAI = _chat_openai_class()
 
@@ -578,11 +579,14 @@ def build_chat_model(model_id: Optional[str] = None, *,
             f"{ENV_KEY} (Key Vault secrets / app settings on the deployment, "
             "a .env file locally).")
     ctx = ssl_context(ps.ca_bundle)
-    client = httpx.Client(verify=ctx if ctx is not None else True,
-                          timeout=REQUEST_TIMEOUT_S,
-                          event_hooks={"response":
-                                       [no_retry_when_budget_spent,
-                                        note_response]})
+    # The openai SDK's own client class: it refuses a client from another
+    # HTTP package (anthropic 1.x already moved to httpx2).
+    client_cls = sdk_http_client_classes(openai)[0]
+    client = client_cls(verify=ctx if ctx is not None else True,
+                        timeout=REQUEST_TIMEOUT_S,
+                        event_hooks={"response":
+                                     [no_retry_when_budget_spent,
+                                      note_response]})
     return ChatOpenAI(
         model=model_id or ps.model,
         api_key=ps.api_key,
