@@ -45,7 +45,8 @@ Pure data; no third-party import.
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, FrozenSet, Iterable, Iterator, List, Optional, Set
+from typing import (Any, Dict, FrozenSet, Iterable, Iterator, List,
+                    Optional, Set)
 
 GIVEN = "given"
 DEFAULT = "default"
@@ -104,10 +105,12 @@ class CallInputs:
     (``given``), the declared defaults it left in force (``defaults``), the
     names it gave that are not the user's (``assumed``: a calc package's
     stated assumptions and the methods it was not told the user gave,
-    GM-167), and the names :func:`how_given` has called "default" so far
-    (``reported``)."""
+    GM-167), the names :func:`how_given` has called "default" so far
+    (``reported``) and, for a default the module works out from other
+    inputs rather than the declared one, the value it took (``took``: a
+    wall friction of 0.66 phi', GM-232)."""
 
-    __slots__ = ("given", "defaults", "assumed", "reported")
+    __slots__ = ("given", "defaults", "assumed", "reported", "took")
 
     def __init__(self, given: Iterable[str], defaults: Iterable[str],
                  assumed: Iterable[str] = ()):
@@ -115,6 +118,7 @@ class CallInputs:
         self.defaults: FrozenSet[str] = frozenset(defaults)
         self.assumed: FrozenSet[str] = frozenset(assumed)
         self.reported: Set[str] = set()
+        self.took: Dict[str, Any] = {}
 
 
 _CALL: ContextVar[Optional[CallInputs]] = ContextVar(
@@ -137,7 +141,7 @@ def call_inputs(given: Iterable[str], defaults: Iterable[str] = (),
 
 
 def how_given(value: Any, default: Any, name: Optional[str] = None,
-              within: Optional[str] = None) -> str:
+              within: Optional[str] = None, took: Any = None) -> str:
     """``"given"`` or ``"default"``: whether the input was given.
 
     With ``name`` (the input as the tool declares it) inside
@@ -149,13 +153,17 @@ def how_given(value: Any, default: Any, name: Optional[str] = None,
     nested value came in, such as ``"layers"`` for a layer's field),
     ``"assumed"`` in place of ``"given"`` when the call said that input is
     not the user's (GM-180). A required input has no default: pass
-    ``None``."""
+    ``None``. ``took``: the value a left-out input took where the module
+    worked it out rather than taking the declared default, which
+    ``defaults_used`` then gives in its place (GM-232)."""
     record = _CALL.get()
     if name is not None and record is not None:
         if name in record.given:
             return ASSUMED if name in record.assumed else GIVEN
         if name in record.defaults:
             record.reported.add(name)
+            if took is not None:
+                record.took[name] = _plain(took)
             return DEFAULT
     try:
         same = value == default

@@ -425,6 +425,9 @@ def test_a_default_a_module_reported_is_listed_whatever_its_condition():
             "b": {"default": 2, "applies_when": False}}}}
     assert D._defaults_used(Mod, "m", set(), {}) == {}
     assert D._defaults_used(Mod, "m", set(), {}, reported={"a"}) == {"a": 1}
+    # GM-232: a default the module worked out is given as the value it took
+    assert D._defaults_used(Mod, "m", set(), {}, reported={"a"},
+                            took={"a": 2.5, "b": 3}) == {"a": 2.5}
 
 
 def test_applies_reads_values_set_unset_and_any_of():

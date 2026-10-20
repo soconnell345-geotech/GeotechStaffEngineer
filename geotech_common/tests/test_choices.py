@@ -50,6 +50,18 @@ def test_inside_a_call_how_given_answers_by_the_inputs_named():
     assert how_given("2:1", "2:1", name="stress_method") == DEFAULT
 
 
+def test_a_default_worked_out_records_the_value_it_took():
+    """GM-232: a left-out input the module works out from others (a wall
+    friction of 0.66 phi') records the value it took, for defaults_used;
+    a given one records nothing."""
+    with call_inputs({"phi_deg"}, {"delta_deg"}) as inputs:
+        assert how_given(None, None, name="delta_deg",
+                         took=np.float64(19.8)) == DEFAULT
+        assert how_given(30.0, None, name="phi_deg", took=30.0) == GIVEN
+    assert inputs.took == {"delta_deg": 19.8}
+    assert type(inputs.took["delta_deg"]) is float
+
+
 def test_a_given_name_the_call_says_is_not_the_users_is_assumed():
     """GM-167: a calc package told which inputs the user did not give
     (a method the agent chose, a stated assumption) has the module say

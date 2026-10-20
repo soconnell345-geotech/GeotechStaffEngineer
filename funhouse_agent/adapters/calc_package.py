@@ -1117,7 +1117,8 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
     used = {}
     if "selector" in spec and spec["selector"][0] not in params:
         used[spec["selector"][0]] = spec["selector"][1]
-    used.update(_defaults_used(mod, tool, given, p, inputs.reported))
+    used.update(_defaults_used(mod, tool, given, p, inputs.reported,
+                               inputs.took))
     used.update(_own_defaults_used(spec.get("own", {}), own, p, declared))
     return _ToolRun(value, tool, p, out, own, used,
                     declared=declared, package=package)

@@ -1279,7 +1279,7 @@ def call_agent(
             result["output_note"] = _output_note(named, parameters)
         result = _citations_checked(agent_name, method, parameters, result)
         result = _with_defaults_used(mod, method, given, result, parameters,
-                                     inputs.reported)
+                                     inputs.reported, inputs.took)
         return hide_working_folder(result)
     except Exception as e:
         return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
@@ -1462,7 +1462,7 @@ def applies(condition, values: dict) -> bool:
 
 
 def _defaults_used(mod, method: str, given, parameters=None,
-                   reported=()) -> dict:
+                   reported=(), took=None) -> dict:
     """The declared defaults a call left in force that apply to it, with
     the default each took (BACKLOG GM-115, GM-119): name -> default, from
     the method's METHOD_INFO ``parameters`` (GM-110), a default that
@@ -1474,19 +1474,25 @@ def _defaults_used(mod, method: str, given, parameters=None,
     ``applies_when`` (:func:`applies`) does not hold for this call is left
     out, unless the module said it used the default (``reported``, the
     names its ``choices`` called "default"), so ``defaults_used`` and
-    ``choices`` never contradict each other."""
+    ``choices`` never contradict each other. A default the module worked
+    out from other inputs (``took``, name -> value; GM-232: a wall friction
+    of 0.66 phi') is given as the value it took, not the declared one."""
     left = _left_out(mod, method, given, parameters)
     if not left:
         return {}
     declared, aliases = _declared(mod, method)
     values = _values_in_force(declared, aliases, parameters)
-    return {name: default for name, default in left.items()
+    used = {name: default for name, default in left.items()
             if name in reported
             or applies(declared[name].get("applies_when"), values)}
+    for name, value in (took or {}).items():
+        if name in used:
+            used[name] = value
+    return used
 
 
 def _with_defaults_used(mod, method: str, given, result, parameters=None,
-                        reported=()):
+                        reported=(), took=None):
     """``result`` with ``defaults_used`` (:func:`_defaults_used`) added when
     the call left a declared default in force that applies to it: the agent
     then knows which values it never chose. A result that is not a dict, is
@@ -1495,7 +1501,8 @@ def _with_defaults_used(mod, method: str, given, result, parameters=None,
             or "defaults_used" in result:
         return result
     try:
-        used = _defaults_used(mod, method, given, parameters, reported)
+        used = _defaults_used(mod, method, given, parameters, reported,
+                              took)
     except Exception:  # noqa: BLE001 - never the method's result
         return result
     if not used:

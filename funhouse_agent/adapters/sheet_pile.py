@@ -39,21 +39,24 @@ def _build_soil_layers(params, *, method, key="layers"):
 
 
 def _log_spiral_source(params, layers, *, method):
-    """The printed source of the log-spiral passive Kp (GM-183); UFC
-    3-220-20 Fig. 4-13 is drawn for one wall friction, delta/phi' = 0.66,
-    so each friction layer must give it."""
-    source = params.get("log_spiral_source", "caquot_kerisel_1948")
-    if source == "dm7_2_fig_4_13" and params.get("pressure_method")             == "log_spiral":
+    """The printed source of the log-spiral passive Kp (GM-183, GM-232);
+    UFC 3-220-20 Figs. 4-12 and 4-13 are drawn for one wall friction,
+    delta/phi' = 0.66, so each friction layer must give it."""
+    from geotech_common import log_spiral as _ls
+    source = params.get("log_spiral_source", _ls.DEFAULT_SOURCE)
+    chart = {"dm7_2_fig_4_12": "Fig. 4-12", "dm7_2_fig_4_13": "Fig. 4-13"}
+    if source in chart and params.get("pressure_method") == "log_spiral":
         off = [i for i, l in enumerate(layers) if l.friction_angle > 0
                and abs(l.wall_friction_deg / l.friction_angle - 0.66) > 0.01]
         if off:
             raise ValueError(
-                f"{method}: log_spiral_source 'dm7_2_fig_4_13' (UFC "
-                "3-220-20 Fig. 4-13) is drawn for delta/phi' = 0.66 only; "
+                f"{method}: log_spiral_source {source!r} (UFC 3-220-20 "
+                f"{chart[source]}) is drawn for delta/phi' = 0.66 only; "
                 f"layers {off} give another wall_friction_deg. Set each "
                 "layer's wall_friction_deg to 0.66 x its friction_angle, or "
-                "use 'dm7_2_eq_4_12' (UFC 3-220-20 Eq. 4-12, any wall "
-                "friction) or 'caquot_kerisel_1948'.")
+                "leave log_spiral_source out (UFC 3-220-20 Eq. 4-12 for a "
+                "vertical face and level ground, any wall friction) or give "
+                "'caquot_kerisel_1948'.")
     return source
 
 
@@ -142,25 +145,32 @@ METHOD_REGISTRY = {
 # The printed sources of the log-spiral passive Kp (GM-183), shared with
 # retaining_walls.earth_pressure_coefficient.
 _LOG_SPIRAL_SOURCE = {
-    "type": "str", "required": False, "default": "caquot_kerisel_1948",
-    "allowed_values": ["caquot_kerisel_1948", "dm7_2_fig_4_13",
-                       "dm7_2_eq_4_12"],
+    "type": "str", "required": False, "default": "ufc_3_220_20",
+    "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948",
+                       "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"],
     "description": (
         "With pressure_method 'log_spiral', the printed source of the "
-        "passive Kp. 'caquot_kerisel_1948' (default, as before): the Caquot "
-        "and Kerisel (1948) chart, Kp at delta = phi times the printed "
-        "reduction factor R(delta/phi), Caltrans Trenching and Shoring "
-        "Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for "
-        "passive pressure. 'dm7_2_fig_4_13': UFC 3-220-20 (DM 7.2) Fig. "
-        "4-13 (p. 193), Kerisel and Absi (1990), drawn for delta/phi' = "
-        "0.66 only, so every layer's wall_friction_deg must be 0.66 x its "
-        "friction_angle. 'dm7_2_eq_4_12': UFC 3-220-20 Eq. 4-12 (p. 191) "
-        "for level ground and any wall friction. They differ: at phi 30, "
-        "delta/phi 0.66 they give 5.4, 5.3 and 5.1. UFC 3-220-20 footnote "
-        "21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along "
-        "with reduction ratios', which 'were averages that introduced "
-        "substantial inaccuracy for some cases'; the 1948 chart takes that "
-        "form (Kp at delta = phi times R). " + _TABLE_4_2_NOTE + "."),
+        "passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the "
+        "source the wall's geometry calls for (pp. 191-193); a sheet pile "
+        "has a vertical face and the tool takes level ground in front of "
+        "it, so that is Eq. 4-12 (p. 191), at each layer's "
+        "wall_friction_deg. 'caquot_kerisel_1948': the Caquot and Kerisel "
+        "(1948) chart, Kp at delta = phi times the printed reduction factor "
+        "R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. "
+        "4-30), the method its Sec. 4-6 uses for passive pressure. "
+        "'dm7_2_fig_4_12', 'dm7_2_fig_4_13': UFC 3-220-20 Figs. 4-12 (p. "
+        "192, theta = 0 curve) and 4-13 (p. 193, beta = 0 row), Kerisel and "
+        "Absi (1990), drawn for delta/phi' = 0.66 only, so every layer's "
+        "wall_friction_deg must be 0.66 x its friction_angle; UFC 3-220-20 "
+        "p. 260 says Kp for a tied-back wall 'should be obtained from "
+        "Figure 4-12'. 'dm7_2_eq_4_12': Eq. 4-12 by name. They differ: at "
+        "phi 30, delta/phi 0.66 the 1948 chart gives 5.4, the UFC charts "
+        "5.3 and Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 "
+        "DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', "
+        "which 'were averages that introduced substantial inaccuracy for "
+        "some cases'; the 1948 chart takes that form (Kp at delta = phi "
+        "times R). " + _TABLE_4_2_NOTE + ". The result's choices give each "
+        "layer's Kp from the source used and from the others."),
 }
 
 METHOD_INFO = {
@@ -178,7 +188,7 @@ METHOD_INFO = {
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
             "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the computed embedment (e.g. 1.2 for the traditional 20% rule). Use 1.0 (default) when FOS_passive already provides the safety basis — do not double-count."},
         },
-        "returns": {"embedment_depth_m": "Required embedment.", "max_moment_kNm_per_m": "Maximum bending moment."},
+        "returns": {"embedment_depth_m": "Required embedment.", "max_moment_kNm_per_m": "Maximum bending moment.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources. Tell the user."},
     },
     "anchored_wall": {
         "category": "Sheet Pile",
@@ -194,7 +204,7 @@ METHOD_INFO = {
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi); set the layer wall_friction_deg (delta)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
         },
-        "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force."},
+        "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources, and UFC 3-220-20 p. 260 on tied-back walls. Tell the user."},
     },
 }
 

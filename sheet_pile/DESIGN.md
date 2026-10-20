@@ -54,9 +54,15 @@ Selectable via `pressure_method="log_spiral"` in `analyze_cantilever` /
 `analyze_anchored` (uses Coulomb active + the log-spiral passive; set the layer
 `wall_friction_deg` = δ). Default remains Rankine/Coulomb. Validated in
 `validation_examples` (V-013). Since GM-183 (2026-10-19) `log_spiral_source`
-picks the printed source of the passive Kp: `caquot_kerisel_1948`
-(default), `dm7_2_fig_4_13` (UFC 3-220-20 Fig. 4-13, every layer's δ =
-0.66 φ) or `dm7_2_eq_4_12` (UFC 3-220-20 Eq. 4-12); the tables are in
+picks the printed source of the passive Kp: since GM-232 (2026-10-20) the
+default is `ufc_3_220_20`, UFC 3-220-20's source by the wall's geometry,
+which for a sheet pile (vertical face, level ground in front) is always Eq.
+4-12 (p. 191) at each layer's δ; `caquot_kerisel_1948` (the default before),
+`dm7_2_fig_4_12` / `dm7_2_fig_4_13` (UFC Figs. 4-12, 4-13, every layer's δ =
+0.66 φ) and `dm7_2_eq_4_12` by name. The result's `choices` give each
+passive-side layer's Kp from the source used and from the others; the
+anchored wall adds UFC p. 260 (tied-back walls: δ/φ′ 0.5 to 1.0, "KP should
+be obtained from Figure 4-12"). The tables are in
 `geotech_common/log_spiral.py` (see `soe/DESIGN.md`).
 
 ## Anchored wall shear and moment (GM-69, fixed 2026-10-14)
