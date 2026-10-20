@@ -703,9 +703,11 @@ def _plot_plan_view(pile_forces, result, analysis):
             **cap_axis)
     ax.plot([0, 0], [y0, y_end], **cap_axis)
     if cap:
+        # the face only: the edge is drawn after the names are placed, with
+        # a gap wherever a name stands on it (_draw_cap_edge)
         ax.add_patch(mpatches.Polygon(
-            cap, closed=True, facecolor='#e5e7eb', edgecolor='#444444',
-            linewidth=1.0, zorder=1))
+            cap, closed=True, facecolor='#e5e7eb', edgecolor='none',
+            zorder=1))
     if prop:
         ax.plot([p[0] for p in prop], [p[1] for p in prop],
                 color=pf.INK, lw=1.2, linestyle='-.', zorder=3)
@@ -771,6 +773,8 @@ def _plot_plan_view(pile_forces, result, analysis):
     # this scale: the forces are left to the force table, then the names too
     fig.tight_layout()
     written = _clear_names(fig, ax, names, piles, xs, ys, labels, r)
+    if cap:
+        _draw_cap_edge(fig, ax, cap, [t for t in names if t.axes is not None])
 
     # the key's lines no wider than the figure prints (a wider key keeps
     # the figure from being drawn at its printed size)
@@ -812,6 +816,61 @@ def _plot_plan_view(pile_forces, result, analysis):
     key_under_axes(fig, ax, handles=handles, note="\n".join(notes),
                    fontsize=8)
     return fig
+
+
+def _draw_cap_edge(fig, ax, cap, names) -> None:
+    """The cap's edge, broken where a pile's name stands on it.
+
+    A name has an opaque halo, and the edge running behind a halo showed in
+    slivers between the letters (GM-224). The edge is cut at each name's box,
+    padded by 2 pt, so it stops cleanly short of the lettering on either
+    side and runs unbroken everywhere else.
+    """
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    pad = 2.0 * fig.dpi / 72.0
+    to_px = ax.transData
+    boxes = []
+    for t in names:
+        bb = t.get_window_extent(rend)
+        boxes.append((bb.x0 - pad, bb.y0 - pad, bb.x1 + pad, bb.y1 + pad))
+    inv = ax.transData.inverted()
+    pts = [tuple(p) for p in cap]
+    for (xa, ya), (xb, yb) in zip(pts, pts[1:] + pts[:1]):
+        (pa, pb) = to_px.transform([(xa, ya), (xb, yb)])
+        cuts = []                          # (t0, t1) of the segment inside a box
+        for x0, y0, x1, y1 in boxes:
+            lo, hi, dx, dy = 0.0, 1.0, pb[0] - pa[0], pb[1] - pa[1]
+            ok = True
+            for d, lo_b, hi_b, o in ((dx, x0, x1, pa[0]), (dy, y0, y1, pa[1])):
+                if abs(d) < 1e-9:
+                    if o < lo_b or o > hi_b:
+                        ok = False
+                        break
+                    continue
+                t0, t1 = (lo_b - o) / d, (hi_b - o) / d
+                if t0 > t1:
+                    t0, t1 = t1, t0
+                lo, hi = max(lo, t0), min(hi, t1)
+                if lo > hi:
+                    ok = False
+                    break
+            if ok:
+                cuts.append((lo, hi))
+        cuts.sort()
+        t, keep = 0.0, []
+        for lo, hi in cuts:
+            if lo > t:
+                keep.append((t, lo))
+            t = max(t, hi)
+        if t < 1.0:
+            keep.append((t, 1.0))
+        for t0, t1 in keep:
+            if t1 - t0 < 1e-6:
+                continue
+            ax.plot([xa + (xb - xa) * t0, xa + (xb - xa) * t1],
+                    [ya + (yb - ya) * t0, ya + (yb - ya) * t1],
+                    color='#444444', lw=1.0, solid_capstyle='butt', zorder=5)
 
 
 def _clear_names(fig, ax, names, piles, xs, ys, labels, r) -> str:
