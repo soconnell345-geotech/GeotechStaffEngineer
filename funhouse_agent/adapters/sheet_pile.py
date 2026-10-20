@@ -4,6 +4,7 @@ from funhouse_agent.adapters import (
     apply_aliases, check_nested_list, declare_applies_when, field_keys,
     reject_unknown_params, require_keys, require_params,
 )
+from geotech_common.log_spiral import TABLE_4_2_NOTE as _TABLE_4_2_NOTE
 from sheet_pile.cantilever import WallSoilLayer, analyze_cantilever
 from sheet_pile.anchored import analyze_anchored
 
@@ -159,7 +160,7 @@ _LOG_SPIRAL_SOURCE = {
         "21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along "
         "with reduction ratios', which 'were averages that introduced "
         "substantial inaccuracy for some cases'; the 1948 chart takes that "
-        "form (Kp at delta = phi times R)."),
+        "form (Kp at delta = phi times R). " + _TABLE_4_2_NOTE + "."),
 }
 
 METHOD_INFO = {

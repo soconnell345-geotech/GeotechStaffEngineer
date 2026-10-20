@@ -33,7 +33,16 @@ CASES = {
         dict(pressure_method="rankine", q_allowable=200.0)),
     "given interface": (
         dict(wall_height=4.0, base_width=2.8, toe_length=0.4),
-        dict(delta_base=24.0, base_adhesion=5.0)),
+        dict(delta_base=24.0, base_adhesion=5.0,
+             sliding_cohesion="friction_plus_adhesion")),
+    # GM-212: phi_foundation 0, so the undrained rule, ca = cu on B
+    "undrained foundation": (
+        dict(wall_height=4.0, base_width=2.8, toe_length=0.4),
+        dict(phi_foundation=0.0, c_foundation=40.0)),
+    "friction and table adhesion": (
+        dict(wall_height=4.0, base_width=2.8, toe_length=0.4),
+        dict(phi_foundation=26.0, c_foundation=30.0,
+             sliding_cohesion="friction_plus_adhesion")),
 }
 
 
@@ -50,10 +59,12 @@ def test_the_checks_dicts_come_from_the_terms_the_result_carries(name):
     method = kw.get("pressure_method", "rankine")
     assert _sliding_dict(r.sliding_terms, r.FOS_sliding_required) \
         == check_sliding(*args, c_foundation=kw.get("c_foundation", 0.0),
+                         phi_foundation=kw.get("phi_foundation"),
                          pressure_method=method,
                          include_passive=kw.get("include_passive", False),
                          delta_base=kw.get("delta_base"),
-                         base_adhesion=kw.get("base_adhesion"))
+                         base_adhesion=kw.get("base_adhesion"),
+                         sliding_cohesion=kw.get("sliding_cohesion"))
     assert _overturning_dict(r.overturning_terms,
                              r.FOS_overturning_required) \
         == check_overturning(*args, pressure_method=method)
