@@ -136,6 +136,22 @@ def test_fingerprint_sees_a_changed_prompt(monkeypatch):
     assert diff and all("system_prompt" in d for d in diff), diff
 
 
+def test_a_swapped_tool_order_fails():
+    """Tools are hashed by name, so the order is recorded as a list and a
+    reorder (which changes what the model sees first) is a difference."""
+    old = {"tools": {"a": {"x": 1}, "b": {"x": 2}}, "tool_order": ["a", "b"]}
+    new = {"tools": {"b": {"x": 2}, "a": {"x": 1}}, "tool_order": ["b", "a"]}
+    diff = page_builds.differences(old, new)
+    assert diff and all("tool_order" in d for d in diff), diff
+    assert not page_builds.differences(old, dict(old))
+
+
+def test_every_recorded_call_has_its_tool_order(golden):
+    for name, build in golden["builds"].items():
+        for call in build["app"]["calls"]:
+            assert list(call["tools"]) == call["tool_order"] or                 sorted(call["tools"]) == sorted(call["tool_order"]), name
+
+
 def test_record_keeps_the_other_planlens_entries():
     """Recording replaces the installed planlens' entry and keeps the
     others, so a developer on planlens main never drops CI's."""
