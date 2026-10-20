@@ -444,14 +444,16 @@ class TestEarthPressureCoefficient:
         ({"alpha_deg": 80.0}, "battered"),
         ({"state": "passive", "beta_deg": 10.0}, "sloping"),
         ({"state": "at_rest", "delta_deg": 10.0}, "Jaky"),
-        # GM-183: a slope is taken with one of the printed forms named
-        ({"state": "at_rest", "beta_deg": 10.0}, "k0_sloping_ground"),
+        # GM-243: a slope is EN 1997-1 Eq. 9.2, for ground rising from the
+        # wall only, and the Caltrans form is no longer a choice
+        ({"state": "at_rest", "beta_deg": -10.0}, r"Eq\. 9\.2"),
+        ({"state": "at_rest", "beta_deg": 10.0,
+          "k0_sloping_ground": "caltrans_eq_4_3_14"}, r"Eq\. 9\.2"),
         ({"state": "passive", "theory": "caquot_kerisel",
           "alpha_deg": 80.0}, "battered"),
         # each refusal names what to use instead (Caltrans T&S 4-3, 4-6)
         ({"state": "passive", "delta_deg": 15.0}, "'caquot_kerisel'"),
         ({"state": "passive", "beta_deg": 10.0}, "Log-Spiral"),
-        ({"state": "at_rest", "beta_deg": 10.0}, r"Eq\. 4-3-14"),
     ])
     def test_an_input_the_theory_does_not_take_is_refused(self, params,
                                                           says):
