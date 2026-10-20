@@ -7,7 +7,8 @@ socket methods.
 All units are SI: kPa, kN/m³, degrees, meters.
 
 References:
-    FHWA GEC-10, Chapters 13-14
+    FHWA GEC-10 (FHWA-NHI-18-024), Sec. 10.3.1 (idealized geomaterial layer
+    profiles) and Sec. 10.3.3 (geomaterial properties)
 """
 
 import warnings

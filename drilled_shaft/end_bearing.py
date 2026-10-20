@@ -9,8 +9,8 @@ Implements tip resistance for:
 All units are SI: kPa, kN, meters.
 
 References:
-    FHWA GEC-10, Chapter 13
-    Brown, Turner & Castelli (2010)
+    FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5
+    Brown, Turner & Castelli (2010), FHWA-NHI-10-016 (where noted)
     O'Neill & Reese (1999)
     AASHTO LRFD Bridge Design Specifications, Section 10.8.3.5.1c
 """
@@ -18,7 +18,8 @@ References:
 import math
 
 
-# GEC-10 / O'Neill-Reese limiting net unit end bearing in clay:
+# GEC-10 (2010 edition) / O'Neill-Reese limiting net unit end bearing in clay
+# (the 2018 edition does not print it):
 # 80 ksf = 3830 kPa (~3.8 MPa). Higher values require load-test
 # verification.
 QB_MAX_COHESIVE = 3830.0  # kPa
@@ -161,7 +162,8 @@ def end_bearing_cohesionless(N60: float, tip_area: float,
 
     References
     ----------
-    GEC-10 Section 13.3.4.3; O'Neill & Reese (1999)
+    GEC-10 (FHWA-NHI-18-024) Eq. 10-14, p. 10-14 (N60 limited to 50, p. 10-15);
+    the 1.27/D reduction is O'Neill & Reese (1999)
     """
     return unit_end_bearing_cohesionless(N60, diameter)["qb"] * tip_area
 
@@ -202,7 +204,8 @@ def end_bearing_rock(qu: float, tip_area: float,
 
     References
     ----------
-    GEC-10 Section 13.3.4.4; Canadian Foundation Engineering Manual
+    GEC-10 (2010 edition) Sec. 13.3.4.4; Canadian Foundation Engineering
+    Manual. The 2018 edition uses q_BN = N*cr q_u, N*cr = 2.5 (Eq. 10-23).
     """
     return rock_end_bearing_multiplier(RQD) * qu * tip_area
 

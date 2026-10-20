@@ -3,7 +3,7 @@ LRFD resistance factors for drilled shaft design per AASHTO.
 
 References:
     AASHTO LRFD Bridge Design Specifications, 9th Ed., Table 10.5.5.2.4-1
-    FHWA GEC-10, Table 13-1
+    FHWA GEC-10 (FHWA-NHI-18-024), Table 8-4, p. 8-14
 """
 
 from typing import Dict, Any

@@ -5,7 +5,7 @@ Computes axial capacity of drilled shafts (bored piles) using GEC-10 methods:
 alpha method (clay), beta method (sand), and rock socket design.
 
 ## References
-- FHWA GEC-10 (Drilled Shafts)
+- FHWA GEC-10 (FHWA-NHI-18-024, 2018), Chapter 10 and Table 8-4; the 2010 edition (FHWA-NHI-10-016) is cited by name where a step follows it
 - O'Neill & Reese (1999) — alpha method for clay
 - AASHTO LRFD Bridge Design Specifications — resistance factors
 

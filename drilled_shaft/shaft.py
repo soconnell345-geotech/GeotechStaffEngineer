@@ -4,7 +4,7 @@ Drilled shaft geometry definition.
 All units are SI: meters, kPa, kN.
 
 References:
-    FHWA GEC-10, Chapter 12
+    FHWA GEC-10 (FHWA-NHI-18-024), Sec. 10.3.4, Select Trial Lengths and Diameters
 """
 
 import math
