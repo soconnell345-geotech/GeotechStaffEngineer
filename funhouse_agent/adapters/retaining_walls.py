@@ -393,6 +393,39 @@ _K_TAKES = {
 _K_NEUTRAL = {"delta_deg": 0.0, "alpha_deg": 90.0, "beta_deg": 0.0}
 _K_SAYS = {"delta_deg": "wall friction", "alpha_deg": "a battered wall back",
            "beta_deg": "a sloping backfill"}
+# What to use instead, by state and input. Caltrans Trenching and Shoring
+# Manual Sec. 4-3: Rankine passive "must NOT be used" for a sloping
+# backfill, Coulomb's passive form is not recommended either, and the
+# Log-Spiral method (Sec. 4-6) is the one for passive pressure with wall
+# friction or slope; its sloping-ground chart and the manual's sloping
+# K0 (Eq. 4-3-14) are not in this tool.
+_CT = "the Caltrans Trenching and Shoring Manual"
+_K_INSTEAD = {
+    ("active", "delta_deg"): "theory 'coulomb' takes wall friction",
+    ("active", "alpha_deg"): "theory 'coulomb' takes a battered back",
+    ("passive", "delta_deg"): (
+        "theory 'caquot_kerisel' (the Log-Spiral Kp " + _CT + " Sec. 4-6 "
+        "recommends for passive pressure) or 'coulomb' takes wall friction"),
+    ("passive", "alpha_deg"): "theory 'coulomb' takes a battered back",
+    ("passive", "beta_deg"): (
+        "Rankine's Kp is not for a sloping backfill (" + _CT + " Sec. 4-3: "
+        "it gives the same Kp for +beta and -beta) and the Log-Spiral Kp "
+        "for sloping ground (its Sec. 4-6) is not in this tool; theory "
+        "'coulomb' takes a slope, though the manual does not recommend "
+        "Coulomb for passive pressure"),
+    ("caquot_kerisel", "passive", "beta_deg"): (
+        "this tool's Log-Spiral Kp is for level ground (the sloping-ground "
+        "chart of " + _CT + " Sec. 4-6 is not in it); theory 'coulomb' "
+        "takes a slope, though the manual does not recommend Coulomb for "
+        "passive pressure"),
+}
+_K_AT_REST_INSTEAD = (
+    "the sloping-backfill K0 of " + _CT + " (Eq. 4-3-14) is not in this "
+    "tool")
+
+
+def _capital(text):
+    return text[:1].upper() + text[1:]
 
 
 def _refuse_unused_k_inputs(p, theory, state):
@@ -403,15 +436,20 @@ def _refuse_unused_k_inputs(p, theory, state):
               and float(p[n]) != neutral]
     if not unused:
         return
-    which = ("Jaky's at-rest K0 = 1 - sin(phi) (level ground, any theory)"
-             if state == "at_rest" else f"the {theory} {state} coefficient")
+    if state == "at_rest":
+        which = ("Jaky's at-rest K0 = 1 - sin(phi) (level ground behind a "
+                 "vertical wall, whatever the theory)")
+        instead = [_K_AT_REST_INSTEAD]
+    else:
+        which = f"the {theory} {state} coefficient"
+        instead = [_K_INSTEAD.get((theory, state, n), _K_INSTEAD[(state, n)])
+                   for n in unused]
     raise ValueError(
         f"earth_pressure_coefficient: {which} does not take "
         + " or ".join(f"{_K_SAYS[n]} ({n} {p[n]})" for n in unused)
-        + ". theory 'coulomb' takes wall friction, a battered back and a "
-        "sloping backfill; leave these out (or at "
-        + ", ".join(f"{n} {_K_NEUTRAL[n]:g}" for n in unused)
-        + ") for this coefficient.")
+        + ". " + _capital("; ".join(instead)) + ". Otherwise leave "
+        + ("it" if len(unused) == 1 else "them") + " out (or at "
+        + ", ".join(f"{n} {_K_NEUTRAL[n]:g}" for n in unused) + ").")
 
 
 def _run_list_reinforcement(params):

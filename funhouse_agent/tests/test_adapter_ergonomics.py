@@ -439,6 +439,10 @@ class TestEarthPressureCoefficient:
         ({"state": "at_rest", "beta_deg": 10.0}, "Jaky"),
         ({"state": "passive", "theory": "caquot_kerisel",
           "alpha_deg": 80.0}, "battered"),
+        # each refusal names what to use instead (Caltrans T&S 4-3, 4-6)
+        ({"state": "passive", "delta_deg": 15.0}, "'caquot_kerisel'"),
+        ({"state": "passive", "beta_deg": 10.0}, "Log-Spiral"),
+        ({"state": "at_rest", "beta_deg": 10.0}, r"Eq\. 4-3-14"),
     ])
     def test_an_input_the_theory_does_not_take_is_refused(self, params,
                                                           says):

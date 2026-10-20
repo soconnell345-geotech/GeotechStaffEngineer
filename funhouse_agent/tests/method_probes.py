@@ -119,7 +119,7 @@ LABEL_ONLY = {
        for n in ("hammer_type", "hammer_custom_name")},
     **{(f"fem2d|{m}", "t"): _PLANE_STRAIN
        for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
-                 "fem2d_slope_srm", "fem2d_staged")},
+                 "fem2d_slope_srm")},
     ("ground_improvement|aggregate_piers", "E_column"):
         "not used in the calculation, as its description says: n sets the "
         "stress split, and E_column only warns below E_soil",
@@ -185,6 +185,7 @@ NOT_REACHED = {
        for n, why in (("socket_diameter", _NO_ROCK),
                       ("casing_depth", _CASING))},
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
+    ("downdrag|post_liquefaction_downdrag", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package", "influence_depth_criterion"):
         "the probe's soil below the toe is marked as not settling",
@@ -199,7 +200,8 @@ NOT_REACHED = {
     ("calc_package|ground_improvement_package", "pattern"): _VIBRO,
     **{(f"lateral_pile|get_py_curve#{m}", "loading"):
        "at the probe's depth (z / b about 8) the cyclic curve is the "
-       "static one; it differs near the surface"
+       "static one; it differs near the surface (and, for SandReese's "
+       "'reese1974' construction, by B at any depth)"
        for m in ("SandAPI", "SandReese")},
     ("lateral_pile|get_py_curve#WeakRock", "rock_top"):
         "the probe's depth is more than 3 b below the rock top either way",
@@ -226,6 +228,9 @@ NOT_REACHED = {
     ("fem2d|fem2d_consolidation", "gamma_w"): _DRAINED,
     ("fem2d|fem2d_staged", "gamma_w"):
         "the probe's phases give no water table",
+    ("fem2d|fem2d_staged", "t"):
+        "the probe has no beam elements: t scales the soil's stiffness, "
+        "weight and loads alike, but not a beam's EA and EI (GM-204)",
     **{(k, "max_iter"): _ITERATIONS for k in (
         "fem2d|fem2d_excavation", "fem2d|fem2d_excavation#interface",
         "fem2d|fem2d_footing_capacity", "fem2d|fem2d_local_fos",
@@ -250,8 +255,8 @@ NOT_REACHED = {
     ("calc_package|reliability_package#form", "max_iterations"):
         _CONVERGES,
     ("calc_package|reliability_package#pem", "scheme"):
-        "one random variable: every point-estimate scheme takes the same "
-        "two points",
+        "one random variable: Rosenblueth's 2n+1 multiplicative form then "
+        "gives the full two-point estimate's mean and COV exactly",
     **{(k, "phi_foundation"): _PHI_FDN for k in (
         "retaining_walls|mse_lrfd_external_stability",
         "retaining_walls|mse_wall", "retaining_walls|mse_wall#surcharge")},
@@ -272,6 +277,10 @@ NOT_REACHED = {
         "the probe's factor of safety clears both requirements",
     ("soe|design_ground_anchor", "anchor_angle_deg"):
         "GEC-4's 4.5 m minimum free length governs at either angle",
+    ("soe|design_ground_anchor", "soil_type"):
+        "the guard's other value, sand_gravel_loose, prints the same "
+        "145 kN/m as sand_medium in GEC-4 Table 6, and the 4.5 m minimum "
+        "bond length governs either way",
     ("soe|fhwa_apparent_pressure_anchored_wall", "FOS_embedment"):
         "the probe's wall reaches no moment balance at FS = 1.3 within 6H, "
         "so no embedment is reported at either factor",
@@ -303,7 +312,7 @@ KNOWN = {
         "GM-140: 'bishop' is listed, but a noncircular slip_points surface "
         "runs Spencer",
     ("lateral_pile|get_py_curve#StiffClayAboveWT", "loading"):
-        "GM-184 follow-up: the cyclic curve is the static one capped at "
+        "GM-202: the cyclic curve is the static one capped at "
         "16 y50, where the static one already reaches pu; Reese & Welch's "
         "cyclic curve needs the number of cycles",
 }
