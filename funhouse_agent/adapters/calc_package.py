@@ -21,6 +21,7 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 import base64
 import contextvars
 import math
+import json
 import os
 import re
 from datetime import datetime
@@ -1622,6 +1623,49 @@ def _generate_downdrag_package(params: dict) -> dict:
 # 8. Seismic Geotechnical
 # ---------------------------------------------------------------------------
 
+#: The most liquefaction layers whose FOS the response lists one by one;
+#: more are summarised (the 8000-char limit above).
+_MAX_LISTED_LAYERS = 30
+
+
+def _seismic_numbers(tool: str, result) -> dict:
+    """The numbers the seismic package's PDF shows, with units, and the
+    choices the analysis made (GM-205), from the result the tool gave."""
+    from calc_package.tables import package_choices
+    if tool == "site_classification":
+        out = {"site_class": result.site_class}
+        for name, unit, value in (
+                ("vs30", "m_per_s", result.vs30),
+                ("n_bar", "", result.n_bar),
+                ("su_bar", "kPa", result.su_bar)):
+            if value is not None:
+                out[f"{name}_{unit}" if unit else name] = value
+        if result.Fa is not None and result.Ss is not None:
+            out.update(Fpga=result.Fpga, Fa=result.Fa, Fv=result.Fv,
+                       Ss_g=result.Ss, S1_g=result.S1,
+                       SDS_g=round(result.Fa * result.Ss, 4),
+                       SD1_g=round(result.Fv * result.S1, 4))
+        return out
+    if tool == "seismic_earth_pressure":
+        out = result.to_dict()
+        out.pop("warnings", None)       # listed once, as "warnings"
+        return out
+    out = {k: v for k, v in result.to_dict().items()
+           if k != "layer_results"}
+    layers = result.layer_results
+    if len(layers) <= _MAX_LISTED_LAYERS:
+        out["layers"] = [
+            {"depth_m": r["depth_m"], "CSR": r["CSR"], "CRR": r["CRR"],
+             "FOS_liq": r["FOS_liq"], "liquefiable": r["liquefiable"]}
+            for r in layers]
+    else:
+        out["liquefiable_depths_m"] = [
+            r["depth_m"] for r in layers if r["liquefiable"]]
+    if not out.get("choices"):
+        out.pop("choices", None)
+    return out
+
+
 def _generate_seismic_package(params: dict) -> dict:
     from seismic_geotech.results import SiteClassResult
 
@@ -1642,7 +1686,8 @@ def _generate_seismic_package(params: dict) -> dict:
         result = run.out
         analysis["magnitude"] = result.magnitude
 
-    extra = {"seismic_analysis_type": run.value}
+    extra = {"seismic_analysis_type": run.value,
+             **_seismic_numbers(run.tool, result)}
     if getattr(result, "warnings", None):
         extra["warnings"] = list(result.warnings)
     return _build_response(
@@ -1739,8 +1784,46 @@ def _generate_ground_improvement_package(params: dict) -> dict:
         "ground_improvement", result, analysis, params,
         run=run,
         analysis_type="Ground Improvement",
-        extra={"method": run.value},
+        extra={"method": run.value, **_vibro_numbers(run.value, result)},
     )
+
+
+def _vibro_numbers(method: str, result) -> dict:
+    """The numbers each ground improvement method's PDF shows (GM-205), from
+    the result's own ``to_dict()`` (units in the key names): vibro's
+    feasibility, the aggregate piers' replacement ratio, composite modulus,
+    bearing and settlement, the wick drains' spacing and degrees of
+    consolidation, the surcharge's time to the target and settlements. The
+    time curves are thinned for the 8000-char limit (the PDF and its CSV
+    have every point); the choices stay, the agent cannot read the PDF and
+    states them to the user, so a response over the limit loses curve
+    points and the wick drain details before it loses a choice."""
+    out = result.to_dict()
+    _thin_curves(out)
+    for points in (_MAX_LISTED_POINTS, 10, 5):
+        if len(json.dumps(out, default=str)) < 6000:
+            break
+        _thin_curves(out, points)
+    if len(json.dumps(out, default=str)) >= 6000:
+        out.pop("wick_drain_details", None)
+    return out
+
+
+def _thin_curves(d: dict, limit: int = None) -> None:
+    """Thin every ``time_settlement_curve`` in ``d`` (and the wick drain
+    details inside it) to at most ``_MAX_LISTED_POINTS`` points, ends kept."""
+    limit = limit or _MAX_LISTED_POINTS
+    curve = d.get("time_settlement_curve")
+    if isinstance(curve, list) and len(curve) > limit:
+        n = len(curve)
+        keep = sorted({round(i * (n - 1) / (limit - 1))
+                       for i in range(limit)})
+        d["time_settlement_curve"] = [curve[i] for i in keep]
+        d["time_settlement_curve_note"] = (
+            f"{len(keep)} of the {n} points, evenly spaced with both ends; "
+            "the PDF and its CSV table have all of them")
+    if isinstance(d.get("wick_drain_details"), dict):
+        _thin_curves(d["wick_drain_details"], limit)
 
 
 # ---------------------------------------------------------------------------
@@ -1754,8 +1837,41 @@ def _generate_wave_equation_package(params: dict) -> dict:
         "wave_equation", result, analysis, params,
         run=run,
         analysis_type="Wave Equation",
-        extra={"n_points": len(result.blow_counts)},
+        extra={"n_points": len(result.blow_counts),
+               **_bearing_graph_numbers(result)},
     )
+
+
+#: The most bearing graph points the response lists (the 8000-char limit).
+_MAX_LISTED_POINTS = 25
+
+
+def _bearing_graph_numbers(result) -> dict:
+    """The bearing graph the PDF shows (GM-205): for each assumed ultimate
+    resistance R_ult, the blow count, the permanent set and the maximum
+    compression and tension stress in the pile, rounded as the table
+    prints them."""
+    n = len(result.R_values)
+    keep = list(range(n))
+    if n > _MAX_LISTED_POINTS:        # evenly thinned, ends kept
+        keep = sorted({round(i * (n - 1) / (_MAX_LISTED_POINTS - 1))
+                       for i in range(_MAX_LISTED_POINTS)})
+    out = {"bearing_graph": [
+        {"R_ult_kN": round(float(r), 1),
+         # the PDF's table prints "Refusal" from 1e5 blows/m up
+         "blow_count_per_m": round(float(b), 1) if b < 1e5 else "refusal",
+         "permanent_set_mm": round(float(s) * 1000, 2),
+         "max_compression_stress_kPa": round(float(c), 0),
+         "max_tension_stress_kPa": round(float(t), 0)}
+        for r, b, s, c, t in (
+            (result.R_values[i], result.blow_counts[i],
+             result.permanent_sets[i], result.max_comp_stresses[i],
+             result.max_tens_stresses[i]) for i in keep)]}
+    if len(keep) < n:
+        out["bearing_graph_note"] = (
+            f"{len(keep)} of the {n} points, evenly spaced with both ends; "
+            "the PDF and its CSV table have all of them")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2721,7 +2837,7 @@ METHOD_INFO = {
     "seismic_package": {
         "category": "Calculation Package",
         "brief": "Run seismic geotechnical analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "seismic_analysis_type": "Which sub-analysis was performed."},
+        "returns": {**_COMMON_RETURNS, "seismic_analysis_type": "Which sub-analysis was performed.", "(numbers)": "The numbers the PDF shows, at the top level by the sub-analysis: site_classification gives site_class, vs30_m_per_s / n_bar / su_bar_kPa as given, and with Ss and S1 Fpga, Fa, Fv, SDS_g and SD1_g; seismic_earth_pressure gives KAE, KPE, PAE_total_kN_per_m, PA_static_kN_per_m, delta_PAE_kN_per_m, height_of_application_m, kh, kv and its choices; liquefaction gives amax_g, magnitude, gwt_depth_m, n_liquefiable, min_FOS_liq, critical_depth_m, each layer's depth, CSR, CRR and FOS_liq (more than 30 layers: the liquefiable depths) and its choices. Report them to the user."},
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
@@ -2731,12 +2847,12 @@ METHOD_INFO = {
     "ground_improvement_package": {
         "category": "Calculation Package",
         "brief": "Run ground improvement analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used."},
+        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(method numbers)": "The numbers the PDF shows, at the top level, units in the key names. vibro: is_feasible, fines_content_percent, initial_N_spt, target_N_spt, recommended_spacing_m, probe_pattern, reasons. aggregate_piers: area_replacement_ratio, stress_concentration_ratio, composite_modulus_kPa, improved_bearing_kPa, unreinforced_bearing_kPa, settlement_improved_mm, settlement_unreinforced_mm, column_diameter_m, column_spacing_m. wick_drains: drain_spacing_m, influence_diameter_m, Ur_percent, Uv_percent, U_total_percent, time_years, ch/cv_m2_per_year. surcharge: surcharge_kPa, target_U_percent, time_to_target_years, settlement_at_target_mm, settlement_ultimate_mm. Report them to the user."},
     },
     "wave_equation_package": {
         "category": "Calculation Package",
         "brief": "Run wave equation analysis and generate bearing graph calc package.",
-        "returns": {**_COMMON_RETURNS, "n_points": "Number of bearing graph points."},
+        "returns": {**_COMMON_RETURNS, "n_points": "Number of bearing graph points.", "bearing_graph": "The graph the PDF shows: per assumed ultimate resistance, R_ult_kN, blow_count_per_m, permanent_set_mm, max_compression_stress_kPa and max_tension_stress_kPa. Report the blow count the driving criterion needs against R_ult."},
     },
     "pile_group_package": {
         "category": "Calculation Package",

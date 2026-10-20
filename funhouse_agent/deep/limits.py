@@ -43,6 +43,13 @@ from langchain.agents.middleware import (AgentMiddleware,
                                         ModelCallLimitMiddleware, hook_config)
 from langchain_core.messages import AIMessage, HumanMessage
 
+#: Default cap on the size of a tool result fed back to the model (the
+#: vision kit's and the core tools'; here since INF-30 step 5), mirroring
+#: v1's ``GeotechAgent._max_result_chars`` (``funhouse_agent/agent.py``). Large
+#: reference-text dumps from the references sub-agent would otherwise be
+#: re-sent on every ReAct round and compound the input-token cost.
+DEFAULT_MAX_RESULT_CHARS = 8000
+
 #: Default model-call budget per references consult (one ``task`` delegation).
 #: Picked from the rc7 run data: good reference answers complete in a few
 #: rounds (median question spend was modest); the token burners were consults

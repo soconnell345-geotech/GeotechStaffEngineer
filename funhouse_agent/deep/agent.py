@@ -87,6 +87,7 @@ from funhouse_agent.deep.prompt import (
 from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
     DEFAULT_MAX_RESULT_CHARS,
+    GEOTECH_VISION_TOOLS,
     make_core_tools,
     make_vision_tools,
 )
@@ -777,9 +778,9 @@ def build_calc_subagent(
             n=int(max_model_calls))
     # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
     # owner on calc packages' figures, 2026-10-15).
-    from funhouse_agent.deep.figure_helper import (CALC_REDRAW_NOTE,
-                                                   FigureLooks,
-                                                   _plot_code_tool)
+    from funhouse_agent.deep.calc_figures import (CALC_REDRAW_NOTE,
+                                                  FigureLooks)
+    from funhouse_agent.deep.figure_helper import _plot_code_tool
     description = _CALC_DESCRIPTION
     plot_code = _plot_code_tool()
     if plot_code is not None:
@@ -880,6 +881,7 @@ def build_primary_tools(
     description_overrides: Optional[dict] = None,
     description_rewrites: Optional[dict] = None,
     plot_reference_charts: bool = True,
+    geotech_vision_tools: bool = True,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -905,6 +907,10 @@ def build_primary_tools(
         descriptions, and whether ``plot_data`` offers the
         soil-classification charts (the Document Review page: no; BACKLOG
         RI-34).
+    geotech_vision_tools : bool, optional
+        Whether the geotech page's two reference readers
+        (:data:`~funhouse_agent.deep.tools.GEOTECH_VISION_TOOLS`) are added
+        to the vision kit's tools (the Document Review page: no; DR-04).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -929,6 +935,7 @@ def build_primary_tools(
         description_overrides=description_overrides,
         description_rewrites=description_rewrites,
         plot_reference_charts=plot_reference_charts,
+        added_tools=GEOTECH_VISION_TOOLS if geotech_vision_tools else None,
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),
@@ -987,9 +994,10 @@ REVIEW_READER_DESCRIPTION = (
 #: the review page has neither the library nor the examples (DR-04; the
 #: review of 2026-09-26). The lean build never had them. ``log_grid`` reads a
 #: boring or test-pit log as its grid: a geotechnical report's page, which
-#: is not this page's document (BACKLOG RI-34).
-GEOTECH_ONLY_TOOLS = ("read_reference_figure", "view_worked_example_source",
-                      "log_grid")
+#: is not this page's document (BACKLOG RI-34). Since INF-30 step 4 the page
+#: is built without the first two (:data:`GEOTECH_VISION_TOOLS`, which GSE
+#: adds to the vision kit) and drops only ``log_grid``, a planlens tool.
+GEOTECH_ONLY_TOOLS = tuple(GEOTECH_VISION_TOOLS) + ("log_grid",)
 
 
 def _review_page_descriptions() -> dict:
@@ -1019,7 +1027,7 @@ def _review_reader_subagent(primary_tools) -> Optional[dict]:
     """
     if _GENERAL_PURPOSE_SPEC is None:
         return None
-    from funhouse_agent.deep.prompt import DOCUMENT_REVIEW_READER_PROMPT
+    from funhouse_agent.review_prompt import DOCUMENT_REVIEW_READER_PROMPT
     from funhouse_agent.deep.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
     wanted = set(READER_TOOLS)
@@ -1131,9 +1139,18 @@ def build_deep_agent(
     review_page: bool = False,
     working_dir: Optional[str] = None,
     coverage_dir: Optional[str] = None,
+    subagent_models: Optional[dict] = None,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
+
+    ``subagent_models`` gives a helper its own chat model, by the helper's
+    name (``{"references": sonnet}``; BACKLOG INF-41). A helper not named,
+    and every helper when it is ``None``, runs on ``model`` as before; a
+    compiled helper (report ingest, the report library) keeps the model it
+    was built with, and a name this build has no helper for is ignored. The
+    host decides the map (``webapp.helper_models``); the compiled agent's
+    ``geotech_build["helper_models"]`` records the result.
 
     ``coverage_dir`` is the conversation's folder, where the coverage ledger
     (``coverage.json``) is kept when ``GEOTECH_COVERAGE`` is on
@@ -1185,7 +1202,7 @@ def build_deep_agent(
     system_prompt : str, optional
         REPLACES the geotechnical domain prompt outright (``extra_system_prompt``
         still appends to it). The document-review page passes
-        :func:`~funhouse_agent.deep.prompt.build_document_review_prompt` here
+        :func:`~funhouse_agent.review_prompt.build_document_review_prompt` here
         with ``allowed_agents=()`` and ``reference_mode="off"`` — a different
         agent over the same document, vision and file tools. Default ``None``
         keeps the geotechnical prompt.
@@ -1398,11 +1415,13 @@ def build_deep_agent(
                                else None),
         description_rewrites=_review_page_rewrites() if review_page else None,
         plot_reference_charts=not review_page,
+        geotech_vision_tools=not review_page,
     )
     if review_page:
         from funhouse_agent import review_flags as _rf
-        # kept_readings (TA-28) waits for the suite on the testers' page.
-        _drop = GEOTECH_ONLY_TOOLS + (
+        # kept_readings (TA-28) waits for the suite on the testers' page;
+        # log_grid is a geotechnical report's (GEOTECH_ONLY_TOOLS).
+        _drop = ("log_grid",) + (
             () if _rf.kept_readings_on_review_page() else ("kept_readings",))
         tools = [t for t in tools if getattr(t, "name", None) not in _drop]
     if extra_tools:
@@ -1652,7 +1671,7 @@ def build_deep_agent(
         # at the output limit is caught before anything acts on it (C5).
         # A helper's own result notes (the calc helper's FigureLooks) go
         # just inside DeliveredToolResults, so the activity log shows them.
-        from funhouse_agent.deep.figure_helper import FigureLooks
+        from funhouse_agent.deep.calc_figures import FigureLooks
         notes = [m for m in spec.get("middleware") or []
                  if isinstance(m, FigureLooks)]
         if notes:
@@ -1710,6 +1729,19 @@ def build_deep_agent(
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
                           + [OutputLimitGuard()]})
+    # A helper's own model (INF-41): set on its spec, which deepagents
+    # builds the helper with in place of the primary's model.
+    helper_models = {}
+    for spec in subagents:
+        name = spec.get("name") if isinstance(spec, dict) else None
+        chosen = (subagent_models or {}).get(name)
+        if chosen is None or "runnable" in spec:
+            continue
+        spec["model"] = chosen
+        from funhouse_agent.deep.busy_retry import engine_facts
+        helper_models[str(name)] = (
+            chosen if isinstance(chosen, str)
+            else engine_facts(chosen).get("model") or type(chosen).__name__)
     if coverage.on:
         # Every helper's reads count: the field session's helper read page
         # ranges the primary never saw (FINDINGS P3).
@@ -1859,6 +1891,9 @@ def build_deep_agent(
             "switches": _rf.describe(),
             "prompt_chars": len(system_prompt or ""),
         }
+        if helper_models:
+            # the helpers on a model of their own (INF-41)
+            agent.geotech_build["helper_models"] = helper_models
         # The turn-end judgment-call check (GM-174) reads this in
         # webapp.core.stream_turn (funhouse_agent.judgment_check.mode_for).
         agent.geotech_judgment_consult = judgment_consult

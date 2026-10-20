@@ -325,6 +325,7 @@ def _call_record(call: dict, norm, planlens: frozenset) -> dict:
         "system_prompt": _h(norm(prompt)),
         "system_prompt_chars": len(norm(prompt)),
         "tools": app,
+        "tool_order": list(app),
         "planlens_tools": served,
         "middleware": _middleware(kw.pop("middleware", None), norm),
     }
@@ -347,6 +348,7 @@ def _call_record(call: dict, norm, planlens: frozenset) -> dict:
                 "description": _h(norm(s.get("description"))),
                 "system_prompt": _h(norm(s.get("system_prompt"))),
                 "tools": s_app,
+                "tool_order": list(s_app),
                 "planlens_tools": s_served,
                 "middleware": _middleware(s.get("middleware"), norm),
             })
@@ -525,6 +527,7 @@ GSE_MODULES = frozenset({
     "funhouse_agent.report_checklist", "funhouse_agent.adapters",
     "funhouse_agent.deep.agent", "funhouse_agent.deep.prompt",
     "funhouse_agent.deep.tools", "funhouse_agent.deep.fit_results",
+    "funhouse_agent.deep.calc_figures",
     "funhouse_agent.deep.setup_agent", "funhouse_agent.deep.setup_tools",
     "funhouse_agent.deep.unknown_tool", "funhouse_agent.deep.eval_harness",
     "funhouse_agent.deep.selfcheck", "funhouse_agent.deep.rc_wheel_check",
@@ -539,7 +542,7 @@ REVIEW_MODULES = frozenset({
     "funhouse_agent.deep.sweep", "funhouse_agent.deep.findings_tools",
     "funhouse_agent.review_findings", "funhouse_agent.deep.geometry_tools",
     "funhouse_agent.deep.digest_tools", "funhouse_agent.review_digest",
-    "webapp.tinyapps_entry",
+    "funhouse_agent.review_prompt", "webapp.tinyapps_entry",
 })
 
 

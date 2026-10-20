@@ -66,7 +66,7 @@ dependencies = [
     "matplotlib>=3.8",
     "jinja2>=3.1",
     "plotly>=5",
-    # Word output (calc_package/docx_renderer.py -> the write_docx agent tool).
+    # Word output (funhouse_agent/docx_renderer.py -> the write_docx agent tool).
     # Reviewers ask for .docx and the agent writes markdown; python-docx is
     # pure Python over lxml, which streamlit already pulls in, so this adds no
     # compiled wheel to the cluster install. Imported LAZILY inside the

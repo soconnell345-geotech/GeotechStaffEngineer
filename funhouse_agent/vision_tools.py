@@ -4738,7 +4738,7 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
 def _dispatch_write_docx(arguments, save_fn):
     """Handle write_docx tool call: markdown in, a Word file on disk out.
 
-    The rendering is ``calc_package.docx_renderer``; the SAVING is
+    The rendering is ``funhouse_agent.docx_renderer``; the SAVING is
     ``save_file``'s, byte for byte — the document is rendered to a scratch file,
     read back and handed to the same writer, so it gets the same path
     resolution into the conversation's working folder, the same /Workspace
@@ -4759,7 +4759,7 @@ def _dispatch_write_docx(arguments, save_fn):
     if not markdown:
         return json.dumps({"error": "Missing required parameter: markdown"})
     try:
-        from calc_package.docx_renderer import markdown_to_docx
+        from funhouse_agent.docx_renderer import markdown_to_docx
     except ImportError as exc:
         return json.dumps({
             "error": f"Word output is not available here: {exc}",

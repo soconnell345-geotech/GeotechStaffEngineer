@@ -8,7 +8,7 @@ themselves and flagged it "not tool-validated" (GC-1, REF-3, REF-5, REF-6).
 
 This tool evaluates one arithmetic expression over named numbers with the
 SAME AST-whitelisted evaluator the reliability module uses for its
-limit-state functions (``reliability_adapter._compile_g``: arithmetic,
+limit-state functions (``funhouse_agent.safe_expr._compile_g``: arithmetic,
 comparisons, conditionals and a fixed list of math functions; no names,
 attributes, strings or calls beyond those). Integer constants are made
 floats first, so a huge power overflows at once instead of building an
@@ -158,8 +158,7 @@ def _bind(variables) -> Tuple[Dict[str, Any], Optional[str]]:
 def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
              ) -> Dict[str, Any]:
     """``{"value", "expression", "variables"}`` or ``{"error", ...}``."""
-    from funhouse_agent.adapters.reliability_adapter import (
-        _MAX_EXPR_CHARS, _compile_g)
+    from funhouse_agent.safe_expr import _MAX_EXPR_CHARS, _compile_g
     expr = str(expression or "").strip()
     if len(expr) > _MAX_EXPR_CHARS:
         return {"error": f"the expression is too long ({len(expr):,} "
@@ -232,8 +231,7 @@ def _several(expression) -> Optional[List[Tuple[Optional[str], str]]]:
     if isinstance(expression, (list, tuple)):
         return [(None, str(v)) for v in expression]
     if isinstance(expression, str):
-        from funhouse_agent.adapters.reliability_adapter import (
-            _MAX_EXPR_CHARS)
+        from funhouse_agent.safe_expr import _MAX_EXPR_CHARS
         if len(expression) > _MAX_EXPR_CHARS:
             return None                 # evaluate says it is too long
         try:

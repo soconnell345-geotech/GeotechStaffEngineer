@@ -8,7 +8,7 @@ lost its numbered list; F02's labels ran together); F31 invented a
 ``read_docx_placeholder`` tool; F41 met an .xlsx nothing could read.
 
 * A **.docx** comes back in the dialect ``write_docx`` writes
-  (:func:`calc_package.docx_renderer.docx_to_markdown`, the writer's inverse):
+  (:func:`funhouse_agent.docx_renderer.docx_to_markdown`, the writer's inverse):
   headings, numbered and bulleted lists with their levels, pipe tables and
   their captions, bold / italic / code, line breaks, ``>`` quotes, fenced
   code, ``---`` page breaks and pictures — so read -> edit -> write keeps the
@@ -110,7 +110,7 @@ def read_office(path, *, image_dir: Optional[str] = None,
 # -- Word ---------------------------------------------------------------------
 
 def _docx(path, image_dir, image_ref):
-    from calc_package.docx_renderer import docx_to_markdown
+    from funhouse_agent.docx_renderer import docx_to_markdown
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_",
                   os.path.splitext(os.path.basename(path))[0]).strip("_")
     read = docx_to_markdown(path, image_dir=image_dir,

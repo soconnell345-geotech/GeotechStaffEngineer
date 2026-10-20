@@ -14,7 +14,9 @@ step-by-step computation, engineering checks (pass/fail), and figures.
 - `renderer.py` — Jinja2 HTML rendering, figure_to_base64(), preprocessing
 - `template.py` — HTML/CSS template as Python string (no external files)
 - `docx_renderer.py` — markdown -> Word (.docx) for prose the agent composed
-  (see "Word output" below); nothing to do with the packages themselves
+  (see "Word output" below); nothing to do with the packages themselves.
+  Since INF-30 step 5 it is `funhouse_agent/docx_renderer.py`, both pages'
+  module; `calc_package.docx_renderer` is the same module under its old name
 - `tables.py` — calculation tables (GM-39): one CSV per table and the printed
   "Calculation Tables" section (see "Calculation tables" below)
 - `latex_renderer.py`, `latex_template.py`, `latex_compiler.py` — the LaTeX / PDF

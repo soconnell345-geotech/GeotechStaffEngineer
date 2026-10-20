@@ -73,7 +73,7 @@ record and its exports out -- and the pieces it drives are:
     Funhouse's Prompter, on the cluster, scored against the hand labels.
     The app runs against OpenAI models there, so a score measured on any
     other model measures a model that will never do the work.
-``report_ingest.mirror``
+``report_ingest.mirror`` (``funhouse_agent.run_mirror``)
     The durable copy of a run's output, to SharePoint or to any folder that
     survives the driver. ``/tmp`` does not, and a cluster restart once wiped
     $17 of finished model calls.
@@ -95,7 +95,44 @@ Prompter through the same one-method engine protocol.
 
 from __future__ import annotations
 
+import importlib as _importlib
+import importlib.util as _importlib_util
+import sys as _sys
 from typing import Any
+
+# The run mirror is in funhouse_agent.run_mirror (INF-30 step 5), which the
+# review suite uses too; report_ingest.mirror is the same module, loaded when
+# it is first imported by either name, so importing this package loads
+# nothing of funhouse_agent (its first-import notice included). The old name
+# goes in step 16.
+_MOVED = {__name__ + ".mirror": "funhouse_agent.run_mirror"}
+
+
+class _MovedModule:
+    """Finder and loader for :data:`_MOVED`: an old name imports the moved
+    module itself (one module object, so a patch by either name reaches the
+    code), never a second copy of it."""
+
+    @staticmethod
+    def find_spec(fullname, path=None, target=None):
+        if fullname not in _MOVED:
+            return None
+        return _importlib_util.spec_from_loader(fullname, _MovedModule())
+
+    def create_module(self, spec):
+        module = _importlib.import_module(_MOVED[spec.name])
+        self._spec = module.__spec__
+        return module
+
+    def exec_module(self, module):
+        module.__spec__ = self._spec    # the import system set the old name's
+
+
+# First, so an old name never resolves to a file of the same name elsewhere.
+if not any(getattr(f, "__qualname__", "") == "_MovedModule"
+           and getattr(f, "__module__", "") == __name__
+           for f in _sys.meta_path):
+    _sys.meta_path.insert(0, _MovedModule)
 
 __all__ = ["triage", "review_labels", "classify_pages_by_vision",
            "read_log", "read_lab_sheet", "read_calculation",

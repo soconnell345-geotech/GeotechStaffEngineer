@@ -328,7 +328,7 @@ _GM184_LISTS = [
     # since GM-183 the at-rest K0 takes a slope, and the log-spiral Kp a
     # slope and its printed source
     ("retaining_walls", "earth_pressure_coefficient",
-     {"phi_deg": 30, "state": "at_rest"}, {"beta_deg"},
+     {"phi_deg": 30, "state": "at_rest"}, {"beta_deg", "OCR"},
      {"theory", "delta_deg", "alpha_deg", "log_spiral_source"}),
     ("retaining_walls", "earth_pressure_coefficient",
      {"phi_deg": 30, "state": "passive", "theory": "caquot_kerisel"},
