@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     # A commit that touches only notes (BACKLOG, HANDOFF, plans, docs) does
-    # not start the 3-5 hour suite; a commit with any code in it still does.
+    # not start the suite; a commit with any code in it still does.
     paths-ignore: ["**.md", "module_work/**", "docs/**"]
   pull_request:
     branches: [master]
@@ -21,7 +21,11 @@ jobs:
   test:
     # Pinned: ubuntu-latest moves to Ubuntu 26 from 2026-10-19.
     runs-on: ubuntu-24.04
-    # The suite takes 3-5 hours; stop before GitHub's 6-hour job limit.
+    # The suite runs on four workers (pytest-xdist): 33-45 min a job, against
+    # 50-100 min in one process. The four vCPUs are two cores, so each test
+    # runs ~1.8x slower beside the others: ~2.2x overall. The time depends on
+    # the CPU model the job draws, not the Python version. The limit stays
+    # under GitHub's 6-hour job limit.
     timeout-minutes: 340
     strategy:
       # One Python version failing must not cancel the other's run.
@@ -46,7 +50,7 @@ jobs:
           pip install --upgrade pip
           pip install -e .
           pip install -e geotech-references/
-          pip install pytest
+          pip install pytest pytest-xdist
 
       - name: Install optional dependencies
         # Install what we can; some packages may fail on certain platforms.
@@ -68,5 +72,13 @@ jobs:
           pip install "PyMuPDF<2" || true   # planlens 0.13 (PyPI) misreads tables on 2.0; lift with planlens>=0.14 (INF-18)
           pip install pyproj || true   # foundry tier3 needs it
 
+      - name: Runner CPU
+        # Job times vary up to 2x with the CPU model GitHub assigns.
+        run: lscpu | grep -E "Model name|^CPU\(s\)"
+
       - name: Run tests
-        run: pytest -q --tb=short
+        # -n auto: one worker per vCPU. worksteal hands out single tests
+        # and rebalances, so a few multi-minute slope and FEM tests do not
+        # leave the other workers idle at the end. The root conftest gives
+        # each worker its own temp dir.
+        run: pytest -n auto --dist worksteal -q --tb=short --durations=20
