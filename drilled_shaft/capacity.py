@@ -132,16 +132,27 @@ def fractured_rock_choice(shaft: DrillShaft, soil: ShaftSoilProfile) -> dict:
     how = how_given(t, 0.0, name="fractured_rock_thickness")
     if t:
         z0, z1 = fractured_rock_zone(shaft, soil)
+        L = shaft.length
+        # where the tip is against the zone: below it the input changes
+        # nothing; inside it the base is on that rock (GM-220 review)
+        where, base_alt = "", []
+        if z0 >= L:
+            where = f"; below the shaft tip ({L:g} m), so it changes nothing"
+        elif L < z1:
+            where = (f"; the tip ({L:g} m) is within it: the base takes "
+                     "the tip rock layer's qu and RQD as given")
+            base_alt = ["the fractured rock as a rock layer of its own, "
+                        "with its qu and RQD, for the base on it"]
         return choice(
             "rock not considered part of the socket",
-            f"{t:g} m below the top of rock ({z0:g}-{z1:g} m)", how,
+            f"{t:g} m below the top of rock ({z0:g}-{z1:g} m){where}", how,
             basis=FRACTURED_ROCK_BASIS,
             alternatives=[
                 "fractured_rock_thickness 0: all rock below the top 1.5 m "
                 "and the casing is socket",
                 "casing_depth to the top of competent rock: no side "
                 "resistance, soil or rock, above it (GEC-10 Example 10-4, "
-                "p. 10-27)"])
+                "p. 10-27)", *base_alt])
     return choice(
         "rock not considered part of the socket", "none", how,
         basis=("all rock in the shaft below the top 1.5 m and the casing "
@@ -409,7 +420,8 @@ class DrillShaftAnalysis:
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
             choices=([side_n60_choice(no_n60)] if no_n60 else [])
-            + ([fractured_rock_choice(shaft, self.soil)] if in_rock else []),
+            + ([fractured_rock_choice(shaft, self.soil)]
+               if in_rock or shaft.fractured_rock_thickness else []),
         )
 
     def capacity_vs_depth(self, depth_min: float = 3.0,

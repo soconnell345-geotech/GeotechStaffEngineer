@@ -59,13 +59,16 @@ get_resistance_factors(method, condition) -> dict
   `casing_depth` differs: it takes the side resistance of soil AND rock
   above it (GEC-10 Example 10-4, p. 10-27, cases the soil and the
   decomposed rock). Refused with no rock layer. A rock profile's result
-  states the choice either way (`capacity.fractured_rock_choice`), the calc
+  states the choice either way (`capacity.fractured_rock_choice`), and
+  says so when the zone lies below the tip (it changes nothing) or holds
+  the tip (the base takes that rock layer's qu and RQD as given; give the
+  fractured rock as its own layer for the base on it); the calc
   steps print the zone and the side-resistance figure hatches it.
   `socket_diameter` stays one value for every rock layer: GEC-10 sizes a
   socket by one diameter B (Eq. 10-21; Example 10-4) and gives no socket
   diameter per rock layer. Found in passing, not changed: the rock base
   area is the shaft's (or bell's) diameter, not `socket_diameter`, while
-  Example 10-4 takes the base on the socket diameter B.
+  Example 10-4 takes the base on the socket diameter B (p. 10-28).
 
 ## Side-resistance methods: simplified (default) vs rational (opt-in)
 

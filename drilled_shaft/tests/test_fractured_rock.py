@@ -88,6 +88,29 @@ def test_the_zone_runs_on_through_a_second_rock_layer():
 def test_a_zone_deeper_than_the_shaft_leaves_only_the_base():
     r = _run(fractured_rock_thickness=7.0)
     assert r.Q_side_rock == 0.0 and r.Q_tip == _run().Q_tip
+    # the base is on rock the caller called fractured: said, not hidden
+    c = _rock_choice(r)
+    assert "tip (14 m) is within it" in c["chosen"]
+    assert "qu and RQD as given" in c["chosen"]
+    assert any("layer of its own" in a for a in c["alternatives"])
+    # a zone ending at the tip leaves the base on the rock below it
+    assert "within" not in _rock_choice(
+        _run(fractured_rock_thickness=6.0))["chosen"]
+
+
+def test_a_zone_below_the_tip_is_said_to_change_nothing():
+    # GM-220 review: the shaft ends above the rock; before, the given
+    # thickness changed nothing and the result said nothing about it
+    r = DrillShaftAnalysis(
+        shaft=DrillShaft(diameter=1.2, length=7.0,
+                         fractured_rock_thickness=1.5),
+        soil=_soil()).compute()
+    c = _rock_choice(r)
+    assert c["how"] == "given"
+    assert "below the shaft tip (7 m), so it changes nothing" in c["chosen"]
+    assert r.Q_ultimate == DrillShaftAnalysis(
+        shaft=DrillShaft(diameter=1.2, length=7.0), soil=_soil()
+    ).compute().Q_ultimate
 
 
 def test_with_no_rock_layer_it_is_refused():

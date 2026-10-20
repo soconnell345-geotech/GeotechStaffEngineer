@@ -366,8 +366,10 @@ _WEIGHTED = ("settlement_method 'weighted_modulus' with E_column: GEC-13 "
              "Fig. 5-21 curve (2), n' = 1 + a_s (E_c/E_s - 1)")
 _BALAAM = ("settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or "
            "'balaam_flexible' (E_c/E_s = 10) with E_column: GEC-13 Fig. "
-           "5-21 Balaam curves (5), 'an average or lower bound estimate "
-           "suitable for preliminary analyses' (p. 5-37)")
+           "5-21 Balaam curves (5); p. 5-37: the FHWA (1983) Equilibrium "
+           "Method, 'roughly equivalent to the Balaam relationships', "
+           "'represents an average or lower bound estimate suitable for "
+           "preliminary analyses'")
 _STRESS_RATIO = ("settlement_method 'stress_ratio' (the default): SRF = "
                  "1 / [1 + a_s (n - 1)] from the given n")
 _PRIEBE = ("Priebe's improvement factor n0 (priebe_improvement_factor); "
