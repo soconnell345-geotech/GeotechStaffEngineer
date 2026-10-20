@@ -847,13 +847,19 @@ for _m, _names in _FEM_PARAM_BACKFILL.items():
 
 # When each default applies (GM-119): the Biot modulus and the time
 # integration parameter to the monolithic consolidation scheme.
+_WATER = [{"gwt": "set"}, {"gwt": [0]}]
 declare_applies_when(METHOD_INFO, {
     "fem2d_consolidation": {
         name: {"consolidation_scheme": ["monolithic"]}
         for name in ("n_w", "theta")},
-    # the wall's joints (GM-72)
+    # the wall's joints (GM-72); since GM-184 the water's unit weight, and
+    # the excavation's water inside, only with a water table ("set" is
+    # not 0, so a table at the ground surface is named)
     "fem2d_excavation": {
-        "interface_adhesion": {"wall_contact": ["interface"]}}})
+        "interface_adhesion": {"wall_contact": ["interface"]},
+        "gamma_w": _WATER, "excavation_water": _WATER},
+    "fem2d_local_fos": {"gamma_w": _WATER},
+    "fem2d_slope_srm": {"gamma_w": _WATER}})
 
 # The values the handlers pass when these are left out (BACKLOG GM-165),
 # and what a left-out input with no default stands for: the load ramp,

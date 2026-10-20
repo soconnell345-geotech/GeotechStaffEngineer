@@ -1,7 +1,8 @@
 """PyNite adapter — flat dict -> pynite_agent -> dict."""
 
 from funhouse_agent.adapters import (
-    check_nested_list, clean_result, reject_unknown_params, require_params,
+    check_nested_list, clean_result, declare_applies_when,
+    reject_unknown_params, require_params,
 )
 
 _ERR = "PyNiteFEA is not installed. Install with: pip install PyNiteFEA"
@@ -114,7 +115,7 @@ METHOD_INFO = {
             "span_lengths": {"type": "array", "required": True, "description": "Span lengths (m), left to right."},
             "E": {"type": "float", "required": True, "description": "Elastic modulus (kPa; steel 200e6)."},
             "I": {"type": "float", "required": True, "description": "Second moment of area (m^4)."},
-            "A": {"type": "float", "required": False, "default": 0.01, "description": "Section area (m^2)."},
+            "A": {"type": "float", "required": False, "default": 0.01, "description": "Section area (m^2). Not used by the results: a continuous beam under these loads carries no axial force; PyNite needs an area to build the member."},
             "udl": {"type": "float", "required": False, "default": 0.0, "description": "UDL on all spans, downward positive (kN/m)."},
             "span_udls": {"type": "array", "required": False, "description": "Per-span UDLs (kN/m, downward positive); overrides udl."},
             "point_loads": {"type": "array", "required": False, "description": "[{span (1-based), x (m from span start), P (kN downward)}]."},
@@ -128,6 +129,11 @@ METHOD_INFO = {
         },
     },
 }
+
+
+# The beam's area is taken and not used (GM-184): the loads are all
+# transverse, so no member carries axial force.
+declare_applies_when(METHOD_INFO, {"continuous_beam": {"A": False}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):

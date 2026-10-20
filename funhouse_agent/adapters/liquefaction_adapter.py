@@ -394,13 +394,17 @@ declare_aliases(METHOD_INFO, {"liquefaction_analysis": {
 }})
 
 # When each default applies (GM-119): the CPT settings to a CPT, C0 to the
-# B&I SPT route, gamma_w to the NCEER route.
+# B&I SPT route, gamma_w to the NCEER route; since GM-184 the cone area
+# ratio to a CPT with u2 (q_t = q_c + (1 - a) u2) and the specific gravity
+# to the void-ratio unit weights (liquepy reads it nowhere else).
 _SPELLINGS = {m: [k for k, v in _METHOD_NORMALIZE.items() if v == m]
               for m in ("bi2014", "nceer2001")}
 _CPT = {"q_c": "set", "input_type": [None, "cpt"]}
 declare_applies_when(METHOD_INFO, {"liquefaction_analysis": {
-    **{k: _CPT for k in ("a_ratio", "i_c_limit", "cfc", "unit_wt_method",
-                         "gamma_predrill", "s_g", "p_a")},
+    **{k: _CPT for k in ("i_c_limit", "cfc", "unit_wt_method",
+                         "gamma_predrill", "p_a")},
+    "a_ratio": {**_CPT, "u_2": "set"},
+    "s_g": {**_CPT, "unit_wt_method": ["void_ratio"]},
     "c_0": {"N160": "set", "input_type": [None, "spt"],
             "method": _SPELLINGS["bi2014"]},
     "gamma_w": {"method": _SPELLINGS["nceer2001"]},

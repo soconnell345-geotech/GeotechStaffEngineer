@@ -589,7 +589,7 @@ METHOD_INFO = {
             "poulos_s_equivalent": {"type": "float", "required": False, "description": "Poulos equivalent-pile settlement (m) for the fully mobilized branch."},
             "pile_width": {"type": "float", "required": False, "description": "Enables PILENEG (with bearing_E): pile width D (m)."},
             "bearing_E": {"type": "float", "required": False, "description": "Enables PILENEG: bearing layer modulus Es (kPa)."},
-            "bearing_nu": {"type": "float", "required": False, "default": 0.3, "description": "Bearing layer Poisson's ratio."},
+            "bearing_nu": {"type": "float", "required": False, "default": 0.3, "description": "Bearing layer Poisson's ratio, for the PILENEG row's toe penetration (with pile_width, bearing_E and a settlement profile)."},
             "eq_footing_width": {"type": "float", "required": False, "description": "Fellenius equivalent footing width (m); required with 'consolidation'."},
             "eq_footing_length": {"type": "float", "required": False, "description": "Fellenius equivalent footing length (m)."},
             "eq_footing_load": {"type": "float", "required": False, "description": "Fellenius equivalent footing load (kN). Default Q_static."},
@@ -662,14 +662,31 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
 }
 
 # When each default applies (GM-119): the pile's unit weight only when its
-# own weight is in the load; the FS_liq threshold only for a liquefaction
-# result.
+# own weight is in the load; since GM-184 the fill's unit weight only
+# under a fill, the Fellenius equivalent footing only when its settlement
+# comes from consolidation parameters (cgpr56.fellenius_method_cgpr56),
+# and the bearing layer's Poisson's ratio only to the PILENEG row, which
+# runs with pile_width, bearing_E and a free-field settlement profile; the
+# FS_liq threshold only for a liquefaction result.
+_EQ_FOOTING = {"consolidation": "set"}
 declare_applies_when(METHOD_INFO, {
     "downdrag_analysis": {
-        "pile_unit_weight": {"include_pile_weight": [True]}},
+        "pile_unit_weight": {"include_pile_weight": [True]},
+        "fill_unit_weight": {"fill_thickness": "set"}},
     "post_liquefaction_downdrag": {
         "pile_unit_weight": {"include_pile_weight": [True]},
-        "fs_liq_threshold": {"liquefaction_result": "set"}}})
+        "fill_unit_weight": {"fill_thickness": "set"},
+        "fs_liq_threshold": {"liquefaction_result": "set"}},
+    "fellenius_cgpr56": {"eq_footing_load": _EQ_FOOTING,
+                         "eq_footing_length": _EQ_FOOTING},
+    "downdrag_method_comparison": {
+        "eq_footing_load": _EQ_FOOTING,
+        "eq_footing_length": _EQ_FOOTING,
+        "bearing_nu": [
+            {"pile_width": "set", "bearing_E": "set",
+             "settlement_profile": "set"},
+            {"pile_width": "set", "bearing_E": "set",
+             "consolidation": "set"}]}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):

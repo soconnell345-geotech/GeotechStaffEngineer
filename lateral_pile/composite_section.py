@@ -378,6 +378,28 @@ def composite_section_ei(section_type: str, *,
     >>> round(sec.EI)                                    # doctest: +SKIP
     8107
     """
+    # Reinforcement the section would leave out is refused, never dropped
+    # (GM-184): a filled pipe has none, a bar ring is a circular section's,
+    # bar_layers a rectangular one's, and a ring needs its bar size.
+    rectangular = section_type == "reinforced_concrete" and diameter is None
+    if n_bars > 0:
+        if section_type == "filled_pipe":
+            raise ValueError(
+                "section_type 'filled_pipe' takes no reinforcement; a "
+                "casing with a grout core and a bar ring is 'cased_concrete'.")
+        if rectangular:
+            raise ValueError(
+                "n_bars is a circular bar ring; a rectangular "
+                "reinforced_concrete section takes its bars as bar_layers.")
+        if bar_diameter <= 0:
+            raise ValueError(
+                "n_bars needs a positive bar_diameter (m), e.g. "
+                "rebar_diameter('#8') = 0.0254.")
+    if bar_layers and not rectangular:
+        raise ValueError(
+            "bar_layers are a rectangular reinforced_concrete section's; a "
+            "circular section or a casing takes a bar ring (n_bars, "
+            "bar_diameter, bar_circle_diameter).")
     if section_type in ("filled_pipe", "cased_concrete"):
         if outer_diameter is None or wall_thickness is None:
             raise ValueError(
