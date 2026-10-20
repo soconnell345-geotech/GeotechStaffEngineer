@@ -194,6 +194,12 @@ NOT_REACHED = {
         "the probe's soil is clay over rock: the beta method is for sand",
     ("drilled_shaft|drilled_shaft_capacity#rock", "casing_depth"): _CASING,
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
+    # GM-228: the warning when the two rules for the depth below the toe
+    # disagree; the #toe_in_sand probe (26 % apart) reaches it
+    ("downdrag|downdrag_analysis", "influence_depth_warning_percent"):
+        "the probe's two rules give pile head settlements 11 % apart, "
+        "under 25 % and 37.5 % alike",
+    ("downdrag|downdrag_analysis#toe_in_sand", "n_sublayers"): _GRID,
     ("downdrag|post_liquefaction_downdrag", "n_sublayers"): _GRID,
     # GM-207: the result as returned leaves out the basis text that names
     # these choices (detail='full' has it); no number of the probe moves
@@ -203,14 +209,25 @@ NOT_REACHED = {
     ("downdrag|post_liquefaction_downdrag", "influence_depth_criterion"):
         "the probe's soil below the toe has no compressibility, so it "
         "settles by nothing to either depth",
+    ("downdrag|post_liquefaction_downdrag",
+     "influence_depth_warning_percent"):
+        "the probe's soil below the toe has no compressibility, so the "
+        "two rules give the same result and nothing is warned",
     ("calc_package|downdrag_package", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package", "influence_depth_criterion"):
         "the probe's soil below the toe is marked as not settling",
+    ("calc_package|downdrag_package", "influence_depth_warning_percent"):
+        "the probe's soil below the toe is marked as not settling, so the "
+        "two rules give the same result and nothing is warned",
     # GM-216: the same probe with a ground elevation
     ("calc_package|downdrag_package#elevation", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package#elevation",
      "influence_depth_criterion"):
         "the probe's soil below the toe is marked as not settling",
+    ("calc_package|downdrag_package#elevation",
+     "influence_depth_warning_percent"):
+        "the probe's soil below the toe is marked as not settling, so the "
+        "two rules give the same result and nothing is warned",
     **{("ground_improvement|feasibility", n):
        "a bearing problem needs both the required and current bearing"
        for n in ("required_bearing_kPa", "current_bearing_kPa")},

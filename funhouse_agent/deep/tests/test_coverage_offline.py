@@ -1,4 +1,4 @@
-"""Coverage in code (plan W4): the ledger, the gate, the tools, the checklist.
+"""Coverage in code (plan W4): the ledger, the gate, the tool.
 
 Offline: no model, no network. The document is the review suite's synthetic
 report (``funhouse_agent/review_eval/report_fixture.py``): new logs as vector
@@ -15,8 +15,11 @@ What is pinned:
 * the gate tells the agent ONCE, with the list, and never loops - on both
   pages, with a helper's reads counting, and it stands down rather than cost
   a turn its answer;
-* the checklist is DATA, its code items run, its judgement items are handed
-  over, and a code item that cannot run is handed over too.
+* on the Document Review page only a declared coverage task holds a turn,
+  and the tool's description names no kind of report (BACKLOG RI-34).
+
+The report-review checklist that used to sit beside the ledger is
+report_ingest's since RI-34: ``report_ingest/tests/test_checklist.py``.
 """
 
 import json
@@ -33,7 +36,6 @@ from langchain_core.outputs import ChatGeneration, ChatResult  # noqa: E402
 from pydantic import Field  # noqa: E402
 
 from funhouse_agent import coverage as C  # noqa: E402
-from funhouse_agent import report_checklist as RC  # noqa: E402
 from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.deep import coverage_tools as CT  # noqa: E402
 from funhouse_agent.review_eval import report_fixture as RF  # noqa: E402
@@ -396,6 +398,9 @@ class _Scripted(BaseChatModel):
     log: list = Field(default_factory=list)
     obey: bool = True
     helper: bool = False
+    #: open a coverage task first, as the Document Review page needs: there
+    #: reading some data pages does not hold the turn (BACKLOG RI-34)
+    declare: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -425,6 +430,9 @@ class _Scripted(BaseChatModel):
         names = [m.name for m in tools]
         if handle is None:
             return self._calls([("open_document", {"source": KEY})])
+        if self.declare and "document_coverage" not in names:
+            return self._calls([("document_coverage",
+                                 {"source": KEY, "pages": "7-29"})])
         if "read_document" not in names:
             return self._calls([("read_document",
                                  {"handle": handle, "pages": "16-18"})])
@@ -484,7 +492,7 @@ def test_the_gate_tells_once_and_the_agent_reads_the_rest(att, tmp_path,
                                                          monkeypatch, page):
     from webapp.activity_log import load
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
-    model = _Scripted()
+    model = _Scripted(declare=page == "review")
     agent = _build(model, att, tmp_path, page)
     assert agent.geotech_extraction_recursion_limit == CT.EXTRACTION_STEP_LIMIT
     answer = _run(agent, tmp_path)
@@ -502,17 +510,17 @@ def test_a_model_that_ignores_the_note_is_not_asked_twice(att, tmp_path,
                                                           monkeypatch):
     from webapp.activity_log import load
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
-    model = _Scripted(obey=False)
+    model = _Scripted(obey=False, declare=True)
     agent = _build(model, att, tmp_path)
     answer = _run(agent, tmp_path)
-    assert answer and model.log == [False, False, False, True]
+    assert answer and model.log == [False, False, False, False, True]
     assert len([r for r in load(str(tmp_path))
                 if r["event"] == "coverage_gate"]) == 1
 
 
 def test_a_helpers_reads_count(att, tmp_path, monkeypatch):
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
-    model = _Scripted(helper=True)
+    model = _Scripted(helper=True, declare=True)
     agent = _build(model, att, tmp_path)
     _run(agent, tmp_path)
     ledger = agent.geotech_coverage_ledger
@@ -564,14 +572,43 @@ def test_switches_off_the_build_is_unchanged(att, tmp_path):
     assert not names & {"document_coverage", "report_checklist"}
 
 
-def test_the_tools_are_on_both_pages_with_the_switches(att, tmp_path,
-                                                       monkeypatch):
+def test_coverage_on_both_pages_and_the_checklist_on_the_geotech_page(
+        att, tmp_path, monkeypatch):
+    """BACKLOG RI-34: the report checklist is report_ingest's and reaches
+    the geotech page only; document_coverage stays on both, in words for
+    any document on the review page."""
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
     monkeypatch.setenv(review_flags.CHECKLIST_ENV, "1")
+    tools = {}
     for page in ("review", "geotech"):
         agent = _build(_Scripted(), att, tmp_path / page, page)
-        names = set(agent.nodes["tools"].bound.tools_by_name)
-        assert {"document_coverage", "report_checklist"} <= names, page
+        tools[page] = agent.nodes["tools"].bound.tools_by_name
+        assert "document_coverage" in tools[page], page
+        assert agent.geotech_coverage_ledger.declared_only is (
+            page == "review")
+    assert "report_checklist" in tools["geotech"]
+    assert "report_checklist" not in tools["review"]
+    # the page builds without the report_ingest tool by default, so the
+    # checklist's description does not point at it
+    assert "report_ingest" not in tools["geotech"]
+    assert "report_ingest" not in tools["geotech"][
+        "report_checklist"].description
+    assert tools["review"]["document_coverage"].description ==         CT.DOCUMENT_COVERAGE_DESCRIPTION_REVIEW
+    assert tools["geotech"]["document_coverage"].description ==         CT.DOCUMENT_COVERAGE_DESCRIPTION
+    for word in ("boring", "laboratory", "DIGGS", "exploration", "log"):
+        assert word not in CT.DOCUMENT_COVERAGE_DESCRIPTION_REVIEW, word
+
+
+def test_on_the_review_page_only_a_declared_task_holds_a_turn(att):
+    ledger = C.CoverageLedger(attachments=att, declared_only=True)
+    turn = "t1"
+    ledger.begin_turn(turn)
+    _read(ledger, att, "16-18")
+    assert ledger.armed(turn) == {}
+    assert ledger.gate_note(turn) is None
+    CT.make_coverage_tool(ledger).invoke({"source": KEY})
+    (groups, why), = ledger.armed(turn).values()
+    assert why == "declared" and groups == C.TARGET_GROUPS
 
 
 def test_the_lean_agent_and_its_helper_carry_it(att, monkeypatch):
@@ -633,150 +670,6 @@ def test_document_coverage_tool(att):
     assert "every page any tool or helper" in \
         CT.DOCUMENT_COVERAGE_DESCRIPTION.replace("tool or helper reads",
                                                  "tool or helper")
-
-
-# ---------------------------------------------------------------------------
-# The checklist
-# ---------------------------------------------------------------------------
-
-def test_the_checklist_is_a_draft_of_data():
-    data = RC.load_checklist()
-    assert data["status"] == "DRAFT"
-    items = data["items"]
-    assert len({i["id"] for i in items}) == len(items)
-    assert {i["section"] for i in items} == {
-        "Completeness", "Consistency", "Currency", "Traceability",
-        "Plausibility", "Recommendations"}
-    for i in items:
-        assert i["mode"] in ("code", "judge") and i["text"]
-        if i["mode"] == "code":
-            assert i["check"] in RC.CHECKS, i["id"]
-    assert sum(i["mode"] == "code" for i in items) == 7
-    assert sum(i["mode"] == "judge" for i in items) == 11
-
-
-def test_the_checklist_ships_in_the_wheel():
-    text = open(os.path.join(os.path.dirname(RC.__file__), "..",
-                             "pyproject.toml"), encoding="utf-8").read()
-    assert "report_review_checklist.json" in text
-
-
-def test_exploration_ids():
-    assert RC.exploration_ids("Borings B-1, B-2 and BH3; TP-12 and CPT 4") \
-        == {"B-1", "B-2", "BH-3", "TP-12", "CPT-4"}
-    assert RC.exploration_ids("Table B-1, Figure B-2, Appendix B-3") == set()
-    assert RC.exploration_ids("Sample S-3 of B12 in Zone B-4") == set()
-
-
-def test_checklist_on_the_report(att):
-    ledger = C.CoverageLedger(attachments=att)
-    for p in range(30):
-        _look(ledger, p)
-    key = next(iter(ledger.docs))
-    res = RC.run_checklist(ledger, key)
-    by = {r["id"]: r for r in res["code_checks"]}
-    assert by["completeness.pages_read"]["status"] == "pass"
-    # the 2011 logs are scans: code cannot see their ids, so it asks for a look
-    ex = by["completeness.explorations_have_logs"]
-    assert ex["status"] == "unsure" and "BH-1" in ex["detail"]
-    assert by["consistency.summary_vs_sheets"]["status"] == "not_run"
-    judge = {r["id"] for r in res["for_you_to_judge"]}
-    assert "completeness.groundwater" in judge
-    assert "completeness.explorations_have_logs" in judge   # unsure -> judge
-    assert "consistency.summary_vs_sheets" in judge         # not run -> judge
-    assert res["status"] == "DRAFT"
-
-
-def test_checklist_reads_the_cross_checks_of_the_data_written(att, tmp_path):
-    """The real write_diggs (W2: the reconciler's cross-checks), fed the
-    fixture's planted error, through the ledger and into the checklist."""
-    from funhouse_agent.dispatch import call_agent
-    ledger = C.CoverageLedger(attachments=att)
-    for p in RF.TARGET_PAGES:
-        _look(ledger, p)
-    params = {
-        "investigations": [{
-            "investigation_id": "B-2", "kind": "boring", "depth_unit": "m",
-            "total_depth": {"value": 7.4, "unit": "m"},
-            "samples": [{"sample_id": "S-3", "kind": "spt",
-                         "top": {"value": 4.0, "unit": "m"}}],
-            "pages": [9]}],
-        "lab_tests": [
-            {"kind": "atterberg", "investigation_id": "B-2",
-             "sample_id": "S-3", "depth_top": {"value": 4.0, "unit": "m"},
-             "pages": [18], "result": {"kind": "atterberg", "ll": 32,
-                                       "pl": 20, "pi": 12}},
-            {"kind": "atterberg", "investigation_id": "B-9",
-             "sample_id": "S-1", "pages": [17],
-             "result": {"kind": "atterberg", "ll": 30, "pl": 18, "pi": 12}},
-            {"kind": "summary_table", "pages": [16], "result": {
-                "kind": "summary_table", "rows": [
-                    {"investigation_id": "B-2", "sample_id": "S-3",
-                     "depth_top": {"value": 4.0, "unit": "m"},
-                     "ll": 20, "pl": 32, "pi": 12}]}}],
-        "output_path": str(tmp_path / "x.diggs.xml")}
-    result = call_agent("subsurface", "write_diggs", params)
-    ledger.record_call("call_agent", {"agent_name": "subsurface",
-                                      "method": "write_diggs",
-                                      "parameters": params}, result)
-    key = next(iter(ledger.docs))
-    res = RC.run_checklist(ledger, key)
-    by = {r["id"]: r for r in res["code_checks"]}
-    sv = by["consistency.summary_vs_sheets"]
-    assert sv["status"] == "fail"
-    assert any("summary table 20" in e and "atterberg sheet 32" in e
-               for e in sv["entries"])
-    assert by["consistency.lab_ids_on_logs"]["status"] == "fail"
-    assert "B-9" in by["consistency.lab_ids_on_logs"]["detail"]
-    sh = by["completeness.summary_and_sheets"]
-    assert sh["status"] == "fail" and "B-9 S-1" in sh["detail"]
-    assert by["traceability.values_cite_pages"]["status"] == "pass"
-    assert by["consistency.units"]["status"] == "pass"
-    lines = RC.failed_lines(ledger, key)
-    assert any("Summary-table values" in ln for ln in lines)
-
-
-def test_register_check_is_the_hook(att):
-    ledger = C.CoverageLedger(attachments=att)
-    _look(ledger, 7)
-    key = next(iter(ledger.docs))
-    data = {"title": "t", "status": "DRAFT", "items": [
-        {"id": "x", "section": "S", "mode": "code", "check": "custom_hook",
-         "text": "a check the lead wires later"}]}
-    res = RC.run_checklist(ledger, key, data)
-    assert res["code_checks"][0]["status"] == "not_run"
-    assert res["for_you_to_judge"][0]["id"] == "x"
-    RC.register_check("custom_hook", lambda ctx, item: {
-        "status": "pass", "detail": "wired"})
-    try:
-        res = RC.run_checklist(ledger, key, data)
-        assert res["code_checks"][0] == {
-            "id": "x", "section": "S", "text": "a check the lead wires later",
-            "status": "pass", "detail": "wired"}
-        assert res["for_you_to_judge"] == []
-    finally:
-        RC.CHECKS.pop("custom_hook", None)
-
-
-def test_the_checklist_tool_and_the_gate_carry_failed_code_checks(att,
-                                                                   monkeypatch):
-    ledger = C.CoverageLedger(attachments=att)
-    tool = CT.make_checklist_tool(ledger)
-    out = json.loads(tool.invoke({"source": KEY}))
-    assert out["status"] == "DRAFT" and out["for_you_to_judge"]
-    gate = CT.CoverageGate(ledger, checklist=True)
-    msgs = [HumanMessage("extract"), AIMessage("done")]
-    gate.before_agent({"messages": msgs}, None)
-    ledger.outputs.append({"seq": ledger.next_seq(), "rows": 1,
-                           "rows_without_pages": ["B-1"], "pages_cited": "",
-                           "cross_checks": {"n": 0, "by_kind": {},
-                                            "entries": []}})
-    for p in RF.TARGET_PAGES:
-        _look(ledger, p)
-    monkeypatch.setattr(CT, "_steps_left", lambda: 100)
-    out = gate.after_model({"messages": msgs}, None)
-    note = out["messages"][0].content
-    assert "Every extracted value cites its page" in note
 
 
 # -- the step limits (owner, 2026-10-08) ------------------------------------
@@ -906,6 +799,8 @@ class _Drafter(BaseChatModel):
 
     seen_draft_after_note: list = Field(default_factory=list)
     calls: int = 0
+    #: open a coverage task first (the Document Review page, RI-34)
+    declare: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -925,6 +820,10 @@ class _Drafter(BaseChatModel):
                 handle = json.loads(m.content)["handle"]
         if handle is None:
             return _reply(calls=[("open_document", {"source": KEY})])
+        if self.declare and not any(m.name == "document_coverage"
+                                    for m in tools):
+            return _reply(calls=[("document_coverage",
+                                  {"source": KEY, "pages": "7-29"})])
         if not any(m.name == "read_document" for m in tools):
             return _reply(calls=[("read_document",
                                   {"handle": handle, "pages": "16-18"})])
@@ -947,7 +846,7 @@ def test_a_gated_turn_delivers_one_whole_answer(att, tmp_path, monkeypatch,
                                                 page):
     from webapp.activity_log import load
     monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
-    model = _Drafter()
+    model = _Drafter(declare=page == "review")
     agent = _build(model, att, tmp_path, page)
     answer = _run(agent, tmp_path)
     # the model never saw its first reply after the note...

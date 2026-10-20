@@ -153,8 +153,20 @@ class DowndragResult:
         ``fill_counted_to_m`` (the bottom of the soil profile; None with
         no fill or drawdown), the settlement under the fill / drawdown and
         under the toe load (mm), ``depth_m`` (the deepest point counted),
-        ``other_criterion`` (the same with the other criterion) and
+        ``other_criterion`` (the analysis run with the other criterion: its
+        toe force, depth and settlement below the toe, neutral plane, pile
+        head settlement and drag force), ``rules_disagree`` (whether the
+        two differ by more than ``influence_depth_warning_percent`` or
+        give different check results; ``warnings`` then says how; None
+        when the run with the other criterion gave no result, its
+        ``error`` in ``other_criterion``) and
         ``basis`` (one paragraph saying all of it).
+    influence_depth_warning_percent : float
+        The difference between the two criteria's pile head settlements or
+        drag forces above which ``warnings`` says so (GM-228).
+    choices : list of dict
+        The choices the run made (``geotech_common.choices``): the
+        criterion for the depth below the toe and that threshold.
     """
     neutral_plane_depth: float
     dragload: float
@@ -193,6 +205,9 @@ class DowndragResult:
     below_toe: dict = field(default_factory=dict)
     ground_elevation: Optional[float] = None
     fill_thickness: float = 0.0
+    # analysis.INFLUENCE_DEPTH_WARNING_PERCENT (analysis imports this file)
+    influence_depth_warning_percent: float = 25.0
+    choices: list = field(default_factory=list)
 
     @property
     def drag_force(self) -> float:
@@ -371,6 +386,8 @@ class DowndragResult:
         if self.warnings:
             lines += ["", "--- Warnings ---"]
             lines += [f"* {w}" for w in self.warnings]
+        from geotech_common.choices import choices_lines
+        lines += choices_lines(self.choices, indent="")
 
         return "\n".join(lines)
 
@@ -419,8 +436,11 @@ class DowndragResult:
         d['include_pile_weight'] = self.include_pile_weight
         d['pile_weight_basis'] = self.pile_weight_basis
         d['influence_depth_criterion'] = self.influence_depth_criterion
+        d['influence_depth_warning_percent'] = (
+            self.influence_depth_warning_percent)
         if self.ground_elevation is not None:
             d['ground_elevation_m'] = self.ground_elevation
+        d['choices'] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:

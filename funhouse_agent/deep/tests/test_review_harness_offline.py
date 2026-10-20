@@ -198,7 +198,8 @@ DEEPAGENTS_OWN = {"write_todos", "task", "ls", "read_file", "write_file",
 def test_default_page_offers_only_the_review_tools():
     """DR-04: the default page offered read_reference_figure and
     view_worked_example_source, geotech tools that cannot work there (no
-    reference library, no worked examples). The geotech page keeps them."""
+    reference library, no worked examples). RI-34: nor ``log_grid``, which
+    reads a boring log. The geotech page keeps them."""
     from funhouse_agent.deep import tools as tools_mod
     from funhouse_agent.deep.agent import GEOTECH_ONLY_TOOLS
     agent = build_deep_agent(_model([]), **_review_kwargs())
@@ -209,12 +210,15 @@ def test_default_page_offers_only_the_review_tools():
                 "annotate_dxf": tools_mod._dxf_notes_available(),
                 "find_like": tools_mod._find_like_available()}
     expected = (REVIEW_PAGE_TOOLS
-                | set(document_tools.document_tool_names())
+                | (set(document_tools.document_tool_names())
+                   - set(GEOTECH_ONLY_TOOLS))
                 | {name for name, ok in optional.items() if ok})
     assert names == expected
     assert not names & set(GEOTECH_ONLY_TOOLS)
     geo = set(_tools_of(build_deep_agent(_model([]))))
-    assert set(GEOTECH_ONLY_TOOLS) <= geo
+    served = {name for name in GEOTECH_ONLY_TOOLS
+              if name != "log_grid" or document_tools.has_tool(name)}
+    assert served <= geo
 
 
 def test_default_page_helper_has_the_review_rules_and_no_writing_tools():

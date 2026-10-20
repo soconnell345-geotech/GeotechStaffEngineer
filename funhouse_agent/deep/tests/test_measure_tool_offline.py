@@ -1,7 +1,9 @@
 """The visual-scale tools on the agents (W3 steps 6-7), offline.
 
-``measure`` and ``log_grid`` on the geotech page and the Document Review
-legacy and lean builds (NOT the minimal one); a scan's label values read by
+``measure`` and ``log_grid`` on the geotech page, ``measure`` alone on the
+Document Review legacy and lean builds (NOT the minimal one; ``log_grid``
+reads a boring log, not that page's document: BACKLOG RI-34); a scan's
+label values read by
 ONE vision side call over numbered crops (the fake vision call reads them as
 a model would: one line per numbered cell); a look's ``view`` + ``image_box``
 searched within that view's location error; and ``read_reference_figure``'s
@@ -144,10 +146,12 @@ def _review_tools(monkeypatch, arm):
 
 
 def test_legacy_and_lean_review_builds_have_measure(monkeypatch):
-    assert {"measure", "log_grid"} <= _review_tools(monkeypatch, "baseline")
-    assert {"measure", "log_grid"} <= _review_tools(monkeypatch, "lean")
+    for arm in ("baseline", "lean"):
+        names = _review_tools(monkeypatch, arm)
+        assert "measure" in names, arm
+        assert "log_grid" not in names, arm          # BACKLOG RI-34
     from funhouse_agent.deep.review_agent import READER_TOOLS
-    assert {"measure", "log_grid"} <= set(READER_TOOLS)
+    assert "measure" in READER_TOOLS and "log_grid" not in READER_TOOLS
 
 
 def test_the_minimal_build_does_not_get_measure(monkeypatch):
