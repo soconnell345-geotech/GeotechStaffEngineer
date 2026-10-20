@@ -41,6 +41,11 @@ STANDARD_PARAMETERS = {
 }
 
 
+def _depth_text(value: Optional[float]) -> str:
+    """A total depth as text, "not given" where the source gives none."""
+    return "not given" if value is None else f"{value:.1f}m"
+
+
 def optional_float(value: Any) -> Optional[float]:
     """A coordinate or an elevation, or None when there is none.
 
@@ -212,8 +217,9 @@ class Investigation:
         Y coordinate (northing or latitude); None when the source gives none.
     elevation_m : float or None
         Ground surface elevation (m); None when the source gives none.
-    total_depth_m : float
-        Total depth of investigation (m).
+    total_depth_m : float or None
+        Total depth of investigation (m); None when the source gives none
+        (never 0.0, which reads as a hole nobody drilled).
     gwl_depth_m : float or None
         Groundwater level depth below ground surface (m).
     gwl_not_encountered : bool
@@ -243,7 +249,7 @@ class Investigation:
     x: Optional[float] = None
     y: Optional[float] = None
     elevation_m: Optional[float] = None
-    total_depth_m: float = 0.0
+    total_depth_m: Optional[float] = None
     gwl_depth_m: Optional[float] = None
     gwl_not_encountered: bool = False
     coordinate_system: str = ""
@@ -360,8 +366,20 @@ class Investigation:
             )
             layers.append(sl)
 
-        gwl_depth = self.gwl_depth_m if self.gwl_depth_m is not None else 30.0
-        gw = GroundwaterCondition(depth=gwl_depth)
+        # A SoilProfile needs a water table depth. Where none is given, or
+        # groundwater was NOT encountered, no water table is placed within
+        # the profile: its depth is the base of the lowest layer, and the
+        # condition's note says so (it was an unstated 30 m).
+        if self.gwl_depth_m is not None:
+            gw = GroundwaterCondition(depth=self.gwl_depth_m)
+        else:
+            base = max((l.bottom_depth for l in layers), default=0.0)
+            why = ("groundwater was not encountered" if self.gwl_not_encountered
+                   else "no groundwater level is given")
+            gw = GroundwaterCondition(
+                depth=base,
+                note=f"{why}: no water table is placed within the profile "
+                     f"(its depth is the base of the lowest layer, {base:g} m)")
 
         return SoilProfile(
             layers=layers,
@@ -379,7 +397,8 @@ class Investigation:
             "y": self.y,
             "elevation_m": (round(self.elevation_m, 3)
                             if self.elevation_m is not None else None),
-            "total_depth_m": round(self.total_depth_m, 3),
+            "total_depth_m": (None if self.total_depth_m is None
+                              else round(self.total_depth_m, 3)),
             "gwl_depth_m": round(self.gwl_depth_m, 3) if self.gwl_depth_m is not None else None,
             "gwl_not_encountered": self.gwl_not_encountered,
             "coordinate_system": self.coordinate_system,
@@ -404,7 +423,7 @@ class Investigation:
             x=optional_float(data.get("x")),
             y=optional_float(data.get("y")),
             elevation_m=optional_float(data.get("elevation_m")),
-            total_depth_m=float(data.get("total_depth_m", 0)),
+            total_depth_m=optional_float(data.get("total_depth_m")),
             gwl_depth_m=float(data["gwl_depth_m"]) if data.get("gwl_depth_m") is not None else None,
             gwl_not_encountered=bool(data.get("gwl_not_encountered", False)),
             coordinate_system=str(data.get("coordinate_system", "")),
@@ -426,7 +445,7 @@ class Investigation:
         params = ", ".join(self.available_parameters()) or "none"
         return (
             f"{self.investigation_id} ({self.investigation_type}): "
-            f"depth={self.total_depth_m:.1f}m, "
+            f"depth={_depth_text(self.total_depth_m)}, "
             f"{len(self.measurements)} measurements ({params}), "
             f"{len(self.lithology)} layers{gwl_str}"
         )

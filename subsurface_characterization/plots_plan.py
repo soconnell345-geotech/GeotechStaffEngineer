@@ -30,6 +30,11 @@ _GEOGRAPHIC = re.compile(
 _EPSG = re.compile(r"EPSG\D{0,3}\d{4,6}", re.IGNORECASE)
 
 
+def _depth(value) -> str:
+    """A total depth for a hover label; "not given" where the source gives none."""
+    return "not given" if value is None else f"{value:.1f}m"
+
+
 def axis_titles(coordinate_system: str):
     """(x title, y title, note) for a plan in ``coordinate_system``.
 
@@ -166,11 +171,11 @@ def _plot_by_type(fig, invs, label_field, go):
         hover_texts = [
             f"ID: {inv.investigation_id}<br>"
             f"Type: {inv.investigation_type}<br>"
-            f"Depth: {inv.total_depth_m:.1f}m<br>"
+            f"Depth: {_depth(inv.total_depth_m)}<br>"
             f"GWL: {inv.gwl_depth_m:.1f}m" if inv.gwl_depth_m is not None else
             f"ID: {inv.investigation_id}<br>"
             f"Type: {inv.investigation_type}<br>"
-            f"Depth: {inv.total_depth_m:.1f}m<br>"
+            f"Depth: {_depth(inv.total_depth_m)}<br>"
             + ("GWL: not encountered<br>" if inv.gwl_not_encountered else "")
             + f"Elev: {_metres(inv.elevation_m)}<br>"
             f"({inv.x:.1f}, {inv.y:.1f})"
@@ -201,7 +206,7 @@ def _plot_by_parameter(fig, invs, parameter, label_field, go):
         hover_texts.append(
             f"ID: {inv.investigation_id}<br>"
             f"Type: {inv.investigation_type}<br>"
-            f"Depth: {inv.total_depth_m:.1f}m<br>"
+            f"Depth: {_depth(inv.total_depth_m)}<br>"
             f"Avg {parameter}: {avg:.1f}<br>"
             f"({inv.x:.1f}, {inv.y:.1f})"
         )

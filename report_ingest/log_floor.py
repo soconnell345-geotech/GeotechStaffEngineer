@@ -115,6 +115,10 @@ _USCS = re.compile(
     r"\b((?:GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT)"
     r"(?:-(?:GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT|ML))?)\b")
 _N_VALUE = re.compile(r"\bN\s*[=:]\s*(\d+)\b")
+#: An N the log prints as words or a bound, not a whole number: ">50",
+#: "50+", "R", "Refusal". Kept as printed in ``SPT.n_printed`` (RI-30).
+_N_PRINTED = re.compile(
+    r"\bN\s*[=:]\s*(>\s*\d+|\d+\s*\+|REF(?:USAL)?|R)(?![\w])", re.I)
 _INTERVAL = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$")
 _PAREN = re.compile(r"\(([^)]{1,14})\)")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -329,6 +333,7 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     blows: List[Any] = []
     n: Optional[int] = None
     refusal = False
+    n_printed = ""
     values: Dict[str, Any] = {}
     units: Dict[str, str] = {}
     texts: List[str] = []
@@ -386,6 +391,12 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if match and ("blows" in names or "n_value" in names
                       or "sample_id" in names):
             n = int(match.group(1))
+            continue
+        printed = _N_PRINTED.search(text)
+        if printed and ("blows" in names or "n_value" in names
+                        or "sample_id" in names):
+            n_printed = re.sub(r"\s+", "", printed.group(1))
+            refusal = True
             continue
         tokens = _blow_tokens(text) if ("blows" in names or "n_value" in names
                                         or "sample_id" in names) else []
@@ -486,9 +497,10 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         pocket_pen=_q(values.get("pocket_pen"), units.get("pocket_pen", "")),
         prov=prov)
     spt = None
-    if blows or n is not None:
+    if blows or n is not None or n_printed:
         spt = SPT(depth_top=_q(top, unit), depth_bottom=_q(bottom, unit),
-                  blows=blows, n=n, refusal=refusal, sample_id=sample_id,
+                  blows=blows, n=n, n_printed=n_printed, refusal=refusal,
+                  sample_id=sample_id,
                   prov=prov.model_copy(deep=True))
     return sample, spt
 
