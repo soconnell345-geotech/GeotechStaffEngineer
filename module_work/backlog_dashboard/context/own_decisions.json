@@ -1342,5 +1342,51 @@
       "BACKLOG.md OWN-71",
       "GEC-10 pp. 10-20 to 10-22, Example 10-4"
     ]
+  },
+  "OWN-72": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "The Document Review package: what is it called, and how does Tiny Apps get it?",
+    "why": "You decided today to split the two apps: GeotechStaffEngineer runs in Foundry, and Document Review becomes its own package, not on PyPI, pulled into Tiny Apps as a wheel. Two things need your call before the split starts: the package's name, and how Tiny Apps installs a package that is not on PyPI. Tiny Apps installs only from the Nexus mirror of PyPI, so a wheel that is not on PyPI has to be checked into the wrapper repo (vendored), and CfA has not yet said whether that is allowed.",
+    "background": "Python's convention is a lower-case distribution name with hyphens and an import name with underscores, for example de-docreview installed and imported as de_docreview. planlens, which does the document reading, is already its own package on PyPI and stays there. The split plan (INF-26) will list what moves and what stays.",
+    "parts": [
+      {
+        "label": "Name",
+        "options": [
+          {
+            "label": "de-docreview (import de_docreview)",
+            "effect": "Follows Python's naming convention."
+          },
+          {
+            "label": "Other (see notes)",
+            "effect": "Write the name you want in the notes."
+          }
+        ]
+      },
+      {
+        "label": "How Tiny Apps gets it",
+        "options": [
+          {
+            "label": "Vendored wheel in the wrapper repo, ask CfA first",
+            "effect": "Not on PyPI, as you said; needs CfA's yes (their open question 6)."
+          },
+          {
+            "label": "A package on Nexus after all",
+            "effect": "Installs like everything else on Tiny Apps; the code becomes public on PyPI."
+          }
+        ]
+      }
+    ],
+    "recommendation": "de-docreview, vendored in the wrapper repo once CfA agrees; ask CfA now so the answer is back before the split is built.",
+    "if_no_answer": "The plan uses de-docreview as a working name and leaves the install route open.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-26"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-72, INF-26",
+      "tinyapps/TINYAPPS.md (Nexus only; CfA question 6)"
+    ]
   }
 }
