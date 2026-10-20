@@ -57,10 +57,42 @@ from calc_package.tables import (
 
 
 # The Word renderer is in funhouse_agent.docx_renderer (INF-30 step 5), which
-# both pages use; calc_package.docx_renderer is the same module.
+# both pages use; calc_package.docx_renderer is the same module, loaded when
+# it is first imported by either name, so importing this package loads
+# nothing of funhouse_agent (its first-import notice included). The old name
+# goes in step 16.
+import importlib as _importlib
+import importlib.util as _importlib_util
 import sys as _sys
-from funhouse_agent import docx_renderer
-_sys.modules[__name__ + ".docx_renderer"] = docx_renderer
+
+_MOVED = {__name__ + ".docx_renderer": "funhouse_agent.docx_renderer"}
+
+
+class _MovedModule:
+    """Finder and loader for :data:`_MOVED`: an old name imports the moved
+    module itself (one module object, so a patch by either name reaches the
+    code), never a second copy of it."""
+
+    @staticmethod
+    def find_spec(fullname, path=None, target=None):
+        if fullname not in _MOVED:
+            return None
+        return _importlib_util.spec_from_loader(fullname, _MovedModule())
+
+    def create_module(self, spec):
+        module = _importlib.import_module(_MOVED[spec.name])
+        self._spec = module.__spec__
+        return module
+
+    def exec_module(self, module):
+        module.__spec__ = self._spec    # the import system set the old name's
+
+
+# First, so an old name never resolves to a file of the same name elsewhere.
+if not any(getattr(f, "__qualname__", "") == "_MovedModule"
+           and getattr(f, "__module__", "") == __name__
+           for f in _sys.meta_path):
+    _sys.meta_path.insert(0, _MovedModule)
 
 # Registry of supported modules — populated lazily on first use
 _MODULE_REGISTRY = {}
