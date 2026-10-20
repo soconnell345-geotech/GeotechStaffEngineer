@@ -1346,46 +1346,56 @@
   "OWN-72": {
     "kind": "decision",
     "ask_who": null,
-    "question": "The Document Review package: what is it called, and how does Tiny Apps get it?",
-    "why": "You decided today to split the two apps: GeotechStaffEngineer runs in Foundry, and Document Review becomes its own package, not on PyPI, pulled into Tiny Apps as a wheel. Two things need your call before the split starts: the package's name, and how Tiny Apps installs a package that is not on PyPI. Tiny Apps installs only from the Nexus mirror of PyPI, so a wheel that is not on PyPI has to be checked into the wrapper repo (vendored), and CfA has not yet said whether that is allowed.",
-    "background": "Python's convention is a lower-case distribution name with hyphens and an import name with underscores, for example de-docreview installed and imported as de_docreview. planlens, which does the document reading, is already its own package on PyPI and stays there. The split plan (INF-26) will list what moves and what stays.",
+    "question": "The split's two new packages: what are they called, and how does Tiny Apps get Document Review?",
+    "why": "The split plan (INF-26) builds three packages of our own from this repository: Document Review (not on PyPI, a wheel for Tiny Apps), a shared package that both apps run (the chat page, the document and vision tools, the model connections), and GeotechStaffEngineer as today. The names are needed before the shared package is built. Tiny Apps installs only from CfA's Nexus mirror, so a package that is not on PyPI needs CfA's agreement to another route; their answer is needed before the Tiny Apps wrapper is changed. Testers keep today's two-page package from Nexus until then, so nothing is lost by waiting.",
+    "background": "Python's convention is a lower-case install name with hyphens and an import name with underscores. The shared package is public like planlens (OWN-74), so its name carries no \"DE\". You decided this morning that the geotech page leaves Tiny Apps and runs on Foundry. The plan is module_work/APP_SPLIT_PLAN.md; section 1.3 compares the four routes.",
     "parts": [
       {
-        "label": "Name",
+        "label": "Names",
         "options": [
           {
-            "label": "de-docreview (import de_docreview)",
-            "effect": "Follows Python's naming convention."
+            "label": "de-docreview for the app, docreview-core for the shared part",
+            "effect": "Imported as de_docreview and docreview_core."
           },
           {
             "label": "Other (see notes)",
-            "effect": "Write the name you want in the notes."
+            "effect": "Write the names you want in the notes."
           }
         ]
       },
       {
-        "label": "How Tiny Apps gets it",
+        "label": "How Tiny Apps gets Document Review",
         "options": [
           {
-            "label": "Vendored wheel in the wrapper repo, ask CfA first",
-            "effect": "Not on PyPI, as you said; needs CfA's yes (their open question 6)."
+            "label": "A: our two wheels in the wrapper repo",
+            "effect": "Pure Python, copied in and installed by path; every other package still from Nexus. Needs CfA's yes (question 6a)."
           },
           {
-            "label": "A package on Nexus after all",
-            "effect": "Installs like everything else on Tiny Apps; the code becomes public on PyPI."
+            "label": "B: the source folder in the wrapper repo",
+            "effect": "The same code, unzipped, if CfA would rather read source (question 6b)."
+          },
+          {
+            "label": "C: a hosted repository on CfA's Nexus",
+            "effect": "Keeps everything through Nexus, if one exists for teams (question 6c)."
+          },
+          {
+            "label": "D: PyPI through Nexus",
+            "effect": "Installs like everything else, but Document Review goes on PyPI, which you did not want."
           }
         ]
       }
     ],
-    "recommendation": "de-docreview, vendored in the wrapper repo once CfA agrees; ask CfA now so the answer is back before the split is built.",
-    "if_no_answer": "The plan uses de-docreview as a working name and leaves the install route open.",
-    "message_to_send": null,
+    "recommendation": "de-docreview and docreview-core; send CfA the four questions below now and plan on A, falling back to B, then C, then D only on your word.",
+    "if_no_answer": "The plan keeps the working names and the route open; the steps that need neither go ahead.",
+    "message_to_send": "Questions on installing our Document Review app (replaces our earlier question 6):\n6a. May our wrapper repo carry our own two wheel files (small, pure Python, built by us), installed by path from packages.txt, with every other package from Nexus? Or must every package come through Nexus?\n6b. If you would rather read source than a wheel, may the app's source folder live in the GHE repo instead? (Same code, unzipped.)\n6c. Does your Nexus have a hosted repository where a team publishes its own package?\n6d. Are the fleet pins our tree must accept still streamlit 1.62.0, pandas 3.0.2, PyJWT 2.13.0, msal 1.37.0, azure-identity 1.21.0 and azure-keyvault-secrets 4.9.0?",
     "steps": [],
     "unblocks": [
-      "INF-26"
+      "INF-32",
+      "INF-34"
     ],
     "sources": [
       "BACKLOG.md OWN-72, INF-26",
+      "module_work/APP_SPLIT_PLAN.md sections 1.3 and 7 (D1, D3)",
       "tinyapps/TINYAPPS.md (Nexus only; CfA question 6)"
     ]
   },
@@ -1426,6 +1436,193 @@
       "GEC-6 p. 100 (Eqs. 5-38, 5-39)",
       "EN 1997-1 6.5.3",
       "UFC 3-220-20 Fig. 4-27, Sec. 4-5.1.3, Table 4-1"
+    ]
+  },
+  "OWN-74": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Where should the code both apps use live once they are split?",
+    "why": "Both apps run the same chat page, document, vision and markup tools, figure helper and model connections, about 46,000 lines. It has to be somewhere both can install: GeotechStaffEngineer from PyPI on Foundry, Document Review as a wheel on Tiny Apps.",
+    "background": "planlens, which reads the documents, is already its own public package on PyPI. This code is public today, in this public repository and in every GSE release since 5.26.",
+    "parts": [
+      {
+        "label": "Where it lives",
+        "options": [
+          {
+            "label": "Its own public package on PyPI",
+            "effect": "Like planlens. GSE stays on PyPI, so Foundry's Libraries panel keeps working, and Document Review stays off it. One copy of the code."
+          },
+          {
+            "label": "Inside Document Review, GSE installs it",
+            "effect": "GSE could then be on PyPI only if Document Review is, and every Foundry install would need uploads."
+          },
+          {
+            "label": "Two copies",
+            "effect": "Every fix to the page, tools or connections made twice."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Its own public package on PyPI: the only option that keeps GSE on PyPI and Document Review off it with one copy of the code.",
+    "if_no_answer": "The steps that need no decision go ahead; the shared package is not built.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-32"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-74",
+      "module_work/APP_SPLIT_PLAN.md section 7 (D2)"
+    ]
+  },
+  "OWN-75": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Release the train you are holding before the split moves any files?",
+    "why": "Master carries everything since 5.33.0 (OWN-55), including the fix that lets the testers' package install beside CfA's pandas 3.0.2. The split's step 9 starts moving files between packages.",
+    "background": "Steps 1 to 8 of the split change no behaviour and can go into this release or the next. A release reaches Funhouse and Tiny Apps a day or two after PyPI.",
+    "parts": [
+      {
+        "label": "When",
+        "options": [
+          {
+            "label": "Release before the files move",
+            "effect": "A clean version to fall back to, and the pandas fix reaches Nexus while CfA works."
+          },
+          {
+            "label": "Hold it and release once with the split",
+            "effect": "One release, but a larger change to fall back from."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Release before the files move.",
+    "if_no_answer": "The split stops before step 9 until you release.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-32",
+      "OWN-55"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-75, OWN-55",
+      "module_work/APP_SPLIT_PLAN.md section 7 (D6)"
+    ]
+  },
+  "OWN-76": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the Document Review code be private?",
+    "why": "Keeping Document Review off PyPI does not make it private: its code is in this public repository and in every GeotechStaffEngineer release since 5.26.",
+    "background": "Moving it to a private repository after the split is a short, mechanical step, so this can wait until the end of the split.",
+    "parts": [
+      {
+        "label": "Public or private",
+        "options": [
+          {
+            "label": "Public, its own package in this repository",
+            "effect": "Nothing changes about who can read it."
+          },
+          {
+            "label": "Private, moved to a private repository after the split",
+            "effect": "The wheel is built there; the code already published stays published."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Public, unless the Department or CfA asks otherwise.",
+    "if_no_answer": "It stays public in this repository.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-35"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-76",
+      "module_work/APP_SPLIT_PLAN.md section 7 (D7)"
+    ]
+  },
+  "OWN-77": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Where do the figure helper and the plotting code go when the apps split?",
+    "why": "Since today both are on for both pages, by your ruling on GM-92 (\"on everywhere\"). Most of them is general: draw, look at the picture, redraw to a checklist. The geotech part is small: standard chart lines from the reference library, nine worked examples (a boring plan, an SPT profile, wall pressures and the like) and a few checklist lines.",
+    "background": "Only GSE has the reference library, so the chart lines have to be handed in from the GSE side. Section 2.8 of the plan measures each option's files and imports.",
+    "parts": [
+      {
+        "label": "Where they go",
+        "options": [
+          {
+            "label": "Into the shared package, examples as they are",
+            "effect": "Both apps keep them; Document Review keeps exactly what it has. The shared package grows by about 4,500 lines and keeps SciPy, which the plotting box lets code use."
+          },
+          {
+            "label": "As above, then Document Review's own examples",
+            "effect": "Later, Document Review gets general examples (drawings, schedules, quantities) in place of the geotech ones, measured on the suite."
+          },
+          {
+            "label": "Document Review drops both",
+            "effect": "The least code to move, but it reverses your GM-92 ruling and takes figures drawn in code away from testers."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Into the shared package during the split, then Document Review's own examples after it.",
+    "if_no_answer": "The split stops before step 6 until you choose.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-31"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-77",
+      "module_work/APP_SPLIT_PLAN.md sections 2.8 and 7 (D8)"
+    ]
+  },
+  "OWN-78": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "What notice should Document Review show, and which SharePoint folder do testers' conversations go to?",
+    "why": "The Document Review page shows GeotechStaffEngineer's geotechnical professional-use disclaimer today, and testers' conversations go to Shared Documents/GeotechStaffEngineer.",
+    "background": "Proposed notice, taken from the page's own caption: \"Document Review reads drawings, specifications, submittals, reports and calculation packages and hands back memos and marked-up PDFs. It is a review aid: it can miss or misread things, and the judgement stays with you. Check anything you rely on against the document.\"",
+    "parts": [
+      {
+        "label": "Notice",
+        "options": [
+          {
+            "label": "Use the proposed notice",
+            "effect": "Replaces the geotech disclaimer on the Document Review page."
+          },
+          {
+            "label": "Edit it (see notes)",
+            "effect": "Write your wording in the notes."
+          }
+        ]
+      },
+      {
+        "label": "SharePoint folder",
+        "options": [
+          {
+            "label": "Keep Shared Documents/GeotechStaffEngineer for now",
+            "effect": "Nothing moves until the published app is live, so nothing moves twice."
+          },
+          {
+            "label": "Shared Documents/DocumentReview",
+            "effect": "A clearer name; existing conversations stay where they are."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Approve the notice (or edit it) and keep the folder until the published app is live.",
+    "if_no_answer": "The page keeps today's disclaimer and folder.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-34"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-78",
+      "module_work/APP_SPLIT_PLAN.md section 7 (D9)"
     ]
   }
 }

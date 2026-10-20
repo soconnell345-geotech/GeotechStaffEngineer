@@ -104,7 +104,11 @@ def test_the_calc_helper_is_told_its_budget_and_warned():
     n = agent_mod.DEFAULT_CALC_MAX_MODEL_CALLS
     assert f"you have {n} model calls for this task" in spec["system_prompt"]
     assert "with calls to spare" in spec["system_prompt"]
-    (mw,) = spec["middleware"]
+    # the budget first; the figure looks (GM-227, on by default) after it
+    mw = spec["middleware"][0]
+    assert isinstance(mw, ModelCallBudgetMiddleware)
+    assert not any(isinstance(m, ModelCallBudgetMiddleware)
+                   for m in spec["middleware"][1:])
     assert mw.run_limit == n
     assert mw.warn_remaining == agent_mod.CALC_WARN_REMAINING == 4
     spec = agent_mod.build_calc_subagent(max_model_calls=9)
@@ -114,7 +118,8 @@ def test_the_calc_helper_is_told_its_budget_and_warned():
 def test_no_budget_no_budget_line():
     spec = agent_mod.build_calc_subagent(max_model_calls=0)
     assert "CALL BUDGET" not in spec["system_prompt"]
-    assert "middleware" not in spec
+    assert not any(isinstance(m, ModelCallBudgetMiddleware)
+                   for m in spec.get("middleware") or [])
 
 
 def test_the_other_budgets_are_unchanged():

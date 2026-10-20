@@ -1399,8 +1399,10 @@ def build_deep_agent(
         from funhouse_agent import review_flags as _flags
         if _flags.judgment_calls() and not review_page:
             # The judgment calls put in front of the user (GM-116), behind
-            # GEOTECH_JUDGMENT_CALLS until measured. The geotech prompt
-            # only: a page that brings its own prompt is unchanged.
+            # GEOTECH_JUDGMENT_CALLS, on by default (GM-226). The geotech
+            # prompt only: a page that brings its own prompt is unchanged.
+            # With the chat's references off there is no helper to consult
+            # and the block says so (the user's choice wins).
             system_prompt += "\n\n" + judgment_calls_section(
                 references=reference_mode != "off")
             judgment_consult = reference_mode != "off"
@@ -1506,7 +1508,8 @@ def build_deep_agent(
     figure_tasks = None
     if _flags.figure_helper() or _flags.plot_code():
         # The figure helper (OWN-61 option B, GM-92): draws, looks, redraws
-        # to a checklist; behind GEOTECH_FIGURE_HELPER until measured.
+        # to a checklist; behind GEOTECH_FIGURE_HELPER, on by default
+        # (GM-227).
         # GEOTECH_PLOT_CODE brings it too: plotting code needs a helper the
         # main agent hands figures to (live wave w8, F55: without one the
         # main agent drew a wall with plot_data five times and ran out of

@@ -6,7 +6,9 @@ on the one example that prompted it. So each behaviour change from that review
 ships behind a switch here, OFF by default, and the review suite
 (:mod:`funhouse_agent.review_eval`) runs the same tasks with the switches off
 and on from ONE install. A switch is turned on by default only once the suite
-says it helps.
+says it helps, or the owner rules it on: on 2026-10-20 the figure helper,
+plotting code and judgment calls (:data:`DEFAULT_ON_ENVS`; ``0`` turns each
+off).
 
 Every switch is read from the environment AT CALL TIME, so a notebook (or the
 suite) can flip one between two runs without rebuilding anything but the agent.
@@ -99,13 +101,19 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     geotech page always offers it; on the review page it waits for the
     suite (arm ``kept_readings``; BACKLOG TA-28).
 ``GEOTECH_FIGURE_HELPER``
-    ``1`` adds the ``figure`` helper (:mod:`funhouse_agent.deep.figure_helper`)
+    ON by default (owner, 2026-10-15, GM-92: "on everywhere"; BACKLOG
+    GM-227); ``0`` with ``GEOTECH_PLOT_CODE=0`` leaves it out (plotting
+    code brings it). Adds the ``figure`` helper
+    (:mod:`funhouse_agent.deep.figure_helper`)
     to the agent: it draws a figure with ``plot_data`` from a figure
     checklist (after Tufte) and worked examples, looks at the PNG and
     redraws (owner's choice, 2026-10-15, OWN-61 option B). Both pages; not
     the lean review agent (BACKLOG GM-92).
 ``GEOTECH_PLOT_CODE``
-    ``1`` offers ``plot_code`` to the figure helper and the ``calc`` helper,
+    ON by default (owner, 2026-10-15, GM-92; BACKLOG GM-227); ``0`` takes
+    it away (and the figure helper too only with
+    ``GEOTECH_FIGURE_HELPER=0``). Offers ``plot_code`` to the figure helper
+    and the ``calc`` helper,
     and brings the figure helper with it (live wave w8: without a helper
     to hand figures to, the main agent never reached the box):
     matplotlib or Plotly code the model writes, run in a locked box (its own
@@ -148,7 +156,13 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     writes after that note is the one delivered. Off: answers and results
     are left as they are. Both pages (BACKLOG EV-21; live wave w8b, F55).
 ``GEOTECH_JUDGMENT_CALLS``
-    ``1`` tells the geotech agent that the engineering judgment is the
+    ON by default (owner, 2026-10-20, OWN-65: "This cost ($0.2 to 0.53) is
+    low compared to the added quality"; BACKLOG GM-226); ``0`` turns it
+    off. The chat's "Consult references" control governs the consult: with
+    references off no references helper is built, each call names a
+    ``choices`` basis or says it rests on judgment, and nothing is sent
+    back at turn end; a lower "Reference consult budget" caps the consult
+    too. Tells the geotech agent that the engineering judgment is the
     user's: an answer that rests on a judgment call (a method, a value the
     user did not give, drained or undrained, which stratum governs, search
     or mesh settings, how ambiguous data was read) ends with a short
@@ -216,10 +230,22 @@ SETTINGS_ENVS = (OVERVIEW_PAGES_ENV, "GEOTECH_REVIEW_SHAPE1_PAGES",
                  "GEOTECH_PLOT_CODE_MEMORY_MB", "GEOTECH_PLOT_CODE_AT_ONCE")
 
 _ON = ("1", "true", "yes", "on")
+_OFF = ("0", "false", "no", "off")
+
+#: The switches that are ON when their variable is unset, by the owner's
+#: ruling rather than the suite's (2026-10-20): the judgment calls (OWN-65,
+#: BACKLOG GM-226) and the figure helper and plotting code (GM-92, GM-227).
+#: ``0`` (or ``false``/``no``/``off``) turns each off.
+DEFAULT_ON_ENVS = (FIGURE_HELPER_ENV, PLOT_CODE_ENV, JUDGMENT_CALLS_ENV)
 
 
 def _on(env: str) -> bool:
     return str(os.environ.get(env, "")).strip().lower() in _ON
+
+
+def _on_by_default(env: str) -> bool:
+    """On unless the variable says ``0``/``false``/``no``/``off``."""
+    return str(os.environ.get(env, "")).strip().lower() not in _OFF
 
 
 def lean_agent() -> bool:
@@ -300,8 +326,9 @@ def vision_turn_retry() -> bool:
 
 
 def figure_helper() -> bool:
-    """Whether the agent gets the ``figure`` helper (both pages)."""
-    return _on(FIGURE_HELPER_ENV)
+    """Whether the agent gets the ``figure`` helper (both pages; on unless
+    ``GEOTECH_FIGURE_HELPER=0``)."""
+    return _on_by_default(FIGURE_HELPER_ENV)
 
 
 def step_cap_answer() -> bool:
@@ -312,16 +339,19 @@ def step_cap_answer() -> bool:
 
 def plot_code() -> bool:
     """Whether the figure and ``calc`` helpers get ``plot_code``, the locked
-    box for plotting code, and the figure helper is built (both pages)."""
-    return _on(PLOT_CODE_ENV)
+    box for plotting code, and the figure helper is built (both pages; on
+    unless ``GEOTECH_PLOT_CODE=0``)."""
+    return _on_by_default(PLOT_CODE_ENV)
 
 
 def judgment_calls() -> bool:
     """Whether the geotech agent ends an answer with its judgment calls, the
     ``calc`` helper reports the calls it made, the references helper
     returns a reference's several methods or values as cited options, and
-    an answer with unsourced calls and no consult is sent back once."""
-    return _on(JUDGMENT_CALLS_ENV)
+    an answer with unsourced calls and no consult is sent back once (on
+    unless ``GEOTECH_JUDGMENT_CALLS=0``; with the chat's references off
+    there is no consult and nothing is sent back)."""
+    return _on_by_default(JUDGMENT_CALLS_ENV)
 
 
 def cited_pages() -> str:
@@ -361,8 +391,10 @@ def overview_pages() -> int:
 
 
 #: Named configurations the review suite compares. ``baseline`` is exactly
-#: what the page does with no switch set. Each later arm adds one change, so
-#: a gain or a loss is attributable to the change that was added.
+#: what the page does with no switch set, the switches of
+#: :data:`DEFAULT_ON_ENVS` on among it. Each later arm adds one change (or,
+#: for a switch on by default, takes it away), so a gain or a loss is
+#: attributable to the change.
 ARMS: Dict[str, Dict[str, str]] = {
     "baseline": {},
     "lean": {AGENT_ENV: "lean"},
@@ -396,11 +428,17 @@ ARMS: Dict[str, Dict[str, str]] = {
     # or the model told once. On the DEFAULT agent, against `baseline`.
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
     "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
-    # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent.
+    # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent. On by
+    # default since GM-227, so this arm is `baseline`.
     "figure_helper": {FIGURE_HELPER_ENV: "1"},
     # Plotting code in a locked box (GM-98, 2026-10-15) for the figure and
-    # calc helpers; it brings the figure helper. On the DEFAULT agent.
+    # calc helpers; it brings the figure helper. On the DEFAULT agent. On by
+    # default since GM-227, so this arm is `baseline`.
     "plot_code": {PLOT_CODE_ENV: "1"},
+    # GM-227 taken away: no figure helper and no plotting code (the page as
+    # it was before 2026-10-20); and the figure helper without plotting code.
+    "figure_helper_off": {FIGURE_HELPER_ENV: "0", PLOT_CODE_ENV: "0"},
+    "plot_code_off": {PLOT_CODE_ENV: "0"},
     # A turn at its step cap answers from what it gathered (TA-33).
     "step_cap_answer": {STEP_CAP_ANSWER_ENV: "1"},
     # Cited documents nothing looked up (EV-21, 2026-10-15): a note on the
@@ -410,16 +448,19 @@ ARMS: Dict[str, Dict[str, str]] = {
     "cited_documents_retry": {CITED_DOCUMENTS_ENV: "retry"},
     # Judgment calls put in front of the user (GM-116, 2026-10-16). On the
     # DEFAULT agent. The geotech page only: on the review page's tasks this
-    # arm builds the same agent as `baseline`.
+    # arm builds the same agent as `baseline`. On by default since GM-226,
+    # so this arm is `baseline`, and `judgment_calls_off` takes it away.
     "judgment_calls": {JUDGMENT_CALLS_ENV: "1"},
+    "judgment_calls_off": {JUDGMENT_CALLS_ENV: "0"},
 }
 
 
 @contextmanager
 def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
     """Set exactly ``values`` for the block: every switch (:data:`ALL_ENVS`)
-    and every switch setting (:data:`SETTINGS_ENVS`) NOT named is unset, so
-    an arm is what it says and nothing leaks in from the notebook's own
+    and every switch setting (:data:`SETTINGS_ENVS`) NOT named is unset (a
+    switch of :data:`DEFAULT_ON_ENVS` unset is on), so an arm is what it
+    says and nothing leaks in from the notebook's own
     environment. Any other variable the arm names (a budget, a vision
     policy) is set too. The previous environment is restored afterwards."""
     values = dict(values or {})
@@ -441,10 +482,16 @@ def switches(values: Optional[Mapping[str, str]]) -> Iterator[None]:
 
 
 def describe() -> str:
-    """One line naming the switches that are on (for diagnostics and logs)."""
-    on = [f"{k}={os.environ[k]}" for k in ALL_ENVS
-          if str(os.environ.get(k, "")).strip()]
-    return ", ".join(on) if on else "none (legacy review page)"
+    """One line naming the switches that are set, and each switch on by
+    default as ``=1 (default)`` while unset (for diagnostics and logs)."""
+    out = []
+    for k in ALL_ENVS:
+        value = str(os.environ.get(k, "")).strip()
+        if value:
+            out.append(f"{k}={value}")
+        elif k in DEFAULT_ON_ENVS:
+            out.append(f"{k}=1 (default)")
+    return ", ".join(out)
 
 
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
@@ -453,7 +500,7 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
            "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV",
-           "OVERVIEW_PAGES_ENV",
+           "DEFAULT_ON_ENVS", "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",

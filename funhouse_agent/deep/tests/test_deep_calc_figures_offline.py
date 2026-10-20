@@ -107,6 +107,10 @@ def test_a_fault_a_look_finds_is_fixed_before_handing_back(monkeypatch, env):
     from funhouse_agent.deep.agent import _CALC_LOOK_FIXES
     for name in (review_flags.FIGURE_HELPER_ENV, review_flags.PLOT_CODE_ENV):
         monkeypatch.delenv(name, raising=False)
+    # on by default (GM-227)
+    assert _CALC_LOOK_FIXES in build_calc_subagent()["system_prompt"]
+    for name in (review_flags.FIGURE_HELPER_ENV, review_flags.PLOT_CODE_ENV):
+        monkeypatch.setenv(name, "0")
     assert _CALC_LOOK_FIXES not in build_calc_subagent()["system_prompt"]
     monkeypatch.setenv(env, "1")
     prompt = build_calc_subagent()["system_prompt"]
