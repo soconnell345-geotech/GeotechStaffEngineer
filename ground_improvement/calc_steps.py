@@ -185,6 +185,12 @@ def _inputs_aggregate_piers(result, analysis) -> List[InputItem]:
         InputItem("n", "Stress concentration ratio",
                   r.stress_concentration_ratio, ""),
     ]
+    if r.settlement_method != "stress_ratio":
+        # GEC-13 Fig. 5-21's methods take E_c / E_s (GM-220)
+        items[4:4] = [InputItem("E_c", "Column modulus",
+                                _piers(analysis, "E_column"), "kPa")]
+        items.append(InputItem("Settlement", "Settlement method",
+                               _FIG_5_21_NAMES[r.settlement_method], ""))
     if r.unreinforced_bearing_kPa > 0:
         items.append(InputItem("q_unr", "Unreinforced bearing capacity",
                                r.unreinforced_bearing_kPa, "kPa"))
@@ -254,6 +260,102 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
     n = r.stress_concentration_ratio
     a_s = r.area_replacement_ratio
 
+    if r.settlement_method != "stress_ratio":
+        sections.append(CalcSection(
+            title="Settlement Ratio by E_c / E_s (GEC-13 Fig. 5-21)",
+            items=_fig_5_21_steps(r, _piers(analysis, "E_column"),
+                                  _piers(analysis, "E_soil")),
+        ))
+    else:
+        _stress_ratio_steps(r, analysis, srf_items, n, a_s)
+        sections.append(CalcSection(
+            title="Settlement Reduction & Composite Modulus",
+            items=srf_items
+        ))
+    _bearing_and_settlement_steps(r, sections, n, a_s)
+    return sections
+
+
+#: GEC-13 Fig. 5-21's settlement methods by name (GM-220).
+_FIG_5_21_NAMES = {
+    "weighted_modulus": "Weighted modulus (GEC-13 Fig. 5-21 curve 2)",
+    "balaam_rigid": "Balaam, rigid (GEC-13 Fig. 5-21 curves 5b, 5c)",
+    "balaam_flexible": "Balaam, flexible (GEC-13 Fig. 5-21 curve 5a)",
+}
+
+
+def _fig_5_21_steps(r, E_c, E_s):
+    """The settlement ratio n' by E_c / E_s off GEC-13 Fig. 5-21."""
+    from ground_improvement.settlement_ratio import BASIS
+    a_s = r.area_replacement_ratio
+    ratio = r.modular_ratio
+    n_p = r.settlement_ratio
+    items = [
+        CalcStep(
+            title="Modular Ratio",
+            equation="E_c / E_s",
+            substitution=f"E_c / E_s = {E_c:.0f} / {E_s:.0f}",
+            result_name="E_c/E_s",
+            result_value=f"{ratio:.3g}",
+        ),
+        CalcStep(
+            title="Area Ratio",
+            equation="A / A_c = 1 / a_s",
+            substitution=f"A / A_c = 1 / {a_s:.4f}",
+            result_name="A/A_c",
+            result_value=f"{1.0 / a_s:.2f}",
+        ),
+    ]
+    if r.settlement_method == "weighted_modulus":
+        items.append(CalcStep(
+            title="Settlement Ratio, Weighted Modulus",
+            equation="n' = 1 + a_s \u00d7 (E_c / E_s - 1)",
+            substitution=f"n' = 1 + {a_s:.4f} \u00d7 ({ratio:.3g} - 1)",
+            result_name="n'",
+            result_value=f"{n_p:.3f}",
+            reference=BASIS["weighted_modulus"],
+        ))
+    else:
+        curve = ("(5a), E_c/E_s = 10, flexible"
+                 if r.settlement_method == "balaam_flexible"
+                 else "(5b) E_c/E_s = 10 and (5c) E_c/E_s = 5, rigid")
+        items.append(CalcStep(
+            title="Settlement Ratio, Balaam",
+            equation=f"n' read off GEC-13 Fig. 5-21, curve {curve}",
+            substitution=(f"A / A_c = {1.0 / a_s:.2f}, "
+                          f"E_c / E_s = {ratio:.3g}"),
+            result_name="n'",
+            result_value=f"{n_p:.3f}",
+            reference=BASIS[r.settlement_method],
+            notes=("Linear in a_s between the tabulated reads of the "
+                   "printed curve"
+                   + ("; linear in E_c/E_s between (5c) and (5b)"
+                      if r.settlement_method == "balaam_rigid"
+                      and not any(math.isclose(ratio, v, rel_tol=0.01)
+                                  for v in (5.0, 10.0)) else "")),
+        ))
+    items.append(CalcStep(
+        title="Settlement Reduction Factor (SRF)",
+        equation="SRF = 1 / n'",
+        substitution=f"SRF = 1 / {n_p:.3f}",
+        result_name="SRF",
+        result_value=f"{r.settlement_reduction_factor:.4f}",
+        notes="n' is the settlement without columns over that with "
+              "them (GEC-13 p. 5-36).",
+    ))
+    items.append(CalcStep(
+        title="Composite Modulus of Improved Ground",
+        equation="E_comp = E_s \u00d7 n'",
+        substitution=f"E_comp = {E_s:.0f} \u00d7 {n_p:.3f}",
+        result_name="E_comp",
+        result_value=f"{r.composite_modulus_kPa:.0f}",
+        result_unit="kPa",
+        notes="Consistent with SRF: E_comp = E_s / SRF.",
+    ))
+    return items
+
+
+def _stress_ratio_steps(r, analysis, srf_items, n, a_s):
     srf_items.append(CalcStep(
         title="Settlement Reduction Factor (SRF)",
         equation="SRF = 1 / [1 + a_s \u00d7 (n - 1)]",
@@ -282,10 +384,9 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
         notes="Consistent with SRF: E_comp = E_s / SRF.",
     ))
 
-    sections.append(CalcSection(
-        title="Settlement Reduction & Composite Modulus", items=srf_items
-    ))
 
+
+def _bearing_and_settlement_steps(r, sections, n, a_s):
     # -- Section 4: Bearing Capacity Improvement ----------------------
     if r.unreinforced_bearing_kPa > 0:
         bc_items = []
@@ -333,7 +434,9 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
             result_name="S_improved",
             result_value=f"{r.settlement_improved_mm:.1f}",
             result_unit="mm",
-            reference="Priebe (1995)",
+            reference=("Priebe (1995)" if r.settlement_method
+                       == "stress_ratio" else
+                       "GEC-13 Fig. 5-21: S = S_unreinforced / n'"),
         ))
 
         settle_items.append(TableData(
@@ -352,8 +455,6 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
             title="Settlement Improvement", items=settle_items
         ))
 
-    return sections
-
 
 def _figures_aggregate_piers(result, analysis) -> List[FigureData]:
     figures = []
@@ -368,21 +469,40 @@ def _figures_aggregate_piers(result, analysis) -> List[FigureData]:
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
-        # Figure 1: SRF sensitivity to stress concentration ratio n
-        fig1 = _plot_srf_vs_n(r)
-        b64_1 = figure_to_base64(fig1, dpi=150)
-        plt.close(fig1)
-        figures.append(FigureData(
-            title="Settlement Reduction Factor vs Stress Concentration Ratio",
-            image_base64=b64_1,
-            caption=(
-                f"Figure 1: SRF vs stress concentration ratio n for "
-                f"a_s = {r.area_replacement_ratio:.4f}. "
-                f"Design point: n = {r.stress_concentration_ratio:.1f}, "
-                f"SRF = {r.settlement_reduction_factor:.3f}."
-            ),
-            width_percent=70,
-        ))
+        if r.settlement_method != "stress_ratio":
+            # Figure 1: the GEC-13 Fig. 5-21 curve the run read (GM-220)
+            fig1 = _plot_settlement_ratio(r)
+            b64_1 = figure_to_base64(fig1, dpi=150)
+            plt.close(fig1)
+            figures.append(FigureData(
+                title="Settlement Ratio vs Area Ratio (GEC-13 Fig. 5-21)",
+                image_base64=b64_1,
+                caption=(
+                    f"Figure 1: settlement ratio n' (settlement without "
+                    f"columns / with them) vs A/A_c, "
+                    f"{_FIG_5_21_NAMES[r.settlement_method]}, E_c/E_s = "
+                    f"{r.modular_ratio:.3g}. Design point: A/A_c = "
+                    f"{1.0 / r.area_replacement_ratio:.2f}, n' = "
+                    f"{r.settlement_ratio:.2f}."
+                ),
+                width_percent=70,
+            ))
+        else:
+            # Figure 1: SRF sensitivity to stress concentration ratio n
+            fig1 = _plot_srf_vs_n(r)
+            b64_1 = figure_to_base64(fig1, dpi=150)
+            plt.close(fig1)
+            figures.append(FigureData(
+                title="Settlement Reduction Factor vs Stress Concentration Ratio",
+                image_base64=b64_1,
+                caption=(
+                    f"Figure 1: SRF vs stress concentration ratio n for "
+                    f"a_s = {r.area_replacement_ratio:.4f}. "
+                    f"Design point: n = {r.stress_concentration_ratio:.1f}, "
+                    f"SRF = {r.settlement_reduction_factor:.3f}."
+                ),
+                width_percent=70,
+            ))
 
         # Figure 2: Before/after bar chart
         if (r.settlement_unreinforced_mm > 0 or
@@ -1109,6 +1229,48 @@ def _plot_srf_vs_n(result):
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=9)
+    plt.tight_layout()
+    return fig
+
+
+def _plot_settlement_ratio(result):
+    """n' against A/A_c on the GEC-13 Fig. 5-21 curve the run read, over
+    the curve's drawn range, with the design point (GM-220)."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from ground_improvement.settlement_ratio import (
+        BALAAM_FLEXIBLE_10, BALAAM_RIGID_5, settlement_ratio)
+
+    r = result
+    table = (BALAAM_FLEXIBLE_10 if r.settlement_method == "balaam_flexible"
+             else BALAAM_RIGID_5)
+    x0, x1 = ((1.5, 9.0) if r.settlement_method == "weighted_modulus"
+              else (min(table), max(table)))
+    xs = [x0 + (x1 - x0) * i / 100 for i in range(101)]
+    ys = [settlement_ratio(r.settlement_method, 1.0 / x, r.modular_ratio)
+          for x in xs]
+    x_d, y_d = 1.0 / r.area_replacement_ratio, r.settlement_ratio
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(xs, ys, '-', color='#2563eb', linewidth=2)
+    # the curve named near its steep end, clear of the design point
+    ax.annotate(f"E_c/E_s = {r.modular_ratio:.3g}", (xs[12], ys[12]),
+                xytext=(10, 4), textcoords="offset points", fontsize=9,
+                color='#2563eb')
+    ax.plot(x_d, y_d, 'o', color='#dc2626', markersize=8, zorder=5)
+    ax.annotate(f"A/A_c = {x_d:.2f}, n' = {y_d:.2f}", (x_d, y_d),
+                xytext=(8, 8), textcoords="offset points", fontsize=9,
+                color='#dc2626')
+    ax.set_xlabel("Area ratio, A / A_c", fontsize=10)
+    ax.set_ylabel("Settlement ratio, n'", fontsize=10)
+    ax.set_title(_FIG_5_21_NAMES[r.settlement_method], fontsize=11,
+                 fontweight='bold')
+    ax.set_xlim(1, 10)
+    ax.set_ylim(1, max(ys) * 1.05)
+    ax.tick_params(labelsize=9)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
     plt.tight_layout()
     return fig
 

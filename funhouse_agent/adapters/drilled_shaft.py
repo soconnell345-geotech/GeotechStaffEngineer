@@ -11,7 +11,7 @@ from drilled_shaft.capacity import skipped_depths_note
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
-                 "bell_diameter", "casing_depth")
+                 "bell_diameter", "casing_depth", "fractured_rock_thickness")
 _SOIL_PARAMS = ("layers", "gwt_depth")
 # GEC-10 rational side-resistance method selectors (opt-in; defaults preserve
 # the AASHTO / depth-based behavior).
@@ -37,7 +37,9 @@ def _build_shaft(params):
     return DrillShaft(diameter=params["diameter"], length=params["shaft_length"],
                        socket_diameter=params.get("socket_diameter"),
                        bell_diameter=params.get("bell_diameter"),
-                       casing_depth=params.get("casing_depth", 0.0))
+                       casing_depth=params.get("casing_depth", 0.0),
+                       fractured_rock_thickness=params.get(
+                           "fractured_rock_thickness", 0.0))
 
 
 def _build_soil_profile(params):
@@ -165,9 +167,10 @@ _INFO_RATIONAL = {
     "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
 }
 _INFO_SHAFT_GEOM = {
-    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter."},
+    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-21, Example 10-4) and gives none per rock layer."},
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
+    "fractured_rock_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Decomposed or fractured rock (m) below the top of the first rock layer that is 'not considered part of the socket for design purposes' (GEC-10 p. 8-15): no rock side resistance over it, while the soil above keeps its own (casing_depth takes both). 0 = all rock is socket. Needs a rock layer."},
 }
 
 METHOD_INFO = {
