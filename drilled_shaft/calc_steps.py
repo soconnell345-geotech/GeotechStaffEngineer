@@ -55,12 +55,13 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     """
     shaft = analysis.shaft
     soil = analysis.soil
+    _, _, base_area = _base(shaft, soil)
 
     items = [
         InputItem("D", "Shaft diameter", shaft.diameter, "m"),
         InputItem("L", "Shaft length", shaft.length, "m"),
         InputItem("P", "Shaft perimeter", f"{shaft.perimeter:.3f}", "m"),
-        InputItem("A_tip", "Tip area", f"{shaft.tip_area:.4f}", "m\u00b2"),
+        InputItem("A_tip", "Tip area", f"{base_area:.4f}", "m\u00b2"),
     ]
 
     # Socket geometry if present
@@ -148,20 +149,20 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{shaft.perimeter:.3f}",
         result_unit="m",
     ))
+    base_name, base_D, base_area = _base(shaft, soil)
     geom_steps.append(CalcStep(
         title="Shaft Tip Area",
-        equation="A_tip = \u03c0 \u00d7 D\u00b2 / 4"
-        if shaft.bell_diameter is None
-        else "A_tip = \u03c0 \u00d7 D_bell\u00b2 / 4",
-        substitution=(
-            f"A_tip = \u03c0 \u00d7 {shaft.diameter:.3f}\u00b2 / 4"
-            if shaft.bell_diameter is None
-            else f"A_tip = \u03c0 \u00d7 {shaft.bell_diameter:.3f}\u00b2 / 4"
-        ),
+        equation=f"A_tip = \u03c0 \u00d7 {base_name}\u00b2 / 4",
+        substitution=f"A_tip = \u03c0 \u00d7 {base_D:.3f}\u00b2 / 4",
         result_name="A_tip",
-        result_value=f"{shaft.tip_area:.4f}",
+        result_value=f"{base_area:.4f}",
         result_unit="m\u00b2",
-        notes="Bell diameter used for tip area" if shaft.bell_diameter else "",
+        notes=("Bell diameter used for tip area" if base_name == "D_bell"
+               else "Rock socket diameter used for the base in rock"
+               if base_name == "D_sock" else ""),
+        reference=("GEC-10 (FHWA-NHI-18-024) Example 10-4, p. 10-28: "
+                   "R_BN = \u03c0/4 B\u00b2 q_BN, B the socket diameter"
+                   if base_name == "D_sock" else ""),
     ))
     geom_steps.append(CalcStep(
         title="Length-to-Diameter Ratio",
@@ -261,14 +262,21 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         method_steps.append(CalcStep(
             title="Rock Socket Method",
             equation=(
-                "f_s = C \u00d7 \u03b1_E \u00d7 \u221a(q_u \u00d7 p_a)\n"
+                "f_s = C \u00d7 p_a \u00d7 \u221a(q_u / p_a) = "
+                "C \u00d7 \u221a(q_u \u00d7 p_a)\n"
                 "Q_s = f_s \u00d7 P_socket \u00d7 \u0394z\n"
-                "where C = roughness factor (default 0.65), \u03b1_E = rock mass reduction, p_a = 101.325 kPa"
+                "where p_a = 101.325 kPa and C = "
+                f"{analysis.rock_side_C:g} (rock_side_C)"
             ),
             substitution="",
             result_name="",
             result_value="",
-            reference="Horvath & Kenney (1979); GEC-10 Section 13.3.3.4",
+            reference=("GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, Eq. 10-21 "
+                       "(p. 10-20) and Eq. 10-22 (p. 10-21)"),
+            notes=("C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, where "
+                   "caving is anticipated) with \u03b1_E = 1.0; GEC-10 "
+                   "recommends Eq. 10-21 with C = 1.0 for routine design "
+                   "of a 'normal' socket (p. 10-21)"),
         ))
 
     if method_steps:
@@ -356,11 +364,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 layer_items.append(CalcStep(
                     title=f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m) -- Rock Socket",
                     equation=(
-                        f"f_s = C \u00d7 \u03b1_E \u00d7 \u221a(q_u \u00d7 p_a)\n"
+                        f"f_s = C \u00d7 \u221a(q_u \u00d7 p_a)\n"
                         f"Q_s = f_s \u00d7 P_socket \u00d7 \u0394z"
                     ),
                     substitution=(
-                        f"f_s = {fs:.1f} kPa\n"
+                        f"f_s = {analysis.rock_side_C:g} \u00d7 "
+                        f"\u221a(q_u \u00d7 {_PA:g}) = {fs:.1f} kPa\n"
                         f"Q_s = {fs:.1f} \u00d7 {socket_perim:.3f} "
                         f"\u00d7 {eff_thickness:.2f}"
                     ),
@@ -441,9 +450,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     from drilled_shaft.end_bearing import (
         QB_MAX_COHESIVE, unit_end_bearing_cohesionless,
         unit_end_bearing_cohesive)
-    base_D = (shaft.bell_diameter if shaft.bell_diameter is not None
-              else shaft.diameter)
-    base_name = "D_bell" if shaft.bell_diameter is not None else "D"
+    base_name, base_D, base_area = _base(shaft, soil)
 
     if tip_layer.soil_type == "cohesive":
         u = unit_end_bearing_cohesive(
@@ -496,7 +503,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         eb_items.append(CalcStep(
             title="End Bearing Capacity",
             equation="Q_tip = q_b × A_tip",
-            substitution=f"Q_tip = {u['qb']:,.1f} × {shaft.tip_area:.4f}",
+            substitution=f"Q_tip = {u['qb']:,.1f} × {base_area:.4f}",
             result_name="Q_tip",
             result_value=f"{r.Q_tip:,.1f}",
             result_unit="kN",
@@ -527,7 +534,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         eb_items.append(CalcStep(
             title="End Bearing Capacity",
             equation="Q_tip = q_b × A_tip",
-            substitution=f"Q_tip = {u['qb']:,.1f} × {shaft.tip_area:.4f}",
+            substitution=f"Q_tip = {u['qb']:,.1f} × {base_area:.4f}",
             result_name="Q_tip",
             result_value=f"{r.Q_tip:,.1f}",
             result_unit="kN",
@@ -553,7 +560,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         eb_items.append(CalcStep(
             title="End Bearing Capacity",
             equation="Q_tip = q_b \u00d7 A_tip",
-            substitution=f"Q_tip = {qb:,.1f} \u00d7 {shaft.tip_area:.4f}",
+            substitution=f"Q_tip = {qb:,.1f} \u00d7 {base_area:.4f}",
             result_name="Q_tip",
             result_value=f"{r.Q_tip:,.1f}",
             result_unit="kN",
@@ -749,6 +756,17 @@ def get_tables(result, analysis) -> list:
 
 
 # ── Helper functions ──────────────────────────────────────────────
+
+def _base(shaft, soil):
+    """(name, diameter m, area m\u00b2) of the base the end bearing acts on,
+    as DrillShaftAnalysis.compute takes it: the bell's, the rock socket's
+    with the tip in rock (GEC-10 Example 10-4, GM-221), else the shaft's."""
+    in_rock = soil.layer_at_depth(shaft.length - 0.01).soil_type == "rock"
+    name = ("D_bell" if shaft.bell_diameter is not None
+            else "D_sock" if in_rock and shaft.socket_diameter is not None
+            else "D")
+    return name, shaft.base_diameter(in_rock), shaft.base_area(in_rock)
+
 
 def _layer_properties_str(layer) -> str:
     """Format key layer properties as a compact string."""

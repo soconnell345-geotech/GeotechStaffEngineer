@@ -27,7 +27,10 @@ class DrillShaft:
         Rock socket diameter if different from shaft diameter (m).
         If None, same as diameter. One diameter for every rock layer:
         GEC-10 sizes a rock socket by one diameter B (Eq. 10-21, Example
-        10-4, p. 10-27) and gives no socket diameter per rock layer.
+        10-4, p. 10-27) and gives no socket diameter per rock layer. It
+        is the diameter of the rock side resistance and, with the tip in
+        rock, of the base: GEC-10 Example 10-4 (p. 10-28) takes R_BN =
+        pi/4 B^2 q_BN with B the 6 ft socket below 6.5 ft casing (GM-221).
     socket_length : float, optional
         Rock socket length (m). Default 0 (no socket).
     bell_diameter : float, optional
@@ -57,7 +60,9 @@ class DrillShaft:
     perimeter : float
         Shaft perimeter for skin friction (m).
     tip_area : float
-        Tip area, accounts for bell if present (m²).
+        Tip area, accounts for bell if present (m²). The base area the
+        capacity uses is :meth:`base_area`, the socket's with the tip in
+        rock.
     """
     diameter: float
     length: float
@@ -74,6 +79,9 @@ class DrillShaft:
             raise ValueError(f"Diameter must be positive, got {self.diameter}")
         if self.length <= 0:
             raise ValueError(f"Length must be positive, got {self.length}")
+        if self.socket_diameter is not None and self.socket_diameter <= 0:
+            raise ValueError(
+                f"Socket diameter must be positive, got {self.socket_diameter}")
         if self.socket_length < 0:
             raise ValueError(f"Socket length must be non-negative, got {self.socket_length}")
         if self.casing_depth < 0:
@@ -112,3 +120,18 @@ class DrillShaft:
         """Tip area (m²). Uses bell diameter if belled."""
         d = self.bell_diameter if self.bell_diameter is not None else self.diameter
         return math.pi * d**2 / 4
+
+    def base_diameter(self, tip_in_rock: bool) -> float:
+        """Diameter (m) of the base the end bearing acts on: the bell's if
+        belled; with the tip in rock, the socket's (GEC-10 Example 10-4,
+        p. 10-28: R_BN = pi/4 B^2 q_BN, B the socket diameter, GM-221);
+        else the shaft's."""
+        if self.bell_diameter is not None:
+            return self.bell_diameter
+        if tip_in_rock and self.socket_diameter is not None:
+            return self.socket_diameter
+        return self.diameter
+
+    def base_area(self, tip_in_rock: bool) -> float:
+        """Base area (m²), pi/4 times :meth:`base_diameter` squared."""
+        return math.pi * self.base_diameter(tip_in_rock) ** 2 / 4

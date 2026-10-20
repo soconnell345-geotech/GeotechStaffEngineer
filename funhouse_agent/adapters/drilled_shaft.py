@@ -14,8 +14,9 @@ _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
                  "bell_diameter", "casing_depth", "fractured_rock_thickness")
 _SOIL_PARAMS = ("layers", "gwt_depth")
 # GEC-10 rational side-resistance method selectors (opt-in; defaults preserve
-# the AASHTO / depth-based behavior).
-_RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa")
+# the AASHTO / depth-based behavior), and the rock side resistance's C.
+_RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa",
+                    "rock_side_C")
 # 'length' is a common guess for the shaft length.
 _SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
 
@@ -74,6 +75,9 @@ def _rational_kwargs(params):
         kw["su_test_type"] = params["su_test_type"]
     if "pa" in params:
         kw["pa"] = params["pa"]
+    # GEC-10 Eq. 10-21's C for the rock side resistance (GM-221)
+    if "rock_side_C" in params:
+        kw["rock_side_C"] = params["rock_side_C"]
     return kw
 
 
@@ -165,9 +169,10 @@ _INFO_RATIONAL = {
     "alpha_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": ["aashto", "rational"], "description": "Cohesive side resistance. 'aashto' = piecewise 0.55 (default). 'rational' = GEC-10 Chen-2011 alpha=0.30+0.17/(su_CIUC/pa), applied to the CIUC-equivalent strength (fs=alpha*su_CIUC)."},
     "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "For alpha_method='rational': the lab test the layer cu represents, for the UU/UC->CIUC transform. 'ciuc' = no transform (default); 'uc'/'uu' = Chen & Kulhawy (1993) transform."},
     "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
+    "rock_side_C": {"type": "float", "required": False, "default": 0.65, "description": "C in the rock side resistance f_s = C*pa*sqrt(qu/pa) (GEC-10 Eq. 10-21, p. 10-20). Default 0.65 = Eq. 10-22 (O'Neill and Reese 1999, for sockets where caving is anticipated) with alpha_E = 1.0. GEC-10 recommends C = 1.0 for routine design of a 'normal' socket (p. 10-21; Example 10-4); 0.65*alpha_E with alpha_E from Table 10-3 where caving is anticipated; 1.9 for roughened sockets, verified by load tests or local experience (p. 10-22). Needs a rock layer."},
 }
 _INFO_SHAFT_GEOM = {
-    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-21, Example 10-4) and gives none per rock layer."},
+    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-21, Example 10-4) and gives none per rock layer. The rock side resistance and, with the tip in rock, the base (pi/4*B^2, GEC-10 Example 10-4, p. 10-28) take it."},
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
     "fractured_rock_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Decomposed or fractured rock (m) below the top of the first rock layer that is 'not considered part of the socket for design purposes' (GEC-10 p. 8-15): no rock side resistance over it, while the soil above keeps its own (casing_depth takes both). 0 = all rock is socket. Needs a rock layer."},
@@ -186,7 +191,7 @@ METHOD_INFO = {
             **_INFO_RATIONAL,
             **_INFO_SHAFT_GEOM,
         },
-        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance."},
+        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Side resistance.", "Q_tip_kN": "Tip resistance.", "base_diameter_m": "Diameter of the base the tip resistance acts on: the bell's, the rock socket's with the tip in rock, else the shaft's."},
     },
     "capacity_vs_depth": {
         "category": "Drilled Shaft",

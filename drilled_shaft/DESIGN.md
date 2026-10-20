@@ -66,9 +66,25 @@ get_resistance_factors(method, condition) -> dict
   steps print the zone and the side-resistance figure hatches it.
   `socket_diameter` stays one value for every rock layer: GEC-10 sizes a
   socket by one diameter B (Eq. 10-21; Example 10-4) and gives no socket
-  diameter per rock layer. Found in passing, not changed: the rock base
-  area is the shaft's (or bell's) diameter, not `socket_diameter`, while
-  Example 10-4 takes the base on the socket diameter B (p. 10-28).
+  diameter per rock layer.
+- Rock socket base and side, GEC-10 Example 10-4 (GM-221, 2026-10-20):
+  with the tip in rock the base is on `socket_diameter` (when given; a
+  bell still governs), as Example 10-4 takes R_BN = pi/4 B^2 q_BN with B
+  the 6 ft socket below 6.5 ft casing (p. 10-28); before, it was on the
+  shaft diameter (29,865 kips for the example where GEC-10 prints 25,447).
+  `DrillShaft.base_diameter(tip_in_rock)` / `base_area` hold the rule, the
+  result carries `base_diameter_m` / `base_area_m2`, and the calc steps
+  print A_tip on that diameter. The rock side resistance's C is
+  `rock_side_C` (f_s = C pa sqrt(qu/pa)): default 0.65, unchanged, which is
+  GEC-10 Eq. 10-22 (O'Neill and Reese 1999, where caving is anticipated)
+  with alpha_E = 1.0; GEC-10 recommends Eq. 10-21 with C = 1.0 for routine
+  design of a "normal" socket (p. 10-21), 0.65 alpha_E by Table 10-3 where
+  caving is anticipated, and C = 1.9 for roughened sockets verified by load
+  tests or local experience (p. 10-22). The result states the choice
+  (`capacity.rock_side_choice`). With C = 1.0 the tools reproduce Example
+  10-4: R_SN 5,202 kips, R_BN 25,447 kips, phi R_BN 12,723 kips
+  (`tests/test_rock_socket_example.py`). Which C is the default is the
+  owner's call.
 
 ## Side-resistance methods: simplified (default) vs rational (opt-in)
 
