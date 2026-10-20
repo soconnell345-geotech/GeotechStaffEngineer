@@ -659,6 +659,32 @@ class TestReporting:
         assert by["side resistance of the liquefied layers"]["how"] == \
             "given"
 
+    def test_the_rule_below_the_toe_is_stated_where_it_moves_a_number(self):
+        """GM-228: HC-1's soil below the toe has no modulus, so the UFC and
+        GEC-12 rules for the depth below the toe give the same numbers
+        and the choices leave them out; with E_s on the dense sand the
+        GEC-12 rule gives 40.6 mm against 29.9 mm: warned, and both
+        choices stated."""
+        r = post_liquefaction_downdrag(_hand_check(),
+                                       liquefied_layers=_HC1_ZONE)
+        whats = [c["what"] for c in r.choices]
+        assert "depth to which the settlement below the toe is computed" \
+            not in whats
+        assert not any("FHWA GEC-12 take the settlement" in w
+                       for w in r.warnings)
+        a = _hand_check()
+        a.soil.layers[2].E_s = 50000.0
+        r = post_liquefaction_downdrag(a, liquefied_layers=_HC1_ZONE)
+        whats = [c["what"] for c in r.choices]
+        assert whats[-2:] == [
+            "depth to which the settlement below the toe is computed",
+            "difference between the UFC 3-220-20 and FHWA GEC-12 results "
+            "that is warned about"]
+        (w,) = [w for w in r.warnings
+                if "FHWA GEC-12 take the settlement" in w]
+        assert "29.9 mm (UFC) and 40.6 mm (GEC-12)" in w
+        assert r.after.below_toe["rules_disagree"] is True
+
     def test_to_dict_and_summary(self):
         r = post_liquefaction_downdrag(
             _hand_check(structural_capacity=3000.0),
