@@ -52,14 +52,17 @@ def _spent():
 def _prompter_model(monkeypatch, handler):
     """The app's own Prompter model, its HTTP answered by ``handler``."""
     import webapp.tinyapps_engine as te
-    real = httpx.Client
+    real_init = httpx.Client.__init__
 
-    class Mocked(real):
-        def __init__(self, *a, **kw):
-            kw["transport"] = httpx.MockTransport(handler)
-            super().__init__(*a, **kw)
+    def mocked_init(self, *a, **kw):
+        kw["transport"] = httpx.MockTransport(handler)
+        real_init(self, *a, **kw)
 
-    monkeypatch.setattr(httpx, "Client", Mocked)
+    # The constructor, not the class: a package first imported while
+    # ``httpx.Client`` is swapped (anthropic, by the agent build) subclasses
+    # the swap for good, and every later test's Claude client got this
+    # test's canned answers (the Foundry proxy tests, run after this file).
+    monkeypatch.setattr(httpx.Client, "__init__", mocked_init)
     # the client's own quick retries off, so each refusal reaches the ladder
     monkeypatch.setenv(te.MAX_RETRIES_ENV, "0")
     return te.build_chat_model(prompter=te.PrompterSettings(

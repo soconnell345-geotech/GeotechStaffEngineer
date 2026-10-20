@@ -30,7 +30,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 #: Default model id — the most capable general Claude (skill guidance).
 DEFAULT_MODEL = "claude-opus-4-8"
@@ -238,15 +238,21 @@ def foundry_proxy_route(family: str) -> Optional[FoundryRoute]:
     return None
 
 
-def foundry_ca_bundle() -> Optional[str]:
-    """The CA bundle file the Foundry proxy's TLS is checked against: the
-    first of :data:`FOUNDRY_CA_ENVS` naming a file that exists, else None
-    (the SDK's own default)."""
+def foundry_ca_source() -> Optional[Tuple[str, str]]:
+    """``(env var, file)`` for the CA bundle the Foundry proxy's TLS is
+    checked against: the first of :data:`FOUNDRY_CA_ENVS` naming a file that
+    exists, else None (the SDK's own default, certifi's public CA list)."""
     for env in FOUNDRY_CA_ENVS:
         path = str(os.environ.get(env) or "").strip()
         if path and os.path.isfile(path):
-            return path
+            return env, path
     return None
+
+
+def foundry_ca_bundle() -> Optional[str]:
+    """The CA bundle file of :func:`foundry_ca_source`, else None."""
+    source = foundry_ca_source()
+    return source[1] if source else None
 
 
 _CA_HTTP_CLIENTS: dict = {}
