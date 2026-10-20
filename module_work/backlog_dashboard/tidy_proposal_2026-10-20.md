@@ -1,8 +1,11 @@
 # Backlog tidy, 2026-10-20: proposal for the lead
 
-Branch `wip/backlog-tidy` holds the code and two data files. BACKLOG.md,
-HANDOFF.md and CLAUDE.md are untouched; the text for them is below. Apply
-everything in one commit (commands at the end).
+**Status: applied on `wip/backlog-tidy` the same day, at the lead's
+request.** The triage, every hand edit below, OWN-69 and its card, and the
+sweep (`## Swept 2026-10-20 (app master 116ddb1)`) are in the branch. The
+merged cards were folded: INF-08 into INF-01, OWN-13 into GM-140. REF-14,
+REF-19 and OWN-24 were deleted, because OWN-40, OWN-21 and VIS-20 say the
+same. The rest of this file is the record of what was done and why.
 
 ## 1. The Done archive
 

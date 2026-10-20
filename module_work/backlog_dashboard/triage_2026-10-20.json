@@ -1353,7 +1353,7 @@
   "target": "GM-199",
   "reason": "GM-191 pinned the anchor design to GEC-4 Examples 1 and 2; what is left of 'no benchmark' is GM-199's worked-example check.",
   "evidence": "GM-191 Done entry (b1613af): 'Pinned to GEC-4 Examples 1 and 2 (hand-checked)'.",
-  "merge_text": "a GEC-4-vs-PTI exhibit was planned (`soe/DESIGN.md:202-212`)."
+  "merge_text": "ground-anchor design has no benchmark beyond the printed GEC-4 Examples 1 and 2 (GEC-4 Table 4 is nominal); a GEC-4-vs-PTI exhibit was planned (`soe/DESIGN.md:202-212`)."
  },
  {
   "id": "GM-23",
@@ -1525,7 +1525,7 @@
   "target": "GM-216",
   "reason": "Same question, which plane a wall's pressure is drawn on: GM-216 names the heel plane, GM-106 the stem face.",
   "evidence": "BACKLOG GM-216 first clause.",
-  "merge_text": "a stem-design figure draws on the stem's back face and the external-stability figure on the heel plane; offer both."
+  "merge_text": "the wall worked example draws pressures on the plane at the back of the heel (external stability); a stem-design figure would use the stem's back face: offer both."
  },
  {
   "id": "GM-102",
@@ -1535,7 +1535,7 @@
   "target": "GM-219",
   "reason": "Same defect: a table's header shading repeats as slivers on the next page of a Story PDF; html_to_pdf renders through the same Story engine.",
   "evidence": "GM-213's Done entry: 'Header slivers: GM-219'; calc_package/latex_renderer.py:1495-1507 (html_to_pdf via fitz.Story).",
-  "merge_text": "first seen in wave w8b's calc PDF (`module_work/live_smoke/runs/w8b-plot-code/TRACE_REVIEW.md` §4.4)."
+  "merge_text": "`html_to_pdf` repeats a table's header shading on the next page too (reproduced from wave w8b's calc PDF, `module_work/live_smoke/runs/w8b-plot-code/TRACE_REVIEW.md` §4.4)."
  },
  {
   "id": "GM-66",
@@ -1662,7 +1662,7 @@
   "target": "REF-29",
   "reason": "Same gap: REF-29 [Next] indexes the text of FHWA NHI-06-088/089, which REF-13 asks for.",
   "evidence": "BACKLOG REF-29 names both PDFs and the text index.",
-  "merge_text": "neither manual has a figure catalog either, so figure search cannot find their charts."
+  "merge_text": "FHWA NHI-06-088/089 also have no figure catalog, so figure search cannot find their charts."
  },
  {
   "id": "REF-14",
@@ -1737,7 +1737,7 @@
   "target": "TA-03",
   "reason": "gpt-5.1 is no longer the rollout model (owner 2026-10-12); a chart read-off on the rollout model is one of TA-03's live checks.",
   "evidence": "BACKLOG TA-03 (charts at openai-original); memory reference_funhouse_model_tiers.",
-  "merge_text": "a chart read-off on Tiny Apps (needs OWN-44 for the reference PDFs)."
+  "merge_text": "measure a chart read-off on Tiny Apps on the rollout model (needs OWN-44 for the reference PDFs; never measured, and gpt-5.1 is no longer the model)."
  },
  {
   "id": "REF-22",
