@@ -35,7 +35,7 @@ _PY_REQUIRED = {
 # with .get and a default), and the keys every layer dict may carry.
 _PY_OPTIONAL = {
     "SoftClayMatlock": ("J",), "StiffClayBelowWT": (),
-    "StiffClayAboveWT": ("J",), "SoftClayJeanjean": ("J",),
+    "StiffClayAboveWT": ("J", "n_cycles"), "SoftClayJeanjean": ("J",),
     "SandReese": ("construction",), "SandAPI": (),
     "WeakRock": ("gamma_r", "RQD", "krm", "rock_top"),
 }
@@ -85,7 +85,8 @@ def _build_py_model(d):
     elif model_name == "StiffClayBelowWT":
         return cls(c=d["c"], gamma=d["gamma"], eps50=d["eps50"], ks=d["ks"], loading=loading)
     elif model_name == "StiffClayAboveWT":
-        return cls(c=d["c"], gamma=d["gamma"], eps50=d["eps50"], J=d.get("J", 0.5), loading=loading)
+        return cls(c=d["c"], gamma=d["gamma"], eps50=d["eps50"], J=d.get("J", 0.5), loading=loading,
+                   n_cycles=d.get("n_cycles"))
     elif model_name == "SoftClayJeanjean":
         return cls(su=d["su"], gamma=d["gamma"], Gmax=d["Gmax"], J=d.get("J", 0.5), loading=loading)
     elif model_name == "SandReese":
@@ -242,7 +243,7 @@ METHOD_INFO = {
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g. 'HP360x132') — required for pile_type 'h_pile'."},
             "axis": {"type": "str", "required": False, "default": "strong", "allowed_values": ["strong", "weak"], "description": "Bending axis — pile_type 'h_pile' only."},
             "fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa) — pile_type 'filled_pipe' only."},
-            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. SandReese also takes optional construction='simplified'(default)|'reese1974' (full four-segment Reese 1974 curve). WeakRock (Reese 1997, FHWA GEC 9 App. A.5) also takes optional RQD (%, default 100: alpha_r = 1/3, the printed lower bound; alpha_r rises linearly to 1.0 at RQD 0), krm (default 0.0005, the softer end of 0.00005-0.0005) and rock_top (depth of the rock surface, m; default the top of the weak-rock layers that hold the layer); its gamma_r is accepted and not used (the criterion does not use the unit weight)."},
+            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. SandReese also takes optional construction='simplified'(default)|'reese1974' (full four-segment Reese 1974 curve). StiffClayAboveWT with loading='cyclic' also needs n_cycles, N, the number of times the design lateral load is applied (>= 1; the references give no number to assume; Welch & Reese, COM624P Eq. 3.29, y_c = y_s + y50 C log N, so y50 times 1 + 0.6 log10 N). WeakRock (Reese 1997, FHWA GEC 9 App. A.5) also takes optional RQD (%, default 100: alpha_r = 1/3, the printed lower bound; alpha_r rises linearly to 1.0 at RQD 0), krm (default 0.0005, the softer end of 0.00005-0.0005) and rock_top (depth of the rock surface, m; default the top of the weak-rock layers that hold the layer); its gamma_r is accepted and not used (the criterion does not use the unit weight)."},
             "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at pile top (kN)."},
             "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at pile top (kN-m)."},
             "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
@@ -271,6 +272,7 @@ METHOD_INFO = {
             "qu": {"type": "float", "required": False, "description": "Uniaxial compressive strength of intact rock (kPa). For WeakRock."},
             "Er": {"type": "float", "required": False, "description": "Modulus of the rock mass E_m (kPa), e.g. from a pressuremeter or dilatometer test. For WeakRock."},
             "loading": {"type": "str", "required": False, "default": "static", "allowed_values": ["static", "cyclic"], "description": "Loading type."},
+            "n_cycles": {"type": "int", "required": False, "description": "N, the number of times the design lateral load is applied (>= 1). Required with loading='cyclic' for StiffClayAboveWT, and refused otherwise; the references give no number to assume. Welch & Reese, COM624P Eqs. 3.28-3.29 (GEC 9 A-20, A-21), y_c = y_s + y50 C log N with C = 9.6 (p/pu)^4, so the static curve with y50 times 1 + 0.6 log10 N."},
             "ks": {"type": "float", "required": False, "description": "Subgrade modulus (kN/m3). For StiffClayBelowWT."},
             "su": {"type": "float", "required": False, "description": "Undrained shear strength (kPa). For SoftClayJeanjean."},
             "Gmax": {"type": "float", "required": False, "description": "Small-strain shear modulus (kPa). For SoftClayJeanjean."},
@@ -329,15 +331,16 @@ declare_applies_when(METHOD_INFO, {
                      "bar_layers": "set"}],
     },
     # each p-y model's own optional inputs (J, construction, RQD, krm,
-    # rock_top) to the models that read them; the weak-rock model takes
-    # gamma_r and does not use it (GEC 9 App. A.5 has no unit weight), and
-    # its criterion is for static loading (GEC 9 p. 92), so loading does
-    # not apply to it (GM-184)
+    # rock_top) to the models that read them, n_cycles to cyclic stiff clay
+    # above the water table; the weak-rock model takes gamma_r and does not
+    # use it (GEC 9 App. A.5 has no unit weight), and its criterion is for
+    # static loading (GEC 9 p. 92), so loading does not apply to it (GM-184)
     "get_py_curve": {
         **{name: {"model": [m for m, keys in _PY_OPTIONAL.items()
                             if name in keys]}
            for name in sorted({k for keys in _PY_OPTIONAL.values()
                                for k in keys})},
+        "n_cycles": {"model": ["StiffClayAboveWT"], "loading": ["cyclic"]},
         "gamma_r": False,
         "loading": {"model": [m for m in _PY_MODELS if m != "WeakRock"]}},
 })

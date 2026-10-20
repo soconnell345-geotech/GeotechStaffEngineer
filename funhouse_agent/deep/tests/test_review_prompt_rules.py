@@ -62,3 +62,19 @@ def test_page_tools_are_for_every_page_not_a_fallback():
     for table in (REVIEW_DESCRIPTIONS, INLINE_DESCRIPTIONS):
         desc = _flat(table["analyze_pdf_page"])
         assert "EVERY page" in desc and "not only when a" in desc
+
+
+def test_each_review_prompt_names_the_calculation_tool_its_build_has():
+    # DOC-21: the default review page has `calculate`, the lean one has
+    # none; each prompt says what its own build has.
+    from funhouse_agent.deep.agent import build_primary_tools
+    from funhouse_agent.deep.review_agent import REVIEW_TOOLS
+    legacy, lean = REVIEW_PROMPTS["legacy"], REVIEW_PROMPTS["lean"]
+    assert "calculate" in {t.name for t in build_primary_tools(
+        allowed_agents=())}
+    assert "Your one calculation tool here is `calculate`" in legacy
+    assert "no analysis tools on this page" in legacy
+    assert "no engineering calculation tools" not in legacy
+    assert "calculate" not in REVIEW_TOOLS
+    assert "`calculate`" not in lean
+    assert "You have no engineering calculation tools on this page" in lean

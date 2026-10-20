@@ -27,8 +27,8 @@ def test_the_tool_runs_the_module_and_lists_its_choices():
     r = _call(liquefied_layers=[{"top": 6, "bottom": 10,
                                  "volumetric_strain": 0.03}])
     assert "error" not in r, r
-    assert list(r)[:3] == ["post_liquefaction_basis", "warnings",
-                           "methods_range_after"]
+    assert list(r)[:4] == ["post_liquefaction_basis", "warnings",
+                           "result_note", "methods_range_after"]
     assert r["neutral_plane_after_m"] == pytest.approx(18.13, abs=0.01)
     assert r["reconsolidation_settlement_mm"] == pytest.approx(120.0)
     assert r["defaults_used"]["liquefied_side_resistance"] == \
@@ -53,8 +53,9 @@ def test_the_liquefaction_tool_output_goes_straight_in():
                  if row["FOS_liq"] <= 1.0]
     assert liquefied == [3.0, 5.0, 7.0, 9.0]
     # each reading halfway to its neighbours, not above the water table
-    assert [(z["top_m"], z["bottom_m"]) for z in r["liquefied_zones"]] == \
-        [(2.0, 10.0)]
+    zones = r["liquefied_zones"]
+    assert zones["columns"][:2] == ["top_m", "bottom_m"]
+    assert [tuple(row[:2]) for row in zones["rows"]] == [(2.0, 10.0)]
     assert r["defaults_used"]["fs_liq_threshold"] == 1.0
     how = {c["what"]: c["how"] for c in r["choices"]}
     assert how["liquefied layers"] == "module"
@@ -84,7 +85,8 @@ def test_the_static_tool_is_unchanged_by_the_shared_builder():
     static = D.call_agent("downdrag", "downdrag_analysis", dict(_STATIC))
     r = _call(liquefied_layers=[{"top": 6, "bottom": 10,
                                  "volumetric_strain": 0.03}])
+    # the post-liquefaction result rounds: 1 mm, 0.1 kN
     assert r["neutral_plane_before_m"] == pytest.approx(
-        static["neutral_plane_depth_m"])
+        static["neutral_plane_depth_m"], abs=5e-4)
     assert r["drag_force_before_kN"] == pytest.approx(
-        static["drag_force_kN"])
+        static["drag_force_kN"], abs=0.05)

@@ -415,8 +415,27 @@ class StiffClayBelowWT:
 class StiffClayAboveWT:
     """p-y curves for stiff clay above the water table per Welch & Reese (1972).
 
-    Uses 1/4 power (not 1/3 as in Matlock) for the p-y relationship.
-    Uses total unit weight since soil is above the water table.
+    The criterion as printed in the COM624P manual (FHWA-SA-91-048),
+    pp. 336-340, Eqs. 3.27-3.29 and Figs. 3.9-3.10, and in FHWA GEC 9
+    (FHWA-HIF-18-031, 2018), Appendix A.3, pp. 224-226, Eqs. A-19 to A-21.
+    pu is the smaller of Eqs. 3.8 and 3.9 (GEC 9 A-1, A-2) with J = 0.5
+    and y50 = 2.5 eps50 b (Eq. 3.10, GEC 9 A-3).
+
+    Static (Fig. 3.9):
+
+        p/pu = 0.5 (y/y50)^(1/4)                         (3.27, A-19)
+        p = pu beyond y = 16 y50
+
+    Cyclic (Fig. 3.10), for N cycles of the design lateral load: for each
+    p/pu, the deflection on the static curve y_s grows to
+
+        C   = 9.6 (p/pu)^4                               (3.28, A-20)
+        y_c = y_s + y50 C log N                          (3.29, A-21)
+
+    with log the common logarithm. Eq. 3.27 gives y_s = 16 y50 (p/pu)^4,
+    so y_c = y50 (p/pu)^4 (16 + 9.6 log N): the static curve with y50
+    multiplied by (1 + 0.6 log N), reaching pu at y = 16 y50 + 9.6 y50
+    log N as Fig. 3.10 labels it. N = 1 gives the static curve.
 
     Parameters
     ----------
@@ -430,17 +449,25 @@ class StiffClayAboveWT:
         Empirical constant (same as Matlock). Default 0.5.
     loading : str
         'static' or 'cyclic'. Default 'static'.
+    n_cycles : float, optional
+        N, the number of times the design lateral load will be applied
+        (COM624P p. 338, step 2; GEC 9 p. 226, step 2), at least 1.
+        Required for 'cyclic' loading, which is refused without it: the
+        references give no default number. Refused with 'static' loading,
+        whose curve takes no N.
 
     References
     ----------
     Welch, R.C. & Reese, L.C. (1972). Research Report 89-10.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.2.
+    COM624P Manual (FHWA-SA-91-048), pp. 336-340, Eqs. 3.27-3.29.
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.3, pp. 224-226.
     """
     c: float
     gamma: float
     eps50: float
     J: float = 0.5
     loading: str = 'static'
+    n_cycles: Optional[float] = None
 
     def __post_init__(self):
         if self.c <= 0:
@@ -451,6 +478,27 @@ class StiffClayAboveWT:
             raise ValueError(f"eps50 must be positive, got {self.eps50}")
         if self.loading not in ('static', 'cyclic'):
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
+        if self.loading == 'cyclic' and self.n_cycles is None:
+            raise ValueError(
+                "cyclic loading of stiff clay above the water table needs "
+                "n_cycles, the number of times the design lateral load will "
+                "be applied: the curve softens with log N (y_c = y_s + y50 C "
+                "log N, COM624P Eq. 3.29, GEC 9 Eq. A-21) and the references "
+                "give no default")
+        if self.loading == 'static' and self.n_cycles is not None:
+            raise ValueError(
+                f"n_cycles ({self.n_cycles:g}) applies to loading='cyclic' "
+                "only; the static curve takes no number of cycles")
+        if self.n_cycles is not None and self.n_cycles < 1:
+            raise ValueError(f"n_cycles must be >= 1, got {self.n_cycles}")
+
+    @property
+    def cyclic_factor(self) -> float:
+        """y_c / y_s at every p: 1 + 0.6 log10 N (COM624P Eqs. 3.27-3.29);
+        1.0 for static loading."""
+        if self.loading != 'cyclic':
+            return 1.0
+        return 1.0 + 0.6 * math.log10(self.n_cycles)
 
     def get_pu(self, z: float, b: float) -> float:
         """Ultimate soil resistance (same formulation as Matlock but total gamma)."""
@@ -459,10 +507,12 @@ class StiffClayAboveWT:
         return min(pu_shallow, pu_deep)
 
     def get_p(self, y: float, z: float, b: float) -> float:
-        """Compute soil resistance using 1/4 power curve.
+        """Compute soil resistance using the 1/4 power curve.
 
-        Static:  p = 0.5 * pu * (y/y50)^(1/4)
-        Cyclic:  p remains constant beyond y = 16*y50
+        Static:  p = 0.5 pu (y/y50)^(1/4), p = pu beyond 16 y50
+        Cyclic:  the same with y50 times (1 + 0.6 log10 N), which is
+                 Eqs. 3.27-3.29 solved for p; p = pu beyond
+                 16 y50 + 9.6 y50 log10 N
         """
         if z < 0:
             return 0.0
@@ -473,25 +523,15 @@ class StiffClayAboveWT:
             return 0.0
 
         pu = self.get_pu(z, b)
-        y50 = 2.5 * self.eps50 * b
-
-        if self.loading == 'static':
-            p = 0.5 * pu * (y_abs / y50) ** 0.25
-            p = min(p, pu)
-        else:
-            # Cyclic: cap at value reached at y = 16*y50
-            if y_abs <= 16.0 * y50:
-                p = 0.5 * pu * (y_abs / y50) ** 0.25
-            else:
-                p = 0.5 * pu * 16.0 ** 0.25  # = 0.5 * pu * 2.0 = pu
-            p = min(p, pu)
-
+        y50 = 2.5 * self.eps50 * b * self.cyclic_factor
+        p = min(0.5 * pu * (y_abs / y50) ** 0.25, pu)
         return sign * p
 
     def get_py_curve(self, z: float, b: float, n_points: int = 50,
                      y_max_factor: float = 25.0) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate a complete p-y curve at depth z."""
-        y50 = 2.5 * self.eps50 * b
+        """Generate a complete p-y curve at depth z, to ``y_max_factor``
+        times y50 (times 1 + 0.6 log10 N for cyclic loading)."""
+        y50 = 2.5 * self.eps50 * b * self.cyclic_factor
         y_max = y_max_factor * y50
         y_array = np.linspace(0, y_max, n_points)
         p_array = np.array([self.get_p(y, z, b) for y in y_array])

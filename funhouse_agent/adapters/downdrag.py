@@ -10,7 +10,9 @@ from downdrag import (
     downdrag_method_comparison, post_liquefaction_downdrag,
     LIQUEFIED_SIDE_RESISTANCE,
 )
-from downdrag.liquefaction import LIQUEFIED_LAYER_KEYS
+from downdrag.liquefaction import (
+    LIQUEFIED_LAYER_KEYS, MAX_ZONES_LISTED, SIDE_RESISTANCE_CITES,
+)
 from funhouse_agent.adapters import (
     check_nested_keys, check_nested_list, clean_result,
     declare_applies_when, field_keys, reject_unknown_params, require_keys,
@@ -151,7 +153,7 @@ def _basis_first(d: dict) -> dict:
 _POST_LIQUEFACTION_PARAMS = _VALID_PARAMS + (
     "liquefied_layers", "liquefaction_result", "volumetric_strain",
     "fs_liq_threshold", "liquefied_side_resistance",
-    "liquefied_side_resistance_ratio",
+    "liquefied_side_resistance_ratio", "detail",
 )
 _LIQUEFIED_KEY_HINTS = {
     "strain": ("volumetric_strain",), "ev": ("volumetric_strain",),
@@ -187,7 +189,122 @@ def _run_post_liquefaction(params):
         )
     except ValueError as exc:
         raise ValueError(f"{method}: {exc}") from None
-    return clean_result(result.to_dict())
+    d = clean_result(result.to_dict())
+    return d if params.get("detail") == "full" else _compact(d)
+
+
+#: What a post_liquefaction_downdrag result is held to, in JSON characters
+#: with what dispatch adds (``defaults_used``) (GM-207; the tests hold it):
+#: the result as returned (:func:`_compact`) for one liquefied zone and for
+#: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,800, under
+#: the 8,000-character general cap; the noisy CPT 9,700 to 10,400: its
+#: warnings and choices (a toe in a liquefied layer, readings left out,
+#: curves that do not meet, the CPT's strain) are its own, not repeats.
+#: detail='full' gives about 20,000 and 30,000 to 32,000 (DESIGN.md "What
+#: the result holds").
+RESULT_BUDGET_CHARS = 10_500
+
+#: How many of more than MAX_ZONES_LISTED zones are listed in full: those
+#: with the largest reconsolidation settlement.
+_LARGEST_ZONES = 3
+
+_ZONE_COLUMNS = ("top_m", "bottom_m", "volumetric_strain",
+                 "reconsolidation_settlement_mm", "fs_liq_min",
+                 "side_resistance_before_kN", "side_resistance_after_kN",
+                 "position")
+_OPTION_COLUMNS = ("option", "source", "neutral_plane_m", "drag_force_kN",
+                   "pile_settlement_mm", "note")
+_METHOD_COLUMNS = ("name", "neutral_plane_before_m", "drag_force_before_kN",
+                   "pile_settlement_before_mm", "neutral_plane_after_m",
+                   "drag_force_after_kN", "pile_settlement_after_mm", "note")
+
+#: What only the whole result has, as result_note says it.
+_LEFT_OUT = (
+    "the sources and assumptions, neutral_plane_basis, Q_np (= Q_dead + "
+    "drag force), toe forces, settlement parts, the methods each zone lies "
+    "below and, after liquefaction, below_toe and the depth profiles")
+
+
+def _table(columns, rows) -> dict:
+    """One table: the columns once, a row of values each; a column empty
+    in every row is left out."""
+    keep = [i for i, _ in enumerate(columns)
+            if any(r[i] not in (None, "") for r in rows)]
+    return {"columns": [columns[i] for i in keep],
+            "rows": [[r[i] for i in keep] for r in rows]}
+
+
+def _zone_rows(zones) -> list:
+    return [[z.get(c) for c in _ZONE_COLUMNS] for z in zones]
+
+
+def _zones_compact(zones: list):
+    """The zones as one table; past MAX_ZONES_LISTED, their totals, the
+    ones with the largest reconsolidation settlement in full and the rest
+    as depth ranges."""
+    if len(zones) <= MAX_ZONES_LISTED:
+        return _table(_ZONE_COLUMNS, _zone_rows(zones))
+    largest = sorted(sorted(zones, key=lambda z: -(
+        z.get("reconsolidation_settlement_mm") or 0.0))[:_LARGEST_ZONES],
+        key=lambda z: z["top_m"])
+    others = [z for z in zones if z not in largest]
+    return {
+        "zones": len(zones),
+        "thickness_m": round(sum(z["thickness_m"] for z in zones), 3),
+        "side_resistance_before_kN": round(sum(
+            z["side_resistance_before_kN"] for z in zones), 1),
+        "side_resistance_after_kN": round(sum(
+            z["side_resistance_after_kN"] for z in zones), 1),
+        "largest_settlement": _table(_ZONE_COLUMNS, _zone_rows(largest)),
+        "others_m": ", ".join(f"{z['top_m']:g}-{z['bottom_m']:g}"
+                              for z in others),
+    }
+
+
+def _reasons(row: dict) -> str:
+    """Why a method gives no plane (or what to know of its plane), before
+    and after: once where the two are the same."""
+    b, a = row.get("reason_before", ""), row.get("reason_after", "")
+    if b == a:
+        return b
+    return "; ".join(f"{state}: {why.rstrip('.')}" for state, why
+                     in (("before", b), ("after", a)) if why) + "."
+
+
+def _compact(d: dict) -> dict:
+    """The post_liquefaction_downdrag result as the tool returns it unless
+    ``detail='full'`` (GM-207): the headline, every neutral plane, drag
+    force and pile settlement (each method before and after, each
+    side-resistance option), the zones (summarised past MAX_ZONES_LISTED),
+    the warnings, basis and choices; result_note says what is left out."""
+    zones = d.get("liquefied_zones") or []
+    note = ("Every neutral plane, drag force and pile settlement is here"
+            + (f"; the {len(zones)} liquefied zones are summarised"
+               if len(zones) > MAX_ZONES_LISTED else "")
+            + ". detail='full' adds "
+            + ("each zone, " if len(zones) > MAX_ZONES_LISTED else "")
+            + _LEFT_OUT + ".")
+    out = {}
+    for key, value in d.items():
+        if key in ("after", "neutral_plane_basis",
+                   "neutral_plane_basis_before"):
+            continue
+        if key == "liquefied_zones":
+            value = _zones_compact(zones)
+        elif key == "side_resistance_comparison":
+            value = _table(_OPTION_COLUMNS, [
+                [r["option"], SIDE_RESISTANCE_CITES.get(r["option"], ""),
+                 r.get("neutral_plane_depth_m"), r.get("drag_force_kN"),
+                 r.get("pile_settlement_mm"), r.get("reason", "")]
+                for r in value])
+        elif key == "by_method":
+            value = _table(_METHOD_COLUMNS, [
+                [r[c] for c in _METHOD_COLUMNS[:-1]] + [_reasons(r)]
+                for r in value])
+        out[key] = value
+        if key == "warnings":
+            out["result_note"] = note
+    return out
 
 
 # ── CGPR #56 method family (Greenfield & Filz 2009) ──────────────────────
@@ -640,26 +757,35 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "fs_liq_threshold": {"type": "float", "required": False, "default": 1.0, "description": "A reading of liquefaction_result liquefies where FOS_liq <= this. 1.0 = GEC-10 9.4.2.2 ('layers predicted to undergo liquefaction (FSliq <= 1.0)'); 1.0 < FSliq <= about 1.5 generates excess pore pressure."},
         "liquefied_side_resistance": {"type": "string", "required": False, "default": "half_pre_earthquake", "description": "Unit side resistance of the liquefied layers after reconsolidation, as drag above the neutral plane and resistance below it, for the headline numbers; every option that can be evaluated is reported in side_resistance_comparison whatever is chosen. 'half_pre_earthquake' (default) = 50 percent of the pre-earthquake (static) side resistance, GEC-10 10.7 p. 10-52 (Rollins et al. 2018); 'zero' = none, GEC-10 p. 10-51 and UFC 3-220-20 Table 6-49 (the state while liquefied); 'residual_strength' = su_r, the lower bound of GEC-10 p. 10-51 and GEC-12 7.4.2.2 (needs su_r or N1_60 for each layer; never more than the static value); 'ratio' = liquefied_side_resistance_ratio x the static value. The other layers keep their static side resistance.", "allowed_values": list(LIQUEFIED_SIDE_RESISTANCE)},
         "liquefied_side_resistance_ratio": {"type": "float", "required": False, "description": "Fraction (0-1) of the pre-earthquake unit side resistance the liquefied layers carry. Required when liquefied_side_resistance='ratio'; given with another option, it adds a 'ratio' row to side_resistance_comparison."},
+        "detail": {"type": "string", "required": False, "description": "'full' = the whole result: each method's and option's source and assumptions, neutral_plane_basis, Q_np, toe forces and settlement parts, every liquefied zone with the methods it lies below, and after liquefaction the resistance below the plane, the settlement below the toe and the depth profiles (about 20,000 characters for one zone). Left out: the result keeps every neutral plane, drag force and pile settlement (each method before and after, each side-resistance option), the tables as {columns, rows}, more than 6 liquefied zones summarised, and result_note says what only 'full' has.", "allowed_values": ["full"]},
     },
     "returns": {
-        "post_liquefaction_basis": "What was done and on what basis (GEC-10 10.7, GEC-12 7.4.2.2 quoted). Report it.",
-        "warnings": "What the engineer must know: why the methods' drag forces differ so much (force equilibrium counts all the friction above the curves' intersection, settling or not; the methods that follow the settlement count only the soil that settles), a toe in or on a liquefied layer, a liquefied zone below the neutral plane before the earthquake with the methods whose drag force rises, readings left out. Report every one.",
+        "post_liquefaction_basis": "What was done and on what basis (GEC-10 10.7; GEC-12 7.4.2.2 quoted). Report it.",
+        "warnings": "What the engineer must know: why the methods' drag forces differ so much (force equilibrium counts all the friction above the curves' intersection, settling or not; the methods that follow the settlement count only the soil that settles), a toe in or on a liquefied layer, a liquefied zone below the neutral plane before the earthquake with the methods whose drag force rises, readings left out; and the static analysis's warnings, once (prefixed 'Before the earthquake:' / 'After liquefaction:' where only one state has them). Report every one.",
         "methods_range_after": "The spread of neutral plane and drag force over the neutral-plane methods after liquefaction. Report it.",
         "neutral_plane_before_m / neutral_plane_after_m": "Neutral plane (m) of the headline method (neutral_plane_method) before and after.",
         "drag_force_before_kN / drag_force_after_kN": "Drag force Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80) before and after.",
         "max_pile_load_before_kN / max_pile_load_after_kN": "Q_np, the maximum axial load (kN).",
         "pile_settlement_before_mm / pile_settlement_after_mm": "Pile head settlement (mm).",
+        "toe_settlement_before_mm / toe_settlement_after_mm": "Pile toe settlement (mm) of the headline method; after liquefaction it includes the reconsolidation settlement of liquefied soil below the toe (reconsolidation_below_toe_mm).",
+        "dragload_before_kN / dragload_after_kN": "With include_pile_weight only: the negative skin friction above the plane without the pile weight (drag force = dragload + the pile weight above the plane).",
         "reconsolidation_settlement_mm": "Reconsolidation settlement of all the liquefied layers (mm): what the ground surface settles by.",
-        "liquefied_zones": "Each contiguous liquefied zone: top, bottom, strain, settlement, side resistance before and after (kN), its position against the headline neutral plane before the earthquake, and below_the_plane_before_of (the methods whose plane before lies above it). Present it as a table.",
-        "side_resistance_comparison": "Each side-resistance option (headline method): name, source, assumptions, applies, used, neutral plane, drag force, pile settlement. Present it as a table.",
-        "by_method": "Every neutral-plane method before and after: neutral plane, drag force, pile settlement in each state. Present it as a table.",
-        "limit_states_note": "The limit states GEC-10 10.7 checks the drag at (structural strength and service; AASHTO's Extreme Event I with load factor 1.0 noted). Report it.",
+        "liquefied_zones": "One table {columns, rows}, a row a contiguous liquefied zone: top_m, bottom_m, volumetric_strain, reconsolidation_settlement_mm, fs_liq_min, side resistance before and after (kN), position (above / across / below the headline neutral plane before the earthquake, or below the pile toe). More than 6 zones: {zones, thickness_m, side resistance totals, largest_settlement: the 3 with the largest reconsolidation settlement as that table, others_m: the rest as depth ranges}. A zone lies below a method's plane before the earthquake where its top_m is at or below that method's neutral_plane_before_m. detail='full': a record a zone with below_the_plane_before_of. Present it as a table.",
+        "result_note": "What only detail='full' adds (and whether the zones were summarised). Tell the user the rest is there.",
+        "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
+        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
-        "choices": "Each choice the run made, given or default, with its basis.",
-        "before": "The static analysis's headline: neutral plane, method, basis, drag force, warnings.",
-        "after": "The full downdrag_analysis result after liquefaction (neutral_plane_comparison, profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa, below_toe).",
+        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative. Report them.",
+        "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }
+
+# Its methods table is by_method, before and after (GM-207).
+_NP_METHOD = METHOD_INFO["post_liquefaction_downdrag"]["parameters"][
+    "neutral_plane_method"]
+_NP_METHOD["description"] = _NP_METHOD["description"].replace(
+    "evaluated and returned in neutral_plane_comparison",
+    "evaluated before and after and returned in by_method")
 
 # When each default applies (GM-119): the pile's unit weight only when its
 # own weight is in the load; since GM-184 the fill's unit weight only

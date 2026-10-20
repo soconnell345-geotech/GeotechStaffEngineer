@@ -186,6 +186,14 @@ NOT_REACHED = {
                       ("casing_depth", _CASING))},
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     ("downdrag|post_liquefaction_downdrag", "n_sublayers"): _GRID,
+    # GM-207: the result as returned leaves out the basis text that names
+    # these choices (detail='full' has it); no number of the probe moves
+    ("downdrag|post_liquefaction_downdrag", "skin_friction_stress"):
+        "the probe has no fill or drawdown, so the initial and final "
+        "effective stress are the same",
+    ("downdrag|post_liquefaction_downdrag", "influence_depth_criterion"):
+        "the probe's soil below the toe has no compressibility, so it "
+        "settles by nothing to either depth",
     ("calc_package|downdrag_package", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package", "influence_depth_criterion"):
         "the probe's soil below the toe is marked as not settling",
@@ -311,10 +319,6 @@ KNOWN = {
     ("slope_stability|analyze_slope", "method"):
         "GM-140: 'bishop' is listed, but a noncircular slip_points surface "
         "runs Spencer",
-    ("lateral_pile|get_py_curve#StiffClayAboveWT", "loading"):
-        "GM-202: the cyclic curve is the static one capped at "
-        "16 y50, where the static one already reaches pu; Reese & Welch's "
-        "cyclic curve needs the number of cycles",
 }
 
 #: Probes the GM-160 guard leaves out, by agent or by probe: why.

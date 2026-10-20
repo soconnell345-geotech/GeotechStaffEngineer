@@ -15,6 +15,7 @@ References
 
 import copy
 import dataclasses
+import math
 import warnings
 from typing import List, Optional
 
@@ -34,7 +35,8 @@ _PY_SOURCE = {
     "StiffClayBelowWT": "Reese, Cox & Koop (1975), OTC 2312, stiff clay "
                         "below the water table",
     "StiffClayAboveWT": "Welch & Reese (1972), Report 89-10, stiff clay "
-                        "above the water table",
+                        "above the water table, as printed in COM624P "
+                        "(FHWA-SA-91-048) pp. 336-340 and GEC 9 App. A.3",
     "SoftClayJeanjean": "Jeanjean (2009), OTC-20158-MS, soft clay",
     "SandReese": "Reese, Cox & Koop (1974), OTC 2080, sand",
     "SandAPI": "API RP2A-WSD (2000) / O'Neill & Murchison (1983), sand",
@@ -88,6 +90,8 @@ def py_choices(layers, within: str = "layers") -> list:
                           basis, family))
         if isinstance(model, WeakRock):
             out += _weak_rock_choices(model, layer, within)
+        if getattr(model, "n_cycles", None) is not None:
+            out.append(_cycles_choice(model, layer, within))
         load = getattr(model, "loading", None)
         if load is not None:
             if how_given(load, _field_default(model, "loading")) != DEFAULT:
@@ -121,6 +125,28 @@ def _weak_rock_note(model) -> str:
         note += ("; the criterion is for static loading (GEC 9 p. 92), so "
                  "the cyclic curve is the static one")
     return note
+
+
+def _cycles_choice(model, layer, within: str = "layers") -> dict:
+    """The number of cycles of load application N of a cyclic stiff-clay
+    layer above the water table (GM-202), always given: the references set
+    no default."""
+    from geotech_common.choices import choice, how_given
+    n = model.n_cycles
+    others = [(n_alt, f"N = {n_alt:g}: y50 x {1 + 0.6 * math.log10(n_alt):.2g}")
+              for n_alt in (10.0, 100.0, 1000.0)]
+    return choice(
+        f"number of cycles of load application N "
+        f"{layer.top:g}-{layer.bottom:g} m",
+        f"{n:g} (y50 x {model.cyclic_factor:.3g})",
+        how_given(n, None, within=within),
+        "y_c = y_s + y50 C log N, C = 9.6 (p/pu)^4 (Welch & Reese 1972; "
+        "COM624P Eqs. 3.28-3.29, p. 338; GEC 9 Eqs. A-20, A-21): the "
+        "static curve with y50 times 1 + 0.6 log N, reaching pu at "
+        "16 y50 + 9.6 y50 log N; the references give no default N",
+        ["N = 1: the static curve, the stiffest"]
+        + [text for n_alt, text in others if abs(n_alt - n) > 1e-9]
+        + ["more cycles: a softer curve, more deflection and moment"])
 
 
 def _weak_rock_choices(model, layer, within: str = "layers") -> list:
