@@ -170,7 +170,7 @@ def _buttons(monkeypatch, pressed):
 
 def test_on_foundry_a_large_file_waits_for_prepare(monkeypatch, tmp_path):
     _foundry(monkeypatch)
-    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0.01")
+    monkeypatch.setenv(file_widgets.DOWNLOAD_PREPARE_MB_ENV, "0.01")
     seen = _record(monkeypatch)
     pressed = [False]
     shown = _buttons(monkeypatch, pressed)
@@ -206,7 +206,7 @@ def test_on_foundry_a_large_file_waits_for_prepare(monkeypatch, tmp_path):
 
 def test_on_foundry_bytes_made_on_request_are_not_asked_again(monkeypatch):
     _foundry(monkeypatch)
-    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0.001")
+    monkeypatch.setenv(file_widgets.DOWNLOAD_PREPARE_MB_ENV, "0.001")
     seen = _record(monkeypatch)
     shown = _buttons(monkeypatch, [False])
     file_widgets.download_button("Download chat.zip", b"z" * 5000,
@@ -219,7 +219,7 @@ def test_on_foundry_bytes_made_on_request_are_not_asked_again(monkeypatch):
 
 def test_elsewhere_a_file_is_streamlits_own_button(monkeypatch, tmp_path):
     monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
-    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0")
+    monkeypatch.setenv(file_widgets.DOWNLOAD_PREPARE_MB_ENV, "0")
     seen = _record(monkeypatch)
     f = tmp_path / "a.txt"
     f.write_bytes(b"abc")
@@ -382,7 +382,7 @@ def test_foundry_app_prepares_large_files_until_the_next_turn(monkeypatch,
     Prepare button (sidebar and card alike), the small CSV is one click; a
     press puts the PDF in the page until the next turn."""
     _foundry(monkeypatch)
-    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0.0001")
+    monkeypatch.setenv(file_widgets.DOWNLOAD_PREPARE_MB_ENV, "0.0001")
     pages = []
     monkeypatch.setattr(file_widgets, "_component",
                         lambda page, height: pages.append(page))

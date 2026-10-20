@@ -328,7 +328,7 @@ file travels inside the page, so files over 20 MB show a message instead;
 `GEOTECH_FOUNDRY_DOWNLOAD_MAX_MB` changes the limit. The page is sent again
 on every action, so a file over 2 MB first shows **Prepare download**: the
 file goes into the page only once pressed, and until the next turn
-(`GEOTECH_FOUNDRY_DOWNLOAD_INLINE_MB` changes the 2 MB). An HTML or SVG file
+(`GEOTECH_FOUNDRY_DOWNLOAD_PREPARE_MB` changes the 2 MB). An HTML or SVG file
 opened in a new tab is shown inside a sandboxed frame, so a page the agent
 wrote runs with an origin of its own, not the app's; the HTML preview on a
 card is framed the same way on every host. A PDF card has a

@@ -15,7 +15,7 @@ file over :func:`download_cap_bytes` gets a message instead. Everywhere else
 it is ``st.download_button``, as before. Every download in ``webapp`` goes
 through here (``webapp/tests/test_file_widgets.py`` checks).
 
-Since INF-44 on Foundry: a file over :func:`download_inline_bytes` (2 MB)
+Since INF-44 on Foundry: a file over :func:`download_prepare_bytes` (2 MB)
 gets a **Prepare download** button first, because every rerun draws every
 card and the sidebar again, and each carries the bytes. Pressed, the bytes
 go into the page until the conversation moves on (the app calls
@@ -52,8 +52,8 @@ DEFAULT_DOWNLOAD_MAX_MB = 20.0
 
 #: Largest file (MB) put into the page at once on Foundry; a larger one
 #: waits for its Prepare download button (INF-44).
-DOWNLOAD_INLINE_MB_ENV = "GEOTECH_FOUNDRY_DOWNLOAD_INLINE_MB"
-DEFAULT_DOWNLOAD_INLINE_MB = 2.0
+DOWNLOAD_PREPARE_MB_ENV = "GEOTECH_FOUNDRY_DOWNLOAD_PREPARE_MB"
+DEFAULT_DOWNLOAD_PREPARE_MB = 2.0
 
 #: What an HTML page the app shows (a card's preview, Open in new tab) may
 #: do in its frame: run its scripts, open links, print, save. Never
@@ -86,10 +86,10 @@ def download_cap_bytes() -> int:
     return _mb_setting(DOWNLOAD_MAX_MB_ENV, DEFAULT_DOWNLOAD_MAX_MB)
 
 
-def download_inline_bytes() -> int:
+def download_prepare_bytes() -> int:
     """The largest file (bytes) the Foundry component carries without a
     Prepare download press first."""
-    return _mb_setting(DOWNLOAD_INLINE_MB_ENV, DEFAULT_DOWNLOAD_INLINE_MB)
+    return _mb_setting(DOWNLOAD_PREPARE_MB_ENV, DEFAULT_DOWNLOAD_PREPARE_MB)
 
 
 def forget_prepared() -> None:
@@ -233,14 +233,14 @@ def _foundry_download(label: str, read: Callable[[], bytes], size: int,
                       key: Optional[str], prepare: bool) -> None:
     """The Foundry component for a file of ``size`` bytes that ``read``
     returns, behind a Prepare download press when it is over
-    :func:`download_inline_bytes` and ``prepare`` is set."""
+    :func:`download_prepare_bytes` and ``prepare`` is set."""
     cap = download_cap_bytes()
     if size > cap:
         _over_cap(file_name, size, cap)
         return
     ready = key or f"{file_name}:{size}"
     prepared = st.session_state.setdefault(_PREPARED, set())
-    if prepare and size > download_inline_bytes() and ready not in prepared:
+    if prepare and size > download_prepare_bytes() and ready not in prepared:
         what = "download" if label == "Download" else label
         if not st.button(
                 f"Prepare {what} ({size / 1048576:.1f} MB)",
@@ -314,7 +314,7 @@ def pdf_page_preview(path: str, key: Optional[str] = None) -> None:
         size = None
     if size is None or size > download_cap_bytes():
         how = "The file is too large to open here."
-    elif size > download_inline_bytes():
+    elif size > download_prepare_bytes():
         how = ("Prepare the download above, then use Open in new tab to read "
                "the whole file in the browser's PDF viewer.")
     else:
