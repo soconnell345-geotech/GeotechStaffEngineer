@@ -66,23 +66,25 @@ def test_a_belled_shaft_in_sand_reduces_by_the_bell():
 
 
 def test_a_side_layer_with_no_n60_states_its_beta():
+    """Under the depth beta (named; GEC-10's Eq. 10-13 needs the N60)."""
+    what = "beta of cohesionless side layers given no N60"
     shaft = DrillShaft(diameter=1.0, length=15.0)
     layers = [ShaftSoilLayer(thickness=8, soil_type="cohesionless",
                              unit_weight=19, phi=32),
               ShaftSoilLayer(thickness=20, soil_type="cohesionless",
                              unit_weight=19, phi=34, N60=30)]
-    r = DrillShaftAnalysis(shaft=shaft,
-                           soil=ShaftSoilProfile(layers=layers)).compute()
-    (c,) = r.choices
+    r = DrillShaftAnalysis(shaft=shaft, soil=ShaftSoilProfile(layers=layers),
+                           beta_method="depth").compute()
+    (c,) = [c for c in r.choices if c["what"] == what]
     assert c["how"] == "module" and "0-8 m" in c["chosen"]
     assert "Eq. 9-42 (p. 9-132)" in c["basis"]
-    assert r.to_dict()["choices"] == [c]
+    assert c in r.to_dict()["choices"]
     # with every side N60 given there is no such choice
     layers[0] = ShaftSoilLayer(thickness=8, soil_type="cohesionless",
                                unit_weight=19, phi=32, N60=10)
-    r = DrillShaftAnalysis(shaft=shaft,
-                           soil=ShaftSoilProfile(layers=layers)).compute()
-    assert r.choices == [] and "choices" not in r.to_dict()
+    r = DrillShaftAnalysis(shaft=shaft, soil=ShaftSoilProfile(layers=layers),
+                           beta_method="depth").compute()
+    assert [c for c in r.choices if c["what"] == what] == []
 
 
 def test_the_tools_refuse_the_concrete_strength_and_say_why():

@@ -10,9 +10,13 @@ from downdrag import (
     downdrag_method_comparison, post_liquefaction_downdrag,
     LIQUEFIED_SIDE_RESISTANCE,
 )
-from downdrag.analysis import INFLUENCE_DEPTH_WARNING_PERCENT
+from downdrag.analysis import (
+    INFLUENCE_DEPTH_WARNING_PERCENT, RULE_CHOICE, RULES_WARNING_LEAD,
+    THRESHOLD_CHOICE,
+)
 from downdrag.liquefaction import (
-    LIQUEFIED_LAYER_KEYS, MAX_ZONES_LISTED, SIDE_RESISTANCE_CITES,
+    FS_LIQ_CHOICE, LIQUEFIED_LAYER_KEYS, MAX_ZONES_LISTED, READINGS_LEFT_OUT,
+    SIDE_RESISTANCE_CITES,
 )
 from funhouse_agent.adapters import (
     check_nested_keys, check_nested_list, clean_result,
@@ -206,12 +210,15 @@ def _run_post_liquefaction(params):
 #: What a post_liquefaction_downdrag result is held to, in JSON characters
 #: with what dispatch adds (``defaults_used``) (GM-207; the tests hold it):
 #: the result as returned (:func:`_compact`) for one liquefied zone and for
-#: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,850, under
-#: the 8,000-character general cap; the noisy CPT 9,700 to 10,450: its
-#: warnings and choices (a toe in a liquefied layer, readings left out,
-#: curves that do not meet, the CPT's strain) are its own, not repeats.
-#: detail='full' gives about 20,000 and 30,000 to 32,000 (DESIGN.md "What
-#: the result holds").
+#: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,600, under
+#: the 8,000-character general cap; the noisy CPT 9,300 to 10,050, and
+#: 9,970 to 10,390 with a modulus in the sand below the toe, where the
+#: warning that the two rules for the depth below the toe disagree fires
+#: (GM-240; 11,380 to 11,760 before the choices it states were left to
+#: detail='full'): its warnings and choices (a toe in a liquefied layer,
+#: readings left out, curves that do not meet, the CPT's strain) are its
+#: own, not repeats. detail='full' gives about 20,000 to 22,000 and
+#: 30,000 to 34,000 (DESIGN.md "What the result holds").
 RESULT_BUDGET_CHARS = 10_500
 
 #: How many of more than MAX_ZONES_LISTED zones are listed in full: those
@@ -227,6 +234,18 @@ _OPTION_COLUMNS = ("option", "source", "neutral_plane_m", "drag_force_kN",
 _METHOD_COLUMNS = ("name", "neutral_plane_before_m", "drag_force_before_kN",
                    "pile_settlement_before_mm", "neutral_plane_after_m",
                    "drag_force_after_kN", "pile_settlement_after_mm", "note")
+
+#: Choices a warning states (the value, the input's name and the reference),
+#: by words of that warning: where the warning is given, the result leaves
+#: the choice to detail='full' (GM-240). The warning that the UFC 3-220-20
+#: and FHWA GEC-12 rules for the depth below the toe disagree states the
+#: rule used, that it is the default, the other rule with its source and
+#: the warning threshold; the warning on readings above fs_liq_threshold
+#: states the threshold and GEC-10 §9.4.2.2.
+_STATED_BY_WARNING = (
+    (RULES_WARNING_LEAD, (RULE_CHOICE, THRESHOLD_CHOICE)),
+    (READINGS_LEFT_OUT, (FS_LIQ_CHOICE,)),
+)
 
 #: What only the whole result has, as result_note says it.
 _LEFT_OUT = (
@@ -271,10 +290,17 @@ def _zones_compact(zones: list):
     }
 
 
-def _reasons(row: dict) -> str:
-    """Why a method gives no plane (or what to know of its plane), before
-    and after: once where the two are the same."""
-    b, a = row.get("reason_before", ""), row.get("reason_after", "")
+def _reasons(row: dict, headline: dict) -> str:
+    """Why a method gives no plane, before and after: once where the two
+    are the same. A note on a plane the method does give is one of its
+    assumptions (settlement compatibility's drag where no soil settles),
+    left to detail='full' with the others (GM-240), except on the headline
+    method's plane (``headline``: the method's name by state), whose drag
+    force the result leads with."""
+    b, a = (row.get(f"reason_{state}", "")
+            if row.get(f"neutral_plane_{state}_m") is None
+            or row.get("name") == headline.get(state) else ""
+            for state in ("before", "after"))
     if b == a:
         return b
     return "; ".join(f"{state}: {why.rstrip('.')}" for state, why
@@ -286,18 +312,27 @@ def _compact(d: dict) -> dict:
     ``detail='full'`` (GM-207): the headline, every neutral plane, drag
     force and pile settlement (each method before and after, each
     side-resistance option), the zones (summarised past MAX_ZONES_LISTED),
-    the warnings, basis and choices; result_note says what is left out."""
+    the warnings, basis and choices; result_note says what is left out.
+    A choice a warning states is left to detail='full' where the warning
+    is given (``_STATED_BY_WARNING``, GM-240)."""
     zones = d.get("liquefied_zones") or []
+    warnings = d.get("warnings") or []
+    stated = {what for words, whats in _STATED_BY_WARNING
+              if any(words in w for w in warnings) for what in whats}
+    stated &= {c.get("what") for c in d.get("choices") or []}
     note = ("Every neutral plane, drag force and pile settlement is here"
             + (f"; the {len(zones)} liquefied zones are summarised"
                if len(zones) > MAX_ZONES_LISTED else "")
             + ". detail='full' adds "
             + ("each zone, " if len(zones) > MAX_ZONES_LISTED else "")
-            + _LEFT_OUT + ".")
+            + _LEFT_OUT
+            + (", and the choices the warnings state" if stated else "")
+            + ".")
     out = {}
     for key, value in d.items():
         if key in ("after", "neutral_plane_basis",
-                   "neutral_plane_basis_before"):
+                   "neutral_plane_basis_before", "side_resistance_name"):
+            # side_resistance_name: the first choice's "chosen" (GM-240)
             continue
         if key == "liquefied_zones":
             value = _zones_compact(zones)
@@ -308,9 +343,13 @@ def _compact(d: dict) -> dict:
                  r.get("pile_settlement_mm"), r.get("reason", "")]
                 for r in value])
         elif key == "by_method":
+            headline = {state: d.get(f"headline_method_{state}")
+                        for state in ("before", "after")}
             value = _table(_METHOD_COLUMNS, [
-                [r[c] for c in _METHOD_COLUMNS[:-1]] + [_reasons(r)]
+                [r[c] for c in _METHOD_COLUMNS[:-1]] + [_reasons(r, headline)]
                 for r in value])
+        elif key == "choices" and stated:
+            value = [c for c in value if c.get("what") not in stated]
         out[key] = value
         if key == "warnings":
             out["result_note"] = note
@@ -596,8 +635,8 @@ METHOD_INFO = {
             "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the nominal toe resistance mobilized where the load and resistance curves intersect. 1.0 = UFC 6-7.4 step 3 full mobilization ('a conservative approach for evaluating the drag force'); 0.5 and 0 = the other UFC 6-5.8.4.2 / GEC-12 7.3.6.1 cases for settlement (all three always reported in the comparison)."},
             "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for Endo et al. (1969).", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
             "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta-method skin friction and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
-            "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted in the settlement (toe force spread 2V:1H from an equivalent footing as wide as the pile): to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3; 2.16 pile widths for a single pile) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 7.3.5.3; deeper for a loaded toe in soft soil). Either way the fill / drawdown, which does not decay with depth, compresses the settling layers below the toe down to the bottom of the soil profile; give the profile down to the base of the compressible soil.", "allowed_values": ["bearing_stress", "effective_stress"]},
-            "influence_depth_warning_percent": {"type": "float", "required": False, "default": 25.0, "description": "The result warns when the two influence_depth_criterion rules (UFC 3-220-20 6-5.8.4.3 and FHWA GEC-12 7.3.5.3) give pile head settlements or drag forces that differ by more than this percentage of the larger of the two (of allowable_settlement / structural_capacity where given), and whenever a settlement or structural check passes with one rule and fails with the other. The rule used is not changed. Default 25 %: the engineer's call, not a reference's figure; neither reference says how far two settlement estimates may differ before it matters."},
+            "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted in the settlement (toe force spread 2V:1H from an equivalent footing as wide as the pile): to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3; 2.16 pile widths for a single pile) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 Vol I step 1c: 7.3.5.3 for clay below the toe, 7.3.5.6 for sand, 7.3.5.5 for both; deeper for a loaded toe in soft soil). Either way the fill / drawdown, which does not decay with depth, compresses the settling layers below the toe down to the bottom of the soil profile; give the profile down to the base of the compressible soil.", "allowed_values": ["bearing_stress", "effective_stress"]},
+            "influence_depth_warning_percent": {"type": "float", "required": False, "default": 25.0, "description": "The result warns when the two influence_depth_criterion rules (UFC 3-220-20 6-5.8.4.3 and FHWA GEC-12 step 1c) give pile head settlements or drag forces that differ by more than this percentage of the larger of the two (of allowable_settlement / structural_capacity where given), and whenever a settlement or structural check passes with one rule and fails with the other. The rule used is not changed. Default 25 %: the engineer's call, not a reference's figure; neither reference says how far two settlement estimates may differ before it matters."},
         },
         "returns": {
             "neutral_plane_depth_m": "Neutral plane depth (m) of the headline method.",
@@ -785,9 +824,9 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "liquefied_zones": "One table {columns, rows}, a row a contiguous liquefied zone: top_m, bottom_m, volumetric_strain, reconsolidation_settlement_mm, fs_liq_min, side resistance before and after (kN), position (above / across / below the headline neutral plane before the earthquake, or below the pile toe). More than 6 zones: {zones, thickness_m, side resistance totals, largest_settlement: the 3 with the largest reconsolidation settlement as that table, others_m: the rest as depth ranges}. A zone lies below a method's plane before the earthquake where its top_m is at or below that method's neutral_plane_before_m. detail='full': a record a zone with below_the_plane_before_of. Present it as a table.",
         "result_note": "What only detail='full' adds (and whether the zones were summarised). Tell the user the rest is there.",
         "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
-        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
+        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after; on the headline method's row, what bears on its plane). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
-        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. Report them.",
+        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. A choice a warning states is left to detail='full': that rule and threshold where the warning on the two rules is given, fs_liq_threshold where readings above it are left out. Report them.",
         "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }

@@ -195,11 +195,12 @@
       "values": [
         {
           "name": "Q_ult_kN",
-          "value": 2970,
+          "value": 4200,
           "rtol": 0.2
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (drilled_shaft.drilled_shaft_capacity, GEC-10 beta)"
+      "source": "hand derivation 2026-10-20 (GM-241, re-derived in its review): GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Eqs. 10-5 to 10-13 (pp. 10-10 to 10-12), and Eq. 10-14 (p. 10-14), as printed; drilled_shaft.drilled_shaft_capacity on wip/gm241 gives 4,195.7 kN. Replaces the 2026-06-10 module value (2,970 kN), which the depth beta gave before 5.9.1 with z in ft in the metric formula (beta held at 0.25)",
+      "notes": "Assumptions the question leaves open: N60 = 15 along the shaft and below the base as well as at the tip; clean sand, so m = 0.6 in Eq. 10-11; no water table, so sigma'v = 19 z; K/Ko = 1 (p. 10-11); side resistance from the ground surface: Sec. 10.3.5.1 prints no top zone in cohesionless soil, and Examples 10-1 and 10-5 take Layer 1's from the surface (the top 5 ft of p. 10-17 is printed for cohesive soils). Step 1 (Sec. 10.3.1): one sand layer, gamma = 19 kN/m3. Step 3 (Table 10-1, p. 10-6): phi' = 34 deg as given, N60 = 15. Step 5, side (Sec. 10.3.5.1): dz = 0 to 15 m; average sigma'v = 19 x 7.5 = 142.5 kPa (Eq. 10-5); sigma'p = 0.47 x 101.3 x 15^0.6 = 241.8 kPa (Eq. 10-11); OCR = 241.8 / 142.5 = 1.697 (Eq. 10-9); the 7.5 ft limit on beta (pp. 10-11, 10-12) does not bind, the layer's average sigma'v being above the 43.4 kPa at 7.5 ft; Ko = (1 - sin 34) x 1.697^(sin 34) = 0.441 x 1.344 = 0.592, less than Kp = tan^2(62) = 3.54 (Eqs. 10-8, 10-10); beta = 0.592 x tan 34 = 0.400 (Eq. 10-13); f_SN = 0.400 x 142.5 = 56.9 kPa (Eq. 10-7); R_SN = pi x 1.2 x 15 x 56.9 = 3,220 kN (Eq. 10-5). Step 5, base (Eq. 10-14, p. 10-14): q_BN = 0.60 x 15 = 9.0 tsf = 862 kPa, under 30 tsf; A = pi x 1.2^2 / 4 = 1.131 m2; R_BN = 975 kN (no large-diameter reduction at B = 1.2 m). Rn = 3,220 + 975 = 4,196, about 4,200 kN. Alternatives the question leaves open: the top 1.5 m (5 ft) left out, as p. 10-17 does in cohesive soil, 3,998 kN; each layer in 0.1 m sub-layers, 3,953 kN; m = 0.8 (silty sand), 5,335 kN; K/Ko = 2/3 (construction quality not controlled, p. 10-12), 3,122 kN; the depth beta of O'Neill and Reese (1999), FHWA NHI-06-089 Eqs. 9-41 to 9-43, which GEC-10 (2018) does not print, 7,656 kN. The last three fall outside the tolerance: an answer there must name its basis."
     }
   },
   {

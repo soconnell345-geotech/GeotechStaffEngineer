@@ -180,7 +180,7 @@ class TestFullEquations:
         assert r"\sqrt{" in result
 
     def test_drilled_shaft_beta(self):
-        eq = "\u03b2 = 1.5 - 0.245\u00d7\u221a(z\u00d73.281)"
+        eq = "\u03b2 = 1.5 - 0.245\u00d7\u221a(z, m)"
         result = unicode_to_latex(eq)
         assert r"\beta" in result
         assert r"\sqrt{" in result

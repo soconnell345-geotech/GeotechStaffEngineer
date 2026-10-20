@@ -5,6 +5,7 @@ Provides input summaries, step-by-step equation output, and figures
 for Mathcad-style calc package generation.
 
 References:
+    FHWA GEC-10 (FHWA-NHI-18-024), Brown, Turner, Castelli & Loehr (2018)
     FHWA GEC-10 (FHWA-NHI-10-016), Brown, Turner & Castelli (2010)
     O'Neill & Reese (1999), FHWA-RD-99-049
     Horvath & Kenney (1979) — rock socket side resistance
@@ -24,6 +25,11 @@ from calc_package.renderer import figure_to_base64
 DISPLAY_NAME = "Drilled Shaft Capacity Analysis (GEC-10)"
 
 REFERENCES = [
+    'Brown, D.A., Turner, J.P., Castelli, R.J. & Loehr, E.J. (2018). '
+    '"Drilled Shafts: Construction Procedures and Design Methods." '
+    'FHWA-NHI-18-024, GEC-10.',
+    'Samtani, N.C. & Nowatzki, E.A. (2006). "Soils and Foundations '
+    'Reference Manual, Volume II." FHWA NHI-06-089.',
     'Brown, D.A., Turner, J.P. & Castelli, R.J. (2010). "Drilled Shafts: '
     'Construction Procedures and LRFD Design Methods." '
     'FHWA-NHI-10-016, GEC-10.',
@@ -113,6 +119,24 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     if soil.gwt_depth is not None:
         items.append(InputItem("GWT", "Groundwater depth", soil.gwt_depth, "m"))
 
+    # Side resistance settings: the top zone, and in sand the beta (GM-241)
+    from drilled_shaft.capacity import TOP_EXCLUSION
+    items.append(InputItem(
+        "z_top", "Top zone with no side resistance (or the casing)",
+        (analysis.top_exclusion if analysis.top_exclusion is not None
+         else f"{TOP_EXCLUSION:g} in cohesive soil and rock, 0 in "
+              "cohesionless soil"), "m"))
+    if any(lay.soil_type == "cohesionless" for lay in soil.layers):
+        gec10 = analysis.beta_method == "rational"
+        items.append(InputItem(
+            "Beta", "Side resistance in cohesionless soil",
+            "GEC-10 (2018) Eq. 10-13" if gec10
+            else "depth beta, O'Neill & Reese (1999)", ""))
+        if gec10:
+            items.append(InputItem(
+                "K/K_o", "K/K_o, construction's effect on the horizontal "
+                "stress", analysis.K_over_Ko, ""))
+
     # Factor of safety
     items.append(InputItem("FS", "Factor of safety", analysis.factor_of_safety, ""))
     items.append(InputItem("Method", "Analysis method", result.method, ""))
@@ -172,16 +196,45 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{shaft.length / shaft.diameter:.1f}",
     ))
 
-    # Exclusion zones
-    top_excl = max(1.5, shaft.casing_depth)
+    # Exclusion zones: the top zone by soil type unless one is given
+    c = shaft.casing_depth
+    if analysis.top_exclusion is not None:
+        top_excl = analysis._top_of_side("cohesive")
+        top_equation = "z_excl_top = max(top zone, casing depth), every layer"
+        top_sub = (f"z_excl_top = max({analysis.top_exclusion:.2f}, "
+                   f"{c:.2f})")
+        top_value = f"{top_excl:.2f}"
+        top_notes = ("Given; GEC-10 prints the top 5 ft for cohesive soils "
+                     "and 'subject to modification based on local "
+                     "experience and judgment of the designer'")
+    else:
+        clay = analysis._top_of_side("cohesive")
+        sand = analysis._top_of_side("cohesionless")
+        top_equation = ("z_excl_top = max(1.5 m, casing depth) in cohesive "
+                        "soil and rock; max(0, casing depth) in "
+                        "cohesionless soil")
+        top_sub = (f"cohesive soil and rock: max(1.50, {c:.2f}) = "
+                   f"{clay:.2f} m; cohesionless soil: max(0, {c:.2f}) = "
+                   f"{sand:.2f} m")
+        top_value = f"{clay:.2f} / {sand:.2f}"
+        top_notes = ("The top 5 ft is printed in Sec. 10.3.5.2, Cohesive "
+                     "Soils, 'subject to modification based on local "
+                     "experience and judgment of the designer'; Sec. "
+                     "10.3.5.1 prints no such zone in cohesionless soil, "
+                     "and Examples 10-1 and 10-5 take the sand's side "
+                     "resistance from the ground surface")
     geom_steps.append(CalcStep(
         title="Top Exclusion Zone",
-        equation="z_excl_top = max(1.5 m, casing depth)",
-        substitution=f"z_excl_top = max(1.5, {shaft.casing_depth:.2f})",
+        equation=top_equation,
+        substitution=top_sub,
         result_name="z_excl_top",
-        result_value=f"{top_excl:.2f}",
+        result_value=top_value,
         result_unit="m",
-        reference="GEC-10 Section 13.3.3: top 1.5 m excluded from side resistance",
+        reference=("GEC-10 (FHWA-NHI-18-024) p. 10-17: 'common design "
+                   "practice to neglect side resistance over the top 5 ft "
+                   "of a drilled shaft, or to the depth of seasonal "
+                   "moisture change'"),
+        notes=top_notes,
     ))
     geom_steps.append(CalcStep(
         title="Bottom Exclusion Zone (cohesive only)",
@@ -244,18 +297,50 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             reference="GEC-10 Section 13.3.3.2; O'Neill & Reese (1999)",
         ))
 
-    if has_sand:
+    if has_sand and analysis.beta_method == "rational":
+        method_steps.append(CalcStep(
+            title="Beta Method (Cohesionless Soils), GEC-10 (2018) Eq. 10-13",
+            equation=(
+                "\u03c6' = the layer's \u03c6', or 27.5 + 9.2 log (N_1)_60\n"
+                "\u03c3'_p / p_a = 0.47 N_60^m, m = 0.6 clean quartzitic "
+                "sands, 0.8 silty sands to sandy silts (Eq. 10-11); "
+                "\u03c3'_p / p_a = 0.15 N_60 gravelly soils (Eq. 10-12)\n"
+                "OCR = \u03c3'_p / \u03c3'_v, \u03c3'_v the layer's average "
+                "and not less than \u03c3'_v at 7.5 ft (2.29 m) (Eq. 10-9)\n"
+                "K_o = (1 - sin \u03c6') OCR^(sin \u03c6') \u2264 K_p = "
+                "tan\u00b2(45\u00b0 + \u03c6'/2) (Eqs. 10-8, 10-10)\n"
+                "\u03b2 = (K/K_o) K_o tan \u03b4, \u03b4 = \u03c6' "
+                "(Eqs. 10-6, 10-13)\n"
+                "f_SN = \u03b2 \u03c3'_v (kPa) (Eq. 10-7)\n"
+                "R_SN = \u03c0 B \u0394z f_SN (Eq. 10-5)"),
+            substitution="",
+            result_name="",
+            result_value="",
+            reference=("GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Step 5 of "
+                       "the design for axial load, Eqs. 10-5 to 10-13 (pp. "
+                       "10-10 to 10-12); Appendix A Eq. A-2 (p. A-8) for "
+                       "\u03c6' from (N_1)_60"),
+            notes=(f"K/K_o = {analysis.K_over_Ko:.3g}: 1 is 'a rational "
+                   "first-order approximation' (p. 10-11), 2/3 or lower "
+                   "where construction quality is not controlled (p. "
+                   "10-12). No upper limit on f_SN is printed. The "
+                   "choices list each judgment with its alternatives."),
+        ))
+    elif has_sand:
         method_steps.append(CalcStep(
             title="Beta Method (Cohesionless Soils)",
             equation=(
-                "\u03b2 = 1.5 - 0.245\u00d7\u221a(z\u00d73.281), clamped to [0.25, 1.2]\n"
-                "f_s = \u03b2 \u00d7 \u03c3'_v, capped at 200 kPa\n"
+                "\u03b2 = 1.5 - 0.135\u00d7\u221a(z, ft) = 1.5 - 0.245\u00d7\u221a(z, m), "
+                "0.25 \u2264 \u03b2 \u2264 1.2, z the depth to the layer's centre\n"
+                "\u03b2 \u00d7 N_60/15 where N_60 < 15\n"
+                "f_s = \u03b2 \u00d7 \u03c3'_v (kPa), capped at 200 kPa\n"
                 "Q_s = f_s \u00d7 P \u00d7 \u0394z"
             ),
             substitution="",
             result_name="",
             result_value="",
-            reference="GEC-10 Section 13.3.3.3; Brown et al. (2010)",
+            reference=("FHWA NHI-06-089 Eqs. 9-41 to 9-43 (pp. 9-132, 9-133); "
+                       "O'Neill & Reese (1999) for the N_60/15 reduction"),
         ))
 
     if has_rock:
@@ -339,6 +424,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                         f"\u03c3'_v = {sigma_v:.1f} kPa"
                     ),
                 ))
+
+            elif soil_type == "cohesionless" and lb.get("beta_steps"):
+                layer_items.append(_gec10_layer_step(
+                    i, desc, lb, shaft.perimeter, analysis.pa))
 
             elif soil_type == "cohesionless":
                 layer_items.append(CalcStep(
@@ -769,6 +858,62 @@ def _base(shaft, soil):
     return name, shaft.base_diameter(in_rock), shaft.base_area(in_rock)
 
 
+def _gec10_layer_step(i, desc, lb, perimeter, pa) -> CalcStep:
+    """A cohesionless layer's side resistance by GEC-10 (2018) Eqs. 10-5
+    to 10-13, each step with the layer's own numbers (GM-241)."""
+    st = lb["beta_steps"]
+    phi = st["phi_deg"]
+    z_top, z_bot = lb["depth_top_m"], lb["depth_bottom_m"]
+    eff_top = lb.get("effective_top_m", z_top)
+    eff_bot = lb.get("effective_bottom_m", z_bot)
+    sv = lb.get("sigma_v_kPa", 0.0)
+    lines = [f"\u03c6' = 27.5 + 9.2 log (N_1)_60 = {phi:.1f}\u00b0"
+             if st["phi_from"] == "N1_60" else f"\u03c6' = {phi:.1f}\u00b0"]
+    if st["OCR_from"] == "OCR":
+        lines.append(f"OCR = {st['OCR']:.3g} (given)")
+    else:
+        corr = st["sigma_p_correlation"]
+        if corr == "gravel":
+            lines.append(f"\u03c3'_p = {pa:g} \u00d7 0.15 \u00d7 "
+                         f"{st['N60']:g} = {st['sigma_p_kPa']:.1f} kPa")
+        else:
+            m = 0.8 if corr == "silty_sand" else 0.6
+            lines.append(f"\u03c3'_p = {pa:g} \u00d7 0.47 \u00d7 "
+                         f"{st['N60']:g}^{m:g} = {st['sigma_p_kPa']:.1f} kPa")
+        lines.append(f"OCR = {st['sigma_p_kPa']:.1f} / "
+                     f"{st['sigma_v_for_OCR_kPa']:.1f} = {st['OCR']:.3f}")
+    lines += [
+        f"K_o = (1 - sin {phi:.1f}\u00b0) \u00d7 {st['OCR']:.3f}^(sin "
+        f"{phi:.1f}\u00b0) = {st['Ko']:.3f} (K_p = {st['Kp']:.3f})",
+        f"\u03b2 = {st['K_over_Ko']:.3g} \u00d7 "
+        f"{min(st['Ko'], st['Kp']):.3f} \u00d7 tan {phi:.1f}\u00b0 = "
+        f"{st['beta']:.3f}",
+        f"f_SN = {st['beta']:.3f} \u00d7 {sv:.1f} = {lb['fs_kPa']:.1f} kPa",
+        f"R_SN = {lb['fs_kPa']:.1f} \u00d7 {perimeter:.3f} \u00d7 "
+        f"{eff_bot - eff_top:.2f}"]
+    notes = [f"Effective zone: {eff_top:.1f}-{eff_bot:.1f} m, \u03c3'_v the "
+             "layer's average"]
+    if st["OCR_from"] == "sigma_v_ref":
+        notes.append("OCR on the given reference (pre-scour) \u03c3'_v")
+    if st.get("shallow_limit"):
+        notes.append("\u03c3'_v for the OCR raised to its value at 7.5 ft "
+                     "(GEC-10 pp. 10-11, 10-12)")
+    return CalcStep(
+        title=(f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m) -- Beta "
+               "Method, GEC-10 (2018) Eq. 10-13"),
+        equation=("\u03b2 = (K/K_o)(1 - sin \u03c6')(\u03c3'_p/\u03c3'_v)"
+                  "^(sin \u03c6') tan \u03c6'\n"
+                  "f_SN = \u03b2 \u03c3'_v,  R_SN = f_SN \u00d7 P \u00d7 "
+                  "\u0394z"),
+        substitution="\n".join(lines),
+        result_name="Q_s",
+        result_value=f"{lb['side_resistance_kN']:,.1f}",
+        result_unit="kN",
+        notes="; ".join(notes),
+        reference="GEC-10 (FHWA-NHI-18-024) Eqs. 10-5 to 10-13",
+    )
+
+
 def _layer_properties_str(layer) -> str:
     """Format key layer properties as a compact string."""
     parts = [f"\u03b3 = {layer.unit_weight:.1f} kN/m\u00b3"]
@@ -778,6 +923,14 @@ def _layer_properties_str(layer) -> str:
         parts.append(f"\u03c6 = {layer.phi:.0f}\u00b0")
         if layer.N60 > 0:
             parts.append(f"N_60 = {layer.N60:.0f}")
+        if layer.N1_60 > 0:
+            parts.append(f"(N_1)_60 = {layer.N1_60:.0f}")
+        if layer.OCR > 0:
+            parts.append(f"OCR = {layer.OCR:g}")
+        if layer.sigma_v_ref > 0:
+            parts.append(f"\u03c3'_v,ref = {layer.sigma_v_ref:.1f} kPa")
+        if layer.sigma_p_correlation != "clean_sand":
+            parts.append(f"\u03c3'_p by {layer.sigma_p_correlation}")
     else:  # rock
         parts.append(f"q_u = {layer.qu:,.0f} kPa")
         if layer.RQD < 100:
@@ -938,10 +1091,17 @@ def _plot_layer_profile(result, analysis):
     ax.axhline(y=analysis.shaft.length, color="#dc2626", linestyle="--",
                linewidth=1.5, label=f"Shaft tip (L = {analysis.shaft.length:.1f} m)")
 
-    # Exclusion zone shading (top)
-    top_excl = max(1.5, analysis.shaft.casing_depth)
-    ax.axhspan(0, top_excl, alpha=0.1, color="#ef4444",
-               label=f"Top exclusion ({top_excl:.1f} m)")
+    # Exclusion zone shading (top), over each layer its zone reaches
+    # (none in cohesionless soil unless top_exclusion is given, GM-241)
+    top_spans = []
+    depth = 0.0
+    for layer in analysis.soil.layers:
+        top, depth = depth, depth + layer.thickness
+        bottom = min(depth, analysis._top_of_side(layer.soil_type),
+                     analysis.shaft.length)
+        if bottom > top:
+            ax.axhspan(top, bottom, alpha=0.1, color="#ef4444")
+            top_spans.append((top, bottom))
     from drilled_shaft.capacity import fractured_rock_zone
     not_socket = fractured_rock_zone(analysis.shaft, analysis.soil)
     if not_socket is not None:
@@ -977,10 +1137,12 @@ def _plot_layer_profile(result, analysis):
         [0], [0], color="#dc2626", linestyle="--", linewidth=1.5,
         label=f"Shaft tip ({analysis.shaft.length:.1f} m)",
     ))
-    legend_handles.append(mpatches.Patch(
-        color="#ef4444", alpha=0.15,
-        label=f"Top exclusion ({top_excl:.1f} m)",
-    ))
+    if top_spans:
+        legend_handles.append(mpatches.Patch(
+            color="#ef4444", alpha=0.15,
+            label="Top exclusion (" + ", ".join(
+                f"{a:.1f}-{b:.1f} m" for a, b in top_spans) + ")",
+        ))
     if not_socket is not None:
         legend_handles.append(mpatches.Patch(
             facecolor="#ef4444", alpha=0.15, hatch="//",

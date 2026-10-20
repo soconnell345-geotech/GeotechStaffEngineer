@@ -564,14 +564,16 @@ class TestBetaN60Reduction:
 
     def test_full_analysis_loose_sand_side(self):
         """Loose sand (N60 = 9) gives 9/15 of the unmeasured-N60 side
-        resistance; clay tip layer isolates the side-resistance effect."""
+        resistance under the depth beta; clay tip layer isolates the
+        side-resistance effect."""
         def make(n60):
             shaft = DrillShaft(diameter=1.0, length=15.0)
             soil = ShaftSoilProfile(layers=[
                 ShaftSoilLayer(10, "cohesionless", 18.5, phi=30, N60=n60),
                 ShaftSoilLayer(5, "cohesive", 17.0, cu=80),
             ])
-            return DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+            return DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                      beta_method="depth").compute()
 
         r_loose = make(9)
         r_unmeasured = make(0)  # N60=0 -> treated as not measured
@@ -689,9 +691,9 @@ class TestRationalSideResistance:
         with pytest.raises(ValueError):
             alpha_cohesive_rational(0)
 
-    def test_high_level_beta_rational_vs_depth_default(self):
-        """beta_method='rational' changes the sand side resistance; the default
-        'depth' path is unchanged."""
+    def test_high_level_beta_rational_vs_depth(self):
+        """beta_method='rational' (the default since GM-241) and 'depth' give
+        different sand side resistances."""
         shaft = DrillShaft(diameter=8 * 0.3048, length=3.0 + 20 * 0.3048, casing_depth=3.0)
         layers = [
             ShaftSoilLayer(3.0, "cohesionless", 18.0, phi=30),
@@ -700,7 +702,9 @@ class TestRationalSideResistance:
         ]
         soil = ShaftSoilProfile(layers=layers)
         rational = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="rational").compute()
-        depth = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()  # default
+        default = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+        assert default.Q_ultimate == rational.Q_ultimate
+        depth = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="depth").compute()
         sand_r = next(lb for lb in rational.layer_breakdown if lb.get("description") == "sand")
         sand_d = next(lb for lb in depth.layer_breakdown if lb.get("description") == "sand")
         assert "rational" in sand_r["method"]

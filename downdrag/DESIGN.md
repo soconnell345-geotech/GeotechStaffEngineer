@@ -506,14 +506,59 @@ and, on Fig 6-19: "Below the neutral plane, the soil settlement is due to the
 stress changes from the applied foundation load and stress changes from
 other sources."
 
-FHWA GEC-12 Vol I (FHWA-NHI-16-009), §7.3.5.3 "Group Settlement in Cohesive
-Soils", step 1c, p. 324: "Determine the stress distribution to soil layers
-below the equivalent footing up to the depth at which the stress increase
-from the equivalent footing is less than 10% of existing vertical effective
-stress at that depth." and p. 325: "The depth at which the stress increase
-is less than 10% will provide the total thickness of cohesive soil layer or
-layers to be used in performing settlement computations." §7.3.5.5 "Group
-Settlement in Layered Soils", step 1c (pp. 327-328), says the same.
+FHWA GEC-12 Vol I (FHWA-NHI-16-009) prints its rule as step 1c of each
+group-settlement procedure, in the same words (pages read again for
+GM-240):
+
+- §7.3.5.3 "Group Settlement in Cohesive Soils", step 1c, p. 324:
+  "Determine the stress distribution to soil layers below the equivalent
+  footing up to the depth at which the stress increase from the equivalent
+  footing is less than 10% of existing vertical effective stress at that
+  depth." and p. 325: "The depth at which the stress increase is less than
+  10% will provide the total thickness of cohesive soil layer or layers to
+  be used in performing settlement computations."
+- §7.3.5.5 "Group Settlement in Layered Soils" ("a layered soil profile
+  consisting of cohesionless and cohesive soils", p. 326), step 1c, p. 327:
+  the same words, "... the total thickness of soil to be evaluated in the
+  settlement computations".
+- §7.3.5.6 "Group Settlement Using the Janbu Tangent Modulus Approach"
+  ("quite adaptable to calculating pile group settlements in any soil
+  profile"; a sand's modulus number from E_s, Eq 7-67, p. 331), step 1c,
+  p. 332: the same words, "... the total thickness of the soil to be
+  analyzed and the number of soil layers"; step 4 (pp. 333-334) sums the
+  layers "until the stress increase is less than 10% of the existing
+  vertical effective stress at that depth".
+- §7.3.5.7 "Group Settlement Using the Neutral Plane Method", p. 336:
+  "the soil materials below the neutral plane should be evaluated for
+  settlement until the stress increase is less than 10%", the settlements
+  "calculated ... as presented for the Janbu method in Section 7.3.5.6.
+  However, the methods presented for layered soils in Section 7.3.5.5
+  could also be used."
+- §7.3.5.2 "Group Settlement in Cohesionless Soils" (pp. 317-320: Hough,
+  Eq 7-49, and Meyerhof's SPT and CPT methods, N or qc within a depth B
+  below the pile toe) prints no depth to stop at.
+
+So the rule is worded the same for sand as for clay, and no number changes
+with the soil.
+
+**Which step is cited (GM-240, 2026-10-20).** Every citation used to name
+the cohesive-soil step, §7.3.5.3 step 1c (p. 324), whatever the soil. Now
+the step goes with the soil from the toe down to where GEC-12's rule stops
+counting the toe load, within the profile (`DowndragAnalysis.gec12_step`):
+
+| Soil from the toe to that depth | Cited |
+|---|---|
+| all cohesive | §7.3.5.3 step 1c, p. 324 |
+| all cohesionless | §7.3.5.6 step 1c, p. 332: the step that covers sand (§7.3.5.2 prints no depth; §7.3.5.7 sends the soil below the neutral plane to §7.3.5.6). Its Eq 7-61 (p. 330, j = 1), strain = stress increase / E_s, is how this module settles sand below the toe |
+| both | §7.3.5.5 step 1c, p. 327: GEC-12's step for a layered profile |
+
+For layered soil the other choices were to cite each step that applies or
+the step for the layer where the depth ends. §7.3.5.5 is GEC-12's own
+procedure for a profile of clay and sand together, in the same words, so
+one citation says what applies without implying a second rule. With no toe
+load the soil just below the toe decides; where the profile ends at the
+toe, the layer the toe is in. The warnings, `below_toe`, `choices` and the
+calc package cite the step for the toe force of the run with GEC-12's rule.
 
 So the two references state different fractions: UFC 10 % of the BEARING
 STRESS of the equivalent footing, GEC-12 10 % of the EXISTING VERTICAL
@@ -531,8 +576,9 @@ the fill's stress, which for a wide fill does not decay with depth.
      footing, UFC §6-5.8.4.3. (B'+z')(L'+z') = 10 B'L', so z' =
      (sqrt(10) - 1) B' = 2.16 B' whatever the load;
    - `"effective_stress"`: the existing vertical effective stress at that
-     depth, GEC-12 §7.3.5.3; Q/(B'+z')² = 0.1 σ'v0, deeper for a loaded toe
-     in soft soil (5.40 m against 0.86 m for 503 kN on a 0.4 m pile in sand).
+     depth, GEC-12's step 1c (the step for the soil below the toe, above);
+     Q/(B'+z')² = 0.1 σ'v0, deeper for a loaded toe in soft soil (5.40 m
+     against 0.86 m for 503 kN on a 0.4 m pile in sand).
 
    UFC is the default because the module's headline procedure is UFC's and
    §6-5.8.4.3 is the section that sets the equivalent footing below the
@@ -680,7 +726,7 @@ engineer's. The `_sand_below` case (toe 2 m into sand with E_s = 50 MPa,
 > UFC 3-220-20 §6-5.8.4.3 (p. 449) takes it to where the stress increase
 > from the toe load is less than 10% of the bearing stress of the
 > equivalent footing (0.86 m below the toe, to 12.86 m; settlement below
-> the toe 12.7 mm); FHWA GEC-12 Vol I §7.3.5.3 step 1c (p. 324) to where it
+> the toe 12.7 mm); FHWA GEC-12 Vol I §7.3.5.6 step 1c (p. 332) to where it
 > is less than 10% of the existing vertical effective stress (5.40 m below
 > the toe, to 17.40 m; settlement below the toe 17.4 mm). GEC-12's rule
 > gives more settlement. This result uses UFC's rule, the module's default
@@ -721,14 +767,15 @@ pile head settlement or drag force before or after the earthquake: its
 result is held to its size (GM-207, about 1,000 characters for the two),
 and where both rules give the same numbers the choice changed nothing. The
 calc package prints both in its Method Choices table and the threshold in
-its inputs. **Size, measured for the GM-228 review:** where the two rules
-do move a number, the two choices and the warning (about 940 characters)
-come on top of the result. The noisy 25 m CPT with E_s = 30 MPa on the
-bearing sand (seeds 3, 7, 11) returns 11,380-11,760 characters against
-`RESULT_BUDGET_CHARS` = 10,500 (HC-1 with E_s stays under 8,000). Tool
-results from analysis modules are not cut (`funhouse_agent/deep/tools.py`),
-so nothing is lost; the budget is the context cost, and it is open
-(BACKLOG).
+its inputs. **Size** (GM-240): where the two rules do move a number, the
+two choices and the warning came on top of the result, and the noisy 25 m
+CPT with E_s = 30 MPa on the bearing sand (seeds 3, 7, 11) returned
+11,380-11,760 characters against `RESULT_BUDGET_CHARS` = 10,500. The
+warning states both choices (the rule used and that it is the default, the
+other rule with its source, the threshold as the engineer's figure), so
+where it is given the tool's result leaves the two choices to
+detail='full' and keeps the warning whole; "What the result holds" below
+has the sizes.
 
 ## Stress Changes from Loading
 
@@ -777,8 +824,10 @@ so nothing is lost; the budget is the context cost, and it is open
 3. AASHTO LRFD Bridge Design Specifications, 9th Ed., Section 10.7.3.7.
 4. UFC 3-220-20, 16 Jan 2025, Chapter 6, Eqs 6-45, 6-49–6-54, 6-80.
 5. FHWA GEC-12 (FHWA-NHI-16-009), Chapter 7 (Beta method); §7.3.5.7 and
-   §7.3.6.1 (neutral plane, 0/50/100 % toe mobilization); §7.3.5.3 and
-   §7.3.5.5 step 1c (how deep below the equivalent footing to count).
+   §7.3.6.1 (neutral plane, 0/50/100 % toe mobilization); step 1c of
+   §7.3.5.3 (p. 324, cohesive soil), §7.3.5.5 (p. 327, layered soil) and
+   §7.3.5.6 (p. 332, Janbu; sand) (how deep below the equivalent footing
+   to count).
 6. Briaud, J.-L. & Tucker, L.M. (1997). "Design and construction guidelines
    for downdrag on uncoated and bitumen-coated piles." NCHRP Report 393.
 7. FHWA GEC-10 (FHWA-NHI-18-024), §10.6 (downdrag; defers to GEC-12
@@ -1013,19 +1062,52 @@ method's plane before the earthquake where its `top_m` is at or below that
 method's `neutral_plane_before_m`) and `after`. Past `MAX_ZONES_LISTED` (6)
 zones it gives their number, total thickness and side resistance before and
 after, the three with the largest reconsolidation settlement in full and
-the depth ranges of the rest. Sizes with `defaults_used`, against
-`RESULT_BUDGET_CHARS` = 10,500 (GM-228 added about 40 to each, its input
-in `defaults_used`):
+the depth ranges of the rest.
 
-| Case | Before GM-207 | Returned | `detail='full'` |
-|---|---|---|---|
-| HC-1, one zone | 29,315 | 7,855 (under the 8,000 general cap) | 20,251 |
-| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,720-10,440 | 29,700-32,300 |
+**GM-240 (2026-10-20): what a warning or a choice already says, once.**
+GM-228's warning that the UFC 3-220-20 and FHWA GEC-12 rules for the depth
+below the toe disagree took the noisy CPT with a modulus in the bearing
+sand (E_s = 30 MPa, seeds 3, 7, 11) to 11,380-11,760 characters. The
+warning stays whole; three more things go to `detail='full'`, each said
+elsewhere in the result:
 
-The noisy CPT cannot reach 8,000 without losing what only it has: the
-warnings on a toe in a liquefied layer, readings left out and load and
-resistance curves that do not meet, and the choices of the CPT's strain and
-the FS_liq threshold. None of them repeats another.
+- a choice a warning in the result states (`_STATED_BY_WARNING`): the rule
+  for the depth below the toe and its warning threshold, where that
+  warning is given (it names the rule used and that it is the default, the
+  other rule with its source and page, and the threshold as the engineer's
+  figure); `fs_liq_threshold`, where the warning on readings above it is
+  given (it states the threshold, the input and GEC-10 §9.4.2.2, p. 9-42).
+  `defaults_used` still says which were defaults, and `result_note` ends
+  "and the choices the warnings state";
+- `side_resistance_name`, the first choice's `chosen`;
+- a note on a plane a method does give: an assumption, as the methods'
+  sources and assumptions already were. The one such note is settlement
+  compatibility's where no soil settles ("so this gives no drag; UFC
+  §6-5.7 (FHWA 2016): the pile-soil stiffness contrast alone gives some
+  drag force"), which the warning on why the methods differ says for the
+  state before the earthquake. It stays on the headline method's row
+  (GM-240 review), where it bears on the drag force the result leads with:
+  a toe resistance larger than all the pile can deliver to its toe leaves
+  the curves apart before the earthquake, and settlement compatibility
+  then leads with no drag. Why a method gives no plane stays.
+
+Every neutral plane, drag force and pile settlement stays. Sizes with
+`defaults_used` (`influence_depth_criterion` and
+`influence_depth_warning_percent` among them since GM-228), against
+`RESULT_BUDGET_CHARS` = 10,500:
+
+| Case | Before GM-207 | GM-207 / GM-228 | Returned (GM-240) | `detail='full'` |
+|---|---|---|---|---|
+| HC-1, one zone | 29,315 | 7,855 | 7,589 (under the 8,000 general cap) | 20,497 |
+| HC-1, E_s = 30 MPa below 10 m (the two rules warned) | | 9,206 | 7,995 | 21,909 |
+| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-30) | 43,928 (seed 7) | 9,720-10,440 (seeds 1-8, 11, 21) | 9,296-10,041 | 29,963-32,499 (seeds 1-8, 11, 21) |
+| The same, E_s = 10 to 80 MPa below 10 m (the two rules warned before the earthquake, every seed) | | 11,378-11,758 (seeds 3, 7, 11, 30 MPa) | 9,967-10,393 | 31,680-34,004 (seeds 1-8, 11, 21) |
+
+The largest, 10,393, is seed 30 with E_s = 10 MPa, 107 under the budget;
+the size test runs it with seeds 3, 7 and 11 at 30 MPa. The noisy CPT
+cannot reach 8,000 without losing what only it has: the warnings on a toe
+in a liquefied layer, readings left out and load and resistance curves
+that do not meet, and the choice of the CPT's strain.
 
 ### Hand check HC-1 (a hand check from the printed equations, NOT a published anchor)
 

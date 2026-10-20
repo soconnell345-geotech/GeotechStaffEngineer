@@ -141,8 +141,12 @@ class DrillShaftResult:
                 "coefficient (alpha=... for cohesive, beta=... for "
                 "cohesionless, rock socket); 'fs_kPa' is the unit side "
                 "resistance. effective_top_m/effective_bottom_m reflect the "
-                "GEC-10 exclusion zones (top 1.5 m or casing depth; bottom 1D "
-                "in cohesive layers) that carry no side resistance."
+                "GEC-10 exclusion zones (the top zone or the casing: unless "
+                "top_exclusion is given, the top 1.5 m in cohesive soil and "
+                "rock and none in cohesionless soil; bottom 1D in cohesive "
+                "layers) that carry no side resistance. Under the "
+                "GEC-10 (2018) beta, 'beta_steps' gives each cohesionless "
+                "layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta."
             )
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
@@ -185,8 +189,8 @@ class DrillShaftResult:
                 note=("GEC-10 side resistance: α method in cohesive "
                       "layers, β method in cohesionless layers, rock "
                       "socket in rock; 'Effective' top and bottom leave out "
-                      "the exclusion zones (top 1.5 m or the casing; 1D above "
-                      "the base in cohesive layers), which carry none"),
+                      "the exclusion zones (the top zone or the casing; 1D "
+                      "above the base in cohesive layers), which carry none"),
                 name="side_resistance",
             ))
 

@@ -138,7 +138,7 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         "10% of the bearing stress of the equivalent footing (UFC "
         "3-220-20 §6-5.8.4.3)" if crit == "bearing_stress" else
         "10% of the existing vertical effective stress (FHWA GEC-12 "
-        "§7.3.5.3)", ""))
+        f"{analysis.gec12_rule(result)})", ""))
     pct = getattr(analysis, "influence_depth_warning_percent", None)
     if pct is not None:
         items.append(InputItem(
@@ -426,6 +426,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             + f"; toe load: {bt['toe_load_compression_mm']:.2f} mm")
     else:
         sub = f"B' = {analysis.pile_diameter:.3f} m"
+    # GEC-12's step for the soil below the toe (GM-240)
+    gec12 = (analysis.gec12_rule(r) if hasattr(analysis, "gec12_rule")
+             else "Vol I step 1c")
     settle_items.append(CalcStep(
         title="Toe Settlement (soil below the toe)",
         equation=(
@@ -434,7 +437,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             "Toe load counted down to where its stress increase falls "
             "below 10% of the bearing stress of the equivalent footing "
             "(UFC \u00a76-5.8.4.3) or, as an option, of the existing "
-            "vertical effective stress (GEC-12 \u00a77.3.5.3);\n"
+            f"vertical effective stress (GEC-12 {gec12});\n"
             "the fill / drawdown, which does not decay with depth, "
             "compresses the settling layers down to the bottom of the "
             "soil profile."
@@ -444,7 +447,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{r.toe_settlement * 1000:.2f}",
         result_unit="mm",
         reference=("UFC 3-220-20 Eqs 6-49 to 6-54, \u00a76-5.8.4.3 (p. 449); "
-                   "FHWA GEC-12 \u00a77.3.5.3 step 1c (p. 324)"),
+                   f"FHWA GEC-12 {gec12}"),
         notes=bt.get("basis", ""),
     ))
 
