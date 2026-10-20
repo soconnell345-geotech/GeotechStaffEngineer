@@ -348,6 +348,19 @@ def _save_pdf_latex(
 _WIDE_TABLE_CLASS = "wide-pdf-table"
 #: A table printed as one block per row (GM-213, :func:`_reflow_tables`).
 _ROWS_CLASS = "pdf-rows"
+# No backgrounds in the Story PDF (BACKLOG GM-219). On every page after the
+# first, the engine draws the background of each table cell and each block
+# laid out on the pages before it again, as a bar its vertical padding high:
+# a cell's where the cell stood on its own page, a block's at the top of the
+# frame. A header row's shading came back as grey bars over the text of
+# every later page (axial pile: 141 in ten pages); so did a calculation
+# step's, and a check's tint and badge at each page top. Borders are not
+# drawn again, so a heading row is marked by a darker rule under it (the
+# least ink that sets it off), and a check's badge by the colour of its
+# word; text left near white by its background going prints black
+# (:func:`_without_backgrounds`, which also takes out the backgrounds a
+# style attribute or a ``bgcolor`` gives: the engine draws those whatever
+# the style sheet says).
 _PDF_STORY_CSS = (
     "<style>"
     f"table.{_WIDE_TABLE_CLASS} th,table.{_WIDE_TABLE_CLASS} td,"
@@ -362,8 +375,94 @@ _PDF_STORY_CSS = (
     f".{_ROWS_CLASS}-key{{font-weight:bold;}}"
     f".{_ROWS_CLASS}-field{{padding-left:14px;}}"
     f".{_ROWS_CLASS}-label{{font-style:italic;color:#555;}}"
+    "*{background:transparent !important;}"
+    "thead th{border-bottom:1px solid #555 !important;}"
+    ".check-badge.pass{color:#16a34a;}.check-badge.fail{color:#dc2626;}"
     "</style>"
 )
+#: A colour declaration in a style sheet or a style attribute (not
+#: ``background-color`` or ``border-color``).
+_COLOR_DECL = re.compile(r"(?<![\w-])(color\s*:\s*)([^;}\"'<>]+)",
+                         re.IGNORECASE)
+#: A background or background-color declaration (a ``url()`` in it may
+#: hold a semicolon).
+_BACKGROUND_DECL = re.compile(
+    r"(?<![\w-])(background(?:-color)?\s*:\s*)"
+    r"((?:url\([^)]*\)|[^;}\"'<>])+)", re.IGNORECASE)
+#: A ``bgcolor`` attribute: the engine draws it whatever the style sheet
+#: says, as it does a style attribute's background.
+_BGCOLOR_ATTR = re.compile(r"""\sbgcolor\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)""",
+                           re.IGNORECASE)
+_STYLE_PARTS = re.compile(
+    r"(<style\b[^>]*>)(.*?)(</style\s*>)"
+    r"|(\sstyle\s*=\s*)(\"[^\"]*\"|'[^']*')", re.IGNORECASE | re.DOTALL)
+_NEAR_WHITE_NAMES = {"white", "whitesmoke", "snow", "ghostwhite", "ivory",
+                     "aliceblue", "mintcream", "azure", "seashell",
+                     "floralwhite", "honeydew", "lightyellow", "lightcyan"}
+#: Text this light (the mean of its red, green and blue, 0 to 1) is not
+#: read on white paper.
+_LIGHT_TEXT = 0.85
+
+
+def _light(value: str) -> bool:
+    """A CSS colour value lighter than :data:`_LIGHT_TEXT` (or near white
+    by name)."""
+    v = value.strip().lower()
+    if v in _NEAR_WHITE_NAMES:
+        return True
+    m = re.fullmatch(r"#([0-9a-f]{3,8})", v)
+    if m:
+        h = m.group(1)
+        if len(h) in (3, 4):
+            rgb = [int(c * 2, 16) for c in h[:3]]
+        elif len(h) in (6, 8):
+            rgb = [int(h[k:k + 2], 16) for k in (0, 2, 4)]
+        else:
+            return False
+    else:
+        m = re.fullmatch(r"rgba?\(\s*([\d.]+%?)\s*[, ]\s*([\d.]+%?)\s*[, ]"
+                         r"\s*([\d.]+%?)[^)]*\)", v)
+        if not m:
+            return False
+        rgb = [float(c[:-1]) * 2.55 if c.endswith("%") else float(c)
+               for c in m.groups()]
+    return sum(rgb) / (3 * 255) >= _LIGHT_TEXT
+
+
+def _without_backgrounds(html: str) -> str:
+    """``html`` with no background in its style sheets, style attributes
+    or ``bgcolor`` attributes, and each near-white text colour made black:
+    the Story PDF draws no backgrounds (GM-219), so light text on a dark one
+    would print white on white. (The engine draws a style attribute's
+    background over an ``!important`` rule of the style sheet.)"""
+
+    def _flag(value):
+        important = re.search(r"\s*!\s*important\s*$", value, re.IGNORECASE)
+        return ((value[:important.start()], " !important") if important
+                else (value, ""))
+
+    def _colour(m: "re.Match") -> str:
+        bare, flag = _flag(m.group(2))
+        return m.group(1) + "#000" + flag if _light(bare) else m.group(0)
+
+    def _background(m: "re.Match") -> str:
+        return m.group(1) + "transparent" + _flag(m.group(2))[1]
+
+    def _css(text):
+        return _COLOR_DECL.sub(_colour, _BACKGROUND_DECL.sub(_background,
+                                                             text))
+
+    def _part(m: "re.Match") -> str:
+        if m.group(1) is not None:
+            return m.group(1) + _css(m.group(2)) + m.group(3)
+        return m.group(4) + _css(m.group(5))
+
+    html = _STYLE_PARTS.sub(_part, html)
+    if "bgcolor" in html.lower():
+        html = re.sub(r"<[A-Za-z][^>]*>",
+                      lambda m: _BGCOLOR_ATTR.sub("", m.group(0)), html)
+    return html
+
 
 #: Header-column count above which a table is treated as "wide" and compacted.
 _WIDE_TABLE_COLS = 11
@@ -1507,12 +1606,15 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     """Render self-contained HTML to a paginated PDF (fitz.Story) and say
     where each figure printed.
 
-    Four Story-only adjustments are applied: inline base64 PNG figures are
+    Five Story-only adjustments are applied: inline base64 PNG figures are
     re-encoded to JPEG (so they stay compressed in the PDF instead of
     bloating it), wide tables are wrapped to the page width (so they cannot
     clip at the right edge), a table the engine cannot print whole as a
     table (a row taller than a third of a page, or wider than the page once
-    compacted) prints a block per row (BACKLOG GM-213), and figures are
+    compacted) prints a block per row (BACKLOG GM-213), no background is
+    drawn (the engine repeats each one as a bar on every later page; a
+    heading row gets a rule under it, near-white text prints black;
+    BACKLOG GM-219), and figures are
     laid out by the rule above (never shrunk to fit what is left of a page;
     BACKLOG GM-168). The Story
     engine supports a SUBSET of CSS: it lays out text, headings, tables,
@@ -1545,6 +1647,7 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     letterings = _png_letterings(html)
     html = _compress_pdf_images(html)
     html = _fit_wide_tables_for_pdf(html)
+    html = _without_backgrounds(html)
     if "</head>" in html:
         html = html.replace("</head>", _PDF_STORY_CSS + "</head>", 1)
     else:
