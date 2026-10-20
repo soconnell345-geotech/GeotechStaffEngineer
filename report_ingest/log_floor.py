@@ -322,9 +322,30 @@ class _Group:
             self.cells.append(cell)
 
 
+def _drawn_box(group: _Group, boxes: Sequence[Any]) -> Any:
+    """The sample box ``log_grid`` drew round this group's rows, or None.
+
+    A box holds the group when its interval, widened by its own
+    uncertainty, takes every row's depth on a sheet the box is on; the
+    narrowest such box wins. A grid with no ``samples`` (an older planlens,
+    or a form that draws none) leaves the rows as they were.
+    """
+    best, best_span = None, None
+    for box in boxes:
+        pages = set(getattr(box, "pages", ()) or ()) | {getattr(box, "page", None)}
+        tol = float(getattr(box, "plus_minus", None) or 0.05)
+        if all(c.page in pages
+               and float(box.top) - tol <= float(c.depth) <= float(box.bottom) + tol
+               for c in group.cells):
+            span = float(box.bottom) - float(box.top)
+            if best is None or span < best_span:
+                best, best_span = box, span
+    return best
+
+
 def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
-                 template_note: str = ""
+                 template_note: str = "", drawn: Any = None
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
     top = min(float(c.depth) for c in group.cells)
     bottom: Optional[float] = None
@@ -474,12 +495,27 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         kind = "spt"
     anchor = blow_cell or group.cells[0]
     page = int(anchor.page)
+    drawn_note = ""
+    if drawn is not None:
+        # The sample's box, drawn against the depth scale (planlens
+        # log_grid, PL-24). An interval the log PRINTS as numbers stays; the
+        # drawn box seats the rows that print none.
+        if bottom is None:
+            top, bottom = float(drawn.top), float(drawn.bottom)
+            pm = getattr(drawn, "plus_minus", None)
+            drawn_note = ("; interval from the sample box drawn on the log"
+                          + (f" (+/- {float(pm):.3g} {unit})".rstrip()
+                             if pm else ""))
+        label = str(getattr(drawn, "label", "") or "").strip()
+        if label and not sample_id:
+            sample_id = label
+            drawn_note += "; sample id from the drawn box"
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
         note=("seeded from the grid rows"
               + (f" ({template_note})" if template_note else "") + ": "
-              + "; ".join(t for t in texts if t)[:160]))
+              + "; ".join(t for t in texts if t)[:160] + drawn_note))
     sample = Sample(
         sample_id=sample_id, top=_q(top, unit), bottom=_q(bottom, unit),
         kind=kind,  # type: ignore[arg-type]
@@ -1001,9 +1037,13 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                 home.add(cell)
             else:
                 groups.append(_Group(cell))
+        boxes = list(getattr(grid, "samples", None) or [])
         for group in groups:
+            drawn = _drawn_box(group, boxes)
+            if drawn is not None:
+                boxes.remove(drawn)
             sample, drive = _seed_sample(group, grid, unit, confidence_floor,
-                                         by_column, template_note)
+                                         by_column, template_note, drawn)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:
