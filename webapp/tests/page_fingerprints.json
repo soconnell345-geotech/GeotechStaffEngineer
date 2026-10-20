@@ -1,5 +1,5 @@
 {
- "_about": "What each page's agent is handed with default switches (BACKLOG INF-30). Re-record only for a deliberate change, in its own commit with the reason: python -m webapp.tests.page_builds record",
+ "_about": "What each page's agent is handed with default switches (BACKLOG INF-30). Re-record only for a deliberate change, in its own commit with the reason; a split step never re-records (plan step 12 is the one exception): python -m webapp.tests.page_builds record (see test_page_fingerprints.py)",
  "builds": {
   "geotech_default": {
    "app": {
@@ -536,65 +536,7 @@
       }
      }
     ]
-   },
-   "planlens": [
-    {
-     "call": 0,
-     "subagents": {
-      "calc": {},
-      "figure": {},
-      "general-purpose": {},
-      "references": {},
-      "reviewer": {}
-     },
-     "tools": {
-      "annotate_document": {
-       "args": "e61aa0124fac52ee",
-       "description": "fa5c88e3b8fffb1d"
-      },
-      "document_markups": {
-       "args": "ddfc51844e5b1412",
-       "description": "e76078c537260c20"
-      },
-      "document_page_map": {
-       "args": "665f72192044caac",
-       "description": "ebb841b0ff44e45e"
-      },
-      "document_structure": {
-       "args": "75aca17975a312b8",
-       "description": "90a50a09fbce2aff"
-      },
-      "find_quantities": {
-       "args": "622c49e76114bb80",
-       "description": "97e383198864374b"
-      },
-      "log_grid": {
-       "args": "e86123cad76c24ec",
-       "description": "c3b1ef0000fad549"
-      },
-      "measure": {
-       "args": "2d8ae460f3762cd2",
-       "description": "e03ebc1cf5774758"
-      },
-      "open_document": {
-       "args": "178a4b401ed2c071",
-       "description": "d9dc416f29a2cddd"
-      },
-      "read_document": {
-       "args": "b1720bbd433edbc5",
-       "description": "04758e899cfdcd4d"
-      },
-      "render_page_thumbnails": {
-       "args": "ed9d08a4314dfa0c",
-       "description": "ad7e23a3446f7810"
-      },
-      "search_document": {
-       "args": "f9b0c511f1cf1f5d",
-       "description": "15f55d293fd7a36b"
-      }
-     }
-    }
-   ]
+   }
   },
   "review_default": {
    "app": {
@@ -878,103 +820,7 @@
       }
      }
     ]
-   },
-   "planlens": [
-    {
-     "call": 0,
-     "subagents": {
-      "figure": {},
-      "general-purpose": {
-       "document_markups": {
-        "args": "ddfc51844e5b1412",
-        "description": "e76078c537260c20"
-       },
-       "document_page_map": {
-        "args": "665f72192044caac",
-        "description": "ebb841b0ff44e45e"
-       },
-       "document_structure": {
-        "args": "75aca17975a312b8",
-        "description": "90a50a09fbce2aff"
-       },
-       "find_quantities": {
-        "args": "622c49e76114bb80",
-        "description": "97e383198864374b"
-       },
-       "log_grid": {
-        "args": "e86123cad76c24ec",
-        "description": "c3b1ef0000fad549"
-       },
-       "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
-       },
-       "open_document": {
-        "args": "178a4b401ed2c071",
-        "description": "d9dc416f29a2cddd"
-       },
-       "read_document": {
-        "args": "b1720bbd433edbc5",
-        "description": "04758e899cfdcd4d"
-       },
-       "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
-       },
-       "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
-       }
-      }
-     },
-     "tools": {
-      "annotate_document": {
-       "args": "e61aa0124fac52ee",
-       "description": "fa5c88e3b8fffb1d"
-      },
-      "document_markups": {
-       "args": "ddfc51844e5b1412",
-       "description": "e76078c537260c20"
-      },
-      "document_page_map": {
-       "args": "665f72192044caac",
-       "description": "ebb841b0ff44e45e"
-      },
-      "document_structure": {
-       "args": "75aca17975a312b8",
-       "description": "90a50a09fbce2aff"
-      },
-      "find_quantities": {
-       "args": "622c49e76114bb80",
-       "description": "97e383198864374b"
-      },
-      "log_grid": {
-       "args": "e86123cad76c24ec",
-       "description": "c3b1ef0000fad549"
-      },
-      "measure": {
-       "args": "2d8ae460f3762cd2",
-       "description": "e03ebc1cf5774758"
-      },
-      "open_document": {
-       "args": "178a4b401ed2c071",
-       "description": "d9dc416f29a2cddd"
-      },
-      "read_document": {
-       "args": "b1720bbd433edbc5",
-       "description": "04758e899cfdcd4d"
-      },
-      "render_page_thumbnails": {
-       "args": "ed9d08a4314dfa0c",
-       "description": "ad7e23a3446f7810"
-      },
-      "search_document": {
-       "args": "f9b0c511f1cf1f5d",
-       "description": "15f55d293fd7a36b"
-      }
-     }
-    }
-   ]
+   }
   },
   "review_lean": {
    "app": {
@@ -1133,105 +979,7 @@
       }
      }
     ]
-   },
-   "planlens": [
-    {
-     "call": 0,
-     "subagents": {},
-     "tools": {
-      "annotate_document": {
-       "args": "e61aa0124fac52ee",
-       "description": "fa5c88e3b8fffb1d"
-      },
-      "document_markups": {
-       "args": "ddfc51844e5b1412",
-       "description": "e76078c537260c20"
-      },
-      "document_page_map": {
-       "args": "665f72192044caac",
-       "description": "ebb841b0ff44e45e"
-      },
-      "document_structure": {
-       "args": "75aca17975a312b8",
-       "description": "90a50a09fbce2aff"
-      },
-      "find_quantities": {
-       "args": "622c49e76114bb80",
-       "description": "97e383198864374b"
-      },
-      "log_grid": {
-       "args": "e86123cad76c24ec",
-       "description": "c3b1ef0000fad549"
-      },
-      "measure": {
-       "args": "2d8ae460f3762cd2",
-       "description": "e03ebc1cf5774758"
-      },
-      "open_document": {
-       "args": "178a4b401ed2c071",
-       "description": "d9dc416f29a2cddd"
-      },
-      "read_document": {
-       "args": "b1720bbd433edbc5",
-       "description": "04758e899cfdcd4d"
-      },
-      "render_page_thumbnails": {
-       "args": "ed9d08a4314dfa0c",
-       "description": "ad7e23a3446f7810"
-      },
-      "search_document": {
-       "args": "f9b0c511f1cf1f5d",
-       "description": "15f55d293fd7a36b"
-      }
-     }
-    },
-    {
-     "call": 1,
-     "subagents": {},
-     "tools": {
-      "document_markups": {
-       "args": "ddfc51844e5b1412",
-       "description": "e76078c537260c20"
-      },
-      "document_page_map": {
-       "args": "665f72192044caac",
-       "description": "ebb841b0ff44e45e"
-      },
-      "document_structure": {
-       "args": "75aca17975a312b8",
-       "description": "90a50a09fbce2aff"
-      },
-      "find_quantities": {
-       "args": "622c49e76114bb80",
-       "description": "97e383198864374b"
-      },
-      "log_grid": {
-       "args": "e86123cad76c24ec",
-       "description": "c3b1ef0000fad549"
-      },
-      "measure": {
-       "args": "2d8ae460f3762cd2",
-       "description": "e03ebc1cf5774758"
-      },
-      "open_document": {
-       "args": "178a4b401ed2c071",
-       "description": "d9dc416f29a2cddd"
-      },
-      "read_document": {
-       "args": "b1720bbd433edbc5",
-       "description": "04758e899cfdcd4d"
-      },
-      "render_page_thumbnails": {
-       "args": "ed9d08a4314dfa0c",
-       "description": "ad7e23a3446f7810"
-      },
-      "search_document": {
-       "args": "f9b0c511f1cf1f5d",
-       "description": "15f55d293fd7a36b"
-      }
-     }
-    }
-   ]
+   }
   },
   "review_minimal": {
    "app": {
@@ -1349,20 +1097,547 @@
       }
      }
     ]
-   },
-   "planlens": [
-    {
-     "call": 0,
-     "subagents": {},
-     "tools": {}
-    },
-    {
-     "call": 1,
-     "subagents": {},
-     "tools": {}
-    }
-   ]
+   }
   }
  },
- "planlens_surface": "709cbea6e23e8aaa"
+ "planlens": {
+  "709cbea6e23e8aaa": {
+   "builds": {
+    "geotech_default": [
+     {
+      "call": 0,
+      "subagents": {
+       "calc": {},
+       "figure": {},
+       "general-purpose": {},
+       "references": {},
+       "reviewer": {}
+      },
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "e86123cad76c24ec",
+        "description": "c3b1ef0000fad549"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     }
+    ],
+    "review_default": [
+     {
+      "call": 0,
+      "subagents": {
+       "figure": {},
+       "general-purpose": {
+        "document_markups": {
+         "args": "ddfc51844e5b1412",
+         "description": "e76078c537260c20"
+        },
+        "document_page_map": {
+         "args": "665f72192044caac",
+         "description": "ebb841b0ff44e45e"
+        },
+        "document_structure": {
+         "args": "75aca17975a312b8",
+         "description": "90a50a09fbce2aff"
+        },
+        "find_quantities": {
+         "args": "622c49e76114bb80",
+         "description": "97e383198864374b"
+        },
+        "log_grid": {
+         "args": "e86123cad76c24ec",
+         "description": "c3b1ef0000fad549"
+        },
+        "measure": {
+         "args": "2d8ae460f3762cd2",
+         "description": "e03ebc1cf5774758"
+        },
+        "open_document": {
+         "args": "178a4b401ed2c071",
+         "description": "d9dc416f29a2cddd"
+        },
+        "read_document": {
+         "args": "b1720bbd433edbc5",
+         "description": "04758e899cfdcd4d"
+        },
+        "render_page_thumbnails": {
+         "args": "ed9d08a4314dfa0c",
+         "description": "ad7e23a3446f7810"
+        },
+        "search_document": {
+         "args": "f9b0c511f1cf1f5d",
+         "description": "15f55d293fd7a36b"
+        }
+       }
+      },
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "e86123cad76c24ec",
+        "description": "c3b1ef0000fad549"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     }
+    ],
+    "review_lean": [
+     {
+      "call": 0,
+      "subagents": {},
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "e86123cad76c24ec",
+        "description": "c3b1ef0000fad549"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     },
+     {
+      "call": 1,
+      "subagents": {},
+      "tools": {
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "e86123cad76c24ec",
+        "description": "c3b1ef0000fad549"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     }
+    ],
+    "review_minimal": [
+     {
+      "call": 0,
+      "subagents": {},
+      "tools": {}
+     },
+     {
+      "call": 1,
+      "subagents": {},
+      "tools": {}
+     }
+    ]
+   },
+   "planlens": "0.13.0 (source checkout)"
+  },
+  "f440beafcd9dfd89": {
+   "builds": {
+    "geotech_default": [
+     {
+      "call": 0,
+      "subagents": {
+       "calc": {},
+       "figure": {},
+       "general-purpose": {},
+       "references": {},
+       "reviewer": {}
+      },
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "b698f6bb0904fb0d",
+        "description": "d23ffbf062522815"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     }
+    ],
+    "review_default": [
+     {
+      "call": 0,
+      "subagents": {
+       "figure": {},
+       "general-purpose": {
+        "document_markups": {
+         "args": "ddfc51844e5b1412",
+         "description": "e76078c537260c20"
+        },
+        "document_page_map": {
+         "args": "665f72192044caac",
+         "description": "ebb841b0ff44e45e"
+        },
+        "document_structure": {
+         "args": "75aca17975a312b8",
+         "description": "90a50a09fbce2aff"
+        },
+        "find_quantities": {
+         "args": "622c49e76114bb80",
+         "description": "97e383198864374b"
+        },
+        "log_grid": {
+         "args": "b698f6bb0904fb0d",
+         "description": "d23ffbf062522815"
+        },
+        "measure": {
+         "args": "2d8ae460f3762cd2",
+         "description": "e03ebc1cf5774758"
+        },
+        "open_document": {
+         "args": "178a4b401ed2c071",
+         "description": "d9dc416f29a2cddd"
+        },
+        "read_document": {
+         "args": "b1720bbd433edbc5",
+         "description": "04758e899cfdcd4d"
+        },
+        "render_page_thumbnails": {
+         "args": "ed9d08a4314dfa0c",
+         "description": "ad7e23a3446f7810"
+        },
+        "search_document": {
+         "args": "f9b0c511f1cf1f5d",
+         "description": "15f55d293fd7a36b"
+        }
+       }
+      },
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "b698f6bb0904fb0d",
+        "description": "d23ffbf062522815"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     }
+    ],
+    "review_lean": [
+     {
+      "call": 0,
+      "subagents": {},
+      "tools": {
+       "annotate_document": {
+        "args": "e61aa0124fac52ee",
+        "description": "fa5c88e3b8fffb1d"
+       },
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "b698f6bb0904fb0d",
+        "description": "d23ffbf062522815"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     },
+     {
+      "call": 1,
+      "subagents": {},
+      "tools": {
+       "document_markups": {
+        "args": "ddfc51844e5b1412",
+        "description": "e76078c537260c20"
+       },
+       "document_page_map": {
+        "args": "665f72192044caac",
+        "description": "ebb841b0ff44e45e"
+       },
+       "document_structure": {
+        "args": "75aca17975a312b8",
+        "description": "90a50a09fbce2aff"
+       },
+       "find_quantities": {
+        "args": "622c49e76114bb80",
+        "description": "97e383198864374b"
+       },
+       "log_grid": {
+        "args": "b698f6bb0904fb0d",
+        "description": "d23ffbf062522815"
+       },
+       "measure": {
+        "args": "2d8ae460f3762cd2",
+        "description": "e03ebc1cf5774758"
+       },
+       "open_document": {
+        "args": "178a4b401ed2c071",
+        "description": "d9dc416f29a2cddd"
+       },
+       "read_document": {
+        "args": "b1720bbd433edbc5",
+        "description": "04758e899cfdcd4d"
+       },
+       "render_page_thumbnails": {
+        "args": "ed9d08a4314dfa0c",
+        "description": "ad7e23a3446f7810"
+       },
+       "search_document": {
+        "args": "f9b0c511f1cf1f5d",
+        "description": "15f55d293fd7a36b"
+       }
+      }
+     }
+    ],
+    "review_minimal": [
+     {
+      "call": 0,
+      "subagents": {},
+      "tools": {}
+     },
+     {
+      "call": 1,
+      "subagents": {},
+      "tools": {}
+     }
+    ]
+   },
+   "planlens": "0.13.0"
+  }
+ }
 }

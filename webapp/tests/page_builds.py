@@ -19,7 +19,9 @@ the one that picks the review page's build. Nothing calls a model or the
 network.
 
 Re-record the fingerprints after a DELIBERATE change, in its own commit
-with the reason (plan §4): ``python -m webapp.tests.page_builds record``.
+with the reason (plan §4): ``python -m webapp.tests.page_builds record``
+(from the repository root). When to, and when not to, is in
+``test_page_fingerprints.py``.
 
 This module imports only the standard library at load, so the boundary
 child can install its import hooks before anything else is imported.
@@ -370,6 +372,26 @@ def planlens_tool_names() -> frozenset:
                      + document_tools.OPTIONAL_DOCUMENT_TOOL_NAMES)
 
 
+def planlens_version() -> str:
+    """The installed planlens' version, to label a recorded ``planlens``
+    part (a main checkout carries the last release's number; an editable
+    install's metadata can be older still, so the package's own first)."""
+    try:
+        import planlens
+        where = os.path.abspath(planlens.__file__).replace("\\", "/")
+        checkout = not any(p in where for p in ("/site-packages/",
+                                                "/dist-packages/"))
+        return str(planlens.__version__) + (" (source checkout)"
+                                            if checkout else "")
+    except Exception:                                    # noqa: BLE001
+        pass
+    try:
+        from importlib.metadata import version
+        return version("planlens")
+    except Exception:                                    # noqa: BLE001
+        return "unknown"
+
+
 def planlens_surface() -> str:
     """A hash of the planlens tool specs this app reads, so a recorded
     ``planlens`` part is compared only against the same planlens."""
@@ -388,10 +410,12 @@ def fingerprint(name: str) -> dict:
     """What build ``name`` hands the agent framework, as names, numbers and
     hashes. ``app``: the app's own tools, prompts, helpers, middleware and
     budgets, the same on every machine (checked on Windows with Python
-    3.14, deepagents 0.6 and planlens main, and on Linux with Python 3.12,
-    deepagents 0.7 and planlens 0.13 from PyPI). ``planlens``: the
-    planlens-served document tools. What deepagents itself adds (its own
-    tools and prompt text) is not ours and is left out."""
+    3.14, deepagents 0.6 and planlens main, and on Linux with Pythons 3.12
+    and 3.13, deepagents 0.7 and planlens 0.13 from PyPI), given the
+    reference library CI installs (the submodule: ``plot_data`` offers
+    ``reference_chart`` only where it has ``chart_lines``). ``planlens``:
+    the planlens-served document tools. What deepagents itself adds (its
+    own tools and prompt text) is not ours and is left out."""
     agent, calls, files_dir = build(name, capture=True)
     norm = _Normaliser(files_dir)
     planlens = planlens_tool_names()
@@ -412,7 +436,31 @@ def fingerprint(name: str) -> dict:
 
 def all_fingerprints() -> dict:
     return {"planlens_surface": planlens_surface(),
+            "planlens_version": planlens_version(),
             "builds": {name: fingerprint(name) for name in BUILDS}}
+
+
+def golden_from(current: dict, old: Optional[dict] = None) -> dict:
+    """The recorded file for this tree's fingerprints: the app part as
+    built here, and the planlens part filed under the planlens it was built
+    with, beside those ``old`` recorded under other planlens versions (CI
+    installs planlens from PyPI; a developer often has planlens main)."""
+    planlens = dict((old or {}).get("planlens") or {})
+    planlens[current["planlens_surface"]] = {
+        "planlens": current.get("planlens_version", "unknown"),
+        "builds": {n: b["planlens"] for n, b in current["builds"].items()},
+    }
+    return {
+        "_about": ("What each page's agent is handed with default switches "
+                   "(BACKLOG INF-30). Re-record only for a deliberate "
+                   "change, in its own commit with the reason; a split "
+                   "step never re-records (plan step 12 is the one "
+                   "exception): python -m webapp.tests.page_builds record "
+                   "(see test_page_fingerprints.py)"),
+        "builds": {n: {"app": b["app"]}
+                   for n, b in current["builds"].items()},
+        "planlens": planlens,
+    }
 
 
 def differences(old: Any, new: Any, path: str = "") -> List[str]:
@@ -460,7 +508,8 @@ GEOTECH_TOP_LEVEL = frozenset({
     "gstools_agent", "salib_agent", "pystra_agent", "section_props_agent",
     "concrete_props_agent", "pynite_agent", "subsurface_characterization",
     "dxf_import", "dxf_export", "fem2d", "geo_project", "report_ingest",
-    "geotech_references", "validation_examples",
+    "geotech_references", "validation_examples", "foundry",
+    "foundry_test_harness",
 })
 
 GSE_MODULES = frozenset({
@@ -711,14 +760,27 @@ def _write(path: str, data: Any) -> None:
 
 def main(argv: List[str]) -> int:
     cmd = argv[0] if argv else ""
+    # As run_child runs the test's builds, so a record from a shell matches.
+    os.environ.setdefault("MPLBACKEND", "Agg")
+    os.environ["GEOTECH_NO_DISCLAIMER"] = "1"
     if cmd == "record":
-        data = all_fingerprints()
-        data["_about"] = ("What each page's agent is handed with default "
-                          "switches (BACKLOG INF-30). Re-record only for a "
-                          "deliberate change, in its own commit with the "
-                          "reason: python -m webapp.tests.page_builds record")
+        old = None
+        if os.path.exists(GOLDEN):
+            with open(GOLDEN, encoding="utf-8") as fh:
+                old = json.load(fh)
+        current = all_fingerprints()
+        data = golden_from(current, old)
         _write(GOLDEN, data)
-        print(f"wrote {GOLDEN}")
+        print(f"wrote {GOLDEN} (planlens {current['planlens_version']}, "
+              f"surface {current['planlens_surface']})")
+        others = sorted(f"{v['planlens']} ({s})"
+                        for s, v in data["planlens"].items()
+                        if s != current["planlens_surface"])
+        if others:
+            print("kept the planlens tools recorded under "
+                  + ", ".join(others) + ". If this change touched the "
+                  "document tools, record under those too (a venv with "
+                  "that planlens), or delete a stale entry.")
         return 0
     if cmd == "fingerprints":
         _write(argv[1], all_fingerprints())

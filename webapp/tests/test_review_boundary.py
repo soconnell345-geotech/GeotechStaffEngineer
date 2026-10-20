@@ -14,6 +14,18 @@ The known couplings below may only SHRINK: a new one fails the test, and so
 does one that has gone and is still listed. From step 8 only the soft ones
 remain (inside ``try``: the page works without them), and the blocking test
 turns into a plain test the page must pass with every GSE module refused.
+Until then it is a strict xfail that expects the page's own failure (an
+``AssertionError``): an unexpected pass, or the child process itself
+failing, is a failure.
+
+What neither the recorder nor the blocker sees: a module loaded from its
+file (``importlib.util.spec_from_file_location``), which the plotting box
+does with ``geotech_common/layout_ink.py`` (listed below only because the
+box's module is also imported in process) and ``plan_furniture.py`` (not
+listed; plan 2.7 names it); anything the plotting box's
+own child interpreter (``python -I``) imports; and data files read by path.
+The docreview-only CI job of step 12, with no geotech package installed,
+is the check for those.
 """
 
 import importlib.util
@@ -40,10 +52,11 @@ KNOWN_COUPLINGS = {
         "2.7 #2, step 4",
     "funhouse_agent.deep.minimal_agent -> funhouse_agent.deep.tools":
         "2.7 #2, step 4",
-    # 3. The package door shows GSE's first-import disclaimer notice; its
-    # other names load on first use since step 2 (the disclaimer goes with
-    # the package, steps 10-15).
-    "funhouse_agent -> funhouse_agent._disclaimer": "2.7 #3, step 10",
+    # 3. The package door shows GSE's first-import disclaimer notice, inside
+    # a ``try`` (so soft); its other names load on first use since step 2
+    # (the disclaimer goes with the package, steps 10-15).
+    "funhouse_agent -> funhouse_agent._disclaimer":
+        "2.7 #3, soft, step 10",
     # 4. The chart stack behind plot_data and the plotting box (step 6).
     "funhouse_agent.plot_box.child -> geotech_common": "2.7 figure, step 6",
     "funhouse_agent.plot_box.child -> geotech_common.layout_ink":
@@ -136,6 +149,7 @@ def test_gse_reaches_into_review_files_only_where_known(review_run,
 
 @pytest.mark.xfail(
     condition=bool(set(KNOWN_COUPLINGS) - SOFT_COUPLINGS), strict=True,
+    raises=AssertionError,
     reason="The review page still imports GSE modules outside a try "
            "(KNOWN_COUPLINGS); from step 8 of the split it must build and "
            "run without them, and this mark lifts itself.")
