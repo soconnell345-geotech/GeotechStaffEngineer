@@ -389,6 +389,63 @@ class TestTheCountsPythonCounts:
         assert counted["figure_labels"] == ["figure 1"]
 
 
+class _Line:
+    def __init__(self, text):
+        self.text = text
+
+
+class _StubDoc:
+    """A document whose pages are lists of caption lines."""
+
+    def __init__(self, pages):
+        self._pages = pages
+
+    def page(self, number, tables=False):
+        class _Content:
+            lines = [_Line(t) for t in self._pages[number]]
+        return _Content
+
+
+class TestTheConfirmedCounts:
+    """RI-36: structureCount and figureCount follow the OWN-08 conventions."""
+
+    def test_appendix_figures_are_not_counted(self):
+        stub = _StubDoc({1: ["Figure 1 - Site Plan", "Figure 2 - Boring Plan"],
+                         2: ["Figure A-1 - Boring Log Key",
+                             "FIGURE B.2: Lab Summary Plot",
+                             "Table 1 - Summary"]})
+        counted = count_captions(stub, [1, 2])
+
+        assert counted["figures"] == 2
+        assert counted["figure_labels"] == ["figure 1", "figure 2"]
+        assert counted["appendix_figure_labels"] == ["figure A-1",
+                                                     "figure B.2"]
+        assert counted["tables"] == 1
+
+    def test_structure_count_is_the_number_of_listed_structures(self, doc):
+        reading = full_reading(structureList=["Building A", "Building B",
+                                              "Retaining wall"])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert result.general.structureCount == 3
+
+    def test_a_stated_structure_count_that_differs_is_recorded(self, doc):
+        reading = full_reading(structureCount=5,
+                               structureList=["Building A", "Building B"])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert result.general.structureCount == 2
+        assert result.facts.stated_counts["structures"] == 5
+        assert any(u["what"] == "structureCount" and "structureList" in u["why"]
+                   for u in result.unresolved)
+
+    def test_a_structure_count_with_no_list_keeps_the_reading(self, doc):
+        result = read(doc, FakeEngine([{"final": full_reading(
+            structureCount=4)}]))
+
+        assert result.general.structureCount == 4
+
+
 class TestALongNarrative:
     """Read in parts, merged in Python, summarised once."""
 
