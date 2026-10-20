@@ -510,10 +510,12 @@
    "soldier beam",
    "tributary method",
    "hinge method",
-   "anchor design load"
+   "anchor design load",
+   "bond length",
+   "unbonded length"
   ],
   "source": "FHWA GEC-4, 'Ground Anchors and Anchored Systems' (FHWA-IF-99-015), Appendix A, Design Example 1: two-tier anchored soldier-beam wall.",
-  "problem": "A 10 m anchored soldier-beam wall in medium dense silty sand (gamma = 18 kN/m3, phi' = 33 deg, no groundwater) has two anchor levels at 2.5 m and 6.25 m below the top (H1 = 2.5 m, H2 = H3 = 3.75 m). Soldier beams are spaced 2.5 m horizontally and anchors are inclined 15 deg. A traffic surcharge qs = 11 kPa (0.6 m of soil) acts at the surface. Compute the FHWA apparent-pressure trapezoid ordinate pe, the surcharge pressure ps, the tributary horizontal anchor loads, the subgrade reaction, the hinge-method moments, and the inclined anchor design loads.",
+  "problem": "A 10 m anchored soldier-beam wall in medium dense silty sand (gamma = 18 kN/m3, phi' = 33 deg, no groundwater) has two anchor levels at 2.5 m and 6.25 m below the top (H1 = 2.5 m, H2 = H3 = 3.75 m). Soldier beams are spaced 2.5 m horizontally and anchors are inclined 15 deg. A traffic surcharge qs = 11 kPa (0.6 m of soil) acts at the surface. Compute the FHWA apparent-pressure trapezoid ordinate pe, the surcharge pressure ps, the tributary horizontal anchor loads, the subgrade reaction, the hinge-method moments, and the inclined anchor design loads. Then size the anchors: the bond zone is in the medium dense silty sand at GEC-4 Table 6's 100 kN/m with FS 2.0; give the bond length for the maximum design load and the unbonded lengths of the bar anchors (upper and lower) and of a strand anchor at the lower level.",
   "dispatch_calls": [
    {
     "module": "soe",
@@ -530,9 +532,48 @@
      "spacing": 2.5,
      "inclination_deg": 15.0
     }
+   },
+   {
+    "module": "soe",
+    "method": "design_ground_anchor",
+    "params": {
+     "design_load_kN": 445.0,
+     "excavation_depth": 10.0,
+     "phi_deg": 33.0,
+     "soil_type": "sand_silt_medium",
+     "anchor_angle_deg": 15.0,
+     "anchor_depth": 2.5,
+     "tendon_type": "bar_32mm"
+    }
+   },
+   {
+    "module": "soe",
+    "method": "design_ground_anchor",
+    "params": {
+     "design_load_kN": 445.0,
+     "excavation_depth": 10.0,
+     "phi_deg": 33.0,
+     "soil_type": "sand_silt_medium",
+     "anchor_angle_deg": 15.0,
+     "anchor_depth": 6.25,
+     "tendon_type": "bar_32mm"
+    }
+   },
+   {
+    "module": "soe",
+    "method": "design_ground_anchor",
+    "params": {
+     "design_load_kN": 445.0,
+     "excavation_depth": 10.0,
+     "phi_deg": 33.0,
+     "soil_type": "sand_silt_medium",
+     "anchor_angle_deg": 15.0,
+     "anchor_depth": 6.25,
+     "tendon_type": "strand_15mm"
+    }
    }
   ],
-  "published_result": "Ka = 0.295; apparent-pressure ordinate pe = 43.6 kN/m2; surcharge ps = 3.2 kPa; tributary horizontal anchor loads TH1 = 168 kN/m, TH2 = 172 kN/m; subgrade reaction R = 37 kN/m; anchor design loads DL1 = 435 kN, DL2 = 445 kN; hinge moments M2/M3 = 66 kN-m/m, published M1 = 76 kN-m/m (governs).",
+  "published_result": "Ka = 0.295; apparent-pressure ordinate pe = 43.6 kN/m2; surcharge ps = 3.2 kPa; tributary horizontal anchor loads TH1 = 168 kN/m, TH2 = 172 kN/m; subgrade reaction R = 37 kN/m; anchor design loads DL1 = 435 kN, DL2 = 445 kN; hinge moments M2/M3 = 66 kN-m/m, published M1 = 76 kN-m/m (governs). Anchors (pp. A-8, A-9, Figure A-3): load transfer 100 kN/m (Table 6, medium dense silty sand), FS 2.0, maximum bond length (445 kN)(2.0)/(100 kN/m) = 8.9 m; unbonded lengths 5.7 m (upper) and 3.9 m (lower) for bar anchors, 2 m beyond the critical failure surface; minimum unbonded length 3 m for bar and 4.5 m for strand anchors.",
   "computed_result": {
    "Ka": 0.2948,
    "pe_kPa": 43.568,
@@ -544,18 +585,27 @@
    "DL2_kN": 445.53,
    "subgrade_reaction_kN_per_m": 36.714,
    "max_moment_kN_m_per_m": 70.434,
-   "note": "All quantities within 2% of published. max_moment uses the compact (13/54)*H1^2*(pe+ps) top-hinge form = 70.4 kN-m/m — a documented CONVENTION vs the published 76 (GEC-4 applies the uniform surcharge over a larger tributary in the top region); the dominant earth-pressure part (13/54)*pe*H1^2 = 65.6 is exact."
+   "note": "All quantities within 2% of published. max_moment uses the compact (13/54)*H1^2*(pe+ps) top-hinge form = 70.4 kN-m/m — a documented CONVENTION vs the published 76 (GEC-4 applies the uniform surcharge over a larger tributary in the top region); the dominant earth-pressure part (13/54)*pe*H1^2 = 65.6 is exact. Anchors (design_ground_anchor, checked 2026-10-20, GM-199): bond length 8.9 m and unbonded lengths 5.74 m / 3.90 m (bar) and 4.5 m (strand, lower: its minimum governs) match Figure A-3's 8.9, 5.7 and 3.9 m and its strand footnote. The module's limit line is the greater of 1.5 m and H/5 behind the 45 + phi/2 surface, measured normal to it (2.0 m at H = 10 m), the example's 2 m. The upper anchor's own load (DL1 = 436 kN) gives 8.7 m; the example sizes both at the maximum 445 kN.",
+   "anchor_load_transfer_kN_per_m": 100.0,
+   "anchor_FOS_bond": 2.0,
+   "anchor_bond_length_m": 8.9,
+   "anchor_unbonded_upper_bar_m": 5.74,
+   "anchor_unbonded_lower_bar_m": 3.9,
+   "anchor_unbonded_lower_strand_m": 4.5
   },
-  "report_notes": "A good report draws the trapezoidal apparent-pressure diagram (2/3-H1 top transition, 2/3-Hn+1 bottom transition), shows pe = 0.65*Ka*gamma*H^2 / (H - H1/3 - Hn+1/3) with the Ka basis, and tabulates the tributary calculation for each anchor (TH), the subgrade reaction R, and the design loads DL = TH * spacing / cos(inclination). Note the top-hinge moment convention: the compact (13/54)H1^2(pe+ps) form gives 70.4 vs the published 76 kN-m/m due to the surcharge-tributary treatment — state which was used. Apparent-pressure envelopes are for anchor loads and wall moments; embedment comes from a separate toe analysis.",
-  "provenance": "validation_examples/test_published_v012_v025.py::test_v016_fhwa_apparent_pressure_high_level, test_v016_Ka_and_pe, test_v016_tributary_anchor_loads, test_v016_anchor_design_loads, test_v016_hinge_moments",
+  "report_notes": "A good report draws the trapezoidal apparent-pressure diagram (2/3-H1 top transition, 2/3-Hn+1 bottom transition), shows pe = 0.65*Ka*gamma*H^2 / (H - H1/3 - Hn+1/3) with the Ka basis, and tabulates the tributary calculation for each anchor (TH), the subgrade reaction R, and the design loads DL = TH * spacing / cos(inclination). Note the top-hinge moment convention: the compact (13/54)H1^2(pe+ps) form gives 70.4 vs the published 76 kN-m/m due to the surcharge-tributary treatment — state which was used. Apparent-pressure envelopes are for anchor loads and wall moments; embedment comes from a separate toe analysis. For the anchors, show the critical failure surface at 45 + phi/2 from the corner of the excavation, the limit line behind it (the greater of 1.5 m and H/5), the unbonded length of each anchor to that line with the tendon's minimum (3 m bar, 4.5 m strand), and the bond length FS x DL / load transfer with the Table 6 row named; say which design load sized the bond (the maximum, as GEC-4 does, or each anchor's own).",
+  "provenance": "validation_examples/test_published_v012_v025.py::test_v016_fhwa_apparent_pressure_high_level, test_v016_Ka_and_pe, test_v016_tributary_anchor_loads, test_v016_anchor_design_loads, test_v016_hinge_moments; soe/tests/test_anchor_gec4.py::test_gec4_example_1_soil (the anchor lengths)",
   "source_doc": "GEC 4.pdf",
   "source_pdf_pages": [
    207,
-   208,
-   209,
-   210
+   210,
+   211,
+   212,
+   213,
+   214,
+   215
   ],
-  "source_pages_estimated": true
+  "source_pages_estimated": false
  },
  {
   "id": "WE-GI-1",

@@ -124,7 +124,11 @@ class AnchorDesignResult:
         transfer is per metre (GM-191; until then the table's value read
         as kPa).
     soil_type : str
-        Soil/rock type of the bond zone (a GEC-4 Table 6 or 8 row).
+        Soil/rock type of the bond zone (a GEC-4 Table 6 or 8 row), or the
+        ground alone ("soil" or "rock") beside a given load transfer.
+    ground : str
+        The ground of the bond zone, "soil" or "rock": it set FOS_bond's
+        default and the minimum bond length (GM-199).
     drill_diameter_mm : float or None
         Drill hole diameter (mm) a given bond stress acts on; None when
         the load transfer is per metre (the hole does not enter it).
@@ -157,6 +161,7 @@ class AnchorDesignResult:
     FOS_bond: float = 2.0
     bond_stress_kPa: Optional[float] = None
     soil_type: str = ""
+    ground: str = ""
     drill_diameter_mm: Optional[float] = None
     tendon: Dict[str, Any] = field(default_factory=dict)
     test_load_factor: float = 1.33
@@ -233,6 +238,7 @@ class AnchorDesignResult:
             "FOS_bond": self.FOS_bond,
             "bond_stress_kPa": self.bond_stress_kPa,
             "soil_type": self.soil_type,
+            "ground": self.ground,
             "drill_diameter_mm": self.drill_diameter_mm,
             "tendon": self.tendon,
             "test_load_factor": self.test_load_factor,

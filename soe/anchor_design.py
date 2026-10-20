@@ -127,6 +127,15 @@ _LOAD_TRANSFER_TABLE = {
 ROCK_TYPES = tuple(k for k, v in _LOAD_TRANSFER_TABLE.items()
                    if v["ground"] == "rock")
 
+#: The row a call that gives no load transfer of its own takes (GEC-4
+#: Table 6, sand, medium dense, 145 kN/m).
+DEFAULT_SOIL_TYPE = "sand_medium"
+
+#: The ground alone, as a ``soil_type`` beside a given bond stress or load
+#: transfer (GM-199): it sets the factor of safety and the minimum bond
+#: length and has no load transfer of its own.
+GROUNDS = ("soil", "rock")
+
 #: The rows GM-191 removed, with what each was and where to look instead.
 _REMOVED_TYPES = {
     "gravel": "'gravel' (sand-gravel mixtures, 310 kPa) was removed (GM-191): "
@@ -583,7 +592,7 @@ def design_ground_anchor(
     anchor_depth: float,
     excavation_depth: float,
     phi_deg: float,
-    soil_type: str = "sand_medium",
+    soil_type: Optional[str] = None,
     anchor_angle_deg: float = 15.0,
     drill_diameter_mm: Optional[float] = None,
     tendon_type: str = "strand_15mm",
@@ -609,13 +618,20 @@ def design_ground_anchor(
         Total excavation depth H (m).
     phi_deg : float
         Friction angle of retained soil (degrees).
-    soil_type : str
+    soil_type : str, optional
         The ground of the bond zone, a row of GEC-4 Table 6 (soil, p. 71)
         or Table 8 (rock, p. 74): its presumptive ultimate load transfer
         (kN/m) is used per metre of bond length (GM-191), and its ground
         sets FOS_bond's default and the minimum bond length. Default
         "sand_medium" (sand, medium dense, 145 kN/m). See
-        :func:`list_bond_stress_types`.
+        :func:`list_bond_stress_types`. Beside a given ``bond_stress_kPa``
+        or ``load_transfer_kN_per_m`` it may also be the ground alone,
+        "soil" or "rock", and it is not defaulted: the value does not say
+        the ground (GEC-4 Table 7, p. 73, prints bond stresses of 0.15 to
+        3.1 MPa in rock and 0.03 to 1.38 MPa in soil), so a given one with
+        no soil_type is refused (GM-199, 2026-10-20; before, it took the
+        default's soil, and a rock bond stress got the soil FS 2.0 and the
+        soil minimum bond length).
     anchor_angle_deg : float
         Anchor inclination below horizontal (degrees). Default 15.
     drill_diameter_mm : float, optional
@@ -667,11 +683,39 @@ def design_ground_anchor(
             "perimeter) or load_transfer_kN_per_m (kN per metre of bond "
             "length), not both")
 
-    # The ground: its row gives the load transfer and, beside a given one,
-    # still says soil or rock for the factor of safety and the minimum
-    # bond length.
-    row = _row(soil_type)
-    ground = row["ground"]
+    # The ground of the bond zone, soil or rock, for the factor of safety
+    # and the minimum bond length: soil_type's row, or, beside a given load
+    # transfer, the ground alone. A given load transfer with no soil_type
+    # is refused: its value does not say the ground (GM-199).
+    given = ("bond_stress_kPa" if bond_stress_kPa is not None else
+             "load_transfer_kN_per_m" if load_transfer_kN_per_m is not None
+             else None)
+    if soil_type is None:
+        if given is not None:
+            raise ValueError(
+                f"{given} is given but not the ground of the bond zone: "
+                "give soil_type='soil' or 'rock' (or a GEC-4 Table 6 soil "
+                "or Table 8 rock row). The ground sets the factor of "
+                "safety on bond (GEC-4 Sec. 5.3.6: 2.0 in soil, p. 71; 3.0 "
+                "in competent rock and 2.0 in weak rocks such as clay "
+                "shales, p. 74) and the minimum bond length (App. E Part 3 "
+                "B, p. E-15: 3 m for a bar in rock, else 4.5 m). The value "
+                "alone does not say it: GEC-4 Table 7 (p. 73) prints bond "
+                "stresses of 0.15 to 3.1 MPa in rock and 0.03 to 1.38 MPa "
+                "in soil")
+        soil_type = DEFAULT_SOIL_TYPE
+    if soil_type in GROUNDS:
+        if given is None:
+            raise ValueError(
+                f"soil_type '{soil_type}' names the ground alone and has no "
+                "load transfer of its own: give bond_stress_kPa or "
+                "load_transfer_kN_per_m with it, or a GEC-4 Table 6 soil or "
+                "Table 8 rock row (list_bond_stress_types)")
+        row = None
+        ground = soil_type
+    else:
+        row = _row(soil_type)
+        ground = row["ground"]
     bar = tendon_type in _BAR_DATA
 
     # Ultimate load transfer per metre of bond length (kN/m)
@@ -755,6 +799,7 @@ def design_ground_anchor(
         bond_stress_kPa=(None if bond_stress_kPa is None
                          else round(bond_stress_kPa, 1)),
         soil_type=soil_type,
+        ground=ground,
         drill_diameter_mm=diameter,
         tendon=tendon,
         test_load_factor=test_load_factor,
@@ -798,18 +843,21 @@ _BOND_FS = (
 )
 
 
-def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
+def anchor_choices(soil_type: str,
+                   bond_stress_kPa: Optional[float],
                    load_transfer_kN_per_m: Optional[float], q: float,
                    FOS_bond: Optional[float], fs: float,
                    max_load_pct: float, test_load_factor: float,
                    governed_by: str, *, diameter: Optional[float] = None,
                    drill_diameter_mm: Optional[float] = None,
                    bar: bool = False, H: float = 0.0) -> list:
-    """What :func:`design_ground_anchor` chose (GM-185, GM-191/192), as a
-    result's ``choices`` (``geotech_common.choices``)."""
+    """What :func:`design_ground_anchor` chose (GM-185, GM-191/192/199),
+    as a result's ``choices`` (``geotech_common.choices``). ``soil_type``
+    is a row, or the ground alone ("soil" or "rock") beside a given load
+    transfer."""
     from geotech_common.choices import MODULE, choice, how_given
-    row = _LOAD_TRANSFER_TABLE[soil_type]
-    ground = row["ground"]
+    row = _LOAD_TRANSFER_TABLE.get(soil_type)
+    ground = row["ground"] if row is not None else soil_type
     out = [
         choice("anchor design method",
                "GEC-4 (FHWA-IF-99-015) Sec. 5.3", MODULE,
@@ -846,7 +894,11 @@ def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
                f"{governed_by}"),
     ]
     by_row = (f"soil_type '{soil_type}': {row['load_transfer_kN_per_m']:g} "
-              f"kN/m, {row['description']} ({row['source']})")
+              f"kN/m, {row['description']} ({row['source']})"
+              if row is not None else
+              "soil_type, a GEC-4 Table "
+              + ("6 soil" if ground == "soil" else "8 rock")
+              + " row, for its presumptive ultimate load transfer per metre")
     given_transfer = ("load_transfer_kN_per_m, e.g. as verified by "
                       "preproduction performance tests (GEC-4 p. 75)")
     given_stress = ("bond_stress_kPa from GEC-4 Table 7 (p. 73, after PTI "
@@ -890,7 +942,7 @@ def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
             "ultimate load transfer",
             f"{q:g} kN/m for soil_type '{soil_type}' "
             f"({row['description']}; {row['source']})",
-            how_given(soil_type, "sand_medium", name="soil_type"),
+            how_given(soil_type, DEFAULT_SOIL_TYPE, name="soil_type"),
             f"{row['source']}: presumptive ultimate values of load transfer "
             f"for preliminary design of {table}, per metre of bond length; "
             f"{caveat}. The drill hole diameter does not enter it (until "
@@ -904,7 +956,12 @@ def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
         "(p. 71); 3.0 in competent rock, \"to account for uncertainties "
         "associated with potential discontinuities in the rock mass\", and "
         "2.0 in weak rocks such as clay shales (p. 74). The default follows "
-        f"soil_type: '{soil_type}' is {ground}",
+        + (f"soil_type: '{soil_type}' is {ground}" if row is not None else
+           f"soil_type '{soil_type}', the ground as given beside the given "
+           "load transfer, whose value does not say it")
+        + ("" if bond_stress_kPa is None and load_transfer_kN_per_m is None
+           else ". Until GM-199 a given bond stress or load transfer with "
+           "no soil_type took the default soil_type's soil"),
         [text for f, text in _BOND_FS if abs(f - fs) > 1e-9]))
     clear = distance_behind_failure_surface(H)
     out.append(choice(
