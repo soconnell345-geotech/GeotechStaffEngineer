@@ -778,9 +778,9 @@ def build_calc_subagent(
             n=int(max_model_calls))
     # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
     # owner on calc packages' figures, 2026-10-15).
-    from funhouse_agent.deep.figure_helper import (CALC_REDRAW_NOTE,
-                                                   FigureLooks,
-                                                   _plot_code_tool)
+    from funhouse_agent.deep.calc_figures import (CALC_REDRAW_NOTE,
+                                                  FigureLooks)
+    from funhouse_agent.deep.figure_helper import _plot_code_tool
     description = _CALC_DESCRIPTION
     plot_code = _plot_code_tool()
     if plot_code is not None:
@@ -1662,7 +1662,7 @@ def build_deep_agent(
         # at the output limit is caught before anything acts on it (C5).
         # A helper's own result notes (the calc helper's FigureLooks) go
         # just inside DeliveredToolResults, so the activity log shows them.
-        from funhouse_agent.deep.figure_helper import FigureLooks
+        from funhouse_agent.deep.calc_figures import FigureLooks
         notes = [m for m in spec.get("middleware") or []
                  if isinstance(m, FigureLooks)]
         if notes:

@@ -56,6 +56,12 @@ from calc_package.tables import (
 )
 
 
+# The Word renderer is in funhouse_agent.docx_renderer (INF-30 step 5), which
+# both pages use; calc_package.docx_renderer is the same module.
+import sys as _sys
+from funhouse_agent import docx_renderer
+_sys.modules[__name__ + ".docx_renderer"] = docx_renderer
+
 # Registry of supported modules — populated lazily on first use
 _MODULE_REGISTRY = {}
 

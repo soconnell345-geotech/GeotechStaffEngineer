@@ -25,6 +25,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, WithJsonSchema, create_model
 
 from funhouse_agent import document_tools as _document_tools
+from funhouse_agent.deep.limits import DEFAULT_MAX_RESULT_CHARS
 from funhouse_agent.deep.strict_args import strict_tool
 from funhouse_agent.vision_tools import (
     IMAGE_FIND_NOTE,
@@ -42,12 +43,6 @@ from funhouse_agent.vision_tools import (
 # ---------------------------------------------------------------------------
 # Tool-result size cap (token-bloat guard)
 # ---------------------------------------------------------------------------
-
-#: Default cap on the size of a tool result fed back to the model, mirroring
-#: v1's ``GeotechAgent._max_result_chars`` (``funhouse_agent/agent.py``). Large
-#: reference-text dumps from the references sub-agent would otherwise be
-#: re-sent on every ReAct round and compound the input-token cost.
-DEFAULT_MAX_RESULT_CHARS = 8000
 
 #: Larger default cap for REFERENCE reads (``call_agent`` on a reference
 #: module + ``read_reference_figure``): for those tools the reference text IS

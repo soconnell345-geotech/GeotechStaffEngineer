@@ -370,7 +370,7 @@ def test_write_docx_without_a_renderer_returns_an_instruction(monkeypatch,
     real_import = builtins.__import__
 
     def no_renderer(name, *args, **kwargs):
-        if name == "calc_package.docx_renderer":
+        if name == "funhouse_agent.docx_renderer":
             raise ImportError("No module named 'docx'")
         return real_import(name, *args, **kwargs)
 

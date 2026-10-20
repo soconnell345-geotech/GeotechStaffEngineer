@@ -69,14 +69,8 @@ KNOWN_COUPLINGS = {
     "funhouse_agent.plot_box.child -> geotech_common.layout_ink":
         "2.7 figure, step 6",
     # 5. (The review prompt's module was GSE's: gone at step 3.)
-    # Further couplings (step 5).
-    "funhouse_agent.deep.calculate_tool -> "
-    "funhouse_agent.adapters.reliability_adapter": "2.7 further, step 5",
-    "funhouse_agent.vision_tools -> calc_package.docx_renderer":
-        "2.7 further, step 5",
-    # The figure helper on the review page (GM-227; steps 6 and 8).
-    "funhouse_agent.deep.figure_helper -> funhouse_agent.deep.agent":
-        "2.7 figure, step 8",
+    # (Further couplings: calculate's evaluator, the Word renderer and the
+    # figure helper's result cap, gone at step 5.)
     # Soft: inside ``try``, the page works without them (hooks, step 11).
     "funhouse_agent.plot_box -> geotech_references.chart_lines":
         "2.7 soft, step 12",

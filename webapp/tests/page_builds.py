@@ -525,6 +525,7 @@ GSE_MODULES = frozenset({
     "funhouse_agent.report_checklist", "funhouse_agent.adapters",
     "funhouse_agent.deep.agent", "funhouse_agent.deep.prompt",
     "funhouse_agent.deep.tools", "funhouse_agent.deep.fit_results",
+    "funhouse_agent.deep.calc_figures",
     "funhouse_agent.deep.setup_agent", "funhouse_agent.deep.setup_tools",
     "funhouse_agent.deep.unknown_tool", "funhouse_agent.deep.eval_harness",
     "funhouse_agent.deep.selfcheck", "funhouse_agent.deep.rc_wheel_check",
