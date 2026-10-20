@@ -419,9 +419,14 @@ def test_fill_layer_self_weight_moves_into_the_load_stage():
             'max_excess_pore_pressure_kPa_by_time'][0]
 
 
-def test_underwater_fill_is_refused():
-    with pytest.raises(ValueError, match="above the water table"):
-        _fill_column(gwt=0.0)
+def test_underwater_fill_is_accepted():
+    """Refused until 2026-10-20 (GM-09); now the fill below the water table
+    loads the clay by its buoyant weight: s_load = (20 q + 38 g') / M
+    (hand checks in test_consolidation_startup_fill.py)."""
+    d = _fill_column(gwt=0.0).to_dict()
+    gp = 18.0 - 9.81
+    assert d['stages'][1]['surface_settlement_m'] == pytest.approx(
+        -(20 * 100.0 + 38 * gp) / M_OED, rel=0.01)
 
 
 def test_fill_must_be_the_top_layer():

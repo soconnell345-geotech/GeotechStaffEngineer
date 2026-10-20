@@ -1227,15 +1227,57 @@ class SoilProfile:
         span = f"{z_top:g}-{z_bot:g} m"
 
         if layer.is_rock:
-            qu = layer.qu if layer.qu is not None else 1000.0
-            Er = 200.0 * qu  # Default estimate
+            # Weak rock, Reese (1997) as printed in FHWA GEC 9 (2018) App.
+            # A.5, p. 231 (GM-161): the criterion needs the uniaxial
+            # compressive strength of the intact rock and the deformation
+            # modulus of the rock mass E_m, "which could be obtained from a
+            # pressuremeter or dilatometer test". Neither has a printed
+            # default, so both are required (before 2026-10-20 qu took 1000
+            # kPa and E_r 200 qu, with no source).
+            missing = [n for n, v in (("qu", layer.qu), ("Es", layer.Es))
+                       if v is None]
+            if missing:
+                raise ValueError(
+                    f"rock layer '{layer.description}' {span}: give "
+                    + " and ".join(
+                        {"qu": "qu (uniaxial compressive strength of the "
+                               "intact rock, kPa)",
+                         "Es": "Es (the deformation modulus of the rock "
+                               "mass E_m, kPa)"}[n] for n in missing)
+                    + " for the weak-rock p-y criterion (Reese 1997, FHWA "
+                    "GEC 9 App. A.5, p. 231: E_m from a pressuremeter or "
+                    "dilatometer test). Neither manual prints a default; "
+                    "FHWA GEC 10 (2018) p. 9-31 reports load tests on "
+                    "shafts in decomposed quartzite (RQD 0) modelled with "
+                    "qu 180 psi, E_ir 27,000 psi (150 qu) and krm 0.0004, "
+                    "which 'might represent a reasonable lower bound' "
+                    "where hard but decomposed rock is known to be present "
+                    "and the investigation gives little strength "
+                    "information.")
+            qu = float(layer.qu)
+            Er = float(layer.Es)
             gamma_r = layer.gamma if layer.gamma is not None else 22.0
-            rqd = layer.RQD if layer.RQD is not None else 50.0
+            rock_choices = [choice(
+                f"rock mass modulus E_m {span}", Er, "given",
+                "the layer's Es, taken as E_m of Reese (1997), FHWA GEC 9 "
+                "App. A.5 Eq. A-35, p. 231")]
+            if layer.RQD is not None:
+                rqd = float(layer.RQD)
+            else:
+                rqd = 100.0
+                rock_choices.append(choice(
+                    f"RQD {span} (%)", rqd, MODULE,
+                    "not given; FHWA GEC 9 App. A.5, p. 231: alpha_r = "
+                    "0.33 at RQD 100 % rising linearly to 1.0 at RQD 0, so "
+                    "RQD 100 takes the smallest printed alpha_r (the lower "
+                    "ultimate resistance), the same default as the "
+                    "lateral_pile tool",
+                    ["the RQD from the core logs"]))
             return {
                 "type": "WeakRock",
                 "params": {"qu": qu, "Er": Er, "gamma_r": gamma_r,
                            "RQD": rqd, "loading": loading},
-                "choices": [],
+                "choices": rock_choices,
             }
 
         if layer.is_cohesive is True and layer.cu is not None:
