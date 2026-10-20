@@ -22,6 +22,21 @@ from typing import Optional, List
 import numpy as np
 
 
+#: How a layer's unit skin friction is worked out (GM-249): the Beta method
+#: (fs = beta sigma'v, UFC 3-220-20 Eq 6-7) or the Alpha method (fs = alpha
+#: cu, UFC 3-220-20 Eq 6-8). A cohesionless layer takes the Beta method; a
+#: cohesive layer the Alpha method unless ``skin_friction_method="beta"``.
+SKIN_FRICTION_METHODS = ("alpha", "beta")
+
+#: Where the Beta method is printed for cohesive soil (long-term, drained
+#: conditions), and its values in clay.
+BETA_IN_CLAY_CITE = "UFC 3-220-20 §6-5.4.1, p. 411; FHWA GEC-12 §7.2.1.3.4, p. 255"
+BETA_IN_CLAY_VALUES = (
+    "from local experience, else from phi' by GEC-12 Table 7-9, p. 256 "
+    "(after Fellenius 2014): clay 0.15-0.35 for phi' 25-30 deg; UFC "
+    "3-220-20 Table 6-15, p. 414, the same for driven piles in clay")
+
+
 @dataclass
 class DowndragSoilLayer:
     """A soil layer for downdrag analysis.
@@ -38,15 +53,21 @@ class DowndragSoilLayer:
     unit_weight : float
         Total unit weight above GWT, or saturated unit weight below GWT (kN/m^3).
     phi : float
-        Effective friction angle (degrees). Required for cohesionless.
+        Effective friction angle (degrees). Required for cohesionless; a
+        cohesive layer does not take it (nothing would use it).
     cu : float
-        Undrained shear strength (kPa). Required for cohesive.
+        Undrained shear strength (kPa). Required for a cohesive layer with
+        the Alpha method, and for a cohesive layer the pile toe sits in
+        (toe resistance Nt x cu, 9 cu unless Nt is given).
     beta : float, optional
-        Override beta coefficient for skin friction. If None, computed
-        from phi using Fellenius (1991): beta = (1-sin(phi))*tan(phi).
+        Beta coefficient for skin friction (fs = beta sigma'v). Cohesionless:
+        if None, computed from phi using Fellenius (1991): beta =
+        (1-sin(phi))*tan(phi). Cohesive: only with
+        ``skin_friction_method="beta"``, which requires it.
     alpha : float, optional
-        Override alpha coefficient for cohesive skin friction.
-        If None, defaults to 1.0 (conservative for soft clay).
+        Alpha coefficient for cohesive skin friction (fs = alpha cu), Alpha
+        method only. If None, defaults to 1.0 (conservative for soft clay).
+        A cohesionless layer does not take it.
     Cc : float
         Compression index. Required if settling=True and cohesive. Given
         with e0 on any clay, C_ec and C_er are derived from them, settling
@@ -76,6 +97,15 @@ class DowndragSoilLayer:
         True if this layer settles due to fill placement or GW drawdown.
     description : str
         Layer description.
+    skin_friction_method : str, optional
+        ``"alpha"`` or ``"beta"``; None (default) = the layer's default: the
+        Alpha method (fs = alpha cu, UFC 3-220-20 Eq 6-8) for a cohesive
+        layer, the Beta method (fs = beta sigma'v, Eq 6-7) for a
+        cohesionless one. ``"beta"`` on a cohesive layer is the effective
+        stress option for long-term, drained conditions (UFC 3-220-20
+        §6-5.4.1; FHWA GEC-12 §7.2.1.3.4) and needs ``beta`` (GEC-12
+        Table 7-9: clay 0.15-0.35). A cohesionless layer takes the Beta
+        method only. :attr:`fs_method` is the method used.
     """
     thickness: float
     soil_type: str
@@ -94,6 +124,77 @@ class DowndragSoilLayer:
     nu_s: float = 0.3
     settling: bool = False
     description: str = ""
+    skin_friction_method: Optional[str] = None
+
+    @property
+    def fs_method(self) -> str:
+        """The skin friction method the layer uses: ``"alpha"`` or
+        ``"beta"`` (``skin_friction_method`` or the soil type's default)."""
+        if self.skin_friction_method is not None:
+            return self.skin_friction_method
+        return "alpha" if self.soil_type == "cohesive" else "beta"
+
+    def _check_skin_friction_inputs(self):
+        """Refuse a skin friction input the layer would not use (GM-249:
+        a ``beta`` on a clay was dropped without a word), naming the input
+        that takes effect."""
+        method = self.skin_friction_method
+        if method is not None and method not in SKIN_FRICTION_METHODS:
+            raise ValueError(
+                f"skin_friction_method must be one of "
+                f"{list(SKIN_FRICTION_METHODS)}, got '{method}'")
+        if self.soil_type == "cohesionless":
+            if method == "alpha":
+                raise ValueError(
+                    "A cohesionless layer does not take skin_friction_method "
+                    "'alpha': its skin friction is beta x sigma'v (the Beta "
+                    "method, UFC 3-220-20 Eq 6-7), beta as given or from "
+                    "phi. The Alpha method is for cohesive layers.")
+            if self.alpha is not None:
+                raise ValueError(
+                    "A cohesionless layer does not take alpha: its skin "
+                    "friction is beta x sigma'v (the Beta method, UFC "
+                    "3-220-20 Eq 6-7), beta as given or from phi. Leave "
+                    "alpha out.")
+            return
+        if self.phi > 0:
+            raise ValueError(
+                "A cohesive layer does not take phi: its skin friction is "
+                "alpha x cu (the Alpha method, the default), or beta x "
+                "sigma'v with skin_friction_method 'beta' and beta given, "
+                "and a toe in it takes Nt x cu (9 cu unless Nt is given). "
+                "For a clay in long-term, drained conditions, give "
+                f"skin_friction_method 'beta' with beta ({BETA_IN_CLAY_VALUES}"
+                "); the module does not work beta out from phi' in clay. "
+                "Leave phi out.")
+        if self.fs_method == "alpha":
+            if self.beta is not None:
+                raise ValueError(
+                    "A cohesive layer does not take beta with the Alpha "
+                    "method (the default for cohesive soil): its skin "
+                    "friction is alpha x cu (UFC 3-220-20 Eq 6-8). For "
+                    "beta x sigma'v, the Beta method for long-term, drained "
+                    f"conditions ({BETA_IN_CLAY_CITE}), give "
+                    "skin_friction_method 'beta' with beta "
+                    f"({BETA_IN_CLAY_VALUES}); otherwise leave beta out.")
+            if self.cu <= 0:
+                raise ValueError(
+                    f"Cohesive layer must have cu > 0, got {self.cu}"
+                )
+            return
+        if self.alpha is not None:
+            raise ValueError(
+                "A cohesive layer with skin_friction_method 'beta' does not "
+                "take alpha: its skin friction is beta x sigma'v (UFC "
+                "3-220-20 Eq 6-7). Leave alpha out, or use "
+                "skin_friction_method 'alpha' for alpha x cu.")
+        if self.beta is None or self.beta <= 0:
+            raise ValueError(
+                "A cohesive layer with skin_friction_method 'beta' needs "
+                f"beta > 0, {BETA_IN_CLAY_VALUES} (GEC-12 §7.2.1.3.4 Step "
+                "2, p. 257).")
+        if self.cu < 0:
+            raise ValueError(f"cu must be non-negative, got {self.cu}")
 
     def __post_init__(self):
         if self.thickness <= 0:
@@ -113,10 +214,7 @@ class DowndragSoilLayer:
             raise ValueError(
                 f"Cohesionless layer must have phi > 0, got {self.phi}"
             )
-        if self.soil_type == "cohesive" and self.cu <= 0:
-            raise ValueError(
-                f"Cohesive layer must have cu > 0, got {self.cu}"
-            )
+        self._check_skin_friction_inputs()
         if self.soil_type == "cohesive":
             # The modified indices whenever Cc and e0 are given, settling or
             # not: below the pile toe the toe load compresses any clay with
@@ -159,13 +257,14 @@ class DowndragSoilLayer:
                         "Cohesionless settling layer must have E_s > 0"
                     )
 
-        # Compute beta from phi if not provided
+        # Compute beta from phi if not provided (cohesionless; a cohesive
+        # layer has no phi, and the Beta method there needs beta given)
         if self.beta is None and self.phi > 0:
             phi_rad = math.radians(self.phi)
             self.beta = (1.0 - math.sin(phi_rad)) * math.tan(phi_rad)
 
-        # Default alpha for cohesive layers
-        if self.alpha is None and self.soil_type == "cohesive":
+        # Default alpha for cohesive layers with the Alpha method
+        if self.alpha is None and self.fs_method == "alpha":
             self.alpha = 1.0
 
 

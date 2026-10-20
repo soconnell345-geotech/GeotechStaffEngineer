@@ -68,7 +68,8 @@ _VALID_PARAMS = (
 #: What each kind of layer needs; appended to a layer's validation error.
 _LAYER_FIX = (
     "Each layer needs thickness (m), soil_type, unit_weight (kN/m3) and phi "
-    "(deg, cohesionless) or cu (kPa, cohesive). A layer with settling=true "
+    "(deg, cohesionless) or cu (kPa, cohesive; or beta with "
+    "skin_friction_method 'beta'). A layer with settling=true "
     "also needs what its settlement is computed from: cohesionless -> E_s "
     "(elastic modulus, kPa, > 0; nu_s optional); cohesive -> Cc and e0 (Cr, "
     "sigma_p optional) or C_ec. If the layer does not settle, set "
@@ -112,11 +113,12 @@ def _build_analysis(params, method, valid):
                 C_ec=l.get("C_ec"), C_er=l.get("C_er"), sigma_p=l.get("sigma_p"),
                 E_s=l.get("E_s"), nu_s=l.get("nu_s", 0.3),
                 settling=l.get("settling", False), description=l.get("description", ""),
+                skin_friction_method=l.get("skin_friction_method"),
             ))
         except ValueError as exc:
             raise ValueError(
                 f"{method}: layers[{i}] ({l.get('description') or l['soil_type']}): "
-                f"{exc}. {_LAYER_FIX}") from None
+                f"{str(exc).rstrip('.')}. {_LAYER_FIX}") from None
     soil = DowndragSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth", 0.0))
     analysis = DowndragAnalysis(
         soil=soil, pile_length=params["pile_length"], pile_diameter=params["pile_diameter"],
@@ -212,7 +214,7 @@ def _run_post_liquefaction(params):
 #: the result as returned (:func:`_compact`) for one liquefied zone and for
 #: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,600, under
 #: the 8,000-character general cap; the noisy CPT 9,300 to 10,050, and
-#: 9,970 to 10,390 with a modulus in the sand below the toe, where the
+#: 9,970 to 10,430 with a modulus in the sand below the toe, where the
 #: warning that the two rules for the depth below the toe disagree fires
 #: (GM-240; 11,380 to 11,760 before the choices it states were left to
 #: detail='full'): its warnings and choices (a toe in a liquefied layer,
@@ -221,9 +223,13 @@ def _run_post_liquefaction(params):
 #: 30,000 to 34,000 (DESIGN.md "What the result holds").
 RESULT_BUDGET_CHARS = 10_500
 
-#: How many of more than MAX_ZONES_LISTED zones are listed in full: those
-#: with the largest reconsolidation settlement.
-_LARGEST_ZONES = 3
+#: How many of more than MAX_ZONES_LISTED zones are listed in full (GM-211):
+#: the zone that holds the neutral plane after the earthquake, and the
+#: others above the toe whose side resistance liquefaction changes most (the
+#: kN that move between drag above the plane and resistance below it).
+#: The zones below the toe have no side resistance: a count and depth range
+#: (their settlement is reconsolidation_below_toe_mm).
+_ZONES_IN_FULL = 3
 
 _ZONE_COLUMNS = ("top_m", "bottom_m", "volumetric_strain",
                  "reconsolidation_settlement_mm", "fs_liq_min",
@@ -267,27 +273,45 @@ def _zone_rows(zones) -> list:
     return [[z.get(c) for c in _ZONE_COLUMNS] for z in zones]
 
 
-def _zones_compact(zones: list):
+def _zones_compact(zones: list, plane_after=None):
     """The zones as one table; past MAX_ZONES_LISTED, their totals, the
-    ones with the largest reconsolidation settlement in full and the rest
-    as depth ranges."""
+    ones that bear on the drag force and the neutral plane in full
+    (``_ZONES_IN_FULL``; ``plane_after``: the headline neutral plane after
+    the earthquake, m), the rest above the toe as depth ranges and those
+    below it as a count (GM-211)."""
     if len(zones) <= MAX_ZONES_LISTED:
         return _table(_ZONE_COLUMNS, _zone_rows(zones))
-    largest = sorted(sorted(zones, key=lambda z: -(
-        z.get("reconsolidation_settlement_mm") or 0.0))[:_LARGEST_ZONES],
-        key=lambda z: z["top_m"])
-    others = [z for z in zones if z not in largest]
-    return {
+    below = [z for z in zones if z["position"] == "below the pile toe"]
+    shaft = [z for z in zones if z not in below]
+    holding = None if plane_after is None else next(
+        (z for z in shaft
+         if z["top_m"] - 1e-6 <= plane_after <= z["bottom_m"] + 1e-6), None)
+    shown = [holding] if holding is not None else []
+    shown += [z for z in sorted(shaft, key=lambda z: (-abs(
+        z["side_resistance_before_kN"] - z["side_resistance_after_kN"]),
+        z["top_m"])) if z is not holding][:_ZONES_IN_FULL - len(shown)]
+    most = "above the toe whose side resistance changes most"
+    rule = (f"the {len(shown)} {most}" if holding is None else
+            "the zone holding the plane after" + (
+                f", and the {len(shown) - 1} others {most}"
+                if len(shown) > 1 else ""))
+    shown.sort(key=lambda z: z["top_m"])
+    out = {
         "zones": len(zones),
         "thickness_m": round(sum(z["thickness_m"] for z in zones), 3),
         "side_resistance_before_kN": round(sum(
             z["side_resistance_before_kN"] for z in zones), 1),
         "side_resistance_after_kN": round(sum(
             z["side_resistance_after_kN"] for z in zones), 1),
-        "largest_settlement": _table(_ZONE_COLUMNS, _zone_rows(largest)),
+        "shown": rule,
+        "shown_zones": _table(_ZONE_COLUMNS, _zone_rows(shown)),
         "others_m": ", ".join(f"{z['top_m']:g}-{z['bottom_m']:g}"
-                              for z in others),
+                              for z in shaft if z not in shown),
     }
+    if below:
+        out["below_toe"] = (f"{len(below)} zones, {below[0]['top_m']:g}-"
+                            f"{below[-1]['bottom_m']:g} m")
+    return out
 
 
 def _reasons(row: dict, headline: dict) -> str:
@@ -335,7 +359,7 @@ def _compact(d: dict) -> dict:
             # side_resistance_name: the first choice's "chosen" (GM-240)
             continue
         if key == "liquefied_zones":
-            value = _zones_compact(zones)
+            value = _zones_compact(zones, d.get("neutral_plane_after_m"))
         elif key == "side_resistance_comparison":
             value = _table(_OPTION_COLUMNS, [
                 [r["option"], SIDE_RESISTANCE_CITES.get(r["option"], ""),
@@ -616,7 +640,7 @@ METHOD_INFO = {
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
+            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, skin_friction_method, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Skin friction: cohesionless = beta x sigma'v (Beta method, UFC 3-220-20 Eq 6-7), beta given or from phi; cohesive = alpha x cu (Alpha method, Eq 6-8, the default; alpha 1.0 unless given), or with skin_friction_method 'beta' beta x sigma'v for long-term, drained conditions (UFC 3-220-20 6-5.4.1; GEC-12 7.2.1.3.4), beta required (GEC-12 Table 7-9: clay 0.15-0.35; cu then only for a toe in the layer). A cohesive layer takes no phi, and beta only with skin_friction_method 'beta'; a cohesionless layer takes no alpha. Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
             "fill_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Fill thickness causing downdrag (m)."},
             "fill_unit_weight": {"type": "float", "required": False, "default": 19.0, "description": "Fill unit weight (kN/m3)."},
@@ -634,7 +658,7 @@ METHOD_INFO = {
             "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "Which method gives the headline numbers; every method is evaluated and returned in neutral_plane_comparison whatever is chosen. 'auto' (default) = the UFC 3-220-20 6-7.4 procedure: the intersection of the load and resistance curves with the toe at toe_mobilization, or, when they do not intersect, where the pile and soil settle equally with the toe force compatible with the toe penetration (UFC 6-5.8.4.3, Fig 6-19). 'force_equilibrium' (the curves' intersection only; error if they do not intersect); 'settlement_compatibility' (pile and soil settle equally, toe force compatible with the toe penetration); 'bearing_layer_top' (top of the bearing layer, end-bearing pile, UFC 6-7.4 step 5); 'pile_toe' (whole shaft in negative skin friction, upper bound); 'endo' (Endo et al. 1969, CGPR #56 Table 3.1 fraction of the embedment; needs endo_bearing_condition).", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
             "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the nominal toe resistance mobilized where the load and resistance curves intersect. 1.0 = UFC 6-7.4 step 3 full mobilization ('a conservative approach for evaluating the drag force'); 0.5 and 0 = the other UFC 6-5.8.4.2 / GEC-12 7.3.6.1 cases for settlement (all three always reported in the comparison)."},
             "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for Endo et al. (1969).", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
-            "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta-method skin friction and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
+            "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for Beta-method skin friction (sand, and clay with skin_friction_method 'beta') and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
             "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted in the settlement (toe force spread 2V:1H from an equivalent footing as wide as the pile): to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3; 2.16 pile widths for a single pile) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 Vol I step 1c: 7.3.5.3 for clay below the toe, 7.3.5.6 for sand, 7.3.5.5 for both; deeper for a loaded toe in soft soil). Either way the fill / drawdown, which does not decay with depth, compresses the settling layers below the toe down to the bottom of the soil profile; give the profile down to the base of the compressible soil.", "allowed_values": ["bearing_stress", "effective_stress"]},
             "influence_depth_warning_percent": {"type": "float", "required": False, "default": 25.0, "description": "The result warns when the two influence_depth_criterion rules (UFC 3-220-20 6-5.8.4.3 and FHWA GEC-12 step 1c) give pile head settlements or drag forces that differ by more than this percentage of the larger of the two (of allowable_settlement / structural_capacity where given), and whenever a settlement or structural check passes with one rule and fails with the other. The rule used is not changed. Default 25 %: the engineer's call, not a reference's figure; neither reference says how far two settlement estimates may differ before it matters."},
         },
@@ -661,7 +685,7 @@ METHOD_INFO = {
             "geotechnical_ok": "Q_dead <= total resistance (when checked).",
             "structural_ok": "LRFD demand <= structural_capacity (when given).",
             "z_m": "Depth profile (m); with axial_load_kN, soil_settlement_mm and unit_skin_friction_kPa at the same depths.",
-            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option) and influence_depth_warning_percent, the engineer's call. Report them.",
+            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option), influence_depth_warning_percent, the engineer's call, and the skin friction method of the cohesive layers (Alpha by default, Beta the option) with their depths and alpha or beta. Report them.",
         },
     },
     "endo_downdrag": {
@@ -821,12 +845,12 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "toe_settlement_before_mm / toe_settlement_after_mm": "Pile toe settlement (mm) of the headline method; after liquefaction it includes the reconsolidation settlement of liquefied soil below the toe (reconsolidation_below_toe_mm).",
         "dragload_before_kN / dragload_after_kN": "With include_pile_weight only: the negative skin friction above the plane without the pile weight (drag force = dragload + the pile weight above the plane).",
         "reconsolidation_settlement_mm": "Reconsolidation settlement of all the liquefied layers (mm): what the ground surface settles by.",
-        "liquefied_zones": "One table {columns, rows}, a row a contiguous liquefied zone: top_m, bottom_m, volumetric_strain, reconsolidation_settlement_mm, fs_liq_min, side resistance before and after (kN), position (above / across / below the headline neutral plane before the earthquake, or below the pile toe). More than 6 zones: {zones, thickness_m, side resistance totals, largest_settlement: the 3 with the largest reconsolidation settlement as that table, others_m: the rest as depth ranges}. A zone lies below a method's plane before the earthquake where its top_m is at or below that method's neutral_plane_before_m. detail='full': a record a zone with below_the_plane_before_of. Present it as a table.",
+        "liquefied_zones": "One table {columns, rows}, a row a contiguous liquefied zone: top_m, bottom_m, volumetric_strain, reconsolidation_settlement_mm, fs_liq_min, side resistance before and after (kN), position (above / across / below the headline neutral plane before the earthquake, or below the pile toe). More than 6 zones: {zones (how many), thickness_m, side resistance totals, shown (which are listed), shown_zones: that table for 3 of them, the zone holding the neutral plane after and the others above the toe whose side resistance changes most (before - after: what moves between drag and resistance), others_m: the rest above the toe as depth ranges, below_toe: the zones below the toe as a count and depth range (no side resistance; their settlement is reconsolidation_below_toe_mm)}. A zone lies below a method's plane before the earthquake where its top_m is at or below that method's neutral_plane_before_m. detail='full': a record a zone with below_the_plane_before_of. Present it as a table.",
         "result_note": "What only detail='full' adds (and whether the zones were summarised). Tell the user the rest is there.",
         "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
         "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after; on the headline method's row, what bears on its plane). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
-        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. A choice a warning states is left to detail='full': that rule and threshold where the warning on the two rules is given, fs_liq_threshold where readings above it are left out. Report them.",
+        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; the skin friction method of the cohesive layers (Alpha by default, Beta the option); and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. A choice a warning states is left to detail='full': that rule and threshold where the warning on the two rules is given, fs_liq_threshold where readings above it are left out. Report them.",
         "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }
