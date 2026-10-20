@@ -304,6 +304,9 @@ class BracedExcavationResult:
     free_earth: Dict[str, Any] = field(default_factory=dict)
     converged: bool = True
     notes: List[str] = field(default_factory=list)
+    #: How the passive pressure below the excavation was taken (GM-242,
+    #: ``geotech_common.choices``).
+    choices: List[Dict[str, Any]] = field(default_factory=list)
     # What the analysis used, for its calc package (BACKLOG GM-41); not in
     # to_dict, so the tool's output is as before.
     #: The apparent-pressure envelope (select_apparent_pressure's dict, with
@@ -399,6 +402,8 @@ class BracedExcavationResult:
             "free_earth": self.free_earth,
             "converged": self.converged,
             "notes": self.notes,
+            **({"choices": [dict(c) for c in self.choices]}
+               if self.choices else {}),
         }
 
 
@@ -460,6 +465,9 @@ class CantileverExcavationResult:
     net_force_at_O_kN_per_m: Optional[float] = 0.0
     converged: bool = True
     notes: List[str] = field(default_factory=list)
+    #: How the passive pressure below the excavation was taken (GM-242,
+    #: ``geotech_common.choices``).
+    choices: List[Dict[str, Any]] = field(default_factory=list)
     # What the analysis used, for its calc package (BACKLOG GM-41); not in
     # to_dict, so the tool's output is as before.
     #: Per layer: top_m, bottom_m, unit_weight, friction_angle, cohesion,
@@ -527,7 +535,13 @@ class CantileverExcavationResult:
             "net_force_at_O_kN_per_m": self.net_force_at_O_kN_per_m,
             "required_Sx_cm3": self.required_Sx_cm3,
             "method": "Caltrans T&S Manual 7-5.02 Simplified Method, layered "
-                      "Rankine pressures with water",
+                      + ("Rankine pressures" if not any(
+                          "passive_wall_friction_deg" in l
+                          for l in self.layers_used) else
+                         "Rankine active and log-spiral passive pressures")
+                      + " with water",
             "converged": self.converged,
             "notes": self.notes,
+            **({"choices": [dict(c) for c in self.choices]}
+               if self.choices else {}),
         }

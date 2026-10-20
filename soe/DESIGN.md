@@ -269,6 +269,30 @@ to check. Kp0 between nodes is now interpolated with log Kp linear in φ
 read up to about 5 % above the chart between nodes (φ 32: 7.86 → 7.57;
 37.5: 13.95 → 13.3; 42.5: 25.6 → 24.3); the 5° nodes are unchanged.
 
+**The passive theory below the excavation (GM-242, 2026-10-20).**
+`analyze_cantilever_excavation`, `analyze_braced_excavation` and
+`embedment_detail` / `compute_embedment` take `passive_theory`: 'rankine'
+(the default, unchanged numbers) or 'log_spiral', the log-spiral Kp of
+`geotech_common.log_spiral` (`log_spiral_source`, default UFC 3-220-20, which
+for the vertical face and level ground in front of the wall is Eq. 4-12, p.
+191) per layer (`free_earth.passive_by_layer`, a Kp per layer in
+`LayeredProfile`). The wall friction: `passive_wall_friction_deg` in every
+layer below the excavation, at most its phi'; left out, the source's own
+(0.66 phi', or phi' with the 1948 chart) in a layer without cohesion and none
+with cohesion (UFC p. 238). Rankine stays the default because the Caltrans
+T&S Manual's examples take it where the wall friction is zero (pp. 7-18,
+7-27, 9-12), each with the note that Rankine "tends to underestimate the
+passive earth pressure" and the Log-Spiral model is recommended; Sec. 4-6
+(p. 4-28) says Rankine "should not be used ... because it does not account
+for wall friction", and Example 8-1 takes the log-spiral Kp (4.7 at delta
+15 on phi 30, p. 8-12; the route reproduces D = 6.09 ft,
+`soe/tests/test_passive_theory.py`). Both results carry `choices` with the
+theory, the other theory's Kp and embedment, and with 'log_spiral' the
+source and each layer's wall friction. 4 m cantilever, phi 33, q 10: D 5.58
+m (Kp 3.39) with Rankine, 3.78 m (Kp 6.39 at delta 21.8) with the log
+spiral; 8 m braced wall, struts at 2 and 5 m: D 2.87 m and 1.72 m. The
+active side stays Rankine.
+
 ## Calc package (GM-41)
 `soe/calc_steps.py` renders the three wall tools through
 `calc_package(soe_package, wall_type=cantilever|braced|fhwa_anchored)`. The

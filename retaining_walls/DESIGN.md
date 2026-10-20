@@ -572,6 +572,22 @@ counts less passive than the no-key option. The check's surface is the top
 of the base; UFC adds "it is also prudent to consider some amount of future
 excavation in front of the wall". `sliding_basis` reports the Pp counted.
 
+**The theory of Kp (GM-242, 2026-10-20).** `passive_theory` 'rankine' (the
+default) or 'log_spiral' (the coefficient tool's 'caquot_kerisel' name is
+taken too), with `log_spiral_source` (default UFC 3-220-20, Eq. 4-12 for the
+vertical face and level ground in front of the toe) and
+`passive_wall_friction_deg` (0 to phi_foundation; left out, the source's
+own, 0.66 phi' or phi' with the 1948 chart). UFC 3-220-20 Sec. 4-5.1 (p.
+219) says the passive pressure in front "is typically ignored", and with it
+considered Fig. 4-27 (p. 220) and Sec. 4-5.1.3 (p. 223) ask FSL >= 2.0;
+neither names a theory for its Kp, so the module keeps Rankine's, the
+smaller. With include_passive the result's `choices` state the theory with
+the other theory's and the no-passive FOS_sliding; with 'log_spiral' also
+the source and the wall friction. `sliding_basis` gives `passive_theory`
+and `Kp`. Wall 5 m, B 3.5 m, toe 1 m, t 0.6 m, phi 32, gamma 19:
+FOS_sliding 1.53 (Rankine, Kp 3.25), 1.65 (log spiral, Kp 5.90 at delta
+21.1), 1.37 with no passive.
+
 ## The foundation cohesion in sliding (GM-212, 2026-10-20)
 
 Before, the sliding check added ca = 2/3 c_foundation on B to the friction

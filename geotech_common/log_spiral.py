@@ -690,6 +690,32 @@ def log_spiral_Kp(phi_deg: float, delta_deg: float = None,
                      f"{list(SOURCES)}")
 
 
+def level_front_Kp(phi_deg: float, delta_deg: float = None,
+                   source: str = DEFAULT_SOURCE) -> dict:
+    """The log-spiral Kp in front of a vertical wall face with level
+    ground, the passive side below an excavation or a retaining wall's toe
+    (GM-242): ``Kp``, ``delta_deg`` (the wall friction used), ``delta_given``
+    and ``route`` (the UFC 3-220-20 source the default took, else None).
+    ``delta_deg`` None takes the source's own: delta/phi' = 0.66 (UFC
+    3-220-20 p. 191, 'a common assumption', the wall friction its charts are
+    drawn for), or delta = phi' with the Caquot-Kerisel (1948) chart (its
+    Kp at R = 1). phi' = 0 gives Kp = 1 with no wall friction."""
+    given = delta_deg is not None
+    if phi_deg <= 0:
+        return {"Kp": 1.0, "delta_deg": 0.0, "delta_given": given,
+                "route": None}
+    if source == DEFAULT_SOURCE:
+        r = ufc_3_220_20_route(phi_deg, delta_deg)
+        return {"Kp": r["Kp"], "delta_deg": r["delta_deg"],
+                "delta_given": given, "route": r["route"]}
+    if not given:
+        delta_deg = (phi_deg if source == "caquot_kerisel_1948"
+                     else DM_DELTA_RATIO * phi_deg)
+    return {"Kp": log_spiral_Kp(phi_deg, delta_deg, 0.0, source=source),
+            "delta_deg": float(delta_deg), "delta_given": given,
+            "route": None}
+
+
 #: What each source is called in a result's alternatives.
 _SOURCE_NAME = {
     "ufc_3_220_20": "UFC 3-220-20 by geometry",

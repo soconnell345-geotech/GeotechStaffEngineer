@@ -308,6 +308,19 @@ def test_anchored_sheet_pile_states_ufc_p_260():
     assert any("Kp 4.7" in a for a in c["alternatives"])
 
 
+def test_log_spiral_names_the_log_spiral_theory():
+    """GM-242: theory 'log_spiral' is 'caquot_kerisel' by its usual name."""
+    p = {"phi_deg": 32.0, "state": "passive", "beta_deg": 10.0}
+    named = D.call_agent("retaining_walls", "earth_pressure_coefficient",
+                         {**p, "theory": "log_spiral"})
+    old = D.call_agent("retaining_walls", "earth_pressure_coefficient",
+                       {**p, "theory": "caquot_kerisel"})
+    assert named["K"] == old["K"] and named["choices"] == old["choices"]
+    err = D.call_agent("retaining_walls", "earth_pressure_coefficient",
+                       {"phi_deg": 32.0, "theory": "log_spiral"})["error"]
+    assert "passive (Kp)" in err
+
+
 def test_sheet_pile_wall_friction_rows():
     """GM-242: a layer's interface_soil names the steel sheet pile row
     (EM 1110-2-2504 Table 3-3, USS Table 4, UFC 3-220-20 Table 4-1); left
