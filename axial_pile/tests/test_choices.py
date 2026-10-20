@@ -92,57 +92,207 @@ def test_toe_stress_limit_is_named():
         gwt_depth=30.0)
     pile = make_pipe_pile(0.6, 0.012, closed_end=True)
     r = AxialPileAnalysis(pile=pile, soil=deep, pile_length=20).compute()
-    toe = _by_what(r)["sigma'p at the toe"]
+    toe = _by_what(r)["sigma'p at the toe (Nordlund, Step 8)"]
     assert r.sigma_v_tip > 3 * KSF
     assert toe["chosen"].startswith(f"{3 * KSF:.1f} kPa (limit")
-    assert toe["how"] == "default" and "Step 8" in toe["basis"]
+    assert toe["how"] == "default"
+    assert toe["basis"].startswith("Nordlund method, Step 8")
+    assert "p. 244" in toe["basis"]
     off = AxialPileAnalysis(pile=pile, soil=deep, pile_length=20,
                             toe_stress_limit=None).compute()
-    toe = _by_what(off)["sigma'p at the toe"]
+    toe = _by_what(off)["sigma'p at the toe (Nordlund, Step 8)"]
     assert toe["chosen"].startswith("not limited") and toe["how"] == "given"
     beta = AxialPileAnalysis(pile=pile, soil=deep, pile_length=20,
                              method="beta").compute()
-    assert "sigma'p at the toe" not in _by_what(beta)
+    assert "sigma'p at the toe (Nordlund, Step 8)" not in _by_what(beta)
 
 
-def test_adhesion_beyond_the_chart_is_named():
-    stiff = AxialSoilProfile(layers=[
+def _stiff():
+    """A clay past Fig. 7-17's curves (su 4 ksf): su / sigma'vo about 2.4
+    at the middle of a 15 m pile."""
+    return AxialSoilProfile(layers=[
         AxialSoilLayer(30, "cohesive", 19.0, cohesion=4.0 * KSF)],
         gwt_depth=1.0)
+
+
+def test_past_the_chart_the_line_is_the_engineers():
+    """GM-229 (owner OWN-63): past Fig. 7-17's curves GEC-12 recommends
+    API alpha for highly overconsolidated clays (p. 247, alpha-method Step
+    1) and gives no su / sigma'vo that marks one, so the default run is
+    refused until the engineer's line is given."""
+    from axial_pile.capacity import JudgmentNeeded
     pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
-    r = AxialPileAnalysis(pile=pile, soil=stiff, pile_length=15).compute()
-    c = _by_what(r)["su beyond Fig. 7-17"]
-    assert c["how"] == "default" and c["chosen"] == "Ca held at the curve's end"
-    assert "Table D-100" in c["basis"] and "p. 247" in c["basis"]
-    assert "API" in c["alternatives"][0]
-    api = AxialPileAnalysis(pile=pile, soil=stiff, pile_length=15,
-                            adhesion_beyond_chart="api").compute()
-    c = _by_what(api)["su beyond Fig. 7-17"]
-    assert c["how"] == "given" and "API" in c["chosen"]
-    assert api.Q_skin > r.Q_skin
+    with pytest.raises(JudgmentNeeded) as e:
+        AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15).compute()
+    msg = str(e.value)
+    assert msg.startswith("alpha method (GEC-12 Sec. 7.2.1.3.2), Step 1 "
+                          "(p. 250)")
+    for text in ("su = 4.00 ksf", "Fig. 7-17's curves end at 3.05 ksf",
+                 "GEC-12 prints no su / sigma'vo", "engineer's judgment",
+                 "highly_overconsolidated_su_ratio", "'chart_end'", "'api'",
+                 "p. 247", "API method (API RP 2A, Sec. 7.2.1.3.3"):
+        assert text in msg, text
+    # su / sigma'vo at the middle of the 15 m pile, given back in the error
+    sv = _stiff().effective_stress_at_depth(7.5)
+    assert f"su / sigma'vo = {4.0 * KSF / sv:.2f}" in msg
+    # a pile that stays within the chart needs no line
     soft = AxialSoilProfile(layers=[
         AxialSoilLayer(30, "cohesive", 19.0, cohesion=60)], gwt_depth=1.0)
     r = AxialPileAnalysis(pile=pile, soil=soft, pile_length=15).compute()
-    assert "su beyond Fig. 7-17" not in _by_what(r)
+    assert not any(c["what"].startswith("su past") for c in r.choices)
+    # capacity_vs_depth refuses too, rather than leaving the depths out
+    with pytest.raises(JudgmentNeeded):
+        AxialPileAnalysis(pile=pile, soil=_stiff(),
+                          pile_length=15).capacity_vs_depth(n_points=3)
 
 
-def test_adhesion_limit_and_fig_7_18_are_named():
-    """Ca at most su (alpha <= 1) and Fig. 7-18 as an alternative."""
+def test_the_refusal_names_every_layer_and_only_where_the_line_matters():
+    """GM-229 review: one refusal names every clay layer past the curves
+    with its su / sigma'vo, so the engineer can place one line; a layer
+    whose Ca the line would not change (inside a shrink-swell zone, or
+    where Fig. 7-18 governs either way under adhesion_chart 'smaller')
+    needs no line."""
+    from axial_pile.capacity import JudgmentNeeded
+    pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
+
+    def profile(su_top, su_bottom, gwt=1.0):
+        return AxialSoilProfile(layers=[
+            AxialSoilLayer(8, "cohesive", 19.0, cohesion=su_top * KSF),
+            AxialSoilLayer(22, "cohesive", 19.0, cohesion=su_bottom * KSF)],
+            gwt_depth=gwt)
+
+    with pytest.raises(JudgmentNeeded) as e:
+        AxialPileAnalysis(pile=pile, soil=profile(4.0, 4.5),
+                          pile_length=20).compute()
+    msg = str(e.value)
+    soil = profile(4.0, 4.5)
+    for top, bottom, su in ((0, 8, 4.0), (8, 20, 4.5)):
+        sv = soil.effective_stress_at_depth((top + bottom) / 2)
+        assert (f"{top:.2f}-{bottom:.2f} m: su = {su:.2f} ksf" in msg
+                and f"su / sigma'vo = {su * KSF / sv:.2f}" in msg), (top, msg)
+    # capacity_vs_depth names both too (its deepest refusal)
+    with pytest.raises(JudgmentNeeded, match="8.00-20.00 m"):
+        AxialPileAnalysis(pile=pile, soil=profile(4.0, 4.5),
+                          pile_length=20).capacity_vs_depth(n_points=3)
+    # the stiff crust lies wholly in the shrink-swell zone: no Ca counts
+    r = AxialPileAnalysis(pile=pile, soil=profile(4.0, 1.0), pile_length=20,
+                          shrink_swell_depth=8.0).compute()
+    side = _by_what(r)["su past Fig. 7-17 (alpha method)"]
+    assert side["chosen"].startswith("Ca held at the curve's end: no highly "
+                                     "overconsolidated line was given")
+    assert not any("highly_overconsolidated" in lb
+                   for lb in r.layer_breakdown)
+    # 'smaller': Fig. 7-18 governs whichever way the line puts the clay
+    one = AxialSoilProfile(layers=[
+        AxialSoilLayer(30, "cohesive", 19.0, cohesion=4.0 * KSF)],
+        gwt_depth=0.0)
+    runs = {m: AxialPileAnalysis(pile=pile, soil=one, pile_length=20,
+                                 adhesion_chart="smaller",
+                                 adhesion_beyond_chart=m).compute()
+            for m in ("chart_end", "api")}
+    assert runs["chart_end"].Q_skin == runs["api"].Q_skin
+    r = AxialPileAnalysis(pile=pile, soil=one, pile_length=20,
+                          adhesion_chart="smaller").compute()
+    assert r.Q_skin == runs["api"].Q_skin
+    # ... but not on a shorter pile, where the line changes Ca
+    with pytest.raises(JudgmentNeeded):
+        AxialPileAnalysis(pile=pile, soil=one, pile_length=12,
+                          adhesion_chart="smaller").compute()
+
+
+@pytest.mark.parametrize("line, high", [(2.0, True), (3.0, False)])
+def test_each_layer_says_its_side_of_the_line(line, high):
+    pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
+    r = AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15,
+                          highly_overconsolidated_su_ratio=line).compute()
+    (lb,) = r.layer_breakdown
+    sv = _stiff().effective_stress_at_depth(7.5)
+    assert lb["su_over_sigma_v"] == pytest.approx(4.0 * KSF / sv)
+    assert lb["highly_overconsolidated"] is high
+    assert lb["adhesion_source"] == ("API alpha" if high else "Fig. 7-17 end")
+    c = _by_what(r)
+    side = c["su past Fig. 7-17 (alpha method)"]
+    assert side["how"] == "default"
+    assert side["chosen"].startswith("API RP 2A's alpha where the clay is "
+                                     "highly overconsolidated")
+    assert "Table D-100" in side["basis"] and "p. 247" in side["basis"]
+    assert any("'chart_end'" in a for a in side["alternatives"])
+    assert any("'api'" in a for a in side["alternatives"])
+    oc = c["highly overconsolidated clay (alpha method)"]
+    assert oc["how"] == "given"
+    assert oc["chosen"].startswith(f"su / sigma'vo at or above {line:g}: "
+                                   f"0-15 m, su / sigma'vo "
+                                   f"{lb['su_over_sigma_v']:.2f}: ")
+    assert ("highly overconsolidated, API alpha" in oc["chosen"]) is high
+    assert "engineer's judgment" in oc["basis"]
+    assert "does not define" in oc["basis"]      # Eqs. 7-13/7-14's 1.0
+    assert any("engineer's judgment" in w and "GEC-12 gives no value" in w
+               for w in r.warnings)
+
+
+def test_chart_end_or_api_for_every_layer_needs_no_line():
+    pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
+    end = AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15,
+                            adhesion_beyond_chart="chart_end").compute()
+    c = _by_what(end)["su past Fig. 7-17 (alpha method)"]
+    assert c["how"] == "given"
+    assert c["chosen"] == "Ca held at the curve's end in every such layer"
+    assert "highly overconsolidated clay (alpha method)" not in _by_what(end)
+    api = AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15,
+                            adhesion_beyond_chart="api").compute()
+    c = _by_what(api)["su past Fig. 7-17 (alpha method)"]
+    assert c["how"] == "given" and "API" in c["chosen"]
+    assert api.Q_skin > end.Q_skin
+    # the line given beside them changes nothing
+    again = AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15,
+                              adhesion_beyond_chart="api",
+                              highly_overconsolidated_su_ratio=5.0).compute()
+    assert again.Q_skin == api.Q_skin
+    with pytest.raises(ValueError, match="highly_overconsolidated_su_ratio"):
+        AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15,
+                          highly_overconsolidated_su_ratio=0.0)
+
+
+def test_ca_above_su_and_fig_7_18_are_named():
+    """GM-229: Fig. 7-17 as drawn (alpha 1.106 at su = 1.0 ksf, D = 40b),
+    stated in the choices; D from the ground surface (p. 246) stated with
+    its page; Fig. 7-18 as an alternative."""
     clay = AxialSoilProfile(layers=[
         AxialSoilLayer(30, "cohesive", 19.0, cohesion=1.0 * KSF)],
         gwt_depth=1.0)
     pile = make_concrete_pile(0.3556)
     r = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20).compute()
     c = _by_what(r)
-    lim = c["adhesion limit (alpha-method)"]
-    assert lim["how"] == "module" and "governed in 1 layer" in lim["chosen"]
-    assert "p. 252" in lim["basis"] and "uncapped" in lim["alternatives"][0]
-    assert r.layer_breakdown[0]["alpha"] == pytest.approx(1.0)
+    above = c["Ca above su (alpha method)"]
+    assert above["how"] == "module"
+    assert above["chosen"] == ("Fig. 7-17 as drawn, no limit on Ca; Ca above "
+                               "su in 1 layer(s), alpha up to 1.11")
+    assert "Steps 1 and 2 (p. 250)" in above["basis"]
+    assert "API RP 2A's" in above["basis"] and "p. 252" in above["basis"]
+    assert r.layer_breakdown[0]["alpha"] == pytest.approx(1.106)
+    D = c["D for Fig. 7-17 (alpha method)"]
+    assert D["chosen"].startswith("from the ground surface to the bottom of "
+                                  "each clay layer, or to the toe if less")
+    assert "p. 246" in D["basis"] and "p. 248" in D["basis"]
     # Fig. 7-18 and the smaller of the two are offered (GM-144)
     chart = c["adhesion chart (alpha-method)"]
     assert chart["how"] == "default" and "smaller value" in chart["basis"]
     assert any("'fig_7_18'" in a for a in chart["alternatives"])
     assert any("'smaller'" in a for a in chart["alternatives"])
+
+
+def test_h_pile_takes_the_corrugated_curve_with_its_page():
+    """GM-229 (OWN-63, no change): an H-pile on the corrugated pile curve
+    times the box area, p. 247, stated in the choices."""
+    clay = AxialSoilProfile(layers=[
+        AxialSoilLayer(30, "cohesive", 19.0, cohesion=60)], gwt_depth=1.0)
+    r = AxialPileAnalysis(pile=make_h_pile("HP12x74"), soil=clay,
+                          pile_length=15).compute()
+    a = _by_what(r)["adhesion (alpha-method)"]
+    assert a["chosen"].startswith("Fig. 7-17, the curves for concrete, "
+                                  "timber, corrugated steel piles")
+    assert "box perimeter" in a["chosen"] and a["how"] == "default"
+    assert "corrugated pile curve times the box area (p. 247)" in a["basis"]
 
 
 def test_h_pile_toe_area_and_uplift_are_named():

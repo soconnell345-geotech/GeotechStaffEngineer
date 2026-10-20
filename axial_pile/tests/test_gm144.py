@@ -75,7 +75,8 @@ def test_fig_7_18_says_where_it_holds_an_edge():
     # past the chart Ca is held at its end, as Fig. 7-17's chart_end is
     assert source == "Fig. 7-18 end"
     assert ca == pytest.approx(0.30 * 5.0 * KSF, rel=0.01)
-    assert any("beyond GEC-12 Figure 7-18" in n for n in notes)
+    assert any(n.startswith("alpha method") and "past the end of GEC-12 "
+               "Figure 7-18" in n for n in notes)
     ca, source = adhesion_fig_7_18(6.0 * KSF, 40, STIFF_CLAY,
                                    sigma_v=4.0 * KSF, beyond_chart="api",
                                    notes=[])

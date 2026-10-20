@@ -556,10 +556,17 @@ def test_axial_gec12_limits_are_listed_where_the_soil_uses_them():
             "inside_friction_ratio", "open_pipe_method"} <= used
     assert not {"adhesion_curve", "adhesion_beyond_chart",
                 "cohesive_Nt", "h_pile_toe_area"} & used
+    # su 4 ksf is past Fig. 7-17's curves: the default needs the
+    # engineer's highly overconsolidated line (GM-229)
     r = D.call_agent("axial_pile", "axial_pile_capacity",
                      {**pipe, "layers": clay, "toe_stress_limit": None})
+    assert "highly_overconsolidated_su_ratio" in r["error"]
+    r = D.call_agent("axial_pile", "axial_pile_capacity",
+                     {**pipe, "layers": clay, "toe_stress_limit": None,
+                      "highly_overconsolidated_su_ratio": 1.0})
     used = set(r["defaults_used"])
     assert {"adhesion_curve", "adhesion_beyond_chart"} <= used
+    assert "highly_overconsolidated_su_ratio" not in used
     assert not {"toe_stress_limit", "open_pipe_toe_limit"} & used
     r = D.call_agent("axial_pile", "axial_pile_capacity",
                      {**pipe, "layers": clay, "method": "beta"})
@@ -602,10 +609,17 @@ def test_axial_gec12_options_reach_the_module():
     stiff = {**closed, "layers": [{"thickness": 30, "soil_type": "cohesive",
                                    "unit_weight": 19,
                                    "cohesion": 4.0 * 47.88}]}
-    end = D.call_agent("axial_pile", "axial_pile_capacity", dict(stiff))
+    end = D.call_agent("axial_pile", "axial_pile_capacity",
+                       {**stiff, "adhesion_beyond_chart": "chart_end"})
     api = D.call_agent("axial_pile", "axial_pile_capacity",
                        {**stiff, "adhesion_beyond_chart": "api"})
     assert api["Q_skin_kN"] > end["Q_skin_kN"]
+    # GM-229: the line puts the clay (su / sigma'vo about 1.0 at the
+    # middle of the pile) on one side or the other
+    for line, same in ((0.5, api), (2.0, end)):
+        r = D.call_agent("axial_pile", "axial_pile_capacity",
+                         {**stiff, "highly_overconsolidated_su_ratio": line})
+        assert r["Q_skin_kN"] == same["Q_skin_kN"], line
     bad = D.call_agent("axial_pile", "axial_pile_capacity",
                        {**pipe, "open_pipe_method": "nope"})
     assert "error" in bad

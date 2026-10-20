@@ -26,7 +26,7 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-001 | axial_pile Nordlund toe (single-φ API, default) | Rt = 154.8 kips (φ=36 in L3) | Rt = 428.1 kips | −64% | DEFAULT | With NO per-layer toe φ set, the high-level `AxialPileAnalysis` API uses ONE φ per layer (φ=36 at the toe too). Pins the default; `AxialSoilLayer.toe_friction_angle` is the example's separate toe φ. |
 | V-002 | axial_pile alpha toe (clay), 9·cu | Rt = 32.8/33.3/34.1 kips (D=70/80/90) | Rt = 32.75/33.03/33.68 | 0% / +1% / +1% | **PASS** | End bearing 9·cu matches Table D-100 to ±2% where the tip is cleanly inside Layer 3. (D=40 toe is a layer-boundary artifact — tip exactly at the L2/L3 interface — excluded.) |
 | V-002 | axial_pile alpha shaft (clay), the example's Fig. 7-17 choices | Rs = 320.2/372.1/424.0 kips (D=70/80/90) | Rs = 318.4/369.3/420.33 | +0.6% / +0.8% / +0.9% | **PASS** (`adhesion_curve="smooth_steel"`, `adhesion_beyond_chart="chart_end"`) | Since GM-121 the adhesion is GEC-12 Fig. 7-17 (by su, pile type, D/b with D from the ground surface). The example used the smooth-steel curves for the H-pile and held Ca at the chart's end in Layer 3 (su 3.1–3.7 ksf); with those two choices the module reproduces it. Before: a simplified α curve, −18 % to −32 %. |
-| V-002 | axial_pile alpha shaft (clay), module defaults | Rs = 362.7/418.2/473.7 kips (D=70/80/90) | Rs = 318.4/369.3/420.33 | +14% / +13% / +13% | CONVENTION | The defaults take the corrugated curve × box area for H-piles (GEC-12 p. 247) and hold Ca at the chart's end where su exceeds Fig. 7-17, as the example did; the difference is the corrugated curve's higher adhesion. |
+| V-002 | axial_pile alpha shaft (clay), module defaults with a highly overconsolidated line of 1.0 | Rs = 362.7/418.2/473.7 kips (D=70/80/90) | Rs = 318.4/369.3/420.33 | +14% / +13% / +13% | CONVENTION (`highly_overconsolidated_su_ratio=1.0`) | The defaults take the corrugated curve × box area for H-piles (GEC-12 p. 247). Past Fig. 7-17's curves GEC-12 recommends API α for highly overconsolidated clays (alpha method, p. 247 and Step 1, p. 250) and gives no su/σ′vo that marks one, so since GM-229 a default run is refused until the engineer gives the line. With 1.0, Layer 3 (su/σ′vo 0.32–0.41) is below it and Ca is held at the chart's end, as the example did; the difference is the corrugated curve's higher adhesion. No V-002 layer reads α above 1, so reading Fig. 7-17 as drawn (GM-229) moves none of these numbers. |
 | V-002 | axial_pile alpha shaft (clay), API α past the chart | Rs = 396.7/516.4/645.0 kips | Rs = 318.4/369.3/420.33 | +25% / +40% / +53% | CONVENTION (`adhesion_beyond_chart="api"`) | GEC-12 p. 247 recommends API α (Eqs. 7-13/7-14) for highly overconsolidated clays whose su exceeds the chart; in Layer 3 API α ≈ 0.7 at σ′v ≈ 7 ksf nearly doubles the chart-end Ca the example held. Both are choices reported in `choices`. |
 | V-003 | wave_equation drivability (diesel) | ~48 bpf @ 746 kips, ~48 ksi comp | 120 bpf @ Rndr=746 kips, 40.1 ksi | bpf −60%, stress +21% | N/A (scope) | No Delmag D36-52 in the hammer DB (only the −22/−32 single-energy diesel series). A hand-built D36-52 + generic cushion gives 48 bpf (vs 120, outside ±25%) and 48 ksi (vs 40.1, outside ±10%): the module's diesel hammer is a simple energy/efficiency velocity conversion, not a GRLWEAP diesel combustion + ram-cycle model. Coverage gap. |
 | V-004 | downdrag neutral plane at 100% toe mobilization | NP=54.0 ft, Qmax=486.6 kips, DF=285.6 kips (pile weight left out, as the example does: the default since 2026-10-15); NP=53.6 ft, Qmax=490.1, DF=289.1 with `include_pile_weight=True` | NP=54 ft, Qmax=486 kips, DF=285 kips | NP 0.0 ft, Qmax +0.1%, DF +0.2% (weight in: −0.4 ft, +0.8%, +1.4%) | **PASS** | The intersection of the load and resistance curves reproduces NP/Qmax/DF at 100% toe mobilization (toe=428.1 kips, Q=201 kips). Per-layer β overridden to feed the module the published Table D-6 Nordlund shaft (inventory-permitted), validating the neutral plane construction decoupled from the shaft method. 2026-10-14 (GM-01): the plane search, the reported Qmax and the calibration now integrate the same shaft profile the same way; before, NP=53.3 ft, Qmax=487.2, DF=286.2 kips (weight in). |
@@ -156,11 +156,18 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   steel curves for the H-pile and held Ca at the chart's end above su ≈ 3.05 ksf;
   GEC-12's text gives the corrugated curve for H-piles (p. 247), and p. 247
   recommends API α for highly overconsolidated clays past the chart. The module
-  takes the corrugated curve and, like the example, holds Ca at the chart's end
-  by default (shaft +13 % to +14 %); API α is the option (+25 % to +53 %: Ca
-  jumps at the chart's end). It reproduces the example within 1 % with
-  `adhesion_curve="smooth_steel"`. Within the chart Ca is at most su (α ≤ 1).
-  Which defaults suit practice is an owner call (BACKLOG OWN-63).
+  takes the corrugated curve. Past the chart, since GM-229 (the owner's OWN-63
+  rulings), it takes API α in a layer whose su/σ′vo is at or above the engineer's
+  `highly_overconsolidated_su_ratio` and holds Ca at the chart's end below it;
+  GEC-12 gives no such line, so a run without one is refused. With a line of 1.0
+  Layer 3 holds Ca at the chart's end, like the example (shaft +13 % to +14 %);
+  API α in every layer past the chart is the option `adhesion_beyond_chart="api"`
+  (+25 % to +53 %: Ca jumps at the chart's end). It reproduces the example within
+  1 % with `adhesion_curve="smooth_steel"`, `adhesion_beyond_chart="chart_end"`.
+  Within the chart Ca is read off Fig. 7-17 as drawn (alpha method, Steps 1-2,
+  p. 250), so α may exceed 1 (about 1.1 at su 1.0 ksf on the D = 40b solid
+  curve); API's α ≤ 1.0 applies only where API α is taken. No V-002 layer reads
+  α above 1.
 - **wave_equation diesel hammers are simplified (V-003).** The DB carries only
   −22/−32 single-energy Delmag diesels and the `Hammer` diesel path is an
   energy→velocity conversion, not a diesel combustion + ram-cycle model. It
