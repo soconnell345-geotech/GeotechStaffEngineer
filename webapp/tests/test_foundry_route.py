@@ -134,17 +134,52 @@ def test_the_clients_check_tls_against_the_named_bundle(env):
     certifi = pytest.importorskip("certifi")
     env.setenv("FOUNDRY_PROXY_URL", PROXY)
     env.setenv("REQUESTS_CA_BUNDLE", certifi.where())
-    sync, asyn = engine_config.foundry_http_clients(certifi.where())
+    sync, asyn = engine_config.foundry_http_clients(certifi.where(),
+                                                    "anthropic")
     res = engine_config.resolve_engine(
         model_id="anthropic:ri.language-model-service..language-model.lm-1")
     assert "CA bundle set" in res.message
     assert res.model._client._client is sync
     assert res.model._async_client._client is asyn
     if _HAS_LC_OPENAI:
+        sync, asyn = engine_config.foundry_http_clients(certifi.where(),
+                                                        "openai")
         res = engine_config.resolve_engine(
             model_id="openai:ri.language-model-service..language-model.gpt-5-2")
         assert res.model.http_client is sync
         assert res.model.http_async_client is asyn
+
+
+@pytest.mark.parametrize("family", engine_config.MODEL_FAMILIES)
+def test_each_sdk_gets_clients_of_its_own_classes(family, tmp_path):
+    """anthropic 1.x is on ``httpx2`` and openai on ``httpx``, and each SDK
+    refuses the other's client: the pair for a family is made from that
+    SDK's own ``DefaultHttpxClient`` classes, one pair per family."""
+    sdk = pytest.importorskip(family)
+    certifi = pytest.importorskip("certifi")
+    sync, asyn = engine_config.foundry_http_clients(certifi.where(), family)
+    assert type(sync) is sdk.DefaultHttpxClient
+    assert type(asyn) is sdk.DefaultAsyncHttpxClient
+    assert engine_config.foundry_http_clients(certifi.where(), family) == \
+        (sync, asyn)
+    http = engine_config.sdk_http_package(sdk)
+    assert isinstance(sync, http.Client) and isinstance(asyn, http.AsyncClient)
+    # the SDK itself accepts them
+    client = sdk.Client(api_key="k", base_url="https://proxy.test",
+                        http_client=sync) if family == "anthropic" else \
+        sdk.OpenAI(api_key="k", base_url="https://proxy.test",
+                   http_client=sync)
+    assert client._client is sync
+
+
+def test_the_tinyapps_client_is_the_openai_sdks_own(monkeypatch):
+    openai = pytest.importorskip("openai")
+    pytest.importorskip("langchain_openai")
+    import webapp.tinyapps_engine as te
+    model = te.build_chat_model(prompter=te.PrompterSettings(
+        url="https://prompter.test/api/v1/chat/completions", model="m",
+        api_key="k"))
+    assert type(model.http_client) is openai.DefaultHttpxClient
 
 
 @pytest.mark.skipif(not _HAS_LC_ANTHROPIC, reason="langchain_anthropic")

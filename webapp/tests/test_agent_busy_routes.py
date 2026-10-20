@@ -14,9 +14,12 @@ import pytest
 
 from funhouse_agent.deep import busy_retry, pacing
 
-httpx = pytest.importorskip("httpx")
-pytest.importorskip("openai")
 pytest.importorskip("langchain_openai")
+from webapp.engine_config import sdk_http_package  # noqa: E402
+
+# the HTTP package openai's clients are built on (httpx; anthropic is on
+# httpx2): transports and responses must come from the same one
+httpx = sdk_http_package(pytest.importorskip("openai"))
 
 
 @pytest.fixture
