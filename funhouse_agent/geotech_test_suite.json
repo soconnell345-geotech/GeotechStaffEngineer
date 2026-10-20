@@ -174,16 +174,17 @@
       "values": [
         {
           "name": "Q_side_kN",
-          "value": 1313,
+          "value": 1360,
           "rtol": 0.15
         },
         {
           "name": "Q_base_kN",
-          "value": 565,
+          "value": 545,
           "rtol": 0.15
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (drilled_shaft.drilled_shaft_capacity, GEC-10 alpha)"
+      "source": "hand derivation 2026-10-20 (GM-244): GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2, Eqs. 10-15 and 10-18 (pp. 10-15, 10-16), the top 5 ft (p. 10-17), Example 10-2 (p. 10-18), Eq. 10-19 and Table 10-2 (p. 10-19), as printed; drilled_shaft.drilled_shaft_capacity on wip/gm244 gives 1,359.9 and 544.8 kN. Replaces the 2026-06-10 module value (1,313 and 565 kN: the AASHTO alpha 0.55, the bottom one diameter left out, Nc = 9)",
+      "notes": "Assumptions the question leaves open: su = 80 kPa taken as su(CIUC): the question names no test, and the UC or UU transform (Eqs. 10-16, 10-17, p. 10-16) needs sigma'vo, from a unit weight the question does not give; the clay continues below the base, so the mean su over 2B below the base (p. 10-19) is 80 kPa; the top 5 ft (1.5 m) carries no side resistance (p. 10-17), and side resistance is taken to the base, as Example 10-2 takes Layer 3's over its whole 27 ft to the base at 60 ft. Step 5, side (Sec. 10.3.5.2): su(CIUC)/pa = 80 / 101.3 = 0.790; alpha = 0.30 + 0.17 / 0.790 = 0.515 (Eq. 10-18); f_SN = 0.515 x 80 = 41.2 kPa; R_SN = pi x 1.0 x (12 - 1.5) x 41.2 = 1,360 kN (Eq. 10-15). Step 5, base (p. 10-19): su = 80 kPa = 1,671 psf, under 2,000 psf, so N*c from Table 10-2 by linear interpolation, 8.0 + (1,671 - 1,000) / 1,000 = 8.67; the depth, 12 m, is at least 3B = 3 m, so Eq. 10-19: q_BN = 8.67 x 80 = 694 kPa; A = pi x 1.0^2 / 4 = 0.785 m2; R_BN = 545 kN. Rn = 1,360 + 545 = 1,905 kN. Alternatives the question leaves open: su a UU strength, with gamma = 18 kN/m3 and no water table (sigma'vo = 121.5 kPa at the middle of 1.5 to 12 m): su(CIUC) = 97.5 kPa (Eq. 10-17), alpha 0.477, R_SN 1,533 kN, and N*c = 9.0 on 2,037 psf, R_BN 689 kN; su a UC strength (Eq. 10-16): su(CIUC) 100.0 kPa, R_SN 1,558 kN, R_BN 707 kN; the alpha of O'Neill and Reese (1999), FHWA NHI-06-089 Eq. 9-37a, 0.55 on su: R_SN 1,451 kN; the bottom one diameter left out (NHI-06-089 Fig. 9-49): R_SN 1,230 kN; Nc = 9 of NHI-06-089 Eq. 9-40: R_BN 565 kN. The UU and UC bases fall outside the tolerance: an answer there must name its basis."
     }
   },
   {

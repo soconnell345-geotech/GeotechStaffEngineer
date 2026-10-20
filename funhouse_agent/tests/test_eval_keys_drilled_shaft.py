@@ -1,13 +1,16 @@
-"""The drilled-shaft eval keys (DS-1, DS-2) against the tool (GM-241).
+"""The drilled-shaft eval keys (DS-1, DS-2) against the tool (GM-241,
+GM-244).
 
-DS-2's key is a hand derivation from GEC-10 (2018) as printed, recorded in
-its ``notes``. DS-1's is still the module value of 2026-06-10 (AASHTO
-alpha 0.55; GEC-10 (2018) Eq. 10-18 gives about 6 % less, inside its
-tolerance). The tool is run here on each question's inputs: a value
+Both keys are hand derivations from GEC-10 (2018) as printed, recorded in
+their ``notes``: DS-2 by Eqs. 10-5 to 10-14, DS-1 by Eqs. 10-15, 10-18 and
+10-19 with Table 10-2 (until GM-244 DS-1's key was the module value of
+2026-06-10). The tool is run here on each question's inputs: a value
 outside the key's ``rtol`` means the tool and the key now disagree.
 Re-derive the key by hand and find out why; never copy the tool's number
 into the key.
 """
+
+import math
 
 import json
 import os
@@ -44,6 +47,21 @@ def test_ds2_key_is_a_hand_derivation():
     assert "hand derivation" in exp["source"]
     assert "GEC-10 (FHWA-NHI-18-024)" in exp["source"]
     assert "Step 5" in exp["notes"] and "Eq. 10-13" in exp["notes"]
+
+
+def test_ds1_key_is_a_hand_derivation():
+    exp = _key("DS-1")
+    assert "hand derivation" in exp["source"]
+    assert "GEC-10 (FHWA-NHI-18-024)" in exp["source"]
+    for step in ("Step 5", "Eq. 10-18", "Table 10-2", "Eq. 10-19"):
+        assert step in exp["notes"]
+    # the derivation's arithmetic, step by step
+    alpha = 0.30 + 0.17 / (80 / 101.325)
+    side = math.pi * 1.0 * (12 - 1.5) * alpha * 80
+    nc = 8.0 + (80 / 0.0478803 - 1000) / 1000
+    base = nc * 80 * math.pi / 4
+    values = {v["name"]: v["value"] for v in exp["values"]}
+    assert values == {"Q_side_kN": round(side), "Q_base_kN": round(base)}
 
 
 @pytest.mark.parametrize("qid", sorted(_INPUTS))
