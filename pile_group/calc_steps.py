@@ -538,8 +538,8 @@ def get_figures(result, analysis) -> List[FigureData]:
                 f"Figure 1: Plan of the pile group "
                 f"({_get(result, 'n_piles', len(pile_forces))} piles), "
                 f"{drawn}, with the axial force at each pile head "
-                f"(positive = compression, negative = tension); the "
-                f"darker the fill, the larger the force."
+                f"(positive = compression, negative = tension and "
+                f"hatched); the darker the fill, the larger the force."
             ),
             width_percent=80,
         ))
