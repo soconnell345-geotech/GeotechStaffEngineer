@@ -610,7 +610,7 @@ class TestGroundImprovementPackage:
         result = _generate_ground_improvement_package({
             "method": "aggregate_piers",
             "column_diameter": 0.76, "spacing": 2.0,
-            "E_column": 80000, "E_soil": 5000,
+            "E_soil": 5000,
             "S_unreinforced": 0.05, "q_unreinforced": 150,
             "output_path": outfile,
         })
@@ -619,7 +619,7 @@ class TestGroundImprovementPackage:
         # Pre-GEC-13 aliases keep working.
         result2 = _generate_ground_improvement_package({
             "method": "aggregate_piers", "diameter": 0.76, "spacing": 2.0,
-            "E_pier": 80000, "output_path": str(tmp_path / "gi_ap2.html"),
+            "output_path": str(tmp_path / "gi_ap2.html"),
         })
         assert result2["status"] == "success"
 

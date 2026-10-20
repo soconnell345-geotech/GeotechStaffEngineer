@@ -25,7 +25,9 @@ class DrillShaft:
         Total shaft length / embedment depth (m).
     socket_diameter : float, optional
         Rock socket diameter if different from shaft diameter (m).
-        If None, same as diameter.
+        If None, same as diameter. One diameter for every rock layer:
+        GEC-10 sizes a rock socket by one diameter B (Eq. 10-21, Example
+        10-4, p. 10-27) and gives no socket diameter per rock layer.
     socket_length : float, optional
         Rock socket length (m). Default 0 (no socket).
     bell_diameter : float, optional
@@ -40,6 +42,13 @@ class DrillShaft:
     rebar_area : float, optional
         Total longitudinal reinforcement area (m²). Default 0. Likewise
         not used by the capacity.
+    fractured_rock_thickness : float, optional
+        Thickness (m) of decomposed or fractured rock below the top of
+        rock (the top of the profile's first rock layer) that is "not
+        considered part of the socket for design purposes" (GEC-10 p.
+        8-15): no rock side resistance over it, while the soil above
+        keeps its own (``casing_depth`` takes both away). Default 0: all
+        rock below the top 1.5 m and the casing is socket (GM-220).
 
     Properties
     ----------
@@ -58,6 +67,7 @@ class DrillShaft:
     casing_depth: float = 0.0
     concrete_fc: float = 28000.0
     rebar_area: float = 0.0
+    fractured_rock_thickness: float = 0.0
 
     def __post_init__(self):
         if self.diameter <= 0:
@@ -68,6 +78,10 @@ class DrillShaft:
             raise ValueError(f"Socket length must be non-negative, got {self.socket_length}")
         if self.casing_depth < 0:
             raise ValueError(f"Casing depth must be non-negative, got {self.casing_depth}")
+        if self.fractured_rock_thickness < 0:
+            raise ValueError(
+                "fractured_rock_thickness must be non-negative, got "
+                f"{self.fractured_rock_thickness}")
         if self.bell_diameter is not None and self.bell_diameter < self.diameter:
             raise ValueError(
                 f"Bell diameter ({self.bell_diameter}) must be >= shaft diameter ({self.diameter})"

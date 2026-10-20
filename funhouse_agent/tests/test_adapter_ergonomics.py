@@ -857,8 +857,11 @@ class TestDocCodeParity:
     def test_drilled_shaft_socket_documented(self):
         from funhouse_agent.adapters.drilled_shaft import METHOD_INFO
         p = METHOD_INFO["drilled_shaft_capacity"]["parameters"]
-        for key in ("gwt_depth", "socket_length", "bell_diameter"):
+        for key in ("gwt_depth", "socket_diameter", "bell_diameter"):
             assert key in p
+        # GM-179: the socket is the shaft within the rock layers
+        assert "socket_length" in METHOD_INFO["drilled_shaft_capacity"][
+            "refused_parameters"]
 
     def test_drilled_shaft_capacity_vs_depth_and_lrfd_document_all_params(self):
         """capacity_vs_depth and lrfd_capacity must document every accepted param

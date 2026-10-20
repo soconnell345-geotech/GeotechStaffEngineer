@@ -87,6 +87,83 @@ def side_n60_choice(spans) -> dict:
                       "needs N60 or N1_60)"])
 
 
+#: GEC-10 (FHWA-NHI-18-024) p. 8-15, as printed.
+FRACTURED_ROCK_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) p. 8-15: the amount of rock to be removed "
+    "should be defined, 'including depth of rock sockets as well as the "
+    "decomposed or fractured rock that may be removed but not considered "
+    "part of the socket for design purposes'. No rock side resistance is "
+    "taken over it; the soil above keeps its own, and the base is the "
+    "rock at the tip")
+
+
+def top_of_rock(soil: ShaftSoilProfile) -> Optional[float]:
+    """Depth (m) of the top of the profile's first rock layer; None with
+    no rock layer."""
+    depth = 0.0
+    for layer in soil.layers:
+        if layer.soil_type == "rock":
+            return depth
+        depth += layer.thickness
+    return None
+
+
+def fractured_rock_zone(shaft: DrillShaft, soil: ShaftSoilProfile):
+    """(top, bottom) depths (m) of the rock not considered part of the
+    socket (GEC-10 p. 8-15; ``shaft.fractured_rock_thickness`` below the
+    top of rock), or None when it is 0. Refused with no rock layer."""
+    t = shaft.fractured_rock_thickness
+    if not t:
+        return None
+    z = top_of_rock(soil)
+    if z is None:
+        raise ValueError(
+            f"fractured_rock_thickness = {t:g} m is rock below the top of "
+            "rock that is not part of the socket (GEC-10 p. 8-15), but the "
+            "profile has no rock layer (soil_type 'rock' with qu)")
+    return z, z + t
+
+
+def fractured_rock_choice(shaft: DrillShaft, soil: ShaftSoilProfile) -> dict:
+    """The choice made for the top of the rock (GM-220): how much of it is
+    not considered part of the socket."""
+    from geotech_common.choices import choice, how_given
+    t = shaft.fractured_rock_thickness
+    how = how_given(t, 0.0, name="fractured_rock_thickness")
+    if t:
+        z0, z1 = fractured_rock_zone(shaft, soil)
+        L = shaft.length
+        # where the tip is against the zone: below it the input changes
+        # nothing; inside it the base is on that rock (GM-220 review)
+        where, base_alt = "", []
+        if z0 >= L:
+            where = f"; below the shaft tip ({L:g} m), so it changes nothing"
+        elif L < z1:
+            where = (f"; the tip ({L:g} m) is within it: the base takes "
+                     "the tip rock layer's qu and RQD as given")
+            base_alt = ["the fractured rock as a rock layer of its own, "
+                        "with its qu and RQD, for the base on it"]
+        return choice(
+            "rock not considered part of the socket",
+            f"{t:g} m below the top of rock ({z0:g}-{z1:g} m){where}", how,
+            basis=FRACTURED_ROCK_BASIS,
+            alternatives=[
+                "fractured_rock_thickness 0: all rock below the top 1.5 m "
+                "and the casing is socket",
+                "casing_depth to the top of competent rock: no side "
+                "resistance, soil or rock, above it (GEC-10 Example 10-4, "
+                "p. 10-27)", *base_alt])
+    return choice(
+        "rock not considered part of the socket", "none", how,
+        basis=("all rock in the shaft below the top 1.5 m and the casing "
+               "is socket. " + FRACTURED_ROCK_BASIS.split(": ", 1)[0]
+               + " allows decomposed or fractured rock 'that may be "
+               "removed but not considered part of the socket for design "
+               "purposes'"),
+        alternatives=["fractured_rock_thickness: that thickness below the "
+                      "top of rock gives no side resistance"])
+
+
 @dataclass
 class DrillShaftAnalysis:
     """Drilled shaft axial capacity analysis.
@@ -191,6 +268,9 @@ class DrillShaftAnalysis:
         # Exclusion zones
         top_exclusion = max(1.5, shaft.casing_depth)
         # Bottom exclusion: 1 diameter for cohesive only (applied per-layer)
+        # Rock not considered part of the socket (GEC-10 p. 8-15, GM-220)
+        not_socket = fractured_rock_zone(shaft, self.soil)
+        in_rock = False
 
         total_Qs = 0.0
         no_n60 = []          # cohesionless side layers with no N60 (GM-148)
@@ -220,6 +300,13 @@ class DrillShaftAnalysis:
             if layer.soil_type == "cohesive":
                 bottom_excl_start = L - D
                 z_bottom_eff = min(z_bottom, bottom_excl_start)
+
+            if layer.soil_type == "rock":
+                in_rock = True
+                # the zone starts at the top of the first rock layer, so
+                # it can only take off the top of a rock layer
+                if not_socket is not None and z_top < not_socket[1]:
+                    z_top_eff = max(z_top_eff, not_socket[1])
 
             effective_thickness = z_bottom_eff - z_top_eff
             if effective_thickness <= 0:
@@ -332,7 +419,9 @@ class DrillShaftAnalysis:
             method="GEC-10",
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
-            choices=[side_n60_choice(no_n60)] if no_n60 else [],
+            choices=([side_n60_choice(no_n60)] if no_n60 else [])
+            + ([fractured_rock_choice(shaft, self.soil)]
+               if in_rock or shaft.fractured_rock_thickness else []),
         )
 
     def capacity_vs_depth(self, depth_min: float = 3.0,

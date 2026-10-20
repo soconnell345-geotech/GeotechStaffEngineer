@@ -64,7 +64,7 @@ EXAMPLES = [
     ("retaining_walls", "cantilever_wall", dict(
         wall_height=6.0, gamma_backfill=18.0, phi_backfill=32.0, surcharge=12.0, q_allowable=250.0)),
     ("ground_improvement", "aggregate_piers", dict(
-        column_diameter=0.76, spacing=1.5, pattern="triangular", E_column=40000.0,
+        column_diameter=0.76, spacing=1.5, pattern="triangular",
         E_soil=8000.0, S_unreinforced=100.0, q_unreinforced=150.0)),
     ("slope_stability", "search_critical_surface", dict(
         surface_points=[[0, 0], [10, 0], [25, 10], [45, 10]],

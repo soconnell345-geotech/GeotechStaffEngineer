@@ -11,7 +11,7 @@ from drilled_shaft.capacity import skipped_depths_note
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
-                 "socket_length", "bell_diameter", "casing_depth")
+                 "bell_diameter", "casing_depth", "fractured_rock_thickness")
 _SOIL_PARAMS = ("layers", "gwt_depth")
 # GEC-10 rational side-resistance method selectors (opt-in; defaults preserve
 # the AASHTO / depth-based behavior).
@@ -36,9 +36,10 @@ def _build_shaft(params):
                    valid=_SHAFT_PARAMS + _SOIL_PARAMS)
     return DrillShaft(diameter=params["diameter"], length=params["shaft_length"],
                        socket_diameter=params.get("socket_diameter"),
-                       socket_length=params.get("socket_length", 0.0),
                        bell_diameter=params.get("bell_diameter"),
-                       casing_depth=params.get("casing_depth", 0.0))
+                       casing_depth=params.get("casing_depth", 0.0),
+                       fractured_rock_thickness=params.get(
+                           "fractured_rock_thickness", 0.0))
 
 
 def _build_soil_profile(params):
@@ -166,10 +167,10 @@ _INFO_RATIONAL = {
     "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
 }
 _INFO_SHAFT_GEOM = {
-    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter."},
-    "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m). Printed in the calc steps only: the capacity takes rock side resistance over every rock layer within the shaft length, whatever this says."},
+    "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter (m). Defaults to shaft diameter. One diameter for every rock layer: GEC-10 sizes a socket by one diameter B (Eq. 10-21, Example 10-4) and gives none per rock layer."},
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
+    "fractured_rock_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Decomposed or fractured rock (m) below the top of the first rock layer that is 'not considered part of the socket for design purposes' (GEC-10 p. 8-15): no rock side resistance over it, while the soil above keeps its own (casing_depth takes both). 0 = all rock is socket. Needs a rock layer."},
 }
 
 METHOD_INFO = {
@@ -234,8 +235,18 @@ METHOD_INFO = {
 _NO_FC = ("the geotechnical capacity (GEC-10 side and base resistance) does "
           "not use the concrete strength, and these tools make no "
           "structural check of the shaft")
+# The socket length was taken and printed and changed nothing (GM-184);
+# refused since GM-179: the socket is the shaft within the rock layers.
+_NO_SOCKET_LENGTH = (
+    "the capacity does not take a socket length: rock side resistance "
+    "(GEC-10) is taken over the shaft's length within the rock layers, so "
+    "the socket is what layers and shaft_length make it. Give the rock as "
+    "layers (soil_type 'rock' with qu) and the shaft_length that ends the "
+    "shaft that far into it. A permanent casing into the rock is "
+    "casing_depth: no side resistance, soil or rock, above it")
 for _m in ("drilled_shaft_capacity", "capacity_vs_depth", "lrfd_capacity"):
-    METHOD_INFO[_m]["refused_parameters"] = {"concrete_fc": _NO_FC}
+    METHOD_INFO[_m]["refused_parameters"] = {
+        "concrete_fc": _NO_FC, "socket_length": _NO_SOCKET_LENGTH}
 
 declare_aliases(METHOD_INFO, {
     m: _SHAFT_ALIASES for m in ("drilled_shaft_capacity", "capacity_vs_depth",
@@ -243,13 +254,10 @@ declare_aliases(METHOD_INFO, {
 
 # When each default applies (GM-119): the CIUC transform and the
 # atmospheric pressure go with GEC-10's rational chains only.
-# The socket length is checked and printed, not used (GM-184): rock side
-# resistance comes from the rock layers within the shaft length.
 declare_applies_when(METHOD_INFO, {
     m: {"su_test_type": {"alpha_method": ["rational"]},
         "pa": [{"alpha_method": ["rational"]},
-               {"beta_method": ["rational"]}],
-        "socket_length": False}
+               {"beta_method": ["rational"]}]}
     for m in ("drilled_shaft_capacity", "capacity_vs_depth",
               "lrfd_capacity")})
 

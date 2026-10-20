@@ -512,6 +512,75 @@ class TestFeasibility:
         assert "GROUND IMPROVEMENT FEASIBILITY" in result.summary()
 
 
+class TestFeasibilityDepth:
+    """GM-179: the treatment reaches depth_to_top_m + thickness_m, held
+    against GEC-13's printed depths: stone columns 100 ft and rammed
+    aggregate piers 35 ft (p. 5-9, item 7); vibro-compaction about 165 ft,
+    about 100 ft generally recommended (p. 4-65)."""
+
+    @staticmethod
+    def _excluded(result):
+        return {d["method"]: d["reason"] for d in result.not_applicable}
+
+    def test_the_printed_depths(self):
+        from ground_improvement.feasibility import (
+            RAMMED_PIER_MAX_DEPTH_M, STONE_COLUMN_MAX_DEPTH_M,
+            VIBRO_MAX_DEPTH_M, VIBRO_RECOMMENDED_DEPTH_M)
+        assert STONE_COLUMN_MAX_DEPTH_M == pytest.approx(30.48)
+        assert RAMMED_PIER_MAX_DEPTH_M == pytest.approx(10.668)
+        assert VIBRO_MAX_DEPTH_M == pytest.approx(50.292)
+        assert VIBRO_RECOMMENDED_DEPTH_M == pytest.approx(30.48)
+
+    def test_within_35_ft_any_aggregate_pier(self):
+        r = evaluate_feasibility(soil_type="soft_clay", thickness_m=8.0,
+                                 depth_to_top_m=2.0)
+        assert "Aggregate Piers" in r.applicable_methods
+        assert "column_type" not in r.preliminary_sizing["aggregate_piers"]
+        assert not any("p. 5-9" in x for x in r.recommendations)
+
+    def test_beyond_35_ft_stone_columns(self):
+        # the layer's depth counts: 10 m thick from 5 m reaches 15 m
+        r = evaluate_feasibility(soil_type="soft_clay", thickness_m=10.0,
+                                 depth_to_top_m=5.0)
+        assert "Aggregate Piers" in r.applicable_methods
+        assert r.preliminary_sizing["aggregate_piers"]["column_type"] == \
+            "stone columns"
+        assert any("15.0 m" in x and "GEC-13 p. 5-9" in x
+                   for x in r.recommendations)
+        # 15 m from the surface: excluded by the old 12 m limit, within
+        # stone columns' 100 ft
+        r = evaluate_feasibility(soil_type="soft_clay", thickness_m=15.0)
+        assert "Aggregate Piers" in r.applicable_methods
+
+    def test_beyond_100_ft_no_aggregate_pier(self):
+        r = evaluate_feasibility(soil_type="soft_clay", thickness_m=25.0,
+                                 depth_to_top_m=10.0)
+        why = self._excluded(r)["Aggregate Piers"]
+        assert "35.0 m" in why and "100 ft (30.5 m)" in why
+        assert "GEC-13 p. 5-9" in why
+
+    def test_vibro_beyond_the_recommended_depth(self):
+        r = evaluate_feasibility(soil_type="loose_sand", fines_content=5.0,
+                                 thickness_m=10.0, depth_to_top_m=25.0)
+        assert "Vibro-Compaction" in r.applicable_methods
+        assert any("generally recommended depth of about 100 ft" in x
+                   for x in r.recommendations)
+
+    def test_vibro_beyond_its_maximum(self):
+        r = evaluate_feasibility(soil_type="loose_sand", fines_content=5.0,
+                                 thickness_m=20.0, depth_to_top_m=35.0)
+        why = self._excluded(r)["Vibro-Compaction"]
+        assert "55.0 m" in why and "165 ft (50 m)" in why
+
+    def test_the_water_table_changes_nothing(self):
+        # p. 4-65: vibro-compaction works above and below it
+        a = evaluate_feasibility(soil_type="loose_sand", fines_content=5.0,
+                                 thickness_m=6.0).to_dict()
+        b = evaluate_feasibility(soil_type="loose_sand", fines_content=5.0,
+                                 thickness_m=6.0, gwt_depth_m=1.0).to_dict()
+        assert a == b
+
+
 # ================================================================
 # RESULT CONTAINERS
 # ================================================================

@@ -710,7 +710,10 @@ def check_external_stability(
     phi_backfill : float
         Reinforced fill friction angle (degrees).
     gamma_foundation : float
-        Foundation soil unit weight (kN/m³).
+        Foundation soil unit weight (kN/m³). Not used by these checks:
+        bearing compares the bearing pressure with ``q_allowable`` and no
+        passive resistance is counted. The LRFD path works a bearing
+        resistance out from it (``check_external_stability_lrfd``).
     phi_foundation : float
         Foundation friction angle (degrees).
     c_foundation : float, optional
@@ -1010,6 +1013,70 @@ def _external_dict(t: Dict[str, Any], q_allowable: float = None,
     return out
 
 
+#: GEC-11 Vol I p. 4-28: the nominal bearing resistance of Eq. 4-22.
+NOMINAL_BEARING_BASIS = (
+    "GEC-11 Vol I Eq. 4-22 (AASHTO Eq. 10.6.3.1.2a-1): qn = c_f Nc + "
+    "0.5 L' gamma_f Ngamma over L' = L - 2 eB of each combination (L' = L "
+    "when eB < 0), Nc and Ngamma from Table 4-6 (AASHTO Table "
+    "10.6.3.1.2a-1: Prandtl's Nc, Vesic's Ngamma); a level grade in front "
+    "of the wall and no groundwater influence, the wall's embedment "
+    "neglected (p. 4-28); qR = phi_b qn (Eq. 4-23)")
+
+
+def bearing_factors(phi_deg: float) -> Dict[str, float]:
+    """Nc, Nq and Ngamma of GEC-11 Table 4-6 (AASHTO Table
+    10.6.3.1.2a-1), from the equations the table notes: Nq (Reissner) =
+    e^(pi tan phi) tan^2(45 + phi/2), Nc (Prandtl) = (Nq - 1) cot phi
+    (5.14 at phi = 0), Ngamma (Vesic) = 2 (Nq + 1) tan phi. They agree with
+    the table within 0.1 (phi = 30: 30.1, 18.4, 22.4)."""
+    if phi_deg < 0 or phi_deg >= 90:
+        raise ValueError(f"phi_foundation must be in [0, 90), got {phi_deg}")
+    t = math.tan(math.radians(phi_deg))
+    Nq = math.exp(math.pi * t) * math.tan(math.radians(45 + phi_deg / 2)) ** 2
+    Nc = (Nq - 1.0) / t if phi_deg > 0 else 2.0 + math.pi
+    return {"Nc": Nc, "Nq": Nq, "Ngamma": 2.0 * (Nq + 1.0) * t}
+
+
+def nominal_bearing_resistance(L_eff: float, gamma_foundation: float,
+                               phi_foundation: float,
+                               c_foundation: float = 0.0) -> float:
+    """The nominal bearing resistance qn (kPa) under an MSE wall, GEC-11 Vol
+    I Eq. 4-22: qn = c_f Nc + 0.5 L' gamma_f Ngamma, for a level grade in
+    front of the wall and no groundwater influence, the embedment neglected
+    (p. 4-28). ``L_eff`` is L' = L - 2 eB (m), ``gamma_foundation`` the
+    foundation soil's unit weight (kN/m3). Reproduces Vol II Example E2:
+    L' = 12.46 ft, 125 pcf, phi = 30 deg -> 17.44 ksf."""
+    f = bearing_factors(phi_foundation)
+    return c_foundation * f["Nc"] + 0.5 * L_eff * gamma_foundation * f["Ngamma"]
+
+
+#: A bearing resistance worked out from the foundation soil takes that
+#: soil's own friction angle, never the reinforced fill's (GM-179 review).
+NEEDS_PHI_FOUNDATION = (
+    "gamma_foundation works the bearing resistance out by GEC-11 Eq. 4-22 "
+    "with Nc and Ngamma for the foundation soil's friction angle: give "
+    "phi_foundation (and c_foundation if it has cohesion); the reinforced "
+    "fill's phi_backfill is not taken for it")
+
+
+def bearing_resistance_choices(phi_bearing: float) -> list:
+    """How the LRFD path worked the strength bearing resistance out from
+    the foundation soil (GM-179), as a result's ``choices``
+    (``geotech_common.choices``)."""
+    from geotech_common.choices import choice, how_given
+    return [choice(
+        "factored bearing resistance qR (Strength I)",
+        f"phi_b qn, phi_b = {phi_bearing:g} (phi_bearing), qn by GEC-11 "
+        f"Eq. 4-22",
+        how_given(phi_bearing, 0.65, name="phi_bearing"),
+        "GEC-11 Vol I Table 4-5 (AASHTO Table 11.5.6-1): bearing "
+        "resistance factor 0.65; " + NOMINAL_BEARING_BASIS,
+        ["a factored resistance given as bearing_resistance_strength in "
+         "place of gamma_foundation: with a slope in front of the wall or "
+         "a high water table, qn by AASHTO 10.6.3.1.2 (GEC-11 Vol I "
+         "p. 4-28)"])]
+
+
 def check_external_stability_lrfd(
     geom: MSEWallGeometry,
     gamma_backfill: float,
@@ -1030,6 +1097,8 @@ def check_external_stability_lrfd(
     phi_sliding: float = 1.0,
     ecc_limit_ratio: float = 0.25,
     traffic_vertical_resists: bool = False,
+    gamma_foundation: float = None,
+    phi_bearing: float = 0.65,
 ) -> Dict[str, Any]:
     """AASHTO/GEC-11 LRFD external stability for an MSE wall (rigid block).
 
@@ -1073,6 +1142,18 @@ def check_external_stability_lrfd(
     bearing_resistance_strength : float, optional
         Factored bearing resistance qR at the strength limit (kPa) = phi_b*qn.
         If given, the strength/critical bearing CDR = qR / sigma_v is reported.
+        Give it or ``gamma_foundation``, not both.
+    gamma_foundation : float, optional
+        Foundation soil unit weight (kN/m3) (GM-179). With it the strength
+        bearing resistance is worked out for each combination instead of
+        given: qn by GEC-11 Eq. 4-22 over that combination's L' with
+        ``phi_foundation`` and ``c_foundation``
+        (:func:`nominal_bearing_resistance`), qR = ``phi_bearing`` qn
+        (Eq. 4-23), as Vol II Example E2 does. Service I keeps its given
+        resistance, a settlement criterion, not qn.
+    phi_bearing : float, optional
+        Bearing resistance factor phi_b for a qn worked out from
+        ``gamma_foundation``. Default 0.65 (GEC-11 Table 4-5).
     bearing_resistance_service : float, optional
         Service bearing resistance (kPa). If given, the Service I bearing CDR is
         reported.
@@ -1131,13 +1212,27 @@ def check_external_stability_lrfd(
     phi_ext = phi_retained if phi_retained is not None else phi_backfill
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
     q = geom.surcharge if live_load is None else live_load
+    if gamma_foundation is not None:
+        if bearing_resistance_strength is not None:
+            raise ValueError(
+                "Give bearing_resistance_strength (a factored resistance qR) "
+                "or gamma_foundation (to work qR out by GEC-11 Eq. 4-22), "
+                "not both.")
+        if not gamma_foundation > 0:
+            raise ValueError(
+                f"gamma_foundation must be > 0, got {gamma_foundation}")
+        if not 0 < phi_bearing <= 1:
+            raise ValueError(f"phi_bearing must be in (0, 1], got "
+                             f"{phi_bearing}")
+    soil = (None if gamma_foundation is None else
+            (gamma_foundation, phi_foundation, c_foundation, phi_bearing, L))
     if geom.backfill_slope > 0:
         return _external_lrfd_sloping(
             geom, gamma_backfill, phi_backfill, phi_foundation, phi_ext,
             gamma_ext, q, bearing_resistance_strength,
             bearing_resistance_service, c_foundation, gamma_EV_max,
             gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL, phi_sliding,
-            ecc_limit_ratio, traffic_vertical_resists)
+            ecc_limit_ratio, traffic_vertical_resists, soil)
     Ka = rankine_Ka(phi_ext)
 
     # Unfactored load components about the toe (Point A). Vertical loads V*
@@ -1189,7 +1284,7 @@ def check_external_stability_lrfd(
         return sigma, eL, Bp
 
     sig_str, eL_bear, Bp_str = _bearing(gamma_EV_max, gamma_LL)   # Str I max
-    sig_crit, _, _ = _bearing(gamma_EV_min, gamma_EV_min)         # min-vertical
+    sig_crit, _, Bp_crit = _bearing(gamma_EV_min, gamma_EV_min)   # min-vertical
 
     # Service I: all factors 1.0, LL included, overturning without EH/LL factors.
     SV_s = V1 + Vs
@@ -1210,14 +1305,15 @@ def check_external_stability_lrfd(
         {"EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
          "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
          "LL": gamma_LL, "phi_sliding": phi_sliding,
-         "ecc_limit_ratio": ecc_limit_ratio})
+         "ecc_limit_ratio": ecc_limit_ratio},
+        soil, Bp_crit)
 
 
 def _external_lrfd_sloping(
     geom, gamma_backfill, phi_backfill, phi_foundation, phi_ext, gamma_ext,
     q, bearing_resistance_strength, bearing_resistance_service, c_foundation,
     gamma_EV_max, gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL,
-    phi_sliding, ecc_limit_ratio, traffic_vertical_resists=False,
+    phi_sliding, ecc_limit_ratio, traffic_vertical_resists=False, soil=None,
 ) -> Dict[str, Any]:
     """``check_external_stability_lrfd`` with a sloping backfill (GEC-11 Vol
     I §4.4.6; Vol II Examples E3 and E1). Same combinations and result as the
@@ -1266,8 +1362,8 @@ def _external_lrfd_sloping(
     eL_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL, ll_v, 0.0)[1]
     sig_str, eL_bear, Bp_str = _base(gamma_EV_max, gamma_EH_max, gamma_LL,
                                      gamma_LL, gamma_LL)
-    sig_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL, gamma_LL,
-                     gamma_EV_min)[0]
+    sig_crit, _, Bp_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL,
+                                 gamma_LL, gamma_EV_min)
     sig_svc = _base(1.0, 1.0, 1.0, 1.0, 1.0)[0]
 
     unfactored = {
@@ -1286,7 +1382,8 @@ def _external_lrfd_sloping(
         {"EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
          "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
          "LL": gamma_LL, "phi_sliding": phi_sliding,
-         "ecc_limit_ratio": ecc_limit_ratio})
+         "ecc_limit_ratio": ecc_limit_ratio},
+        soil, Bp_crit)
     out["backslope"] = _backslope_summary(ld, traffic_vertical_resists)
     return out
 
@@ -1295,10 +1392,14 @@ def _lrfd_result(
     cdr_slide_max, cdr_slide_min, cdr_slide_crit, eL_max, eL_crit, e_limit,
     sig_str, eL_bear, Bp_str, sig_crit, sig_svc,
     bearing_resistance_strength, bearing_resistance_service,
-    unfactored, load_factors,
+    unfactored, load_factors, soil=None, Bp_crit=None,
 ) -> Dict[str, Any]:
     """The LRFD external-stability result from its CDRs, eccentricities and
-    bearing stresses (shared by the level and sloping-backfill cases)."""
+    bearing stresses (shared by the level and sloping-backfill cases).
+    ``soil`` = (gamma_f, phi_f, c_f, phi_b, L) works the strength bearing
+    resistance out by GEC-11 Eq. 4-22 over each combination's L'
+    (``Bp_str``, ``Bp_crit``; L' = L when eB < 0, p. 4-28) instead of
+    taking it given (GM-179)."""
     cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
     eL_gov = max(eL_max, eL_crit)
 
@@ -1307,8 +1408,29 @@ def _lrfd_result(
             return None
         return resistance / demand
 
-    cdr_bear_str = _cdr(bearing_resistance_strength, sig_str)
-    cdr_bear_crit = _cdr(bearing_resistance_strength, sig_crit)
+    qR_str = qR_crit = bearing_resistance_strength
+    worked_out = None
+    if soil is not None:
+        gamma_f, phi_f, c_f, phi_b, L = soil
+        Lq_str = min(max(Bp_str, 0.0), L)
+        Lq_crit = min(max(Bp_crit, 0.0), L)
+        qn_str = nominal_bearing_resistance(Lq_str, gamma_f, phi_f, c_f)
+        qn_crit = nominal_bearing_resistance(Lq_crit, gamma_f, phi_f, c_f)
+        qR_str, qR_crit = phi_b * qn_str, phi_b * qn_crit
+        f = bearing_factors(phi_f)
+        worked_out = {
+            "qn_strength_max_kPa": round(qn_str, 2),
+            "qR_strength_max_kPa": round(qR_str, 2),
+            "B_eff_critical_m": round(Lq_crit, 4),
+            "qn_critical_kPa": round(qn_crit, 2),
+            "qR_critical_kPa": round(qR_crit, 2),
+            "Nc": round(f["Nc"], 2), "Ngamma": round(f["Ngamma"], 2),
+            "phi_bearing": phi_b,
+            "resistance_basis": NOMINAL_BEARING_BASIS,
+        }
+
+    cdr_bear_str = _cdr(qR_str, sig_str)
+    cdr_bear_crit = _cdr(qR_crit, sig_crit)
     cdr_bear_svc = _cdr(bearing_resistance_service, sig_svc)
     bear_cdrs = [c for c in (cdr_bear_str, cdr_bear_crit) if c is not None]
     cdr_bear_gov = min(bear_cdrs) if bear_cdrs else None
@@ -1336,7 +1458,23 @@ def _lrfd_result(
                    if k.startswith("bearing") and v is not None]
     bearing_passes = all(bearing_ran) if bearing_ran else None
 
-    return {
+    bearing = {
+        "sigma_v_strength_max_kPa": round(sig_str, 2),
+        "eL_strength_max_m": round(eL_bear, 4),
+        "B_eff_strength_max_m": round(Bp_str, 4),
+        "sigma_v_critical_kPa": round(sig_crit, 2),
+        "sigma_v_service_kPa": round(sig_svc, 2),
+        "CDR_strength": round(cdr_bear_str, 3) if cdr_bear_str else None,
+        "CDR_critical": round(cdr_bear_crit, 3) if cdr_bear_crit else None,
+        "CDR_service": round(cdr_bear_svc, 3) if cdr_bear_svc else None,
+        "CDR_governing": round(cdr_bear_gov, 3) if cdr_bear_gov else None,
+        "checked": bool(bearing_ran),
+        "passes": bearing_passes,
+    }
+    if worked_out:
+        bearing.update(worked_out)
+
+    out = {
         "sliding": {
             "CDR_strength_max": round(cdr_slide_max, 3),
             "CDR_strength_min": round(cdr_slide_min, 3),
@@ -1351,25 +1489,16 @@ def _lrfd_result(
             "e_limit_m": round(e_limit, 4),
             "passes": eL_gov <= e_limit,
         },
-        "bearing": {
-            "sigma_v_strength_max_kPa": round(sig_str, 2),
-            "eL_strength_max_m": round(eL_bear, 4),
-            "B_eff_strength_max_m": round(Bp_str, 4),
-            "sigma_v_critical_kPa": round(sig_crit, 2),
-            "sigma_v_service_kPa": round(sig_svc, 2),
-            "CDR_strength": round(cdr_bear_str, 3) if cdr_bear_str else None,
-            "CDR_critical": round(cdr_bear_crit, 3) if cdr_bear_crit else None,
-            "CDR_service": round(cdr_bear_svc, 3) if cdr_bear_svc else None,
-            "CDR_governing": round(cdr_bear_gov, 3) if cdr_bear_gov else None,
-            "checked": bool(bearing_ran),
-            "passes": bearing_passes,
-        },
+        "bearing": bearing,
         "passes": passes,
         "checks_failed": checks_failed,
         "checks_not_run": checks_not_run,
         "unfactored_kN_m": unfactored,
         "load_factors": load_factors,
     }
+    if worked_out:
+        out["choices"] = bearing_resistance_choices(soil[3])
+    return out
 
 
 def analyze_mse_wall(
@@ -1404,7 +1533,13 @@ def analyze_mse_wall(
     reinforcement : Reinforcement
         Reinforcement properties.
     gamma_foundation : float, optional
-        Foundation unit weight. If None, uses gamma_backfill.
+        Foundation soil unit weight (kN/m3). Used only on the LRFD path
+        (``lrfd_external=True``) with no ``bearing_resistance_strength``:
+        the strength bearing resistance is then worked out by GEC-11 Eq.
+        4-22 (see ``check_external_stability_lrfd``); a given
+        ``bearing_resistance_strength`` is used as given. The ASD bearing
+        check compares the bearing pressure with ``q_allowable`` and counts
+        no passive resistance, so it does not use it (GM-179).
     phi_foundation : float, optional
         Foundation friction angle. If None, uses phi_backfill.
     c_foundation : float, optional
@@ -1449,8 +1584,9 @@ def analyze_mse_wall(
         (:func:`_external_terms`) and ``choices`` how a live load over the
         reinforced zone was counted (:func:`live_load_choices`).
     """
-    if gamma_foundation is None:
-        gamma_foundation = gamma_backfill
+    if (lrfd_external and gamma_foundation is not None
+            and bearing_resistance_strength is None and phi_foundation is None):
+        raise ValueError(NEEDS_PHI_FOUNDATION)
     if phi_foundation is None:
         phi_foundation = phi_backfill
 
@@ -1488,6 +1624,9 @@ def analyze_mse_wall(
             bearing_resistance_strength=bearing_resistance_strength,
             bearing_resistance_service=bearing_resistance_service,
             traffic_vertical_resists=traffic_vertical_resists,
+            gamma_foundation=(gamma_foundation
+                              if bearing_resistance_strength is None
+                              else None),
         )
 
     return MSEWallResult(

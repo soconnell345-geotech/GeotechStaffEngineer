@@ -513,55 +513,55 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html",
 MODULE_REGISTRY = {
     "bearing_capacity": {
         "adapter": "funhouse_agent.adapters.bearing_capacity",
-        "brief": "Shallow foundation bearing capacity (Terzaghi/Vesic/Meyerhof/Hansen)",
+        "brief": "Shallow foundations (Terzaghi/Vesic/Meyerhof/Hansen)",
     },
     "settlement": {
         "adapter": "funhouse_agent.adapters.settlement",
-        "brief": "Foundation settlement (elastic, Schmertmann, consolidation)",
+        "brief": "Foundations (elastic, Schmertmann, consolidation)",
     },
     "slope_stability": {
         "adapter": "funhouse_agent.adapters.slope_stability",
-        "brief": "Slope stability: LE methods + search, rapid drawdown, infinite slope, seismic ky/Newmark, nails/anchors/piles, FOSM/MC",
+        "brief": "LE methods + search, rapid drawdown, infinite slope, seismic ky/Newmark, nails/anchors/piles, FOSM/MC",
     },
     "seismic_geotech": {
         "adapter": "funhouse_agent.adapters.seismic_geotech",
-        "brief": "Seismic evaluation (site class, M-O pressure); liquefaction triggering is in 'liquefaction'",
+        "brief": "Site class, M-O pressure; liquefaction triggering: 'liquefaction'",
     },
     "liquefaction": {
         "adapter": "funhouse_agent.adapters.liquefaction_adapter",
-        "brief": "Liquefaction triggering: CPT -> Boulanger & Idriss 2014 + LPI/LSN/LDI, FS and strain by depth; SPT -> B&I 2014 or NCEER/Youd 2001 (method='nceer2001'); feeds post-liquefaction downdrag",
+        "brief": "Triggering: CPT -> Boulanger & Idriss 2014 + LPI/LSN/LDI, FS and strain by depth; SPT -> B&I 2014 or NCEER/Youd 2001 (method='nceer2001'); feeds post-liquefaction downdrag",
     },
     "retaining_walls": {
         "adapter": "funhouse_agent.adapters.retaining_walls",
-        "brief": "Retaining walls (cantilever + MSE, GEC-11)",
+        "brief": "Cantilever + MSE walls (GEC-11)",
     },
     "axial_pile": {
         "adapter": "funhouse_agent.adapters.axial_pile",
-        "brief": "Driven pile axial capacity (Nordlund/Tomlinson/Beta)",
+        "brief": "Driven pile capacity (Nordlund/Tomlinson/Beta)",
     },
     "drilled_shaft": {
         "adapter": "funhouse_agent.adapters.drilled_shaft",
-        "brief": "Drilled shaft capacity (GEC-10 alpha/beta/rock socket, LRFD)",
+        "brief": "Capacity (GEC-10 alpha/beta/rock socket, LRFD)",
     },
     "sheet_pile": {
         "adapter": "funhouse_agent.adapters.sheet_pile",
-        "brief": "Sheet pile walls (cantilever and anchored)",
+        "brief": "Cantilever and anchored walls",
     },
     "lateral_pile": {
         "adapter": "funhouse_agent.adapters.lateral_pile",
-        "brief": "Lateral pile analysis (COM624P, 8 p-y models, FD solver); composite pile section EI",
+        "brief": "COM624P (8 p-y models, FD solver); composite pile section EI",
     },
     "pile_group": {
         "adapter": "funhouse_agent.adapters.pile_group",
-        "brief": "Pile group analysis (rigid cap, 6-DOF, Converse-Labarre)",
+        "brief": "Rigid cap, 6-DOF, Converse-Labarre",
     },
     "ground_improvement": {
         "adapter": "funhouse_agent.adapters.ground_improvement",
-        "brief": "Ground improvement (aggregate piers, wick drains, vibro, GEC-13)",
+        "brief": "Aggregate piers, wick drains, vibro (GEC-13)",
     },
     "wave_equation": {
         "adapter": "funhouse_agent.adapters.wave_equation",
-        "brief": "Smith 1-D wave equation (bearing graph, drivability)",
+        "brief": "Smith 1-D (bearing graph, drivability)",
     },
     "downdrag": {
         "adapter": "funhouse_agent.adapters.downdrag",
@@ -573,51 +573,51 @@ MODULE_REGISTRY = {
     },
     "pavement_design": {
         "adapter": "funhouse_agent.adapters.pavement_design_adapter",
-        "brief": "Pavement design: AASHTO 1993 and UFC 3-250-01 (flexible SN/CBR, rigid slab D, ESALs)",
+        "brief": "AASHTO 1993 and UFC 3-250-01 (flexible SN/CBR, rigid slab D, ESALs)",
     },
     "dxf_export": {
         "adapter": "funhouse_agent.adapters.dxf_export",
-        "brief": "Export cross-section geometry to DXF file format",
+        "brief": "Cross-section geometry to a DXF file",
     },
     "calc_package": {
         "adapter": "funhouse_agent.adapters.calc_package",
-        "brief": "Calc packages (HTML/LaTeX/PDF) for 15 modules with CSV calculation tables, their figures as PNGs, html_to_pdf for bespoke reports",
+        "brief": "HTML/LaTeX/PDF for 15 modules with CSV calculation tables, figures as PNGs; html_to_pdf for bespoke reports",
     },
     "profile_figure": {
         "adapter": "funhouse_agent.adapters.profile_figure_adapter",
-        "brief": "PNG figures: subsurface profile schematic (layers, water, foundation); plot_data x/y or depth plots",
+        "brief": "PNGs: subsurface profile schematic (layers, water, foundation); plot_data x/y or depth plots",
     },
     "worked_examples": {
         "adapter": "funhouse_agent.adapters.worked_examples_adapter",
-        "brief": "Published worked examples (GEC/Caltrans/AASHTO/UFC/Slide2) with method calls and answers; consult before nontrivial designs",
+        "brief": "Published (GEC/Caltrans/AASHTO/UFC/Slide2) with method calls and answers; consult before nontrivial designs",
     },
     "pystra": {
         "adapter": "funhouse_agent.adapters.pystra_adapter",
-        "brief": "Structural reliability analysis (FORM/SORM/Monte Carlo)",
+        "brief": "Structural reliability (FORM/SORM/Monte Carlo)",
     },
     "reliability": {
         "adapter": "funhouse_agent.adapters.reliability_adapter",
-        "brief": "GEOTECH reliability: FOSM (Duncan 2000), Rosenblueth PEM, Monte Carlo, FORM, published COVs, Vanmarcke averaging. SORM: pystra",
+        "brief": "GEOTECH: FOSM (Duncan 2000), Rosenblueth PEM, Monte Carlo, FORM, published COVs, Vanmarcke averaging; SORM: 'pystra'",
     },
     "salib": {
         "adapter": "funhouse_agent.adapters.salib_adapter",
-        "brief": "Sensitivity analysis (Sobol, Morris screening)",
+        "brief": "Sensitivity (Sobol, Morris screening)",
     },
     "dxf_import": {
         "adapter": "funhouse_agent.adapters.dxf_import_adapter",
-        "brief": "DXF CAD import for slope stability + FEM (discover, parse, build geometry)",
+        "brief": "CAD import for slope stability + FEM (discover, parse, build geometry)",
     },
     "pdf_import": {
         "adapter": "funhouse_agent.adapters.pdf_import_adapter",
-        "brief": "PDF cross-section import (PyMuPDF vector extraction, content discovery)",
+        "brief": "Cross-sections (vector extraction, content discovery)",
     },
     "drawing_ir": {
         "adapter": "funhouse_agent.adapters.drawing_ir_adapter",
-        "brief": "Drawing geometry from DXF/PDF/raster: slice queries, leader/dimension/title-block/bubble/cloud proposals, drawing-set search, region snip",
+        "brief": "DXF/PDF/raster geometry: slice queries, leader/dimension/title-block/bubble/cloud proposals, drawing-set search, region snip",
     },
     "opensees": {
         "adapter": "funhouse_agent.adapters.opensees_adapter",
-        "brief": "OpenSees FE analyses (PM4Sand DSS, 1D site response)",
+        "brief": "FE analyses (PM4Sand DSS, 1D site response)",
     },
     "pystrata": {
         "adapter": "funhouse_agent.adapters.pystrata_adapter",
@@ -625,11 +625,11 @@ MODULE_REGISTRY = {
     },
     "liquepy": {
         "adapter": "funhouse_agent.adapters.liquepy_adapter",
-        "brief": "liquepy B&I 2014 CPT/SPT triggering, LPI/LSN/LDI, CPT correlations (Vs/Dr/su/k); routine triggering: 'liquefaction'",
+        "brief": "B&I 2014 CPT/SPT triggering, LPI/LSN/LDI, CPT correlations (Vs/Dr/su/k); routine triggering: 'liquefaction'",
     },
     "seismic_signals": {
         "adapter": "funhouse_agent.adapters.seismic_signals_adapter",
-        "brief": "Earthquake signal processing (response spectra, intensity measures, RotD, filtering)",
+        "brief": "Earthquake records (response spectra, intensity measures, RotD, filtering)",
     },
     "fem2d": {
         "adapter": "funhouse_agent.adapters.fem2d_adapter",
@@ -641,7 +641,7 @@ MODULE_REGISTRY = {
     },
     "section_props": {
         "adapter": "funhouse_agent.adapters.section_props_adapter",
-        "brief": "Cross-section properties: A, I, Z, S, J, warping; steel shapes + polygons",
+        "brief": "A, I, Z, S, J, warping; steel shapes + polygons",
     },
     "concrete_props": {
         "adapter": "funhouse_agent.adapters.concrete_props_adapter",
@@ -653,7 +653,7 @@ MODULE_REGISTRY = {
     },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
-        "brief": "Subsurface data: DIGGS read/validate/write (from logs you read), AGS4, GEF/BRO-XML CPT+borehole; Plotly depth/Atterberg/plan/section plots",
+        "brief": "DIGGS read/validate/write (from logs you read), AGS4, GEF/BRO-XML CPT+borehole; Plotly depth/Atterberg/plan/section plots",
     },
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {
@@ -670,87 +670,87 @@ MODULE_REGISTRY = {
     },
     "em_2104": {
         "adapter": "funhouse_agent.adapters.em_2104_adapter",
-        "brief": "EM 1110-2-2104 RC hydraulic structures (USACE): loads, service limits, flexure-axial (App B/D), shear",
+        "brief": "EM 1110-2-2104 RC hydraulic structures (USACE): loads, service limits, flexure-axial, shear",
     },
     "em_2107": {
         "adapter": "funhouse_agent.adapters.em_2107_adapter",
-        "brief": "EM 1110-2-2107 hydraulic steel structures (USACE): LRFD loads, seismic amplification, Tainter gates (App F)",
+        "brief": "EM 1110-2-2107 hydraulic steel structures (USACE): LRFD loads, seismic amplification, Tainter gates",
     },
     "gec4": {
         "adapter": "funhouse_agent.adapters.gec4_adapter",
-        "brief": "GEC-4 ground anchors (FHWA-IF-99-015): bond stress, load transfer, corrosion protection, anchored walls (ASD)",
+        "brief": "Ground anchors (FHWA-IF-99-015): bond stress, load transfer, corrosion protection, anchored walls (ASD)",
     },
     "gec5": {
         "adapter": "funhouse_agent.adapters.gec5_adapter",
-        "brief": "GEC-5 site characterization (FHWA NHI-16-072): investigation planning, classification, strength, stiffness, hazards",
+        "brief": "Site characterization (FHWA NHI-16-072): investigation planning, classification, strength, stiffness, hazards",
     },
     "gec6": {
         "adapter": "funhouse_agent.adapters.gec6_adapter",
-        "brief": "GEC-6 shallow foundations reference (FHWA-SA-02-054)",
+        "brief": "Shallow foundations reference (FHWA-SA-02-054)",
     },
     "gec7": {
         "adapter": "funhouse_agent.adapters.gec7_adapter",
-        "brief": "GEC-7 soil nail walls reference (FHWA-NHI-14-007)",
+        "brief": "Soil nail walls reference (FHWA-NHI-14-007)",
     },
     "gec8": {
         "adapter": "funhouse_agent.adapters.gec8_adapter",
-        "brief": "GEC-8 CFA piles (FHWA-HIF-07-03): DD pile capacity (NeSmith), ASD, grout volume factor, p-multipliers, group efficiency",
+        "brief": "CFA piles (FHWA-HIF-07-03): DD pile capacity (NeSmith), ASD, grout volume factor, p-multipliers, group efficiency",
     },
     "gec9": {
         "adapter": "funhouse_agent.adapters.gec9_adapter",
-        "brief": "GEC-9 laterally loaded piles (FHWA-HIF-18-031): resistance factors, p-multipliers, p-y parameters (stiff clay, sand)",
+        "brief": "Laterally loaded piles (FHWA-HIF-18-031): resistance factors, p-multipliers, p-y parameters (stiff clay, sand)",
     },
     "gec10": {
         "adapter": "funhouse_agent.adapters.gec10_adapter",
-        "brief": "GEC-10 drilled shafts reference (FHWA-NHI-18-024)",
+        "brief": "Drilled shafts reference (FHWA-NHI-18-024)",
     },
     "gec11": {
         "adapter": "funhouse_agent.adapters.gec11_adapter",
-        "brief": "GEC-11 MSE walls & reinforced soil slopes (FHWA-NHI-10-024)",
+        "brief": "MSE walls & reinforced soil slopes (FHWA-NHI-10-024)",
     },
     "gec12": {
         "adapter": "funhouse_agent.adapters.gec12_adapter",
-        "brief": "GEC-12 driven piles reference (FHWA-NHI-16-009)",
+        "brief": "Driven piles reference (FHWA-NHI-16-009)",
     },
     "gec13": {
         "adapter": "funhouse_agent.adapters.gec13_adapter",
-        "brief": "GEC-13 ground modification reference (FHWA-NHI-16-027)",
+        "brief": "Ground modification reference (FHWA-NHI-16-027)",
     },
     "gec14": {
         "adapter": "funhouse_agent.adapters.gec14_adapter",
-        "brief": "GEC-14 QA for geotech reporting documents (FHWA-HIF-17-016): GRD types, ACMs/ADMs, QA process, checklists",
+        "brief": "QA for geotech reporting documents (FHWA-HIF-17-016): GRD types, ACMs/ADMs, QA process, checklists",
     },
     "micropile": {
         "adapter": "funhouse_agent.adapters.micropile_adapter",
-        "brief": "Micropile design reference (FHWA-NHI-05-039): bond stresses",
+        "brief": "Design reference (FHWA-NHI-05-039): bond stresses",
     },
     "ufc_backfill": {
         "adapter": "funhouse_agent.adapters.ufc_backfill_adapter",
-        "brief": "UFC 3-220-04N backfill design (compaction, filter criteria, drainage)",
+        "brief": "UFC 3-220-04N (compaction, filter criteria, drainage)",
     },
     "ufc_expansive": {
         "adapter": "funhouse_agent.adapters.ufc_expansive_adapter",
-        "brief": "UFC 3-220-07 expansive soils (swell potential, heave, pier design)",
+        "brief": "UFC 3-220-07 (swell potential, heave, pier design)",
     },
     "ufc_pavement": {
         "adapter": "funhouse_agent.adapters.ufc_pavement_adapter",
-        "brief": "UFC 3-250-01 roads/parking: CBR flexible (curve E-1), rigid (Eq 13-1), overlays, frost, drainage, joints, mixed traffic (US)",
+        "brief": "UFC 3-250-01 roads/parking: CBR flexible, rigid, overlays, frost, drainage, joints, mixed traffic (US)",
     },
     "ufc_stabilization": {
         "adapter": "funhouse_agent.adapters.ufc_stabilization_adapter",
-        "brief": "UFC 3-250-11 soil stabilization: additive selection, strength/durability criteria, equivalency factors",
+        "brief": "UFC 3-250-11: additive selection, strength/durability criteria, equivalency factors",
     },
     "ufc_flexible_practice": {
         "adapter": "funhouse_agent.adapters.ufc_flexible_practice_adapter",
-        "brief": "UFC 3-250-03 asphalt practice: HMA gradations, Marshall/Superpave, spray rates, seal coats",
+        "brief": "UFC 3-250-03 asphalt: HMA gradations, Marshall/Superpave, spray rates, seal coats",
     },
     "ufc_concrete_practice": {
         "adapter": "funhouse_agent.adapters.ufc_concrete_practice_adapter",
-        "brief": "UFC 3-250-04 concrete practice: materials tables, dowel tolerances, joint spacing, RCC",
+        "brief": "UFC 3-250-04: materials tables, dowel tolerances, joint spacing, RCC",
     },
     "ufc_structural": {
         "adapter": "funhouse_agent.adapters.ufc_structural_adapter",
-        "brief": "UFC 3-301-01 DoD structural (IBC/ASCE 7-22 mods): risk categories, live loads, Table 3-1 seismic systems",
+        "brief": "UFC 3-301-01 DoD (IBC/ASCE 7-22 mods): risk categories, live loads, seismic systems",
     },
     "ufc_collapse": {
         "adapter": "funhouse_agent.adapters.ufc_collapse_adapter",
@@ -762,11 +762,11 @@ MODULE_REGISTRY = {
     },
     "wood_handbook": {
         "adapter": "funhouse_agent.adapters.wood_handbook_adapter",
-        "brief": "USDA Wood Handbook: clear-wood properties, EMC/shrinkage, Ch 9 stress/deformation/stability, fastener yield model",
+        "brief": "USDA Wood Handbook: clear-wood properties, EMC/shrinkage, stress/deformation/stability, fastener yield model",
     },
     "fema_p2082": {
         "adapter": "funhouse_agent.adapters.fema_p2082_adapter",
-        "brief": "FEMA P-2082 (2020 NEHRP): Vs30 site classes A-F incl. BC/CD/DE, SDS/SD1, two-period spectrum, SDC, Risk Category",
+        "brief": "2020 NEHRP: Vs30 site classes A-F incl. BC/CD/DE, SDS/SD1, two-period spectrum, SDC, Risk Category",
     },
     "california_trenching": {
         "adapter": "funhouse_agent.adapters.california_trenching_adapter",
@@ -778,11 +778,11 @@ MODULE_REGISTRY = {
     },
     "eurocode_7_1": {
         "adapter": "funhouse_agent.adapters.eurocode_7_1_adapter",
-        "brief": "EN 1997-1 (Eurocode 7-1): partial factors + DA1-DA3 (Annex A); earth pressure, bearing, PMT, settlement, rock, movement (Annexes C-H). SI",
+        "brief": "EN 1997-1: partial factors + DA1-DA3; earth pressure, bearing, PMT, settlement, rock, movement. SI",
     },
     "eurocode_7_2": {
         "adapter": "funhouse_agent.adapters.eurocode_7_2_adapter",
-        "brief": "EN 1997-2 (Eurocode 7-2): CPT, Menard PMT, SPT, dynamic probing, vane, DMT, plate load correlations; cu/Eoed; lab minima. SI",
+        "brief": "EN 1997-2: CPT, Menard PMT, SPT, dynamic probing, vane, DMT, plate load correlations; cu/Eoed; lab minima. SI",
     },
     "aashto_1993": {
         "adapter": "funhouse_agent.adapters.aashto_1993_adapter",

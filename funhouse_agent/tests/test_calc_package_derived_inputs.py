@@ -188,16 +188,20 @@ def test_aggregate_pier_inputs_given_by_older_names_are_printed(built):
     from ground_improvement.calc_steps import get_input_summary
     module, r, analysis = built("ground_improvement_package", {
         "method": "aggregate_piers", "diameter": 0.8, "spacing": 2.0,
-        "E_pier": 100000.0, "E_soil": 4000.0})
+        "E_soil": 4000.0})
     assert module == "ground_improvement"
-    assert analysis["E_column"] == 100000.0 and "E_pier" not in analysis
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
-    # E_column feeds only a warning: stated in the choices, not printed as
-    # an input (GM-142)
-    assert "E_c" not in items
-    chosen = {c["what"]: c["chosen"] for c in r.choices}
-    assert chosen["column modulus E_c"] == "100000 kPa"     # not 80,000
-    assert items["d_c"] == 0.8
+    assert items["d_c"] == 0.8 and items["E_s"] == 4000.0
+
+
+def test_the_column_modulus_is_refused_by_each_name(built):
+    # GM-179: E_column (E_pier, column_modulus) changed no result, only a
+    # warning below E_soil: n sets the stress split
+    for name in ("E_pier", "E_column", "column_modulus"):
+        with pytest.raises(ValueError, match="give n|Give n"):
+            built("ground_improvement_package", {
+                "method": "aggregate_piers", "column_diameter": 0.8,
+                "spacing": 2.0, name: 100000.0})
 
 
 def test_aggregate_pier_tool_names_reach_the_package(built):
@@ -209,24 +213,26 @@ def test_aggregate_pier_tool_names_reach_the_package(built):
     )
     from ground_improvement.calc_steps import get_input_summary
     given = {"column_diameter": 0.8, "spacing": 2.0,
-             "stress_concentration_ratio": 3.0, "column_modulus": 90000.0,
+             "stress_concentration_ratio": 3.0,
              "soil_modulus": 4500.0, "S_unreinforced": 80.0}
     _, r, analysis = built("ground_improvement_package",
                            {"method": "aggregate_piers", **given})
     assert r.stress_concentration_ratio == 3.0
-    assert (analysis["n"], analysis["E_column"], analysis["E_soil"]) == \
-        (3.0, 90000.0, 4500.0)
+    assert (analysis["n"], analysis["E_soil"]) == (3.0, 4500.0)
+    assert "E_column" not in analysis
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
     assert (items["E_s"], items["n"]) == (4500.0, 3.0)
-    chosen = {c["what"]: c["chosen"] for c in r.choices}
-    assert chosen["column modulus E_c"] == "90000 kPa"
     tool = GI_TOOL["aggregate_piers"](dict(given))
     assert r.settlement_improved_mm == pytest.approx(
         tool["settlement_improved_mm"], abs=0.05)
     spec = cp.METHOD_INFO["ground_improvement_package"]
-    for name in ("stress_concentration_ratio", "column_modulus",
-                 "soil_modulus"):
+    for name in ("stress_concentration_ratio", "soil_modulus"):
         assert name in spec["parameter_aliases"]
+    # GM-179: refused with the stress-ratio method (above); GM-220: other
+    # names of E_column, which GEC-13 Fig. 5-21's methods take
+    for name in ("column_modulus", "E_pier"):
+        assert spec["parameter_aliases"][name] == "E_column"
+        assert name not in (spec.get("refused_parameters") or {})
 
 
 def test_aggregate_pier_column_modulus_default_is_stated(built):
@@ -238,6 +244,6 @@ def test_aggregate_pier_column_modulus_default_is_stated(built):
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
     assert "E_c" not in items and items["E_s"] == 5000.0
     by = {c["what"]: c for c in r.choices}
-    assert by["column modulus E_c"]["chosen"] == "80000 kPa"
-    assert "not used in the calculation" in by["column modulus E_c"]["basis"]
+    # GM-179: the column modulus changes no result, so it is no choice
+    assert "column modulus E_c" not in by
     assert math.isclose(r.stress_concentration_ratio, 5.0)

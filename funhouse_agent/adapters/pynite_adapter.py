@@ -1,8 +1,7 @@
 """PyNite adapter — flat dict -> pynite_agent -> dict."""
 
 from funhouse_agent.adapters import (
-    check_nested_list, clean_result, declare_applies_when,
-    reject_unknown_params, require_params,
+    check_nested_list, clean_result, reject_unknown_params, require_params,
 )
 
 _ERR = "PyNiteFEA is not installed. Install with: pip install PyNiteFEA"
@@ -65,7 +64,7 @@ def _run_continuous_beam(params: dict) -> dict:
         return {"error": _ERR}
     reject_unknown_params(
         params,
-        ("span_lengths", "E", "I", "A", "udl", "span_udls", "point_loads",
+        ("span_lengths", "E", "I", "udl", "span_udls", "point_loads",
          "support_types"),
         method="continuous_beam")
     require_params(params, ["span_lengths", "E", "I"],
@@ -76,7 +75,6 @@ def _run_continuous_beam(params: dict) -> dict:
     result = analyze_continuous_beam(
         span_lengths_m=params["span_lengths"],
         E_kPa=params["E"], I_m4=params["I"],
-        A_m2=params.get("A", 0.01),
         udl_kN_m=params.get("udl", 0.0),
         span_udls_kN_m=params.get("span_udls"),
         point_loads=params.get("point_loads"),
@@ -115,7 +113,6 @@ METHOD_INFO = {
             "span_lengths": {"type": "array", "required": True, "description": "Span lengths (m), left to right."},
             "E": {"type": "float", "required": True, "description": "Elastic modulus (kPa; steel 200e6)."},
             "I": {"type": "float", "required": True, "description": "Second moment of area (m^4)."},
-            "A": {"type": "float", "required": False, "default": 0.01, "description": "Section area (m^2). Not used by the results: a continuous beam under these loads carries no axial force; PyNite needs an area to build the member."},
             "udl": {"type": "float", "required": False, "default": 0.0, "description": "UDL on all spans, downward positive (kN/m)."},
             "span_udls": {"type": "array", "required": False, "description": "Per-span UDLs (kN/m, downward positive); overrides udl."},
             "point_loads": {"type": "array", "required": False, "description": "[{span (1-based), x (m from span start), P (kN downward)}]."},
@@ -131,9 +128,12 @@ METHOD_INFO = {
 }
 
 
-# The beam's area is taken and not used (GM-184): the loads are all
-# transverse, so no member carries axial force.
-declare_applies_when(METHOD_INFO, {"continuous_beam": {"A": False}})
+# The beam's area was taken and not used (GM-184), refused since GM-179.
+METHOD_INFO["continuous_beam"]["refused_parameters"] = {
+    "A": ("a continuous beam does not use the section area: its loads are "
+          "all transverse, so in this linear analysis no span carries "
+          "axial force and the area changes no reaction, moment or "
+          "deflection. frame_analysis takes each member's A")}
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):

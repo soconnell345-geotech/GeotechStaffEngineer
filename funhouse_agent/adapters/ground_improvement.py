@@ -17,31 +17,56 @@ def _valid_kwargs(func):
     return set(inspect.signature(func).parameters)
 
 
-def _run(func, p, *, method, aliases=None, required=()):
+def _run(func, p, *, method, aliases=None, required=(), refused=()):
     """Alias-map, validate, and call a module function with **p: (result,
     inputs in force), each of the function's inputs as given or its
-    default."""
+    default. ``refused`` names inputs the function takes and the tool
+    does not (GM-179): they change no result, so they are refused, not
+    passed."""
     if aliases:
         p = apply_aliases(p, aliases)
-    valid = _valid_kwargs(func)
+    valid = _valid_kwargs(func) - set(refused)
     reject_unknown_params(p, valid, method=method)
     require_params(p, required, method=method, valid=valid)
     used = {name: p.get(name, prm.default)
-            for name, prm in inspect.signature(func).parameters.items()}
+            for name, prm in inspect.signature(func).parameters.items()
+            if name in valid}
     return func(**p), used
 
 
-def _call(func, p, *, method, aliases=None, required=()):
+def _call(func, p, *, method, aliases=None, required=(), refused=()):
     """Alias-map, validate, and call a module function with **p."""
     result, _ = _run(func, p, method=method, aliases=aliases,
-                     required=required)
+                     required=required, refused=refused)
     return clean_result(result.to_dict())
 
 
 # Aliases: names the agent reaches for (and that older METHOD_INFO advertised)
 # mapped onto the module's actual keyword names.
-_AGG_ALIASES = {"column_modulus": "E_column", "soil_modulus": "E_soil",
-                "stress_concentration_ratio": "n", "diameter": "column_diameter"}
+_AGG_ALIASES = {"soil_modulus": "E_soil",
+                "stress_concentration_ratio": "n", "diameter": "column_diameter",
+                "column_modulus": "E_column"}
+# GM-179: with the stress-ratio settlement method the column modulus
+# changes no result (only a warning below E_soil): the stress split is n,
+# given. Refused there by each of its names; GEC-13 Fig. 5-21's methods
+# take it (GM-220).
+_BY_MODULI = ("weighted_modulus", "balaam_rigid", "balaam_flexible")
+_NO_E_COLUMN = (
+    "the stress-ratio settlement method (settlement_method "
+    "'stress_ratio', the default) does not use the column's modulus: the "
+    "stress split is the stress concentration ratio n, taken as given, "
+    "not worked out from the moduli. Give n (GEC-13: 'between 2.0 and "
+    "5.0' for stone columns, Sec. 4.1.2.4; for rammed aggregate piers '4 "
+    "to 45 for rigid footings' and 5 to 10 under embankments, p. 5-45), "
+    "or a settlement_method that takes E_c / E_s off GEC-13 Fig. 5-21: "
+    "'weighted_modulus', 'balaam_rigid' or 'balaam_flexible'")
+# GM-179: no screen reads the water table.
+_NO_GWT = (
+    "the feasibility screening does not use the water table: GEC-13 finds "
+    "vibro-compaction 'effective both above and below the natural "
+    "groundwater level' (p. 4-65), and no other screen here reads it. "
+    "Give the layer's depth_to_top_m and thickness_m, which the screening "
+    "holds against GEC-13's depth limits")
 _WICK_ALIASES = {"drain_spacing": "spacing", "time_years": "time",
                  "drain_diameter": "dw"}
 _DESIGN_ALIASES = {"time_years": "target_time", "time": "target_time",
@@ -60,6 +85,10 @@ _FEAS_ALIASES = {"treatment_depth": "thickness_m", "thickness": "thickness_m",
 # names the caller in error messages.
 
 def run_aggregate_piers(p, *, method="aggregate_piers"):
+    by_moduli = p.get("settlement_method") in _BY_MODULI
+    column = [k for k in ("E_column", "column_modulus") if k in p]
+    if column and not by_moduli:
+        raise ValueError(f"{method} does not take {column}: {_NO_E_COLUMN}.")
     p = apply_aliases(p, _AGG_ALIASES)
     # Accept the commonly-guessed area_replacement_ratio (As/A) and convert it
     # to a center-to-center spacing for the given diameter + pattern.
@@ -73,8 +102,11 @@ def run_aggregate_piers(p, *, method="aggregate_piers"):
             A_col = math.pi * d ** 2 / 4.0
             trib = 0.866 if p.get("pattern", "triangular") == "triangular" else 1.0
             p["spacing"] = math.sqrt(A_col / (ar * trib))
+    # GEC-13 Fig. 5-21's methods are by E_c / E_s: both moduli are given
     return _run(analyze_aggregate_piers, p, method=method,
-                required=["column_diameter", "spacing"])
+                required=["column_diameter", "spacing"]
+                + (["E_column", "E_soil"] if by_moduli else []),
+                refused=() if by_moduli else ("E_column",))
 
 
 def run_wick_drains(p, *, method="wick_drains"):
@@ -119,7 +151,8 @@ def _run_vibro_compaction(p):
 
 def _run_feasibility(p):
     return _call(evaluate_feasibility, p, method="feasibility",
-                 aliases=_FEAS_ALIASES, required=["soil_type"])
+                 aliases=_FEAS_ALIASES, required=["soil_type"],
+                 refused=("gwt_depth_m",))
 
 
 _PRIEBE_ALIASES = {"area_replacement_ratio": "as_ratio", "as": "as_ratio",
@@ -166,13 +199,14 @@ METHOD_INFO = {
             "spacing": {"type": "float", "required": True, "description": "Center-to-center spacing (m). Alternatively give area_replacement_ratio (As/A, 0.1-0.35 typical) and spacing is back-calculated."},
             "area_replacement_ratio": {"type": "float", "required": False, "description": "Area replacement ratio As/A (0.1-0.35 typical). Used to compute spacing when spacing is not given."},
             "pattern": _PATTERN,
-            "E_column": {"type": "float", "required": False, "default": 80000.0, "description": "Aggregate column modulus (kPa). Not used in the calculation, only a warning when it is below E_soil: n sets the stress split."},
-            "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Surrounding soil modulus (kPa). Used only for the composite modulus E_comp = E_soil*[1 + as*(n-1)]."},
-            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the settlement reduction factor and the improved bearing. GEC-13: 'between 2.0 and 5.0' for stone columns (Sec. 4.1.2.4); for rammed aggregate piers '4 to 45 for rigid footings' and 5 to 10 under embankments (p. 5-45)."},
+            "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Surrounding soil modulus (kPa). With settlement_method 'stress_ratio', used only for the composite modulus E_comp = E_soil*[1 + as*(n-1)]; the GEC-13 Fig. 5-21 methods need it given, for E_c/E_s."},
+            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the improved bearing and, with settlement_method 'stress_ratio', the settlement reduction factor. GEC-13: 'between 2.0 and 5.0' for stone columns (Sec. 4.1.2.4); for rammed aggregate piers '4 to 45 for rigid footings' and 5 to 10 under embankments (p. 5-45)."},
+            "settlement_method": {"type": "str", "required": False, "default": "stress_ratio", "allowed_values": ["stress_ratio", *_BY_MODULI], "description": "How the settlement over the columns is worked out. 'stress_ratio' (default): SRF = 1/[1 + as*(n-1)] from n. The others give the settlement ratio n' (settlement without columns / with them) by E_c/E_s off GEC-13 Fig. 5-21 (p. 5-36), and need E_column and E_soil: 'weighted_modulus' (curve 2, n' = 1 + as*(E_c/E_s - 1), any E_c/E_s); 'balaam_rigid' (curves 5b, 5c: E_c/E_s 5 to 10, A/A_c 1.75 to 9); 'balaam_flexible' (curve 5a: E_c/E_s = 10, A/A_c 1.5 to 8.5). GEC-13 p. 5-37: the FHWA (1983) Equilibrium Method, 'roughly equivalent to the Balaam relationships', 'represents an average or lower bound estimate suitable for preliminary analyses'; the Priebe curve (priebe_improvement_factor) 'the upper bound effectiveness'."},
+            "E_column": {"type": "float", "required": False, "description": "Aggregate column modulus E_c (kPa), with E_soil, for the settlement_method 'weighted_modulus', 'balaam_rigid' or 'balaam_flexible' (E_c/E_s, GEC-13 Fig. 5-21). Refused with 'stress_ratio', which takes n instead. Alias: column_modulus."},
             "q_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced bearing capacity (kPa). 0 = not computed."},
             "S_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced settlement (mm). 0 = not computed."},
         },
-        "returns": {"area_replacement_ratio": "As/A achieved.", "settlement_improvement_factor": "Settlement reduction factor."},
+        "returns": {"area_replacement_ratio": "As/A achieved.", "settlement_reduction_factor": "SRF: settlement with columns / without (1/n' with the Fig. 5-21 methods).", "settlement_ratio": "Fig. 5-21 methods only: n' = settlement without columns / with them.", "modular_ratio": "Fig. 5-21 methods only: E_c/E_s."},
     },
     "priebe_improvement_factor": {
         "category": "Aggregate Piers",
@@ -258,8 +292,8 @@ METHOD_INFO = {
             "fines_content": {"type": "float", "required": False, "description": "Percent passing #200 sieve. Required for vibro assessment."},
             "N_spt": {"type": "float", "required": False, "description": "Average SPT N in the treatment zone."},
             "cu_kPa": {"type": "float", "required": False, "description": "Average undrained shear strength (kPa)."},
-            "thickness_m": {"type": "float", "required": False, "default": 0.0, "description": "Thickness of the compressible/treatable layer (m)."},
-            "depth_to_top_m": {"type": "float", "required": False, "default": 0.0, "description": "Depth to top of the treatable layer (m). Taken and not used by the screening."},
+            "thickness_m": {"type": "float", "required": False, "default": 0.0, "description": "Thickness of the compressible/treatable layer (m). The treatment reaches depth_to_top_m + thickness_m (see depth_to_top_m)."},
+            "depth_to_top_m": {"type": "float", "required": False, "default": 0.0, "description": "Depth to the top of the treatable layer (m). The treatment reaches depth_to_top_m + thickness_m, held against GEC-13's printed depths: aggregate piers not applicable beyond 100 ft (30.5 m), the typical maximum practical depth of stone columns, and stone columns only beyond 35 ft (10.7 m), that of rammed aggregate piers (p. 5-9: 'Typically, the maximum practical depth of stone columns and rammed aggregate piers is 100 feet and 35 feet respectively'); vibro-compaction not applicable beyond about 165 ft (50 m) and noted beyond the generally recommended about 100 ft (30.5 m) (p. 4-65)."},
             "required_bearing_kPa": {"type": "float", "required": False, "default": 0.0, "description": "Required bearing capacity (kPa). 0 = not a bearing problem."},
             "current_bearing_kPa": {"type": "float", "required": False, "default": 0.0, "description": "Current (unimproved) bearing capacity (kPa)."},
             "predicted_settlement_mm": {"type": "float", "required": False, "default": 0.0, "description": "Predicted settlement without improvement (mm)."},
@@ -267,7 +301,6 @@ METHOD_INFO = {
             "time_constraint_months": {"type": "float", "required": False, "default": 0.0, "description": "Time available (months). 0 = no constraint."},
             "cv_m2_per_year": {"type": "float", "required": False, "description": "Vertical coefficient of consolidation (m2/yr)."},
             "Hdr_m": {"type": "float", "required": False, "description": "Vertical drainage path length (m)."},
-            "gwt_depth_m": {"type": "float", "required": False, "description": "Depth to groundwater (m). Taken and not used by the screening."},
         },
         "returns": {"recommended_methods": "List of feasible methods.", "is_feasible": "Overall feasibility."},
     },
@@ -288,11 +321,15 @@ declare_aliases(METHOD_INFO, {
 declare_applies_when(METHOD_INFO, {
     "surcharge_preloading": {
         name: {"drain_spacing": "set"}
-        for name in ("pattern", "dw", "smear_ratio", "kh_ks_ratio")}})
+        for name in ("pattern", "dw", "smear_ratio", "kh_ks_ratio")},
+    "aggregate_piers": {
+        "E_column": {"settlement_method": list(_BY_MODULI)},
+        # with a Fig. 5-21 method n sets only the improved bearing
+        "n": [{"settlement_method": ["stress_ratio"]},
+              {"q_unreinforced": "set"}]}})
 
 # What a left-out input with no default stands for (BACKLOG GM-165): the
-# screening's consolidation time needs cv and Hdr; the water table is taken
-# and not used by the screening.
+# screening's consolidation time needs cv and Hdr.
 from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _NO_TIME = ("consolidation time not estimated",
             "the time to 90 % consolidation without drains needs both cv "
@@ -302,7 +339,8 @@ declare_when_absent(METHOD_INFO, {
 for _name in ("cv_m2_per_year", "Hdr_m"):
     METHOD_INFO["feasibility"]["parameters"][_name]["applies_when"] = {
         "time_constraint_months": "set"}
-# The water table and, since GM-184, the depth to the treatable layer are
-# taken and not used by the screening.
-for _name in ("gwt_depth_m", "depth_to_top_m"):
-    METHOD_INFO["feasibility"]["parameters"][_name]["applies_when"] = False
+# Taken and not used before (GM-184), refused since GM-179: the water
+# table. The depth to the treatable layer is used since GM-179. The column
+# modulus is refused by run_aggregate_piers with the stress-ratio method
+# only: GEC-13 Fig. 5-21's methods take it (GM-220).
+METHOD_INFO["feasibility"]["refused_parameters"] = {"gwt_depth_m": _NO_GWT}

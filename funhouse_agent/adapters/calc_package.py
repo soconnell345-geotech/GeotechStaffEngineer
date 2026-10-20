@@ -526,10 +526,12 @@ _PACKAGE_TOOLS = {
                   "vibro": "vibro_compaction"},
         "selector_values": {"surcharge_preloading": "surcharge",
                             "vibro_compaction": "vibro"},
-        "older": {"aggregate_piers": {"E_pier": "E_column"},
-                  "surcharge": {"target_consolidation": "target_U"},
+        # E_pier: the aggregate pier column modulus, which the tool takes
+        # for GEC-13 Fig. 5-21's settlement methods only (GM-220)
+        "older": {"surcharge": {"target_consolidation": "target_U"},
                   "vibro": {"N1_before": "initial_N_spt",
-                            "N1_target": "target_N_spt"}},
+                            "N1_target": "target_N_spt"},
+                  "aggregate_piers": {"E_pier": "E_column"}},
     },
     "wave_equation_package": {
         "adapter": "wave_equation",

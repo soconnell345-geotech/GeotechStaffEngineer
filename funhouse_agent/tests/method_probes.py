@@ -120,9 +120,6 @@ LABEL_ONLY = {
     **{(f"fem2d|{m}", "t"): _PLANE_STRAIN
        for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
                  "fem2d_slope_srm")},
-    ("ground_improvement|aggregate_piers", "E_column"):
-        "not used in the calculation, as its description says: n sets the "
-        "stress split, and E_column only warns below E_soil",
 }
 
 #: Declared inputs that act, but not on their probe's inputs or not in
@@ -209,6 +206,9 @@ NOT_REACHED = {
         "0.5 mm stays below the allowable settlement",
     ("ground_improvement|feasibility", "allowable_settlement_mm"):
         "the probe predicts no settlement, so 75 mm allows it as 50 mm does",
+    ("ground_improvement|feasibility", "depth_to_top_m"):
+        "the probe's treatment reaches 0.5 m, well short of GEC-13's depth "
+        "limits (10.7 m, 30.5 m, 50 m) that it is held against",
     ("calc_package|ground_improvement_package", "target_N_spt"): _VIBRO,
     ("calc_package|ground_improvement_package", "pattern"): _VIBRO,
     **{(f"lateral_pile|get_py_curve#{m}", "loading"):

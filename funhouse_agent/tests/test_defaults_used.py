@@ -336,7 +336,13 @@ _GM184_LISTS = [
     ("retaining_walls", "cantilever_wall", {}, set(), {"has_shear_key"}),
     ("retaining_walls", "cantilever_wall", {"include_passive": True},
      {"has_shear_key"}, set()),
-    ("retaining_walls", "mse_wall", {}, set(), {"gamma_foundation"}),
+    # GM-179: the bearing resistance is given or worked out from the
+    # foundation soil (GEC-11 Eq. 4-22), and phi_b goes with the latter
+    ("retaining_walls", "mse_lrfd_external_stability", {},
+     {"bearing_resistance_strength"}, {"phi_bearing"}),
+    ("retaining_walls", "mse_lrfd_external_stability",
+     {"gamma_foundation": 18.0, "phi_foundation": 30.0}, {"phi_bearing"},
+     {"bearing_resistance_strength"}),
     ("downdrag", "downdrag_analysis", {},
      set(), {"pile_unit_weight", "fill_unit_weight"}),
     ("downdrag", "downdrag_analysis",
@@ -344,9 +350,8 @@ _GM184_LISTS = [
      {"pile_unit_weight", "fill_unit_weight"}, set()),
     ("downdrag", "fellenius_cgpr56", {},
      set(), {"eq_footing_load", "eq_footing_length"}),
-    ("drilled_shaft", "drilled_shaft_capacity", {}, set(),
-     {"socket_length"}),
-    ("ground_improvement", "feasibility", {}, set(), {"depth_to_top_m"}),
+    # GM-179: the depth to the layer is held against GEC-13's depths
+    ("ground_improvement", "feasibility", {}, {"depth_to_top_m"}, set()),
     ("gstools", "kriging", {}, set(), {"cell_size"}),
     ("gstools", "conditional_simulation", {}, set(), {"bounds_mode"}),
     ("gstools", "conditional_simulation", {"bounds": [{"x": 0, "y": 0,
@@ -372,8 +377,7 @@ _GM184_LISTS = [
     ("liquepy", "cpt_liquefaction",
      {"u_2": [10], "unit_wt_method": "void_ratio"}, {"a_ratio", "s_g"},
      set()),
-    ("liquepy", "field_correlations", {"u_2": [10]}, {"a_ratio"},
-     {"i_c_limit", "s_g"}),
+    ("liquepy", "field_correlations", {"u_2": [10]}, {"a_ratio"}, set()),
     # water inputs only with a water table, one at the ground included
     ("fem2d", "fem2d_excavation", {}, set(),
      {"gamma_w", "excavation_water"}),
@@ -401,7 +405,6 @@ _GM184_LISTS = [
      {"shape", "rigidity", "point", "L"}),
     ("settlement", "elastic_settlement", {"rigidity": "rigid"}, {"shape"},
      {"point"}),
-    ("pynite", "continuous_beam", {}, set(), {"A"}),
 ]
 
 
