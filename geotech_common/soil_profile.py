@@ -1247,10 +1247,13 @@ class SoilProfile:
                     + " for the weak-rock p-y criterion (Reese 1997, FHWA "
                     "GEC 9 App. A.5, p. 231: E_m from a pressuremeter or "
                     "dilatometer test). Neither manual prints a default; "
-                    "FHWA GEC 10 (2018) p. 9-31 reports one load-test fit "
-                    "in decomposed rock (qu 180 psi, E_ir 27,000 psi = 150 "
-                    "qu, RQD 0) as a reasonable lower bound when the "
-                    "investigation gives little strength information.")
+                    "FHWA GEC 10 (2018) p. 9-31 reports load tests on "
+                    "shafts in decomposed quartzite (RQD 0) modelled with "
+                    "qu 180 psi, E_ir 27,000 psi (150 qu) and krm 0.0004, "
+                    "which 'might represent a reasonable lower bound' "
+                    "where hard but decomposed rock is known to be present "
+                    "and the investigation gives little strength "
+                    "information.")
             qu = float(layer.qu)
             Er = float(layer.Es)
             gamma_r = layer.gamma if layer.gamma is not None else 22.0
