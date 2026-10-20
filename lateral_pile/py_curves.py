@@ -61,7 +61,29 @@ class SoftClayMatlock:
 
     This is the most widely used p-y formulation for soft to medium clays.
     The method was developed from full-scale tests on instrumented piles
-    at Lake Austin and Sabine Pass, Texas.
+    in soft clay.
+
+    The criterion as printed in the COM624P manual (FHWA-SA-91-048),
+    pp. 323-327, Eqs. 3.8-3.13 and Fig. 3.5, and in FHWA GEC 9
+    (FHWA-HIF-18-031, 2018), Appendix A.1, pp. 216-219, Eqs. A-1 to A-6.
+    pu is the smaller of (3 + gamma' x / c + J x / b) c b and 9 c b
+    (3.8, 3.9; A-1, A-2), y50 = 2.5 eps50 b (3.10, A-3).
+
+    Static (Fig. 3.5a):
+
+        p/pu = 0.5 (y/y50)^(1/3)                     (3.11, A-4)
+        p = pu beyond y = 8 y50
+
+    Cyclic (Fig. 3.5b): the static curve while p is less than 0.72 pu,
+    then, past y = 3 y50,
+
+        x >= x_r: p = 0.72 pu
+        x <  x_r: p falls on a straight line from 0.72 pu at 3 y50 to
+                  p = 0.72 pu (x / x_r) at 15 y50    (3.13, A-6)
+                  and stays there beyond 15 y50
+
+    with x_r = 6 c b / (gamma' b + J c) (3.12, A-5), the depth where the
+    two expressions for pu meet.
 
     Parameters
     ----------
@@ -81,7 +103,8 @@ class SoftClayMatlock:
     References
     ----------
     Matlock, H. (1970). OTC 1204.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.1.
+    COM624P Manual (FHWA-SA-91-048), pp. 323-327, Eqs. 3.8-3.13.
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.1, pp. 216-219.
 
     Examples
     --------
@@ -191,18 +214,20 @@ class SoftClayMatlock:
                 p = 0.5 * pu * (y_abs / y50) ** (1.0 / 3.0)
             else:
                 p = pu
+        elif y_abs <= 3.0 * y50:
+            # Cyclic: the static curve for p below 0.72 pu (COM624P p. 326,
+            # step 1), which it reaches at 2.99 y50
+            p = min(0.5 * pu * (y_abs / y50) ** (1.0 / 3.0), 0.72 * pu)
         else:
-            # Cyclic loading
             zr = self.get_zr(b)
-            if y_abs <= 3.0 * y50:
-                p = 0.5 * pu * (y_abs / y50) ** (1.0 / 3.0)
+            if z >= zr:
+                p = 0.72 * pu
             else:
-                if z >= zr:
-                    # Deep: constant at 0.72*pu
-                    p = 0.72 * pu
-                else:
-                    # Shallow: reduced by z/zr
-                    p = 0.72 * pu * (z / zr) if zr > 0 else 0.0
+                # above x_r, from 0.72 pu at 3 y50 down to 0.72 pu z/z_r at
+                # 15 y50 (Eq. 3.13, A-6), constant beyond
+                p_15 = 0.72 * pu * z / zr
+                frac = min((y_abs - 3.0 * y50) / (12.0 * y50), 1.0)
+                p = 0.72 * pu + (p_15 - 0.72 * pu) * frac
 
         return sign * p
 
@@ -239,40 +264,125 @@ class SoftClayMatlock:
 # 2. Stiff Clay Below Water Table — Reese et al. (1975)
 # =============================================================================
 
+#: A_s and A_c of the stiff-clay-below-water criterion against x/b, read off
+#: COM624P Fig. 3.7 (FHWA-SA-91-048 p. 330) and its redraw, GEC 9 Fig. A-6
+#: (FHWA-HIF-18-031 p. 224). Each curve was traced on both prints: the
+#: COM624P scan at 300 dpi, deskewed against its frame (its A ticks read
+#: back within 0.003), and the GEC 9 raster against its grid lines; the
+#: line's centre was taken across each row where the curve is steep and
+#: down each column where it is flat, away from the plotted test points.
+#: The two prints agree within 0.013 (GEC 9's redraw sits up to 0.013
+#: above COM624P's between x/b 0.25 and 1.5); the table is their mean,
+#: rounded to 0.005, but for the deep A_s, 0.60 as COM624P prints it (GEC
+#: 9's redraw: 0.593). Both curves start at 0.2 at the ground. A_s reaches
+#: 0.60 at x/b about 4.5 and A_c 0.305 at about 1.75; each is drawn dashed,
+#: constant, to x/b = 12, where the figure ends, and is held at that value
+#: below it.
+_STIFF_CLAY_A_ZB = (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5,
+                    3.0, 3.5, 4.0, 4.5)
+_STIFF_CLAY_AS = (0.200, 0.270, 0.340, 0.395, 0.435, 0.470, 0.500, 0.520,
+                  0.535, 0.565, 0.580, 0.590, 0.595, 0.600)
+_STIFF_CLAY_AC = (0.200, 0.235, 0.255, 0.270, 0.285, 0.290, 0.300, 0.305,
+                  0.305, 0.305, 0.305, 0.305, 0.305, 0.305)
+
+#: COM624P Table 3.2 (GEC 9 Table A-1): representative k for stiff clay by
+#: the average undrained shear strength to five pile diameters, 0.5-1,
+#: 1-2 and 2-4 ton/ft^2 (48-96, 96-192 and 192-383 kPa): ks 500, 1,000 and
+#: 2,000 lb/in^3, kc 200, 400 and 800 lb/in^3, here in kN/m^3.
+STIFF_CLAY_K_TABLE = {
+    "ks": ((48.0, 96.0, 135_700.0), (96.0, 192.0, 271_400.0),
+           (192.0, 383.0, 542_900.0)),
+    "kc": ((48.0, 96.0, 54_300.0), (96.0, 192.0, 108_600.0),
+           (192.0, 383.0, 217_200.0)),
+}
+
+
 @dataclass
 class StiffClayBelowWT:
-    """p-y curves for stiff clay below the water table per Reese et al. (1975).
+    """p-y curves for stiff clay below the water surface per Reese, Cox &
+    Koop (1975).
 
-    Uses a five-segment p-y curve construction with separate static and cyclic
-    formulations. Requires the initial modulus of subgrade reaction ks in
-    addition to shear strength and strain parameters.
+    The criterion as printed in the COM624P manual (FHWA-SA-91-048),
+    pp. 328-335, Eqs. 3.14-3.26, Figs. 3.6-3.8 and Tables 3.2-3.3, and in
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.2, pp. 219-224,
+    Eqs. A-7 to A-18 ("stiff clay with free water"). GEC 9 (p. 219) limits
+    it to stiff clay with free water at or near the ground surface, where
+    the soil degrades under cyclic load; with the groundwater at depth,
+    Welch & Reese (``StiffClayAboveWT``) is more appropriate, even below
+    it. At depth x:
+
+        pct = 2 ca b + gamma' b x + 2.83 ca x          (3.14, A-7)
+        pcd = 11 c b                                   (3.15, A-8)
+
+    pc the smaller, with ca, the average undrained shear strength over the
+    depth x, taken as the layer's c; y50 = eps50 b (3.17, A-10; not the
+    2.5 eps50 b of the other clay criteria); the initial straight line
+    p = (k x) y (3.16, A-9), k = ks for static loading and kc for cyclic.
+
+    Static (Fig. 3.6), A_s from Fig. 3.7 at x/b:
+
+        p = 0.5 pc (y/y50)^0.5                       to As y50     (3.18)
+        p = 0.5 pc (y/y50)^0.5
+            - 0.055 pc ((y - As y50)/(As y50))^1.25  to 6 As y50   (3.19)
+        p = 0.5 pc (6 As)^0.5 - 0.411 pc
+            - (0.0625/y50) pc (y - 6 As y50)         to 18 As y50  (3.20)
+        p = 0.5 pc (6 As)^0.5 - 0.411 pc - 0.75 pc As   beyond     (3.21)
+
+    (GEC 9 A-11 to A-14.) Cyclic (Fig. 3.8), A_c from Fig. 3.7 at x/b,
+    yp = 4.1 Ac y50 (3.23):
+
+        p = Ac pc [1 - |(y - 0.45 yp)/(0.45 yp)|^2.5]  to 0.6 yp   (3.24)
+        p = 0.936 Ac pc - (0.085/y50) pc (y - 0.6 yp)  to 1.8 yp   (3.25)
+        p = 0.936 Ac pc - (0.102/y50) pc yp             beyond     (3.26)
+
+    (GEC 9 A-16 to A-18.) The initial line holds until it meets the curve;
+    where they do not meet, the smaller p holds (COM624P's notes, pp. 333
+    and 335). The curve's p/y falls with y, so this is the smaller of the
+    two at every y; at the ground (x = 0) the line is p = 0. Two readings
+    differ between the manuals. GEC 9 prints A-15 as yp = 4.1 As y50;
+    COM624P's Eq. 3.23 and Fig. 3.8 give 4.1 Ac y50, used here. GEC 9's
+    static step 9 (p. 223) discards the line when it meets Eq. A-11 beyond
+    As y50 and carries A-11 to y = 0; that differs from COM624P's note only
+    near the ground, where k x is small (a 0.9 m shaft in c = 100 kPa clay,
+    ks = 271,400 kN/m^3: the top 0.2 m), and COM624P's note is followed
+    here. Where As is below 0.223 (x/b below about 0.08) Eq. 3.21 gives a
+    negative p; p is held at zero there.
 
     Parameters
     ----------
     c : float
-        Undrained shear strength (kPa). Typical: 50-400 kPa for stiff clay.
+        Undrained shear strength (kPa). The criterion comes from tests in
+        clay of about 1 to 3 ton/ft^2 (about 100-290 kPa; COM624P p. 328).
     gamma : float
-        Effective unit weight of soil (kN/m^3).
+        Effective (submerged) unit weight gamma' (kN/m^3).
     eps50 : float
-        Strain at 50% of max deviator stress. Typical: 0.004-0.007.
-    ks : float
-        Initial modulus of subgrade reaction (kN/m^3).
-        Typical: 135,000 kN/m^3 for stiff clay (50-100 kPa),
-        270,000 kN/m^3 for very stiff clay (100-200 kPa),
-        540,000 kN/m^3 for hard clay (200-400 kPa).
+        Strain at half the maximum principal-stress difference. Table 3.3
+        (A-2): 0.007, 0.005 and 0.004 for 48-96, 96-192 and 192-383 kPa.
+    ks : float, optional
+        k for static loading (kN/m^3), required with loading='static' and
+        refused with 'cyclic'. Table 3.2 (A-1): 135,700, 271,400 and
+        542,900 kN/m^3 (500, 1,000 and 2,000 lb/in^3) for an average
+        undrained shear strength to five diameters of 48-96, 96-192 and
+        192-383 kPa.
     loading : str
         'static' or 'cyclic'. Default 'static'.
+    kc : float, optional
+        k for cyclic loading (kN/m^3), required with loading='cyclic' and
+        refused with 'static'. Table 3.2 (A-1): 54,300, 108,600 and 217,200
+        kN/m^3 (200, 400 and 800 lb/in^3) for the same ranges.
 
     References
     ----------
     Reese, L.C., Cox, W.R. & Koop, F.D. (1975). OTC 2312.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.3.
+    COM624P Manual (FHWA-SA-91-048), pp. 328-335, Eqs. 3.14-3.26.
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.2, pp. 219-224.
     """
     c: float
     gamma: float
     eps50: float
-    ks: float
+    ks: Optional[float] = None
     loading: str = 'static'
+    kc: Optional[float] = None
 
     def __post_init__(self):
         if self.c <= 0:
@@ -281,130 +391,104 @@ class StiffClayBelowWT:
             raise ValueError(f"gamma must be positive, got {self.gamma}")
         if self.eps50 <= 0:
             raise ValueError(f"eps50 must be positive, got {self.eps50}")
-        if self.ks <= 0:
-            raise ValueError(f"ks must be positive, got {self.ks}")
         if self.loading not in ('static', 'cyclic'):
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
+        need, other = (("ks", "kc") if self.loading == 'static'
+                       else ("kc", "ks"))
+        value = getattr(self, need)
+        if value is None:
+            raise ValueError(
+                f"{self.loading} loading of stiff clay below the water "
+                f"table needs {need}, the k of the initial line p = (k x) y "
+                f"(COM624P Eq. 3.16, Table 3.2; GEC 9 Eq. A-9, Table A-1): "
+                f"{_k_table_text(need)}")
+        if value <= 0:
+            raise ValueError(f"{need} must be positive, got {value}")
+        if getattr(self, other) is not None:
+            raise ValueError(
+                f"{other} ({getattr(self, other):g}) is the k for "
+                f"{'cyclic' if other == 'kc' else 'static'} loading; "
+                f"loading='{self.loading}' uses {need} only (COM624P "
+                f"Table 3.2)")
 
         if self.c < 50:
             warnings.warn(f"c = {self.c} kPa may be too low for stiff clay model")
 
-    def _get_As(self, z: float, b: float) -> float:
-        """Static coefficient As as function of z/b.
+    @property
+    def k(self) -> float:
+        """The k of the initial line in force: ks static, kc cyclic."""
+        return self.ks if self.loading == 'static' else self.kc
 
-        Interpolated from Reese et al. (1975) Table/Figure.
-        """
-        zb = z / b if b > 0 else 0
-        # Tabulated values from COM624P manual
-        if zb <= 0:
-            return 2.5  # at surface
-        elif zb >= 12:
-            return 0.88
-        else:
-            # Piecewise linear interpolation from published values
-            zb_tab = [0, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12]
-            As_tab = [2.5, 2.2, 1.9, 1.5, 1.25, 1.1, 1.0, 0.95, 0.93, 0.9, 0.88]
-            return float(np.interp(zb, zb_tab, As_tab))
+    def _get_As(self, z: float, b: float) -> float:
+        """A_s at x/b, from COM624P Fig. 3.7 (GEC 9 Fig. A-6)."""
+        zb = z / b if b > 0 else 0.0
+        return float(np.interp(zb, _STIFF_CLAY_A_ZB, _STIFF_CLAY_AS))
 
     def _get_Ac(self, z: float, b: float) -> float:
-        """Cyclic coefficient Ac as function of z/b.
-
-        Interpolated from Reese et al. (1975) Table/Figure.
-        """
-        zb = z / b if b > 0 else 0
-        if zb <= 0:
-            return 0.2
-        elif zb >= 12:
-            return 0.55
-        else:
-            zb_tab = [0, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12]
-            Ac_tab = [0.2, 0.2, 0.3, 0.35, 0.4, 0.42, 0.45, 0.47, 0.5, 0.52, 0.55]
-            return float(np.interp(zb, zb_tab, Ac_tab))
+        """A_c at x/b, from COM624P Fig. 3.7 (GEC 9 Fig. A-6)."""
+        zb = z / b if b > 0 else 0.0
+        return float(np.interp(zb, _STIFF_CLAY_A_ZB, _STIFF_CLAY_AC))
 
     def get_pu(self, z: float, b: float) -> float:
-        """Ultimate soil resistance.
-
-        Two mechanisms:
-        - Shallow (wedge): pu = (2*c*b + gamma*b*z + 2.83*c*z)
-        - Deep (flow-around): pu = 11*c*b
-        """
+        """pc, the smaller of pct = 2 ca b + gamma' b x + 2.83 ca x and
+        pcd = 11 c b (COM624P Eqs. 3.14-3.15, GEC 9 A-7, A-8), ca = c."""
         pu_shallow = 2.0 * self.c * b + self.gamma * b * z + 2.83 * self.c * z
         pu_deep = 11.0 * self.c * b
         return min(pu_shallow, pu_deep)
 
-    def get_p(self, y: float, z: float, b: float) -> float:
-        """Compute soil resistance for stiff clay below water table.
+    def _curve(self, y: float, z: float, b: float) -> float:
+        """The static (3.18-3.21) or cyclic (3.24-3.26) curve at y >= 0,
+        without the initial line."""
+        pc = self.get_pu(z, b)
+        y50 = self.eps50 * b
+        if self.loading == 'static':
+            As = self._get_As(z, b)
+            if y <= As * y50:
+                return 0.5 * pc * math.sqrt(y / y50)
+            if y <= 6.0 * As * y50:
+                return pc * (0.5 * math.sqrt(y / y50) - 0.055
+                             * ((y - As * y50) / (As * y50)) ** 1.25)
+            top = 0.5 * pc * math.sqrt(6.0 * As) - 0.411 * pc
+            if y <= 18.0 * As * y50:
+                return top - 0.0625 / y50 * pc * (y - 6.0 * As * y50)
+            return top - 0.75 * pc * As
+        Ac = self._get_Ac(z, b)
+        yp = 4.1 * Ac * y50
+        if y <= 0.6 * yp:
+            return Ac * pc * (1.0 - abs((y - 0.45 * yp) / (0.45 * yp)) ** 2.5)
+        if y <= 1.8 * yp:
+            return 0.936 * Ac * pc - 0.085 / y50 * pc * (y - 0.6 * yp)
+        return 0.936 * Ac * pc - 0.102 / y50 * pc * yp
 
-        Uses the five-segment construction from Reese et al. (1975).
-        """
+    def get_p(self, y: float, z: float, b: float) -> float:
+        """Soil resistance (kN/m): the smaller of the initial line
+        (k x) y and the curve, never below zero; the sign of y."""
         if z < 0:
             return 0.0
-
         sign = _safe_sign(y)
         y_abs = abs(y)
         if y_abs == 0:
             return 0.0
-
-        pu = self.get_pu(z, b)
-        y50 = 2.5 * self.eps50 * b
-
-        if self.loading == 'static':
-            As = self._get_As(z, b)
-            pc = As * pu
-
-            # Initial linear portion: p = ks * z * y
-            p_linear = self.ks * z * y_abs
-
-            # Parabolic portion: p = 0.5 * pu * (y/y50)^0.5
-            if y_abs > 0 and y50 > 0:
-                p_para = 0.5 * pu * (y_abs / y50) ** 0.5
-            else:
-                p_para = 0.0
-
-            # Use the lesser of linear and parabolic in the transition zone
-            if y_abs <= y50:
-                p = min(p_linear, p_para)
-            elif y_abs <= 6.0 * y50:
-                p = min(p_para, pc)
-            elif y_abs <= 18.0 * y50:
-                # Linear decrease from pc to residual
-                p = pc - (pc - pu * 0.5) * (y_abs - 6.0 * y50) / (12.0 * y50)
-                p = max(p, 0.5 * pu)
-            else:
-                p = 0.5 * pu  # Residual
-
-            p = min(p, pc)
-        else:
-            # Cyclic
-            Ac = self._get_Ac(z, b)
-            pc = Ac * pu
-
-            p_linear = self.ks * z * y_abs
-
-            if y_abs > 0 and y50 > 0:
-                p_para = 0.5 * pu * (y_abs / y50) ** 0.5
-            else:
-                p_para = 0.0
-
-            if y_abs <= y50:
-                p = min(p_linear, p_para)
-            elif y_abs <= 3.0 * y50:
-                p = min(p_para, pc)
-            else:
-                p = pc  # Constant plateau for cyclic
-
-            p = min(p, pc)
-
-        return sign * p
+        p = min(self.k * z * y_abs, self._curve(y_abs, z, b))
+        return sign * max(p, 0.0)
 
     def get_py_curve(self, z: float, b: float, n_points: int = 50,
                      y_max_factor: float = 30.0) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate a complete p-y curve at depth z."""
-        y50 = 2.5 * self.eps50 * b
+        """Generate a complete p-y curve at depth z, to ``y_max_factor``
+        times y50 = eps50 b."""
+        y50 = self.eps50 * b
         y_max = y_max_factor * y50
         y_array = np.linspace(0, y_max, n_points)
         p_array = np.array([self.get_p(y, z, b) for y in y_array])
         return y_array, p_array
+
+
+def _k_table_text(name: str) -> str:
+    """COM624P Table 3.2's ``ks`` or ``kc`` in kN/m^3, for messages."""
+    rows = STIFF_CLAY_K_TABLE[name]
+    return ("; ".join(f"{k:,.0f} kN/m3 for {lo:g}-{hi:g} kPa"
+                      for lo, hi, k in rows)
+            + ", by the average undrained shear strength to five diameters")
 
 
 # =============================================================================
@@ -442,7 +526,11 @@ class StiffClayAboveWT:
     c : float
         Undrained shear strength (kPa).
     gamma : float
-        Total unit weight of soil (kN/m^3). Note: total, not effective.
+        Unit weight in Eq. 3.8 (GEC 9 A-1), kN/m^3: total above the water
+        table, submerged below it. GEC 9 (p. 219) titles this criterion
+        "stiff clay with no free water" and prefers it to Reese et al.
+        (1975) even below the water table where the groundwater is at
+        depth and free water is not at or near the ground surface.
     eps50 : float
         Strain at 50% of max deviator stress.
     J : float
@@ -480,11 +568,11 @@ class StiffClayAboveWT:
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
         if self.loading == 'cyclic' and self.n_cycles is None:
             raise ValueError(
-                "cyclic loading of stiff clay above the water table needs "
-                "n_cycles, the number of times the design lateral load will "
-                "be applied: the curve softens with log N (y_c = y_s + y50 C "
-                "log N, COM624P Eq. 3.29, GEC 9 Eq. A-21) and the references "
-                "give no default")
+                "cyclic loading of stiff clay with no free water (Welch & "
+                "Reese, StiffClayAboveWT) needs n_cycles, the number of "
+                "times the design lateral load will be applied: the curve "
+                "softens with log N (y_c = y_s + y50 C log N, COM624P Eq. "
+                "3.29, GEC 9 Eq. A-21) and the references give no default")
         if self.loading == 'static' and self.n_cycles is not None:
             raise ValueError(
                 f"n_cycles ({self.n_cycles:g}) applies to loading='cyclic' "
