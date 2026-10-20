@@ -1309,6 +1309,18 @@ def heel_surcharge_choices(geom: CantileverWallGeometry,
                 how_given(flag, False, name=name), basis[flag],
                 [f"{other} ({name}={not flag}): {basis[not flag]}"]))
     if out:
+        # A pavement or slab is modelled as retained soil up to the ground
+        # surface; any other surcharge is transient live load (OWN-64).
+        out.append(choice(
+            "pavement or slab over the backfill",
+            "modelled as retained soil up to the ground surface; a "
+            "surcharge is transient live load (its thrust counts in every "
+            "check, its weight over the heel does not resist sliding or "
+            "overturning)",
+            "module", "the usual practice for pavements and slabs; "
+            "dead_load_resists=true counts a dead-load surcharge over the "
+            "heel as resisting weight in sliding and overturning",
+            []))
         flag = surcharge_in_bearing
         out.append(choice(
             "surcharge over the heel, in the bearing pressures",
