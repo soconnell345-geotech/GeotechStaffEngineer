@@ -436,7 +436,9 @@ class TestEarthPressureCoefficient:
         ({"delta_deg": 20.0}, "wall friction"),
         ({"alpha_deg": 80.0}, "battered"),
         ({"state": "passive", "beta_deg": 10.0}, "sloping"),
-        ({"state": "at_rest", "beta_deg": 10.0}, "Jaky"),
+        ({"state": "at_rest", "delta_deg": 10.0}, "Jaky"),
+        # GM-183: a slope is taken with one of the printed forms named
+        ({"state": "at_rest", "beta_deg": 10.0}, "k0_sloping_ground"),
         ({"state": "passive", "theory": "caquot_kerisel",
           "alpha_deg": 80.0}, "battered"),
         # each refusal names what to use instead (Caltrans T&S 4-3, 4-6)

@@ -319,9 +319,14 @@ _GM184_LISTS = [
     ("retaining_walls", "earth_pressure_coefficient",
      {"phi_deg": 30, "theory": "coulomb"},
      {"delta_deg", "alpha_deg", "beta_deg"}, set()),
+    # since GM-183 the at-rest K0 takes a slope, and the log-spiral Kp a
+    # slope and its printed source
     ("retaining_walls", "earth_pressure_coefficient",
-     {"phi_deg": 30, "state": "at_rest"}, set(),
-     {"theory", "delta_deg", "alpha_deg", "beta_deg"}),
+     {"phi_deg": 30, "state": "at_rest"}, {"beta_deg"},
+     {"theory", "delta_deg", "alpha_deg", "log_spiral_source"}),
+    ("retaining_walls", "earth_pressure_coefficient",
+     {"phi_deg": 30, "state": "passive", "theory": "caquot_kerisel"},
+     {"beta_deg", "log_spiral_source"}, {"delta_deg", "alpha_deg"}),
     ("retaining_walls", "cantilever_wall", {}, set(), {"has_shear_key"}),
     ("retaining_walls", "cantilever_wall", {"include_passive": True},
      {"has_shear_key"}, set()),
