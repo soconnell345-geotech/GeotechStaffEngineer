@@ -216,7 +216,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 
 **Open questions** about how the harnesses behave are listed at the end of
 each document in `module_work/harness_theory/`. Read that folder before
-changing a harness (BACKLOG EV-12).
+changing a harness.
 
 ### 5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag `v0.11.0`)
 

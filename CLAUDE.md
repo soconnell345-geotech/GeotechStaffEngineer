@@ -14,8 +14,8 @@ answer was re-derived from scratch at least twice:
 | asks you to change an agent or pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/` — how the three harnesses actually work, from the code and the recorded Foundry runs, with their known failure modes and open questions |
 | brings back the results of ANY model run (suite run, live check, Foundry hand-back, a field session's conversation, a report-ingest stage) | the section **"REVIEW EVERY MODEL RUN IN FULL"** just below — read every run's full record (tool calls, results, the model's own text), not just the scores |
 | asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
-| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. Then sweep `BACKLOG.md`: every item the release closed moves to "Done since the last sweep" with its commit. |
-| finds a bug, a gap, a follow-up or an owner question while working — or a review, trace read, smoke wave or field session produces a fix list | add each item to `BACKLOG.md` under its area with the next free ID (section "How every session uses this file" at its top). Never start a new to-do list anywhere else; `webapp/tests/test_backlog.py` checks the IDs. |
+| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. Then sweep `BACKLOG.md`: every item the release closed moves to "Done since the last sweep" with its commit, and `module_work/backlog_dashboard/sweep_done.py` moves that list to `BACKLOG_DONE.md` (the archive; its IDs are never reused). |
+| finds a bug, a gap, a follow-up or an owner question while working — or a review, trace read, smoke wave or field session produces a fix list | add each item to `BACKLOG.md` under its area with the next free ID (`module_work/backlog_dashboard/sweep_done.py --next PREFIX` reads `BACKLOG.md` and `BACKLOG_DONE.md`; section "How every session uses this file" at its top). Never start a new to-do list anywhere else; `webapp/tests/test_backlog.py` checks the IDs. |
 
 **Why this block is here.** After a context compaction a fresh agent keeps only
 this file and `MEMORY.md`. Three releases running, an install log arrived and
@@ -168,7 +168,7 @@ Key conventions:
     beside CfA's pandas 3.0.2 pin (a229090); Department addresses scrubbed
     (24b46df).
   - **2026-10-14, the core-improvements train** (CfA's SharePoint and
-    per-user keys are weeks out; `BACKLOG.md` "Done since the last sweep"
+    per-user keys are weeks out; `BACKLOG_DONE.md` (swept 2026-10-20)
     has every item with its commit):
     - unsafe-side module answers: downdrag shows every neutral-plane method
       with final effective stress (e787b11); the slope search finds
@@ -292,7 +292,7 @@ Key conventions:
       figure tools keep names off reference lines and hatching and take in every
       plan outline;
       the release notes to carry are listed in HANDOFF §0a-current;
-      see BACKLOG "Done".
+      see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).
@@ -2256,7 +2256,7 @@ decisions. See memory `feedback-reference-layer-autonomy`.
   (`module_work/module_feedback.json`). (A `fdm2d` wall-clock guard was added here too; `fdm2d`
   has since been removed in the Phase 1 consolidation — see `CONSOLIDATION_CHANGES.md`.)
 
-**Open backlog (history; current status is `BACKLOG.md` §8 and the "Done since the last sweep" list there):** the ~23 per-module param-name/value bugs and the `retaining_walls`
+**Open backlog (history; current status is `BACKLOG.md` §8 and the "Done since the last sweep" list there and `BACKLOG_DONE.md`):** the ~23 per-module param-name/value bugs and the `retaining_walls`
 earth-pressure-coefficient gap were FIXED in v5.1 (adapter-ergonomics stream). Open at the
 time: module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and a `fem2d`
 footing convenience method, since built as `fem2d.analyze_footing_capacity` (load to collapse;

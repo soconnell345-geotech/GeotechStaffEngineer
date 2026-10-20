@@ -525,7 +525,11 @@ _PACKAGE_TOOLS = {
                            "clockwise from the cap's +y axis (up on the "
                            "plan), -360 to 360, as the plan the layout "
                            "came from shows it. Not given: north is drawn "
-                           "up and the figure says so."}},
+                           "up and the figure says so.",
+            "when_absent": {
+                "case": "north drawn up",
+                "basis": "no north given: the plan view draws north "
+                         "straight up and says so"}}},
         "dropped": {"layout": {
             "reason": "the layout is rectangular when n_rows and n_cols "
                       "are given, else the piles list",

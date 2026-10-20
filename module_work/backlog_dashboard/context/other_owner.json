@@ -256,42 +256,6 @@
     "unblocks": [],
     "sources": ["geotech-references: git log --stat -1 rescue/reference-wip-2026-06-02 (7fb6fe8)", "geotech-references: git diff main..rescue (merge base 829b897 = 1.2.5)", "geotech-references/geotech_references/_retrieval_db.py (summary field indexed)", "BACKLOG.md (OWN-28)"]
   },
-  "REF-14": {
-    "kind": "action",
-    "ask_who": null,
-    "question": "Upload the Wood Handbook PDF to the SharePoint reference folder; fetch FEMA P-2192 Vol 1 only if OWN-21 says use it.",
-    "why": "The wood_handbook module's figure read-off needs its source PDF, which lives only on the laptop (104 MB, too big for GitHub). On the cluster and Tiny Apps, reference PDFs are fetched from SharePoint the first time they are needed.",
-    "background": "The file is geotech-references/docs/USDA_Wood_Handbook_FPL-GTR-282.pdf (gitignored); the figure catalog expects that exact name. The app fetches from SharePoint GSE_app/primary_references when a figure is first needed. On Tiny Apps this works only once the SharePoint app registration exists (OWN-44). FEMA P-2192 Vol 1, about 1,000 pages of worked seismic examples, was never fetched: FEMA's website returned 502 errors in September. It was meant as ground truth for future structural modules, which is a scope call (OWN-21). Owner item OWN-40.",
-    "options": [],
-    "recommendation": null,
-    "if_no_answer": "Wood Handbook figures stay readable on the laptop only; P-2192 stays unfetched.",
-    "message_to_send": null,
-    "steps": [
-      "Copy geotech-references/docs/USDA_Wood_Handbook_FPL-GTR-282.pdf to SharePoint GSE_app/primary_references, keeping the file name exactly.",
-      "Tell the next session it is there, so one figure read-off can be checked on the cluster.",
-      "Only if OWN-21 keeps structural rounds: download FEMA P-2192 Vol 1 in a browser and keep it locally."
-    ],
-    "unblocks": [],
-    "sources": ["geotech-references/scripts/manifests/wood_handbook.json (source_note)", "webapp/reference_fetch.py (module docstring)", "module_work/STRUCTURAL_REFS_SURVEY.md (header, Verified download links)", "BACKLOG.md (OWN-21, OWN-40, OWN-44)"]
-  },
-  "REF-19": {
-    "kind": "decision",
-    "ask_who": null,
-    "question": "Is a further structural reference round wanted (NIST briefs, FEMA P-2192 examples, pelicun loss), or does structural stop at round 1?",
-    "why": "Round 1 shipped six public-domain structural references and three analysis engines. More rounds only make sense if structural work is part of the product's direction, and they compete with document review for effort.",
-    "background": "Survey leftovers (2026-09-03): FEMA P-2192 Vol 1 worked seismic examples (download blocked); NIST NEHRP Seismic Design Technical Briefs 1-13; the FHWA steel-bridge handbook and LRFD superstructure examples (only if bridges enter scope). pelicun (BSD-3, FEMA P-58 loss assessment, bundles its damage library) was deferred as the strongest next-round library. AISC's free shapes database forbids reproduction without written permission, so steel shape tables would need an AISC letter, and only if steel modules are built. The scope call is in OWN-21.",
-    "options": [
-      {"label": "Stop at round 1", "effect": "Close REF-19; the six structural references stay as they are."},
-      {"label": "Park until a structural need appears", "effect": "Status quo; revisit if a tester or project asks for structural work."},
-      {"label": "Plan round 2", "effect": "An agent sizes the P-2192 examples plus pelicun as a separate train after document review."}
-    ],
-    "recommendation": "Park until a structural need appears; nothing in the tester work needs it.",
-    "if_no_answer": "Stays Later; no structural work.",
-    "message_to_send": null,
-    "steps": null,
-    "unblocks": [],
-    "sources": ["module_work/STRUCTURAL_REFS_SURVEY.md (header, Prioritized inventory, lines 1-68)", "module_work/FUTURE_IDEAS.md (STRUCTURAL SURVEY 2026-09-03, ~322-358)", "BACKLOG.md (OWN-21)"]
-  },
   "EV-01": {
     "kind": "decision",
     "ask_who": null,
@@ -350,38 +314,20 @@
   "INF-01": {
     "kind": "decision",
     "ask_who": null,
-    "question": "Delete the nine stale root copies, and move the three old eval-run records to a private local archive?",
-    "why": "Twelve untracked files clutter the repo root and get swept into agents' reading. Nine are older copies of tracked documents; three are the only full records of the June and July eval runs.",
-    "background": "Checked 2026-10-12. Identical to the tracked versions apart from line endings: the A2, A7, APP_PLAN, FOUNDRY_APP_PLAN and V5.4_PLAN copies. Older than the tracked versions, holding only superseded text: both provenance audits, CONSOLIDATION_PLAN.md.local-bak, and FOUNDRY_setup_copy.md (obsolete install extras). The only copies: suite_trial.json (634 KB) and suite_trial.json.md (198 KB), a June 76-question run; docs/geotech_eval_20260713.md (301 KB), the July 100-question run whose headline (43/60 keyed, 71.7 %) is quoted elsewhere. The decision itself is OWN-27.",
+    "question": "Delete the nine stale root copies, and the leftover build folder, old worktrees and three merged or superseded branches; move the three old eval-run records to a private local archive?",
+    "why": "Twelve untracked files clutter the repo root and get swept into agents' reading. Nine are older copies of tracked documents; three are the only full records of the June and July eval runs. The leftovers (merged here from INF-08, 2026-10-20): About 620 MB of stale working copies and three dead branches remain. They confuse sessions that share the checkout and cost disk space; none holds work missing from a release.",
+    "background": "Checked 2026-10-12. Identical to the tracked versions apart from line endings: the A2, A7, APP_PLAN, FOUNDRY_APP_PLAN and V5.4_PLAN copies. Older than the tracked versions, holding only superseded text: both provenance audits, CONSOLIDATION_PLAN.md.local-bak, and FOUNDRY_setup_copy.md (obsolete install extras). The only copies: suite_trial.json (634 KB) and suite_trial.json.md (198 KB), a June 76-question run; docs/geotech_eval_20260713.md (301 KB), the July 100-question run whose headline (43/60 keyed, 71.7 %) is quoted elsewhere. The decision itself is OWN-27. Leftovers (was INF-08; all still there on 2026-10-20): Checked 2026-10-12. build/ (9.1 MB, gitignored). .claude/worktrees/: three folders, 614 MB (two agent copies from 2026-09-01, v5.1-todos from 2026-07-17), no longer registered with git, so uncommitted edits inside them cannot be checked cheaply. Release worktrees wt_app_rel533 and wt_pl_rel013 beside the repos; git also holds nine stale worktree records. Branches: app hotfix/5.12.1-structural-extra (local only, never tagged, superseded by 5.13.0's native structural modules); planlens fix/advice-names-no-missing-tools (already in main); refs origin/feature/reference-query-expansion (merged; deleting it touches GitHub). Two worktrees under the current session's scratchpad may be in use. OWN-27.",
     "options": [
       {"label": "Delete copies, archive run records", "effect": "Nine copies deleted; the three run records moved to a gitignored local archive folder. Nothing unique is lost."},
       {"label": "Delete all twelve", "effect": "Cleanest; the June and July run details are gone for good."},
       {"label": "Leave them", "effect": "No change."}
     ],
-    "recommendation": "Delete the copies and archive the three run records.",
+    "recommendation": "Delete the copies, archive the three run records, and remove the leftovers (everything is merged, released or superseded). An agent first looks inside the orphaned folders for uncommitted files, and leaves the current session's worktrees alone.",
     "if_no_answer": "Files stay; no harm beyond clutter.",
     "message_to_send": null,
     "steps": null,
     "unblocks": [],
-    "sources": ["BACKLOG.md (INF-01, OWN-27)", "repo root (files checked against tracked versions, 2026-10-12)", "module_work/SESSION_2026-10-02_doc-review-5.32.md (July 43/60 headline, line 126)"]
-  },
-  "INF-08": {
-    "kind": "decision",
-    "ask_who": null,
-    "question": "OK to remove leftover build folders, old worktrees and three merged or superseded branches, including one on GitHub?",
-    "why": "About 620 MB of stale working copies and three dead branches remain. They confuse sessions that share the checkout and cost disk space; none holds work missing from a release.",
-    "background": "Checked 2026-10-12. build/ (9.1 MB, gitignored). .claude/worktrees/: three folders, 614 MB (two agent copies from 2026-09-01, v5.1-todos from 2026-07-17), no longer registered with git, so uncommitted edits inside them cannot be checked cheaply. Release worktrees wt_app_rel533 and wt_pl_rel013 beside the repos; git also holds nine stale worktree records. Branches: app hotfix/5.12.1-structural-extra (local only, never tagged, superseded by 5.13.0's native structural modules); planlens fix/advice-names-no-missing-tools (already in main); refs origin/feature/reference-query-expansion (merged; deleting it touches GitHub). Two worktrees under the current session's scratchpad may be in use. OWN-27.",
-    "options": [
-      {"label": "Remove all listed", "effect": "Local folders, stale worktree records and the three branches go, including the merged GitHub branch."},
-      {"label": "Local only, keep GitHub branch", "effect": "Everything on the laptop is cleaned; the merged GitHub branch stays."},
-      {"label": "Leave them", "effect": "No change."}
-    ],
-    "recommendation": "Remove all listed; everything is merged, released or superseded. An agent first looks inside the three orphaned folders for uncommitted files, and leaves the current session's scratchpad worktrees alone.",
-    "if_no_answer": "Leftovers stay: about 620 MB and three dead branches.",
-    "message_to_send": null,
-    "steps": null,
-    "unblocks": [],
-    "sources": ["BACKLOG.md (INF-08, OWN-27)", "git worktree list and .git/worktrees (checked 2026-10-12)", "git cherry / git tag --contains for the three branches (checked 2026-10-12)"]
+    "sources": ["BACKLOG.md (INF-01, OWN-27)", "repo root (files checked against tracked versions, 2026-10-12)", "module_work/SESSION_2026-10-02_doc-review-5.32.md (July 43/60 headline, line 126)", "BACKLOG.md (INF-08, OWN-27)", "git worktree list and .git/worktrees (checked 2026-10-12)", "git cherry / git tag --contains for the three branches (checked 2026-10-12)"]
   },
   "LT-02": {
     "kind": "decision",
@@ -515,7 +461,7 @@
     "ask_who": null,
     "question": "When should the integral slope_stability review happen, and should its first step be a written account only (no code)?",
     "why": "You asked on 2026-10-18 to defer slope fixes until they can be done integrally: nine single fixes in three days each moved pinned values, each started by one case. Twelve slope items now wait on one review.",
-    "background": "The fixes were GM-87, GM-122, GM-123, GM-124, GM-127, GM-128, GM-131, GM-134 and GM-138: search ranges, ground crossings, a time budget, circles above the toe, the m_alpha check, base-tangent circles, slicing for polylines and circles, and the rigorous methods' refinement. Each was right on its own and reviewed, but they were found one case at a time. Waiting: GM-12, GM-15, GM-18, GM-19, GM-56, GM-82, GM-117, GM-130, GM-135, GM-136, GM-137, GM-139, and your decisions OWN-17 and OWN-59.",
+    "background": "The fixes were GM-87, GM-122, GM-123, GM-124, GM-127, GM-128, GM-131, GM-134 and GM-138: search ranges, ground crossings, a time budget, circles above the toe, the m_alpha check, base-tangent circles, slicing for polylines and circles, and the rigorous methods' refinement. Each was right on its own and reviewed, but they were found one case at a time. Waiting: GM-12, GM-15, GM-18, GM-19, GM-56, GM-82, GM-117, GM-130, GM-135, GM-136, GM-137, GM-139, and your decisions OWN-17 and OWN-59. Also held for the review (was OWN-13, merged 2026-10-20): Should the Ito-Matsui stabilizing-pile force be its own callable method, not only an option inside a full slope analysis? Recommended: Yes. It is an existing, verified calculation; exposing it is a general capability, not a rule fitted to one question.",
     "options": [
       {
         "label": "Written account first, when you say",

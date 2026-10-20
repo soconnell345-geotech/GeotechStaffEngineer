@@ -408,32 +408,6 @@
    "BACKLOG.md (OWN-53, REF-10)"
   ]
  },
- "OWN-13": {
-  "kind": "decision",
-  "ask_who": null,
-  "question": "Should the Ito-Matsui stabilizing-pile force be its own callable method, not only an option inside a full slope analysis?",
-  "why": "Asked directly for the Ito-Matsui force on a pile (eval question SPL-3, expected 412 kN per pile), the agent concluded the method did not exist and declined, because it appears only as a sub-option of the slope analysis's stabilizing-pile input.",
-  "background": "slope_stability already has ito_matsui_lateral_force and ito_matsui_pressure, verified against the 1975 paper in v5.3.0, and uses them when a stabilizing pile is given ito_matsui=true. The agent finds tools only through the catalog and method descriptions, so a capability named in neither is invisible to it. Exposing it means one adapter method and its description. The module catalog is 12 characters under its 8,000-character cap (GM-42); a new method adds to the module's method list rather than the catalog text.",
-  "options": [
-   {
-    "label": "Yes, expose it as a method",
-    "effect": "One adapter method; the agent can answer pile-force questions directly, and SPL-3 should pass."
-   },
-   {
-    "label": "No, keep it inside the slope analysis",
-    "effect": "The force is still used in full analyses; direct questions keep failing."
-   }
-  ],
-  "recommendation": "Yes. It is an existing, verified calculation; exposing it is a general capability, not a rule fitted to one question.",
-  "if_no_answer": "SPL-3 keeps failing and direct Ito-Matsui questions get 'not available'.",
-  "message_to_send": null,
-  "unblocks": [],
-  "sources": [
-   "module_work/harness_theory/geotech_agent.md (catalog briefs; SPL-3)",
-   "funhouse_agent/adapters/slope_stability.py (stabilizing_piles parameter)",
-   "docs/geotech_eval_v54_additions.md (SPL-3)"
-  ]
- },
  "OWN-14": {
   "kind": "decision",
   "ask_who": null,
@@ -733,37 +707,6 @@
    "module_work/A7_INDUSTRY_MEMO.md (Recommendations, item 6)",
    "tinyapps/TINYAPPS.md (environment facts)",
    "CLAUDE.md (5.33.0 state block)"
-  ]
- },
- "OWN-24": {
-  "kind": "decision",
-  "ask_who": null,
-  "question": "Keep vision on 'robust first', or start dialling back its cost now that testers use $50-a-month keys?",
-  "why": "Testers get one GPT-5.6 Sol-or-higher deployment (owner, 2026-10-12). Robust-first sends it full-size images and tiles small-lettered pages automatically; on Sol in brief 4, 90 of 100 looks were tiled. Each tester's key holds about $50 a month, so vision cost may decide how far a tester gets.",
-  "background": "Your rule (2026-09-25): robust first, cost is fine, dial back later, and do not act until you ask. Knobs on file: GEOTECH_VISION_POLICY=efficient (largest detail only for chart read-offs); 2x2 tiles first, escalating only where needed; crop to the drawing area before tiling; keep the vision probe's result instead of four small calls per process. In brief 4 (Foundry, Sol at full resolution), 90 of 100 looks were tiled and a long set's input doubled; on GPT-5.4, 'robust' sends about 10k image tokens a view against about 0.7k at 'high'. Tiny Apps testers have no spend line in the sidebar yet (TA-05).",
-  "options": [
-   {
-    "label": "Stay parked",
-    "effect": "Robust stays until you ask."
-   },
-   {
-    "label": "Measure first, then decide",
-    "effect": "Add the spend line (TA-05), watch a week of tester use, then pick knobs from the numbers."
-   },
-   {
-    "label": "Dial back now",
-    "effect": "Switch to 'efficient' and 2x2-first tiling: cheaper turns, some risk of misread small lettering."
-   }
-  ],
-  "recommendation": "Option 2: measure per-conversation cost during the tester weeks before giving up any accuracy. Robust-first was set for good reasons, and the trade-off needs numbers.",
-  "if_no_answer": "Vision stays robust; testers may exhaust their key budgets sooner on drawing sets.",
-  "message_to_send": null,
-  "unblocks": [
-   "VIS-20"
-  ],
-  "sources": [
-   "module_work/FUTURE_IDEAS.md (VISION EFFICIENCY)",
-   "BACKLOG.md (VIS-20, TA-05)"
   ]
  },
  "OWN-25": {
@@ -1247,6 +1190,83 @@
     "sources": [
       "BACKLOG.md OWN-68, GM-217, GM-215",
       "FHWA GEC 9 pp. 216, 219; COM624P Table 3.3"
+    ]
+  },
+  "OWN-69": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "May these nine old backlog items be dropped?",
+    "why": "The backlog holds 237 'later' and 'parked' items. A review of every one found nine that no longer earn a place: later work overtook them, or they are ideas nothing has needed. Dropping them makes the list shorter to read. Each moves to the Done list with its reason, so nothing is lost and its number is never reused.",
+    "background": "Only items that are your call are listed here, and none of them fixes a wrong or unsafe result. The same review merged 15 items into others that cover the same work and closed 6 that were already done (the commit named for each). Those needed no decision.",
+    "parts": [
+      {
+        "label": "Overall",
+        "options": [
+          {
+            "label": "Drop all nine",
+            "effect": "All nine move to the Done list as 'dropped by the owner', each with its reason."
+          },
+          {
+            "label": "Drop some",
+            "effect": "Tick the ones to drop below; the rest stay open."
+          },
+          {
+            "label": "Keep all",
+            "effect": "Nothing changes; all nine stay open."
+          }
+        ]
+      },
+      {
+        "label": "If some: which to drop",
+        "multi": true,
+        "options": [
+          {
+            "label": "OWN-23: a separate multi-user screen",
+            "effect": "Each user already gets their own conversations on Tiny Apps and on Funhouse; the old idea was a different web framework."
+          },
+          {
+            "label": "OWN-37: follow-ups from the security scan",
+            "effect": "The app now installs beside the newer pandas, the quarantined package is no longer used, and the matplotlib flag is a labelling quirk of the scanner."
+          },
+          {
+            "label": "OWN-42: the Funhouse admin note about refused keys",
+            "effect": "The app now retries a refused key once and says so plainly; Funhouse is only the backup host now."
+          },
+          {
+            "label": "OWN-20: switches that copy worked examples' own conventions",
+            "effect": "The module's defaults are correct as they stand (the validation notes say so). Bearing depth factors already have such a switch, and pile alpha has its own question (OWN-63)."
+          },
+          {
+            "label": "TA-09: email from the app on Tiny Apps",
+            "effect": "Email works only through Funhouse's own toolkit, and nobody has asked for it on Tiny Apps."
+          },
+          {
+            "label": "TA-15: old live checks from versions 5.11 to 5.18",
+            "effect": "Those features have run in every live test wave and in daily use since."
+          },
+          {
+            "label": "VIS-18: a public CAD drawing benchmark",
+            "effect": "Measuring against our own review tasks matters more, and that work stays (VIS-17)."
+          },
+          {
+            "label": "REF-17: a backup for chart reading and a smarter search, only if needed",
+            "effect": "Nothing has needed it since June; the rule stays written in the project notes."
+          },
+          {
+            "label": "GM-44: standard multi-step 'playbooks'",
+            "effect": "An idea with no failure behind it; the worked-examples library already shows the agent multi-step work."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Drop all nine.",
+    "if_no_answer": "All nine stay open; nothing changes.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "module_work/backlog_dashboard/triage_2026-10-20.json",
+      "module_work/backlog_dashboard/tidy_proposal_2026-10-20.md"
     ]
   }
 }
