@@ -904,7 +904,8 @@ def _rule_moved(result: DowndragResult) -> bool:
     """Whether the other rule for the depth below the toe gives another
     pile head settlement or drag force (to 0.1 mm / 0.1 kN)."""
     other = result.below_toe.get("other_criterion") or {}
-    if not other:
+    if "pile_settlement_mm" not in other:
+        # none, or the other rule's run gave no result (its "error")
         return False
     return (abs(other["pile_settlement_mm"]
                 - result.pile_settlement * 1000.0) >= 0.05

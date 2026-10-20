@@ -157,7 +157,9 @@ class DowndragResult:
         toe force, depth and settlement below the toe, neutral plane, pile
         head settlement and drag force), ``rules_disagree`` (whether the
         two differ by more than ``influence_depth_warning_percent`` or
-        give different check results; ``warnings`` then says how) and
+        give different check results; ``warnings`` then says how; None
+        when the run with the other criterion gave no result, its
+        ``error`` in ``other_criterion``) and
         ``basis`` (one paragraph saying all of it).
     influence_depth_warning_percent : float
         The difference between the two criteria's pile head settlements or

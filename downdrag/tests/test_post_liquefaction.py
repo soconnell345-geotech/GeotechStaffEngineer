@@ -668,17 +668,20 @@ class TestReporting:
         r = post_liquefaction_downdrag(_hand_check(),
                                        liquefied_layers=_HC1_ZONE)
         whats = [c["what"] for c in r.choices]
-        assert "depth below the toe the toe load is counted to" not in whats
-        assert not any("FHWA GEC-12 rules" in w for w in r.warnings)
+        assert "depth to which the settlement below the toe is computed" \
+            not in whats
+        assert not any("FHWA GEC-12 take the settlement" in w
+                       for w in r.warnings)
         a = _hand_check()
         a.soil.layers[2].E_s = 50000.0
         r = post_liquefaction_downdrag(a, liquefied_layers=_HC1_ZONE)
         whats = [c["what"] for c in r.choices]
         assert whats[-2:] == [
-            "depth below the toe the toe load is counted to",
-            "difference between the two rules' results that is warned "
-            "about"]
-        (w,) = [w for w in r.warnings if "FHWA GEC-12 rules" in w]
+            "depth to which the settlement below the toe is computed",
+            "difference between the UFC 3-220-20 and FHWA GEC-12 results "
+            "that is warned about"]
+        (w,) = [w for w in r.warnings
+                if "FHWA GEC-12 take the settlement" in w]
         assert "29.9 mm (UFC) and 40.6 mm (GEC-12)" in w
         assert r.after.below_toe["rules_disagree"] is True
 

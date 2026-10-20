@@ -89,6 +89,13 @@ _INFLUENCE = {
                          "FHWA GEC-12 §7.3.5.3 step 1c, p. 324"),
 }
 
+#: Each criterion's reference, for the GM-228 warnings: the short name and
+#: the section and page the rule is printed on.
+_RULE_NAME = {
+    "bearing_stress": ("UFC 3-220-20", "§6-5.8.4.3 (p. 449)"),
+    "effective_stress": ("FHWA GEC-12", "Vol I §7.3.5.3 step 1c (p. 324)"),
+}
+
 #: Default of ``influence_depth_warning_percent`` (GM-228): how far apart
 #: the two rules' pile head settlements or drag forces may be before the
 #: result warns. The engineer's call, not a reference's figure: neither UFC
@@ -419,9 +426,15 @@ class DowndragAnalysis:
             settlement, and limit state checks.
         """
         result = self._compute()
-        other = replace(self, influence_depth_criterion=self._other_rule()
-                        )._compute()
-        self._compare_rules(result, other)
+        try:
+            other = replace(self, influence_depth_criterion=self._other_rule()
+                            )._compute()
+        except ValueError as exc:
+            # e.g. a requested neutral-plane method that locates no plane
+            # with the other rule: this rule's result stands, and says so
+            self._other_rule_failed(result, exc)
+        else:
+            self._compare_rules(result, other)
         result.choices = self._choices()
         return result
 
@@ -1812,6 +1825,54 @@ class DowndragAnalysis:
         bt["rules_disagree"] = warning is not None
         if warning:
             result.warnings.append(warning)
+        elif (obt["toe_load_stopped_by"] == "profile_end"
+              and bt["toe_load_stopped_by"] != "profile_end"):
+            # the other rule's depth was cut short by the profile, so the
+            # two were compared on less than the other rule counts (this
+            # rule's own shortfall is warned about in _compute)
+            result.warnings.append(self._short_profile_warning(result, other))
+
+    def _short_profile_warning(self, result: DowndragResult,
+                               other: DowndragResult) -> str:
+        """The warning when the other rule's depth below the toe lies below
+        the bottom of the soil profile and the two rules did not warn: the
+        comparison stopped at the profile's bottom."""
+        obt = other.below_toe
+        o_name, o_src = _RULE_NAME[other.influence_depth_criterion]
+        name = _RULE_NAME[result.influence_depth_criterion][0]
+        reach = self.pile_length + obt["toe_load_depth_below_toe_m"]
+        return (
+            f"{o_name} {o_src} takes the settlement below the toe to "
+            f"{reach:.2f} m, below the bottom of the soil profile "
+            f"({obt['toe_load_counted_to_m']:.2f} m), so the {name} and "
+            f"{o_name} depths were compared only to the bottom of the "
+            f"profile: pile head settlement "
+            f"{result.pile_settlement * 1000.0:.1f} mm by {name}'s and at "
+            f"least {other.pile_settlement * 1000.0:.1f} mm by {o_name}'s. "
+            f"Give the soil profile down to {reach:.2f} m to compare them.")
+
+    def _other_rule_failed(self, result: DowndragResult,
+                           exc: Exception) -> None:
+        """What the result says when the analysis with the other rule
+        raised: ``other_criterion`` carries the error, ``rules_disagree``
+        is None (not compared), and a warning says so."""
+        o_crit = self._other_rule()
+        o_what, o_src = _INFLUENCE[o_crit]
+        o_name, o_cite = _RULE_NAME[o_crit]
+        name = _RULE_NAME[self.influence_depth_criterion][0]
+        bt = result.below_toe
+        bt["other_criterion"] = {
+            "influence_depth_criterion": o_crit,
+            "criterion": f"{o_what} ({o_src})",
+            "error": str(exc),
+        }
+        bt["rules_disagree"] = None
+        bt["basis"] += (f" With {o_what} instead ({o_src}) the analysis "
+                        f"gives no result: {exc}")
+        result.warnings.append(
+            f"The analysis with {o_name}'s depth for the settlement below "
+            f"the toe ({o_cite}) gives no result ({exc}), so the two depths "
+            f"are not compared; this result uses {name}'s.")
 
     @staticmethod
     def _other_rule_text(result: DowndragResult,
@@ -1828,11 +1889,19 @@ class DowndragAnalysis:
             text += (f"the neutral plane is at "
                      f"{other.neutral_plane_depth:.2f} m and the toe force "
                      f"{obt['toe_force_kN']:.1f} kN, ")
-        text += (f"the toe force is counted "
-                 f"{obt['toe_load_depth_below_toe_m']:.2f} m below the toe: "
-                 if same_toe else
-                 f"counted {obt['toe_load_depth_below_toe_m']:.2f} m below "
-                 f"the toe: ")
+        stop = obt["toe_load_stopped_by"]
+        if stop == "no_toe_load":
+            where = "the toe carries no load: "
+        elif stop == "profile_end":
+            where = (f"counted to the bottom of the soil profile, "
+                     f"{obt['toe_load_counted_to_m']:.2f} m, short of "
+                     f"{other.pile_length + obt['toe_load_depth_below_toe_m']:.2f}"
+                     f" m, where its stress increase would fall below that: ")
+        else:
+            where = (f"counted {obt['toe_load_depth_below_toe_m']:.2f} m "
+                     f"below the toe: ")
+        text += ("the toe force is " if same_toe and stop != "no_toe_load"
+                 else "") + where
         s, o = bt["settlement_below_toe_mm"], obt["settlement_below_toe_mm"]
         if abs(o - s) < _SAME_MM:
             text += f"the same settlement below the toe, {s:.1f} mm"
@@ -1911,14 +1980,12 @@ class DowndragAnalysis:
         if not parts and not checks:
             return None
 
+        lead = ("UFC 3-220-20 and FHWA GEC-12 take the settlement below the "
+                "equivalent footing at the toe to different depths")
         if parts:
-            text = ("The UFC 3-220-20 and FHWA GEC-12 rules for how deep "
-                    "below the toe the toe load is counted give "
-                    + " and ".join(parts) + ". ")
+            text = f"{lead}, giving " + " and ".join(parts) + ". "
         else:
-            text = ("The UFC 3-220-20 and FHWA GEC-12 rules for how deep "
-                    "below the toe the toe load is counted give different "
-                    "verdicts. ")
+            text = f"{lead}, and the checks come out differently. "
         moved = abs(ufc.neutral_plane_depth - gec.neutral_plane_depth) > 1e-6
 
         def counted(r):
@@ -1926,7 +1993,10 @@ class DowndragAnalysis:
             where = (f"{b['toe_load_depth_below_toe_m']:.2f} m below the "
                      f"toe, to {b['toe_load_counted_to_m']:.2f} m")
             if b["toe_load_stopped_by"] == "profile_end":
-                where += ", the bottom of the soil profile"
+                where = (f"only to the bottom of the soil profile, "
+                         f"{b['toe_load_counted_to_m']:.2f} m, short of "
+                         f"{r.pile_length + b['toe_load_depth_below_toe_m']:.2f}"
+                         f" m")
             elif b["toe_load_stopped_by"] == "no_toe_load":
                 where = "the toe carries no load"
             plane = (f"neutral plane {r.neutral_plane_depth:.2f} m, toe "
@@ -1934,12 +2004,12 @@ class DowndragAnalysis:
             return (f"{plane}{where}; settlement below the toe "
                     f"{b['settlement_below_toe_mm']:.1f} mm")
 
-        text += (f"UFC 3-220-20 §6-5.8.4.3 (p. 449) counts it to where its "
-                 f"stress increase falls below 10% of the bearing stress of "
-                 f"the equivalent footing ({counted(ufc)}); FHWA GEC-12 Vol "
-                 f"I §7.3.5.3 step 1c (p. 324) to where it falls below 10% "
-                 f"of the existing vertical effective stress "
-                 f"({counted(gec)}). ")
+        text += (f"UFC 3-220-20 §6-5.8.4.3 (p. 449) takes it to where the "
+                 f"stress increase from the toe load is less than 10% of the "
+                 f"bearing stress of the equivalent footing ({counted(ufc)});"
+                 f" FHWA GEC-12 Vol I §7.3.5.3 step 1c (p. 324) to where it "
+                 f"is less than 10% of the existing vertical effective stress"
+                 f" ({counted(gec)}). ")
         by_settle = (("GEC-12" if s_g > s_u else "UFC")
                      if abs(s_u - s_g) >= _SAME_MM else None)
         by_drag = (("GEC-12" if f_g > f_u else "UFC")
@@ -1961,8 +2031,9 @@ class DowndragAnalysis:
                 f"GEC-12's rule (UFC's is the module's default)")
         text += (f"This result uses {used} (influence_depth_criterion "
                  f"'{crit}'); which rule to design with is the engineer's "
-                 f"choice. Warned when the two differ by more than {pct:g} % "
-                 f"(influence_depth_warning_percent).")
+                 f"choice. The warning is set at {pct:g} % "
+                 f"(influence_depth_warning_percent), the engineer's figure; "
+                 f"neither reference gives one.")
         return text
 
     def _choices(self) -> list:
@@ -1973,10 +2044,13 @@ class DowndragAnalysis:
         what, src = _INFLUENCE[crit]
         o_what, o_src = _INFLUENCE[self._other_rule()]
         pct = self.influence_depth_warning_percent
-        limits = (self.allowable_settlement is not None
-                  or self.structural_capacity is not None)
+        # as _rules_warning: a limit of 0 or less is not measured against
+        limits = [limit for limit, value in (
+            ("allowable settlement", self.allowable_settlement),
+            ("structural resistance", self.structural_capacity))
+            if value is not None and value > 0]
         return [
-            choice("depth below the toe the toe load is counted to",
+            choice("depth to which the settlement below the toe is computed",
                    f"{what} ({src})",
                    how_given(crit, "bearing_stress",
                              name="influence_depth_criterion"),
@@ -1985,12 +2059,12 @@ class DowndragAnalysis:
                    + "The other rule's results are reported beside it "
                    "(below_toe, other_criterion).",
                    [f"{o_what} ({o_src})"]),
-            choice("difference between the two rules' results that is "
-                   "warned about",
-                   f"more than {pct:g} % of the larger pile head settlement "
-                   f"or drag force"
-                   + (" (of the allowable settlement or structural "
-                      "resistance given)" if limits else ""),
+            choice("difference between the UFC 3-220-20 and FHWA GEC-12 "
+                   "results that is warned about",
+                   f"pile head settlements or drag forces more than {pct:g} "
+                   f"% apart: of the "
+                   + (" or ".join(limits) + " given, else of the larger"
+                      if limits else "larger of the two"),
                    how_given(pct, INFLUENCE_DEPTH_WARNING_PERCENT,
                              name="influence_depth_warning_percent"),
                    "The engineer's call, not a reference's figure: neither "

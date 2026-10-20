@@ -142,9 +142,10 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     pct = getattr(analysis, "influence_depth_warning_percent", None)
     if pct is not None:
         items.append(InputItem(
-            "Δ_rules", "Difference between the UFC and GEC-12 rules' pile "
-            "head settlements or drag forces that is warned about (the "
-            "engineer's call)",
+            "Δ_rules", "Difference between the pile head settlements or "
+            "drag forces by the UFC 3-220-20 and FHWA GEC-12 depths that "
+            "is warned about (the engineer's figure; neither reference "
+            "gives one)",
             f"{pct:g}", "%"))
 
     return items
@@ -656,7 +657,10 @@ def basis_and_warnings(result) -> list:
         items.append("WARNING: " + w)
     if not warnings:
         items.append("Warnings: none.")
-    return items
+    # printed for the engineer: the brackets that only name inputs for the
+    # agent ("(influence_depth_warning_percent)") are left out (GM-228)
+    from geotech_common.choices import plain
+    return [plain(item) for item in items]
 
 
 def get_figures(result, analysis) -> List[FigureData]:
