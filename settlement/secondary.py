@@ -49,7 +49,8 @@ def secondary_settlement(C_alpha: float, H: float,
 
     References
     ----------
-    FHWA GEC-6, Eq 8-20.
+    FHWA GEC-6 Sec. 5.3.3.2 (p. 85) discusses secondary compression and
+    gives no equation.
     Mesri, G. (1973), "Coefficient of Secondary Compression",
     JSMFE, ASCE, Vol. 99, No. SM1.
     """

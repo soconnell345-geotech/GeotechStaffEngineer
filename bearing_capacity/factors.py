@@ -17,7 +17,7 @@ References:
     Meyerhof, G.G. (1963) — Shape, depth, inclination factors
     Hansen, J.B. (1970) — General bearing capacity theory
     Terzaghi, K. (1943) — Theoretical Soil Mechanics, Ch. VIII
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 5: Eqs. 5-2 to 5-8 (pp. 51-53),
+    FHWA GEC-6 (FHWA-SA-02-054), Chapter 5: Eqs. 5-2 to 5-8 (pp. 51-53),
         Tables 5-1, 5-2, 5-4, 5-5 (pp. 54-60), Eq. 5-14 (p. 63)
     EN 1997-1:2004 Annex D.4 (p. 159) — Vesic's load inclination factors
     FHWA Soils & Foundations Reference Manual, Volume II, Chapter 8

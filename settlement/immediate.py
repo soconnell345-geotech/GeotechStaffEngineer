@@ -14,7 +14,7 @@ References:
     Schmertmann, J.H. (1970) — Static cone to compute static settlement
     Schmertmann, J.H. et al. (1978) — Improved strain influence factor diagrams
     FHWA Soils & Foundations Reference Manual, Vol II, Ch 8
-    FHWA GEC-6 (FHWA-IF-02-054), Section 8.3
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.4
 """
 
 import math

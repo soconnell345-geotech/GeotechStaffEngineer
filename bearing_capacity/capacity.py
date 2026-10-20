@@ -7,7 +7,7 @@ bearing capacity equation (Vesic/Meyerhof/Hansen forms), or Terzaghi's
 systems.
 
 References:
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 5
+    FHWA GEC-6 (FHWA-SA-02-054), Chapter 5
     FHWA-SA-94-034 (CBEAR User's Guide)
     NAVFAC DM-7.01 Ch. 4 / Bowles 5th ed. Sec. 4-7 — Two-layer load-spread method
     Meyerhof & Hanna (1978) — Two-layer punching shear (recognized alternative)

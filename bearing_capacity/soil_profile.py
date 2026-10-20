@@ -7,7 +7,7 @@ Each layer is defined by shear strength parameters (c, phi) and unit weight.
 All units are SI: kPa, kN/m³, degrees, meters.
 
 References:
-    FHWA GEC-6, Chapter 6 (FHWA-IF-02-054)
+    FHWA GEC-6, Chapter 5 (FHWA-SA-02-054)
     Meyerhof & Hanna (1978) — Two-layer bearing capacity
 """
 

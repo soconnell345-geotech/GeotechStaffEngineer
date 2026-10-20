@@ -104,7 +104,7 @@ def test_a_given_stress_acts_on_the_perimeter():
     """GEC-4 Table 7 (p. 73) prints stresses; one given as bond_stress_kPa
     acts over the as-drilled hole (p. 72)."""
     r = design_ground_anchor(445, 3, 8, 32, bond_stress_kPa=200,
-                             drill_diameter_mm=200)
+                             drill_diameter_mm=200, soil_type="soil")
     q = 200 * math.pi * 0.200
     assert r.load_transfer_kN_per_m == pytest.approx(q, abs=0.05)
     assert r.bond_length_m == pytest.approx(2 * 445 / q, abs=0.01)
@@ -112,11 +112,55 @@ def test_a_given_stress_acts_on_the_perimeter():
 
 
 def test_a_given_load_transfer_is_used_per_metre():
-    r = design_ground_anchor(445, 3, 8, 32, load_transfer_kN_per_m=120)
+    r = design_ground_anchor(445, 3, 8, 32, load_transfer_kN_per_m=120,
+                             soil_type="soil")
     assert r.bond_length_m == pytest.approx(2 * 445 / 120, abs=0.005)
     with pytest.raises(ValueError, match="not both"):
         design_ground_anchor(445, 3, 8, 32, load_transfer_kN_per_m=120,
-                             bond_stress_kPa=200)
+                             bond_stress_kPa=200, soil_type="soil")
+
+
+@pytest.mark.parametrize("given", [{"bond_stress_kPa": 1000},
+                                   {"load_transfer_kN_per_m": 400}])
+def test_a_given_load_transfer_needs_its_ground(given):
+    """GM-199: the value does not say the ground (GEC-4 Table 7, p. 73:
+    0.15 to 3.1 MPa in rock, 0.03 to 1.38 MPa in soil), so a given one
+    with no soil_type is refused and the call asked for it. It took the
+    default's soil: a 1,000 kPa rock bond stress over a 150 mm hole
+    (471 kN/m), DL 1,000 kN, got FS 2.0 and 4.5 m where rock's FS 3.0
+    gives 6.37 m."""
+    with pytest.raises(ValueError, match="soil_type='soil' or 'rock'"):
+        design_ground_anchor(1000, 3, 8, 32, **given)
+
+
+def test_the_ground_alone_beside_a_given_load_transfer():
+    """GM-199: soil_type 'rock' or 'soil' names the ground of a given bond
+    stress or load transfer: FS 3.0 in rock (GEC-4 p. 74), 2.0 in soil
+    (p. 71), and the minimum bond length of that ground (p. E-15: 3 m for
+    a bar in rock, else 4.5 m)."""
+    q = 1000 * math.pi * 0.150
+    rock = design_ground_anchor(1000, 3, 8, 32, bond_stress_kPa=1000,
+                                soil_type="rock")
+    assert rock.ground == "rock" and rock.FOS_bond == 3.0
+    assert rock.bond_length_m == pytest.approx(3 * 1000 / q, abs=0.005)
+    soil = design_ground_anchor(1000, 3, 8, 32, bond_stress_kPa=1000,
+                                soil_type="soil")
+    assert soil.ground == "soil" and soil.FOS_bond == 2.0
+    assert soil.bond_length_m == 4.5            # 2 x 1000 / 471 = 4.24
+    bar = design_ground_anchor(300, 3, 8, 32, bond_stress_kPa=1000,
+                               soil_type="rock", tendon_type="bar_32mm")
+    assert bar.bond_length_m == 3.0
+    # a row beside a given stress still names the ground
+    assert design_ground_anchor(1000, 3, 8, 32, bond_stress_kPa=1000,
+                                soil_type="sandstone").FOS_bond == 3.0
+    fs = next(c for c in rock.choices
+              if c["what"] == "factor of safety on bond")
+    assert "soil_type 'rock'" in fs["basis"] and "GM-199" in fs["basis"]
+
+
+def test_the_ground_alone_has_no_load_transfer():
+    with pytest.raises(ValueError, match="names the ground alone"):
+        design_ground_anchor(300, 3, 8, 32, soil_type="rock")
 
 
 def test_the_factor_of_safety_follows_the_ground():

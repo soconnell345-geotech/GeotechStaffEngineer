@@ -33,6 +33,12 @@ CASES = [
     "retaining_wall_package",      # B on R, P_a on its outline, boxes
     "sheet_pile_package",          # the key on the shear curve
     "wave_equation_package",       # the key under the twin axis' lines
+    # GM-216: the elevation axis, the cap outline and property line, the
+    # shear key and the pressure on the plane through the heel
+    "downdrag_package#elevation",
+    "pile_group_package#cap",
+    "retaining_wall_package#key",
+    "retaining_wall_package#surcharge",
 ]
 
 
@@ -68,7 +74,7 @@ def test_package_figures_have_clear_lettering(tmp_path, checked, name):
     from funhouse_agent.adapters import calc_package as adapter
     params = {**_probe(name), "format": "html",
               "output_path": str(tmp_path / "pkg.html")}
-    result = adapter.METHOD_REGISTRY[name](params)
+    result = adapter.METHOD_REGISTRY[name.split("#")[0]](params)
     assert result["status"] == "success", result.get("error")
     assert checked, "no figure was drawn"
     assert checked == [{}] * len(checked), checked

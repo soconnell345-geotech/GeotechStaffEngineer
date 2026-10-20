@@ -13,7 +13,7 @@ Methods:
 - Stress distribution: 2:1 approximate, Boussinesq, Westergaard
 
 References:
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 8
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3
     USACE EM 1110-1-1904
     FHWA-TS-86-205 (CSETT User's Guide)
 """

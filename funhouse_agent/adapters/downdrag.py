@@ -70,12 +70,17 @@ _LAYER_FIX = (
     "settling=false.")
 
 
+#: downdrag_analysis's own inputs: the static ones and the ground's
+#: elevation, which only the figures use (GM-216)
+_ANALYSIS_PARAMS = _VALID_PARAMS + ("ground_elevation",)
+
+
 def run_downdrag_analysis(params, *, method="downdrag_analysis"):
     """(result, analysis) of ``downdrag_analysis``: the tool's own code
     path, also run by ``calc_package.downdrag_package`` (GM-141).
     ``method`` names the caller in error messages."""
-    reject_unknown_params(params, _VALID_PARAMS, method=method)
-    analysis = _build_analysis(params, method, _VALID_PARAMS)
+    reject_unknown_params(params, _ANALYSIS_PARAMS, method=method)
+    analysis = _build_analysis(params, method, _ANALYSIS_PARAMS)
     return analysis.compute(), analysis
 
 
@@ -123,6 +128,7 @@ def _build_analysis(params, method, valid):
         skin_friction_stress=params.get("skin_friction_stress", "final"),
         influence_depth_criterion=params.get("influence_depth_criterion",
                                              "bearing_stress"),
+        ground_elevation=params.get("ground_elevation"),
     )
     return analysis
 
@@ -779,6 +785,22 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }
+
+# The ground's elevation, for the figures only (GM-216): downdrag_analysis
+# and its calc package take it; added after the copy above, so
+# post_liquefaction_downdrag (no figures) does not.
+METHOD_INFO["downdrag_analysis"]["parameters"]["ground_elevation"] = {
+    "type": "float", "required": False,
+    "description": "Elevation of the ground surface the depths are "
+                   "measured from (m): the top of the layers, where the "
+                   "pile head is taken (the original ground under a "
+                   "fill). Figures only: the calc package's profiles "
+                   "are drawn against elevation; every result stays in "
+                   "depth and no number changes.",
+    "when_absent": {"case": "no elevation",
+                    "basis": "the figures plot depth below the ground "
+                             "and say no elevation was given; results "
+                             "are in depth either way"}}
 
 # Its methods table is by_method, before and after (GM-207).
 _NP_METHOD = METHOD_INFO["post_liquefaction_downdrag"]["parameters"][

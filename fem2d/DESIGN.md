@@ -15,6 +15,22 @@ No new dependencies — uses only numpy and scipy (sparse solver, Delaunay).
 
 Out-of-plane strain ε_zz = 0; stress σ_zz ≠ 0.
 
+**The thickness `t` (GM-204, 2026-10-20).** The model is a slice `t`
+metres thick (default 1). The soil's stiffness, weight, pore-pressure and
+surface loads are integrated over it (K_e = t·A·B^T·D·B); the members given
+per metre run are multiplied by it too: a beam's EA, EI and self-weight
+(kN/m, kN·m²/m, kN/m/m), a spring's or strut's stiffness (kN/m per m run),
+a wall joint's stiffness and adhesion, and a phase's `nodal_forces`. So the
+displacements and stresses do not depend on `t`, and every member force is
+reported per metre run (beam axial, shear, moment; spring and strut forces;
+joint normal and shear forces). Before, the members were not scaled: at
+t = 1.5 the soil was 1.5 times stiffer and heavier than the wall, and on
+the excavation probe the wall moment went 11.40 -> 16.79 kN·m/m, a strut's
+force 4.35 -> 6.22 kN/m, with the displacements unchanged. At t = 1 nothing
+moved. `fem2d/tests/test_staged_thickness.py` pins t = 1 against t = 1.5.
+Left as it was: the seepage result's `total_flow_m3_per_s_per_m` sums
+|v|·A·t, so it still scales with `t`.
+
 Elasticity D-matrix (3×3 in-plane):
 
     D = E / ((1+ν)(1−2ν)) × [[1−ν, ν, 0], [ν, 1−ν, 0], [0, 0, (1−2ν)/2]]

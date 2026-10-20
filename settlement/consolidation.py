@@ -10,7 +10,7 @@ References:
     Terzaghi, K. (1925) — Theory of 1-D consolidation
     USACE EM 1110-1-1904, Chapter 5
     FHWA Soils & Foundations Reference Manual, Vol II, Ch 8
-    FHWA GEC-6 (FHWA-IF-02-054), Section 8.4
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.3 (Eqs. 5-20 to 5-23)
 """
 
 import math
@@ -109,7 +109,7 @@ def consolidation_settlement_layer(layer: ConsolidationLayer,
 
     References
     ----------
-    FHWA GEC-6, Eqs 8-5 through 8-7.
+    FHWA GEC-6, Eqs 5-20 and 5-22 (pp. 82, 84).
     """
     return consolidation_layer_terms(layer, delta_sigma)["Sc"]
 
