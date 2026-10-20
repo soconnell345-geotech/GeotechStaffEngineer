@@ -145,3 +145,17 @@ def test_deep_tools_include_view_worked_example():
     tools = make_vision_tools(engine=None)
     names = {t.name for t in tools}
     assert "view_worked_example_source" in names
+
+
+def test_get_worked_example_accepts_id_alias():
+    eid = we.load_examples()[0]["id"]
+    full = call_agent("worked_examples", "get_worked_example", {"id": eid})
+    assert full.get("id") == eid
+
+
+def test_get_worked_example_wrong_id_says_did_you_mean():
+    eid = we.load_examples()[0]["id"]
+    res = call_agent("worked_examples", "get_worked_example",
+                     {"example_id": eid.lower() + "x"})
+    assert "Did you mean" in res["error"]
+    assert eid in res["error"].split("Known ids")[0]

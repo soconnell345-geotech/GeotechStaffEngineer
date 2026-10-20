@@ -38,13 +38,25 @@ def _find(params: dict) -> dict:
     }
 
 
+#: Search-box names for the example id.
+_GET_ALIASES = {"id": "example_id", "name": "example_id",
+                "example": "example_id", "example_name": "example_id"}
+
+
 def _get(params: dict) -> dict:
+    params = apply_aliases(params, _GET_ALIASES)
     require_params(params, ["example_id"], method="get_worked_example")
     entry = _we.get_example(params["example_id"])
     if entry is None:
+        import difflib
         known = [e.get("id") for e in _we.load_examples()]
+        close = difflib.get_close_matches(
+            str(params["example_id"]).upper(), [str(k).upper() for k in known],
+            n=5, cutoff=0.4)
+        close = [k for k in known if str(k).upper() in close]
         return {"error": f"Unknown worked example id "
-                         f"'{params['example_id']}'. Known ids: {known}"}
+                         f"'{params['example_id']}'. Did you mean: {close}? "
+                         f"Known ids: {known}"}
     return dict(entry)
 
 
@@ -87,4 +99,5 @@ METHOD_INFO = {
     },
 }
 
-declare_aliases(METHOD_INFO, {"find_worked_examples": _FIND_ALIASES})
+declare_aliases(METHOD_INFO, {"find_worked_examples": _FIND_ALIASES,
+                              "get_worked_example": _GET_ALIASES})
