@@ -84,6 +84,11 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         items.append(InputItem(
             "L_case", "Permanent casing depth", shaft.casing_depth, "m",
         ))
+    if shaft.fractured_rock_thickness > 0:
+        items.append(InputItem(
+            "t_fr", "Rock not part of the socket, below the top of rock",
+            shaft.fractured_rock_thickness, "m",
+        ))
 
     # Soil layers
     items.append(InputItem(
@@ -187,6 +192,25 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         reference="GEC-10 Section 13.3.3: bottom 1D excluded for cohesive soils",
     ))
 
+    # Rock not considered part of the socket (GEC-10 p. 8-15, GM-220)
+    from drilled_shaft.capacity import fractured_rock_zone
+    not_socket = fractured_rock_zone(shaft, soil)
+    if not_socket is not None:
+        geom_steps.append(CalcStep(
+            title="Rock Not Considered Part of the Socket",
+            equation="z_rock to z_rock + t_fr: no rock side resistance",
+            substitution=(
+                f"{not_socket[0]:.2f} to {not_socket[0]:.2f} + "
+                f"{shaft.fractured_rock_thickness:.2f}"),
+            result_name="z_socket_top",
+            result_value=f"{not_socket[1]:.2f}",
+            result_unit="m",
+            reference=("GEC-10 (FHWA-NHI-18-024) p. 8-15: decomposed or "
+                       "fractured rock 'not considered part of the socket "
+                       "for design purposes'"),
+            notes="The soil above the rock keeps its side resistance.",
+        ))
+
     sections.append(CalcSection(title="Shaft Geometry & Exclusion Zones", items=geom_steps))
 
     # ── Section 2: Side Resistance Methods ───────────────────────
@@ -265,6 +289,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             Qs_layer = lb["side_resistance_kN"]
             desc = lb.get("description", "") or soil_type.capitalize()
 
+            in_not_socket = (soil_type == "rock" and not_socket is not None
+                             and z_top < not_socket[1])
             if method_used == "excluded":
                 layer_items.append(CalcStep(
                     title=f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m)",
@@ -273,7 +299,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     result_name="Q_s",
                     result_value="0.0",
                     result_unit="kN",
-                    notes="Layer within top or bottom exclusion zone",
+                    notes=("Rock not considered part of the socket "
+                           "(GEC-10 p. 8-15)" if in_not_socket
+                           else "Layer within top or bottom exclusion zone"),
                 ))
                 continue
 
@@ -339,7 +367,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     result_name="Q_s",
                     result_value=f"{Qs_layer:,.1f}",
                     result_unit="kN",
-                    notes=f"Effective zone: {eff_top:.1f}-{eff_bot:.1f} m",
+                    notes=f"Effective zone: {eff_top:.1f}-{eff_bot:.1f} m"
+                    + ("; the rock above it is not considered part of the "
+                       "socket (GEC-10 p. 8-15)" if in_not_socket else ""),
                 ))
 
         # Summary table for all layers
@@ -893,6 +923,10 @@ def _plot_layer_profile(result, analysis):
     top_excl = max(1.5, analysis.shaft.casing_depth)
     ax.axhspan(0, top_excl, alpha=0.1, color="#ef4444",
                label=f"Top exclusion ({top_excl:.1f} m)")
+    from drilled_shaft.capacity import fractured_rock_zone
+    not_socket = fractured_rock_zone(analysis.shaft, analysis.soil)
+    if not_socket is not None:
+        ax.axhspan(*not_socket, alpha=0.1, color="#ef4444", hatch="//")
 
     # Invert y-axis so depth increases downward
     ax.invert_yaxis()
@@ -928,6 +962,12 @@ def _plot_layer_profile(result, analysis):
         color="#ef4444", alpha=0.15,
         label=f"Top exclusion ({top_excl:.1f} m)",
     ))
+    if not_socket is not None:
+        legend_handles.append(mpatches.Patch(
+            facecolor="#ef4444", alpha=0.15, hatch="//",
+            label=(f"Rock not part of the socket "
+                   f"({not_socket[0]:.1f}-{not_socket[1]:.1f} m)"),
+        ))
     # the key under the axes: inside them it covered the bars and the
     # shaft tip (GM-194)
     from geotech_common.plotting import key_under_axes

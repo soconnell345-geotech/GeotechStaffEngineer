@@ -228,9 +228,11 @@ def test_aggregate_pier_tool_names_reach_the_package(built):
     spec = cp.METHOD_INFO["ground_improvement_package"]
     for name in ("stress_concentration_ratio", "soil_modulus"):
         assert name in spec["parameter_aliases"]
-    # GM-179: refused, with its reason
+    # GM-179: refused with the stress-ratio method (above); GM-220: other
+    # names of E_column, which GEC-13 Fig. 5-21's methods take
     for name in ("column_modulus", "E_pier"):
-        assert name in spec["refused_parameters"]
+        assert spec["parameter_aliases"][name] == "E_column"
+        assert name not in (spec.get("refused_parameters") or {})
 
 
 def test_aggregate_pier_column_modulus_default_is_stated(built):
