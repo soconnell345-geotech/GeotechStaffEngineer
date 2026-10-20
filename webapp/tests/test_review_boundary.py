@@ -49,34 +49,28 @@ KNOWN_COUPLINGS = {
     "webapp.core -> funhouse_agent.deep.agent": "2.7 #1, step 8",
     "funhouse_agent.deep.review_agent -> funhouse_agent.deep.agent":
         "2.7 #1, step 8",
-    # 2. The review tools' factory sits in GSE's tools module (step 4).
-    "funhouse_agent.deep.review_agent -> funhouse_agent.deep.tools":
-        "2.7 #2, step 4",
-    "funhouse_agent.deep.minimal_agent -> funhouse_agent.deep.tools":
-        "2.7 #2, step 4",
+    # 2. (The review tools' factory sat in GSE's tools module: gone at
+    # step 4, now the vision kit.)
     # 3. The package door shows GSE's first-import disclaimer notice, inside
     # a ``try`` (so soft); its other names load on first use since step 2
     # (the disclaimer goes with the package, steps 10-15).
     "funhouse_agent -> funhouse_agent._disclaimer":
         "2.7 #3, soft, step 10",
     # 4. The chart stack behind plot_data and the plotting box (step 6).
+    # The vision kit's plot_data still draws through GSE's dispatch (which
+    # adds defaults_used and the output note) and reads the adapter's
+    # description: there before step 4 too, hidden in GSE's tools module.
+    "funhouse_agent.deep.vision_kit -> funhouse_agent.dispatch":
+        "2.7 #4, step 6",
+    "funhouse_agent.deep.vision_kit -> "
+    "funhouse_agent.adapters.profile_figure_adapter": "2.7 #4, step 6",
+    "funhouse_agent.deep.vision_kit -> profile_figure": "2.7 #4, step 6",
     "funhouse_agent.plot_box.child -> geotech_common": "2.7 figure, step 6",
     "funhouse_agent.plot_box.child -> geotech_common.layout_ink":
         "2.7 figure, step 6",
-    # 5. The review prompt's module is GSE's (step 3).
-    "funhouse_agent.deep.review_agent -> funhouse_agent.deep.prompt":
-        "2.7 #5, step 3",
-    "webapp.profiles -> funhouse_agent.deep.prompt": "2.7 #5, step 3",
-    # Further couplings (step 5).
-    "funhouse_agent.deep.calculate_tool -> "
-    "funhouse_agent.adapters.reliability_adapter": "2.7 further, step 5",
-    "funhouse_agent.vision_tools -> calc_package.docx_renderer":
-        "2.7 further, step 5",
-    # The figure helper on the review page (GM-227; steps 6 and 8).
-    "funhouse_agent.deep.figure_helper -> funhouse_agent.deep.agent":
-        "2.7 figure, step 8",
-    "funhouse_agent.deep.figure_helper -> funhouse_agent.deep.tools":
-        "2.7 figure, step 4",
+    # 5. (The review prompt's module was GSE's: gone at step 3.)
+    # (Further couplings: calculate's evaluator, the Word renderer and the
+    # figure helper's result cap, gone at step 5.)
     # Soft: inside ``try``, the page works without them (hooks, step 11).
     "funhouse_agent.plot_box -> geotech_references.chart_lines":
         "2.7 soft, step 12",
@@ -99,6 +93,11 @@ KNOWN_REVERSE_COUPLINGS = {
         "the review build inside GSE's builder, step 8",
     "funhouse_agent.deep.agent -> funhouse_agent.deep.minimal_agent":
         "the review build inside GSE's builder, step 8",
+    "funhouse_agent.deep.agent -> funhouse_agent.review_prompt":
+        "the review build inside GSE's builder, step 8",
+    # The old import path of the review prompt (step 3), re-exported.
+    "funhouse_agent.deep.prompt -> funhouse_agent.review_prompt":
+        "re-export for the old import path, step 15",
 }
 
 

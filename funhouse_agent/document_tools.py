@@ -1708,7 +1708,7 @@ def remove_problem(remove) -> Optional[Dict[str, Any]]:
     skipped without a word (``remove=[{"markup_id": ...}]`` removed nothing
     and said nothing; BACKLOG DR-32), so it is refused, naming the valid
     keys and the one most likely meant, before anything is written."""
-    from funhouse_agent.adapters import check_nested_keys
+    from funhouse_agent.arg_checks import check_nested_keys
     entries = ([remove] if isinstance(remove, (str, dict))
                else list(remove or []))
     for i, raw in enumerate(entries):

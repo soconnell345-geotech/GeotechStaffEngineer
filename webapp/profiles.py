@@ -175,7 +175,8 @@ class AppProfile:
         """The ``build_deep_agent`` overrides for this page (a fresh dict)."""
         kw = dict(self._build_kwargs)
         if kw.pop("_document_review_prompt", False):
-            from funhouse_agent.deep.prompt import build_document_review_prompt
+            from funhouse_agent.review_prompt import (
+                build_document_review_prompt)
             kw["system_prompt"] = build_document_review_prompt(
                 memory_enabled=bool(kw.get("enable_memory")))
         return kw

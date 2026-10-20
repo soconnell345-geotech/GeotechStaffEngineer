@@ -477,7 +477,7 @@ def _write_docx(markdown: str, path: str, title: str,
     """The comment log through ``write_docx``'s own writer (same working
     folder, verification and download card)."""
     from funhouse_agent import vision_tools
-    from funhouse_agent.deep.tools import _with_saved_note
+    from funhouse_agent.deep.vision_kit import _with_saved_note
     if not vision_tools.docx_available():
         return {"error": "Word output is not available here",
                 "hint": "ask for format='markdown' instead"}

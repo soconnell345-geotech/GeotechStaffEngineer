@@ -656,7 +656,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     mirror = None
     if sharepoint is not None or durable_dir is not None:
         try:
-            from report_ingest.mirror import Mirror
+            from funhouse_agent.run_mirror import Mirror
             mirror = Mirror(sharepoint=sharepoint, durable_dir=durable_dir,
                             base_folder=sharepoint_folder)
             remote = mirror.remote_for(out.name)

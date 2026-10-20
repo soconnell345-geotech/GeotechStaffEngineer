@@ -13,7 +13,7 @@ on the SDK's manager (``ls``, ``upload_file``, ``download_file``,
 ``create_folder``, ``search_filenames``, ``get_web_url``), with the same
 argument names and return shapes the callers read, so
 :mod:`webapp.sharepoint_store`, :mod:`webapp.sharepoint_tools`,
-:mod:`webapp.reference_fetch` and ``report_ingest.mirror`` need no change
+:mod:`webapp.reference_fetch` and ``funhouse_agent.run_mirror`` need no change
 beyond how the manager is built.
 
 Paths are the UI paths the rest of the app uses — ``Shared Documents/

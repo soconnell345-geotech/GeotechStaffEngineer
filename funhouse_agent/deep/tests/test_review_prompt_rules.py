@@ -78,3 +78,13 @@ def test_each_review_prompt_names_the_calculation_tool_its_build_has():
     assert "calculate" not in REVIEW_TOOLS
     assert "`calculate`" not in lean
     assert "You have no engineering calculation tools on this page" in lean
+
+
+def test_the_review_prompt_is_the_same_from_its_own_module():
+    # INF-30 step 3: the review texts moved out of the geotechnical
+    # prompt's module, which re-exports them; each page keeps its own
+    # copy of the memory note, the same words until the split.
+    from funhouse_agent import review_prompt as R
+    assert P.DOCUMENT_REVIEW_PROMPT is R.DOCUMENT_REVIEW_PROMPT
+    assert P.build_document_review_prompt is R.build_document_review_prompt
+    assert R.MEMORY_SECTION == P._MEMORY_SECTION

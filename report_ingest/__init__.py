@@ -73,7 +73,7 @@ record and its exports out -- and the pieces it drives are:
     Funhouse's Prompter, on the cluster, scored against the hand labels.
     The app runs against OpenAI models there, so a score measured on any
     other model measures a model that will never do the work.
-``report_ingest.mirror``
+``report_ingest.mirror`` (``funhouse_agent.run_mirror``)
     The durable copy of a run's output, to SharePoint or to any folder that
     survives the driver. ``/tmp`` does not, and a cluster restart once wiped
     $17 of finished model calls.
@@ -95,7 +95,13 @@ Prompter through the same one-method engine protocol.
 
 from __future__ import annotations
 
+import sys as _sys
 from typing import Any
+
+# The run mirror is in funhouse_agent.run_mirror (INF-30 step 5), which the
+# review suite uses too; report_ingest.mirror is the same module.
+from funhouse_agent import run_mirror as mirror
+_sys.modules[__name__ + ".mirror"] = mirror
 
 __all__ = ["triage", "review_labels", "classify_pages_by_vision",
            "read_log", "read_lab_sheet", "read_calculation",
