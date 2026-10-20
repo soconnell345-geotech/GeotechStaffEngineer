@@ -27,7 +27,9 @@ in :class:`~axial_pile.capacity.AxialPileAnalysis`. API alpha is at most
 1.0, API RP 2A's own limit, so it applies on that route only.
 
 Toe resistance qp = 9 su (Eq. 7-11). Figure 7-17's curves were measured off
-the printed figure on 2026-10-18. Units are SI (kPa, m, kN).
+the printed figure on 2026-10-18; they live in
+:mod:`geotech_common.alpha_method`, which ``downdrag`` reads too (GM-255).
+Units are SI (kPa, m, kN).
 
 References:
     Tomlinson, M.J. (1979) -- Pile Design and Construction Practice
@@ -41,51 +43,11 @@ from typing import Optional, Tuple
 import numpy as np
 
 from axial_pile.nordlund import _note
-
-#: 1 ksf in kPa.
-KSF = 47.880259
-
-#: The Figure 7-17 curve families: GEC-12's legend for each.
-SOLID = "concrete_timber_corrugated"
-DASHED = "smooth_steel"
-CURVES = {SOLID: "concrete, timber, corrugated steel piles",
-          DASHED: "smooth steel piles"}
-
-_SU = [0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
-       1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,
-       3.0]
-# Ca (ksf) at _SU (ksf). Solid D = 10b runs on to 3.45 ksf; the solid D = 40b
-# curve starts at su = 1.0 ksf (below it the chart has the one solid curve);
-# the dashed curves end at about 3.05 ksf.
-_SOLID_10 = ([0.26, 0.324, 0.413, 0.503, 0.598, 0.691, 0.784, 0.875, 0.948,
-              1.013, 1.082, 1.14, 1.188, 1.249, 1.296, 1.333, 1.359, 1.367,
-              1.369, 1.354, 1.328, 1.289, 1.222, 1.164, 1.104, 1.052, 1.004,
-              0.961, 0.922, 0.892, 0.862, 0.844, 0.832, 0.827])
-_SOLID_40 = ([1.106, 1.181, 1.263, 1.346, 1.419, 1.497, 1.566, 1.626, 1.695,
-              1.749, 1.799, 1.819, 1.819, 1.814, 1.797, 1.767, 1.724, 1.685,
-              1.633, 1.586, 1.514, 1.465, 1.429, 1.402, 1.376, 1.367])
-_DASHED_10 = ([0.23, 0.257, 0.317, 0.403, 0.49, 0.575, 0.66, 0.737, 0.801,
-               0.859, 0.92, 0.965, 1.009, 1.063, 1.108, 1.14, 1.164, 1.168,
-               1.17, 1.152, 1.127, 1.084, 1.045, 1.0, 0.946, 0.896, 0.858,
-               0.821, 0.786, 0.78])
-_DASHED_40 = ([0.26, 0.324, 0.413, 0.503, 0.598, 0.691, 0.784, 0.875, 0.948,
-               1.013, 1.082, 1.14, 1.243, 1.295, 1.344, 1.406, 1.456, 1.497,
-               1.516, 1.555, 1.581, 1.578, 1.555, 1.524, 1.486, 1.464, 1.408,
-               1.352, 1.294, 1.279])
-_SU_SOLID = _SU + [3.1, 3.2, 3.3, 3.4, 3.45]
-_SU_SOLID_40 = _SU[8:] + [3.1, 3.2, 3.3, 3.4, 3.45]
-_SU_DASHED = _SU + [3.05]
-
-#: Each curve family: (su, Ca at D = 10b, su, Ca at D = 40b) in ksf.
-_FIG_7_17 = {
-    SOLID: (_SU_SOLID, _SOLID_10, _SU_SOLID_40, _SOLID_40),
-    DASHED: (_SU_DASHED, _DASHED_10, _SU_DASHED, _DASHED_40),
-}
-
-#: Where each family's curves end (ksf). Past them GEC-12 recommends API
-#: alpha for highly overconsolidated clays (alpha method, p. 247 and Step
-#: 1); :func:`adhesion` takes it or holds Ca at the curve's end.
-CHART_END_KSF = {SOLID: 3.45, DASHED: 3.05}
+# Figure 7-17 as drawn, shared with downdrag (GM-255); :func:`adhesion`
+# decides what to do past the curves' end (CHART_END_KSF).
+from geotech_common.alpha_method import (  # noqa: F401 (re-exported)
+    CHART_END_KSF, CURVES, DASHED, KSF, SOLID, adhesion_fig_7_17,
+)
 
 
 def curve_for_pile(pile_type: str) -> str:
@@ -93,41 +55,6 @@ def curve_for_pile(pile_type: str) -> str:
     steel for pipe piles, the corrugated curve for H-piles (p. 247), and
     the concrete and timber curve for those piles."""
     return DASHED if pile_type.startswith("pipe") else SOLID
-
-
-def _one_curve(su_ksf: float, su_nodes, ca_nodes, lower=None) -> float:
-    """Ca on one curve; a D = 40b curve that starts above the chart's start
-    takes the shared lower curve (``lower``) below its first node."""
-    if lower is not None and su_ksf < su_nodes[0]:
-        return lower
-    return float(np.interp(su_ksf, su_nodes, ca_nodes))
-
-
-def adhesion_fig_7_17(su: float, D_over_b: float, curve: str = SOLID,
-                      notes: Optional[list] = None) -> float:
-    """Pile adhesion Ca (kPa) from GEC-12 Figure 7-17 (alpha method, Step
-    1), as drawn.
-
-    Linear along each curve in su, then linear in D/b between the D = 10b
-    and D = 40b curves; D/b below 10 takes the 10b curve and above 40 the
-    40b curve. Below the curves' start (0.25 ksf) Ca = su times the
-    curve's alpha there. Above the curve's end the value is held there;
-    :func:`adhesion` decides what to do past it.
-    """
-    if curve not in _FIG_7_17:
-        raise ValueError(f"curve must be one of {list(_FIG_7_17)}, got "
-                         f"'{curve}'")
-    su_ksf = su / KSF
-    s10, c10, s40, c40 = _FIG_7_17[curve]
-    if su_ksf < s10[0]:
-        a10 = c10[0] / s10[0]
-        a40 = (c40[0] if s40[0] == s10[0] else c10[0]) / s10[0]
-        ca10, ca40 = a10 * su_ksf, a40 * su_ksf
-    else:
-        ca10 = _one_curve(su_ksf, s10, c10)
-        ca40 = _one_curve(su_ksf, s40, c40, lower=ca10)
-    w = min(max((D_over_b - 10.0) / 30.0, 0.0), 1.0)
-    return (ca10 + w * (ca40 - ca10)) * KSF
 
 
 def api_alpha(su: float, sigma_v: float) -> float:
