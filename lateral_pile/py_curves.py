@@ -526,7 +526,11 @@ class StiffClayAboveWT:
     c : float
         Undrained shear strength (kPa).
     gamma : float
-        Total unit weight of soil (kN/m^3). Note: total, not effective.
+        Unit weight in Eq. 3.8 (GEC 9 A-1), kN/m^3: total above the water
+        table, submerged below it. GEC 9 (p. 219) titles this criterion
+        "stiff clay with no free water" and prefers it to Reese et al.
+        (1975) even below the water table where the groundwater is at
+        depth and free water is not at or near the ground surface.
     eps50 : float
         Strain at 50% of max deviator stress.
     J : float
@@ -564,11 +568,11 @@ class StiffClayAboveWT:
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
         if self.loading == 'cyclic' and self.n_cycles is None:
             raise ValueError(
-                "cyclic loading of stiff clay above the water table needs "
-                "n_cycles, the number of times the design lateral load will "
-                "be applied: the curve softens with log N (y_c = y_s + y50 C "
-                "log N, COM624P Eq. 3.29, GEC 9 Eq. A-21) and the references "
-                "give no default")
+                "cyclic loading of stiff clay with no free water (Welch & "
+                "Reese, StiffClayAboveWT) needs n_cycles, the number of "
+                "times the design lateral load will be applied: the curve "
+                "softens with log N (y_c = y_s + y50 C log N, COM624P Eq. "
+                "3.29, GEC 9 Eq. A-21) and the references give no default")
         if self.loading == 'static' and self.n_cycles is not None:
             raise ValueError(
                 f"n_cycles ({self.n_cycles:g}) applies to loading='cyclic' "

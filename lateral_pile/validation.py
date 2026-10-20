@@ -766,7 +766,7 @@ class TestParametricBehavior:
     def test_cyclic_vs_static(self):
         """Cyclic loading should give more deflection than static.
 
-        Uses Matlock Lake Austin pile at high load where deflections
+        Uses the Matlock (1970) test pile at high load where deflections
         exceed 3*y50 (=29.2 mm) so cyclic degradation engages.
         At small deflections (< 3*y50), static and cyclic are identical.
         """
@@ -988,18 +988,19 @@ class TestPublishedBenchmarks:
         assert abs(r_fixed.rotation_top) < 1e-6
         assert r_fixed.moment[0] < 0
 
-    def test_matlock_lake_austin_benchmark(self):
-        """Matlock (1970) Lake Austin test — OTC 1204.
+    def test_matlock_1970_test_pile_benchmark(self):
+        """Matlock (1970), OTC 1204: the instrumented test pile in the
+        stronger of his two soft clays.
 
-        Corrected pile and soil parameters from published literature
-        (confirmed across pilegroups.com, RSPile theory manual, Springer).
+        Pile and soil parameters as the literature reports the test; the
+        values below are this module's own results, not published ones.
 
         Steel pipe pile: D=324mm (12.75"), t=12.7mm (0.5"), L=12.8m
         EI = 30,141 kN-m^2
         Soft clay: su=38.3 kPa, gamma'=10.0 kN/m3, eps50=0.012, J=0.5
         Free head, static loading, load at ground line.
 
-        Reference (n=400, equilibrium verified to <0.01%):
+        Module results (n=400, equilibrium verified to <0.01%):
           V=22.2 kN (5 kips):  y_top = 2.39 mm, Mmax = 18.5 kN-m @ 1.60 m
           V=44.5 kN (10 kips): y_top = 8.74 mm, Mmax = 45.9 kN-m @ 1.98 m
           V=89.0 kN (20 kips): y_top = 31.5 mm, Mmax = 113.1 kN-m @ 2.43 m
@@ -1026,23 +1027,47 @@ class TestPublishedBenchmarks:
         assert r3.converged
         assert abs(r3.y_top * 1000 - 31.5) / 31.5 < 0.05
 
-    def test_com624p_example1_sabine_river(self):
-        """COM624P Example 1 — Sabine River soft clay test pile.
+    @pytest.mark.parametrize("v_kip, y_top_in, m_max_in_kip", [
+        (20.0, 0.145, 661.0),     # printed summary table, p. 126
+        (40.0, 0.623, 1740.0),
+    ])
+    def test_com624p_example_1(self, v_kip, y_top_in, m_max_in_kip):
+        """COM624P Example 1 (FHWA-SA-91-048, printed pp. 101-126): a
+        14HP89, strong axis (I 904 in^4, E 29,000 ksi), 300 in long, head
+        at the ground, free, 39 kips axial, in uniform stiff clay above the
+        water table (Welch & Reese: c 14 psi, gamma 0.069 lb/in^3, eps50
+        0.007), static, 120 increments. Head deflection and maximum moment
+        as printed on p. 126; the printed p-y curves (pp. 121-122) are
+        pinned in tests/test_stiff_clay_above_wt.py (GM-202)."""
+        IN, PSI, PCI, KIP = 0.0254, 6.894757, 271.4471, 4.448222
+        b = 14.7 * IN
+        pile = Pile(length=300 * IN, diameter=b, E=29e6 * PSI,
+                    moment_of_inertia=904 * IN ** 4)
+        clay = StiffClayAboveWT(c=14.0 * PSI, gamma=0.069 * PCI, eps50=0.007)
+        r = LateralPileAnalysis(pile, [SoilLayer(0.0, 300 * IN, clay)]).solve(
+            Vt=v_kip * KIP, Q=39.0 * KIP, n_elements=120)
+        assert r.converged
+        assert r.y_top / IN == pytest.approx(y_top_in, rel=0.01)
+        assert r.max_moment / (KIP * IN) == pytest.approx(m_max_in_kip,
+                                                          rel=0.01)
 
-        Published in FHWA-SA-91-048 (Wang & Reese, 1993), Example 1.
-        Matches Matlock (1970) Sabine River field test.
+    def test_soft_clay_regression_case_source_unknown(self):
+        """Regression case, source unknown: NOT a published check.
 
-        Steel pipe pile: D=12.75" (0.3239 m), t=3/8" (9.525 mm), L=12.8 m
-        EI ≈ 23,265 kN-m^2
-        Soft clay: su=14.4 kPa (2.1 psi), gamma'=5.0 kN/m^3 (buoyant),
-                   eps50=0.012, J=0.5
-        Free head, static loading, lateral load at ground line.
+        From the module's first commit until GM-209 this case was labelled
+        "COM624P Example 1" with a "published" 34.3 mm (1.35 in). It is
+        not: the manual's Example 1 is the 14HP89 in stiff clay above
+        (test_com624p_example_1). No printed source for 34.3 mm was found
+        (GM-209 searched the COM624P manual, Matlock 1970 OTC 1204, GEC 9
+        and other lateral-pile literature on file). Matlock's
+        instrumented pile had a 0.5 in wall, not this 3/8 in, and his
+        free-head deflections are printed for cyclic loading only. 34.3 mm
+        is within 0.3 % of what this module computes for these inputs, so
+        the case guards against change, not against a published answer.
 
-        Published COM624P output:
-          V = 44.5 kN (10 kips) -> y_top = 34.3 mm (1.35 in)
-
-        This test validates the full analysis pipeline against the
-        COM624P program's published results to within 5%.
+        Steel pipe pile: D 0.3239 m, t 9.525 mm, L 12.8 m (EI about 23,265
+        kN m^2). Soft clay: su 14.4 kPa, gamma' 5.0 kN/m^3, eps50 0.012,
+        J 0.5. Free head, static, load at the ground line, 44.5 kN.
         """
         pile = Pile(length=12.8, diameter=0.3239, thickness=0.009525, E=200e6)
         layers = [SoilLayer(top=0.0, bottom=12.8,
@@ -1052,12 +1077,12 @@ class TestPublishedBenchmarks:
         results = analysis.solve(Vt=44.5, head_condition='free', n_elements=200)
 
         assert results.converged
-        # Published COM624P result: 34.3 mm (1.35 in)
+        # The module's own result (34.41 mm at GM-209), not a published one
         y_mm = results.y_top * 1000
         rel_error = abs(y_mm - 34.3) / 34.3
-        assert rel_error < 0.05, (
-            f"COM624P Example 1: y_top = {y_mm:.2f} mm, "
-            f"published = 34.3 mm, error = {rel_error:.1%}"
+        assert rel_error < 0.01, (
+            f"soft clay regression case: y_top = {y_mm:.2f} mm, "
+            f"pinned 34.3 mm, change = {rel_error:.1%}"
         )
 
     def test_sand_high_load_benchmark(self):
