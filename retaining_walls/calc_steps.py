@@ -466,8 +466,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     delta_b = sl["delta_b"]
     ca = sl["ca"]
     Pp = sl["Pp"]
+    # GM-212: the printed rule for the foundation cohesion
+    rule = sl.get("sliding_cohesion", "drained")
+    width = sl.get("adhesion_width")
 
-    if sl["delta_b_given"]:
+    if delta_b is None:
+        pass
+    elif sl["delta_b_given"]:
         slide_items.append(CalcStep(
             title="Base Friction Angle",
             equation="\u03b4_b given directly (no 2/3 factor)",
@@ -485,24 +490,73 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             result_name="\u03b4_b",
             result_value=f"{delta_b:.2f}",
             result_unit="deg",
-            reference="Das Ch. 13; typically 1/2 to 2/3 of \u03c6",
+            reference=("EN 1997-1 6.5.3(10), 2/3 \u03c6'cv;d for smooth "
+                       "precast foundations; UFC 3-220-20 Table 4-1"),
         ))
 
+    if rule == "friction_plus_adhesion":
+        if sl["ca_given"]:
+            slide_items.append(CalcStep(
+                title="Base Adhesion",
+                equation="C_a given directly",
+                substitution=f"C_a = {ca:.1f} kPa",
+                result_name="C_a", result_value=f"{ca:.1f}",
+                result_unit="kPa", reference="input base_adhesion"))
+        else:
+            slide_items.append(CalcStep(
+                title="Base Adhesion",
+                equation=("C_a from the undrained shear strength c_f, "
+                          "read linearly within its row"),
+                substitution=f"c_f = {sl['c_foundation']:.1f} kPa",
+                result_name="C_a", result_value=f"{ca:.1f}",
+                result_unit="kPa", reference="UFC 3-220-20 Table 4-1"))
+        e_s = sl["eccentricity"]
+        slide_items.append(CalcStep(
+            title="Effective Base Width",
+            equation="B_e = B \u2212 2|e|",
+            substitution=f"B_e = {B:.2f} \u2212 2 \u00d7 {abs(e_s):.3f}",
+            result_name="B_e", result_value=f"{width:.3f}", result_unit="m",
+            reference="UFC 3-220-20 Sec. 4-5.1.3, Fig. 4-27",
+            notes=("e from the loads the sliding check counts, the uniform "
+                   "bearing pressure method; NHI-06-089 Fig. 10-17 takes "
+                   "the full B.")))
+
     R_sliding = sl["resisting"]
+    if rule == "undrained":
+        equation = "R = c_a \u00d7 B"
+        substitution = f"R = {ca:.1f} \u00d7 {width:.2f}"
+        reference = "GEC-6 Eq. 5-39"
+        rule_note = ("Undrained: adhesion alone, c_a = "
+                     + ("base_adhesion given directly"
+                        if sl["ca_given"] else
+                        "c_foundation as the undrained shear strength")
+                     + ", no base friction (GEC-6: Eqs. 5-38 and 5-39 "
+                     "'should not be combined'). ")
+    elif rule == "friction_plus_adhesion":
+        equation = "R = V \u00d7 tan(\u03b4_b) + C_a \u00d7 B_e"
+        substitution = (f"R = {sl['V']:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
+                        f" + {ca:.1f} \u00d7 {width:.2f}")
+        reference = "UFC 3-220-20 Fig. 4-27"
+        rule_note = ("Friction and adhesion added (UFC 3-220-20 Sec. "
+                     "4-5.1.3, which adds that the minimum FS may need to "
+                     "be increased when base adhesion is included). ")
+    else:
+        equation = "R = V \u00d7 tan(\u03b4_b)"
+        substitution = f"R = {sl['V']:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
+        reference = "GEC-6 Eq. 5-38"
+        rule_note = (f"Drained: c_foundation = {sl['c_foundation']:g} kPa "
+                     "not counted (GEC-6: Eqs. 5-38 and 5-39 'should not "
+                     "be combined'; EN 1997-1 6.5.3(10)). "
+                     if sl.get("c_foundation") else "")
     slide_items.append(CalcStep(
         title="Resisting Force (Sliding)",
-        equation=("R = V \u00d7 tan(\u03b4_b) + c_a \u00d7 B"
-                  + (" + P_p" if Pp > 0 else "")),
-        substitution=(
-            f"R = {sl['V']:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
-            + (f" + {ca:.1f} \u00d7 {B:.2f}" if ca > 0 else "")
-            + (f" + {Pp:.1f}" if Pp > 0 else "")
-        ),
+        equation=equation + (" + P_p" if Pp > 0 else ""),
+        substitution=substitution + (f" + {Pp:.1f}" if Pp > 0 else ""),
         result_name="R",
         result_value=f"{R_sliding:.1f}",
         result_unit="kN/m",
-        notes=("c_a given directly (no 2/3 factor). " if sl["ca_given"]
-               else "")
+        reference=reference,
+        notes=rule_note
               + (("P_p: Rankine passive resistance over the depth of the "
                   "shear key only, below the toe from the underside of the "
                   f"base ({sl['D_passive_top']:.2f} m) to the level of the "
@@ -1276,7 +1330,8 @@ def _cantilever_terms(result, analysis):
             _used(analysis, "gamma_foundation"),
             delta_base=_used(analysis, "delta_base"),
             base_adhesion=_used(analysis, "base_adhesion"),
-            live_load_resists=live, dead_load_resists=dead),
+            live_load_resists=live, dead_load_resists=dead,
+            sliding_cohesion=_used(analysis, "sliding_cohesion")),
         cw._overturning_terms(geom, gamma, phi, c, gamma_c, method,
                               live_load_resists=live,
                               dead_load_resists=dead),

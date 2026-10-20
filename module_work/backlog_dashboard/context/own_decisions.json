@@ -1388,5 +1388,44 @@
       "BACKLOG.md OWN-72, INF-26",
       "tinyapps/TINYAPPS.md (Nexus only; CfA question 6)"
     ]
+  },
+  "OWN-73": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Cantilever wall sliding on soil with cohesion: which rule should be the default?",
+    "why": "The sliding check used to add two-thirds of the foundation cohesion to base friction. GEC-6 (p. 100) gives two separate rules: friction for drained loading (Eq. 5-38) and adhesion, cu times the base width, for undrained loading (Eq. 5-39), and says they should not be combined. EN 1997-1 6.5.3(10) neglects c' for drained sliding. UFC 3-220-20 (Fig. 4-27, Sec. 4-5.1.3) adds friction and adhesion Ca over the effective base width. The tool now follows GEC-6 by default and offers UFC's rule.",
+    "background": "A 5 m wall on a foundation soil with phi' 28 degrees and c' 10 kPa: the factor of safety against sliding was 1.51 under the old two-thirds rule, is 1.23 under GEC-6's drained rule (below 1.5, so the wall fails the check), and is 1.55 under UFC's friction plus adhesion. The tool reads the strength from what the user gives: phi = 0 is read as undrained (c as cu), anything else as drained (c as c'), and the result says which and why.",
+    "parts": [
+      {
+        "label": "Default rule",
+        "options": [
+          {
+            "label": "GEC-6 as built (friction when drained, cu times B when phi = 0)",
+            "effect": "Follows GEC-6 and EN 1997-1 as printed and gives the lowest factor of safety of the three where c' > 0. UFC's rule stays a named option."
+          },
+          {
+            "label": "UFC friction plus adhesion",
+            "effect": "A higher factor of safety where c' > 0, as UFC 3-220-20 draws it. GEC-6's rule becomes the option."
+          },
+          {
+            "label": "Ask for the rule whenever the base has cohesion",
+            "effect": "The tool stops until the rule is given; its message lists the three rules with their sources."
+          }
+        ]
+      }
+    ],
+    "recommendation": "GEC-6 as built, with UFC's rule as the named option: it follows the manual's steps as printed, as you asked for driven piles, and it errs on the safe side.",
+    "if_no_answer": "GEC-6's rule stays the default, and each result says which rule it used and gives the other rules' factors of safety.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-234"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-73",
+      "GEC-6 p. 100 (Eqs. 5-38, 5-39)",
+      "EN 1997-1 6.5.3",
+      "UFC 3-220-20 Fig. 4-27, Sec. 4-5.1.3, Table 4-1"
+    ]
   }
 }
