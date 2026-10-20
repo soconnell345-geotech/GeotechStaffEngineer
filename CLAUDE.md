@@ -301,7 +301,7 @@ Key conventions:
       GEC-6 (friction or adhesion, not both; release note); the owner split
       Document Review and GeotechStaffEngineer into two apps, GSE to run in
       Foundry (BACKLOG INF-25, INF-26), its test wheels delivered with Claude
-      RIDs routed by model family; the geotech-report questions moved to report_ingest and off the Document Review page (RI-34);
+      RIDs routed by model family; the geotech-report questions moved to report_ingest and off the Document Review page (RI-34); both pages' agents are pinned by `webapp/tests/test_page_fingerprints.py` (a deliberate prompt or tool change re-records with `python -m webapp.tests.page_builds record`, in its own commit; INF-30);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
