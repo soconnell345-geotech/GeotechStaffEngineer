@@ -53,8 +53,18 @@ _CD_RECT = (
 GEC6_TABLE_5_12_BASIS = (
     "GEC-6 Table 5-12 (p. 97), shape and rigidity factors C_d for points "
     "at the surface of an elastic half space of infinite depth (after "
-    "Winterkorn & Fang 1975), used as Iw in Se = q B (1 - nu^2) Iw / Es "
-    "(GEC-6 Eq. 5-36, p. 96)")
+    "Winterkorn & Fang 1975; the same table is FHWA NHI-06-089 Table 8-13, "
+    "p. 8-59), used as Iw in Se = q B (1 - nu^2) Iw / Es (GEC-6 Eq. 5-36, "
+    "p. 96)")
+#: GM-214: the rigid square as printed, and why it is kept.
+GEC6_RIGID_SQUARE_NOTE = (
+    "The table prints the rigid square at 0.99, above the flexible "
+    "square's average (0.95), where its rigid circle (0.79) is below the "
+    "flexible circle's average (0.85). NHI-06-089 Table 8-13 prints the "
+    "same 0.99, and no other reference in the app's reference library "
+    "(UFC 3-220-20, UFC 3-220-10 / DM 7.1, EN 1997-1 and -2) prints a "
+    "rigid square, so 0.99 is used as printed. Give Iw for another "
+    "value.")
 
 
 def gec6_influence_factor(shape: str = "square", rigidity: str = "flexible",
@@ -165,7 +175,7 @@ def elastic_settlement(q: float, B: float, Es: float,
         ``rigidity`` and ``point`` (:func:`gec6_influence_factor`), by
         default the centre of a flexible square, 1.12 (GM-203: the default
         was 1.0, which matches no printed point). Rigid: circle 0.79,
-        square 0.99 as printed.
+        square 0.99 as printed (:data:`GEC6_RIGID_SQUARE_NOTE`).
     shape, L, rigidity, point : optional
         The footing and the point, for the table; not used when Iw is
         given. ``L`` for a rectangle.

@@ -25,6 +25,7 @@ from bearing_capacity.factors import (
     shape_factors,
     depth_factors,
     depth_parameter_k,
+    ufc_table_5_8_printed_dc,
     DEPTH_FACTOR_METHODS,
     DEPTH_FACTOR_BASIS,
     inclination_factors,
@@ -367,6 +368,13 @@ class BearingCapacityAnalysis:
                 f"k = Df/B = {df_b:.2f}, as UFC 3-220-20 Table 5-6 (p. 294) "
                 "prints for Meyerhof at any depth (larger depth factors; "
                 "not an option of this tool)")
+        if fm == "vesic" and dm == "hansen" and phi > 0:
+            # GM-214: the table's printed d_c is half its note C formula's
+            alternatives.append(
+                f"d_c = {ufc_table_5_8_printed_dc(phi, Df, B):.3f}, as UFC "
+                "3-220-20 Table 5-8 (p. 296) prints it, 1 + k (1 - sin "
+                "phi)^2 N_q/N_c: half of what the correspondence formula "
+                "its note C names gives (not an option of this tool)")
         return choice(
             "depth factors", chosen,
             how_given(dm, "hansen", name="depth_factor_method"), basis,
@@ -392,13 +400,19 @@ class BearingCapacityAnalysis:
                       f"{self.vertical_load * math.tan(math.radians(beta)):.1f}"
                       f" kN{per} with V = {self.vertical_load:g} kN{per}, "
                       f"A' = {self._inclination_area():.2f} m2{per}; {i}")
-        mic, miq, mig = _meyerhof_inclination_factors(
-            layer.friction_angle, beta)
+        try:
+            mic, miq, mig = _meyerhof_inclination_factors(
+                layer.friction_angle, beta)
+            meyerhof = (f"i_c = i_q = {mic:.3f}, i_gamma = {mig:.3f} "
+                        "(factor_method 'meyerhof', with its shape factors "
+                        "1 under an inclined load)")
+        except ValueError:
+            # beta >= phi: the table takes theta < phi' (GM-214)
+            meyerhof = (f"none at {beta:g} deg: the table takes theta = "
+                        f"atan(H/V) < phi' = {layer.friction_angle:g} deg")
         alternatives = [
-            f"Meyerhof's angle-only factors, UFC 3-220-20 Table 5-6 (p. "
-            f"294): i_c = i_q = {mic:.3f}, i_gamma = {mig:.3f} "
-            "(factor_method 'meyerhof', with its shape factors 1 under "
-            "an inclined load)",
+            "Meyerhof's angle-only factors, UFC 3-220-20 Table 5-6 (p. "
+            "294): " + meyerhof,
             "none, with sliding checked against the horizontal load: GEC-6 "
             "Sec. 5.2.3.7 (p. 62) (load_inclination 0)"]
         if layer.friction_angle == 0:

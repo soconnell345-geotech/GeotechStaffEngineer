@@ -215,3 +215,60 @@ it to 788.6, the shape factors the rest). Pass `ngamma_method="vesic"` for
 the old mixed method under a vertical load; under an inclined load no input
 restores the old combination of shape and inclination factors (675.1 kPa
 with Vesic's N-gamma). Vesic and Terzaghi results do not change.
+
+## Two printed oddities (2026-10-19, BACKLOG GM-214)
+
+**d_c against UFC 3-220-20 Table 5-8 (p. 296).** The table prints
+d_c = 1 + k (1 - sin phi')^2 (N_q/N_c). Its note C says the c factors come
+from the q factors by the correspondence formula (Brinch Hansen 1961, de
+Beer 1970); the note names the formula and does not print it. That formula,
+x_c = x_q - (1 - x_q)/(N_c tan phi'), from the printed
+d_q gives d_c = 1 + 2 k (1 - sin phi')^2 (N_q/N_c): twice the increment
+the table prints. The module keeps the note C form (no number changes),
+for three printed reasons: the table's own s_c = 1 + (B/L)(N_q/N_c) cos phi'
+and i_c = (i_q N_q - 1)/(N_q - 1) are that formula term for term; note C names it
+as the source of the c factors; and as phi' goes to 0 it tends to
+1 + 2k/5.14 = 1 + 0.39 k, Table 5-7's 1 + 0.4 k, where the printed form
+tends to 1 + 0.19 k. The depth choice's basis says so, and its
+alternatives give the printed value for the footing
+(`factors.ufc_table_5_8_printed_dc`; not an option of the tool). The calc
+steps cite note C for d_c. GEC-6 prints no d_c (Table 5-4 is d_q alone).
+
+**Meyerhof's i_gamma and theta < phi'.** `max((1 - beta/phi)^2, 0)` never
+clamps: past phi it grows again (beta = 2 phi gives 1). UFC 3-220-20
+Table 5-6 (p. 294) defines theta = atan(H/V) < phi' in its notes (the
+"Inclined Load" row carries a note B whose text is not printed), so
+beta >= phi is refused with that reason (phi = 0: N_gamma = 0 and i_gamma stays 1). Under
+Vesic's factors, which stand to 45 deg with c = 0, the Meyerhof
+alternative in the choices reads "none" there. Phi 32 deg, 2 m square,
+Df 1 m, c 0: q_ult was 199.4 kPa at 32 deg (i_gamma 0), 176.7 at 40 and
+496.2 at 64; now refused. Below phi nothing changes (215.2 kPa at 30 deg).
+
+**The other factors that turned back up**, now refused with a plain
+message: a load inclination below 0 or from 90 deg (Vesic at -10 deg gave
+i_q 1.28 and q_ult 1,555.9 kPa against 1,158.8 vertical); a ground slope
+below 0 or above 45 deg, where Vesic's g_q = (1 - tan omega)^2 is 0 and
+grows again (621.0 kPa at 60 deg against 0.0 at 45; 1,603.4 at -10); a
+base tilt with alpha tan phi above 1 (radians), where b_q is 0 and grows
+again (GEC-6 Sec. 5.2.3.5, p. 58, advises inclined footings of less than
+about 8-10 deg). A negative base tilt stays: GEC-6 Table 5-5 takes alpha
+upward +. Vesic's load inclination factors already refused H > V + A' c
+cot phi.
+
+Which limits are printed: theta < phi' is UFC Table 5-6's own. The 45 deg
+ground slope and alpha tan phi = 1 are this module's own, the points where
+the formulas reach 0: GEC-6 Table 5-5 prints b_q = (1 - 0.017 alpha
+tan phi)^2 (alpha in degrees) with no limit, and no reference in the library
+prints Vesic's g_q = (1 - tan omega)^2 or a limit for it (UFC 3-220-20
+p. 296 cautions against Brinch Hansen's g factors, (1 - 0.5 tan beta)^5,
+on ground steeper than 2H:1V; GEC-6 Sec. 5.2.3.4 uses N_cq and N_gamma-q of
+its Fig. 5-7 instead). The messages say so. No validation example, eval
+question, worked example or calc package in the repo uses a load
+inclination, a ground slope or a base tilt the module now refuses (checked
+2026-10-19).
+
+**Release note:** `factor_method="meyerhof"` with a load inclined at phi
+or more from vertical is refused (it gave a capacity that rose again with
+the angle); so are a negative or 90-degree load inclination, a ground slope
+outside 0-45 deg and a base tilt past alpha tan phi = 1. No other result
+changes.
