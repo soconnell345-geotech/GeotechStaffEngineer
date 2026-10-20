@@ -1268,5 +1268,79 @@
       "module_work/backlog_dashboard/triage_2026-10-20.json",
       "module_work/backlog_dashboard/tidy_proposal_2026-10-20.md"
     ]
+  },
+  "OWN-70": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Stone columns: which basis should the improvement factor use by default?",
+    "why": "The ground-improvement tool estimates how much stone columns cut settlement with Priebe's basic improvement factor, n0. GEC-13 does not print Priebe's formula; it prints only his design curve (Vol I Fig. 5-21, curve 4), drawn for a column friction angle of 37.5 degrees. The tool's default runs the formula with a column friction angle of 42.5 degrees, a value GEC-13 prints nowhere, so it gives more improvement than the curve GEC-13 itself calls the upper bound (p. 5-37).",
+    "background": "GEC-13 Example 2 has an area ratio A/Ac of 3.61. There the formula at 42.5 degrees gives n0 = 3.06, the formula at 37.5 degrees gives 2.58, the printed curve gives 2.55, and the example reads 2.7 off the chart. The example's untreated settlement of 27 in becomes 8.8 in with today's default and 10.6 in with the printed curve. Your rule from the driven-pile questions (follow the manual's steps as printed and note the judgment) points to the printed curve.",
+    "parts": [
+      {
+        "label": "Default basis",
+        "options": [
+          {
+            "label": "The printed curve (Fig. 5-21, curve 4)",
+            "effect": "Follows GEC-13 as printed. Less improvement than today (10.6 in against 8.8 in on Example 2). The formula stays an option, with its column friction angle a stated input."
+          },
+          {
+            "label": "The formula at 37.5 degrees",
+            "effect": "Within about 1 % of the printed curve where the curve is drawn, and usable beyond the curve's range."
+          },
+          {
+            "label": "Keep 42.5 degrees (current)",
+            "effect": "No number changes; each result keeps saying 42.5 degrees is not printed in GEC-13."
+          }
+        ]
+      }
+    ],
+    "recommendation": "The printed curve, with the formula at a stated angle as the option: it is what GEC-13 prints, and it errs on the safe side of today's default.",
+    "if_no_answer": "The formula at 42.5 degrees stays the default, and each result says that angle is not printed in GEC-13.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-233"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-70",
+      "GEC-13 Vol I pp. 5-36, 5-37 (Fig. 5-21), Example 2"
+    ]
+  },
+  "OWN-71": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Drilled shafts in rock: which side-resistance factor C should be the default?",
+    "why": "GEC-10's equation for side resistance in a rock socket carries a factor C. GEC-10 recommends C = 1.0 for normal sockets in routine design (pp. 10-20 and 10-21). Its Eq. 10-22, for rock that may cave, gives 0.65 when the joints are closed and RQD is 100, and less otherwise (Table 10-3). It allows 1.9 only for roughened sockets verified by load tests or local experience (p. 10-22). The tool's default is 0.65.",
+    "background": "GEC-10 Example 10-4 uses C = 1.0 and prints a side resistance of 5,202 kips; the tool now reproduces it when C = 1.0 is given. At 0.65 the same socket gets 35 % less side resistance. The tool does not yet build Table 10-3, so values below 0.65 must be given directly (GM-233).",
+    "parts": [
+      {
+        "label": "Default C",
+        "options": [
+          {
+            "label": "1.0 (GEC-10's routine design)",
+            "effect": "Matches GEC-10's recommendation and Example 10-4. Side resistance in rock rises by about 54 % against today. 0.65 (caving rock) and 1.9 (roughened, load-tested) are named as the alternatives."
+          },
+          {
+            "label": "Keep 0.65 (current)",
+            "effect": "No number changes; the lower, caving-rock value stays the default."
+          },
+          {
+            "label": "Ask for C on every rock socket",
+            "effect": "The tool refuses a rock socket without C, and its message lists the printed values."
+          }
+        ]
+      }
+    ],
+    "recommendation": "1.0, GEC-10's own recommendation for routine design, with the caving-rock and roughened values named; the result says that which one applies is the engineer's call.",
+    "if_no_answer": "0.65 stays the default, and each result names it as the caving-rock value.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-233"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-71",
+      "GEC-10 pp. 10-20 to 10-22, Example 10-4"
+    ]
   }
 }
