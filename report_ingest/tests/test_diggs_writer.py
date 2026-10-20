@@ -17,7 +17,8 @@ from report_ingest.diggs_writer import (
     diggs_schema_gate, write_diggs,
 )
 from report_ingest.model import (
-    DrillingDetails, Investigation, Layer, Project, Quantity, ReportRecord,
+    DrillingDetails, Investigation, Layer, Project, Provenance, Quantity,
+    ReportRecord,
     SPT, Sample, WaterLevel,
 )
 
@@ -1055,3 +1056,67 @@ class TestAPrintedRefusalReadsBackAsARefusal:
         back = _read_back(write_diggs([hole]))["B-1"]
         assert [(r.depth_m, r.printed) for r in back.refusals] == [(3.0, ">50")]
         assert not back.get_measurements("N_spt")
+
+
+class TestRI28:
+    """RI-28: what the writer says instead of staying silent."""
+
+    def test_unequal_drives_are_written_per_drive(self):
+        from report_ingest.diggs_writer import _drive_sets
+        rec = SPT(depth_top=_m(3.0), blows=[5, 7, 9],
+                  increments=[Quantity(value=20, unit="cm"),
+                              Quantity(value=15, unit="cm"),
+                              Quantity(value=15, unit="cm")])
+        assert [round(p, 3) for _c, p in _drive_sets(rec)] == [0.2, 0.15, 0.15]
+        hole = _hole(spt=[rec])
+        xml = write_diggs([hole])
+        assert xml.count("<diggs_geo:penetration uom=\"m\">") == 3
+        assert "<diggs_geo:penetration uom=\"m\">0.2</" in xml
+        assert diggs_schema_gate(xml)[0]
+        # equal drives still use the single increment or the 6 in standard
+        plain = SPT(depth_top=_m(3.0), blows=[5, 7, 9])
+        assert {round(p, 4) for _c, p in _drive_sets(plain)} == {0.1524}
+
+    def test_a_ditto_mark_is_the_layer_above_and_said(self):
+        notes = []
+        hole = _hole(layers=[
+            Layer(top=_m(0.0), bottom=_m(4.0), description="SILTY SAND",
+                  uscs="SM"),
+            Layer(top=_m(4.0), bottom=_m(8.0), description="do.")])
+        xml = write_diggs([hole], notes=notes)
+        assert xml.count("SILTY SAND") == 2
+        assert any("ditto" in s for s in notes[0].assumed)
+
+    def test_a_depth_from_a_legend_is_said(self):
+        notes = []
+        q = Quantity(value=12.0, unit="m",
+                     prov=Provenance(page=0, note="read off the plan legend"))
+        write_diggs([_hole(total_depth=q)], notes=notes)
+        assert any("legend or plan" in s and "not measured" in s
+                   for s in notes[0].assumed)
+        notes2 = []
+        write_diggs([_hole()], notes=notes2)
+        assert not any("legend or plan" in s for s in notes2[0].assumed)
+
+    def test_the_printed_id_stays_the_name(self):
+        xml = write_diggs([_hole(investigation_id="B-12 (ALT) / N")])
+        names = [e.text for e in _root(xml).iter(f"{{{NS['gml']}}}name")]
+        assert "B-12 (ALT) / N" in names
+
+    def test_moisture_has_a_place_without_a_sample_id(self):
+        xml = write_diggs([_hole(samples=[
+            Sample(top=_m(2.0), water_content=14.0)])])
+        assert "water_content_natural" in xml
+        assert diggs_schema_gate(xml)[0]
+
+    def test_north_in_a_local_grid_is_written_and_said(self):
+        notes = []
+        xml = write_diggs([_hole(x=10.0, y=20.0, elevation=_m(5.0),
+                                 coordinate_system=(
+                                     "local grid, north is 116 deg from +y"))],
+                          notes=notes)
+        point = _root(xml).find(".//diggs:referencePoint/diggs:PointLocation",
+                                NS)
+        assert "north is 116" in point.find("gml:description", NS).text
+        assert diggs_schema_gate(xml)[0]
+        assert any("north" in s for s in notes[0].assumed)
