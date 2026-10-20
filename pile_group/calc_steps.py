@@ -528,14 +528,18 @@ def get_figures(result, analysis) -> List[FigureData]:
         b64 = figure_to_base64(fig1, dpi=150)
         import matplotlib.pyplot as plt
         plt.close(fig1)
+        drawn = ("drawn to scale" if _get(analysis, 'pile_diameter')
+                 else "drawn to scale, the piles as symbols (no diameter "
+                      "given)")
         figures.append(FigureData(
             title="Pile Group Plan View",
             image_base64=b64,
             caption=(
-                f"Figure 1: Plan view of pile group layout showing axial "
-                f"force distribution ({_get(result, 'n_piles', len(pile_forces))} piles). "
-                f"Circle size and color indicate load magnitude. "
-                f"Positive = compression, negative = tension."
+                f"Figure 1: Plan of the pile group "
+                f"({_get(result, 'n_piles', len(pile_forces))} piles), "
+                f"{drawn}, with the axial force at each pile head "
+                f"(positive = compression, negative = tension and "
+                f"hatched); the darker the fill, the larger the force."
             ),
             width_percent=80,
         ))
@@ -598,94 +602,232 @@ def _simple_load_substitution(n_piles, Vz, My, Mx, piles):
     return " ".join(parts)
 
 
+#: The plan view, drawn at the width it prints at so that a size in
+#: points here is the size printed (GM-186, GM-206): the margins round
+#: the piles, in points. At the sides and above, room for the cap axes'
+#: names; below, a pile's name and then the band holding the scale bar
+#: and the north arrow.
+_PLAN_WIDTH_IN = 5.0
+_PLAN_MAX_HEIGHT_IN = 6.0
+_PLAN_SIDE_PT = 30.0
+_PLAN_ABOVE_PT = 18.0
+_PLAN_NAME_PT = 26.0
+_PLAN_BAND_PT = 56.0
+#: the least width of the view, in points: the scale bar, its end names
+#: and the north arrow side by side
+_PLAN_MIN_VIEW_PT = 170.0
+#: a pile drawn as a symbol, where no diameter is given: its radius
+_PLAN_SYMBOL_PT = 5.0
+#: the names of the piles (pile and force), in points
+_PLAN_NAME_SIZE = 7.0
+#: a pile in tension (and its key): hatched as well as red
+_TENSION_HATCH = '////'
+
+
 def _plot_plan_view(pile_forces, result, analysis):
-    """Create plan view of pile layout with colored/sized markers
-    showing axial force distribution."""
+    """The pile group in plan, drawn as a drawing (GM-206; the owner's
+    rule for plans, 2026-10-15): no axes, grid or frame; a scale bar; a
+    north arrow at ``north_deg`` (clockwise from up, as the plan the
+    layout came from shows it), straight up when none is given, and the
+    figure says so; the cap's x and y axes through its origin. A pile is
+    a circle at its diameter when one is given, else a symbol not to
+    scale; its fill is blue in compression and red and hatched in
+    tension, darker the larger the axial force, and its name and force
+    are written under it.
+    Circles sized by the force read as the piles' size against a scale
+    bar and covered the names (GM-206). Where the names cannot all be
+    written clear of each other and of the piles, the forces are left to the
+    force table and the bar chart, then the names too, and the key says
+    so."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
-    import numpy as np
-
-    fig, ax = plt.subplots(figsize=(8, 7))
-
-    xs = [pf['x_m'] for pf in pile_forces]
-    ys = [pf['y_m'] for pf in pile_forces]
-    forces = [pf['axial_kN'] for pf in pile_forces]
-    labels = [pf['label'] for pf in pile_forces]
-
-    forces_arr = np.array(forces)
-    abs_max = max(abs(forces_arr.max()), abs(forces_arr.min()), 1.0)
-
-    # Color mapping: blue = compression, red = tension
-    colors = []
-    for f in forces:
-        if f >= 0:
-            # Compression: shades of blue
-            intensity = min(abs(f) / abs_max, 1.0)
-            colors.append((0.15, 0.39, 0.92, 0.3 + 0.7 * intensity))
-        else:
-            # Tension: shades of red
-            intensity = min(abs(f) / abs_max, 1.0)
-            colors.append((0.86, 0.20, 0.16, 0.3 + 0.7 * intensity))
-
-    # Marker sizes proportional to load magnitude
-    min_size = 200
-    max_size = 1200
-    abs_forces = np.abs(forces_arr)
-    if abs_max > 0:
-        sizes = min_size + (max_size - min_size) * abs_forces / abs_max
-    else:
-        sizes = np.full(len(forces), min_size + (max_size - min_size) / 2)
-
-    # Plot piles
-    scatter = ax.scatter(xs, ys, s=sizes, c=colors, edgecolors='#333333',
-                         linewidths=1.5, zorder=5)
-
-    # Labels with force values, each just under its own marker: a
-    # marker's size is in points, so its label is set off by the marker's
-    # radius in points (set off by a share of the layout in metres, the
-    # markers covered the labels; GM-194)
-    x_range = max(xs) - min(xs) if len(xs) > 1 else 1.0
-    y_range = max(ys) - min(ys) if len(ys) > 1 else 1.0
-
-    for x, y, label, force, size in zip(xs, ys, labels, forces, sizes):
-        ax.annotate(
-            f"{label}\n{force:+,.1f} kN",
-            (x, y), textcoords="offset points",
-            xytext=(0, -(math.sqrt(size) / 2 + 3)),
-            ha='center', va='top', fontsize=7.5, fontweight='bold',
-            bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
-                      edgecolor='#cccccc', alpha=0.85),
-        )
-
-    # Add crosshairs at centroid
-    ax.axhline(y=0, color='#888888', linestyle='--', linewidth=0.8, alpha=0.5)
-    ax.axvline(x=0, color='#888888', linestyle='--', linewidth=0.8, alpha=0.5)
-
-    # Legend
     import matplotlib.patches as mpatches
-    comp_patch = mpatches.Patch(color=(0.15, 0.39, 0.92, 0.8), label='Compression (+)')
-    tens_patch = mpatches.Patch(color=(0.86, 0.20, 0.16, 0.8), label='Tension (\u2212)')
-    legend_handles = [comp_patch, tens_patch]
+    from geotech_common import plan_furniture as pf
+    from geotech_common.plotting import halo, key_under_axes
 
-    # Axis setup
-    margin = max(x_range, y_range, 1.0) * 0.4
-    ax.set_xlim(min(xs) - margin, max(xs) + margin)
-    ax.set_ylim(min(ys) - margin, max(ys) + margin)
-    ax.set_xlabel('X (m)', fontsize=10)
-    ax.set_ylabel('Y (m)', fontsize=10)
-    ax.set_title(
-        f'Pile Group Plan View  ({_get(result, "n_piles", len(pile_forces))} piles)',
-        fontsize=11, fontweight='bold',
-    )
-    ax.set_aspect('equal')
-    ax.grid(True, alpha=0.2)
-    ax.tick_params(labelsize=9)
-    # the key under the axes, clear of the corner piles
-    from geotech_common.plotting import key_under_axes
-    key_under_axes(fig, ax, handles=legend_handles, fontsize=9)
+    xs = [float(p['x_m']) for p in pile_forces]
+    ys = [float(p['y_m']) for p in pile_forces]
+    forces = [float(p['axial_kN']) for p in pile_forces]
+    labels = [str(p['label']) for p in pile_forces]
+    D = _get(analysis, 'pile_diameter')
+    r = 0.5 * float(D) if D else 0.0
+    north = _get(analysis, 'north_deg')
+
+    # The view: the piles and the cap's origin, with the margins in
+    # points, at the scale (m per point) that fits it to the width it
+    # prints at, or to the height allowed
+    x0, x1 = min(xs + [0.0]) - r, max(xs + [0.0]) + r
+    y0, y1 = min(ys + [0.0]) - r, max(ys + [0.0]) + r
+    below = _PLAN_NAME_PT + _PLAN_BAND_PT
+    room_w = _PLAN_WIDTH_IN * 72.0 - 20.0 - 2 * _PLAN_SIDE_PT
+    room_h = (_PLAN_MAX_HEIGHT_IN * 72.0 - 40.0 - _PLAN_ABOVE_PT
+              - below)
+    span = max(x1 - x0, y1 - y0, 1e-3)
+    scale = max((x1 - x0) / room_w, (y1 - y0) / room_h,
+                0.2 * span / room_w)
+    left, right = x0 - _PLAN_SIDE_PT * scale, x1 + _PLAN_SIDE_PT * scale
+    widen = _PLAN_MIN_VIEW_PT * scale - (right - left)
+    if widen > 0:
+        left, right = left - widen / 2, right + widen / 2
+    bottom, top = y0 - below * scale, y1 + _PLAN_ABOVE_PT * scale
+    height_in = min(max((top - bottom) / scale / 72.0 + 0.4, 1.5),
+                    _PLAN_MAX_HEIGHT_IN)
+    fig, ax = plt.subplots(figsize=(_PLAN_WIDTH_IN, height_in))
+    ax.set_xlim(left, right)
+    ax.set_ylim(bottom, top)
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_axis_off()               # the scale bar carries the scale
+
+    # The cap's x and y axes through its origin, named at their ends
+    cap_axis = dict(color='#888888', lw=0.7, linestyle=(0, (6, 3)),
+                    zorder=2)
+    x_end = x1 + 0.45 * _PLAN_SIDE_PT * scale
+    y_end = y1 + 0.35 * _PLAN_ABOVE_PT * scale
+    ax.plot([x0 - 0.45 * _PLAN_SIDE_PT * scale, x_end], [0, 0],
+            **cap_axis)
+    ax.plot([0, 0], [y0, y_end], **cap_axis)
+    axis_names = [
+        ax.annotate('x', (x_end, 0), xytext=(2, 0),
+                    textcoords='offset points', ha='left', va='center',
+                    fontsize=8, style='italic', color='#555555'),
+        ax.annotate('y', (0, y_end), xytext=(0, 1),
+                    textcoords='offset points', ha='center', va='bottom',
+                    fontsize=8, style='italic', color='#555555')]
+
+    # The piles: blue in compression, red and hatched in tension, darker
+    # the larger the force. The hatch tells tension from compression in
+    # grey print, where the two colours print alike and the forces may be
+    # left to the table (GM-200 review)
+    f_max = max(max(abs(f) for f in forces), 1e-9)
+    fills = [(0.15, 0.39, 0.92, 0.25 + 0.65 * abs(f) / f_max) if f >= 0
+             else (0.86, 0.20, 0.16, 0.25 + 0.65 * abs(f) / f_max)
+             for f in forces]
+    piles = []
+    if r > 0:
+        for x, y, c, f in zip(xs, ys, fills, forces):
+            piles.append(ax.add_patch(mpatches.Circle(
+                (x, y), r, facecolor=c, edgecolor='#333333', linewidth=0.9,
+                hatch=_TENSION_HATCH if f < 0 else None, zorder=4)))
+    else:
+        for tension in (False, True):
+            at = [i for i, f in enumerate(forces) if (f < 0) == tension]
+            if at:
+                ax.scatter([xs[i] for i in at], [ys[i] for i in at],
+                           s=(2 * _PLAN_SYMBOL_PT) ** 2,
+                           c=[fills[i] for i in at], edgecolors='#333333',
+                           linewidths=0.9, zorder=4,
+                           hatch=_TENSION_HATCH if tension else None)
+
+    # The names under the piles, set off from each pile's edge in points
+    names = []
+    for x, y, lab, f in zip(xs, ys, labels, forces):
+        if r > 0:
+            at, off = (x, y - r), -2
+        else:
+            at, off = (x, y), -(_PLAN_SYMBOL_PT + 2)
+        names.append(ax.annotate(
+            f"{lab}\n{f:+,.1f} kN", at, xytext=(0, off),
+            textcoords='offset points', ha='center', va='top',
+            fontsize=_PLAN_NAME_SIZE, color='#222222', zorder=6))
+    halo(names + axis_names)
+
+    # The scale bar and, right of it, the north arrow, in the band under
+    # the names
+    length = pf.nice_length(right - left)
+    arrow_xy = (right - 18.0 * scale, y0 - (_PLAN_NAME_PT + 28.0) * scale)
+    bar_x = arrow_xy[0] - 36.0 * scale - length
+    bar_y = y0 - (_PLAN_NAME_PT + 18.0) * scale
+    pf.mpl_scale_bar(ax, bar_x, bar_y, length, 4.0 * scale, "m",
+                     fontsize=7.5)
+    pf.mpl_north_arrow(ax, arrow_xy, 0.0 if north is None else float(north))
+
+    ax.set_title(f'Pile Group Plan  ({len(pile_forces)} piles)',
+                 fontsize=10, fontweight='bold', loc='left')
+
+    # Names that cannot be written clear of each other and of the piles at
+    # this scale: the forces are left to the force table, then the names too
+    fig.tight_layout()
+    written = _clear_names(fig, ax, names, piles, xs, ys, labels, r)
+
+    # the key's lines no wider than the figure prints (a wider key keeps
+    # the figure from being drawn at its printed size)
+    notes = ["Axial force at each pile head (kN): + compression, "
+             "− tension (hatched);",
+             "the darker the fill, the larger the force."]
+    if written != "all":
+        notes += [("Too many piles to write each force at this scale:"
+                   if written == "names" else
+                   "Too many piles to name at this scale:"),
+                  "see the table Per-Pile Axial Forces."]
+    notes.append(f"Piles to scale, D = {float(D):.2f} m." if r > 0 else
+                 "Piles drawn as symbols, not to scale: no diameter given.")
+    notes.append("x, y: the cap's axes, through its origin."
+                 + (" North drawn up: none was given." if north is None
+                    else ""))
+    handles = []
+    if any(f >= 0 for f in forces):
+        handles.append(mpatches.Patch(color=(0.15, 0.39, 0.92, 0.8),
+                                      label='Compression (+)'))
+    if any(f < 0 for f in forces):
+        handles.append(mpatches.Patch(facecolor=(0.86, 0.20, 0.16, 0.8),
+                                      edgecolor='#333333', linewidth=0.9,
+                                      hatch=_TENSION_HATCH,
+                                      label='Tension (−)'))
+    key_under_axes(fig, ax, handles=handles, note="\n".join(notes),
+                   fontsize=8)
     return fig
+
+
+def _clear_names(fig, ax, names, piles, xs, ys, labels, r) -> str:
+    """Write the piles' names as they fit at the printed size: each pile's
+    name and force ("all"), else the name only ("names"), else none
+    ("none"). A name fits when it is clear of every other name and of
+    every pile but its own."""
+    from matplotlib.transforms import Bbox
+
+    pt = fig.dpi / 72.0
+    gap = 2.0 * pt
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    if r > 0:
+        circles = [p.get_window_extent(rend) for p in piles]
+    else:
+        rad = _PLAN_SYMBOL_PT * pt
+        circles = [Bbox.from_extents(cx - rad, cy - rad, cx + rad, cy + rad)
+                   for cx, cy in ax.transData.transform(list(zip(xs, ys)))]
+
+    def apart(a, b):
+        return (a.x1 + gap < b.x0 or b.x1 + gap < a.x0
+                or a.y1 + gap < b.y0 or b.y1 + gap < a.y0)
+
+    def clear():
+        fig.canvas.draw()
+        boxes = [t.get_window_extent(fig.canvas.get_renderer())
+                 for t in names]
+        for i, a in enumerate(boxes):
+            if not all(apart(a, b) for b in boxes[i + 1:]):
+                return False
+            if not all(apart(a, c) for j, c in enumerate(circles)
+                       if j != i):
+                return False
+        return True
+
+    if clear():
+        return "all"
+    for t, lab in zip(names, labels):
+        t.set_text(lab)
+    if clear():
+        return "names"
+    for t in names:
+        t.remove()
+    return "none"
+
+
+#: The bar chart's room for its bars at the width it prints at (points),
+#: and the most pile names its axis carries there.
+_BAR_ROOM_PT = 300.0
+_BAR_NAMES = 30
 
 
 def _plot_pile_load_bar(pile_forces, result):
@@ -702,24 +844,40 @@ def _plot_pile_load_bar(pile_forces, result):
     # Color by compression (blue) vs tension (red)
     colors = ['#2563eb' if f >= 0 else '#dc2626' for f in forces]
 
-    fig, ax = plt.subplots(figsize=(max(7, len(labels) * 0.6), 5))
+    # 7 in wide, printed at 5 in: a figure 0.6 in a pile wide was shrunk
+    # to the print width and its lettering ran together (GM-206, 64 piles)
+    n = len(labels)
+    fig, ax = plt.subplots(figsize=(7, 5))
 
-    x_pos = np.arange(len(labels))
+    x_pos = np.arange(n)
     bars = ax.bar(x_pos, forces, color=colors, edgecolor='#333333',
                   linewidth=0.8, width=0.65)
 
     # Value labels on bars, 2 pt off the bar end (an offset of 2 kN put
-    # them 68 in off the figure when the forces were near zero; GM-186)
-    for bar, val in zip(bars, forces):
+    # them 68 in off the figure when the forces were near zero; GM-186):
+    # across the bar while they fit side by side at the printed width,
+    # along it while a bar is wider than a line of lettering, else on the
+    # largest compression and tension only
+    per_bar_pt = _BAR_ROOM_PT / max(n, 1)
+    turned = per_bar_pt < 36.0
+    shown = range(n)
+    if per_bar_pt < 10.0:
+        shown = {int(np.argmax(forces_arr))}
+        if forces_arr.min() < 0:
+            shown.add(int(np.argmin(forces_arr)))
+    for i, (bar, val) in enumerate(zip(bars, forces)):
+        if i not in shown:
+            continue
         ypos = bar.get_height()
         va = 'bottom' if val >= 0 else 'top'
         offset = 2 if val >= 0 else -2
         ax.annotate(f'{val:+,.1f}', (bar.get_x() + bar.get_width() / 2, ypos),
                     xytext=(0, offset), textcoords='offset points',
-                    ha='center', va=va, fontsize=7.5, fontweight='bold')
+                    ha='center', va=va, fontsize=7.5, fontweight='bold',
+                    rotation=90 if turned else 0)
 
     # room past the longest bar for its value (GM-186)
-    ax.margins(y=0.12)
+    ax.margins(y=0.25 if turned else 0.12)
 
     # Zero line
     ax.axhline(y=0, color='#333333', linewidth=0.8)
@@ -737,9 +895,14 @@ def _plot_pile_load_bar(pile_forces, result):
         ax2.tick_params(labelsize=8, colors='#555555')
         ax2.legend(loc='upper right', fontsize=8)
 
+    # every pile named while the names fit at the printed width, else
+    # every k-th
+    step = max(1, math.ceil(n / _BAR_NAMES))
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(labels, rotation=45 if len(labels) > 6 else 0,
-                       ha='right' if len(labels) > 6 else 'center',
+    ax.set_xticklabels([lab if i % step == 0 else ''
+                        for i, lab in enumerate(labels)],
+                       rotation=45 if 6 < n <= 12 else 90 if n > 12 else 0,
+                       ha='right' if 6 < n <= 12 else 'center',
                        fontsize=8)
     ax.set_xlabel('Pile', fontsize=10)
     ax.set_ylabel('Axial Force (kN)', fontsize=10)
@@ -747,8 +910,9 @@ def _plot_pile_load_bar(pile_forces, result):
     max_comp = _get(result, 'max_compression', 0)
     max_tens = _get(result, 'max_tension', 0)
     ax.set_title(
-        f'Individual Pile Forces  '
-        f'(Max comp = {max_comp:,.1f} kN, Max tens = {max_tens:,.1f} kN)',
+        f'Individual Pile Forces\n'
+        f'max compression = {max_comp:,.1f} kN, '
+        f'max tension = {max_tens:,.1f} kN',
         fontsize=10, fontweight='bold',
     )
     ax.grid(True, axis='y', alpha=0.2)
