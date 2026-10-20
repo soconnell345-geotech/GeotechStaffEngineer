@@ -2800,8 +2800,7 @@ auto-memory. Headlines:
   (custom-RID clobber fix; Connection-diagnostics panel + persistent errors +
   `max_completion_tokens` for GPT-5 RIDs; extras folded into the core install —
   plain `pip install geotech-staff-engineer` now brings everything).
-- **Owner's Foundry app IS PUBLISHED and running** (State gov enclave,
-  stateobo.palantirgov.com, PDCS Sandbox / geotechStaffChatbot) but **blocked on
+- **Owner's Foundry app IS PUBLISHED and running** (a government enclave, a sandbox project) but **blocked on
   a 401 from the LLM proxy = enrollment/permissions**, NOT our code. Full field
   notes + the admin ticket text: `docs/FOUNDRY.md` troubleshooting section. When
   the admin answers, the fix is likely one `GEOTECH_FOUNDRY_HOST` line in the
