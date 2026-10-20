@@ -194,6 +194,11 @@ CURVE_KEYS = {
 # Poisson's ratio of each material's skeleton when a layer gives none:
 # drained sand 0.3, and clay 0.495 (nearly incompressible, undrained).
 DEFAULT_NU = {"sand": 0.3, "clay": 0.495}
+# Darendeli's optional inputs and their defaults, in darendeli_params'
+# order: non-plastic, normally consolidated, and his base case of 1 Hz
+# and 10 cycles (the last two set only the reported damping).
+DARENDELI_DEFAULTS = {"plas_index": 0.0, "ocr": 1.0, "freq_hz": 1.0,
+                      "n_cycles": 10.0}
 
 
 def _validate_layer_options(i, layer, mat):
@@ -209,7 +214,7 @@ def _validate_layer_options(i, layer, mat):
         if other == curve:
             continue
         stray = [k for k in keys if k in layer
-                 and k not in CURVE_KEYS[curve] and k != "n_cycles"]
+                 and k not in CURVE_KEYS[curve]]
         if stray:
             raise ValueError(
                 f"{label} gives {stray}, which the '{other}' curve reads, "
@@ -1025,18 +1030,21 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
             constants = {k: float(L.get(k, PDMY02_DR40[k]))
                          for k in SAND_CONSTANTS}
         else:
-            # Cap to prevent numerical issues
+            # Cap to prevent numerical issues (nu above about 0.495)
             b_max = min(b_max, g_max * 100.0)
             p_ref = max(sigma_v_eff * 0.67, 5.0)
             tau_f = float(L["su"])
             constants = {}
+        # The Poisson's ratio the moduli give, after the clay's cap
+        nu_used = (3.0 * b_max - 2.0 * g_max) / (2.0 * (3.0 * b_max + g_max))
         curve = str(L.get("curve", "opensees")).lower().strip()
         damping_fn = None
         report = {"curve": curve}
+        curve_params = {}
         if curve == "darendeli":
-            prm = C.darendeli_params(
-                p_ref, L.get("plas_index", 0.0), L.get("ocr", 1.0),
-                L.get("freq_hz", 1.0), L.get("n_cycles", 10.0))
+            curve_params = {k: float(L.get(k, d)) for k, d in
+                            DARENDELI_DEFAULTS.items()}
+            prm = C.darendeli_params(p_ref, *curve_params.values())
             ggmax_fn = (lambda g, prm=prm:
                         C.modified_hyperbolic(g, *prm)[0])
             damping_fn = (lambda g, prm=prm:
@@ -1045,8 +1053,10 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
                           curvature=round(prm[1], 4),
                           min_damping_pct=round(prm[2] * 100, 3))
         elif curve == "menq":
-            prm = C.menq_params(p_ref, L["uniformity_coeff"],
-                                L["diam_mean"], L.get("n_cycles", 10.0))
+            curve_params = {"uniformity_coeff": float(L["uniformity_coeff"]),
+                            "diam_mean": float(L["diam_mean"]),
+                            "n_cycles": float(L.get("n_cycles", 10.0))}
+            prm = C.menq_params(p_ref, *curve_params.values())
             ggmax_fn = (lambda g, prm=prm:
                         C.modified_hyperbolic(g, *prm)[0])
             damping_fn = (lambda g, prm=prm:
@@ -1084,8 +1094,9 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
                 for v in C.masing_damping(pairs, g_max, strains)]
         plans.append(dict(
             material=mat, n_elem=int(L.get("n_elem", n_elem_per_layer)),
-            nu=nu, g_max=g_max, b_max=b_max, p_ref=p_ref, tau_f=tau_f,
-            constants=constants, curve=curve, pairs=pairs, report=report,
+            nu=nu, nu_used=nu_used, g_max=g_max, b_max=b_max, p_ref=p_ref,
+            tau_f=tau_f, constants=constants, curve=curve,
+            curve_params=curve_params, pairs=pairs, report=report,
             _given=tuple(sorted(L))))
     return plans
 
@@ -1109,32 +1120,38 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
                            n_elem_per_layer, linear_elastic):
     """The result's ``choices`` (GM-115): what the column was built with,
     each with its basis and alternatives."""
-    from geotech_common.choices import MODULE, DEFAULT, GIVEN, choice, \
-        how_given
+    from geotech_common.choices import MODULE, choice, how_given
     from opensees_agent.curves import CURVES
     out = []
     for i, plan in enumerate(plans):
         label = f"layers[{i}] ({plan['material']})"
         curve = plan["curve"]
-        how = DEFAULT if curve == "opensees" and not _layer_has(
-            plans, i, "curve") else GIVEN
         out.append(choice(
-            f"{label} stress-strain curve", curve, how,
+            f"{label} stress-strain curve", curve,
+            _layer_how(plans, i, "curve"),
             _CURVE_BASIS[curve] + (
                 "; not used: the column stays linear elastic"
                 if linear_elastic else ""),
             CURVES))
+        if plan["curve_params"]:
+            out.append(_curve_params_choice(plans, i, label))
+        if plan["pairs"] is not None and not linear_elastic:
+            out.append(_backbone_strength_choice(plan, label, MODULE))
+        nu_basis = ("drained sand skeleton" if plan["material"] == "sand"
+                    else "nearly incompressible undrained clay (the "
+                    "OpenSees wiki total-stress example uses 0.0)")
+        if abs(plan["nu_used"] - plan["nu"]) > 5e-5:
+            nu_basis += (f"; {plan['nu']:g} given, but the clay's bulk "
+                         f"modulus is capped at 100 Gmax, which is "
+                         f"{plan['nu_used']:.4f}")
         out.append(choice(
-            f"{label} Poisson's ratio", round(plan["nu"], 4),
-            GIVEN if _layer_has(plans, i, "nu") else DEFAULT,
-            ("drained sand skeleton" if plan["material"] == "sand" else
-             "nearly incompressible undrained clay (the OpenSees wiki "
-             "total-stress example uses 0.0)"),
+            f"{label} Poisson's ratio", round(plan["nu_used"], 4),
+            _layer_how(plans, i, "nu"), nu_basis,
             ("any value in [0, 0.5) as layers[i]['nu']",)))
         out.append(choice(
             f"{label} element count", plan["n_elem"],
-            GIVEN if _layer_has(plans, i, "n_elem") else how_given(
-                n_elem_per_layer, 4, name="n_elem_per_layer"),
+            _layer_how(plans, i, "n_elem") if _layer_has(plans, i, "n_elem")
+            else how_given(n_elem_per_layer, 4, name="n_elem_per_layer"),
             "layers[i]['n_elem'], else n_elem_per_layer",
             ("layers[i]['n_elem']",)))
         if plan["material"] == "sand":
@@ -1143,7 +1160,7 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
             out.append(choice(
                 f"{label} contraction / dilation constants",
                 ", ".join(f"{k} {v:g}" for k, v in plan["constants"].items()),
-                GIVEN if given else DEFAULT,
+                _layer_how(plans, i, *plan["constants"]),
                 "the OpenSees wiki's suggested PressureDependMultiYield02 "
                 "parameters, Dr = 40 % column, and the command's defaults"
                 + (f"; given: {', '.join(given)}" if given else
@@ -1169,6 +1186,71 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
 def _layer_has(plans, i, key):
     """Whether layer i was given ``key`` (read off its plan's source)."""
     return key in plans[i].get("_given", ())
+
+
+def _layer_how(plans, i, *keys):
+    """'default' when layer i gives none of ``keys``; otherwise 'given',
+    or 'assumed' when the call said its layers are not the user's
+    (geotech_common.choices.how_given, GM-180)."""
+    from geotech_common.choices import DEFAULT, how_given
+    if not any(_layer_has(plans, i, k) for k in keys):
+        return DEFAULT
+    return how_given(True, None, within="layers")
+
+
+_CURVE_PARAM_TEXT = {"plas_index": "PI {:g}", "ocr": "OCR {:g}",
+                     "freq_hz": "{:g} Hz", "n_cycles": "{:g} cycles",
+                     "uniformity_coeff": "Cu {:g}",
+                     "diam_mean": "D50 {:g} mm"}
+
+
+def _curve_params_choice(plans, i, label):
+    """The Darendeli or Menq inputs a layer's curve used, and which were
+    left at their defaults."""
+    from geotech_common.choices import choice
+    plan = plans[i]
+    params = plan["curve_params"]
+    defaulted = [k for k in params if not _layer_has(plans, i, k)]
+    if plan["curve"] == "darendeli":
+        basis = ("PI and OCR set the reference strain; the frequency and "
+                 "the number of cycles set only the reported damping")
+    else:
+        basis = ("Cu sets the reference strain; D50 and the number of "
+                 "cycles set only the reported damping")
+    if defaulted:
+        basis += "; left at default: " + ", ".join(
+            _CURVE_PARAM_TEXT[k].format(params[k]) for k in defaulted)
+    return choice(
+        f"{label} {plan['curve']} curve inputs",
+        ", ".join(_CURVE_PARAM_TEXT[k].format(v) for k, v in params.items()),
+        _layer_how(plans, i, *(k for k in params if k not in defaulted)),
+        basis)
+
+
+def _backbone_strength_choice(plan, label, how):
+    """How the fitted backbone meets the layer's strength (GM-80)."""
+    from geotech_common.choices import choice
+    pairs = plan["pairs"]
+    strains, ratios = pairs[0::2], pairs[1::2]
+    if plan["report"]["how"] == "the curve reaches the strength":
+        chosen = (f"the curve to the layer's strength "
+                  f"({plan['tau_f']:.1f} kPa) at {strains[-1] * 100:.3g} % "
+                  f"strain")
+    else:
+        taus = [plan["g_max"] * s * r for s, r in zip(strains, ratios)]
+        stiffer = len(taus) > 2 and (
+            (taus[-1] - taus[-2]) / (strains[-1] - strains[-2])
+            > (taus[-2] - taus[-3]) / (strains[-2] - strains[-3]))
+        chosen = (f"the curve to {strains[-2] * 100:.3g} % strain "
+                  f"({taus[-2]:.1f} kPa), then a straight "
+                  f"{'stiffer ' if stiffer else ''}segment to the layer's "
+                  f"strength ({plan['tau_f']:.1f} kPa) at 10 %")
+    return choice(
+        f"{label} backbone at large strain", chosen, how,
+        "the material takes its friction angle (sand) or cohesion (clay) "
+        "from the last pair (OpenSees source, setUpSurfaces), so the last "
+        "pair sits at the layer's strength; a curve whose stress stays "
+        "below it to 10 % implies a lower strength than the layer's")
 
 
 def _solver_steps(algo_counts, substep_steps, n_steps, dt):

@@ -228,6 +228,7 @@ class TestInputs:
         (dict(SAND33, curve="menq", diam_mean=0.4), "uniformity_coeff"),
         (dict(SAND33, curve="user"), "G_Gmax_curve"),
         (dict(SAND33, plas_index=10), "darendeli"),
+        (dict(SAND33, n_cycles=10), "curve='darendeli'"),
         (dict(CLAY60, contrac1=0.1), "sand"),
         (dict(SAND33, n_elem=0), "n_elem"),
         (dict(SAND33, nu=0.5), "nu"),
@@ -253,6 +254,60 @@ class TestInputs:
         assert rep["G_Gmax"][0] > 0.95 > rep["G_Gmax"][-1]
 
 
+def _choices(layers, **kw):
+    from opensees_agent.site_response import _site_response_choices
+    plans = _layer_plans(layers, 50.0, 4)
+    return {c["what"]: c for c in _site_response_choices(
+        plans, 0.02, kw.get("rayleigh_freqs_hz"), 4, False)}
+
+
+class TestChoices:
+    """What the column was built with, given or default (GM-115)."""
+
+    def test_darendeli_inputs_left_at_default_are_named(self):
+        ch = _choices([dict(CLAY60, curve="darendeli", plas_index=30)])
+        c = ch["layers[0] (clay) darendeli curve inputs"]
+        assert c["chosen"] == "PI 30, OCR 1, 1 Hz, 10 cycles"
+        assert c["how"] == "given"
+        assert "left at default: OCR 1, 1 Hz, 10 cycles" in c["basis"]
+        c = _choices([dict(CLAY60, curve="darendeli")])[
+            "layers[0] (clay) darendeli curve inputs"]
+        assert c["how"] == "default" and "PI 0" in c["basis"]
+
+    def test_how_the_backbone_meets_the_strength(self):
+        ch = _choices([dict(SAND33, curve="darendeli")])
+        c = ch["layers[0] (sand) backbone at large strain"]
+        assert c["how"] == "module"
+        assert "stiffer segment" in c["chosen"] and "91.2 kPa" in c["chosen"]
+        c = _choices([dict(SAND33, curve="menq", uniformity_coeff=2,
+                           diam_mean=0.4)])[
+            "layers[0] (sand) backbone at large strain"]
+        assert c["chosen"].startswith("the curve to the layer's strength")
+        assert "layers[0] (sand) backbone at large strain" not in \
+            _choices([SAND33])
+
+    def test_clay_poissons_ratio_reports_the_cap(self):
+        c = _choices([dict(CLAY60, nu=0.499)])[
+            "layers[0] (clay) Poisson's ratio"]
+        assert c["chosen"] == pytest.approx(0.495, abs=1e-4)
+        assert "capped" in c["basis"]
+        c = _choices([CLAY60])["layers[0] (clay) Poisson's ratio"]
+        assert c["chosen"] == 0.495 and c["how"] == "default"
+
+    def test_layer_inputs_a_call_did_not_get_from_the_user_are_assumed(self):
+        """GM-180: a nested value reads 'assumed' when the call says its
+        layers are not the user's; a module never writes 'given' itself."""
+        from geotech_common.choices import call_inputs
+        layers = [dict(SAND33, curve="darendeli", nu=0.25, contrac1=0.01)]
+        with call_inputs(["layers"], assumed=["layers"]):
+            ch = _choices(layers)
+        for what in ("stress-strain curve", "Poisson's ratio",
+                     "contraction / dilation constants"):
+            assert ch[f"layers[0] (sand) {what}"]["how"] == "assumed"
+        assert ch["layers[0] (sand) darendeli curve inputs"]["how"] \
+            == "default"
+
+
 # ===========================================================================
 # GM-80: the GM-77 dry sand column at 0.30 g with each curve
 # ===========================================================================
@@ -264,7 +319,7 @@ DRY_SAND = dict(SAND33)  # 20 m, Vs 200 m/s, 1.9 Mg/m3, phi 33; dry
 class TestAmplificationByCurve:
     """Synthetic pulse at 0.30 g, water below the column, 10 elements.
     Measured 2026-10-20 (nonlinear / pystrata equivalent-linear with the
-    same curve at the same mean effective stress, 63.5 kPa):
+    same curve at the same mean effective stress, 118.7 kPa):
 
     ==========================  ==========  ==================
     curve                       nonlinear   equivalent-linear
@@ -276,9 +331,9 @@ class TestAmplificationByCurve:
     ==========================  ==========  ==================
 
     The default backbone is about twice as stiff as the laboratory
-    curves (GM-80); with a laboratory curve the nonlinear column
-    amplifies a little less than the equivalent-linear one, as the clay
-    column does (test_nonlinear_against_equivalent_linear)."""
+    curves (GM-80). With Darendeli and Menq Cu 10 the nonlinear column
+    amplifies about 30 % less than the equivalent-linear one (peak strain
+    0.35 %); with the stiffer Menq Cu 2 curve about 17 % more."""
 
     def _run(self, **extra):
         return analyze_site_response(

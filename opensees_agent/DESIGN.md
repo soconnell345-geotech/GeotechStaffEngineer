@@ -410,7 +410,13 @@ c = sqrt(3)/2 tau_max. So the fit follows the curve until its stress
 reaches the layer's strength (phi at the reference pressure, or su) and
 puts the last pair there; a curve still below the strength at 10 % gets its
 last pair at the strength at 10 %. The layer keeps its phi (the material
-prints 32.96 deg for 33; the residual pressure term) or su. Stress must
+prints 32.96 deg for 33; the residual pressure term) or su. On the GM-77
+dry sand column Darendeli and Menq (Cu 10) never reach it: the curve is at
+42.8 / 49.0 kPa at 6.8 % against a strength of 91.2 kPa, so the last
+segment stiffens (tangent 67 to 1,521 kPa for Darendeli) and the curve
+below it implies about half the layer's strength. The runs below peak at
+0.35 % strain, far from it; the result's `choices` says which way each
+layer's backbone meets its strength. Stress must
 rise from pair to pair: the material exits the process otherwise, so the
 fit and the user-table checks refuse a falling stress before OpenSees sees
 it.
