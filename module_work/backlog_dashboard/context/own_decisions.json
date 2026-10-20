@@ -1705,5 +1705,40 @@
       "BACKLOG.md OWN-80, INF-39, INF-26",
       "the AI FDE's handoff 2026-10-20 (local only)"
     ]
-  }
+  },
+ "OWN-81": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Drilled shafts in rock: resistance factor for side resistance, 0.50 or 0.55?",
+  "why": "GEC-10 (2018) gives two values for the same thing: Table 8-4 (p. 8-14) prints 0.50 for side resistance in rock, the chapter text on p. 10-21 says 0.55. The factored side resistance differs by 10 %.",
+  "background": "The tool now follows GEC-10 (2018) as printed elsewhere: side factor C = 1.0 by default (Eq. 10-21), base 2.5 qu only where the rock below meets the three conditions of p. 10-22. It uses Table 8-4's 0.50 and shows 0.55 as the alternative in its choices.",
+  "parts": [
+   {
+    "label": "The factor",
+    "options": [
+     {
+      "label": "Keep 0.50 (Table 8-4)",
+      "effect": "No change; the table's value, the lower one; 0.55 shown beside it."
+     },
+     {
+      "label": "Use 0.55 (the chapter text)",
+      "effect": "Factored side resistance in rock up 10 %; 0.50 shown beside it."
+     },
+     {
+      "label": "Ask on every rock socket",
+      "effect": "The tool refuses a rock socket with no factor stated."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Keep 0.50: it is the table the manual's LRFD chapter prints, it is the lower of the two, and the result shows 0.55 beside it.",
+  "if_no_answer": "0.50 stays, with 0.55 shown as the alternative.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-81, GM-244",
+   "GEC-10 (2018) Table 8-4 p. 8-14, p. 10-21"
+  ]
+ }
 }
