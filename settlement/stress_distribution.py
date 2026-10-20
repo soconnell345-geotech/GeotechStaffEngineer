@@ -195,7 +195,8 @@ def boussinesq_center_strip(q: float, B: float, z: float) -> float:
     References
     ----------
     Poulos & Davis (1974), Elastic Solutions for Soil and Rock Mechanics,
-    the uniformly loaded strip; FHWA NHI-06-088 Sec. 8.3.
+    the uniformly loaded strip; FHWA NHI-06-088 Sec. 2.4.1, Fig. 2-9
+    (Boussinesq isobars under a continuous footing).
     """
     if z <= 0:
         return q
