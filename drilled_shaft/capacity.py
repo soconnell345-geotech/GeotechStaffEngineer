@@ -97,6 +97,51 @@ FRACTURED_ROCK_BASIS = (
     "rock at the tip")
 
 
+#: The rock side resistance coefficient C the module takes when none is
+#: given: GEC-10 Eq. 10-22's 0.65 alpha_E with alpha_E = 1.0.
+ROCK_SIDE_C = 0.65
+
+#: GEC-10 (FHWA-NHI-18-024) pp. 10-20 to 10-22, as printed (GM-221).
+ROCK_SIDE_C_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3: f_SN = C pa sqrt(qu / pa), C "
+    "'a regression coefficient used to analyze load test results' (Eq. "
+    "10-21, p. 10-20). In summary, 'for routine design of rock sockets, "
+    "Equation 10-21 with C = 1.0 is recommended' (p. 10-21; Example 10-4, "
+    "p. 10-28). "
+    "Where caving or instability of the socket is anticipated, Eq. 10-22 "
+    "(O'Neill and Reese 1999): f_SN = 0.65 alpha_E pa sqrt(qu / pa), "
+    "alpha_E from Table 10-3 by RQD and joint condition. For roughened "
+    "sockets a mean C = 1.9 (Kulhawy and Prakoso 2007, p. 10-22); 'load "
+    "tests or local experience' should verify C greater than 1.0. The "
+    "resistance factor is 0.55 with either equation (p. 10-21)")
+
+#: The values of C GEC-10 names, each with where it applies.
+_ROCK_SIDE_C_NAMED = {
+    0.65: "Eq. 10-22 (where caving is anticipated) with alpha_E = 1.0",
+    1.0: "Eq. 10-21, a 'normal' socket, recommended for routine design "
+         "(p. 10-21)",
+    1.9: "roughened sockets, verified by load tests or local experience "
+         "(p. 10-22)",
+}
+
+
+def rock_side_choice(C: float) -> dict:
+    """The choice made for the rock side resistance coefficient C (GM-221):
+    the module's 0.65 is GEC-10 Eq. 10-22 with alpha_E = 1.0, where GEC-10
+    recommends Eq. 10-21 with C = 1.0 for a normal socket."""
+    from geotech_common.choices import choice, how_given
+    named = _ROCK_SIDE_C_NAMED.get(C)
+    alternatives = [f"{c!r}: {why}" for c, why in _ROCK_SIDE_C_NAMED.items()
+                    if c != C and c != ROCK_SIDE_C]
+    alternatives.append("0.65 alpha_E: Eq. 10-22 with alpha_E from Table "
+                        "10-3 by RQD and joint condition, where caving is "
+                        "anticipated (p. 10-21)")
+    return choice("rock side resistance coefficient C",
+                  f"{float(C)!r}: {named}" if named else f"{C:g}",
+                  how_given(C, ROCK_SIDE_C, name="rock_side_C"),
+                  basis=ROCK_SIDE_C_BASIS, alternatives=alternatives)
+
+
 def top_of_rock(soil: ShaftSoilProfile) -> Optional[float]:
     """Depth (m) of the top of the profile's first rock layer; None with
     no rock layer."""
@@ -189,6 +234,11 @@ class DrillShaftAnalysis:
         for the CIUC transform — "ciuc" (default, no transform), "uc", or "uu".
     pa : float, optional
         Atmospheric pressure (kPa) for the rational chains. Default 101.325.
+    rock_side_C : float, optional
+        C in the rock side resistance f_s = C pa sqrt(qu / pa) (GEC-10 Eq.
+        10-21). Default 0.65, Eq. 10-22 with alpha_E = 1.0; GEC-10
+        recommends 1.0 for a normal socket (p. 10-21). See
+        :data:`ROCK_SIDE_C_BASIS` (GM-221).
 
     Examples
     --------
@@ -208,10 +258,14 @@ class DrillShaftAnalysis:
     alpha_method: str = "aashto"
     su_test_type: str = "ciuc"
     pa: float = PA
+    rock_side_C: float = ROCK_SIDE_C
 
     def __post_init__(self):
         if self.shaft is None:
             raise ValueError("Shaft must be provided")
+        if not self.rock_side_C > 0:
+            raise ValueError(
+                f"rock_side_C must be positive, got {self.rock_side_C}")
         if self.soil is None:
             raise ValueError("Soil profile must be provided")
         if self.beta_method not in ("depth", "rational"):
@@ -364,9 +418,10 @@ class DrillShaftAnalysis:
             else:  # rock
                 perimeter = shaft.socket_perimeter
                 Qs_layer = side_resistance_rock(
-                    layer.qu, perimeter, effective_thickness
+                    layer.qu, perimeter, effective_thickness,
+                    C=self.rock_side_C,
                 )
-                fs = 0.65 * (layer.qu * PA) ** 0.5
+                fs = self.rock_side_C * (layer.qu * PA) ** 0.5
                 Qs_rock += Qs_layer
                 method_used = "rock socket"
 
@@ -385,22 +440,25 @@ class DrillShaftAnalysis:
             })
 
         # End bearing. Large-base reductions are governed by the bearing
-        # surface, so use the bell diameter when the shaft is belled.
+        # surface, so use the bell diameter when the shaft is belled; in
+        # rock the base is the socket's (GEC-10 Example 10-4, GM-221).
         tip_layer = self.soil.layer_at_depth(L - 0.01)
         sigma_v_tip = self.soil.effective_stress_at_depth(L)
         L_over_D = L / D
-        base_D = shaft.bell_diameter if shaft.bell_diameter is not None else D
+        tip_in_rock = tip_layer.soil_type == "rock"
+        base_D = shaft.base_diameter(tip_in_rock)
+        base_area = shaft.base_area(tip_in_rock)
 
         if tip_layer.soil_type == "cohesive":
             Qt = end_bearing_cohesive(
-                tip_layer.cu, shaft.tip_area, L_over_D,
+                tip_layer.cu, base_area, L_over_D,
                 base_diameter=base_D, shaft_length=L,
             )
         elif tip_layer.soil_type == "cohesionless":
             N60 = require_tip_N60(tip_layer, L)
-            Qt = end_bearing_cohesionless(N60, shaft.tip_area, base_D)
+            Qt = end_bearing_cohesionless(N60, base_area, base_D)
         else:  # rock
-            Qt = end_bearing_rock(tip_layer.qu, shaft.tip_area, tip_layer.RQD)
+            Qt = end_bearing_rock(tip_layer.qu, base_area, tip_layer.RQD)
 
         Q_ultimate = total_Qs + Qt
         Q_allowable = Q_ultimate / self.factor_of_safety
@@ -416,12 +474,15 @@ class DrillShaftAnalysis:
             factor_of_safety=self.factor_of_safety,
             shaft_diameter=D,
             shaft_length=L,
+            base_diameter=base_D,
+            base_area=base_area,
             method="GEC-10",
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
             choices=([side_n60_choice(no_n60)] if no_n60 else [])
             + ([fractured_rock_choice(shaft, self.soil)]
-               if in_rock or shaft.fractured_rock_thickness else []),
+               if in_rock or shaft.fractured_rock_thickness else [])
+            + ([rock_side_choice(self.rock_side_C)] if in_rock else []),
         )
 
     def capacity_vs_depth(self, depth_min: float = 3.0,
@@ -474,6 +535,7 @@ class DrillShaftAnalysis:
                     factor_of_safety=self.factor_of_safety,
                     beta_method=self.beta_method, alpha_method=self.alpha_method,
                     su_test_type=self.su_test_type, pa=self.pa,
+                    rock_side_C=self.rock_side_C,
                 )
                 r = trial.compute()
                 results.append({

@@ -139,8 +139,9 @@ def run_free_field_single(velocity, motion_dt=MOTION_DT, motion_steps=None,
     thing at a time and see what it does: ``elastoplastic=False`` skips
     ``updateMaterialStage`` (the soil stays linear elastic); ``nu``,
     ``rayleigh_hz`` / ``damp`` and ``gamma_peak`` are the three inputs
-    ``analyze_site_response`` cannot set as the Tcl does (see
-    ``API_EXPRESSIBLE``).
+    ``analyze_site_response`` did not let a user set as the Tcl does
+    (see ``API_EXPRESSIBLE``); since GM-79 it takes the first two
+    (``layers[i]['nu']``, ``rayleigh_freqs_hz``; see ``own_api_inputs``).
 
     Returns a dict: ``time`` (s, starting at 0) and ``surface_accel_g``
     (the top node, starting at rest at t = 0, as the example's
@@ -352,7 +353,9 @@ def closest_api_inputs():
     dry SSPquadUP, an SSPquad and the Tcl's quad give the same surface
     motion to 1e-12).
 
-    Not expressible, and what is done instead:
+    Left at the module's defaults here (until GM-79 a user could not set
+    the first two; ``own_api_inputs`` sets them as the Tcl does), and what
+    is done instead:
       * Poisson's ratio: the module's clay is nearly incompressible
         (nu = 0.495, K0 about 1 after gravity); the Tcl's is 0 (K0 = 0);
       * Rayleigh damping: the module puts the target ratio at the site
@@ -381,6 +384,23 @@ API_EXPRESSIBLE = dict(
     gamma_peak=0.1)
 
 
+def own_api_inputs():
+    """``closest_api_inputs`` with the Tcl's own Poisson's ratio (0) and
+    Rayleigh damping (2 % at 0.2 and 20 Hz), which the module takes since
+    GM-79 (``layers[i]['nu']``, ``rayleigh_freqs_hz``). Only the peak
+    shear strain is left (0.1 in the module, 0.05 in the Tcl): the port
+    with ``OWN_INPUTS`` is what this column should reproduce."""
+    inputs = closest_api_inputs()
+    inputs["layers"][0]["nu"] = 0.0
+    inputs["damping"] = 0.02
+    inputs["rayleigh_freqs_hz"] = [0.2, 20.0]
+    return inputs
+
+
+# The port as written but for the peak shear strain (GM-79).
+OWN_INPUTS = dict(gamma_peak=0.1)
+
+
 def reference_numbers():
     """Run the port three ways on the stored record and summarize each:
     as written; linear elastic (no updateMaterialStage); and with the
@@ -393,7 +413,7 @@ def reference_numbers():
     accel, dt = load_record()
     vel = velocity_from_acceleration(accel, dt)
     runs = {"as_written": {}, "linear": {"elastoplastic": False},
-            "api_expressible": API_EXPRESSIBLE}
+            "api_expressible": API_EXPRESSIBLE, "own_inputs": OWN_INPUTS}
     out = {}
     for name, kw in runs.items():
         r = run_free_field_single(vel, motion_dt=dt, **kw)

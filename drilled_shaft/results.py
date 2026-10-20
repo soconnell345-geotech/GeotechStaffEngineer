@@ -32,6 +32,12 @@ class DrillShaftResult:
         Shaft diameter (m).
     shaft_length : float
         Shaft length (m).
+    base_diameter : float
+        Diameter (m) of the base the end bearing acts on: the bell's, the
+        rock socket's with the tip in rock (GEC-10 Example 10-4, GM-221),
+        else the shaft's.
+    base_area : float
+        Base area (m²), pi/4 times base_diameter squared.
     method : str
         Analysis method description.
     layer_breakdown : list of dict
@@ -53,6 +59,8 @@ class DrillShaftResult:
     factor_of_safety: float = 2.5
     shaft_diameter: float = 0.0
     shaft_length: float = 0.0
+    base_diameter: float = 0.0
+    base_area: float = 0.0
     method: str = "GEC-10"
     layer_breakdown: Optional[List[Dict[str, Any]]] = None
     sigma_v_tip: float = 0.0
@@ -121,6 +129,8 @@ class DrillShaftResult:
             "factor_of_safety": self.factor_of_safety,
             "shaft_diameter_m": self.shaft_diameter,
             "shaft_length_m": self.shaft_length,
+            "base_diameter_m": round(self.base_diameter, 4),
+            "base_area_m2": round(self.base_area, 4),
             "method": self.method,
             "sigma_v_tip_kPa": round(self.sigma_v_tip, 1),
         }

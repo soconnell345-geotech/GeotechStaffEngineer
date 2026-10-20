@@ -405,6 +405,9 @@ REFERENCE_GAPS = {
     ("gec_10", "eq", "10-12"): "p. 10-11",
     ("gec_10", "eq", "10-13"): "p. 10-11",
     ("gec_10", "eq", "10-21"): "p. 10-20 (rock side resistance)",
+    ("gec_10", "eq", "10-22"): "p. 10-21 (rock side resistance where "
+                               "caving is anticipated)",
+    ("gec_10", "table", "10-3"): "p. 10-21 (alpha_E for caving rock)",
     ("gec_11", "eq", "4-21"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-23"): "Vol I p. 4-30",

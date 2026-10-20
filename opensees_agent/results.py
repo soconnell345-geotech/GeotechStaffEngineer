@@ -227,6 +227,22 @@ class SiteResponseResult:
     initial_sigma_v_eff_kPa : numpy.ndarray
         Vertical effective stress at each element centre after the
         gravity stages (kPa), the denominator of ru.
+    solver_steps : dict
+        How the dynamic steps converged (GM-79): the count by algorithm
+        at the full step, the steps that needed a fallback algorithm and
+        the steps taken in substeps (with their times).
+    rayleigh_freqs_hz : list of float
+        The two frequencies at which the Rayleigh damping equals the
+        target damping.
+    n_elements : int
+        Elements in the column.
+    layer_curves : list of dict
+        Each layer's stress-strain curve (GM-80): its name, the strength
+        and mean effective stress it was fitted at, G/Gmax and the curve's
+        damping at 0.001-1 % strain, and the Masing damping the fitted
+        backbone gives.
+    choices : list of dict
+        What the analysis chose (GM-115, ``geotech_common.choices``).
     """
     total_depth_m: float = 0.0
     n_layers: int = 0
@@ -247,6 +263,11 @@ class SiteResponseResult:
     site_period_s: float = 0.0
     initial_sigma_v_eff_kPa: np.ndarray = field(
         default_factory=lambda: np.array([]))
+    solver_steps: dict = field(default_factory=dict)
+    rayleigh_freqs_hz: list = field(default_factory=list)
+    n_elements: int = 0
+    layer_curves: list = field(default_factory=list)
+    choices: list = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -269,6 +290,16 @@ class SiteResponseResult:
             lines.append(f"  Max shear strain:     {np.max(self.max_strain_pct):.3f} %")
         if len(self.max_pore_pressure_ratio) > 0:
             lines.append(f"  Max ru:               {np.max(self.max_pore_pressure_ratio):.3f}")
+        if self.solver_steps:
+            st = self.solver_steps
+            lines.append(
+                f"  Dynamic steps:        {st.get('n_steps', 0)} "
+                f"({st.get('fallback_steps', 0)} by a fallback algorithm, "
+                f"{st.get('substepped_steps', 0)} in substeps)")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.append("")
+            lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -287,6 +318,17 @@ class SiteResponseResult:
             d["max_shear_strain_pct"] = round(float(np.max(self.max_strain_pct)), 4)
         if len(self.max_pore_pressure_ratio) > 0:
             d["max_ru"] = round(float(np.max(self.max_pore_pressure_ratio)), 4)
+        if self.solver_steps:
+            d["solver_steps"] = dict(self.solver_steps)
+        if self.rayleigh_freqs_hz:
+            d["rayleigh_freqs_hz"] = [round(f, 4)
+                                      for f in self.rayleigh_freqs_hz]
+        if self.n_elements:
+            d["n_elements"] = self.n_elements
+        if self.layer_curves:
+            d["layer_curves"] = [dict(c) for c in self.layer_curves]
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def plot_surface_motion(self, ax=None, show=True, **kwargs):
