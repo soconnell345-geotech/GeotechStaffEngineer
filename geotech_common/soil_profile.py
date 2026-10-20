@@ -31,6 +31,11 @@ from geotech_common.validation import (
     check_positive, check_non_negative, check_range, check_unit_weight,
 )
 
+#: The undrained shear strength (kPa) from which ``to_lateral_pile_input``
+#: gives a clay a stiff clay p-y criterion: this module's own value
+#: (GM-217; neither GEC 9 nor COM624P prints a boundary).
+STIFF_CLAY_CU = 100.0
+
 
 # ---------------------------------------------------------------------------
 # SoilLayer
@@ -1066,13 +1071,14 @@ class SoilProfile:
                               loading: str = "static",
                               n_cycles: Optional[float] = None,
                               free_water_at_surface: Optional[bool] = None,
+                              stiff_clay_cu: float = STIFF_CLAY_CU,
                               ) -> Dict[str, Any]:
         """Convert profile to lateral_pile module input format.
 
         Selects a p-y criterion for each layer:
         - Rock: WeakRock
-        - Clay with cu below 100 kPa: SoftClayMatlock
-        - Stiff clay (cu 100 kPa and up) with free water: StiffClayBelowWT,
+        - Clay with cu below ``stiff_clay_cu`` (100 kPa): SoftClayMatlock
+        - Stiff clay (cu ``stiff_clay_cu`` and up) with free water: StiffClayBelowWT,
           Reese et al. (1975), "stiff clay with free water" (GEC 9 App. A.2)
         - Other stiff clay: StiffClayAboveWT, Welch & Reese (1972), "stiff
           clay with no free water" (GEC 9 App. A.3), above the water table
@@ -1109,7 +1115,16 @@ class SoilProfile:
             0), except for stiff clay below a sand stratum; no with the
             groundwater at depth. "Near" the surface is the engineer's
             call: True gives every stiff clay layer below the water table
-            Reese et al. (1975), False gives every one Welch & Reese.
+            Reese et al. (1975), False gives every one Welch & Reese. Given
+            with no stiff clay below the water table, the choices say it
+            was not used (GM-217).
+        stiff_clay_cu : float, optional
+            The undrained shear strength (kPa) from which a clay layer
+            takes a stiff clay criterion; below it, Matlock's (1970) soft
+            clay. Default 100, this module's own value (GM-217): GEC 9
+            prints soft clays as 250-500 psf (12.0-23.9 kPa, p. 216) and
+            stiff as 1,000-2,000 psf (47.9-95.8 kPa, p. 219), and neither
+            it nor COM624P prints a boundary.
 
         Returns
         -------
@@ -1117,9 +1132,13 @@ class SoilProfile:
             "layers": list of dicts with top, bottom, py_model_type,
             py_model_params, description; the caller instantiates the p-y
             model objects from the returned type+params. "choices": each
-            clay layer's criterion, the eps50 and k estimated for it and N
-            (``geotech_common.choices``).
+            clay layer's criterion, the eps50 and k estimated for it, the
+            soft/stiff clay boundary and N (``geotech_common.choices``).
         """
+        if not stiff_clay_cu > 0:
+            raise ValueError(
+                f"stiff_clay_cu must be a strength above 0 kPa, got "
+                f"{stiff_clay_cu}")
         if n_cycles is not None and loading != "cyclic":
             raise ValueError(
                 f"n_cycles ({n_cycles:g}) applies to loading='cyclic' "
@@ -1130,6 +1149,8 @@ class SoilProfile:
         lateral_layers, choices = [], []
         sand_above = False
         welch_reese_cyclic = []
+        clays = []                # (span, cu) of each clay layer (GM-217)
+        free_water_used = False   # a stiff clay below the water table
 
         for layer in self.layers:
             z_top = layer.top_depth
@@ -1142,7 +1163,12 @@ class SoilProfile:
             gamma_eff = self._get_effective_gamma(layer, z_top, z_bot, gwt)
             model_info = self._select_py_model(
                 layer, gamma_eff, gwt, z_top, z_bot, loading,
-                free_water_at_surface, sand_above)
+                free_water_at_surface, sand_above, stiff_clay_cu)
+            if not layer.is_rock and layer.is_cohesive is True \
+                    and layer.cu is not None:
+                clays.append((f"{z_top:g}-{z_bot:g} m", layer.cu))
+                free_water_used = free_water_used or (
+                    layer.cu >= stiff_clay_cu and (z_top + z_bot) / 2.0 >= gwt)
             if (model_info["type"] == "StiffClayAboveWT"
                     and loading == "cyclic"):
                 if n_cycles is None:
@@ -1163,6 +1189,10 @@ class SoilProfile:
                 "description": layer.description,
             })
 
+        if clays:
+            choices.append(_stiff_clay_cu_choice(stiff_clay_cu, clays))
+        if free_water_at_surface is not None and not free_water_used:
+            choices.append(_free_water_not_used_choice(free_water_at_surface))
         if n_cycles is not None:
             choices.append(_n_cycles_choice(n_cycles, welch_reese_cyclic))
         return {"layers": lateral_layers, "choices": choices}
@@ -1185,10 +1215,12 @@ class SoilProfile:
                          z_top: float, z_bot: float,
                          loading: str,
                          free_water: Optional[bool] = None,
-                         sand_above: bool = False) -> Dict[str, Any]:
+                         sand_above: bool = False,
+                         stiff_clay_cu: float = STIFF_CLAY_CU,
+                         ) -> Dict[str, Any]:
         """Select a p-y model and its parameters for a layer, with what was
         chosen for it ("choices"): a clay layer's criterion and the eps50
-        and k estimated for it."""
+        and k estimated for it. A clay is stiff from ``stiff_clay_cu``."""
         from geotech_common.choices import MODULE, choice
         mid = (z_top + z_bot) / 2.0
         below_gwt = mid >= gwt
@@ -1208,6 +1240,7 @@ class SoilProfile:
 
         if layer.is_cohesive is True and layer.cu is not None:
             choices = []
+            stiff = layer.cu >= stiff_clay_cu
             if layer.eps50 is not None:
                 eps50 = layer.eps50
             else:
@@ -1216,17 +1249,17 @@ class SoilProfile:
                 choices.append(choice(
                     f"eps50 {span}", eps50, MODULE,
                     f"estimated from cu {layer.cu:g} kPa: "
-                    + _eps50_basis(layer.cu, stiff=layer.cu >= 100),
+                    + _eps50_basis(layer.cu, stiff=stiff),
                     ["eps50 from the layer's own stress-strain curves"]))
 
-            if layer.cu < 100:
+            if not stiff:
                 # Soft/medium clay
                 choices.insert(0, choice(
                     f"p-y criterion {span}", "Matlock (1970) soft clay "
                     "(SoftClayMatlock)", MODULE,
-                    f"cu {layer.cu:g} kPa, below the 100 kPa this adapter "
-                    "takes as stiff clay (GEC 9 p. 219 calls stiff clays "
-                    "those of 1,000 to 2,000 psf, 48-96 kPa)",
+                    f"cu {layer.cu:g} kPa, below stiff_clay_cu "
+                    f"{stiff_clay_cu:g} kPa (see the soft/stiff clay "
+                    "boundary)",
                     ["Welch & Reese (1972), stiff clay with no free water "
                      "(StiffClayAboveWT)", "Reese et al. (1975), stiff "
                      "clay with free water (StiffClayBelowWT)"]))
@@ -1251,8 +1284,9 @@ class SoilProfile:
                     "(StiffClayBelowWT)"
             choices.insert(0, choice(
                 f"p-y criterion {span}", reese if with_water else welch,
-                how, f"cu {layer.cu:g} kPa, stiff clay from 100 kPa; "
-                + why, [welch, reese] if below_gwt else []))
+                how, f"cu {layer.cu:g} kPa, stiff clay from stiff_clay_cu "
+                f"{stiff_clay_cu:g} kPa; " + why,
+                [welch, reese] if below_gwt else []))
             if with_water:
                 # The initial line p = (k x) y takes ks for static loading
                 # and kc for cyclic (COM624P Table 3.2; GEC 9 Table A-1),
@@ -2306,6 +2340,65 @@ _N_CYCLES_NEEDED = (
     "lateral load will be applied: the curve softens with log N (y_c = "
     "y_s + y50 C log N, COM624P Eq. 3.29, GEC 9 Eq. A-21) and the "
     "references give no default")
+
+
+#: Where GEC 9 prints the clays the soft and stiff clay criteria were
+#: developed on (GM-217).
+_GEC9_CLAY_RANGES = (
+    "GEC 9 p. 216: soft clays (Matlock 1970) \"are those with undrained "
+    "shear strength (Su) ranging from 250 to 500 psf\" (12.0-23.9 kPa); "
+    "p. 219: stiff clays (Reese et al. 1975) \"are those with undrained "
+    "shear strength (Su) ranging from 1,000 to 2,000 psf\" (47.9-95.8 "
+    "kPa). Neither page prints a boundary between them, nor does COM624P, "
+    "whose stiff clay Tables 3.2 and 3.3 start at 0.5 ton/ft^2 (47.9 kPa)")
+
+
+def _stiff_clay_cu_choice(stiff_clay_cu: float, clays: List[tuple]) -> dict:
+    """The undrained shear strength from which a clay takes a stiff clay
+    criterion (GM-217), with what the printed edges would change in this
+    profile. ``clays``: (span, cu) of each clay layer."""
+    from geotech_common.choices import choice, how_given
+
+    def changes(edge: float) -> str:
+        moved = [f"{span} (cu {cu:g} kPa)" for span, cu in clays
+                 if (cu >= edge) != (cu >= stiff_clay_cu)]
+        if not moved:
+            return "no layer here changes"
+        side = ("a stiff clay criterion" if edge < stiff_clay_cu
+                else "Matlock's soft clay")
+        return ", ".join(moved) + " would take " + side
+
+    alternatives = []
+    if stiff_clay_cu != 47.9:
+        alternatives.append(
+            f"stiff_clay_cu 47.9 kPa (1,000 psf), where GEC 9's stiff clays "
+            f"and COM624P Tables 3.2 and 3.3 start: {changes(47.9)}")
+    if stiff_clay_cu != STIFF_CLAY_CU:
+        alternatives.append(
+            f"stiff_clay_cu {STIFF_CLAY_CU:g} kPa, this module's default: "
+            f"{changes(STIFF_CLAY_CU)}")
+    return choice(
+        "soft/stiff clay boundary",
+        f"stiff clay from cu {stiff_clay_cu:g} kPa (stiff_clay_cu); below "
+        "it Matlock (1970) soft clay",
+        how_given(stiff_clay_cu, STIFF_CLAY_CU, name="stiff_clay_cu"),
+        _GEC9_CLAY_RANGES + f". {STIFF_CLAY_CU:g} kPa is this module's own "
+        "value, above GEC 9's stiff range; a clay between the two ranges "
+        "is in neither",
+        alternatives)
+
+
+def _free_water_not_used_choice(free_water: bool) -> dict:
+    """``free_water_at_surface`` given with no stiff clay below the water
+    table, where it picks the criterion (GM-217)."""
+    from geotech_common.choices import choice, how_given
+    return choice(
+        "free water at or near the ground surface",
+        f"{bool(free_water)}, not used",
+        how_given(free_water, None, name="free_water_at_surface"),
+        "free_water_at_surface picks Reese et al. (1975) or Welch & Reese "
+        "(1972) for stiff clay below the water table (GEC 9 p. 219); no "
+        "layer here is stiff clay below the water table")
 
 
 def _n_cycles_choice(n_cycles: float, spans: List[str]) -> dict:

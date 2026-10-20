@@ -108,7 +108,10 @@ results.summary()
   is more appropriate, even below groundwater", and stiff clay below a
   sand stratum "would normally not be subject to degradation due to free
   water (unless scour removed the overlying sand)". `SoilProfile` follows
-  that rule and states it (GM-215). The initial line holds until
+  that rule and states it (GM-215); it takes a clay as stiff from
+  `stiff_clay_cu`, 100 kPa by default, its own value: GEC 9 prints soft
+  clays as 250-500 psf (p. 216) and stiff as 1,000-2,000 psf (p. 219) and
+  no boundary (GM-217, `geotech_common/DESIGN.md`). The initial line holds until
   it meets the curve and the smaller p holds where they do not meet
   (COM624P notes, pp. 333, 335). Where As < 0.223 (x/b below about 0.08)
   the static residual is negative; p is held at zero.

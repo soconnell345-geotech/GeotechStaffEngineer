@@ -285,7 +285,8 @@ class TestLateralPileAdapter:
         layer = result["layers"][0]
         assert layer["py_model_type"] == "StiffClayBelowWT"
         assert layer["py_model_params"]["ks"] == 271_400.0
-        crit, k = result["choices"]
+        crit, k, boundary = result["choices"]
+        assert boundary["what"] == "soft/stiff clay boundary"
         assert crit["chosen"].startswith("Reese et al. (1975)")
         assert crit["how"] == "given"
         assert k["what"] == "k of the initial line, ks, 0-10 m"
@@ -408,7 +409,7 @@ class TestLateralPileAdapter:
             groundwater=GroundwaterCondition(depth=20.0))
         result = profile.to_lateral_pile_input(10.0, 0.6)
         assert result["layers"][0]["py_model_params"]["eps50"] == 0.005
-        crit, eps = result["choices"]
+        crit, eps, _boundary = result["choices"]
         assert crit["chosen"].startswith("Welch & Reese")
         assert "above the water table" in crit["basis"]
         assert "alternatives" not in crit
@@ -416,7 +417,69 @@ class TestLateralPileAdapter:
         assert "Table 3.3" in eps["basis"] and "Table A-2" in eps["basis"]
         given = _clay_only_profile().to_lateral_pile_input(10.0, 0.6)
         assert [c["what"] for c in given["choices"]] == [
-            "p-y criterion 0-10 m"]
+            "p-y criterion 0-10 m", "soft/stiff clay boundary"]
+
+    def test_soft_stiff_boundary_is_a_stated_choice(self):
+        """GM-217: clay is stiff from 100 kPa, this module's own value; the
+        choice prints GEC 9's ranges (soft 250-500 psf, p. 216; stiff
+        1,000-2,000 psf, p. 219) and what 47.9 kPa would change here."""
+        profile = SoilProfile(
+            layers=[SoilLayer(0, 5, "Clay", gamma=17.0, cu=60,
+                              is_cohesive=True, eps50=0.007),
+                    SoilLayer(5, 12, "Stiff clay", gamma=19.0, cu=150,
+                              is_cohesive=True, eps50=0.005)],
+            groundwater=GroundwaterCondition(depth=20.0))
+        r = profile.to_lateral_pile_input(12.0, 0.9)
+        assert [l["py_model_type"] for l in r["layers"]] == [
+            "SoftClayMatlock", "StiffClayAboveWT"]
+        b = [c for c in r["choices"]
+             if c["what"] == "soft/stiff clay boundary"][0]
+        assert b["how"] == "default"
+        assert b["chosen"].startswith("stiff clay from cu 100 kPa")
+        assert "250 to 500 psf" in b["basis"] and "p. 216" in b["basis"]
+        assert "1,000 to 2,000 psf" in b["basis"] and "p. 219" in b["basis"]
+        assert "this module's own value" in b["basis"]
+        assert b["alternatives"] == [
+            "stiff_clay_cu 47.9 kPa (1,000 psf), where GEC 9's stiff clays "
+            "and COM624P Tables 3.2 and 3.3 start: 0-5 m (cu 60 kPa) would "
+            "take a stiff clay criterion"]
+        assert "below stiff_clay_cu 100 kPa" in r["choices"][0]["basis"]
+
+        # the caller sets it: the 60 kPa clay takes a stiff clay criterion
+        r = profile.to_lateral_pile_input(12.0, 0.9, stiff_clay_cu=47.9)
+        assert [l["py_model_type"] for l in r["layers"]] == [
+            "StiffClayAboveWT", "StiffClayAboveWT"]
+        b = [c for c in r["choices"]
+             if c["what"] == "soft/stiff clay boundary"][0]
+        assert b["how"] == "given"
+        assert b["alternatives"] == [
+            "stiff_clay_cu 100 kPa, this module's default: 0-5 m (cu 60 "
+            "kPa) would take Matlock's soft clay"]
+        with pytest.raises(ValueError, match="stiff_clay_cu"):
+            profile.to_lateral_pile_input(12.0, 0.9, stiff_clay_cu=0)
+
+    def test_no_clay_no_boundary_choice(self):
+        r = _sand_only_profile().to_lateral_pile_input(10.0, 0.6)
+        assert r["choices"] == []
+
+    def test_free_water_given_but_not_used_is_said(self):
+        """GM-217: free_water_at_surface picks the criterion for stiff
+        clay below the water table only; given with none, it says so."""
+        soft = _mixed_profile()  # cu 30 clay below the water table
+        r = soft.to_lateral_pile_input(8.0, 0.6, free_water_at_surface=True)
+        fw = r["choices"][-1]
+        assert fw["what"] == "free water at or near the ground surface"
+        assert fw["chosen"] == "True, not used" and fw["how"] == "given"
+        dry = SoilProfile(
+            layers=[SoilLayer(0, 10, "Stiff clay", gamma=19.0, cu=120,
+                              is_cohesive=True, eps50=0.005)],
+            groundwater=GroundwaterCondition(depth=20.0))
+        r = dry.to_lateral_pile_input(10.0, 0.6, free_water_at_surface=False)
+        assert r["choices"][-1]["chosen"] == "False, not used"
+        # used: stiff clay below the water table
+        r = _clay_only_profile().to_lateral_pile_input(
+            10.0, 0.6, free_water_at_surface=True)
+        assert all("not used" not in str(c["chosen"]) for c in r["choices"])
 
     def test_rock_gets_weakrock(self):
         profile = _profile_with_rock()
