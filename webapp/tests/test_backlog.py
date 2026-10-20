@@ -147,6 +147,54 @@ def test_sweep_keeps_every_closed_id_and_open_item(tmp_path):
         sweep_done.next_id("GM", BACKLOG, ARCHIVE))
 
 
+def test_apply_triage_moves_merged_and_closed_items_to_done(tmp_path):
+    """A triage's merges and closes leave the open list as Done entries, so
+    every ID the backlog cites stays defined."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "apply_triage", ROOT / "module_work" / "backlog_dashboard" / "apply_triage.py")
+    apply_triage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(apply_triage)
+    backlog = tmp_path / "BACKLOG.md"
+    backlog.write_text(
+        "# Backlog\n\n## 7. Modules (GM-nn)\n\n"
+        "- **GM-01** [Later] **One**: text. *Src:* a\n"
+        "- **GM-02** [Later] **Two**: see GM-01.\n"
+        "- **GM-03** [Later] **Three**: text.\n"
+        "- **GM-04** [Later] **Four**: text.\n\n"
+        f"{_DONE}\n\nIntro.\n\n- **GM-05** closed. Commit `abc1234`.\n",
+        encoding="utf-8")
+    rows = [
+        {"id": "GM-01", "action": "MERGE", "target": "GM-03", "reason": "same",
+         "evidence": "", "merge_text": "one's text."},
+        {"id": "GM-02", "action": "CLOSE-COVERED", "target": "",
+         "reason": "built", "evidence": "commit abc1234"},
+        {"id": "GM-04", "action": "DROP?", "target": "", "reason": "low",
+         "evidence": ""},
+    ]
+    assert apply_triage.apply(backlog, rows, "2000-01-01") == 0
+    text = backlog.read_text(encoding="utf-8")
+    open_part, done = text.split(_DONE, 1)
+    assert re.findall(r"^- \*\*(GM-\d+)\*\*", open_part, re.M) == ["GM-03", "GM-04"]
+    assert "Also (was GM-01, merged 2000-01-01): one's text." in open_part
+    assert _DONE_ITEM.findall(done) == ["GM-01", "GM-02", "GM-05"]
+    # the owner's drops later, from the same file: applied rows are skipped
+    assert apply_triage.apply(backlog, rows, "2000-01-02", drop=["GM-04"]) == 0
+    text = backlog.read_text(encoding="utf-8")
+    open_part, done = text.split(_DONE, 1)
+    assert re.findall(r"^- \*\*(GM-\d+)\*\*", open_part, re.M) == ["GM-03"]
+    assert _DONE_ITEM.findall(done) == ["GM-04", "GM-01", "GM-02", "GM-05"]
+    # a merge target that is not open refuses, changing nothing
+    backlog.write_text(text.replace("- **GM-03** [Later]",
+                                    "- **GM-03** [Later] see\n- **GM-06** [Later]"),
+                       encoding="utf-8")
+    before = backlog.read_text(encoding="utf-8")
+    bad = {"id": "GM-06", "action": "MERGE", "target": "GM-09",
+           "reason": "", "evidence": "", "merge_text": "x"}
+    assert apply_triage.apply(backlog, [bad], "2000-01-03") == 1
+    assert backlog.read_text(encoding="utf-8") == before
+
+
 def test_handoff_slice_cites_only_existing_ids():
     defined = {i for i, _ in _items()}
     section = _section(ROOT / "HANDOFF.md", "0a-current")

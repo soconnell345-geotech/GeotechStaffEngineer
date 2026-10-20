@@ -1,0 +1,2150 @@
+[
+ {
+  "id": "OWN-09",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-11",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-12",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-13",
+  "tier": "Later",
+  "owner": true,
+  "action": "MERGE",
+  "target": "GM-140",
+  "reason": "A slope method question; the owner deferred all slope work to GM-140's integral review.",
+  "evidence": "memory feedback_slope_fixes_deferred; GM-140.",
+  "merge_text": "whether the Ito-Matsui stabilizing-pile force should be its own method (eval SPL-3)."
+ },
+ {
+  "id": "OWN-14",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-15",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-16",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-17",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-18",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-19",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-20",
+  "tier": "Later",
+  "owner": true,
+  "action": "DROP?",
+  "target": "",
+  "reason": "Mostly answered: bearing depth factors are now a cited option incl. 'none' (GM-197, ad3ed66); Tomlinson alpha is OWN-63; what is left are conservative defaults that follow GEC-10.",
+  "evidence": "ad3ed66; BACKLOG OWN-63; validation_examples RESULTS V-008b, V-021, V-002."
+ },
+ {
+  "id": "OWN-21",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-22",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-23",
+  "tier": "Later",
+  "owner": true,
+  "action": "DROP?",
+  "target": "",
+  "reason": "The multi-user need is met: Tiny Apps and the Funhouse pages give each user their own conversations (5.26.0-5.33.0); rec 6 was a different UI framework.",
+  "evidence": "module_work/A7_INDUSTRY_MEMO.md:61-63; webapp/identity.py, per-user roots (5.26.0)."
+ },
+ {
+  "id": "OWN-24",
+  "tier": "Parked",
+  "owner": true,
+  "action": "MERGE",
+  "target": "VIS-20",
+  "reason": "OWN-24 records the owner's standing answer for VIS-20's knobs; one parked item is enough.",
+  "evidence": "BACKLOG OWN-24 cites VIS-20; both [Parked] [owner].",
+  "merge_text": "the owner's rule of 2026-09-25: robust first, and do not act until the owner asks."
+ },
+ {
+  "id": "OWN-25",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-26",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-27",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-36",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Prompter metering is a compliance check; still unrecorded.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-37",
+  "tier": "Later",
+  "owner": true,
+  "action": "DROP?",
+  "target": "",
+  "reason": "Mostly overtaken: the app installs beside pandas 3 (a229090), cytriangle is no longer used (5.13.0); the matplotlib label is a scanner artifact.",
+  "evidence": "a229090; CLAUDE.md 5.13.0 note on cytriangle."
+ },
+ {
+  "id": "OWN-38",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-39",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-40",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-41",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-42",
+  "tier": "Later",
+  "owner": true,
+  "action": "DROP?",
+  "target": "",
+  "reason": "The app now retries a refused key once and says so plainly (0562ddf); Funhouse is the backup host; the $0.00 alias price is in Funhouse's own table.",
+  "evidence": "0562ddf; HANDOFF 'Prompter 401' item."
+ },
+ {
+  "id": "OWN-68",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-56",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-53",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "OWN-54",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-07",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-08",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-12",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-13",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-30",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-31",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-33",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-22",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DR-28",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-23",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-22",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-13",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "DR-28",
+  "reason": "DR-28 already makes VIS-13 its first step ('switch it to pixel boxes first').",
+  "evidence": "deep/inline_images.py:71 still asks for 0-999 boxes (checked 2026-10-20); DR-28 cites VIS-13.",
+  "merge_text": "the inline route still asks for 0-999 boxes (`deep/inline_images.py:71`, measured 57-91 pt off)."
+ },
+ {
+  "id": "VIS-14",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: find_like has no 300 pt rule.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-15",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "VIS-24",
+  "reason": "The structured location rows already drop a side call's own page_bbox (computed in code since cf43c90); what is left is page coordinates the side call writes in prose, which VIS-24 covers.",
+  "evidence": "funhouse_agent/vision_view.py ~1097-1114: rows keep only what/text/sure plus code-computed page_bbox (cf43c90, 2026-10-07).",
+  "merge_text": "page coordinates a side call writes into its prose answer still pass through (Sol `baseline_r3` gave some beyond the page)."
+ },
+ {
+  "id": "VIS-16",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-17",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "DROP?",
+  "target": "",
+  "reason": "A public CAD benchmark; VIS-17 (chart and drawing truth) keeps the measurement work that matters to reviews.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-20",
+  "tier": "Parked",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "VIS-21",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-23",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-07",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-08",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "DROP?",
+  "target": "",
+  "reason": "The email tool works only through the Funhouse SDK; nobody has asked for email on Tiny Apps.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: subsurface plots write only the Plotly sidecar.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "CLOSE-COVERED",
+  "target": "",
+  "reason": "The busy-refusal ladder runs on every engine, the Funhouse bridge included.",
+  "evidence": "TA-20 (Done), commit 8cd38f4: AgentBusyRetry on the primary and every helper, 'Tested on the Prompter key route ... and the Funhouse bridge'."
+ },
+ {
+  "id": "TA-13",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "TA-14",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Touches a measured failure class (false completion after a tool error, CLAUDE.md P1).",
+  "evidence": "module_work/FUTURE_IDEAS.md:235-238"
+ },
+ {
+  "id": "TA-15",
+  "tier": "Later",
+  "owner": false,
+  "action": "DROP?",
+  "target": "",
+  "reason": "Checks of 5.11-5.18 features; the live waves w1-w14 and daily use have run these paths since.",
+  "evidence": "HANDOFF:1710-1749, 2695-2730."
+ },
+ {
+  "id": "TA-16",
+  "tier": "Parked",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-23",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-08",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: still misses the form.",
+  "evidence": "`scan_text('Pc (kip): 437.0')` returns [] (planlens main, 2026-10-20)"
+ },
+ {
+  "id": "PL-12",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-13",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-14",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-15",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-16",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner call on a version bound; planlens has no <6 cap.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-17",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-18",
+  "tier": "Parked",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-20",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Wrong geometry from the raster leg (arcs lost, double traces); frozen, but not a drop.",
+  "evidence": ""
+ },
+ {
+  "id": "PL-21",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "VIS-11",
+  "reason": "Same work: VIS-11 (free OCR on FIPS hosts) already says it merges PL-21.",
+  "evidence": "BACKLOG VIS-11: 'Merges Tier-2 engines and PL-21.'",
+  "merge_text": "`planlens.ocr` as a document text source, so image-only logs stop reading as `figure` (planlens DESIGN.md:988-991)."
+ },
+ {
+  "id": "PL-26",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-29",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-01",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "A wrong-number item: citations print 0-based pages.",
+  "evidence": "report_ingest/writers.py:358-361 `p{row.page}`; library_agent.py:694-697 '0-based PDF page'"
+ },
+ {
+  "id": "RI-02",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-03",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-04",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-05",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: RESULTS does not print visual-scales counts.",
+  "evidence": "no 'visual' scale count in report_ingest/cluster_scoring.py"
+ },
+ {
+  "id": "RI-06",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-07",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-08",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-10",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-13",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-14",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-15",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-16",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-17",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-20",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-21",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-22",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-23",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-24",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "RI-25",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-04",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: the beta = 0.3 default is still uncited.",
+  "evidence": "downdrag/analysis.py:1108 `else 0.3`; downdrag/DESIGN.md"
+ },
+ {
+  "id": "GM-73",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-74",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-75",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-82",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-89",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item: add 'Deferred to GM-140' as its siblings carry (owner 2026-10-18).",
+  "evidence": "memory feedback_slope_fixes_deferred"
+ },
+ {
+  "id": "GM-93",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-64",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "A wrong-result item: side surcharge only sizes the load ramp.",
+  "evidence": "fem2d/analysis.py ~224-227"
+ },
+ {
+  "id": "GM-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-56",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-15",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-17",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-126",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item: add 'Deferred to GM-140' as its siblings carry (owner 2026-10-18).",
+  "evidence": "memory feedback_slope_fixes_deferred"
+ },
+ {
+  "id": "GM-130",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-132",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open in part: GM-165/GM-184 tagged most adapters; the `[True]` vs 'set' and undeclared-name parts remain. Trim the first clause.",
+  "evidence": "0a44e7b (GM-165), 8ab231a (GM-184); adapters/axial_pile.py:433 `[True]`"
+ },
+ {
+  "id": "GM-135",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-136",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-137",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-139",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-140",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-156",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: fem2d_excavation's choices name only the wall contact.",
+  "evidence": "fem2d/analysis.py:1092-1111"
+ },
+ {
+  "id": "GM-161",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: weak-rock defaults uncited, choices empty.",
+  "evidence": "geotech_common/soil_profile.py:1230-1238 (qu 1000, Er = 200 qu, RQD 50, `\"choices\": []`)"
+ },
+ {
+  "id": "GM-162",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-163",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-166",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: labels keep the descriptions' capitals.",
+  "evidence": "funhouse_agent/adapters/calc_package.py:775-787 `_input_words` takes the first sentence only"
+ },
+ {
+  "id": "GM-193",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-196",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-199",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-204",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-205",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-211",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-212",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-216",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-218",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-219",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-65",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-22",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "GM-199",
+  "reason": "GM-191 pinned the anchor design to GEC-4 Examples 1 and 2; what is left of 'no benchmark' is GM-199's worked-example check.",
+  "evidence": "GM-191 Done entry (b1613af): 'Pinned to GEC-4 Examples 1 and 2 (hand-checked)'.",
+  "merge_text": "a GEC-4-vs-PTI exhibit was planned (`soe/DESIGN.md:202-212`)."
+ },
+ {
+  "id": "GM-23",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-24",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-26",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "A missing method; the library does not print it, so it needs a source first.",
+  "evidence": "geotech-references: lambda method only named in gec_9 ch. 1"
+ },
+ {
+  "id": "GM-27",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: the socket still drops the top 1.5 m (GM-179 kept it).",
+  "evidence": ""
+ },
+ {
+  "id": "GM-28",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-29",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: defaults now cite GEC-12 Table 12-3 but were never checked against it; the diesel cycle is still missing.",
+  "evidence": "wave_equation/calc_steps.py:308-358"
+ },
+ {
+  "id": "GM-31",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-32",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "A wrong-result item: a descending backfill is still taken as level, silently.",
+  "evidence": "retaining_walls/geometry.py:101 and cantilever.py:143 handle only backfill_slope > 0; no refusal"
+ },
+ {
+  "id": "GM-33",
+  "tier": "Later",
+  "owner": false,
+  "action": "CLOSE-COVERED",
+  "target": "",
+  "reason": "The SG-2 step now prints PGA when given and says when Fpga is read against Ss.",
+  "evidence": "seismic_geotech/calc_steps.py ~281-298, commit c9752a0 (GM-141)."
+ },
+ {
+  "id": "GM-34",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-35",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-36",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-37",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-38",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-111",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-113",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: kh is marked unused but still accepted; N1_60/OCR under beta_method='depth' not refused.",
+  "evidence": "adapters/slope_stability.py ~889 `\"kh\": False`; adapters/drilled_shaft.py:159-164"
+ },
+ {
+  "id": "GM-114",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-117",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Slope item, already deferred to GM-140 (owner 2026-10-18); stays for the integral review.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-106",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "GM-216",
+  "reason": "Same question, which plane a wall's pressure is drawn on: GM-216 names the heel plane, GM-106 the stem face.",
+  "evidence": "BACKLOG GM-216 first clause.",
+  "merge_text": "a stem-design figure draws on the stem's back face and the external-stability figure on the heel plane; offer both."
+ },
+ {
+  "id": "GM-102",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "GM-219",
+  "reason": "Same defect: a table's header shading repeats as slivers on the next page of a Story PDF; html_to_pdf renders through the same Story engine.",
+  "evidence": "GM-213's Done entry: 'Header slivers: GM-219'; calc_package/latex_renderer.py:1495-1507 (html_to_pdf via fitz.Story).",
+  "merge_text": "first seen in wave w8b's calc PDF (`module_work/live_smoke/runs/w8b-plot-code/TRACE_REVIEW.md` §4.4)."
+ },
+ {
+  "id": "GM-66",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-43",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-44",
+  "tier": "Later",
+  "owner": false,
+  "action": "DROP?",
+  "target": "",
+  "reason": "An idea with no measured failure behind it; the worked-examples library already gives the agent multi-step examples.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-45",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "GM-46",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open in part: G13 is done (3195ede); G3(d), G12 (unique-name describe) and PAV-6/7 remain. Trim G13.",
+  "evidence": "funhouse_agent/dispatch.py:403-425 describe_method does not resolve a unique guess"
+ },
+ {
+  "id": "GM-47",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-06",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-07",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-08",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: GEC-13 catalog still 33 figures.",
+  "evidence": "geotech-references gec_13 figures_catalog.json: 33 entries"
+ },
+ {
+  "id": "REF-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: the UFC 4-023-03 file is still a 1.3 KB HTML page.",
+  "evidence": "geotech-references docs/UFC_4-023-03_2024_c4.pdf (1,359 bytes, tracked)"
+ },
+ {
+  "id": "REF-13",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "REF-29",
+  "reason": "Same gap: REF-29 [Next] indexes the text of FHWA NHI-06-088/089, which REF-13 asks for.",
+  "evidence": "BACKLOG REF-29 names both PDFs and the text index.",
+  "merge_text": "neither manual has a figure catalog either, so figure search cannot find their charts."
+ },
+ {
+  "id": "REF-14",
+  "tier": "Later",
+  "owner": true,
+  "action": "MERGE",
+  "target": "OWN-40",
+  "reason": "Duplicate: REF-14 points at OWN-40, which names both the Wood Handbook upload and FEMA P-2192.",
+  "evidence": "BACKLOG OWN-40 text.",
+  "merge_text": ""
+ },
+ {
+  "id": "REF-15",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-16",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-17",
+  "tier": "Later",
+  "owner": false,
+  "action": "DROP?",
+  "target": "",
+  "reason": "Conditional by design ('only if needed'); nothing has needed it since June, and CLAUDE.md P4/P6 keep the rule.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-19",
+  "tier": "Later",
+  "owner": true,
+  "action": "MERGE",
+  "target": "OWN-21",
+  "reason": "Owner scope call already listed in OWN-21 ('structural future rounds').",
+  "evidence": "BACKLOG OWN-21 lists 'structural future rounds'.",
+  "merge_text": "the structural rounds: pelicun, and an AISC letter only if steel modules are built (`module_work/STRUCTURAL_REFS_SURVEY.md:38-68`)."
+ },
+ {
+  "id": "REF-21",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-20",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "TA-03",
+  "reason": "gpt-5.1 is no longer the rollout model (owner 2026-10-12); a chart read-off on the rollout model is one of TA-03's live checks.",
+  "evidence": "BACKLOG TA-03 (charts at openai-original); memory reference_funhouse_model_tiers.",
+  "merge_text": "a chart read-off on Tiny Apps (needs OWN-44 for the reference PDFs)."
+ },
+ {
+  "id": "REF-22",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-30",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-31",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-32",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-33",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-34",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "REF-35",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-08",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "A developer call, not an owner one; cheap and useful once CI time allows.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "CLOSE-COVERED",
+  "target": "",
+  "reason": "A standing rule, already a CLAUDE.md read-first trigger ('asks you to change an agent or pipeline' -> module_work/harness_theory/).",
+  "evidence": "CLAUDE.md trigger table, commit 4fd1987. HANDOFF §0a-current cites EV-12: drop that '(BACKLOG EV-12)' in the same commit."
+ },
+ {
+  "id": "EV-16",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-27",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-28",
+  "tier": "Later",
+  "owner": false,
+  "action": "CLOSE-COVERED",
+  "target": "",
+  "reason": "Both parts done: the three keys and the scratch-write detector (GM-155), then the judgment-calls key scoped to the Judgment calls list.",
+  "evidence": "8b9abba (GM-155) per the item; 006ed10 adds `\"within\": \"judgment_calls\"` to 8 keys in module_work/live_smoke/flows.json and the detector in detectors.py."
+ },
+ {
+  "id": "EV-29",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-31",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-32",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "EV-22",
+  "tier": "Later",
+  "owner": false,
+  "action": "CLOSE-COVERED",
+  "target": "",
+  "reason": "Built as EV-30's answer-number check; its leftover (arithmetic across paragraphs) is EV-32.",
+  "evidence": "EV-30 (Done), commit 6e452d3: 'a new check for a number in the answer no tool result holds'."
+ },
+ {
+  "id": "INF-01",
+  "tier": "Later",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Waits on OWN-27; every file still exists.",
+  "evidence": "12 files present 2026-10-20"
+ },
+ {
+  "id": "INF-04",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "INF-03",
+  "reason": "The openai<3 pin is one of INF-03's agent-stack caps; fix its comment when the cap is next touched.",
+  "evidence": "pyproject.toml:46-49 still carries the wrong comment (checked 2026-10-20); INF-03 owns the cap.",
+  "merge_text": "the `openai<3` comment (`pyproject.toml:46-49`) is wrong: httpx2 arrives via langsmith, not openai."
+ },
+ {
+  "id": "INF-05",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "INF-06",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "INF-08",
+  "tier": "Later",
+  "owner": true,
+  "action": "MERGE",
+  "target": "INF-01",
+  "reason": "Both are leftovers waiting on the same owner OK (OWN-27); every leftover still exists.",
+  "evidence": "2026-10-20: build/, hotfix/5.12.1-structural-extra, planlens fix/advice-names-no-missing-tools, refs origin/feature/reference-query-expansion and 4 .claude/worktrees/agent-* all present.",
+  "merge_text": "gitignored `build/`; old release worktrees and `.claude/worktrees/agent-*`; branches app `hotfix/5.12.1-structural-extra`, planlens `fix/advice-names-no-missing-tools` (shipped as 0d9787b), refs `origin/feature/reference-query-expansion` (merged)."
+ },
+ {
+  "id": "INF-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "CLOSE-COVERED",
+  "target": "",
+  "reason": "The Harness Map was rebuilt on 2026-10-19; its remaining stale summaries are DOC-20.",
+  "evidence": "DOC-18 (Done), commit 1f278d4; dev/harness_viz/out/data.js dated 2026-10-19."
+ },
+ {
+  "id": "INF-16",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "INF-18",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "INF-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "INF-21",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-01",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-02",
+  "tier": "Parked",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-03",
+  "tier": "Parked",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-04",
+  "tier": "Parked",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-05",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-06",
+  "tier": "Parked",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-07",
+  "tier": "Parked",
+  "owner": true,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Owner decision or owner-supplied input still pending.",
+  "evidence": ""
+ },
+ {
+  "id": "LT-08",
+  "tier": "Parked",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DOC-09",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: stale counts still printed.",
+  "evidence": "README.md:60 '48 standalone tool agents'; docs/funhouse_agent_guide.md:521, 566 hvsrpy/swprocess"
+ },
+ {
+  "id": "DOC-10",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: the PDF is still v5.3.",
+  "evidence": "docs/GeotechStaffEngineer_User_Manual_v5.3.pdf"
+ },
+ {
+  "id": "DOC-11",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open in part ('currently disconnected' and 'no adapter yet' are gone).",
+  "evidence": "lateral_pile/DESIGN.md:63 'machine precision'"
+ },
+ {
+  "id": "DOC-12",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: both stale lines still there.",
+  "evidence": "validation_examples/RESULTS.md V-038 'flip owner-gated'; TIER_A_LEDGER.md:109 'OPEN'"
+ },
+ {
+  "id": "DOC-16",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Not checked line by line; the README still says the narrative reader is 'one call'.",
+  "evidence": "report_ingest/README.md:19"
+ },
+ {
+  "id": "DOC-19",
+  "tier": "Later",
+  "owner": false,
+  "action": "MERGE",
+  "target": "DOC-10",
+  "reason": "One build: docs/user_manual/ makes manual.html and then the PDF (README there); rebuilding one is rebuilding both.",
+  "evidence": "docs/user_manual/README.md: gen_worked_examples.py -> build_manual.py -> render_pdf.py.",
+  "merge_text": "rebuild `docs/user_manual/manual.html` from its sources before the next release (it shows the old anchor inputs and a fixed 1.50 test load, and predates the 2026-10-14..19 train)."
+ },
+ {
+  "id": "DOC-20",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: no commit or Done entry covers it.",
+  "evidence": ""
+ },
+ {
+  "id": "DOC-17",
+  "tier": "Later",
+  "owner": false,
+  "action": "KEEP",
+  "target": "",
+  "reason": "Open: the pointers are unchanged.",
+  "evidence": "webapp/app.py:796-797 still says 'recorded future item in HANDOFF §0a'"
+ }
+]
