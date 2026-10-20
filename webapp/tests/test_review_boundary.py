@@ -40,19 +40,10 @@ KNOWN_COUPLINGS = {
         "2.7 #2, step 4",
     "funhouse_agent.deep.minimal_agent -> funhouse_agent.deep.tools":
         "2.7 #2, step 4",
-    # 3. The package doors load the v1 agent and the geotech builder (step 2).
-    "funhouse_agent -> funhouse_agent._disclaimer": "2.7 #3, step 2",
-    "funhouse_agent -> funhouse_agent.agent": "2.7 #3, step 2",
-    "funhouse_agent -> funhouse_agent.engine": "2.7 #3, step 2",
-    "funhouse_agent -> funhouse_agent.react_support": "2.7 #3, step 2",
-    "funhouse_agent -> funhouse_agent.reviewers": "2.7 #3, step 2",
-    "funhouse_agent.deep -> funhouse_agent.deep.agent": "2.7 #3, step 2",
-    "funhouse_agent.deep -> funhouse_agent.deep.eval_harness":
-        "2.7 #3, step 2",
-    "funhouse_agent.deep -> funhouse_agent.deep.notebook": "2.7 #3, step 2",
-    "funhouse_agent.deep -> funhouse_agent.deep.prompt": "2.7 #3, step 2",
-    "funhouse_agent.deep -> funhouse_agent.deep.selfcheck": "2.7 #3, step 2",
-    "funhouse_agent.deep -> funhouse_agent.deep.tools": "2.7 #3, step 2",
+    # 3. The package door shows GSE's first-import disclaimer notice; its
+    # other names load on first use since step 2 (the disclaimer goes with
+    # the package, steps 10-15).
+    "funhouse_agent -> funhouse_agent._disclaimer": "2.7 #3, step 10",
     # 4. The chart stack behind plot_data and the plotting box (step 6).
     "funhouse_agent.plot_box.child -> geotech_common": "2.7 figure, step 6",
     "funhouse_agent.plot_box.child -> geotech_common.layout_ink":

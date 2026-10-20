@@ -12,6 +12,12 @@ Public API::
 * :class:`DeepNotebookChat` — the Phase-4 ipywidgets chat that drives the
   compiled graph's LangGraph streaming (imported lazily so this package import
   never requires ipywidgets).
+
+These names load on first use (a module ``__getattr__``), not when the
+package is imported, so importing one of its modules (the review page's
+builds, the guards, the vision engine) does not load the geotech builder,
+the setup agent or the eval harness (BACKLOG INF-30, the app split's
+step 2).
 """
 
 # MUST run before ANY langchain / langgraph / deepagents import below: on
@@ -23,22 +29,49 @@ from funhouse_agent.runtime_check import ensure_typing_extensions as _ensure_te
 
 _ensure_te()
 
-from funhouse_agent.deep.agent import (
-    build_deep_agent,
-    build_primary_tools,
-    build_references_subagent,
-    build_reviewer_subagent,
-)
-from funhouse_agent.deep.eval_harness import (
-    render_suite_markdown,
-    run_suite,
-    write_suite_results,
-)
-from funhouse_agent.deep.notebook import DeepNotebookChat
-from funhouse_agent.deep.prompt import build_domain_prompt
-from funhouse_agent.deep.selfcheck import run_selfcheck
-from funhouse_agent.deep.tools import make_core_tools, make_vision_tools
-from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+import importlib as _importlib
+import importlib.util as _importlib_util
+
+#: Each public name -> the module that defines it.
+_LAZY = {
+    "build_deep_agent": "funhouse_agent.deep.agent",
+    "build_primary_tools": "funhouse_agent.deep.agent",
+    "build_references_subagent": "funhouse_agent.deep.agent",
+    "build_reviewer_subagent": "funhouse_agent.deep.agent",
+    "render_suite_markdown": "funhouse_agent.deep.eval_harness",
+    "run_suite": "funhouse_agent.deep.eval_harness",
+    "write_suite_results": "funhouse_agent.deep.eval_harness",
+    "DeepNotebookChat": "funhouse_agent.deep.notebook",
+    "build_domain_prompt": "funhouse_agent.deep.prompt",
+    "run_selfcheck": "funhouse_agent.deep.selfcheck",
+    "make_core_tools": "funhouse_agent.deep.tools",
+    "make_vision_tools": "funhouse_agent.deep.tools",
+    "LangChainVisionEngine": "funhouse_agent.deep.vision_engine",
+}
+
+
+def __getattr__(name):
+    """A public name from its module, or a submodule by its name (as
+    ``funhouse_agent.deep.agent`` was reachable when this package imported
+    it)."""
+    module = _LAZY.get(name)
+    if module is not None:
+        value = getattr(_importlib.import_module(module), name)
+        globals()[name] = value
+        return value
+    if not name.startswith("__"):
+        try:
+            spec = _importlib_util.find_spec(f"{__name__}.{name}")
+        except (ImportError, ValueError):
+            spec = None
+        if spec is not None:
+            return _importlib.import_module(f"{__name__}.{name}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY))
+
 
 __all__ = [
     "build_deep_agent",

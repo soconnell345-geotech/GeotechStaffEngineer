@@ -19,32 +19,62 @@ Usage:
     agent = GeotechAgent(genai_engine=ClaudeEngine())
 
     result = agent.ask("Calculate bearing capacity of 2m footing, phi=30")
+
+The names below load on first use (a module ``__getattr__``), not when the
+package is imported, so importing one of its modules (the vision tools,
+the document tools, the switches) does not load the v1 agent, its engines
+or the reviewers (BACKLOG INF-30, the app split's step 2).
 """
 
-from funhouse_agent.engine import (
-    GenAIEngine,
-    ClaudeEngine,
-    NativeToolEngine,
-    PrompterBridgeEngine,
-    USING_SDK_ENGINES,
-)
-from funhouse_agent.agent import GeotechAgent
-from funhouse_agent.react_support import AgentResult
-from funhouse_agent.reviewers import (
-    make_seismic_reviewer,
-    make_seismic_reviewer_deep,
-    make_foundations_reviewer,
-    make_foundations_reviewer_deep,
-    make_earth_retention_reviewer,
-    make_earth_retention_reviewer_deep,
-    make_slope_fem_reviewer,
-    make_slope_fem_reviewer_deep,
-    make_pavement_specialist,
-    make_pavement_specialist_deep,
-    make_structural_specialist,
-    make_structural_specialist_deep,
-)
-from funhouse_agent._disclaimer import disclaimer
+import importlib as _importlib
+import importlib.util as _importlib_util
+
+#: Each public name -> the module that defines it.
+_LAZY = {
+    "GenAIEngine": "funhouse_agent.engine",
+    "ClaudeEngine": "funhouse_agent.engine",
+    "NativeToolEngine": "funhouse_agent.engine",
+    "PrompterBridgeEngine": "funhouse_agent.engine",
+    "USING_SDK_ENGINES": "funhouse_agent.engine",
+    "GeotechAgent": "funhouse_agent.agent",
+    "AgentResult": "funhouse_agent.react_support",
+    "make_seismic_reviewer": "funhouse_agent.reviewers",
+    "make_seismic_reviewer_deep": "funhouse_agent.reviewers",
+    "make_foundations_reviewer": "funhouse_agent.reviewers",
+    "make_foundations_reviewer_deep": "funhouse_agent.reviewers",
+    "make_earth_retention_reviewer": "funhouse_agent.reviewers",
+    "make_earth_retention_reviewer_deep": "funhouse_agent.reviewers",
+    "make_slope_fem_reviewer": "funhouse_agent.reviewers",
+    "make_slope_fem_reviewer_deep": "funhouse_agent.reviewers",
+    "make_pavement_specialist": "funhouse_agent.reviewers",
+    "make_pavement_specialist_deep": "funhouse_agent.reviewers",
+    "make_structural_specialist": "funhouse_agent.reviewers",
+    "make_structural_specialist_deep": "funhouse_agent.reviewers",
+    "disclaimer": "funhouse_agent._disclaimer",
+}
+
+
+def __getattr__(name):
+    """A public name from its module, or a submodule by its name (as
+    ``funhouse_agent.agent`` was reachable when this package imported it)."""
+    module = _LAZY.get(name)
+    if module is not None:
+        value = getattr(_importlib.import_module(module), name)
+        globals()[name] = value
+        return value
+    if not name.startswith("__"):
+        try:
+            spec = _importlib_util.find_spec(f"{__name__}.{name}")
+        except (ImportError, ValueError):
+            spec = None
+        if spec is not None:
+            return _importlib.import_module(f"{__name__}.{name}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY))
+
 
 __all__ = [
     "GeotechAgent",
