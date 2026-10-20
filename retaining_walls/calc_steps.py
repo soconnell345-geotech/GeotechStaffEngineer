@@ -503,9 +503,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN/m",
         notes=("c_a given directly (no 2/3 factor). " if sl["ca_given"]
                else "")
-              + ("P_p: Rankine passive resistance in front of the base"
-                 + (" and shear key" if getattr(geom, "has_shear_key", False)
-                    else "") + ". " if Pp > 0 else "")
+              + (("P_p: Rankine passive resistance on the shear key face "
+                  f"only, from the underside of the base ({sl['D_passive_top']:.2f} m) "
+                  f"to the bottom of the key ({sl['D_passive']:.2f} m), "
+                  "UFC 3-220-20 Fig. 4-29. "
+                  if sl.get("D_passive_top") else
+                  "P_p: Rankine passive resistance in front of the base. ")
+                 if Pp > 0 else "")
               + (f"V leaves out {sl['V_left_out']:.1f} kN/m of surcharge "
                  "over the heel, not a resisting force (see Choices)."
                  if sl.get("V_left_out", 0.0) > 0 else ""),

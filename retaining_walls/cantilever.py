@@ -346,7 +346,9 @@ def _sliding_terms(geom: CantileverWallGeometry,
     counted), ``V_left_out`` (the surcharge over the heel and the live
     load's share of Pv not counted, GM-157), the base interface
     ``delta_b`` (deg) and ``ca`` (kPa) with whether each was given,
-    ``Kp``, ``D_passive`` and ``Pp`` (None / 0 without passive),
+    ``Kp``, ``D_passive`` and ``Pp`` (None / 0 without passive; with a
+    shear key Pp acts on the key face, from ``D_passive_top`` = the base
+    thickness down to ``D_passive``, GM-210),
     ``resisting``, ``driving`` (= Ph) and ``FOS`` (None with no driving
     force)."""
     if phi_foundation is None:
@@ -382,18 +384,25 @@ def _sliding_terms(geom: CantileverWallGeometry,
 
     resisting = V * math.tan(math.radians(delta_b)) + ca * B
 
-    # Passive resistance (optional)
+    # Passive resistance (optional), with the soil in front taken up to the
+    # top of the base
     Pp = 0.0
-    Kp = D = None
+    Kp = D = D_top = None
     if include_passive:
         Kp = rankine_Kp(phi_foundation)
         if geom.has_shear_key and geom.key_depth > 0:
-            # Passive resistance on shear key depth
-            D = geom.key_depth
+            # On the face of the key only (GM-210): UFC 3-220-20 Sec.
+            # 4-5.1.3 and Fig. 4-29 (pp. 223-224), "the passive pressure is
+            # applied only along the depth of the key and not along the
+            # entire burial depth of the wall"; GEC-6 Fig. 5-22 likewise.
+            # The face runs from the underside of the base (depth t) to the
+            # bottom of the key (t + key_depth): the trapezoid between them.
+            D_top = geom.base_thickness
+            D = D_top + geom.key_depth
         else:
-            # Passive resistance on embedment (base_thickness)
-            D = geom.base_thickness
-        Pp = 0.5 * Kp * gamma_foundation * D ** 2
+            # On the embedment of the base (base_thickness)
+            D_top, D = 0.0, geom.base_thickness
+        Pp = 0.5 * Kp * gamma_foundation * (D ** 2 - D_top ** 2)
         resisting += Pp
 
     driving = Ph
@@ -410,7 +419,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
             "phi_foundation": phi_foundation,
             "delta_b": delta_b, "delta_b_given": delta_base is not None,
             "ca": ca, "ca_given": base_adhesion is not None,
-            "Kp": Kp, "D_passive": D, "gamma_foundation": gamma_foundation,
+            "Kp": Kp, "D_passive": D, "D_passive_top": D_top,
+            "gamma_foundation": gamma_foundation,
             "Pp": Pp, "resisting": resisting, "driving": driving,
             "Pa": Pa, "delta_deg": delta_deg,
             "no_driving_force": no_driving_force, "FOS": FOS}

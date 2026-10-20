@@ -444,6 +444,36 @@ class TestShearKeyPassive:
         assert r2["Pp_kN_per_m"] > r1["Pp_kN_per_m"]
         assert r2["FOS_sliding"] > r1["FOS_sliding"]
 
+    def test_shear_key_passive_on_the_key_face_only(self):
+        """GM-210: UFC 3-220-20 Fig. 4-29 (p. 224), 'the passive pressure
+        is applied only along the depth of the key and not along the entire
+        burial depth of the wall': the trapezoid on the key face, from the
+        underside of the base (t) to the bottom of the key (t + k). Before
+        GM-210 it was the triangle 1/2 Kp gamma k^2, as if the key's top
+        were at the ground surface: 9.7 kN/m here, now 29.2."""
+        t, k, gamma, phi = 0.6, 0.6, 18.0, 30.0
+        geom = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=t,
+            has_shear_key=True, key_depth=k)
+        r = check_sliding(geom, gamma, phi, include_passive=True)
+        Kp = rankine_Kp(phi)
+        assert r["Pp_kN_per_m"] == pytest.approx(
+            round(0.5 * Kp * gamma * ((t + k) ** 2 - t ** 2), 1))
+        assert r["Pp_kN_per_m"] == pytest.approx(29.2)
+        # a key shallower than 0.41 t gives less than the base alone
+        short = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=t,
+            has_shear_key=True, key_depth=0.2)
+        no_key = CantileverWallGeometry(
+            wall_height=5.0, base_width=3.0, toe_length=0.5,
+            stem_thickness_base=0.5, base_thickness=t)
+        assert check_sliding(short, gamma, phi, include_passive=True)[
+            "Pp_kN_per_m"] < check_sliding(no_key, gamma, phi,
+                                           include_passive=True)[
+            "Pp_kN_per_m"]
+
     def test_no_passive_by_default(self):
         """Passive resistance not included unless opt-in."""
         geom = CantileverWallGeometry(

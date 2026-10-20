@@ -524,3 +524,24 @@ friction, tan delta, will be equal to the tangent of the friction angle
 6.5.3(10), phi'cv;d "for cast-in-situ concrete foundations". Wave w13 F55
 turned on it: sliding 1.07 at the default, 1.72 at delta_b = phi_f. No
 number changes. EM 1110-2-2502 is not in the reference library.
+
+## Passive resistance on a shear key (GM-210, 2026-10-19)
+
+With `include_passive` the sliding check adds Rankine passive resistance in
+front of the wall, with the soil in front taken up to the top of the base:
+without a key on the base thickness t, Pp = 1/2 Kp gamma_f t^2. With
+`has_shear_key` it now acts on the key face only, from the underside of the
+base (depth t) to the bottom of the key (t + k): Pp = 1/2 Kp gamma_f
+[(t + k)^2 - t^2]. UFC 3-220-20 Sec. 4-5.1.3 and Fig. 4-29 (pp. 223-224):
+"the passive pressure is applied only along the depth of the key and not
+along the entire burial depth of the wall"; the figure draws the trapezoid
+on the key face. GEC-6 Sec. 5.4 Fig. 5-22 / Eq. 5-41 (pp. 100-101) draws the
+same and adds that keys in granular soils "are not very efficient in
+developing passive pressures"; its key method is for stiff, overconsolidated
+clays and soft rock. Before, the key took the triangle 1/2 Kp gamma_f k^2,
+as if the top of the key were at the ground surface. Wall 5.0 m, B 3.0 m,
+t = k = 0.6 m, phi 30, gamma 18: Pp 9.7 -> 29.2 kN/m, FOS_sliding 1.31 ->
+1.57. As printed, a key shallower than about 0.41 t gives less passive than
+the base alone. The check's surface is the top of the base; UFC adds "it is
+also prudent to consider some amount of future excavation in front of the
+wall". `sliding_basis` reports the Pp counted.

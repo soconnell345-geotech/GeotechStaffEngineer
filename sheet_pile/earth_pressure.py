@@ -17,6 +17,8 @@ import math
 import warnings
 from typing import Optional
 
+from geotech_common import log_spiral as _log_spiral
+
 
 def rankine_Ka(phi_deg: float) -> float:
     """Rankine active earth pressure coefficient.
@@ -169,63 +171,27 @@ def coulomb_Kp(phi_deg: float, delta_deg: float = 0.0,
 # Caquot-Kerisel (1948) log-spiral passive coefficient
 # ----------------------------------------------------------------------------
 
-# Base Kp at delta = phi (full wall friction), vertical wall, level backfill
-# (beta/phi = 0 curve), read off the Caquot & Kerisel (1948) chart as printed in
-# the Caltrans Trenching and Shoring Manual (2025), Figure 4-20, p. 4-30 (the
-# same chart: FHWA NHI-06-089 Figure 10-10, p. 10-22). Cross-read 2026-10-19
-# (BACKLOG GM-21): each value is the chart read, and agrees within 1 % with
-# Kp_Rankine(phi) / R(delta/phi = 0) from the printed R table (a smooth wall's
-# log-spiral Kp is the Rankine Kp). phi = 30 deg keeps 6.30, the value the
-# manual's own Example 8-1 reads off the chart (p. 8-12); the pixel read is 6.40,
-# inside reading accuracy. Before 2026-10-19 the table stopped at 40 deg and read
-# 35 and 40 deg low (9.20 and 14.0); phi = 0 is the chart's own origin (1.0).
-_CK_KP0_PHI = [0.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0]
-_CK_KP0 = [1.00, 1.65, 2.20, 3.00, 4.30, 6.30, 10.2, 17.7, 33.5]
-
-# Wall-friction reduction factor R = Kp(delta)/Kp(delta=phi), the table printed
-# on Caltrans T&S Figure 4-20 (p. 4-30) and, identically, FHWA NHI-06-089
-# Figure 10-10 (p. 10-22): phi 10-45 deg, -delta/phi 0 to 0.7 (Matrix 4-1, p.
-# 4-29, quotes the phi 30/32/35 rows of it). R = 1.0 at delta = phi by
-# definition; between 0.7 and 1.0 it is interpolated linearly. The printed
-# delta/phi = 0 column is kept for reference; the code anchors delta = 0 to the
-# Rankine Kp instead (see caquot_kerisel_Kp).
-_CK_R_PHI = [10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0]
-_CK_R_RATIO = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0]
-_CK_R = {
-    10.0: {0.0: 0.864, 0.1: 0.881, 0.2: 0.898, 0.3: 0.912, 0.4: 0.929, 0.5: 0.946, 0.6: 0.962, 0.7: 0.978, 1.0: 1.000},
-    15.0: {0.0: 0.775, 0.1: 0.803, 0.2: 0.830, 0.3: 0.854, 0.4: 0.881, 0.5: 0.907, 0.6: 0.934, 0.7: 0.961, 1.0: 1.000},
-    20.0: {0.0: 0.678, 0.1: 0.716, 0.2: 0.752, 0.3: 0.787, 0.4: 0.824, 0.5: 0.862, 0.6: 0.901, 0.7: 0.939, 1.0: 1.000},
-    25.0: {0.0: 0.574, 0.1: 0.620, 0.2: 0.666, 0.3: 0.711, 0.4: 0.759, 0.5: 0.808, 0.6: 0.860, 0.7: 0.912, 1.0: 1.000},
-    30.0: {0.0: 0.467, 0.1: 0.520, 0.2: 0.574, 0.3: 0.627, 0.4: 0.686, 0.5: 0.746, 0.6: 0.811, 0.7: 0.878, 1.0: 1.000},
-    35.0: {0.0: 0.362, 0.1: 0.417, 0.2: 0.475, 0.3: 0.536, 0.4: 0.603, 0.5: 0.674, 0.6: 0.752, 0.7: 0.836, 1.0: 1.000},
-    40.0: {0.0: 0.262, 0.1: 0.316, 0.2: 0.375, 0.3: 0.439, 0.4: 0.512, 0.5: 0.592, 0.6: 0.682, 0.7: 0.783, 1.0: 1.000},
-    45.0: {0.0: 0.174, 0.1: 0.221, 0.2: 0.276, 0.3: 0.339, 0.4: 0.414, 0.5: 0.500, 0.6: 0.600, 0.7: 0.718, 1.0: 1.000},
-}
-
-
-def _lininterp(x, xs, ys):
-    """Clamped piecewise-linear interpolation."""
-    if x <= xs[0]:
-        return ys[0]
-    if x >= xs[-1]:
-        return ys[-1]
-    for i in range(len(xs) - 1):
-        if xs[i] <= x <= xs[i + 1]:
-            t = (x - xs[i]) / (xs[i + 1] - xs[i])
-            return ys[i] + t * (ys[i + 1] - ys[i])
-    return ys[-1]
-
+# The chart's tables live in geotech_common.log_spiral (GM-183), shared with
+# the soe copy.
 
 def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
-                      Kp_initial: float = None) -> float:
-    """Caquot-Kerisel (1948) log-spiral passive earth-pressure coefficient.
+                      Kp_initial: float = None,
+                      beta_deg: float = 0.0) -> float:
+    """Caquot-Kerisel (1948) log-spiral passive coefficient Kp' = R * Kp0.
 
-    Kp' = R * Kp0, where Kp0 is the passive coefficient at delta = phi (read
-    from the log-spiral chart) and R = Kp(delta)/Kp(delta=phi) <= 1 reduces it
-    for the actual wall-friction ratio delta/phi. For a vertical wall and level
-    backfill this is the standard log-spiral passive value, which — unlike
-    Coulomb — does NOT over-predict Kp at high delta/phi (Coulomb assumes a
-    planar passive wedge; the true surface is a log spiral).
+    Kp0 is the passive coefficient at delta = phi, read off the Caquot-Kerisel
+    chart as printed in the Caltrans Trenching and Shoring Manual (Fig. 4-20,
+    p. 4-30; FHWA NHI-06-089 Fig. 10-10) for the ground slope beta in front
+    of the wall (beta/phi -0.9 to +1); R = Kp(delta)/Kp(delta=phi) <= 1, the
+    table printed on the same figure, reduces it for the wall friction.
+    Unlike Coulomb (planar wedge), the log-spiral surface does not
+    over-predict Kp at high delta/phi. For phi = 30 deg, delta/phi = 0.5,
+    Kp' = 6.30 * 0.746 = 4.70 (Caltrans Ex 8-1); for phi = 32, beta = 27,
+    delta = 14 deg, Kp0 ~= 19 and Kp' = 13 (the manual's p. 4-29 example).
+    On level ground, below delta/phi = 0.1 R runs to the Rankine anchor
+    R(0) = Kp_rankine(phi)/Kp0, so a smooth wall (delta = 0) returns the
+    Rankine Kp. The tables and the other printed sources (UFC 3-220-20
+    Fig. 4-13 and Eq. 4-12) are in ``geotech_common.log_spiral``.
 
     Parameters
     ----------
@@ -234,59 +200,18 @@ def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
     delta_deg : float, optional
         Wall friction angle (degrees). Default None -> delta = phi (R = 1.0).
     Kp_initial : float, optional
-        Chart-read base Kp at delta = phi. If None, taken from the digitized
-        Caquot-Kerisel chart (Caltrans T&S Fig 4-20, phi 0-45 deg; the phi = 30
-        anchor is the manual's Example 8-1 read, 6.30).
-
-    Returns
-    -------
-    float
-        Log-spiral passive coefficient Kp'.
-
-    Notes
-    -----
-    The reduction factor R is the table printed on Caltrans T&S Fig 4-20 (and
-    FHWA NHI-06-089 Fig 10-10): phi 10-45 deg, delta/phi 0-0.7; delta >= phi
-    gives R = 1.0, interpolated linearly from 0.7. For delta/phi below 0.1 R is
-    interpolated down to the Rankine anchor R(0) = Kp_rankine(phi)/Kp0, so a
-    smooth wall (delta = 0) returns exactly the Rankine Kp rather than clamping
-    to R(0.1)*Kp0 (which would
-    over-predict passive resistance and under-predict embedment). For phi = 30
-    deg, delta/phi = 0.5, Kp' = 6.30 * 0.746 = 4.70 (Caltrans Ex 8-1).
+        Chart-read base Kp at delta = phi. If None, from the digitized chart.
+    beta_deg : float, optional
+        Ground slope in front of the wall (degrees, + rising away from the
+        wall). Default 0, level ground.
 
     References
     ----------
-    Caquot & Kerisel (1948); Caltrans T&S Manual Section 4-6 / Fig 4-20 /
-    Matrix 4-1; NAVFAC DM-7.2.
+    Caquot & Kerisel (1948); Caltrans T&S Manual Sec 4-6 / Fig 4-20 / Matrix
+    4-1; FHWA NHI-06-089 Fig 10-10.
     """
-    if phi_deg < 0 or phi_deg > 50:
-        raise ValueError(f"Friction angle must be 0-50 degrees, got {phi_deg}")
-    Kp0 = Kp_initial if Kp_initial is not None else _lininterp(phi_deg, _CK_KP0_PHI, _CK_KP0)
-    if delta_deg is None or phi_deg <= 0:
-        return Kp0
-    ratio = min(max(delta_deg / phi_deg, 0.0), 1.0)
-    if ratio >= 1.0:
-        return Kp0
-
-    def _R_tab(r):
-        # Bilinear over the printed (phi, delta/phi) grid, clamped in phi.
-        cols = _CK_R_RATIO[1:]
-        phi_c = min(max(phi_deg, _CK_R_PHI[0]), _CK_R_PHI[-1])
-        r_row = [_lininterp(r, cols, [_CK_R[p][k] for k in cols])
-                 for p in _CK_R_PHI]
-        return _lininterp(phi_c, _CK_R_PHI, r_row)
-
-    lowest = _CK_R_RATIO[1]  # 0.1 -- lowest printed delta/phi column used
-    if ratio >= lowest:
-        R = _R_tab(ratio)
-    else:
-        # Between delta = 0 and the 0.1 column R is interpolated from the
-        # Rankine anchor R(0) = Kp_rankine(phi)/Kp0, so a smooth wall returns
-        # exactly the Rankine Kp (the printed R(0) times the chart Kp0 gives it
-        # within 2 %).
-        R0 = rankine_Kp(phi_deg) / Kp0
-        R = R0 + (ratio / lowest) * (_R_tab(lowest) - R0)
-    return Kp0 * R
+    return _log_spiral.caquot_kerisel_1948_Kp(
+        phi_deg, delta_deg, beta_deg=beta_deg, Kp_initial=Kp_initial)
 
 
 def K0(phi_deg: float) -> float:
