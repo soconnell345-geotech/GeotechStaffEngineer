@@ -824,7 +824,9 @@ def test_plot_data_says_when_one_figure_is_redrawn_again(tmp_path):
     assert "plot_code" in outs[2]["redraw_note"]
 
 
-def test_off_by_default_then_offered_to_both_helpers(monkeypatch):
+def test_on_by_default_offered_to_both_helpers_and_0_turns_it_off(
+        monkeypatch):
+    """GM-227 (owner, GM-92, 2026-10-15: "on everywhere")."""
     from funhouse_agent.deep.agent import build_calc_subagent
     from funhouse_agent.deep.figure_helper import (PLOT_CODE_STEP,
                                                    build_figure_subagent)
@@ -832,12 +834,17 @@ def test_off_by_default_then_offered_to_both_helpers(monkeypatch):
     def names(spec):
         return {t.name for t in spec["tools"]}
 
-    monkeypatch.delenv(review_flags.PLOT_CODE_ENV, raising=False)
+    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "0")
     assert "plot_code" not in names(build_calc_subagent())
     fig = build_figure_subagent()
     assert fig is None or "plot_code" not in names(fig)
 
-    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "1")
+    for value in (None, "1"):          # unset (the default), then set
+        if value is None:
+            monkeypatch.delenv(review_flags.PLOT_CODE_ENV, raising=False)
+        else:
+            monkeypatch.setenv(review_flags.PLOT_CODE_ENV, value)
+        assert "plot_code" in names(build_calc_subagent()), value
     calc = build_calc_subagent()
     assert "plot_code" in names(calc)
     assert "plot_code" in calc["system_prompt"]
@@ -845,3 +852,52 @@ def test_off_by_default_then_offered_to_both_helpers(monkeypatch):
     if fig is not None:
         assert "plot_code" in names(fig)
         assert fig["system_prompt"].endswith(PLOT_CODE_STEP)
+
+
+def test_a_host_without_the_box_builds_both_pages_without_it(monkeypatch):
+    """GM-227: on by default, so a host where the box cannot run (no
+    matplotlib, or the child file missing) must still build both pages,
+    with the figure helper on plot_data alone and no plot_code anywhere."""
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from funhouse_agent.deep import agent as agent_mod
+    from webapp.profiles import DOCUMENT_REVIEW
+
+    class _Quiet(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "quiet"
+
+        def bind_tools(self, tools, **kw):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            return ChatResult(generations=[ChatGeneration(
+                message=AIMessage(content="done"))])
+
+    for env in review_flags.ALL_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    monkeypatch.setattr(plot_box, "available", lambda: False)
+    builds = []
+    real = agent_mod.create_deep_agent
+
+    def spy(**k):
+        builds.append(k)
+        return real(**k)
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    agent_mod.build_deep_agent(model=_Quiet(), enable_calc_subagent=True)
+    agent_mod.build_deep_agent(model=_Quiet(),
+                               **DOCUMENT_REVIEW.build_kwargs())
+    # One build per page; a deepagents that leaves out the todo
+    # middleware is rebuilt once with it, so CI's newer stack sees four.
+    assert len(builds) in (2, 4)
+    for k in builds:
+        helpers = {s.get("name"): s for s in k["subagents"]}
+        assert "figure" in helpers
+        assert "plot_code" not in {getattr(t, "name", None)
+                                   for t in k["tools"]}
+        for spec in helpers.values():
+            assert "plot_code" not in {getattr(t, "name", None)
+                                       for t in spec.get("tools") or []}

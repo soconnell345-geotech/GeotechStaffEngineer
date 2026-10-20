@@ -210,7 +210,7 @@ that day (tests: `tests/test_data_plot_maps.py`):
 each with what it shows and why it is drawn that way: `plan_borings`,
 `spt_profile`, `cases`, `time_settlement`, `load_settlement` and
 `exceedance`. The figure helper (`funhouse_agent/deep/figure_helper.py`,
-behind `GEOTECH_FIGURE_HELPER`, OFF by default) fetches one by name through
+behind `GEOTECH_FIGURE_HELPER`, ON by default since 2026-10-20) fetches one by name through
 its `figure_examples` tool, a near name matched by shared words and then by
 spelling, and adapts it; `render_examples(out_dir)` draws them all. Every
 number in the file is invented.

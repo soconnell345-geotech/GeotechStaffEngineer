@@ -200,7 +200,10 @@ def test_mode_needs_the_switch_and_a_build_that_asks_for_a_consult(
     class Agent:
         geotech_judgment_consult = True
 
+    # on by default (GM-226, 2026-10-20)
     monkeypatch.delenv(review_flags.JUDGMENT_CALLS_ENV, raising=False)
+    assert jc.mode_for(Agent()) == "retry"
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "0")
     assert jc.mode_for(Agent()) == "off"
     monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
     assert jc.mode_for(Agent()) == "retry"

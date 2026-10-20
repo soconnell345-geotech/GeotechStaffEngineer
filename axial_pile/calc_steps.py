@@ -571,8 +571,16 @@ def _auto_method_notes(result, analysis=None) -> str:
                        if lb.get("adhesion_chart", "Fig. 7-17") == "Fig. 7-17"
                        else f"{lb['fig_7_18_case'].replace('_', ' ')}, D/b "
                             f"into the clay = {lb['D_over_b_fig_7_18']:.1f}")
+            line = getattr(analysis, "highly_overconsolidated_su_ratio", None)
             parts.append(f"{where}: {reading}, \u03b1 = "
                          f"{lb['alpha']:.2f} ({lb['adhesion_source']})"
+                         # past the chart: the layer's side of the
+                         # engineer's line (GM-229)
+                         + (f", s_u/\u03c3'_vo = {lb['su_over_sigma_v']:.2f}"
+                            + (" \u2265 " if lb["highly_overconsolidated"]
+                               else " < ") + f"{line:g}"
+                            if "highly_overconsolidated" in lb
+                            and line is not None else "")
                          + (", \u00d7 0.8 (Eq. 7-90)"
                             if "eq_7_90_factor" in lb else "")
                          + (f", none in the shrink-swell zone "

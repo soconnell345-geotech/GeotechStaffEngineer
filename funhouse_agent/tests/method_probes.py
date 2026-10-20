@@ -169,6 +169,11 @@ NOT_REACHED = {
     ("axial_pile|capacity_vs_depth", "toe_stress_limit"): _TOE_LIMIT,
     ("axial_pile|capacity_vs_depth", "toe_phi_zone"): _ONE_SAND,
     ("axial_pile|capacity_vs_depth#clay", "adhesion_curve"): _ADHESION,
+    # GM-229: su past Fig. 7-17's curves, above the line the probe gives
+    ("axial_pile|axial_pile_capacity#overconsolidated", "adhesion_curve"):
+        _ADHESION,
+    ("axial_pile|capacity_vs_depth#overconsolidated", "adhesion_curve"):
+        _ADHESION,
     ("calc_package|axial_pile_package", "toe_stress_limit"): _TOE_LIMIT,
     ("calc_package|axial_pile_package", "toe_phi_zone"): _ONE_SAND,
     **{(k, "beta_method"): _ALL_CLAY for k in (

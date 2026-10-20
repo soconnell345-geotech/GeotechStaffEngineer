@@ -181,10 +181,11 @@ class TestTomlinson:
         assert hi == pytest.approx(1.106 * KSF, rel=1e-6)
 
     def test_alpha_soft_clay_about_one(self):
-        """Very soft clay (su = 10 kPa, below the chart's 0.25 ksf start):
-        the curve's starting alpha, at most 1."""
+        """Very soft clay (su = 10 kPa, below the curves' 0.25 ksf start):
+        the curve's alpha at its start, as drawn (GM-229: 1.04 on the solid
+        curve, no longer held at 1)."""
         assert alpha_tomlinson(10, "steel") == pytest.approx(0.92, abs=0.005)
-        assert alpha_tomlinson(10, "concrete") == pytest.approx(1.0)
+        assert alpha_tomlinson(10, "concrete") == pytest.approx(1.04)
 
     def test_smooth_steel_at_or_below_the_corrugated_curve(self):
         for cu in [25, 50, 100, 140]:
@@ -209,35 +210,28 @@ class TestTomlinson:
                                   notes=notes)
         assert source == "Fig. 7-17 end"
         assert ca_end == pytest.approx(1.279 * KSF, rel=1e-6)
-        assert len(notes) == 1 and "beyond GEC-12 Figure 7-17" in notes[0]
+        assert len(notes) == 1 and "past the end of GEC-12 Figure 7-17"             in notes[0] and notes[0].startswith("alpha method")
         ca, source = adhesion(su, 40, "smooth_steel", sigma_v=sv,
                               beyond_chart="api")
         assert source == "API alpha"
         psi = su / sv
         assert ca == pytest.approx(0.5 * psi ** -0.25 * su, rel=1e-9)
 
-    def test_ca_at_most_su(self):
-        """Within the chart Ca is at most su (alpha <= 1): below, at and
-        above the point where the D = 40b solid curve crosses Ca = su."""
+    def test_ca_read_as_drawn(self):
+        """GM-229 (owner OWN-63): within the chart Ca is Fig. 7-17 as
+        drawn, above su where the D = 40b solid curve passes above Ca = su
+        (alpha about 1.1 at 1.0 ksf); the alpha method's steps set no
+        limit, API RP 2A's alpha <= 1.0 is the API method's."""
         solid = "concrete_timber_corrugated"
         for su_ksf in (1.0, 1.2):          # the chart is above su here
             su = su_ksf * KSF
-            assert adhesion_fig_7_17(su, 40, solid) > su
-            assert adhesion(su, 40, solid) == (su, "Fig. 7-17, at most su")
+            ca = adhesion_fig_7_17(su, 40, solid)
+            assert ca > su
+            assert adhesion(su, 40, solid) == (ca, "Fig. 7-17")
         su = 2.0 * KSF                     # the chart is below su here
         assert adhesion(su, 40, solid) == (
             adhesion_fig_7_17(su, 40, solid), "Fig. 7-17")
-        # where the chart meets su the two agree
-        lo, hi = 1.2, 2.0
-        for _ in range(60):
-            mid = (lo + hi) / 2
-            if adhesion_fig_7_17(mid * KSF, 40, solid) > mid * KSF:
-                lo = mid
-            else:
-                hi = mid
-        at = lo * KSF
-        assert adhesion(at, 40, solid)[0] == pytest.approx(at, rel=1e-9)
-        assert alpha_tomlinson(1.0 * KSF, "concrete", D_over_b=40) == 1.0
+        assert alpha_tomlinson(1.0 * KSF, "concrete", D_over_b=40) ==             pytest.approx(1.106)
 
     def test_api_alpha_equations(self):
         """GEC-12 Eqs. 7-13 to 7-15, at most 1.0."""

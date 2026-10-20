@@ -9,7 +9,10 @@ Auto-selects the appropriate method for each soil layer:
 Also supports the beta (effective stress) method for any soil type.
 
 Each method follows the GEC-12 step-by-step procedure, with its limits:
-sigma'p at the toe limited to 3 ksf for the Nordlund toe (Step 8); an
+sigma'p at the toe limited to 3 ksf for the Nordlund toe (Step 8); the
+alpha method's Ca read off Figure 7-17 as drawn (Step 1), and past the
+chart's curves API RP 2A's alpha where the clay is highly overconsolidated
+(p. 247), by an su / sigma'vo the engineer gives; an
 open-end pipe pile as the lesser of the plugged and unplugged cases (Eqs.
 7-88/7-89), with the interior side resistance a fraction of the exterior,
 the soil plug weight subtracted and Tomlinson's 105 ksf limiting unit toe
@@ -37,9 +40,9 @@ import numpy as np
 from axial_pile.pile_types import PileSection
 from axial_pile.soil_profile import AxialSoilProfile, AxialSoilLayer
 from axial_pile.tomlinson import (
-    AT_MOST_SU, BEYOND_SOURCES, CURVES, FIG_7_18_CASES, SAND_OVER_STIFF_CLAY,
-    STIFF_CLAY, adhesion, adhesion_fig_7_18, curve_for_pile,
-    end_bearing_cohesive,
+    BEYOND_SOURCES, CHART_END_KSF, CURVES, FIG_7_18_CASES,
+    SAND_OVER_STIFF_CLAY, STIFF_CLAY, adhesion, adhesion_fig_7_18,
+    curve_for_pile, end_bearing_cohesive, fig_7_18_range_ksf,
 )
 from axial_pile.nordlund import (
     FIG_7_9_CURVE, KSF, SIGMA_P_LIMIT, delta_phi_ratio_fig_7_9,
@@ -85,13 +88,24 @@ _NORDLUND_OVERPREDICT_WIDTH = 24 * _INCH
 
 _OPEN_PIPE_METHODS = ("auto", "paikowsky_whitman", "tomlinson")
 _ADHESION_CURVES = ("auto",) + tuple(CURVES)
-_BEYOND_CHART = ("api", "chart_end")
+#: The alpha method where su is past the charts' curves: API alpha where
+#: the clay is highly overconsolidated (GEC-12 p. 247 and Step 1, p. 250),
+#: by the su / sigma'vo the engineer gives, Ca held at the curve's end
+#: elsewhere; or one of the two in every such layer.
+API_IF_HIGHLY_OC = "api_if_highly_overconsolidated"
+_BEYOND_CHART = (API_IF_HIGHLY_OC, "chart_end", "api")
 _H_TOE_AREAS = ("box", "steel")
 #: GEC-12 p. 246: Figure 7-17 generally, Figure 7-18 for its stratigraphy
 #: cases, and the smaller of the two for the inexperienced user.
 _ADHESION_CHARTS = ("fig_7_17", "fig_7_18", "smaller")
 _BETA_COEFFICIENTS = ("from_phi", "table_7_9")
 _TOE_PHI_ZONES = ("toe_layer", "average_3b")
+
+
+class JudgmentNeeded(ValueError):
+    """A step of the manual leaves a call to the engineer, the run needs
+    it and no input gives it: the analysis is refused, saying which call
+    and what to give."""
 
 
 @dataclass
@@ -165,10 +179,23 @@ class AxialPileAnalysis:
         curve for H-piles per GEC-12 p. 247, concrete and timber piles),
         "concrete_timber_corrugated" or "smooth_steel".
     adhesion_beyond_chart : str, optional
-        Where su exceeds Figure 7-17: "chart_end" (default; Ca held at the
-        curve's end, as GEC-12's worked example, Vol 3 Table D-100, did) or
-        "api" (alpha from API RP 2A, which GEC-12 p. 247 recommends for
-        highly overconsolidated clays). Within the chart Ca is at most su.
+        The alpha method where a clay layer's su is past the end of the
+        chart's curves (Figure 7-17, or 7-18 where it is read). GEC-12 p.
+        247 and Step 1 (p. 250) recommend API RP 2A's alpha there for
+        highly overconsolidated clays. "api_if_highly_overconsolidated"
+        (default): API alpha where the layer's su / sigma'vo is at least
+        ``highly_overconsolidated_su_ratio``, Ca held at the curve's end
+        where it is less. "chart_end" holds Ca at the curve's end in every
+        such layer (GEC-12's worked example, Vol 3 Table D-100, did); "api"
+        takes API alpha in every such layer. Within the curves Ca is read
+        as drawn.
+    highly_overconsolidated_su_ratio : float or None, optional
+        The su / sigma'vo at and above which a clay is highly
+        overconsolidated, for ``adhesion_beyond_chart``
+        "api_if_highly_overconsolidated". GEC-12 gives no value: it is the
+        engineer's judgment. Default None: an analysis with a clay layer
+        past the curves is refused until it is given (sigma'vo at the
+        middle of the layer's length along the pile).
     displaced_volume : float or None, optional
         Displaced volume V per unit length (m3/m) for the Nordlund charts.
         Default None: the steel area of an H-pile, the gross area of other
@@ -244,7 +271,8 @@ class AxialPileAnalysis:
     cohesive_Nt: float = COHESIVE_NT
     h_pile_toe_area: str = "box"
     adhesion_curve: str = "auto"
-    adhesion_beyond_chart: str = "chart_end"
+    adhesion_beyond_chart: str = API_IF_HIGHLY_OC
+    highly_overconsolidated_su_ratio: Optional[float] = None
     displaced_volume: Optional[float] = None
     adhesion_chart: str = "fig_7_17"
     shrink_swell_depth: Optional[float] = None
@@ -277,7 +305,8 @@ class AxialPileAnalysis:
             raise ValueError("inside_friction_ratio must be between 0 and 1, "
                              f"got {self.inside_friction_ratio}")
         for name in ("toe_stress_limit", "open_pipe_toe_limit",
-                     "displaced_volume", "shrink_swell_depth"):
+                     "displaced_volume", "shrink_swell_depth",
+                     "highly_overconsolidated_su_ratio"):
             value = getattr(self, name)
             if value is not None and value <= 0:
                 raise ValueError(f"{name} must be > 0 or None, got {value}")
@@ -456,6 +485,14 @@ class AxialPileAnalysis:
                     "and should be carefully analyzed.")
         else:
             Qt = toe(self._toe_area(), toe_details)
+
+        # The alpha method past the chart's curves, where the engineer's
+        # highly overconsolidated line would change the answer and is not
+        # given: refused, naming every such layer (GM-229).
+        wanted = [lb.pop("line_needed") for lb in layer_results
+                  if "line_needed" in lb]
+        if wanted:
+            raise JudgmentNeeded(self._line_needed(wanted))
 
         Q_ultimate = total_Qs + Qt - plug_weight
         Q_allowable = Q_ultimate / self.factor_of_safety
@@ -765,12 +802,12 @@ class AxialPileAnalysis:
                           f"{limit:.1f} kPa; sigma'v at the toe "
                           f"{sigma_v_tip:.1f} kPa)")
             out.append(choice(
-                "sigma'p at the toe", chosen,
+                "sigma'p at the toe (Nordlund, Step 8)", chosen,
                 how_given(limit, _TOE_STRESS_LIMIT, name="toe_stress_limit"),
-                "GEC-12 Sec. 7.2.1.3.1 Step 8 (p. 244): 'The limiting value "
-                "of sigma'p is 3 ksf' (144 kPa), Nordlund's recommendation "
-                "(p. 234); GEC-12's worked example (Vol 3, Table D-6, "
-                "DrivenPiles) did not apply it",
+                "Nordlund method, Step 8 (GEC-12 Sec. 7.2.1.3.1, p. 244): "
+                "'The limiting value of sigma'p is 3 ksf' (144 kPa), as "
+                "Nordlund recommended (p. 234); GEC-12's worked example (Vol "
+                "3, Table D-6) did not apply it",
                 ["sigma'p limited to 3 ksf (toe_stress_limit 143.6)"
                  if limit is None else "no limit (toe_stress_limit None)"]))
         if "toe_phi_deg" in toe_details and plug_case != "eq_7_90":
@@ -1045,38 +1082,57 @@ class AxialPileAnalysis:
         read_17 = [lb for lb in clay if "fig_7_17_source" in lb]
         if read_17:
             curve = self._adhesion_curve()
-            chosen = f"Fig. 7-17, {CURVES[curve]} curves"
+            chosen = f"Fig. 7-17, the curves for {CURVES[curve]}"
             if self.adhesion_curve == "auto":
                 chosen += " (by pile type)"
-            if self.pile.pile_type == "h_pile":
+            h_pile = self.pile.pile_type == "h_pile"
+            if h_pile:
                 chosen += ", on the box perimeter"
             out.append(choice(
                 "adhesion (alpha-method)", chosen,
                 how_given(self.adhesion_curve, "auto",
                           name="adhesion_curve"),
-                "GEC-12 Step 1 (p. 250): Ca from Fig. 7-17 by su, pile type "
-                "and D/b, D from the ground surface to the bottom of the "
-                "clay layer or to the toe if less (p. 246), linear between "
-                "the D = 10b and 40b curves; H-piles: the corrugated pile "
-                "curve times the box area (p. 247); GEC-12's worked example "
-                "(Vol 3, Table D-100, DrivenPiles) used the smooth steel "
-                "curves for an H-pile",
-                [f"{CURVES[c]} curves (adhesion_curve '{c}')"
+                "alpha method, Step 1 (GEC-12 p. 250): Ca from Fig. 7-17 "
+                "(p. 248) by su, pile type and D/b, linear between the D = "
+                "10b and 40b curves"
+                + ("; an H-pile takes the corrugated pile curve times the "
+                   "box area (p. 247); GEC-12's worked example (Vol 3, Table "
+                   "D-100) used the smooth steel curves for its H-pile"
+                   if h_pile else ""),
+                [f"the curves for {CURVES[c]} (adhesion_curve '{c}')"
                  for c in CURVES if c != curve]))
-            capped = sum(lb.get("fig_7_17_source") == AT_MOST_SU
-                         and lb.get("adhesion_chart") == "Fig. 7-17"
-                         for lb in clay)
+            ratios = [lb["D_over_b"] for lb in read_17]
             out.append(choice(
-                "adhesion limit (alpha-method)",
-                "Ca at most su (alpha <= 1)"
-                + (f"; it governed in {capped} layer(s)" if capped else ""),
+                "D for Fig. 7-17 (alpha method)",
+                "from the ground surface to the bottom of each clay layer, "
+                "or to the toe if less (D/b "
+                + (f"{min(ratios):.1f}" if len(set(ratios)) == 1 else
+                   f"{min(ratios):.1f}-{max(ratios):.1f}") + ")",
                 MODULE,
-                "API RP 2A takes alpha at most 1.0 (GEC-12 p. 252: 'An alpha "
-                "value of 1.0 is recommended for unconsolidated clays'), and "
-                "p. 247 takes su on an H-pile's soil-to-soil faces; Fig. "
-                "7-17 as drawn passes above Ca = su at low su (the D = 40b "
-                "concrete, timber and corrugated curve up to about 1.5 ksf)",
-                ["uncapped, Fig. 7-17 as drawn (not offered)"]))
+                "alpha method: p. 246 takes Fig. 7-17's embedded length D "
+                "as 'the minimum value of the length from the ground surface "
+                "to the bottom of the clay layer, or the length from the "
+                "ground surface to the pile toe', as the figure's legend (p. "
+                "248) has it; Step 1's 'embedded pile length in clay, D' "
+                "(p. 250) is read the same way"))
+            above = [lb["alpha"] for lb in read_17
+                     if lb.get("adhesion_chart") == "Fig. 7-17"
+                     and lb.get("fig_7_17_source") == "Fig. 7-17"
+                     and lb.get("alpha", 0.0) > 1.0 + 1e-9]
+            out.append(choice(
+                "Ca above su (alpha method)",
+                "Fig. 7-17 as drawn, no limit on Ca"
+                + (f"; Ca above su in {len(above)} layer(s), alpha up to "
+                   f"{max(above):.2f}" if above else ""),
+                MODULE,
+                "alpha method, Steps 1 and 2 (p. 250): Ca from Fig. 7-17 and "
+                "fs = Ca (Eq. 7-10), with no limit; the figure's D = 40b "
+                "concrete, timber and corrugated curve passes above Ca = su "
+                "below su of about 1.5 ksf (alpha about 1.1 at su = 1.0 "
+                "ksf). The limit alpha <= 1.0 is API RP 2A's, part of the "
+                "API method (Sec. 7.2.1.3.3; p. 252 recommends alpha 1.0 for "
+                "unconsolidated clays), and applies where API alpha is "
+                "taken"))
 
         read_18 = [lb for lb in clay if "fig_7_18_case" in lb]
         if chart != "fig_7_17" and not eq_7_90:
@@ -1121,36 +1177,90 @@ class AxialPileAnalysis:
                 "Ca of the two charts (alpha-method)", "; ".join(parts),
                 MODULE, "GEC-12 p. 246: the smaller value governs"))
 
+        modes = {
+            API_IF_HIGHLY_OC: "API RP 2A's alpha where the clay is highly "
+                              "overconsolidated, Ca held at the curve's end "
+                              "elsewhere",
+            "chart_end": "Ca held at the curve's end in every such layer",
+            "api": "API RP 2A's alpha (Eqs. 7-13/7-14) in every such layer"}
         for which, rows, text in (
                 ("Fig. 7-17", read_17, "fig_7_17_source"),
                 ("Fig. 7-18", read_18, "fig_7_18_source")):
             if not any(lb.get(text) in BEYOND_SOURCES for lb in rows):
                 continue
-            chosen = ("alpha from API RP 2A (Eqs. 7-13/7-14)"
-                      if self.adhesion_beyond_chart == "api"
-                      else "Ca held at the curve's end")
-            basis = ("GEC-12's worked example (Vol 3, Table D-100) held Ca "
-                     "at the chart's end; p. 247 (and Step 1) recommends "
-                     "alpha by API RP 2A (Sec. 7.2.1.3.3) for highly "
-                     "overconsolidated clays whose su exceeds the charts")
+            basis = ("alpha method, Step 1 (p. 250) and p. 247: where su "
+                     "exceeds the charts in highly overconsolidated clays, "
+                     "alpha by API RP 2A (Sec. 7.2.1.3.3, Eqs. 7-13 to "
+                     "7-15, p. 251); GEC-12's worked example (Vol 3, Table "
+                     "D-100) held Ca at the chart's end")
             if which == "Fig. 7-17":
-                basis += ("; at the chart's end Ca jumps (the concrete, "
-                          "timber and corrugated curves end at su = 3.45 ksf "
-                          "with Ca 0.83-1.37 ksf for D = 10b-40b; API alpha "
-                          "there at sigma'v 4 ksf gives 1.86 ksf)")
+                basis += ("; the concrete, timber and corrugated curves end "
+                          "at su = 3.45 ksf and the smooth steel curves at "
+                          "3.05 ksf, and API alpha there can make Ca jump")
             else:
                 basis += ("; Fig. 7-18's curves end at su = 5.0 ksf (top "
                           "and bottom graphs) and about 4.6-4.8 ksf (middle "
                           "graph)")
+            mode = self.adhesion_beyond_chart
+            chosen = modes[mode]
+            if mode == API_IF_HIGHLY_OC \
+                    and self.highly_overconsolidated_su_ratio is None:
+                # the run was not refused: the line changes nothing here
+                chosen = ("Ca held at the curve's end: no highly "
+                          "overconsolidated line was given, and either side "
+                          "of one gives the same answer here (the other "
+                          "chart governs, or the layer is in the "
+                          "shrink-swell zone)")
             out.append(choice(
-                f"su beyond {which}", chosen,
-                how_given(self.adhesion_beyond_chart, "chart_end",
+                f"su past {which} (alpha method)", chosen,
+                how_given(mode, API_IF_HIGHLY_OC,
                           name="adhesion_beyond_chart"),
                 basis,
-                ["Ca held at the curve's end (adhesion_beyond_chart "
-                 "'chart_end')"
-                 if self.adhesion_beyond_chart == "api" else
-                 "API alpha (adhesion_beyond_chart 'api')"]))
+                [f"{t} (adhesion_beyond_chart '{key}')"
+                 for key, t in modes.items() if key != mode]))
+        sides = [lb for lb in clay if "highly_overconsolidated" in lb]
+        if sides:
+            out.append(choice(
+                "highly overconsolidated clay (alpha method)",
+                f"su / sigma'vo at or above "
+                f"{self.highly_overconsolidated_su_ratio:g}: "
+                + "; ".join(self._sides(sides)),
+                how_given(self.highly_overconsolidated_su_ratio, None,
+                          name="highly_overconsolidated_su_ratio"),
+                "alpha method: p. 247 and Step 1 (p. 250) recommend API RP "
+                "2A's alpha for highly overconsolidated clays whose su "
+                "exceeds the charts, and GEC-12 gives no su / sigma'vo at "
+                "which a clay becomes highly overconsolidated: the line is "
+                "the engineer's judgment; sigma'vo at the middle of each "
+                "layer's length along the pile. The 1.0 in Eqs. 7-13 and "
+                "7-14 (p. 251) chooses between API's two expressions for "
+                "alpha; it does not define a highly overconsolidated clay"))
+        return out
+
+    @staticmethod
+    def _sides(rows: List[dict]) -> List[str]:
+        """Each run of contiguous clay layers past the chart on one side of
+        the highly overconsolidated line: depths, su / sigma'vo and what the
+        alpha method took there."""
+        runs: List[list] = []
+        for lb in rows:
+            high = lb["highly_overconsolidated"]
+            ratio = lb["su_over_sigma_v"]
+            if runs and runs[-1][0] == high \
+                    and abs(runs[-1][2] - lb["depth_top_m"]) < 1e-6:
+                runs[-1][2] = lb["depth_bottom_m"]
+                runs[-1][3].append(ratio)
+            else:
+                runs.append([high, lb["depth_top_m"], lb["depth_bottom_m"],
+                             [ratio]])
+        out = []
+        for high, top, bottom, ratios in runs:
+            lo, hi = min(ratios), max(ratios)
+            span = f"{lo:.2f}" if f"{lo:.2f}" == f"{hi:.2f}" else \
+                f"{lo:.2f}-{hi:.2f}"
+            out.append(f"{top:g}-{bottom:g} m, su / sigma'vo {span}: "
+                       + ("highly overconsolidated, API alpha" if high else
+                          "below the line, Ca held at the curve's end"))
         return out
 
     def _beta_choice(self, layer_results, tip_layer,
@@ -1230,11 +1340,13 @@ class AxialPileAnalysis:
         cuts.sort()
         zone = (self.shrink_swell_depth
                 if layer.soil_type == "cohesive" else None)
+        sigma_v_mid = self.soil.effective_stress_at_depth((z_top + z_bottom) / 2)
 
         Qs = 0.0
         counted = 0.0
         method_used = ""
         info: dict = {}
+        line_needed = None
         for za, zb in zip(cuts[:-1], cuts[1:]):
             seg_thickness = zb - za
             sigma_v = self.soil.effective_stress_at_depth((za + zb) / 2)
@@ -1272,10 +1384,17 @@ class AxialPileAnalysis:
                         "C_F": f["C_F"]}
             else:
                 ca, info = self._adhesion(layer, layer_bottom, sigma_v,
-                                          stratum, notes, chart)
+                                          stratum, notes, chart,
+                                          sigma_v_layer=sigma_v_mid,
+                                          where=(z_top, z_bottom),
+                                          counts=share > 0)
+                # any segment the highly overconsolidated line would change
+                line_needed = info.pop("line_needed", line_needed)
                 Qs += share * ca * perimeter * seg_thickness
                 method_used = "tomlinson"
 
+        if line_needed is not None:
+            info["line_needed"] = line_needed
         if zone is not None and counted < z_bottom - z_top:
             info["shrink_swell_m"] = (z_bottom - z_top) - counted
         if method_used == "tomlinson" and z_bottom > z_top and perimeter > 0:
@@ -1283,18 +1402,44 @@ class AxialPileAnalysis:
             # for a shrink-swell zone)
             info["alpha"] = (Qs / (perimeter * counted * layer.cohesion)
                              if counted > 0 else ca / layer.cohesion)
-        sigma_v_mid = self.soil.effective_stress_at_depth((z_top + z_bottom) / 2)
         return Qs, sigma_v_mid, method_used, info
+
+    def _beyond_chart(self, su: float, sigma_v: float
+                      ) -> Tuple[Optional[str], dict]:
+        """(how the alpha method takes Ca where this clay layer's su is past
+        the chart's curves, "api" or "chart_end", or None where the
+        default needs ``highly_overconsolidated_su_ratio`` and it is not
+        given; the layer's su / sigma'vo and the side of that line it is
+        on, for the default)."""
+        if self.adhesion_beyond_chart != API_IF_HIGHLY_OC:
+            return self.adhesion_beyond_chart, {}
+        ratio = su / sigma_v if sigma_v > 0 else float("inf")
+        reading = {"su_over_sigma_v": ratio}
+        line = self.highly_overconsolidated_su_ratio
+        if line is None:
+            return None, reading
+        reading["highly_overconsolidated"] = ratio >= line
+        return ("api" if ratio >= line else "chart_end"), reading
 
     def _adhesion(self, layer: AxialSoilLayer, layer_bottom: float,
                   sigma_v: float, stratum: Optional[Tuple[str, float, str]],
-                  notes: Optional[List[str]], chart: Optional[str] = None
+                  notes: Optional[List[str]], chart: Optional[str] = None,
+                  sigma_v_layer: Optional[float] = None,
+                  where: Tuple[float, float] = (0.0, 0.0),
+                  counts: bool = True
                   ) -> Tuple[float, dict]:
         """(Ca in kPa, its readings) of a clay layer by ``chart`` (default
         ``adhesion_chart``):
         Figure 7-17, Figure 7-18 for the layer's stratigraphy case, or the
-        smaller of the two (GEC-12 p. 246). The notes of a chart not used
-        are left out."""
+        smaller of the two (GEC-12 p. 246). ``sigma_v`` is the segment's
+        sigma'vo (API alpha's), ``sigma_v_layer`` the layer's at the middle
+        of its length along the pile (``where``, m), which decides whether
+        it is highly overconsolidated. Where the layer is past the chart's
+        curves, no line is given and the line would change the Ca that
+        counts (``counts``: the segment is below any shrink-swell zone),
+        the readings carry ``line_needed`` and :meth:`compute` refuses the
+        run, naming every such layer. The notes of a chart not used are
+        left out."""
         bottom = min(layer_bottom, self._tip_depth)
         # Fig. 7-17's D: ground surface to the bottom of the clay layer, or
         # to the toe if less (GEC-12 p. 246).
@@ -1302,32 +1447,58 @@ class AxialPileAnalysis:
         info: dict = {"D_over_b": D_over_b}
         case = stratum[0] if stratum else "none"
         chart = chart or self.adhesion_chart
-        readings = {}
-        if chart in ("fig_7_17", "smaller") or case == "none":
-            own: List[str] = []
-            ca, source = adhesion(
-                layer.cohesion, D_over_b, self._adhesion_curve(),
-                sigma_v=sigma_v, beyond_chart=self.adhesion_beyond_chart,
-                notes=own)
-            readings["Fig. 7-17"] = (ca, source, own)
-            info["fig_7_17_source"] = source
-        if chart in ("fig_7_18", "smaller") and case != "none":
-            # Fig. 7-18's D: the penetration into the clay stratum, from its
-            # top (the ground surface in the bottom graph) to the bottom of
-            # the layer, or to the toe if less.
-            D18 = (bottom - stratum[1]) / self.pile.width
-            own = []
-            ca, source = adhesion_fig_7_18(
-                layer.cohesion, D18, case, sigma_v=sigma_v,
-                beyond_chart=self.adhesion_beyond_chart, notes=own)
-            readings["Fig. 7-18"] = (ca, source, own)
+        beyond, reading = self._beyond_chart(
+            layer.cohesion, sigma_v if sigma_v_layer is None
+            else sigma_v_layer)
+        # Fig. 7-18's D: the penetration into the clay stratum, from its
+        # top (the ground surface in the bottom graph) to the bottom of
+        # the layer, or to the toe if less.
+        D18 = ((bottom - stratum[1]) / self.pile.width
+               if case != "none" else None)
+
+        def read(mode: str) -> Tuple[dict, dict]:
+            """(chart -> (Ca, source, notes), chart -> curves' end in ksf)
+            with ``mode`` past the curves."""
+            readings, ends = {}, {}
+            if chart in ("fig_7_17", "smaller") or case == "none":
+                own: List[str] = []
+                curve = self._adhesion_curve()
+                readings["Fig. 7-17"] = (*adhesion(
+                    layer.cohesion, D_over_b, curve, sigma_v=sigma_v,
+                    beyond_chart=mode, notes=own), own)
+                ends["Fig. 7-17"] = CHART_END_KSF[curve]
+            if chart in ("fig_7_18", "smaller") and case != "none":
+                own = []
+                readings["Fig. 7-18"] = (*adhesion_fig_7_18(
+                    layer.cohesion, D18, case, sigma_v=sigma_v,
+                    beyond_chart=mode, notes=own), own)
+                ends["Fig. 7-18"] = fig_7_18_range_ksf(case, D18)[1]
+            return readings, ends
+
+        readings, ends = read(beyond or "chart_end")
+        if "Fig. 7-17" in readings:
+            info["fig_7_17_source"] = readings["Fig. 7-17"][1]
+        if "Fig. 7-18" in readings:
             info.update({"fig_7_18_case": case, "D_over_b_fig_7_18": D18,
-                         "fig_7_18_source": source})
+                         "fig_7_18_source": readings["Fig. 7-18"][1]})
+        past = [k for k, r in readings.items() if r[1] in BEYOND_SOURCES]
+        if past and beyond is None and counts:
+            # Would the line change the answer? Not where the other chart
+            # governs either way (adhesion_chart 'smaller').
+            api = min(r[0] for r in read("api")[0].values())
+            if abs(api - min(r[0] for r in readings.values())) > 1e-9:
+                info["line_needed"] = {
+                    "where": where, "su": layer.cohesion, "chart": past[0],
+                    "end_ksf": ends[past[0]],
+                    "ratio": reading["su_over_sigma_v"]}
         if len(readings) == 2:
             info["Ca_fig_7_17_kPa"] = readings["Fig. 7-17"][0]
             info["Ca_fig_7_18_kPa"] = readings["Fig. 7-18"][0]
         used = min(readings, key=lambda k: (readings[k][0], k))
         ca, source, own = readings[used]
+        if past and "highly_overconsolidated" in reading:
+            info.update(reading)
+            own = own + [self._line_note()]
         if notes is not None:
             notes.extend(n for n in own if n not in notes)
         else:
@@ -1336,6 +1507,44 @@ class AxialPileAnalysis:
         info["adhesion_source"] = source
         info["adhesion_chart"] = used
         return ca, info
+
+    @staticmethod
+    def _line_needed(rows: List[dict]) -> str:
+        """Why an analysis is refused for want of
+        ``highly_overconsolidated_su_ratio``: every clay layer past the
+        chart's curves whose answer the line would change (``rows``, their
+        ``line_needed`` readings), and what to give."""
+        layers = "; ".join(
+            f"{r['where'][0]:.2f}-{r['where'][1]:.2f} m: su = "
+            f"{r['su'] / KSF:.2f} ksf ({r['su']:.1f} kPa), where "
+            f"{r['chart']}'s curves end at {r['end_ksf']:.2f} ksf; su / "
+            f"sigma'vo = {r['ratio']:.2f}" for r in rows)
+        return (
+            f"alpha method (GEC-12 Sec. 7.2.1.3.2), Step 1 (p. 250): these "
+            f"clay layers have su past the end of the chart's curves: "
+            f"{layers}. For highly overconsolidated "
+            f"clays whose su exceeds the charts, Step 1 and p. 247 recommend "
+            f"the adhesion factor of the API method (API RP 2A, Sec. "
+            f"7.2.1.3.3, Eqs. 7-13 to 7-15, p. 251). GEC-12 prints no su / "
+            f"sigma'vo (or other number) at which a clay becomes highly "
+            f"overconsolidated: that is the engineer's judgment. Give "
+            f"highly_overconsolidated_su_ratio (API alpha in a layer whose "
+            f"su / sigma'vo, at the middle of its length along the pile, is "
+            f"at or above it; Ca held at the curve's end below it), or "
+            f"adhesion_beyond_chart 'chart_end' (Ca held at the curve's end "
+            f"in every such layer) or 'api' (API alpha in every such "
+            f"layer).")
+
+    def _line_note(self) -> str:
+        """The judgment note of a run that took the line given."""
+        return (
+            f"alpha method (GEC-12 p. 247; Step 1, p. 250): past the chart's "
+            f"curves, API RP 2A's alpha was taken in clay layers with su / "
+            f"sigma'vo at or above {self.highly_overconsolidated_su_ratio:g} "
+            f"(highly overconsolidated, by the line given) and Ca was held "
+            f"at the curve's end below it. Where a clay becomes highly "
+            f"overconsolidated is the engineer's judgment; GEC-12 gives no "
+            f"value.")
 
     def _compute_inside_skin_friction(self, V: float,
                                       notes: Optional[List[str]] = None
@@ -1395,6 +1604,8 @@ class AxialPileAnalysis:
 
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
+        # the deepest refusal names every layer down to it (GM-229)
+        wanted: Optional[JudgmentNeeded] = None
 
         # Use a copy per trial depth rather than temporarily mutating
         # self.pile_length (re-entrant / thread-safe).
@@ -1409,6 +1620,10 @@ class AxialPileAnalysis:
                     "Q_tip_kN": round(r.Q_tip, 1),
                     **({"warnings": r.warnings} if r.warnings else {}),
                 })
+            except JudgmentNeeded as e:
+                wanted = e
             except Exception:
                 pass
+        if wanted is not None:
+            raise wanted
         return results

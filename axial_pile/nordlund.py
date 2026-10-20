@@ -344,8 +344,8 @@ def _limiting_tip_resistance(phi_deg: float) -> float:
         +11 % at 34 deg, and 3-6 % low from 38 to 43 deg.
       - It also carried nodes at 26, 28, 44 and 45 deg that are not on the
         chart.
-      - GEC-12's worked example (NHI-06-089, the 428.1 kip toe plateau at a
-        toe phi of 40) now agrees to +0.3 % (429.3 kips) instead of -4.6 %.
+      - GEC-12's worked example (FHWA-NHI-16-064 Table D-6, the 428.1 kip
+        toe plateau at a toe phi of 40) now agrees to +0.3 % (429.3 kips) instead of -4.6 %.
     """
     phi = min(max(phi_deg, TOE_LIMIT_PHI_MIN), TOE_LIMIT_PHI_MAX)
     return float(np.interp(phi, _FIG_7_15_PHI, _FIG_7_15_QL_KPA))

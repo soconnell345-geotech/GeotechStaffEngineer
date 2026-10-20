@@ -686,6 +686,9 @@ def test_arms_are_the_old_ones_plus_overview():
         # GM-98 plotting code in a locked box, pinned in
         # funhouse_agent/tests/test_plot_box.py
         "plot_code": {A.PLOT_CODE_ENV: "1"},
+        # GM-227 both on by default; these take them away
+        "figure_helper_off": {A.FIGURE_HELPER_ENV: "0", A.PLOT_CODE_ENV: "0"},
+        "plot_code_off": {A.PLOT_CODE_ENV: "0"},
         # TA-33 an answer at the step cap, pinned in webapp/tests/test_core.py
         "step_cap_answer": {A.STEP_CAP_ANSWER_ENV: "1"},
         # EV-21 cited documents nothing looked up, pinned in
@@ -695,6 +698,8 @@ def test_arms_are_the_old_ones_plus_overview():
         # GM-116 judgment calls, pinned in
         # funhouse_agent/deep/tests/test_judgment_calls.py
         "judgment_calls": {A.JUDGMENT_CALLS_ENV: "1"},
+        # GM-226 on by default; this takes it away
+        "judgment_calls_off": {A.JUDGMENT_CALLS_ENV: "0"},
     }
 
 
