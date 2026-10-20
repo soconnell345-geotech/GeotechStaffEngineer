@@ -141,6 +141,7 @@
 "retaining_walls|cantilever_wall#adhesion": {"params": {"c_foundation": 10.0, "gamma": 19.0, "height": 4.0, "phi": 32.0, "sliding_cohesion": "friction_plus_adhesion"}},
 "retaining_walls|cantilever_wall#undrained": {"params": {"c_foundation": 40.0, "gamma": 19.0, "height": 4.0, "phi": 32.0, "phi_foundation": 0.0}},
 "retaining_walls|earth_pressure_coefficient": {"params": {"phi_deg": 30, "beta_deg": 10}},
+"retaining_walls|earth_pressure_coefficient#at_rest_slope": {"params": {"beta_deg": 20, "phi_deg": 30, "state": "at_rest"}},
 "retaining_walls|earth_pressure_coefficient#battered": {"params": {"phi_deg": 32, "state": "passive", "theory": "caquot_kerisel", "theta_deg": 10}},
 "retaining_walls|earth_pressure_coefficient#log_spiral": {"params": {"delta_deg": 21.12, "phi_deg": 32, "state": "passive", "theory": "caquot_kerisel"}},
 "retaining_walls|list_reinforcement": {"params": {}},
