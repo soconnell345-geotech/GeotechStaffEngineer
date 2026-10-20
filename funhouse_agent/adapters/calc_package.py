@@ -1827,7 +1827,8 @@ def _bearing_graph_numbers(result) -> dict:
                        for i in range(_MAX_LISTED_POINTS)})
     out = {"bearing_graph": [
         {"R_ult_kN": round(float(r), 1),
-         "blow_count_per_m": round(float(b), 1),
+         # the PDF's table prints "Refusal" from 1e5 blows/m up
+         "blow_count_per_m": round(float(b), 1) if b < 1e5 else "refusal",
          "permanent_set_mm": round(float(s) * 1000, 2),
          "max_compression_stress_kPa": round(float(c), 0),
          "max_tension_stress_kPa": round(float(t), 0)}
