@@ -251,6 +251,15 @@ NOT_REACHED = {
            "dxf_export|export_to_dxf_bytes")},
     ("fem2d|fem2d_consolidation", "gwt"): _DRAINED,
     ("fem2d|fem2d_consolidation", "gamma_w"): _DRAINED,
+    ("fem2d|fem2d_consolidation#monolithic", "gwt"): _DRAINED,
+    ("fem2d|fem2d_consolidation#monolithic", "gamma_w"): _DRAINED,
+    ("fem2d|fem2d_consolidation#monolithic", "t"):
+        "the plane-strain thickness scales the load, stiffness, storage "
+        "and flow of the coupled solve alike, so the column does not show it",
+    ("fem2d|fem2d_consolidation#monolithic", "startup_steps"):
+        "2 -> 3: two start-up steps already damp the jump at the drained "
+        "boundary; 0 (none) leaves the Crank-Nicolson ringing, 16.8 kPa at "
+        "1e8 s in this probe (fem2d/tests/test_consolidation_startup_fill.py)",
     ("fem2d|fem2d_staged", "gamma_w"):
         "the probe's phases give no water table",
     **{(k, "max_iter"): _ITERATIONS for k in (

@@ -381,7 +381,8 @@ def _run_analyze_consolidation(params: dict) -> dict:
     from fem2d import analyze_consolidation
     _valid = ("width", "depth", "soil_layers", "k", "load_q", "time_points",
               "gwt", "gamma_w", "nx", "ny", "t", "n_w", "layer_polylines",
-              "consolidation_scheme", "theta", "reset_displacements_after")
+              "consolidation_scheme", "theta", "reset_displacements_after",
+              "startup_steps")
     reject_unknown_params(params, _valid, method="fem2d_consolidation")
     require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
                             "time_points"],
@@ -409,6 +410,7 @@ def _run_analyze_consolidation(params: dict) -> dict:
         n_w=params.get("n_w", 2.2e6),
         consolidation_scheme=scheme,
         theta=params.get("theta", 1.0),
+        startup_steps=params.get("startup_steps", 2),
     )
     if "layer_polylines" in params:
         kwargs["layer_polylines"] = params["layer_polylines"]
@@ -716,7 +718,7 @@ METHOD_INFO = {
         "parameters": {
             "width": {"type": "float", "required": True, "description": "Domain width (m)."},
             "depth": {"type": "float", "required": True, "description": "Domain depth (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "Soil property dicts, each with 'E' (kPa), 'nu', 'gamma' (kN/m3) AND 'bottom_elevation' (m; 'top_elevation' optional, defaults to the domain top / the layer above). Add 'fill': true to a layer PLACED during construction: its self-weight then moves from the initial stage into the load stage (monolithic: applied undrained with the load, so it consolidates). Fill layers must be the top layers and lie above the water table (gwt at or below their base)."},
+            "soil_layers": {"type": "array", "required": True, "description": "Soil property dicts, each with 'E' (kPa), 'nu', 'gamma' (kN/m3) AND 'bottom_elevation' (m; 'top_elevation' optional, defaults to the domain top / the layer above). Add 'fill': true to a layer PLACED during construction: its self-weight then moves from the initial stage into the load stage (monolithic: applied undrained with the load, so it consolidates). Fill layers must be the top layers; they may be placed under water (gwt above their base): below gwt a fill loads the soil by its buoyant unit weight gamma - gamma_w, the water standing on the soil in place before placement being part of the initial stage."},
             "k": {"type": "float", "required": True, "description": "Hydraulic conductivity (m/s) for 'staggered'; for 'monolithic' pass the MOBILITY m^2/(kPa.s)."},
             "load_q": {"type": "float", "required": True, "description": "Surface load (kPa, positive downward)."},
             "time_points": {"type": "array", "required": True, "description": "OUTPUT times since the load is applied (seconds, >= 0). t = 0 (the loading instant) is always reported first; U and settlement come back at each of these times. The monolithic scheme integrates on a finer internal schedule between them, so a sparse list (e.g. [1e3, 1e6, 1e7]) is fine."},
@@ -732,6 +734,8 @@ METHOD_INFO = {
                                      "description": "Biot solver: 'staggered' (default, sequential split; drained at every step, so U = 1 and NO consolidation transient under the load) or 'monolithic' (coupled u-p, Taylor-Hood T6/T3, reproduces the load-induced undrained response p0 and the Terzaghi transient; use it for U and settlement versus time). For 'monolithic', pass k as the MOBILITY m^2/(kPa.s) and n_w as the Biot modulus M (kPa)."},
             "theta": {"type": "float", "required": False, "default": 1.0,
                       "description": "Time-integration parameter for the monolithic scheme (1.0 backward Euler; 0.5 Crank-Nicolson, more accurate). Range [0.5, 1.0]."},
+            "startup_steps": {"type": "int", "required": False, "default": 2,
+                              "description": "Monolithic scheme with theta < 1: the first startup_steps time steps are each taken as two fully implicit half-steps (Rannacher start-up), so Crank-Nicolson does not ring at the drained boundary. 0 = plain theta-stepping from the first step."},
             "reset_displacements_after": {"type": "string", "required": False,
                                           "allowed_values": ["initial", "start"],
                                           "description": "Which stage the reported settlements are measured from. The analysis has two stages: 0 'initial' (self-weight of the soil in place, drained, with the hydrostatic water table and any ponded water) and 1 'load' (load_q + any 'fill' layers, then consolidation). 'initial' = from the end of the initial stage, i.e. the load stage alone (common FE practice; the DEFAULT when omitted). 'start' = cumulative, self-weight settlement included. Omitting it lets the default apply and the result then carries a 'judgment' record if the choice matters."},
@@ -754,6 +758,7 @@ METHOD_INFO = {
             "judgment": "Present only when the default reference stage was applied AND it changes the reported settlement materially: {question, options [{name, source, assumptions, applies, result}], used, why} — the self-weight movement counts or not depending on the construction sequence; say which basis the reported number uses.",
             "scheme": "'staggered' or 'monolithic'.",
             "notes": "Basis and caveats: the time origin, gwt as an elevation, the displacement reference, what the excess pore pressure includes, the early-time mesh limit; for 'staggered', that it is drained at every step (U = 1, no transient).",
+            "choices": "The water table elevation and where it lies, the fill's unit weight (buoyant below the water table), and with theta < 1 the time-stepping start-up, each with how it was set and its basis.",
         },
     },
     "fem2d_staged": {
@@ -855,7 +860,9 @@ _WATER = [{"gwt": "set"}, {"gwt": [0]}]
 declare_applies_when(METHOD_INFO, {
     "fem2d_consolidation": {
         name: {"consolidation_scheme": ["monolithic"]}
-        for name in ("n_w", "theta")},
+        for name in ("n_w", "theta")} | {
+        "startup_steps": {"consolidation_scheme": ["monolithic"],
+                          "theta": [0.5]}},
     # the wall's joints (GM-72); since GM-184 the water's unit weight, and
     # the excavation's water inside, only with a water table ("set" is
     # not 0, so a table at the ground surface is named)

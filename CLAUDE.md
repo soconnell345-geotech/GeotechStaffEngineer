@@ -290,7 +290,14 @@ Key conventions:
       and judgment calls cite their source (behind the OFF switch); the driven-pile
       tools take GEC-12 chapter 7's remaining options and a custom section; the
       figure tools keep names off reference lines and hatching and take in every
-      plan outline;
+      plan outline. 2026-10-19/20: CI about 2.2x faster (pytest-xdist); OpenSees
+      site response takes Darendeli or Menq laboratory curves as its backbone;
+      a drilled shaft tipped in rock takes its base on the socket diameter, with
+      GEC-10's rock side factor C an input; a cantilever wall's sliding follows
+      GEC-6 (friction or adhesion, not both; release note); the owner split
+      Document Review and GeotechStaffEngineer into two apps, GSE to run in
+      Foundry (BACKLOG INF-25, INF-26), its test wheels delivered with Claude
+      RIDs routed by model family;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
