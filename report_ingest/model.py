@@ -672,6 +672,12 @@ class SPT(BaseModel):
     increment: Optional[Quantity] = Field(
         default=None, description="the length of each increment, when "
                                   "printed (typically 6 in or 0.15 m)")
+    increments: List[Quantity] = Field(
+        default_factory=list,
+        description="the length of EACH drive when the drives are unequal "
+                    "(e.g. 20, 15, 15 cm), one per entry of blows, in the "
+                    "same order; empty when every drive is the same length "
+                    "(then ``increment`` or the 6 in standard applies)")
     prov: Optional[Provenance] = None
 
 

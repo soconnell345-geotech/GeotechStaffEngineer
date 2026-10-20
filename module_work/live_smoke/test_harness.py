@@ -431,7 +431,10 @@ def test_judgment_arms_pair_with_their_flows():
 # The session follows app.py
 # ---------------------------------------------------------------------------
 
-_CALL = re.compile(r"(?<![\w.])(core|turn_jobs|profiles)\.(\w+)\(")
+# helper_models since EV-33: the session had silently lost INF-41's helper
+# models, which this pin did not see.
+_CALL = re.compile(r"(?<![\w.])(core|turn_jobs|profiles|helper_models)"
+                   r"\.(\w+)\(")
 
 
 def _calls(text):

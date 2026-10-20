@@ -325,6 +325,7 @@ def _call_record(call: dict, norm, planlens: frozenset) -> dict:
         "system_prompt": _h(norm(prompt)),
         "system_prompt_chars": len(norm(prompt)),
         "tools": app,
+        "tool_order": list(app),
         "planlens_tools": served,
         "middleware": _middleware(kw.pop("middleware", None), norm),
     }
@@ -347,6 +348,7 @@ def _call_record(call: dict, norm, planlens: frozenset) -> dict:
                 "description": _h(norm(s.get("description"))),
                 "system_prompt": _h(norm(s.get("system_prompt"))),
                 "tools": s_app,
+                "tool_order": list(s_app),
                 "planlens_tools": s_served,
                 "middleware": _middleware(s.get("middleware"), norm),
             })

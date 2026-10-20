@@ -924,20 +924,89 @@ with st.sidebar:
     else:
         st.caption("No attachments yet.")
 
+    # Downloads made on request (this conversation's zip, INF-38; on Foundry
+    # a large file's bytes, INF-44) are dropped once the conversation moves
+    # on: a turn, or another conversation. On Foundry their bytes travel
+    # inside the page on every rerun while they are kept.
+    _conv_stamp = (ss.thread_id, len(ss.transcript))
+    if ss.get("prepared_stamp") != _conv_stamp:
+        ss.prepared_stamp = _conv_stamp
+        ss.pop("conv_zip", None)
+        file_widgets.forget_prepared()
+
     if ss.artifacts:
         st.divider()
         st.subheader("Downloads")
         for path in ss.artifacts:
             import os as _os
             try:
-                with open(path, "rb") as fh:
-                    data = fh.read()
-                file_widgets.download_button(
-                    _os.path.basename(path), data,
-                    file_name=_os.path.basename(path),
+                file_widgets.download_file(
+                    _os.path.basename(path), path,
                     mime=_mime_for(path), key=f"dl_{path}")
             except OSError:
                 pass
+
+    # Download this conversation (INF-38): a zip of its record, files and
+    # figures, to keep where the conversations folder is not kept (inside a
+    # published Foundry app's container). Built only when Prepare is pressed
+    # and dropped once the conversation moves on (above).
+    if _PROFILE.conversation_download and \
+            core.load_meta(ss.thread_id) is not None:
+        st.divider()
+        st.subheader("Download this conversation")
+        _zip_cap = file_widgets.download_limit_bytes()
+
+        def _prepare_zip(record_only: bool = False) -> None:
+            from webapp import conversation_export as _cx
+            with st.spinner("Zipping the conversation…"):
+                ss.conv_zip = {"export": _cx.build(
+                    ss.thread_id, cap=_zip_cap, record_only=record_only)}
+
+        def _zip_size(n: int) -> str:
+            return (f"{n / 1048576:.1f} MB" if n >= 104858
+                    else f"{max(1, round(n / 1024))} KB")
+
+        if st.button("Prepare download", key=f"conv_zip_{ss.thread_id}",
+                     help="Zips this conversation's record, files and "
+                          "figures (caches, and anything that may hold a "
+                          "key, are left out), then shows the download."):
+            _prepare_zip()
+        _zip = ss.get("conv_zip")
+        if _zip:
+            _x = _zip["export"]
+            if _x.data is not None:
+                file_widgets.download_button(
+                    f"Download {_x.name}", _x.data, file_name=_x.name,
+                    mime="application/zip",
+                    key=f"conv_zip_dl_{ss.thread_id}", prepare=False)
+                if _x.record_only:
+                    _n_del = sum(1 for f in _x.files if "/" in f)
+                    st.caption(f"The record and {_n_del} deliverables, "
+                               f"{_zip_size(_x.size)}. LEFT_OUT.txt in the "
+                               "zip names what was left out.")
+                else:
+                    st.caption(f"{len(_x.files)} files, "
+                               f"{_zip_size(_x.size)}.")
+            elif _x.record_only:
+                st.caption(
+                    "Even the record alone zips to more than the "
+                    f"{(_x.cap or 0) / 1048576:.3g} MB a download in the "
+                    "Foundry app can carry (raise "
+                    f"{file_widgets.DOWNLOAD_MAX_MB_ENV} in the app file to "
+                    "carry more).")
+            else:
+                st.caption(
+                    f"The whole conversation ({len(_x.files)} files, "
+                    f"{_zip_size(_x.folder_bytes)} on disk) zips to "
+                    f"more than the {(_x.cap or 0) / 1048576:.3g} MB a "
+                    "download in the Foundry app can carry (raise "
+                    f"{file_widgets.DOWNLOAD_MAX_MB_ENV} in the app file to "
+                    "carry more). The record alone can be downloaded, with "
+                    "the deliverables that fit.")
+                if st.button("Prepare the record alone",
+                             key=f"conv_zip_rec_{ss.thread_id}"):
+                    _prepare_zip(record_only=True)
+                    st.rerun()
 
     # Feedback (owner feedback 2026-09-11): a note from the user, saved WITH
     # the conversation (feedback.jsonl + FEEDBACK.md in the record dir, so
@@ -1191,15 +1260,14 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
         # is no PNG), not Plotly's JSON (live smoke wave 1, A15d).
         dl_path = (core.plotly_download_twin(path) if card.kind == "plotly"
                    else path)
+        dl_name = os.path.basename(dl_path)
         try:
-            data = core.artifact_bytes(dl_path)
+            file_widgets.download_file("Download", dl_path,
+                                       mime=_mime_for(dl_name),
+                                       key=f"dlcard_{slot}_{path}")
         except OSError:
             st.caption("(file unavailable)")
             return
-        dl_name = os.path.basename(dl_path)
-        file_widgets.download_button("Download", data, file_name=dl_name,
-                                     mime=_mime_for(dl_name),
-                                     key=f"dlcard_{slot}_{path}")
         if card.kind == "plotly":
             # Native interactive chart from a *.plotly.json sidecar. plotly is
             # imported lazily/guarded so the app still runs without it (then the
@@ -1226,7 +1294,11 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
         elif card.kind == "html":
             with st.expander("Preview (HTML)", expanded=False):
                 if card.size <= core.HTML_PREVIEW_MAX_BYTES:
-                    _embed_frame(core.read_text(path), height=600)
+                    # Streamlit's frame allows the app's origin; the page
+                    # the agent wrote gets a sandboxed frame inside it, with
+                    # an origin of its own (INF-44).
+                    _embed_frame(file_widgets.sandboxed_html_page(
+                        core.read_text(path)), height=600)
                 else:
                     st.caption(f"Too large to preview inline "
                                f"({card.size:,} bytes) — download above.")

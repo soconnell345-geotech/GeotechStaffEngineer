@@ -91,7 +91,7 @@ def load_site_from_csv(
             x=optional_float(row.get("x")),
             y=optional_float(row.get("y")),
             elevation_m=optional_float(row.get("elevation_m")),
-            total_depth_m=float(row.get("total_depth_m", 0)),
+            total_depth_m=optional_float(row.get("total_depth_m")),
             gwl_depth_m=float(row["gwl_depth_m"]) if row.get("gwl_depth_m") else None,
             drilling_method=row.get("drilling_method", ""),
         )

@@ -32,6 +32,18 @@ _VALID = {
 }
 
 
+def _image_name(path: str) -> str:
+    """``path`` as an image file name: one already ending .png, .jpg or
+    .jpeg is kept; a document extension (.html, .pdf, .svg) is replaced, not
+    stacked (``plot.html`` made ``plot.html.png``; REF-02)."""
+    if path.lower().endswith((".png", ".jpg", ".jpeg")):
+        return path
+    root, ext = os.path.splitext(path)
+    if ext.lower() in (".html", ".htm", ".pdf", ".svg", ".json"):
+        path = root
+    return path + ".png"
+
+
 def _default_output_path() -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return os.path.join(default_output_dir(), f"subsurface_profile_{ts}.png")
@@ -110,8 +122,7 @@ def _run_subsurface_profile(params: dict) -> dict:
 
     output_path = params.get("output_path") or _default_output_path()
     output_path = resolve_output_path(str(output_path))
-    if not output_path.lower().endswith((".png", ".jpg", ".jpeg")):
-        output_path += ".png"
+    output_path = _image_name(output_path)
 
     # Render in memory, then write through save_verified so a /Workspace
     # target goes via the durable Databricks workspace API and every write is
@@ -609,8 +620,7 @@ def _run_plot_data(params: dict) -> dict:
 
     output_path = params.get("output_path") or _default_plot_path()
     output_path = resolve_output_path(str(output_path))
-    if not output_path.lower().endswith((".png", ".jpg", ".jpeg")):
-        output_path += ".png"
+    output_path = _image_name(output_path)
 
     try:
         result = render_data_plot(

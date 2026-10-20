@@ -550,6 +550,30 @@ class TestTheFloor:
         assert all(s.prov.method == "grid" for s in seed.samples)
         assert all(0.0 < s.prov.confidence <= 1.0 for s in seed.samples)
 
+    def test_drawn_sample_boxes_seat_the_rows(self, imperial):
+        """RI-32: planlens' sample intervals (PL-24) give the floor's rows
+        a top, a bottom and, where the log prints none, the sample id; a
+        grid with no samples seeds exactly as before."""
+        doc, _gt = imperial
+        from planlens.document.loggrid import Sample, log_grid
+        grid = log_grid(doc, [0])
+        before = seed_from_grid(grid, [0], "RXX")
+        grid.samples = [
+            Sample(page=0, top=t - 0.5, bottom=t + 1.5, label=f"S-{i + 1}",
+                   plus_minus=0.05)
+            for i, t in enumerate(s.top.value for s in before.samples)]
+        after = seed_from_grid(grid, [0], "RXX")
+        for b, a in zip(before.samples, after.samples):
+            assert b.bottom is None and b.sample_id == ""
+            assert a.top.value == pytest.approx(b.top.value - 0.5, abs=0.1)
+            assert a.bottom.value == pytest.approx(b.top.value + 1.5, abs=0.1)
+            assert a.sample_id.startswith("S-")
+            assert "sample box drawn" in a.prov.note
+        assert [r.n for r in after.spt] == [21, 14, 26, 10]   # nothing else moved
+        grid.samples = []
+        again = seed_from_grid(grid, [0], "RXX")
+        assert [(s.top.value, s.bottom) for s in again.samples] ==             [(s.top.value, s.bottom) for s in before.samples]
+
     def test_the_model_is_shown_the_starting_record(self, imperial):
         doc, _gt = imperial
         engine = FakeEngine([{"final": _good_imperial_reading()}])

@@ -228,3 +228,11 @@ class TestPlotData:
         info = describe_method("profile_figure", "plot_data")
         assert "series" in json.dumps(info)
         assert len(json.dumps(list_agents())) < 8000
+
+
+def test_html_output_name_is_replaced_not_stacked():
+    """REF-02: plot.html gave plot.html.png."""
+    from funhouse_agent.adapters.profile_figure_adapter import _image_name
+    assert _image_name("out/plot.html") == "out/plot.png"
+    assert _image_name("out/plot.PNG") == "out/plot.PNG"
+    assert _image_name("out/plot") == "out/plot.png"

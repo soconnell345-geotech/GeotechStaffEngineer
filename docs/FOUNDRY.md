@@ -255,7 +255,10 @@ The sidebar's success line names the route (`route: FOUNDRY_PROXY_URL`,
 diagnostics** print the setting and the URL (never the token). TLS is checked
 against the first of `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
 `MAESTRO_CERT_PEM_PATH` and `FOUNDRY_CLI_CERT_PEM_PATH` that names a file
-(the line then says "CA bundle set"), else the SDK's own default.
+(the line then says "CA bundle set"), else the SDK's own default, certifi's
+public CA list. Connection diagnostics' **TLS certificates** line says which
+(by variable, never the path), and warns when a variable names a file that
+does not exist.
 
 ### 3d. Reference PDFs on Foundry
 
@@ -322,7 +325,13 @@ buttons the page makes in the browser: the download itself, saved under the
 file's own name, and **Open in new tab**, the browser's own viewer (a file
 saved from there gets a random name; use the first button to keep it). The
 file travels inside the page, so files over 20 MB show a message instead;
-`GEOTECH_FOUNDRY_DOWNLOAD_MAX_MB` changes the limit. A PDF card has a
+`GEOTECH_FOUNDRY_DOWNLOAD_MAX_MB` changes the limit. The page is sent again
+on every action, so a file over 2 MB first shows **Prepare download**: the
+file goes into the page only once pressed, and until the next turn
+(`GEOTECH_FOUNDRY_DOWNLOAD_PREPARE_MB` changes the 2 MB). An HTML or SVG file
+opened in a new tab is shown inside a sandboxed frame, so a page the agent
+wrote runs with an origin of its own, not the app's; the HTML preview on a
+card is framed the same way on every host. A PDF card has a
 **Preview the first 10 pages** switch: turned on, it shows those pages as
 images, with a note to open the whole file in a new tab (the pages are drawn
 only when asked for, so a long conversation with many PDFs stays quick).
@@ -432,6 +441,10 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
 - Conversations persist under `GEOTECH_WEBAPP_DATA` (default
   `~/.geotech_webapp`). In a published app that is inside the app's own
   container: not visible from the workspace, and lost when the container is
-  rebuilt (BACKLOG INF-38).
+  rebuilt (BACKLOG INF-38). To keep one, use **Download this conversation**
+  in the sidebar: **Prepare download** zips its record (`meta.json`,
+  `activity.jsonl`, transcript), files and figures, leaving out caches and
+  anything that may hold a key; over the 20 MB download limit (§4a) it
+  offers the record alone, with the deliverables that fit.
 - The old `foundry/` wrapper files (tools for the prepackaged AIP agent) are
   RETIRED and unrelated to this deployment.

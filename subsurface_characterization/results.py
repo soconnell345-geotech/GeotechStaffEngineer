@@ -43,6 +43,10 @@ class PlotResult:
     figure: Any = None
     trend_results: list = field(default_factory=list)
     skipped: List[str] = field(default_factory=list)
+    #: Plan views: north on the page, degrees clockwise from up, and where
+    #: that came from (GM-76).
+    north_deg: Optional[float] = None
+    north_note: str = ""
 
     def to_html(self, full_html: bool = True) -> str:
         """Export figure as self-contained HTML string."""
@@ -98,6 +102,9 @@ class PlotResult:
             ]
         if self.skipped:
             d["skipped"] = list(self.skipped)
+        if self.north_note:
+            d["north_deg"] = self.north_deg
+            d["north_note"] = self.north_note
         return d
 
 
