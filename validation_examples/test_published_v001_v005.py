@@ -245,7 +245,7 @@ def test_v002_toe_nine_su_matches():
     at the depths where the tip sits cleanly inside Layer 3 (D = 70/80/90 ft)."""
     published_Rt = {70: 32.75, 80: 33.03, 90: 33.68}
     for D_ft, Rt_pub in published_Rt.items():
-        r = _v002_run(D_ft)
+        r = _v002_run(D_ft, adhesion_beyond_chart="chart_end")
         assert r.Q_tip / KIP == pytest.approx(Rt_pub, rel=0.02), (
             f"D={D_ft} ft: toe {r.Q_tip / KIP:.1f} vs published {Rt_pub}"
         )
@@ -278,24 +278,35 @@ def test_v002_shaft_matches_with_the_examples_chart_choices():
 
 
 def test_v002_shaft_with_the_module_defaults_documented():
-    """CONVENTION: with the module's defaults (the corrugated curve times the
-    box area for an H-pile, GEC-12 p. 247; Ca held at the curve's end where
-    su exceeds Fig. 7-17, as the example did) the shaft is 13-14 % above
-    Table D-100, the corrugated curve's higher adhesion. With API alpha past
-    the chart (adhesion_beyond_chart "api", which p. 247 recommends for
-    highly overconsolidated clays) it is 25-53 % above: Layer 3's su
-    (3.1-3.7 ksf) is past the chart's end, where API alpha (about 0.7 at
-    sigma'v ~7 ksf) nearly doubles the chart-end adhesion. The test pins
-    both bands so a change to either is caught."""
+    """CONVENTION: Layer 3's su (3.1-3.7 ksf) is past the end of Fig.
+    7-17's curves below about 70 ft, where GEC-12 recommends API alpha for
+    highly overconsolidated clays (p. 247, alpha-method Step 1) and gives
+    no su / sigma'vo that marks one. Since GM-229 (owner OWN-63) the
+    default run is refused until the engineer gives that line. With a line
+    of 1.0 Layer 3 (su / sigma'vo 0.32-0.41) is not highly
+    overconsolidated, so Ca is held at the curve's end as the example did,
+    and the shaft is 13-14 % above Table D-100, the corrugated curve's
+    higher adhesion (GEC-12 p. 247 for H-piles); the as-drawn reading of
+    Fig. 7-17 (GM-229) moves none of it, since no V-002 layer reads alpha
+    above 1. With API alpha in every layer past the chart
+    (adhesion_beyond_chart "api") it is 25-53 % above: API alpha (about
+    0.7 at sigma'v ~7 ksf) nearly doubles the chart-end adhesion. The test
+    pins both bands so a change to either is caught."""
+    from axial_pile.capacity import JudgmentNeeded
+    with pytest.raises(JudgmentNeeded, match="highly_overconsolidated"):
+        _v002_run(70)
     published_Rs = {70: 318.4, 80: 369.3, 90: 420.33}
     for D_ft, Rs_pub in published_Rs.items():
-        r = _v002_run(D_ft)
+        r = _v002_run(D_ft, highly_overconsolidated_su_ratio=1.0)
         ratio = (r.Q_skin / KIP) / Rs_pub
         assert 1.10 <= ratio <= 1.17, (
             f"D={D_ft} ft: shaft ratio {ratio:.2f} outside documented band"
         )
         sources = {lb.get("adhesion_source") for lb in r.layer_breakdown}
         assert "Fig. 7-17 end" in sources and "API alpha" not in sources
+        assert not any(lb.get("highly_overconsolidated")
+                       for lb in r.layer_breakdown)
+        assert max(lb["alpha"] for lb in r.layer_breakdown) <= 1.0
         api = _v002_run(D_ft, adhesion_beyond_chart="api")
         ratio = (api.Q_skin / KIP) / Rs_pub
         assert 1.20 <= ratio <= 1.60, (

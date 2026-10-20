@@ -24,7 +24,7 @@ open-end pipe plugging; uplift.
   `toe_limit_chart_note`, `end_bearing_cohesionless` (Eq. 7-9 with the
   Step 8 and Step 9 limits).
 - `tomlinson.py` — the alpha-method: `adhesion_fig_7_17`, `api_alpha`
-  (Eqs. 7-13/7-14), `adhesion` (the chart, at most su; past it the
+  (Eqs. 7-13/7-14), `adhesion` (the chart as drawn; past it the
   curve's end or API alpha), `alpha_fig_7_18` and `adhesion_fig_7_18`
   (Fig. 7-18's three stratigraphy cases), `alpha_tomlinson`,
   `skin_friction_cohesive` (Eq. 7-10), `end_bearing_cohesive` (Eq. 7-11).
@@ -46,7 +46,9 @@ AxialPileAnalysis(pile, soil, pile_length, method="auto",
                   toe_stress_limit=143.64, inside_friction_ratio=1/3,
                   open_pipe_toe_limit=5027.4, open_pipe_method="auto",
                   cohesive_Nt=3.0, h_pile_toe_area="box",
-                  adhesion_curve="auto", adhesion_beyond_chart="chart_end",
+                  adhesion_curve="auto",
+                  adhesion_beyond_chart="api_if_highly_overconsolidated",
+                  highly_overconsolidated_su_ratio=None,
                   displaced_volume=None, adhesion_chart="fig_7_17",
                   shrink_swell_depth=None, beta_coefficients="from_phi",
                   toe_phi_zone="toe_layer").compute() -> AxialPileResult
@@ -73,18 +75,18 @@ given/default/module, basis, alternatives), `toe_details`, `plug_weight`,
 | 4 | C_F from Fig. 7-14 by phi and delta/phi | Fig. 7-14 measured off the printed figure. Before: a linear fit on delta/phi. |
 | 5-6 | sigma'd at the layer midpoint, no limit; fs = K_delta C_F sigma'd sin delta (Eq. 7-8); H-piles on the box perimeter | As stated; midpoint rule split at the water table. No limit on sigma'd or fs (GEC-12 gives none). |
 | 7 | alpha_t from Fig. 7-16(a) by phi and D/b (D/b 20, 30, 45); N'q from Fig. 7-16(b) | Both measured off the printed figure; D/b below 20 or above 45 takes the nearest curve. Before: alpha_t saturating at 1.0, no phi. |
-| 8 | "The limiting value of sigma'p is 3 ksf" (p. 244; Nordlund, p. 234) | Applied by default (`toe_stress_limit` 143.6 kPa, None = no limit). Before: not applied (a 25 m sand run used 475 kPa). |
+| 8 | "The limiting value of sigma'p is 3 ksf" (p. 244; Nordlund, p. 234) | Applied by default (`toe_stress_limit` 143.6 kPa, None = no limit), stated in `choices` as "sigma'p at the toe (Nordlund, Step 8)" with p. 244; the owner kept it (OWN-63, 2026-10-20). Before: not applied (a 25 m sand run used 475 kPa). |
 | 9 | Rp = alpha_t N'q sigma'p Ap at most qL Ap (Fig. 7-15); the toe area of an H or open pile "based on past experience and local correlations" | qL from Fig. 7-15 (re-measured 2026-10-08), held at the chart's ends with a warning. H-pile toe area: box by default (`h_pile_toe_area`), as Sec. 7.10.7 (p. 408) uses in soil. |
 | 7c | "If phi angle is estimated from SPT data, compute the average corrected SPT N value, (N1)60, over the zone from the pile toe to 3 diameters below the pile toe" | `toe_phi_zone`: "toe_layer" (default; the toe layer's phi or `toe_friction_angle`, as GEC-12's worked examples, Tables D-6 and D-51, took it) or "average_3b" (the thickness-weighted average of the cohesionless layers' toe phi from the toe to 3b below, the profile's last layer continuing; cohesive soil in the zone is left out of the average with a note). The module takes phi, not N, so it averages phi (the same where phi is linear in N). Used for Fig. 7-16 and Fig. 7-15 alike (Step 9a.2). GM-144. |
 | p. 232 | widths over 18 in were outside the correlation database; Nordlund tends to over predict over 24 in | Warnings on the result. |
 
-### alpha-method (Sec. 7.2.1.3.2, Steps 1-6, pp. 246-250)
+### alpha-method (Sec. 7.2.1.3.2, Steps 1-6, pp. 245-250)
 | Step | GEC-12 | Module |
 |---|---|---|
-| 1 | Ca from Fig. 7-17 by su, pile type and D/b; D from the ground surface to the bottom of the clay layer, or to the toe if less (p. 246) | Fig. 7-17 measured off the printed figure: smooth steel (dashed) and concrete/timber/corrugated (solid) curves at D = 10b and 40b, linear in D/b between, held outside. Before: one simplified alpha-vs-cu curve, no D/b. |
-| p. 247 | H-piles: the corrugated pile curve times the box area | `adhesion_curve` "auto": pipe piles smooth steel, H, concrete and timber piles the solid curve; either can be given. |
-| p. 247, Step 1 | su past the charts (highly overconsolidated clays): alpha by API RP 2A recommended (Eqs. 7-13/7-14) | `adhesion_beyond_chart` "chart_end" by default (Ca held at the curve's end, as GEC-12's worked example, Vol 3 Table D-100, did), or "api". At the chart's end API alpha makes Ca jump (solid curves at su 3.45 ksf, sigma'v 4 ksf: 0.83-1.37 ksf to 1.86 ksf). Before review: "api" by default. |
-| p. 252, p. 247 | API alpha at most 1.0 ("An alpha value of 1.0 is recommended for unconsolidated clays"); su on an H-pile's soil-to-soil faces | Ca at most su within the chart (Fig. 7-17 as drawn passes above Ca = su at low su: the D = 40b solid curve to about 1.5 ksf). Stated in `choices`; uncapped is not offered. |
+| 1 | Ca from Fig. 7-17 by su, pile type and D/b; D from the ground surface to the bottom of the clay layer, or to the toe if less (p. 246; the figure's legend, p. 248) | D as p. 246 gives it, stated in `choices` ("D for Fig. 7-17 (alpha method)") with pp. 246 and 248; the owner kept it (OWN-63). Fig. 7-17 measured off the printed figure: smooth steel (dashed) and concrete/timber/corrugated (solid) curves at D = 10b and 40b, linear in D/b between, held outside. Before: one simplified alpha-vs-cu curve, no D/b. |
+| p. 247 | H-piles: the corrugated pile curve times the box area | `adhesion_curve` "auto": pipe piles smooth steel, H, concrete and timber piles the solid curve; either can be given. The H-pile basis is stated in `choices` with p. 247; the owner kept it (OWN-63). |
+| p. 247, Step 1 (p. 250) | su past the charts in highly overconsolidated clays: alpha by API RP 2A recommended (Sec. 7.2.1.3.3, Eqs. 7-13 to 7-15, p. 251); GEC-12 gives no su / sigma'vo at which a clay becomes highly overconsolidated | `adhesion_beyond_chart` "api_if_highly_overconsolidated" by default: API alpha in a clay layer past the curves whose su / sigma'vo (sigma'vo at the middle of the layer's length along the pile) is at or above `highly_overconsolidated_su_ratio`, Ca held at the curve's end below it. The line is the engineer's judgment (owner, OWN-63, 2026-10-20), so a run with such a layer and no line is refused (`JudgmentNeeded`, a ValueError) with the layer's su / sigma'vo in the message. The 1.0 in Eqs. 7-13/7-14 only chooses between API's two expressions and is not offered as the line. "chart_end" (every such layer, as GEC-12's worked example, Vol 3 Table D-100, did) and "api" (every such layer) need no line. `choices` says, per run of layers, which side of the line each fell on. At the chart's end API alpha can make Ca jump (solid curves at su 3.45 ksf, sigma'v 4 ksf: 0.83-1.37 ksf to 1.86 ksf). GM-229; before it: "chart_end" by default. |
+| Steps 1-2 (p. 250), Fig. 7-17 (p. 248); p. 252 | Ca from Fig. 7-17 and fs = Ca (Eq. 7-10), with no limit on Ca; API alpha at most 1.0 ("An alpha value of 1.0 is recommended for unconsolidated clays", p. 252) belongs to the API method | Fig. 7-17 as drawn: Ca may exceed su (alpha about 1.1 at su 1.0 ksf on the D = 40b solid curve, 1.04 at the solid curve's start), stated in `choices` ("Ca above su (alpha method)") with how many layers and the largest alpha. API's alpha <= 1.0 applies only where API alpha is taken. GM-229 (owner, OWN-63); before it Ca was held at su within the chart (GEC-12's Example 9-3 of NHI-06-089, WE-SF-2: shaft 715.3 kN at alpha 1.0, 761.9 kN as drawn). |
 | 4 | qp = 9 su (Eq. 7-11) | As stated. |
 | p. 246-247 | Fig. 7-18 (Tomlinson 1980): alpha against su for three stratigraphy cases; Fig. 7-17 generally; where either could be used, "the inexperienced user should select and use the smaller value" | `adhesion_chart`: "fig_7_17" (default), "fig_7_18" or "smaller" (the smaller Ca of the two, layer by layer). A clay layer's case is its `fig_7_18_case`, else from the profile: contiguous cohesive layers are one clay stratum; under a cohesionless layer the top graph (sands or sandy gravels over stiff clay), from the ground surface the bottom graph (stiff clay without different overlying strata); the middle graph (soft clay over stiff clay) only where a layer gives it, since GEC-12 gives no su that separates a soft clay from a stiff one. A given case starts a stratum at the layer's top. D for Fig. 7-18 is the penetration into the clay (the figure's sketches): from the top of the stratum to the bottom of the layer, or to the toe if less; linear in D/b between the curves, the nearest held outside them (below the middle and bottom graphs' 10b curve with a note: alpha rises with penetration, so it is overstated there). Past the curves (5.0 ksf; 4.56-4.76 ksf in the middle graph) `adhesion_beyond_chart` as for Fig. 7-17. GM-144. |
 | p. 247 | "In clays with large shrink-swell potential, static resistance calculations should ignore the shaft resistance from the adhesion in the shrink-swell zone" | `shrink_swell_depth` (m below the ground surface, default none): no shaft resistance in cohesive soil above it, in the beta method too (the gap is the same). GM-144. |
@@ -158,8 +160,12 @@ footing only where the soil above it is gone for good.
   example did not apply Step 8.
 - V-002 (Table D-100): toe 9 su within 2 %; shaft within 1 % with the
   example's choices (smooth steel curves, Ca held at the chart's end); +13 %
-  to +14 % with the defaults (corrugated curve, p. 247; Ca held at the
-  chart's end); +25 % to +53 % with API alpha past the chart.
+  to +14 % with the defaults and a highly overconsolidated line of 1.0
+  (corrugated curve, p. 247; Layer 3's su / sigma'vo 0.32-0.41 is below the
+  line, so Ca is held at the chart's end); +25 % to +53 % with API alpha in
+  every layer past the chart. With no line the default run is refused
+  (GM-229). No V-002 layer reads alpha above 1, so the as-drawn reading moves
+  none of it.
 See `validation_examples/RESULTS.md`.
 
 ## Not done (engineering choices or gaps)
