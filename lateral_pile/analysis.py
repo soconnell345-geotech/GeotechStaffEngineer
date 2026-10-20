@@ -38,7 +38,11 @@ _PY_SOURCE = {
                        "App. A.1",
     "StiffClayBelowWT": "Reese, Cox & Koop (1975), OTC 2312, stiff clay "
                         "below the water table, as printed in COM624P "
-                        "(FHWA-SA-91-048) pp. 328-335 and GEC 9 App. A.2",
+                        "(FHWA-SA-91-048) pp. 328-335 and GEC 9 App. A.2; "
+                        "GEC 9 p. 219: for stiff clay with free water at "
+                        "or near the ground surface; with the groundwater "
+                        "at depth, Welch & Reese (StiffClayAboveWT) is "
+                        "more appropriate, even below it",
     "StiffClayAboveWT": "Welch & Reese (1972), Report 89-10, stiff clay "
                         "above the water table, as printed in COM624P "
                         "(FHWA-SA-91-048) pp. 336-340 and GEC 9 App. A.3",
@@ -280,7 +284,7 @@ class LateralPileAnalysis:
         rotational_stiffness: float = 0.0,
         n_elements: int = 100,
         tolerance: float = 1e-5,
-        max_iterations: int = 100,
+        max_iterations: int = 500,
         ei_tolerance: float = 1e-3,
         max_ei_iterations: int = 20,
         stickup: float = 0.0,
@@ -310,7 +314,12 @@ class LateralPileAnalysis:
         tolerance : float
             Convergence tolerance on deflection. Default 1e-5.
         max_iterations : int
-            Maximum number of solver iterations. Default 100.
+            Maximum number of solver iterations. Default 500 (100 before
+            GM-208; softening p-y curves take more near their peak). When
+            the iteration does not converge and the soil cannot resist the
+            load, ``lateral_pile.solver.SoilResistanceExceeded`` is raised
+            (no solution); when it can, the result has ``converged``
+            False and a ``message``.
         ei_tolerance : float
             Convergence tolerance on EI for cracked concrete sections.
             Default 1e-3.
@@ -387,6 +396,7 @@ class LateralPileAnalysis:
                 Es=solver_result.Es,
                 iterations=solver_result.iterations,
                 converged=solver_result.converged,
+                message=solver_result.message,
                 pile_length=self.pile.length,
                 pile_diameter=self.pile.diameter,
                 Vt=Vt, Mt=Mt, Q=Q,
@@ -450,6 +460,7 @@ class LateralPileAnalysis:
             tolerance=tolerance,
             max_iterations=max_iterations,
             pile_diameter=self.pile.diameter,
+            stickup=stickup,
         )
 
         return Results(
@@ -462,6 +473,7 @@ class LateralPileAnalysis:
             Es=solver_result.Es,
             iterations=solver_result.iterations,
             converged=solver_result.converged,
+            message=solver_result.message,
             pile_length=self.pile.length,
             pile_diameter=self.pile.diameter,
             Vt=Vt, Mt=Mt, Q=Q,

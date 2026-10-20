@@ -51,3 +51,13 @@ def test_get_py_curve_takes_kc():
     # the residuals (Eqs. 3.21, 3.26): 47.44 and 87.27 kN/m at x/b 2.5
     assert static["p_kN_per_m"][-1] == pytest.approx(47.44, abs=0.01)
     assert cyclic["p_kN_per_m"][-1] == pytest.approx(87.27, abs=0.01)
+
+
+def test_the_tool_says_no_solution_plainly():
+    """Cyclic at 900 kN: the pile and soil carry about 890 kN, so the call
+    fails saying so, with no deflections (GM-208)."""
+    r = call_agent("lateral_pile", "lateral_pile_analysis",
+                   dict(_PILE, Vt=900.0, layers=[dict(
+                       _CLAY, loading="cyclic", kc=108_600.0)]))
+    assert "No solution: the soil cannot resist this load" in r["error"]
+    assert "y_top_m" not in r

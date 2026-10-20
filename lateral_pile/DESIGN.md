@@ -63,6 +63,22 @@ results.summary()
   embedded response (matches to machine precision at equal h).
   No t-z/Q-z axial springs are modeled (out of scope); with Q != 0 the
   stickup mesh also captures the P-delta moment over the free length.
+- **No solution, or an iteration that stopped (GM-208, 2026-10-19)**: the
+  secant (p/y) iteration runs to `max_iterations` (default 500; it was 100,
+  and softening curves took 120-140 near their peak; a run that converged
+  within 100 is unchanged). When it stops short, or "converges" only after
+  running away (deflections beyond the pile's length, where every secant
+  modulus is too small to change the solve: on a 0.9 m, 15 m shaft in
+  cyclic stiff clay at 900 kN it reached 1.5e10 mm at iteration 643), the
+  head is pushed (displacement control, `solver._head_load_capacity`): at
+  head deflections from 0.001 b to the larger of 10 b and the length, the
+  load factor that holds each is iterated, and the peak refined. Below 1,
+  there is no solution and `SoilResistanceExceeded` (a ValueError) says
+  so plainly, with the most the pile and soil carry and the deflection
+  there; the tool returns it as its error. At 1 or more, the result comes
+  back with `converged` False and a `message` saying the iteration
+  stopped, not the soil. The push takes about 3 s, on these paths only.
+  Load control cannot pass the peak of a softening system; the push can.
 - **Sign convention**: M = EI*y'', V = EI*y''' + Q*y'. Positive Vt -> positive y.
 - **Moment equilibrium**: integral(p*z*dz) = -Mt (soil reaction opposes applied moment)
 - **Matlock cyclic (GM-208, 2026-10-19)**: as printed in COM624P
@@ -124,9 +140,11 @@ results.summary()
   - Before GM-208: a line, a square-root parabola and a plateau at A pu
     with y50 = 2.5 eps50 b, and 'cyclic' took ks. On a 0.9 m, 15 m shaft
     (E 25 GPa, free head) in c 100 kPa, the head deflection at 600 kN went
-    from 13.7 to 12.1 mm static and 19.4 to 62.8 mm cyclic (kc 108,600).
-    The softening curves need more than the default 100 secant iterations
-    at larger loads (`max_iterations`).
+    from 13.7 to 12.1 mm static and 19.4 to 63.0 mm cyclic (kc 108,600).
+    The softening curves need more than the old default of 100 secant
+    iterations at larger loads (static 900 kN: 133; cyclic 600 kN: 126);
+    the default is 500 since GM-208. Cyclic at 900 kN has no solution:
+    the pile and soil carry about 890 kN (see "No solution" above).
 - **Stiff clay above the water table (`StiffClayAboveWT`, GM-202,
   2026-10-19)**: Welch & Reese (1972) as printed in COM624P pp. 336-340
   (Eqs. 3.27-3.29, Figs. 3.9-3.10) and GEC 9 App. A.3 (Eqs. A-19 to A-21).

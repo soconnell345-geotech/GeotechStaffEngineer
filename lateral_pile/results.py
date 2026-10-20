@@ -61,6 +61,10 @@ class Results:
     choices : list of dict
         What the analysis used (GM-115, ``geotech_common.choices``): the
         p-y model of each layer with its source, and the loading.
+    message : str, optional
+        When the p-y iteration did not converge, why, in plain words: the
+        deflections and moments are then the last iterate, not a solution
+        (GM-208). None when it converged.
     """
     z: np.ndarray
     deflection: np.ndarray
@@ -80,6 +84,7 @@ class Results:
     ei_iterations: int = 0
     stickup: float = 0.0
     choices: list = field(default_factory=list)
+    message: Optional[str] = None
 
     @property
     def y_top(self) -> float:
@@ -143,8 +148,10 @@ class Results:
         lines = [
             "Lateral Pile Analysis Results",
             "=" * 40,
-            f"Pile length:          {self.pile_length:.2f} m",
         ]
+        if self.message:
+            lines += [self.message, ""]
+        lines.append(f"Pile length:          {self.pile_length:.2f} m")
         if self.stickup > 0:
             lines.append(f"Stickup above grade:  {self.stickup:.2f} m")
         lines += [
@@ -190,6 +197,8 @@ class Results:
             'iterations': self.iterations,
             'converged': self.converged,
         }
+        if self.message:
+            d = {'message': self.message, **d}
         if self.stickup > 0:
             d['stickup_m'] = self.stickup
             d['y_ground_m'] = self.y_ground

@@ -305,7 +305,11 @@ class StiffClayBelowWT:
     The criterion as printed in the COM624P manual (FHWA-SA-91-048),
     pp. 328-335, Eqs. 3.14-3.26, Figs. 3.6-3.8 and Tables 3.2-3.3, and in
     FHWA GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.2, pp. 219-224,
-    Eqs. A-7 to A-18 ("stiff clay with free water"). At depth x:
+    Eqs. A-7 to A-18 ("stiff clay with free water"). GEC 9 (p. 219) limits
+    it to stiff clay with free water at or near the ground surface, where
+    the soil degrades under cyclic load; with the groundwater at depth,
+    Welch & Reese (``StiffClayAboveWT``) is more appropriate, even below
+    it. At depth x:
 
         pct = 2 ca b + gamma' b x + 2.83 ca x          (3.14, A-7)
         pcd = 11 c b                                   (3.15, A-8)

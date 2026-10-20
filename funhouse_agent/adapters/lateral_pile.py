@@ -154,7 +154,7 @@ def run_lateral_pile_analysis(params, *, method="lateral_pile_analysis"):
         Vt=params.get("Vt", 0.0), Mt=params.get("Mt", 0.0), Q=params.get("Q", 0.0),
         head_condition=params.get("head_condition", "free"),
         n_elements=params.get("n_elements", 100), tolerance=params.get("tolerance", 1e-5),
-        max_iterations=params.get("max_iterations", 100),
+        max_iterations=params.get("max_iterations", 500),
         stickup=stickup,
     )
     return result, analysis
@@ -252,7 +252,7 @@ METHOD_INFO = {
             "stickup": {"type": "float", "required": False, "default": 0.0, "description": "Above-ground free length (m): head loads/BCs act at the top of the stickup; no soil resistance over it. pile_length stays the EMBEDDED length. Alias: free_length."},
             "n_elements": {"type": "int", "required": False, "default": 100, "description": "Finite-difference elements along the pile."},
             "tolerance": {"type": "float", "required": False, "default": 1e-5, "description": "Convergence tolerance on deflection (m)."},
-            "max_iterations": {"type": "int", "required": False, "default": 100, "description": "Most p-y iterations."},
+            "max_iterations": {"type": "int", "required": False, "default": 500, "description": "Most p-y iterations. If they run out, a push of the pile head decides: when the soil cannot resist the load the call fails with 'No solution: the soil cannot resist this load' and the most the pile and soil carry; otherwise the result says converged false with a message (raise max_iterations)."},
         },
         "returns": {"max_deflection_m": "Maximum deflection (m).", "y_top_m": "Deflection at loaded head (m).", "max_moment_kNm": "Maximum bending moment.", "max_moment_depth_m": "Depth of max moment (m).", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
