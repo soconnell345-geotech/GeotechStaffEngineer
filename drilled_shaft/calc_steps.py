@@ -667,11 +667,19 @@ def get_tables(result, analysis) -> list:
     top = max(length, analysis.soil.total_thickness)
     low = min(3.0, length)
     if top > low:
+        skipped = []
         rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
                  r["Q_ultimate_kN"]]
                 for r in analysis.capacity_vs_depth(
                     depth_min=low, depth_max=top,
-                    n_points=CAPACITY_TABLE_POINTS)]
+                    n_points=CAPACITY_TABLE_POINTS, skipped=skipped)]
+        note = ("The same analysis re-run with the shaft length set to "
+                "each value (SHAFT's capacity against depth); FS is not "
+                "applied")
+        if skipped:
+            from drilled_shaft.capacity import skipped_depths_note
+            note += ". " + skipped_depths_note(skipped,
+                                               CAPACITY_TABLE_POINTS)
         if rows:
             tables.append(CalcTable(
                 title="Ultimate capacity against shaft length",
@@ -680,9 +688,7 @@ def get_tables(result, analysis) -> list:
                          ("Base resistance Q_b", "kN", ".1f"),
                          ("Ultimate capacity Q_ult", "kN", ".1f")],
                 rows=rows,
-                note=("The same analysis re-run with the shaft length set "
-                      "to each value (SHAFT's capacity against depth); FS "
-                      "is not applied"),
+                note=note,
                 name="capacity_vs_length",
             ))
 

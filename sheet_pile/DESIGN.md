@@ -53,7 +53,11 @@ Kp at high δ/φ. For φ=30, δ/φ=0.5, Kp' = 6.30·0.746 = 4.70 (Caltrans Ex 8-
 Selectable via `pressure_method="log_spiral"` in `analyze_cantilever` /
 `analyze_anchored` (uses Coulomb active + the log-spiral passive; set the layer
 `wall_friction_deg` = δ). Default remains Rankine/Coulomb. Validated in
-`validation_examples` (V-013).
+`validation_examples` (V-013). Since GM-183 (2026-10-19) `log_spiral_source`
+picks the printed source of the passive Kp: `caquot_kerisel_1948`
+(default), `dm7_2_fig_4_13` (UFC 3-220-20 Fig. 4-13, every layer's δ =
+0.66 φ) or `dm7_2_eq_4_12` (UFC 3-220-20 Eq. 4-12); the tables are in
+`geotech_common/log_spiral.py` (see `soe/DESIGN.md`).
 
 ## Anchored wall shear and moment (GM-69, fixed 2026-10-14)
 `analyze_anchored` finds the embedment D by moments about the anchor and the

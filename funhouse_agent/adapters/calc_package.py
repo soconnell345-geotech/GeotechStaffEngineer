@@ -2024,7 +2024,8 @@ def _pdf_layout(path: str, figures=None, max_pages: int = 20) -> dict:
 
 
 def _generate_html_to_pdf(params: dict) -> dict:
-    from calc_package.latex_renderer import render_html_pdf_story
+    from calc_package.latex_renderer import (figures_not_printed_warning,
+                                           render_html_pdf_story)
 
     reject_unknown_params(
         params, {"html", "html_path", "output_path", "allow_unembeddable"},
@@ -2106,6 +2107,9 @@ def _generate_html_to_pdf(params: dict) -> dict:
             f"{len(findings)} figure reference(s) were NOT embedded and are "
             "missing from the PDF (allow_unembeddable=true). Tell the user "
             "which figures are absent — do not describe the PDF as complete."]
+    missing = figures_not_printed_warning(rendered)
+    if missing:
+        response.setdefault("renderer_warnings", []).append(missing)
     if problem:
         response["status"] = "error"
         response["error"] = (f"PDF was generated but {problem}."
@@ -2343,7 +2347,11 @@ METHOD_INFO = {
                  "scaled to fit a page. Pure-Python (PyMuPDF Story engine).",
         "parameters": {
             "html": {"type": "str", "required": False,
-                     "description": "Self-contained HTML content to render. Inline all "
+                     "description": "Self-contained HTML content to render: the "
+                                    "finished page as ONE string value, written out "
+                                    "in full with each figure's <img> tag in place "
+                                    "(nothing in the call is run, so no code builds "
+                                    "or edits it). Inline all "
                                     "CSS. FIGURES: use <img src=\"fig.png\"> "
                                     "(a PNG/JPEG in the working folder, named as the "
                                     "figure tool returned it, or a real local path, "

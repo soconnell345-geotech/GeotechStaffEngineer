@@ -310,6 +310,12 @@ _GM184_LISTS = [
     ("bearing_capacity", "bearing_capacity_analysis",
      {"load_inclination": 10, "factor_method": "meyerhof"},
      set(), {"vertical_load"}),
+    # depth factors for an embedded footing, and none in Terzaghi's (GM-197)
+    ("bearing_capacity", "bearing_capacity_analysis", {"depth": 1.0},
+     {"depth_factor_method"}, set()),
+    ("bearing_capacity", "bearing_capacity_analysis",
+     {"depth": 1.0, "factor_method": "terzaghi"}, set(),
+     {"depth_factor_method"}),
     # what each theory takes
     ("retaining_walls", "earth_pressure_coefficient", {"phi_deg": 30},
      {"theory", "beta_deg"}, {"delta_deg", "alpha_deg"}),
@@ -319,9 +325,14 @@ _GM184_LISTS = [
     ("retaining_walls", "earth_pressure_coefficient",
      {"phi_deg": 30, "theory": "coulomb"},
      {"delta_deg", "alpha_deg", "beta_deg"}, set()),
+    # since GM-183 the at-rest K0 takes a slope, and the log-spiral Kp a
+    # slope and its printed source
     ("retaining_walls", "earth_pressure_coefficient",
-     {"phi_deg": 30, "state": "at_rest"}, set(),
-     {"theory", "delta_deg", "alpha_deg", "beta_deg"}),
+     {"phi_deg": 30, "state": "at_rest"}, {"beta_deg"},
+     {"theory", "delta_deg", "alpha_deg", "log_spiral_source"}),
+    ("retaining_walls", "earth_pressure_coefficient",
+     {"phi_deg": 30, "state": "passive", "theory": "caquot_kerisel"},
+     {"beta_deg", "log_spiral_source"}, {"delta_deg", "alpha_deg"}),
     ("retaining_walls", "cantilever_wall", {}, set(), {"has_shear_key"}),
     ("retaining_walls", "cantilever_wall", {"include_passive": True},
      {"has_shear_key"}, set()),
@@ -383,7 +394,13 @@ _GM184_LISTS = [
      {"n_interaction_points"}),
     ("concrete_props", "rc_rectangular_section",
      {"include_interaction": True}, {"n_interaction_points"}, set()),
-    ("settlement", "elastic_settlement", {}, {"Iw"}, {"shape"}),
+    # GEC-6 Table 5-12's Iw by shape, rigidity and point (GM-203)
+    ("settlement", "elastic_settlement", {}, {"Iw", "shape", "rigidity",
+                                             "point"}, {"L"}),
+    ("settlement", "elastic_settlement", {"Iw": 1.0}, set(),
+     {"shape", "rigidity", "point", "L"}),
+    ("settlement", "elastic_settlement", {"rigidity": "rigid"}, {"shape"},
+     {"point"}),
     ("pynite", "continuous_beam", {}, set(), {"A"}),
 ]
 

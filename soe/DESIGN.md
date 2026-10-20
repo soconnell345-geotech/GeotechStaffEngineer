@@ -251,8 +251,23 @@ Rankine anchor so δ = 0 returns exactly the Rankine Kp (the printed R(0)
 times the chart Kp0 is Rankine within 2 %). DM 7.2 Figure 4-13 (p. 193) is
 Kerisel & Absi (1990) at δ/φ = 0.66: within 5 % of this table up to φ 35°,
 and 8–12 % lower at 40–45° (the 1948 chart runs higher there). Pinned in
-`soe/tests/test_caquot_kerisel_printed.py`. The chart's sloping-backfill
-curves (β/φ ≠ 0) are not built.
+`soe/tests/test_caquot_kerisel_printed.py`.
+
+**Sources side by side (GM-183, 2026-10-19).** The tables moved to
+`geotech_common/log_spiral.py`, which both `caquot_kerisel_Kp` copies call
+(one table, no copy to drift), and gained what the references print beside
+the 1948 chart: (1) the chart's sloping-ground curves, β/φ −0.9 to +1 at φ
+10–45° (`caquot_kerisel_Kp(..., beta_deg=)`), pinned to the manual's p. 4-29
+example (φ 32, β 27, δ 14: Kp ≈ 19, R 0.679, Kp′ = 13; the module gives
+19.3 and 13.05); (2) UFC 3-220-20 Fig. 4-13 (Kerisel & Absi 1990, δ/φ′ =
+0.66 only, β/φ′ −0.6 to +1, Kp ≤ 20); (3) UFC 3-220-20 Eq. 4-12 (level
+ground, any δ). The default stays the 1948 chart. Both figures are printed
+only as charts: every value was read by tracing each curve on the rendered
+page, calibrated on the printed grid lines, and drawn back over the figure
+to check. Kp0 between nodes is now interpolated with log Kp linear in φ
+(the chart's log scale), on 2.5° nodes; linear Kp between the 5° nodes had
+read up to about 5 % above the chart between nodes (φ 32: 7.86 → 7.57;
+37.5: 13.95 → 13.3; 42.5: 25.6 → 24.3); the 5° nodes are unchanged.
 
 ## Calc package (GM-41)
 `soe/calc_steps.py` renders the three wall tools through

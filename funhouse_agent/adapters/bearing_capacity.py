@@ -22,6 +22,7 @@ _ANALYSIS_VALID_PARAMS = (
     "layer2_friction_angle", "layer2_unit_weight", "layer2_description",
     "gwt_depth", "load_inclination", "ground_slope", "vertical_load",
     "factor_of_safety", "ngamma_method", "factor_method", "failure_mode",
+    "depth_factor_method",
 )
 
 
@@ -85,11 +86,12 @@ def run_bearing_capacity_analysis(params: dict, *,
         footing=footing, soil=soil,
         load_inclination=params.get("load_inclination", 0.0),
         ground_slope=params.get("ground_slope", 0.0),
-        vertical_load=params.get("vertical_load", 0.0),
+        vertical_load=params.get("vertical_load"),
         factor_of_safety=params.get("factor_of_safety", 3.0),
         ngamma_method=params.get("ngamma_method"),
         factor_method=params.get("factor_method", "vesic"),
         failure_mode=params.get("failure_mode", "general"),
+        depth_factor_method=params.get("depth_factor_method", "hansen"),
     )
     return analysis.compute(), analysis
 
@@ -183,7 +185,8 @@ METHOD_INFO = {
             "eccentricity_L": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along L (m)."},
             "load_inclination": {"type": "float", "required": False, "default": 0.0, "description": "Load inclination from vertical (degrees)."},
             "ground_slope": {"type": "float", "required": False, "default": 0.0, "description": "Ground slope angle (degrees)."},
-            "vertical_load": {"type": "float", "required": False, "default": 0.0, "description": "Applied vertical load V (kN) for Vesic's inclination factors, which take H = V tan(load_inclination) (GEC-6 Table 6-4); used only with factor_method 'vesic' and a load_inclination. With V = 0 Meyerhof's angle-based inclination factors are used instead."},
+            "vertical_load": {"type": "float", "required": False, "description": "Required with factor_method 'vesic', a load_inclination and a soil with cohesion (or phi = 0): the vertical load V on the footing (kN; kN/m for a strip). Vesic's load inclination factors take H = V tan(load_inclination) over V + A' c cot(phi) (Vesic 1975, EN 1997-1:2004 Annex D.4); with c = 0 that is tan(load_inclination) and V cancels. Without it the call is refused (factor_method 'meyerhof' takes the angle alone, UFC 3-220-20 Table 5-6)."},
+            "depth_factor_method": {"type": "str", "required": False, "default": "hansen", "allowed_values": ["hansen", "gec6", "none"], "description": "Depth factors for an embedded footing. 'hansen': Brinch Hansen's (1970) k = Df/B below Df/B = 1, arctan(Df/B) from 1 (UFC 3-220-20 Tables 5-7, 5-8 note B) in the factor_method's d factors (Meyerhof's: k = Df/B up to 1 as UFC Table 5-6 prints it). 'gec6' (factor_method 'vesic' only): GEC-6 Eq. 5-14 and Table 5-4, d_q on the surcharge term alone, 1.0 below Df/B = 1. 'none': no depth factors, as GEC-6 Sec. 5.2.3.3 advises unless the cover over the footing is competent and sure to stay. The result's choices give what each option gives."},
         },
         "returns": {
             "q_ultimate_kPa": "Ultimate bearing capacity.",
@@ -192,7 +195,7 @@ METHOD_INFO = {
             "Nc": "Cohesion factor.", "Nq": "Overburden factor.", "Ngamma": "Unit weight factor.",
             "Ngamma_alternatives": "Terzaghi: N-gamma from the other cited source.",
             "notes": "Terzaghi: method basis, N-gamma source, shape interpolation, Df/B and local-shear notes.",
-            "choices": "What the analysis chose, each with its basis and the alternatives: the method, its N-gamma, the shear mode, gross or net allowable pressure (and Meyerhof's depth parameter beyond Df/B = 1, shape factors under an inclined load). Tell the user.",
+            "choices": "What the analysis chose, each with its basis and the alternatives: the method, its N-gamma, the shear mode, gross or net allowable pressure, the depth factors for an embedded footing, and under an inclined load Vesic's inclination factors (what they took) or Meyerhof's shape factors. Tell the user.",
         },
     },
     "bearing_capacity_factors": {
@@ -221,7 +224,10 @@ declare_applies_when(METHOD_INFO, {
         # Vesic's inclination factors take H and V; Meyerhof's take the
         # angle alone, and Terzaghi's take no inclination (GM-184)
         "vertical_load": {"load_inclination": "set",
-                          "factor_method": ["vesic"]}},
+                          "factor_method": ["vesic"]},
+        # an embedded footing; Terzaghi has no depth factors (GM-197)
+        "depth_factor_method": {"depth": "set",
+                                "factor_method": ["vesic", "meyerhof"]}},
     "bearing_capacity_factors": {
         "ngamma_method": {"method": ["terzaghi"]},
         "failure_mode": {"method": ["terzaghi"]}},
@@ -241,5 +247,11 @@ declare_when_absent(METHOD_INFO, {
         "length": ("set by shape and width",
                    "a strip is taken as infinitely long; a square or "
                    "circular footing has L = B"),
+        # a run that left it out had c = 0: with cohesion it is refused
+        # (GM-203)
+        "vertical_load": ("not needed: with c = 0, H/V = "
+                          "tan(load_inclination) and V cancels",
+                          "Vesic (1975), EN 1997-1:2004 Annex D.4: i_q = "
+                          "[1 - H/(V + A' c cot phi)]^m"),
     },
 })

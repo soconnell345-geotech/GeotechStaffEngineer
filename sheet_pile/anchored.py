@@ -23,6 +23,7 @@ from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp  # kept for backwar
 from sheet_pile.cantilever import (
     WallSoilLayer, _get_soil_at_depth, _cumulative_stress,
     _cumulative_stress_passive, _effective_gamma, _compute_Ka_Kp,
+    _with_log_spiral_source,
 )
 from geotech_common.water import GAMMA_W
 
@@ -141,6 +142,7 @@ def analyze_anchored(
     FOS_passive: float = 1.5,
     gamma_w: float = GAMMA_W,
     pressure_method: str = "rankine",
+    log_spiral_source: str = "caquot_kerisel_1948",
 ) -> AnchoredWallResult:
     """Analyze an anchored sheet pile wall (free earth support method).
 
@@ -166,6 +168,12 @@ def analyze_anchored(
         Factor of safety on passive resistance. Default 1.5.
     gamma_w : float, optional
         Unit weight of water. Default 9.81.
+    pressure_method : str, optional
+        "rankine" (default), "coulomb" or "log_spiral" (Coulomb active and
+        the log-spiral passive Kp).
+    log_spiral_source : str, optional
+        With pressure_method "log_spiral", the printed source of the
+        passive Kp; see ``analyze_cantilever``.
 
     Returns
     -------
@@ -180,6 +188,8 @@ def analyze_anchored(
         )
     if gwt_depth_passive is None:
         gwt_depth_passive = gwt_depth_active
+    pressure_method = _with_log_spiral_source(pressure_method,
+                                              log_spiral_source)
 
     H = excavation_depth
     n_points = 500

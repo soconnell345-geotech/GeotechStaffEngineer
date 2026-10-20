@@ -10,6 +10,7 @@ Reuses the same preprocessing pipeline as the HTML renderer
 
 import base64
 import math
+import re
 import shutil
 import tempfile
 from datetime import date
@@ -484,6 +485,28 @@ _COLLAPSED_TABLES = "<style>table{border-collapse:collapse}</style>"
 class _StoryLoop(RuntimeError):
     """The Story engine ran past its page limit without placing
     everything: it is repeating the document."""
+
+
+#: Block elements a page break can go before, when the engine opens one
+#: past a page's foot (GM-198, :func:`_story_bytes`). Table rows and list
+#: items too: the engine drops a row or an item it opens there.
+_BLOCK_START = re.compile(
+    r"<(?:div|p|table|tr|li|h[1-6]|ul|ol|pre|blockquote|figure|section)"
+    r"(?=[\s/>])", re.IGNORECASE)
+#: Of those, the ones that hold lines of text, not other blocks: a table or
+#: a section that runs past a page foot can be whole, one of these is not.
+_TEXT_BLOCK_START = re.compile(r"<(?:p|li|h[1-6]|pre)(?=[\s/>])",
+                               re.IGNORECASE)
+_ID_ATTR = re.compile(r"""\sid\s*=\s*["']?([^"'\s>]+)""", re.IGNORECASE)
+#: A heading's end tag, then nothing but space (to the element after it).
+_HEADING_END = re.compile(r"</h([1-6])\s*>\s*$", re.IGNORECASE)
+#: The tags that say which table row an offset is in.
+_TABLE_PARTS = re.compile(r"<(/?)(table|thead|tr)(?=[\s/>])", re.IGNORECASE)
+_HEADING_ROW = re.compile(r"\s*<th(?=[\s/>])", re.IGNORECASE)
+#: Elements past a page foot dealt with, one per layout, in one Story PDF;
+#: and the layouts tried for them, at most.
+_MAX_FOOT_BREAKS = 25
+_MAX_FOOT_TRIALS = 40
 #: Containers a figure's own block climbs through, when the picture is the
 #: first thing in them and their only picture.
 _FIGURE_WRAPPERS = {"div", "figure", "p", "center", "a", "span", "picture"}
@@ -644,21 +667,281 @@ def _figure_marks(html: str) -> dict:
     return {"spans": spans, "breaks": breaks, "titled": titled}
 
 
+def _tag_blocks(html: str):
+    """``(html, starts)``: ``html`` with an id on each block element
+    (:data:`_BLOCK_START`) that has none, and ``{id: offset}``, where each
+    one's start tag is in the ``html`` given. An id the HTML uses twice is
+    left out."""
+    starts, twice, parts, last = {}, set(), [], 0
+    for m in _BLOCK_START.finditer(html):
+        end = html.find(">", m.end())
+        found = _ID_ATTR.search(html, m.end(),
+                                len(html) if end == -1 else end)
+        if found:
+            key = found.group(1)
+            if key in starts:
+                twice.add(key)
+            starts.setdefault(key, m.start())
+            continue
+        key = f"gse-block-{m.start()}"
+        starts[key] = m.start()
+        parts += [html[last:m.end()], f' id="{key}"']
+        last = m.end()
+    parts.append(html[last:])
+    for key in twice:
+        del starts[key]
+    return "".join(parts), starts
+
+
 def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
     """``html`` laid out by the Story engine into pages ``where`` on
     ``mediabox``: the PDF's bytes. :class:`_StoryLoop` past ``max_pages``
-    (default :data:`_MAX_STORY_PAGES`)."""
+    (default :data:`_MAX_STORY_PAGES`).
+
+    An element the engine opens past the foot of a page is not drawn, nor
+    anything in it (GM-198: a pile group package's "Figures" section, plan
+    view and caption, after a table that ran to 6 pt above the foot; a
+    section of calculation steps in another; a table row or a list item),
+    and the lines of a paragraph or list item it runs past the foot are
+    not drawn either. A page break goes before it, or before the heading
+    just above it so the heading goes with it (:func:`_foot_breaks`), and
+    the HTML is laid out again. When no break moves it without looping the
+    engine (a table row taller than a page), it is left as it was and the
+    next one after it is moved; :data:`_MAX_FOOT_TRIALS` layouts in all."""
+    import fitz
+
+    pdf, at = _story_pass(html, mediabox, where, max_pages)
+    if at is None:
+        return pdf
+    # a break adds a page at most, so a trial past this is the engine looping
+    with fitz.open("pdf", pdf) as doc:
+        limit = min(max_pages or _MAX_STORY_PAGES,
+                    doc.page_count + _MAX_FOOT_BREAKS + 2)
+    after = -1                     # elements up to here are left as they are
+    trials = 0
+    for _ in range(_MAX_FOOT_BREAKS):
+        trial = None
+        for (pos, insert), prefix in ((e, p) for e in _foot_breaks(html, at)
+                                      for p in ("", _COLLAPSED_TABLES)):
+            # a break after a table loops the engine unless the table
+            # borders are collapsed (as in _lay_out_figures)
+            if prefix and html.startswith(prefix):
+                continue
+            if trials >= _MAX_FOOT_TRIALS:
+                return pdf
+            trials += 1
+            text = prefix + html[:pos] + insert + html[pos:]
+
+            def _moved(offset, pos=pos, insert=insert, prefix=prefix):
+                if offset < 0:
+                    return offset
+                return (offset + len(prefix)
+                        + (len(insert) if pos <= offset else 0))
+            try:
+                got_pdf, got_at = _story_pass(text, mediabox, where, limit,
+                                              after=_moved(after),
+                                              loop_early=True)
+            except _StoryLoop:
+                continue
+            # still the first one past a foot (or one before it is): the
+            # break did not move it
+            if got_at is not None and got_at <= _moved(at):
+                continue
+            trial = (text, got_pdf, got_at, _moved(after))
+            break
+        if trial is None:
+            after = _element_end(html, at)
+            try:
+                at = _story_pass(html, mediabox, where, limit, after=after)[1]
+            except _StoryLoop:
+                break
+        else:
+            html, pdf, at, after = trial
+        if at is None:
+            break
+    return pdf
+
+
+def _element_end(html: str, at: int) -> int:
+    """Where the element whose start tag is at ``at`` ends (``at`` itself
+    when its end tag is not found): an element left as it is, is left with
+    everything in it."""
+    name = re.match(r"<([A-Za-z0-9]+)", html[at:at + 12])
+    if name is None:
+        return at
+    depth = 0
+    for m in re.finditer(rf"<(/?){name.group(1)}(?=[\s/>])", html[at:],
+                         re.IGNORECASE):
+        depth += -1 if m.group(1) else 1
+        if depth == 0:
+            close = html.find(">", at + m.end())
+            return len(html) if close == -1 else close + 1
+    return at
+
+
+def _table_row(html: str, at: int):
+    """``(table start, row start, body rows before)`` for the innermost
+    table whose row starts at or holds ``at``: where its start tag and the
+    row's are, and where its body rows (not in ``<thead>``, not headings
+    only) before the row start. ``None`` when ``at`` is in no table."""
+    tables = []
+    for m in _TABLE_PARTS.finditer(html, 0, at):
+        if m.group(2).lower() == "table":
+            if m.group(1):
+                if tables:
+                    tables.pop()
+            else:
+                tables.append(m.start())
+    if not tables:
+        return None
+    depth, head, row, rows = 0, False, None, []
+    for m in _TABLE_PARTS.finditer(html, tables[-1], min(len(html), at + 4)):
+        tag, closing = m.group(2).lower(), bool(m.group(1))
+        if tag == "table":
+            depth += -1 if closing else 1
+        elif depth == 1 and tag == "thead":
+            head = not closing
+        elif depth == 1 and tag == "tr" and not closing and m.start() <= at:
+            if row is not None and not row[1]:
+                rows.append(row[0])
+            # a row of <th> cells is the table's heading, kept with its rows
+            row = (m.start(), head or bool(_HEADING_ROW.match(
+                html, html.find(">", m.start()) + 1)))
+    if row is None:
+        return None
+    return tables[-1], row[0], rows
+
+
+def _foot_breaks(html: str, at: int) -> list:
+    """The page breaks that may move the element starting at ``at`` to the
+    next page (GM-198), in the order :func:`_story_bytes` tries them, as
+    ``[(offset, text inserted)]``.
+
+    A row of a table is moved by ending the table before it and starting
+    it again on the next page (the engine places a break between rows
+    before the table, and ignores one in a cell or on a row); its first
+    body row, by a break before the table. Anything else gets a break
+    before it. A break at a page foot can be placed past the foot too, and
+    ignored (inside a calculation step, after the line or the row before
+    it), so then the block or the row just before it goes too (a table's
+    last row), then each block holding it, innermost first. Each is tried
+    first before a heading just above it, so the heading goes with it.
+    """
+    edits = []
+    row = _table_row(html, at)
+    if row is not None:
+        table, tr, before = row
+        edits += _row_splits(html, table, [tr] + before[1:][-1:], before)
+        at = table
+    previous, holding = _blocks_before(html, at)
+    targets = [at] + ([previous] if previous is not None else []) + holding
+    for target in targets:
+        heading = _HEADING_END.search(html, max(0, target - 2000), target)
+        spots = [target]
+        if heading:
+            spots.insert(0, html.rfind(f"<h{heading.group(1)}", 0, target))
+        if target == previous and re.match(r"<table(?=[\s/>])",
+                                           html[target:target + 7],
+                                           re.IGNORECASE):
+            end = _element_end(html, target)
+            last = (_table_row(html, html.rfind("<", target, end))
+                    if end > target else None)
+            if last is not None:
+                edits += _row_splits(html, last[0], [last[1]], last[2])
+        edits += [(spot, _PAGE_BREAK) for spot in spots if spot >= 0]
+    return list(dict.fromkeys(edits))
+
+
+def _row_splits(html: str, table: int, rows: list, before: list) -> list:
+    """The edits that end the table starting at ``table`` before each of
+    ``rows`` and start it again on the next page; none when no body row
+    comes before (``before``: :func:`_table_row`)."""
+    if not before:
+        return []
+    tag = html[table:html.find(">", table) + 1]
+    again = "</table>" + _PAGE_BREAK + _ID_ATTR.sub("", tag)
+    return [(start, again) for start in rows]
+
+
+#: Block start and end tags, for the blocks before and holding an offset.
+_BLOCK_TAGS = re.compile(
+    r"<(/?)(div|section|figure|blockquote|ul|ol|li|table|td|th|tr|p|pre"
+    r"|h[1-6])(?=[\s/>])", re.IGNORECASE)
+#: Blocks climbed through, from an element no break moves.
+_MAX_BLOCKS_CLIMBED = 3
+_CELL_TAGS = ("td", "th", "tr")
+
+
+def _blocks_before(html: str, at: int):
+    """``(previous, holding)``: where the block just before the offset
+    ``at`` starts, in the block holding it (``None``: none is), and where
+    the blocks holding ``at`` start, innermost first, up to
+    :data:`_MAX_BLOCKS_CLIMBED`; none from inside a table (its rows are
+    moved by :func:`_foot_breaks`)."""
+    stack = [["", 0, None]]         # tag, start, the last block closed in it
+    for m in _BLOCK_TAGS.finditer(html, 0, at):
+        tag = m.group(2).lower()
+        if not m.group(1):
+            stack.append([tag, m.start(), None])
+            continue
+        for i in range(len(stack) - 1, 0, -1):
+            if stack[i][0] == tag:
+                start = stack[i][1]
+                del stack[i:]
+                stack[-1][2] = start
+                break
+    if stack[-1][0] in _CELL_TAGS:
+        return None, []
+    holding = []
+    for tag, start, _last in reversed(stack[1:]):
+        if tag in _CELL_TAGS or len(holding) >= _MAX_BLOCKS_CLIMBED:
+            break
+        holding.append(start)
+    return stack[-1][2], holding
+
+
+def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
+                loop_early=False):
+    """``(pdf bytes, offset)``: one layout of ``html``
+    (:func:`_story_bytes`), and where in ``html`` the first block element
+    past ``after`` starts that the engine opened past a page's foot, or a
+    paragraph, list item or heading it ran past one (``None``: none).
+    :class:`_StoryLoop` past ``max_pages``, or with ``loop_early`` as soon
+    as the engine places an element a second time (a trial page break that
+    loops it)."""
     import io
 
     import fitz
 
+    tagged, starts = _tag_blocks(html)
+    texts = {key for key, at in starts.items()
+             if _TEXT_BLOCK_START.match(html, at)}
+    past_foot, opened, again = [], set(), []
+
+    def _seen(pos):
+        if pos.id not in starts:
+            return
+        if pos.open_close & 1:
+            # the engine looping places the same element again
+            if pos.id in opened:
+                again.append(pos.id)
+            opened.add(pos.id)
+        if past_foot or starts[pos.id] <= after:
+            return
+        top, bottom = pos.rect[1], pos.rect[3]
+        if bottom <= top:
+            return
+        if ((pos.open_close & 1 and top >= where.y1 - 0.5)
+                or (pos.id in texts and bottom > where.y1 + 0.5)):
+            past_foot.append(starts[pos.id])
+
     limit = max_pages or _MAX_STORY_PAGES
-    story = fitz.Story(html=html)
+    story = fitz.Story(html=tagged)
     buf = io.BytesIO()
     writer = fitz.DocumentWriter(buf)
     more, pages = 1, 0
     while more:
-        if pages >= limit:
+        if pages >= limit or (loop_early and again):
             writer.close()
             raise _StoryLoop(
                 f"the layout ran past {limit} pages without placing "
@@ -667,11 +950,13 @@ def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
                 "page break")
         device = writer.begin_page(mediabox)
         more, _filled = story.place(where)
+        if not past_foot or loop_early:
+            story.element_positions(_seen)
         story.draw(device)
         writer.end_page()
         pages += 1
     writer.close()
-    return buf.getvalue()
+    return buf.getvalue(), (past_foot[0] if past_foot else None)
 
 
 def _story_images(pdf: bytes) -> list:
@@ -903,7 +1188,9 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     (``geotech_common.layout_ink.LETTERING_KEY``), ``lettering_pt`` (the
     smallest as printed) and ``checked_width_in`` (the width the layout
     check measured it at). ``figures`` is ``None`` when the pictures drawn
-    cannot be matched to the HTML's ``<img>`` tags.
+    cannot be matched to the HTML's ``<img>`` tags; then, when fewer
+    printed than the HTML holds, ``figures_not_printed`` says how many did
+    not (:func:`figures_not_printed_warning`).
     """
     try:
         import fitz  # PyMuPDF, installed via the [pdf] extra
@@ -947,7 +1234,26 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
                 if lt.get("checked_width_in"):
                     row["checked_width_in"] = lt["checked_width_in"]
             figures.append(row)
-    return {"path": str(output_path), "figures": figures}
+    out = {"path": str(output_path), "figures": figures}
+    if figures is None:
+        try:
+            short = len(_figure_marks(html)["spans"]) - len(_story_images(pdf))
+        except Exception:                                  # noqa: BLE001
+            short = 0
+        if short > 0:
+            out["figures_not_printed"] = short
+    return out
+
+
+def figures_not_printed_warning(rendered: dict) -> "str | None":
+    """The warning for a Story PDF that left figures out
+    (``rendered["figures_not_printed"]``, GM-198), else None."""
+    short = rendered.get("figures_not_printed") if rendered else None
+    if not short:
+        return None
+    return (f"{short} figure(s) in the HTML did not print in the PDF (the "
+            "Story engine left them out where a page was full). Tell the "
+            "user which are missing; do not describe the PDF as complete.")
 
 
 def render_pdf(
@@ -1011,6 +1317,9 @@ def render_pdf(
             "Print -> Save as PDF, or install a LaTeX distribution "
             "(MiKTeX / TeX Live)."
         ) from exc
+    missing = figures_not_printed_warning(rendered)
+    if missing:
+        warnings.append(missing)
     # each figure's printed size and lettering (GM-186), for the caller to
     # warn on one that prints too small
     return {"path": rendered["path"], "renderer": "pymupdf_story",

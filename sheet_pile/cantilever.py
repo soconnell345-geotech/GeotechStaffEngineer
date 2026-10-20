@@ -24,6 +24,26 @@ from sheet_pile.earth_pressure import (
     active_pressure, passive_pressure, tension_crack_depth,
 )
 from geotech_common.water import GAMMA_W
+from geotech_common import log_spiral as _log_spiral
+
+_LOG_SPIRAL = ("log_spiral", "caquot_kerisel", "logspiral")
+
+
+def _with_log_spiral_source(pressure_method: str, source: str) -> str:
+    """The pressure method the integrations take: 'log_spiral' carries the
+    printed source of its passive Kp as 'log_spiral:<source>' (GM-183).
+    A source other than the default with another method is refused."""
+    if source not in _log_spiral.SOURCES:
+        raise ValueError(f"Unknown log_spiral_source {source!r}; one of "
+                         f"{list(_log_spiral.SOURCES)}")
+    if pressure_method not in _LOG_SPIRAL:
+        if source != _log_spiral.DEFAULT_SOURCE:
+            raise ValueError(
+                f"log_spiral_source {source!r} is the source of the "
+                f"log-spiral passive Kp; pressure_method {pressure_method!r} "
+                "does not use it (use pressure_method 'log_spiral')")
+        return pressure_method
+    return f"log_spiral:{source}"
 
 
 @dataclass
@@ -231,6 +251,7 @@ def analyze_cantilever(
     gamma_w: float = GAMMA_W,
     pressure_method: str = "rankine",
     embedment_increase: float = 1.0,
+    log_spiral_source: str = "caquot_kerisel_1948",
 ) -> CantileverWallResult:
     """Analyze a cantilever sheet pile wall.
 
@@ -271,12 +292,19 @@ def analyze_cantilever(
     gamma_w : float, optional
         Unit weight of water (kN/m³). Default 9.81.
     pressure_method : str, optional
-        "rankine" (default) or "coulomb".
+        "rankine" (default), "coulomb" or "log_spiral" (Coulomb active and
+        the log-spiral passive Kp).
     embedment_increase : float, optional
         Multiplier applied to the converged embedment to obtain the
         design embedment. Default 1.0 (no increase — safety carried by
         FOS_passive). Use 1.2-1.4 with FOS_passive = 1.0 for the
         depth-increase basis. Must be >= 1.0.
+    log_spiral_source : str, optional
+        With pressure_method "log_spiral", the printed source of the
+        passive Kp (``geotech_common.log_spiral.SOURCES``): the Caquot-
+        Kerisel (1948) chart, Caltrans T&S Fig. 4-20 (default); UFC
+        3-220-20 Fig. 4-13 (Kerisel and Absi 1990, delta/phi' = 0.66 only);
+        or UFC 3-220-20 Eq. 4-12 (level ground, any wall friction).
 
     Returns
     -------
@@ -290,6 +318,8 @@ def analyze_cantilever(
 
     if gwt_depth_passive is None:
         gwt_depth_passive = gwt_depth_active
+    pressure_method = _with_log_spiral_source(pressure_method,
+                                              log_spiral_source)
 
     # For a simple single-layer case, we use analytical formulas
     # For multi-layer, we use numerical integration
@@ -346,8 +376,14 @@ def _compute_Ka_Kp(phi_deg: float, method: str = "rankine",
     method="log_spiral" (Caquot-Kerisel) uses the Coulomb active coefficient but
     the log-spiral PASSIVE coefficient (``caquot_kerisel_Kp``), which avoids
     Coulomb's over-prediction of Kp at high delta/phi. Requires delta_deg.
+    "log_spiral:<source>" takes the passive Kp from that printed source
+    (``geotech_common.log_spiral``; GM-183).
     """
-    if method in ("log_spiral", "caquot_kerisel", "logspiral"):
+    if method.startswith("log_spiral:"):
+        return (coulomb_Ka(phi_deg, delta_deg=delta_deg),
+                _log_spiral.log_spiral_Kp(phi_deg, delta_deg,
+                                          source=method.split(":", 1)[1]))
+    if method in _LOG_SPIRAL:
         return (coulomb_Ka(phi_deg, delta_deg=delta_deg),
                 caquot_kerisel_Kp(phi_deg, delta_deg=delta_deg))
     if method == "coulomb":

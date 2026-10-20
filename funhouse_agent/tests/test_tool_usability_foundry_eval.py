@@ -157,6 +157,17 @@ class TestParameterSuggestions:
         # nor on the name given: axial_pile_capacity's E is the pile's
         assert suggest_params("E_s", ["E", "nu"]) == []
 
+    def test_a_one_letter_tail_offers_its_siblings(self):
+        # GM-197: dm7's uplift block takes the two unit weights gamma_m and
+        # gamma_b; 'gamma' matched gamma_m alone ('m' read as metres)
+        assert suggest_params("gamma", ["B", "L", "Z1", "Z2", "gamma_m",
+                                        "gamma_b", "W_cap"]) == [
+            "gamma_m", "gamma_b"]
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("dm7", "uplift_block_weight_undrained",
+                         {"gamma": 18.0})
+        assert "gamma -> gamma_m or gamma_b" in out["error"]
+
     def test_does_not_offer_a_different_quantity(self):
         # sharing a word is not a spelling slip: base vs load inclination
         assert suggest_params("base_inclination",
