@@ -128,7 +128,7 @@ def _with_scheme(value: str) -> str:
     """``value`` with ``https://`` added when it has no scheme, no trailing
     slash."""
     url = value.strip().rstrip("/")
-    if not url.startswith(("http://", "https://")):
+    if not url.lower().startswith(("http://", "https://")):
         url = "https://" + url
     return url
 
@@ -156,6 +156,9 @@ FOUNDRY_INJECTED_BASE_ENVS = {"anthropic": "ANTHROPIC_BASE_URL",
                               "openai": "OPENAI_BASE_URL"}
 #: The container's Foundry proxy (a host and path, usually with no scheme).
 FOUNDRY_PROXY_URL_ENV = "FOUNDRY_PROXY_URL"
+#: Where a container may carry it, first set wins (the AI FDE's forwarder,
+#: which worked in the published app, read both).
+FOUNDRY_PROXY_URL_ENVS = (FOUNDRY_PROXY_URL_ENV, "MAESTRO_FOUNDRY_PROXY_URL")
 #: The language-model service's provider-shaped doors behind that proxy.
 FOUNDRY_PROXY_PATHS = {
     "anthropic": "/language-model-service/api/proxy/anthropic",
@@ -163,10 +166,11 @@ FOUNDRY_PROXY_PATHS = {
 #: The stack's own LLM-proxy paths (``foundry_base_url`` + these).
 FOUNDRY_STACK_PATHS = {"anthropic": "/api/v2/llm/proxy/anthropic",
                        "openai": "/api/v2/llm/proxy/openai/v1"}
-#: CA bundle files for the proxy's TLS, first existing file wins. The SDKs'
-#: HTTP client reads only SSL_CERT_FILE itself.
+#: CA bundle files for the proxy's TLS, first existing file wins (the four
+#: the AI FDE's forwarder read). The SDKs' HTTP client reads only
+#: SSL_CERT_FILE itself.
 FOUNDRY_CA_ENVS = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
-                   "MAESTRO_CERT_PEM_PATH")
+                   "MAESTRO_CERT_PEM_PATH", "FOUNDRY_CLI_CERT_PEM_PATH")
 
 
 @dataclass(frozen=True)
@@ -206,7 +210,8 @@ def foundry_proxy_route(family: str) -> Optional[FoundryRoute]:
        set there keeps working);
     2. ``ANTHROPIC_BASE_URL`` / ``OPENAI_BASE_URL``, when the container is
        given them;
-    3. derived from ``FOUNDRY_PROXY_URL`` + the language-model service path;
+    3. derived from ``FOUNDRY_PROXY_URL`` (or ``MAESTRO_FOUNDRY_PROXY_URL``)
+       + the language-model service path;
     4. ``FOUNDRY_HOSTNAME`` / ``FOUNDRY_URL`` + the stack path (the route
        before INF-36).
     """
@@ -222,10 +227,10 @@ def foundry_proxy_route(family: str) -> Optional[FoundryRoute]:
     injected = FOUNDRY_INJECTED_BASE_ENVS[family]
     if _env(injected):
         return FoundryRoute(_with_scheme(_env(injected)), injected)
-    if _env(FOUNDRY_PROXY_URL_ENV):
-        return FoundryRoute(_with_scheme(_env(FOUNDRY_PROXY_URL_ENV))
-                            + FOUNDRY_PROXY_PATHS[family],
-                            FOUNDRY_PROXY_URL_ENV)
+    for env in FOUNDRY_PROXY_URL_ENVS:
+        if _env(env):
+            return FoundryRoute(_with_scheme(_env(env))
+                                + FOUNDRY_PROXY_PATHS[family], env)
     for env in FOUNDRY_HOST_ENVS[1:]:
         if _env(env):
             return FoundryRoute(_with_scheme(_env(env))

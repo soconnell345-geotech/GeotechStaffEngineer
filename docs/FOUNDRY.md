@@ -17,32 +17,34 @@ Everything lives in the pip package; the Foundry side is one workspace, a
 3. **Test wheels** (built from master, not on PyPI; e.g. the INF-25 set in
    `../foundry_handoff/gse_app_2026-10-20/`). Their versions carry a local
    label (`5.33.0+foundry.20261020`), which the sidebar footer shows. What
-   the first run found (the AI FDE, 2026-10-20):
-   - **Rename the files after a zip upload.** Unpacking a zip in the
-     workspace dropped the `+` from the wheel names
-     (`geotech_staff_engineer-5.33.0foundry.20261020-py3-none-any.whl`), and
-     pip refuses a wheel whose name does not match its version. Put the `+`
-     back (`5.33.0+foundry.20261020`) before installing; the version inside
-     the wheel (its METADATA) is the one to copy.
-   - **maestro does not take file paths** (`maestro env pip install ./x.whl`
-     answers "No valid versions found"). What worked: every third-party
-     dependency through the managed environment as usual, and the three
-     local wheels installed by the app file at start-up with
-     `pip install --no-deps --no-index --target <folder>` into a folder
-     outside the managed environment, that folder first on `sys.path` and
-     `PYTHONPATH`. Then the lockfile never lists the local builds and the
-     published app installs them the same way. The clean route is a Foundry
-     Artifacts repository (or conda channel) holding the three packages, so
-     the environment can list them like any other dependency.
-   - **Three pins the managed environment needed:** `websockets>=14,<16`,
-     `polars>=1,<2` and `tenacity<9.2`. Streamlit's and Foundry's own
-     libraries otherwise resolve newer versions than langgraph-sdk
-     (websockets), pygef (polars) and google-genai (tenacity) accept, and
-     `pip check` reports the conflict (`websockets 17.3`, `polars 2.0.0`).
-     Add them on the conda side beside the app's dependencies.
-   - The app needs numpy 2 (`np.trapezoid`); a fresh install of the INF-25
-     set resolved numpy 2.5.4 on Python 3.12 and 2.4.6 on 3.11 (WSL,
-     2026-10-20), and Foundry resolved 2.5.4 on Python 3.12.15.
+   worked in the first run (the AI FDE, 2026-10-20), in order:
+   1. **The other packages first.** Everything the app needs except its own
+      three packages goes into the managed environment as usual, plus three
+      pins: `websockets>=14,<16`, `polars>=1,<2` and `tenacity<9.2`
+      (Streamlit's and Foundry's own libraries otherwise pull in newer
+      versions than langgraph-sdk, pygef and google-genai accept, and
+      `pip check` reports the conflict, e.g. `websockets 17.3`,
+      `polars 2.0.0`). Add the pins on the conda side beside the other
+      dependencies. The app needs numpy 2 (`np.trapezoid`); Foundry resolved
+      numpy 2.5.4 on Python 3.12.15.
+   2. **Upload the three wheels**, and check their names. Unpacking a zip
+      in the workspace dropped the `+` from the names
+      (`geotech_staff_engineer-5.33.0foundry.20261020-py3-none-any.whl`),
+      and pip refuses a wheel whose name does not match its version. Put the
+      `+` back (`5.33.0+foundry.20261020`); the version inside the wheel
+      (its METADATA) is the one to copy.
+   3. **Install them from the app file at start-up.** maestro does not take
+      file paths (`maestro env pip install ./x.whl` answers "No valid
+      versions found"), so the app file runs
+      `pip install --no-deps --no-index --target <folder>` on the three
+      wheels, into a folder outside the managed environment, and puts that
+      folder first on `sys.path` and `PYTHONPATH`. The lockfile then never
+      lists the local builds, and the published app installs them the same
+      way when it starts.
+
+   The clean route is a Foundry Artifacts repository (or conda channel)
+   holding the three packages, so the environment lists them like any other
+   dependency and step 3 goes away.
 
 ## 2. The app file (the only code that lives in Foundry)
 
@@ -110,7 +112,11 @@ picker switches between them.
 INF-41). On Foundry the helper that searches and reads the reference library
 defaults to the model list's `Sonnet 5.5` entry; the main agent and every
 other helper (calculations, figures, the reviewer, page reading) run on the
-main model, Opus 5.5 by default. The sidebar shows
+main model, Opus 5.5 by default. Pictures are read on the main model too:
+when the references helper reads a value off a chart
+(`read_reference_figure`), the image goes to the main model (Opus 5.5 by
+default), and Sonnet 5.5 does the helper's searching, reading and writing.
+The sidebar shows
 a **References helper model** picker under **Model** ("Same as the main
 model" keeps it on the main model), and `GEOTECH_HELPER_MODELS` sets any
 helper by name: `references=Sonnet 5.5`, `calc=main`, or a RID
@@ -119,8 +125,9 @@ helper by name: `references=Sonnet 5.5`, `calc=main`, or a RID
 as the main one, through the same proxy address and request fixes (§3a,
 §3c). If `Sonnet 5.5` is not in the list, the helper stays on the main model
 and the sidebar says so. **Connection diagnostics** print an `agent models`
-line (the main agent, each helper with a model of its own, and "every other
-helper: the main agent's model", each with where it came from: this host's
+line (the main agent, each helper with a model of its own, "every other
+helper: the main agent's model" and the model that reads images, each with
+where it came from: this host's
 default, `GEOTECH_HELPER_MODELS`, `GEOTECH_WEBAPP_MODEL` or the sidebar) and send a plain and a tool-calling request
 to each helper model; each turn's `activity.jsonl` names the model on every
 `model_start` beside the agent that made the call, and `meta.json`'s engine
@@ -234,7 +241,9 @@ The first that is set wins:
    containers are given these ready-made.
 3. `https://` + `FOUNDRY_PROXY_URL` + `/language-model-service/api/proxy/anthropic`
    (or `/openai/v1`): every Code Workspace and published app seen so far
-   carries `FOUNDRY_PROXY_URL`, so this is the usual route.
+   carries `FOUNDRY_PROXY_URL`, so this is the usual route
+   (`MAESTRO_FOUNDRY_PROXY_URL` is read when `FOUNDRY_PROXY_URL` is not
+   set, as the first run's workspace glue did).
 4. `FOUNDRY_HOSTNAME` (or `FOUNDRY_URL`) + `/api/v2/llm/proxy/...`: the route
    before the release after 5.33.0. In a Code Workspace and a published app
    `FOUNDRY_HOSTNAME` is a local data sidecar (`localhost:8080`) that answers
@@ -244,9 +253,9 @@ The first that is set wins:
 The sidebar's success line names the route (`route: FOUNDRY_PROXY_URL`,
 `route: the base URL the container provides`, ...), and **Connection
 diagnostics** print the setting and the URL (never the token). TLS is checked
-against the first of `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and
-`MAESTRO_CERT_PEM_PATH` that names a file (the line then says "CA bundle
-set"), else the SDK's own default.
+against the first of `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
+`MAESTRO_CERT_PEM_PATH` and `FOUNDRY_CLI_CERT_PEM_PATH` that names a file
+(the line then says "CA bundle set"), else the SDK's own default.
 
 ### 3d. Reference PDFs on Foundry
 
@@ -313,9 +322,11 @@ buttons the page makes in the browser: the download itself, saved under the
 file's own name, and **Open in new tab**, the browser's own viewer (a file
 saved from there gets a random name; use the first button to keep it). The
 file travels inside the page, so files over 20 MB show a message instead;
-`GEOTECH_FOUNDRY_DOWNLOAD_MAX_MB` changes the limit. A PDF card's preview
-shows the first ten pages as images, with a note to open the whole file in a
-new tab. Elsewhere both are unchanged (`webapp/file_widgets.py`).
+`GEOTECH_FOUNDRY_DOWNLOAD_MAX_MB` changes the limit. A PDF card has a
+**Preview the first 10 pages** switch: turned on, it shows those pages as
+images, with a note to open the whole file in a new tab (the pages are drawn
+only when asked for, so a long conversation with many PDFs stays quick).
+Elsewhere both are unchanged (`webapp/file_widgets.py`).
 
 ## 4b. Retiring the workspace glue
 

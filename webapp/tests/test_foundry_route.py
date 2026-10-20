@@ -20,8 +20,8 @@ _HAS_LC_ANTHROPIC = importlib.util.find_spec("langchain_anthropic") is not None
 _HAS_LC_OPENAI = importlib.util.find_spec("langchain_openai") is not None
 
 ROUTE_ENVS = ("GEOTECH_FOUNDRY_HOST", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL",
-              "FOUNDRY_PROXY_URL", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
-              "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
+              *engine_config.FOUNDRY_PROXY_URL_ENVS, "FOUNDRY_HOSTNAME",
+              "FOUNDRY_URL", *engine_config.FOUNDRY_CA_ENVS,
               "GEOTECH_DEPLOYMENT")
 PROXY = "proxy.example.test/api/foundry-proxy"
 LMS = "https://proxy.example.test/api/foundry-proxy/language-model-service"
@@ -43,6 +43,29 @@ def test_the_proxy_url_gives_both_doors(env):
     assert a.url == f"{LMS}/api/proxy/anthropic"
     assert o.url == f"{LMS}/api/proxy/openai/v1"
     assert a.source == o.source == "FOUNDRY_PROXY_URL"
+
+
+@pytest.mark.parametrize("value", [
+    PROXY, PROXY + "/", PROXY + "//", "https://" + PROXY + "/",
+    "HTTPS://" + PROXY, "  " + PROXY + " "])
+def test_the_proxy_url_with_or_without_scheme_and_slash(env, value):
+    """No scheme gets https://, a scheme in any case is kept, trailing
+    slashes go: never a doubled or missing path segment."""
+    env.setenv("FOUNDRY_PROXY_URL", value)
+    url = foundry_proxy_route("anthropic").url
+    assert url.lower() == f"{LMS}/api/proxy/anthropic"
+    assert "//language" not in url and url.count("://") == 1
+
+
+def test_the_maestro_name_of_the_proxy_url(env):
+    """The AI FDE's forwarder, which worked in the published app, also read
+    MAESTRO_FOUNDRY_PROXY_URL; FOUNDRY_PROXY_URL comes first."""
+    env.setenv("MAESTRO_FOUNDRY_PROXY_URL", PROXY)
+    route = foundry_proxy_route("anthropic")
+    assert (route.url, route.source) == (f"{LMS}/api/proxy/anthropic",
+                                         "MAESTRO_FOUNDRY_PROXY_URL")
+    env.setenv("FOUNDRY_PROXY_URL", "other.example.test/p")
+    assert foundry_proxy_route("anthropic").source == "FOUNDRY_PROXY_URL"
 
 
 def test_the_order_of_the_settings(env):
@@ -102,6 +125,8 @@ def test_a_ca_bundle_is_the_first_named_file_that_exists(env, tmp_path):
     assert engine_config.foundry_ca_bundle() == str(ca)
     env.delenv("MAESTRO_CERT_PEM_PATH")
     assert engine_config.foundry_ca_bundle() is None
+    env.setenv("FOUNDRY_CLI_CERT_PEM_PATH", str(ca))     # the forwarder's 4th
+    assert engine_config.foundry_ca_bundle() == str(ca)
 
 
 @pytest.mark.skipif(not _HAS_LC_ANTHROPIC, reason="langchain_anthropic")

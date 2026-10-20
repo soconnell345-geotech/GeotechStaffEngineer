@@ -18,7 +18,8 @@ through here (``webapp/tests/test_file_widgets.py`` checks).
 The inline PDF preview is a ``data:application/pdf`` frame, which the
 Foundry frame blocks as well ("This content is blocked"; a ``data:`` HTML
 page of page images was blocked too). :func:`pdf_page_preview` shows the
-first pages as images instead, which the frame displays.
+first pages as images instead, which the frame displays, when its switch is
+turned on.
 """
 
 from __future__ import annotations
@@ -52,8 +53,12 @@ def download_cap_bytes() -> int:
 
 
 def _js_string(value: str) -> str:
-    """A JavaScript string literal that cannot end the script element."""
-    return json.dumps(value).replace("</", "<\\/")
+    """A JavaScript string literal that cannot end the script element or
+    change how the browser reads it: ``<``, ``>`` and ``&`` are written as
+    ``\\u`` escapes, so neither ``</script>`` nor ``<!--<script>`` (which
+    would keep the element open past its end tag) can appear."""
+    return (json.dumps(value).replace("<", "\\u003c")
+            .replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
 def browser_download_html(data: bytes, file_name: str, mime: Optional[str],
@@ -110,12 +115,14 @@ document.getElementById("open").onclick = function () {{
 
 
 def _component(page: str, height: int) -> None:
-    """Draw ``page`` in a component frame (scripts run in it)."""
-    try:
-        import streamlit.components.v1 as components
-        components.html(page, height=height)
-    except (ImportError, AttributeError):        # a Streamlit without it
+    """Draw ``page`` in a frame (scripts run in it): ``st.iframe``, which
+    replaced the deprecated ``components.v1.html`` and draws the same frame,
+    else the older call (as ``app._embed_frame`` does)."""
+    if hasattr(st, "iframe"):
         st.iframe(page, height=height)
+        return
+    import streamlit.components.v1 as components
+    components.html(page, height=height)
 
 
 def download_button(label: str, data: Union[bytes, str], *, file_name: str,
@@ -140,9 +147,16 @@ def download_button(label: str, data: Union[bytes, str], *, file_name: str,
                _COMPONENT_HEIGHT)
 
 
-def pdf_page_preview(path: str) -> None:
-    """The first pages of the PDF at ``path`` as images (Foundry), with a
-    note on how to see the whole file."""
+def pdf_page_preview(path: str, key: Optional[str] = None) -> None:
+    """A switch that shows the first pages of the PDF at ``path`` as images
+    (Foundry), with a note on how to see the whole file.
+
+    The pages are drawn only once the switch is on: every rerun draws every
+    card again, and a conversation with more PDFs than the page cache holds
+    would otherwise draw every page of every PDF on every rerun."""
+    if not st.toggle(f"Preview the first {core.PDF_PREVIEW_PAGES} pages",
+                     key=key):
+        return
     pngs, count = core.pdf_page_pngs(path)
     if not pngs:
         st.caption("No preview: the PDF could not be read. Download it "

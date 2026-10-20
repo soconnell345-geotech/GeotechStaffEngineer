@@ -1230,13 +1230,12 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
                 else:
                     st.caption(f"Too large to preview inline "
                                f"({card.size:,} bytes) — download above.")
+        elif card.kind == "pdf" and engine_config.is_foundry_deployment():
+            # The Foundry app frame blocks a data: PDF in a frame; the pages
+            # go as images there, drawn when asked for (INF-37).
+            file_widgets.pdf_page_preview(path, key=f"pdfpages_{slot}_{path}")
         elif card.kind == "pdf":
             with st.expander("Preview (PDF)", expanded=False):
-                # The Foundry app frame blocks a data: PDF in a frame; the
-                # pages go as images there (INF-37).
-                if engine_config.is_foundry_deployment():
-                    file_widgets.pdf_page_preview(path)
-                    return
                 uri = core.pdf_data_uri(path)
                 if uri:
                     _embed_frame(uri, height=620)

@@ -99,8 +99,9 @@ def _env_check() -> dict:
     from webapp import engine_config
     envs = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
             "GEOTECH_FOUNDRY_HOST", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL",
-            "FOUNDRY_PROXY_URL", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
-            "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
+            *engine_config.FOUNDRY_PROXY_URL_ENVS,
+            "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
+            *engine_config.FOUNDRY_CA_ENVS,
             "GEOTECH_FOUNDRY_MODELS", "GEOTECH_HELPER_MODELS",
             "GEOTECH_WEBAPP_MAX_TOKENS",
             "GEOTECH_FOUNDRY_DISABLE_STREAMING",

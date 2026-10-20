@@ -26,6 +26,11 @@ Claude Sonnet 5.5 and the main agent and every other helper on Opus 5.5
 * Each helper model is built by ``engine_config.resolve_engine``, exactly
   as the main model is: on Foundry the same proxy route, TLS and request-field
   sanitizer.
+* A helper's own model does its thinking, searching and writing. Images are
+  read by the vision tools, which ``build_deep_agent`` builds once on the
+  main model: so the references helper on Sonnet reads a chart value off a
+  figure (``read_reference_figure``) with the main model, Opus 5.5 by
+  default on Foundry. :func:`summary` says so.
 """
 
 from __future__ import annotations
@@ -222,10 +227,17 @@ def build_kwargs(helpers: List[HelperModel]) -> dict:
 
 
 def summary(main_label: str, helpers: List[HelperModel]) -> str:
-    """One line naming the model each agent runs on."""
+    """One line naming the model each agent runs on, and the model that
+    reads images for every helper: the vision tools (the references
+    helper's chart read-off among them) are built on the main agent's
+    model, whatever model the helper thinks with."""
     parts = [f"main agent: {main_label}"]
     parts += [h.describe() for h in helpers]
     parts.append("every other helper: the main agent's model")
+    if any(h.own_model for h in helpers):
+        parts.append("images and charts any helper reads (the references "
+                     "helper's read_reference_figure too): the main agent's "
+                     "model")
     return "; ".join(parts)
 
 

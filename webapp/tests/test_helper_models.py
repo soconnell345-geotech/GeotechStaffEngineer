@@ -17,7 +17,8 @@ SONNET = "anthropic:ri.language-model-service..language-model.lm-4d5e6f"
 ENVS = ("GEOTECH_DEPLOYMENT", "GEOTECH_HELPER_MODELS", "GEOTECH_FOUNDRY_MODELS",
         "GEOTECH_WEBAPP_MODEL", "GEOTECH_FOUNDRY_HOST", "ANTHROPIC_BASE_URL",
         "OPENAI_BASE_URL", "FOUNDRY_HOSTNAME", "FOUNDRY_URL", "SSL_CERT_FILE",
-        "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH")
+        "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
+        "FOUNDRY_CLI_CERT_PEM_PATH", "MAESTRO_FOUNDRY_PROXY_URL")
 
 
 @pytest.fixture
@@ -70,7 +71,12 @@ def test_on_foundry_the_references_helper_is_sonnet(foundry):
     line = helper_models.summary("Opus 5.5", helpers)
     assert line == (f"main agent: Opus 5.5; references: Sonnet 5.5 ({SONNET}; "
                     "this host's default); every other helper: the main "
-                    "agent's model")
+                    "agent's model; images and charts any helper reads (the "
+                    "references helper's read_reference_figure too): the "
+                    "main agent's model")
+    # no helper on a model of its own: nothing to say about images
+    assert "images" not in helper_models.summary("Opus 5.5", [
+        helper_models.HelperModel("references", "main", "the sidebar")])
 
 
 @needs_anthropic

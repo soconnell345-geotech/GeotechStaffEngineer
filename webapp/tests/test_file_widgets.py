@@ -81,8 +81,40 @@ def test_the_page_carries_the_bytes_and_the_real_name():
     script = page.split("<script>", 1)[1]
     assert "</script>" not in script.rsplit("</script>", 1)[0]
     literal = re.search(r"const NAME = (.*);", script).group(1)
-    assert json.loads(literal.replace("<\\/", "</")) == name
+    assert json.loads(literal) == name
     assert "<b>" not in page.split("<script>", 1)[0]
+
+
+@pytest.mark.parametrize("name", [
+    "<!--<script>.pdf",                       # would hold the element open
+    '"><img src=x onerror=alert(1)>.png',
+    "a b & c > d.csv",
+])
+def test_no_name_reaches_the_page_as_markup(name):
+    """The name is markup nowhere: escaped in the attribute and the button,
+    and a JS string with no ``<``, ``>`` or ``&`` in the script, so the
+    script element ends where it should and the page still runs."""
+    page = file_widgets.browser_download_html(b"x", name, "a</script>b",
+                                              f"Download {name}")
+    head, script = page.split("<script>", 1)
+    assert "<img" not in head and "<!--" not in head
+    body, tail = script.split("</script>", 1)
+    assert tail == "</body></html>"
+    for const, value in (("NAME", name), ("MIME", "a</script>b")):
+        literal = re.search(rf"const {const} = (.*);", body).group(1)
+        assert not set("<>& ") & set(literal)
+        assert json.loads(literal) == value
+
+
+def test_the_frame_is_st_iframe_where_streamlit_has_it(monkeypatch):
+    """``components.v1.html`` is deprecated for ``st.iframe``, which draws
+    the same frame."""
+    seen = []
+    monkeypatch.setattr(file_widgets.st, "iframe",
+                        lambda page, height: seen.append((page, height)),
+                        raising=False)
+    file_widgets._component("<p>x</p>", 44)
+    assert seen == [("<p>x</p>", 44)]
 
 
 def test_on_foundry_the_download_is_made_in_the_browser(monkeypatch):
@@ -178,15 +210,27 @@ def _run_turn(monkeypatch, tmp_path):
 def test_foundry_app_has_no_native_download_and_previews_pages(monkeypatch,
                                                                tmp_path):
     """The whole app on Foundry: no Streamlit download button anywhere, the
-    PDF card previews its pages as images, and no data: PDF frame."""
+    PDF card previews its pages as images once its switch is on (not
+    before: every rerun draws every card), and no data: PDF frame."""
     _foundry(monkeypatch)
     pages = []
     monkeypatch.setattr(file_widgets, "_component",
                         lambda page, height: pages.append(page))
+    drawn = []
+    real_pngs = core.pdf_page_pngs
+    monkeypatch.setattr(core, "pdf_page_pngs",
+                        lambda path, *a, **k: drawn.append(path)
+                        or real_pngs(path, *a, **k))
     at = _run_turn(monkeypatch, tmp_path)
     assert not at.get("download_button")
     names = {re.search(r"const NAME = (.*);", p).group(1) for p in pages}
     assert {'"calc_package.pdf"', '"inputs.csv"'} <= names
+    images = " ".join(str(i.proto) for i in at.get("image"))
+    assert "Page 1 of" not in images and not drawn
+    (switch,) = [t for t in at.toggle
+                 if str(t.key or "").startswith("pdfpages_")]
+    switch.set_value(True).run()
+    assert not at.exception, [e.value for e in at.exception]
     images = " ".join(str(i.proto) for i in at.get("image"))
     assert "Page 1 of 3" in images and "Page 3 of 3" in images
     assert "data:application/pdf" not in _all_protos(at)
