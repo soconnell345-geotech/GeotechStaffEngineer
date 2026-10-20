@@ -451,8 +451,8 @@ What the manuals print (each page rendered from the PDF):
 Neither drag procedure prints β as the method for clay, so α stays the
 default and β is a named option on the layer: `skin_friction_method="beta"`
 with `beta` given. β is not derived from φ' in clay: the module's sand rule
-(1 - sin φ') tan φ' gives 0.27-0.29 across φ' 25-30°, not Table 7-9's
-0.15-0.35, so the engineer gives β.
+(1 - sin φ') tan φ' gives 0.27-0.29 across φ' 25-30°, where Table 7-9
+and UFC Table 6-15 go from 0.15 to 0.35, so the engineer gives β.
 
 Inputs a layer would not use are refused, naming the input that takes
 effect (GM-179 wording, "does not take"): `beta` on a clay with the α
