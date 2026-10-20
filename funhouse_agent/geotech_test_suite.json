@@ -128,11 +128,12 @@
       "values": [
         {
           "name": "Q_ult_kN",
-          "value": 2034,
+          "value": 1310,
           "rtol": 0.2
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (axial_pile.axial_pile_capacity, Nordlund)"
+      "source": "hand derivation 2026-10-20 (GM-238): Nordlund method, GEC-12 (FHWA-NHI-16-009) Vol I Sec. 7.2.1.3.1 as printed, Steps 1-10 pp. 242-245; axial_pile.axial_pile_capacity on master 1a122ca gives 1,307.6 kN. Replaces the 2026-06-10 module value (2,034 kN), which no hand derivation supported",
+      "notes": "Assumptions the question leaves open: a circular section, b = 0.4 m; the pile head at the ground surface; the same sand below the toe; 19 kN/m3 above and below the water table, gamma_w = 9.81 kN/m3. Step 1: one sand layer, phi = 32 deg, split at the water table (0-3 m, 3-15 m). Step 2: V = pi x 0.4^2/4 = 0.126 m3/m = 1.35 ft3/ft; Figure 7-9 (p. 235), curve c (precast concrete piles), read at V = 1.35: delta/phi = 0.84, delta = 26.9 deg. Step 3: K_delta from Table 7-7 (p. 241), phi = 32 deg, 1.39 at V = 1.0 and 1.52 at V = 2.0, log-linear in V (Step 3e): 1.45. Step 4: Figure 7-14 (p. 238) at phi = 32 deg: C_F = 0.935 on the delta/phi = 0.8 curve, 1.00 on the 1.0 curve, so 0.948 at 0.84. Step 5: sigma'd at mid-layer 28.5 kPa (1.5 m) and 112.1 kPa (9 m), no limit (p. 243). Step 6: Rs = K_delta C_F sigma'd sin(delta) C_d D (Eq. 7-8, p. 244) with C_d = pi x 0.4 = 1.257 m: 67 + 1,048 = 1,115 kN. Step 7: Figure 7-16 (p. 239) at phi = 32 deg: alpha_t = 0.59 (D/b = 30) and 0.56 (D/b = 45), so 0.577 at D/b = 37.5; N'q = 40. Step 8: sigma'v at the toe 167 kPa (3.5 ksf), limited to 3 ksf = 144 kPa. Step 9: Eq. 7-9 gives 0.577 x 40 x 0.1257 m2 x 143.6 kPa = 417 kN; the limit q_L A_p, q_L read off Figure 7-15 (p. 238) at phi = 32 deg = 16 tsf (about 1,550 kPa), is 195 kN; the lesser governs, Rp = 195 kN. Step 10: Rn = 1,115 + 195 = 1,310 kN. The q_L read is good to about 1 tsf (Rn 1,298-1,322 kN); the sigma'p limit does not govern, since q_L does."
     }
   },
   {
@@ -144,11 +145,12 @@
       "values": [
         {
           "name": "Q_ult_kN",
-          "value": 1033,
+          "value": 1670,
           "rtol": 0.15
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (axial_pile.axial_pile_capacity, Tomlinson alpha)"
+      "source": "hand derivation 2026-10-20 (GM-238): alpha method, GEC-12 (FHWA-NHI-16-009) Vol I Sec. 7.2.1.3.2 as printed, Steps 1-6 p. 250; axial_pile.axial_pile_capacity on master 1a122ca gives 1,678.5 kN. Replaces the 2026-06-10 module value (1,033 kN, alpha about 0.62), set before Figure 7-17 was read by D/b and as drawn (GM-121, GM-229)",
+      "notes": "Assumptions the question leaves open: a circular section, b = 0.45 m; the pile head at the ground surface; the clay continuing below the toe; su = 60 kPa (1.25 ksf) at every depth. The unit weight and the water table do not enter: the alpha method is a total-stress method and su is within Figure 7-17's curves, so API alpha (Sec. 7.2.1.3.3) is not needed. Step 1: Figure 7-17 (p. 248), the solid curves (concrete, timber, corrugated steel piles); D is the lesser of the depth to the bottom of the clay layer and the depth to the toe (p. 246), 18 m, so D/b = 40 and the D = 40b curve; read at su = 1.25 ksf, Ca = 1.30 ksf (62.2 kPa, alpha about 1.04), good to about 0.02 ksf. Step 2: fs = Ca = 62.2 kPa (Eq. 7-10, p. 245). Step 3: Rs = 62.2 x pi x 0.45 x 18 = 1,584 kN. Step 4: qp = Nc su = 9 x 60 = 540 kPa (Eq. 7-11, Nc = 9 for deep foundations, p. 248). Step 5: Rp = 540 x pi x 0.45^2/4 = 86 kN. Step 6: Rn = 1,584 + 86 = 1,670 kN (1,645-1,694 kN over the chart read). Also inside the tolerance: Figure 7-18's bottom graph (stiff clay without any different overlying strata, p. 249), whose D > 40b curve starts at alpha = 1.00 near su = 1.55 ksf, gives alpha = 1.00, Ca = 60 kPa and Rn = 1,613 kN; p. 246 has the inexperienced user take the smaller of the two figures."
     }
   },
   {
