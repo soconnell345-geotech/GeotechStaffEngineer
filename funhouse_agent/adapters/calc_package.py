@@ -1788,11 +1788,33 @@ def _generate_ground_improvement_package(params: dict) -> dict:
 
 
 def _vibro_numbers(method: str, result) -> dict:
-    """The vibro-compaction feasibility numbers the PDF shows (GM-205);
-    the other methods' packages return their method alone."""
-    if method != "vibro":
-        return {}
-    return result.to_dict()
+    """The numbers each ground improvement method's PDF shows (GM-205), from
+    the result's own ``to_dict()`` (units in the key names): vibro's
+    feasibility, the aggregate piers' replacement ratio, composite modulus,
+    bearing and settlement, the wick drains' spacing and degrees of
+    consolidation, the surcharge's time to the target and settlements. The
+    time curves (and the choices, which the PDF lists) are thinned or left
+    out for the 8000-char limit; the PDF and its CSV have every point."""
+    out = result.to_dict()
+    out.pop("choices", None)
+    _thin_curves(out)
+    return out
+
+
+def _thin_curves(d: dict) -> None:
+    """Thin every ``time_settlement_curve`` in ``d`` (and the wick drain
+    details inside it) to at most ``_MAX_LISTED_POINTS`` points, ends kept."""
+    curve = d.get("time_settlement_curve")
+    if isinstance(curve, list) and len(curve) > _MAX_LISTED_POINTS:
+        n = len(curve)
+        keep = sorted({round(i * (n - 1) / (_MAX_LISTED_POINTS - 1))
+                       for i in range(_MAX_LISTED_POINTS)})
+        d["time_settlement_curve"] = [curve[i] for i in keep]
+        d["time_settlement_curve_note"] = (
+            f"{len(keep)} of the {n} points, evenly spaced with both ends; "
+            "the PDF and its CSV table have all of them")
+    if isinstance(d.get("wick_drain_details"), dict):
+        _thin_curves(d["wick_drain_details"])
 
 
 # ---------------------------------------------------------------------------
@@ -2816,7 +2838,7 @@ METHOD_INFO = {
     "ground_improvement_package": {
         "category": "Calculation Package",
         "brief": "Run ground improvement analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(vibro numbers)": "With method 'vibro': is_feasible, fines_content_percent, initial_N_spt, target_N_spt, recommended_spacing_m, probe_pattern and the go/no-go reasons, at the top level. Report them to the user."},
+        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(method numbers)": "The numbers the PDF shows, at the top level, units in the key names. vibro: is_feasible, fines_content_percent, initial_N_spt, target_N_spt, recommended_spacing_m, probe_pattern, reasons. aggregate_piers: area_replacement_ratio, stress_concentration_ratio, composite_modulus_kPa, improved_bearing_kPa, unreinforced_bearing_kPa, settlement_improved_mm, settlement_unreinforced_mm, column_diameter_m, column_spacing_m. wick_drains: drain_spacing_m, influence_diameter_m, Ur_percent, Uv_percent, U_total_percent, time_years, ch/cv_m2_per_year. surcharge: surcharge_kPa, target_U_percent, time_to_target_years, settlement_at_target_mm, settlement_ultimate_mm. Report them to the user."},
     },
     "wave_equation_package": {
         "category": "Calculation Package",
