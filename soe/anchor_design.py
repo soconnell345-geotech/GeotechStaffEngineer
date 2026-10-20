@@ -179,7 +179,9 @@ def _row(soil_type: str) -> Dict[str, Any]:
         raise ValueError(_REMOVED_TYPES[soil_type])
     raise ValueError(
         f"Unknown soil_type '{soil_type}'. "
-        f"Available: {list(_LOAD_TRANSFER_TABLE.keys())}"
+        f"Available: {list(_LOAD_TRANSFER_TABLE.keys())}; beside a given "
+        f"bond_stress_kPa or load_transfer_kN_per_m also the ground alone, "
+        f"{list(GROUNDS)}"
     )
 
 

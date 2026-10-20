@@ -702,6 +702,7 @@ METHOD_INFO = {
             "k": {"type": "float|array", "required": True, "description": "Hydraulic conductivity (m/s). Scalar or per-element."},
             "head_bcs": {"type": "array", "required": True, "description": "Dirichlet BCs [[node_id, head_value],...]."},
             "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Unit weight of water (kN/m3)."},
+            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness of the plane-strain slice (m). The heads and pore pressures do not depend on it; total_flow_m3_per_s_per_m sums |v| x element area x t, so it grows with t. Leave it at 1."},
         },
         "returns": {
             "max_head_m": "Maximum total head.",
