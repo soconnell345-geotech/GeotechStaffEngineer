@@ -625,6 +625,11 @@ The default depends on phi_foundation:
   c_foundation = cu.
 - Anything else gives `drained`.
 
+The choice's basis starts with that reason ("phi_foundation 28 deg is
+taken as a drained strength, so c_foundation is c'"). Its other rules
+read c_foundation as cu and say so; with phi_foundation 0 the drained rule
+is listed as not run (no friction angle to use), not as FOS 0.
+
 An input the rule does not count is refused:
 
 - `base_adhesion` with `drained`;

@@ -1122,6 +1122,13 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     for rule in SLIDING_COHESION:
         if rule == s_terms["sliding_cohesion"]:
             continue
+        if rule == "drained" and phi_foundation == 0 and delta_base is None:
+            others[rule] = (
+                "phi_foundation 0 is an undrained strength, so there is no "
+                "base friction to count: GEC-6 Eq. 5-38 needs the "
+                "foundation soil's drained friction angle (phi_foundation) "
+                "or delta_base")
+            continue
         try:
             t = slide(rule,
                       delta_base=None if rule == "undrained" else delta_base,
@@ -1185,8 +1192,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
 SLIDING_COHESION_SHORT = {
     "drained": ("R = V tan delta_b, the cohesion not counted (GEC-6 "
                 "Eq. 5-38; EN 1997-1 6.5.3(10))"),
-    "undrained": ("R = ca B alone, ca = cu, no friction (GEC-6 Eq. 5-39, "
-                  "not combined with Eq. 5-38)"),
+    "undrained": ("R = ca B alone, ca = c_foundation read as cu, no "
+                  "friction (GEC-6 Eq. 5-39, not combined with Eq. 5-38)"),
     "friction_plus_adhesion": (
         "R = V tan delta_b + Ca Be (UFC 3-220-20 Fig. 4-27, Ca from its "
         "Table 4-1 at c_foundation as the undrained shear strength)"),
@@ -1200,9 +1207,10 @@ def sliding_cohesion_choice(terms: Dict[str, Any], rule_default: str,
     is no cohesion or adhesion to count and the drained rule was the one
     in force by default. ``terms`` are the sliding check's
     (:func:`_sliding_terms`), ``rule_default`` the rule taken when none is
-    given (:func:`default_sliding_cohesion`) and ``others`` the sliding FOS
+    given (:func:`default_sliding_cohesion`), ``others`` the sliding FOS
     each other rule gives on the same wall (None: no driving force), or
-    why it did not run."""
+    why it did not run. The basis of a default rule starts with its reason:
+    the phi_foundation in force (phi_backfill when none is given)."""
     from geotech_common.choices import choice, how_given
     rule, c_f, ca = (terms["sliding_cohesion"], terms["c_foundation"],
                      terms["ca"])
@@ -1226,6 +1234,9 @@ def sliding_cohesion_choice(terms: Dict[str, Any], rule_default: str,
     if rule == "undrained" and rule == rule_default:
         basis = ("phi_foundation 0 is an undrained strength, so "
                  "c_foundation is cu: " + basis)
+    elif rule == "drained" and rule == rule_default:
+        basis = (f"phi_foundation {terms['phi_foundation']:g} deg is taken "
+                 "as a drained strength, so c_foundation is c': " + basis)
 
     def other(name):
         fos = others.get(name)

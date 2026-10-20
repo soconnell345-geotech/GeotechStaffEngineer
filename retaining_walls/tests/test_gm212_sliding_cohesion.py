@@ -156,10 +156,19 @@ def test_the_choice_names_the_rule_and_the_others_fos():
     (c,) = _cohesion_choice(r)
     assert c["how"] == "default"
     assert "c_foundation = 10 kPa not counted" in c["chosen"]
-    assert c["basis"] == SLIDING_COHESION_BASIS["drained"]
+    # the default's reason, from what the call gave
+    assert c["basis"] == ("phi_foundation 28 deg is taken as a drained "
+                          "strength, so c_foundation is c': "
+                          + SLIDING_COHESION_BASIS["drained"])
     alt = " | ".join(c["alternatives"])
     assert "friction_plus_adhesion (FOS_sliding 1.553)" in alt
-    assert "undrained (FOS_sliding" in alt
+    assert "undrained (FOS_sliding 0.411)" in alt
+    assert "c_foundation read as cu" in alt
+    # no phi_foundation: phi_backfill's 32 deg, the value in force
+    r = _run(c_foundation=10.0)
+    (c,) = _cohesion_choice(r)
+    assert c["basis"].startswith("phi_foundation 32 deg is taken as a "
+                                 "drained strength")
     # the base friction choice stays beside it
     assert any("base friction" in x["what"] for x in r.choices)
 
@@ -169,6 +178,9 @@ def test_undrained_has_no_base_friction_choice():
     (c,) = _cohesion_choice(r)
     assert c["basis"].startswith("phi_foundation 0 is an undrained")
     assert not any("base friction" in x["what"] for x in r.choices)
+    # the drained rule has no friction angle to use: said, not FOS 0.000
+    drained = next(a for a in c["alternatives"] if a.startswith("drained"))
+    assert "not run here" in drained and "GEC-6 Eq. 5-38 needs" in drained
 
 
 def test_no_cohesion_no_choice():

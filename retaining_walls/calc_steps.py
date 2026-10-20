@@ -490,8 +490,8 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             result_name="\u03b4_b",
             result_value=f"{delta_b:.2f}",
             result_unit="deg",
-            reference=("EN 1997-1 6.5.3(10), 2/3 \u03c6 for a smooth "
-                       "precast base; UFC 3-220-20 Table 4-1"),
+            reference=("EN 1997-1 6.5.3(10), 2/3 \u03c6'cv;d for smooth "
+                       "precast foundations; UFC 3-220-20 Table 4-1"),
         ))
 
     if rule == "friction_plus_adhesion":
