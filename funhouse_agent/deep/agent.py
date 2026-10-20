@@ -1489,7 +1489,8 @@ def build_deep_agent(
     if _review_flags.checklist() and not review_page:
         from report_ingest.checklist import make_checklist_tool
         cap = max(max_result_chars, 16000) if max_result_chars > 0 else 0
-        tools = list(tools) + [make_checklist_tool(cap)]
+        tools = list(tools) + [make_checklist_tool(
+            cap, ingest_tool=bool(ingest_tools))]
     # Every primary tool refuses an argument it does not take, by name,
     # whichever module built it (brief 5, N3: analyze_pdf_page(pages=12)
     # silently looked at page 0). See funhouse_agent/deep/strict_args.py.

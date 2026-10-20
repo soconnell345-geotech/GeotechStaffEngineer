@@ -871,8 +871,10 @@ the Document Review page no longer offers it.
 The checklist is DATA, `report_review_checklist.json` beside the module,
 shipped in the wheel and marked **DRAFT** until the owner has marked it up
 (BACKLOG OWN-31): 18 items in six sections, each `code` or `judge`. Its items
-and wording are the owner's first draft unchanged; only the two notes on how
-it is used say where the checks now read from.
+and wording are the owner's first draft unchanged; the two notes on how it
+is used say where the checks now read from, and the summary item gained a
+`where` (`lab_tests.`), because the record holds every reader's QA entries
+and the ledger's cross-checks held only the laboratory ones.
 
 `run_checklist(record)` takes a `ReportRecord`, its dict, or the path of
 `report.record.json` or of the folder the ingest wrote. It runs every `code`
@@ -884,7 +886,7 @@ item it has a check for and returns the `judge` items for the agent:
 | `explorations_vs_logs` | the reconciler's count and list checks (`count_mismatch` on `general.*`) and the narrative reader's own differences with the logs, for the explorations the narrative STATED (an answer with a citation; one filled in from the logs proves nothing) |
 | `lab_ids_vs_logs` | each laboratory test's link to an exploration and a sample on its log, and the reconciler's `partial` entries for the ones that did not link |
 | `summary_and_sheets` | each summary-table row against the sheets, and each sheet of a kind the summary tabulates against the rows (a chemistry sheet beside a table of index tests is not missing from it) |
-| `cross_checks` | the reconciler's QA entries of the kinds the item names (`disagreement`, `conflict` for the summary against the sheets; `unconverted` for units) |
+| `cross_checks` | the reconciler's QA entries of the kinds the item names, narrowed by its `where` (`disagreement`, `conflict` on `lab_tests.` for the summary against the sheets, so a log value read two ways or an SPT whose drives do not add up is not counted there; `unconverted` for units) |
 | `values_cite_pages` | every exploration, test and calculation names its pages, and every narrative answer its citation (except the counts the reader takes from the record itself) |
 
 A `code` item whose check cannot run on the record it is given (no record, a
@@ -903,7 +905,9 @@ call in OWN-31.
 **On the app.** `make_checklist_tool()` is the `report_checklist(record)`
 tool: offered on the GeotechStaffEngineer page only, behind
 `GEOTECH_REVIEW_CHECKLIST` (OFF by default), after `report_ingest` has written
-the record. Importing the module costs pydantic and nothing else; the tool
+the record. Its description names the `report_ingest` tool only where the
+agent has it (`make_checklist_tool(ingest_tool=False)` otherwise; the app's
+pages build without it by default). Importing the module costs pydantic and nothing else; the tool
 imports LangChain when it is built.
 
 ## The writers (`writers.py`)

@@ -103,11 +103,17 @@ def load_record(record: Any):
         return record
     if isinstance(record, dict):
         return ReportRecord.model_validate(record)
+    if not isinstance(record, (str, os.PathLike)):
+        # e.g. the coverage ledger the checks read before RI-34
+        raise TypeError(f"the checklist reads a report's record (a "
+                        f"ReportRecord, its dict, or the path of "
+                        f"{RECORD_NAME} or its folder), not a "
+                        f"{type(record).__name__}")
     path = record_path(str(record))
     if not os.path.isfile(path):
-        raise ValueError(f"no record at {path!r}: give the record path "
-                         f"report_ingest returned (paths.record) or the "
-                         f"folder it wrote")
+        raise ValueError(f"no record at {path!r}: give the path of the "
+                         f"{RECORD_NAME} report ingest wrote, or of the "
+                         f"folder it wrote it into")
     try:
         with open(path, encoding="utf-8") as fh:
             return ReportRecord.model_validate(json.load(fh))
@@ -196,9 +202,9 @@ def _pages_of(entry: Any) -> List[int]:
 
 def _no_record(_item: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": "not_run",
-            "detail": "no report_ingest record was given: read the report "
-                      "with report_ingest first and pass the record it "
-                      "returns (paths.record)"}
+            "detail": f"no record of the report was given (the {RECORD_NAME} "
+                      "report ingest writes when it reads a report), so code "
+                      "could not check this"}
 
 
 # ---------------------------------------------------------------------------
@@ -544,24 +550,44 @@ def failed_lines(record: Any = None, data: Optional[Dict[str, Any]] = None
 # The tool (the GeotechStaffEngineer page, behind GEOTECH_REVIEW_CHECKLIST)
 # ---------------------------------------------------------------------------
 
-REPORT_CHECKLIST_DESCRIPTION = (
+_DESCRIPTION = (
     "The review checklist for a geotechnical report (a DRAFT the owner is "
-    "still marking up), run on the record report_ingest wrote of the report. "
-    "It makes the checks code can make from that record - every log and "
-    "laboratory page read, the explorations the narrative names and counts "
-    "against the logs, each laboratory test against the samples on its "
-    "log, the summary table against the sheets, the reconciler's "
-    "disagreements and unconverted units, and every value's page - and "
-    "returns the items that need your judgement: campaigns and dates, "
-    "groundwater, locations and datum, consistency, currency of the codes "
-    "cited, plausibility, recommendations. `record`: the record path "
-    "report_ingest returned (paths.record) or the folder it wrote; with "
-    "none, every item comes back for you to judge. Report against every "
-    "item.")
+    "still marking up), run on the report's record: the "
+    f"{RECORD_NAME} report ingest writes when it reads a report (what each "
+    "page is, the explorations and laboratory tests read, the answers taken "
+    "from the text, each with its pages). From the record it checks that "
+    "every log and laboratory page was read, the explorations the text names "
+    "and counts against the logs, each laboratory test against a sample on "
+    "its log, the summary table against the sheets (values that differ, "
+    "sheets missing either way), units that could not be converted, and "
+    "that every value cites its page. It returns the items that need your "
+    "judgement: campaigns and dates, groundwater, locations and datum, "
+    "consistency, currency of the codes cited, plausibility, "
+    "recommendations. {record} With no record, every item comes back for "
+    "you to judge. Report against every item.")
+
+#: ``record`` where the ``report_ingest`` tool is offered beside it, and
+#: where it is not (no pointer at a tool the agent does not have).
+_RECORD_WITH_INGEST = ("`record`: the record path the report_ingest tool "
+                       "returned (paths.record), or the folder it wrote.")
+_RECORD_ALONE = (f"`record`: the path of a {RECORD_NAME}, or of the folder "
+                 "holding one.")
+
+REPORT_CHECKLIST_DESCRIPTION = _DESCRIPTION.format(record=_RECORD_WITH_INGEST)
 
 
-def make_checklist_tool(max_result_chars: int = 16000):
-    """The ``report_checklist`` tool: the checklist on a record."""
+def checklist_description(ingest_tool: bool = True) -> str:
+    """The tool's description, naming the ``report_ingest`` tool only where
+    the agent has it."""
+    return _DESCRIPTION.format(
+        record=_RECORD_WITH_INGEST if ingest_tool else _RECORD_ALONE)
+
+
+def make_checklist_tool(max_result_chars: int = 16000,
+                        ingest_tool: bool = True):
+    """The ``report_checklist`` tool: the checklist on a record.
+    ``ingest_tool``: whether the agent also has the ``report_ingest`` tool
+    (its description names it only then)."""
     from langchain_core.tools import StructuredTool
 
     def report_checklist(record: str = "") -> str:
@@ -581,11 +607,12 @@ def make_checklist_tool(max_result_chars: int = 16000):
 
     return StructuredTool.from_function(
         report_checklist, name="report_checklist",
-        description=REPORT_CHECKLIST_DESCRIPTION)
+        description=checklist_description(ingest_tool))
 
 
 __all__ = ["load_checklist", "load_record", "record_path", "run_checklist",
            "failed_lines", "register_check", "make_checklist_tool",
+           "checklist_description",
            "compact", "CHECKS", "CheckContext", "DATA_FILE", "RECORD_NAME",
            "STATUSES", "LOG_LABELS", "LAB_LABELS", "COUNTED_BY_CODE",
            "EXPLORATION_FIELDS", "HOW_TO_REPORT",

@@ -588,6 +588,11 @@ def test_coverage_on_both_pages_and_the_checklist_on_the_geotech_page(
             page == "review")
     assert "report_checklist" in tools["geotech"]
     assert "report_checklist" not in tools["review"]
+    # the page builds without the report_ingest tool by default, so the
+    # checklist's description does not point at it
+    assert "report_ingest" not in tools["geotech"]
+    assert "report_ingest" not in tools["geotech"][
+        "report_checklist"].description
     assert tools["review"]["document_coverage"].description ==         CT.DOCUMENT_COVERAGE_DESCRIPTION_REVIEW
     assert tools["geotech"]["document_coverage"].description ==         CT.DOCUMENT_COVERAGE_DESCRIPTION
     for word in ("boring", "laboratory", "DIGGS", "exploration", "log"):

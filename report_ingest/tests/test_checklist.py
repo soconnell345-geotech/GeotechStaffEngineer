@@ -93,6 +93,10 @@ def test_the_checklist_is_the_owners_draft_unchanged():
     assert kinds["consistency.summary_vs_sheets"] == ["disagreement",
                                                       "conflict"]
     assert kinds["consistency.units"] == ["unconverted"]
+    # the record holds every reader's QA entries, so the summary item is
+    # narrowed to the laboratory ones (see the test below)
+    wheres = {i["id"]: i.get("where") for i in data["items"]}
+    assert wheres["consistency.summary_vs_sheets"] == "lab_tests."
     # the notes say where it lives now
     assert "report_ingest/checklist.py" in data["how_it_is_used"]
     assert "funhouse_agent" not in data["how_to_edit"]
@@ -189,6 +193,31 @@ def test_the_planted_faults_are_found():
     assert res["report"].startswith("Rosewood Terrace Development")
 
 
+def test_the_summary_item_reads_only_the_summary_against_the_sheets():
+    """A real record carries every reader's QA entries: a log value the grid
+    and the model read differently, an SPT whose drives do not add up, a
+    DIGGS read-back, one sheet read two ways. None of them is a summary
+    value against its sheet."""
+    from report_ingest.model import QAEntry
+    rec = _record(lab_tests=[atterberg(), gradation(), summary_table()])
+    rec.qa += [
+        QAEntry(kind="disagreement", where="investigations[B-1]",
+                detail="N-value at 5 ft: the grid read 12, the model read "
+                       "21; the record carries the grid's.", pages=[7]),
+        QAEntry(kind="conflict", where="B-1.spt",
+                detail="5.0 ft: its drives add up to 0.6 m but the interval "
+                       "is 0.45 m", pages=[7]),
+        QAEntry(kind="conflict", where="diggs.roundtrip",
+                detail="reading the DIGGS file back does not give the "
+                       "record's own values"),
+        QAEntry(kind="disagreement", where="lab_tests[atterberg B-1 5 ft]",
+                detail="liquid limit: the tables read 38, the model read "
+                       "39; the record carries the tables'.", pages=[12]),
+    ]
+    sv = _by_id(CL.run_checklist(rec))["consistency.summary_vs_sheets"]
+    assert sv["status"] == "pass", sv
+
+
 def test_a_sheet_of_a_kind_the_summary_does_not_carry_is_not_missing_from_it():
     """DR-21: chemistry beside a summary of index tests is not a fault."""
     from report_ingest.tests.record_fixtures import q
@@ -238,7 +267,7 @@ def test_with_no_record_every_item_goes_to_the_agent():
     judged = {r["id"] for r in res["for_you_to_judge"]}
     assert judged == set(DRAFT_ITEMS)
     said = [r for r in res["for_you_to_judge"] if "code_said" in r]
-    assert len(said) == 7 and "report_ingest" in said[0]["code_said"]
+    assert len(said) == 7 and CL.RECORD_NAME in said[0]["code_said"]
 
 
 def test_a_record_without_page_labels_says_why_it_cannot_list_pages():
@@ -321,6 +350,29 @@ def test_the_tool(tmp_path):
     blind = json.loads(tool.invoke({"record": ""}))
     assert {r["status"] for r in blind["code_checks"]} == {"not_run"}
     err = json.loads(tool.invoke({"record": str(tmp_path / "nope")}))
-    assert "paths.record" in err["error"]
+    assert "no record at" in err["error"]
     capped = CL.make_checklist_tool(900).invoke({"record": str(tmp_path)})
     assert len(capped) <= 900 and '"entries"' not in capped
+
+
+def test_the_tool_names_the_ingest_tool_only_where_the_agent_has_it():
+    """No pointer at a tool the agent does not have: the geotech page
+    offers report_ingest only behind enable_report_ingest (OFF)."""
+    pytest.importorskip("langchain_core")
+    with_ingest = CL.make_checklist_tool().description
+    alone = CL.make_checklist_tool(ingest_tool=False).description
+    assert "report_ingest" in with_ingest and "paths.record" in with_ingest
+    assert "report_ingest" not in alone and "paths.record" not in alone
+    assert CL.RECORD_NAME in alone
+    # and nothing the model sees without the tool points at it either
+    assert "report_ingest" not in json.dumps(CL.run_checklist(None))
+    # tracing shorthand an engineer does not read
+    assert "reconciler" not in with_ingest
+
+
+def test_the_old_ledger_call_says_what_the_checklist_reads_now():
+    """Before RI-34 a caller passed (ledger, document key)."""
+    with pytest.raises(TypeError, match="record"):
+        CL.run_checklist(object(), "doc-key")
+    with pytest.raises(TypeError, match="record"):
+        CL.failed_lines(object(), "doc-key")

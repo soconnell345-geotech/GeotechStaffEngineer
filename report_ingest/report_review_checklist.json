@@ -23,7 +23,7 @@
      "text": "Locations, elevations and their datum are stated."},
 
     {"id": "consistency.summary_vs_sheets", "section": "Consistency", "mode": "code",
-     "check": "cross_checks", "kinds": ["disagreement", "conflict"],
+     "check": "cross_checks", "kinds": ["disagreement", "conflict"], "where": "lab_tests.",
      "text": "Summary-table values match the individual sheets (the reconciler)."},
     {"id": "consistency.lab_ids_on_logs", "section": "Consistency", "mode": "code",
      "check": "lab_ids_vs_logs",
