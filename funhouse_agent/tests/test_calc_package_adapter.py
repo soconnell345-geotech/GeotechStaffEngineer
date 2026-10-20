@@ -646,6 +646,57 @@ class TestGroundImprovementPackage:
         assert result["status"] == "success"
         assert os.path.exists(outfile)
 
+    def test_methods_return_their_numbers(self, tmp_path):
+        """GM-205: each method returns the numbers its PDF shows."""
+        import json
+        from funhouse_agent.adapters.calc_package import _generate_ground_improvement_package as gen
+        wick = gen({"method": "wick_drains", "spacing": 1.5, "ch": 3.0,
+                    "cv": 1.0, "Hdr": 5.0, "time": 1.0,
+                    "output_path": str(tmp_path / "w.html")})
+        assert wick["drain_spacing_m"] == 1.5 and "U_total_percent" in wick
+        ap = gen({"method": "aggregate_piers", "column_diameter": 0.76,
+                  "spacing": 2.0, "E_soil": 5000, "S_unreinforced": 0.05,
+                  "q_unreinforced": 150,
+                  "output_path": str(tmp_path / "a.html")})
+        assert ap["area_replacement_ratio"] > 0 and "composite_modulus_kPa" in ap
+        su = gen({"method": "surcharge", "S_ultimate": 0.30, "surcharge": 50,
+                  "cv": 3.0, "Hdr": 4.0, "target_consolidation": 90,
+                  "output_path": str(tmp_path / "s.html")})
+        assert su["surcharge_kPa"] == 50 and "time_to_target_years" in su
+        for r in (wick, ap, su):
+            assert len(json.dumps(r)) < 8000
+        # the choices the agent states travel with every method's numbers
+        vb = gen({"method": "vibro", "fines_content": 8, "N1_before": 12,
+                  "target_N_spt": 25, "output_path": str(tmp_path / "v.html")})
+        for r in (wick, ap, su, vb):
+            assert len(json.dumps(r)) < 8000
+        assert ap.get("choices"), "aggregate piers' choices were dropped"
+
+    def test_choices_survive_thinning(self):
+        """A result with choices and long curves keeps every choice."""
+        from funhouse_agent.adapters.calc_package import _vibro_numbers
+
+        class R:
+            def to_dict(self):
+                return {"time_settlement_curve": [
+                            {"time_years": i, "settlement_mm": i * 2.0}
+                            for i in range(400)],
+                        "choices": [{"name": f"c{i}", "basis": "x" * 150}
+                                    for i in range(10)]}
+        for method in ("wick_drains", "aggregate_piers", "surcharge", "vibro"):
+            out = _vibro_numbers(method, R())
+            assert len(out["choices"]) == 10
+            assert len(out["time_settlement_curve"]) < 400
+
+
+class TestPlotDataScaleUnits:
+    def test_unknown_unit_refused_by_name(self):
+        import pytest
+        from funhouse_agent.adapters.profile_figure_adapter import _scale_units
+        assert _scale_units(None) == "m" and _scale_units(" FT ") == "ft"
+        with pytest.raises(ValueError, match="scale_units.*furlongs.*m, km"):
+            _scale_units("furlongs")
+
 
 class TestSeismicEarthPressurePackage:
     def test_mononobe_okabe(self, tmp_path):
