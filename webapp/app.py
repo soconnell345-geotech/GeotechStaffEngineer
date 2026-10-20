@@ -26,8 +26,9 @@ if _PKG_ROOT not in sys.path:
 
 import streamlit as st
 
-from webapp import (budget_panel, core, engine_config, identity, profiles,
-                    sharepoint_store, turn_jobs, ws_upload)
+from webapp import (budget_panel, core, engine_config, file_widgets,
+                    identity, profiles, sharepoint_store, turn_jobs,
+                    ws_upload)
 
 # Which PAGE this run serves (webapp.profiles): the geotech agent by default
 # — a plain `streamlit run webapp/app.py` and the Databricks launcher change
@@ -892,10 +893,10 @@ with st.sidebar:
             try:
                 with open(path, "rb") as fh:
                     data = fh.read()
-                st.download_button(_os.path.basename(path), data=data,
-                                   file_name=_os.path.basename(path),
-                                   mime=_mime_for(path),
-                                   key=f"dl_{path}")
+                file_widgets.download_button(
+                    _os.path.basename(path), data,
+                    file_name=_os.path.basename(path),
+                    mime=_mime_for(path), key=f"dl_{path}")
             except OSError:
                 pass
 
@@ -1157,9 +1158,9 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
             st.caption("(file unavailable)")
             return
         dl_name = os.path.basename(dl_path)
-        st.download_button("Download", data=data, file_name=dl_name,
-                           mime=_mime_for(dl_name),
-                           key=f"dlcard_{slot}_{path}")
+        file_widgets.download_button("Download", data, file_name=dl_name,
+                                     mime=_mime_for(dl_name),
+                                     key=f"dlcard_{slot}_{path}")
         if card.kind == "plotly":
             # Native interactive chart from a *.plotly.json sidecar. plotly is
             # imported lazily/guarded so the app still runs without it (then the
@@ -1192,6 +1193,11 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
                                f"({card.size:,} bytes) — download above.")
         elif card.kind == "pdf":
             with st.expander("Preview (PDF)", expanded=False):
+                # The Foundry app frame blocks a data: PDF in a frame; the
+                # pages go as images there (INF-37).
+                if engine_config.is_foundry_deployment():
+                    file_widgets.pdf_page_preview(path)
+                    return
                 uri = core.pdf_data_uri(path)
                 if uri:
                     _embed_frame(uri, height=620)

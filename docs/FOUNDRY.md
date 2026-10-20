@@ -15,15 +15,34 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    - (On 5.8.0 or older, use the old form: `geotech-staff-engineer[deep,full,pdf]`
      plus `streamlit` plus `langchain-openai`.)
 3. **Test wheels** (built from master, not on PyPI; e.g. the INF-25 set in
-   `../foundry_handoff/gse_app_2026-10-20/`): upload the wheel files into the
-   workspace and install them in ONE command naming every file, so the local
-   builds are used and the rest comes from PyPI:
-   `maestro env pip install ./geotech_staff_engineer-*.whl ./geotech_references-*.whl ./planlens-*.whl`.
-   Their versions carry a local label (`5.33.0+foundry.20261020`), which the
-   sidebar footer shows. If maestro will not take file paths, ask the AI FDE
-   (the brief beside the wheels asks what works). The app needs numpy 2
-   (`np.trapezoid`); a fresh install of the INF-25 set resolved numpy 2.5.4
-   on Python 3.12 and 2.4.6 on 3.11 (WSL, 2026-10-20).
+   `../foundry_handoff/gse_app_2026-10-20/`). Their versions carry a local
+   label (`5.33.0+foundry.20261020`), which the sidebar footer shows. What
+   the first run found (the AI FDE, 2026-10-20):
+   - **Rename the files after a zip upload.** Unpacking a zip in the
+     workspace dropped the `+` from the wheel names
+     (`geotech_staff_engineer-5.33.0foundry.20261020-py3-none-any.whl`), and
+     pip refuses a wheel whose name does not match its version. Put the `+`
+     back (`5.33.0+foundry.20261020`) before installing; the version inside
+     the wheel (its METADATA) is the one to copy.
+   - **maestro does not take file paths** (`maestro env pip install ./x.whl`
+     answers "No valid versions found"). What worked: every third-party
+     dependency through the managed environment as usual, and the three
+     local wheels installed by the app file at start-up with
+     `pip install --no-deps --no-index --target <folder>` into a folder
+     outside the managed environment, that folder first on `sys.path` and
+     `PYTHONPATH`. Then the lockfile never lists the local builds and the
+     published app installs them the same way. The clean route is a Foundry
+     Artifacts repository (or conda channel) holding the three packages, so
+     the environment can list them like any other dependency.
+   - **Three pins the managed environment needed:** `websockets>=14,<16`,
+     `polars>=1,<2` and `tenacity<9.2`. Streamlit's and Foundry's own
+     libraries otherwise resolve newer versions than langgraph-sdk
+     (websockets), pygef (polars) and google-genai (tenacity) accept, and
+     `pip check` reports the conflict (`websockets 17.3`, `polars 2.0.0`).
+     Add them on the conda side beside the app's dependencies.
+   - The app needs numpy 2 (`np.trapezoid`); a fresh install of the INF-25
+     set resolved numpy 2.5.4 on Python 3.12 and 2.4.6 on 3.11 (WSL,
+     2026-10-20), and Foundry resolved 2.5.4 on Python 3.12.15.
 
 ## 2. The app file (the only code that lives in Foundry)
 
@@ -44,9 +63,10 @@ set environment variables for the workspace/app:
 |---|---|---|
 | `GEOTECH_FOUNDRY_MODELS` | `GPT 5.2=ri.language-model-service..language-model.gpt-5-2` (comma-separate several; `Label=RID` or bare RID) | Populates the in-app model picker; the FIRST entry is the default |
 | `FOUNDRY_TOKEN` / `GEOTECH_FOUNDRY_TOKEN` | your Foundry token (Code Workspaces usually provides `FOUNDRY_TOKEN` already — check `env \| grep -i foundry` in the terminal) | Auth to the LLM proxy |
-| `FOUNDRY_HOSTNAME` / `GEOTECH_FOUNDRY_HOST` | the stack host, e.g. `yourstack.palantirfoundry.com` (often preset too) | Where the proxy lives |
+| `FOUNDRY_PROXY_URL` | preset by Foundry in Code Workspaces and published apps (a `<proxy host>/…/foundry-proxy` address); nothing to set | Where the proxy lives (§3c) |
+| `GEOTECH_FOUNDRY_HOST` | only to override the route on purpose, e.g. the stack host `yourstack.palantirfoundry.com` an admin names | Where the proxy lives (§3c) |
 | `GEOTECH_WEBAPP_DATA` | a durable writable folder, e.g. a path under the workspace files | Saved conversations survive restarts |
-| `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional) | Enables figure read-off, same as Databricks |
+| `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional; §3d) | Enables figure read-off and worked-example pages, same as Databricks |
 
 Any model id starting with `ri.` routes through the Foundry LLM proxy
 automatically, by **model family**: a Claude model uses the
@@ -68,8 +88,8 @@ The family is the one the id states, else read off the id:
   2026-10-20 matched the words anywhere in the id.)
 
 The sidebar's success line names the route and how the family was decided,
-e.g. "Using the Foundry Anthropic proxy (ri.…; family chosen)", and so does
-**Connection diagnostics**.
+e.g. "Using the Foundry Anthropic proxy (ri.…; family chosen; route:
+FOUNDRY_PROXY_URL)", and so does **Connection diagnostics**.
 
 ### 3a. Claude on Foundry (Opus 5.5 / Sonnet 5.5)
 
@@ -84,27 +104,90 @@ main()
 The first entry is the default; the sidebar picker switches between them.
 Or leave the env line out and type the RID in the sidebar with Model family
 **Anthropic (Claude)**, then **Use this model**. Claude goes through the
-Anthropic-messages proxy (`/api/v2/llm/proxy/anthropic/v1/messages`) with
-`FOUNDRY_TOKEN` as the bearer; a Claude model **API name** typed instead of
-a RID goes there too, because the `palantir_models` engine below is
-GPT-only. If the proxy refuses (401/403), see the troubleshooting entry
-below; there is no in-platform Claude engine in the app yet.
+Anthropic-messages proxy (§3c says which address) with `FOUNDRY_TOKEN` as
+the bearer; a Claude model **API name** typed instead of a RID goes there
+too, because the `palantir_models` engine below is GPT-only. The RIDs must
+be imported in the workspace's Models panel, or the proxy answers 403
+`UseModelPermissionDenied`. The OpenAI-shaped door does not serve Claude
+RIDs (404 `LanguageModelNotAvailable`), so a Claude RID must be family
+Anthropic. If the proxy refuses (401/403), see the troubleshooting entry
+below.
 
 Page images go the same way: the vision tools send each image as a base64
 data URI, which `langchain-anthropic` turns into an Anthropic `image` block
 (`source.type: base64`), with the bare RID and a `max_tokens` on every
-request. Checked against a stand-in proxy on the laptop
-(`webapp/tests/test_foundry_model_family.py`), not yet on Foundry.
+request. Images worked on Foundry on 2026-10-20 (Opus 5.5 and Sonnet 5.5).
+The vision tools size Claude's images by the model's name (`claude-hires`
+for the 5.5 models; Connection diagnostics show it), not by the token-count
+probe the GPT models need, which labelled Opus 5.5 `gpt-5.2-high` in the
+first run.
 
-**Prompt caching.** The agent's turns (not the connection diagnostics) ask
-for prompt caching through deepagents' caching middleware, which would put a
-`cache_control` field at the top of the request: a field only Anthropic's
-own API accepts (Bedrock refuses extra keys). On the Foundry proxy the app
-puts the marks on the system prompt, the tools and the last message instead
-(`engine_config.foundry_chat_anthropic_class`). If chat questions still fail
-with a 400 that names `cache_control` while the diagnostics pass, add
-`os.environ["GEOTECH_FOUNDRY_PROMPT_CACHE"] = "0"` to the app file: no cache
-marks are sent at all.
+**What the proxy refuses, and what the app sends instead** (measured with
+both Claude 5.5 RIDs on 2026-10-20; each refusal is a 400 whose body names
+the field, e.g. `unrecognizedProperty=cache_control`). Every request passes
+`engine_config.sanitize_foundry_anthropic_payload` on its final payload, so
+this holds for plain, streamed and tool calls and whatever middleware asked:
+
+| Field | Proxy | The app |
+|---|---|---|
+| `cache_control` at the top of the request (deepagents' caching middleware asks for it) | refused | moved onto the last message block, or the last system block |
+| `cache_control` on a tool definition (the same middleware marks the last tool) | refused | removed |
+| `cache_control` on system and message content blocks | accepted; a repeated prompt reads from the cache | kept |
+| `service_tier` | refused | removed |
+| `thinking: {"type": "enabled", ...}` | refused ("use adaptive") | sent as `{"type": "adaptive"}` |
+| `tool_choice` `any` or a named tool | refused for these models | stopped before sending, with an error that says so; `auto` and none are unchanged |
+| `anthropic-beta` headers, `metadata.user_id` | accepted | unchanged |
+
+A new refusal names its field in the 400 body: add it to that function. If
+chat questions still fail with a 400 that names `cache_control` while the
+diagnostics pass, add `os.environ["GEOTECH_FOUNDRY_PROMPT_CACHE"] = "0"` to
+the app file: no cache marks are sent at all. In the first run's checks a
+repeated prompt did not always read from the cache; a miss costs tokens,
+not answers. Checked
+offline against a stand-in proxy that refuses those fields
+(`webapp/tests/test_foundry_model_family.py`).
+
+### 3c. Which proxy address the app uses
+
+The first that is set wins:
+
+1. `GEOTECH_FOUNDRY_HOST` + `/api/v2/llm/proxy/anthropic` (or
+   `/openai/v1`): the app's own setting, for a route an admin names on
+   purpose. Leave it unset otherwise.
+2. `ANTHROPIC_BASE_URL` (Claude) or `OPENAI_BASE_URL` (GPT): some Foundry
+   containers are given these ready-made.
+3. `https://` + `FOUNDRY_PROXY_URL` + `/language-model-service/api/proxy/anthropic`
+   (or `/openai/v1`): every Code Workspace and published app seen so far
+   carries `FOUNDRY_PROXY_URL`, so this is the usual route.
+4. `FOUNDRY_HOSTNAME` (or `FOUNDRY_URL`) + `/api/v2/llm/proxy/...`: the route
+   before the release after 5.33.0. In a Code Workspace and a published app
+   `FOUNDRY_HOSTNAME` is a local data sidecar (`localhost:8080`) that answers
+   every LLM-proxy path with 401 and an empty body, so this works only where
+   it is the real stack host.
+
+The sidebar's success line names the route (`route: FOUNDRY_PROXY_URL`,
+`route: the base URL the container provides`, ...), and **Connection
+diagnostics** print the setting and the URL (never the token). TLS is checked
+against the first of `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and
+`MAESTRO_CERT_PEM_PATH` that names a file (the line then says "CA bundle
+set"), else the SDK's own default.
+
+### 3d. Reference PDFs on Foundry
+
+There is no SharePoint on Foundry, so the reference PDFs (chart read-offs,
+worked-example source pages) sit in a folder committed beside the app file,
+under the same file names as the SharePoint `primary_references` folder
+(Connection diagnostics list the names it looks for), and the app file points
+at it:
+
+```python
+import os
+os.environ.setdefault("GEOTECH_REFERENCES_DOCS", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "references"))
+```
+
+Where the PDFs should live for good (a media set or a dataset, with a fetcher
+like the SharePoint one) is BACKLOG INF-39 (e) and OWN-80.
 
 ### 3b. Alternative engine: the in-platform `palantir_models` SDK (no proxy, no token)
 
@@ -162,7 +245,19 @@ print(r.choices[0].message.content)
 ## 4. The 30-second proxy smoke test ("one curl")
 
 Before publishing, open the workspace **Terminal** and paste (substitute your
-RID; `$FOUNDRY_TOKEN` is usually already set):
+Claude RID; `$FOUNDRY_TOKEN` and `$FOUNDRY_PROXY_URL` are usually already
+set). This is the route of §3c step 3:
+
+```bash
+curl -s "https://$FOUNDRY_PROXY_URL/language-model-service/api/proxy/anthropic/v1/messages" \
+  -H "Authorization: Bearer $FOUNDRY_TOKEN" -H "Content-Type: application/json" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"<Claude RID>","max_tokens":20,"messages":[{"role":"user","content":"Say ok."}]}'
+```
+
+(If curl reports a certificate problem, add `--cacert "$REQUESTS_CA_BUNDLE"`
+or the file `MAESTRO_CERT_PEM_PATH` names.) The stack-host route, where
+`FOUNDRY_HOSTNAME` is the real stack host:
 
 ```bash
 curl -s "https://$FOUNDRY_HOSTNAME/api/v2/llm/proxy/openai/v1/chat/completions" \
@@ -183,6 +278,38 @@ A JSON reply containing the model's answer = the proxy is enabled and the RID
 is right. An error page or 404 = the LLM-provider-compatible API isn't enabled
 on the enrollment — ask the platform admin. (If `FOUNDRY_HOSTNAME` already
 carries `http://` or `https://`, drop the `https://` in the URL.)
+
+## 4a. Downloads and the PDF preview in the published app
+
+In the published app Streamlit's own download button saves an HTML error
+page instead of the file (Chrome: `<id>.htm`, "File wasn't available on
+site"), and a PDF shown inline as a `data:` frame is blocked ("This content
+is blocked"). Since the release after 5.33.0, on Foundry
+(`GEOTECH_DEPLOYMENT=foundry`, which the entry sets) every download is two
+buttons the page makes in the browser: the download itself, saved under the
+file's own name, and **Open in new tab**, the browser's own viewer (a file
+saved from there gets a random name; use the first button to keep it). The
+file travels inside the page, so files over 20 MB show a message instead;
+`GEOTECH_FOUNDRY_DOWNLOAD_MAX_MB` changes the limit. A PDF card's preview
+shows the first ten pages as images, with a note to open the whole file in a
+new tab. Elsewhere both are unchanged (`webapp/file_widgets.py`).
+
+## 4b. Retiring the workspace glue
+
+The first run (INF-25) needed two files the AI FDE wrote in the workspace:
+`foundry_proxy_shim.py` (a local forwarder that fixed the proxy address and
+dropped the refused fields) and `foundry_ui_shim.py` (the download buttons,
+and a PDF preview attempt that stayed blocked). The release after 5.33.0
+does both in the package (§3a, §3c, §4a). Once it is installed, delete the
+two files and their `install()` calls from the app file, republish, and run
+Connection diagnostics: the engine line should say `route:
+FOUNDRY_PROXY_URL` (or `route: the base URL the container provides`). Keep
+the wheel installation and the model list in the app file until the
+packages come from an Artifacts repository (§1). Nothing breaks if the new
+wheel arrives before the two files are deleted: the forwarder sets
+`GEOTECH_FOUNDRY_HOST`, which the app then follows (§3c step 1), and the
+package's own download buttons and preview no longer call what the UI file
+replaces.
 
 ## 5. Preview, then publish
 
@@ -229,20 +356,24 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
   diagnostics** — it tests resolve / plain / streaming / tool-calling
   requests and prints failures verbatim.
 - **401 Unauthorized from the LLM proxy on a gov enclave**: the container's
-  `FOUNDRY_HOSTNAME` may point at a local sidecar (seen: `localhost:8080`)
-  that rejects LLM-proxy paths, and direct egress to the stack domain is
-  DNS-blocked. This is an enrollment/permission question, not an app bug.
-  Ask the platform admin: (1) is the LLM provider-compatible API enabled for
-  the enrollment; (2) is this account/project authorized for the enabled
-  models; (3) what base URL + auth should Code Workspace containers use for
-  the LLM proxy in this enclave. Their answer goes into
-  `GEOTECH_FOUNDRY_HOST` (explicit `http://`/`https://` schemes are honored)
-  in the app file — no package change needed. For Claude this is the only
-  route today (the `palantir_models` engine is GPT-only): if the Anthropic
-  proxy is refused, find out whether `palantir_models.models` has a Claude /
-  Anthropic class and what request type it takes (the AI FDE brief
-  `../foundry_handoff/gse_app_2026-10-20/AI_FDE_BRIEF_GSE_APP.md` asks
-  exactly this), so the SDK engine can gain a Claude leg.
+  `FOUNDRY_HOSTNAME` points at a local sidecar (`localhost:8080`) that
+  answers every LLM-proxy path with 401 and an empty body, and direct egress
+  to the stack domain is DNS-blocked. Since the release after 5.33.0 the
+  app goes through `FOUNDRY_PROXY_URL` instead (§3c); check the engine line
+  in Connection diagnostics says so, and that `GEOTECH_FOUNDRY_HOST` is not
+  set to something older. If the proxy route answers 401/403 too, it is an
+  enrollment or permission question: is the LLM provider-compatible API
+  enabled; is this account authorized for the models, and are the RIDs
+  imported in the workspace's Models panel (403 `UseModelPermissionDenied`
+  otherwise); what base URL should containers use. An admin's answer goes
+  into `GEOTECH_FOUNDRY_HOST` in the app file (explicit
+  `http://`/`https://` schemes are honoured). `palantir_models` has a Claude
+  class too (`AnthropicClaudeLanguageModel`, by model API name; worked for
+  both 5.5 models on 2026-10-20), so the SDK engine can gain a Claude leg if
+  the proxy is ever closed.
+- **The upload line in Connection diagnostics** on Foundry reads `PUT -> 403;
+  POST -> 405`: expected, because the probe has no browser session.
+  Uploading from the browser worked in the published app (2026-10-20).
 - **Non-secret config lives in the app file** (there is no env-var panel):
   ```python
   import os
@@ -264,8 +395,9 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
   route (§3b) keeps its own retries as well. Vision (attachment analysis, figure read-off) depends on the
   enrollment's model supporting images through the proxy — try it, and prefer
   a multimodal RID for the default model.
-- Conversations persist under `GEOTECH_WEBAPP_DATA`; if the published app's
-  filesystem turns out not to be durable, point it at a durable mount (or
-  accept per-session conversations until we wire a dataset-backed store).
+- Conversations persist under `GEOTECH_WEBAPP_DATA` (default
+  `~/.geotech_webapp`). In a published app that is inside the app's own
+  container: not visible from the workspace, and lost when the container is
+  rebuilt (BACKLOG INF-38).
 - The old `foundry/` wrapper files (tools for the prepackaged AIP agent) are
   RETIRED and unrelated to this deployment.

@@ -394,6 +394,47 @@ def pdf_data_uri(path, max_bytes: int = PDF_PREVIEW_MAX_BYTES) -> Optional[str]:
         base64.b64encode(artifact_bytes(path)).decode("ascii")
 
 
+#: Pages a page-image preview of a PDF shows (where a ``data:`` PDF cannot
+#: be framed: the Foundry app frame, INF-37), and how finely they are drawn.
+PDF_PREVIEW_PAGES = 10
+PDF_PREVIEW_DPI = 110
+
+_PDF_PAGE_CACHE: dict = {}
+_PDF_PAGE_CACHE_MAX = 16
+
+
+def pdf_page_pngs(path, max_pages: int = PDF_PREVIEW_PAGES,
+                  dpi: int = PDF_PREVIEW_DPI) -> "tuple[list, int]":
+    """``(PNG bytes of the first pages, the PDF's page count)``, or
+    ``([], 0)`` when the file is missing, empty or cannot be read.
+
+    Every rerun draws each card again, so the pages are kept per file
+    version (path, size, modification time) for the process."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return [], 0
+    if info.st_size <= 0:
+        return [], 0
+    key = (os.path.abspath(str(path)), info.st_size, info.st_mtime_ns,
+           max_pages, dpi)
+    hit = _PDF_PAGE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        import fitz  # PyMuPDF
+        with fitz.open(str(path)) as doc:
+            count = doc.page_count
+            pngs = [doc[i].get_pixmap(dpi=dpi).tobytes("png")
+                    for i in range(min(count, max(0, max_pages)))]
+    except Exception:                                    # noqa: BLE001
+        return [], 0
+    if len(_PDF_PAGE_CACHE) >= _PDF_PAGE_CACHE_MAX:
+        _PDF_PAGE_CACHE.pop(next(iter(_PDF_PAGE_CACHE)))
+    _PDF_PAGE_CACHE[key] = (pngs, count)
+    return pngs, count
+
+
 #: A Plotly sidecar and the static image it supersedes share everything but
 #: this suffix (``lateral_pressure.png`` / ``lateral_pressure.plotly.json``).
 PLOTLY_SIDECAR_SUFFIX = ".plotly.json"
