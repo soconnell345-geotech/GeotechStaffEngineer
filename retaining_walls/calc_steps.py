@@ -1515,9 +1515,10 @@ def _plot_cantilever_section(result, analysis):
     ax.fill(backfill_x, backfill_y, facecolor='#f5e6c8', edgecolor='none',
             alpha=0.7, zorder=0)
 
-    # A shear key: where it is given, else under the stem, as UFC 3-220-20
-    # Fig. 4-29 and GEC-6 Fig. 5-22 draw it, and the figure says so
-    # (GM-216); the analysis has no place for it
+    # A shear key: where it is given, else under the stem, an assumption
+    # (UFC 3-220-20 Fig. 4-29, p. 224, draws a gravity wall, GEC-6 Fig.
+    # 5-22 a footing; neither prints a cantilever key's position), and the
+    # figure says so (GM-216, GM-224); the analysis has no place for it
     key_depth = geom.key_depth if geom.has_shear_key else 0.0
     key_lines = []
     if key_depth > 0:
@@ -1527,8 +1528,9 @@ def _plot_cantilever_section(result, analysis):
             missing = ("position or width" if key_x is None
                        and key_w is None else
                        "position" if key_x is None else "width")
-            key_lines += [("Shear key drawn under the stem, as UFC 3-220-20 "
-                           "Fig. 4-29 draws it:"),
+            key_lines += [("Shear key drawn under the stem: an assumption, no "
+                           "printed basis (UFC 3-220-20 Fig. 4-29 draws a "
+                           "gravity wall);"),
                           f"no key {missing} given."]
         key_x = t_toe if key_x is None else float(key_x)
         key_w = t_stem_b if key_w is None else float(key_w)

@@ -483,29 +483,34 @@ _PACKAGE_TOOLS = {
                            "only: the sliding check takes the passive "
                            "resistance on the plane below the toe over the "
                            "key's depth, wherever the key is. Not given: "
-                           "the key is drawn under the stem, as UFC "
-                           "3-220-20 Fig. 4-29 and GEC-6 Fig. 5-22 draw "
-                           "it, and the figure says so.",
+                           "the key is drawn under the stem, an "
+                           "assumption: UFC 3-220-20 Fig. 4-29 (p. 224, a "
+                           "gravity wall) and GEC-6 Fig. 5-22 (p. 101, a "
+                           "footing) print no key position for a "
+                           "cantilever wall. Set it here.",
             "applies_when": {"has_shear_key": [True], "key_depth": "set"},
             "when_absent": {
                 "case": "under the stem",
                 "basis": "no key position given: the wall section draws "
-                         "the key's front face under the stem's, as UFC "
-                         "3-220-20 Fig. 4-29 and GEC-6 Fig. 5-22 draw it, "
-                         "and says so"}},
+                         "the key's front face under the stem's, an "
+                         "assumption with no printed basis (UFC 3-220-20 "
+                         "Fig. 4-29 draws a gravity wall, GEC-6 Fig. 5-22 "
+                         "a footing, neither a cantilever wall's key "
+                         "position), and says so"}},
             "key_width": {
                 "type": "float", "required": False,
                 "description": "Width of the shear key (m), for the wall "
                                "section figure only. Not given: the "
-                               "stem's thickness at its base, as UFC "
-                               "3-220-20 Fig. 4-29 draws it.",
+                               "stem's thickness at its base, an "
+                               "assumption: no printed basis for a "
+                               "cantilever wall's key width.",
                 "applies_when": {"has_shear_key": [True],
                                  "key_depth": "set"},
                 "when_absent": {
                     "case": "the stem's thickness at its base",
                     "basis": "no key width given: the wall section draws "
-                             "the key as wide as the stem, as UFC "
-                             "3-220-20 Fig. 4-29 draws it"}}},
+                             "the key as wide as the stem, an "
+                             "assumption with no printed basis"}}},
         "not_packaged": {"mse": (
             "the MSE steps work the earth pressure out again from "
             "phi_backfill, level backfill only, where the mse_wall tool "
