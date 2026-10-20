@@ -707,14 +707,23 @@
      "as_ratio": 0.277,
      "phi_column": 39.0
     }
+   },
+   {
+    "module": "ground_improvement",
+    "method": "priebe_improvement_factor",
+    "params": {
+     "as_ratio": 0.277,
+     "method": "fig_5_21"
+    }
    }
   ],
   "published_result": "Settlement-improvement ratio = 2.7 (chart read from Figure 5-27); improved settlement = 27 in / 2.7 = 10 in (unimproved S = 27 in reproduced exactly by the consolidation closed form Cc/(1+eo)*H*log10((po+dq)/po)).",
   "computed_result": {
    "n0_phi42p5_default": 3.06,
    "n0_phi39": 2.711,
+   "n0_fig_5_21_curve_4": 2.548,
    "improved_settlement_range_in": "27/3.06 = 8.8 in (module default phi_column = 42.5) to 27/2.71 = 10.0 in (phi_column = 39, matching the chart)",
-   "note": "The published 2.7 is a chart read; the Priebe (1995) formula result depends on the area-ratio convention and phi_column. At the source's as = 0.277: n0 = 3.06 with the default phi_column = 42.5 (+13%), and n0 = 2.71 at phi_column = 39 (matches the chart). Both bracket the published improved settlement of 10 in from below — within chart-read latitude."
+   "note": "The published 2.7 is a chart read; the Priebe (1995) formula result depends on the area-ratio convention and phi_column. At the source's as = 0.277: n0 = 3.06 with the default phi_column = 42.5 (+13%), and n0 = 2.71 at phi_column = 39 (matches the chart). Both bracket the published improved settlement of 10 in from below — within chart-read latitude. GEC-13 prints no Priebe formula: it prints the curve, Fig. 5-21 curve (4), phi = 37.5 deg, which method 'fig_5_21' reads: n0 = 2.55 at A/Ac = 3.61 (27/2.55 = 10.6 in). Fig. 5-27's arrows are drawn at A/Ac 3.53 and 2.63 on that curve and labelled 3.6 and 2.7 (GM-221)."
   },
   "report_notes": "The report should state the area-ratio convention up front (as = Ac/A = 1/(s/d)^2 here vs the geometric triangular-tributary value — they differ by ~10%) and the assumed column friction angle, since n0 is sensitive to both; presenting n0 for two or three phi_column values honestly reflects the chart-read latitude of the source. Pair the improvement factor with the unimproved consolidation settlement calculation (settlement module) so the improved settlement S/n0 is traceable end-to-end. Note this is the Priebe BASIC factor n0 (no depth or compressibility corrections).",
   "provenance": "validation_examples/test_published_v018_v020.py::test_v019_priebe_improvement_factor_convention, test_v019_unimproved_consolidation_pass",

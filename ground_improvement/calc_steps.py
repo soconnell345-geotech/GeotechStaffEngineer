@@ -380,8 +380,12 @@ def _stress_ratio_steps(r, analysis, srf_items, n, a_s):
         result_name="E_comp",
         result_value=f"{r.composite_modulus_kPa:.0f}",
         result_unit="kPa",
-        reference="Priebe (1995); GEC-13 unit-cell model",
-        notes="Consistent with SRF: E_comp = E_s / SRF.",
+        reference=("GEC-13 (FHWA-NHI-16-027) Vol. I: the unit cell (Sec. "
+                   "4.1.2.1, pp. 5-28 to 5-30) under equal strain (Sec. "
+                   "4.1.2.4, p. 5-31), the soil stress by Eq. 5-4 (p. 5-32)"),
+        notes=("Consistent with SRF: E_comp = E_s / SRF. GEC-13 prints no "
+               "composite modulus; this is the modulus that settles the "
+               "unit cell as the stress reduction method does."),
     ))
 
 
@@ -434,8 +438,10 @@ def _bearing_and_settlement_steps(r, sections, n, a_s):
             result_name="S_improved",
             result_value=f"{r.settlement_improved_mm:.1f}",
             result_unit="mm",
-            reference=("Priebe (1995)" if r.settlement_method
-                       == "stress_ratio" else
+            reference=("GEC-13 (FHWA-NHI-16-027) Vol. I, Sec. 4.1.2.6, "
+                       "p. 5-36: the stress reduction method, the soil "
+                       "stress by Eq. 5-4 (p. 5-32)"
+                       if r.settlement_method == "stress_ratio" else
                        "GEC-13 Fig. 5-21: S = S_unreinforced / n'"),
         ))
 
