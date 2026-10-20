@@ -385,7 +385,7 @@ MODULE_REGISTRY = {
     },
     "retaining_walls": {
         "adapter": "funhouse_agent.adapters.retaining_walls",
-        "brief": "Cantilever + MSE walls (GEC-11)",
+        "brief": "Cantilever + MSE walls (GEC-11); earth pressure coefficients: Rankine and Coulomb Ka/Kp, log-spiral Kp (wall and ground slope), at-rest K0 behind a slope",
     },
     "axial_pile": {
         "adapter": "funhouse_agent.adapters.axial_pile",
