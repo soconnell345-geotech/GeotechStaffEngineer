@@ -190,7 +190,7 @@ def _run_cantilever_wall(params):
         "thrust_inclination_deg": sl["thrust_inclination_deg"],
     }
     if sl.get("Pp_kN_per_m"):
-        # with include_passive: on the base, or on the key face (GM-210)
+        # with include_passive: on the base, or over the key depth (GM-210)
         output["sliding_basis"]["Pp_kN_per_m"] = sl["Pp_kN_per_m"]
     return output
 
@@ -596,7 +596,7 @@ METHOD_INFO = {
             "stem_thickness_top": {"type": "float", "required": False, "default": 0.30, "description": "Stem thickness at top (m)."},
             "stem_thickness_base": {"type": "float", "required": False, "description": "Stem thickness at base (m)."},
             "base_thickness": {"type": "float", "required": False, "default": 0.60, "description": "Base slab thickness (m)."},
-            "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key below the base (with key_depth). It acts only with include_passive: the sliding check then takes the passive resistance on the face of the key only, from the underside of the base (depth base_thickness) to the bottom of the key (base_thickness + key_depth), the trapezoid of UFC 3-220-20 Fig. 4-29 (p. 224: 'the passive pressure is applied only along the depth of the key and not along the entire burial depth of the wall'; GEC-6 Fig. 5-22 likewise), in place of the passive on the base thickness. GEC-6 Sec. 5.4 (pp. 100-101): keys in granular soils 'are not very efficient in developing passive pressures'; its key method is for stiff, overconsolidated clays and soft rock. UFC: 'it is also prudent to consider some amount of future excavation in front of the wall'."},
+            "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key below the base (with key_depth). It acts only with include_passive: the sliding check then takes the passive resistance over the depth of the key only, from the underside of the base (depth base_thickness) to the level of the bottom of the key (base_thickness + key_depth), the trapezoid UFC 3-220-20 Fig. 4-29 draws below the toe (p. 224: 'the passive pressure is applied only along the depth of the key and not along the entire burial depth of the wall'; GEC-6 Fig. 5-22 likewise), in place of the passive on the base thickness. GEC-6 Sec. 5.4 (pp. 100-101): keys in granular soils 'are not very efficient in developing passive pressures'; its key method is for stiff, overconsolidated clays and soft rock. UFC: 'it is also prudent to consider some amount of future excavation in front of the wall'."},
             "key_depth": {"type": "float", "required": False, "default": 0.0, "description": "Shear key depth below the underside of the base slab (m)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform LIVE-load surcharge on the backfill (kPa), e.g. traffic. Its thrust K*q*H drives every check. Over the heel it is NOT a resisting force in sliding, overturning or the eccentricity check by default (live_load_resists), and it does load the base in the bearing pressures (surcharge_in_bearing). A permanent surcharge (pavement, approach slab) goes in dead_load_surcharge."},
             "dead_load_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform DEAD-load (permanent) surcharge on the backfill (kPa), e.g. a pavement or an approach slab (FHWA NHI-06-089 Sec. 10.4.2). Its thrust drives every check, added to the live load's. Over the heel it is not a resisting force by default (dead_load_resists); it loads the base in the bearing pressures (surcharge_in_bearing)."},
@@ -609,7 +609,7 @@ METHOD_INFO = {
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa), FULL value — the sliding check applies adhesion ca = (2/3)*c_foundation INTERNALLY. Do NOT pre-reduce. To set the adhesion directly, use base_adhesion instead."},
             "delta_base": {"type": "float", "required": False, "description": "Base interface friction angle delta_b (deg), used DIRECTLY in the sliding check with NO 2/3 factor. Overrides the (2/3)*phi_foundation default. delta_b = phi_foundation for concrete cast against the ground (GEC-6 Sec. 5.4, p. 99: tan delta 'will be equal to the tangent of the friction angle (tan phi) for the soil supporting the footing'). The result's choices state the delta_b used, its basis and the other reading."},
             "base_adhesion": {"type": "float", "required": False, "description": "Base adhesion ca (kPa), used DIRECTLY with NO 2/3 factor (0 = no adhesion). Overrides the (2/3)*c_foundation default."},
-            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include Rankine passive resistance in front of the wall in the sliding check, with the soil in front taken up to the top of the base: on the base thickness, or with has_shear_key on the key face only (from base_thickness to base_thickness + key_depth below that surface, UFC 3-220-20 Fig. 4-29)."},
+            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include Rankine passive resistance in front of the wall in the sliding check, with the soil in front taken up to the top of the base: on the base thickness, or with has_shear_key over the depth of the key only (from base_thickness to base_thickness + key_depth below that surface, UFC 3-220-20 Fig. 4-29)."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3) for passive resistance. Defaults to gamma_backfill."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check. Without it the bearing check is NOT RUN: FOS_bearing and passes_bearing are null and checks_not_run lists 'bearing' (q_toe / q_heel are still reported)."},
             "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
@@ -746,7 +746,7 @@ declare_applies_when(METHOD_INFO, {
                               "state": ["passive"]}},
     "cantilever_wall": {
         # the key acts only through the passive resistance in front of it
-        # (cantilever.py: Pp on the key face when has_shear_key, GM-210)
+        # (cantilever.py: Pp over the key depth when has_shear_key, GM-210)
         "has_shear_key": {"include_passive": [True]},
         "key_depth": {"has_shear_key": [True], "include_passive": [True]},
         "gamma_foundation": {"include_passive": [True]},

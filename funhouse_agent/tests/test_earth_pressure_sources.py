@@ -123,9 +123,10 @@ def test_sheet_pile_log_spiral_source():
     assert "log_spiral_source" not in (_wall().get("defaults_used") or {})
 
 
-def test_cantilever_wall_key_passive_on_the_key_face():
-    """GM-210: Pp on the key face, base_thickness 0.6 to 1.2 m (UFC 3-220-20
-    Fig. 4-29): 1/2 x 3 x 18 x (1.2^2 - 0.6^2) = 29.2 kN/m (was 9.7)."""
+def test_cantilever_wall_key_passive_over_the_key_depth():
+    """GM-210: Pp over the key depth, 0.6 to 1.2 m below the top of the
+    base (UFC 3-220-20 Fig. 4-29): 1/2 x 3 x 18 x (1.2^2 - 0.6^2) = 29.2
+    kN/m (was 9.7)."""
     r = D.call_agent("retaining_walls", "cantilever_wall", {
         "wall_height": 5.0, "gamma_backfill": 18.0, "phi_backfill": 30.0,
         "base_width": 3.0, "toe_length": 0.5, "stem_thickness_base": 0.5,

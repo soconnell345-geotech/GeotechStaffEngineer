@@ -347,8 +347,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
     load's share of Pv not counted, GM-157), the base interface
     ``delta_b`` (deg) and ``ca`` (kPa) with whether each was given,
     ``Kp``, ``D_passive`` and ``Pp`` (None / 0 without passive; with a
-    shear key Pp acts on the key face, from ``D_passive_top`` = the base
-    thickness down to ``D_passive``, GM-210),
+    shear key Pp acts over the depth of the key only, from
+    ``D_passive_top`` = the base thickness down to ``D_passive``, GM-210),
     ``resisting``, ``driving`` (= Ph) and ``FOS`` (None with no driving
     force)."""
     if phi_foundation is None:
@@ -391,12 +391,14 @@ def _sliding_terms(geom: CantileverWallGeometry,
     if include_passive:
         Kp = rankine_Kp(phi_foundation)
         if geom.has_shear_key and geom.key_depth > 0:
-            # On the face of the key only (GM-210): UFC 3-220-20 Sec.
+            # Over the depth of the key only (GM-210): UFC 3-220-20 Sec.
             # 4-5.1.3 and Fig. 4-29 (pp. 223-224), "the passive pressure is
             # applied only along the depth of the key and not along the
             # entire burial depth of the wall"; GEC-6 Fig. 5-22 likewise.
-            # The face runs from the underside of the base (depth t) to the
-            # bottom of the key (t + key_depth): the trapezoid between them.
+            # Both figures draw the trapezoid on the vertical plane below
+            # the toe (a-a1, the front of the soil the key carries), from
+            # the underside of the base (depth t) to the level of the bottom
+            # of the key (t + key_depth).
             D_top = geom.base_thickness
             D = D_top + geom.key_depth
         else:
