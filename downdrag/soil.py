@@ -164,9 +164,9 @@ class DowndragSoilLayer:
                 "sigma'v with skin_friction_method 'beta' and beta given, "
                 "and a toe in it takes Nt x cu (9 cu unless Nt is given). "
                 "For a clay in long-term, drained conditions, give "
-                "skin_friction_method 'beta' and the beta for its phi' "
-                f"({BETA_IN_CLAY_VALUES}); the module does not work beta "
-                "out from phi' in clay. Leave phi out.")
+                f"skin_friction_method 'beta' with beta ({BETA_IN_CLAY_VALUES}"
+                "); the module does not work beta out from phi' in clay. "
+                "Leave phi out.")
         if self.fs_method == "alpha":
             if self.beta is not None:
                 raise ValueError(

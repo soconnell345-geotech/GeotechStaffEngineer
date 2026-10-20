@@ -118,7 +118,7 @@ def _build_analysis(params, method, valid):
         except ValueError as exc:
             raise ValueError(
                 f"{method}: layers[{i}] ({l.get('description') or l['soil_type']}): "
-                f"{exc}. {_LAYER_FIX}") from None
+                f"{str(exc).rstrip('.')}. {_LAYER_FIX}") from None
     soil = DowndragSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth", 0.0))
     analysis = DowndragAnalysis(
         soil=soil, pile_length=params["pile_length"], pile_diameter=params["pile_diameter"],
