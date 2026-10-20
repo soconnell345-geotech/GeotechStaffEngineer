@@ -179,20 +179,48 @@ def _rock_shaft(**options):
 
 def test_rock_from_the_top_and_its_base_choice():
     """Sec. 10.3.5.3 prints no top zone in rock (Example 10-4 takes the
-    socket's whole length): rock carries side resistance from its top."""
-    r = _rock_shaft()
+    socket's whole length): rock carries side resistance from its top.
+    Eq. 10-23 is for rock massive or tightly jointed to one diameter below
+    the base (p. 10-22): with RQD 40 there the call is refused unless the
+    engineer states the conditions met (GM-244 review)."""
+    with pytest.raises(ValueError, match="RQD 40 % at 6-7.2 m"):
+        _rock_shaft()
+    with pytest.raises(ValueError, match="Hoek-Brown"):
+        _rock_shaft(rock_base_conditions_met=False)
+    r = _rock_shaft(rock_base_conditions_met=True)
     (rock,) = r.layer_breakdown
     assert rock["effective_top_m"] == 0.0
     top = _choice(r, "side resistance near the ground surface")
     assert "rock" in top["chosen"] and top["how"] == "default"
     base = _choice(r, "base resistance in rock")
     assert base["how"] == "default" and "2.5 qu" in base["chosen"]
-    assert "RQD is given as 40 %" in base["basis"]
+    assert "rock_base_conditions_met" in base["basis"]
     assert base["alternatives"][0].startswith("rock_base_method 'rqd'")
     assert "Hoek-Brown" in base["alternatives"][1]
+    met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
+    assert met["how"] == "given" and "RQD 40 % at 6-7.2 m" in met["chosen"]
     rqd = _rock_shaft(rock_base_method="rqd")
     assert rqd.Q_tip < r.Q_tip
-    assert _choice(rqd, "base resistance in rock")["how"] == "given"
+    rqd_base = _choice(rqd, "base resistance in rock")
+    assert rqd_base["how"] == "given"
+    assert "rock_base_conditions_met true" in rqd_base["alternatives"][0]
+    assert f"Q_b {r.Q_tip:,.0f} kN" in rqd_base["alternatives"][0]
+
+
+def test_rock_below_the_base_at_rqd_100_is_taken_as_met_and_said():
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0)])
+    r = DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=6.0),
+                           soil=soil).compute()
+    met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
+    assert met["how"] == "default" and met["chosen"].startswith("taken as met")
+    # soil within one base diameter below the base is refused the same way
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(6.5, "rock", 23.0, qu=20000.0),
+        ShaftSoilLayer(5.0, "cohesive", 18.0, cu=50.0)])
+    with pytest.raises(ValueError, match="cohesive soil at 6.5-7.2 m"):
+        DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=6.0),
+                           soil=soil).compute()
 
 
 def test_no_large_base_reduction_unless_asked():
@@ -268,10 +296,11 @@ def test_the_calc_steps_print_what_was_used():
     unit = steps["Unit End Bearing"]
     assert float(unit.result_value.replace(",", "")) * a.shaft.tip_area == \
         pytest.approx(r.Q_tip, rel=1e-3)
-    rock = _rock_shaft()
+    rock = _rock_shaft(rock_base_conditions_met=True)
     a = DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=6.0),
                            soil=ShaftSoilProfile(layers=[ShaftSoilLayer(
-                               10.0, "rock", 23.0, qu=20000.0, RQD=40.0)]))
+                               10.0, "rock", 23.0, qu=20000.0, RQD=40.0)]),
+                           rock_base_conditions_met=True)
     titles = [s.title for sec in get_calc_steps(rock, a)
               for s in sec.items if hasattr(s, "title")]
     assert "Unit End Bearing (Rock Base), GEC-10 Eq. 10-23" in titles

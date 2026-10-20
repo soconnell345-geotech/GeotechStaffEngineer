@@ -260,7 +260,7 @@
         "alpha_method": "rational",
         "su_test_type": "ciuc",
         "pa": 101.325,
-        "rock_side_C": 0.65,
+        "rock_side_C": 1.0,
         "socket_diameter": 1.0,
         "casing_depth": 0.0,
         "fractured_rock_thickness": 0.0

@@ -230,28 +230,30 @@ class TestRockSocket:
         Qs = side_resistance_rock(10000, 3.14, 0.0)
         assert Qs == 0.0
 
-    def test_default_C_is_065(self):
-        """Default C parameter should be 0.65 per GEC-10."""
+    def test_default_C_is_1(self):
+        """Default C is 1.0, GEC-10 Eq. 10-21 for a 'normal' socket (pp.
+        10-20, 10-21; GM-244, was 0.65, Eq. 10-22's)."""
         qu = 10000
         Qs_default = side_resistance_rock(qu, 3.14, 2.0)
-        Qs_explicit = side_resistance_rock(qu, 3.14, 2.0, C=0.65)
+        Qs_explicit = side_resistance_rock(qu, 3.14, 2.0, C=1.0)
         assert abs(Qs_default - Qs_explicit) < 0.001
 
     def test_rock_socket_uses_pa(self):
         """Formula must include atmospheric pressure normalization."""
         qu = 10000  # kPa
         Qs = side_resistance_rock(qu, 1.0, 1.0)  # unit perimeter, unit thickness
-        expected_fs = 0.65 * math.sqrt(10000 * PA)
+        expected_fs = 1.0 * math.sqrt(10000 * PA)
         assert abs(Qs - expected_fs) < 0.1
 
     def test_rock_socket_known_value(self):
-        """Hand calc: qu=5000, C=0.65, alpha_E=1.0.
-        fs = 0.65 * sqrt(5000 * 101.325) = 0.65 * 711.78 = 462.66 kPa.
+        """Hand calc: qu=5000, C=1.0, alpha_E=1.0.
+        fs = 1.0 * sqrt(5000 * 101.325) = 711.78 kPa; with Eq. 10-22's
+        C = 0.65, 0.65 * 711.78 = 462.66 kPa.
         """
         qu = 5000
         Qs = side_resistance_rock(qu, 1.0, 1.0)
-        expected_fs = 0.65 * math.sqrt(5000 * PA)
-        assert abs(Qs - expected_fs) < 0.1
+        assert abs(Qs - 711.78) < 0.1
+        assert abs(side_resistance_rock(qu, 1.0, 1.0, C=0.65) - 462.66) < 0.1
 
     def test_explicit_C_override(self):
         """User can still pass C=1.0 to override default."""
@@ -346,7 +348,7 @@ class TestFullAnalysis:
         soil = ShaftSoilProfile(layers=[
             ShaftSoilLayer(5, "cohesionless", 18.0, phi=32, N60=20),
             ShaftSoilLayer(10, "cohesive", 17.0, cu=80),
-            ShaftSoilLayer(5, "rock", 22.0, qu=5000, RQD=85),
+            ShaftSoilLayer(5, "rock", 22.0, qu=5000),
         ])
         return shaft, soil
 

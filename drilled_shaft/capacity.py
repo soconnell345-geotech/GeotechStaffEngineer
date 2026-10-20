@@ -301,11 +301,32 @@ ROCK_BASE_BASIS = (
     "to a depth of at least one diameter beneath the base, 2. It can be "
     "verified that no solution cavities or voids exist beneath the base, "
     "and 3. A clean base can be achieved and verified using conventional "
-    "clean-out equipment'. Example 10-4 (p. 10-28): 2.5 x 360 ksf = 900 "
-    "ksf. For a fractured rock mass, the Hoek-Brown base (Eqs. 10-24 to "
-    "10-29, pp. 10-23, 10-24), for which 2.5 'can be used as an upper-bound "
-    "limit'. Resistance factor 0.50 (Table 8-4, p. 8-14). Whether the "
-    "three conditions hold is the engineer's judgment")
+    "clean-out equipment'. Example 10-4 (pp. 10-27, 10-28) takes it with "
+    "RQD 37 to 100 in the zone of the socket because 'Rock coring and local "
+    "experience indicate the rock mass below the socket tip is competent': "
+    "2.5 x 360 ksf = 900 ksf. For a fractured rock mass, the Hoek-Brown "
+    "base (Eqs. 10-24 to 10-29, pp. 10-23, 10-24), for which 2.5 'can be "
+    "used as an upper-bound limit'; this tool does not compute it. "
+    "Resistance factor 0.50 (Table 8-4, p. 8-14; p. 10-22). Whether the "
+    "three conditions hold is the engineer's judgment "
+    "(rock_base_conditions_met)")
+
+#: Why the default rock base is refused where the conditions of Eq. 10-23
+#: are said not to hold, or the layers below the base put them in doubt
+#: and the call does not say (GM-244 review).
+ROCK_BASE_REFUSAL = (
+    "GEC-10 (FHWA-NHI-18-024) p. 10-22 recommends N*cr = 2.5 (Eq. 10-23) "
+    "only where the rock below the base is massive or tightly jointed (no "
+    "compressible seams or joints) to at least one diameter below it, no "
+    "solution cavities or voids exist beneath it, and a clean base can be "
+    "achieved and verified; for a fractured rock mass it gives the "
+    "Hoek-Brown base, Eqs. 10-24 to 10-29 (pp. 10-23, 10-24), which this "
+    "tool does not compute. Give rock_base_conditions_met true where the "
+    "engineer judges the three conditions met (Example 10-4 takes 2.5 with "
+    "RQD 37 to 100 because coring and local experience showed the rock "
+    "below the tip competent); or rock_base_method 'rqd' (this tool's "
+    "older reduction of q_b/q_u by RQD, not checked against a printed "
+    "page); or work Eq. 10-29 by hand from GSI and m_i")
 
 #: The earlier rock base of this tool (GM-244).
 RQD_BASE_BASIS = (
@@ -345,47 +366,64 @@ FRACTURED_ROCK_BASIS = (
 
 
 #: The rock side resistance coefficient C the module takes when none is
-#: given: GEC-10 Eq. 10-22's 0.65 alpha_E with alpha_E = 1.0.
-ROCK_SIDE_C = 0.65
+#: given: GEC-10 Eq. 10-21 with C = 1.0, 'recommended for design of
+#: "normal" rock sockets' (p. 10-20; GM-244, was 0.65, Eq. 10-22's 0.65
+#: alpha_E with alpha_E = 1.0).
+ROCK_SIDE_C = 1.0
 
-#: GEC-10 (FHWA-NHI-18-024) pp. 10-20 to 10-22, as printed (GM-221).
+#: GEC-10 (FHWA-NHI-18-024) pp. 10-20 to 10-22, as printed (GM-221,
+#: GM-244).
 ROCK_SIDE_C_BASIS = (
     "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3: f_SN = C pa sqrt(qu / pa), C "
     "'a regression coefficient used to analyze load test results' (Eq. "
-    "10-21, p. 10-20). In summary, 'for routine design of rock sockets, "
-    "Equation 10-21 with C = 1.0 is recommended' (p. 10-21; Example 10-4, "
-    "p. 10-28). "
-    "Where caving or instability of the socket is anticipated, Eq. 10-22 "
-    "(O'Neill and Reese 1999): f_SN = 0.65 alpha_E pa sqrt(qu / pa), "
-    "alpha_E from Table 10-3 by RQD and joint condition. For roughened "
-    "sockets a mean C = 1.9 (Kulhawy and Prakoso 2007, p. 10-22); 'load "
-    "tests or local experience' should verify C greater than 1.0. "
-    "Resistance factor: Table 8-4 (p. 8-14) prints 0.50 for side "
-    "resistance in rock by Eq. 10-21 (0.40 in uplift), which lrfd_capacity "
-    "takes; the text of p. 10-21 gives 0.55 for Eqs. 10-21 and 10-22, 'as "
-    "presented in Table 8-4'")
+    "10-21, p. 10-20); 'Equation 10-21 with C = 1.0 is recommended for "
+    "design of \"normal\" rock sockets' (p. 10-20), a normal socket being "
+    "one 'constructed with conventional equipment and resulting in "
+    "nominally clean sidewalls without resorting to special procedures or "
+    "artificial roughening'; rock prone to smearing or deterioration, and "
+    "rock that cannot be excavated without caving, are outside it (p. "
+    "10-21). In summary, 'for routine design of rock sockets, Equation "
+    "10-21 with C = 1.0 is recommended' (p. 10-21); Example 10-4 (pp. "
+    "10-27, 10-28) takes C = 1.0 for a socket that 'satisfies the criteria "
+    "for a \"normal\" socket'. 'For highly fractured or weathered rock that "
+    "cannot be drilled without some type of artificial support ... or where "
+    "caving is anticipated', Eq. 10-22 (O'Neill and Reese 1999): f_SN = "
+    "0.65 alpha_E pa sqrt(qu / pa), alpha_E from Table 10-3 by RQD and "
+    "joint condition (1.0 at RQD 100 with closed joints, down to 0.45 at "
+    "RQD 20; p. 10-21, not built here). For roughened sockets a mean C = "
+    "1.9 (Kulhawy and Prakoso 2007, p. 10-22); 'load tests or local "
+    "experience' should verify C greater than 1.0. 'For design, the value "
+    "of qu used in Equation 10-21 should not exceed the compressive "
+    "strength of the drilled shaft concrete' (p. 10-21): this tool takes "
+    "qu as given and does not check it. Whether a socket is "
+    "normal is the engineer's judgment. Resistance factor: Table 8-4 (p. "
+    "8-14) prints 0.50 for side resistance in rock by Eq. 10-21 (0.40 in "
+    "uplift), which lrfd_capacity takes; the text of p. 10-21 gives 0.55 "
+    "for Eqs. 10-21 and 10-22, 'as presented in Table 8-4'")
 
 #: The values of C GEC-10 names, each with where it applies.
 _ROCK_SIDE_C_NAMED = {
-    0.65: "Eq. 10-22 (where caving is anticipated) with alpha_E = 1.0",
     1.0: "Eq. 10-21, a 'normal' socket, recommended for routine design "
-         "(p. 10-21)",
+         "(pp. 10-20, 10-21)",
+    0.65: "Eq. 10-22, where caving or instability of the socket is "
+          "anticipated (O'Neill and Reese 1999), with alpha_E = 1.0, the "
+          "most Table 10-3 gives (RQD 100, closed joints); lower RQD or "
+          "open joints give a lower alpha_E (p. 10-21)",
     1.9: "roughened sockets, verified by load tests or local experience "
          "(p. 10-22)",
 }
 
 
-def rock_side_choice(C: float) -> dict:
+def rock_side_choice(C: float, values=None) -> dict:
     """The choice made for the rock side resistance coefficient C (GM-221):
-    the module's 0.65 is GEC-10 Eq. 10-22 with alpha_E = 1.0, where GEC-10
-    recommends Eq. 10-21 with C = 1.0 for a normal socket."""
+    1.0, GEC-10 Eq. 10-21 for a normal socket, by default (GM-244); the
+    other values GEC-10 names are the alternatives. ``values``, where
+    given, maps a C to the run's values with it, in words."""
     from geotech_common.choices import choice, how_given
     named = _ROCK_SIDE_C_NAMED.get(C)
-    alternatives = [f"{c!r}: {why}" for c, why in _ROCK_SIDE_C_NAMED.items()
-                    if c != C and c != ROCK_SIDE_C]
-    alternatives.append("0.65 alpha_E: Eq. 10-22 with alpha_E from Table "
-                        "10-3 by RQD and joint condition, where caving is "
-                        "anticipated (p. 10-21)")
+    alternatives = [
+        f"{c!r}: {why}" + (f": {values(c)}" if values else "")
+        for c, why in _ROCK_SIDE_C_NAMED.items() if c != C]
     return choice("rock side resistance coefficient C",
                   f"{float(C)!r}: {named}" if named else f"{C:g}",
                   how_given(C, ROCK_SIDE_C, name="rock_side_C"),
@@ -518,6 +556,16 @@ class DrillShaftAnalysis:
         (2018) Eq. 10-23, N*cr = 2.5; see :data:`ROCK_BASE_BASIS`) or
         "rqd" (q_b/q_u reduced by the tip layer's RQD; see
         :data:`RQD_BASE_BASIS`).
+    rock_base_conditions_met : bool, optional
+        For ``rock_base_method`` "gec10": whether the rock below the base
+        meets the three conditions GEC-10 p. 10-22 sets on N*cr = 2.5
+        (massive or tightly jointed to one diameter below the base, no
+        cavities or voids, a clean base). True: 2.5 qu, the engineer's
+        statement. False: refused (the Hoek-Brown base of a fractured
+        rock mass is not built). Left out (None): 2.5 qu with the
+        conditions taken as met, stated in the choices, unless the layers
+        within one base diameter below the base show an RQD below 100 or
+        soil, when it is refused (:data:`ROCK_BASE_REFUSAL`).
     large_base_reduction : bool, optional
         O'Neill and Reese's (1999) reduction of base resistance for a large
         base: 1.27/B in cohesionless soil (B > 1.27 m), F_r in cohesive
@@ -526,8 +574,9 @@ class DrillShaftAnalysis:
         Atmospheric pressure (kPa) for the rational chains. Default 101.325.
     rock_side_C : float, optional
         C in the rock side resistance f_s = C pa sqrt(qu / pa) (GEC-10 Eq.
-        10-21). Default 0.65, Eq. 10-22 with alpha_E = 1.0; GEC-10
-        recommends 1.0 for a normal socket (p. 10-21). See
+        10-21). Default 1.0, recommended for a normal socket (pp. 10-20,
+        10-21; GM-244); 0.65 is Eq. 10-22 with alpha_E = 1.0, where caving
+        is anticipated (the default until GM-244). See
         :data:`ROCK_SIDE_C_BASIS` (GM-221).
 
     Examples
@@ -554,6 +603,7 @@ class DrillShaftAnalysis:
     bottom_exclusion: float = 0.0
     clay_base_method: str = "gec10"
     rock_base_method: str = "gec10"
+    rock_base_conditions_met: Optional[bool] = None
     large_base_reduction: bool = False
 
     def __post_init__(self):
@@ -584,6 +634,10 @@ class DrillShaftAnalysis:
             raise ValueError(
                 f"rock_base_method must be one of {list(ROCK_BASE_METHODS)}, "
                 f"got {self.rock_base_method!r}")
+        if self.rock_base_conditions_met not in (None, True, False):
+            raise ValueError(
+                "rock_base_conditions_met must be true, false or left out, "
+                f"got {self.rock_base_conditions_met!r}")
         if self.soil is None:
             raise ValueError("Soil profile must be provided")
         if self.beta_method not in ("depth", "rational"):
@@ -872,6 +926,8 @@ class DrillShaftAnalysis:
             u = unit_end_bearing_cohesionless(N60, base_D,
                                               self.large_base_reduction)
         else:  # rock
+            if self.rock_base_method == "gec10":
+                self._check_rock_base(L, base_D)
             factor = rock_base_factor(tip_layer.RQD, self.rock_base_method)
             u = {"method": self.rock_base_method, "qu_kPa": tip_layer.qu,
                  "RQD": tip_layer.RQD, "factor": factor,
@@ -894,7 +950,10 @@ class DrillShaftAnalysis:
                 + ([side_n60_choice(no_n60)] if no_n60 else [])
                 + ([fractured_rock_choice(shaft, self.soil)]
                    if in_rock or shaft.fractured_rock_thickness else [])
-                + ([rock_side_choice(self.rock_side_C)] if in_rock else [])
+                + ([rock_side_choice(
+                    self.rock_side_C,
+                    lambda c: self._alternative(rock_side_C=c, part="rock"))]
+                   if in_rock else [])
                 + self._base_choices(tip_layer, base_steps, Qt, Q_ultimate))
 
         return DrillShaftResult(
@@ -916,6 +975,81 @@ class DrillShaftAnalysis:
             base_steps=_rounded(base_steps),
             choices=choices,
         )
+
+    def _rock_below_base(self, L: float, B: float) -> List[str]:
+        """What the layers within one base diameter ``B`` below the base at
+        ``L`` show against the first condition of Eq. 10-23 (GEC-10 p.
+        10-22, 'massive or tightly jointed ... to a depth of at least one
+        diameter beneath the base'): each rock layer there with an RQD
+        below 100, and each soil layer, in words. The last layer is taken
+        to go on below the profile."""
+        out = []
+        top = 0.0
+        layers = self.soil.layers
+        for i, layer in enumerate(layers):
+            bottom = top + layer.thickness
+            if i == len(layers) - 1:
+                bottom = max(bottom, L + B)
+            if bottom > L + 1e-9 and top < L + B - 1e-9:
+                where = f"{max(top, L):g}-{min(bottom, L + B):g} m"
+                if layer.soil_type != "rock":
+                    out.append(f"{layer.soil_type} soil at {where}")
+                elif layer.RQD < 100:
+                    out.append(f"rock with RQD {layer.RQD:g} % at {where}")
+            top += layer.thickness
+        return out
+
+    def _rock_conditions_choice(self, B: float) -> dict:
+        """The choice made for the conditions of Eq. 10-23 (GEC-10 p.
+        10-22) under the default rock base: stated by the call, or taken
+        as met where it does not say and the layers below the base show
+        nothing against them (GM-244 review)."""
+        from geotech_common.choices import choice, how_given
+        below = self._rock_below_base(self.shaft.length, B)
+        if self.rock_base_conditions_met:
+            chosen = ("met, as the call states: the rock below the base is "
+                      "massive or tightly jointed to one diameter below "
+                      "it, with no cavities or voids, and a clean base")
+            if below:
+                chosen += ("; the layers within one base diameter below "
+                           "the base give " + "; ".join(below))
+        else:
+            chosen = ("taken as met, as the call does not say: the layers "
+                      f"within one base diameter ({B:g} m) below the base "
+                      "give no RQD below 100 and no soil; no cavities or "
+                      "voids and a clean base are assumed")
+        return choice(
+            "rock below the base (the conditions of Eq. 10-23)", chosen,
+            how_given(self.rock_base_conditions_met, None,
+                      name="rock_base_conditions_met"),
+            basis=ROCK_BASE_BASIS,
+            alternatives=[
+                "rock_base_conditions_met false, the rock below the base "
+                "fractured: refused, as GEC-10 gives the Hoek-Brown base "
+                "of a fractured rock mass (Eqs. 10-24 to 10-29, pp. "
+                "10-23, 10-24), which this tool does not compute",
+                "side resistance alone, the base neglected: AASHTO Article "
+                "C.10.8.3.5.4a as GEC-10 quotes it (p. 10-25), for 'cases "
+                "in which the base of the drilled hole cannot be cleaned "
+                "and inspected'; the result's Q_skin is that resistance"])
+
+    def _check_rock_base(self, L: float, B: float) -> None:
+        """Refuse GEC-10's rock base, N*cr = 2.5 (Eq. 10-23), where the
+        call says the conditions of p. 10-22 do not hold, or where it does
+        not say and the layers within one base diameter below the base
+        show an RQD below 100 or soil (GM-244 review)."""
+        if self.rock_base_conditions_met is False:
+            raise ValueError(
+                "rock_base_conditions_met is false: " + ROCK_BASE_REFUSAL)
+        if self.rock_base_conditions_met is None:
+            below = self._rock_below_base(L, B)
+            if below:
+                raise ValueError(
+                    f"the base at {L:g} m bears on rock, and within one "
+                    f"base diameter ({B:g} m) below it the layers give "
+                    + "; ".join(below) + ". Whether that rock meets the "
+                    "conditions of Eq. 10-23 is the engineer's call, and "
+                    "the call does not say. " + ROCK_BASE_REFUSAL)
 
     def _alternative(self, sublayer: Optional[float] = None,
                      correlation: Optional[str] = None,
@@ -1400,11 +1534,11 @@ class DrillShaftAnalysis:
             how = how_given(self.rock_base_method, "gec10",
                             name="rock_base_method")
             RQD = base_steps["RQD"]
+            conditions = None
             if self.rock_base_method == "gec10":
                 chosen = "GEC-10 (2018) Eq. 10-23, q_BN = 2.5 qu: " + here
                 basis = ROCK_BASE_BASIS
-                if RQD < 100:
-                    basis += f"; the tip rock's RQD is given as {RQD:g} %"
+                conditions = self._rock_conditions_choice(B)
                 alternatives = [
                     f"rock_base_method 'rqd', q_b/q_u = "
                     f"{rock_base_factor(RQD, 'rqd'):.2f} at RQD {RQD:g} %: "
@@ -1419,11 +1553,16 @@ class DrillShaftAnalysis:
                 basis = RQD_BASE_BASIS
                 alternatives = [
                     "rock_base_method 'gec10', GEC-10 (2018) Eq. 10-23, "
-                    "N*cr = 2.5: "
+                    "N*cr = 2.5, where the rock below the base meets the "
+                    "conditions of p. 10-22 (rock_base_conditions_met "
+                    "true): "
                     + self._alternative(rock_base_method="gec10",
+                                        rock_base_conditions_met=True,
                                         part="base")]
             out.append(choice("base resistance in rock", chosen, how,
                               basis=basis, alternatives=alternatives))
+            if conditions:
+                out.append(conditions)
         limit = {"cohesive": LARGE_BASE_DIAMETER,
                  "cohesionless": LARGE_BASE_DIAMETER_SAND}.get(kind)
         if limit is not None and B > limit:

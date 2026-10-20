@@ -15,7 +15,10 @@ below the tip. As printed:
 
 Before GM-221 the base was taken on the shaft diameter, pi/4 (6.5 ft)^2 x
 900 ksf = 29,865 kips (+17.4 %), and C was fixed at 0.65 (Eq. 10-22 with
-alpha_E = 1.0), so the side could not be reproduced.
+alpha_E = 1.0), so the side could not be reproduced. Since GM-244 C = 1.0
+is the default, and the example's statement that the rock below the tip is
+competent is the call's ``rock_base_conditions_met=True``: with RQD 93
+below the base, the call is refused without it.
 """
 
 import math
@@ -45,22 +48,44 @@ def _shaft(**kw):
                          "casing_depth": 34 * FT, **kw})
 
 
+#: "Rock coring and local experience indicate the rock mass below the
+#: socket tip is competent" (p. 10-28)
+COMPETENT = {"rock_base_conditions_met": True}
+
+
 def _run(C=None, **kw):
     extra = {} if C is None else {"rock_side_C": C}
     return DrillShaftAnalysis(shaft=_shaft(**kw), soil=_soil(),
-                              **extra).compute()
+                              **COMPETENT, **extra).compute()
 
 
 def test_example_10_4_side_and_base_as_printed():
-    r = _run(C=1.0)
+    r = _run()
     (rock,) = [lb for lb in r.layer_breakdown if lb["soil_type"] == "rock"]
     assert rock["fs_kPa"] / 47.880 == pytest.approx(27.6, abs=0.05)
     assert r.Q_side_rock / KIP == pytest.approx(5202, abs=1)
     assert r.Q_side_clay == r.Q_side_sand == 0.0   # all cased
     assert r.Q_tip / KIP == pytest.approx(25447, abs=1)
     assert r.base_diameter == pytest.approx(6.0 * FT)
-    lrfd = apply_lrfd(r, "rock")
+    lrfd = apply_lrfd(r)
+    assert lrfd["phi_tip"] == 0.50
     assert lrfd["phi_Qt_kN"] / KIP == pytest.approx(12723, abs=1)
+
+
+def test_the_competent_rock_is_the_engineers_statement():
+    with pytest.raises(ValueError, match="RQD 93 % at") as e:
+        DrillShaftAnalysis(shaft=_shaft(), soil=_soil()).compute()
+    assert "rock_base_conditions_met" in str(e.value)
+    with pytest.raises(ValueError, match="Hoek-Brown"):
+        DrillShaftAnalysis(shaft=_shaft(), soil=_soil(),
+                           rock_base_conditions_met=False).compute()
+    (c,) = [c for c in _run().choices if c["what"].startswith("rock below")]
+    assert c["how"] == "given" and c["chosen"].startswith("met, as the call")
+    assert "RQD 93 % at" in c["chosen"]
+    # the older RQD reduction needs no statement
+    rqd = DrillShaftAnalysis(shaft=_shaft(), soil=_soil(),
+                             rock_base_method="rqd").compute()
+    assert rqd.Q_tip / KIP == pytest.approx(25447, abs=1)   # RQD 93 >= 70
 
 
 def test_the_base_was_on_the_shaft_diameter_before():
@@ -75,16 +100,21 @@ def test_the_base_was_on_the_shaft_diameter_before():
     assert _run(socket_diameter=None).Q_tip == pytest.approx(before)
 
 
-def test_the_default_c_is_unchanged_and_said():
+def test_the_default_c_is_1_and_said():
+    """C = 1.0 by default since GM-244 (pp. 10-20, 10-21); 0.65, Eq.
+    10-22's, the default before, is a named option with its numbers."""
     r = _run()
-    assert r.Q_side_rock / KIP == pytest.approx(0.65 * 5202.75, abs=1)
+    assert r.Q_side_rock / KIP == pytest.approx(5202.75, abs=1)
     (c,) = [c for c in r.choices if c["what"].startswith("rock side")]
-    assert c["how"] == "default" and c["chosen"].startswith("0.65: Eq. 10-22")
-    assert "C = 1.0 is recommended" in c["basis"]
-    assert any(a.startswith("1.0: Eq. 10-21") for a in c["alternatives"])
-    c1 = [c for c in _run(C=1.0).choices
+    assert c["how"] == "default" and c["chosen"].startswith("1.0: Eq. 10-21")
+    assert "recommended for design" in c["basis"]
+    (old,) = [a for a in c["alternatives"] if a.startswith("0.65: Eq. 10-22")]
+    assert "Q_s in rock 15,043 kN" in old      # 0.65 x 5,202.7 kips
+    c0 = [c for c in _run(C=0.65).choices
           if c["what"].startswith("rock side")][0]
-    assert c1["how"] == "given" and c1["chosen"].startswith("1.0: Eq. 10-21")
+    assert c0["how"] == "given" and c0["chosen"].startswith("0.65: Eq. 10-22")
+    assert _run(C=0.65).Q_side_rock / KIP == pytest.approx(
+        0.65 * 5202.75, abs=1)
 
 
 def test_a_bell_still_takes_the_base_and_soil_tips_keep_the_shaft():
@@ -103,7 +133,8 @@ def test_bad_inputs_are_refused():
 
 
 def test_the_capacity_curve_carries_c():
-    a = DrillShaftAnalysis(shaft=_shaft(), soil=_soil(), rock_side_C=1.0)
+    a = DrillShaftAnalysis(shaft=_shaft(), soil=_soil(), rock_side_C=0.65,
+                           **COMPETENT)
     deepest = a.capacity_vs_depth(depth_min=40 * FT, n_points=2)[-1]
     r = a.compute()
     assert deepest["Q_skin_kN"] == pytest.approx(r.Q_skin, abs=0.1)
@@ -111,7 +142,7 @@ def test_the_capacity_curve_carries_c():
 
 
 def test_the_calc_steps_print_the_socket_base_and_c():
-    a = DrillShaftAnalysis(shaft=_shaft(), soil=_soil(), rock_side_C=1.0)
+    a = DrillShaftAnalysis(shaft=_shaft(), soil=_soil(), **COMPETENT)
     r = a.compute()
     steps = [s for sec in get_calc_steps(r, a) for s in sec.items
              if hasattr(s, "equation")]

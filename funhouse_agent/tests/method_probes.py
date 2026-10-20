@@ -221,10 +221,11 @@ NOT_REACHED = {
         "drilled_shaft|drilled_shaft_capacity#rock",
         "drilled_shaft|drilled_shaft_capacity#fractured_rock")},
     # GM-244: at RQD 70 or more the 'rqd' base also takes 2.5 qu; the
-    # #fractured_rock probe (RQD 40) reaches it
+    # #fractured_rock probe (RQD 40, the conditions of Eq. 10-23 stated
+    # met) reaches it
     ("drilled_shaft|drilled_shaft_capacity#rock", "rock_base_method"):
-        "the probe's RQD 80 is 70 or more, where the 'rqd' base also "
-        "takes q_b = 2.5 qu",
+        "the probe's rock has RQD 100 (the default), where the 'rqd' base "
+        "also takes q_b = 2.5 qu",
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     # GM-228: the warning when the two rules for the depth below the toe
     # disagree; the #toe_in_sand probe (26 % apart) reaches it

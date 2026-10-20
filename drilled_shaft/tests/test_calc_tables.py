@@ -17,7 +17,7 @@ def solved():
         ShaftSoilLayer(thickness=10.0, soil_type="cohesionless",
                        unit_weight=19.5, phi=34.0, N60=25),
         ShaftSoilLayer(thickness=6.0, soil_type="rock", unit_weight=22.0,
-                       qu=5000.0, RQD=80.0),
+                       qu=5000.0),
     ], gwt_depth=3.0)
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil)
     return analysis.compute(), analysis

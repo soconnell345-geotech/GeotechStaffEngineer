@@ -423,10 +423,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value="",
             reference=("GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, Eq. 10-21 "
                        "(p. 10-20) and Eq. 10-22 (p. 10-21)"),
-            notes=("C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, where "
+            notes=("C = 1.0 is Eq. 10-21 as GEC-10 recommends it for "
+                   "routine design of a 'normal' socket (pp. 10-20, "
+                   "10-21); C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, "
+                   "where caving is anticipated) with \u03b1_E = 1.0"
+                   if analysis.rock_side_C == 1.0 else
+                   "C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, where "
                    "caving is anticipated) with \u03b1_E = 1.0; GEC-10 "
                    "recommends Eq. 10-21 with C = 1.0 for routine design "
-                   "of a 'normal' socket (p. 10-21)"),
+                   "of a 'normal' socket (pp. 10-20, 10-21)"),
         ))
 
     if method_steps:
@@ -767,9 +772,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                            "Example 10-4 (p. 10-28)"),
                 notes=("For rock massive or tightly jointed to one diameter "
                        "below the base, with no cavities or voids beneath and "
-                       "a clean base (p. 10-22); a fractured rock mass takes "
-                       "the Hoek-Brown base, Eqs. 10-24 to 10-29, not "
-                       "computed here"
+                       "a clean base (p. 10-22): "
+                       + ("as the engineer states (rock_base_conditions_met)"
+                          if analysis.rock_base_conditions_met else
+                          "taken as met, not stated")
+                       + "; a fractured rock mass takes the Hoek-Brown base, "
+                       "Eqs. 10-24 to 10-29, not computed here"
                        + (f"; RQD given as {RQD:.0f}%" if RQD < 100 else "")),
             ))
         else:

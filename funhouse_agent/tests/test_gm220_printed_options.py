@@ -25,7 +25,7 @@ _SHAFT = {"diameter": 1.2, "shaft_length": 14.0, "gwt_depth": 2.0,
           "layers": [{"thickness": 8.0, "soil_type": "cohesive",
                       "unit_weight": 18.5, "cu": 75.0},
                      {"thickness": 10.0, "soil_type": "rock",
-                      "unit_weight": 23.0, "qu": 20000.0, "RQD": 80.0}]}
+                      "unit_weight": 23.0, "qu": 20000.0}]}
 
 
 @pytest.mark.parametrize("method", ["drilled_shaft_capacity",
@@ -40,10 +40,10 @@ def test_the_shaft_tools_take_the_rock_not_in_the_socket(method):
     assert r0["defaults_used"]["fractured_rock_thickness"] == 0.0
     if method == "drilled_shaft_capacity":
         # GM-244: the clay's alpha by GEC-10 Eq. 10-18, 0.530 for 0.55,
-        # over its 6.5 m: 37.4 kN less than the GM-220 pins (78489.5,
-        # 73257.0)
-        assert r0["Q_ultimate_kN"] == pytest.approx(78452.1, abs=0.1)
-        assert r["Q_ultimate_kN"] == pytest.approx(73219.6, abs=0.1)
+        # over its 6.5 m, 37.4 kN less, and the rock's C by Eq. 10-21, 1.0
+        # for 0.65 (GM-220 pins 78489.5, 73257.0)
+        assert r0["Q_ultimate_kN"] == pytest.approx(89722.1, abs=0.1)
+        assert r["Q_ultimate_kN"] == pytest.approx(81672.1, abs=0.1)
         (c,) = [c for c in r["choices"] if "socket" in c["what"]]
         assert c["how"] == "given" and "p. 8-15" in c["basis"]
 
@@ -51,8 +51,10 @@ def test_the_shaft_tools_take_the_rock_not_in_the_socket(method):
 def test_the_shaft_curve_and_the_refusal_without_rock():
     r = _call("drilled_shaft", "capacity_vs_depth",
               {**_SHAFT, "fractured_rock_thickness": 1.5, "n_points": 5})
+    # 16708.3 at GM-220; GM-244: 37.4 kN less by the clay's alpha, and
+    # the rock's 4.5 m at C = 1.0 for 0.65
     assert r["capacity_vs_depth"][-1]["Q_skin_kN"] == pytest.approx(
-        16670.9, abs=0.1)  # 16708.3 less the 37.4 kN of GM-244's alpha
+        25123.4, abs=0.1)
     err = _call("drilled_shaft", "drilled_shaft_capacity",
                 {**_SHAFT, "layers": _SHAFT["layers"][:1],
                  "shaft_length": 7.0, "fractured_rock_thickness": 1.0})
