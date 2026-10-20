@@ -70,7 +70,12 @@ Two external-stability paths are available; both are default-preserving.
     qR = φb·qn, φb = 0.65 (Table 4-5, Eq. 4-23). Reproduces Vol II Example E2
     on Example E1's wall: L' = 12.46 ft, qn = 17.44 ksf, qR = 11.34 ksf
     (`test_v057_e2_nominal_bearing_resistance`). Service I keeps its given
-    resistance (a settlement criterion). Giving both is refused. The ASD
+    resistance (a settlement criterion). Giving both is refused, and so is
+    `gamma_foundation` without `phi_foundation`: the factors are the
+    foundation soil's, never the reinforced fill's `phi_backfill`. The
+    result's `choices` state φb (given or default), the Eq. 4-22 basis and
+    the other way (a given `bearing_resistance_strength`, e.g. qn by AASHTO
+    10.6.3.1.2 for a slope in front of the wall or high water). The ASD
     `mse_wall` tool refuses `gamma_foundation`: its bearing check compares
     with `q_allowable` and it counts no passive resistance, so the input
     changed nothing (GM-184); the library function keeps it and passes it to

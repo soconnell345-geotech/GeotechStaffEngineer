@@ -1050,6 +1050,33 @@ def nominal_bearing_resistance(L_eff: float, gamma_foundation: float,
     return c_foundation * f["Nc"] + 0.5 * L_eff * gamma_foundation * f["Ngamma"]
 
 
+#: A bearing resistance worked out from the foundation soil takes that
+#: soil's own friction angle, never the reinforced fill's (GM-179 review).
+NEEDS_PHI_FOUNDATION = (
+    "gamma_foundation works the bearing resistance out by GEC-11 Eq. 4-22 "
+    "with Nc and Ngamma for the foundation soil's friction angle: give "
+    "phi_foundation (and c_foundation if it has cohesion); the reinforced "
+    "fill's phi_backfill is not taken for it")
+
+
+def bearing_resistance_choices(phi_bearing: float) -> list:
+    """How the LRFD path worked the strength bearing resistance out from
+    the foundation soil (GM-179), as a result's ``choices``
+    (``geotech_common.choices``)."""
+    from geotech_common.choices import choice, how_given
+    return [choice(
+        "factored bearing resistance qR (Strength I)",
+        f"phi_b qn, phi_b = {phi_bearing:g} (phi_bearing), qn by GEC-11 "
+        f"Eq. 4-22",
+        how_given(phi_bearing, 0.65, name="phi_bearing"),
+        "GEC-11 Vol I Table 4-5 (AASHTO Table 11.5.6-1): bearing "
+        "resistance factor 0.65; " + NOMINAL_BEARING_BASIS,
+        ["a factored resistance given as bearing_resistance_strength in "
+         "place of gamma_foundation: with a slope in front of the wall or "
+         "a high water table, qn by AASHTO 10.6.3.1.2 (GEC-11 Vol I "
+         "p. 4-28)"])]
+
+
 def check_external_stability_lrfd(
     geom: MSEWallGeometry,
     gamma_backfill: float,
@@ -1447,7 +1474,7 @@ def _lrfd_result(
     if worked_out:
         bearing.update(worked_out)
 
-    return {
+    out = {
         "sliding": {
             "CDR_strength_max": round(cdr_slide_max, 3),
             "CDR_strength_min": round(cdr_slide_min, 3),
@@ -1469,6 +1496,9 @@ def _lrfd_result(
         "unfactored_kN_m": unfactored,
         "load_factors": load_factors,
     }
+    if worked_out:
+        out["choices"] = bearing_resistance_choices(soil[3])
+    return out
 
 
 def analyze_mse_wall(
@@ -1554,6 +1584,9 @@ def analyze_mse_wall(
         (:func:`_external_terms`) and ``choices`` how a live load over the
         reinforced zone was counted (:func:`live_load_choices`).
     """
+    if (lrfd_external and gamma_foundation is not None
+            and bearing_resistance_strength is None and phi_foundation is None):
+        raise ValueError(NEEDS_PHI_FOUNDATION)
     if phi_foundation is None:
         phi_foundation = phi_backfill
 

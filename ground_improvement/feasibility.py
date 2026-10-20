@@ -205,10 +205,13 @@ def _eval_aggregate_piers(
     if bottom > STONE_COLUMN_MAX_DEPTH_M:
         not_applicable.append({
             "method": method,
-            "reason": f"Treatment to {reaches} is beyond the maximum "
-                      "practical depth of stone columns, 100 ft (30.5 m), "
-                      "and of rammed aggregate piers, 35 ft (10.7 m) "
-                      "(GEC-13 p. 5-9)"
+            "reason": f"Treatment to {reaches} is beyond the typical "
+                      "maximum practical depth of stone columns, 100 ft "
+                      "(30.5 m), and of rammed aggregate piers, 35 ft "
+                      "(10.7 m) (GEC-13 p. 5-9: 'Typically, the maximum "
+                      "practical depth of stone columns and rammed "
+                      "aggregate piers is 100 feet and 35 feet "
+                      "respectively')"
         })
         return
 
@@ -239,10 +242,10 @@ def _eval_aggregate_piers(
     if bottom > RAMMED_PIER_MAX_DEPTH_M:
         pier_sizing["column_type"] = "stone columns"
         recommendations.append(
-            f"Aggregate piers: treatment to {reaches} is beyond the maximum "
-            "practical depth of rammed aggregate piers, 35 ft (10.7 m), and "
-            "within that of stone columns, 100 ft (30.5 m) (GEC-13 p. 5-9): "
-            "stone columns"
+            f"Aggregate piers: treatment to {reaches} is beyond the typical "
+            "maximum practical depth of rammed aggregate piers, 35 ft "
+            "(10.7 m), and within that of stone columns, 100 ft (30.5 m) "
+            "(GEC-13 p. 5-9): of the aggregate columns, stone columns"
         )
 
     if settlement_problem and predicted_settlement_mm > 0:

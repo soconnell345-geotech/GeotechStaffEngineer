@@ -1517,12 +1517,33 @@ class TestMSELRFDBearingNotChecked:
 
     def test_analyze_mse_wall_takes_it_on_the_lrfd_path(self):
         r = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
-                             gamma_foundation=18.0, lrfd_external=True)
+                             gamma_foundation=18.0, phi_foundation=30.0,
+                             lrfd_external=True)
         assert r.external_lrfd["bearing"]["CDR_strength"] is not None
         given = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
                                  gamma_foundation=18.0, lrfd_external=True,
                                  bearing_resistance_strength=500.0)
         assert "qn_strength_max_kPa" not in given.external_lrfd["bearing"]
+        assert "choices" not in given.external_lrfd
+
+    def test_the_resistance_takes_the_foundation_soils_own_phi(self):
+        # GM-179 review: never the reinforced fill's phi_backfill
+        with pytest.raises(ValueError, match="give phi_foundation"):
+            analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
+                             gamma_foundation=18.0, lrfd_external=True)
+
+    def test_the_worked_out_resistance_is_a_stated_choice(self):
+        from retaining_walls.mse import check_external_stability_lrfd
+        r = check_external_stability_lrfd(self._geom(), 19.0, 34.0, 30.0,
+                                          gamma_foundation=18.0)
+        (c,) = r["choices"]
+        assert c["how"] == "default" and "0.65" in c["chosen"]
+        assert "Table 4-5" in c["basis"] and "Eq. 4-22" in c["basis"]
+        assert "bearing_resistance_strength" in c["alternatives"][0]
+        r = check_external_stability_lrfd(self._geom(), 19.0, 34.0, 30.0,
+                                          gamma_foundation=18.0,
+                                          phi_bearing=0.5)
+        assert r["choices"][0]["how"] == "given"
 
 
 def test_a_resultant_beyond_the_middle_third_on_the_heel_side_bears_under_the_heel(

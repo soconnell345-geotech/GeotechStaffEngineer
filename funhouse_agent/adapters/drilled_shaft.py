@@ -239,7 +239,8 @@ _NO_SOCKET_LENGTH = (
     "(GEC-10) is taken over the shaft's length within the rock layers, so "
     "the socket is what layers and shaft_length make it. Give the rock as "
     "layers (soil_type 'rock' with qu) and the shaft_length that ends the "
-    "shaft that far into it")
+    "shaft that far into it. A permanent casing into the rock is "
+    "casing_depth: no side resistance, soil or rock, above it")
 for _m in ("drilled_shaft_capacity", "capacity_vs_depth", "lrfd_capacity"):
     METHOD_INFO[_m]["refused_parameters"] = {
         "concrete_fc": _NO_FC, "socket_length": _NO_SOCKET_LENGTH}

@@ -341,7 +341,7 @@ _GM184_LISTS = [
     ("retaining_walls", "mse_lrfd_external_stability", {},
      {"bearing_resistance_strength"}, {"phi_bearing"}),
     ("retaining_walls", "mse_lrfd_external_stability",
-     {"gamma_foundation": 18.0}, {"phi_bearing"},
+     {"gamma_foundation": 18.0, "phi_foundation": 30.0}, {"phi_bearing"},
      {"bearing_resistance_strength"}),
     ("downdrag", "downdrag_analysis", {},
      set(), {"pile_unit_weight", "fill_unit_weight"}),

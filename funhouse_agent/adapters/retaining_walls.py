@@ -9,7 +9,9 @@ from funhouse_agent.adapters import (
 from retaining_walls import earth_pressure as _ep
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
-from retaining_walls.mse import analyze_mse_wall, check_external_stability_lrfd
+from retaining_walls.mse import (
+    NEEDS_PHI_FOUNDATION, analyze_mse_wall, check_external_stability_lrfd,
+)
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, WELDED_WIRE_GRID_W11,
     GEOGRID_UX1600, GEOGRID_UX1700,
@@ -284,6 +286,9 @@ def _run_mse_lrfd_external_stability(params):
         method="mse_lrfd_external_stability")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="mse_lrfd_external_stability")
+    if (params.get("gamma_foundation") is not None
+            and params.get("phi_foundation") is None):
+        raise ValueError(NEEDS_PHI_FOUNDATION)
     geom = MSEWallGeometry(
         wall_height=params["wall_height"],
         reinforcement_length=params.get("reinforcement_length"),
@@ -682,7 +687,7 @@ METHOD_INFO = {
             "gamma_retained": {"type": "float", "required": False, "description": "Retained fill unit weight (kN/m3). Defaults to gamma_backfill."},
             "live_load": {"type": "float", "required": False, "description": "Live-load surcharge q (kPa) if different from `surcharge`."},
             "bearing_resistance_strength": {"type": "float", "required": False, "description": "Factored bearing resistance qR at the strength limit (kPa) = phi_b*qn; enables the strength/critical bearing CDR = qR/sigma_v. Give it or gamma_foundation, not both."},
-            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3). Given in place of bearing_resistance_strength, it works the strength bearing resistance out for each Strength I combination, as GEC-11 Vol II Example E2 does: qn = c_foundation*Nc + 0.5*L'*gamma_foundation*Ngamma (GEC-11 Vol I Eq. 4-22; Nc, Ngamma from Table 4-6 for phi_foundation) over that combination's L' = L - 2eB (L' = L when eB < 0), for a level grade in front of the wall and no groundwater influence, the wall's embedment neglected (p. 4-28); qR = phi_bearing*qn (Eq. 4-23). For a slope in front of the wall or a high water table work qn out by AASHTO 10.6.3.1.2 and give bearing_resistance_strength."},
+            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3). Given in place of bearing_resistance_strength, it works the strength bearing resistance out for each Strength I combination, as GEC-11 Vol II Example E2 does: qn = c_foundation*Nc + 0.5*L'*gamma_foundation*Ngamma (GEC-11 Vol I Eq. 4-22; Nc, Ngamma from Table 4-6 for phi_foundation, which must then be given: the reinforced fill's phi_backfill is not taken for it) over that combination's L' = L - 2eB (L' = L when eB < 0), for a level grade in front of the wall and no groundwater influence, the wall's embedment neglected (p. 4-28); qR = phi_bearing*qn (Eq. 4-23). For a slope in front of the wall or a high water table work qn out by AASHTO 10.6.3.1.2 and give bearing_resistance_strength."},
             "phi_bearing": {"type": "float", "required": False, "default": 0.65, "description": "Bearing resistance factor phi_b for the qn worked out from gamma_foundation (GEC-11 Table 4-5: 0.65)."},
             "bearing_resistance_service": {"type": "float", "required": False, "description": "Service bearing resistance (kPa); enables the Service I bearing CDR."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation cohesion (kPa) for sliding adhesion (2/3 c), and c_f in qn when gamma_foundation is given."},
@@ -694,7 +699,7 @@ METHOD_INFO = {
             "phi_sliding": {"type": "float", "required": False, "default": 1.0, "description": "Sliding resistance factor (AASHTO 11.10.5.3)."},
             "ecc_limit_ratio": {"type": "float", "required": False, "default": 0.25, "description": "Limiting-eccentricity ratio e_max/L (0.25 = L/4 for MSE on soil; use 1/6 on rock)."},
         },
-        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given. With gamma_foundation: qn and qR for Strength I max and the critical combination, Nc, Ngamma, phi_bearing and resistance_basis (GEC-11 Eq. 4-22).", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
+        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given. With gamma_foundation: qn and qR for Strength I max and the critical combination, Nc, Ngamma, phi_bearing and resistance_basis (GEC-11 Eq. 4-22).", "choices": "With gamma_foundation: how the factored bearing resistance qR was worked out (phi_b, given or default, and the Eq. 4-22 basis) and the other way (a given bearing_resistance_strength). Tell the user.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
     },
     "list_reinforcement": {
         "category": "MSE Wall",

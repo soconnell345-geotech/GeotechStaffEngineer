@@ -82,8 +82,12 @@ def test_lrfd_mse_works_the_bearing_resistance_out():
     before = _call("retaining_walls", "mse_lrfd_external_stability", base)
     assert before["bearing"]["CDR_strength"] is None
     assert "bearing (Strength I)" in before["checks_not_run"]
+    # the foundation soil's own phi, never the reinforced fill's
+    no_phi = _call("retaining_walls", "mse_lrfd_external_stability",
+                   {**base, "gamma_foundation": 18.0})
+    assert "give phi_foundation" in no_phi.get("error", "")
     after = _call("retaining_walls", "mse_lrfd_external_stability",
-                  {**base, "gamma_foundation": 18.0})
+                  {**base, "gamma_foundation": 18.0, "phi_foundation": 30.0})
     b = after["bearing"]
     assert b["qR_strength_max_kPa"] == pytest.approx(
         0.65 * b["qn_strength_max_kPa"], abs=0.02)
@@ -92,8 +96,10 @@ def test_lrfd_mse_works_the_bearing_resistance_out():
     assert "bearing (Strength I)" not in after["checks_not_run"]
     assert "phi_bearing" in after["defaults_used"]
     assert "bearing_resistance_strength" not in after["defaults_used"]
+    (choice,) = after["choices"]
+    assert choice["how"] == "default" and "Table 4-5" in choice["basis"]
     both = _call("retaining_walls", "mse_lrfd_external_stability",
-                 {**base, "gamma_foundation": 18.0,
+                 {**base, "gamma_foundation": 18.0, "phi_foundation": 30.0,
                   "bearing_resistance_strength": 500.0})
     assert "not both" in both.get("error", "")
 
