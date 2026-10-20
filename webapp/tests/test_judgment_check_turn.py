@@ -225,12 +225,107 @@ def test_sent_back_for_no_consult_it_is_not_sent_back_again(tmp_path,
         ("fed_back", jc.NO_CONSULT), ("none", jc.AFTER_CONSULT)]
 
 
-def test_switch_off_it_never_fires(tmp_path):
+def test_switch_off_it_never_fires(tmp_path, monkeypatch):
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "0")
     agent = _ScriptedAgent(_reply(UNSOURCED))
     answer, items, events = _run(agent, tmp_path)
     assert answer == UNSOURCED and len(agent.inputs) == 1
     assert {"kind": "tool_call", "text": jc.RETRY_STATUS} not in items
     assert [(e["mode"], e["action"]) for e in events] == [("off", "none")]
+
+
+def test_on_by_default_it_fires(tmp_path):
+    """GM-226 (owner, OWN-65, 2026-10-20): the switch unset is on."""
+    agent = _ScriptedAgent(_reply(UNSOURCED), _reply(SOURCED))
+    answer, items, events = _run(agent, tmp_path)
+    assert len(agent.inputs) == 2 and answer == SOURCED
+    assert [e["mode"] for e in events][0] == "retry"
+
+
+def _chat_build(monkeypatch, **behavior):
+    """The geotech page's build from the chat's own Behavior settings
+    (``core.behavior_build_kwargs``), the switch at its default; returns
+    what create_deep_agent was handed and the agent."""
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from funhouse_agent.deep import agent as agent_mod
+
+    class _Quiet(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "quiet"
+
+        def bind_tools(self, tools, **kw):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            return ChatResult(generations=[ChatGeneration(
+                message=AIMessage(content="done"))])
+
+    captured = {}
+    real = agent_mod.create_deep_agent
+
+    def spy(**k):
+        captured.update(k)
+        return real(**k)
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    kw = core.behavior_build_kwargs({**core.default_behavior(), **behavior})
+    agent = agent_mod.build_deep_agent(model=_Quiet(), **kw)
+    monkeypatch.setattr(agent_mod, "create_deep_agent", real)
+    return captured, agent
+
+
+def test_chat_references_off_stops_the_consult_and_the_check(
+        tmp_path, monkeypatch):
+    """The owner (OWN-65): the user can lower or stop reference calls from
+    the chat. With "Consult references" off in Behavior, the judgment calls
+    (on by default) build no references helper to consult, the prompt asks
+    for no consult (each call names a `choices` basis or says it rests on
+    judgment), and the turn-end check never sends an answer back."""
+    from funhouse_agent.deep.prompt import judgment_calls_section
+    captured, agent = _chat_build(monkeypatch, references="off")
+    names = {s.get("name") for s in captured["subagents"]}
+    assert not {"references", "reviewer"} & names
+    prompt = captured["system_prompt"]
+    assert judgment_calls_section(references=False) in prompt
+    assert "`references` helper" not in prompt
+    flat = " ".join(prompt.split())
+    assert ("(a `choices` basis or a reference looked up); otherwise say "
+            "plainly that it rests on judgment, with no reference cited;") \
+        in flat
+    assert agent.geotech_judgment_consult is False
+    assert jc.mode_for(agent) == "off"
+    # the turn: an unsourced list goes out as written, never sent back
+    scripted = _ScriptedAgent(_reply(UNSOURCED), consult=False)
+    scripted.geotech_judgment_consult = agent.geotech_judgment_consult
+    answer, _items, events = _run(scripted, tmp_path)
+    assert answer == UNSOURCED and len(scripted.inputs) == 1
+    assert [e["mode"] for e in events] == ["off"]
+
+
+def test_chat_references_on_asks_for_the_consult(monkeypatch):
+    """The default chat (references on): the judgment calls ask for one
+    consult and the turn-end check acts."""
+    captured, agent = _chat_build(monkeypatch)
+    assert "references" in {s.get("name") for s in captured["subagents"]}
+    assert "`references` helper" in captured["system_prompt"]
+    assert agent.geotech_judgment_consult is True
+    assert jc.mode_for(agent) == "retry"
+
+
+def test_chat_reference_budget_caps_the_judgment_consult(monkeypatch):
+    """A lower "Reference consult budget" in the chat's Advanced caps is
+    the consult's budget (the judgment consult never raises it)."""
+    from funhouse_agent.deep.limits import (
+        JUDGMENT_REFERENCES_MAX_MODEL_CALLS, ModelCallBudgetMiddleware)
+    captured, _agent = _chat_build(monkeypatch, ref_max_calls=2)
+    spec = next(s for s in captured["subagents"]
+                if s.get("name") == "references")
+    limits = [m.run_limit for m in spec.get("middleware") or []
+              if isinstance(m, ModelCallBudgetMiddleware)]
+    assert limits == [2] and 2 < JUDGMENT_REFERENCES_MAX_MODEL_CALLS
+    assert "You have 2 model calls" in spec["system_prompt"]
 
 
 def test_a_build_with_no_consult_never_fires(tmp_path, monkeypatch):

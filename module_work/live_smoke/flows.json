@@ -208,6 +208,7 @@
    "title": "Geotech page: bearing capacity with a calc package PDF (judgment calls OFF; EV-26)",
    "page": "geotech",
    "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "0"},
    "steps": [
     {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
    ],
@@ -687,6 +688,7 @@
    "title": "Geotech page: a staged FEM excavation with a strut, and the wall's design forces (GM-71; judgment calls OFF; EV-26)",
    "page": "geotech",
    "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "0"},
    "steps": [
     {"say": "Run a 2D finite-element staged excavation: a 10 m wide, 5 m deep cut in stiff clay (c' = 25 kPa, phi' = 20 degrees, E = 20 MPa, nu = 0.3, unit weight 18 kN/m3) retained by a 10 m long sheet pile wall (EI = 50,000 kN*m2/m, EA = 2,000,000 kN/m) with one strut at 1.5 m depth (stiffness 50,000 kN/m per m). Give the moment and shear to design the wall for, the strut force, and how far the wall top moves and in which direction."}
    ],
@@ -733,6 +735,7 @@
    "title": "Geotech page: a report plan of borings and a footprint (figure helper off)",
    "page": "geotech",
    "cost": "light",
+   "env": {"GEOTECH_FIGURE_HELPER": "0", "GEOTECH_PLOT_CODE": "0"},
    "steps": [
     {"say": "Draw a plan for a report: the building footprint has corners at (40,60), (80,60), (80,85), (70,85), (70,100), (80,100), (80,150), (40,150) in our local site grid (metres). Borings and what they found: B-2 at (52,120) hard rock at 14.2 m; B-6 at (150,40) hard rock at 11.8 m; B-9 at (230,160) hard rock at 12.5 m; B-1 (45,70), B-3 (74,140), B-4 (95,90), B-5 (120,130), B-7 (160,95), B-8 (210,60) ended in soil without reaching hard rock. Show which borings reached hard rock, and let me see each boring's depth to rock when I hover."}
    ],
@@ -743,7 +746,7 @@
    "title": "Geotech page: a report plan of borings and a footprint (figure helper ON, GM-92)",
    "page": "geotech",
    "cost": "light",
-   "env": {"GEOTECH_FIGURE_HELPER": "1"},
+   "env": {"GEOTECH_FIGURE_HELPER": "1", "GEOTECH_PLOT_CODE": "0"},
    "steps": [
     {"say": "Draw a plan for a report: the building footprint has corners at (40,60), (80,60), (80,85), (70,85), (70,100), (80,100), (80,150), (40,150) in our local site grid (metres). Borings and what they found: B-2 at (52,120) hard rock at 14.2 m; B-6 at (150,40) hard rock at 11.8 m; B-9 at (230,160) hard rock at 12.5 m; B-1 (45,70), B-3 (74,140), B-4 (95,90), B-5 (120,130), B-7 (160,95), B-8 (210,60) ended in soil without reaching hard rock. Show which borings reached hard rock, and let me see each boring's depth to rock when I hover."}
    ],
@@ -754,6 +757,7 @@
    "title": "Geotech page: a sensitivity-case figure and a settlement-time figure (figure helper off)",
    "page": "geotech",
    "cost": "light",
+   "env": {"GEOTECH_FIGURE_HELPER": "0", "GEOTECH_PLOT_CODE": "0"},
    "steps": [
     {"say": "Make two figures for the report from these results. (1) Fraction of the footprint above the excavation level for five covariance cases - Exp 15 m: upper contact 0.42, persistent contact 0.16; Exp 30 m: 0.53, 0.14; Exp 60 m: 0.42, 0.21; Sph 30 m: 0.49, 0.21; Gau 30 m: 0.44, 0.21 - with our best estimate 0.16 marked. (2) Settlement of the embankment centre over time, no drains vs wick drains at 1.5 m, days 1, 3, 10, 30, 60, 100, 200, 400, 1000: no drains 5, 14, 40, 90, 150, 210, 300, 360, 395 mm; wick drains 12, 45, 130, 260, 340, 375, 392, 398, 400 mm; filling finished at day 60."}
    ],
@@ -764,7 +768,7 @@
    "title": "Geotech page: a sensitivity-case figure and a settlement-time figure (figure helper ON, GM-92)",
    "page": "geotech",
    "cost": "light",
-   "env": {"GEOTECH_FIGURE_HELPER": "1"},
+   "env": {"GEOTECH_FIGURE_HELPER": "1", "GEOTECH_PLOT_CODE": "0"},
    "steps": [
     {"say": "Make two figures for the report from these results. (1) Fraction of the footprint above the excavation level for five covariance cases - Exp 15 m: upper contact 0.42, persistent contact 0.16; Exp 30 m: 0.53, 0.14; Exp 60 m: 0.42, 0.21; Sph 30 m: 0.49, 0.21; Gau 30 m: 0.44, 0.21 - with our best estimate 0.16 marked. (2) Settlement of the embankment centre over time, no drains vs wick drains at 1.5 m, days 1, 3, 10, 30, 60, 100, 200, 400, 1000: no drains 5, 14, 40, 90, 150, 210, 300, 360, 395 mm; wick drains 12, 45, 130, 260, 340, 375, 392, 398, 400 mm; filling finished at day 60."}
    ],
@@ -786,7 +790,7 @@
    "title": "Geotech page: a wall drawn to scale with its pressure diagrams in a calc PDF (plot_code ON for the calc helper, GM-98; judgment calls OFF; EV-26)",
    "page": "geotech",
    "cost": "light",
-   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "env": {"GEOTECH_PLOT_CODE": "1", "GEOTECH_JUDGMENT_CALLS": "0"},
    "steps": [
     {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
    ],
@@ -900,6 +904,7 @@
    "title": "Geotech page: a cut slope with a thin weak layer over rock - does the answer name its search choice and what would change it? (judgment calls OFF, EV-25/EV-26; with GM-57's search the default circle already finds about 0.94 in the clay, so this flow measures whether the answer NAMES its choices, not whether the agent overrides the default)",
    "page": "geotech",
    "cost": "light",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "0"},
    "steps": [
     {"say": "What's the factor of safety of this cut slope? Section in metres (x, elevation): ground surface (0, 0), (20, 0), (30, 10), (60, 10), so a 10 m high cut at 1H:1V with level ground in front of the toe and behind the crest. The top 3.5 m, from el. 10 down to el. 6.5, is a weak residual clay: unit weight 18.5 kN/m3, c' = 3 kPa, phi' = 22 degrees. Below el. 6.5 is sandstone: unit weight 23 kN/m3, c' = 200 kPa, phi' = 40 degrees. No groundwater."}
    ],

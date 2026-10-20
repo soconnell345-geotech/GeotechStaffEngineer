@@ -236,6 +236,23 @@ in `wrapper_repo/.env.example`):
   `GEOTECH_AGENT_BUSY_TRIES` (5), `GEOTECH_BUSY_TURN_MAX_S` (900).
 - `GEOTECH_PROMPTER_STREAM_USAGE` (on): token use is requested on streamed
   replies so each turn's cost is recorded; set 0 only if the gateway refuses.
+- Three agent behaviours are ON by default since 2026-10-20 (the owner's
+  rulings; BACKLOG GM-226, GM-227); `0` turns each off:
+  - `GEOTECH_FIGURE_HELPER` (on): a `figure` helper on both pages draws
+    figures to a checklist, looks at each and redraws;
+  - `GEOTECH_PLOT_CODE` (on): the figure and `calc` helpers may draw in
+    matplotlib or Plotly code, run in a locked box (its own process, no
+    network, no keys, writes only figure and data files in the
+    conversation's folder). It brings the figure helper with it, so turn
+    both to `0` to leave the helper out. Where matplotlib is missing the
+    tool is simply not offered;
+  - `GEOTECH_JUDGMENT_CALLS` (on; the GeotechStaffEngineer page only): an
+    answer ends with its judgment calls, each with its source, after one
+    look-up by the references helper (about $0.20-0.53 a turn in live
+    smoke wave w14). A user stops the look-up for a conversation with
+    Behavior's "Consult references" and caps it with "Reference consult
+    budget"; with references off the calls are still listed, each with a
+    tool's basis or "rests on judgment".
 
 Add the tokens-per-minute question to the CfA list (with OWN-50, what a spent
 budget returns).

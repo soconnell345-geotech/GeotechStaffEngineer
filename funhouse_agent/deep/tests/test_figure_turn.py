@@ -38,8 +38,12 @@ SERIES = [{"x": [0, 10, 45], "y": [0, 12, 30], "label": "SP-1"}]
 
 
 def _no_switches(monkeypatch):
+    """Every switch off: unset, and those on by default set to 0 (GM-226,
+    GM-227)."""
     for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
         monkeypatch.delenv(env, raising=False)
+    for env in review_flags.DEFAULT_ON_ENVS:
+        monkeypatch.setenv(env, "0")
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 """The agent states its judgment calls (BACKLOG GM-116, behind
-``GEOTECH_JUDGMENT_CALLS``).
+``GEOTECH_JUDGMENT_CALLS``, on by default since 2026-10-20: GM-226).
 
 The owner, 2026-10-16: "We should also make sure the agent is communicating
 its engineering judgements to the user. User's judgement is the one that
@@ -44,8 +44,12 @@ class _Quiet(BaseChatModel):
 
 
 def _no_switches(monkeypatch):
+    """Every switch off: unset, and those on by default set to 0 (GM-226,
+    GM-227), so a test sees this switch's effect alone."""
     for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
         monkeypatch.delenv(env, raising=False)
+    for env in review_flags.DEFAULT_ON_ENVS:
+        monkeypatch.setenv(env, "0")
 
 
 def _built(monkeypatch, on: bool, env=None, **kw):
@@ -55,8 +59,7 @@ def _built(monkeypatch, on: bool, env=None, **kw):
     _no_switches(monkeypatch)
     for k, v in (env or {}).items():
         monkeypatch.setenv(k, v)
-    if on:
-        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1" if on else "0")
     captured = {}
     real = agent_mod.create_deep_agent
 
@@ -111,22 +114,105 @@ def _surface(captured, agent) -> dict:
 # the switch and its arm
 # ---------------------------------------------------------------------------
 
-def test_the_switch_is_off_by_default_and_has_an_arm(monkeypatch):
-    _no_switches(monkeypatch)
-    assert review_flags.judgment_calls() is False
+def test_the_switch_is_on_by_default_and_has_arms(monkeypatch):
+    """GM-226 (owner, OWN-65, 2026-10-20): on unless ``0`` (or false, no,
+    off); ``describe`` says so; the arms put it on and take it away."""
+    for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    assert review_flags.judgment_calls() is True
     assert review_flags.JUDGMENT_CALLS_ENV == "GEOTECH_JUDGMENT_CALLS"
     assert review_flags.JUDGMENT_CALLS_ENV in review_flags.ALL_ENVS
+    assert review_flags.JUDGMENT_CALLS_ENV in review_flags.DEFAULT_ON_ENVS
+    assert "GEOTECH_JUDGMENT_CALLS=1 (default)" in review_flags.describe()
     arm = review_flags.ARMS["judgment_calls"]
     assert arm == {review_flags.JUDGMENT_CALLS_ENV: "1"}
+    off = review_flags.ARMS["judgment_calls_off"]
+    assert off == {review_flags.JUDGMENT_CALLS_ENV: "0"}
     with review_flags.switches(arm):
         assert review_flags.judgment_calls() is True
         assert "GEOTECH_JUDGMENT_CALLS=1" in review_flags.describe()
-    assert review_flags.judgment_calls() is False
-    for value in ("1", "true", "on", "yes"):
-        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, value)
+    with review_flags.switches(off):
+        assert review_flags.judgment_calls() is False
+        assert "GEOTECH_JUDGMENT_CALLS=0" in review_flags.describe()
+    with review_flags.switches(review_flags.ARMS["baseline"]):
         assert review_flags.judgment_calls() is True
-    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "0")
-    assert review_flags.judgment_calls() is False
+    assert review_flags.judgment_calls() is True
+    for value in ("1", "true", "on", "yes", "", " "):
+        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, value)
+        assert review_flags.judgment_calls() is True, value
+    for value in ("0", "false", "no", "off", " OFF "):
+        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, value)
+        assert review_flags.judgment_calls() is False, value
+
+
+def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
+    """GM-226/GM-227: the owner ruled three switches on; every other review
+    switch still waits for the suite and is OFF with its variable unset,
+    and an empty value counts as unset."""
+    assert set(review_flags.DEFAULT_ON_ENVS) == {
+        "GEOTECH_JUDGMENT_CALLS", "GEOTECH_FIGURE_HELPER",
+        "GEOTECH_PLOT_CODE"}
+    readers = {
+        review_flags.AGENT_ENV: lambda: (review_flags.lean_agent()
+                                         or review_flags.minimal_agent()),
+        review_flags.VISION_TEXT_ENV: review_flags.vision_text_context,
+        review_flags.VISION_STRUCTURED_ENV: review_flags.vision_structured,
+        review_flags.VISION_INLINE_ENV: review_flags.vision_inline,
+        review_flags.SWEEP_ENV: review_flags.sweep,
+        review_flags.FINDINGS_ENV: review_flags.findings,
+        review_flags.OVERVIEW_ENV: review_flags.overview,
+        review_flags.GEOMETRY_ENV: review_flags.geometry,
+        review_flags.DIGEST_ENV: review_flags.digest,
+        review_flags.COVERAGE_ENV: review_flags.coverage,
+        review_flags.CHECKLIST_ENV: review_flags.checklist,
+        review_flags.VISION_TURN_RETRY_ENV: review_flags.vision_turn_retry,
+        review_flags.KEPT_READINGS_ENV:
+            review_flags.kept_readings_on_review_page,
+        review_flags.CITED_PAGES_ENV:
+            lambda: review_flags.cited_pages() != "off",
+        review_flags.CITED_DOCUMENTS_ENV:
+            lambda: review_flags.cited_documents() != "off",
+        review_flags.STEP_CAP_ANSWER_ENV: review_flags.step_cap_answer,
+        review_flags.FIGURE_HELPER_ENV: review_flags.figure_helper,
+        review_flags.PLOT_CODE_ENV: review_flags.plot_code,
+        review_flags.JUDGMENT_CALLS_ENV: review_flags.judgment_calls,
+    }
+    assert set(readers) == set(review_flags.ALL_ENVS)
+    for unset in (None, "", "  "):
+        for env in review_flags.ALL_ENVS:
+            if unset is None:
+                monkeypatch.delenv(env, raising=False)
+            else:
+                monkeypatch.setenv(env, unset)
+        for env, read in readers.items():
+            assert bool(read()) is (env in review_flags.DEFAULT_ON_ENVS), \
+                (env, unset)
+    described = review_flags.describe()
+    for env in review_flags.ALL_ENVS:
+        assert (f"{env}=1 (default)" in described) is (
+            env in review_flags.DEFAULT_ON_ENVS), env
+
+
+def test_the_default_build_states_its_judgment_calls(monkeypatch):
+    """No variable set at all: the geotech build is the switch-on build,
+    and its record says the switch is on by default."""
+    for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    captured = {}
+    real = agent_mod.create_deep_agent
+
+    def spy(**k):
+        captured.update(k)
+        return real(**k)
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    agent = agent_mod.build_deep_agent(model=_Quiet())
+    assert ("\n\n" + judgment_calls_section(references=True)) in \
+        captured["system_prompt"]
+    assert agent.geotech_judgment_consult is True
+    assert "GEOTECH_JUDGMENT_CALLS=1 (default)" in \
+        agent.geotech_build["switches"]
+    assert _spec(captured, "references")["system_prompt"] == \
+        _references_prompt(True, consult=True)
 
 
 # ---------------------------------------------------------------------------
