@@ -10,7 +10,10 @@ applications.
 - Matlock (1970) — soft clay p-y curves
 - Reese et al. (1974) — sand p-y curves
 - API RP2A (2000) — sand simplified p-y
-- Reese (1975) — stiff clay below/above water table
+- Reese et al. (1975) — stiff clay below the water table
+- Welch and Reese (1972) — stiff clay above the water table, static and
+  cyclic, as printed in the COM624P manual (FHWA-SA-91-048) pp. 336-340 and
+  GEC 9 App. A.3, pp. 224-226
 - Jeanjean (2009) — soft clay updated model
 - Rollins et al. (2005) — liquefied sand p-y curves
 - Reese (1997) — weak rock p-y curves, as printed in FHWA GEC 9
@@ -58,7 +61,48 @@ results.summary()
   stickup mesh also captures the P-delta moment over the free length.
 - **Sign convention**: M = EI*y'', V = EI*y''' + Q*y'. Positive Vt -> positive y.
 - **Moment equilibrium**: integral(p*z*dz) = -Mt (soil reaction opposes applied moment)
-- **Matlock cyclic**: Only engages when deflections exceed 3*y50
+- **Matlock cyclic**: Only engages when deflections exceed 3*y50. Not as
+  printed above z_r (found in the GM-202 sweep, not fixed): past 3 y50 the
+  code drops straight to 0.72 pu z/z_r, where COM624P Fig. 3.5b and GEC 9
+  App. A.1 (Eq. A-6) fall linearly from 0.72 pu at 3 y50 to 0.72 pu z/z_r
+  at 15 y50 (softer than printed between 3 and 15 y50).
+- **Stiff clay below the water table**: the static and cyclic curves are a
+  simplified construction (linear, a square-root parabola, a plateau at
+  A pu), not the printed five- and four-segment curves of Reese et al.
+  (1975) in COM624P pp. 328-335 and GEC 9 App. A.2 (Eqs. A-7 to A-18);
+  found in the GM-202 sweep, not fixed. Cyclic is not ignored.
+- **Stiff clay above the water table (`StiffClayAboveWT`, GM-202,
+  2026-10-19)**: Welch & Reese (1972) as printed in COM624P pp. 336-340
+  (Eqs. 3.27-3.29, Figs. 3.9-3.10) and GEC 9 App. A.3 (Eqs. A-19 to A-21).
+  pu the smaller of Eqs. 3.8/3.9 (J = 0.5, total unit weight above the
+  water table), y50 = 2.5 eps50 b (Eq. 3.10). Static: p/pu = 0.5
+  (y/y50)^(1/4), p = pu beyond 16 y50. Cyclic, for N cycles of the design
+  load: for each p/pu, C = 9.6 (p/pu)^4 (3.28) and y_c = y_s + y50 C log N
+  (3.29), "log" read as the common logarithm. With y_s = 16 y50 (p/pu)^4
+  from 3.27 this is y_c = y50 (p/pu)^4 (16 + 9.6 log N): the static curve
+  with y50 times (1 + 0.6 log N), reaching pu at 16 y50 + 9.6 y50 log N as
+  Fig. 3.10 labels it; N = 1 is the static curve. `n_cycles` (N) is
+  required with loading='cyclic' and refused with 'static': neither
+  manual gives a default N (COM624P step 2: "the number of times the
+  design lateral load will be applied"), so the engineer states it; it is
+  reported in `choices` with y50's factor. Before GM-202 'cyclic' gave the
+  static curve (a cap at 16 y50 the static curve already has).
+  - **Anchors**: the static curve reproduces COM624P Example 1 (printed
+    pp. 101-126: a 14HP89, strong axis, in uniform stiff clay above the
+    water table, c 14 psi, gamma 0.069 lb/in^3, eps50 0.007, static): the
+    printed p-y curves at 20/60/100/150 in (pp. 121-122) to 0.002 %, and
+    the head deflection and moment at 20 and 40 kips (p. 126: 0.145 in,
+    661 in-kip; 0.623 in, 1,740 in-kip) within 0.2 %. Neither COM624P nor
+    GEC 9 prints a cyclic example, so the cyclic curve is a HAND
+    CALCULATION from the printed equations: Example 1's clay at 60 in,
+    N = 100, pu = 1,098.258 lb/in, y50 = 0.25725 in; at p/pu = 0.5,
+    y_s = 0.25725 in, C = 0.6, y_c = 0.25725 + 0.25725 x 0.6 x 2 =
+    0.56595 in, where the cyclic curve carries 549.13 lb/in and the static
+    668.77 lb/in; and the plateau starts at 16 y50 + 9.6 y50 log N (Fig.
+    3.10). `tests/test_stiff_clay_above_wt.py`.
+  - The validation test named `test_com624p_example1_sabine_river` is not
+    the manual's Example 1 (which is the 14HP89 above, and static); where
+    its 34.3 mm comes from is unverified.
 - **API sand**: tanh model is linear at small loads
 - **SandReese construction (v5.3)**: `SandReese(construction=...)` selects the
   sand p-y curve build. `"simplified"` (**default**, byte-identical to prior):
@@ -125,7 +169,11 @@ results.summary()
   head-deflection flag from CONVENTION to PASS (see validation_examples/RESULTS.md).
 
 ## Validation
-- COM624P Example 1 (Sabine River): 0.3% match to published 34.3mm
+- COM624P Example 1 (printed pp. 101-126, 14HP89 in stiff clay above the
+  water table): p-y curves to 0.002 %, head deflection and moment within
+  0.2 % (`tests/test_stiff_clay_above_wt.py`)
+- "COM624P Example 1 (Sabine River)" in `validation.py`: 0.3% match to
+  34.3mm, a source that is not the manual's Example 1 (see above)
 - Hetenyi closed-form: <2% error
 - Force/moment equilibrium: <0.01% error
 - validation.py (97 tests) + tests/ (12 regression tests) + composite-section

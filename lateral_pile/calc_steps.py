@@ -342,4 +342,6 @@ def _extract_model_params(model) -> str:
         parts.append(f"k_rm={model.krm:g}")
     if getattr(model, 'rock_top', None) is not None:
         parts.append(f"rock surface {model.rock_top:g} m")
+    if getattr(model, 'n_cycles', None) is not None:
+        parts.append(f"N={model.n_cycles:g} cycles")
     return ", ".join(parts) if parts else "—"
