@@ -492,8 +492,12 @@ no live load on the zone and does not move. Tests:
     `uniformity_coefficient`); left out, Cu = 4, and the result's choices
     say so, quote the page and give FOS_pullout at the top level and the
     lowest at the other reading (Cu 6.3 or more, or Cu 4 when one was
-    given). It is refused where the F* takes no Cu (a steel grid given its
-    t/St, a geosynthetic, and `mse_lrfd_external_stability`). At phi 34,
+    given). A steel grid given its t/St and a geosynthetic keep their own
+    F*, which takes no Cu; a Cu given with them is checked against note
+    (i) only, since that note covers every empirical F* in Table 3-6, and
+    the choice says whether it is within it (it was refused at first; the
+    GM-246 review kept it, as refusing it dropped the only check the page
+    makes with it). `mse_lrfd_external_stability` refuses it. At phi 34,
     F* at 0, 3 and 6 m: 2.000, 1.348, 0.695 before; 1.802, 1.247, 0.692
     now; unchanged at 6.096 m and below (tan 34 = 0.675). On a 9 m wall
     the top level's pullout falls 10 % (123.7 to 111.8 kN/m at 0.38 m)
@@ -627,15 +631,18 @@ toe refuse it (GM-242). Before, the 1948 chart took delta = phi, its
 largest Kp: 6.30 at phi 30, against 5.06 by default. The refusal gives
 the printed guidance: Caltrans Table 4-2 (p. 4-15), UFC Table 4-1 (p.
 184), and FHWA NHI-06-089 (p. 10-17), which gives delta = 1/2 phi' as
-"the maximum wall friction suggested for design" on the passive side and
-prints the same chart as its Fig. 10-10. Every log-spiral result's wall
+"the maximum wall friction suggested for design" on the passive side, and
+zero for walls retaining soft cohesive soils or granular soils "that will
+be subjected to significant vibration", and prints the same chart as its
+Fig. 10-10. Every log-spiral result's wall
 friction choice gives the Kp at delta = 0 beside the delta used:
 - Rankine's Kp before a vertical face with level ground, which Eq. 4-12
   gives at delta = 0;
 - the 1948 chart with R from its delta/phi = 0 column for sloping ground;
 - Coulomb's Kp at alpha = 90 - theta for a battered face, as no log-spiral
-  chart here gives one at delta = 0 (NHI-06-089 p. 10-19 finds Coulomb's
-  passive Kp unreliable only above delta = phi'/3).
+  chart here gives one at delta = 0 (NHI-06-089 p. 10-19 calls Coulomb's
+  passive results "unreliable" for wall friction "greater than phi'/3",
+  and the failure surface "almost linear" when delta is small).
 
 ## The foundation cohesion in sliding (GM-212, 2026-10-20)
 

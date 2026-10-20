@@ -171,7 +171,9 @@ def wall_friction_note(source: str, left_out: str = None) -> str:
 NHI_PASSIVE_DELTA = (
     "FHWA NHI-06-089 (p. 10-17) gives 'the maximum wall friction suggested "
     "for design' on the passive side as delta = 1/2 phi', values that 'can "
-    "be adopted in most cases'")
+    "be adopted in most cases', and for walls retaining soft cohesive "
+    "soils or granular soils 'that will be subjected to significant "
+    "vibration' says 'delta should be assumed to be zero'")
 
 #: The level-ground comparison (GM-232), for a result's choices.
 EQ_VS_CHARTS_NOTE = (
@@ -713,10 +715,11 @@ LEVEL_FRONT_NEEDS_DELTA = {
         "(Sec. 4-6, p. 4-29) begins 'Given delta, beta, and phi', and its "
         "Example 8-1 takes 15 deg on phi 30. Caltrans Table 4-2 (p. 4-15) "
         "and UFC 3-220-20 Table 4-1 (p. 184) give interface friction "
-        "angles by wall material and soil; " + NHI_PASSIVE_DELTA + ", and "
+        "angles by wall material and soil; " + NHI_PASSIVE_DELTA + "; it "
         "prints this chart as its Fig. 10-10 (p. 10-22). Or leave "
-        "log_spiral_source out: UFC 3-220-20 takes delta/phi' = 0.66 when "
-        "it is left out."),
+        "log_spiral_source out: with UFC 3-220-20 the tool takes "
+        "delta/phi' = 0.66 when the wall friction is left out, the value "
+        "p. 191 calls 'a common assumption'."),
     "dm7_2_eq_4_12": (
         "log_spiral_source 'dm7_2_eq_4_12' (UFC 3-220-20 Eq. 4-12) needs "
         "the wall friction given ({name}); p. 191: 'while delta/phi' = 0.66 "

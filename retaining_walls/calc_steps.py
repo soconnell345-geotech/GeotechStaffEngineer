@@ -1130,8 +1130,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                       "linear between"),
             substitution=(
                 f"C_u = {cu:g}"
-                + (" (not given: GEC-11 p. 3-20 takes C_u = 4 when the "
-                   "backfill's is unknown)" if cu_given is None else "")
+                + (" (not given: GEC-11 p. 3-20 says to assume C_u = 4 "
+                   "when the backfill's is unknown)" if cu_given is None
+                   else "")
+                + (" (below 4: GEC-11 Table 3-6 note (i), 'For fill "
+                   "outside these limits, tests must be run')"
+                   if cu < _mse.CU_UNKNOWN else "")
                 + f": F* = {f_top:.2f} at z = 0; tan {phi_b:.1f}° = "
                 f"{f_deep:.3f} at z ≥ 6.10 m"),
             result_name="F*",

@@ -74,16 +74,42 @@ def test_which_reinforcement_takes_the_strip_curve():
 
 
 @pytest.mark.parametrize("reinforcement, words", [
-    (WELDED_WIRE_GRID_W11, "20 t/St to 10 t/St"),
+    (WELDED_WIRE_GRID_W11, "20 t/St at the top to 10 t/St"),
     (GEOGRID_UX1600, "0.67 tan phi_backfill")])
-def test_a_Cu_is_refused_where_the_F_star_takes_none(reinforcement, words):
-    with pytest.raises(ValueError, match="Leave Cu_backfill out") as e:
-        check_internal_stability(_geom(), 20.0, 34.0, reinforcement,
-                                 Cu_backfill=5.0)
-    assert words in str(e.value) and "Eq. 3-4" in str(e.value)
+def test_where_the_F_star_takes_no_Cu_a_given_Cu_is_checked_by_note_i(
+        reinforcement, words):
+    """GEC-11 Table 3-6 note (i) (p. 3-17) accepts every empirical F* in
+    the table, strips, grids and sheets alike, only for Cu >= 4: a Cu
+    given with a grid or a geosynthetic leaves its F* as it was and is
+    checked against the note, not refused (GM-246 review)."""
+    left_out = analyze_mse_wall(_geom(), 20.0, 34.0, reinforcement)
     # left out, nothing is said about it
-    r = analyze_mse_wall(_geom(), 20.0, 34.0, reinforcement)
-    assert not [c for c in r.choices if "Cu_backfill" in c["what"]]
+    assert not [c for c in left_out.choices if "Cu_backfill" in c["what"]]
+    for Cu, within in ((5.0, True), (2.5, False)):
+        r = analyze_mse_wall(_geom(), 20.0, 34.0, reinforcement,
+                             Cu_backfill=Cu)
+        assert [lv["F_star"] for lv in r.internal_results] == \
+            [lv["F_star"] for lv in left_out.internal_results]
+        (c,) = [c for c in r.choices if "(Cu_backfill)" in c["what"]]
+        assert c["how"] == "given" and words in c["chosen"]
+        assert c["chosen"].startswith(f"Cu {Cu:g}: ")
+        assert ("at least 4, within" in c["chosen"]) is within
+        assert ("tests must be run" in c["chosen"]) is not within
+        assert "Table 3-1 for MSE walls is used and Cu >= 4" in c["basis"]
+        assert "Appendix B" in c["alternatives"][0]
+    with pytest.raises(ValueError, match="D60/D10, 1 or more"):
+        check_internal_stability(_geom(), 20.0, 34.0, reinforcement,
+                                 Cu_backfill=0.5)
+
+
+def test_a_Cu_of_4_given_reads_as_given():
+    """The library call says 'given' for a Cu the call gave, though it
+    equals the value taken when it is left out."""
+    c = _choice(analyze_mse_wall(_geom(), 20.0, 34.0,
+                                 RIBBED_STEEL_STRIP_75x4, Cu_backfill=4.0))
+    assert c["how"] == "given"
+    assert _choice(analyze_mse_wall(
+        _geom(), 20.0, 34.0, RIBBED_STEEL_STRIP_75x4))["how"] == "default"
 
 
 def test_the_choice_states_the_printed_default_and_the_other_reading():
@@ -155,7 +181,10 @@ def test_the_calc_steps_show_the_Cu_and_the_F_star_curve():
         return found[0]
 
     s = step(None)
-    assert "C_u = 4 (not given: GEC-11 p. 3-20 takes C_u = 4" in s.substitution
+    assert ("C_u = 4 (not given: GEC-11 p. 3-20 says to assume C_u = 4"
+            in s.substitution)
+    assert "note (i)" not in s.substitution
+    assert "tests must be run" in step(2.5).substitution
     assert s.result_value.startswith("1.80") and "0.675" in s.result_value
     assert s.reference == "GEC-11 Vol I Eqs. 3-4, 3-5 (p. 3-20)"
     assert step(7.0).substitution.startswith("C_u = 7: F* = 2.00 at z = 0")

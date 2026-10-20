@@ -65,6 +65,25 @@ _Z20_FT_M = 20.0 * 0.3048  # 6.096 m
 CU_UNKNOWN = 4.0
 F_STAR_STRIP_MAX = 2.0
 
+#: GEC-11 Vol I Table 3-6 note (i) (p. 3-17), read on the rendered page:
+#: it covers every empirical F* in the table (strips, grids, sheets), so a
+#: given Cu is checked against it whatever the reinforcement (GM-246).
+F_STAR_NOTE_I = (
+    "GEC-11 Vol I Table 3-6 note (i) (p. 3-17): the empirical F* values "
+    "are acceptable 'in the absence of product and backfill specific test "
+    "data, provided granular reinforced fill as specified in Table 3-1 for "
+    "MSE walls is used and Cu >= 4. For fill outside these limits, tests "
+    "must be run.'")
+_NOTE_I_WITHIN = ("at least 4, within the fill for which GEC-11 Table 3-6 "
+                  "note (i) accepts the empirical F*")
+_NOTE_I_OUTSIDE = ("below 4, outside the fill for which GEC-11 Table 3-6 "
+                   "note (i) accepts the empirical F*: 'For fill outside "
+                   "these limits, tests must be run'")
+_NOTE_I_TESTS = ("pullout test data for this reinforcement in the wall's "
+                 "backfill in place of the empirical F*, which note (i) "
+                 "requires outside these limits (GEC-11 Vol I p. 3-20: the "
+                 "procedures are in Appendix B)")
+
 F_STAR_STRIP_BASIS = (
     "GEC-11 Vol I (FHWA-NHI-10-024) p. 3-20, for steel ribbed "
     "reinforcement: Eq. 3-4, F* = 1.2 + log Cu at the top of the "
@@ -73,13 +92,9 @@ F_STAR_STRIP_BASIS = (
     "(D60/D10). 'If the specific Cu for the wall backfill is unknown at "
     "design time, a Cu = 4 should be assumed (i.e., F* = 1.8 at the top of "
     "the wall) for reinforced fills meeting the requirements of Section "
-    "3.1 of this chapter.' Table 3-6 note (i) (p. 3-17): the empirical "
-    "values are acceptable 'in the absence of product and backfill "
-    "specific test data, provided granular reinforced fill as specified in "
-    "Table 3-1 for MSE walls is used and Cu >= 4. For fill outside these "
-    "limits, tests must be run.' F* is taken linearly between, as Vol II "
-    "Examples E3 and E5 interpolate it, over the same depths as Kr/Ka "
-    "(p. 4-49)")
+    "3.1 of this chapter.' " + F_STAR_NOTE_I + " F* is taken linearly "
+    "between, as Vol II Examples E3 and E5 interpolate it, over the same "
+    "depths as Kr/Ka (p. 4-49)")
 
 
 def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
@@ -577,11 +592,24 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     given or the Cu = 4 GEC-11 Vol I p. 3-20 takes when the backfill's is
     unknown, with FOS_pullout at the top level and the lowest at the other
     reading (Cu = 4, or a Cu of 6.3 or more, where F* reaches its 2.0
-    maximum). None for a
-    reinforcement whose F* takes no Cu."""
+    maximum). For a reinforcement whose F* takes no Cu: nothing when Cu
+    is left out, and a given Cu checked against GEC-11 Table 3-6 note
+    (i), which accepts every empirical F* only for Cu >= 4."""
     from geotech_common.choices import choice, how_given
     if not uses_strip_F_star(reinforcement):
-        return []
+        if Cu_backfill is None:
+            return []
+        own = ("20 t/St at the top to 10 t/St at 20 ft (GEC-11 Fig. E4-5)"
+               if reinforcement.is_metallic else "0.67 tan phi_backfill")
+        return [choice(
+            "Backfill uniformity coefficient (Cu_backfill) against the "
+            "empirical pullout factor F*",
+            f"Cu {Cu_backfill:g}: "
+            + (_NOTE_I_WITHIN if Cu_backfill >= CU_UNKNOWN
+               else _NOTE_I_OUTSIDE)
+            + f"; this reinforcement's F*, {own}, takes no Cu",
+            how_given(Cu_backfill, None, name="Cu_backfill"), F_STAR_NOTE_I,
+            [_NOTE_I_TESTS])]
     Cu = CU_UNKNOWN if Cu_backfill is None else Cu_backfill
     top = F_star_strip_top(Cu)
     capped = 1.2 + math.log10(Cu) > F_STAR_STRIP_MAX
@@ -591,9 +619,7 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
               f"{math.tan(math.radians(phi_backfill)):.3f} at 20 ft "
               f"(6.1 m) and below")
     if Cu < CU_UNKNOWN:
-        chosen += ("; Cu is below 4, outside the fill for which GEC-11 "
-                   "Table 3-6 note (i) accepts the empirical F*: 'For fill "
-                   "outside these limits, tests must be run'")
+        chosen += "; Cu is " + _NOTE_I_OUTSIDE
     if internal is None:
         internal = check_internal_stability(
             geom, gamma_backfill, phi_backfill, reinforcement,
@@ -626,7 +652,7 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     return [choice(
         "Pullout resistance factor F* of ribbed steel strips, from the "
         "backfill's uniformity coefficient (Cu_backfill)", chosen,
-        how_given(Cu, CU_UNKNOWN, name="Cu_backfill"), basis, [alt])]
+        how_given(Cu_backfill, None, name="Cu_backfill"), basis, [alt])]
 
 
 def check_internal_stability(
@@ -657,8 +683,11 @@ def check_internal_stability(
     Cu_backfill : float, optional
         Uniformity coefficient D60/D10 of the reinforced backfill, for the
         ribbed steel strip F* (:func:`F_star_strip_top`). Default None: 4,
-        as GEC-11 Vol I p. 3-20 takes when it is unknown. Refused with a
-        reinforcement whose F* takes none (:func:`uses_strip_F_star`).
+        as GEC-11 Vol I p. 3-20 says to assume when it is unknown. A
+        reinforcement whose F* takes none (:func:`uses_strip_F_star`)
+        keeps its F*; the Cu is then only checked against GEC-11 Table 3-6
+        note (i), which accepts every empirical F* only for Cu >= 4
+        (:func:`pullout_factor_choices`).
 
     Returns
     -------
@@ -706,15 +735,11 @@ def check_internal_stability(
     else:
         r_type = "geosynthetic"
     t_over_St = reinforcement.t_over_St if reinforcement.is_grid else None
-    if Cu_backfill is not None and not uses_strip_F_star(reinforcement):
-        raise ValueError(
-            f"Cu_backfill sets the ribbed steel strip F* at the top of the "
-            f"wall (GEC-11 Vol I Eq. 3-4, p. 3-20); "
-            + ("a steel grid given its transverse-bar geometry takes F* "
-               "from it, 20 t/St to 10 t/St (GEC-11 Fig. E4-5)"
-               if reinforcement.is_metallic else
-               "a geosynthetic's F* here is 0.67 tan phi_backfill")
-            + ", which takes no Cu. Leave Cu_backfill out")
+    if Cu_backfill is not None:
+        # a grid with t/St or a geosynthetic takes no Cu in its F*; GEC-11
+        # Table 3-6 note (i) still asks Cu >= 4 of every empirical F*
+        # (pullout_factor_choices), so the value is checked, not refused
+        F_star_strip_top(Cu_backfill)
 
     results = []
     for z in geom.reinforcement_depths:

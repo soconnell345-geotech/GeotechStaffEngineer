@@ -1,6 +1,7 @@
 """GM-246: mse_wall takes the backfill's uniformity coefficient for the
 ribbed steel strip F* (GEC-11 Vol I Eq. 3-4, p. 3-20), states the Cu = 4
-it takes when it is left out, and refuses it where the F* takes none."""
+it takes when it is left out, and checks a Cu given with another
+reinforcement against GEC-11 Table 3-6 note (i)."""
 
 import pytest
 
@@ -49,12 +50,26 @@ def test_a_custom_strip_takes_it_and_a_geogrid_does_not_list_it():
                 if "(Cu_backfill)" in c["what"]]
 
 
+@pytest.mark.parametrize("name, cu", [
+    ("welded_wire_grid_w11", 5.0), ("geogrid_ux1600", 2.5)])
+def test_a_grid_or_geogrid_takes_it_as_a_note_i_check(name, cu):
+    """GEC-11 Table 3-6 note (i) (p. 3-17) holds every empirical F* to Cu
+    >= 4, so a Cu given with a grid or a geogrid is checked, not refused
+    (GM-246 review); their F* takes no Cu and is unchanged."""
+    r = _mse(reinforcement_name=name, Cu=cu)
+    assert "error" not in r, r.get("error")
+    c = _choice(r)
+    assert c["how"] == "given" and "note (i)" in c["chosen"]
+    assert ("tests must be run" in c["chosen"]) is (cu < 4)
+    assert [lv["F_star"] for lv in r["internal_results"]] == [
+        lv["F_star"] for lv in _mse(reinforcement_name=name)[
+            "internal_results"]]
+
+
 @pytest.mark.parametrize("method, params, words", [
-    ("mse_wall", {**_STRIP, "reinforcement_name": "welded_wire_grid_w11",
-                  "Cu": 5.0}, "Leave Cu_backfill out"),
-    ("mse_wall", {**_STRIP, "reinforcement_name": "geogrid_ux1600",
-                  "Cu_backfill": 5.0}, "0.67 tan phi_backfill"),
     ("mse_wall", {**_STRIP, "Cu_backfill": 0.5}, "1 or more"),
+    ("mse_wall", {**_STRIP, "reinforcement_name": "geogrid_ux1600",
+                  "Cu_backfill": 0.5}, "1 or more"),
     ("mse_lrfd_external_stability",
      dict(wall_height=9.0, gamma_backfill=20.0, phi_backfill=34.0,
           reinforcement_length=7.0, Cu_backfill=5.0),
