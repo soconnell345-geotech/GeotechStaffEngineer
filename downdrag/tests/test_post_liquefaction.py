@@ -284,6 +284,30 @@ class TestZonesInsideALayer:
                                      + 0.5 * (8.5 ** 2 - 7.0 ** 2) / 2)
         assert row["drag_force_after_kN"] == pytest.approx(hand, abs=0.5)
 
+    def test_a_zone_split_into_layers_is_the_same_zone(self):
+        """GM-201: a node on the boundary between two liquefied layers of
+        one zone kept its static side resistance, so a zone given as
+        several layers (a CPT's bands, an SPT result's readings) gave a
+        different neutral plane from the same zone given whole."""
+        one = post_liquefaction_downdrag(_hand_check(),
+                                         liquefied_layers=_HC1_ZONE)
+        for n in (2, 16):
+            dz = 4.0 / n
+            split = post_liquefaction_downdrag(
+                _hand_check(), liquefied_layers=[
+                    {"top": 6.0 + k * dz, "bottom": 6.0 + (k + 1) * dz,
+                     "volumetric_strain": 0.03} for k in range(n)])
+            z = split.after.z
+            look = DowndragAnalysis._lookup_depths(z)
+            inside = (look > 6.0) & (look < 10.0)
+            np.testing.assert_allclose(
+                split.after.unit_skin_friction[inside],
+                0.5 * _Hand.k1 * z[inside])
+            z1, _ = _Hand.fe_plane(_Hand.s06 + 0.5 * _Hand.s610)
+            assert split.after.neutral_plane_depth == pytest.approx(z1)
+            assert split.after.neutral_plane_depth == pytest.approx(
+                one.after.neutral_plane_depth)
+
     def test_settlement_given_instead_of_strain(self):
         r = post_liquefaction_downdrag(
             _hand_check(), liquefied_layers=[
@@ -432,6 +456,97 @@ class TestFromALiquefactionResult:
             post_liquefaction_downdrag(
                 _hand_check(), liquefaction_result=self._spt(
                     [1.2, 1.6, 1.5, 1.9, 1.6]), volumetric_strain=0.03)
+
+
+class TestFromACptDepthProfile:
+    """The ``liquefaction`` tool's CPT ``depth_profile`` rows (GM-201): each
+    row stands for its own top_m to bottom_m and carries its strain."""
+
+    ROWS = [
+        {"top_m": 0.0, "bottom_m": 2.0, "FOS_liq": 2.0,
+         "volumetric_strain": 0.0},
+        {"top_m": 2.0, "bottom_m": 6.0, "FOS_liq": 1.3,
+         "volumetric_strain": 0.004},
+        {"top_m": 6.0, "bottom_m": 8.0, "FOS_liq": 0.6,
+         "volumetric_strain": 0.03},
+        {"top_m": 8.0, "bottom_m": 10.0, "FOS_liq": 0.8,
+         "volumetric_strain": 0.03},
+        {"top_m": 10.0, "bottom_m": 30.5, "FOS_liq": 2.0,
+         "volumetric_strain": 0.0},
+    ]
+
+    def test_rows_stand_for_their_own_depths(self):
+        layers, left = liquefied_layers_from_result(
+            {"input_type": "CPT", "depth_profile": self.ROWS})
+        assert [(s.top, s.bottom, s.volumetric_strain) for s in layers] == [
+            (6.0, 8.0, 0.03), (8.0, 10.0, 0.03)]
+        assert [s.fs_liq for s in layers] == [0.6, 0.8]
+        assert left == pytest.approx(0.004 * 4.0)
+
+    def test_the_rows_alone_and_one_row_are_taken(self):
+        layers, _ = liquefied_layers_from_result(self.ROWS)
+        assert len(layers) == 2
+        layers, _ = liquefied_layers_from_result([self.ROWS[2]])
+        assert [(s.top, s.bottom) for s in layers] == [(6.0, 8.0)]
+
+    def test_the_water_table_and_the_profile_bound_them(self):
+        rows = [dict(r, FOS_liq=0.7, volumetric_strain=0.01)
+                for r in self.ROWS]
+        layers, _ = liquefied_layers_from_result(
+            rows, profile_depth=30.0, water_table=1.0)
+        assert layers[0].top == 1.0 and layers[-1].bottom == 30.0
+
+    def test_a_threshold_counts_a_band_by_its_fos(self):
+        layers, _ = liquefied_layers_from_result(self.ROWS,
+                                                 fs_liq_threshold=1.3)
+        assert [(s.top, s.bottom) for s in layers][0] == (2.0, 6.0)
+
+    def test_a_given_strain_replaces_the_rows(self):
+        layers, _ = liquefied_layers_from_result(self.ROWS,
+                                                 volumetric_strain=0.02)
+        assert [s.volumetric_strain for s in layers] == [0.02, 0.02]
+
+    def test_overlapping_rows_refused(self):
+        rows = [dict(self.ROWS[2]), dict(self.ROWS[3], top_m=7.0)]
+        with pytest.raises(ValueError, match="overlap"):
+            liquefied_layers_from_result(rows)
+
+    def test_the_analysis_takes_it_and_says_where_the_strain_came_from(self):
+        r = post_liquefaction_downdrag(
+            _hand_check(), liquefaction_result={
+                "input_type": "CPT", "depth_profile": self.ROWS,
+                "depth_profile_note": "banded"})
+        assert [(z["top_m"], z["bottom_m"]) for z in r.liquefied_zones] == \
+            [(6.0, 10.0)]
+        assert r.reconsolidation_settlement == pytest.approx(0.12)
+        strain = next(c for c in r.choices
+                      if c["what"] == "reconsolidation volumetric strain")
+        assert strain["chosen"] == "the liquefaction result's own"
+        assert "Zhang et al. (2002)" in strain["basis"]
+        assert "depth bands" in strain["basis"]
+        # the HC-1 zone, so the HC-1 numbers
+        given = post_liquefaction_downdrag(_hand_check(),
+                                           liquefied_layers=_HC1_ZONE)
+        assert r.after.neutral_plane_depth == pytest.approx(
+            given.after.neutral_plane_depth)
+
+
+class TestNoSptStrainMethod:
+    """GM-201: no reference in the library prints a post-liquefaction
+    volumetric strain method for SPT (GEC-10 §10.7, p. 10-52, names
+    Ishihara and Yoshimine 1992 as Idriss and Boulanger 2008 describe it;
+    its Fig 9-34 is maximum SHEAR strain; GEC-5 p. 12-23 names Tokimatsu
+    and Seed 1987 for dry or partially saturated sand and defers to a
+    manual not in the library), so the strain stays an input."""
+
+    def test_an_spt_result_without_a_strain_says_so(self):
+        rows = [{"depth_m": d, "FOS_liq": f, "N1_60": 10.0}
+                for d, f in ((3.0, 1.2), (5.0, 0.6), (7.0, 1.4))]
+        with pytest.raises(ValueError) as exc:
+            liquefied_layers_from_result({"layer_results": rows})
+        msg = str(exc.value)
+        assert "no reference in the library prints an SPT method" in msg
+        assert "Give volumetric_strain" in msg
 
 
 class TestInputs:

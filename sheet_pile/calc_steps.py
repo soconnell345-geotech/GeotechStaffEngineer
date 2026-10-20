@@ -755,7 +755,6 @@ def _plot_shear_moment(result, analysis):
     # no panel titles: the axis labels name each panel, and the titles
     # ran into each other at the printed width (GM-186)
     ax1.invert_yaxis()
-    ax1.legend(fontsize=8)
     ax1.grid(True, alpha=0.3)
     ax1.tick_params(labelsize=9)
 
@@ -765,18 +764,20 @@ def _plot_shear_moment(result, analysis):
     ax2.axhline(y=H, color='#16a34a', linestyle='--', linewidth=1.2)
     ax2.axvline(x=0, color='black', linewidth=0.5)
 
-    # Mark maximum moment
+    # Mark maximum moment, its note beside it on the diagram's side of the
+    # point, where the curve is not (placed in metres off the point, the
+    # curve ran through it at the printed width; GM-194)
     max_idx = np.argmax(np.abs(moment))
     ax2.plot(moment[max_idx], depths[max_idx], 'ro', markersize=8, zorder=5)
+    toward_zero = 1 if moment[max_idx] < 0 else -1
     ax2.annotate(
         f'M_max = {abs(moment[max_idx]):.0f} kN\u00b7m/m\n'
         f'at z = {depths[max_idx]:.1f} m',
         xy=(moment[max_idx], depths[max_idx]),
-        xytext=(moment[max_idx] + abs(moment).max() * 0.15,
-                depths[max_idx] - 0.5),
+        xytext=(10 * toward_zero, 0), textcoords='offset points',
+        ha='left' if toward_zero > 0 else 'right', va='center',
         fontsize=8,
-        arrowprops=dict(arrowstyle='->', color='#dc2626', lw=1.2),
-        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8),
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='white'),
     )
 
     ax2.set_xlabel('Bending Moment (kN\u00b7m/m)', fontsize=10)
@@ -784,7 +785,10 @@ def _plot_shear_moment(result, analysis):
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(labelsize=9)
 
-    plt.tight_layout()
+    # the key under the panels: inside them the shear curve ran through
+    # it (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, [ax1, ax2])
     return fig
 
 
@@ -908,25 +912,32 @@ def _plot_wall_section(result, analysis):
                               alpha=0.85, edgecolor='#ccc'))
         z_cum += layer.thickness
 
-    # Labels
-    ax.text(-2.0, -0.4, 'Retained Side', ha='center', fontsize=10,
-            fontweight='bold', color='#374151')
+    # Labels (with a surcharge, the side's name goes over the surcharge's
+    # value, over its arrows: under them the arrows ran through it; GM-194)
+    q = analysis.get("surcharge", 0.0)
+    if q > 0:
+        ax.annotate('Retained Side', (-2.0, -0.6), xytext=(0, 14),
+                    textcoords='offset points', ha='center', va='bottom',
+                    fontsize=10, fontweight='bold', color='#374151')
+    else:
+        ax.text(-2.0, -0.4, 'Retained Side', ha='center', fontsize=10,
+                fontweight='bold', color='#374151')
     ax.text(2.0, H - 0.4, 'Excavation Side', ha='center', fontsize=10,
             fontweight='bold', color='#374151')
 
     # Surcharge arrow
-    q = analysis.get("surcharge", 0.0)
     if q > 0:
         for x_arr in [-3.0, -2.0, -1.0]:
             ax.annotate('', xy=(x_arr, 0),
                         xytext=(x_arr, -0.6),
                         arrowprops=dict(arrowstyle='->', color='#dc2626',
                                         lw=1.5))
-        ax.text(-2.0, -0.8, f'q = {q:.0f} kPa', ha='center', fontsize=9,
-                color='#dc2626', fontweight='bold')
+        ax.annotate(f'q = {q:.0f} kPa', (-2.0, -0.6), xytext=(0, 2),
+                    textcoords='offset points', ha='center', va='bottom',
+                    fontsize=9, color='#dc2626', fontweight='bold')
 
     ax.set_xlim(left_extent - 0.5, right_extent + 1.0)
-    ax.set_ylim(L + 0.5, min(-1.5, -1.0))
+    ax.set_ylim(L + 0.5, -2.0 if q > 0 else -1.5)
     ax.set_xlabel('Distance (m)', fontsize=10)
     ax.set_ylabel('Depth (m)', fontsize=10)
     title = ("Anchored" if wall_type == "anchored" else "Cantilever")
