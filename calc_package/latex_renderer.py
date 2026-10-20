@@ -346,12 +346,22 @@ def _save_pdf_latex(
 # out-specifies the base rule) collapses the padding and shrinks the font so all
 # columns fit. Narrow tables are untouched.
 _WIDE_TABLE_CLASS = "wide-pdf-table"
+#: A table printed as one block per row (GM-213, :func:`_reflow_tables`).
+_ROWS_CLASS = "pdf-rows"
 _PDF_STORY_CSS = (
     "<style>"
+    f"table.{_WIDE_TABLE_CLASS} th,table.{_WIDE_TABLE_CLASS} td,"
     f".data-table.{_WIDE_TABLE_CLASS} th,"
     f".data-table.{_WIDE_TABLE_CLASS} td"
     "{padding:0px 1px;font-size:6.5pt;"
     "word-break:break-word;overflow-wrap:anywhere;}"
+    f".{_ROWS_CLASS}{{font-size:9.5pt;line-height:1.35;text-align:left;"
+    "margin-bottom:12px;border-bottom:1px solid #bbb;}"
+    f".{_ROWS_CLASS}-row{{border-top:1px solid #bbb;padding:3px 2px 4px 2px;}}"
+    f".{_ROWS_CLASS}-key,.{_ROWS_CLASS}-field{{margin:0;}}"
+    f".{_ROWS_CLASS}-key{{font-weight:bold;}}"
+    f".{_ROWS_CLASS}-field{{padding-left:14px;}}"
+    f".{_ROWS_CLASS}-label{{font-style:italic;color:#555;}}"
     "</style>"
 )
 
@@ -383,6 +393,225 @@ def _fit_wide_tables_for_pdf(html: str, wide_cols: int = _WIDE_TABLE_COLS) -> st
 
     return re.sub(r'<table class="data-table".*?</table>', _proc, html,
                   flags=re.DOTALL)
+
+
+# ── Story PDF tables that do not print as tables (BACKLOG GM-213) ─────
+#
+# The Story engine never splits a table row across pages: a row taller
+# than a page is cut off at the page foot, or never placed while the
+# engine adds empty pages, and a column is never narrower than its longest
+# word, so a table of long words runs past the page's right edge and is
+# cut off there. A calc package's "Choices made" table did both: five
+# columns of sentences in a 5 in text column, rows up to 1,060 pt tall
+# (lost: 18 words of one package, 43 of another). Such a table prints as
+# one block per row instead: the row's first cell in bold, then each other
+# cell under its heading, as paragraphs that run on across pages.
+
+#: A table with a row taller than this share of a page prints as a block
+#: per row: a row a third of a page tall is a column of a few words a line.
+_TALL_ROW_SHARE = 1 / 3
+#: The most layouts measuring the tables takes, and the pages of one.
+_MAX_MEASURES = 3
+_MAX_MEASURE_PAGES = 200
+#: The height of a page measured on: tall enough that no row meets a foot.
+_MEASURE_PAGE_PT = 100_000
+_BLOCK_IN_CELL = re.compile(
+    r"<(?:p|div|ul|ol|li|table|h[1-6]|pre|blockquote|br)(?=[\s/>])",
+    re.IGNORECASE)
+
+
+def _measure_tables(html: str, where) -> "dict | None":
+    """``{table start: (rect, tallest row)}`` for each table in ``html``
+    that holds no other table and no picture, laid out at the width of
+    ``where`` on pages no row meets the foot of; ``None`` when the engine
+    loops on it."""
+    import fitz
+
+    tables = []
+    for m in re.finditer(r"<table(?=[\s/>])", html, re.IGNORECASE):
+        end = _element_end(html, m.start())
+        inner = html[m.end():end]
+        if end > m.start() and not re.search(r"<(?:table|img)(?=[\s/>])",
+                                             inner, re.IGNORECASE):
+            tables.append((m.start(), end))
+    if not tables:
+        return {}
+    tagged, starts = _tag_blocks(html)
+    by_start = {at: key for key, at in starts.items()}
+    rects, opened = {}, set()
+    looped = []
+
+    def _seen(pos):
+        if pos.id not in starts:
+            return
+        if pos.open_close & 1:
+            if pos.id in opened:
+                looped.append(pos.id)
+            opened.add(pos.id)
+        r = fitz.Rect(pos.rect)
+        rects[pos.id] = rects[pos.id] | r if pos.id in rects else r
+
+    tall = fitz.Rect(where.x0, where.y0, where.x1,
+                     where.y0 + _MEASURE_PAGE_PT)
+    story = fitz.Story(html=tagged)
+    more, pages = 1, 0
+    while more:
+        if pages >= _MAX_MEASURE_PAGES or looped:
+            return None
+        more, _filled = story.place(tall)
+        story.element_positions(_seen)
+        pages += 1
+    out = {}
+    for start, end in tables:
+        key = by_start.get(start)
+        if key not in rects:
+            continue
+        rows = [rects[k].height for at, k in by_start.items()
+                if start < at < end and k in rects
+                and html[at:at + 3].lower() == "<tr"]
+        out[start] = (rects[key], max(rows, default=0.0))
+    return out
+
+
+def _cell_text(inner: str) -> str:
+    """The words of a cell's HTML, its tags left out."""
+    import html as _html
+
+    return " ".join(_html.unescape(re.sub(r"<[^>]+>", " ", inner)).split())
+
+
+def _table_rows(table: str) -> list:
+    """``[(heading, [(tag, inner html, columns spanned, rows spanned)])]``,
+    a row at a time, for the HTML of one table (one with no table inside):
+    a heading row is in ``<thead>`` or holds only ``<th>`` cells. End tags
+    may be left out."""
+    heads = [(m.start(), table.lower().find("</thead", m.start()))
+             for m in re.finditer(r"<thead(?=[\s>])", table, re.IGNORECASE)]
+    trs = list(re.finditer(r"<tr(?=[\s/>])[^>]*>", table, re.IGNORECASE))
+    rows = []
+    for k, m in enumerate(trs):
+        body = table[m.end():trs[k + 1].start() if k + 1 < len(trs)
+                     else len(table)]
+        tags = list(re.finditer(r"<(t[dh])(?=[\s/>])[^>]*>", body,
+                                re.IGNORECASE))
+        cells = []
+        for j, c in enumerate(tags):
+            inner = body[c.end():tags[j + 1].start() if j + 1 < len(tags)
+                         else len(body)]
+            inner = re.split(r"</t[dh]\s*>|</(?:tr|tbody|thead|tfoot|table)"
+                             r"\s*>", inner, maxsplit=1,
+                             flags=re.IGNORECASE)[0]
+            spans = [re.search(rf"""\s{a}span\s*=\s*["']?(\d+)""",
+                               c.group(0), re.IGNORECASE)
+                     for a in ("col", "row")]
+            cells.append((c.group(1).lower(), inner.strip()) + tuple(
+                max(1, min(int(n.group(1)), 50)) if n else 1 for n in spans))
+        in_head = any(a <= m.start() and (b < 0 or m.start() < b)
+                      for a, b in heads)
+        rows.append((in_head or bool(cells) and all(
+            cell[0] == "th" for cell in cells), cells))
+    return rows
+
+
+def _cell_columns(rows: list) -> list:
+    """Per row of :func:`_table_rows`, the column each cell starts in: a
+    cell spanning rows holds its columns in the rows below it."""
+    held, out = {}, []
+    for _heading, cells in rows:
+        cols, col = [], 0
+        for _t, _inner, across, down in cells:
+            while held.get(col, 0) > 0:
+                col += 1
+            cols.append(col)
+            held.update((c, down) for c in range(col, col + across))
+            col += across
+        held = {c: n - 1 for c, n in held.items() if n > 1}
+        out.append(cols)
+    return out
+
+
+def _table_as_blocks(table: str) -> "str | None":
+    """The HTML of one table as a block per row (:data:`_ROWS_CLASS`): the
+    row's first cell in bold, then each other cell that holds anything,
+    each after its column's heading (the words of the heading rows above
+    it); its caption first, and a heading row among the body rows as a
+    line in bold. ``None`` when it has no body rows."""
+    rows = _table_rows(table)
+    columns = _cell_columns(rows)
+    lead = next((k for k, (heading, _c) in enumerate(rows) if not heading),
+                len(rows))
+    labels = []
+    for (_heading, cells), cols in zip(rows[:lead], columns):
+        for (_t, inner, across, _down), at in zip(cells, cols):
+            text = _cell_text(inner)
+            for col in range(at, at + across):
+                labels += [[]] * (col + 1 - len(labels))
+                if text and text not in labels[col]:
+                    labels[col] = labels[col] + [text]
+    labels = [" ".join(words) for words in labels]
+    if not any(cells for heading, cells in rows[lead:] if not heading):
+        return None
+
+    def _para(cls, inner, label=""):
+        tag = "div" if _BLOCK_IN_CELL.search(inner) else "p"
+        if label:
+            inner = (f'<span class="{_ROWS_CLASS}-label">'
+                     f"{label.rstrip(':')}:</span> {inner}")
+        return f'<{tag} class="{_ROWS_CLASS}-{cls}">{inner}</{tag}>'
+
+    out = [f'<div class="{_ROWS_CLASS}">']
+    caption = re.search(r"<caption(?=[\s>])[^>]*>(.*?)(?:</caption\s*>|<tr"
+                        r"(?=[\s/>]))", table, re.IGNORECASE | re.DOTALL)
+    if caption and _cell_text(caption.group(1)):
+        out.append(_para("key", caption.group(1).strip()))
+    for (heading, cells), cols in zip(rows[lead:], columns[lead:]):
+        filled = [(cell[1], at) for cell, at in zip(cells, cols)
+                  if _cell_text(cell[1])]
+        if not filled:
+            continue
+        out.append(f'<div class="{_ROWS_CLASS}-row">')
+        if heading:
+            out.append(_para("key", " ".join(inner for inner, _a in filled)))
+        else:
+            for k, (inner, at) in enumerate(filled):
+                out.append(_para("field" if k else "key", inner,
+                                 labels[at] if at < len(labels) else ""))
+        out.append("</div>")
+    out.append("</div>")
+    return "".join(out)
+
+
+def _reflow_tables(html: str, where) -> str:
+    """``html`` with each table the Story engine would not print whole as
+    a table (see the note above) printed a block per row: one with a row
+    taller than :data:`_TALL_ROW_SHARE` of the page ``where``, or wider
+    than it once compacted (the ``wide-pdf-table`` style) (GM-213)."""
+    for _ in range(_MAX_MEASURES):
+        measured = _measure_tables(html, where)
+        if not measured:
+            return html
+        edits = []
+        for start, (rect, tallest) in measured.items():
+            tag_end = html.find(">", start) + 1
+            tag = html[start:tag_end]
+            if tallest > _TALL_ROW_SHARE * where.height or (
+                    rect.x1 > where.x1 + 0.5 and _WIDE_TABLE_CLASS in tag):
+                blocks = _table_as_blocks(html[start:_element_end(html,
+                                                                  start)])
+                if blocks is not None:
+                    edits.append((start, _element_end(html, start), blocks))
+            elif rect.x1 > where.x1 + 0.5:
+                # compacted first: smaller type and padding
+                m = re.search(r"""\sclass\s*=\s*(["'])""", tag)
+                tag = (tag[:m.end()] + _WIDE_TABLE_CLASS + " " + tag[m.end():]
+                       if m else
+                       tag[:6] + f' class="{_WIDE_TABLE_CLASS}"' + tag[6:])
+                edits.append((start, tag_end, tag))
+        if not edits:
+            return html
+        for start, end, text in sorted(edits, reverse=True):
+            html = html[:start] + text + html[end:]
+    return html
 
 
 def _compress_pdf_images(html: str, jpg_quality: int = 90,
@@ -484,7 +713,14 @@ _COLLAPSED_TABLES = "<style>table{border-collapse:collapse}</style>"
 
 class _StoryLoop(RuntimeError):
     """The Story engine ran past its page limit without placing
-    everything: it is repeating the document."""
+    everything, or placed an element a second time: it is repeating the
+    document. ``at``: where in the HTML the last element it placed before
+    repeating starts (``None``: not known); ``repeats``: it placed one
+    again (else it ran out of pages, placing nothing)."""
+
+    def __init__(self, message, at=None, repeats=False):
+        super().__init__(message)
+        self.at, self.repeats = at, repeats
 
 
 #: Block elements a page break can go before, when the engine opens one
@@ -498,6 +734,9 @@ _BLOCK_START = re.compile(
 _TEXT_BLOCK_START = re.compile(r"<(?:p|li|h[1-6]|pre)(?=[\s/>])",
                                re.IGNORECASE)
 _ID_ATTR = re.compile(r"""\sid\s*=\s*["']?([^"'\s>]+)""", re.IGNORECASE)
+#: An id attribute with its value, quotes and all: to take it out.
+_WHOLE_ID_ATTR = re.compile(r"""\sid\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)""",
+                            re.IGNORECASE)
 #: A heading's end tag, then nothing but space (to the element after it).
 _HEADING_END = re.compile(r"</h([1-6])\s*>\s*$", re.IGNORECASE)
 #: The tags that say which table row an offset is in.
@@ -707,10 +946,12 @@ def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
     just above it so the heading goes with it (:func:`_foot_breaks`), and
     the HTML is laid out again. When no break moves it without looping the
     engine (a table row taller than a page), it is left as it was and the
-    next one after it is moved; :data:`_MAX_FOOT_TRIALS` layouts in all."""
+    next one after it is moved; :data:`_MAX_FOOT_TRIALS` layouts in all.
+    Where the engine loops on the HTML itself, the same breaks go before
+    the last element it placed (:func:`_unlooped`)."""
     import fitz
 
-    pdf, at = _story_pass(html, mediabox, where, max_pages)
+    html, pdf, at, _edits = _unlooped(html, mediabox, where, max_pages)
     if at is None:
         return pdf
     # a break adds a page at most, so a trial past this is the engine looping
@@ -738,16 +979,23 @@ def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
                 return (offset + len(prefix)
                         + (len(insert) if pos <= offset else 0))
             try:
-                got_pdf, got_at = _story_pass(text, mediabox, where, limit,
-                                              after=_moved(after),
-                                              loop_early=True)
+                # with collapsed borders, a loop at a table that the break
+                # took to a page foot is stopped too (GM-213)
+                text, got_pdf, got_at, fixed = _unlooped(
+                    text, mediabox, where, limit, after=_moved(after),
+                    fixes=int(text.startswith(_COLLAPSED_TABLES)), tries=2,
+                    last_word=False)
             except _StoryLoop:
                 continue
+            moved_at, moved_after = _moved(at), _moved(after)
+            for fix_at, n in fixed:
+                moved_at = _shifted(moved_at, fix_at, n)
+                moved_after = _shifted(moved_after, fix_at, n)
             # still the first one past a foot (or one before it is): the
             # break did not move it
-            if got_at is not None and got_at <= _moved(at):
+            if got_at is not None and got_at <= moved_at:
                 continue
-            trial = (text, got_pdf, got_at, _moved(after))
+            trial = (text, got_pdf, got_at, moved_after)
             break
         if trial is None:
             after = _element_end(html, at)
@@ -760,6 +1008,70 @@ def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
         if at is None:
             break
     return pdf
+
+
+#: Loops of the engine dealt with, at most, in one layout (GM-213).
+_MAX_LOOP_FIXES = 10
+
+
+def _shifted(offset: int, pos: int, n: int) -> int:
+    """``offset`` in a text after ``n`` characters were put in at ``pos``
+    (a negative offset stays as it is)."""
+    return offset if offset < 0 else offset + (n if pos <= offset else 0)
+
+
+def _unlooped(html: str, mediabox, where, max_pages=None, after=-1,
+              fixes=_MAX_LOOP_FIXES, tries=None, last_word=True):
+    """``(html, pdf bytes, offset, edits)``: :func:`_story_pass` of
+    ``html`` (elements up to ``after`` left out), or, where the engine
+    loops on it, of ``html`` with page breaks that stop the loops;
+    ``edits``: ``[(offset, length)]`` of the text put in, in order.
+
+    The engine loops on a table that ends at a page foot: it lays the
+    rows on that page out again on every page after it (GM-213: 4 of 30
+    stress documents, and a test report whose table a trial page break
+    took to a page foot). A break before the last element it placed stops it,
+    the breaks :func:`_foot_breaks` gives (the first ``tries``): for a
+    table row, the table closed before that row and started again, with
+    its heading rows, on the next page. One that moves the loop on is
+    kept, and the next loop is dealt with, ``fixes`` in all. When none
+    does, :class:`_StoryLoop`; or, with ``last_word``, the layout run to
+    the page limit, which says whether it is a loop."""
+    edits = []
+    while True:
+        try:
+            return (html,) + _story_pass(html, mediabox, where, max_pages,
+                                         after=after, loop_early=True) + (
+                edits,)
+        except _StoryLoop as loop:
+            if not loop.repeats:
+                raise                       # an element that fits no page
+            stopped = False
+            if loop.at is not None and len(edits) < fixes:
+                for pos, insert in _foot_breaks(html, loop.at)[:tries]:
+                    text = html[:pos] + insert + html[pos:]
+                    n = len(insert)
+                    try:
+                        return (text,) + _story_pass(
+                            text, mediabox, where, max_pages,
+                            after=_shifted(after, pos, n),
+                            loop_early=True) + (edits + [(pos, n)],)
+                    except _StoryLoop as later:
+                        if (later.repeats and later.at is not None
+                                and later.at > _shifted(loop.at, pos, n)):
+                            # this loop stopped; the next one
+                            html, after = text, _shifted(after, pos, n)
+                            edits.append((pos, n))
+                            stopped = True
+                            break
+            if stopped:
+                continue
+            if not last_word:
+                raise
+            break
+    # (an element placed twice need not be a loop: the page limit says)
+    return (html,) + _story_pass(html, mediabox, where, max_pages,
+                                 after=after) + (edits,)
 
 
 def _element_end(html: str, at: int) -> int:
@@ -854,13 +1166,33 @@ def _foot_breaks(html: str, at: int) -> list:
 
 def _row_splits(html: str, table: int, rows: list, before: list) -> list:
     """The edits that end the table starting at ``table`` before each of
-    ``rows`` and start it again on the next page; none when no body row
-    comes before (``before``: :func:`_table_row`)."""
+    ``rows`` and start it again on the next page, under its heading rows
+    (GM-213); none when no body row comes before (``before``:
+    :func:`_table_row`)."""
     if not before:
         return []
-    tag = html[table:html.find(">", table) + 1]
-    again = "</table>" + _PAGE_BREAK + _ID_ATTR.sub("", tag)
+    again = "</table>" + _PAGE_BREAK + _table_restart(html, table)
     return [(start, again) for start in rows]
+
+
+def _table_restart(html: str, table: int) -> str:
+    """The start tag of the table starting at ``table`` and its heading
+    rows (its ``<thead>``, else a first row of ``<th>`` cells), without
+    their ids: what starts it again after a page break."""
+    tag = html[table:html.find(">", table) + 1]
+    end = _element_end(html, table)
+    first = re.compile(r"<(thead|tr)(?=[\s/>])", re.IGNORECASE).search(
+        html, table + len(tag), end if end > table else len(html))
+    head = ""
+    if first and first.group(1).lower() == "thead":
+        head = html[first.start():_element_end(html, first.start())]
+    elif first and _HEADING_ROW.match(html, html.find(">", first.start())
+                                      + 1):
+        stop = re.compile(r"</tr\s*>|<tr(?=[\s/>])|</table\s*>",
+                          re.IGNORECASE).search(html, first.end())
+        if stop and stop.group(0).lower().startswith("</tr"):
+            head = html[first.start():stop.end()]
+    return _WHOLE_ID_ATTR.sub("", tag + head)
 
 
 #: Block start and end tags, for the blocks before and holding an offset.
@@ -908,7 +1240,7 @@ def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
     paragraph, list item or heading it ran past one (``None``: none).
     :class:`_StoryLoop` past ``max_pages``, or with ``loop_early`` as soon
     as the engine places an element a second time (a trial page break that
-    loops it)."""
+    loops it); its ``at`` is the last element placed before that."""
     import io
 
     import fitz
@@ -917,6 +1249,7 @@ def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
     texts = {key for key, at in starts.items()
              if _TEXT_BLOCK_START.match(html, at)}
     past_foot, opened, again = [], set(), []
+    last = [None, None]             # placed last for the first time; looped
 
     def _seen(pos):
         if pos.id not in starts:
@@ -924,7 +1257,11 @@ def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
         if pos.open_close & 1:
             # the engine looping places the same element again
             if pos.id in opened:
+                if not again:
+                    last[1] = last[0]
                 again.append(pos.id)
+            else:
+                last[0] = starts[pos.id]
             opened.add(pos.id)
         if past_foot or starts[pos.id] <= after:
             return
@@ -945,9 +1282,10 @@ def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
             writer.close()
             raise _StoryLoop(
                 f"the layout ran past {limit} pages without placing "
-                "everything (a page break before the first element of the "
-                "HTML makes the engine repeat an empty page): remove that "
-                "page break")
+                "everything: the engine repeats a page (a page break before "
+                "the first element of the HTML does that; remove that page "
+                "break), or an element fits on no page",
+                at=last[1] if again else last[0], repeats=bool(again))
         device = writer.begin_page(mediabox)
         more, _filled = story.place(where)
         if not past_foot or loop_early:
@@ -1169,11 +1507,14 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     """Render self-contained HTML to a paginated PDF (fitz.Story) and say
     where each figure printed.
 
-    Three Story-only adjustments are applied: inline base64 PNG figures are
+    Four Story-only adjustments are applied: inline base64 PNG figures are
     re-encoded to JPEG (so they stay compressed in the PDF instead of
     bloating it), wide tables are wrapped to the page width (so they cannot
-    clip at the right edge), and figures are laid out by the rule above
-    (never shrunk to fit what is left of a page; BACKLOG GM-168). The Story
+    clip at the right edge), a table the engine cannot print whole as a
+    table (a row taller than a third of a page, or wider than the page once
+    compacted) prints a block per row (BACKLOG GM-213), and figures are
+    laid out by the rule above (never shrunk to fit what is left of a page;
+    BACKLOG GM-168). The Story
     engine supports a SUBSET of CSS: it lays out text, headings, tables,
     colours and inline base64 PNG/JPEG ``<img>`` figures, but ignores
     advanced CSS (flexbox/grid, positioned layout, some border/spacing
@@ -1214,6 +1555,7 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     mediabox = fitz.paper_rect("letter")
     m = _STORY_MARGIN_PT
     where = mediabox + (m, m, -m, -m)
+    html = _reflow_tables(html, where)
     pdf, placed = _lay_out_figures(html, mediabox, where)
     output_path.write_bytes(pdf)
 
