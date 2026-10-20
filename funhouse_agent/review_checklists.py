@@ -304,9 +304,13 @@ specific check, the governing reference, and the corrective action.
    layer `toe_friction_angle` should reflect the actual bearing stratum.
 
 6. **Drilled shaft (`drilled_shaft`, GEC-10).** α (cohesive side), β
-   (cohesionless side) and rock-socket resistance selected per layer; clay end
-   bearing capped at N*c·su (N*c → 9); an N60-based side-resistance reduction for
-   sand; the unreliable top and bottom zones excluded from side resistance.
+   (cohesionless side) and rock-socket resistance selected per layer. In sand
+   the default is the GEC-10 (2018) β, Eq. 10-13 (K/Ko, σ'p from N60 and OCR);
+   the O'Neill-Reese depth method (`beta_method='depth'`, with its N60 < 15
+   reduction) is a named option, so check which one the run states. Clay end
+   bearing is capped at N*c·su (N*c → 9); the top zone (1.5 m in cohesive soil
+   and rock, none in cohesionless soil unless `top_exclusion` is given) and the
+   bottom 1D of cohesive layers carry no side resistance.
 
 7. **Pile group (`pile_group`).** ONE right-hand sign convention end-to-end —
    the module's +Mx sense is a DOCUMENTED convention (an intentional change vs

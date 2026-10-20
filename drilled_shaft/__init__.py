@@ -9,7 +9,8 @@ using FHWA GEC-10 methods:
 - End bearing for clay, sand, and rock
 
 References:
-    FHWA GEC-10 (FHWA-NHI-10-016), Brown et al. (2010/2018)
+    FHWA GEC-10 (FHWA-NHI-18-024), Brown et al. (2018); the 2010 edition
+    (FHWA-NHI-10-016) where noted
     O'Neill & Reese (1999), FHWA-RD-99-049
 """
 

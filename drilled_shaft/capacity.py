@@ -14,7 +14,7 @@ Applies GEC-10 exclusion zones:
 All units are SI: kN, m, kPa.
 
 References:
-    FHWA GEC-10 (FHWA-NHI-10-016), Chapters 13-14
+    FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5
 """
 
 import math
@@ -44,7 +44,7 @@ def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
     """The N60 a cohesionless tip layer's end bearing uses (GM-142).
 
     End bearing in cohesionless soil is q_b = 57.5 N60 kPa (N60 capped
-    at 50; GEC-10, O'Neill & Reese 1999), so it needs the tip layer's
+    at 50; GEC-10 (2018) Eq. 10-14, O'Neill & Reese 1999), so it needs the tip layer's
     N60. Until GM-142 a layer with no N60 took N60 = 15 without saying
     so; now it is refused.
     """
@@ -54,7 +54,7 @@ def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
     raise ValueError(
         f"the shaft tip at {depth:g} m is in a cohesionless layer{name} "
         "with no N60: end bearing q_b = 57.5 N60 kPa (N60 capped at 50; "
-        "GEC-10, O'Neill & Reese 1999) needs that layer's N60 (the SPT "
+        "GEC-10 (2018) Eq. 10-14, O'Neill & Reese 1999) needs that layer's N60 (the SPT "
         "blow count corrected to 60 % energy at the tip)")
 
 

@@ -167,7 +167,7 @@
           "sigma_v_kPa": 136.9
         }
       ],
-      "side_resistance_note": "Per-layer side resistance. 'method' gives the mobilized coefficient (alpha=... for cohesive, beta=... for cohesionless, rock socket); 'fs_kPa' is the unit side resistance. effective_top_m/effective_bottom_m reflect the GEC-10 exclusion zones (top 1.5 m or casing depth; bottom 1D in cohesive layers) that carry no side resistance."
+      "side_resistance_note": "Per-layer side resistance. 'method' gives the mobilized coefficient (alpha=... for cohesive, beta=... for cohesionless, rock socket); 'fs_kPa' is the unit side resistance. effective_top_m/effective_bottom_m reflect the GEC-10 exclusion zones (the top zone or the casing: unless top_exclusion is given, the top 1.5 m in cohesive soil and rock and none in cohesionless soil; bottom 1D in cohesive layers) that carry no side resistance. Under the GEC-10 (2018) beta, 'beta_steps' gives each cohesionless layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta."
     }
   },
   "lateral_pile.lateral_pile_analysis": {

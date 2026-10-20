@@ -11,8 +11,8 @@ Implements:
 All units are SI: kPa, kN, meters.
 
 References:
-    FHWA GEC-10, Chapter 13
-    Brown, Turner & Castelli (2010), FHWA-NHI-10-016
+    FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5
+    Brown, Turner & Castelli (2010), FHWA-NHI-10-016 (where noted)
     O'Neill & Reese (1999), FHWA-RD-99-049
 """
 
@@ -40,7 +40,8 @@ def alpha_cohesive(cu: float, pa: float = PA) -> float:
 
     References
     ----------
-    Brown et al. (2010), GEC-10 Figure 13-5 / Section 13.3.3.2
+    Brown et al. (2010), GEC-10 (2010 edition) Figure 13-5 / Section 13.3.3.2;
+    the 2018 edition replaces it with the rational alpha, Eq. 10-18 (p. 10-16)
     """
     ratio = cu / pa
     if ratio <= 1.5:
@@ -213,7 +214,8 @@ def beta_cohesionless(z: float, N60: float = None) -> float:
 
     References
     ----------
-    Brown et al. (2010), GEC-10 Section 13.3.3.3
+    Brown et al. (2010), GEC-10 (2010 edition) Section 13.3.3.3; the 2018
+    edition prints the rational beta instead, Eq. 10-13 (Sec. 10.3.5.1)
     O'Neill & Reese (1999), FHWA-RD-99-049
     AASHTO LRFD 10.8.3.5.2b (N60 < 15 reduction)
     """

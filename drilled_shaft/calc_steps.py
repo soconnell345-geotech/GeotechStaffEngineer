@@ -37,7 +37,8 @@ REFERENCES = [
     'Procedures and Design Methods." FHWA-RD-99-049.',
     'Horvath, R.G. & Kenney, T.C. (1979). "Shaft Resistance of Rock-Socketed '
     'Drilled Piers." Symposium on Deep Foundations, ASCE, pp. 182-214.',
-    "FHWA GEC-10, Chapters 12-14: Drilled Shaft Design and Construction.",
+    "FHWA GEC-10 (FHWA-NHI-18-024), Chapter 10, Sec. 10.3.5: nominal side and "
+    "base resistances; Table 8-4: resistance factors.",
 ]
 
 
@@ -243,7 +244,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="z_excl_bot",
         result_value=f"{shaft.length - shaft.diameter:.2f}",
         result_unit="m",
-        reference="GEC-10 Section 13.3.3: bottom 1D excluded for cohesive soils",
+        reference=("GEC-10 (2010 edition) Sec. 13.3.3: bottom 1D excluded for "
+                   "cohesive soils; the 2018 edition does not print it"),
     ))
 
     # Rock not considered part of the socket (GEC-10 p. 8-15, GM-220)
@@ -294,7 +296,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution="",
             result_name="",
             result_value="",
-            reference="GEC-10 Section 13.3.3.2; O'Neill & Reese (1999)",
+            reference=("GEC-10 (2010 edition) Sec. 13.3.3.2; O'Neill & Reese "
+                       "(1999); the 2018 edition gives the rational alpha "
+                       "(Eq. 10-18, p. 10-16) instead"),
         ))
 
     if has_sand and analysis.beta_method == "rational":
@@ -553,7 +557,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution=f"N_c = min(6.0 × (1 + 0.2 × {L_over_D:.1f}), 9.0)",
             result_name="N_c",
             result_value=f"{Nc:.2f}",
-            reference="GEC-10 Section 13.3.4.2; O'Neill & Reese (1999)",
+            reference=("GEC-10 (2010 edition) Sec. 13.3.4.2; O'Neill & Reese "
+                       "(1999); the 2018 edition takes N*c = 9.0 (Eq. 10-19, "
+                       "Table 10-2, p. 10-19)"),
         ))
         cap_note = (
             f"N_c × c_u = {u['qb_uncapped']:,.1f} kPa exceeds the "
@@ -568,7 +574,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="q_b",
             result_value=f"{qb_cap:,.1f}",
             result_unit="kPa",
-            reference="GEC-10 Section 13.3.4.2; O'Neill & Reese (1999)",
+            reference=("GEC-10 (2010 edition) Sec. 13.3.4.2; O'Neill & Reese "
+                       "(1999); the 2018 edition's Eq. 10-19 is q_BN = N*c "
+                       "s_u (p. 10-19)"),
             notes=cap_note,
         ))
         if u["Fr"] is not None:
@@ -618,7 +626,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="q_b",
             result_value=f"{u['qb']:,.1f}",
             result_unit="kPa",
-            reference="GEC-10 Section 13.3.4.3; O'Neill & Reese (1999)",
+            reference=("GEC-10 (FHWA-NHI-18-024) Eq. 10-14 (p. 10-14), "
+                       "N60 limited to 50 (p. 10-15); the 1.27/D reduction is "
+                       "O'Neill & Reese (1999), not printed in the 2018 edition"),
             notes=large_dia_note,
         ))
         eb_items.append(CalcStep(
@@ -644,7 +654,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="q_b",
             result_value=f"{qb:,.1f}",
             result_unit="kPa",
-            reference="GEC-10 Section 13.3.4.4",
+            reference=("GEC-10 (2010 edition) Sec. 13.3.4.4; the 2018 edition "
+                       "uses q_BN = N*cr q_u, N*cr = 2.5 (Eq. 10-23, p. 10-22)"),
             notes=_rqd_note(RQD),
         ))
         eb_items.append(CalcStep(

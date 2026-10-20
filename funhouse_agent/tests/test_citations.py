@@ -406,11 +406,15 @@ REFERENCE_GAPS = {
     ("gec_10", "eq", "10-11"): "p. 10-11",
     ("gec_10", "eq", "10-12"): "p. 10-11",
     ("gec_10", "eq", "10-13"): "p. 10-11",
+    ("gec_10", "eq", "10-14"): "p. 10-14 (base resistance in cohesionless "
+                               "soil)",
     ("gec_10", "eq", "10-21"): "p. 10-20 (rock side resistance)",
     ("gec_10", "eq", "10-22"): "p. 10-21 (rock side resistance where "
                                "caving is anticipated)",
+    ("gec_10", "eq", "10-23"): "p. 10-22 (base resistance in rock)",
     ("gec_10", "eq", "A-2"): "Appendix A, p. A-8 (phi' from (N1)60, "
                              "GM-241)",
+    ("gec_10", "table", "8-4"): "p. 8-14 (resistance factors)",
     ("gec_10", "table", "10-3"): "p. 10-21 (alpha_E for caving rock)",
     ("gec_11", "eq", "4-21"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
