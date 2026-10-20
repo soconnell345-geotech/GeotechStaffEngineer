@@ -166,11 +166,12 @@ def test_live_and_dead_together():
     assert r.FOS_sliding == pytest.approx(v * TAN_DB / ph, abs=5e-4)
     assert r.bearing_terms["V"] == pytest.approx(V_WALL + W_Q + 6.0 * HEEL)
     whats = [c["what"] for c in r.choices]
-    assert len(whats) == 4
+    assert len(whats) == 5
     assert whats[0] == "base friction delta_b (sliding)"      # GM-173
     assert whats[1].startswith("live-load surcharge over the heel")
     assert whats[2].startswith("dead-load surcharge over the heel")
-    assert whats[3] == "surcharge over the heel, in the bearing pressures"
+    assert whats[3] == "pavement or slab over the backfill"
+    assert whats[4] == "surcharge over the heel, in the bearing pressures"
 
 
 def test_the_live_share_of_an_inclined_thrust_does_not_resist():
@@ -240,7 +241,8 @@ def test_the_f55_wall_before_and_after():
 
 def test_the_choices_say_what_was_used_and_why():
     r = analyze_cantilever_wall(_wall(surcharge=Q), GAMMA, PHI)
-    friction, live, bearing = r.choices
+    friction, live, pavement, bearing = r.choices
+    assert "retained soil up to the ground surface" in pavement["chosen"]
     assert friction["what"] == "base friction delta_b (sliding)"
     assert live["how"] == "default"
     assert "not a resisting force" in live["chosen"]
