@@ -40,6 +40,9 @@ from soe.free_earth import (
 
 
 def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
+                     passive_theory: str = "rankine",
+                     log_spiral_source: Optional[str] = None,
+                     passive_wall_friction_deg: Optional[float] = None,
                      ) -> Union[CantileverSolution, SupportSolution]:
     """Full free-earth-support solution behind :func:`compute_embedment`.
 
@@ -47,10 +50,15 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
     from below, moment and shear) for a braced wall; a ``CantileverSolution``
     (D0, D = 1.2 D0, ...) when there are no supports. With no moment balance
     within 6H the depths (and what follows from them) are None,
-    ``converged`` is False and the first note says why.
+    ``converged`` is False and the first note says why. ``passive_theory``,
+    ``log_spiral_source`` and ``passive_wall_friction_deg``: the passive
+    coefficient below the excavation, Rankine's by default
+    (``soe.free_earth.passive_by_layer``, GM-242).
     """
     geometry.validate()
-    prof = profile_for(geometry)
+    prof = profile_for(geometry, passive_theory=passive_theory,
+                       log_spiral_source=log_spiral_source,
+                       passive_wall_friction_deg=passive_wall_friction_deg)
     if not geometry.support_levels:
         return solve_cantilever(prof, FS_passive=FOS_passive,
                                 embedment_increase=1.2)
@@ -65,6 +73,9 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
 def compute_embedment(geometry: ExcavationGeometry,
                       FOS_passive: float = 1.5,
                       embedment_increase: Optional[float] = None,
+                      passive_theory: str = "rankine",
+                      log_spiral_source: Optional[str] = None,
+                      passive_wall_friction_deg: Optional[float] = None,
                       ) -> Optional[float]:
     """Compute required wall embedment below excavation level (m).
 
@@ -78,6 +89,9 @@ def compute_embedment(geometry: ExcavationGeometry,
     embedment_increase : float, optional
         Multiplier on the solved depth. Default 1.0 for braced walls and 1.2
         (D = 1.2 D0) for cantilever walls.
+    passive_theory, log_spiral_source, passive_wall_friction_deg : optional
+        The passive coefficient below the excavation, as
+        :func:`embedment_detail` takes them (GM-242).
 
     Returns
     -------
@@ -86,7 +100,10 @@ def compute_embedment(geometry: ExcavationGeometry,
         depth within 6H balances the moments (the wall cannot stand as
         configured -- :func:`embedment_detail` carries the warning).
     """
-    detail = embedment_detail(geometry, FOS_passive=FOS_passive)
+    detail = embedment_detail(
+        geometry, FOS_passive=FOS_passive, passive_theory=passive_theory,
+        log_spiral_source=log_spiral_source,
+        passive_wall_friction_deg=passive_wall_friction_deg)
     if isinstance(detail, CantileverSolution):
         inc = 1.2 if embedment_increase is None else embedment_increase
         base = detail.D0

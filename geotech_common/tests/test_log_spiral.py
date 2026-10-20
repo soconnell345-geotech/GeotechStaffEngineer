@@ -300,6 +300,30 @@ def test_wall_friction_note_says_what_each_source_takes():
     assert "0.66, for which" in ufc and "delta = phi'" in ck
     assert "smooth" in LS.wall_friction_note("ufc_3_220_20",
                                              left_out="A smooth wall.")
+    # "" where the caller has said what is taken
+    said = LS.wall_friction_note("ufc_3_220_20", left_out="")
+    assert "Left out" not in said and "  " not in said
+
+
+def test_level_front_refuses_a_left_out_delta_where_none_is_printed():
+    """The GM-242 review: in a wall's design the 1948 chart and Eq. 4-12
+    by name need delta given (the Caltrans procedure begins 'Given delta',
+    p. 4-29); before, the chart took delta = phi', its largest Kp. The UFC
+    sources by geometry or chart take 0.66 phi'."""
+    for source in ("caquot_kerisel_1948", "dm7_2_eq_4_12"):
+        with pytest.raises(ValueError, match=r"needs the wall friction "
+                                             r"given \(toe_delta\)"):
+            LS.level_front_Kp(33.0, None, source, name="toe_delta")
+        assert "refused" in LS.level_front_left_out(source)
+        given = LS.level_front_Kp(33.0, 15.0, source)
+        assert given["delta_deg"] == 15.0 and given["delta_given"]
+    for source in ("ufc_3_220_20", "dm7_2_fig_4_12", "dm7_2_fig_4_13"):
+        r = LS.level_front_Kp(33.0, None, source)
+        assert r["delta_deg"] == pytest.approx(0.66 * 33.0)
+        assert not r["delta_given"]
+        assert "0.66" in LS.level_front_left_out(source)
+    # phi' = 0 needs no wall friction with any source
+    assert LS.level_front_Kp(0.0, None, "caquot_kerisel_1948")["Kp"] == 1.0
 
 
 def test_vertical_wall_sources_refuse_a_battered_face():

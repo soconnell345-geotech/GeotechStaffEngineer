@@ -25,6 +25,7 @@ from calc_package.data_model import (
     InputItem, CalcStep, CheckItem, FigureData, CalcSection, TableData,
 )
 from calc_package.renderer import figure_to_base64
+from geotech_common.log_spiral import source_label
 
 DISPLAY_NAME = "Support of Excavation Wall Analysis"
 
@@ -167,18 +168,31 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     return _fhwa_steps(result, analysis)
 
 
+def _log_spiral(layers_used) -> bool:
+    """Whether the passive pressure took the log-spiral Kp (GM-242)."""
+    return any("passive_wall_friction_deg" in l for l in layers_used)
+
+
 def _layer_table(layers_used, where: str = "") -> TableData:
+    spiral = _log_spiral(layers_used)
     return TableData(
         title="Soil layers and earth pressure coefficients",
         headers=["Layer", "Top (m)", "Bottom (m)", "γ (kN/m³)", "φ' (deg)",
-                 "c (kPa)", "Ka", "Kp"],
+                 "c (kPa)", "Ka", "Kp"]
+        + (["δ passive (deg)"] if spiral else []),
         rows=[[k, f"{l['top_m']:.2f}", f"{l['bottom_m']:.2f}",
                f"{l['unit_weight']:.1f}", f"{l['friction_angle']:.1f}",
                f"{l['cohesion']:.1f}", f"{l['Ka']:.4f}", f"{l['Kp']:.4f}"]
+              + ([f"{l['passive_wall_friction_deg']:.1f}"] if spiral else [])
               for k, l in enumerate(layers_used, 1)],
-        notes="Ka = tan²(45° − φ'/2), Kp = tan²(45° + φ'/2) (Rankine), as the "
-              f"analysis applied them{where}; the last layer continues below "
-              "its bottom.")
+        notes=("Ka = tan²(45° − φ'/2) (Rankine); Kp the log-spiral "
+               "coefficient at the wall friction δ on the passive side below "
+               "the excavation (passive_theory 'log_spiral'; Rankine's "
+               "tan²(45° + φ'/2) where δ = 0; see Choices)"
+               if spiral else
+               "Ka = tan²(45° − φ'/2), Kp = tan²(45° + φ'/2) (Rankine)")
+        + f", as the analysis applied them{where}; the last layer "
+          "continues below its bottom.")
 
 
 def _cantilever_steps(r, analysis) -> List[CalcSection]:
@@ -196,12 +210,27 @@ def _cantilever_steps(r, analysis) -> List[CalcSection]:
             substitution=f"K<sub>a</sub> = tan²(45° − {phi:g}°/2)",
             result_name="Ka", result_value=r.Ka,
             reference="Rankine (1857)"))
-        pressures.append(CalcStep(
-            title="Passive coefficient, embedment layer",
-            equation="K<sub>p</sub> = tan²(45° + φ'/2)",
-            substitution=f"K<sub>p</sub> = tan²(45° + {phi:g}°/2)",
-            result_name="Kp", result_value=r.Kp,
-            reference="Rankine (1857)"))
+        delta = l0.get("passive_wall_friction_deg") or 0.0
+        if delta > 0:
+            # the log-spiral Kp (GM-242): its source is in the choices
+            pressures.append(CalcStep(
+                title="Passive coefficient, embedment layer",
+                equation="K<sub>p</sub> log spiral, vertical face, level "
+                         "ground in front",
+                substitution=f"K<sub>p</sub> at φ' = {phi:g}°, δ = "
+                             f"{delta:g}°",
+                result_name="Kp", result_value=r.Kp,
+                reference=source_label(next(
+                    (c["chosen"] for c in r.choices
+                     if "log_spiral_source" in c["what"]),
+                    "ufc_3_220_20"))))
+        else:
+            pressures.append(CalcStep(
+                title="Passive coefficient, embedment layer",
+                equation="K<sub>p</sub> = tan²(45° + φ'/2)",
+                substitution=f"K<sub>p</sub> = tan²(45° + {phi:g}°/2)",
+                result_name="Kp", result_value=r.Kp,
+                reference="Rankine (1857)"))
     pressures.append(
         "Active pressure on the retained side: σa = Ka·σ'v − 2c·√Ka (no "
         "tension), plus the net water pressure u(retained) − u(excavation). "

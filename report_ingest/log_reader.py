@@ -46,6 +46,7 @@ bounded thing to read and the reader reads it.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -195,6 +196,21 @@ class ReadSPT(BaseModel):
         default=None,
         description="the N value the log PRINTS. null when it prints only "
                     "the drives -- do not compute one")
+    n_printed: str = Field(
+        default="",
+        description="the N column EXACTLY as printed when it is not a plain "
+                    "whole number: '>50', '50+', '50/3\"', 'WOH', 'WOR', "
+                    "'R'. Empty when the log prints a whole number or no N. "
+                    "Copy it; never write one the log does not print")
+    drive_lengths: List[float] = Field(
+        default_factory=list,
+        description="the length of EACH drive as printed, one per entry of "
+                    "blows in the same order (e.g. 8, 6, 6), when the log "
+                    "prints them or the drives are unequal; empty when it "
+                    "prints no lengths")
+    drive_length_unit: str = Field(
+        default="", description="in or cm or mm or ft, as the log prints "
+                                "the drive lengths")
     refusal: bool = Field(
         default=False,
         description="the record shows refusal: 50 blows for less than the "
@@ -495,7 +511,11 @@ WHAT TO RECORD, WHEN THE LOG PRINTS IT.
   printed, one entry per increment, as strings. '12' is a count, '50/5"' is a
   refusal and stays a string. Do NOT add drives together. Record n only where
   the log PRINTS an N value; where it prints only the drives, leave n null.
-  That is not a gap -- it is what the page says.
+  That is not a gap -- it is what the page says. Where the N column prints
+  something other than a whole number (">50", "50/3\"", "WOH", "R"), copy it
+  exactly as printed into n_printed, and copy each drive's length as printed
+  into drive_lengths (with its unit) when the log gives them. Never compute
+  an N, or a length, that the log does not print.
 - Every water observation: the depth, whether it was read while drilling, at
   completion or after a stated number of hours, the date, the casing and
   caved depths. A log that says water was not encountered is a water entry
@@ -894,11 +914,20 @@ class _Builder:
                 # refusal, a range, a note -- stays the string the log
                 # printed, because that is what it says.
                 blows.append(int(text) if text.isdigit() else text)
+            lengths = [self._q(v, rec.drive_length_unit)
+                       for v in rec.drive_lengths]
+            # One length per drive, in the order of the blows; a list that
+            # does not line up with them says nothing usable.
+            if (len(lengths) != len(blows) or None in lengths
+                    or not rec.drive_length_unit.strip()):
+                lengths = []
             out.append(SPT(
                 depth_top=top,
                 depth_bottom=self._depth(rec.depth_bottom, what + " base",
                                          rec.prov.page),
                 blows=blows, n=rec.n, refusal=bool(rec.refusal),
+                n_printed=re.sub(r"\s+", "", rec.n_printed or ""),
+                increments=lengths,
                 hammer=self.reading.drilling.hammer_type,
                 sample_id=rec.sample_id,
                 prov=self._prov(rec.prov, what)))

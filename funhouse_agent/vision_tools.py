@@ -4577,8 +4577,10 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
         f"Task: {question}"
     )
     try:
-        analysis = engine.analyze_image(
-            image_bytes, vision_view.with_location(framing, _sent_size(info)))
+        analysis = ask_vision(
+            engine, image_bytes,
+            vision_view.with_location(framing, _sent_size(info)),
+            "worked_example_page")
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({"error": f"Vision not available on this engine: {e}"})
     except Exception as e:
@@ -4695,9 +4697,10 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         full_prompt = chart_reading.with_read_lines(full_prompt)
 
     try:
-        result = engine.analyze_image(
-            image_bytes, vision_view.with_location(full_prompt,
-                                                   _sent_size(info)))
+        result = ask_vision(
+            engine, image_bytes,
+            vision_view.with_location(full_prompt, _sent_size(info)),
+            "reference_figure")
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({"error": f"Vision not available on this engine: {e}"})
     except Exception as e:

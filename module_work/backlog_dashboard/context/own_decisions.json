@@ -1740,5 +1740,68 @@
    "BACKLOG.md OWN-81, GM-244",
    "GEC-10 (2018) Table 8-4 p. 8-14, p. 10-21"
   ]
+ },
+ "OWN-82": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Passive wall friction when the user gives none: confirm three tool defaults",
+  "why": "Passive wall friction raises Kp a lot, and with it shortens embedment: a 4 m cantilever sheet pile in sand needs 5.06 m with 17 deg wall friction and 7.21 m with none. The manuals do not agree on when to take it, so each tool states its default and shows the other numbers, and you decide which default stands.",
+  "background": "UFC 3-220-20 Fig. 4-37 step 1 (p. 237): passive pressures for clean coarse-grained soils include wall friction (Table 4-1); for other soils, ignore it. EM 1110-2-2504 (p. 4-3) and the USS manual (pp. 23, 29) use Table 4-1's delta with Coulomb. Caltrans pp. 4-16/4-28 say to avoid Rankine where wall friction develops, yet its soldier-pile examples use Rankine with delta = 0.",
+  "parts": [
+   {
+    "label": "(a) Sheet piles, log-spiral, a layer without cohesion and no row named",
+    "options": [
+     {
+      "label": "Keep 17 deg for every such layer",
+      "effect": "No change; silty sand and silt also get clean sand's 17 deg."
+     },
+     {
+      "label": "17 deg only where the user marks clean sand or gravel, else 0",
+      "effect": "Follows UFC's 'clean coarse grained' wording; silty layers get Rankine's Kp and say so."
+     },
+     {
+      "label": "Ask for the row every time",
+      "effect": "The tool refuses a log-spiral sheet pile with no row named."
+     }
+    ]
+   },
+   {
+    "label": "(b) Sheet piles, Coulomb, no wall friction given",
+    "options": [
+     {
+      "label": "Keep delta = 0",
+      "effect": "No change; the result shows the table-delta numbers beside it."
+     },
+     {
+      "label": "Take Table 4-1's delta, as EM 2504 and USS do",
+      "effect": "Coulomb Kp up and embedment down for sands, matching the Corps and USS."
+     }
+    ]
+   },
+   {
+    "label": "(c) Support of excavation, passive theory by default",
+    "options": [
+     {
+      "label": "Keep Rankine",
+      "effect": "No change; matches Caltrans' own examples (delta = 0)."
+     },
+     {
+      "label": "Log-spiral with a stated wall friction",
+      "effect": "Shorter embedment; needs a delta default too."
+     }
+    ]
+   }
+  ],
+  "recommendation": "(a) 17 deg only for layers marked clean sand or gravel, else 0 and say so; (b) take the table's delta as EM 2504 and USS do; (c) keep Rankine.",
+  "if_no_answer": "The defaults stay as now (17 deg for any layer without cohesion under log-spiral, 0 under Coulomb, Rankine for soe), each stated in the result with the alternatives' numbers.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-82, GM-242",
+   "UFC 3-220-20 Fig. 4-37 p. 237, Table 4-1 p. 184",
+   "EM 1110-2-2504 p. 4-3",
+   "Caltrans T&S pp. 4-16, 4-28"
+  ]
  }
 }

@@ -1773,3 +1773,33 @@ def test_report_shows_the_judgment_check_and_given_keys(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert "read 2 answer(s), sent 1 back" in text
     assert "judgment_check_retry" in text and "assumed_input_given" in text
+
+
+def test_watch_leaves_out_other_sessions_edits(tmp_path):
+    """EV-34 (w15 H10): the lead's BACKLOG.md edit and Temp/ed*.py script
+    were listed as outside files."""
+    from live_smoke import watch
+    repo, tmp = tmp_path / "repo", tmp_path / "tmp"
+    repo.mkdir()
+    tmp.mkdir()
+    (repo / "BACKLOG.md").write_text("a")
+    roots = {"repo": (str(repo), 0), "temp": (str(tmp), 3)}
+    before = watch.snapshot(roots)
+    _at(repo / "BACKLOG.md", os.path.getmtime(repo / "BACKLOG.md") + 10)
+    (tmp / "ed1.py").write_text("x")
+    (tmp / "report.pdf").write_bytes(b"%PDF")
+    (repo / "stray.pdf").write_bytes(b"%PDF")
+    changed = watch.diff(before, watch.snapshot(roots))
+    assert sorted(os.path.basename(d["path"]) for d in changed) == [
+        "report.pdf", "stray.pdf"]
+
+
+def test_reference_figure_reads_are_labelled_side_calls():
+    """EV-34 (w15 H9): two vision paths called the engine without
+    ask_vision, so the spend record folded them into the helper."""
+    import inspect
+    from funhouse_agent import vision_tools as vt
+    for fn in (vt._dispatch_read_reference_figure_at_budget,
+               vt._dispatch_view_worked_example_at_budget):
+        src = inspect.getsource(fn)
+        assert "ask_vision(" in src and "engine.analyze_image(" not in src

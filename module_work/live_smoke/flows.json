@@ -1018,7 +1018,7 @@
     "helpers": ["references"],
     "key": {"name": "neutral plane depth", "near": "neutral plane", "units": "m\\b", "ranges": [[6.5, 22.5]], "value": "13.99 m by settlement compatibility (the module's headline, UFC 3-220-20 Sec. 6-5.8.4.3); 6.86 m with the toe at 0 %; the curves do not intersect at 50 % or 100 % toe mobilization; upper bound at the toe, 22 m. Drag load 258 to 1,317 kN, headline 544 kN, by the Alpha method in the clay (the module's default, alpha 1.0 x su 25 kPa). With the Beta method in the clay (skin_friction_method 'beta', GM-249): beta 0.25 gives 7.98 m at 0 %, the same 13.99 m headline, drag 314 to 1,428 kN, headline 655 kN; beta 0.30 gives 8.13 m at 0 %, drag 373 to 1,546 kN, headline 773 kN", "source": "downdrag.downdrag_analysis on the stated inputs (pile perimeter 1.6 m, area 0.16 m2), $0 local run 2026-10-20; re-pinned after GM-249 (the Beta method in clay by name)"},
     "method": "UFC 3-220-20 Sec. 6-7.4 steps 3-5 and Sec. 6-5.8.4.2 (force equilibrium at 0/50/100 % toe mobilization) and Sec. 6-5.8.4.3, Fig. 6-19 (settlement compatibility); FHWA GEC-12 Sec. 7.3.6.1",
-    "methods": [{"name": "force equilibrium at a toe mobilization", "any": ["force equilibrium", "toe (resistance )?mobili[sz]", "intersect", "(0|50|100) ?% (of the )?toe"]}, {"name": "settlement compatibility", "any": ["settlement compatib", "settle equally", "equal settlement", "pile and (the )?soil settle"]}],
+    "methods": [{"name": "force equilibrium at a toe mobilization", "any": ["force equilibrium", "toe (resistance )?mobili[sz]", "intersect", "(0|50|100) ?% (of the )?toe"]}, {"name": "settlement compatibility", "any": ["settlement compatib", "settlement equilibri", "pile settlement equals", "settle equally", "equal settlement", "pile and (the )?soil settle"]}],
     "methods_min": 2,
     "cites": [{"ref": "UFC 3-220-20|DM[- ]?7\\.?0?2|NAVFAC", "any": ["\\b44[79]\\b", "\\b450\\b", "\\b47[6-8]\\b", "6-7\\.4", "6-5\\.8\\.4", "6-19", "6-26"]}, {"ref": "GEC[- ]?12|NHI[- ]?16[- ]?009", "any": ["\\b34[2-6]\\b", "7\\.3\\.6", "7-59", "7-60"]}],
     "cites_needed": 1
@@ -1057,10 +1057,10 @@
     {"say": "A 1.2 m diameter drilled shaft, 15 m long, is in clean medium dense sand all the way down: unit weight 19 kN/m3 above and below the water table, phi' = 35 degrees, SPT N60 = 25 throughout. The water table is 3 m below the ground surface. What is the nominal side resistance of the shaft in the sand by the current FHWA drilled shaft manual (GEC-10)? Which method does it use for side resistance in cohesionless soil, and how does it get the horizontal stress?"}
    ],
    "expect": {"tools_any": ["drilled_shaft", "task"], "answer_names": [{"name": "the side resistance", "any": ["side resistance", "\\bQ_?s\\b", "skin"]}, {"name": "beta", "any": ["beta", "β"]}, {"name": "K0 from OCR", "any": ["OCR", "preconsolidation", "\\bK_?[0o]\\b"]}]},
-   "reader_checks": ["the method is GEC-10 (2018) Eq. 10-13: beta = (K/K0) K0 tan phi', K0 = (1 - sin phi') OCR^(sin phi') <= Kp, OCR from N60 by Eq. 10-11; not the older O'Neill and Reese depth-beta (which gives about 4,600 kN)", "K/K0 = 1 is stated as GEC-10's first-order assumption with what would lower it (construction quality, caving: 2/3)", "the side resistance is the tool's number", "compare the arms: same method and pages from the references helper?"],
+   "reader_checks": ["the method is GEC-10 (2018) Eq. 10-13: beta = (K/K0) K0 tan phi', K0 = (1 - sin phi') OCR^(sin phi') <= Kp, OCR from N60 by Eq. 10-11; not the older O'Neill and Reese depth-beta (a higher figure; the review did not reproduce 4,611 kN, so none is pinned here)", "K/K0 = 1 is stated as GEC-10's first-order assumption with what would lower it (construction quality, caving: 2/3)", "the side resistance is the tool's number", "compare the arms: same method and pages from the references helper?"],
    "truth": {
     "helpers": ["references"],
-    "key": {"name": "side resistance", "near": "side resistance|\\bQ_?s\\b|skin", "units": "kN\\b|MN\\b", "ranges": [[2900, 3500], [2.9, 3.5]], "value": "3,274 kN (one layer, beta 0.607 on the average sigma'v 95 kPa, OCR 3.44, K0 0.867); 3,113 kN split at the water table; 3,076 kN in 1 m layers. The O'Neill and Reese depth-beta gives 4,611 kN", "source": "drilled_shaft.drilled_shaft_capacity (beta_method rational and depth), $0 local run 2026-10-20"},
+    "key": {"name": "side resistance", "near": "side resistance|\\bQ_?s\\b|skin", "units": "kN\\b|MN\\b", "ranges": [[2900, 3500], [2.9, 3.5]], "value": "3,076 to 3,113 kN, the tool on the layered profile (3,113 kN split at the water table; 3,076 kN in 1 m layers); the one-layer form (beta 0.607 on the average sigma'v 95 kPa, OCR 3.44, K0 0.867) gives 3,274 kN", "source": "drilled_shaft.drilled_shaft_capacity (beta_method rational and depth), $0 local run 2026-10-20"},
     "method": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Eqs. 10-5 to 10-13 (pp. 10-10 to 10-12)",
     "methods": [{"name": "the GEC-10 beta from K0 and OCR", "any": ["10-13", "OCR", "preconsolidation", "K_?[0o]\\s*=\\s*\\(?1"]}],
     "methods_min": 1,
@@ -1172,7 +1172,7 @@
     "method": "GEC-10 (FHWA-NHI-18-024) Eq. 10-21 (p. 10-20) with C = 1.0 for a normal socket",
     "methods": [{"name": "C = 1.0 for a normal socket", "any": ["\\bC ?= ?1(\\.0)?\\b", "C of 1(\\.0)?\\b", "coefficient of 1(\\.0)?\\b"]}],
     "methods_min": 1,
-    "cites": [{"ref": "GEC[- ]?10|NHI[- ]?18[- ]?024|drilled shaft manual", "any": ["10-2[0-2]\\b", "10\\.3\\.5", "Eq(uation)?\\.? ?10-2"]}],
+    "cites": [{"ref": "GEC[- ]?10|NHI[- ]?18[- ]?024|drilled shaft manual", "any": ["10-2[0-2]\\b", "Eq(uation)?\\.? ?10-2[0-2]"]}],
     "cites_needed": 1
    }
   }
