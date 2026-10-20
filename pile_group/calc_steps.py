@@ -532,6 +532,12 @@ def get_figures(result, analysis) -> List[FigureData]:
         drawn = ("drawn to scale" if _get(analysis, 'pile_diameter')
                  else "drawn to scale, the piles as symbols (no diameter "
                       "given)")
+        given = [name for name, key in (("the cap outline", 'cap_outline'),
+                                        ("the property line",
+                                         'property_line'))
+                 if _get(analysis, key)]
+        if given:
+            drawn += ", with " + " and ".join(given) + " as given"
         figures.append(FigureData(
             title="Pile Group Plan View",
             image_base64=b64,
@@ -654,12 +660,20 @@ def _plot_plan_view(pile_forces, result, analysis):
     D = _get(analysis, 'pile_diameter')
     r = 0.5 * float(D) if D else 0.0
     north = _get(analysis, 'north_deg')
+    # The cap outline and the property line, drawn only where given
+    # (GM-216): never made up
+    cap = _get(analysis, 'cap_outline') or []
+    prop = _get(analysis, 'property_line') or []
+    lines_x = [float(p[0]) for p in cap + prop]
+    lines_y = [float(p[1]) for p in cap + prop]
 
-    # The view: the piles and the cap's origin, with the margins in
-    # points, at the scale (m per point) that fits it to the width it
-    # prints at, or to the height allowed
-    x0, x1 = min(xs + [0.0]) - r, max(xs + [0.0]) + r
-    y0, y1 = min(ys + [0.0]) - r, max(ys + [0.0]) + r
+    # The view: the piles, the cap's origin and the lines given, with the
+    # margins in points, at the scale (m per point) that fits it to the
+    # width it prints at, or to the height allowed
+    x0 = min(min(xs + [0.0]) - r, min(lines_x, default=0.0))
+    x1 = max(max(xs + [0.0]) + r, max(lines_x, default=0.0))
+    y0 = min(min(ys + [0.0]) - r, min(lines_y, default=0.0))
+    y1 = max(max(ys + [0.0]) + r, max(lines_y, default=0.0))
     below = _PLAN_NAME_PT + _PLAN_BAND_PT
     room_w = _PLAN_WIDTH_IN * 72.0 - 20.0 - 2 * _PLAN_SIDE_PT
     room_h = (_PLAN_MAX_HEIGHT_IN * 72.0 - 40.0 - _PLAN_ABOVE_PT
@@ -688,6 +702,13 @@ def _plot_plan_view(pile_forces, result, analysis):
     ax.plot([x0 - 0.45 * _PLAN_SIDE_PT * scale, x_end], [0, 0],
             **cap_axis)
     ax.plot([0, 0], [y0, y_end], **cap_axis)
+    if cap:
+        ax.add_patch(mpatches.Polygon(
+            cap, closed=True, facecolor='#e5e7eb', edgecolor='#444444',
+            linewidth=1.0, zorder=1))
+    if prop:
+        ax.plot([p[0] for p in prop], [p[1] for p in prop],
+                color=pf.INK, lw=1.2, linestyle='-.', zorder=3)
     axis_names = [
         ax.annotate('x', (x_end, 0), xytext=(2, 0),
                     textcoords='offset points', ha='left', va='center',
@@ -766,7 +787,20 @@ def _plot_plan_view(pile_forces, result, analysis):
     notes.append("x, y: the cap's axes, through its origin."
                  + (" North drawn up: none was given." if north is None
                     else ""))
+    missing = [name for name, given in (("cap outline", cap),
+                                        ("property line", prop))
+               if not given]
+    if missing:
+        notes.append(f"No {' or '.join(missing)} given: not drawn.")
     handles = []
+    if cap:
+        handles.append(mpatches.Patch(facecolor='#e5e7eb',
+                                      edgecolor='#444444', linewidth=1.0,
+                                      label='Pile cap'))
+    if prop:
+        from matplotlib.lines import Line2D
+        handles.append(Line2D([], [], color=pf.INK, lw=1.2,
+                              linestyle='-.', label='Property line'))
     if any(f >= 0 for f in forces):
         handles.append(mpatches.Patch(color=(0.15, 0.39, 0.92, 0.8),
                                       label='Compression (+)'))

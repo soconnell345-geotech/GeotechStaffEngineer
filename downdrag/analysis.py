@@ -217,6 +217,14 @@ class DowndragAnalysis:
         to the bottom of the soil profile. The result's ``below_toe`` says
         how deep each was counted, why it stopped, and what the other
         criterion gives.
+    ground_elevation : float, optional
+        Elevation of the ground surface the depths are measured from (m):
+        the top of the soil layers, where the pile head is taken (the
+        original ground under a fill). Used only to draw the profiles
+        against elevation (the calc package's figures and the result's
+        ``plot_*``); every result stays in depth. Default None: the
+        figures plot depth below the ground and say no elevation was
+        given.
 
     Examples
     --------
@@ -258,6 +266,7 @@ class DowndragAnalysis:
     skin_friction_stress: str = "final"
     include_pile_weight: bool = False
     influence_depth_criterion: str = "bearing_stress"
+    ground_elevation: Optional[float] = None
 
     def __post_init__(self):
         if self.pile_length <= 0:
@@ -321,6 +330,17 @@ class DowndragAnalysis:
                 f"{list(INFLUENCE_DEPTH_CRITERIA)} ('bearing_stress': UFC "
                 f"3-220-20 §6-5.8.4.3; 'effective_stress': FHWA GEC-12 "
                 f"§7.3.5.3), got '{self.influence_depth_criterion}'")
+        if self.ground_elevation is not None:
+            try:
+                elevation = float(self.ground_elevation)
+            except (TypeError, ValueError):
+                elevation = float("nan")
+            if isinstance(self.ground_elevation, bool) or \
+                    not math.isfinite(elevation):
+                raise ValueError(
+                    f"ground_elevation must be the elevation of the ground "
+                    f"surface in m, a number, got {self.ground_elevation!r}")
+            self.ground_elevation = elevation
 
     def _weight_per_m(self) -> float:
         """The pile's own weight per metre in the load curve (kN/m): zero
@@ -539,6 +559,8 @@ class DowndragAnalysis:
                              else "no neutral plane"),
             influence_depth_criterion=self.influence_depth_criterion,
             below_toe=below_toe,
+            ground_elevation=self.ground_elevation,
+            fill_thickness=self.fill_thickness,
         )
 
     # ── Neutral-plane methods ─────────────────────────────────────────────
