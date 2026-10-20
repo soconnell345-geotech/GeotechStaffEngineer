@@ -233,7 +233,13 @@ DEPTH_FACTOR_BASIS = {
                "arctan(Df/B) for Df/B >= 1, UFC 3-220-20 Tables 5-7 and "
                "5-8 note B (pp. 295-296); d_q = 1 + 2 k tan phi (1 - sin "
                "phi)^2, Table 5-8; d_c = d_q - (1 - d_q)/(N_c tan phi), "
-               "the correspondence formula of its note C; d_gamma = 1"),
+               "the correspondence formula of its note C (Brinch Hansen "
+               "1961, de Beer 1970), = 1 + 2 k (1 - sin phi)^2 N_q/N_c; "
+               "d_gamma = 1. Table 5-8 prints d_c = 1 + k (1 - sin phi)^2 "
+               "N_q/N_c, half of that, while its printed s_c and i_c follow "
+               "the note C formula exactly; the formula's d_c tends to 1 + "
+               "0.39 k as phi goes to 0, Table 5-7's 1 + 0.4 k, the printed "
+               "one to 1 + 0.19 k"),
     "gec6": ("FHWA GEC-6 Eq. 5-14 (p. 63): the depth factor on the "
              "surcharge term alone (d_c = d_gamma = 1); d_q of Table 5-4 "
              "(Brinch Hansen 1970, p. 57) for Df/B from 1, which k = "
@@ -262,6 +268,20 @@ def depth_parameter_k(Df: float, B: float, method: str = "vesic") -> float:
     df_b = Df / B
     linear = df_b <= 1.0 if str(method).lower() == "meyerhof" else df_b < 1.0
     return df_b if linear else math.atan(df_b)
+
+
+def ufc_table_5_8_printed_dc(phi_deg: float, Df: float, B: float) -> float:
+    """d_c as UFC 3-220-20 Table 5-8 (p. 296) prints it for phi' > 0:
+    1 + k (1 - sin phi)^2 N_q/N_c, half of what its note C correspondence
+    formula gives from the same d_q (GM-214). Reported beside the factor
+    :func:`depth_factors` uses; not used in the capacity."""
+    if phi_deg <= 0:
+        raise ValueError("Table 5-8 is for phi' > 0; Table 5-7 gives d_c = "
+                         "0.4 k for phi = 0")
+    phi = math.radians(phi_deg)
+    k = depth_parameter_k(Df, B)
+    return 1.0 + k * (1.0 - math.sin(phi)) ** 2 * (
+        bearing_capacity_Nq(phi_deg) / bearing_capacity_Nc(phi_deg))
 
 
 def depth_factors(phi_deg: float, Df: float, B: float,
@@ -295,9 +315,11 @@ def depth_factors(phi_deg: float, Df: float, B: float,
 
     Vesic/Hansen: UFC 3-220-20 Table 5-8 (p. 296); GEC-6 Table 5-4 (p. 57).
         dq = 1 + 2*tan(phi)*(1-sin(phi))² * k
-        dc = dq - (1-dq)/(Nc*tan(phi))   for phi > 0
+        dc = dq - (1-dq)/(Nc*tan(phi))   for phi > 0 (Table 5-8 note C)
         dc = 1 + 0.4*k                    for phi = 0 (UFC Table 5-7)
         dgamma = 1.0
+    Table 5-8's printed d_c is half of its note C formula's
+    (:func:`ufc_table_5_8_printed_dc`); the note C form is used (GM-214).
 
     GEC-6 (depth_method="gec6"): Eq. 5-14 (p. 63) and Table 5-4.
         dq = 1 + 2*tan(phi)*(1-sin(phi))² * arctan(Df/B)  for Df/B >= 1
@@ -374,12 +396,24 @@ def _meyerhof_inclination_factors(phi_deg: float,
     Table 5-6 (p. 294).
 
         ic = iq = (1 - beta/90)^2
-        ig = (1 - beta/phi)^2   (phi > 0; clamped >= 0), else 1.0
+        ig = (1 - beta/phi)^2   (phi > 0), else 1.0 (N_gamma = 0)
+
+    The table takes theta = atan(H/V) < phi' (its note B), so beta >= phi
+    is refused (GM-214): i_gamma is 0 at beta = phi and grows again beyond
+    it, to 1 at beta = 2 phi; a clamp at 0 had let that through.
     """
+    if phi_deg > 0 and beta_deg >= phi_deg:
+        raise ValueError(
+            f"Meyerhof's load inclination factors are for a load inclined "
+            f"less than phi from vertical: UFC 3-220-20 Table 5-6 (p. 294) "
+            f"takes theta = atan(H/V) < phi'. Got {beta_deg:g} deg with phi "
+            f"= {phi_deg:g} deg. At theta = phi, i_gamma = (1 - theta/phi)^2 "
+            "is 0, and beyond it the formula grows again. Check sliding "
+            "for this load.")
     ic = (1.0 - beta_deg / 90.0) ** 2
     iq = ic
     if phi_deg > 0:
-        ig = max((1.0 - beta_deg / phi_deg) ** 2, 0.0)
+        ig = (1.0 - beta_deg / phi_deg) ** 2
     else:
         ig = 1.0
     return ic, iq, ig
@@ -407,7 +441,8 @@ def inclination_factors(phi_deg: float, beta_deg: float, c: float,
         Friction angle (degrees).
     beta_deg : float
         Inclination angle of load from vertical (degrees).
-        0 = purely vertical load. Range [0, phi].
+        0 = purely vertical load. 0 to below 90; Meyerhof's factors below
+        phi (UFC 3-220-20 Table 5-6).
     c : float
         Cohesion (kPa).
     B : float
@@ -441,8 +476,16 @@ def inclination_factors(phi_deg: float, beta_deg: float, c: float,
     GEC-6 Sec. 5.2.3.7 (p. 62) omits load inclination factors where
     sliding is checked separately.
     Meyerhof (1963), UFC 3-220-20 Table 5-6 (p. 294):
-        ic = iq = (1 - beta/90)², ig = (1 - beta/phi)²
+        ic = iq = (1 - beta/90)², ig = (1 - beta/phi)², beta < phi
+    beta must be 0 or more and below 90 deg: a negative angle gave factors
+    above 1 (GM-214).
     """
+    if not 0.0 <= beta_deg < 90.0:
+        raise ValueError(
+            f"load_inclination is the load's angle from vertical, 0 to below "
+            f"90 deg; got {beta_deg:g}. The inclination factors take its "
+            "size (H/V), not its direction; a negative angle gave factors "
+            "above 1.")
     if beta_deg == 0:
         return 1.0, 1.0, 1.0
 
@@ -524,13 +567,21 @@ def base_inclination_factors(phi_deg: float,
         bq = bgamma = (1 - alpha*tan(phi))²
         bc = bq - (1-bq)/(Nc*tan(phi))  for phi > 0
         bc = 1 - 2*alpha/(pi+2)          for phi = 0
-    alpha in radians for the equations.
+    alpha in radians for the equations; upward + (GEC-6 Table 5-5).
+    Refused where alpha tan(phi) passes 1: b_q is 0 there and grows again
+    beyond it (GM-214).
     """
     if alpha_deg == 0:
         return 1.0, 1.0, 1.0
 
     alpha = math.radians(alpha_deg)
     phi = math.radians(phi_deg)
+    if alpha * math.tan(phi) > 1.0:
+        raise ValueError(
+            f"Base tilt {alpha_deg:g} deg with phi = {phi_deg:g} deg gives "
+            "alpha tan(phi) above 1 (alpha in radians): b_q = (1 - alpha "
+            "tan phi)^2 is 0 at 1 and grows again beyond it. GEC-6 Sec. "
+            "5.2.3.5 (p. 58) limits inclined footings to about 8 to 10 deg.")
 
     if phi_deg == 0:
         bc = 1.0 - 2.0 * alpha / (math.pi + 2.0)
@@ -572,8 +623,18 @@ def ground_inclination_factors(phi_deg: float,
         gq = ggamma = (1 - tan(omega))²
         gc = gq - (1-gq)/(Nc*tan(phi))  for phi > 0
         gc = 1 - 2*omega/(pi+2)          for phi = 0
-    omega in radians for the equations.
+    omega in radians for the equations. Refused below 0 (the factors
+    went above 1) and above 45 deg, where g_q = (1 - tan omega)^2 is 0
+    and grows again beyond it (GM-214).
     """
+    if not 0.0 <= omega_deg <= 45.0:
+        raise ValueError(
+            f"ground_slope is the slope's angle down from horizontal, 0 to "
+            f"45 deg here; got {omega_deg:g}. Vesic's g_q = (1 - tan "
+            "omega)^2 is 0 at 45 deg and grows again beyond it; a negative "
+            "angle gave factors above 1. For a footing on or near a slope "
+            "GEC-6 Sec. 5.2.3.4 (p. 58) uses N_cq and N_gamma-q (Fig. 5-7), "
+            "and the slope's own stability is checked.")
     if omega_deg == 0:
         return 1.0, 1.0, 1.0
 

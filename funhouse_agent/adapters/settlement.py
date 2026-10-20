@@ -6,7 +6,8 @@ from funhouse_agent.adapters import (
 )
 from geotech_common.choices import MODULE, choice, how_given
 from settlement.immediate import (
-    GEC6_TABLE_5_12_BASIS, SchmertmannLayer, elastic_settlement,
+    GEC6_RIGID_SQUARE_NOTE, GEC6_TABLE_5_12_BASIS, SchmertmannLayer,
+    elastic_settlement,
     gec6_influence_factor, schmertmann_settlement,
 )
 from settlement.consolidation import (
@@ -82,11 +83,16 @@ def _elastic_iw_choice(params: dict) -> tuple:
             continue
         if abs(v - Iw) > 1e-9:
             others.append(f"{v:.3g} for {label}")
+    basis = GEC6_TABLE_5_12_BASIS
+    if where.startswith("square"):
+        # a square uses or lists the printed rigid square, which is above
+        # the flexible average (GM-214)
+        basis += ". " + GEC6_RIGID_SQUARE_NOTE
     return Iw, choice(
         "influence factor Iw",
         f"{Iw:.3g}: GEC-6 Table 5-12, {where} (shape '{shape}', rigidity "
         f"'{rigidity}', point '{point}')",
-        MODULE, GEC6_TABLE_5_12_BASIS, others + ["give Iw (Iw)"])
+        MODULE, basis, others + ["give Iw (Iw)"])
 
 
 def _run_elastic_settlement(params: dict) -> dict:
