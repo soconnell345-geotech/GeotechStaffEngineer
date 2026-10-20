@@ -254,11 +254,19 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
     different strength parameters (SRM trials) — the elastic stiffness
     factorization is computed lazily once and shared.
 
+    ``t`` : the out-of-plane thickness of the plane-strain slice (m). The
+    soil's stiffness and loads are integrated over it; the members given
+    per metre run (beams' EA, EI and weight, springs, joints) are
+    multiplied by it, so the displacements do not depend on t and every
+    member force the solver reports is per metre run (GM-204, 2026-10-20;
+    before, t scaled the soil and not the beams or springs, and a wall's
+    moment at t = 1.5 came out about 1.5 times the moment per metre).
     ``strut_springs`` : list of (node_id, kx), (node_id, kx, ky) or
     (node_id, kx, ky, node_b) — linear springs (kN/m per m run) from a node
     to ground, or between two nodes when node_b is given (a tie). ``extra_forces`` : an
-    (2 * n_nodes,) nodal force vector added to the external load (e.g. the
-    water standing on free faces, ``porewater.standing_water_forces``).
+    (2 * n_nodes,) nodal force vector of the slice, added to the external
+    load like the soil's own (e.g. the water standing on free faces,
+    ``porewater.standing_water_forces`` with the same t).
     The rotation DOF of a beam node that no ACTIVE beam touches is fixed
     (an inactive beam has no stiffness to hold it).
     ``interfaces`` : dict of equal-length arrays, optional — wall/soil
@@ -266,11 +274,14 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
     tangential force (see ``_iface_force``). Keys 'a_t', 'b_t' (tangential
     DOFs of the wall and soil node), 'a_n', 'b_n' (normal DOFs), 'ks'
     (tangential stiffness, kN/m per m run), 'kn' (the stiffness of the
-    linear normal tie between the same nodes, already in the springs),
-    'n_off' (that tie's stretch at placement), 'sgn' (+1 when the soil is on
-    the -x side of the wall, -1 on the +x side), 'tan_d' (tan delta), 'adh'
-    (adhesion force, kN per m run), 'n_water' (pore-water force the normal
-    tie carries, subtracted to give the effective normal force).
+    linear normal tie between the same nodes, already in the springs, kN/m
+    per m run), 'n_off' (that tie's stretch at placement), 'sgn' (+1 when
+    the soil is on the -x side of the wall, -1 on the +x side), 'tan_d'
+    (tan delta), 'adh' (adhesion force, kN per m run), 'n_water'
+    (pore-water force the normal tie carries, kN per m run, subtracted to
+    give the effective normal force). The forces, stiffnesses and
+    'n_water' are multiplied by t in the context; ``run_nl`` reports the
+    joints' forces per m run.
     """
     from fem2d.assembly import assemble_gravity, assemble_surface_load
 
@@ -323,16 +334,16 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
             assemble_beam_stiffness, assemble_beam_gravity)
         K_lin = assemble_beam_stiffness(
             nodes, beam_elements, rotation_dof_map, n_dof,
-            active_beams=active_beams)
+            active_beams=active_beams, t=t)
         F_ext += assemble_beam_gravity(
             nodes, beam_elements, rotation_dof_map, n_dof,
-            active_beams=active_beams)
+            active_beams=active_beams, t=t)
     if strut_springs:
         rows, cols, vals = [], [], []
         for spring in strut_springs:
             node_id = int(spring[0])
-            kx = float(spring[1])
-            ky = float(spring[2]) if len(spring) > 2 else 0.0
+            kx = float(spring[1]) * t        # per m run -> the slice
+            ky = (float(spring[2]) if len(spring) > 2 else 0.0) * t
             node_b = spring[3] if len(spring) > 3 else None
             for comp, k in ((0, kx), (1, ky)):
                 if not k:
@@ -401,6 +412,9 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
         iface = {k: np.asarray(v, dtype=(int if k in ('a_t', 'b_t', 'a_n',
                                                        'b_n') else float))
                  for k, v in interfaces.items()}
+        for k in ('ks', 'kn', 'adh', 'n_water'):     # per m run -> the slice
+            if k in iface:
+                iface[k] = iface[k] * t
         a, b, ks = iface['a_t'], iface['b_t'], iface['ks']
         K_if = coo_matrix(
             (np.concatenate([ks, -ks, -ks, ks]),
@@ -924,8 +938,9 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     out_if = {}
     if iface_on:
         _, _, shear_if, n_if = _iface_force(ctx, u, slip)
-        out_if = {'iface_slip': slip, 'iface_shear': shear_if,
-                  'iface_normal': n_if}
+        t = float(ctx.get('t', 1.0))           # the slice -> per m run
+        out_if = {'iface_slip': slip, 'iface_shear': shear_if / t,
+                  'iface_normal': n_if / t}
     return {'converged': converged_overall, 'u': u, 'sigma_gp': sig_gp,
             'eps_gp': eps_gp, 'hs_state': hs_state, **out_if,
             'iterations': iters_per_step, 'n_iter_total': n_iter_total,
@@ -1028,11 +1043,12 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         for u=0, `roller_base` for v=0) plus a fixed or far-field boundary.
     lin_offset : (n_dof,) array, optional — the force the linear members
         (beams, springs) would carry at their placement displacement,
-        ``sum K_m u_placed``. Their internal force is then
+        ``sum K_m u_placed``, with K_m per metre run (it is multiplied by
+        t, as the members are). Their internal force is then
         ``K_lin u - lin_offset``: a member placed in a staged phase carries
         only the movement after its placement (GM-61). None = zero.
-    extra_forces : (2 n_nodes,) array, optional — nodal forces added to the
-        external load (see build_nl_context).
+    extra_forces : (2 n_nodes,) array, optional — nodal forces of the slice
+        added to the external load (see build_nl_context).
     settled_ratio, settled_residual_cap : accept a load step whose
         displacements stand still at the iteration ceiling (see run_nl).
         Default None: off.
@@ -1065,8 +1081,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             strut_springs=strut_springs, n_gp=n_gp,
             extra_forces=extra_forces, interfaces=interfaces)
     ngp = ctx['gp']['n_gp']
-    if lin_offset is not None:
-        lin_offset = np.asarray(lin_offset, dtype=float)
+    if lin_offset is not None:              # per m run -> the slice
+        lin_offset = (np.asarray(lin_offset, dtype=float)
+                      * float(ctx.get('t', 1.0)))
     mats = ctx['mats']
 
     sig_gp0, eps_gp0 = _legacy_state_in(sigma_init, strain_init, mats,
