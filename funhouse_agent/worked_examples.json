@@ -171,14 +171,14 @@
   "published_result": "Layer 3 sand: phi' = 40 deg, sigma'p = 7654 psf, OCR = 1.65, Ko = 0.49, beta = 0.41, fSN = 936 psf, RSN = 470.7 kips (2094 kN). Layer 4 clay: su(CIUC) = 2057 psf, alpha = 0.47, fSN = 976 psf, RSN = 368.1 kips (1637 kN). Base (N60 = 41 sand): qb = 0.60*N60 tsf = 49.2 ksf, RBN = 2473 kips unreduced.",
   "computed_result": {
    "sand_beta": 0.413,
-   "sand_fs_kPa": 44.8,
-   "sand_side_resistance_kN": 2091.4,
+   "sand_fs_kPa": 44.9,
+   "sand_side_resistance_kN": 2094.9,
    "clay_alpha": 0.475,
    "clay_fs_kPa": 46.7,
    "clay_side_resistance_kN": 1635.8
   },
-  "report_notes": "A good report shows the full rational chains as intermediate values: for sand, phi' from (N1)60, sigma'p from N60, OCR computed on the NO-SCOUR sigma'v (sigma_v_ref) while fs uses the scour-adjusted design stress, Ko, then beta (0.413 vs published 0.41, side resistance 470.2 vs 470.7 kips, <0.2%); for clay, the UC-to-CIUC transform (su_test_type='uc') before alpha (0.475 vs 0.47, 367.8 vs 368.1 kips). State the GEC-10 exclusion zones (cased/top cover carries no side resistance; bottom-1D cohesive exclusion) — read them off effective_top_m/effective_bottom_m in side_resistance_by_layer. Note the tip-resistance convention: the module applies the O'Neill-Reese 1.27/Db large-diameter reduction for Db > 1.27 m, so Q_tip is ~52% of the example's unreduced RBN — cite which convention the report adopts. For LRFD factored design, follow with lrfd_capacity/get_resistance_factors.",
-  "provenance": "validation_examples/test_published_v006_v008.py::test_v006_high_level_rational_beta, test_v007_high_level_rational_alpha, test_v008_base_unit_resistance_matches, test_v008b_large_diameter_reduction_is_applied",
+  "report_notes": "A good report shows the full rational chains as intermediate values: for sand, phi' (the example rounds 27.5 + 9.2 log (N1)60 = 39.7 deg to the 40 deg the call gives; a phi' given is used, and the result's choices give the correlation's value beside it), sigma'p from N60, OCR computed on the NO-SCOUR sigma'v (sigma_v_ref) while fs uses the scour-adjusted design stress, Ko, then beta (0.413 vs published 0.41, side resistance 470.9 vs 470.7 kips, <0.1%); for clay, the UC-to-CIUC transform (su_test_type='uc') before alpha (0.475 vs 0.47, 367.7 vs 368.1 kips). State the zones that carry no side resistance (the cased cover; no zone above the base by default, as GEC-10 (2018) Example 10-2 takes the clay's to the base) — read them off effective_top_m/effective_bottom_m in side_resistance_by_layer. The base follows GEC-10 (2018) Eq. 10-14 with no large-diameter reduction: Q_tip 11,009 kN = 2,475 kips against the example's unreduced 2,473 kips (the second call). O'Neill and Reese's (1999) 1.27/B reduction is large_base_reduction=true (about 52 % of it here), which the 2018 edition does not print — cite which the report adopts. For LRFD factored design, follow with lrfd_capacity/get_resistance_factors (GEC-10 Table 8-4).",
+  "provenance": "validation_examples/test_published_v006_v008.py::test_v006_high_level_rational_beta, test_v007_high_level_rational_alpha, test_v008_base_unit_resistance_matches, test_v008b_large_diameter_reduction_is_an_option",
   "source_doc": "GEC 10.pdf",
   "source_pdf_pages": [
    584,

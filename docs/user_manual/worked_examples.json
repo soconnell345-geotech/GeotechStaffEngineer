@@ -129,16 +129,18 @@
       "gwt_depth": 4.0
     },
     "result": {
-      "Q_ultimate_kN": 4212.1,
-      "Q_skin_kN": 2857.3,
+      "Q_ultimate_kN": 3718.7,
+      "Q_skin_kN": 2363.9,
       "Q_tip_kN": 1354.8,
-      "Q_allowable_kN": 1684.8,
-      "Q_side_clay_kN": 842.3,
-      "Q_side_sand_kN": 2014.9,
+      "Q_allowable_kN": 1487.5,
+      "Q_side_clay_kN": 811.2,
+      "Q_side_sand_kN": 1552.7,
       "Q_side_rock_kN": 0.0,
       "factor_of_safety": 2.5,
       "shaft_diameter_m": 1.0,
       "shaft_length_m": 15.0,
+      "base_diameter_m": 1.0,
+      "base_area_m2": 0.7854,
       "method": "GEC-10",
       "sigma_v_tip_kPa": 169.1,
       "side_resistance_by_layer": [
@@ -149,10 +151,18 @@
           "effective_bottom_m": 8.0,
           "soil_type": "cohesive",
           "description": "",
-          "method": "alpha=0.550",
-          "side_resistance_kN": 842.3,
-          "fs_kPa": 41.2,
-          "sigma_v_kPa": 78.1
+          "method": "alpha=0.530 (rational)",
+          "side_resistance_kN": 811.2,
+          "fs_kPa": 39.7,
+          "sigma_v_kPa": 78.1,
+          "alpha_steps": {
+            "alpha_method": "rational",
+            "su_kPa": 75.0,
+            "su_used_kPa": 75.0,
+            "su_over_pa": 0.74,
+            "alpha": 0.53,
+            "su_test_type": "ciuc"
+          }
         },
         {
           "depth_top_m": 8.0,
@@ -161,13 +171,100 @@
           "effective_bottom_m": 15.0,
           "soil_type": "cohesionless",
           "description": "",
-          "method": "beta=0.669",
-          "side_resistance_kN": 2014.9,
-          "fs_kPa": 91.6,
-          "sigma_v_kPa": 136.9
+          "method": "beta=0.516 (rational)",
+          "side_resistance_kN": 1552.7,
+          "fs_kPa": 70.6,
+          "sigma_v_kPa": 136.9,
+          "beta_steps": {
+            "phi_deg": 34.0,
+            "phi_from": "phi",
+            "OCR_from": "sigma_v",
+            "N60": 30,
+            "sigma_p_correlation": "clean_sand",
+            "sigma_p_kPa": 366.511,
+            "sigma_v_for_OCR_kPa": 136.925,
+            "shallow_limit": false,
+            "OCR": 2.677,
+            "Ko": 0.764,
+            "Kp": 3.537,
+            "K_over_Ko": 1.0,
+            "K": 0.764,
+            "beta": 0.516
+          }
         }
       ],
-      "side_resistance_note": "Per-layer side resistance. 'method' gives the mobilized coefficient (alpha=... for cohesive, beta=... for cohesionless, rock socket); 'fs_kPa' is the unit side resistance. effective_top_m/effective_bottom_m reflect the GEC-10 exclusion zones (the top zone or the casing: unless top_exclusion is given, the top 1.5 m in cohesive soil and rock and none in cohesionless soil; bottom 1D in cohesive layers) that carry no side resistance. Under the GEC-10 (2018) beta, 'beta_steps' gives each cohesionless layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta."
+      "side_resistance_note": "Per-layer side resistance. 'method' gives the mobilized coefficient (alpha=... for cohesive, beta=... for cohesionless, rock socket); 'fs_kPa' is the unit side resistance. effective_top_m/effective_bottom_m reflect the zones that carry no side resistance: the top zone or the casing (unless top_exclusion is given, the top 1.5 m in cohesive soil and none in cohesionless soil or rock) and, where bottom_exclusion is given, that much above the base in cohesive soil. Under the GEC-10 (2018) beta, 'beta_steps' gives each cohesionless layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta; 'alpha_steps' each cohesive layer's su, the su the alpha used (su(CIUC) under GEC-10's Eq. 10-18), su/pa and alpha.",
+      "base_steps": {
+        "soil_type": "cohesionless",
+        "base_diameter_m": 1.0,
+        "N60_capped": 30,
+        "qb_unreduced": 1725.0,
+        "reduction": null,
+        "qb": 1725.0
+      },
+      "choices": [
+        {
+          "what": "side resistance in cohesionless soil",
+          "chosen": "GEC-10 (2018) beta, Eq. 10-13, on each layer's average sigma'v: Q_s in cohesionless soil 1,553 kN, Q_ult 3,719 kN",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Step 5 of the design for axial load (Sec. 10.3), pp. 10-10 to 10-12: R_SN = pi B dz f_SN with f_SN = beta sigma'v (Eqs. 10-5, 10-7), sigma'v the 'average vertical effective stress over the depth interval' dz, taken here over each layer (Table 10-1, p. 10-6; Example 10-1 takes it at mid-layer). beta = K tan(delta) (Eq. 10-6) with delta = phi'; K = Ko, 'a rational first-order approximation' (K/Ko = 1, p. 10-11); Ko = (1 - sin phi') OCR^(sin phi') <= Kp = tan^2(45 + phi'/2) (Eqs. 10-8, 10-10; Mayne and Kulhawy 1982); OCR = sigma'p / sigma'v (Eq. 10-9) with sigma'p from N60 by Eq. 10-11 or 10-12; together Eq. 10-13. 'The value of beta at shallow depths should be limited to the value corresponding to a depth of 7.5 ft' (pp. 10-11, 10-12). phi' is the layer's where given, else 27.5 + 9.2 log (N1)60 (Example 10-1, p. 10-13; Appendix A, Eq. A-2, p. A-8). GEC-10 prints no upper limit on f_SN in cohesionless soil. Resistance factor 0.55 (p. 10-12)",
+          "alternatives": [
+            "each layer split into sub-layers of 0.1 m, each on its own sigma'v (GEC-10 p. 10-7 splits a layer where its N-values vary by more than a COV of 45 %): Q_s in cohesionless soil 1,549 kN, Q_ult 3,715 kN",
+            "beta_method 'depth', O'Neill and Reese (1999) beta = 1.5 - 0.135 sqrt(z, ft), 0.25 to 1.2 (FHWA NHI-06-089 Eqs. 9-41 to 9-43), which GEC-10 (2018) does not print: Q_s in cohesionless soil 2,015 kN, Q_ult 4,181 kN"
+          ]
+        },
+        {
+          "what": "K/Ko in cohesionless soil (construction's effect on the horizontal stress)",
+          "chosen": "1",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) p. 10-11: 'A rational first-order approximation is that K/Ko = 1, assuming there is no stress change induced by construction'; p. 10-12: valid 'for dry, slurry (wet-hole), and casing methods of construction with minimal sidewall disturbance, proper handling of slurry and casing, and prompt placement of concrete'; 'when these aspects of construction quality are not controlled properly, the coefficient K can be reduced to 2/3 of its initial in-situ value (Ko), or lower if soil caving is allowed to occur. Judgment and understanding of the influence of construction activities are therefore needed'",
+          "alternatives": [
+            "2/3, where construction quality is not controlled properly (p. 10-12): Q_s in cohesionless soil 1,035 kN, Q_ult 3,201 kN"
+          ]
+        },
+        {
+          "what": "preconsolidation stress sigma'p of cohesionless soil from N60",
+          "chosen": "Eq. 10-11, sigma'p/pa = 0.47 N60^m with m = 0.6 (clean quartzitic sands): 8-15 m",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) p. 10-11: Eq. 10-11, sigma'p/pa = 0.47 (N60)^m, 'where m = 0.6 for clean quartzitic sands and m = 0.8 for silty sands to sandy silts (e.g., Piedmont residual soils)' (Mayne 2007); Eq. 10-12, sigma'p/pa = 0.15 N60, which 'Kulhawy and Chen (2007) suggest ... provides a good fit for gravelly soils'; 'sigma'p is estimated by Equation 10-11 for sandy soils and Equation 10-12 for gravelly soils'. The soil's description decides which; Example 10-1's silty sands take m = 0.8",
+          "alternatives": [
+            "sigma_p_correlation 'silty_sand' on these layers, Eq. 10-11, sigma'p/pa = 0.47 N60^m with m = 0.8 (silty sands to sandy silts): Q_s in cohesionless soil 2,271 kN, Q_ult 4,437 kN",
+            "sigma_p_correlation 'gravel' on these layers, Eq. 10-12, sigma'p/pa = 0.15 N60 (gravelly soils): Q_s in cohesionless soil 1,754 kN, Q_ult 3,920 kN"
+          ]
+        },
+        {
+          "what": "side resistance in cohesive soil",
+          "chosen": "GEC-10 (2018) alpha, Eq. 10-18, on su(CIUC) (1.5-8 m: su/pa 0.74, alpha 0.530): Q_s in cohesive soil 811 kN, Q_ult 3,719 kN",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2, Step 5 of the design for axial load, pp. 10-15 to 10-18: R_SN = pi B dz alpha su (Eq. 10-15); alpha = 0.30 + 0.17 / (su(CIUC) / pa) (Eq. 10-18, p. 10-16; Chen et al. 2011, Fig. 10-6, p. 10-17), 'recommended as a revision to the expressions for alpha currently given in the AASHTO LRFD Bridge Design Specifications (2017a)'; f_SN = alpha su(CIUC) (Example 10-2, p. 10-18). su is each layer's, with sigma'vo for a transform at the middle of the length that carries side resistance. Resistance factor 0.45 (Table 8-4, p. 8-14)",
+          "alternatives": [
+            "alpha_method 'aashto', O'Neill and Reese (1999) as FHWA NHI-06-089 prints it (Eqs. 9-37a, 9-37b, p. 9-129), alpha = 0.55 for su/pa <= 1.5: Q_s in cohesive soil 842 kN, Q_ult 3,750 kN"
+          ]
+        },
+        {
+          "what": "strength su in Eq. 10-18 (the test each cu came from)",
+          "chosen": "each layer's cu taken as su(CIUC), untransformed",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) p. 10-16: Eq. 10-18 is fitted to su(CIUC) (Fig. 10-6); 'For values of undrained shear strength determined by UC or UU lab tests, the value of su should first be transformed to its equivalent CIUC value' by Eq. 10-16 (UC) or Eq. 10-17 (UU), Chen and Kulhawy (1993), on sigma'vo at the layer's middle (Example 10-2, p. 10-18). Which test each cu came from is the engineer's to state: left out, cu is taken as su(CIUC), untransformed",
+          "alternatives": [
+            "su_test_type 'uc', UC, transformed to su(CIUC) by Eq. 10-16: Q_s in cohesive soil 872 kN, Q_ult 3,779 kN",
+            "su_test_type 'uu', UU, transformed to su(CIUC) by Eq. 10-17: Q_s in cohesive soil 861 kN, Q_ult 3,769 kN"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "factor_of_safety": 2.5,
+        "beta_method": "rational",
+        "K_over_Ko": 1.0,
+        "top_exclusion": "1.5 m in cohesive soil, 0 in cohesionless soil and rock: GEC-10 (FHWA-NHI-18-024) p. 10-17 prints the top 5 ft in Sec. 10.3.5.2, Cohesive Soils; Secs. 10.3.5.1 and 10.3.5.3 print no such zone in cohesionless soil or rock: Examples 10-1 and 10-5 take the sand's side resistance from the ground surface, Example 10-4 the socket's over its whole length",
+        "alpha_method": "rational",
+        "su_test_type": "ciuc",
+        "pa": 101.325,
+        "rock_side_C": 0.65,
+        "socket_diameter": 1.0,
+        "casing_depth": 0.0,
+        "fractured_rock_thickness": 0.0
+      }
     }
   },
   "lateral_pile.lateral_pile_analysis": {
