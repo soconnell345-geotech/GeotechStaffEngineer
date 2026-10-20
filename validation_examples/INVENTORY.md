@@ -1009,6 +1009,21 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Verdict: **PASS** (RESULTS.md). Tests:
   test_published_v056_v057_gec11_slope.py.
 
+## V-058 GEC-10 (2018) Example 10-1 — side resistance in cohesionless soil
+- Source: GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Illustrative Example 10-1
+  (pp. 10-12 to 10-14), read from `geotech-references/docs/GEC 10.pdf`.
+- Target: `drilled_shaft.drilled_shaft_capacity`, the GEC-10 beta (Eq.
+  10-13), the default since GM-241.
+- Inputs: B = 5 ft; Layer 1 0-15 ft, gamma 115 pcf, (N1)60 14, N60 9;
+  Layer 2 15-33 ft, gamma 125 pcf below the water table at 15 ft, (N1)60 28,
+  N60 27; silty sands (m = 0.8 in Eq. 10-11); side resistance from the
+  ground surface (the tool's default in sand).
+- Published answer: phi' 38 / 41; sigma'p 5,768 / 13,890 psf; OCR 6.7 /
+  6.1; Ko 1.24 / 1.13; beta 0.97 / 0.98; fSN 837 / 2,248 psf; RSN 197.2 /
+  635.6 kips; sum 833 kips.
+- Verdict: **PASS** (RESULTS.md). Tests:
+  test_published_v058_gec10_ex10_1.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

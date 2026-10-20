@@ -390,11 +390,18 @@ def _log_spiral_kp(p, phi, beta, source):
 def _run_earth_pressure_coefficient(params):
     """Thin wrapper over retaining_walls.earth_pressure Ka/Kp/K0 functions."""
     from geotech_common import log_spiral as _ls
-    from geotech_common.choices import choice, how_given
+    from geotech_common.choices import choice
     names = ("phi_deg", "theory", "state", "delta_deg", "beta_deg",
-             "alpha_deg", "theta_deg", "log_spiral_source",
-             "k0_sloping_ground")
-    p = apply_aliases(params, _K_ALIASES)
+             "alpha_deg", "theta_deg", "log_spiral_source")
+    p = without_unused(
+        apply_aliases(params, _K_ALIASES),
+        METHOD_INFO["earth_pressure_coefficient"]["refused_parameters"])
+    if "k0_sloping_ground" in p:
+        # the same refusal dispatch gives, for a caller that skips it
+        raise ValueError(
+            "earth_pressure_coefficient does not take "
+            "['k0_sloping_ground']: k0_sloping_ground: "
+            + _NO_K0_FORM["reason"] + ".")
     reject_unknown_params(p, names, method="earth_pressure_coefficient")
     require_params(p, ["phi_deg"], method="earth_pressure_coefficient",
                    valid=list(names))
@@ -409,8 +416,7 @@ def _run_earth_pressure_coefficient(params):
         raise ValueError(f"Unknown state '{state}'. Allowed: ['active', 'passive', 'at_rest'].")
     _refuse_unused_k_inputs(p, theory, state)
     source = p.get("log_spiral_source", _ls.DEFAULT_SOURCE)
-    form = p.get("k0_sloping_ground")
-    _refuse_unused_k_forms(p, theory, state, source, form, beta)
+    _refuse_unused_k_forms(p, theory, state, source, beta)
     choices = []
     log_spiral = theory == "caquot_kerisel" and state == "passive"
 
@@ -430,11 +436,13 @@ def _run_earth_pressure_coefficient(params):
     elif state == "at_rest":
         K, symbol = _ep.K0(phi), "K0"
         if beta:
-            K = K * _K0_SLOPE[form][1](beta)
+            # EN 1997-1 Eq. 9.2, the one form (GM-243, owner OWN-67)
+            K = K * (1.0 + math.sin(math.radians(beta)))
             choices.append(choice(
-                "At-rest K0 for sloping ground (k0_sloping_ground)", form,
-                how_given(form, None), _K0_SLOPE[form][0],
-                [f for f in _K0_SLOPE if f != form]))
+                "At-rest K0 behind sloping ground", "EN 1997-1 Eq. 9.2",
+                "module",
+                f"K0;beta = K0 (1 + sin beta) = (1 - sin {phi:g})(1 + sin "
+                f"{beta:g}) = {K:.3f}. " + _K0_SLOPE_BASIS))
     elif theory == "rankine":
         if state == "active":
             K = _ep.rankine_Ka_sloped(phi, beta) if beta else _ep.rankine_Ka(phi)
@@ -456,7 +464,7 @@ def _run_earth_pressure_coefficient(params):
     elif delta is None:
         delta = 0.0
     if state == "at_rest":
-        name = form if beta else "jaky_at_rest"
+        name = "en_1997_1_eq_9_2" if beta else "jaky_at_rest"
     else:
         name = theory
     out = {
@@ -487,35 +495,37 @@ _LOG_SPIRAL_NOTE = (
     "introduced substantial inaccuracy for some cases'; the Caquot-Kerisel "
     "(1948) chart takes that form. " + _TABLE_4_2_NOTE)
 
-# The printed sloping-ground at-rest forms (GM-183). They disagree in sign,
-# so neither is a default: k0_sloping_ground is required with a slope. UFC
-# 3-220-20 Table 4-3 (p. 195, after Kim et al. 1991) gives a higher K0
-# behind a 2H:1V slope than behind level ground (loose sand 0.55 against
-# 0.45).
-_K0_SLOPE = {
-    "caltrans_eq_4_3_14": (
-        "K0 = (1 - sin phi)(1 - sin beta), the Caltrans Trenching and "
-        "Shoring Manual Eq. 4-3-14 (Sec. 4-3.01, p. 4-9), beta the slope of "
-        "the backfill behind the wall: lower than the level-ground K0. "
-        "EN 1997-1 Eq. 9.2 raises it instead, and UFC 3-220-20 Table 4-3 "
-        "(p. 195, after Kim et al. 1991) gives a higher K0 behind a 2H:1V "
-        "slope than behind level ground",
-        lambda beta: 1.0 - math.sin(math.radians(beta))),
-    "en_1997_1_eq_9_2": (
-        "K0;beta = K0 (1 + sin beta), EN 1997-1:2004 Sec. 9.5.2(4) Eq. 9.2, "
-        "for ground sloping upwards from the wall at beta <= phi': the "
-        "horizontal component of the at-rest pressure, with the resulting "
-        "force 'assumed to be parallel to the ground surface'; higher than "
-        "the level-ground K0, as UFC 3-220-20 Table 4-3 (p. 195) is. The "
-        "Caltrans Trenching and Shoring Manual Eq. 4-3-14 lowers it instead",
-        lambda beta: 1.0 + math.sin(math.radians(beta))),
-}
+# The at-rest K0 behind sloping ground: EN 1997-1 Eq. 9.2 always (GM-243;
+# the owner, OWN-67: "Always Eurocode 9.2. That's a standard in textbooks
+# and grad class notes."). The basis the result's choices give, after the
+# arithmetic.
+_K0_SLOPE_BASIS = (
+    "EN 1997-1:2004 Sec. 9.5.2(4), Eq. 9.2 (p. 104): where the ground "
+    "slopes upwards from the wall at beta <= phi' to the horizontal, "
+    "K0;beta relates the horizontal component of the effective at-rest "
+    "earth pressure to the effective overburden pressure, and the resulting "
+    "force is taken parallel to the ground surface. beta (beta_deg) is the "
+    "slope of the ground rising away from the back of the wall, from the "
+    "horizontal; Eq. 9.2 does not cover ground falling away from the wall. "
+    "K0 is 1 - sin phi', EN 1997-1 Eq. 9.1 (p. 104) for normally "
+    "consolidated ground; Eq. 9.1 multiplies it by the square root of the "
+    "overconsolidation ratio, which this tool does not take")
+
+# The input that chose the sloping form before GM-243, refused with this
+# reason; a call naming EN 1997-1 Eq. 9.2, the one form, passes.
+_NO_K0_FORM = {
+    "reason": (
+        "the at-rest K0 behind ground rising from the wall is always EN "
+        "1997-1:2004 Eq. 9.2 (p. 104), K0;beta = K0 (1 + sin beta); the "
+        "Caltrans Trenching and Shoring Manual Eq. 4-3-14 form was removed "
+        "(GM-243). Leave k0_sloping_ground out"),
+    "accepts": ["en_1997_1_eq_9_2"]}
 
 
-def _refuse_unused_k_forms(p, theory, state, source, form, beta):
-    """The log-spiral source is for the log-spiral Kp and the sloping K0
-    form for the at-rest K0 on sloping ground (GM-183); refused where the
-    call does not use it, and the form required where it does."""
+def _refuse_unused_k_forms(p, theory, state, source, beta):
+    """The log-spiral source is for the log-spiral Kp (GM-183), refused
+    where the call does not use it; the at-rest K0 behind sloping ground
+    (EN 1997-1 Eq. 9.2, GM-243) is refused where Eq. 9.2 does not reach."""
     from geotech_common import log_spiral as _ls
     if source not in _ls.SOURCES:
         raise ValueError(f"earth_pressure_coefficient: log_spiral_source "
@@ -528,34 +538,15 @@ def _refuse_unused_k_forms(p, theory, state, source, form, beta):
             "the source of the log-spiral passive Kp (theory "
             "'caquot_kerisel', state 'passive'); this call does not use it. "
             "Leave it out.")
-    if form is not None and form not in _K0_SLOPE:
-        raise ValueError(f"earth_pressure_coefficient: k0_sloping_ground "
-                         f"must be one of {list(_K0_SLOPE)}, got {form!r}.")
-    if state != "at_rest":
-        if form is not None:
-            raise ValueError(
-                "earth_pressure_coefficient: k0_sloping_ground is the "
-                "at-rest K0 for sloping ground (state 'at_rest'); this "
-                f"call is state {state!r}. Leave it out.")
-        return
-    if not beta:
+    if state != "at_rest" or not beta:
         return
     if beta < 0:
         raise ValueError(
-            "earth_pressure_coefficient: the at-rest K0 here takes ground "
-            "rising behind the wall (beta_deg > 0), as EN 1997-1 Eq. 9.2 "
-            f"states it; got beta_deg {beta}.")
-    if form is None:
-        raise ValueError(
-            "earth_pressure_coefficient: an at-rest K0 behind sloping "
-            "ground needs k0_sloping_ground; the printed forms disagree. "
-            "'caltrans_eq_4_3_14': K0 = (1 - sin phi)(1 - sin beta), the "
-            "Caltrans Trenching and Shoring Manual Eq. 4-3-14 (p. 4-9), "
-            "lower than on level ground. 'en_1997_1_eq_9_2': K0 (1 + sin "
-            "beta), EN 1997-1:2004 Eq. 9.2 (beta <= phi', force parallel "
-            "to the ground surface), higher; UFC 3-220-20 Table 4-3 (p. "
-            "195) also gives a higher K0 behind a 2H:1V slope.")
-    if form == "en_1997_1_eq_9_2" and beta > p["phi_deg"]:
+            "earth_pressure_coefficient: the at-rest K0 behind sloping "
+            "ground is EN 1997-1 Eq. 9.2, for ground rising from the wall "
+            f"(beta_deg > 0); got beta_deg {beta}, ground falling away from "
+            "the wall, which Eq. 9.2 does not cover.")
+    if beta > p["phi_deg"]:
         raise ValueError(
             "earth_pressure_coefficient: EN 1997-1 Eq. 9.2 is for ground "
             f"sloping up at beta <= phi'; got beta {beta} on phi' "
@@ -566,7 +557,7 @@ def _refuse_unused_k_forms(p, theory, state, source, form, beta):
 # sloping backfill, its Kp neither wall friction nor a slope; Coulomb's
 # wall friction, a battered back and a sloping backfill; the log-spiral Kp
 # (Caquot-Kerisel) wall friction and, since GM-183, sloping ground; the
-# at-rest K0, since GM-183, sloping ground (with k0_sloping_ground). A
+# at-rest K0, since GM-183, sloping ground (EN 1997-1 Eq. 9.2, GM-243). A
 # value the chosen one does not take is refused, never echoed as if it had
 # been used.
 _K_TAKES = {
@@ -623,9 +614,8 @@ _K_INSTEAD = {
         "alpha_deg; Fig. 4-12)"),
 }
 _K_AT_REST_INSTEAD = (
-    "the at-rest forms here (Jaky's, and for sloping ground " + _CT
-    + " Eq. 4-3-14 or EN 1997-1 Eq. 9.2 with k0_sloping_ground) are for a "
-    "vertical wall and take no wall friction")
+    "the at-rest forms here (Jaky's, and for sloping ground EN 1997-1 Eq. "
+    "9.2) are for a vertical wall and take no wall friction")
 
 
 def _capital(text):
@@ -686,8 +676,8 @@ METHOD_INFO = {
             "base_thickness": {"type": "float", "required": False, "default": 0.60, "description": "Base slab thickness (m)."},
             "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key below the base (with key_depth). It acts only with include_passive: the sliding check then takes the passive resistance over the depth of the key only, from the underside of the base (depth base_thickness) to the level of the bottom of the key (base_thickness + key_depth), the trapezoid UFC 3-220-20 Fig. 4-29 draws below the toe (p. 224: 'the passive pressure is applied only along the depth of the key and not along the entire burial depth of the wall'; GEC-6 Fig. 5-22 likewise), in place of the passive on the base thickness. GEC-6 Sec. 5.4 (pp. 100-101): keys in granular soils 'are not very efficient in developing passive pressures'; its key method is for stiff, overconsolidated clays and soft rock. UFC: 'it is also prudent to consider some amount of future excavation in front of the wall'."},
             "key_depth": {"type": "float", "required": False, "default": 0.0, "description": "Shear key depth below the underside of the base slab (m)."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform LIVE-load surcharge on the backfill (kPa), e.g. traffic. Its thrust K*q*H drives every check. Over the heel it is NOT a resisting force in sliding, overturning or the eccentricity check by default (live_load_resists), and it does load the base in the bearing pressures (surcharge_in_bearing). A permanent surcharge (pavement, approach slab) goes in dead_load_surcharge."},
-            "dead_load_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform DEAD-load (permanent) surcharge on the backfill (kPa), e.g. a pavement or an approach slab (FHWA NHI-06-089 Sec. 10.4.2). Its thrust drives every check, added to the live load's. Over the heel it is not a resisting force by default (dead_load_resists); it loads the base in the bearing pressures (surcharge_in_bearing)."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform LIVE-load surcharge on the backfill (kPa), e.g. traffic. Its thrust K*q*H drives every check. Over the heel it is NOT a resisting force in sliding, overturning or the eccentricity check by default (live_load_resists), and it does load the base in the bearing pressures (surcharge_in_bearing). A pavement or slab is not a surcharge here: model it as retained soil up to the ground surface (it then rests on the heel and resists like the backfill). Any other surcharge is transient live load: its thrust counts in every check, but its weight over the heel does not resist sliding or overturning. A permanent load you want carried as a surcharge goes in dead_load_surcharge."},
+            "dead_load_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform DEAD-load (permanent) surcharge on the backfill (kPa), a permanent load that is not part of the retained soil (FHWA NHI-06-089 Sec. 10.4.2). Pavements and slabs are normally modelled as retained soil up to the ground surface instead. Its thrust drives every check, added to the live load's. Over the heel it is not a resisting force by default (dead_load_resists=true counts it as resisting weight in sliding and overturning); it loads the base in the bearing pressures (surcharge_in_bearing)."},
             "live_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the live-load surcharge over the heel (and its share of a sloped or Coulomb thrust's vertical component) as a resisting force in sliding, overturning and the eccentricity check. Default false: FHWA NHI-06-089 Sec. 10.5.5 (p. 10-43), 'the live load surcharge is not considered as a stabilizing force over the heel of the wall when sliding resistance is being checked'; UFC 3-220-20 App. B-1.2 (p. 597), 'For overturning and sliding checks, it is assumed that the traffic pressure does not act over the wall heel'. true = the free body with the load over the heel, which none of these references uses for a live load. The result's choices say which was used."},
             "dead_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the dead-load surcharge over the heel as a resisting force in sliding, overturning and the eccentricity check. Default false: FHWA NHI-06-089 Sec. 10.5.3 (p. 10-41), for CIP semi-gravity walls the surcharge loads are 'conservatively neglected within the width of the base slab since they contribute to overturning and sliding resistance'. true = counted as a permanent load: GEC-11 Vol I p. 4-22 (AASHTO), loads that increase sliding resistance are included 'only if those loads are permanent'."},
             "surcharge_in_bearing": {"type": "bool", "required": False, "default": True, "description": "Count the surcharges over the heel in the bearing pressures (q_toe, q_heel, FOS_bearing). Default true: UFC 3-220-20 App. B-1.6 (p. 602), 'it is conservative to include the surcharge over the heel of the wall, if this is possible to occur, in the bearing capacity check'; GEC-11 Vol I p. 4-26. false = the surcharge taken as located behind the heel (NHI-06-089 p. 10-41)."},
@@ -713,16 +703,15 @@ METHOD_INFO = {
         "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine, Coulomb, or the log-spiral passive Kp: by default UFC 3-220-20's Eq. 4-12, Fig. 4-12 or Fig. 4-13 by wall geometry, or the Caquot-Kerisel 1948 chart; K0 also behind sloping ground).",
         "parameters": {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
-            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi), times the sloping-ground form k0_sloping_ground names when beta_deg is not 0."},
+            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi), and behind ground rising from the wall (beta_deg > 0) EN 1997-1 Eq. 9.2, K0 (1 + sin beta)."},
             "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
             "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for) and delta = phi (full wall friction, R = 1) with 'caquot_kerisel_1948'; 'dm7_2_eq_4_12' needs it given. With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil); the result's choices give the delta used."},
-            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (by default UFC 3-220-20 Fig. 4-13: a vertical face, beta/phi' -0.6 to +1 at delta/phi' 0.66; the Caquot-Kerisel 1948 chart, Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg, any wall friction; Eq. 4-12 and Fig. 4-12 are for level ground) and at_rest with k0_sloping_ground (beta > 0). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
+            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (by default UFC 3-220-20 Fig. 4-13: a vertical face, beta/phi' -0.6 to +1 at delta/phi' 0.66; the Caquot-Kerisel 1948 chart, Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg, any wall friction; Eq. 4-12 and Fig. 4-12 are for level ground) and at_rest (EN 1997-1:2004 Eq. 9.2, p. 104: K0;beta = K0 (1 + sin beta), the horizontal component of the at-rest pressure, for ground sloping upwards from the wall at 0 < beta <= phi'; ground falling away is refused). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
             "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical; below 90 when the soil overhangs the face, as UFC 3-220-20 Fig. 4-7 draws a gravity wall's back, where its theta = 90 - alpha_deg is positive). Coulomb only; the others take a vertical back and refuse another value (the log-spiral Kp takes a battered face as theta_deg = 90 - alpha_deg). Alias: alpha."},
             "theta_deg": {"type": "float", "required": False, "default": 0.0, "description": "With theory 'caquot_kerisel' (passive): the wall face's angle from vertical (degrees), UFC 3-220-20's theta (Figs. 4-7, 4-12): positive when the face slopes down into the soil it bears on, so the soil overhangs it (Kp falls; Fig. 4-12 draws the toe of the face farther into the soil than its top), negative the other way (Kp rises); theta_deg = 90 - Coulomb's alpha_deg. A non-zero value reads UFC 3-220-20 Fig. 4-12 (p. 192): level ground only, theta -30 to +40 deg, delta/phi' 0.66 only, Kp up to 15. Alias: theta."},
             "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for (pp. 191-193): Eq. 4-12 (p. 191) for a vertical face and level ground, at any wall friction; Fig. 4-12 (p. 192) for a battered face (theta_deg) with level ground and Fig. 4-13 (p. 193) for a vertical face with sloping ground (beta_deg), both drawn for delta/phi' = 0.66 only. UFC prints nothing for a battered face with sloping ground, nor for those two charts at another wall friction: the default refuses those and names what covers them. 'caquot_kerisel_1948': the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; a vertical wall, level or sloping ground, any wall friction. 'dm7_2_eq_4_12', 'dm7_2_fig_4_12', 'dm7_2_fig_4_13': each UFC source on its own. They differ: at phi 30, delta/phi 0.66 on level ground the 1948 chart gives 5.4, Figs. 4-12 and 4-13 5.3, Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The result's choices give the route taken and each other source's Kp."},
-            "k0_sloping_ground": {"type": "str", "required": False, "allowed_values": ["caltrans_eq_4_3_14", "en_1997_1_eq_9_2"], "description": "The at-rest K0 behind ground rising from the wall: required when state is 'at_rest' and beta_deg is not 0, and there is no default because the printed forms disagree in sign. 'caltrans_eq_4_3_14': K0 = (1 - sin phi)(1 - sin beta), Caltrans Trenching and Shoring Manual Eq. 4-3-14 (p. 4-9), lower than on level ground. 'en_1997_1_eq_9_2': K0;beta = K0 (1 + sin beta), EN 1997-1:2004 Sec. 9.5.2(4) Eq. 9.2, for beta <= phi', the resulting force parallel to the ground surface, higher. UFC 3-220-20 Table 4-3 (p. 195, after Kim et al. 1991) also gives a higher K0 behind a 2H:1V slope than behind level ground (loose sand 0.55 against 0.45)."},
         },
-        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground, else the sloping-ground form.", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources, phi with the 1948 chart).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route or the sloping-ground K0 form used, with its basis and each other source's Kp for the case. Tell the user."},
+        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources, phi with the 1948 chart).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, or behind sloping ground the at-rest K0 equation (EN 1997-1 Eq. 9.2) with its arithmetic, page and the sign of beta. Tell the user."},
     },
     "mse_wall": {
         "category": "MSE Wall",
@@ -817,6 +806,9 @@ METHOD_INFO["mse_wall"]["refused_parameters"] = {
         "resistance. Give q_allowable, or run mse_lrfd_external_stability "
         "with gamma_foundation (and phi_foundation, c_foundation) to work "
         "the bearing resistance out by GEC-11 Eq. 4-22")}
+# GM-243: the sloping-ground at-rest form is no longer a choice.
+METHOD_INFO["earth_pressure_coefficient"]["refused_parameters"] = {
+    "k0_sloping_ground": _NO_K0_FORM}
 
 # When each default applies (GM-119): the key depth to a wall with a shear
 # key, the custom reinforcement's properties to a custom reinforcement (a

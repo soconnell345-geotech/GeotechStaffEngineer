@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from geotech_common.water import GAMMA_W
+from drilled_shaft.side_resistance import SIGMA_P_CORRELATIONS
 
 
 @dataclass
@@ -54,6 +55,11 @@ class ShaftSoilLayer:
         Direct overconsolidation-ratio override for the rational beta method.
         Default 0.0 -> compute OCR = sigma'p/sigma_v_ref from N60. If > 0 it is
         used as given (N60/sigma_v_ref then not needed for beta).
+    sigma_p_correlation : str, optional
+        How the rational beta method estimates sigma'p from N60 (GEC-10
+        p. 10-11): "clean_sand" (default; Eq. 10-11, m = 0.6, clean
+        quartzitic sands), "silty_sand" (Eq. 10-11, m = 0.8, silty sands to
+        sandy silts) or "gravel" (Eq. 10-12, sigma'p/pa = 0.15 N60).
     description : str, optional
         Layer description.
     """
@@ -68,6 +74,7 @@ class ShaftSoilLayer:
     N1_60: float = 0.0
     sigma_v_ref: float = 0.0
     OCR: float = 0.0
+    sigma_p_correlation: str = "clean_sand"
     description: str = ""
 
     def __post_init__(self):
@@ -77,6 +84,11 @@ class ShaftSoilLayer:
                 f"soil_type must be 'cohesive', 'cohesionless', or 'rock', "
                 f"got '{self.soil_type}'"
             )
+        if self.sigma_p_correlation not in SIGMA_P_CORRELATIONS:
+            raise ValueError(
+                "sigma_p_correlation must be one of "
+                f"{sorted(SIGMA_P_CORRELATIONS)}, got "
+                f"{self.sigma_p_correlation!r}")
         if self.thickness <= 0:
             raise ValueError(f"Layer thickness must be positive, got {self.thickness}")
         if self.unit_weight <= 0:
@@ -163,6 +175,31 @@ class ShaftSoilProfile:
             depth_accumulated = layer_bottom
 
         return sigma_v
+
+    def average_effective_stress(self, z1: float, z2: float) -> float:
+        """Average effective vertical stress (kPa) over depths z1 to z2 (m).
+
+        GEC-10 (2018) Eq. 10-5 takes sigma'v as the 'average vertical
+        effective stress over the depth interval Delta z'. The stress is
+        linear between layer boundaries and the water table, so the
+        trapezoidal rule over those points is exact; with one unit weight
+        over the interval it is the stress at mid-depth.
+        """
+        if z2 <= z1:
+            return self.effective_stress_at_depth(z1)
+        points = {z1, z2}
+        depth = 0.0
+        for layer in self.layers:
+            depth += layer.thickness
+            if z1 < depth < z2:
+                points.add(depth)
+        if self.gwt_depth is not None and z1 < self.gwt_depth < z2:
+            points.add(self.gwt_depth)
+        z = sorted(points)
+        s = [self.effective_stress_at_depth(d) for d in z]
+        area = sum((z[i + 1] - z[i]) * (s[i] + s[i + 1]) / 2
+                   for i in range(len(z) - 1))
+        return area / (z2 - z1)
 
     def layer_at_depth(self, z: float) -> Optional[ShaftSoilLayer]:
         """Get the soil layer at a given depth.

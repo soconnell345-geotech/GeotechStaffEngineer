@@ -1,7 +1,8 @@
 """GM-183 and GM-210 through the tools: the printed sources of the
 log-spiral passive Kp, the sloping-ground at-rest K0, and the passive
 resistance on a shear key; GM-232: the UFC 3-220-20 source by the wall's
-geometry as the log-spiral default."""
+geometry as the log-spiral default; GM-243: the at-rest K0 behind a slope
+is EN 1997-1 Eq. 9.2 always."""
 
 import pytest
 
@@ -158,36 +159,63 @@ def test_rankine_passive_slope_refusal_names_the_log_spiral():
     assert "theory 'caquot_kerisel' takes a slope" in r["error"]
 
 
-def test_sloping_at_rest_needs_a_printed_form():
-    r = _k(phi_deg=30.0, state="at_rest", beta_deg=10.0)
-    assert "k0_sloping_ground" in r["error"] and "Table 4-3" in r["error"]
-    ct = _k(phi_deg=30.0, state="at_rest", beta_deg=10.0,
-            k0_sloping_ground="caltrans_eq_4_3_14")
-    ec = _k(phi_deg=30.0, state="at_rest", beta_deg=10.0,
-            k0_sloping_ground="en_1997_1_eq_9_2")
-    # (1 - sin 30)(1 - sin 10) and (1 - sin 30)(1 + sin 10)
-    assert ct["K"] == pytest.approx(0.4132, abs=1e-4)
-    assert ec["K"] == pytest.approx(0.5868, abs=1e-4)
-    assert ct["theory"] == "caltrans_eq_4_3_14"
-    assert ec["choices"][0]["alternatives"] == ["caltrans_eq_4_3_14"]
+@pytest.mark.parametrize("phi, beta, k0", [
+    # K0 (1 + sin beta), K0 = 1 - sin phi'; 26.565 deg is 2H:1V
+    (30.0, 10.0, 0.5868), (30.0, 20.0, 0.6710), (30.0, 26.565, 0.7236),
+    (35.0, 10.0, 0.5005), (35.0, 20.0, 0.5723), (35.0, 26.565, 0.6171),
+])
+def test_sloping_at_rest_is_en_1997_1_eq_9_2(phi, beta, k0):
+    """GM-243 (owner OWN-67): behind ground rising from the wall the
+    at-rest K0 is EN 1997-1 Eq. 9.2, asked of nobody; the choices give the
+    arithmetic, the page and the sign of beta."""
+    r = _k(phi_deg=phi, state="at_rest", beta_deg=beta)
+    assert r["K"] == pytest.approx(k0, abs=1e-4)
+    assert r["theory"] == "en_1997_1_eq_9_2"
+    (c,) = r["choices"]
+    assert c["chosen"] == "EN 1997-1 Eq. 9.2" and c["how"] == "module"
+    assert "alternatives" not in c
+    assert f"= {k0:.3f}." in c["basis"]
+    assert "Eq. 9.2 (p. 104)" in c["basis"]
+    assert "rising away from the back of the wall" in c["basis"]
+    assert "Caltrans" not in c["basis"]
+
+
+def test_level_at_rest_is_jaky():
     level = _k(phi_deg=30.0, state="at_rest")
     assert level["K"] == 0.5 and level["theory"] == "jaky_at_rest"
+    assert "choices" not in level
 
 
-@pytest.mark.parametrize("params, words", [
-    ({"beta_deg": 35.0, "k0_sloping_ground": "en_1997_1_eq_9_2"},
-     "beta <= phi'"),
-    ({"beta_deg": -10.0, "k0_sloping_ground": "caltrans_eq_4_3_14"},
-     "rising behind the wall"),
+@pytest.mark.parametrize("beta, words", [
+    (35.0, "beta <= phi'"),
+    (-10.0, "ground falling away from the wall"),
 ])
-def test_sloping_at_rest_limits(params, words):
-    assert words in _k(phi_deg=30.0, state="at_rest", **params)["error"]
+def test_sloping_at_rest_limits(beta, words):
+    assert words in _k(phi_deg=30.0, state="at_rest",
+                       beta_deg=beta)["error"]
 
 
-def test_k0_form_refused_off_at_rest():
-    r = _k(phi_deg=30.0, state="active",
+@pytest.mark.parametrize("state", ["at_rest", "active"])
+def test_caltrans_k0_form_refused_pointing_to_eq_9_2(state):
+    """GM-243: the input that chose the Caltrans T&S Eq. 4-3-14 form is
+    refused, with Eq. 9.2 named; naming Eq. 9.2 itself changes nothing."""
+    r = _k(phi_deg=30.0, state=state, beta_deg=10.0,
            k0_sloping_ground="caltrans_eq_4_3_14")
-    assert "Leave it out" in r["error"]
+    assert "does not take ['k0_sloping_ground']" in r["error"]
+    assert "EN 1997-1:2004 Eq. 9.2 (p. 104)" in r["error"]
+    assert "Did you mean" not in r["error"]
+    same = _k(phi_deg=30.0, state="at_rest", beta_deg=10.0,
+              k0_sloping_ground="en_1997_1_eq_9_2")
+    assert same == _k(phi_deg=30.0, state="at_rest", beta_deg=10.0)
+
+
+def test_k0_form_is_not_advertised():
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    info = METHOD_INFO["earth_pressure_coefficient"]
+    assert "k0_sloping_ground" not in info["parameters"]
+    words = " ".join(spec["description"]
+                     for spec in info["parameters"].values())
+    assert "4-3-14" not in words and "Eq. 9.2" in words
 
 
 def _wall(**params):

@@ -127,6 +127,7 @@ LABEL_ONLY = {
 #: what the probe's run returns: ``(probe key, name) -> why the probe
 #: does not show it``. Filled by the GM-184 sweep (2026-10-19).
 _ALL_CLAY = "the probe's profile is all clay: the beta method is for sand"
+_ALL_SAND = "the probe's profile is all sand: the alpha method is for clay"
 _NO_ROCK = "the probe has no rock layer, so there is no socket"
 _CASING = ("0.5 m of casing lies inside the top 1.5 m that GEC-10 already "
            "leaves out of the side resistance in clay")
@@ -176,22 +177,39 @@ NOT_REACHED = {
         _ADHESION,
     ("calc_package|axial_pile_package", "toe_stress_limit"): _TOE_LIMIT,
     ("calc_package|axial_pile_package", "toe_phi_zone"): _ONE_SAND,
-    **{(k, "beta_method"): _ALL_CLAY for k in (
+    # GM-241: K/Ko and pa go with the GEC-10 beta, the default
+    **{(k, n): _ALL_CLAY for k in (
         "drilled_shaft|capacity_vs_depth",
         "drilled_shaft|drilled_shaft_capacity",
-        "drilled_shaft|lrfd_capacity", "calc_package|drilled_shaft_package")},
+        "drilled_shaft|lrfd_capacity", "calc_package|drilled_shaft_package")
+       for n in ("beta_method", "K_over_Ko", "pa")},
     **{(k, n): why for k in (
+        "drilled_shaft|capacity_vs_depth",
+        "drilled_shaft|capacity_vs_depth#sand",
+        "drilled_shaft|drilled_shaft_capacity",
+        "drilled_shaft|drilled_shaft_capacity#sand",
+        "drilled_shaft|lrfd_capacity",
+        "drilled_shaft|lrfd_capacity#sand")
+       for n, why in (("socket_diameter", _NO_ROCK),
+                      ("rock_side_C", _NO_ROCK))},
+    # casing_depth: these probes have clay over the top 1.5 m; the
+    # all-sand probes take side resistance from the ground surface, so
+    # their casing reaches the result (GM-241 review)
+    **{(k, "casing_depth"): _CASING for k in (
         "drilled_shaft|capacity_vs_depth",
         "drilled_shaft|drilled_shaft_capacity",
         "drilled_shaft|drilled_shaft_capacity#sand",
-        "drilled_shaft|lrfd_capacity")
-       for n, why in (("socket_diameter", _NO_ROCK),
-                      ("casing_depth", _CASING),
-                      ("rock_side_C", _NO_ROCK))},
+        "drilled_shaft|lrfd_capacity")},
     ("calc_package|drilled_shaft_package", "rock_side_C"): _NO_ROCK,
+    ("calc_package|drilled_shaft_package#sand", "rock_side_C"): _NO_ROCK,
+    **{(k, "alpha_method"): _ALL_SAND for k in (
+        "drilled_shaft|capacity_vs_depth#sand",
+        "drilled_shaft|lrfd_capacity#sand",
+        "calc_package|drilled_shaft_package#sand")},
     # GM-221: the rock probe's soil is clay over rock
-    ("drilled_shaft|drilled_shaft_capacity#rock", "beta_method"):
-        "the probe's soil is clay over rock: the beta method is for sand",
+    **{("drilled_shaft|drilled_shaft_capacity#rock", n):
+       "the probe's soil is clay over rock: the beta method is for sand"
+       for n in ("beta_method", "K_over_Ko", "pa")},
     ("drilled_shaft|drilled_shaft_capacity#rock", "casing_depth"): _CASING,
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     # GM-228: the warning when the two rules for the depth below the toe
