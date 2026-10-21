@@ -171,7 +171,9 @@ def test_load_filters_by_turn(tmp_path):
     al.ActivityLogger(str(tmp_path), turn=1).turn_start("a")
     al.ActivityLogger(str(tmp_path), turn=2).turn_start("b")
     assert [r["prompt"] for r in al.load(str(tmp_path), turn=2)] == ["b"]
-    assert len(al.load(str(tmp_path))) == 2
+    # two turns, after the process's own first line (EV-19)
+    assert [r["event"] for r in al.load(str(tmp_path))] == [
+        "process_start", "turn_start", "turn_start"]
     assert al.load(str(tmp_path / "missing")) == []
 
 
@@ -255,7 +257,8 @@ def test_real_stack_subagent_calls_are_logged_and_attributed(tmp_path):
     # model calls on both sides
     models = [r["agent"] for r in recs if r["event"] == "model_end"]
     assert "primary" in models and "calc" in models
-    assert recs[0]["event"] == "turn_start" and recs[-1]["event"] == "turn_end"
+    turn = [r for r in recs if r["agent"] != al.APP]   # not process_start
+    assert turn[0]["event"] == "turn_start" and turn[-1]["event"] == "turn_end"
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +296,8 @@ def test_turn_job_writes_activity_with_trace_off(monkeypatch, tmp_path):
         time.sleep(0.02)
     assert job.done
     assert isinstance(seen["callbacks"][0], al.ActivityLogger)
-    recs = al.load(core.conversation_dir(tid))
+    recs = [r for r in al.load(core.conversation_dir(tid))
+            if r["agent"] != al.APP]                   # not process_start
     assert [r["event"] for r in recs] == ["turn_start", "turn_end"]
     assert recs[0]["turn"] == 1 and recs[0]["prompt"] == "q1"
     assert recs[1]["turn_tokens"] == 7 and recs[1]["error"] is None

@@ -60,16 +60,57 @@ reasoning summary the provider returned). Without them a review of a run
 could see every tool call and never the model's account of why (the owner,
 reviewing the first live checks of 5.32.0).
 
+Since 2026-10-21 (BACKLOG EV-06, EV-19) the record also says:
+
+* on ``turn_end``: ``graph_steps``, the highest LangGraph step the
+  primary's graph reached (what the step cap counts; per pass in
+  ``graph_steps_by_pass`` when the turn ran more than one), ``step_cap`` and
+  any ``step_allowance`` (:meth:`ActivityLogger.note_step_cap`),
+  ``system_prompt`` (a :func:`fingerprint` and the length of the system
+  message the primary was sent) and ``tools_offered_sha`` with
+  ``tools_offered`` (the tool names the primary was offered: from its model
+  calls where the client shows them, ``tools_offered_from: "calls"``, else
+  the build's list, ``"build"``); the names are written when the list
+  changes (and once per process), the sha every turn: a turn without them
+  was offered the list of the latest ``turn_end`` with the same sha;
+* on the ``model_end`` (and ``model_error``) of a vision side call:
+  ``vision``, its label (``kind``, ``page``, ``tile``, ``image_px``,
+  ``detail``) with what was sent: ``prompt`` (whole up to
+  :data:`SIDE_PROMPT_CHARS`, else that much and a ``prompt_sha``),
+  ``prompt_chars``, ``detail_sent`` and ``images``;
+* ``tool_delivered`` with ``stage: "graph"``: a result the agent's graph
+  changed after the app's own middleware, as the model got it -- deepagents
+  moving a large result to ``/large_tool_results/`` and sending a notice and
+  a preview instead (``moved_to``: the path it names);
+* ``turn_files`` (after ``turn_end``): each file the turn wrote or listed,
+  its ``bytes``, a ``sha`` of its content (its ``mtime`` instead over
+  :data:`HASH_MAX_BYTES`) and ``how`` (``new``, ``rewritten``,
+  ``listed``);
+* ``process_start``: written before the first record a process adds to a
+  conversation's log (``process`` is a token unique to the process, with
+  its ``pid`` and when it started), so an app restart between turns shows;
+* ``restored`` (the conversation was brought back from the mirror or a
+  zip: ``webapp.sharepoint_store``, ``webapp.conversation_restore``), held
+  by :func:`note_restored` and written before the next ``turn_start`` with
+  the time of the restore;
+* ``page_error``, written at once by :func:`append_event`: a page rerun
+  raised (``webapp.page_errors``).
+
+Hashes and sizes, never file contents, images or keys.
+
 A logging failure must never fail a turn: every handler swallows its own
 exceptions and ``raise_error`` is left False.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import threading
 import time
+import uuid
 from typing import Any, Optional
 
 #: One lock per activity file. Tool calls run in parallel threads (a model
@@ -140,6 +181,177 @@ SIDECAR_DIR = "activity_full"
 
 def activity_path(conv_dir: str) -> str:
     return os.path.join(conv_dir, FILE_NAME)
+
+
+#: Who writes the events that are not an agent's: a restore, a page error,
+#: the process start.
+APP = "app"
+
+#: Most characters of a vision side call's prompt kept on its record; a
+#: longer prompt keeps this much and a :func:`fingerprint` (EV-06).
+SIDE_PROMPT_CHARS = 300
+
+#: Most files listed on one ``turn_files`` record (``n_files`` says how many
+#: there were).
+MAX_TURN_FILES = 200
+
+#: Largest file :func:`file_facts` hashes; a larger one (a 200 MB scanned
+#: PDF a tool names) gets its ``mtime`` instead, so the record never holds
+#: up the end of a turn reading it.
+HASH_MAX_BYTES = 32 * 1024 * 1024
+
+
+def fingerprint(data: Any) -> str:
+    """The first 16 hex digits of the SHA-256 of ``data`` (text or bytes):
+    two records with the same fingerprint carried the same text. Too short
+    to look like a key."""
+    if not isinstance(data, (bytes, bytearray)):
+        data = str("" if data is None else data).encode("utf-8", "replace")
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def file_facts(path: str, base: Optional[str] = None) -> Optional[dict]:
+    """``{"path", "bytes", "sha"}`` of a file: its path relative to ``base``
+    ('/' separators; the file name alone when it lies outside), its size and
+    a :func:`fingerprint` of its content -- or, over
+    :data:`HASH_MAX_BYTES`, its ``mtime`` in place of the ``sha``. ``None``
+    when it cannot be read."""
+    try:
+        st = os.stat(path)
+        if st.st_size > HASH_MAX_BYTES:
+            h, size = None, int(st.st_size)
+        else:
+            h, size = hashlib.sha256(), 0
+            with open(path, "rb") as fh:
+                for block in iter(lambda: fh.read(1 << 20), b""):
+                    h.update(block)
+                    size += len(block)
+    except OSError:
+        return None
+    rel = os.path.basename(path)
+    if base:
+        try:
+            r = os.path.relpath(os.path.abspath(path), os.path.abspath(base))
+            if not r.startswith(".."):
+                rel = r.replace(os.sep, "/")
+        except ValueError:                             # another drive
+            pass
+    if h is None:
+        return {"path": rel, "bytes": size, "mtime": round(st.st_mtime, 3)}
+    return {"path": rel, "bytes": size, "sha": h.hexdigest()[:16]}
+
+
+#: This process, as the ``process_start`` record names it: a token unique
+#: to it (a pid can repeat across container restarts), its pid, and when it
+#: started (psutil's word where installed, else when this module loaded).
+_PROCESS_TOKEN = uuid.uuid4().hex[:12]
+_IMPORTED_AT = time.time()
+_PROCESS_NOTED: set = set()
+
+#: The ``tools_offered_sha`` whose list this process last wrote into each
+#: conversation's log: the list is written again only when it changes.
+_TOOLS_NOTED: dict = {}
+
+
+def _log_key(conv_dir: str) -> str:
+    return os.path.normcase(os.path.abspath(conv_dir))
+
+
+def _process_started() -> float:
+    try:
+        import psutil
+        return float(psutil.Process().create_time())
+    except Exception:                                  # noqa: BLE001
+        return _IMPORTED_AT
+
+
+def _app_version() -> Optional[str]:
+    try:
+        from importlib.metadata import version
+        return version("geotech-staff-engineer")
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _process_record(conv_dir: str) -> Optional[dict]:
+    """The ``process_start`` record, the first time this process writes to
+    ``conv_dir``'s log; ``None`` after that."""
+    key = _log_key(conv_dir)
+    with _FILE_LOCKS_GUARD:
+        if key in _PROCESS_NOTED:
+            return None
+        _PROCESS_NOTED.add(key)
+    return {"agent": APP, "event": "process_start",
+            "process": _PROCESS_TOKEN, "pid": os.getpid(),
+            "process_started": round(_process_started(), 3),
+            "app_version": _app_version()}
+
+
+def _append(conv_dir: str, recs: list) -> int:
+    """Append whole lines to the log, under its lock. Returns how many."""
+    os.makedirs(conv_dir, exist_ok=True)
+    lines = "".join(json.dumps(r, ensure_ascii=False, default=str) + "\n"
+                    for r in recs)
+    path = activity_path(conv_dir)
+    with _lock_for(path):
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(lines)
+    return len(recs)
+
+
+#: App events waiting for the next turn's log, by conversation folder
+#: (:func:`note_restored`).
+_PENDING: dict = {}
+
+
+def note_restored(conv_dir: str, **fields) -> None:
+    """Keep a ``restored`` event (the folder came back from the mirror or a
+    zip: ``source``, ``files``, ...) for the conversation's next turn,
+    whose log writes it before ``turn_start`` with the time of the restore.
+    Held rather than appended at once so the restored record stays the
+    mirror's copy byte for byte (and re-mirrors nothing) until a turn adds
+    to it. The restored log may not carry this process's ``process_start``
+    or its last tool list, so the next turn writes both again. Never
+    raises."""
+    try:
+        key = _log_key(conv_dir)
+        rec = {"ts": round(time.time(), 3), "t": None, "agent": APP,
+               "event": "restored",
+               **{k: _json_safe(v) for k, v in fields.items()
+                  if k not in ("turn", "ts", "t", "agent", "event")}}
+        with _FILE_LOCKS_GUARD:
+            _PENDING.setdefault(key, []).append(rec)
+            _PROCESS_NOTED.discard(key)
+            _TOOLS_NOTED.pop(key, None)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
+def _take_pending(conv_dir: str) -> list:
+    key = _log_key(conv_dir)
+    with _FILE_LOCKS_GUARD:
+        return _PENDING.pop(key, [])
+
+
+def append_event(conv_dir: str, event: str, turn: Optional[int] = None,
+                 **fields) -> bool:
+    """Write one app event outside a turn (``page_error``):
+    ``{"turn", "ts", "agent": "app", "event", **fields}``, after the
+    process's ``process_start`` when it is the process's first record
+    there. Never raises; ``True`` when written."""
+    try:
+        now = round(time.time(), 3)
+        recs = []
+        proc = _process_record(conv_dir)
+        if proc is not None:
+            recs.append({"turn": turn, "ts": now, **proc})
+        recs.append({"turn": turn, "ts": now, "agent": APP, "event": event,
+                     **{k: _json_safe(v) for k, v in fields.items()
+                        if k not in ("turn", "ts", "agent", "event")}})
+        _append(conv_dir, recs)
+        return True
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 def _helper_fields() -> dict:
@@ -329,6 +541,104 @@ def _n_tool_calls(response: Any) -> int:
         return 0
 
 
+def _tool_messages(obj: Any) -> list:
+    """The tool messages in a graph node's output (a ToolMessage, a
+    ``{"messages": [...]}`` update, a Command, or a list of them)."""
+    if getattr(obj, "type", None) == "tool" and hasattr(obj, "tool_call_id"):
+        return [obj]
+    if isinstance(obj, dict):
+        return _tool_messages(obj.get("messages"))
+    if isinstance(obj, (list, tuple)):
+        out: list = []
+        for o in obj:
+            out.extend(_tool_messages(o))
+        return out
+    update = getattr(obj, "update", None)                # a Command
+    if isinstance(update, dict):
+        return _tool_messages(update.get("messages"))
+    return []
+
+
+def _delivered_text(content: Any) -> str:
+    """A message's content as the delivered-result event writes it
+    (``funhouse_agent.deep.delivered_log``), so the two compare."""
+    try:
+        from funhouse_agent.deep.delivered_log import _text
+        return _text(content)
+    except Exception:                                  # noqa: BLE001
+        return _to_text(content)
+
+
+_MOVED = (re.compile(r"at this path:\s*(\S+)"),
+          re.compile(r"(\S*/large_tool_results/\S+)"))
+
+
+def _moved_to(text: str) -> Optional[str]:
+    """The scratch path a moved result's notice names, else ``None``."""
+    for pattern in _MOVED:
+        m = pattern.search(text or "")
+        if m:
+            return m.group(1).rstrip(".,;:)'\"`")
+    return None
+
+
+def _side_prompt(messages: Any) -> dict:
+    """What a vision side call sent besides its image: the prompt text
+    (whole up to :data:`SIDE_PROMPT_CHARS`, else that much and a
+    ``prompt_sha`` of the whole), ``prompt_chars``, the ``detail`` each image
+    was sent with (``detail_sent``) and how many ``images``. Never the
+    image; anything in the text shaped like a key is masked."""
+    texts: list = []
+    details: list = []
+    images = 0
+    for batch in messages or []:
+        for m in batch or []:
+            content = getattr(m, "content", m)
+            if isinstance(content, str):
+                texts.append(content)
+                continue
+            for b in content if isinstance(content, list) else []:
+                if isinstance(b, str):
+                    texts.append(b)
+                elif isinstance(b, dict):
+                    kind = str(b.get("type") or "")
+                    if "image" in kind:
+                        images += 1
+                        url = b.get("image_url")
+                        d = (url.get("detail") if isinstance(url, dict)
+                             else None) or b.get("detail")
+                        if d:
+                            details.append(str(d))
+                    elif isinstance(b.get("text"), str):
+                        texts.append(b["text"])
+    prompt = "\n".join(t for t in texts if t)
+    try:
+        from funhouse_agent.error_text import mask_secrets
+        shown = mask_secrets(prompt)
+    except Exception:  # noqa: BLE001 - no excerpt rather than a raw one
+        shown = ""
+    out: dict = {"prompt": shown[:SIDE_PROMPT_CHARS],
+                 "prompt_chars": len(prompt), "images": images}
+    if len(prompt) > SIDE_PROMPT_CHARS:
+        out["prompt_sha"] = fingerprint(prompt)
+    if details:
+        out["detail_sent"] = (details[0] if len(set(details)) == 1
+                              else sorted(set(details)))
+    return out
+
+
+def _tool_name(spec: Any) -> Optional[str]:
+    """A tool's name from the spec a model call was sent (OpenAI's
+    ``{"function": {"name"}}``, Anthropic's ``{"name"}``, or a tool)."""
+    if isinstance(spec, dict):
+        fn = spec.get("function")
+        if isinstance(fn, dict) and fn.get("name"):
+            return str(fn["name"])
+        return str(spec["name"]) if spec.get("name") else None
+    name = getattr(spec, "name", None)
+    return str(name) if name else None
+
+
 class ActivityLogger(BaseCallbackHandler):
     """Append every tool/model event of one turn to ``activity.jsonl``.
 
@@ -359,6 +669,15 @@ class ActivityLogger(BaseCallbackHandler):
         self._outputs: dict = {}          # tool_call_id -> the tool's output
         self._vision: dict = {}           # tool run_id -> [calls, queued_s]
         self._lock_wait: dict = {}        # tool run_id -> document lock wait
+        self._side: dict = {}             # model run_id -> side call facts
+        self._seen: dict = {}             # tool_call_id -> text as delivered
+        self._tool_nodes: set = set()     # run_ids of graph "tools" nodes
+        self._passes: list = []           # highest primary step, per pass
+        self._system: dict = {}           # primary system prompt sha -> chars
+        self._tools_sent: set = set()     # tool names the primary was sent
+        self._build_tools: Optional[list] = None
+        self.step_cap: Optional[int] = None
+        self.step_allowance: Optional[int] = None
         self._lock = threading.Lock()
         self.records_written = 0
         self.last_error: Optional[str] = None
@@ -388,13 +707,94 @@ class ActivityLogger(BaseCallbackHandler):
         return PRIMARY
 
     def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None,
-                       **kwargs):
+                       metadata=None, **kwargs):
         # Graph and node runs sit between a task call and the sub-agent's own
-        # model/tool runs; only their parentage is needed.
+        # model/tool runs; their parentage is needed, and they carry the
+        # graph's step count (EV-06).
         try:
             self._note(run_id, parent_run_id)
+            if parent_run_id is None:
+                # a graph run at the top: one pass of the turn (an
+                # auto-continue or a checker's retry is another)
+                self._passes.append(0)
+                return
+            md = metadata if isinstance(metadata, dict) else {}
+            step = md.get("langgraph_step")
+            if not isinstance(step, int):
+                return
+            if kwargs.get("name") == "tools" \
+                    and md.get("langgraph_node") == "tools":
+                self._tool_nodes.add(str(run_id))
+            # The primary's own graph: a helper's nodes run in a namespace
+            # nested under the task call ("tools:<id>|model:<id>").
+            if "|" not in str(md.get("langgraph_checkpoint_ns") or "") \
+                    and self._agent_of(parent_run_id) == PRIMARY:
+                if not self._passes:
+                    self._passes.append(0)
+                self._passes[-1] = max(self._passes[-1], step)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def on_chain_end(self, outputs, *, run_id, parent_run_id=None, **kwargs):
+        """A graph ``tools`` node has finished: its messages are what the
+        model will be given. Where one differs from the text last seen for
+        that call (the tool's own output, or as the app's middleware
+        delivered it), the agent's graph changed it -- deepagents moves a
+        large result to ``/large_tool_results/`` and sends a notice and a
+        preview instead -- and it is logged as ``tool_delivered`` with
+        ``stage: "graph"`` (EV-19; field session 2026-10-15: the record
+        kept the first 32,000 characters of a 277,385-character result,
+        never the notice the model read)."""
+        rid = str(run_id)
+        if rid not in self._tool_nodes:
+            return
+        try:
+            self._tool_nodes.discard(rid)
+            for msg in _tool_messages(outputs):
+                self._graph_delivered(msg, rid)
+        except Exception as exc:                       # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def on_chain_error(self, error, *, run_id, parent_run_id=None, **kwargs):
+        self._tool_nodes.discard(str(run_id))
+
+    def _graph_delivered(self, msg, node_rid: str) -> None:
+        call_id = str(getattr(msg, "tool_call_id", "") or "")
+        if not call_id:
+            return
+        if call_id in self._seen:
+            prev, now = self._seen.pop(call_id), _delivered_text(msg.content)
+        elif call_id in self._outputs:
+            prev, now = self._outputs.pop(call_id), _to_text(msg)
+        else:
+            return                       # nothing seen to compare with
+        if prev == now:
+            return
+        text, truncated, n, whole = self._cap_whole(
+            now, self.max_chars, f"delivered_{getattr(msg, 'name', '') or ''}",
+            call_id)
+        rec = {"agent": self._agent_of(node_rid), "event": "tool_delivered",
+               "name": getattr(msg, "name", None), "tool_call_id": call_id,
+               "status": getattr(msg, "status", None), "stage": "graph",
+               "text": text, "truncated": truncated, "chars": n,
+               "chars_before": len(prev)}
+        moved = _moved_to(now)
+        if moved:
+            rec["moved_to"] = moved
+        if whole:
+            rec["full"] = whole
+        self._write(rec)
+
+    def note_step_cap(self, cap: Optional[int],
+                      allowance: Optional[int] = None) -> None:
+        """The step cap the turn's run was given, and the ordinary cap it
+        travels with when the extraction cap raised it (``webapp.core.
+        stream_turn``); written on ``turn_end`` beside ``graph_steps``."""
+        try:
+            self.step_cap = int(cap) if cap else None
+            self.step_allowance = int(allowance) if allowance else None
+        except (TypeError, ValueError):
+            pass
 
     def _tool_of(self, parent_run_id) -> Optional[str]:
         """The run id of the tool call a run sits inside (the nearest open
@@ -458,10 +858,19 @@ class ActivityLogger(BaseCallbackHandler):
         part of what the model was shown, so it belongs in the record.
         ``engine`` is which client served the turn and the retry, pacing
         and helper policy in force (``webapp.core.engine_record``)."""
+        proc = _process_record(self.conv_dir)
+        if proc is not None:
+            self._write(proc)
+        for held in _take_pending(self.conv_dir):    # a restore since
+            self._write(held)
         rec = {"agent": PRIMARY, "event": "turn_start",
                "prompt": (prompt or "")[:500], "model": model}
         if engine:
             rec["engine"] = engine
+            tools = (engine.get("build") or {}).get("tools") \
+                if isinstance(engine.get("build"), dict) else None
+            if isinstance(tools, list):
+                self._build_tools = [str(t) for t in tools]
         if note:
             rec["context_note"] = str(note)[:DEFAULT_MAX_CHARS]
         self._write(rec)
@@ -471,13 +880,69 @@ class ActivityLogger(BaseCallbackHandler):
                  error_detail: Optional[str] = None) -> None:
         """``error`` is what the user was shown; ``error_detail`` the
         provider's own text when that was NOT shown (a spent AI budget:
-        its JSON and request id are for the owner, live smoke 2c, D2)."""
+        its JSON and request id are for the owner, live smoke 2c, D2).
+        Also the turn's graph steps against its cap, the fingerprint of
+        the primary's system prompt and the tools it was offered
+        (EV-06; see the module docstring)."""
         rec = {"agent": PRIMARY, "event": "turn_end",
                "duration_s": round(self._clock() - self._t0, 3),
                "turn_tokens": turn_tokens, "answer_chars": answer_chars,
                "error": error}
         if error_detail:
             rec["error_detail"] = str(error_detail)[:DEFAULT_MAX_CHARS]
+        try:
+            rec.update(self._turn_facts())
+        except Exception as exc:                       # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
+        written = self.records_written
+        self._write(rec)
+        if "tools_offered" in rec and self.records_written > written:
+            with _FILE_LOCKS_GUARD:
+                _TOOLS_NOTED[_log_key(self.conv_dir)] = \
+                    rec.get("tools_offered_sha")
+
+    def _turn_facts(self) -> dict:
+        out: dict = {}
+        passes = [s for s in self._passes if s]
+        if passes:
+            out["graph_steps"] = max(passes)
+            if len(passes) > 1:
+                out["graph_steps_by_pass"] = passes
+        if self.step_cap:
+            out["step_cap"] = self.step_cap
+        if self.step_allowance:
+            out["step_allowance"] = self.step_allowance
+        prompts = [{"sha": sha, "chars": n}
+                   for sha, n in self._system.items()]
+        if prompts:
+            out["system_prompt"] = prompts[0] if len(prompts) == 1 else prompts
+        names = sorted(self._tools_sent or self._build_tools or ())
+        if names:
+            # The names themselves only when this process has not already
+            # written the same list into this log (a long conversation
+            # repeated them every turn); the sha says which list it was.
+            sha = fingerprint(json.dumps(names))
+            out["tools_offered_sha"] = sha
+            out["tools_offered_from"] = ("calls" if self._tools_sent
+                                         else "build")
+            with _FILE_LOCKS_GUARD:
+                same = _TOOLS_NOTED.get(_log_key(self.conv_dir)) == sha
+            if not same:
+                out["tools_offered"] = names
+        return out
+
+    def turn_files(self, files: list) -> None:
+        """The files the turn wrote or listed, each ``{"path", "bytes",
+        "sha", "how"}`` (:func:`file_facts`; ``how`` is ``new``,
+        ``rewritten`` or ``listed``), written after ``turn_end`` by the
+        app's turn job (EV-19; field session 2026-10-15: a file rewritten
+        under its own name looked like two outputs). Nothing when the turn
+        wrote nothing."""
+        files = [f for f in files or () if isinstance(f, dict)]
+        if not files:
+            return
+        rec = {"agent": PRIMARY, "event": "turn_files",
+               "files": files[:MAX_TURN_FILES], "n_files": len(files)}
         self._write(rec)
 
     # -- tools ------------------------------------------------------------
@@ -599,6 +1064,8 @@ class ActivityLogger(BaseCallbackHandler):
             side = _side_call_fields()
             if side:
                 rec["vision"] = side
+                # what was sent with the image, for its model_end (EV-06)
+                self._side[rid] = {**side, **_side_prompt(messages)}
                 tool_rid = self._tool_of(parent_run_id)
                 if tool_rid:
                     rec["tool"] = self._names.get(tool_rid)
@@ -607,6 +1074,8 @@ class ActivityLogger(BaseCallbackHandler):
                         acc = self._vision.setdefault(tool_rid, [0, 0.0])
                         acc[0] += 1
                         acc[1] += float(side.get("queued_s") or 0.0)
+            elif rec["agent"] == PRIMARY and not source:
+                self._primary_call(messages, kwargs)
             try:
                 from webapp import http_trace
                 http_trace.begin()
@@ -615,6 +1084,35 @@ class ActivityLogger(BaseCallbackHandler):
             self._write(rec)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def _primary_call(self, messages, kwargs: dict) -> None:
+        """Note what a primary model call was sent: a fingerprint of its
+        system message, and the names of the tools it was offered where the
+        client puts them in its invocation parameters (an OpenAI-style
+        client does; a client that keeps them on itself does not, and the
+        build's list stands in)."""
+        try:
+            first = messages[0][0] if messages and messages[0] else None
+            if getattr(first, "type", None) == "system":
+                text = _to_text(first)
+                with self._lock:
+                    self._system.setdefault(fingerprint(text), len(text))
+            params = kwargs.get("invocation_params")
+            tools = params.get("tools") if isinstance(params, dict) else None
+            if isinstance(tools, (list, tuple)):
+                names = {n for n in (_tool_name(t) for t in tools) if n}
+                with self._lock:
+                    self._tools_sent.update(names)
+        except Exception as exc:                       # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def _side_fields(self, rid: str) -> dict:
+        """A vision side call's label and what it sent (taken at its
+        ``model_start``), with any facts the call added since."""
+        sent = self._side.pop(rid, None)
+        if sent is None:
+            return {}
+        return {"vision": {**(_side_call_fields() or {}), **sent}}
 
     @staticmethod
     def _http_fields(require_more: bool = True) -> dict:
@@ -660,6 +1158,7 @@ class ActivityLogger(BaseCallbackHandler):
                     reasoning, MODEL_TEXT_CHARS, "model_reasoning", rid)
                 if whole:
                     record["reasoning_full"] = whole
+            record.update(self._side_fields(rid))
             record.update(self._http_fields())
             self._write(record)
         except Exception as exc:                       # noqa: BLE001
@@ -714,6 +1213,9 @@ class ActivityLogger(BaseCallbackHandler):
         call_id = str(data.get("tool_call_id") or "")
         content = str(data.get("content") or "")
         own = self._outputs.pop(call_id, None) if call_id else None
+        if call_id:
+            # what the graph's own change, if any, is measured against
+            self._seen[call_id] = content
         if own is not None and own == content:
             return
         refused = bool(data.get("refused")) or own is None
@@ -746,6 +1248,7 @@ class ActivityLogger(BaseCallbackHandler):
                          "error": text, "truncated": truncated,
                          "duration_s": (round(self._clock() - t_start, 3)
                                         if t_start is not None else None),
+                         **self._side_fields(rid),
                          **_refusal_fields(error),
                          **self._http_fields(require_more=False)})
         except Exception as exc:                       # noqa: BLE001
@@ -773,5 +1276,6 @@ def load(conv_dir: str, turn: Optional[int] = None) -> list:
     return out
 
 
-__all__ = ["ActivityLogger", "activity_path", "load", "FILE_NAME",
-           "DEFAULT_MAX_CHARS", "TASK_TOOL", "PRIMARY"]
+__all__ = ["ActivityLogger", "activity_path", "load", "append_event",
+           "note_restored", "file_facts", "fingerprint", "FILE_NAME",
+           "DEFAULT_MAX_CHARS", "TASK_TOOL", "PRIMARY", "APP"]

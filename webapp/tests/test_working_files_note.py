@@ -205,7 +205,7 @@ def test_a_turn_job_carries_the_note_and_records_it(conv, monkeypatch):
         time.sleep(0.02)
     assert job.done and seen["note"] == note
     assert seen["last"] == "q"                  # the note is added downstream
-    recs = al.load(conv_dir)
+    recs = [r for r in al.load(conv_dir) if r["agent"] != al.APP]
     assert recs[0]["event"] == "turn_start" and recs[0]["context_note"] == note
     saved = json.load(open(os.path.join(conv_dir, "messages.json")))
     assert note not in json.dumps(saved)        # never in the saved history

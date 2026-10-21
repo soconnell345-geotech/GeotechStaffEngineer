@@ -29,7 +29,8 @@ any arm that changes only the orientation, with ``orientation=True``: without
 it the arm is the same as its base arm.
 
 Every run writes ``runs/<arm>/<task>/run.json`` (the answer, the checks, tool
-calls, model calls, tokens, seconds) beside the conversation's own
+calls, model calls, tokens, seconds, and a ``fingerprint`` of the system
+prompt and the tools the agent was given) beside the conversation's own
 ``activity.jsonl`` and any file the agent produced, then rewrites
 ``RESULTS.md`` / ``results.json`` and mirrors the folder (SharePoint and/or a
 durable folder) — the cluster's ``/tmp`` does not survive a restart, and a
@@ -111,6 +112,31 @@ def _activity_records(run_dir: str) -> List[Dict[str, Any]]:
     return out
 
 
+def _fingerprint(found: Dict[str, Any],
+                 records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """What the run's agent was given, as hashes and names (BACKLOG EV-06;
+    the check1 trace review could not tell two runs' prompts apart):
+    ``system_prompt`` -- the fingerprint and length of the system message
+    the primary was sent (each turn's ``turn_end``; a list when they
+    differ) -- and ``tools`` -- a fingerprint of the tools' names,
+    descriptions and argument schemas, with the names
+    (``webapp.core.tools_fingerprint``)."""
+    out: Dict[str, Any] = {}
+    prompts: List[Any] = []
+    for rec in records:
+        if rec.get("event") != "turn_end" or not rec.get("system_prompt"):
+            continue
+        sp = rec["system_prompt"]
+        for one in (sp if isinstance(sp, list) else [sp]):
+            if one not in prompts:
+                prompts.append(one)
+    if prompts:
+        out["system_prompt"] = prompts[0] if len(prompts) == 1 else prompts
+    if found.get("tools"):
+        out["tools"] = found["tools"]
+    return out
+
+
 def _activity(conv_dir: str) -> Dict[str, Any]:
     """Tool calls, model calls and tokens from the run's activity.jsonl."""
     path = os.path.join(conv_dir, "activity.jsonl")
@@ -180,6 +206,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
         "turns": [], "answer": "", "error": None, "outcome_error": None}
     t0 = time.monotonic()
     staged: List[str] = []
+    fingerprint: Dict[str, Any] = {}
     collector = _output_collector()
     try:
         docs = [_documents.resolve(d, docs_dir) for d in task.documents]
@@ -209,12 +236,15 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             history: List[Dict[str, str]] = []
             thread = uuid4().hex
             limit = recursion_limit or core.DEFAULT_BEHAVIOR["recursion_limit"]
+            # What the run's agent offers, on the record as the app keeps it.
+            engine = core.engine_record(agent) or None
+            fingerprint["tools"] = core.tools_fingerprint(agent)
             for i, text in enumerate(turns):
                 content = core.assemble_user_message([note] if i == 0 else [],
                                                      text)
                 history.append({"role": "user", "content": content})
                 logger = ActivityLogger(run_dir, turn=i + 1)
-                logger.turn_start(prompt=text)
+                logger.turn_start(prompt=text, engine=engine)
                 t_turn = time.monotonic()
                 answer, tokens, err, kind = "", 0, None, None
                 callbacks = [logger] + ([collector] if collector else [])
@@ -270,6 +300,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                   tool_calls=act["tool_calls"],
                   tool_counts=_counts(c["name"] for c in act["tool_calls"]))
     records = _activity_records(run_dir)
+    result["fingerprint"] = _fingerprint(fingerprint, records)
     result["checks"] = [
         _checks.run_check(c, result["answer"], files=produced,
                           tool_calls=act["tool_calls"], activity=records)

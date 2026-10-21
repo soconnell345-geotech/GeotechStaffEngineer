@@ -325,6 +325,15 @@ _SECRETS = re.compile(
     r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}|\bBearer\s+\S+|\b[A-Za-z0-9_\-]{32,}\b")
 
 
+def mask_secrets(text: Any) -> str:
+    """``text`` with anything shaped like a key or a bearer token replaced
+    by an ellipsis (the rule :func:`html_gist` applies). Never raises."""
+    try:
+        return _SECRETS.sub("…", "" if text is None else str(text))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def auth_refused(exc) -> bool:
     """Whether ``exc`` (or an error it was raised from) is the AI service
     refusing a call's sign-in: OpenAI's ``AuthenticationError`` or any HTTP
@@ -393,4 +402,4 @@ __all__ = ["scrub_paths", "error_line", "tool_error", "tool_error_json",
            "BudgetStop", "budget_signal", "budget_exhausted",
            "budget_message", "budget_tool_note", "BUDGET_HINT",
            "BUDGET_CODES", "BUDGET_PHRASES", "auth_refused", "auth_message",
-           "html_gist"]
+           "html_gist", "mask_secrets"]

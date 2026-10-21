@@ -789,6 +789,19 @@ class SharePointStore:
                     f"{rel}: {type(exc).__name__}: {exc}")
         _save_manifest(conv_dir, stamps, remote_base)
         summary["status"] = "restored" if summary["downloaded"] else "error"
+        if summary["downloaded"]:
+            # The record says the folder came back from the mirror (BACKLOG
+            # EV-19: a restart and a restore were invisible in it).
+            try:
+                from webapp import activity_log
+                activity_log.note_restored(
+                    conv_dir, source="sharepoint",
+                    files=summary["downloaded"],
+                    bytes=sum(int(s[0]) for s in stamps.values()
+                              if isinstance(s, (list, tuple)) and s),
+                    errors=len(summary["errors"]), replaced=bool(overwrite))
+            except Exception:  # noqa: BLE001 - a record, never the restore
+                pass
 
     def _leave_moved_pointer(self, fm, old_base: str, new_base: str,
                              summary: dict) -> None:

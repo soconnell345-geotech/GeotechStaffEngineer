@@ -1291,6 +1291,25 @@ def _history_after(run_state, added, work_messages, pass_text) -> list:
     return list(work_messages) + [{"role": "assistant", "content": pass_text}]
 
 
+def _note_step_cap(callbacks, config: dict) -> None:
+    """Tell the turn's activity log (any callback with ``note_step_cap``)
+    the step cap the run was given and the ordinary cap it travels with
+    when the extraction cap raised it, for ``turn_end`` (BACKLOG EV-06)."""
+    allowance = None
+    try:
+        from funhouse_agent.deep.coverage_tools import ALLOWANCE_KEY
+        allowance = (config.get("configurable") or {}).get(ALLOWANCE_KEY)
+    except Exception:  # noqa: BLE001 - a record, never the turn
+        pass
+    for cb in callbacks or ():
+        note = getattr(cb, "note_step_cap", None)
+        if callable(note):
+            try:
+                note(config.get("recursion_limit"), allowance)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _turn_scope():
     """The scope one turn's agents share (:mod:`funhouse_agent.deep.
     keep_work`), or a no-op where it cannot be imported."""
@@ -1402,6 +1421,7 @@ def stream_turn(agent, messages: list, thread_id: str,
             recursion_limit = int(extraction)
     if recursion_limit:                     # A5(b): primary-agent step cap
         config["recursion_limit"] = int(recursion_limit)
+    _note_step_cap(callbacks, config)
     try:
         from langchain_core.callbacks import get_usage_metadata_callback
         cb_ctx = get_usage_metadata_callback()
@@ -2753,9 +2773,50 @@ def engine_record(agent) -> dict:
         if isinstance(build, dict) and build:
             # the tools, helpers and switches the turn ran with (EV-20)
             out["build"] = build
+        # the tools' wording, as one fingerprint (EV-06)
+        tools_sha = tools_fingerprint(agent).get("sha")
+        if tools_sha:
+            out["tools_sha"] = tools_sha
         return out
     except Exception:  # noqa: BLE001 - a record, never the turn
         return {}
+
+
+def tools_fingerprint(agent) -> dict:
+    """``{"sha", "names"}`` of the tools a built agent offers its model: a
+    fingerprint (``webapp.activity_log.fingerprint``) of every tool's name,
+    description and argument schema, and the names. Two runs with the same
+    ``sha`` were offered the same tools, worded the same (BACKLOG EV-06;
+    the check1 trace review could not tell). Worked out once per agent;
+    ``{}`` when the build cannot say."""
+    cached = getattr(agent, "geotech_tools_fingerprint", None)
+    if isinstance(cached, dict):
+        return cached
+    try:
+        tools = agent.nodes["tools"].bound.tools_by_name
+    except Exception:  # noqa: BLE001 - not a graph with a tool node
+        return {}
+    try:
+        rows = []
+        for name in sorted(tools):
+            tool = tools[name]
+            try:
+                schema = tool.tool_call_schema.model_json_schema()
+            except Exception:  # noqa: BLE001 - a tool without a schema
+                schema = None
+            rows.append([name, str(getattr(tool, "description", "") or ""),
+                         schema])
+        from webapp.activity_log import fingerprint
+        out = {"sha": fingerprint(_json.dumps(rows, sort_keys=True,
+                                              default=str)),
+               "names": sorted(tools)}
+    except Exception:  # noqa: BLE001 - a record, never the run
+        return {}
+    try:
+        agent.geotech_tools_fingerprint = out
+    except Exception:  # noqa: BLE001 - a compiled graph that refuses it
+        pass
+    return out
 
 
 def record_engine(thread_id: str, record: dict,
