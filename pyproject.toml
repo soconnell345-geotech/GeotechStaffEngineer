@@ -87,7 +87,6 @@ dependencies = [
     "openseespy>=3.6",
     "pystrata>=0.5",
     "eqsig>=1.2",
-    "pyrotd>=0.6",
     "liquepy>=0.3",
     "pygef>=0.10",
     "gstools>=1.5",

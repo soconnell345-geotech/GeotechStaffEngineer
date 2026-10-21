@@ -147,7 +147,6 @@ OPTIONAL_DEPS: dict[str, str] = {
     "openseespy": "opensees",
     "pystrata": "pystrata",
     "eqsig": "seismic-signals",
-    "pyrotd": "seismic-signals",
     "liquepy": "liquepy",
     "gstools": "gstools",
     "SALib": "salib",

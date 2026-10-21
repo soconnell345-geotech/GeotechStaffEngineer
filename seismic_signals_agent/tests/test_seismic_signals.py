@@ -456,8 +456,6 @@ class TestSignalUtils:
         assert err.startswith("pyrotd is installed but cannot be imported")
         assert "pkg_resources" in err and "setuptools" in err
         assert su.has_pyrotd() is False
-        with pytest.raises(ImportError, match="installed but cannot"):
-            su.import_pyrotd()
 
     def test_pyrotd_not_installed_says_so(self, monkeypatch):
         import importlib.util
@@ -467,8 +465,6 @@ class TestSignalUtils:
                             lambda n, *a: None if n == "pyrotd"
                             else real_find(n, *a))
         assert su.pyrotd_import_error() == "pyrotd is not installed"
-        with pytest.raises(ImportError, match="not installed"):
-            su.import_pyrotd()
 
 
 # ===================================================================
@@ -870,10 +866,8 @@ class TestRotDTimeDomain:
                                                            monkeypatch):
         from seismic_signals_agent import rotd_spectrum, signal_utils
 
-        def no_pyrotd():
-            raise ImportError("pyrotd is not installed")
-
-        monkeypatch.setattr(signal_utils, "import_pyrotd", no_pyrotd)
+        monkeypatch.setattr(signal_utils, "pyrotd_import_error",
+                            lambda: "pyrotd is not installed")
         r = rotd_spectrum.analyze_rotd_spectrum(
             motion_a="synthetic_pulse", motion_b="synthetic_long",
             periods=[0.1, 1.0], percentiles=[0, 50, 84, 100])

@@ -1238,7 +1238,7 @@ def _ch2_install(ctx):
         "dxf": "DXF CAD import and export",
         "opensees": "OpenSeesPy nonlinear FE (PM4Sand, 1D site response)",
         "pystrata": "equivalent-linear 1D site response",
-        "seismic-signals": "eqsig + pyrotd ground-motion processing",
+        "seismic-signals": "eqsig ground-motion processing (RotD computed in the time domain by the app's own code)",
         "liquepy": "Boulanger &amp; Idriss liquepy triggering",
         "gstools": "geostatistical kriging, random fields and conditional simulation",
         "salib": "Sobol / Morris sensitivity analysis",
