@@ -3,7 +3,8 @@
 ## Purpose
 
 Wraps the eqsig and pyrotd libraries for earthquake signal processing.
-Provides response spectra (Nigam-Jennings), intensity measures,
+Provides response spectra (Nigam-Jennings, the shared
+`geotech_common.response_spectrum` since GM-274), intensity measures,
 orientation-independent spectra (RotD50/RotD100), and signal processing
 (filtering + baseline correction).
 
@@ -61,16 +62,63 @@ seismic_signals_agent_foundry.py  # Foundry wrapper (project root)
    0/50/100); `SignalProcessingResult.to_dict` adds `filter_applied` and
    `baseline_corrected`.
 
-## Comparison: eqsig vs Existing Response Spectrum
+## Response spectrum: one code with the OpenSees tool (GM-274, 2026-10-21)
 
-| Feature | eqsig (this module) | compute_response_spectrum (opensees_utils) |
-|---------|--------------------|--------------------------------------------|
-| Algorithm | Nigam-Jennings | Nigam-Jennings since GM-272 (2026-10-21; Newmark average acceleration before), substeps below 20 steps a period |
-| Accuracy | Exact at the samples for piecewise-linear input | The same at the points; the peak between points read off a cubic through u and v (within 0.004 % of scipy's lsim on site response records) |
-| Speed | Fast (vectorized C/Fortran) | Fast (scipy `lfilter`) |
-| Intensity measures | Yes (Arias, CAV, Ds5-95) | No |
-| Dependencies | eqsig | numpy, scipy |
-| Use case | Full signal analysis | Quick spectrum when eqsig not installed |
+`analyze_response_spectrum` takes Sa from `geotech_common.response_spectrum`
+(`pseudo_spectral_accel`), the code `opensees_agent.opensees_utils.
+compute_response_spectrum` wraps, so the two tools give the same Sa for the
+same record (`TestOneSpectrumCode` in both suites, bit for bit). Every
+period by Nigam and Jennings (1969): the record linear between its
+samples, each oscillator solved in closed form, in sub-steps of at most
+T / 20 below 20 record steps a period, the peak read between points off
+the cubic through u and v; within 0.004 % of scipy's lsim (GM-272). PGV
+and PGD still come from eqsig (`AccSignal`), as do the intensity measures
+and the filters, so the tool still needs eqsig. The result's fields and
+units are unchanged; `summary()` names the method.
+
+Until GM-274 the spectrum was eqsig's (`AccSignal.generate_response_spectrum`):
+the same step, but the whole record at one step, the larger of the
+shortest period / 20 and a quarter of the record's step, the peak read
+only at its points, and the PGA where a period was under six of them.
+Against lsim it read up to 2.5 % low under ten record steps a period
+(-2.5 % at 0.0137 s on the dense sand surface, 0.01 s; -0.32 % at 0.026 s
+on the Gilroy input, 0.005 s) and within 0.04 % from ten steps up. So Sa
+under ten record steps now rises by up to about 2.5 % (synthetic pulse,
+0.01 s: 0.3000 -> 0.3023 g); no test pinned those values.
+
+## RotD: measured against lsim, not changed (GM-274)
+
+`analyze_rotd_spectrum` (pyrotd's procedure, or `rotd_native`, the same to
+2e-16 on the records below) computes each response in the frequency
+domain. Its RotD100 of one component with the other zero is that
+component's spectrum, so it was checked against lsim like the spectrum
+above: 27 periods 0.01-4 s, the GM-272 records (20 s each).
+
+| Record (dt) | under ten steps a period | ten steps and up |
+|---|---|---|
+| dense sand surface, 80 el. (0.01 s) | +0.9 to +60.9 % | -2.3 to +2.8 % |
+| dense sand input (0.01 s) | -0.8 to +0.1 % | -0.4 to +4.9 % |
+| wiki column surface (0.005 s) | +1.8 to +16.8 % | -8.2 to +14.7 % |
+| effective example surface (0.005 s) | +2.0 to +10.1 % | -8.1 to +30.0 % |
+| Gilroy input (0.005 s) | -0.1 to +3.2 % | -3.5 to +25.4 % |
+
+Two causes:
+
+- **The record is not padded.** The FFT takes the record as periodic, so
+  the oscillator still ringing at its end runs on into its start. With
+  80 s of zeros after each record, the procedure is within -0.4 to +1.6 %
+  of Nigam and Jennings on the same padded record from ten steps a period
+  up (the rest is the peak read only at its points, ten or more a period).
+- **Under ten steps it reads the record as band-limited**, sine waves
+  through the samples rather than straight lines between them: padded,
+  still up to +61 % on the dense sand surface (0.02 s, two steps a period,
+  the record's Nyquist frequency), +15 % on the wiki surface and +3.7 % on
+  the Gilroy input.
+
+So RotD100 of one component is not, as it stands, the spectrum
+`analyze_response_spectrum` gives for it. Which reading of a record
+between its samples a short-period spectrum should use is a method choice;
+padding is not. Left for the backlog (see `BACKLOG.md`).
 
 ## Intensity Measures
 

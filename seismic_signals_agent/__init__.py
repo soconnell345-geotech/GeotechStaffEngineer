@@ -4,7 +4,8 @@ Seismic Signals Agent Module
 Earthquake signal processing using eqsig and pyrotd.
 
 Current analyses:
-  - Response spectrum (Nigam-Jennings via eqsig)
+  - Response spectrum (Nigam-Jennings with sub-steps,
+    geotech_common.response_spectrum; PGV and PGD via eqsig)
   - Intensity measures (Arias intensity, CAV, significant duration)
   - Rotated spectral acceleration (RotD50/RotD100 via pyrotd)
   - Signal processing (filtering + baseline correction via eqsig)

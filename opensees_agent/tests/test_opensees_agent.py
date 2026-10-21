@@ -1849,11 +1849,11 @@ class TestNigamJenningsSpectrum:
     def test_closed_form_step_matches_the_matrix_exponential(self):
         """u and v at the samples against lsim on the same record, from a
         stiff oscillator (2 steps a period) to a soft one (2,000)."""
-        from opensees_agent.opensees_utils import _nigam_jennings
+        from geotech_common.response_spectrum import nigam_jennings
         dt = 0.005
         _, a = _spiky_record(dt)
         for T in (0.01, 0.1, 1.0, 10.0):
-            u, v = _nigam_jennings(-a * 9.81, dt, 2.0 * np.pi / T, 0.05)
+            u, v = nigam_jennings(-a * 9.81, dt, 2.0 * np.pi / T, 0.05)
             y, yv = _lsim_response(a, dt, T)
             assert np.max(np.abs(u - y)) < 1e-9 * np.max(np.abs(y)), T
             assert np.max(np.abs(v - yv)) < 1e-9 * np.max(np.abs(yv)), T
@@ -1877,14 +1877,14 @@ class TestNigamJenningsSpectrum:
         two samples: the samples reach cos(pi / 20) = 0.988, the cubic
         through u and v the crest, to within 3e-5 (the cubic's error
         bound, (2 pi / 20)^4 / 384 = 2.5e-5 of the amplitude)."""
-        from opensees_agent.opensees_utils import _peak_between_points
+        from geotech_common.response_spectrum import peak_between_points
         T, h = 1.0, 0.05
         t = np.arange(0.0, 2.0, h)
         w = 2.0 * np.pi / T
         u = np.cos(w * (t - 0.525))
         assert np.max(np.abs(u)) == pytest.approx(np.cos(np.pi / 20), abs=1e-9)
-        assert _peak_between_points(u, -w * np.sin(w * (t - 0.525)),
-                                    h) == pytest.approx(1.0, abs=3e-5)
+        assert peak_between_points(u, -w * np.sin(w * (t - 0.525)),
+                                   h) == pytest.approx(1.0, abs=3e-5)
 
     def test_a_stiff_oscillator_reads_the_peak(self):
         """Sa at 0.01 s of a smooth 2 Hz record is its peak, to within
@@ -1903,72 +1903,67 @@ class TestNigamJenningsSpectrum:
 
 requires_eqsig = pytest.mark.skipif(
     importlib.util.find_spec("eqsig") is None,
-    reason="eqsig not installed (seismic_signals' optional spectrum)")
+    reason="eqsig not installed (seismic_signals' response spectrum takes "
+           "its PGV and PGD from it)")
 
 #: The 27 periods of the GM-272 lsim check: 20 from 0.01 to 4 s and seven
 #: round ones
 CROSS_CHECK_PERIODS_S = np.unique(np.concatenate(
     [np.geomspace(0.01, 4.0, 20), [0.02, 0.03, 0.05, 0.08, 0.1, 0.2, 1.0]]))
 
+#: Three of them under ten steps of both records (0.0137, 0.0258 and
+#: 0.0484 s), where seismic_signals' spectrum read low until GM-274
+SHORT_PERIODS_S = CROSS_CHECK_PERIODS_S[[1, 4, 7]]
 
-class TestAgainstSeismicSignalsSpectrum:
-    """compute_response_spectrum against seismic_signals' spectrum (eqsig,
-    Nigam and Jennings too), on the Gilroy input stored for the wiki
-    example (0.005 s) and the dense sand surface record (0.01 s, run by
-    OpenSees). Skipped without eqsig; the dense sand case also needs
-    openseespy (WSL, CI)."""
 
-    def _assert_the_same_step(self, a, dt):
-        """Fed the same force on the same points, eqsig's step gives the
-        same displacement and velocity at every point, within 1e-7 of the
-        peak (measured 1.4e-8: eqsig takes 2 pi as 6.2831853)."""
-        from eqsig.sdof import nigam_and_jennings_response
-        from opensees_agent.opensees_utils import (
-            _POINTS_PER_PERIOD, _nigam_jennings, _substeps)
-        groups = {}
-        for T in CROSS_CHECK_PERIODS_S:
-            n = max(1, math.ceil(_POINTS_PER_PERIOD * dt / T - 1e-9))
-            groups.setdefault(n, []).append(T)
-        for n, periods in groups.items():
-            p = _substeps(-np.asarray(a) * 9.81, n)
-            eu, ev, _ = nigam_and_jennings_response(p, dt / n, periods, 0.05)
-            for T, e_u, e_v in zip(periods, eu, ev):
-                u, v = _nigam_jennings(p, dt / n, 2.0 * np.pi / T, 0.05)
-                assert np.max(np.abs(u - e_u)) < 1e-7 * np.max(np.abs(u)), T
-                assert np.max(np.abs(v - e_v)) < 1e-7 * np.max(np.abs(v)), T
+class TestOneSpectrumCode:
+    """seismic_signals' response spectrum and compute_response_spectrum are
+    one code, geotech_common.response_spectrum (GM-274), on the Gilroy
+    input stored for the wiki example (0.005 s) and the dense sand surface
+    record (0.01 s, run by OpenSees). Skipped without eqsig; the dense sand
+    case also needs openseespy (WSL, CI)."""
 
-    def _assert_the_same_spectrum(self, a, dt, worst_below):
-        """Sa within 0.1 % at ten record steps a period and longer
-        (measured 0.04 % at most). Shorter, eqsig is lower, by up to
-        ``worst_below``: it integrates the whole record at the larger of
-        the shortest period / 20 and a quarter of the record's step, reads
-        the peak only at its points, and gives the PGA where a period is
-        under six of them; here the module agrees with scipy's lsim within
-        0.004 % (GM-272), so the shortfall is eqsig's (GM-274)."""
+    def _assert_one_code(self, a, dt):
+        """The same Sa at the 27 periods of the GM-272 check."""
         from seismic_signals_agent import analyze_response_spectrum
         P = CROSS_CHECK_PERIODS_S
-        e = analyze_response_spectrum(accel_history=a, dt=dt, periods=P).Sa_g
+        r = analyze_response_spectrum(accel_history=a, dt=dt, periods=P)
         _, sa = compute_response_spectrum(a, dt, P)
-        long_ = P >= 10 * dt * (1.0 - 1e-9)
-        np.testing.assert_allclose(e[long_], sa[long_], rtol=1e-3)
-        assert np.all(e[~long_] <= sa[~long_] * (1.0 + 1e-6))
-        assert np.all(e[~long_] >= sa[~long_] * (1.0 - worst_below))
+        np.testing.assert_array_equal(r.Sa_g, sa)
+
+    def _assert_against_lsim(self, a, dt):
+        """seismic_signals' Sa under ten record steps a period against
+        scipy's lsim read at least 100 times a period: from 0.01 % below
+        lsim's reading (the cubic's error) to 0.1 % above it (lsim reads
+        only at its points, about 1 - cos(pi / 100) = 0.05 % under the
+        peak at most); measured -0.001 to +0.03 %."""
+        from seismic_signals_agent import analyze_response_spectrum
+        r = analyze_response_spectrum(accel_history=a, dt=dt,
+                                      periods=SHORT_PERIODS_S)
+        for T, s in zip(SHORT_PERIODS_S, r.Sa_g):
+            assert T < 10 * dt
+            y, _ = _lsim_response(a, dt, T,
+                                  read_every=dt / math.ceil(100 * dt / T))
+            ref = (2.0 * np.pi / T) ** 2 * np.max(np.abs(y)) / 9.81
+            assert ref * (1.0 - 1e-4) <= s <= ref * (1.0 + 1e-3), T
 
     @requires_eqsig
     def test_gilroy_input(self):
-        """The stored Gilroy record: below ten steps eqsig is up to 0.32 %
-        low (0.026 s), checked within 1 %."""
+        """The stored Gilroy record. Until GM-274 seismic_signals took
+        eqsig's spectrum, which read these short periods 0.09, 0.32 and
+        0.01 % low: it integrated the whole record no finer than a quarter
+        of its step and read the peak only at its points."""
         from opensees_agent.tests import opensees_wiki_free_field as wiki
         a, dt = wiki.load_record()
-        self._assert_the_same_step(a, dt)
-        self._assert_the_same_spectrum(a, dt, worst_below=0.01)
+        self._assert_one_code(a, dt)
+        self._assert_against_lsim(a, dt)
 
     @requires_eqsig
     @requires_opensees
     def test_dense_sand_surface(self):
-        """GM-264's dense sand column in 80 elements (raw PGA 0.453 g):
-        below ten steps eqsig is up to 2.5 % low (0.014 s, where it gives
-        the PGA), checked within 3 %."""
+        """GM-264's dense sand column in 80 elements (raw PGA 0.453 g).
+        eqsig read these short periods 2.50, 0.64 and 0.55 % low; at
+        0.0137 s, under six of its points a period, it gave the PGA."""
         from opensees_agent.site_response import analyze_site_response
         layer = {"thickness": 20.0, "Vs": 300.0, "density": 2.0,
                  "material_type": "sand", "phi": 38.0}
@@ -1978,9 +1973,8 @@ class TestAgainstSeismicSignalsSpectrum:
             time_limit_s=TEST_TIME_LIMIT_S)
         dt = float(r.time[1] - r.time[0])
         assert dt == pytest.approx(0.01)
-        self._assert_the_same_step(r.surface_accel_g, dt)
-        self._assert_the_same_spectrum(r.surface_accel_g, dt,
-                                       worst_below=0.03)
+        self._assert_one_code(r.surface_accel_g, dt)
+        self._assert_against_lsim(r.surface_accel_g, dt)
 
 
 class TestLowpass:

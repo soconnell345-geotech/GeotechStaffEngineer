@@ -21,7 +21,8 @@ def _pct_label(p: float) -> str:
 
 @dataclass
 class ResponseSpectrumResult:
-    """Results from Nigam-Jennings response spectrum analysis.
+    """Results of a response spectrum analysis, every period by Nigam and
+    Jennings (1969) with sub-steps (``geotech_common.response_spectrum``).
 
     Attributes
     ----------
@@ -66,12 +67,16 @@ class ResponseSpectrumResult:
     def summary(self) -> str:
         lines = [
             "=" * 60,
-            "  RESPONSE SPECTRUM (Nigam-Jennings)",
+            "  RESPONSE SPECTRUM (Nigam and Jennings, with sub-steps)",
             "=" * 60,
             "",
             f"  Motion:               {self.motion_name}",
             f"  Duration:             {self.duration_s:.1f} s  ({self.n_points} pts, dt={self.dt_s:.4f} s)",
             f"  Damping:              {self.damping:.1%}",
+            "  Method:               Nigam and Jennings (1969), the record "
+            "linear between samples,",
+            "                        in sub-steps of at most T/20, the peak "
+            "read between them",
             "",
             f"  PGA:                  {self.pga_g:.4f} g",
             f"  PGV:                  {self.pgv_m_per_s:.4f} m/s",
