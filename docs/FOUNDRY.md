@@ -249,10 +249,17 @@ and `create_chat_completion(ClaudeChatCompletionRequest, max_rate_limit_retries=
 (wrapper: `PalantirClaudeChatModel` in `webapp/palantir_sdk_engine.py`): no
 token, no proxy address. Text and tool calls come back as the agent expects,
 tool results go back as `tool_result` blocks, page images go as base64 PNG or
-JPEG (a reply's thinking is kept for the rest of its tool loop and recorded in
-`activity.jsonl`); the system prompt goes as one block marked
-for caching (`GEOTECH_FOUNDRY_PROMPT_CACHE=0` sends the plain text; a service
-that refuses the mark is asked once more without it, and not again);
+JPEG. No request asks for thinking; if a reply carries thinking blocks anyway,
+they go back with the rest of that tool loop, as Anthropic's API requires.
+Two blocks are marked for caching, as the proxy route's caching middleware
+marks them: the system prompt (one block, which caches the tools with it) and
+the last message's last block (the conversation so far). Where this SDK's
+classes take no cache field, that block goes unmarked; the tools and system
+prompt are then cached alone, or nothing is. `GEOTECH_FOUNDRY_PROMPT_CACHE=0`
+sends no marks. A 400 whose body names a cache field (`cache_control`,
+`system_blocks`) is asked once more with no marks, and if that works no marks
+are sent for that model until the app restarts; any other error, a 5xx
+included, is not resent for this;
 `tool_choice` is never sent; connection drops, timeouts, rate limits and 503s
 are retried as on the GPT leg. The labels keep the main agent on Opus 5.5 and
 the references helper on Sonnet 5.5 (§3a). A model RID still uses the proxy,

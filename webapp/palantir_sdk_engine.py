@@ -94,8 +94,8 @@ The reply is Anthropic's shape: ``content`` items carrying ``text``,
 ``stop_reason`` and ``usage``. A tool call goes back as a ``tool_use`` block
 and its result as a ``tool_result`` block (``tool_use_id``, ``content``,
 ``is_error``), the field names the public ``langchain-palantir`` adapter
-(Apache-2.0) uses; those two, the thinking blocks and the system block's
-cache mark are not yet seen on Foundry. A Claude model takes this leg only
+(Apache-2.0) uses; those two, the thinking blocks and the cache marks (the
+system block's and the last message's) are not yet seen on Foundry. A Claude model takes this leg only
 when ``GEOTECH_FOUNDRY_CLAUDE_SDK`` is on (``webapp.engine_config``); the
 LLM proxy stays Claude's route by default.
 
@@ -1016,11 +1016,12 @@ def not_imported_message(api_name: str) -> str:
 
 
 #: The same switch as the Foundry proxy route's (``webapp.engine_config``):
-#: ``0`` / ``off`` sends no cache mark on the system prompt.
+#: ``0`` / ``off`` sends no cache marks.
 PROMPT_CACHE_ENV = "GEOTECH_FOUNDRY_PROMPT_CACHE"
 
-#: Model API names whose service refused the system block's cache mark: one
-#: refused call per process, then the plain ``system`` text only. Kept here,
+#: Model API names whose service refused the cache marks (a 400 naming a
+#: cache field, and the unmarked request then worked): no marks for the rest
+#: of the process. Kept here,
 #: not on the model, because ``bind_tools`` makes a copy for each call.
 _CACHE_REFUSED: set = set()
 
@@ -1219,27 +1220,104 @@ def _openai_tools_to_claude(openai_tools: list, v3) -> list:
     return out
 
 
-def _cached_system(system: str, v3) -> Optional[list]:
-    """The system prompt as one block with an ephemeral cache mark (which
-    caches the tools and the system prompt together), or ``None`` where
-    this SDK cannot build it."""
+def _cache_mark(v3) -> Any:
+    """An ephemeral cache mark, or ``None`` where this SDK cannot build one."""
     try:
-        mark = v3.ClaudeChatCacheControl(
+        return v3.ClaudeChatCacheControl(
             ephemeral=v3.ClaudeChatEphemeralCacheControl())
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _cached_system(system: str, v3, mark) -> Optional[list]:
+    """The system prompt as one block carrying ``mark`` (which caches the
+    tools and the system prompt together), or ``None`` where this SDK
+    cannot build it."""
+    try:
         return [v3.ClaudeChatSystemBlock(text=system, cache_control=mark)]
     except (AttributeError, TypeError, ValueError):
         return None
 
 
+def _marked_block(block, v3, mark):
+    """A text, tool-result or image block rebuilt carrying ``mark``, or
+    ``None`` (another kind, or this SDK's block takes no mark)."""
+    try:
+        text = getattr(block, "text", None)
+        if text is not None:
+            return v3.ClaudeChatMessageContent(text=v3.ClaudeChatTextContent(
+                text=text.text, cache_control=mark))
+        result = getattr(block, "tool_result", None)
+        if result is not None:
+            kwargs = {"tool_use_id": result.tool_use_id,
+                      "content": result.content, "cache_control": mark}
+            if getattr(result, "is_error", None):
+                kwargs["is_error"] = True
+            return v3.ClaudeChatMessageContent(
+                tool_result=v3.ClaudeChatToolResultContent(**kwargs))
+        image = getattr(block, "image", None)
+        if image is not None:
+            return v3.ClaudeChatMessageContent(image=v3.ClaudeChatImageContent(
+                source=image.source, cache_control=mark))
+    except (AttributeError, TypeError, ValueError):
+        pass
+    return None
+
+
+def _mark_last_message(claude_messages: list, v3, mark) -> Optional[list]:
+    """The messages with the last message's last block carrying ``mark``
+    (so the conversation so far is cached, as the proxy route's caching
+    middleware does), or ``None`` where that block cannot be marked."""
+    if not claude_messages:
+        return None
+    last = claude_messages[-1]
+    content = list(getattr(last, "content", None) or [])
+    block = _marked_block(content[-1], v3, mark) if content else None
+    if block is None:
+        return None
+    try:
+        return claude_messages[:-1] + [v3.ClaudeChatMessage(
+            role=last.role, content=content[:-1] + [block])]
+    except (TypeError, ValueError):
+        return None
+
+
+#: The request fields the cache marks add, as a 400's body may name them
+#: (lower case, underscores dropped, so ``cache_control`` and conjure's
+#: ``cacheControl`` both match). Only a 400 naming one of them is the
+#: service refusing the marks: never a word in the request's URL (the
+#: in-platform service's host carries "-system"), nor a 5xx, nor another
+#: invalid request (a prompt too long, an unmatched ``tool_use_id``, an
+#: ``unrecognizedProperty`` naming some other field).
+_CACHE_FIELDS = ("cachecontrol", "systemblock", "ephemeral")
+_URL = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.I)
+
+
+def _http_status(exc: BaseException) -> Optional[int]:
+    """The HTTP status of a failed call (the response's, else the leading
+    ``400 Client Error`` of the message), or ``None``."""
+    for e in (exc, getattr(exc, "__cause__", None)):
+        if e is None:
+            continue
+        # Not ``a or b``: a requests Response is falsy for any 4xx or 5xx.
+        for response in (getattr(e, "response", None),
+                         getattr(getattr(e, "_cause", None), "response", None)):
+            status = getattr(response, "status_code", None)
+            if isinstance(status, int):
+                return status
+        m = re.match(r"\s*(\d{3}) (?:Client|Server) Error", str(e))
+        if m:
+            return int(m.group(1))
+    return None
+
+
 def _refused_cache(exc: BaseException) -> bool:
-    """Whether a failed call may be the service refusing the system block
-    or its cache mark (a 400 naming a field, or an invalid request)."""
-    text = str(exc).lower()
-    name = str(getattr(exc, "error_name", None)
-               or getattr(exc, "_error_name", None) or "")
-    return ("cache" in text or "system" in text
-            or "InvalidRequest" in name or "InvalidArgument" in name
-            or "invalid_argument" in text or "unrecognized" in text)
+    """Whether a failed call is a 400 whose body names a cache-mark field
+    (:data:`_CACHE_FIELDS`)."""
+    if _http_status(exc) != 400:
+        return False
+    text = _URL.sub(" ", str(exc)).lower().replace("_", "")
+    return any(field in text for field in _CACHE_FIELDS)
 
 
 def _claude_value(value: Any) -> str:
@@ -1326,9 +1404,11 @@ class PalantirClaudeChatModel(BaseChatModel):
     rate_limit_retries : int, optional
         Passed as the SDK's ``max_rate_limit_retries`` (its default is 4).
     prompt_cache : bool
-        Mark the system prompt for caching (``GEOTECH_FOUNDRY_PROMPT_CACHE=0``
-        turns it off too); a service that refuses the mark is asked once
-        more without it, and not again.
+        Mark the system prompt and the last message's last block for
+        caching, where this SDK's classes take the field
+        (``GEOTECH_FOUNDRY_PROMPT_CACHE=0`` turns it off too). A 400 naming
+        a cache field is asked once more with no marks; if that works, this
+        model is sent none for the rest of the process.
     retry_total_s, read_timeout_s : float
         As for :class:`PalantirSdkChatModel`: connection drops, timeouts,
         rate limits and 503s are retried with backoff up to
@@ -1385,7 +1465,9 @@ class PalantirClaudeChatModel(BaseChatModel):
 
     def _request(self, v3, system: str, claude_messages: list, max_tokens,
                  temperature, stop, tools, cache: bool):
-        """``(request, cache mark sent?)``."""
+        """``(request, [what carries a cache mark])``: with ``cache``, the
+        system prompt and the last message's last block, where this SDK can
+        mark them."""
         kwargs: dict = {"messages": claude_messages, "max_tokens": max_tokens}
         if temperature is not None:
             kwargs["temperature"] = temperature
@@ -1393,16 +1475,24 @@ class PalantirClaudeChatModel(BaseChatModel):
             kwargs["stop_sequences"] = list(stop)
         if tools:
             kwargs["tools"] = _openai_tools_to_claude(tools, v3)
-        blocks = _cached_system(system, v3) if (system and cache) else None
+        marks: list = []
+        mark = _cache_mark(v3) if cache else None
+        if mark is not None:
+            marked = _mark_last_message(claude_messages, v3, mark)
+            if marked is not None:
+                kwargs["messages"] = marked
+                marks.append("last message")
+        blocks = (_cached_system(system, v3, mark)
+                  if (system and mark is not None) else None)
         if blocks is not None:
             try:
                 return v3.ClaudeChatCompletionRequest(
-                    system_blocks=blocks, **kwargs), True
+                    system_blocks=blocks, **kwargs), ["system"] + marks
             except TypeError:           # this SDK's request has no blocks
                 pass
         if system:
             kwargs["system"] = system
-        return v3.ClaudeChatCompletionRequest(**kwargs), False
+        return v3.ClaudeChatCompletionRequest(**kwargs), marks
 
     def _complete(self, request):
         try:
@@ -1442,26 +1532,25 @@ class PalantirClaudeChatModel(BaseChatModel):
         system, claude_messages = _lc_messages_to_claude(messages, v3)
         cache = (self.prompt_cache and prompt_cache_on()
                  and self.model_api_name not in _CACHE_REFUSED)
-        request, marked = self._request(v3, system, claude_messages,
-                                        max_tokens, temperature, stop, tools,
-                                        cache)
+        request, marks = self._request(v3, system, claude_messages,
+                                       max_tokens, temperature, stop, tools,
+                                       cache)
         try:
             response = self._complete(request)
         except FoundryModelNotImported:
             raise
         except Exception as exc:  # noqa: BLE001 - classified below
-            if (not marked or transient_kind(exc) is not None
-                    or not _refused_cache(exc)):
+            if not marks or not _refused_cache(exc):
                 raise
-            # Perhaps the system block or its cache mark: ask once more with
-            # the plain system text, and only if that works stop marking.
-            plain, _ = self._request(v3, system, claude_messages, max_tokens,
-                                     temperature, stop, tools, False)
+            # A 400 naming a cache-mark field: ask once more with no marks
+            # (the plain system text), and only if that works stop marking.
+            plain, marks = self._request(v3, system, claude_messages,
+                                         max_tokens, temperature, stop, tools,
+                                         False)
             response = self._complete(plain)
-            marked = False
-            log.warning("Foundry Claude (%s) refused the system prompt's "
-                        "cache mark (%s); sending the plain system text from "
-                        "now on", self.model_api_name, str(exc)[:200])
+            log.warning("Foundry Claude (%s) refused the cache marks (%s); "
+                        "sending none from now on", self.model_api_name,
+                        str(exc)[:200])
             _CACHE_REFUSED.add(self.model_api_name)
 
         ai_message = _claude_response_to_ai_message(response)
@@ -1473,7 +1562,7 @@ class PalantirClaudeChatModel(BaseChatModel):
             "stop_reason": stop_reason or None,
             "model_name": getattr(response, "model", None)
             or self.model_api_name,
-            "system_cache_mark": "sent" if marked else "not sent"}
+            "cache_marks": " and ".join(marks) or "none"}
         usage = _claude_usage(getattr(response, "usage", None))
         if usage is not None:
             generation_info["usage"] = {

@@ -13,9 +13,9 @@ input_schema))``; replies with ``content[i].text.text`` /
 ``usage``) and, for the tool-loop blocks the FDE did not send
 (``ClaudeChatToolUseContent(id, name, input)``,
 ``ClaudeChatToolResultContent(content, tool_use_id, is_error)``), the
-public ``langchain-palantir`` adapter. The thinking blocks and the system
-block's cache mark follow Anthropic's own field names; those are the parts
-not yet seen on Foundry.
+public ``langchain-palantir`` adapter. The thinking blocks and the cache
+marks (the system block's and the last message's) follow Anthropic's own
+field names; those are the parts not yet seen on Foundry.
 """
 
 import importlib.abc
@@ -60,8 +60,8 @@ class _MediaType:
 
 
 class _Text:
-    def __init__(self, text):
-        self.text = text
+    def __init__(self, text, cache_control=None):
+        self.text, self.cache_control = text, cache_control
 
 
 class _Base64Source:
@@ -75,8 +75,8 @@ class _ImageSource:
 
 
 class _Image:
-    def __init__(self, source):
-        self.source = source
+    def __init__(self, source, cache_control=None):
+        self.source, self.cache_control = source, cache_control
 
 
 class _ToolUse:
@@ -85,9 +85,10 @@ class _ToolUse:
 
 
 class _ToolResult:
-    def __init__(self, content, tool_use_id, is_error=None):
+    def __init__(self, content, tool_use_id, is_error=None,
+                 cache_control=None):
         self.content, self.tool_use_id = content, tool_use_id
-        self.is_error = is_error
+        self.is_error, self.cache_control = is_error, cache_control
 
 
 class _Thinking:
@@ -178,7 +179,7 @@ class _AnthropicClaudeLanguageModel:
         return _FakeClaude()
 
 
-def _install_fake_sdk(monkeypatch, cache_types=True):
+def _install_fake_sdk(monkeypatch, cache_types=True, block_marks=True):
     pm = types.ModuleType("palantir_models")
     pm_models = types.ModuleType("palantir_models.models")
     pm_models.AnthropicClaudeLanguageModel = _AnthropicClaudeLanguageModel
@@ -207,6 +208,12 @@ def _install_fake_sdk(monkeypatch, cache_types=True):
         v3.ClaudeChatEphemeralCacheControl = _EphemeralCache
         v3.ClaudeChatCacheControl = _CacheControl
         v3.ClaudeChatSystemBlock = _SystemBlock
+    if not block_marks:        # message blocks that take no cache field
+        v3.ClaudeChatTextContent = lambda text: _Text(text)
+        v3.ClaudeChatImageContent = lambda source: _Image(source)
+        v3.ClaudeChatToolResultContent = (
+            lambda content, tool_use_id, is_error=None:
+            _ToolResult(content, tool_use_id, is_error))
     lms.languagemodelservice_api_completion_v3 = v3
     monkeypatch.setitem(sys.modules, "palantir_models", pm)
     monkeypatch.setitem(sys.modules, "palantir_models.models", pm_models)
@@ -283,13 +290,17 @@ def test_text_turn(monkeypatch):
                       _EphemeralCache)
     [msg] = req.messages
     assert msg.role == "USER" and msg.content[0].text.text == "Say OK"
+    # And the last message's last block (the conversation so far), as the
+    # proxy route's caching middleware marks it.
+    assert isinstance(msg.content[0].text.cache_control.ephemeral,
+                      _EphemeralCache)
     # Usage and the model that answered, as the app's records read them.
     assert out.usage_metadata == {"input_tokens": 12, "output_tokens": 4,
                                   "total_tokens": 16}
     meta = out.response_metadata
     assert meta["model_name"] == "claude-opus-5-5"
     assert meta["finish_reason"] == "stop"
-    assert meta["system_cache_mark"] == "sent"
+    assert meta["cache_marks"] == "system and last message"
 
 
 def test_cache_reads_count_into_the_input(monkeypatch):
@@ -312,6 +323,7 @@ def test_no_cache_mark_when_switched_off_or_unbuildable(monkeypatch):
     _model().invoke([SystemMessage(content="sys"), HumanMessage(content="q")])
     req = _FakeClaude.requests[-1]
     assert req.system == "sys" and req.system_blocks is None
+    assert req.messages[0].content[0].text.cache_control is None
     # An SDK without the cache types: the plain system text.
     _install_fake_sdk(monkeypatch, cache_types=False)
     _FakeClaude.queue = [_reply(_text("b"))]
@@ -319,7 +331,39 @@ def test_no_cache_mark_when_switched_off_or_unbuildable(monkeypatch):
                            HumanMessage(content="q")])
     req = _FakeClaude.requests[-1]
     assert req.system == "sys" and req.system_blocks is None
-    assert out.response_metadata["system_cache_mark"] == "not sent"
+    assert req.messages[0].content[0].text.cache_control is None
+    assert out.response_metadata["cache_marks"] == "none"
+
+
+def test_message_blocks_without_a_cache_field_leave_the_system_mark(
+        monkeypatch):
+    """Where this SDK's message blocks take no cache field, only the tools
+    and system prompt are cached."""
+    _install_fake_sdk(monkeypatch, block_marks=False)
+    _FakeClaude.queue = [_reply(_text("a"))]
+    out = _model().invoke([SystemMessage(content="sys"),
+                           HumanMessage(content="q")])
+    req = _FakeClaude.requests[0]
+    assert req.system_blocks[0].cache_control is not None
+    assert req.messages[0].content[0].text.cache_control is None
+    assert out.response_metadata["cache_marks"] == "system"
+
+
+def test_the_last_tool_result_carries_the_mark(monkeypatch):
+    _install_fake_sdk(monkeypatch)
+    _FakeClaude.queue = [_reply(_text("done"))]
+    _model().bind_tools([_TOOL]).invoke([
+        HumanMessage(content="Ka for 30?"),
+        AIMessage(content="", tool_calls=[{"name": "get_ka", "id": "toolu_1",
+                                           "args": {"phi_deg": 30}}]),
+        ToolMessage(content="0.333", tool_call_id="toolu_1", status="error")])
+    last = _FakeClaude.requests[0].messages[-1]
+    result = last.content[-1].tool_result
+    assert result.tool_use_id == "toolu_1" and result.content == "0.333"
+    assert result.is_error is True and result.cache_control is not None
+    # Earlier messages are left as they were.
+    first = _FakeClaude.requests[0].messages[0]
+    assert first.content[0].text.cache_control is None
 
 
 def test_a_refused_cache_mark_is_asked_once_without_it(monkeypatch):
@@ -338,6 +382,8 @@ def test_a_refused_cache_mark_is_asked_once_without_it(monkeypatch):
     first, second = _FakeClaude.requests
     assert first.system_blocks is not None
     assert second.system == "sys" and second.system_blocks is None
+    assert second.messages[0].content[0].text.cache_control is None
+    assert out.response_metadata["cache_marks"] == "none"
     assert OPUS in P._CACHE_REFUSED
     # A copy (bind_tools makes one per call) does not ask with it again.
     model.bind_tools([_TOOL]).invoke([SystemMessage(content="sys"),
@@ -345,14 +391,79 @@ def test_a_refused_cache_mark_is_asked_once_without_it(monkeypatch):
     assert _FakeClaude.requests[2].system_blocks is None
 
 
-def test_an_unrelated_400_is_not_blamed_on_the_cache_mark(monkeypatch):
+_SERVICE = "https://language-model-service-system.example/api/v2/completions"
+
+
+class _ErrorResponse:
+    """A requests Response is falsy for any 4xx or 5xx."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+    def __bool__(self):
+        return False
+
+
+def _http_error(status, text, cause=False):
+    """A failed call as the SDK raises it, the status on ``response`` or on
+    ``_cause.response``; the URL names the in-platform service's host."""
+    reason = "Client" if status < 500 else "Server"
+    err = RuntimeError(f"{status} {reason} Error: for url: {_SERVICE}. {text}")
+    if cause:
+        err._cause = SimpleNamespace(response=_ErrorResponse(status))
+    else:
+        err.response = _ErrorResponse(status)
+    return err
+
+
+@pytest.mark.parametrize("status", [500, 502, 504])
+def test_a_5xx_with_system_in_the_url_is_not_resent(monkeypatch, status):
+    """A one-off 5xx is raised as it is: not resent without the marks, and
+    not blamed on them."""
     from webapp import palantir_sdk_engine as P
     _install_fake_sdk(monkeypatch)
-    bad = RuntimeError("400 INVALID_ARGUMENT: messages: roles must alternate")
-    _FakeClaude.queue = [bad, RuntimeError("400 INVALID_ARGUMENT: same")]
-    with pytest.raises(RuntimeError, match="same"):
+    err = _http_error(status, "INTERNAL", cause=status == 502)
+    assert not P._refused_cache(err)
+    _FakeClaude.queue = [err, _reply(_text("not asked"))]
+    with pytest.raises(RuntimeError, match=str(status)):
         _model().invoke([SystemMessage(content="sys"),
                          HumanMessage(content="q")])
+    assert len(_FakeClaude.requests) == 1
+    assert OPUS not in P._CACHE_REFUSED
+
+
+@pytest.mark.parametrize("text", [
+    "INVALID_ARGUMENT {unrecognizedProperty=cache_control}",
+    "ErrorCode: 'INVALID_ARGUMENT'. Parameters: {'field': 'systemBlocks'}",
+    "messages.0.content.0.text.cacheControl: Extra inputs are not permitted",
+])
+def test_a_400_naming_a_cache_field_is_a_refusal(text):
+    from webapp import palantir_sdk_engine as P
+    assert P._refused_cache(_http_error(400, text))
+    assert P._refused_cache(_http_error(400, text, cause=True))
+    # The same words on a 5xx are not.
+    assert not P._refused_cache(_http_error(500, text))
+
+
+@pytest.mark.parametrize("text", [
+    "INVALID_ARGUMENT: prompt is too long: 212000 tokens > 200000 maximum",
+    "INVALID_ARGUMENT: unexpected tool_use_id found in tool_result blocks: "
+    "toolu_9. Each tool_result block must have a corresponding tool_use",
+    "INVALID_ARGUMENT {unrecognizedProperty=output_config}",
+    "messages: roles must alternate",
+])
+def test_an_unrelated_400_is_not_blamed_on_the_cache_marks(monkeypatch, text):
+    """Sent once and raised: not resent without the marks on every turn."""
+    from webapp import palantir_sdk_engine as P
+    _install_fake_sdk(monkeypatch)
+    bad = _http_error(400, text)
+    bad.error_name = "LanguageModelService:InvalidArgument"
+    assert not P._refused_cache(bad)
+    _FakeClaude.queue = [bad, _reply(_text("not asked"))]
+    with pytest.raises(RuntimeError, match="400"):
+        _model().invoke([SystemMessage(content="sys"),
+                         HumanMessage(content="q")])
+    assert len(_FakeClaude.requests) == 1
     assert OPUS not in P._CACHE_REFUSED
 
 
