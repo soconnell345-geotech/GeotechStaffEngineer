@@ -1251,6 +1251,19 @@ No test geometry is left: E4's `_E4Levels` subclass is gone, and E1 and E3
 never had one (their per-layer tests are hand primitives at the printed Z
 and Sv).
 
+**Review (2026-10-21).** Checked by hand, formulas written out apart
+from the module: a strip wall under a 15 degree slope (sigma_2 = gamma
+0.35 H tan beta, constant with depth) at uneven depths, both averages,
+and a level bar-mat wall with a 12 kPa live load whose contributory
+heights straddle 20 ft. Tmax agrees at every level to rounding (0.03 %).
+Where Kr/Ka changes with depth sigma_H is not linear over Svt; the
+trapezoid then reads within about 1 % of the true mean of sigma_H over
+Svt (under it above 20 ft, 0.7 % over it at the level that straddles
+20 ft) and the midpoint within 0.3 % above it: the approximation p. 4-47
+offers. Where a geosynthetic wall's FOS_rupture is short, the choices now
+name the input in use for closer levels: level_depths when the depths are
+given (reinforcement_spacing would be refused beside them).
+
 Tests: `tests/test_mse_level_depths.py`,
 `funhouse_agent/tests/test_mse_level_depths_adapter.py`, V-010, V-056,
 V-057, the probe `retaining_walls|mse_wall#depths`.

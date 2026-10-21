@@ -544,8 +544,15 @@ _ONE_GEOSYNTHETIC = (
     "a stronger grade at the levels where FOS_rupture is below {req:.1f}: "
     "reinforcement_per_level, each level its own reinforcement, as GEC-11 "
     "Vol II Example E1 takes its GG-I geogrid at Layers 1 to 4 and GG-II "
-    "below (Table E1-7.4, p. E1-16); or a closer vertical spacing "
-    "(reinforcement_spacing)")
+    "below (Table E1-7.4, p. E1-16); or {vertical}")
+
+
+def _closer_vertical(internal: List[Dict[str, Any]]) -> str:
+    """The input that brings a wall's levels closer together: the depths
+    given (``Svt_m`` in the levels, GM-273), else the spacing Sv."""
+    if internal and "Svt_m" in internal[0]:
+        return "the levels closer together (level_depths)"
+    return "a closer vertical spacing (reinforcement_spacing)"
 
 #: GEC-11 Vol I, read on the rendered pages (GM-262 review). The factored
 #: tensile resistance is phi Tal Rc (Eq. 4-33, p. 4-48) against Tmax
@@ -630,7 +637,8 @@ def tensile_strength_choice(reinforcement: Reinforcement,
                       else f"{len(z)} levels, z = {z[0]:g} to {z[-1]:g} m")
                    + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
         alts.append((_ONE_REINFORCEMENT if r.is_metallic
-                     else _ONE_GEOSYNTHETIC).format(req=req))
+                     else _ONE_GEOSYNTHETIC).format(
+                         req=req, vertical=_closer_vertical(internal)))
     if r.basis:
         alts.append(_SPECIFIED_PRODUCT.format(
             name=r.name, type=r.type,
@@ -717,7 +725,7 @@ def _level_list_tensile_choice(rs, internal) -> list:
                    + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
         alts.append(_STRONGER_AT_LEVELS.format(
             req=req, vertical="" if metallic else
-            ", or a closer vertical spacing (reinforcement_spacing)"))
+            ", or " + _closer_vertical(internal)))
     if built_in:
         names = [r.name for r, _ in _grouped(built_in, key=lambda r: r.name)]
         alts.append(_SPECIFIED_PRODUCTS.format(
@@ -1069,7 +1077,8 @@ CONTRIBUTORY_HEIGHT_BASIS = (
     "tributary trapezoidal area (i.e. average of the stress at top and at "
     "the bottom of the contributory height) or at the midpoint of the "
     "contributory height' (Fig. 4-14). Vol II Examples E3 and E4 tabulate "
-    "Svt = Z+ - Z- (Tables E3-7.1, p. E3-13, and E4-7.1, p. E4-11) and take "
+    "it as the 'vertical tributary spacing' Svt = Z+ - Z- (Tables E3-7.1, "
+    "p. E3-13, and E4-7.1, p. E4-11) and take "
     "sigma_H as the average of its values at Z- and Z+ at every level (pp. "
     "E3-15, E4-13)")
 

@@ -1229,7 +1229,7 @@ METHOD_INFO = {
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing Sv (m): the levels sit at Sv (i + 1/2) below the top of the wall, wall_height / Sv of them rounded down, each taking Sv in Tmax and sigma_H at its depth. Not taken with level_depths, which places the levels itself."},
             "level_depths": {"type": "list", "required": False, "description": "The depths z (m) of the reinforcement levels below the top of the wall, from the top down, instead of reinforcement_spacing, as GEC-11 Vol II's examples print Z (Example E4, Table E4-7.1, p. E4-11: 1.87 ft, then 2.5 ft apart to 24.37 ft). Each must lie inside the wall (0 < z < wall_height) and below the one above; a list that does not is refused. Each level then takes its contributory height Svt (GEC-11 Vol I p. 4-46): from the midpoints between it and its neighbours, the top level's from the top of the wall and the bottom level's to its base (p. 4-47, Fig. 4-14), and Tmax = sigma_H x Svt with sigma_H averaged over Svt (sigma_H_average). Each level of internal_results then also gives Svt_m and sigma_H_kPa. reinforcement_per_level then needs one entry a depth. Example, a 6 m wall: [0.4, 1.15, 1.9, 2.65, 3.4, 4.15, 4.9, 5.65]. Alias: reinforcement_depths."},
-            "sigma_H_average": {"type": "str", "required": False, "default": "trapezoidal", "allowed_values": ["trapezoidal", "midpoint"], "description": "With level_depths: how sigma_H is averaged over each level's contributory height Svt, the two GEC-11 Vol I p. 4-47 gives: 'trapezoidal' (default), the average of sigma_H at the top and the bottom of Svt, as Vol II Examples E3 and E4 take it at every level (pp. E3-15, E4-13); 'midpoint', sigma_H at the middle of Svt. They differ only where Kr/Ka changes with depth (steel reinforcement, within 20 ft of the top). Refused without level_depths."},
+            "sigma_H_average": {"type": "str", "required": False, "default": "trapezoidal", "allowed_values": ["trapezoidal", "midpoint"], "description": "With level_depths: how sigma_H is averaged over each level's contributory height Svt, the two GEC-11 Vol I p. 4-47 gives: 'trapezoidal' (default), the average of sigma_H at the top and the bottom of Svt, as Vol II Examples E3 and E4 take it at every level (pp. E3-15, E4-13); 'midpoint', sigma_H at the middle of Svt. They differ only where Kr/Ka changes with depth (steel reinforcement, within 6.1 m (20 ft) of the top). Refused without level_depths."},
             "reinforcement_width": {"type": "float", "required": False, "description": "Gross width b (m) of the strip, grid or sheet; for a grid, centre to centre of the outside longitudinal bars (GEC-11 Vol I p. 3-12, Fig. 3-3). Required with reinforcement_horizontal_spacing for Rc = b/Sh, except for a built-in that carries its own (ribbed_steel_strip_50x4: 0.05 m; welded_wire_grid_w11 and E4's 4W15 mats: 0.457 m, 4 wires at 0.152 m; bar_mat_e4_3w11_w11x0_5: 0.305 m, 3 wires)."},
             "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},
@@ -1486,11 +1486,12 @@ declare_when_absent(METHOD_INFO, {
             "the levels at reinforcement_spacing (i + 1/2) below the top, "
             "wall_height / reinforcement_spacing of them rounded down, each "
             "taking Sv and sigma_H at its depth",
-            "a trial layout; each level's Sv is its contributory height "
-            "(GEC-11 Vol I pp. 4-46, 4-47) only when wall_height is a whole "
-            "number of spacings, and otherwise the part of the wall below "
-            "the bottom level's Sv is carried by no level. Give "
-            "level_depths for the wall as designed"),
+            "a trial layout. When wall_height is not a whole number of "
+            "spacings, the bottom level still takes Sv, where GEC-11 Vol I "
+            "pp. 4-46, 4-47 run its contributory height down to the base, "
+            "so the bottom wall_height - n Sv of the wall (n the number of "
+            "levels) is in no level's Tmax. Give level_depths for the wall "
+            "as designed"),
         # GM-256: a steel strip or grid with neither is refused
         "coverage_ratio": (
             "Rc 1, a continuous geosynthetic layer",

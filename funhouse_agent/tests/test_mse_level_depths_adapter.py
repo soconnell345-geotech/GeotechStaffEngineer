@@ -100,6 +100,28 @@ def test_a_reinforcement_list_needs_one_entry_a_depth():
     assert "error" not in ok and ok["n_levels"] == 3
 
 
+@pytest.mark.parametrize("reinforcement", [
+    {"reinforcement_name": "geogrid_gec11_e1_gg1"},
+    {"reinforcement_per_level": ["geogrid_gec11_e1_gg1"] * 10}])
+def test_a_rupture_shortfall_points_at_the_input_in_use(reinforcement):
+    # GM-273 review: with the depths given, closer levels are level_depths;
+    # reinforcement_spacing would be refused beside them
+    wall = dict(wall_height=6.0, gamma_backfill=19.0, phi_backfill=34.0,
+                **reinforcement)
+
+    def advice(r):
+        (c,) = [c for c in r["choices"] if "Tal" in c["what"]]
+        return " ".join(a for a in c["alternatives"] if "closer" in a)
+
+    spaced = D.call_agent("retaining_walls", "mse_wall", wall)
+    placed = D.call_agent("retaining_walls", "mse_wall", {
+        **wall, "level_depths": [0.3 + 0.6 * i for i in range(10)]})
+    assert "a closer vertical spacing (reinforcement_spacing)" in \
+        advice(spaced)
+    assert "the levels closer together (level_depths)" in advice(placed)
+    assert "reinforcement_spacing" not in advice(placed)
+
+
 def test_the_tool_text_offers_it():
     params = METHOD_INFO["mse_wall"]["parameters"]
     words = params["level_depths"]["description"]
