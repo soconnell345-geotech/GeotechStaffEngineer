@@ -240,6 +240,15 @@ def _from_top(values) -> str:
             if isinstance(values, (list, tuple)) else "")
 
 
+def _sigma_H_text(analysis) -> str:
+    """How sigma_H was averaged over each contributory height, in the
+    calc package's symbols (GM-273)."""
+    from retaining_walls import mse as _mse
+    average = _mse.sigma_H_average_of(_get(analysis, "sigma_H_average"))
+    return (_mse.SIGMA_H_AVERAGE_TEXT[average]
+            .replace("sigma_H", "\u03c3_H").replace("Svt", "S_vt"))
+
+
 def _input_summary_mse(result, analysis) -> List[InputItem]:
     """Input summary for MSE walls."""
     geom = _get(analysis, "geom")
@@ -257,6 +266,16 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
         InputItem("S_v", "Reinforcement spacing", f"{geom.reinforcement_spacing:.2f}", "m"),
         InputItem("N_levels", "Number of reinforcement levels", geom.n_reinforcement_levels, ""),
     ]
+    if geom.level_depths is not None:
+        # GM-273: the levels at the depths given, each over its
+        # contributory height (GEC-11 Vol I pp. 4-46, 4-47)
+        items[3] = InputItem(
+            "z", "Reinforcement level depths below the top of the wall, "
+            "from the top", ", ".join(f"{z:.2f}" for z in geom.level_depths),
+            "m")
+        items.append(InputItem(
+            "\u03c3_H", "\u03c3_H over each level's contributory height S_vt",
+            _sigma_H_text(analysis), ""))
 
     if geom.backfill_slope > 0:
         items.append(InputItem("\u03b2", "Backfill slope", f"{geom.backfill_slope:.1f}", "deg"))
@@ -1220,15 +1239,32 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11, Figure 4-10",
     ))
 
-    int_items.append(CalcStep(
-        title="Maximum Reinforcement Tension",
-        equation="T_max = (Kr/Ka) \u00d7 K_a \u00d7 \u03c3_v \u00d7 S_v",
-        substitution="\u03c3_v = \u03b3\u00b7z + q",
-        result_name="T_max",
-        result_value="(per level)",
-        result_unit="kN/m",
-        reference="GEC-11, Eq. 4-10",
-    ))
+    if geom.level_depths is None:
+        int_items.append(CalcStep(
+            title="Maximum Reinforcement Tension",
+            equation="T_max = (Kr/Ka) \u00d7 K_a \u00d7 \u03c3_v \u00d7 S_v",
+            substitution="\u03c3_v = \u03b3\u00b7z + q",
+            result_name="T_max",
+            result_value="(per level)",
+            result_unit="kN/m",
+            reference="GEC-11, Eq. 4-10",
+        ))
+    else:
+        # GM-273: each level over its contributory height S_vt
+        int_items.append(CalcStep(
+            title="Maximum Reinforcement Tension",
+            equation=("T_max = \u03c3_H \u00d7 S_vt, \u03c3_H = (Kr/Ka) "
+                      "\u00d7 K_a \u00d7 \u03c3_v"),
+            substitution=(
+                "\u03c3_v = \u03b3\u00b7z + q; S_vt from the midpoints "
+                "between levels, the top level's from the top of the wall "
+                "and the bottom level's to its base; "
+                + _sigma_H_text(analysis)),
+            result_name="T_max",
+            result_value="(per level)",
+            result_unit="kN/m",
+            reference="GEC-11 Vol I Eq. 4-32a, pp. 4-46, 4-47 (Fig. 4-14)",
+        ))
 
     from retaining_walls import mse as _mse
     f_tested = _get(analysis, "F_star_tested")
@@ -1349,11 +1385,13 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     if result.internal_results:
         int_rows = []
         keys = _reinforcement_keys(rs) if per_r else {}
+        svt = geom.level_depths is not None   # GM-273
         for i, r in enumerate(result.internal_results):
             status = "OK" if r.get("passes", False) else "FAIL"
             int_rows.append([
                 f"{r['depth_m']:.2f}"] + (
-                [keys[_reinforcement_label(rs[i])]] if per_r else []) + [
+                [keys[_reinforcement_label(rs[i])]] if per_r else []) + (
+                [f"{r['Svt_m']:.2f}"] if svt else []) + [
                 f"{r.get('Kr_Ka', 0):.3f}",
                 f"{r['Tmax_kN_per_m']:.2f}",
                 f"{r.get('Tal_Rc_kN_per_m', 0):.1f}",
@@ -1367,7 +1405,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
         int_items.append(TableData(
             title="Internal Stability per Reinforcement Level",
-            headers=["z (m)"] + (["Reinf."] if per_r else []) + [
+            headers=["z (m)"] + (["Reinf."] if per_r else [])
+            + (["S_vt (m)"] if svt else []) + [
                      "Kr/Ka", "T_max (kN/m)", "T_al R_c (kN/m)",
                      "L_e (m)", "F*", "P_r (kN/m)",
                      "FOS_po", "FOS_ru", "Status"],
@@ -2065,6 +2104,8 @@ def _plot_mse_section(result, analysis):
         y2 = H - z2
         ax.annotate('', xy=(L * 1.05, y1), xytext=(L * 1.05, y2),
                     arrowprops=dict(arrowstyle='<->', color='#666', lw=0.8))
+        if geom.level_depths is not None:
+            Sv = z2 - z1   # GM-273: the depths given set the spacing
         ax.text(L * 1.08, (y1 + y2) / 2, f'Sv = {Sv:.2f} m',
                 fontsize=7, va='center', color='#666')
 
