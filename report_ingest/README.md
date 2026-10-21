@@ -938,6 +938,18 @@ agent has it (`make_checklist_tool(ingest_tool=False)` otherwise; the app's
 pages build without it by default). Importing the module costs pydantic and nothing else; the tool
 imports LangChain when it is built.
 
+**On every record the page's ingest writes (BACKLOG RI-35).** With
+`GEOTECH_REPORT_INGEST` and `GEOTECH_REVIEW_CHECKLIST` both on, the ingest
+(the tool and the sub-agent alike) runs the code checks itself once the record
+is written (`subagent.run_checklist_on`, no model call): the whole result goes
+to `report.checklist.json` beside the record (`paths.checklist`), and the
+answer's `checklist` field carries the checklist's status, the checks counted
+by result, up to six failed ones and how many items are left to judge, which
+`report_checklist(record)` then lists. A checklist that cannot run says so in
+the field; the record stands. Why on the page and not only in the pipeline:
+the code checks need only the record, and the other half of the checklist,
+the judgement items, needs an agent with the report in front of it.
+
 ## The writers (`writers.py`)
 
 `write_outputs(record, out_dir, source=…, db_path=…)` writes five things, in
@@ -1022,6 +1034,14 @@ tool:
 ```python
 agent = build_deep_agent(model, enable_report_ingest=True)   # default OFF
 ```
+
+On the GeotechStaffEngineer page the pair follows `GEOTECH_REPORT_INGEST`
+(OFF by default; `enable_report_ingest=None`, the default, reads it, and an
+explicit `True` or `False` wins); it is never on the Document Review page
+(RI-34, RI-35). A report's outputs go to `report_ingest/<file name>` in the
+conversation's own folder (the folder bound to the turn), from the tool and
+the sub-agent alike. Where the app's own engine holds no Prompter (Foundry's
+chat models) the ingest has no engine and says so (BACKLOG RI-03).
 
 That adds the `report_ingest(source, questions="")` primary tool and a
 `CompiledSubAgent` — a one-node LangGraph that runs `ingest_report` and returns

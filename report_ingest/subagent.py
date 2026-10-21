@@ -48,6 +48,7 @@ theirs is enforced here:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -59,6 +60,7 @@ __all__ = [
     "build_report_ingest_subagent", "build_report_ingest_graph",
     "run_ingest", "diggs_verdict", "IngestSummary", "parse_request",
     "CallCeiling", "CallCeilingReached", "DEFAULT_MAX_MODEL_CALLS",
+    "run_checklist_on", "CHECKLIST_NAME",
     "SUBAGENT_NAME",
     "SUBAGENT_DESCRIPTION", "SUMMARY_LINES",
 ]
@@ -90,6 +92,13 @@ SUMMARY_CHARS = 1200
 #: bound reports included (``module_work/harness_theory/report_ingest.md``
 #: section 7), and :class:`~report_ingest.graph.Budgets` caps each reader.
 DEFAULT_MAX_MODEL_CALLS = 1000
+
+#: The checklist's result, written beside the record it was run on.
+CHECKLIST_NAME = "report.checklist.json"
+#: How many failed checks the answer names, and how long each line may be;
+#: the file beside the record has them all.
+CHECKLIST_LINES = 6
+CHECKLIST_CHARS = 240
 
 
 class CallCeilingReached(RuntimeError):
@@ -224,6 +233,15 @@ class IngestSummary(BaseModel):
     answers: List[Dict[str, str]] = Field(
         default_factory=list,
         description="the caller's own questions and what the narrative said")
+    checklist: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="the report review checklist's code checks, run on this "
+                    "record when the checklist is on: the checklist's status "
+                    "(a DRAFT), how many checks passed, failed, were unsure "
+                    "or could not run, the failed ones, and how many items "
+                    "need your judgement (report_checklist on the record "
+                    "lists them); every row is in paths.checklist. Null when "
+                    "the checklist is off")
     error: str = Field(default="")
 
 
@@ -243,6 +261,38 @@ def _head(path: str, lines: int = SUMMARY_LINES) -> str:
         if len(kept) >= lines or sum(len(k) for k in kept) > SUMMARY_CHARS:
             break
     return "\n".join(kept)[:SUMMARY_CHARS]
+
+
+def run_checklist_on(record: Any, out_dir: Any) -> Dict[str, Any]:
+    """The report review checklist's code checks on a record just written.
+
+    Runs :func:`report_ingest.checklist.run_checklist` (no model call),
+    writes its whole result to :data:`CHECKLIST_NAME` beside the record, and
+    returns what the answer carries: the checklist's status, the code
+    checks counted by result, the failed ones (at most
+    :data:`CHECKLIST_LINES`), how many items are left to judge, and the
+    file's ``path``. A checklist that cannot run says so in ``error``; the
+    ingest it follows has still written its record.
+    """
+    from report_ingest.checklist import run_checklist
+
+    try:
+        result = run_checklist(record)
+        path = os.path.join(str(out_dir), CHECKLIST_NAME)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(result, handle, indent=2, ensure_ascii=False)
+    except Exception as exc:  # noqa: BLE001 - the record stands without it
+        return {"error": f"the checklist did not run: "
+                         f"{type(exc).__name__}: {exc}"}
+    rows = result.get("code_checks") or []
+    counts = {status: sum(1 for row in rows if row.get("status") == status)
+              for status in ("pass", "fail", "unsure", "not_run")}
+    failed = [f"{row.get('id')}: {row.get('detail', '')}"[:CHECKLIST_CHARS]
+              for row in rows if row.get("status") == "fail"]
+    return {"status": result.get("status"), "counts": counts,
+            "failed": failed[:CHECKLIST_LINES],
+            "to_judge": len(result.get("for_you_to_judge") or []),
+            "path": path}
 
 
 def diggs_verdict(qa: Sequence[Any]) -> Optional[bool]:
@@ -273,7 +323,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
                trust_table: Any = None,
                templates: Any = None,
                ingest_bound: bool = True,
-               max_model_calls: Optional[int] = None) -> IngestSummary:
+               max_model_calls: Optional[int] = None,
+               checklist: bool = False) -> IngestSummary:
     """Read one report and return the compact answer, never the record.
 
     The label parameters are the graph's own and are documented on
@@ -285,6 +336,10 @@ def run_ingest(source: str, questions: Sequence[str], *,
 
     ``max_model_calls`` is the run's :class:`CallCeiling` over both engines
     (``None``: none).
+
+    ``checklist`` runs the report review checklist's code checks on the
+    record just written (:func:`run_checklist_on`; no model call) and puts
+    the counts and the failures in the answer (BACKLOG RI-35).
     """
     from report_ingest.graph import ingest_report, output_paths
 
@@ -304,6 +359,11 @@ def run_ingest(source: str, questions: Sequence[str], *,
     paths = output_paths(out_dir)
     counts = record.counts()
     diggs_ok = diggs_verdict(record.qa)
+    checked = None
+    if checklist:
+        checked = run_checklist_on(record, out_dir)
+        if checked.get("path"):
+            paths = dict(paths, checklist=checked.pop("path"))
     from report_ingest.writers import title_of
     return IngestSummary(
         report=title_of(record),
@@ -341,6 +401,7 @@ def run_ingest(source: str, questions: Sequence[str], *,
                        if row.record_path else ""}
             for row in record.bound_documents],
         summary=_head(paths.get("summary", "")),
+        checklist=checked,
         answers=[{"question": str(row.get("question", "")),
                   "answer": str(row.get("answer", ""))}
                  for row in record.narrative.extra_answers])
@@ -411,7 +472,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                               templates: Any = None,
                               ingest_bound: bool = True,
                               max_model_calls: Optional[int] =
-                              DEFAULT_MAX_MODEL_CALLS) -> Any:
+                              DEFAULT_MAX_MODEL_CALLS,
+                              checklist: bool = False) -> Any:
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
@@ -428,7 +490,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
     or the document's bytes -- the app passes its attachment resolver.
 
     ``max_model_calls`` is each delegation's :class:`CallCeiling`, enforced
-    here (``None``: none).
+    here (``None``: none). ``checklist`` runs the report review checklist's
+    code checks on each record written (:func:`run_checklist_on`).
     """
     from langgraph.graph import END, StateGraph
     from langgraph.graph.message import add_messages
@@ -500,7 +563,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                                 trust_table=trust_table,
                                 templates=templates,
                                 ingest_bound=ingest_bound,
-                                max_model_calls=max_model_calls)
+                                max_model_calls=max_model_calls,
+                                checklist=checklist)
         except Exception as exc:                 # one report, not the session
             answer = IngestSummary(
                 error=f"the ingest failed: {type(exc).__name__}: {exc}")
@@ -515,7 +579,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                f"one ingest was reached, so some passes or items were not "
                f"read (each is a skipped QA entry); asking for the same "
                f"report again resumes from what was read."
-               if answer.ceiling_reached else ""))
+               if answer.ceiling_reached else "")
+            + _checklist_text(answer))
         return {"messages": [AIMessage(content=text)],
                 "structured_response": answer}
 
@@ -539,6 +604,28 @@ def _last_text(messages: Sequence[Any]) -> str:
             if any(parts):
                 return "\n".join(parts)
     return ""
+
+
+def _checklist_text(answer: IngestSummary) -> str:
+    """The checklist's lines in the sub-agent's answer (empty when off)."""
+    checked = answer.checklist
+    if not checked:
+        return ""
+    if checked.get("error"):
+        return f" The review checklist: {checked['error']}."
+    counts = checked.get("counts") or {}
+    text = (f" The review checklist ({checked.get('status') or 'DRAFT'}), "
+            f"its code checks on this record: {counts.get('pass', 0)} "
+            f"passed, {counts.get('fail', 0)} failed, "
+            f"{counts.get('unsure', 0)} unsure, {counts.get('not_run', 0)} "
+            f"could not run; every row is in "
+            f"{answer.paths.get('checklist', CHECKLIST_NAME)}.")
+    if checked.get("failed"):
+        text += " Failed: " + "; ".join(checked["failed"]) + "."
+    if checked.get("to_judge"):
+        text += (f" {checked['to_judge']} item(s) need judgement: "
+                 f"report_checklist on this record lists them.")
+    return text
 
 
 def _stem(source: str) -> str:
@@ -567,7 +654,8 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                  vision_mode: str = "sheet",
                                  trust_table: Any = None,
                                  templates: Any = None,
-                                 ingest_bound: bool = True
+                                 ingest_bound: bool = True,
+                                 checklist: bool = False
                                  ) -> Dict[str, Any]:
     """The deepagents ``CompiledSubAgent`` spec for the ingest.
 
@@ -592,5 +680,5 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
             vision_engine_factory=vision_engine_factory,
             vision_mode=vision_mode, trust_table=trust_table,
             templates=templates, ingest_bound=ingest_bound,
-            max_model_calls=max_model_calls),
+            max_model_calls=max_model_calls, checklist=checklist),
     }

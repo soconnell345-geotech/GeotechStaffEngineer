@@ -1126,7 +1126,7 @@ def build_deep_agent(
     enable_setup_agent: bool = False,
     setup_store=None,
     setup_render_dir: Optional[str] = None,
-    enable_report_ingest: bool = False,
+    enable_report_ingest: Optional[bool] = None,
     report_ingest_out_dir: Optional[str] = None,
     report_ingest_budgets=None,
     report_ingest_db: Optional[str] = None,
@@ -1473,7 +1473,15 @@ def build_deep_agent(
     # The whole-report ingest: one primary tool and one sub-agent, both OFF by
     # default. The tool hides itself on a planlens too old to serve the ingest
     # (the page roles and the log grid), so the pair is only really on when
-    # the deployment can run it.
+    # the deployment can run it. Unless the caller says, it follows
+    # GEOTECH_REPORT_INGEST, never on the Document Review page (RI-35); with
+    # GEOTECH_REVIEW_CHECKLIST on as well, the checklist's code checks run on
+    # each record the ingest writes.
+    from funhouse_agent import review_flags as _review_flags
+    if enable_report_ingest is None:
+        enable_report_ingest = (_review_flags.report_ingest()
+                                and not review_page)
+    ingest_checklist = _review_flags.checklist() and not review_page
     ingest_tools = []
     if enable_report_ingest:
         from funhouse_agent.deep.tools import make_report_ingest_tool
@@ -1481,7 +1489,8 @@ def build_deep_agent(
             engine=engine, attachments=attachments,
             out_dir=report_ingest_out_dir, budgets=report_ingest_budgets,
             db_path=report_ingest_db, max_result_chars=max_result_chars,
-            max_model_calls=report_ingest_max_model_calls)
+            max_model_calls=report_ingest_max_model_calls,
+            checklist=ingest_checklist)
         if ingest_tools:
             tools = list(tools) + list(ingest_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_INGEST_NUDGE
@@ -1513,8 +1522,7 @@ def build_deep_agent(
     # The geotechnical report review checklist (GEOTECH_REVIEW_CHECKLIST, OFF
     # by default): report_ingest's, run on the record report ingest wrote;
     # the geotech page only (BACKLOG RI-34).
-    from funhouse_agent import review_flags as _review_flags
-    if _review_flags.checklist() and not review_page:
+    if ingest_checklist:
         from report_ingest.checklist import make_checklist_tool
         cap = max(max_result_chars, 16000) if max_result_chars > 0 else 0
         tools = list(tools) + [make_checklist_tool(
@@ -1621,6 +1629,7 @@ def build_deep_agent(
                 resolve_source=lambda source: _resolve_ingest_source(
                     source, attachments),
                 max_model_calls=report_ingest_max_model_calls,
+                checklist=ingest_checklist,
             )
         )
     if library_tools:

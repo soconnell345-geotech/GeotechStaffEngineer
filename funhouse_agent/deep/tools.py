@@ -706,6 +706,7 @@ def make_report_ingest_tool(
     label_policy: str = "structural",
     review_mode: str = "disagreements",
     max_model_calls: Optional[int] = None,
+    checklist: bool = False,
 ) -> list:
     """The ``report_ingest`` primary tool, or an empty list.
 
@@ -729,7 +730,9 @@ def make_report_ingest_tool(
 
     ``max_model_calls`` is one run's ceiling on model calls, the same one
     the sub-agent holds (:class:`report_ingest.subagent.CallCeiling`;
-    ``None``: no ceiling beyond the readers' own budgets).
+    ``None``: no ceiling beyond the readers' own budgets). ``checklist``
+    runs the report review checklist's code checks on the record written
+    and returns them in the answer (BACKLOG RI-35).
     """
     if not _document_tools.report_ingest_supported():
         return []
@@ -771,7 +774,8 @@ def make_report_ingest_tool(
                                 vision_engine=vision_engine,
                                 report_id=os.path.splitext(
                                     os.path.basename(str(source)))[0],
-                                max_model_calls=max_model_calls)
+                                max_model_calls=max_model_calls,
+                                checklist=checklist)
         except Exception as exc:  # noqa: BLE001 - one report, not the turn
             return json.dumps({"error": f"the ingest failed: "
                                         f"{type(exc).__name__}: {exc}"})

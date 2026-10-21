@@ -165,6 +165,7 @@ def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
         review_flags.DIGEST_ENV: review_flags.digest,
         review_flags.COVERAGE_ENV: review_flags.coverage,
         review_flags.CHECKLIST_ENV: review_flags.checklist,
+        review_flags.REPORT_INGEST_ENV: review_flags.report_ingest,
         review_flags.VISION_TURN_RETRY_ENV: review_flags.vision_turn_retry,
         review_flags.KEPT_READINGS_ENV:
             review_flags.kept_readings_on_review_page,

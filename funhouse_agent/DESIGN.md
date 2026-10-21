@@ -294,7 +294,10 @@ the eyes). What changed on master after 5.33.0, in short:
   of the coverage ledger, the PDF's text layer and `write_diggs`'
   cross-checks. `report_checklist(record)` is offered on the geotech page
   only, behind `GEOTECH_REVIEW_CHECKLIST` (OFF); the coverage gate no longer
-  adds failed checks to its note. `funhouse_agent/report_checklist.py` is a
+  adds failed checks to its note. Report ingest itself is on the geotech
+  page behind `GEOTECH_REPORT_INGEST` (OFF; RI-35): the record is written to
+  `report_ingest/<file name>` in the conversation's folder and, with the
+  checklist on, its code checks run on it (`report.checklist.json`). `funhouse_agent/report_checklist.py` is a
   deprecated re-export until INF-26. The Document Review page keeps general
   review only: no `log_grid` (legacy, lean or the reading helper), no
   `plot_data` `reference_chart`, and its own wording for `measure`,
