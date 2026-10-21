@@ -223,8 +223,9 @@ def test_v056_internal_pullout_and_tension_by_level(level):
     """GM-256: E3's pullout and tension at every level of Table E3-7.3.
     E3 Step 7.5 (p. E3-18): Pr = (1.0)(1.420)(2)(0.164 ft)(13.41 ft)(2.175
     ksf) = 13.58 k/strip at Level 4, b = 0.164 ft; Step 7.4 (p. E3-16):
-    phi_t Tn = 0.75 x 13.00 = 9.75 k/strip; Ng strips per 5 ft panel. The module works per metre of wall, Pr and Tal times
-    Rc = b/Sh (GEC-11 Vol I Eq. 4-35, p. 4-47), unfactored: its Pr times Sh
+    phi_t Tn = 0.75 x 13.00 = 9.75 k/strip; Ng strips per 5 ft panel. The
+    module works per metre of wall, Pr and Tal times Rc = b/Sh (GEC-11 Vol
+    I Eq. 4-35, p. 4-49; p. 4-47), unfactored: its Pr times Sh
     is E3's Pr per strip, and its FOS times phi / gamma_EV (0.90 / 1.35
     pullout, 0.75 / 1.35 tension) is E3's Ng phi R / Tmax. Before GM-256 it
     took Rc = 1: FOS_pullout at Level 4 was 45.2 (Ng phi Pr / Tmax 30.2)
@@ -417,4 +418,4 @@ def test_v057_pullout_cdr_by_layer(z, Le, Tmax, Zp, cdr):
     assert level["alpha"] == 0.8
     Pr = pullout_resistance(Zp * FT, GAMMA, Le * FT, level["F_star"],
                             alpha_pullout=level["alpha"])
-    assert 0.90 * Pr / (Tmax * KFT / 1000) == pytest.approx(cdr, rel=0.015)
+    assert 0.90 * Pr / (Tmax * KFT / 1000) == pytest.approx(cdr, rel=0.012)

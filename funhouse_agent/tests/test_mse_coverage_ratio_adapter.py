@@ -36,7 +36,7 @@ def test_a_strip_takes_its_spacing_by_any_name(name):
 def test_a_strip_with_no_spacing_is_refused_naming_the_inputs():
     err = _mse(reinforcement_name="ribbed_steel_strip_75x4")["error"]
     for words in ("coverage_ratio", "reinforcement_horizontal_spacing",
-                  "Sh alone will do", "For scale only, not taken"):
+                  "Sh alone will do", "the tool assumes none of them"):
         assert words in err, words
 
 
@@ -47,6 +47,15 @@ def test_the_coverage_ratio_given_directly():
     both = _mse(reinforcement_name="ribbed_steel_strip_75x4", Rc=0.12,
                 Sh=0.75)
     assert "not both" in both["error"]
+    # GM-256 review: a width serves only Rc = b/Sh, so beside a given Rc it
+    # would be taken and not used; a geogrid's width needs its spacing
+    unused = _mse(reinforcement_type="metallic_strip",
+                  reinforcement_Tallowable=500.0, Rc=0.1,
+                  reinforcement_width=0.05)
+    assert "the width is used only for Rc" in unused["error"]
+    no_sh = _mse(reinforcement_type="geogrid", reinforcement_Tallowable=30.0,
+                 reinforcement_width=0.5)
+    assert "needs its horizontal spacing Sh" in no_sh["error"]
 
 
 def test_a_geogrid_is_a_continuous_layer_and_says_so():

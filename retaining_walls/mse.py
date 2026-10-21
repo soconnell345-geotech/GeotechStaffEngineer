@@ -112,7 +112,8 @@ COVERAGE_BASIS = (
 #: Typical spacings GEC-11 Vol II prints, named in a refusal and never
 #: used for one.
 _TYPICAL_COVERAGE = (
-    "For scale only, not taken: GEC-11 Vol II Example E3 (pp. E3-2, E3-19) "
+    "The spacings in GEC-11's worked examples, for comparison only (the "
+    "tool assumes none of them): Vol II Example E3 (pp. E3-2, E3-19) "
     "uses 50 mm (1.969 in.) ribbed strips at Sh 0.76 m and 0.51 m (2.50 and "
     "1.67 ft: 2 or 3 strips per 1.5 m panel), Rc 0.066 and 0.098, with 'a "
     "minimum 2 strips at a horizontal spacing not exceeding 2.5 ft'; "
@@ -122,12 +123,21 @@ _TYPICAL_COVERAGE = (
     "0.30")
 
 NEEDS_COVERAGE = (
-    "the coverage ratio Rc = b/Sh of this {kind}: a steel strip or grid "
+    "A {kind} needs its coverage ratio Rc = b/Sh: a steel strip or grid "
     "covers only part of each level, and GEC-11 Vol I takes its pullout "
     "and tensile resistance per unit width of wall times Rc (Eq. 3-1, p. "
     "3-12; Eq. 4-35, p. 4-49; p. 4-47). Give coverage_ratio, or "
     "reinforcement_horizontal_spacing (Sh, m, centre to centre) with "
     "reinforcement_width (b, m{width}). " + _TYPICAL_COVERAGE)
+
+#: GEC-11 Vol I p. 3-12 describes a layer of geosynthetic strips 'by the
+#: width of the strips and the center-to-center horizontal distance between
+#: them': a width with no spacing leaves Rc unknown (GM-256 review).
+GEOSYNTHETIC_WIDTH_NEEDS_SH = (
+    "the geosynthetic's width b {b:g} m (reinforcement_width) is used only "
+    "for Rc = b/Sh (GEC-11 Vol I Eq. 3-1, p. 3-12) and needs its horizontal "
+    "spacing Sh (reinforcement_horizontal_spacing, m, centre to centre); a "
+    "continuous layer, Rc = 1 (p. 3-13), takes neither")
 
 
 def coverage_ratio(reinforcement: Reinforcement) -> float:
@@ -135,10 +145,12 @@ def coverage_ratio(reinforcement: Reinforcement) -> float:
     3-1, p. 3-12; GM-256): its ``coverage_ratio`` when given; else its
     width b over its horizontal spacing Sh; else 1 for a geosynthetic, a
     continuous layer ("Rc = 1 in the case of continuous reinforcement", p.
-    3-13). A steel strip or grid given neither is refused (ValueError,
-    :data:`NEEDS_COVERAGE`): GEC-11 prints no spacing to assume, and
-    taking Rc = 1 overstated a strip wall's pullout and rupture many times
-    (before GM-256)."""
+    3-13); a width with no spacing does not change that (the choice says so,
+    and the tool refuses it: :data:`GEOSYNTHETIC_WIDTH_NEEDS_SH`). A steel
+    strip or grid given neither is refused (ValueError,
+    :data:`NEEDS_COVERAGE`): GEC-11 prints no spacing to assume, and taking
+    Rc = 1 overstated a strip wall's pullout and rupture many times (before
+    GM-256)."""
     r = reinforcement
     Rc, Sh, b = r.coverage_ratio, r.horizontal_spacing, r.width
     if Rc is not None and Sh is not None:
@@ -192,6 +204,9 @@ def coverage_choice(reinforcement: Reinforcement,
                         name="reinforcement_horizontal_spacing")
     else:
         chosen = "Rc 1, a continuous geosynthetic layer"
+        if r.width is not None:
+            chosen += (f" (its width b {r.width:g} m is not used: Rc = b/Sh "
+                       "needs a horizontal spacing)")
         how = how_given(None, None, name="coverage_ratio")
         alts.append(
             "geosynthetic strips at less than full coverage: Rc = b/Sh "
@@ -243,13 +258,13 @@ _ALPHA_GRID_NOTE = (
     "bars/wires spacing greater than 6 inches, alpha may be less than 1.0 "
     "and pullout tests are required'")
 NEEDS_ALPHA = (
-    "the scale effect correction factor alpha of this geosynthetic in its "
-    "pullout resistance, F* alpha sigma_v Le C Rc (GEC-11 Vol I Eq. 3-2, "
-    "p. 3-16): 'In the absence of test data, alpha = 0.8 for geogrids and "
-    "alpha = 0.6 for geotextiles (extensible sheets) is recommended' (p. "
-    "3-16; Table 3-6, p. 3-17). Give reinforcement_type 'geogrid' (alpha "
-    "0.8) or 'geotextile' (alpha 0.6), or alpha_tested from pullout tests "
-    "(Appendix B). Before GM-256 a geosynthetic took alpha 1.0")
+    "A geosynthetic of no stated kind needs its scale effect correction "
+    "factor alpha, in the pullout resistance F* alpha sigma_v Le C Rc "
+    "(GEC-11 Vol I Eq. 3-2, p. 3-16): 'In the absence of test data, alpha = "
+    "0.8 for geogrids and alpha = 0.6 for geotextiles (extensible sheets) "
+    "is recommended' (p. 3-16; Table 3-6, p. 3-17). Give reinforcement_type "
+    "'geogrid' (alpha 0.8) or 'geotextile' (alpha 0.6), or alpha_tested "
+    "from pullout tests (Appendix B)")
 
 
 def table_alpha(reinforcement: Reinforcement) -> Optional[float]:
@@ -1008,7 +1023,7 @@ def check_internal_stability(
         ``Zp_m``, the depth below the slope surface used for pullout.
         ``Pr_kN_per_m`` and ``Tal_Rc_kN_per_m`` are per metre of wall, the
         reinforcement's pullout and tensile resistance times its coverage
-        ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-47; GM-256);
+        ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-49; p. 4-47; GM-256);
         ``Tallowable_kN_per_m`` is Tal per metre of reinforcement width.
 
     Notes

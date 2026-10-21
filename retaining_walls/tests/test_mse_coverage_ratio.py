@@ -23,8 +23,8 @@ import pytest
 from retaining_walls.calc_steps import get_calc_steps, get_input_summary
 from retaining_walls.geometry import MSEWallGeometry
 from retaining_walls.mse import (
-    analyze_mse_wall, check_internal_stability, coverage_ratio,
-    F_star_from_tests,
+    analyze_mse_wall, check_internal_stability, coverage_choice,
+    coverage_ratio, F_star_from_tests,
 )
 from retaining_walls.reinforcement import (
     GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4, Reinforcement,
@@ -98,13 +98,28 @@ def test_a_geogrid_wall_keeps_Rc_1():
     assert "b/Sh" in c["alternatives"][0]
 
 
+def test_a_geosynthetic_width_with_no_spacing_is_said_to_be_unused():
+    """GM-256 review: GEC-11 p. 3-12 describes geosynthetic STRIPS 'by the
+    width of the strips and the center-to-center horizontal distance
+    between them'. A width with no spacing leaves Rc unknown: the library
+    keeps Rc = 1 and its choice says the width was not used (the retired
+    Foundry wrapper gives every custom reinforcement a 0.05 m width), and
+    the tool refuses it (funhouse_agent test_mse_coverage_ratio_adapter)."""
+    strips = Reinforcement("geogrid strips", "geogrid", 30.0, width=0.5)
+    assert coverage_ratio(strips) == 1.0
+    assert "its width b 0.5 m is not used" in coverage_choice(strips)[
+        "chosen"]
+    assert coverage_ratio(dataclasses.replace(
+        strips, horizontal_spacing=1.0)) == pytest.approx(0.5)
+
+
 def test_a_steel_strip_or_grid_with_no_spacing_is_refused():
     with pytest.raises(ValueError) as err:
         analyze_mse_wall(_strip_wall(), 20.0, 34.0, RIBBED_STEEL_STRIP_75x4)
     text = str(err.value)
     for words in ("coverage_ratio", "reinforcement_horizontal_spacing",
                   "reinforcement_width", "Eq. 3-1", "Sh alone will do",
-                  "For scale only, not taken", "E3-19"):
+                  "the tool assumes none of them", "E3-19"):
         assert words in text, words
     with pytest.raises(ValueError, match="outside longitudinal bars"):
         coverage_ratio(WELDED_WIRE_GRID_W11)

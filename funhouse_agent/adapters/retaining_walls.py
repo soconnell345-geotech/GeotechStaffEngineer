@@ -14,8 +14,8 @@ from retaining_walls.cantilever import (
     SLIDING_COHESION, analyze_cantilever_wall, default_sliding_cohesion,
 )
 from retaining_walls.mse import (
-    NEEDS_PHI_FOUNDATION, analyze_mse_wall, check_external_stability_lrfd,
-    table_alpha,
+    GEOSYNTHETIC_WIDTH_NEEDS_SH, NEEDS_PHI_FOUNDATION, analyze_mse_wall,
+    check_external_stability_lrfd, table_alpha,
 )
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, WELDED_WIRE_GRID_W11,
@@ -74,7 +74,8 @@ def _with_coverage(reinforcement, params):
     """``reinforcement`` with the call's width, horizontal spacing and
     coverage ratio (GM-256): a copy, never the shared built-in."""
     width = params.get("reinforcement_width")
-    if width is not None and reinforcement.width is not None             and width != reinforcement.width:
+    if width is not None and reinforcement.width is not None \
+            and width != reinforcement.width:
         raise ValueError(
             f"mse_wall: {reinforcement.name} is {reinforcement.width:g} m "
             f"wide, and its Tallowable is per metre of that width; for "
@@ -89,9 +90,32 @@ def _with_coverage(reinforcement, params):
 
 
 def _build_reinforcement(params):
+    if params.get("coverage_ratio") is not None \
+            and params.get("reinforcement_width") is not None:
+        # GM-256 review: the width serves only Rc = b/Sh, so with Rc given
+        # it would be taken and not used
+        raise ValueError(
+            "mse_wall: give coverage_ratio, or reinforcement_width with "
+            "reinforcement_horizontal_spacing (Rc = b/Sh, GEC-11 Vol I Eq. "
+            "3-1, p. 3-12), not both: the width is used only for Rc")
     name = params.get("reinforcement_name", "").lower()
     if name in _REINFORCEMENT_DB:
-        return _with_coverage(_REINFORCEMENT_DB[name], params)
+        r = _with_coverage(_REINFORCEMENT_DB[name], params)
+    else:
+        r = _custom_reinforcement(params)
+    width = params.get("reinforcement_width")
+    if not r.is_metallic and width is not None \
+            and params.get("reinforcement_horizontal_spacing") is None:
+        # GM-256 review: geosynthetic strips at a spacing (GEC-11 p. 3-12);
+        # with no Sh the width would be taken and not used, and Rc = 1
+        # would overstate a strip layer
+        raise ValueError("mse_wall: " + GEOSYNTHETIC_WIDTH_NEEDS_SH.format(
+            b=width))
+    return r
+
+
+def _custom_reinforcement(params):
+    """A custom reinforcement from the call's reinforcement_* inputs."""
     if params.get("reinforcement_Tallowable") is None:
         given = params.get("reinforcement_name")
         not_built_in = (f"reinforcement_name '{given}' is not a built-in. "

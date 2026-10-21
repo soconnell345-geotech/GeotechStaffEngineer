@@ -486,8 +486,8 @@ continuous layer.
 reinforcement's `width` and `horizontal_spacing`, or 1 for a geosynthetic
 given neither (p. 3-13). A steel strip or grid given neither is REFUSED,
 naming `coverage_ratio`, `reinforcement_horizontal_spacing` and
-`reinforcement_width`; the refusal quotes GEC-11 Vol II's spacings "for scale
-only, not taken" (E3: 50 mm strips at 0.76 and 0.51 m, 2 or 3 a 1.5 m panel,
+`reinforcement_width`; the refusal quotes GEC-11 Vol II's spacings "for
+comparison only (the tool assumes none of them)" (E3: 50 mm strips at 0.76 and 0.51 m, 2 or 3 a 1.5 m panel,
 "a minimum 2 strips at a horizontal spacing not exceeding 2.5 ft"; E5: 0.40
 to 0.52 m; E4: one 4-wire mat, b 0.46 m, a panel). No spacing is assumed.
 Pullout is F* alpha sigma_v Le C Rc and the rupture resistance Tal x Rc,
@@ -569,7 +569,26 @@ alpha 1.0 each would be 25 % high. Tests:
 `tests/test_mse_scale_effect_alpha.py`, and V-057 in
 `validation_examples/test_published_v056_v057_gec11_slope.py`.
 
+**Review (2026-10-20).** The pages above were rendered and read; the 9 m
+wall's bottom level worked by hand both ways (Tmax 43.87 kN/m; 43.1 / 43.87
+= 0.982 before, 43.1 / 0.75 / 43.87 = 1.310 now: 1.33 strips a metre of
+wall). The tool refuses two inputs that were taken and not used: a
+geosynthetic's width with no spacing (p. 3-12 describes geosynthetic strips
+by their width and spacing, so Rc = 1 would overstate a strip layer;
+`mse.GEOSYNTHETIC_WIDTH_NEEDS_SH`), and a width beside `coverage_ratio`.
+The library keeps Rc = 1 for the first, as the retired Foundry wrapper
+gives every custom reinforcement a 0.05 m width, and its choice says the
+width was not used. The refusals now open with what is missing ("A
+steel strip needs its coverage ratio Rc = b/Sh ...").
+
 **Left for the owner** (BACKLOG):
+- the built-in W11 grid's Tallowable 32.0: its source is not recorded. It
+  equals Fy times the area of one uncorroded W11 wire (450 MPa x 70.9 mm2 =
+  31.9 kN), and read per metre of grid width (times Rc) it is several times
+  below E4's W11 mat (Tn 5.2 k a wire at 0.5 ft, b 1.5 ft: about 202 kN/m of
+  grid width). At E4's layout (Rc 0.30) the built-in grid shows FOS_rupture
+  about 0.4 where E4's mat passes. Conservative; re-derive it or drop the
+  built-in strength;
 - whether Cu < 4 with no tested F* is refused rather than computed and
   flagged;
 - Rc is one value for the wall: E3 changes Sh with depth (2.50 ft to

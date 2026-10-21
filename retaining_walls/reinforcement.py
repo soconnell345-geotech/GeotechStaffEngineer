@@ -129,7 +129,13 @@ RIBBED_STEEL_STRIP_75x4 = Reinforcement(
 WELDED_WIRE_GRID_W11 = Reinforcement(
     name="Welded Wire Grid W11xW11",
     type="metallic_grid",
-    Tallowable=32.0,  # kN/m of grid width
+    # kN/m of grid width since GM-256, times Rc per metre of wall. Its
+    # source is not recorded: 32.0 is Fy x the area of ONE uncorroded W11
+    # wire (450 MPa x 70.9 mm2 = 31.9 kN), and GEC-11 Vol II Example E4's
+    # 4-wire W11 mat (Tn 5.2 k a wire, b 1.5 ft) is about 202 kN/m of grid
+    # width, so per grid width this is several times low (conservative).
+    # Left for the owner (GM-256 review).
+    Tallowable=32.0,
     Fy=450000.0,
     thickness=0.0095,           # W11 transverse-bar diameter t = 0.374 in
     transverse_spacing=0.1524,  # St = 6 in (densest level) -> t/St = 0.0623
