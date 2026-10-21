@@ -880,6 +880,97 @@ pinned spectrum are unchanged; on these records they sit within about
 on a 2,000-step record at 0.01 s 0.22 -> 2.05 s, on a 4,000-step record
 at 0.005 s 0.35 -> 0.84 s.
 
+GM-272, below, checked more periods (up to 11 % off where this said about
+5 %) and replaced the method at every period.
+
+## GM-272 (2026-10-21): the spectrum by Nigam and Jennings at every period
+
+`compute_response_spectrum` now takes the record as linear between its
+samples and solves each oscillator's response to it in closed form, step
+by step: the step of Nigam and Jennings (1969),
+u[j+1] = A u[j] + B v[j] + C p[j] + D p[j+1] and v[j+1] likewise
+(`_nigam_jennings`), run as the two-step recursion it implies through
+scipy's `lfilter`. At the points this is the response to that
+piecewise-linear record with no integration error; the coefficients are
+checked against scipy's `lsim` (the matrix exponential of the same
+system) to 1e-9 in `test_closed_form_step_matches_the_matrix_exponential`.
+Two things remain, and both are handled:
+
+- A period shorter than 20 record steps is integrated on the same straight
+  lines split into equal substeps of at most T / 20 (`_POINTS_PER_PERIOD`),
+  which changes nothing about the record.
+- The largest response falls between points. It is read off the cubic
+  through u and v at both ends of each step, at its turning points
+  (`_peak_between_points`). Reading the points alone left up to 0.13 % at
+  long periods (1.5-2 s on the synthetic pulse): there the curvature of u
+  at its peak is set by the ground acceleration, many times Sa.
+
+Against `lsim` on the same piecewise-linear record, read every T / 400 or
+dt / 50, whichever is finer, at 27 periods from 0.01 to 4 s, on the three
+surface records of the GM-264 table and their inputs, the largest
+difference is 0.0032 %. The Newmark average acceleration it replaces
+(GM-264's substeps below ten steps, the record's step above) was off by up
+to 10.7 %, from ten steps a period up as well as below:
+
+| Record (dt) | T (s) | steps | Newmark | now |
+|---|---|---|---|---|
+| dense sand, 80 el. (0.01 s) | 0.05 | 5 | -1.9 % | 0.000 % |
+| | 0.125 | 12.5 | +10.4 % | 0.000 % |
+| | 0.2 | 20 | -1.2 % | -0.002 % |
+| wiki column (0.005 s) | 0.026 | 5.2 | -5.3 % | -0.001 % |
+| | 0.066 | 13.3 | -10.7 % | 0.000 % |
+| | 0.1 | 20 | -1.7 % | -0.001 % |
+| effective example (0.005 s) | 0.05 | 10 | -5.0 % | -0.002 % |
+| | 0.08 | 16 | +2.6 % | 0.000 % |
+| Gilroy input (0.005 s) | 0.05 | 10 | +3.7 % | 0.000 % |
+| | 0.08 | 16 | +4.3 % | 0.000 % |
+| synthetic pulse input (0.01 s) | 0.32 | 32 | +1.4 % | 0.000 % |
+
+eqsig, Nigam and Jennings read at the samples, agrees within 0.06 % on the
+synthetic pulse from 0.1 to 3.2 s (seismic_signals_agent's test, which
+until now divided by the function's (periods, Sa) tuple). 100 periods take
+0.04-0.1 s on these records, against 0.6-1.4 s before (both measured on
+the same machine; the Python loop is gone).
+
+**What moved.** The stored spectra of the two published examples' ports
+were computed by this function, so they were recomputed from the same runs
+(WSL, openseespy 3.8.0; every PGA, its time and the effective example's
+r_u reproduced): the wiki port's Sa by up to -3.2 % (linear, 0.1 s) and
+amplification by up to +3.5 % (0.1 s), the Gilroy input's Sa(0.1 s)
+1.0674 -> 1.0485 g, the effective port's Sa by up to 0.6 % and
+amplification by up to 1.8 %. Periods from 0.4 s on moved 0.2 % or less.
+The module against the ports, both through the new spectrum: nonlinear as
+written -2.8 to +11.6 % (was -2.6 to +11.7), the inputs the module can
+express within 0.1 %, the Tcl's own inputs within 0.03 %, the effective
+example -8.7 to +4.4 % (was -8.6 to +4.4); all inside their tolerances.
+
+**The linear column held its 3 % only by the old spectrum's errors.** Run
+with damping matched at the site frequency (0.41 %, Rayleigh at it and
+five times it), the module's linear column is less damped above about
+8 Hz than the Tcl's 2 % at 0.2 and 20 Hz: by `lsim` on both surface
+records its Sa is 15 % above the port's at 0.08 s, 13 % at 0.09 s and 8.0 %
+at 0.1 s. The Newmark spectrum read the module's 0.1 s ordinate 2.5 % low
+and the port's 3.3 % high, so the test measured +1.9 %. With the Tcl's own
+Rayleigh damping (`rayleigh_freqs_hz` [0.2, 20], 2 %; GM-80) the module's
+column is the port's: amplification and PGA agree to 1e-7, Poisson's ratio
+0 or 0.495 alike. The test now runs that way, at its 3 %.
+
+**Dense sand** (the GM-260 / GM-264 column, `to_dict` values, g):
+
+| Elements | 10 | 20 | 40 | 80 |
+|---|---|---|---|---|
+| Sa 0.1 s, Newmark | 0.466 | 0.523 | 0.528 | 0.535 |
+| Sa 0.1 s, now | 0.460 | 0.536 | 0.526 | 0.529 |
+| Sa 0.2 s, Newmark | 0.493 | 0.469 | 0.463 | 0.461 |
+| Sa 0.2 s, now | 0.480 | 0.475 | 0.467 | 0.466 |
+| Sa 1.0 s, now (Newmark the same to 0.001) | 0.147 | 0.147 | 0.147 | 0.147 |
+| Sa 0.01 s, now | 0.224 | 0.296 | 0.408 | 0.456 |
+
+Sa at 0.2 s now holds within 3 % from 10 to 80 elements, where the tables
+above, read through the old spectrum, said 7 %. The OpenSees-pystrata
+linear comparison (0.1 to 1 s) moved to at most 3.3 % (3.26 %, at 0.5 s;
+3.31 % before).
+
 ## Ground Motions
 
 Built-in synthetic motions are provided for testing.  Custom motions can

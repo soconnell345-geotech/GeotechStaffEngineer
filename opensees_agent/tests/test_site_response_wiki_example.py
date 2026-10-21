@@ -20,7 +20,10 @@ port reproduces the example's published result: surface PGA 0.353 g at
 1.38 g against its Figure 3 (a peak of about 1.4 g near 0.4 s).
 
 REFERENCE holds the port's numbers (openseespy 3.8.0, Python 3.12, WSL,
-2026-10-15; regenerate with ``opensees_wiki_free_field.reference_numbers``):
+2026-10-15; regenerate with ``opensees_wiki_free_field.reference_numbers``;
+the spectra re-computed 2026-10-21 from the same runs, which reproduce
+every PGA, by Nigam-Jennings (GM-272): Newmark at the record's step had
+them up to 3.5 % off at 0.1 s, twenty record steps):
 5 %-damped spectral accelerations at PERIODS_S and the amplification
 spectrum (surface / input Sa), three ways: as written, linear elastic,
 and with the three inputs analyze_site_response could not set as the Tcl
@@ -31,10 +34,12 @@ Poisson's ratio and Rayleigh damping reproduces.
 
 What to expect, and why (measured on the 20 s record):
 
-* Linear elastic, damping matched at the site frequency (0.41 %): the
-  same column, so within 3 % from 0.1 to 1.5 s (measured -0.1 to +2.0 %)
-  and PGA within 5 % (+2.7 %). What is left is the Rayleigh curve: the
-  module's is less damped above about 8 Hz than the Tcl's 2 % at 20 Hz.
+* Linear elastic, with the Tcl's own Rayleigh damping (2 % at 0.2 and
+  20 Hz, ``rayleigh_freqs_hz``): the same column, so within 3 % from 0.1
+  to 1.5 s and PGA within 5 % (measured: both to 1e-7). With damping
+  matched at the site frequency instead (0.41 %, Rayleigh at it and five
+  times it), the module's column is less damped above about 8 Hz: Sa at
+  0.1 s 8.0 % above the port's, PGA +2.7 % (GM-272).
 * Nonlinear, against the port with the three inputs set as the module
   sets them: the same model (on this column the Tcl's quad, an SSPquad
   and the module's dry SSPquadUP give the same motion to 1e-12), so it
@@ -45,7 +50,7 @@ What to expect, and why (measured on the 20 s record):
   0.4 % strain), adding high-frequency noise and taking 9-35 % off Sa
   from 0.1 to 1.5 s. It now runs Newton, as the Tcl does.
 * Nonlinear, against the port as written: within 15 % from 0.3 to 1.5 s
-  (measured -2.6 to +11.7 %): Poisson's ratio 0 (the Tcl) against 0.495
+  (measured -2.8 to +11.6 %): Poisson's ratio 0 (the Tcl) against 0.495
   (the module's clay) moves Sa at 0.64-1.5 s by 7-12 %. PGA comes out
   higher in the module (+23 %): its column is less damped at high
   frequency, where a nonlinear column's peaks live.
@@ -69,35 +74,35 @@ TEST_TIME_LIMIT_S = 300.0
 # sa_g / amplification are at wiki.PERIODS_S = 0.1, 0.2, 0.3, 0.4, 0.5,
 # 0.64 (the site period), 1.0, 1.5 s.
 REFERENCE = {
-    "input_sa_g": [1.0674, 0.9735, 1.4109, 1.9844, 1.1985, 0.4107, 0.3103,
-                   0.2217],
+    "input_sa_g": [1.0485, 0.9758, 1.4128, 1.9864, 1.1999, 0.4113, 0.3104,
+                   0.2218],
     "as_written": {
         "pga_g": 0.3528, "pga_time_s": 4.430,
-        "sa_g": [0.9518, 0.7619, 1.0962, 1.3759, 0.7990, 0.3881, 0.4192,
+        "sa_g": [0.9571, 0.7660, 1.0947, 1.3777, 0.8000, 0.3882, 0.4193,
                  0.3644],
-        "amplification": [0.8917, 0.7826, 0.7769, 0.6934, 0.6666, 0.9450,
-                          1.3511, 1.6433]},
+        "amplification": [0.9128, 0.7850, 0.7749, 0.6936, 0.6668, 0.9438,
+                          1.3508, 1.6431]},
     "linear": {
         "pga_g": 0.7895, "pga_time_s": 4.300,
-        "sa_g": [1.0888, 1.8589, 1.7792, 2.5955, 2.1152, 0.7399, 0.4983,
+        "sa_g": [1.0541, 1.8435, 1.7781, 2.5961, 2.1181, 0.7405, 0.4983,
                  0.2781],
-        "amplification": [1.0200, 1.9095, 1.2610, 1.3079, 1.7650, 1.8015,
-                          1.6059, 1.2542]},
+        "amplification": [1.0053, 1.8891, 1.2586, 1.3070, 1.7652, 1.8002,
+                          1.6055, 1.2541]},
     "api_expressible": {
         "pga_g": 0.4331, "pga_time_s": 4.525,
-        "sa_g": [0.9402, 0.7484, 1.0711, 1.3619, 0.7779, 0.4294, 0.4681,
+        "sa_g": [0.9563, 0.7500, 1.0697, 1.3629, 0.7781, 0.4296, 0.4681,
                  0.3885],
-        "amplification": [0.8809, 0.7688, 0.7592, 0.6863, 0.6491, 1.0456,
-                          1.5085, 1.7520]},
+        "amplification": [0.9121, 0.7685, 0.7572, 0.6861, 0.6485, 1.0443,
+                          1.5082, 1.7518]},
     # The port as written but for the peak shear strain (0.1), which is
     # all the module cannot set since GM-79 (openseespy 3.8.0, WSL,
     # 2026-10-20; wiki.OWN_INPUTS).
     "own_inputs": {
         "pga_g": 0.3500, "pga_time_s": 4.430,
-        "sa_g": [0.9418, 0.7630, 1.0897, 1.3666, 0.7923, 0.3865, 0.4179,
+        "sa_g": [0.9485, 0.7675, 1.0881, 1.3686, 0.7934, 0.3866, 0.4180,
                  0.3637],
-        "amplification": [0.8824, 0.7838, 0.7723, 0.6887, 0.6611, 0.9410,
-                          1.3470, 1.6402]},
+        "amplification": [0.9046, 0.7865, 0.7702, 0.6890, 0.6612, 0.9399,
+                          1.3468, 1.6399]},
 }
 
 
@@ -196,11 +201,26 @@ class TestAgainstTheOpenSeesWikiExample:
     @requires_opensees
     def test_linear_column_matches_the_port(self):
         """Linear elastic (no updateMaterialStage in the port,
-        linear_elastic=True in the module), damping matched at the site
-        frequency: amplification within 3 % from 0.1 to 1.5 s (measured
-        -0.1 to +2.0 %), PGA within 5 % (measured +2.7 %; the module's
-        Rayleigh curve is less damped above about 8 Hz)."""
-        got = _ours(True)
+        linear_elastic=True in the module) with the Tcl's own Rayleigh
+        damping (2 % at 0.2 and 20 Hz, ``rayleigh_freqs_hz``; its Poisson's
+        ratio 0 too, which changes nothing in a linear column):
+        amplification within 3 % from 0.1 to 1.5 s and PGA within 5 %
+        (measured: both to 1e-7, the same column).
+
+        Until GM-272 the module ran here with damping matched at the site
+        frequency (0.41 %, Rayleigh at it and five times it), which damps
+        less than the Tcl's above about 8 Hz: Sa at 0.1 s is 8.0 % above
+        the port's (lsim on both records agrees) and PGA 2.7 %. It passed
+        at 3 % (measured +1.9 %) only because the Newmark spectrum at the
+        record's step read the module's 0.1 s ordinate 2.5 % low and the
+        port's 3.3 % high."""
+        from opensees_agent.site_response import analyze_site_response
+        accel, dt = wiki.load_record()
+        r = analyze_site_response(accel_history=accel, dt=dt,
+                                  linear_elastic=True,
+                                  time_limit_s=TEST_TIME_LIMIT_S,
+                                  **wiki.own_api_inputs())
+        got = wiki.summarize(r.surface_accel_g, accel, dt)
         ref = REFERENCE["linear"]
         assert got["pga_g"] == pytest.approx(ref["pga_g"], rel=0.05)
         _assert_spectrum(got["amplification"], ref["amplification"], 0.03,

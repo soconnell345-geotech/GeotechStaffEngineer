@@ -65,11 +65,11 @@ seismic_signals_agent_foundry.py  # Foundry wrapper (project root)
 
 | Feature | eqsig (this module) | compute_response_spectrum (opensees_utils) |
 |---------|--------------------|--------------------------------------------|
-| Algorithm | Nigam-Jennings | Newmark-beta average acceleration |
-| Accuracy | Exact for piecewise-linear input | Dt-dependent |
-| Speed | Fast (vectorized C/Fortran) | Moderate (Python loop) |
+| Algorithm | Nigam-Jennings | Nigam-Jennings since GM-272 (2026-10-21; Newmark average acceleration before), substeps below 20 steps a period |
+| Accuracy | Exact at the samples for piecewise-linear input | The same at the points; the peak between points read off a cubic through u and v (within 0.004 % of scipy's lsim on site response records) |
+| Speed | Fast (vectorized C/Fortran) | Fast (scipy `lfilter`) |
 | Intensity measures | Yes (Arias, CAV, Ds5-95) | No |
-| Dependencies | eqsig | numpy only |
+| Dependencies | eqsig | numpy, scipy |
 | Use case | Full signal analysis | Quick spectrum when eqsig not installed |
 
 ## Intensity Measures
