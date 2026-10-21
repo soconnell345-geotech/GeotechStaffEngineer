@@ -644,7 +644,13 @@ declare_when_absent(METHOD_INFO, {
                       "with fit_variogram, the starting guess for the fit"),
         "cell_size": _CELL,
         "north_deg": ("north straight up",
-                      "the source plan's north was not given")},
+                      "the source plan's north was not given"),
+        "outlines": ("no outlines drawn",
+                     "the source plan's outlines were not given; drawing "
+                     "only"),
+        "observations_name": ("'Observations' in the legend",
+                              "what the points are was not given; drawing "
+                              "only")},
     "conditional_simulation": {
         "variance": _VARIANCE, "len_scale": _LEN_SCALE, "cell_size": _CELL,
         "nugget": ("0, or the largest measurement_error",
@@ -653,5 +659,11 @@ declare_when_absent(METHOD_INFO, {
         "report_values": ("round values per region and level",
                           "the totals the exceedance table reports"),
         "north_deg": ("north straight up",
-                      "the source plan's north was not given")},
+                      "the source plan's north was not given"),
+        "outlines": ("no outlines drawn",
+                     "the source plan's outlines were not given; drawing "
+                     "only"),
+        "observations_name": ("'Observations' in the legend",
+                              "what the points are was not given; drawing "
+                              "only")},
 })
