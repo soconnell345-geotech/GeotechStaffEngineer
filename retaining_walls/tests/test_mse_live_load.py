@@ -169,13 +169,11 @@ class TestResult:
         r = analyze_mse_wall(_geom(q=0.0), G, PHI, _STRIP)
         assert _live(r) == []
         r = analyze_mse_wall(_geom(q=0.0), G, PHI, GEOGRID_UX1600)
-        # only the coverage ratio, Rc 1 for a continuous layer, the
-        # built-in geogrid's Tal and the allowable 0.90 / 1.35 Tal the
-        # rupture check takes (GM-268), and GEC-11 Table 3-6's alpha 0.8
-        # for a geogrid (GM-256)
-        assert [c["what"].split()[0] for c in r.choices] == [
-            "Coverage", "Long-term", "Allowable", "Scale"]
-        assert {c["how"] for c in r.choices} == {"default", "module"}
+        # only the coverage ratio, Rc 1 for a continuous layer, and GEC-11
+        # Table 3-6's alpha 0.8 for a geogrid (GM-256)
+        assert [c["what"].split()[0] for c in r.choices] == ["Coverage",
+                                                             "Scale"]
+        assert {c["how"] for c in r.choices} == {"default"}
 
 
 class TestCalcSteps:

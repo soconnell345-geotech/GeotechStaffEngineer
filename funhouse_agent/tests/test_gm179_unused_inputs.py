@@ -4,9 +4,8 @@ their reason, or used as a printed method uses them.
 Refused: axial E (the static capacity methods), drilled shaft
 socket_length, the aggregate piers' column modulus (E_column,
 column_modulus; the package's older E_pier), the feasibility screen's
-water table, the CPT correlations' i_c_limit and s_g, a continuous
-beam's area and an MSE wall reinforcement's yield strength (GM-269: the
-rupture check takes the Tal given). Used: the LRFD MSE wall's gamma_foundation (GEC-11 Eq. 4-22;
+water table, the CPT correlations' i_c_limit and s_g, and a continuous
+beam's area. Used: the LRFD MSE wall's gamma_foundation (GEC-11 Eq. 4-22;
 mse_wall refuses it) and the feasibility screen's depth_to_top_m
 (GEC-13 pp. 5-9, 4-65).
 """
@@ -51,9 +50,6 @@ def _probe(key):
     ("pynite", "continuous_beam", "A", 0.02, "frame_analysis"),
     ("retaining_walls", "mse_wall", "gamma_foundation", 18.0,
      "mse_lrfd_external_stability"),
-    ("retaining_walls", "mse_wall", "reinforcement_Fy", 448.0,
-     "Eq. 3-11a (p. 3-22), Fy Ac / b: 0.55 Fy for strips and 0.48 Fy for "
-     "bar mats (p. 4-77)"),
 ])
 def test_an_input_that_changed_nothing_is_refused(agent, method, name,
                                                   value, why):

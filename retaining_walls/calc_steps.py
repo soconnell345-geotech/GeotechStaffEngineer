@@ -1228,29 +1228,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                   "AASHTO Fig. 11.10.6.3.1-1",
     ))
 
-    # GM-268: a geosynthetic's Tal is taken at 0.90 / 1.35 (the allowable
-    # Ta); steel's Tal is its allowable
-    geosynthetic = reinforcement is not None and reinforcement.is_geosynthetic
-    if geosynthetic:
-        Ta = _mse.rupture_allowable(reinforcement)
-        int_items.append(CalcStep(
-            title="Tensile Resistance per Metre of Wall (geosynthetic)",
-            equation=("T_a \u00d7 R_c \u2265 T_max; T_a = \u03c6 T_al / "
-                      "\u03b3_EV-MAX = 0.90 T_al / 1.35; T_al = T_ult / "
-                      "(RF_ID \u00d7 RF_CR \u00d7 RF_D)"),
-            substitution=(f"T_a = 0.90 \u00d7 {reinforcement.Tallowable:.1f}"
-                          f" / 1.35 = {Ta:.1f} kN/m of reinforcement width "
-                          f"\u00d7 {Rc_text}"),
-            result_name="T_a \u00d7 R_c",
-            result_value=(
-                f"{Ta * min(Rcs):.1f} to {Ta * max(Rcs):.1f}" if per_level
-                else f"{Ta * Rcs[0]:.1f}"),
-            result_unit="kN/m of wall",
-            reference="GEC-11 Vol I Eq. 3-12 (p. 3-28), p. 4-47, "
-                      "Eqs. 4-33 and 4-34 (pp. 4-48, 4-49), Table 4-7 "
-                      "(p. 4-48), p. 4-40",
-        ))
-    elif reinforcement is not None:
+    if reinforcement is not None:
         int_items.append(CalcStep(
             title="Tensile Resistance per Metre of Wall",
             equation="T_al \u00d7 R_c \u2265 T_max",
@@ -1268,8 +1246,6 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
     # Per-level results table
     if result.internal_results:
-        tension = "Ta_Rc_kN_per_m" if geosynthetic else "Tal_Rc_kN_per_m"
-        tension_label = "T_a R_c" if geosynthetic else "T_al R_c"
         int_rows = []
         for r in result.internal_results:
             status = "OK" if r.get("passes", False) else "FAIL"
@@ -1277,7 +1253,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                 f"{r['depth_m']:.2f}",
                 f"{r.get('Kr_Ka', 0):.3f}",
                 f"{r['Tmax_kN_per_m']:.2f}",
-                f"{r.get(tension, 0):.1f}",
+                f"{r.get('Tal_Rc_kN_per_m', 0):.1f}",
                 f"{r.get('Le_m', 0):.2f}",
                 f"{r.get('F_star', 0):.3f}",
                 f"{r['Pr_kN_per_m']:.2f}",
@@ -1288,19 +1264,15 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
         int_items.append(TableData(
             title="Internal Stability per Reinforcement Level",
-            headers=["z (m)", "Kr/Ka", "T_max (kN/m)",
-                     f"{tension_label} (kN/m)",
+            headers=["z (m)", "Kr/Ka", "T_max (kN/m)", "T_al R_c (kN/m)",
                      "L_e (m)", "F*", "P_r (kN/m)",
                      "FOS_po", "FOS_ru", "Status"],
             rows=int_rows,
             notes=(
                 f"FOS_pullout required: 1.5. FOS_rupture required: 1.0. "
-                f"{tension_label} and P_r per metre of wall, coverage ratio "
+                f"T_al R_c and P_r per metre of wall, coverage ratio "
                 f"R_c = {Rc_text}. "
-                + ("T_a = 0.90 / 1.35 T_al: GEC-11's phi T_al R_c against "
-                   "1.35 T_max (Table 4-7, p. 4-48; p. 4-40). "
-                   if geosynthetic else "")
-                + f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}"
+                f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}"
             ),
         ))
 

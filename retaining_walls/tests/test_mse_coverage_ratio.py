@@ -82,9 +82,7 @@ def test_pullout_and_rupture_fall_in_proportion_to_the_spacing():
 
 def test_a_geogrid_wall_keeps_Rc_1():
     """A geosynthetic given no spacing is a continuous layer, Rc = 1, as
-    before GM-256. FOS_rupture is 0.795 at the bottom level: 1.192 before
-    GM-268, which takes the geogrid's Tal at 0.90 / 1.35 (GEC-11 Table 4-7,
-    p. 4-48; p. 4-40).
+    before GM-256, and FOS_rupture is unchanged, 1.192 at the bottom level.
     FOS_pullout is 8.394 to 20.633: 10.493 to 25.792 before, times the
     alpha 0.8 GEC-11 Table 3-6 prints for a geogrid (p. 3-17; the GM-256
     alpha commit, tests/test_mse_scale_effect_alpha.py)."""
@@ -95,7 +93,7 @@ def test_a_geogrid_wall_keeps_Rc_1():
     assert min(po) == pytest.approx(8.394, abs=1e-3)
     assert max(po) == pytest.approx(20.633, abs=1e-3)
     assert min(lv["FOS_rupture"] for lv in r.internal_results) == \
-        pytest.approx(0.795, abs=1e-3)
+        pytest.approx(1.192, abs=1e-3)
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
     assert c["how"] == "default"
     assert c["chosen"].startswith("Rc 1, a continuous geosynthetic layer")

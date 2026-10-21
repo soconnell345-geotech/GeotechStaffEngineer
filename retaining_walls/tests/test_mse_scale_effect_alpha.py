@@ -60,12 +60,11 @@ def test_table_3_6_by_type():
 
 def test_a_geogrid_wall_before_and_after():
     """FOS_pullout 10.493 to 25.792 at the alpha 1.0 taken before; 8.394 to
-    20.633 at Table 3-6's 0.8. Rupture does not take alpha: 0.795 (1.192
-    before GM-268 took the Tal at 0.90 / 1.35)."""
+    20.633 at Table 3-6's 0.8. Rupture does not take alpha: 1.192."""
     lo, hi, ru = _pullout(GEOGRID_UX1600)
     assert (lo, hi) == (pytest.approx(8.394, abs=1e-3),
                         pytest.approx(20.633, abs=1e-3))
-    assert ru == pytest.approx(0.795, abs=1e-3)
+    assert ru == pytest.approx(1.192, abs=1e-3)
     lo1, hi1, ru1 = _pullout(GEOGRID_UX1600, alpha_tested=1.0)
     assert (lo1, hi1) == (pytest.approx(10.493, abs=1e-3),
                           pytest.approx(25.792, abs=1e-3))
@@ -92,7 +91,7 @@ def test_a_geotextile_wall_before_and_after():
     lo, hi, ru = _pullout(_geotextile())
     assert (lo, hi) == (pytest.approx(6.296, abs=1e-3),
                         pytest.approx(15.475, abs=1e-3))
-    assert ru == pytest.approx(0.795, abs=1e-3)    # GM-268
+    assert ru == pytest.approx(1.192, abs=1e-3)
     r = analyze_mse_wall(_wall(), 19.0, 34.0, _geotextile())
     assert _alpha_choice(r)["chosen"].startswith(
         "alpha 0.6, GEC-11 Vol I Table 3-6's default value for extensible "

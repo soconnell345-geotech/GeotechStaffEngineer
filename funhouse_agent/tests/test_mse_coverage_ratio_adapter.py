@@ -167,11 +167,9 @@ def test_list_reinforcement_says_what_each_needs():
     assert "allowable" in out["Tallowable"]
 
 
-# reinforcement_Fy is refused with or without a built-in since GM-269
-# (test_gm179_unused_inputs)
 @pytest.mark.parametrize("name, value", [
     ("reinforcement_Tallowable", 138.4), ("reinforcement_type", "strip"),
-    ("reinforcement_thickness", 0.01),
+    ("reinforcement_Fy", 448.0), ("reinforcement_thickness", 0.01),
     ("reinforcement_transverse_spacing", 0.3)])
 def test_a_built_in_refuses_the_custom_inputs_it_would_not_use(name, value):
     """GM-262 review: a built-in carries its own Tal, type and bar
