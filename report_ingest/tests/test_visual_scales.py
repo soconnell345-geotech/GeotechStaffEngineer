@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("fitz", reason="the fixtures are drawn with PyMuPDF")
+pytest.importorskip("pymupdf", reason="the fixtures are drawn with PyMuPDF")
 pytest.importorskip("planlens.document.scalefinder")
 
 from planlens.document.loggrid import log_grid  # noqa: E402

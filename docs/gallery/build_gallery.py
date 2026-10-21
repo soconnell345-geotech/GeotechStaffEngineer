@@ -1273,8 +1273,8 @@ def ex_pdf_import() -> Exhibit:
     res = extract_vector_geometry(filepath=pdf_path)
 
     # Raw page render (what the drawing looks like).
-    import fitz
-    doc = fitz.open(pdf_path)
+    import pymupdf
+    doc = pymupdf.open(pdf_path)
     pix = doc[0].get_pixmap(dpi=150)
     raw_png = os.path.join(FIG_DIR, "ex12_raw_page.png")
     pix.save(raw_png)

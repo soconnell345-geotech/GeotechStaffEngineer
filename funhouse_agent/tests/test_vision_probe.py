@@ -20,7 +20,7 @@ import struct
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import vision_probe, vision_view  # noqa: E402
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine  # noqa: E402
@@ -103,7 +103,7 @@ def probing_on(monkeypatch):
 @pytest.fixture
 def sheet_pdf():
     """A half-size sheet whose notes are 5 pt tall, like BD-AB_01-26."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=1224, height=792)
     for i in range(30):
         page.insert_text((60 + 280 * (i % 4), 80 + 22 * (i // 4)),

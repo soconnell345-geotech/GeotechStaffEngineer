@@ -22,7 +22,7 @@ import pytest
 
 pytest.importorskip("planlens.tools")
 pytest.importorskip("planlens.ir")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeMessagesListChatModel)
@@ -83,7 +83,7 @@ def displayed_box(box_ir, rotation, w=W_UN, h=H_UN):
 
 
 def rotated(path, rotation):
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     if rotation:
         doc[0].set_rotation(rotation)
     data = doc.tobytes()
@@ -379,7 +379,7 @@ _VP = ("[ << /Type /Viewport /BBox [ 0 0 900 700 ] /Measure << /Type /Measure "
 
 
 def _with_viewport(path, ratio, unit, c):
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     doc.xref_set_key(doc[0].xref, "VP", _VP.format(ratio=ratio, unit=unit,
                                                    c=c))
     data = doc.tobytes()

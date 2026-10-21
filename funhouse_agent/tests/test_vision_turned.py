@@ -34,7 +34,7 @@ import re
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 np = pytest.importorskip("numpy")
 
 from funhouse_agent import (  # noqa: E402
@@ -74,7 +74,7 @@ def _sheet(text_rotate=0, page_rotate=0, n_lines=4, mark=MARK, text=NOTE,
     mark, and ``/Rotate`` ``page_rotate``. ``strokes`` draws the lettering's
     stand-in as lines instead (no text layer, like a CAD plot). Returns the
     PDF and the mark as the page displays it."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     for i in range(n_lines):
         step = 14 * i
@@ -84,21 +84,21 @@ def _sheet(text_rotate=0, page_rotate=0, n_lines=4, mark=MARK, text=NOTE,
             x, y = origin
             end = {0: (x + 240, y), 90: (x, y - 240), 180: (x - 240, y),
                    270: (x, y + 240)}[text_rotate]
-            page.draw_line(fitz.Point(x, y), fitz.Point(*end), color=(0, 0, 0),
+            page.draw_line(pymupdf.Point(x, y), pymupdf.Point(*end), color=(0, 0, 0),
                            width=2)
         elif text:
             page.insert_text(origin, text, fontsize=9, rotate=text_rotate)
-    page.draw_rect(fitz.Rect(*mark), color=(1, 0, 0), fill=(1, 0, 0))
+    page.draw_rect(pymupdf.Rect(*mark), color=(1, 0, 0), fill=(1, 0, 0))
     if page_rotate:
         page.set_rotation(page_rotate)
-    shown = tuple(fitz.Rect(*mark) * page.rotation_matrix)
+    shown = tuple(pymupdf.Rect(*mark) * page.rotation_matrix)
     data = doc.tobytes()
     doc.close()
     return data, shown
 
 
 def _pixels(image_bytes):
-    pix = fitz.Pixmap(image_bytes)
+    pix = pymupdf.Pixmap(image_bytes)
     a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
         pix.height, pix.width, pix.n)
     return a[:, :, :3]
@@ -251,7 +251,7 @@ def _one_word(rotate):
     """A page with one line of lettering turned ``rotate`` degrees, and a
     240 pt square window centred on it (the same size whatever the turn, so
     every render draws the lettering at the same scale)."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     origin = {0: (200, 400), 90: (300, 520), 180: (420, 400),
               270: (300, 280)}[rotate]
@@ -792,14 +792,14 @@ def test_zooms_on_a_few_turned_tags_do_not_turn_an_upright_page(retry_on):
     """An upright sheet with one turned group: zooms on the group are read
     again upright, but the whole-page look outweighs them, so later looks
     at the page still go as it shows."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     for i in range(4):
-        page.draw_line(fitz.Point(60, 450 + 14 * i),
-                       fitz.Point(300, 450 + 14 * i), color=(0, 0, 0), width=2)
-        page.draw_line(fitz.Point(450 + 14 * i, 340),
-                       fitz.Point(450 + 14 * i, 100), color=(0, 0, 0), width=2)
-    page.draw_rect(fitz.Rect(*MARK), color=(1, 0, 0), fill=(1, 0, 0))
+        page.draw_line(pymupdf.Point(60, 450 + 14 * i),
+                       pymupdf.Point(300, 450 + 14 * i), color=(0, 0, 0), width=2)
+        page.draw_line(pymupdf.Point(450 + 14 * i, 340),
+                       pymupdf.Point(450 + 14 * i, 100), color=(0, 0, 0), width=2)
+    page.draw_rect(pymupdf.Rect(*MARK), color=(1, 0, 0), fill=(1, 0, 0))
     pdf = doc.tobytes()
     doc.close()
     engine = SaysTurned()

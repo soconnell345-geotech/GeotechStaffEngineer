@@ -53,16 +53,16 @@ class SoundingGT:
 
 
 def _page(doc=None):
-    import fitz
-    doc = doc if doc is not None else fitz.open()
+    import pymupdf
+    doc = doc if doc is not None else pymupdf.open()
     page = doc.new_page(width=LETTER[0], height=LETTER[1])
     return doc, page
 
 
 def _text(page, x: float, y: float, text: str, size: float = 9.0,
           bold: bool = False) -> None:
-    import fitz
-    page.insert_text(fitz.Point(x, y), text, fontsize=size,
+    import pymupdf
+    page.insert_text(pymupdf.Point(x, y), text, fontsize=size,
                      fontname="hebo" if bold else "helv")
 
 
@@ -80,7 +80,7 @@ def _row(page, y: float, xs, cells, size: float = 8.0,
 
 def build_test_pit() -> SoundingGT:
     """A pit form with a ruler, layers, samples and a bucket in its header."""
-    import fitz
+    import pymupdf
 
     doc, page = _page()
     _text(page, 60, 50, "TEST PIT LOG", 13, bold=True)
@@ -104,10 +104,10 @@ def build_test_pit() -> SoundingGT:
     # the ruled log
     top, bottom = 210.0, 610.0
     left, right = 60.0, 560.0
-    page.draw_rect(fitz.Rect(left, top, right, bottom), width=0.8)
+    page.draw_rect(pymupdf.Rect(left, top, right, bottom), width=0.8)
     for x in (110.0, 340.0, 400.0, 470.0):
-        page.draw_line(fitz.Point(x, top), fitz.Point(x, bottom), width=0.6)
-    page.draw_line(fitz.Point(left, top + 26), fitz.Point(right, top + 26),
+        page.draw_line(pymupdf.Point(x, top), pymupdf.Point(x, bottom), width=0.6)
+    page.draw_line(pymupdf.Point(left, top + 26), pymupdf.Point(right, top + 26),
                    width=0.8)
     _text(page, 64, top + 18, "DEPTH (m)", 8, bold=True)
     _text(page, 170, top + 18, "MATERIAL DESCRIPTION", 8, bold=True)
@@ -124,8 +124,8 @@ def build_test_pit() -> SoundingGT:
 
     depth = 0.0
     while depth <= 2.6001:
-        page.draw_line(fitz.Point(left + 2, at(depth)),
-                       fitz.Point(left + 12, at(depth)), width=0.5)
+        page.draw_line(pymupdf.Point(left + 2, at(depth)),
+                       pymupdf.Point(left + 12, at(depth)), width=0.5)
         if abs(depth * 5 - round(depth * 5)) < 1e-6 and \
                 abs(depth - round(depth, 1)) < 1e-6 and \
                 abs((depth * 10) % 5) < 1e-6:
@@ -138,17 +138,17 @@ def build_test_pit() -> SoundingGT:
         (1.10, 2.60, "LEAN CLAY; grey, moist, stiff", "CL"),
     ]
     for lo, hi, description, symbol in layers:
-        page.draw_line(fitz.Point(110.0, at(lo)), fitz.Point(400.0, at(lo)),
+        page.draw_line(pymupdf.Point(110.0, at(lo)), pymupdf.Point(400.0, at(lo)),
                        width=0.6)
         _text(page, 118, at(lo) + 14, description, 8)
         if symbol:
             _text(page, 355, at((lo + hi) / 2.0), symbol, 8)
-    page.draw_line(fitz.Point(110.0, at(2.60)), fitz.Point(400.0, at(2.60)),
+    page.draw_line(pymupdf.Point(110.0, at(2.60)), pymupdf.Point(400.0, at(2.60)),
                    width=0.6)
 
     samples = [("B-1", 0.40, 0.60), ("B-2", 1.40, 1.60)]
     for name, lo, hi in samples:
-        page.draw_rect(fitz.Rect(408, at(lo), 428, at(hi)), width=0.6)
+        page.draw_rect(pymupdf.Rect(408, at(lo), 428, at(hi)), width=0.6)
         _text(page, 432, at(lo) + 8, name, 8)
     _text(page, 476, at(2.30), "Bottom of test pit at 2.60 m", 8)
 
@@ -220,7 +220,7 @@ def build_plotted_cpt() -> SoundingGT:
     The floor can read the AXES off this and NOTHING else, which is the whole
     point of it: it is the sheet that makes the reader digitise.
     """
-    import fitz
+    import pymupdf
 
     doc, page = _page()
     _text(page, 60, 50, "CPT-7", 14, bold=True)
@@ -229,13 +229,13 @@ def build_plotted_cpt() -> SoundingGT:
 
     left, right = 120.0, 520.0
     top, bottom = 140.0, 640.0
-    page.draw_rect(fitz.Rect(left, top, right, bottom), width=0.9)
+    page.draw_rect(pymupdf.Rect(left, top, right, bottom), width=0.9)
 
     _text(page, 210, top - 26, "Cone resistance (qc) in MPa", 9, bold=True)
     for n, value in enumerate((5, 10, 15, 20, 25)):
         x = left + (n + 1) * (right - left) / 6.0
         _text(page, x - 6, top - 8, str(value), 8)
-        page.draw_line(fitz.Point(x, top), fitz.Point(x, bottom),
+        page.draw_line(pymupdf.Point(x, top), pymupdf.Point(x, bottom),
                        width=0.3, color=(0.8, 0.8, 0.8))
 
     _text(page, 210, bottom + 26, "Sleeve friction (fs) in MPa", 9, bold=True)
@@ -247,13 +247,13 @@ def build_plotted_cpt() -> SoundingGT:
     for n in range(0, 11):
         y = top + n * (bottom - top) / 10.0
         _text(page, left - 26, y + 3, str(n), 8)
-        page.draw_line(fitz.Point(left, y), fitz.Point(right, y),
+        page.draw_line(pymupdf.Point(left, y), pymupdf.Point(right, y),
                        width=0.3, color=(0.8, 0.8, 0.8))
 
     # the traces, as strokes and nothing else
     points = [(left + 20 + 14 * n % 180, top + n * 5.0) for n in range(100)]
     for a, b in zip(points, points[1:]):
-        page.draw_line(fitz.Point(*a), fitz.Point(*b), width=0.7,
+        page.draw_line(pymupdf.Point(*a), pymupdf.Point(*b), width=0.7,
                        color=(0, 0, 1))
     return SoundingGT(
         pdf=doc.tobytes(), kind="cpt", investigation_id="CPT-7",

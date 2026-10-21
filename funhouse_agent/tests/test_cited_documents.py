@@ -467,7 +467,7 @@ def test_the_record_is_read_incrementally(tmp_path):
 # ---------------------------------------------------------------------------
 
 def _html_to_pdf(conv, html=HTML):
-    pytest.importorskip("fitz")
+    pytest.importorskip("pymupdf")
     from funhouse_agent._fileio import working_dir_bound
     from funhouse_agent.dispatch import call_agent
     with working_dir_bound(str(conv / "files")), \
@@ -523,7 +523,7 @@ def test_a_writer_on_a_host_with_no_record_is_unchanged(tmp_path,
 
 
 def _html_to_pdf_in(folder):
-    pytest.importorskip("fitz")
+    pytest.importorskip("pymupdf")
     from funhouse_agent._fileio import working_dir_bound
     from funhouse_agent.dispatch import call_agent
     with working_dir_bound(str(folder)):

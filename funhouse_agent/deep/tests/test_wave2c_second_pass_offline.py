@@ -27,7 +27,7 @@ import threading
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import _fileio, vision_tools  # noqa: E402
 from funhouse_agent.deep.vision_engine import (  # noqa: E402
@@ -40,11 +40,11 @@ QUESTION = "Transcribe ALL text on this sheet exactly."
 
 
 def _pdf(n=1) -> bytes:
-    d = fitz.open()
+    d = pymupdf.open()
     for i in range(n):
         page = d.new_page(width=612, height=792)
         page.insert_text((72, 100), f"Sheet {i + 1}  B-1  B-2", fontsize=12)
-        page.draw_rect(fitz.Rect(300, 300, 500, 500), color=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(300, 300, 500, 500), color=(0, 0, 0))
     data = d.tobytes()
     d.close()
     return data

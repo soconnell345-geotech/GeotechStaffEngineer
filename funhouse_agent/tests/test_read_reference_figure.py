@@ -37,7 +37,7 @@ def _call(args, engine):
 
 def _pdf_available() -> bool:
     try:
-        import fitz  # noqa: F401
+        import pymupdf  # noqa: F401
         from geotech_references import _figures_db
         _figures_db.resolve_pdf("dm7_2", "4-12")
         return True

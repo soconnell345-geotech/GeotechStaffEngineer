@@ -13,7 +13,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeMessagesListChatModel)
@@ -59,7 +59,7 @@ def uploads():
 def long_pdf(n_pages=150):
     """A long manual: running header, printed page numbers, captions,
     references on every page, a repeated phrase to search for."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     for i in range(n_pages):
         p = doc.new_page(width=612, height=792)
         p.insert_text((460, 50), "MANUAL 1-2-3", fontsize=9)
@@ -70,7 +70,7 @@ def long_pdf(n_pages=150):
         body = (f"The allowable bearing pressure for zone {i} is given in "
                 f"Table {ch}-{i % 10 + 1}; see also Figure {ch}-2, SHEET "
                 f"S-{100 + i} and DETAIL 4/S-{300 + i}. ") * 4
-        p.insert_textbox(fitz.Rect(72, 150, 540, 700), body, fontsize=10)
+        p.insert_textbox(pymupdf.Rect(72, 150, 540, 700), body, fontsize=10)
         p.insert_text((300, 740), f"{ch}-{i % 10 + 1}", fontsize=9)
     data = doc.tobytes()
     doc.close()

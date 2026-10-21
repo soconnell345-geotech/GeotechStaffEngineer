@@ -331,17 +331,17 @@ def _lettering_under(page, box: Sequence[float]) -> Optional[float]:
     of it the label's height across, on a render of the page WITHOUT its
     annotations (the label itself is one), lines that run right across the
     label left out; ``None`` when the box cannot be rendered."""
-    import fitz
+    import pymupdf
     import numpy as np
 
     x0, y0, x1, y1 = (float(v) for v in box)
     if x1 - x0 < 1.0 or y1 - y0 < 1.0:
         return None
     try:
-        pix = page.get_pixmap(matrix=fitz.Matrix(LABEL_PX_PER_PT,
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(LABEL_PX_PER_PT,
                                                  LABEL_PX_PER_PT),
-                              clip=fitz.Rect(x0, y0, x1, y1),
-                              colorspace=fitz.csGRAY, alpha=False,
+                              clip=pymupdf.Rect(x0, y0, x1, y1),
+                              colorspace=pymupdf.csGRAY, alpha=False,
                               annots=False)
     except Exception:  # noqa: BLE001 - an unrendered label is not judged
         return None
@@ -399,9 +399,9 @@ def check_labels(pdf_bytes: bytes, result: Dict[str, Any],
              and it["row"].get("label_bbox") is not None]
     if not items:
         return []
-    import fitz
+    import pymupdf
     out: List[Dict[str, Any]] = []
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
         for it in items:
             row = it["row"]
@@ -474,13 +474,13 @@ def _text_letters(page) -> List[Tuple[Tuple[float, float, float, float],
     the displayed frame (planlens ``pdf_text._textpage``). Line-high boxes
     on PyMuPDF 2.x as on 1.x, through planlens' own guard (INF-17)."""
     import contextlib
-    import fitz
+    import pymupdf
     try:
         from planlens.pymupdf_settings import line_boxes
     except Exception:  # noqa: BLE001 - a planlens before 0.14 has no guard
         line_boxes = contextlib.nullcontext
     stext = page.get_displaylist(annots=False).get_textpage()
-    tp = stext if isinstance(stext, fitz.TextPage) else fitz.TextPage(stext)
+    tp = stext if isinstance(stext, pymupdf.TextPage) else pymupdf.TextPage(stext)
     tp.parent = page
     with line_boxes():
         words = page.get_text("words", textpage=tp)
@@ -517,9 +517,9 @@ def _reads_to_ask(pdf_bytes: bytes, items: Sequence[Dict[str, Any]]) -> set:
             and not str(it["spec"].get("label_reads") or "").strip()]
     if not want or not _label_reads_supported():
         return set()
-    import fitz
+    import pymupdf
     out, letters = set(), {}
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     try:
         for it in want:
             pno = int(it["row"].get("page") or 0)
@@ -1260,12 +1260,12 @@ def _copy_markups(pdf_bytes: bytes, signer: str) -> List[Dict[str, Any]]:
     ``label`` when it is a mark's visible label (planlens ties a label to its
     mark with ``/IRT`` and ``/RT /Group``), ``parent`` that mark, ``ours``
     when this app wrote it (signed ``signer`` or as this app)."""
-    import fitz
+    import pymupdf
     from planlens.document.annotations import extract_annotations
 
     from funhouse_agent.document_tools import _is_label, _ours
 
-    doc = fitz.open(stream=bytes(pdf_bytes), filetype="pdf")
+    doc = pymupdf.open(stream=bytes(pdf_bytes), filetype="pdf")
     try:
         out: List[Dict[str, Any]] = []
         for i in range(doc.page_count):

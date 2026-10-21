@@ -9,7 +9,7 @@ regression shows.
 
 import pytest
 
-pytest.importorskip("fitz")
+pytest.importorskip("pymupdf")
 pytest.importorskip("matplotlib")
 
 import matplotlib  # noqa: E402

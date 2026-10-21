@@ -159,14 +159,14 @@ def test_a_stalled_page_look_returns_an_error_not_a_hang(short_limit,
                                                          monkeypatch):
     """Through the tool: the stalled look comes back as a JSON error within
     the limit, so the turn goes on."""
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     from funhouse_agent import vision_probe
     from funhouse_agent.vision_tools import dispatch_extended_tool
 
     monkeypatch.setenv(vision_probe.PROBE_ENV, "0")
     vision_probe.clear_cache()
 
-    doc = fitz.open()
+    doc = pymupdf.open()
     doc.new_page(width=200, height=200).insert_text((20, 40), "B-1")
     pdf = doc.tobytes()
     model = _Stalls(stall_on=(1, 2, 3, 4, 5, 6, 7, 8))

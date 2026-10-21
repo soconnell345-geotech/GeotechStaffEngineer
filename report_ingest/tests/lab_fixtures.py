@@ -43,16 +43,16 @@ class LabSheetGT:
 
 
 def _page():
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     page = doc.new_page(width=LETTER[0], height=LETTER[1])
     return doc, page
 
 
 def _text(page, x: float, y: float, text: str, size: float = 9.0,
           bold: bool = False) -> None:
-    import fitz
-    page.insert_text(fitz.Point(x, y), text, fontsize=size,
+    import pymupdf
+    page.insert_text(pymupdf.Point(x, y), text, fontsize=size,
                      fontname="hebo" if bold else "helv")
 
 
@@ -64,7 +64,7 @@ def _grid(page, x0: float, y0: float, widths, rows,
     lines, and a fixture that only sometimes reads as a table would make a
     test that only sometimes means anything.
     """
-    import fitz
+    import pymupdf
     height = 16.0
     xs = [x0]
     for width in widths:
@@ -76,29 +76,29 @@ def _grid(page, x0: float, y0: float, widths, rows,
                   bold=(header and r == 0))
         y += height
     for i, x in enumerate(xs):
-        page.draw_line(fitz.Point(x, y0), fitz.Point(x, y), width=0.6)
+        page.draw_line(pymupdf.Point(x, y0), pymupdf.Point(x, y), width=0.6)
     for r in range(len(rows) + 1):
-        page.draw_line(fitz.Point(xs[0], y0 + r * height),
-                       fitz.Point(xs[-1], y0 + r * height), width=0.6)
+        page.draw_line(pymupdf.Point(xs[0], y0 + r * height),
+                       pymupdf.Point(xs[-1], y0 + r * height), width=0.6)
     return (xs[0], y0, xs[-1], y)
 
 
 def _plot(page, x0: float, y0: float, x1: float, y1: float,
           ticks_x, ticks_y, points) -> None:
     """A plot with labelled axes and a polyline, for the zoom tool to read."""
-    import fitz
-    page.draw_rect(fitz.Rect(x0, y0, x1, y1), width=0.8)
+    import pymupdf
+    page.draw_rect(pymupdf.Rect(x0, y0, x1, y1), width=0.8)
     for value, fraction in ticks_x:
         x = x0 + (x1 - x0) * fraction
-        page.draw_line(fitz.Point(x, y1), fitz.Point(x, y1 + 4), width=0.6)
+        page.draw_line(pymupdf.Point(x, y1), pymupdf.Point(x, y1 + 4), width=0.6)
         _text(page, x - 6, y1 + 13, str(value), 7.0)
     for value, fraction in ticks_y:
         y = y1 - (y1 - y0) * fraction
-        page.draw_line(fitz.Point(x0 - 4, y), fitz.Point(x0, y), width=0.6)
+        page.draw_line(pymupdf.Point(x0 - 4, y), pymupdf.Point(x0, y), width=0.6)
         _text(page, x0 - 24, y + 3, str(value), 7.0)
     previous = None
     for fx, fy in points:
-        point = fitz.Point(x0 + (x1 - x0) * fx, y1 - (y1 - y0) * fy)
+        point = pymupdf.Point(x0 + (x1 - x0) * fx, y1 - (y1 - y0) * fy)
         page.draw_circle(point, 2.0, width=0.8)
         if previous is not None:
             page.draw_line(previous, point, width=0.8)

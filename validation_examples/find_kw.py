@@ -1,4 +1,4 @@
-import fitz, sys, os, glob, re
+import pymupdf, sys, os, glob, re
 
 docs = r"C:/Users/socon/OneDrive/dev/GeotechStaffEngineer/.claude/worktrees/v5.1-todos/geotech-references/docs"
 sys.stdout.reconfigure(encoding='utf-8')
@@ -6,7 +6,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 sub, rx = sys.argv[1], re.compile(sys.argv[2], re.I)
 matches = [p for p in glob.glob(docs + "/*.pdf") if sub.lower() in os.path.basename(p).lower()]
 for pdf in matches:
-    doc = fitz.open(pdf)
+    doc = pymupdf.open(pdf)
     print(f"--- {os.path.basename(pdf)} ---")
     for i, page in enumerate(doc):
         txt = page.get_text()

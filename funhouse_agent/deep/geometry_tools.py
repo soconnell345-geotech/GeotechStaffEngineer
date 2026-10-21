@@ -319,14 +319,14 @@ def _viewports(doc, page, index: int) -> list:
 
 
 def _ingest(src: Any, page: int) -> _Sheet:
-    import fitz
+    import pymupdf
     from planlens.ir import from_pdf_vector
 
     from funhouse_agent import vision_view
 
     data = bytes(src) if isinstance(src, (bytes, bytearray)) else None
-    doc = (fitz.open(stream=data, filetype="pdf") if data is not None
-           else fitz.open(str(src)))
+    doc = (pymupdf.open(stream=data, filetype="pdf") if data is not None
+           else pymupdf.open(str(src)))
     try:
         n = len(doc)
         if not 0 <= page < n:
