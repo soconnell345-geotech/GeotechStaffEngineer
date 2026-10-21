@@ -202,10 +202,21 @@ def test_the_tool_text_says_per_unit_width_and_names_the_equations():
     assert "per metre of the reinforcement's own width" in p[
         "reinforcement_Tallowable"]["description"]
     assert "Eq. 3-11a" in p["reinforcement_Tallowable"]["description"]
-    # GM-262: the check is at FOS 1.0 on the unfactored Tmax: an allowable
-    for words in ("unfactored Tmax at a factor of safety of 1.0",
-                  "0.48 Fy for bar mats (p. 4-77)", "Fig. 3-5, p. 3-24"):
+    # GM-262: steel's check is at FOS 1.0 on the unfactored Tmax, so its Tal
+    # is an allowable; the review: a geosynthetic's is Tult / RF, at 1.5
+    for words in ("For steel it requires a factor of safety of 1.0",
+                  "0.48 Fy for bar mats (p. 4-77)", "Fig. 3-5, p. 3-24",
+                  "For a geosynthetic it requires 1.5 (1.35 / phi 0.90",
+                  "Tult / RF (Eq. 3-12, p. 3-28)"):
         assert words in p["reinforcement_Tallowable"]["description"], words
+    out = D.call_agent("retaining_walls", "list_reinforcement", {})
+    assert "of 1.5 for a geosynthetic" in out["Tallowable"]
+    grid = D.call_agent("retaining_walls", "mse_wall", {
+        "wall_height": 6.0, "gamma_backfill": 19.0, "phi_backfill": 34.0,
+        "reinforcement_length": 5.0, "reinforcement_spacing": 0.6,
+        "reinforcement_name": "geogrid_ux1600"})
+    assert {lv["FOS_rupture_required"] for lv in grid["internal_results"]} \
+        == {1.5}
     sh = p["reinforcement_horizontal_spacing"]["description"]
     assert "Rc = b/Sh (Eq. 3-1)" in sh and "refused" in sh
     assert "default" not in p["reinforcement_width"]

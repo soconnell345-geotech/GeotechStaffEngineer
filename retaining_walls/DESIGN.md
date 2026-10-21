@@ -683,7 +683,7 @@ values, and each level's Ng wires carry its factored Tmax; at Level 4 the
 built-in mat's Tal x Rc over the unfactored Tmax is 1.044, against E4's 4 x
 3.36 / 12.75 = 1.054. Module tests: `tests/test_mse_bar_mat_strength.py`.
 
-**Left for the owner** (BACKLOG; the review below took the first two):
+**Left for the owner** (BACKLOG; the review below took the first three):
 - the ribbed strip's 43.1 kN a strip has no recorded source either (it is
   about 0.32 x 450 MPa x 75 x 4 mm, uncorroded) - now 0.55 Fy Ec at E3's
   corroded thickness, 47.9 kN (review below);
@@ -691,7 +691,8 @@ built-in mat's Tal x Rc over the unfactored Tmax is 1.044, against E4's 4 x
   Fy; the built-in is E4's rigid-facing mat at 0.48 Fy - now stated, with
   the flexible-facing Tal as the alternative (review below);
 - whether the built-in geogrids' Tal (21.9 and 29.2 kN/m) is a long-term
-  design strength or an allowable: the check takes it at FOS 1.0;
+  design strength or an allowable: the check takes it at FOS 1.0 - now
+  taken as Tult / RF and checked at 1.5 (review below);
 - a reinforcement per level (E4's 3W11 at Level 2 and 4W15 below Level 4)
   is not taken; GM-261 takes the spacing per level.
 
@@ -838,14 +839,56 @@ empirical F* given beside the tested one. Tests:
 `tests/test_mse_bar_mat_strength.py`, `tests/test_mse_coverage_ratio.py`,
 and `funhouse_agent/tests/test_mse_coverage_ratio_adapter.py`.
 
+**The factor of safety on rupture, by reinforcement type.** Before the
+review the rupture check required Tal x Rc / Tmax >= 1.0 of every
+reinforcement. That is right for steel, whose Tal is given as GEC-11's
+allowable (0.55 Fy or 0.48 Fy, p. 4-77, the 0.75 / 1.35 and 0.65 / 1.35
+already in it), and unsafe for a geosynthetic, whose Tal is its long-term
+strength:
+- GEC-11 Vol I p. 4-47: Tal is "the nominal long-term reinforcement
+  design strength" for steel and geosynthetics alike; for a geosynthetic
+  Tal = Tult / RF, RF = RFID x RFCR x RFD (Eq. 3-12, p. 3-28). Eq. 4-33
+  (p. 4-48): Tr = phi Tal, phi 0.90 for geosynthetics, static (Table
+  4-7). Tmax takes gamma_P-EV = 1.35 (p. 4-40).
+- Vol II Example E1 does exactly that for its geogrids: GG-I Tult 3,000
+  lb/ft, RF 1.85 x 1.15 x 1.3, Tal 1,085 lb/ft, Tr = 0.90 Tal = 976
+  (Table E1-7.3, p. E1-15), against the factored Tmax, CDR 1.00 at Layer
+  4 (Table E1-7.4, p. E1-16).
+- Against the unfactored Tmax this module uses, that is Tal Rc / Tmax >=
+  1.35 / 0.90 = 1.5, the same 1.5 the module already requires of pullout
+  (phi 0.90). At 1.0 a geosynthetic passed at two thirds of GEC-11's
+  factored resistance.
+
+The module now requires 1.35 / phi of each type
+(`mse.rupture_FOS_required`): 1.0 for steel (the phi / 1.35 is in its
+Tal) and 1.5 for a geosynthetic (Tal = Tult / RF). The steel and
+geosynthetic checks are then the same check, GEC-11's phi Tal Rc >= 1.35
+Tmax; only where the phi / 1.35 sits differs, and it sits where each Tal
+is printed: in the steel allowable of p. 4-77, and in the required factor
+of safety for a geosynthetic, whose published Tal (Tult / RF) carries
+none. The 0.48 Fy argument above stands. Each level gives
+`FOS_rupture_required`, the calc package prints it, the Tal choice of a
+geosynthetic states it with this basis, and `check_internal_stability`
+still takes `FOS_rupture` to override it.
+
+The built-in geogrids' 21.9 and 29.2 kN/m (about 1,500 and 2,000 lb/ft)
+have no recorded source. The code called them the long-term design
+strength after creep, installation damage and durability, i.e. Tult / RF,
+and the check now takes them so; their basis says the value is not
+checked against the product's published strength.
+
+Numbers: the 6 m geogrid wall (UX1600, L 5 m, Sv 0.6 m, gamma 19, phi
+34) keeps FOS_rupture 1.192 at the bottom level, and now fails rupture at
+5.1 m (1.332) and 5.7 m (1.192), where every level passed before. Steel
+results are unchanged. Tests: `tests/test_mse_rupture_factor_of_safety.py`.
+
 **Left for the owner and the lead** (BACKLOG):
 - a reinforcement per level (another Tal and width at the deeper levels,
-  as E4's 4W15 mats);
+  as E4's 4W15 mats, or E1's GG-II geogrids below Layer 4);
 - the built-in strip's 75 mm width, where GEC-11's strip is 50 mm;
-- the geosynthetic rupture check: the built-in geogrids' Tal (21.9 and
-  29.2 kN/m) is the long-term design strength, and GEC-11 checks it at phi
-  0.90 against Tmax times 1.35, an allowable of 0.67 Tal, where this module
-  takes Tal itself at a factor of safety of 1.0;
+- the built-in geogrids' Tal (21.9, 29.2 kN/m) and their product names:
+  no source is recorded; check them against the products' published
+  long-term strengths, or rename them as generic geogrids;
 - `reinforcement_Fy` is used in no check, for a custom reinforcement too.
 
 ## Key Notes
