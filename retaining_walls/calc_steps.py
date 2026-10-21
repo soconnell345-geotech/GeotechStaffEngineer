@@ -187,6 +187,26 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
     return items
 
 
+def _per_level_text(values) -> str:
+    """A value given for the wall, or per level from the top (GM-261):
+    runs of the same value as 'v x n'."""
+    if not isinstance(values, (list, tuple)):
+        return f"{values:.3f}"
+    runs = []
+    for v in values:
+        if runs and runs[-1][0] == v:
+            runs[-1][1] += 1
+        else:
+            runs.append([v, 1])
+    return ", ".join(f"{v:.3f}" + (f" × {n}" if n > 1 else "")
+                     for v, n in runs)
+
+
+def _from_top(values) -> str:
+    return (", per level from the top"
+            if isinstance(values, (list, tuple)) else "")
+
+
 def _input_summary_mse(result, analysis) -> List[InputItem]:
     """Input summary for MSE walls."""
     geom = _get(analysis, "geom")
@@ -232,12 +252,18 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
             items.extend([
                 InputItem("b", "Reinforcement width",
                           f"{reinforcement.width:.3f}", "m"),
-                InputItem("S_h", "Horizontal spacing, centre to centre",
-                          f"{reinforcement.horizontal_spacing:.3f}", "m"),
+                InputItem("S_h", "Horizontal spacing, centre to centre"
+                          + _from_top(reinforcement.horizontal_spacing),
+                          _per_level_text(reinforcement.horizontal_spacing),
+                          "m"),
             ])
+        # GM-261: one value a level when the spacing is given per level
+        Rcs = _mse.coverage_ratios(reinforcement, geom.reinforcement_depths)
         items.append(InputItem(
-            "R_c", "Coverage ratio b/S_h (1 for a continuous layer)",
-            f"{_mse.coverage_ratio(reinforcement):.3f}", ""))
+            "R_c", "Coverage ratio b/S_h (1 for a continuous layer)"
+            + _from_top(Rcs if reinforcement.per_level else None),
+            _per_level_text(tuple(Rcs) if reinforcement.per_level
+                            else Rcs[0]), ""))
 
     if phi_f is not None:
         items.append(InputItem("\u03c6_foundation", "Foundation friction angle",
@@ -1170,8 +1196,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             reference="GEC-11 Vol I Eqs. 3-4, 3-5 (p. 3-20)",
         ))
 
-    Rc = (_mse.coverage_ratio(reinforcement) if reinforcement is not None
-          else 1.0)
+    # GM-261: one R_c a level when the spacing is given per level
+    per_level = reinforcement is not None and reinforcement.per_level
+    Rcs = (_mse.coverage_ratios(reinforcement, geom.reinforcement_depths)
+           if reinforcement is not None else [1.0])
+    Rc_text = (_per_level_text(tuple(Rcs)) + " per level from the top"
+               if per_level else f"{Rcs[0]:.3f}")
     alpha_t = _get(analysis, "alpha_tested")
     alpha = (_mse.pullout_alpha(reinforcement, alpha_t) if reinforcement
              else alpha_t if alpha_t is not None else 1.0)
@@ -1189,7 +1219,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             + f"; C = 2; \u03b1 = {alpha:g}"
             + (" (from pullout tests)" if alpha_t is not None
                else " (GEC-11 Table 3-6, p. 3-17)")
-            + f"; R_c = {Rc:.3f}"
+            + f"; R_c = {Rc_text}"
         ),
         result_name="P_r",
         result_value="(per level)",
@@ -1203,9 +1233,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             title="Tensile Resistance per Metre of Wall",
             equation="T_al \u00d7 R_c \u2265 T_max",
             substitution=(f"{reinforcement.Tallowable:.1f} kN/m of "
-                          f"reinforcement width \u00d7 {Rc:.3f}"),
+                          f"reinforcement width \u00d7 {Rc_text}"),
             result_name="T_al \u00d7 R_c",
-            result_value=f"{reinforcement.Tallowable * Rc:.1f}",
+            result_value=(
+                f"{reinforcement.Tallowable * min(Rcs):.1f} to "
+                f"{reinforcement.Tallowable * max(Rcs):.1f}" if per_level
+                else f"{reinforcement.Tallowable * Rcs[0]:.1f}"),
             result_unit="kN/m of wall",
             reference="GEC-11 Vol I Eq. 3-11a (p. 3-22), p. 4-47, "
                       "Eqs. 4-33 and 4-34 (pp. 4-48, 4-49)",
@@ -1238,7 +1271,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             notes=(
                 f"FOS_pullout required: 1.5. FOS_rupture required: 1.0. "
                 f"T_al R_c and P_r per metre of wall, coverage ratio "
-                f"R_c = {Rc:.3f}. "
+                f"R_c = {Rc_text}. "
                 f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}"
             ),
         ))

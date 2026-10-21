@@ -5,6 +5,9 @@ Spatial random field generation using GSTools.
 import numpy as np
 
 from gstools_agent.gstools_utils import import_gstools
+from gstools_agent.models import model_class
+from geotech_common.choices import choice, how_given
+from gstools_agent.choices import model_choice, seed_choice
 from gstools_agent.results import RandomFieldResult
 
 
@@ -82,7 +85,7 @@ def generate_random_field(
 
     gs = import_gstools()
 
-    model_cls = getattr(gs, model_type)
+    model_cls = model_class(model_type)     # GSTools' own, Exponential fixed
     model = model_cls(dim=2, var=variance, len_scale=len_scale, nugget=nugget)
 
     srf = gs.SRF(model, mean=mean, seed=seed)
@@ -101,4 +104,25 @@ def generate_random_field(
         field=field,
         grid_x=grid_x,
         grid_y=grid_y,
+        choices=_choices(model_type, variance, len_scale, nugget, mean, seed),
     )
+
+
+def _choices(model_type, variance, len_scale, nugget, mean, seed):
+    """What the field was drawn with (GM-265): the module fits nothing, so
+    every value is the call's or the default."""
+    out = [model_choice(model_type)]
+    for what, value, default, name, basis in (
+            ("variance (sill)", variance, 1.0, "variance",
+             "set by the user; a field drawn from a model has no data to "
+             "fit it to"),
+            ("correlation length", len_scale, 10.0, "len_scale",
+             "set by the user, in metres"),
+            ("nugget", nugget, 0.0, "nugget",
+             "no variation below the grid spacing unless one is given"),
+            ("mean", mean, 0.0, "mean",
+             "the field is the mean plus the random part")):
+        out.append(choice(what, f"{float(value):.4g}",
+                          how_given(value, default, name=name), basis))
+    out.append(seed_choice(seed))
+    return out

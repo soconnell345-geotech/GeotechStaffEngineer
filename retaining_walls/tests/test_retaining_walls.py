@@ -1115,8 +1115,8 @@ class TestBarMatCurves:
         r = WELDED_WIRE_GRID_W11
         assert r.is_grid
         assert r.type == "metallic_grid"
-        # W11 transverse t = 0.374 in -> 0.0095 m; St = 6 in -> 0.1524 m
-        assert r.t_over_St == pytest.approx(0.0095 / 0.1524, abs=1e-6)
+        # W11 transverse t = 0.374 in; St = 6 in (GEC-11 Vol II p. E4-15)
+        assert r.t_over_St == pytest.approx(0.374 / 6.0, abs=1e-6)
 
     def test_grid_reinforcement_routes_to_barmat_curves(self):
         """check_internal_stability with a bar-mat reinforcement uses the
