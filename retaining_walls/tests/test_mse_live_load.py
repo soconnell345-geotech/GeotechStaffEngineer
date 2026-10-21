@@ -23,7 +23,7 @@ from retaining_walls.mse import (
     BEARING_BASIS, LIVE_LOAD_BASIS, _external_terms, analyze_mse_wall,
     check_external_stability,
 )
-from retaining_walls.reinforcement import RIBBED_STEEL_STRIP_75x4
+from retaining_walls.reinforcement import GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4
 
 H, L, G, PHI, G_F, PHI_F, Q = 6.0, 4.2, 18.0, 34.0, 19.0, 30.0, 12.0
 Q_ALL = 300.0
@@ -138,14 +138,20 @@ class TestBrokenBackslope:
                                backfill_slope=self.BETA,
                                broken_backslope_height=3.0, surcharge=Q)
         r = analyze_mse_wall(geom, 19.0, 34.0, RIBBED_STEEL_STRIP_75x4)
-        assert r.choices == []
+        assert _live(r) == []
+
+
+def _live(r):
+    """The live-load choices; a ribbed strip's result also gives its F*
+    (GM-246)."""
+    return [c for c in r.choices if c["what"].startswith("live-load")]
 
 
 class TestResult:
     def test_choices_with_a_surcharge(self):
         r = analyze_mse_wall(_geom(), G, PHI, RIBBED_STEEL_STRIP_75x4,
                              gamma_foundation=G_F, phi_foundation=PHI_F)
-        assert [c["how"] for c in r.choices] == ["default", "default"]
+        assert [c["how"] for c in _live(r)] == ["default", "default"]
         assert "live_load_resists=False" in r.choices[0]["chosen"]
         assert "surcharge_in_bearing=True" in r.choices[1]["chosen"]
         assert r.to_dict()["choices"] == r.choices
@@ -157,6 +163,8 @@ class TestResult:
 
     def test_no_surcharge_no_choices(self):
         r = analyze_mse_wall(_geom(q=0.0), G, PHI, RIBBED_STEEL_STRIP_75x4)
+        assert _live(r) == []
+        r = analyze_mse_wall(_geom(q=0.0), G, PHI, GEOGRID_UX1600)
         assert r.choices == [] and "choices" not in r.to_dict()
 
 

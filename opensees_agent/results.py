@@ -212,7 +212,10 @@ class SiteResponseResult:
     max_accel_g : numpy.ndarray
         Max acceleration profile (g).
     max_pore_pressure_ratio : numpy.ndarray
-        Max excess pore pressure ratio profile.
+        Peak excess pore pressure ratio at each element centre: the
+        excess pore pressure over the initial vertical effective stress,
+        (u - u0) / sigma'v0 (GM-79); 0 where there is no pore water. Not
+        capped at 1.
     periods : numpy.ndarray
         Spectral periods (s).
     Sa_surface_g : numpy.ndarray
@@ -289,7 +292,11 @@ class SiteResponseResult:
         if len(self.max_strain_pct) > 0:
             lines.append(f"  Max shear strain:     {np.max(self.max_strain_pct):.3f} %")
         if len(self.max_pore_pressure_ratio) > 0:
-            lines.append(f"  Max ru:               {np.max(self.max_pore_pressure_ratio):.3f}")
+            ru = float(np.max(self.max_pore_pressure_ratio))
+            # ru is not capped (GM-79): above 1 is stated, not hidden
+            lines.append(f"  Max ru:               {ru:.3f}" + (
+                " (above 1: the pore pressure above the initial total "
+                "vertical stress)" if ru > 1.0 else ""))
         if self.solver_steps:
             st = self.solver_steps
             lines.append(

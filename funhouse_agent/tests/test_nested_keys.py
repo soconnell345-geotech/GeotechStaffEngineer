@@ -413,13 +413,20 @@ class TestSiteResponse:
                      {"layers": [{"thickness": 5, "Vs": 200, "density": 1.9,
                                   "material_type": "clay", "cu": 50}]},
                      r"layers\[0\] \(clay\).*\['cu'\]", r"cu -> su")
+            # GM-79: a layer's hydraulic conductivity is 'permeability'
+            _refused("opensees_adapter", "site_response_1d",
+                     {"layers": [{"thickness": 5, "Vs": 200, "density": 1.9,
+                                  "material_type": "clay", "su": 50,
+                                  "hydraulic_conductivity": 1e-8}]},
+                     r"hydraulic_conductivity -> permeability")
             fake = MagicMock()
             fake.return_value.to_dict.return_value = {"pga_surface_g": 0.3}
             with patch("opensees_agent.analyze_site_response", fake):
                 r = _registry("opensees_adapter")["site_response_1d"](
                     {"layers": [{"thickness": 5, "Vs": 200, "density": 1.9,
                                  "material_type": "sand", "phi": 33,
-                                 "K0": 0.5, "e_init": 0.7}],
+                                 "K0": 0.5, "e_init": 0.7,
+                                 "permeability": 1e-5}],
                      "motion": "synthetic_pulse"})
         assert r == {"pga_surface_g": 0.3}
 

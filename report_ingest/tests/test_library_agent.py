@@ -122,20 +122,20 @@ class TestEveryQueryRendersCitedText:
         result = run_query(library, "find",
                            {"text": "severely corrosive", "k": 3})
 
-        assert "(L05, p4)" in result.text
+        assert "(L05, p5)" in result.text
         assert ("L05", 4) in result.rows
 
     def test_where_is(self, library):
         result = run_query(library, "where_is",
                            {"text": "allowable bearing pressure of 3,000 psf"})
 
-        assert "(L01, p4)" in result.text
+        assert "(L01, p5)" in result.text
 
     def test_facts(self, library):
         result = run_query(library, "facts",
                            {"report_id": "L02", "fields": ["siteClass"]})
 
-        assert "siteClass: Site Class C (L02, p4)" in result.text
+        assert "siteClass: Site Class C (L02, p5)" in result.text
         assert '"Site Class C"' in result.text
         assert result.rows == [("L02", 4)]
 
@@ -149,7 +149,7 @@ class TestEveryQueryRendersCitedText:
     def test_compare(self, library):
         result = run_query(library, "compare", {"field": "siteClass"})
 
-        assert "L01: Site Class D (L01, p4)" in result.text
+        assert "L01: Site Class D (L01, p5)" in result.text
         assert "Did not answer it: L03, L04, L06" in result.text
 
     def test_explorations(self, library):
@@ -158,28 +158,28 @@ class TestEveryQueryRendersCitedText:
 
         assert "B-1 (boring)" in result.text
         assert "total depth 30 ft" in result.text
-        assert "(L01, p7, p8)" in result.text
+        assert "(L01, p8, p9)" in result.text
         assert "Brown sandy lean CLAY" in result.text
 
     def test_lab_summary(self, library):
         result = run_query(library, "lab_summary", {"report_id": "L01"})
 
         assert "atterberg" in result.text and "ASTM D4318" in result.text
-        assert "(L01, p12)" in result.text
+        assert "(L01, p13)" in result.text
 
     def test_calculations(self, library):
         result = run_query(library, "calculations", {"report_id": "L04"})
 
         assert "slope stability" in result.text
         assert "SLIDE2 9.0" in result.text
-        assert "(L04, p20, p21)" in result.text
+        assert "(L04, p21, p22)" in result.text
 
     def test_disagreements(self, library):
         result = run_query(library, "disagreements")
 
         assert "conflict at" in result.text
         assert "38 vs 41" in result.text
-        assert "(L01, p12, p14)" in result.text
+        assert "(L01, p13, p15)" in result.text
 
     def test_a_report_that_is_not_there_is_an_answer_not_a_crash(self,
                                                                  library):
@@ -240,8 +240,8 @@ class TestTheStructuredAnswer:
     def test_the_shape_the_primary_reads(self, root):
         model = ToolCallingFake(responses=[
             _call("compare", {"field": "siteClass"}),
-            AIMessage(content="L01 is Site Class D (L01, p4) and L02 is Site "
-                              "Class C (L02, p4)."),
+            AIMessage(content="L01 is Site Class D (L01, p5) and L02 is Site "
+                              "Class C (L02, p5)."),
         ])
         answer = answer_question("What site class did each report give?",
                                  model=model, library_root=root)
@@ -249,7 +249,7 @@ class TestTheStructuredAnswer:
         assert isinstance(answer, LibraryAnswer)
         assert answer.answer.startswith("L01 is Site Class D")
         assert [(c.report, c.page) for c in answer.citations] == [
-            ("L01", 4), ("L02", 4)]
+            ("L01", 5), ("L02", 5)]
         assert set(answer.reports_consulted) == {"L01", "L02", "L02-bound1",
                                                  "L05"}
         assert answer.gaps == []
@@ -271,12 +271,12 @@ class TestTheStructuredAnswer:
     def test_a_report_no_query_returned_is_a_gap(self, root):
         model = ToolCallingFake(responses=[
             _call("facts", {"report_id": "L01", "fields": ["siteClass"]}),
-            AIMessage(content="It is Site Class D (L01, p4), like L99 (L99)."),
+            AIMessage(content="It is Site Class D (L01, p5), like L99 (L99)."),
         ])
         answer = answer_question("site class?", model=model,
                                  library_root=root)
 
-        assert [(c.report, c.page) for c in answer.citations] == [("L01", 4)]
+        assert [(c.report, c.page) for c in answer.citations] == [("L01", 5)]
         assert any("L99" in gap for gap in answer.gaps)
 
     def test_an_empty_query_becomes_a_gap(self, root):
@@ -293,7 +293,7 @@ class TestTheStructuredAnswer:
                                                                    root):
         model = ToolCallingFake(responses=[
             _call("compare", {"field": "siteClass"}),
-            AIMessage(content="L02 is Site Class C (L02, p4).\n"
+            AIMessage(content="L02 is Site Class C (L02, p5).\n"
                               "Gap: three reports gave no site class."),
         ])
         answer = answer_question("site class?", model=model,
@@ -343,30 +343,30 @@ class TestBuildAnswer:
         from report_ingest.library_agent import QueryResult
 
         result = QueryResult(text="", rows=[("L01", 4)], reports=["L01"])
-        answer = build_answer("It is D (L01, p4).", [("facts", result)],
+        answer = build_answer("It is D (L01, p5).", [("facts", result)],
                               ["L01"])
 
-        assert [(c.report, c.page) for c in answer.citations] == [("L01", 4)]
+        assert [(c.report, c.page) for c in answer.citations] == [("L01", 5)]
 
     def test_a_word_in_brackets_is_not_read_as_a_citation(self):
         from report_ingest.library_agent import QueryResult
 
         result = QueryResult(text="", rows=[("L01", 4)], reports=["L01"])
-        answer = build_answer("It is D (probably) at L01 (L01, p4).",
+        answer = build_answer("It is D (probably) at L01 (L01, p5).",
                               [("facts", result)], ["L01"])
 
-        assert [(c.report, c.page) for c in answer.citations] == [("L01", 4)]
+        assert [(c.report, c.page) for c in answer.citations] == [("L01", 5)]
 
     def test_the_page_spellings_a_model_uses_are_all_read(self):
         from report_ingest.library_agent import QueryResult
 
         result = QueryResult(text="", rows=[("L01", 4), ("L02", 7)],
                              reports=["L01", "L02"])
-        answer = build_answer("one (L01, page 4), two (l02, p7).",
+        answer = build_answer("one (L01, page 5), two (l02, p8).",
                               [("facts", result)], ["L01", "L02"])
 
         assert [(c.report, c.page) for c in answer.citations] == [
-            ("L01", 4), ("L02", 7)]
+            ("L01", 5), ("L02", 8)]
 
 
 class TestTheSubAgentSpec:
@@ -439,7 +439,7 @@ def test_the_answer_json_is_small_enough_for_a_tool_result(root):
 
     model = ToolCallingFake(responses=[
         _call("compare", {"field": "siteClass"}),
-        AIMessage(content="L01 is D (L01, p4), L02 is C (L02, p4)."),
+        AIMessage(content="L01 is D (L01, p5), L02 is C (L02, p5)."),
     ])
     answer = answer_question("site class?", model=model, library_root=root)
     blob = answer_as_json(answer)

@@ -149,11 +149,18 @@ def test_an_ordinary_failed_turn_still_offers_to_ask_again(tmp_path,
 
 # -- the Tiny Apps client: a spent quota is not retried ----------------------
 
+def _openai_http():
+    """The HTTP package openai's clients are built on (httpx today;
+    anthropic is on httpx2): its transports and responses must match."""
+    from webapp.engine_config import sdk_http_package
+    return sdk_http_package(pytest.importorskip("openai"))
+
+
 def _openai_client(handler, retries=3):
     openai = pytest.importorskip("openai")
-    httpx = pytest.importorskip("httpx")
+    httpx = _openai_http()
     import webapp.tinyapps_engine as te
-    client = httpx.Client(
+    client = openai.DefaultHttpxClient(
         transport=httpx.MockTransport(handler),
         event_hooks={"response": [te.no_retry_when_budget_spent]})
     return openai, openai.OpenAI(base_url="https://prompter.test/api/v1",
@@ -167,7 +174,7 @@ def _chat(client):
 
 
 def test_the_prompter_client_does_not_retry_a_spent_quota():
-    httpx = pytest.importorskip("httpx")
+    httpx = _openai_http()
     calls = []
 
     def handler(request):
@@ -186,7 +193,7 @@ def test_the_prompter_client_does_not_retry_a_spent_quota():
 
 
 def test_the_prompter_client_still_retries_a_rate_limit():
-    httpx = pytest.importorskip("httpx")
+    httpx = _openai_http()
     calls = []
 
     def handler(request):

@@ -469,6 +469,15 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # GM-212: the printed rule for the foundation cohesion
     rule = sl.get("sliding_cohesion", "drained")
     width = sl.get("adhesion_width")
+    # the theory of the passive coefficient in front of the wall (GM-242)
+    passive_name = "Rankine passive resistance"
+    if sl.get("passive_theory") == "log_spiral":
+        passive_name = (
+            f"log-spiral passive resistance (Kp {sl['Kp']:.3g} at wall "
+            f"friction {sl['passive_delta']:.3g}°, log_spiral_source "
+            f"'{sl['log_spiral_source']}')")
+    elif Pp > 0:
+        passive_name = f"Rankine passive resistance (Kp {sl['Kp']:.3g})"
 
     if delta_b is None:
         pass
@@ -557,13 +566,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN/m",
         reference=reference,
         notes=rule_note
-              + (("P_p: Rankine passive resistance over the depth of the "
+              + ((f"P_p: {passive_name} over the depth of the "
                   "shear key only, below the toe from the underside of the "
                   f"base ({sl['D_passive_top']:.2f} m) to the level of the "
                   f"bottom of the key ({sl['D_passive']:.2f} m), "
                   "UFC 3-220-20 Fig. 4-29. "
                   if sl.get("D_passive_top") else
-                  "P_p: Rankine passive resistance in front of the base. ")
+                  f"P_p: {passive_name} in front of the base. ")
                  if Pp > 0 else "")
               + (f"V leaves out {sl['V_left_out']:.1f} kN/m of surcharge "
                  "over the heel, not a resisting force (see Choices)."
@@ -1106,6 +1115,34 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11, Eq. 4-10",
     ))
 
+    from retaining_walls import mse as _mse
+    if reinforcement is not None and _mse.uses_strip_F_star(reinforcement):
+        # GM-246: the ribbed steel strip F*, from the backfill's Cu
+        cu_given = _get(analysis, "Cu_backfill")
+        cu = _mse.CU_UNKNOWN if cu_given is None else cu_given
+        phi_b = _get(analysis, "phi_backfill", 34.0)
+        f_top = _mse.F_star_strip_top(cu)
+        f_deep = math.tan(math.radians(phi_b))
+        int_items.append(CalcStep(
+            title="Pullout Resistance Factor F* (ribbed steel strips)",
+            equation=("F* = 1.2 + log C_u ≤ 2.0 at the top of the "
+                      "wall; F* = tan φ at 20 ft (6 m) and below; "
+                      "linear between"),
+            substitution=(
+                f"C_u = {cu:g}"
+                + (" (not given: GEC-11 p. 3-20 says to assume C_u = 4 "
+                   "when the backfill's is unknown)" if cu_given is None
+                   else "")
+                + (" (below 4: GEC-11 Table 3-6 note (i), 'For fill "
+                   "outside these limits, tests must be run')"
+                   if cu < _mse.CU_UNKNOWN else "")
+                + f": F* = {f_top:.2f} at z = 0; tan {phi_b:.1f}° = "
+                f"{f_deep:.3f} at z ≥ 6.10 m"),
+            result_name="F*",
+            result_value=f"{f_top:.2f} → {f_deep:.3f}",
+            reference="GEC-11 Vol I Eqs. 3-4, 3-5 (p. 3-20)",
+        ))
+
     int_items.append(CalcStep(
         title="Pullout Resistance",
         equation="P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e \u00d7 C",
@@ -1506,9 +1543,10 @@ def _plot_cantilever_section(result, analysis):
     ax.fill(backfill_x, backfill_y, facecolor='#f5e6c8', edgecolor='none',
             alpha=0.7, zorder=0)
 
-    # A shear key: where it is given, else under the stem, as UFC 3-220-20
-    # Fig. 4-29 and GEC-6 Fig. 5-22 draw it, and the figure says so
-    # (GM-216); the analysis has no place for it
+    # A shear key: where it is given, else under the stem, an assumption
+    # (UFC 3-220-20 Fig. 4-29, p. 224, draws a gravity wall, GEC-6 Fig.
+    # 5-22 a footing; neither prints a cantilever key's position), and the
+    # figure says so (GM-216, GM-224); the analysis has no place for it
     key_depth = geom.key_depth if geom.has_shear_key else 0.0
     key_lines = []
     if key_depth > 0:
@@ -1518,8 +1556,9 @@ def _plot_cantilever_section(result, analysis):
             missing = ("position or width" if key_x is None
                        and key_w is None else
                        "position" if key_x is None else "width")
-            key_lines += [("Shear key drawn under the stem, as UFC 3-220-20 "
-                           "Fig. 4-29 draws it:"),
+            key_lines += [("Shear key drawn under the stem: an assumption, no "
+                           "printed basis (UFC 3-220-20 Fig. 4-29 draws a "
+                           "gravity wall);"),
                           f"no key {missing} given."]
         key_x = t_toe if key_x is None else float(key_x)
         key_w = t_stem_b if key_w is None else float(key_w)

@@ -111,6 +111,18 @@ def snapshot(roots: Dict[str, Tuple[str, int]],
     return out
 
 
+def _foreign(label: str, path: str, existed: bool) -> bool:
+    """True for a change another Claude Code session makes beside a wave
+    (EV-34 / w15 H10): writes cannot be told apart by who made them, so
+    leave out what the app does not do. It never rewrites a file already in
+    the checkout's top level (the lead's BACKLOG.md and HANDOFF.md edits),
+    and it never writes a ``.py`` script into a temp folder (the lead's
+    ``Temp/ed*.py`` helpers)."""
+    if label == "repo" and existed:
+        return True
+    return label in ("temp", "c_tmp") and path.lower().endswith(".py")
+
+
 def diff(before: Dict[str, Dict[str, list]],
          after: Dict[str, Dict[str, list]]) -> List[dict]:
     """New or changed files: ``[{"root", "path", "bytes", "change"}]``."""
@@ -118,6 +130,8 @@ def diff(before: Dict[str, Dict[str, list]],
     for label, now in after.items():
         was = before.get(label) or {}
         for p, (size, mtime) in now.items():
+            if _foreign(label, p, p in was):
+                continue
             if p not in was:
                 out.append({"root": label, "path": p, "bytes": size,
                             "change": "new"})

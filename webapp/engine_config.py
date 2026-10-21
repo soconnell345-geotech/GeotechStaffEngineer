@@ -30,7 +30,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 #: Default model id — the most capable general Claude (skill guidance).
 DEFAULT_MODEL = "claude-opus-4-8"
@@ -238,35 +238,75 @@ def foundry_proxy_route(family: str) -> Optional[FoundryRoute]:
     return None
 
 
-def foundry_ca_bundle() -> Optional[str]:
-    """The CA bundle file the Foundry proxy's TLS is checked against: the
-    first of :data:`FOUNDRY_CA_ENVS` naming a file that exists, else None
-    (the SDK's own default)."""
+def foundry_ca_source() -> Optional[Tuple[str, str]]:
+    """``(env var, file)`` for the CA bundle the Foundry proxy's TLS is
+    checked against: the first of :data:`FOUNDRY_CA_ENVS` naming a file that
+    exists, else None (the SDK's own default, certifi's public CA list)."""
     for env in FOUNDRY_CA_ENVS:
         path = str(os.environ.get(env) or "").strip()
         if path and os.path.isfile(path):
-            return path
+            return env, path
     return None
+
+
+def foundry_ca_bundle() -> Optional[str]:
+    """The CA bundle file of :func:`foundry_ca_source`, else None."""
+    source = foundry_ca_source()
+    return source[1] if source else None
 
 
 _CA_HTTP_CLIENTS: dict = {}
 
 
-def foundry_http_clients(ca_file: str):
-    """``(sync, async)`` httpx clients that check TLS against ``ca_file``,
-    one pair per file for the process (the SDKs share them)."""
-    pair = _CA_HTTP_CLIENTS.get(ca_file)
+def sdk_http_client_classes(sdk) -> tuple:
+    """``(sync, async)`` HTTP client classes the SDK module ``sdk``
+    (``anthropic`` or ``openai``) accepts as its ``http_client``: its own
+    ``DefaultHttpxClient`` / ``DefaultAsyncHttpxClient``. The SDKs do not
+    share one HTTP package any more (anthropic 1.x is on ``httpx2``, openai
+    on ``httpx``) and each refuses the other's client. Plain ``httpx`` only
+    for an SDK without those classes."""
+    sync = getattr(sdk, "DefaultHttpxClient", None)
+    asyn = getattr(sdk, "DefaultAsyncHttpxClient", None)
+    if sync is None or asyn is None:
+        import httpx
+        return httpx.Client, httpx.AsyncClient
+    return sync, asyn
+
+
+def sdk_http_package(sdk):
+    """The HTTP package (``httpx`` or ``httpx2``) the SDK module ``sdk``'s
+    clients are built on: a transport, response or timeout given to its
+    client must come from the same one."""
+    import importlib
+    for base in sdk_http_client_classes(sdk)[0].__mro__:
+        root = base.__module__.split(".")[0]
+        if root.startswith("httpx"):
+            return importlib.import_module(root)
+    import httpx
+    return httpx
+
+
+def foundry_http_clients(ca_file: str, family: str):
+    """``(sync, async)`` HTTP clients for the ``family`` SDK
+    (:data:`MODEL_FAMILIES`) that check TLS against ``ca_file``, one pair
+    per (family, file) for the process, built from the SDK's own classes
+    (:func:`sdk_http_client_classes`)."""
+    key = (family, ca_file)
+    pair = _CA_HTTP_CLIENTS.get(key)
     if pair is None:
+        import importlib
         import ssl
 
-        import httpx
-        timeout = httpx.Timeout(MODEL_REQUEST_TIMEOUT_S, connect=30.0)
-        pair = (httpx.Client(verify=ssl.create_default_context(cafile=ca_file),
-                             timeout=timeout),
-                httpx.AsyncClient(
-                    verify=ssl.create_default_context(cafile=ca_file),
-                    timeout=timeout))
-        _CA_HTTP_CLIENTS[ca_file] = pair
+        sdk = importlib.import_module(family)
+        sync, asyn = sdk_http_client_classes(sdk)
+        timeout_cls = getattr(sdk, "Timeout", None)
+        timeout = (timeout_cls(MODEL_REQUEST_TIMEOUT_S, connect=30.0)
+                   if timeout_cls is not None else MODEL_REQUEST_TIMEOUT_S)
+        pair = (sync(verify=ssl.create_default_context(cafile=ca_file),
+                     timeout=timeout),
+                asyn(verify=ssl.create_default_context(cafile=ca_file),
+                     timeout=timeout))
+        _CA_HTTP_CLIENTS[key] = pair
     return pair
 
 
@@ -510,7 +550,8 @@ def foundry_chat_anthropic_class():
                     return super()._client
                 import anthropic
                 return anthropic.Client(**self._client_params,
-                                        http_client=foundry_http_clients(ca)[0])
+                                        http_client=foundry_http_clients(
+                                            ca, "anthropic")[0])
 
             @cached_property
             def _async_client(self):
@@ -520,7 +561,7 @@ def foundry_chat_anthropic_class():
                 import anthropic
                 return anthropic.AsyncClient(
                     **self._client_params,
-                    http_client=foundry_http_clients(ca)[1])
+                    http_client=foundry_http_clients(ca, "anthropic")[1])
 
         _FOUNDRY_CHAT_ANTHROPIC = FoundryChatAnthropic
     return _FOUNDRY_CHAT_ANTHROPIC
@@ -612,7 +653,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             "1", "true", "yes", "on")
         _clients = ({} if ca is None else dict(
             zip(("http_client", "http_async_client"),
-                foundry_http_clients(ca))))
+                foundry_http_clients(ca, "openai"))))
         model = ChatOpenAI(
             model=model_id,
             api_key=token,

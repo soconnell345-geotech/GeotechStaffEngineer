@@ -87,7 +87,7 @@ def test_defaults_used_print_as_assumed(tmp_path):
     rows = assumed.split("Input Value used Basis", 1)[1]
     assert len(re.findall(r"the analysis's default(?!s)|not given: ",
                           rows)) == len(used)
-    assert ("Allowable bearing pressure (kPa) for the bearing check bearing "
+    assert ("Allowable bearing pressure (kPa) bearing "
             "not checked not given: ") in rows
     for given in ("Wall height", "Backfill unit weight"):
         assert given not in assumed
@@ -99,9 +99,9 @@ def test_defaults_used_print_as_assumed(tmp_path):
 
 @pytest.mark.parametrize("package, inputs, given, defaults", [
     ("retaining_wall_package", _WALL,
-     ("The wall to analyse and report cantilever", "Base width (m) 2.8",
+     ("Wall type cantilever", "Base width (m) 2.8",
       "Backfill unit weight (kN/m3) 19",
-      "Foundation soil friction angle (deg), FULL value 32"),
+      "Foundation soil friction angle (deg) 32"),
      _WALL_DEFAULTS),
     ("bearing_capacity_package", _BEARING,
      ("Footing width B (m) 2", "Embedment depth Df (m) 1",
@@ -140,7 +140,7 @@ def test_a_callers_assumptions_print_with_their_basis(tmp_path):
                      "gamma_concrete": "not given; normal-weight concrete"}))
     assert r["status"] == "success", r
     assumed = _section(_text(out), "Assumed Inputs", _NEXT)
-    assert ("Foundation soil friction angle (deg), FULL value 32 not given; "
+    assert ("Foundation soil friction angle (deg) 32 not given; "
             "taken equal to the backfill") in assumed
     # a stated assumption replaces the default's row, keeping its value
     assert "Concrete unit weight (kN/m3) 24 not given; normal-weight " \
@@ -166,7 +166,7 @@ def test_same_numbers_with_and_without_assumptions(tmp_path):
         assert a[k] == b[k], k
     assumed = _section(_text(str(tmp_path / "b.html")), "Assumed Inputs",
                        _NEXT)
-    assert "FULL value 32 stated as an assumption" in assumed
+    assert "32 stated as an assumption" in assumed
 
 
 def test_assumptions_in_another_shape_are_refused(tmp_path):
@@ -465,4 +465,4 @@ def test_a_long_description_is_cut_at_its_first_clause():
         "Uniform DEAD-load (permanent) surcharge on the backfill (kPa), e.g. "
         "a pavement (FHWA NHI-06-089 Sec. 10.4.2). Its thrust drives.")}}
     assert cp._input_words("q", declared) == (
-        "Uniform DEAD-load (permanent) surcharge on the backfill (kPa)")
+        "Uniform dead-load (permanent) surcharge on the backfill (kPa)")

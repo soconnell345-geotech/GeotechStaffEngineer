@@ -355,10 +355,19 @@ def _show(value: Any) -> str:
     return str(value)
 
 
+def _pdf_pages(spec: Any) -> str:
+    """A page spec (``"15-18"``, ``"3,7-9"`` or a list) as a PDF viewer
+    numbers the pages (from 1): the record's are 0-based."""
+    import re
+    if isinstance(spec, (list, tuple, set)):
+        spec = ",".join(str(p) for p in spec)
+    return re.sub(r"\d+", lambda m: str(int(m.group(0)) + 1), str(spec))
+
+
 def _cites(record: ReportRecord, section: str, name: str) -> str:
     holder = getattr(record, section)
     rows = holder.citations.get(name) or []
-    return ", ".join(f"p{row.page}" for row in rows)
+    return ", ".join(f"p{row.page + 1}" for row in rows)
 
 
 def key_parameters(record: ReportRecord) -> List[str]:
@@ -528,7 +537,9 @@ def _calc_pages(calc: Any) -> str:
     pages = [int(p) for p in calc.pages]
     if not pages:
         return ""
-    return f"p{pages[0]}" if len(pages) == 1 else f"p{pages[0]}-{pages[-1]}"
+    # the page a reader opens in a PDF viewer: the record's pages are 0-based
+    return (f"p{pages[0] + 1}" if len(pages) == 1
+            else f"p{pages[0] + 1}-{pages[-1] + 1}")
 
 
 def calculations_section(record: ReportRecord) -> List[str]:
@@ -571,7 +582,7 @@ def summary_markdown(record: ReportRecord) -> str:
     if parent is not None:
         out += [f"_This report is bound inside another one"
                 + (f" (`{parent.report_id}`)" if parent.report_id else "")
-                + f", at pages {parent.pages} of that file. Every page "
+                + f", at pages {_pdf_pages(parent.pages)} of that file. Every page "
                   f"number below is a page of that same file._", ""]
     if general.quickSummary:
         out += [general.quickSummary, ""]
@@ -586,7 +597,7 @@ def summary_markdown(record: ReportRecord) -> str:
                 "| Pressure | Foundation | Condition | Pages |",
                 "|---|---|---|---|"]
         for value in general.bearingCapacityValues:
-            pages = ", ".join(f"p{c.page}" for c in value.citation)
+            pages = ", ".join(f"p{c.page + 1}" for c in value.citation)
             out.append(f"| {_show(value.value)} | "
                        f"{_md(value.foundation_type)} | "
                        f"{_md(value.condition)} | {pages} |")
@@ -641,7 +652,7 @@ def summary_markdown(record: ReportRecord) -> str:
                 detail += " (" + "; ".join(entry.values[:4]) + ")"
             if entry.pages:
                 detail += " [pages " + ", ".join(
-                    str(p) for p in entry.pages[:10]) + "]"
+                    str(p + 1) for p in entry.pages[:10]) + "]"
             out.append(f"| {entry.kind} | {_md(entry.where)} | "
                        f"{_md(detail)} |")
 

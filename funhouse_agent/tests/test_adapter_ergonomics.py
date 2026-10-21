@@ -425,7 +425,8 @@ class TestEarthPressureCoefficient:
         # face and level ground: 7.58. The Caquot-Kerisel (1948) chart by
         # name: Kp0 10.2 x R 0.808 = 8.24 (Caltrans T&S Fig 4-20, p. 4-30;
         # was 7.2 on the old Kp0 of 9.2, GM-21); DM 7.2 Fig 4-13 (p. 193,
-        # delta/phi 0.66) reads 8.0. delta omitted -> R=1 on the 1948 chart.
+        # delta/phi 0.66) reads 8.0. delta = phi -> R=1 on the 1948 chart
+        # (left out, the 1948 chart refuses it: GM-253).
         r = self._run({"phi_deg": 35.0, "state": "passive",
                        "theory": "caquot_kerisel", "delta_deg": 23.33})
         assert r["coefficient"] == "Kp"
@@ -435,7 +436,7 @@ class TestEarthPressureCoefficient:
                         "log_spiral_source": "caquot_kerisel_1948"})
         assert ck["K"] == pytest.approx(8.24, abs=0.05)
         full = self._run({"phi_deg": 30.0, "state": "passive",
-                          "theory": "caquot_kerisel",
+                          "theory": "caquot_kerisel", "delta_deg": 30.0,
                           "log_spiral_source": "caquot_kerisel_1948"})["K"]
         assert full == pytest.approx(6.3, abs=0.1)   # delta=phi anchor
 
@@ -467,15 +468,16 @@ class TestEarthPressureCoefficient:
         assert r["K"] == pytest.approx(1.0 / 3.0, abs=1e-3)
 
     def test_caquot_kerisel_echoes_the_wall_friction_it_used(self):
-        # GM-184: delta left out is full wall friction, delta = phi, on the
-        # 1948 chart; 0.66 phi' (UFC 3-220-20 p. 191) by default (GM-232)
+        # GM-184: the wall friction used is echoed: 0.66 phi' (UFC 3-220-20
+        # p. 191) by default (GM-232); the 1948 chart, which prints none,
+        # refuses it left out (GM-253; it had taken delta = phi)
         r = self._run({"phi_deg": 30.0, "state": "passive",
                        "theory": "caquot_kerisel"})
         assert r["delta_deg"] == pytest.approx(19.8)
-        r = self._run({"phi_deg": 30.0, "state": "passive",
+        with pytest.raises(ValueError, match=r"given \(delta_deg\)"):
+            self._run({"phi_deg": 30.0, "state": "passive",
                        "theory": "caquot_kerisel",
                        "log_spiral_source": "caquot_kerisel_1948"})
-        assert r["delta_deg"] == 30.0
         assert self._run({"phi_deg": 30.0})["delta_deg"] == 0.0
 
     def test_caquot_kerisel_requires_passive(self):
@@ -501,8 +503,9 @@ class TestEarthPressureCoefficient:
         )
         assert set(METHOD_INFO) == set(METHOD_REGISTRY)
         info = METHOD_INFO["earth_pressure_coefficient"]
+        # log_spiral by name since GM-242 (the same route as caquot_kerisel)
         assert info["parameters"]["theory"]["allowed_values"] == [
-            "rankine", "coulomb", "caquot_kerisel"]
+            "rankine", "coulomb", "caquot_kerisel", "log_spiral"]
         assert info["parameters"]["state"]["allowed_values"] == [
             "active", "passive", "at_rest"]
 

@@ -566,3 +566,30 @@ def test_north_deg_out_of_range_is_refused_by_name(north, tmp_path,
         "north_deg": north})
     assert "north_deg" in r.get("error", ""), r
     assert "-360 to 360" in r["error"]
+
+
+def test_the_cap_edge_stops_short_of_the_names(built):
+    # The edge ran behind the names' halos and showed in slivers between
+    # the letters (GM-224): it is cut clear of each name's box
+    from matplotlib.text import Annotation
+    cap = [[-2.4, -1.2], [2.4, -1.2], [2.4, 1.5], [-2.4, 1.5]]
+    fig, _ = _plan(built, {
+        "n_rows": 2, "n_cols": 3, "spacing": 1.8, "Vz": 2400.0,
+        "My": 900.0, "pile_diameter": 0.6, "cap_outline": cap})
+    ax = fig.axes[0]
+    fig.canvas.draw()
+    rend = fig.canvas.get_renderer()
+    names = [t.get_window_extent(rend) for t in ax.texts
+             if isinstance(t, Annotation) and "kN" in t.get_text()]
+    edges = [ln for ln in ax.get_lines() if ln.get_zorder() == 5
+             and ln.get_color() == "#444444"]
+    assert names and edges
+    for ln in edges:
+        pts = ax.transData.transform(list(zip(ln.get_xdata(),
+                                              ln.get_ydata())))
+        for bb in names:
+            # sample along the segment: no point inside a name's box
+            for k in range(21):
+                x = pts[0][0] + (pts[1][0] - pts[0][0]) * k / 20
+                y = pts[0][1] + (pts[1][1] - pts[0][1]) * k / 20
+                assert not (bb.x0 < x < bb.x1 and bb.y0 < y < bb.y1)

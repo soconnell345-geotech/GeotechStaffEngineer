@@ -62,3 +62,27 @@ def test_list_indexed_references():
     refs = {r["reference"] for r in inv}
     assert "dm7_1" in refs
     assert "dm7_2" in refs
+
+
+@pytest.mark.parametrize("name", ["GEC-10", "GEC 10", "gec10", "GEC_10",
+                                  "NHI-18-024", "FHWA-NHI-18-024"])
+def test_reference_filter_accepts_printed_names(name):
+    """REF-41: filtering on "GEC-10" returned an empty list silently."""
+    res = call_agent("reference_db", "reference_search", {
+        "query": "drilled shaft side resistance", "reference": name,
+        "limit": 3})
+    hits = res.get("result", res)
+    assert hits and all(h["reference"] == "gec_10" for h in hits)
+
+
+def test_reference_filter_unknown_name_gets_did_you_mean():
+    res = call_agent("reference_db", "reference_search", {
+        "query": "settlement", "reference": "GEC-99"})
+    row = res.get("result", res)[0]
+    assert "error" in row and "gec_9" in row["did_you_mean"]
+    got = call_agent("reference_db", "reference_get", {
+        "reference": "GEC 10", "section_id": "10.3.5"})
+    assert "error" not in got or "no reference named" not in got["error"]
+    bad = call_agent("reference_db", "reference_get", {
+        "reference": "nonsense", "section_id": "1"})
+    assert bad.get("did_you_mean")

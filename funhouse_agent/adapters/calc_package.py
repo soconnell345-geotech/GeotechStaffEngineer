@@ -21,6 +21,7 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 import base64
 import contextvars
 import math
+import json
 import os
 import re
 from datetime import datetime
@@ -482,29 +483,34 @@ _PACKAGE_TOOLS = {
                            "only: the sliding check takes the passive "
                            "resistance on the plane below the toe over the "
                            "key's depth, wherever the key is. Not given: "
-                           "the key is drawn under the stem, as UFC "
-                           "3-220-20 Fig. 4-29 and GEC-6 Fig. 5-22 draw "
-                           "it, and the figure says so.",
+                           "the key is drawn under the stem, an "
+                           "assumption: UFC 3-220-20 Fig. 4-29 (p. 224, a "
+                           "gravity wall) and GEC-6 Fig. 5-22 (p. 101, a "
+                           "footing) print no key position for a "
+                           "cantilever wall. Set it here.",
             "applies_when": {"has_shear_key": [True], "key_depth": "set"},
             "when_absent": {
                 "case": "under the stem",
                 "basis": "no key position given: the wall section draws "
-                         "the key's front face under the stem's, as UFC "
-                         "3-220-20 Fig. 4-29 and GEC-6 Fig. 5-22 draw it, "
-                         "and says so"}},
+                         "the key's front face under the stem's, an "
+                         "assumption with no printed basis (UFC 3-220-20 "
+                         "Fig. 4-29 draws a gravity wall, GEC-6 Fig. 5-22 "
+                         "a footing, neither a cantilever wall's key "
+                         "position), and says so"}},
             "key_width": {
                 "type": "float", "required": False,
                 "description": "Width of the shear key (m), for the wall "
                                "section figure only. Not given: the "
-                               "stem's thickness at its base, as UFC "
-                               "3-220-20 Fig. 4-29 draws it.",
+                               "stem's thickness at its base, an "
+                               "assumption: no printed basis for a "
+                               "cantilever wall's key width.",
                 "applies_when": {"has_shear_key": [True],
                                  "key_depth": "set"},
                 "when_absent": {
                     "case": "the stem's thickness at its base",
                     "basis": "no key width given: the wall section draws "
-                             "the key as wide as the stem, as UFC "
-                             "3-220-20 Fig. 4-29 draws it"}}},
+                             "the key as wide as the stem, an "
+                             "assumption with no printed basis"}}},
         "not_packaged": {"mse": (
             "the MSE steps work the earth pressure out again from "
             "phi_backfill, level backfill only, where the mse_wall tool "
@@ -837,19 +843,77 @@ def _package_aliases(package: str) -> dict:
                 or {})
 
 
+#: Capitalised acronyms a description may carry; every OTHER word of four
+#: letters or more written in capitals is emphasis ("TOTAL", "UNDERSIDE").
+_ACRONYMS = frozenset({
+    "AASHTO", "ASCE", "USCS", "ASTM", "NCEER", "FHWA", "USACE", "GEC",
+    "UFC", "SPT", "CPT", "DCP", "LRFD", "ASD", "LRFD", "ACI", "AISC",
+    "PGA", "MSE", "FOSM", "FORM", "RQD", "GWT", "OCR", "NAVFAC", "SHANSEP",
+    "COM624P", "PYWALL", "SLIDE2", "FLAC"})
+
+#: A units bracket: "(m)", "(kN/m3)", "(m2/yr)", "(degrees)", "(%)".
+_UNIT_PAREN = re.compile(
+    r"\((?:%|(?:deg(?:rees?)?|[kMG]?Pa|k?N|kips?|psf|psi|pcf|ksf|tsf|ft|in|"
+    r"mm|cm|m|g|years?|days?|s|hr)(?:[-*/^]?(?:m|ft|yr|day|s|hr|Pa|N)?\d?)*)"
+    r"\)")
+
+#: Condition prefixes the merged descriptions of a package's tools carry:
+#: "Required when X is Y.", "Default: ... .", "method=wick_drains: ".
+_COND_PREFIX = re.compile(
+    r"^\s*(?:Required when .*?(?:\.(?=\s)|$)|Default:.*?(?:\.(?=\s)|$)|"
+    r"[A-Za-z_][A-Za-z_0-9]*=\S+(?: or [A-Za-z_0-9]+)*:)\s*")
+
+
+def _plain_label(desc: str) -> str:
+    """The quantity's plain name and units from a description (GM-166).
+
+    The rule: the first alternative of a merged description; its condition
+    prefixes ("Required when ...", "Default: ...", "method=x:") dropped; its
+    first sentence; cut before the first explanatory clause (a dash, a
+    semicolon, "e.g.", a quoted list of values, or whatever follows a units
+    bracket); the description's emphasis capitals (TOTAL, UNDERSIDE) put in
+    sentence case with acronyms kept; and a capital first letter.
+    """
+    text = desc.split(" | ")[0].strip()
+    while True:
+        stripped = _COND_PREFIX.sub("", text, count=1)
+        if stripped == text:
+            break
+        text = stripped
+    first = re.match(r"(.+?[^A-Z]\.)\s+(?=[A-Z'])", text)
+    text = (first.group(1) if first else text).rstrip(".").strip()
+    text = re.split(
+        r" \u2014 |; |,? e\.g\.|,? \(e\.g\.|:\s+'| \('|:\s*[{\[]|\s\[?\{"
+        r"|\s\((?:use|see|omit|or|else|overrides?|default|typically|required"
+        r"|give|set|with|when|if|for|alternative|instead)\b", text)[0]
+    unit = _UNIT_PAREN.search(text)
+    if unit and unit.end() < len(text):
+        text = text[:unit.end()]
+    text = text.split(" -> ")[0].strip().rstrip(",:").strip()
+    if text.count("(") > text.count(")"):      # a cut inside a bracket
+        text = text[:text.rindex("(")].strip().rstrip(",:").strip()
+    if re.search(r"\b(?:of|and|or|to|for|with)$", text):
+        return ""                              # nothing left but a stem
+    text = re.sub(
+        r"\b[A-Z]{4,}\b",
+        lambda m: m.group(0) if m.group(0) in _ACRONYMS
+        else m.group(0).lower(), text)
+    if len(text) > 80:
+        text = text[:77].rsplit(" ", 1)[0]
+        if text.count("(") > text.count(")"):
+            text = text[:text.rindex("(")].rstrip(" ,:")
+        text += "..."
+    return text[:1].upper() + text[1:]
+
+
 def _input_words(name: str, declared: dict) -> str:
-    """An input as the package prints it: the first sentence of its
-    description (plain words, as the Method Choices table prints them),
+    """An input as the package prints it: the quantity's plain name and its
+    units (:func:`_plain_label`, as the Method Choices table prints them),
     else its name."""
     desc = str((declared.get(name) or {}).get("description") or "").strip()
     if not desc:
         return name
-    first = re.match(r"(.+?[^A-Z]\.)\s+(?=[A-Z])", desc)
-    text = (first.group(1) if first else desc).rstrip(".").strip()
-    text = re.split(r" — |; |,? e\.g\.|,? \(e\.g\.", text)[0].strip()
-    if len(text) > 80:
-        text = text[:77].rsplit(" ", 1)[0] + "..."
-    return text
+    return _plain_label(desc) or name
 
 
 def _package_declared(package: str = None, run: "_ToolRun" = None) -> dict:
@@ -883,12 +947,10 @@ def _passed_inputs(params: dict, run: "_ToolRun" = None,
     if selector and selector in params:
         passed[selector] = params[selector]
         if declared is not None:
-            # "The wall to analyse and report: 'cantilever' (...)": the
-            # words before the list of tools, where they make a phrase
-            words = _input_words(selector, declared)
-            head = words.split(": ", 1)[0]
-            declared[selector] = {"description": head if head != words
-                                  and len(head.split()) >= 3 else selector}
+            # the selector row is the tool pick itself: its name in words
+            # ("Wall type"), the value beside it ("cantilever")
+            declared[selector] = {
+                "description": selector.replace("_", " ").capitalize()}
     passed.update(run.own)
     passed.update(run.params)
     return passed
@@ -1788,11 +1850,41 @@ def _generate_ground_improvement_package(params: dict) -> dict:
 
 
 def _vibro_numbers(method: str, result) -> dict:
-    """The vibro-compaction feasibility numbers the PDF shows (GM-205);
-    the other methods' packages return their method alone."""
-    if method != "vibro":
-        return {}
-    return result.to_dict()
+    """The numbers each ground improvement method's PDF shows (GM-205), from
+    the result's own ``to_dict()`` (units in the key names): vibro's
+    feasibility, the aggregate piers' replacement ratio, composite modulus,
+    bearing and settlement, the wick drains' spacing and degrees of
+    consolidation, the surcharge's time to the target and settlements. The
+    time curves are thinned for the 8000-char limit (the PDF and its CSV
+    have every point); the choices stay, the agent cannot read the PDF and
+    states them to the user, so a response over the limit loses curve
+    points and the wick drain details before it loses a choice."""
+    out = result.to_dict()
+    _thin_curves(out)
+    for points in (_MAX_LISTED_POINTS, 10, 5):
+        if len(json.dumps(out, default=str)) < 6000:
+            break
+        _thin_curves(out, points)
+    if len(json.dumps(out, default=str)) >= 6000:
+        out.pop("wick_drain_details", None)
+    return out
+
+
+def _thin_curves(d: dict, limit: int = None) -> None:
+    """Thin every ``time_settlement_curve`` in ``d`` (and the wick drain
+    details inside it) to at most ``_MAX_LISTED_POINTS`` points, ends kept."""
+    limit = limit or _MAX_LISTED_POINTS
+    curve = d.get("time_settlement_curve")
+    if isinstance(curve, list) and len(curve) > limit:
+        n = len(curve)
+        keep = sorted({round(i * (n - 1) / (limit - 1))
+                       for i in range(limit)})
+        d["time_settlement_curve"] = [curve[i] for i in keep]
+        d["time_settlement_curve_note"] = (
+            f"{len(keep)} of the {n} points, evenly spaced with both ends; "
+            "the PDF and its CSV table have all of them")
+    if isinstance(d.get("wick_drain_details"), dict):
+        _thin_curves(d["wick_drain_details"], limit)
 
 
 # ---------------------------------------------------------------------------
@@ -2816,7 +2908,7 @@ METHOD_INFO = {
     "ground_improvement_package": {
         "category": "Calculation Package",
         "brief": "Run ground improvement analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(vibro numbers)": "With method 'vibro': is_feasible, fines_content_percent, initial_N_spt, target_N_spt, recommended_spacing_m, probe_pattern and the go/no-go reasons, at the top level. Report them to the user."},
+        "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used.", "(method numbers)": "The numbers the PDF shows, at the top level, units in the key names. vibro: is_feasible, fines_content_percent, initial_N_spt, target_N_spt, recommended_spacing_m, probe_pattern, reasons. aggregate_piers: area_replacement_ratio, stress_concentration_ratio, composite_modulus_kPa, improved_bearing_kPa, unreinforced_bearing_kPa, settlement_improved_mm, settlement_unreinforced_mm, column_diameter_m, column_spacing_m. wick_drains: drain_spacing_m, influence_diameter_m, Ur_percent, Uv_percent, U_total_percent, time_years, ch/cv_m2_per_year. surcharge: surcharge_kPa, target_U_percent, time_to_target_years, settlement_at_target_mm, settlement_ultimate_mm. Report them to the user."},
     },
     "wave_equation_package": {
         "category": "Calculation Package",

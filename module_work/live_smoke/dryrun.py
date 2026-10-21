@@ -205,6 +205,160 @@ def run(wave: str = "dry-run", runs_dir: str = None, verbose: bool = False
             "wave_dir": w.dir, "turns": dj.get("turns")}
 
 
+# ---------------------------------------------------------------------------
+# The arms dry run (BACKLOG EV-33)
+# ---------------------------------------------------------------------------
+
+#: The flows the arms dry run takes from flows.json: one that consults the
+#: references helper and the control that should not.
+ARMS_FLOWS = ("F68-ms-passive-kp-sloping-ground",
+              "F73-ms-control-effective-stress")
+
+#: Marks the scripted brief to the references helper, so the script can
+#: tell the helper's calls from the main agent's.
+DRY_TAG = "[EV33-DRY]"
+
+ARMS_KP_ANSWER = (
+    "Use **Kp = 4.6** by the log-spiral method: UFC 3-220-20 Fig. 4-13 "
+    "(p. 193) gives Kp for a vertical wall with sloping ground, drawn for "
+    "delta/phi' = 0.66 (Caquot and Kerisel's log spiral). Coulomb would "
+    "give 4.9 and is not the log-spiral value.")
+ARMS_CONTROL_ANSWER = (
+    "Vertical effective stress at 8 m: sigma_v = 2 x 18 + 6 x 20 = 156 kPa; "
+    "u = 6 x 9.81 = 58.9 kPa; effective stress sigma'v = 97.1 kPa.")
+
+
+def _content_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(str(b.get("text") or "") if isinstance(b, dict)
+                        else str(b) for b in content)
+    return str(content or "")
+
+
+def arms_policy():
+    """The scripted model for the arms dry run: on F68 the main agent
+    briefs the references helper (``task``), which calls one reference
+    tool and answers; the main agent then answers with the Kp chart. On
+    the control (F73) the main agent answers at once."""
+    from langchain_core.messages import AIMessage
+    from live_smoke.models import _is_vision_call
+    counter = {"n": 0}
+
+    def policy(messages):
+        if _is_vision_call(messages):
+            return AIMessage(content="A chart (scripted).")
+        humans = [i for i, m in enumerate(messages)
+                  if getattr(m, "type", "") == "human"]
+        said = " ".join(_content_text(messages[i].content) for i in humans)
+        step = sum(1 for m in messages[(humans[-1] if humans else -1) + 1:]
+                   if getattr(m, "type", "") == "ai")
+        counter["n"] += 1
+        cid = f"dry_{counter['n']}"
+        if DRY_TAG in said:                       # the references helper
+            if step == 0:
+                return AIMessage(content="", tool_calls=[{
+                    "name": "call_agent", "id": cid, "args": {
+                        "agent_name": "reference_db",
+                        "method": "reference_search",
+                        "parameters": {"query": "log spiral passive "
+                                                "sloping ground"}}}])
+            return AIMessage(content="UFC 3-220-20 Fig. 4-13 (p. 193): "
+                                     "log-spiral Kp for sloping ground, "
+                                     "about 4.6 at beta = -10 degrees.")
+        if "passive" in said.lower():             # F68's main agent
+            if step == 0:
+                return AIMessage(content="", tool_calls=[{
+                    "name": "task", "id": cid, "args": {
+                        "description": f"{DRY_TAG} Which chart gives the "
+                                       "log-spiral Kp for ground sloping "
+                                       "down in front of a vertical wall?",
+                        "subagent_type": "references"}}])
+            return AIMessage(content=ARMS_KP_ANSWER)
+        return AIMessage(content=ARMS_CONTROL_ANSWER)   # the control
+
+    return policy
+
+
+def run_arms(wave: str = "dry-arms", runs_dir: str = None,
+             verbose: bool = False, arms_names=None) -> dict:
+    """The arms wave end to end at $0: both arms of :data:`ARMS_FLOWS` on
+    scripted fakes named after the models they stand in for, through the
+    app's own helper-model wiring, then ``RESULTS.md``. ``{"ok",
+    "problems", "results", "wave_dir"}``; ``ok`` when every scenario ran
+    and passed its wiring check, the references helper's calls were metered
+    on the arm's model for it (Sonnet in ``split``, Opus in ``opus_all``),
+    the control called no helper, and the truth checks read the scripted
+    answers as right."""
+    import json
+    from live_smoke import arms, runner
+    names = list(arms_names or arms.DEFAULT_ARMS)
+    models = arms.arm_models(names)
+    pool = {f["id"]: f for f in runner.load_flows()}
+    flows = []
+    for fid in ARMS_FLOWS:
+        f = json.loads(json.dumps(pool[fid]))
+        f["env"] = dict(f.get("env") or {}, GEOTECH_VISION_PROBE="0")
+        flows.append(f)
+    w = runner.Wave(wave, mode="arms", model_id=models[0], cap=0, fake=True,
+                    fake_policy=arms_policy(), extra_models=models[1:],
+                    runs_dir=runs_dir or runner.RUNS, redo=True,
+                    verbose=verbose)
+    w.start()
+    try:
+        for f, a in arms.order(flows, names):
+            w.run_arm(f, a)
+    finally:
+        w.finish()
+    path = arms.write_results(w.dir, flows, names)
+    res = arms.analyse_wave(w.dir, flows, names)
+    problems: List[str] = []
+    calls = w.meter.calls
+    for f in flows:
+        uses = arms.REFERENCES in (f.get("truth") or {}).get("helpers", [])
+        for a in names:
+            sid = arms.scenario_id(f["id"], a)
+            with open(os.path.join(w.dir, sid, "summary.json"),
+                      encoding="utf-8") as fh:
+                summ = json.load(fh)
+            if summ.get("incomplete") or (summ.get("severity") or {}).get(
+                    "high"):
+                problems.append(f"{sid}: incomplete or a high finding "
+                                f"({summ.get('by_code')})")
+            mine = [c for c in calls if c.get("scenario") == sid]
+            want_ref = arms.expected_helper_models(a).get(
+                arms.REFERENCES) or arms.arm(a)["main"]
+            ref_models = {c["model"] for c in mine
+                          if c.get("agent") == arms.REFERENCES}
+            main_models = {c["model"] for c in mine
+                           if c.get("agent") == "primary"}
+            if main_models != {arms.arm(a)["main"]}:
+                problems.append(f"{sid}: main agent's calls on "
+                                f"{sorted(main_models)}")
+            if uses and ref_models != {want_ref}:
+                problems.append(f"{sid}: references helper's calls on "
+                                f"{sorted(ref_models)}, not {want_ref}")
+            if not uses and ref_models:
+                problems.append(f"{sid}: the control called the "
+                                "references helper")
+    for r in res["rows"]:
+        if not r.get("ran"):
+            problems.append(f"{r['flow']}@{r['arm']}: not run")
+            continue
+        if r.get("key") and not r["key"]["in_range"]:
+            problems.append(f"{r['flow']}@{r['arm']}: key number "
+                            f"{r['key']['value']} read as out of range")
+        if not r["methods"]["ok"] or not r["cites"]["ok"]:
+            problems.append(f"{r['flow']}@{r['arm']}: methods or cites "
+                            "read as not right")
+        if not r["references_as_expected"]:
+            problems.append(f"{r['flow']}@{r['arm']}: references helper "
+                            "use not as the truth expects")
+    return {"ok": not problems, "problems": problems, "results": path,
+            "wave_dir": w.dir, "arms": res["arms"]}
+
+
 class _Turns:
     """A session for :func:`detectors.detect_expectations`: its turns."""
 
@@ -292,4 +446,5 @@ def recheck(wave_dir: str, ids=(), *, flows=None,
 
 
 __all__ = ["run", "bad_policy", "FLOW", "EXPECTED", "fired", "rogue_tool",
-           "redirect_request", "recheck"]
+           "redirect_request", "recheck", "run_arms", "arms_policy",
+           "ARMS_FLOWS"]

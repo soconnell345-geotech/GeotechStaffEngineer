@@ -125,7 +125,7 @@ Drag-load assumptions the references state:
 
 | Assumption | Source | In the module |
 |---|---|---|
-| Unit negative friction = the nominal side resistance (alpha / beta); higher alpha, beta conservative for drag, lower for resistance | UFC §6-7.4 steps 2-3 (pp. 476-477); GEC-10 §10.6.2 (p. 10-48, unit drag f_DN by the side-resistance methods); GEC-12 §7.3.6.1 step 2 | Yes; the engineer picks alpha / beta per layer |
+| Unit negative friction = the nominal side resistance (alpha / beta); higher alpha, beta conservative for drag, lower for resistance | UFC §6-7.4 steps 2-3 (pp. 476-477); GEC-10 §10.6.2 (p. 10-48, unit drag f_DN by the side-resistance methods); GEC-12 §7.3.6.1 step 2 | Yes; alpha given per layer or read off the chart UFC prints (GM-255), beta given or from phi |
 | Side and base resistance on the effective-stress profile that INCLUDES the settlement-causing change (Siegel et al. 2013) | UFC §6-7.4 step 2 (p. 476); GEC-12 §7.3.6.1 (p. 348) points the same way without a rule (next section) | Default since 2026-10-14: `skin_friction_stress="final"` (beta friction and the toe in sand); `"initial"` on request |
 | Transient load excluded from the head load (it reverses the friction while it acts) | UFC §6-7.4 step 4 (p. 477) | Yes (Q_dead only) |
 | Drag excluded from the geotechnical strength check, included in structural strength and in settlement | UFC Table 6-30 (p. 437); GEC-12 §7.3.6 (pp. 336-337); GEC-10 §10.6.1 (p. 10-46; notes AASHTO treats DD as a load in geotechnical strength) | Yes (UFC / FHWA) |
@@ -295,7 +295,11 @@ All still match the published values (to 1 ft and 1 kip; the test pins 0.1 ft
 of the exact values). Before, the reported Pmax was 1.2-1.9 % above the toe +
 positive friction at the same plane (GM-01); now they are equal. The test
 enters the transition layer as alpha = 720/3000 (2.88 k/ft against the printed
-2.9), which is the remaining 0.05 ft at 0 %. The neutral plane at the bearing
+2.9), which is the remaining 0.05 ft at 0 %. Left out, the module reads the
+example's α itself (GM-255: 1.0, Eq 6-9 0.240, Fig 6-14 0.500) and gives 47.72
+/ 50.15 / 52.49 ft and 119.4 / 126.2 / 132.9 kips (`test_alpha_default.py`;
+before GM-255 it took α 1.0 throughout: 56.63 ft, 223.5 kips, drag force 816
+kN against 413). The neutral plane at the bearing
 layer gives 48.0 ft, the base of the soft clay (B-5.7: "the position of the
 neutral plane is below the bottom of the soft clay"), with Q_np = 120.0 kips
 exactly. GEC-12 Fig 7-60 (p. 346) is graphical (curved shaft profile), so it
@@ -425,7 +429,148 @@ and passed only through the toe default.
 - **Cohesionless (beta method, UFC Eq 6-7)**: `fs = β · σ'v`
   where β = (1 - sin φ) · tan φ for NC soil (Fellenius 1991)
 - **Cohesive (alpha method, UFC Eq 6-8)**: `fs = α · cu`
-  where α defaults to 1.0 unless overridden
+  with α as the layer gives it, else read off `alpha_chart` (GM-255, below)
+- **Cohesive with `skin_friction_method="beta"` (GM-249)**: `fs = β · σ'v`,
+  β given (required), σ'v as `skin_friction_stress` sets.
+
+### β in clay: an option, α the default (GM-249, 2026-10-20)
+
+A live test (w15-model-split, F67) had both helpers pass `beta` on a clay
+layer for an effective-stress drag; the module used α·cu and dropped `beta`
+without a word, so they rebuilt the layers by hand (α·cu set equal to β·σ'v).
+
+What the manuals print (each page rendered from the PDF):
+
+| Where | What it prints |
+|---|---|
+| GEC-12 §7.3.6.1 Step 2, p. 342 (the drag procedure) | "Using an appropriate static analysis method for the pile type and subsurface conditions": names neither α nor β |
+| GEC-12 §7.2.1.2, p. 229 | FHWA recommends Nordlund in cohesionless soils and "the α-method in cohesive soils" |
+| GEC-12 §7.2.1.3.4, p. 255 | the effective stress β-method for "cohesionless, cohesive, and layered soils", "developed to model the long term drained shear strength conditions"; Eq. 7-19 fs = β σ'vo |
+| GEC-12 Table 7-9, p. 256; Step 2, p. 257 | β from local experience, else Table 7-9 (Fellenius 2014): clay β 0.15-0.35 for φ' 25-30° |
+| UFC 3-220-20 §6-7.4 step 2, p. 476 (the drag procedure) | "an appropriate SCA method"; "higher α and β is conservative for negative skin friction" |
+| UFC 3-220-20 pp. 409-410, §6-5.4.1 p. 411, §6-5.4.2 p. 414 | Beta "applicable to any soil in a drained condition, e.g., long-term analysis of capacity in clay soils" (Eq 6-7); Alpha "targeted at clay soils ... the undrained condition in the short term" (Eq 6-8); Table 6-15: Fellenius β 0.15-0.35 in clay |
+| UFC 3-220-20 App. B-5.4, p. 636 | the drag force example: Alpha method in the soft and stiff clay (α 1.0 and 0.5) |
+| GEC-10 p. 10-48 (drag on drilled shafts) | "the α-method for short-term undrained conditions in cohesive soils, and effective stress analysis for long-term conditions in cohesive soils, where appropriate" |
+
+Neither drag procedure prints β as the method for clay, so α stays the
+default and β is a named option on the layer: `skin_friction_method="beta"`
+with `beta` given. β is not derived from φ' in clay: the module's sand rule
+(1 - sin φ') tan φ' gives 0.27-0.29 across φ' 25-30°, where Table 7-9
+and UFC Table 6-15 go from 0.15 to 0.35, so the engineer gives β.
+
+Inputs a layer would not use are refused, naming the input that takes
+effect (GM-179 wording, "does not take"): `beta` on a clay with the α
+method; `alpha` on a sand or on a β clay; `phi` on a clay (nothing uses it:
+its toe is Nt x cu, 9 cu by default; until GM-249 a φ on a clay toe gave
+Nt from φ times cu); `skin_friction_method="alpha"` on a sand. A β clay
+needs `cu` only if the pile toe sits in it. The `phi` refusal says what a
+drained clay takes instead: `skin_friction_method="beta"` and the β for its
+φ' (Table 7-9; UFC Table 6-15, p. 414, prints the same 0.15 at 25° to 0.35
+at 30° for driven piles in clay).
+
+The toe in clay stays 9 cu whatever the method above it: Nc "usually taken
+as 9 for deep foundations" (GEC-12 Eq. 7-11, p. 248) and N*c = 9 for Z/b
+of at least 2.5 (UFC 3-220-20 Eq 6-22, p. 424, after Brinch Hansen). The
+effective-stress toe, Nt · σ'p (GEC-12 Eq. 7-20, Table 7-9 clay Nt 3-30;
+UFC Eq 6-21, N*q · σ'm, for drained conditions), is not offered: GEC-12
+p. 256 notes that Fellenius' Nt of 3 in clay gives about the toe
+resistance of the undrained analysis and recommends a low Nt there, and a
+given `Nt` multiplies cu in a clay toe (its description says so). Offering
+the drained toe in a β clay is an owner's call (GM-249 review).
+
+`choices` carries one entry per method and how it was set ("skin friction
+method in the cohesive soil, <depths>"): the method and equation (with β),
+default or given, the basis and the other method; α has its own entries
+("alpha in the cohesive soil, <depths>", GM-255). Cohesionless layers have
+no entry (the Beta method only). In a post-liquefaction run the warning
+that GEC-10 states its 50 % for β side resistance names only α clays.
+
+### α as the manuals print it (GM-255, 2026-10-20)
+
+Until GM-255 a clay layer that left α out took 1.0 whatever its su. Both
+manuals read α off a chart by su (and the depth to pile width ratio), and
+UFC's own drag example does so. What they print (each page rendered from
+the PDF):
+
+| Where | What it prints |
+|---|---|
+| UFC 3-220-20 §6-7.4 step 2, p. 476 (the drag procedure) | side resistance by "an appropriate SCA method"; "higher α and β is conservative for negative skin friction" |
+| UFC §6-5.4.2, pp. 414-415 | the α method, fs = α su (Eq 6-8); α "limited to values between zero and 1.0"; Tomlinson (1970): "pile texture has no discernable effect"; α reduces more at lower Z/b; Z = "the distance from the ground surface to the bottom of the clay layer, sublayer, or pile, whichever comes first" |
+| UFC Table 6-16, p. 416 (Tomlinson 1994) | soft clay, su below 800 psf: α = 1 (fs = su; or su ~ 0, fs = 0 where ignored); firm 800-1,500, stiff 1,500-3,000 and very stiff 3,000-6,000 psf: Fig 6-14 |
+| UFC Fig 6-14, p. 417 | α against su/Pa for driven piles: curve A at Z of 40b or more, curve B at Z = 10b; curve A runs at α 1.0 to su/Pa 0.72, falls to 0.30 at 2.0; both end flat at 2.36 |
+| UFC pp. 416-417, Eq 6-9 | the transition zone, the top 10b of a stiff clay: under soft clay α = 0.28 (su/Pa)^-0.44, with "the unit shaft resistance from the soft clay layer" where higher; under sand or gravel α = 1.0 (Tomlinson 1980); firm clay under either: no guidance, "judgment should be applied" |
+| UFC App. B-5.4, pp. 636-637 (the drag example) | soft clay su 500 psf α 1.0 (2 k/ft); stiff clay su 3,000 psf: 10 ft transition at 720 psf (Eq 6-9), then α 0.5 off Fig 6-14 (6 k/ft) |
+| GEC-12 §7.3.6.1 Step 2, p. 342 (the drag procedure) | "an appropriate static analysis method": names no chart |
+| GEC-12 §7.2.1.3.2, pp. 246-250 | the α method; Ca from Fig. 7-17 (p. 248, Tomlinson 1979) by su, D/b and pile type (Step 1, p. 250), D to the clay's base or the toe (p. 246); an H-pile takes the corrugated curve (p. 247); the D = 40b solid curve passes above Ca = su; highly overconsolidated clay: API α (§7.2.1.3.3); Fig. 7-18 for sand or soft clay over stiff clay |
+
+The two charts differ (Tomlinson 1994 against 1979: UFC's α is at most 1.0
+and has no pile-type curves; GEC-12's Ca may exceed su and has two pile
+families). The headline procedure is UFC's, so its chart is the default and
+GEC-12's is the named option:
+
+- `alpha_chart="ufc_fig_6_14"` (default): soft clay α 1 (Table 6-16); firm
+  to very stiff clay Fig 6-14 by su/Pa (Pa 101.325 kPa), curve A at Z/b of
+  40 or more, B at 10, linear in Z/b between; Z to the clay's base or the
+  toe, b `pile_diameter`. The curves were read off the figure's vector paths
+  (`geotech_common/alpha_method.py`): curve A gives 0.50 at the example's
+  su/Pa 1.42.
+- `alpha_transition_zone` (None: on with UFC's chart, off with GEC-12's):
+  the top 10b of a stiff or very stiff clay directly under soft clay takes
+  Eq 6-9, the unit side resistance at least the soft clay's at the boundary;
+  directly under a cohesionless layer α 1.0. The zone's base is a grid
+  boundary (α jumps there). The zone runs 10b from the top of the stiff
+  clay however the clay is split into sublayers (UFC p. 415 allows the
+  split; review 2026-10-20), each sublayer's Eq 6-9 on its own su. Firm
+  clay gets no zone and a warning (p. 417); a Beta clay above that gives
+  no su cannot be called soft, and a warning says no zone was taken.
+- `alpha_chart="gec12_fig_7_17"` with `fig_7_17_curve`
+  (`concrete_timber_corrugated` or `smooth_steel`, required where a clay
+  reads the chart): Ca off Fig. 7-17 as drawn, the reading `axial_pile`
+  uses (GM-229), moved to `geotech_common` for both. Past the curves' end
+  Ca is held there with a warning naming API α (give α to use it); below
+  D/b 10 the D = 10b curve, with a warning. Fig. 7-18 (the stratigraphy
+  cases) is not offered here: a stiff clay under sand or soft clay gets a
+  warning that GEC-12 p. 246 recommends it.
+- A given α is kept, and has its own entry in `choices`.
+- `alpha_chart` other than the default, `fig_7_17_curve` and
+  `alpha_transition_zone` are refused where no clay along the pile reads
+  its α off a chart, and `alpha_transition_zone` where no zone falls
+  (GM-179: an input that changes nothing is refused with its reason).
+
+Choices left to the engineer (warned or stated, not settled by the print):
+linear interpolation in Z/b between curves B and A (the figure gives two
+curves only, and UFC p. 415 says "engineering judgment should be exercised
+for how to consider length effects"); curve B held below Z/b 10, which
+overstates α there (p. 415), with a warning; α held at the curves' end past
+su/Pa 2.36 (5,000 psf), with a warning (Table 6-16 runs to 6,000 psf); the
+transition zone on by default (as UFC's own drag example takes it); firm
+clay under soft clay or sand read off Fig 6-14 throughout. The α choice's
+basis states whichever of the first three a run made, with UFC's words, and
+its alternatives name the zone switch and a given α, with UFC's note that a
+higher α is conservative for negative skin friction (§6-7.4 step 2, p. 476).
+The default lowers the drag force wherever a firm to very stiff clay settles
+(the soft-over-stiff case below: 1,148 to 789 kN).
+
+`choices` gives the α each clay took, with its depths and source ("alpha
+1.00 at 0-6 m (Table 6-16, soft clay); 0.28 at 6-10 m (Eq 6-9, transition
+zone under soft clay; fs at least the soft clay's); 0.87 at 10-22 m (Fig
+6-14, Z/b 55)"), the basis and the alternatives; the calc package's soil
+table shows each α as read with its source.
+
+Numbers (`dd_numbers` on the tool path, before / after):
+
+| Case | Before (α 1.0) | After (α as printed) |
+|---|---|---|
+| F67 (soft clay su 25 kPa) | NP 13.99 m, drag force 543.7 kN | unchanged (Table 6-16: α 1) |
+| UFC App. B-5.4, α left out, 100 % toe | NP 56.6 ft, Q_np 223.5 kips, drag force 816 kN | NP 52.5 ft, 132.9 kips, 413 kN (printed: 52 ft, 133 kips) |
+| 6 m soft clay (su 20) over stiff clay (su 100), 0.4 m pile 22 m, 600 kN | NP 11.97 m, drag force 1,148 kN | NP 13.01 m, 789 kN (Eq 6-9 0.28 to 10 m, Fig 6-14 0.87 below) |
+| stiff clay su 75 kPa, 18 m pile, 4 m drawdown | NP 7.37 m, 884 kN | NP 7.36 m, 880 kN (su/Pa 0.74: Fig 6-14 still about 1.0) |
+
+Found on the way (not fixed here): geotech-references
+`dm7_2/chapter6.py::alpha_tomlinson_transition` codes Eq 6-9 with the
+exponents swapped, 0.44 (su/Pa)^-0.28, and cites p. 454; UFC prints 0.28
+(su/Pa)^-0.44 on p. 416. BACKLOG REF-43; fixed on the references' master
+(2e8ad84), not yet in the submodule pin.
 
 ## UFC Equation Coverage
 
@@ -1061,8 +1206,26 @@ and settlement parts, the methods each zone lies below (a zone lies below a
 method's plane before the earthquake where its `top_m` is at or below that
 method's `neutral_plane_before_m`) and `after`. Past `MAX_ZONES_LISTED` (6)
 zones it gives their number, total thickness and side resistance before and
-after, the three with the largest reconsolidation settlement in full and
-the depth ranges of the rest.
+after, `shown` (which zones it lists) and in full (`shown_zones`) the ones
+that bear on the drag force and the neutral plane, the other zones above
+the toe as depth ranges and those below the toe as a count and depth range
+(`below_toe`).
+
+**GM-211 (2026-10-20): which zones are listed past six.** Until GM-211 the
+three with the largest reconsolidation settlement were listed; on the noisy
+CPT (seed 7) two of them lay below the toe, where a zone has no side
+resistance and adds no drag (its settlement is already in
+`reconsolidation_below_toe_mm`). The rule now follows what moves the drag
+force and the plane. Three zones are listed: the zone that holds the
+headline plane after the earthquake, and the others above the toe whose
+side resistance liquefaction changes most (`side_resistance_before_kN -
+side_resistance_after_kN`: above the plane that change is drag lost; below
+it, resistance lost, and liquefaction there "will increase the axial
+compression load in the pile as well as result in additional pile
+settlement", GEC-12 §7.4.2.2, pp. 384-385). `shown` says which. Seed 7
+lists 1.19-16.01 m (1,039 -> 520 kN), 16.21-17.41 m (185 -> 92 kN) and
+19.83-20.07 m (the plane after, 19.89 m); its eight zones below the toe
+read "8 zones, 20.15-25.01 m".
 
 **GM-240 (2026-10-20): what a warning or a choice already says, once.**
 GM-228's warning that the UFC 3-220-20 and FHWA GEC-12 rules for the depth
@@ -1104,7 +1267,10 @@ Every neutral plane, drag force and pile settlement stays. Sizes with
 | The same, E_s = 10 to 80 MPa below 10 m (the two rules warned before the earthquake, every seed) | | 11,378-11,758 (seeds 3, 7, 11, 30 MPa) | 9,967-10,393 | 31,680-34,004 (seeds 1-8, 11, 21) |
 
 The largest, 10,393, is seed 30 with E_s = 10 MPa, 107 under the budget;
-the size test runs it with seeds 3, 7 and 11 at 30 MPa. The noisy CPT
+the size test runs it with seeds 3, 7 and 11 at 30 MPa. Since GM-211 (the
+rule's words in `shown`, the zones below the toe as one count) the largest
+is 10,428, seed 8 with E_s = 10 MPa (seed 30: 10,379); the size test runs
+it too. The noisy CPT
 cannot reach 8,000 without losing what only it has: the warnings on a toe
 in a liquefied layer, readings left out and load and resistance curves
 that do not meet, and the choice of the CPT's strain.

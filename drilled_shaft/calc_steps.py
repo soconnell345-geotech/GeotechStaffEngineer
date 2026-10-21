@@ -125,8 +125,20 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     items.append(InputItem(
         "z_top", "Top zone with no side resistance (or the casing)",
         (analysis.top_exclusion if analysis.top_exclusion is not None
-         else f"{TOP_EXCLUSION:g} in cohesive soil and rock, 0 in "
-              "cohesionless soil"), "m"))
+         else f"{TOP_EXCLUSION:g} in cohesive soil, 0 in cohesionless "
+              "soil and rock"), "m"))
+    if any(lay.soil_type == "cohesive" for lay in soil.layers):
+        items.append(InputItem(
+            "Alpha", "Side resistance in cohesive soil",
+            "GEC-10 (2018) Eq. 10-18 on su(CIUC), cu taken as "
+            + {"ciuc": "su(CIUC)", "uc": "UC (Eq. 10-16)",
+               "uu": "UU (Eq. 10-17)"}[analysis.su_test_type]
+            if analysis.alpha_method == "rational"
+            else "alpha of O'Neill & Reese (1999), NHI-06-089 Eq. 9-37",
+            ""))
+        items.append(InputItem(
+            "z_bot", "Bottom zone with no side resistance (cohesive soil)",
+            analysis.bottom_exclusion, "m"))
     if any(lay.soil_type == "cohesionless" for lay in soil.layers):
         gec10 = analysis.beta_method == "rational"
         items.append(InputItem(
@@ -212,18 +224,20 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         clay = analysis._top_of_side("cohesive")
         sand = analysis._top_of_side("cohesionless")
         top_equation = ("z_excl_top = max(1.5 m, casing depth) in cohesive "
-                        "soil and rock; max(0, casing depth) in "
-                        "cohesionless soil")
-        top_sub = (f"cohesive soil and rock: max(1.50, {c:.2f}) = "
-                   f"{clay:.2f} m; cohesionless soil: max(0, {c:.2f}) = "
+                        "soil; max(0, casing depth) in cohesionless soil "
+                        "and rock")
+        top_sub = (f"cohesive soil: max(1.50, {c:.2f}) = {clay:.2f} m; "
+                   f"cohesionless soil and rock: max(0, {c:.2f}) = "
                    f"{sand:.2f} m")
         top_value = f"{clay:.2f} / {sand:.2f}"
         top_notes = ("The top 5 ft is printed in Sec. 10.3.5.2, Cohesive "
                      "Soils, 'subject to modification based on local "
-                     "experience and judgment of the designer'; Sec. "
-                     "10.3.5.1 prints no such zone in cohesionless soil, "
-                     "and Examples 10-1 and 10-5 take the sand's side "
-                     "resistance from the ground surface")
+                     "experience and judgment of the designer'; Secs. "
+                     "10.3.5.1 and 10.3.5.3 print no such zone in "
+                     "cohesionless soil or rock: Examples 10-1 and 10-5 "
+                     "take the sand's side resistance from the ground "
+                     "surface, Example 10-4 the socket's over its whole "
+                     "length below the casing")
     geom_steps.append(CalcStep(
         title="Top Exclusion Zone",
         equation=top_equation,
@@ -237,16 +251,34 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                    "moisture change'"),
         notes=top_notes,
     ))
-    geom_steps.append(CalcStep(
-        title="Bottom Exclusion Zone (cohesive only)",
-        equation="z_excl_bot = L - D (bottom 1\u00d7D excluded for cohesive layers)",
-        substitution=f"z_excl_bot = {shaft.length:.2f} - {shaft.diameter:.3f}",
-        result_name="z_excl_bot",
-        result_value=f"{shaft.length - shaft.diameter:.2f}",
-        result_unit="m",
-        reference=("GEC-10 (2010 edition) Sec. 13.3.3: bottom 1D excluded for "
-                   "cohesive soils; the 2018 edition does not print it"),
-    ))
+    z_bot = analysis.bottom_exclusion
+    if any(lay.soil_type == "cohesive" for lay in soil.layers) and z_bot > 0:
+        geom_steps.append(CalcStep(
+            title="Bottom Exclusion Zone (cohesive soil)",
+            equation="z_excl_bot = L - z_bot (given)",
+            substitution=f"z_excl_bot = {shaft.length:.2f} - {z_bot:.3f}",
+            result_name="z_excl_bot",
+            result_value=f"{shaft.length - z_bot:.2f}",
+            result_unit="m",
+            reference=("FHWA NHI-06-089 p. 9-129 (O'Neill & Reese 1999): "
+                       "the bottom 5 ft, its Fig. 9-49 the bottom one "
+                       "diameter; GEC-10 (2018) prints no such zone"),
+        ))
+    elif any(lay.soil_type == "cohesive" for lay in soil.layers):
+        geom_steps.append(CalcStep(
+            title="Bottom Zone (cohesive soil)",
+            equation="none: side resistance taken to the base",
+            substitution="",
+            result_name="z_excl_bot",
+            result_value=f"{shaft.length:.2f}",
+            result_unit="m",
+            reference=("GEC-10 (FHWA-NHI-18-024) Example 10-2 (p. 10-18) "
+                       "takes the clay's side resistance to the base; "
+                       "Sec. 10.3.5.2 prints only the top 5 ft"),
+            notes=("FHWA NHI-06-089 (O'Neill & Reese 1999) leaves out the "
+                   "bottom 5 ft (p. 9-129) or one diameter (Fig. 9-49); "
+                   "the choices give both with their values"),
+        ))
 
     # Rock not considered part of the socket (GEC-10 p. 8-15, GM-220)
     from drilled_shaft.capacity import fractured_rock_zone
@@ -283,22 +315,50 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         lb["soil_type"] == "rock" for lb in (r.layer_breakdown or [])
     )
 
-    if has_clay:
+    if has_clay and analysis.alpha_method == "rational":
         method_steps.append(CalcStep(
-            title="Alpha Method (Cohesive Soils)",
+            title="Alpha Method (Cohesive Soils), GEC-10 (2018) Eq. 10-18",
+            equation=(
+                "s_u(CIUC) = c_u where c_u is a CIUC strength; from UC: "
+                "s_u(UC)/s_u(CIUC) = 0.893 + 0.513 log (s_u(UC)/\u03c3'_vo) "
+                "(Eq. 10-16); from UU: s_u(UU)/s_u(CIUC) = 0.911 + 0.499 "
+                "log (s_u(UU)/\u03c3'_vo) (Eq. 10-17)\n"
+                "\u03b1 = 0.30 + 0.17 / (s_u(CIUC) / p_a) (Eq. 10-18)\n"
+                "f_SN = \u03b1 \u00d7 s_u(CIUC)\n"
+                "R_SN = \u03c0 B \u0394z f_SN (Eq. 10-15)"),
+            substitution="",
+            result_name="",
+            result_value="",
+            reference=("GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2, Eqs. 10-15 "
+                       "to 10-18 (pp. 10-15, 10-16), Fig. 10-6 (p. 10-17), "
+                       "Example 10-2 (p. 10-18)"),
+            notes=(f"c_u taken as "
+                   + {"ciuc": "s_u(CIUC), untransformed",
+                      "uc": "a UC strength (Eq. 10-16)",
+                      "uu": "a UU strength (Eq. 10-17)"}[
+                          analysis.su_test_type]
+                   + f" (su_test_type '{analysis.su_test_type}'); p_a = "
+                   f"{analysis.pa:g} kPa. Eq. 10-18 is recommended 'as a "
+                   "revision' to the AASHTO alpha (p. 10-16)"),
+        ))
+    elif has_clay:
+        method_steps.append(CalcStep(
+            title="Alpha Method (Cohesive Soils), O'Neill & Reese (1999)",
             equation=(
                 "\u03b1 = 0.55 for c_u/p_a \u2264 1.5\n"
-                "\u03b1 = 0.55 - 0.1\u00d7(c_u/p_a - 1.5) for c_u/p_a > 1.5\n"
-                "    (minimum \u03b1 = 0.35)\n"
+                "\u03b1 = 0.55 - 0.1\u00d7(c_u/p_a - 1.5) for 1.5 < "
+                "c_u/p_a \u2264 2.5\n"
                 "f_s = \u03b1 \u00d7 c_u\n"
                 "Q_s = f_s \u00d7 P \u00d7 \u0394z"
             ),
             substitution="",
             result_name="",
             result_value="",
-            reference=("GEC-10 (2010 edition) Sec. 13.3.3.2; O'Neill & Reese "
-                       "(1999); the 2018 edition gives the rational alpha "
-                       "(Eq. 10-18, p. 10-16) instead"),
+            reference=("FHWA NHI-06-089 Eqs. 9-37a, 9-37b (p. 9-129), "
+                       "O'Neill & Reese (1999); GEC-10 (2018) recommends "
+                       "Eq. 10-18 instead (p. 10-16)"),
+            notes=("NHI-06-089 prints nothing above c_u/p_a = 2.5; this "
+                   "tool goes on along the line to 0.35 and holds it"),
         ))
 
     if has_sand and analysis.beta_method == "rational":
@@ -337,14 +397,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 "\u03b2 = 1.5 - 0.135\u00d7\u221a(z, ft) = 1.5 - 0.245\u00d7\u221a(z, m), "
                 "0.25 \u2264 \u03b2 \u2264 1.2, z the depth to the layer's centre\n"
                 "\u03b2 \u00d7 N_60/15 where N_60 < 15\n"
-                "f_s = \u03b2 \u00d7 \u03c3'_v (kPa), capped at 200 kPa\n"
+                "f_s = \u03b2 \u00d7 \u03c3'_v \u2264 4 ksf = 191.5 kPa\n"
                 "Q_s = f_s \u00d7 P \u00d7 \u0394z"
             ),
             substitution="",
             result_name="",
             result_value="",
-            reference=("FHWA NHI-06-089 Eqs. 9-41 to 9-43 (pp. 9-132, 9-133); "
-                       "O'Neill & Reese (1999) for the N_60/15 reduction"),
+            reference=("FHWA NHI-06-089 Eqs. 9-41 to 9-43 (pp. 9-132, 9-133), "
+                       "the 4 ksf (191 kPa) limit p. 9-133; O'Neill & Reese "
+                       "(1999) for the N_60/15 reduction"),
         ))
 
     if has_rock:
@@ -362,10 +423,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value="",
             reference=("GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, Eq. 10-21 "
                        "(p. 10-20) and Eq. 10-22 (p. 10-21)"),
-            notes=("C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, where "
+            notes=("C = 1.0 is Eq. 10-21 as GEC-10 recommends it for "
+                   "routine design of a 'normal' socket (pp. 10-20, "
+                   "10-21); C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, "
+                   "where caving is anticipated) with \u03b1_E = 1.0"
+                   if analysis.rock_side_C == 1.0 else
+                   "C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, where "
                    "caving is anticipated) with \u03b1_E = 1.0; GEC-10 "
                    "recommends Eq. 10-21 with C = 1.0 for routine design "
-                   "of a 'normal' socket (p. 10-21)"),
+                   "of a 'normal' socket (pp. 10-20, 10-21)"),
         ))
 
     if method_steps:
@@ -412,12 +478,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 layer_items.append(CalcStep(
                     title=f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m) -- Alpha Method",
                     equation=(
-                        f"f_s = \u03b1 \u00d7 c_u = {method_used}\n"
+                        f"f_s = \u03b1 \u00d7 s_u, {method_used}\n"
                         f"Q_s = f_s \u00d7 P \u00d7 \u0394z"
                     ),
-                    substitution=(
-                        f"f_s = {fs:.1f} kPa\n"
-                        f"Q_s = {fs:.1f} \u00d7 {shaft.perimeter:.3f} "
+                    substitution=_alpha_lines(lb, analysis.pa) + (
+                        f"\nQ_s = {fs:.1f} \u00d7 {shaft.perimeter:.3f} "
                         f"\u00d7 {eff_thickness:.2f}"
                     ),
                     result_name="Q_s",
@@ -542,43 +607,111 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     # (GM-148): the reductions are governed by the base, so a belled
     # shaft's bell diameter, as DrillShaftAnalysis.compute does.
     from drilled_shaft.end_bearing import (
-        QB_MAX_COHESIVE, unit_end_bearing_cohesionless,
+        QB_MAX_COHESIVE, rock_base_factor, unit_end_bearing_cohesionless,
         unit_end_bearing_cohesive)
     base_name, base_D, base_area = _base(shaft, soil)
 
     if tip_layer.soil_type == "cohesive":
+        # the su the analysis took for the base (GM-244)
+        cu = (r.base_steps or {}).get("su_kPa", tip_layer.cu)
         u = unit_end_bearing_cohesive(
-            tip_layer.cu, L_over_D, base_diameter=base_D,
-            shaft_length=shaft.length)
+            cu, L_over_D, base_diameter=base_D,
+            shaft_length=shaft.length, method=analysis.clay_base_method,
+            large_base_reduction=analysis.large_base_reduction)
         Nc = u["Nc"]
-        eb_items.append(CalcStep(
-            title="Bearing Capacity Factor N_c (Cohesive Tip)",
-            equation="N_c = min(6.0 × (1 + 0.2 × L/D), 9.0)",
-            substitution=f"N_c = min(6.0 × (1 + 0.2 × {L_over_D:.1f}), 9.0)",
-            result_name="N_c",
-            result_value=f"{Nc:.2f}",
-            reference=("GEC-10 (2010 edition) Sec. 13.3.4.2; O'Neill & Reese "
-                       "(1999); the 2018 edition takes N*c = 9.0 (Eq. 10-19, "
-                       "Table 10-2, p. 10-19)"),
-        ))
-        cap_note = (
-            f"N_c × c_u = {u['qb_uncapped']:,.1f} kPa exceeds the "
-            f"limiting {QB_MAX_COHESIVE:,.0f} kPa (80 ksf); the limit is "
-            f"used" if u["capped"] else "")
-        qb_cap = min(u["qb_uncapped"], QB_MAX_COHESIVE)
-        eb_items.append(CalcStep(
-            title="Unit End Bearing",
-            equation=("q_b = N_c × c_u ≤ "
-                      f"{QB_MAX_COHESIVE:,.0f} kPa"),
-            substitution=f"q_b = {Nc:.2f} × {tip_layer.cu:.1f}",
-            result_name="q_b",
-            result_value=f"{qb_cap:,.1f}",
-            result_unit="kPa",
-            reference=("GEC-10 (2010 edition) Sec. 13.3.4.2; O'Neill & Reese "
-                       "(1999); the 2018 edition's Eq. 10-19 is q_BN = N*c "
-                       "s_u (p. 10-19)"),
-            notes=cap_note,
-        ))
+        if u["method"] == "gec10":
+            # s_u as the mean over 2B below the base (GM-252)
+            from drilled_shaft.capacity import _su_zone_words
+            st = r.base_steps
+            tip_words = ("the tip layer's s_u(CIUC), as for its side "
+                         "resistance (Example 10-3, p. 10-20)"
+                         if st.get("su_from") == "su_ciuc"
+                         else "the tip layer's c_u")
+            clay = [c for c in st["su_layers"] if c["su_kPa"] is not None]
+            thick = sum(c["bottom_m"] - c["top_m"] for c in clay)
+            eb_items.append(CalcStep(
+                title="Base s_u, the Mean over 2B below the Base",
+                equation=("s_u = Σ(s_u,i × Δz_i) / Σ Δz_i over the cohesive "
+                          "soil from the base to 2B below it"),
+                substitution=(
+                    "(" + " + ".join(
+                        f"{c['su_kPa']:.1f} × {c['bottom_m'] - c['top_m']:.2f}"
+                        for c in clay) + f") / {thick:.2f}"
+                    if len(clay) > 1 else f"s_u = {cu:.1f}"),
+                result_name="s_u",
+                result_value=f"{cu:.1f}",
+                result_unit="kPa",
+                reference=("GEC-10 (FHWA-NHI-18-024) p. 10-19: 'mean "
+                           "undrained shear strength of the cohesive soil "
+                           "over a depth of 2B below the base'"),
+                notes=("s_u is " + _su_zone_words(st, tip_words)),
+            ))
+            eb_items.append(CalcStep(
+                title="Bearing Capacity Factor N*c (Cohesive Base), Table 10-2",
+                equation=("N*c = 6.5 at s_u = 500 psf, 8.0 at 1,000 psf, 9.0 "
+                          "at 2,000 psf or more; linear between"),
+                substitution=(f"s_u = {cu:.1f} kPa = {u['su_psf']:,.0f} "
+                              "psf"),
+                result_name="N*c",
+                result_value=f"{Nc:.2f}",
+                reference=("GEC-10 (FHWA-NHI-18-024) Table 10-2 and text, "
+                           "p. 10-19"),
+                notes=("s_u is below the table's first row (500 psf); N*c "
+                       "is held at 6.5, the engineer's judgment (the "
+                       "choices give the alternative)" if u["below_table"]
+                       else ""),
+            ))
+            if u["equation"] == "10-19":
+                equation = "q_BN = N*c × s_u (Eq. 10-19), D ≥ 3B"
+                sub = (f"D/B = {u['D_over_B']:.2f}; q_BN = {Nc:.2f} × "
+                       f"{cu:.1f}")
+            else:
+                equation = ("q_BN = (2/3)[1 + D/(6B)] N*c × s_u (Eq. 10-20), "
+                            "D < 3B")
+                sub = (f"D/B = {u['D_over_B']:.2f}; q_BN = (2/3)[1 + "
+                       f"{u['D_over_B']:.2f}/6] × {Nc:.2f} × {cu:.1f}")
+            eb_items.append(CalcStep(
+                title="Unit End Bearing",
+                equation=equation,
+                substitution=sub,
+                result_name="q_b",
+                result_value=f"{u['qb_unreduced']:,.1f}",
+                result_unit="kPa",
+                reference=("GEC-10 (FHWA-NHI-18-024) Eqs. 10-19, 10-20 "
+                           "(p. 10-19), Example 10-3 (p. 10-20)"),
+                notes="GEC-10 (2018) prints no upper limit on q_BN",
+            ))
+        else:
+            soft = (" × 0.67 (s_u < 0.5 ksf within 2 diameters of the tip)"
+                    if u["soft_clay"] else "")
+            eb_items.append(CalcStep(
+                title="Bearing Capacity Factor N_c (Cohesive Tip), "
+                      "O'Neill & Reese (1999)",
+                equation="N_c = min(6.0 × (1 + 0.2 × L/D), 9.0)" + soft,
+                substitution=(f"N_c = min(6.0 × (1 + 0.2 × {L_over_D:.1f}), "
+                              f"9.0){soft}"),
+                result_name="N_c",
+                result_value=f"{Nc:.2f}",
+                reference=("FHWA NHI-06-089 Eqs. 9-39, 9-40 (p. 9-131), "
+                           "O'Neill & Reese (1999); GEC-10 (2018) takes N*c "
+                           "from Table 10-2 (p. 10-19)"),
+            ))
+            cap_note = (
+                f"N_c × c_u = {u['qb_uncapped']:,.1f} kPa exceeds the "
+                f"limiting {QB_MAX_COHESIVE:,.0f} kPa (80 ksf); the limit is "
+                f"used" if u["capped"] else "")
+            eb_items.append(CalcStep(
+                title="Unit End Bearing",
+                equation=("q_b = N_c × c_u ≤ "
+                          f"{QB_MAX_COHESIVE:,.0f} kPa (80 ksf)"),
+                substitution=f"q_b = {Nc:.2f} × {cu:.1f}",
+                result_name="q_b",
+                result_value=f"{u['qb_unreduced']:,.1f}",
+                result_unit="kPa",
+                reference="FHWA NHI-06-089 Eq. 9-39 and p. 9-131",
+                notes=cap_note,
+            ))
+        qb_cap = u["qb_unreduced"]
         if u["Fr"] is not None:
             eb_items.append(CalcStep(
                 title="Large-Base Reduction F_r",
@@ -594,7 +727,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 result_name="q_b",
                 result_value=f"{u['qb']:,.1f}",
                 result_unit="kPa",
-                reference="O'Neill & Reese (1999); AASHTO LRFD 10.8.3.5.1c",
+                reference=("O'Neill & Reese (1999), large_base_reduction; "
+                           "not printed in GEC-10 (2018)"),
                 notes=f"Applies to a base wider than 1.90 m (75 in); "
                       f"{base_name} = {base_D:.3f} m",
             ))
@@ -610,7 +744,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     elif tip_layer.soil_type == "cohesionless":
         from drilled_shaft.capacity import require_tip_N60
         N60 = require_tip_N60(tip_layer, shaft.length)
-        u = unit_end_bearing_cohesionless(N60, base_D)
+        u = unit_end_bearing_cohesionless(N60, base_D,
+                                          analysis.large_base_reduction)
         large_dia_note = ""
         if u["reduction"] is not None:
             large_dia_note = (
@@ -627,8 +762,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{u['qb']:,.1f}",
             result_unit="kPa",
             reference=("GEC-10 (FHWA-NHI-18-024) Eq. 10-14 (p. 10-14), "
-                       "N60 limited to 50 (p. 10-15); the 1.27/D reduction is "
-                       "O'Neill & Reese (1999), not printed in the 2018 edition"),
+                       "N60 limited to 50 (p. 10-15); the 1.27/B reduction "
+                       "(large_base_reduction) is O'Neill & Reese (1999), "
+                       "not printed in the 2018 edition"),
             notes=large_dia_note,
         ))
         eb_items.append(CalcStep(
@@ -643,21 +779,107 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     else:  # rock
         RQD = tip_layer.RQD
         qu = tip_layer.qu
-        from drilled_shaft.end_bearing import rock_end_bearing_multiplier
-        mult = rock_end_bearing_multiplier(RQD)
-        qb = mult * qu
+        hb = (r.base_steps or {}).get("equation") == "10-29"
+        if hb:
+            # the same code as the analysis, unrounded (GM-148)
+            from drilled_shaft.end_bearing import hoek_brown_base
+            st = hoek_brown_base(qu, tip_layer.GSI, tip_layer.m_i,
+                                 soil.effective_stress_at_depth(shaft.length))
+            mult, qb = st["factor"], st["qb"]
+        else:
+            mult = rock_base_factor(RQD, analysis.rock_base_method)
+            qb = mult * qu
 
-        eb_items.append(CalcStep(
-            title="Unit End Bearing (Rock Tip)",
-            equation=f"q_b = {mult:.2f} \u00d7 q_u (RQD = {RQD:.0f}%)",
-            substitution=f"q_b = {mult:.2f} \u00d7 {qu:,.1f}",
-            result_name="q_b",
-            result_value=f"{qb:,.1f}",
-            result_unit="kPa",
-            reference=("GEC-10 (2010 edition) Sec. 13.3.4.4; the 2018 edition "
-                       "uses q_BN = N*cr q_u, N*cr = 2.5 (Eq. 10-23, p. 10-22)"),
-            notes=_rqd_note(RQD),
-        ))
+        if hb:
+            # the Hoek-Brown base of a fractured rock mass (GM-251)
+            ref = "GEC-10 (FHWA-NHI-18-024) Eqs. 10-25 to 10-27 (p. 10-24)"
+            eb_items.append(CalcStep(
+                title="Hoek-Brown Parameters of the Rock Mass",
+                equation=("m_b = m_i exp[(GSI − 100)/28]; s = exp[(GSI − "
+                          "100)/9]; a = 1/2 + (1/6)[exp(−GSI/15) − "
+                          "exp(−20/3)]"),
+                substitution=f"GSI = {st['GSI']:g}, m_i = {st['m_i']:g}",
+                result_name="m_b, s, a",
+                result_value=(f"{st['m_b']:.3f}, {st['s']:.3g}, "
+                              f"{st['a']:.3f}"),
+                reference=ref,
+                notes=("GSI and m_i are the tip rock layer's, the "
+                       "engineer's (m_i by rock type, GEC 5 Table 9-10)"),
+            ))
+            eb_items.append(CalcStep(
+                title="Hoek-Brown Base, Eq. 10-28",
+                equation="A = σ'vb + q_u [m_b (σ'vb / q_u) + s]^a",
+                substitution=(f"A = {st['sigma_vb_kPa']:,.1f} + {qu:,.1f} × "
+                              f"[{st['m_b']:.3f} × ({st['sigma_vb_kPa']:,.1f} "
+                              f"/ {qu:,.1f}) + {st['s']:.3g}]^{st['a']:.3f}"),
+                result_name="A",
+                result_value=f"{st['A_kPa']:,.1f}",
+                result_unit="kPa",
+                reference="GEC-10 (FHWA-NHI-18-024) Eq. 10-28 (p. 10-24)",
+                notes="σ'vb is the vertical effective stress at the base",
+            ))
+            eb_items.append(CalcStep(
+                title="Unit End Bearing (Fractured Rock Mass), GEC-10 Eq. 10-29",
+                equation=("q_BN = A + q_u [m_b (A / q_u) + s]^a, q_BN / q_u "
+                          "≤ 2.5"),
+                substitution=(f"q_BN = {st['A_kPa']:,.1f} + {qu:,.1f} × "
+                              f"[{st['m_b']:.3f} × ({st['A_kPa']:,.1f} / "
+                              f"{qu:,.1f}) + {st['s']:.3g}]^{st['a']:.3f} = "
+                              f"{st['qb_uncapped']:,.1f}"
+                              + (f"; limited to 2.5 × {qu:,.1f}"
+                                 if st["capped"] else "")),
+                result_name="q_b",
+                result_value=f"{qb:,.1f}",
+                result_unit="kPa",
+                reference=("GEC-10 (FHWA-NHI-18-024) Eqs. 10-24 to 10-29 "
+                           "(pp. 10-23, 10-24), Fig. 10-8 (p. 10-25)"),
+                notes=(f"N*cr = q_BN / q_u = {st['Ncr_uncapped']:.3f}"
+                       + ("; 2.5 is the upper-bound limit 'unless local "
+                          "experience or load tests can be used to validate "
+                          "higher values' (p. 10-24)" if st["capped"] else "")
+                       + ("; the call does not state the conditions of Eq. "
+                          "10-23 (p. 10-22) met, and the layers within one "
+                          "base diameter below the base show an RQD below "
+                          "100 or soil"
+                          if analysis.rock_base_conditions_met is None
+                          else "; the rock below the base stated not to "
+                          "meet the conditions of Eq. 10-23 (p. 10-22)")),
+            ))
+        elif analysis.rock_base_method == "gec10":
+            eb_items.append(CalcStep(
+                title="Unit End Bearing (Rock Base), GEC-10 Eq. 10-23",
+                equation="q_BN = N*cr \u00d7 q_u, N*cr = 2.5",
+                substitution=f"q_BN = 2.5 \u00d7 {qu:,.1f}",
+                result_name="q_b",
+                result_value=f"{qb:,.1f}",
+                result_unit="kPa",
+                reference=("GEC-10 (FHWA-NHI-18-024) Eq. 10-23 (p. 10-22), "
+                           "Example 10-4 (p. 10-28)"),
+                notes=("For rock massive or tightly jointed to one diameter "
+                       "below the base, with no cavities or voids beneath and "
+                       "a clean base (p. 10-22): "
+                       + ("as the engineer states (rock_base_conditions_met)"
+                          if analysis.rock_base_conditions_met else
+                          "taken as met, not stated")
+                       + "; a fractured rock mass takes the Hoek-Brown base, "
+                       "Eqs. 10-24 to 10-29 (the choices give it, or the "
+                       "inputs it needs)"
+                       + (f"; RQD given as {RQD:.0f}%" if RQD < 100 else "")),
+            ))
+        else:
+            eb_items.append(CalcStep(
+                title="Unit End Bearing (Rock Tip), q_b/q_u by RQD",
+                equation=f"q_b = {mult:.2f} \u00d7 q_u (RQD = {RQD:.0f}%)",
+                substitution=f"q_b = {mult:.2f} \u00d7 {qu:,.1f}",
+                result_name="q_b",
+                result_value=f"{qb:,.1f}",
+                result_unit="kPa",
+                reference=("rock_base_method 'rqd': this tool's earlier rock "
+                           "base, cited to GEC-10 (2010 edition) Sec. "
+                           "13.3.4.4, not in the reference library; GEC-10 "
+                           "(2018) uses N*cr = 2.5 (Eq. 10-23, p. 10-22)"),
+                notes=_rqd_note(RQD),
+            ))
         eb_items.append(CalcStep(
             title="End Bearing Capacity",
             equation="Q_tip = q_b \u00d7 A_tip",
@@ -878,8 +1100,13 @@ def _gec10_layer_step(i, desc, lb, perimeter, pa) -> CalcStep:
     eff_top = lb.get("effective_top_m", z_top)
     eff_bot = lb.get("effective_bottom_m", z_bot)
     sv = lb.get("sigma_v_kPa", 0.0)
-    lines = [f"\u03c6' = 27.5 + 9.2 log (N_1)_60 = {phi:.1f}\u00b0"
-             if st["phi_from"] == "N1_60" else f"\u03c6' = {phi:.1f}\u00b0"]
+    if st["phi_from"] == "N1_60":
+        lines = [f"\u03c6' = 27.5 + 9.2 log (N_1)_60 = {phi:.1f}\u00b0"]
+    elif "phi_from_N1_60_deg" in st:
+        lines = [f"\u03c6' = {phi:.1f}\u00b0 (given; 27.5 + 9.2 log "
+                 f"(N_1)_60 would give {st['phi_from_N1_60_deg']:.1f}\u00b0)"]
+    else:
+        lines = [f"\u03c6' = {phi:.1f}\u00b0"]
     if st["OCR_from"] == "OCR":
         lines.append(f"OCR = {st['OCR']:.3g} (given)")
     else:
@@ -925,13 +1152,38 @@ def _gec10_layer_step(i, desc, lb, perimeter, pa) -> CalcStep:
     )
 
 
+def _alpha_lines(lb, pa) -> str:
+    """A cohesive layer's alpha with its own numbers (GM-244)."""
+    st = lb.get("alpha_steps")
+    fs = lb.get("fs_kPa", 0.0)
+    if not st:
+        return f"f_s = {fs:.1f} kPa"
+    su, used, a = st["su_kPa"], st["su_used_kPa"], st["alpha"]
+    if st["alpha_method"] != "rational":
+        return (f"c_u/p_a = {su:.1f} / {pa:g} = {st['su_over_pa']:.3f}; "
+                f"\u03b1 = {a:.3f}\nf_s = {a:.3f} \u00d7 {su:.1f} = "
+                f"{fs:.1f} kPa")
+    lines = []
+    if st.get("su_test_type", "ciuc") != "ciuc":
+        eq = "10-16" if st["su_test_type"] == "uc" else "10-17"
+        lines.append(f"s_u(CIUC) = {used:.1f} kPa (Eq. {eq} on c_u = "
+                     f"{su:.1f} kPa, \u03c3'_vo = "
+                     f"{lb.get('sigma_v_kPa', 0.0):.1f} kPa)")
+    else:
+        lines.append(f"s_u(CIUC) = c_u = {used:.1f} kPa")
+    lines += [f"\u03b1 = 0.30 + 0.17 / ({used:.1f} / {pa:g}) = {a:.3f}",
+              f"f_SN = {a:.3f} \u00d7 {used:.1f} = {fs:.1f} kPa"]
+    return "\n".join(lines)
+
+
 def _layer_properties_str(layer) -> str:
     """Format key layer properties as a compact string."""
     parts = [f"\u03b3 = {layer.unit_weight:.1f} kN/m\u00b3"]
     if layer.soil_type == "cohesive":
         parts.append(f"c_u = {layer.cu:.0f} kPa")
     elif layer.soil_type == "cohesionless":
-        parts.append(f"\u03c6 = {layer.phi:.0f}\u00b0")
+        if layer.phi > 0:
+            parts.append(f"\u03c6 = {layer.phi:.0f}\u00b0")
         if layer.N60 > 0:
             parts.append(f"N_60 = {layer.N60:.0f}")
         if layer.N1_60 > 0:

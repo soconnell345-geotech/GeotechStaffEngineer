@@ -448,6 +448,88 @@ def _refuse_unused_interface(rule: str, c_foundation: float,
             "for a drained strength give phi_foundation > 0.")
 
 
+#: The theories of the passive resistance in front of the wall (GM-242):
+#: Rankine's Kp, no wall friction (the default), or the log-spiral Kp of
+#: ``geotech_common.log_spiral`` with wall friction.
+PASSIVE_THEORIES = ("rankine", "log_spiral")
+
+#: Why the passive resistance in front of the wall takes Rankine's Kp by
+#: default (GM-242), for the choice.
+TOE_PASSIVE_BASIS = (
+    "UFC 3-220-20 Sec. 4-5.1 (p. 219): 'the passive pressure on the front "
+    "of the wall is typically ignored when assessing the stability', and "
+    "with it considered Fig. 4-27 (p. 220) and Sec. 4-5.1.3 (p. 223) ask "
+    "FSL >= 2.0; with a shear key the passive pressure acts over the key's "
+    "depth only (Fig. 4-29, p. 224). Neither names the theory of its Kp. "
+    "By default the module takes Rankine's, with no wall friction, the "
+    "smaller; passive_theory 'log_spiral' takes the log-spiral Kp with "
+    "wall friction")
+
+
+def toe_passive_Kp(phi_f: float, passive_theory: str = "rankine",
+                   log_spiral_source: Optional[str] = None,
+                   passive_wall_friction_deg: Optional[float] = None
+                   ) -> Dict[str, Any]:
+    """The passive coefficient in front of the wall (GM-242): ``Kp``,
+    ``delta`` (deg), ``delta_given`` and ``route``. "rankine": Rankine's Kp,
+    no wall friction. "log_spiral": the log-spiral Kp of
+    ``log_spiral_source`` (default UFC 3-220-20's for a vertical face and
+    level ground, Eq. 4-12, p. 191) at ``passive_wall_friction_deg``; left
+    out, the source's own (``geotech_common.log_spiral.level_front_Kp``)."""
+    from geotech_common import log_spiral as _ls
+    if passive_theory == "rankine":
+        return {"Kp": rankine_Kp(phi_f), "delta": 0.0,
+                "delta_given": False, "route": None}
+    r = _ls.level_front_Kp(phi_f, passive_wall_friction_deg,
+                           log_spiral_source or _ls.DEFAULT_SOURCE)
+    return {"Kp": r["Kp"], "delta": r["delta_deg"],
+            "delta_given": r["delta_given"], "route": r["route"]}
+
+
+def _refuse_unused_passive(include_passive: bool, passive_theory: str,
+                           log_spiral_source: Optional[str],
+                           passive_wall_friction_deg: Optional[float],
+                           phi_f: float) -> None:
+    """The passive theory's inputs checked, and refused where the sliding
+    check does not use them (GM-242)."""
+    from geotech_common import log_spiral as _ls
+    if passive_theory not in PASSIVE_THEORIES:
+        raise ValueError(f"passive_theory must be one of "
+                         f"{list(PASSIVE_THEORIES)}, got {passive_theory!r}")
+    if log_spiral_source is not None \
+            and log_spiral_source not in _ls.SOURCES:
+        raise ValueError(f"log_spiral_source must be one of "
+                         f"{list(_ls.SOURCES)}, got {log_spiral_source!r}")
+    if passive_theory == "log_spiral" and not include_passive:
+        raise ValueError(
+            "passive_theory 'log_spiral' is the theory of the passive "
+            "resistance in front of the wall, which the sliding check counts "
+            "only with include_passive. Give include_passive true, or leave "
+            "passive_theory out.")
+    if passive_theory != "log_spiral":
+        unused = [n for n, v in (
+            ("log_spiral_source", log_spiral_source),
+            ("passive_wall_friction_deg", passive_wall_friction_deg))
+            if v is not None]
+        if unused:
+            raise ValueError(
+                f"{' and '.join(unused)}: for the log-spiral passive Kp in "
+                "front of the wall (passive_theory 'log_spiral'); Rankine's "
+                "Kp takes no wall friction. Give passive_theory "
+                "'log_spiral', or leave "
+                f"{'it' if len(unused) == 1 else 'them'} out.")
+        return
+    if passive_wall_friction_deg is not None and not (
+            0.0 <= passive_wall_friction_deg <= max(phi_f, 0.0)):
+        raise ValueError(
+            f"passive_wall_friction_deg must be in [0, phi_foundation = "
+            f"{phi_f:g}] deg, got {passive_wall_friction_deg:g}")
+    if passive_wall_friction_deg is None and phi_f > 0 \
+            and log_spiral_source in _ls.LEVEL_FRONT_NEEDS_DELTA:
+        raise ValueError(_ls.LEVEL_FRONT_NEEDS_DELTA[
+            log_spiral_source].format(name="passive_wall_friction_deg"))
+
+
 def _sliding_terms(geom: CantileverWallGeometry,
                    gamma_backfill: float, phi_backfill: float,
                    c_backfill: float = 0.0,
@@ -461,7 +543,11 @@ def _sliding_terms(geom: CantileverWallGeometry,
                    base_adhesion: float = None,
                    live_load_resists: bool = False,
                    dead_load_resists: bool = False,
-                   sliding_cohesion: str = None) -> Dict[str, Any]:
+                   sliding_cohesion: str = None,
+                   passive_theory: str = "rankine",
+                   log_spiral_source: str = None,
+                   passive_wall_friction_deg: float = None
+                   ) -> Dict[str, Any]:
     """The sliding check's terms, unrounded (GM-143): ``V`` and its parts
     (``V_weights``, ``V_surcharge`` the surcharge over the heel counted,
     ``Pv_counted`` the part of the thrust's vertical component ``Pv``
@@ -476,8 +562,10 @@ def _sliding_terms(geom: CantileverWallGeometry,
     ``R_friction`` and ``R_adhesion``; ``Kp``, ``D_passive`` and ``Pp``
     (None / 0 without passive; with a shear key Pp acts over the depth of
     the key only, from ``D_passive_top`` = the base thickness down to
-    ``D_passive``, GM-210), ``resisting``, ``driving`` (= Ph) and ``FOS``
-    (None with no driving force)."""
+    ``D_passive``, GM-210; how Kp was taken, ``passive_theory``,
+    ``passive_delta``, ``passive_delta_given``, ``log_spiral_source`` and
+    ``log_spiral_route``, GM-242), ``resisting``, ``driving`` (= Ph) and
+    ``FOS`` (None with no driving force)."""
     if sliding_cohesion is None:
         sliding_cohesion = default_sliding_cohesion(phi_foundation)
     if sliding_cohesion not in SLIDING_COHESION:
@@ -490,6 +578,9 @@ def _sliding_terms(geom: CantileverWallGeometry,
         phi_foundation = phi_backfill
     if gamma_foundation is None:
         gamma_foundation = gamma_backfill
+    _refuse_unused_passive(include_passive, passive_theory,
+                           log_spiral_source, passive_wall_friction_deg,
+                           phi_foundation)
 
     B = geom.base_width
 
@@ -549,8 +640,12 @@ def _sliding_terms(geom: CantileverWallGeometry,
     # top of the base
     Pp = 0.0
     Kp = D = D_top = None
+    toe = {"delta": None, "delta_given": False, "route": None}
     if include_passive:
-        Kp = rankine_Kp(phi_foundation)
+        # Rankine's Kp by default, or the log-spiral Kp (GM-242)
+        toe = toe_passive_Kp(phi_foundation, passive_theory,
+                             log_spiral_source, passive_wall_friction_deg)
+        Kp = toe["Kp"]
         if geom.has_shear_key and geom.key_depth > 0:
             # Over the depth of the key only (GM-210): UFC 3-220-20 Sec.
             # 4-5.1.3 and Fig. 4-29 (pp. 223-224), "the passive pressure is
@@ -587,6 +682,14 @@ def _sliding_terms(geom: CantileverWallGeometry,
             "adhesion_width": width, "eccentricity": e,
             "R_friction": R_friction, "R_adhesion": R_adhesion,
             "Kp": Kp, "D_passive": D, "D_passive_top": D_top,
+            "passive_theory": passive_theory if include_passive else None,
+            "passive_delta": toe["delta"],
+            "passive_delta_given": toe["delta_given"],
+            "log_spiral_source": (
+                (log_spiral_source or "ufc_3_220_20")
+                if include_passive and passive_theory == "log_spiral"
+                else None),
+            "log_spiral_route": toe["route"],
             "gamma_foundation": gamma_foundation,
             "Pp": Pp, "resisting": resisting, "driving": driving,
             "Pa": Pa, "delta_deg": delta_deg,
@@ -629,7 +732,11 @@ def check_sliding(geom: CantileverWallGeometry,
                   base_adhesion: float = None,
                   live_load_resists: bool = False,
                   dead_load_resists: bool = False,
-                  sliding_cohesion: str = None) -> Dict[str, Any]:
+                  sliding_cohesion: str = None,
+                  passive_theory: str = "rankine",
+                  log_spiral_source: str = None,
+                  passive_wall_friction_deg: float = None
+                  ) -> Dict[str, Any]:
     """Check sliding stability.
 
     FOS_sliding = (R_friction + R_adhesion + Pp) / (Pa * cos(delta))
@@ -692,6 +799,19 @@ def check_sliding(geom: CantileverWallGeometry,
         otherwise on base_thickness. Default False.
     gamma_foundation : float, optional
         Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
+    passive_theory : str, optional
+        With include_passive, the passive coefficient (GM-242): "rankine"
+        (default, no wall friction; :data:`TOE_PASSIVE_BASIS`) or
+        "log_spiral" (:func:`toe_passive_Kp`).
+    log_spiral_source : str, optional
+        With passive_theory "log_spiral", the printed source of the Kp
+        (``geotech_common.log_spiral.SOURCES``). None: UFC 3-220-20's for a
+        vertical face and level ground, Eq. 4-12 (p. 191).
+    passive_wall_friction_deg : float, optional
+        With passive_theory "log_spiral", the wall friction delta in front
+        of the wall (deg), 0 to phi_foundation. None: the source's own,
+        delta/phi' = 0.66 (UFC 3-220-20 p. 191), or phi' with the
+        Caquot-Kerisel (1948) chart.
     delta_base : float, optional
         Base interface friction angle (degrees), used DIRECTLY (no 2/3
         factor). If None (default), delta_b = (2/3)*phi_foundation.
@@ -726,7 +846,8 @@ def check_sliding(geom: CantileverWallGeometry,
         geom, gamma_backfill, phi_backfill, c_backfill, phi_foundation,
         c_foundation, gamma_concrete, pressure_method, include_passive,
         gamma_foundation, delta_base, base_adhesion, live_load_resists,
-        dead_load_resists, sliding_cohesion), FOS_required)
+        dead_load_resists, sliding_cohesion, passive_theory,
+        log_spiral_source, passive_wall_friction_deg), FOS_required)
 
 
 def _overturning_terms(geom: CantileverWallGeometry,
@@ -1025,7 +1146,10 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             live_load_resists: bool = False,
                             dead_load_resists: bool = False,
                             surcharge_in_bearing: bool = True,
-                            sliding_cohesion: str = None
+                            sliding_cohesion: str = None,
+                            passive_theory: str = "rankine",
+                            log_spiral_source: str = None,
+                            passive_wall_friction_deg: float = None
                             ) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
@@ -1063,6 +1187,10 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         If True, include passive resistance in sliding check. Default False.
     gamma_foundation : float, optional
         Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
+    passive_theory, log_spiral_source, passive_wall_friction_deg : optional
+        With include_passive, the passive coefficient in front of the wall
+        as :func:`check_sliding` takes them (GM-242): Rankine's by
+        default.
     delta_base : float, optional
         Base interface friction angle (degrees), used DIRECTLY in the sliding
         check (no 2/3 factor). Default None → (2/3)*phi_foundation. Refused
@@ -1100,7 +1228,9 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         q_heel the bearing check's; and ``choices``: the rule for the
         foundation cohesion in sliding when there is any (GM-212), the base
         friction delta_b when friction is counted (GM-173) and how the
-        surcharges over the heel were counted when there are any (GM-157).
+        surcharges over the heel were counted when there are any (GM-157),
+        and with include_passive the passive coefficient in front of the
+        wall (GM-242, :func:`toe_passive_choices`).
     """
     rule_default = default_sliding_cohesion(phi_foundation)
 
@@ -1111,7 +1241,10 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
             pressure_method, include_passive, gamma_foundation,
             delta_base=delta_base, base_adhesion=base_adhesion,
             live_load_resists=live_load_resists,
-            dead_load_resists=dead_load_resists, sliding_cohesion=rule)
+            dead_load_resists=dead_load_resists, sliding_cohesion=rule,
+            passive_theory=passive_theory,
+            log_spiral_source=log_spiral_source,
+            passive_wall_friction_deg=passive_wall_friction_deg)
 
     s_terms = slide(sliding_cohesion)
     sliding = _sliding_dict(s_terms, FOS_sliding)
@@ -1183,7 +1316,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         + ([base_friction_choice(s_terms)]
            if s_terms["delta_b"] is not None else [])
         + heel_surcharge_choices(geom, live_load_resists,
-                                 dead_load_resists, surcharge_in_bearing),
+                                 dead_load_resists, surcharge_in_bearing)
+        + toe_passive_choices(s_terms),
     )
 
 
@@ -1330,4 +1464,76 @@ def heel_surcharge_choices(geom: CantileverWallGeometry,
             BEARING_BASIS[flag],
             [f"{'left out' if flag else 'counted'} "
              f"(surcharge_in_bearing={not flag}): {BEARING_BASIS[not flag]}"]))
+    return out
+
+
+def toe_passive_choices(terms: Dict[str, Any]) -> list:
+    """How the sliding check took the passive resistance in front of the
+    wall (GM-242), as a result's ``choices`` (``geotech_common.choices``):
+    none without passive; else the theory of Kp with the other theory's and
+    no passive's FOS as alternatives, and with the log-spiral Kp its source
+    and the wall friction. ``terms`` are the sliding check's
+    (:func:`_sliding_terms`)."""
+    from geotech_common import log_spiral as _ls
+    from geotech_common.choices import choice, how_given
+    if terms["passive_theory"] is None:
+        return []
+    phi_f = terms["phi_foundation"]
+    D, D_top = terms["D_passive"], terms["D_passive_top"]
+    g, driving = terms["gamma_foundation"], terms["driving"]
+    without = terms["resisting"] - terms["Pp"]
+
+    def fos(R):
+        return ("no FOS (no driving force)" if driving <= 0
+                else f"FOS_sliding {R / driving:.3g}")
+
+    def with_Kp(Kp):
+        Pp = 0.5 * Kp * g * (D ** 2 - D_top ** 2)
+        return f"Kp {Kp:.3g}, Pp {Pp:.1f} kN/m, {fos(without + Pp)}"
+
+    theory, Kp = terms["passive_theory"], terms["Kp"]
+    left_out = (f"passive resistance left out (include_passive false), as "
+                f"UFC 3-220-20 p. 219 says is typical: {fos(without)}")
+    log_spiral = terms["log_spiral_source"]
+    if theory == "rankine":
+        default = _ls.level_front_Kp(phi_f)
+        others = [f"log_spiral (passive_theory 'log_spiral'), UFC 3-220-20 "
+                  f"Eq. 4-12 at delta/phi' 0.66: {with_Kp(default['Kp'])}",
+                  left_out]
+        chosen = f"rankine: {with_Kp(Kp)}, no wall friction"
+    else:
+        others = [f"rankine (passive_theory 'rankine'), no wall friction: "
+                  f"{with_Kp(rankine_Kp(phi_f))}", left_out]
+        chosen = (f"log_spiral: {with_Kp(Kp)}, wall friction "
+                  f"{terms['passive_delta']:.3g} deg")
+    out = [choice(
+        "passive resistance in front of the wall, in sliding "
+        "(passive_theory)", chosen,
+        how_given(theory, "rankine", name="passive_theory"),
+        TOE_PASSIVE_BASIS, others)]
+    if log_spiral is None:
+        return out
+    delta, route = terms["passive_delta"], terms["log_spiral_route"]
+    basis = _ls.SOURCE_BASIS[log_spiral]
+    if route == "dm7_2_eq_4_12":
+        basis += (". The front of the wall is a vertical face with level "
+                  "ground, so it is Eq. 4-12 (p. 191). "
+                  + _ls.EQ_VS_CHARTS_NOTE)
+    if "dm7_2_eq_4_12" in (log_spiral, route) \
+            and _ls.above_the_charts(phi_f, delta):
+        basis += ". " + _ls.HIGH_FRICTION_NOTE
+    out.append(choice(
+        "Log-spiral passive Kp in front of the wall (log_spiral_source)",
+        log_spiral,
+        how_given(log_spiral, _ls.DEFAULT_SOURCE, name="log_spiral_source"),
+        basis, _ls.other_sources(phi_f, delta, used=(log_spiral, route))))
+    out.append(choice(
+        "Wall friction delta in front of the wall "
+        "(passive_wall_friction_deg)",
+        f"{delta:.3g} deg" + (f" (delta/phi' {delta / phi_f:.2f})"
+                              if phi_f else ""),
+        how_given(delta if terms["passive_delta_given"] else None, None,
+                  name="passive_wall_friction_deg", took=round(delta, 4)),
+        _ls.wall_friction_note(
+            log_spiral, left_out=_ls.level_front_left_out(log_spiral))))
     return out

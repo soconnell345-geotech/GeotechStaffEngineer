@@ -269,7 +269,9 @@ class TestMSEKrAndFstar:
         assert Kr_Ka_ratio(6, "geosynthetic") == 1.0
 
     def test_Fstar_surface(self):
-        assert abs(F_star_metallic(0) - 2.0) < 0.001
+        """GEC-11 Vol I Eq. 3-4 (p. 3-20): 1.2 + log Cu, Cu 4 when the
+        backfill's is unknown (F* 1.8; GM-246)."""
+        assert abs(F_star_metallic(0) - (1.2 + math.log10(4.0))) < 0.001
 
     def test_Fstar_deep(self):
         """At z>=20 ft (6.096 m), F* = tan(phi) for ribbed metallic strips
@@ -708,18 +710,26 @@ class TestFstarAtDepth:
         # F_deep should be tan(34) ~ 0.6745, not 0.67*tan(34) ~ 0.4519
         assert abs(F_deep - wrong_value) > 0.1
 
-    def test_surface_still_2(self):
-        """F* at z=0 is still 2.0 regardless of phi."""
-        assert abs(F_star_metallic(0, 30.0) - 2.0) < 0.001
-        assert abs(F_star_metallic(0, 40.0) - 2.0) < 0.001
+    def test_surface_is_1_2_plus_log_Cu(self):
+        """F* at z=0 is 1.2 + log Cu, 2.0 at most, whatever the phi (GEC-11
+        Vol I Eq. 3-4; GM-246: 2.0 whatever the Cu before)."""
+        for phi in (30.0, 40.0):
+            assert F_star_metallic(0, phi) == pytest.approx(1.802, abs=1e-3)
+            assert F_star_metallic(0, phi, Cu=2.0) == pytest.approx(
+                1.501, abs=1e-3)
+            assert F_star_metallic(0, phi, Cu=7.0) == 2.0
+        with pytest.raises(ValueError, match="1 or more"):
+            F_star_metallic(0, 34.0, Cu=0.8)
 
     def test_interpolation_midpoint(self):
-        """At z=3m, F* is linear between 2.0 at 0 and tan(phi) at 6.096 m."""
+        """At z=3m, F* is linear between 1.2 + log Cu at 0 and tan(phi) at
+        6.096 m."""
         phi = 34.0
         F_deep = math.tan(math.radians(phi))
-        expected_mid = 2.0 - (2.0 - F_deep) / 6.096 * 3.0
-        actual = F_star_metallic(3.0, phi)
-        assert abs(actual - expected_mid) < 0.001
+        for Cu, top in ((None, 1.2 + math.log10(4.0)), (7.0, 2.0)):
+            expected_mid = top - (top - F_deep) / 6.096 * 3.0
+            actual = F_star_metallic(3.0, phi, Cu=Cu)
+            assert abs(actual - expected_mid) < 0.001
 
     def test_phi_matters_at_depth(self):
         """Higher phi -> higher F* at depth."""
@@ -1052,11 +1062,12 @@ class TestBarMatCurves:
         with pytest.raises(ValueError, match="t_over_St"):
             F_star_metallic(3.0, 34.0, "metallic_grid")
 
-    # -- default-preserving: ribbed strip unchanged ------------------------
-    def test_strip_default_unchanged(self):
+    # -- the ribbed strip curves -------------------------------------------
+    def test_strip_curves(self):
         """The default (ribbed-strip) curves: Kr/Ka 1.7 -> 1.2 over 20 ft
-        (6.096 m); F* 2.0 -> tan(phi) over 20 ft (GEC-11 Fig. 4-10, Eq. 3-5;
-        6.0 m before the GM-112 review, 2026-10-16)."""
+        (6.096 m); F* 1.2 + log Cu -> tan(phi) over 20 ft (GEC-11 Fig. 4-10,
+        Eqs. 3-4 and 3-5; 6.0 m before the GM-112 review, 2026-10-16); at
+        Cu 6.3 or more the 2.0 every strip took before GM-246."""
         Z20 = 20.0 * 0.3048
 
         def kr_old(z):
@@ -1066,8 +1077,8 @@ class TestBarMatCurves:
                 return 1.2
             return 1.7 - (0.5 / Z20) * z
 
-        def f_old(z, phi):
-            fs, fd = 2.0, math.tan(math.radians(phi))
+        def f_old(z, phi, fs=2.0):
+            fd = math.tan(math.radians(phi))
             if z <= 0:
                 return fs
             if z >= Z20:
@@ -1078,8 +1089,11 @@ class TestBarMatCurves:
             assert Kr_Ka_ratio(z) == kr_old(z)
             assert Kr_Ka_ratio(z, "metallic") == kr_old(z)
             for phi in (28.0, 30.0, 34.0, 40.0):
-                assert F_star_metallic(z, phi) == f_old(z, phi)
-                assert F_star_metallic(z, phi, "metallic") == f_old(z, phi)
+                assert F_star_metallic(z, phi, Cu=7.0) == f_old(z, phi)
+                assert F_star_metallic(z, phi, "metallic", Cu=7.0) == \
+                    f_old(z, phi)
+                assert F_star_metallic(z, phi) == pytest.approx(
+                    f_old(z, phi, 1.2 + math.log10(4.0)), abs=1e-12)
 
     # -- routing: a built-in bar-mat reinforcement uses the new curves -----
     def test_welded_grid_constant_carries_geometry(self):

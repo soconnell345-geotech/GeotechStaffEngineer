@@ -177,12 +177,13 @@ NOT_REACHED = {
         _ADHESION,
     ("calc_package|axial_pile_package", "toe_stress_limit"): _TOE_LIMIT,
     ("calc_package|axial_pile_package", "toe_phi_zone"): _ONE_SAND,
-    # GM-241: K/Ko and pa go with the GEC-10 beta, the default
+    # GM-241: K/Ko goes with the GEC-10 beta, the default; pa reaches
+    # clay too since GEC-10's alpha became the default (GM-244)
     **{(k, n): _ALL_CLAY for k in (
         "drilled_shaft|capacity_vs_depth",
         "drilled_shaft|drilled_shaft_capacity",
         "drilled_shaft|lrfd_capacity", "calc_package|drilled_shaft_package")
-       for n in ("beta_method", "K_over_Ko", "pa")},
+       for n in ("beta_method", "K_over_Ko")},
     **{(k, n): why for k in (
         "drilled_shaft|capacity_vs_depth",
         "drilled_shaft|capacity_vs_depth#sand",
@@ -202,15 +203,33 @@ NOT_REACHED = {
         "drilled_shaft|lrfd_capacity")},
     ("calc_package|drilled_shaft_package", "rock_side_C"): _NO_ROCK,
     ("calc_package|drilled_shaft_package#sand", "rock_side_C"): _NO_ROCK,
-    **{(k, "alpha_method"): _ALL_SAND for k in (
+    **{(k, n): _ALL_SAND for k in (
         "drilled_shaft|capacity_vs_depth#sand",
+        "drilled_shaft|drilled_shaft_capacity#large_base",
         "drilled_shaft|lrfd_capacity#sand",
-        "calc_package|drilled_shaft_package#sand")},
+        "calc_package|drilled_shaft_package#sand")
+       for n in ("alpha_method", "su_test_type")},
+    **{("drilled_shaft|drilled_shaft_capacity#large_base", n): _NO_ROCK
+       for n in ("socket_diameter", "rock_side_C")},
     # GM-221: the rock probe's soil is clay over rock
-    **{("drilled_shaft|drilled_shaft_capacity#rock", n):
-       "the probe's soil is clay over rock: the beta method is for sand"
-       for n in ("beta_method", "K_over_Ko", "pa")},
-    ("drilled_shaft|drilled_shaft_capacity#rock", "casing_depth"): _CASING,
+    **{(k, n): "the probe's soil is clay over rock: the beta method is "
+       "for sand" for k in ("drilled_shaft|drilled_shaft_capacity#rock",
+                            "drilled_shaft|drilled_shaft_capacity"
+                            "#fractured_rock",
+                            "drilled_shaft|drilled_shaft_capacity"
+                            "#hoek_brown")
+       for n in ("beta_method", "K_over_Ko")},
+    **{(k, "casing_depth"): _CASING for k in (
+        "drilled_shaft|drilled_shaft_capacity#rock",
+        "drilled_shaft|drilled_shaft_capacity#fractured_rock",
+        "drilled_shaft|drilled_shaft_capacity#hoek_brown")},
+    # GM-244: at RQD 70 or more the 'rqd' base also takes 2.5 qu; the
+    # #fractured_rock probe (RQD 40, the conditions of Eq. 10-23 stated
+    # met) reaches it, and the #hoek_brown probe (RQD 40 with GSI and m_i,
+    # the Hoek-Brown base, GM-251)
+    ("drilled_shaft|drilled_shaft_capacity#rock", "rock_base_method"):
+        "the probe's rock has RQD 100 (the default), where the 'rqd' base "
+        "also takes q_b = 2.5 qu",
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     # GM-228: the warning when the two rules for the depth below the toe
     # disagree; the #toe_in_sand probe (26 % apart) reaches it

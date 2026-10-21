@@ -72,6 +72,12 @@ class CantileverWallGeometry:
             raise ValueError(f"Wall height must be positive, got {self.wall_height}")
         if self.base_thickness <= 0:
             raise ValueError(f"Base thickness must be positive, got {self.base_thickness}")
+        if self.has_shear_key and not self.key_depth > 0:
+            raise ValueError(
+                f"has_shear_key needs the key's depth below the base slab, "
+                f"key_depth > 0 (m), got {self.key_depth:g}: the passive "
+                f"resistance acts over the key's depth (UFC 3-220-20 Fig. "
+                f"4-29, p. 224). Give key_depth, or leave has_shear_key out.")
 
         # Auto-size if not specified
         if self.base_width is None:

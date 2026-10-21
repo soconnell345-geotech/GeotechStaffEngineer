@@ -50,7 +50,7 @@ _MANAGED_ENV = (
     "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET",
     "SHAREPOINT_SITE_URL", "KV_NAME", "GEOTECH_MARKUP_AUTHOR",
     "GEOTECH_VISION_PROBE", "GEOTECH_HEARTBEAT_S", "ANTHROPIC_API_KEY",
-    "GEOTECH_REVIEW_AGENT",
+    "GEOTECH_REVIEW_AGENT", "GEOTECH_HELPER_MODELS",
 )
 
 #: Seconds a single turn may run before the harness gives up following it.
@@ -88,10 +88,18 @@ class AppEnv:
     """Process setup for one scenario; ``with AppEnv(...) as env:``."""
 
     def __init__(self, sandbox: str, model, *, model_id: str,
-                 sharepoint: bool = True, extra_env: Optional[dict] = None):
+                 sharepoint: bool = True, extra_env: Optional[dict] = None,
+                 models: Optional[Dict[str, Any]] = None,
+                 labels: Optional[Dict[str, str]] = None):
         self.sandbox = os.path.abspath(sandbox)
         self.model = model
         self.model_id = model_id
+        #: Further models by id (BACKLOG EV-33: a helper on its own model).
+        #: The registered builder hands out the one asked for, as the
+        #: Prompter builder does; the model list names each by its label.
+        self.models = {k: v for k, v in (models or {}).items()
+                       if k != model_id}
+        self.labels = dict(labels or {})
         self.sharepoint = sharepoint
         self.extra_env = dict(extra_env or {})
         self.data_root = os.path.join(self.sandbox, "data")
@@ -145,7 +153,7 @@ class AppEnv:
             "GEOTECH_DEPLOYMENT": "tinyapps",
             "GEOTECH_UPLOAD_MODE": "http",
             # What webapp.tinyapps_engine.register publishes for its model.
-            "GEOTECH_PROMPTER_MODELS": f"{self.model_id}={self.model_id}",
+            "GEOTECH_PROMPTER_MODELS": self.model_list(),
             "GEOTECH_WEBAPP_MODEL": self.model_id,
         }
         if self.sharepoint:
@@ -158,10 +166,10 @@ class AppEnv:
             })
         env.update(self.extra_env)
         os.environ.update({k: str(v) for k, v in env.items()})
-        model = self.model
+        model, others = self.model, dict(self.models)
 
         def _build(model_id=None):          # the Prompter builder's shape
-            return model
+            return others.get(model_id, model)
 
         engine_config.register_model_builder(_build)
         if self.sharepoint:
@@ -170,6 +178,16 @@ class AppEnv:
         self._saved_cwd = os.getcwd()
         os.chdir(self.cwd)
         return self
+
+    def model_list(self) -> str:
+        """``GEOTECH_PROMPTER_MODELS``: the main model alone as ``id=id``
+        (every wave before EV-33), else ``Label=id`` for each model, the
+        main one first, so a helper can be named by its label as the
+        Foundry model list names it (``references=Sonnet 5.5``)."""
+        if not self.models:
+            return f"{self.model_id}={self.model_id}"
+        ids = [self.model_id] + sorted(self.models)
+        return ",".join(f"{self.labels.get(i, i)}={i}" for i in ids)
 
     def reset_process_state(self) -> None:
         """What a fresh app process starts with: a new SharePoint store (no
@@ -268,7 +286,8 @@ class Session:
             messages=[], transcript=[], pending_notes=[], total_tokens=0,
             last_turn_tokens=0, save_error=None, behavior=None, agent=None,
             agent_error=None, engine=None, model=None, sp_sync=None,
-            pending_orientation=None, recovered_notice=False)
+            pending_orientation=None, recovered_notice=False,
+            helper_models=None, helper_engines=[])
         self.turns: List[TurnRecord] = []
         self.threads: List[str] = []
         self.sidebar: dict = {}
@@ -281,17 +300,24 @@ class Session:
 
     # -- app.py: _build_agent_for_session / _resolve_and_build ---------------
     def _build_agent_for_session(self) -> None:
-        from webapp import core
+        from webapp import core, helper_models
         ss = self.ss
         ss.agent = None
         ss.agent_error = None
+        ss.helper_engines = []
         if ss.engine.ok:
             try:
                 _kind = (ss.behavior or {}).get("agent_type", "full")
                 if not self.profile.specialists:
                     _kind = "full"
+                # app.py: a helper's own model (INF-41): this host's
+                # defaults, GEOTECH_HELPER_MODELS, the sidebar's picks.
+                ss.helper_engines = helper_models.resolve(
+                    ss.model, ss.helper_models, identity=self.ident)
+                _helper_kw = helper_models.build_kwargs(ss.helper_engines)
                 if _kind == "full":
                     _kw = core.behavior_build_kwargs(ss.behavior)
+                    _kw.update(_helper_kw)
                     _kw.update(self.profile.build_kwargs())
                     _kw.setdefault("markup_author", self.ident.markup_author)
                     if HARNESS_TOOLS:          # the dry run only
@@ -303,7 +329,7 @@ class Session:
                 else:
                     ss.agent = core.build_reviewer_agent(
                         _kind, ss.engine.model, ss.attachments, ss.temp_dir,
-                        ss.artifacts)
+                        ss.artifacts, **_helper_kw)
             except Exception as exc:  # surfaced like the app does
                 ss.agent_error = f"{type(exc).__name__}: {exc}"
 
@@ -312,6 +338,29 @@ class Session:
         self.ss.model = model_id
         self.ss.engine = engine_config.resolve_engine(model_id=model_id)
         self._build_agent_for_session()
+
+    # -- app.py: the sidebar's Behavior expander, when a setting changes ------
+    def set_behavior(self, changes: dict) -> bool:
+        """Set Behavior settings the way the sidebar does (a flow's
+        ``behavior``, e.g. ``{"references": "anytime"}`` for the "Consult
+        references" switch; BACKLOG GM-239): saved on the conversation when
+        it has a meta file, and the agent rebuilt unless only the trace
+        changed. Returns whether anything changed."""
+        from webapp import core
+        ss = self.ss
+        _b = dict(ss.behavior or core.default_behavior())
+        unknown = set(changes or {}) - set(core.default_behavior())
+        if unknown:
+            raise ValueError(f"unknown Behavior settings {sorted(unknown)}")
+        _new_b = {**_b, **(changes or {})}
+        if _new_b == _b:
+            return False
+        ss.behavior = _new_b
+        if core.load_meta(ss.thread_id) is not None:
+            core.set_behavior(ss.thread_id, _new_b)
+        if {k: v for k, v in _new_b.items() if k != "trace"} !=                 {k: v for k, v in _b.items() if k != "trace"}:
+            self._resolve_and_build(ss.model)
+        return True
 
     # -- app.py: _new_conversation / _open_conversation -----------------------
     def new_conversation(self) -> str:

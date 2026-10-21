@@ -16,6 +16,14 @@ The owner's hard total is :data:`HARD_TOTAL_USD` across every live run.
   and the hard total and RAISES :class:`WaveCapReached` (``raise_error`` is
   True for that one hook), which ends the turn cleanly as a turn error; the
   stop is recorded on the ledger.
+* A wave that runs more than one model (BACKLOG EV-33: the main agent on one
+  model, a helper on another) gives each model object its own
+  :class:`ModelMeter` (:meth:`SpendMeter.for_model`), which prices the call
+  at that model's rates and records it on the one meter, so the cap, the
+  ledger and the call list stay one. Every call record names its ``model``
+  and its ``agent`` (``lc_agent_name`` from the run's metadata, which
+  deepagents sets to the helper's name; ``primary`` when none) and, for a
+  vision side call, its ``side_call`` label, so cost splits per agent.
 
 Prices are USD per million tokens, from
 platform.claude.com/docs/en/about-claude/pricing (read 2026-10-08). The
@@ -289,11 +297,37 @@ class SpendLedger:
 # The per-call meter
 # ---------------------------------------------------------------------------
 
+#: The agent a model call belongs to when its run names none: the main agent
+#: (deepagents names each helper's runs ``lc_agent_name``, not the primary's).
+PRIMARY = "primary"
+
+
+def call_agent_name(metadata) -> str:
+    """The agent a model call was made by, from its run metadata."""
+    name = (metadata or {}).get("lc_agent_name") \
+        if isinstance(metadata, dict) else None
+    return str(name) if name else PRIMARY
+
+
+def _side_call_label() -> Optional[str]:
+    """The vision side call running in this context (``kind`` of
+    ``funhouse_agent.deep.vision_engine.side_call``), else ``None``."""
+    try:
+        from funhouse_agent.deep.vision_engine import current_side_call
+        info = current_side_call()
+    except Exception:  # noqa: BLE001 - attribution never fails a call
+        return None
+    if not info:
+        return None
+    return str(info.get("kind") or info.get("tool") or "vision")
+
+
 class SpendMeter(BaseCallbackHandler):
     """Meter every call of ONE model object and enforce the wave cap.
 
     Attach it to the model (``ChatAnthropic(callbacks=[meter])``). Only the
-    cap check raises (``raise_error``); the accounting never does.
+    cap check raises (``raise_error``); the accounting never does. A second
+    model in the same wave gets :meth:`for_model`'s handler instead.
     """
 
     raise_error = True
@@ -314,8 +348,16 @@ class SpendMeter(BaseCallbackHandler):
         self.accounting_errors: List[str] = []
         self._lock = threading.Lock()
         self._starts: Dict[str, float] = {}
+        self._agents: Dict[str, tuple] = {}
         # A live model must have a price before the first call.
         rates_for(model_id, 0, prices)
+
+    def for_model(self, model_id: str) -> "ModelMeter":
+        """The handler for another model object in this wave: its calls are
+        priced at ``model_id``'s rates and recorded here (one cap, one
+        ledger, one call list). Refuses a model with no price on file."""
+        rates_for(model_id, 0, self.prices)
+        return ModelMeter(self, model_id)
 
     # -- the guard ----------------------------------------------------------
     def check(self) -> None:
@@ -338,16 +380,29 @@ class SpendMeter(BaseCallbackHandler):
                 self.ledger.record_stop(self.wave, reason)
             raise WaveCapReached(reason)
 
-    def on_chat_model_start(self, serialized, messages, *, run_id, **kwargs):
-        self.check()
-        self._starts[str(run_id)] = time.time()
+    def on_chat_model_start(self, serialized, messages, *, run_id,
+                            metadata=None, **kwargs):
+        self._start(run_id, metadata)
 
-    def on_llm_start(self, serialized, prompts, *, run_id, **kwargs):
+    def on_llm_start(self, serialized, prompts, *, run_id, metadata=None,
+                     **kwargs):
+        self._start(run_id, metadata)
+
+    def _start(self, run_id, metadata=None) -> None:
         self.check()
-        self._starts[str(run_id)] = time.time()
+        rid = str(run_id)
+        self._starts[rid] = time.time()
+        try:
+            self._agents[rid] = (call_agent_name(metadata),
+                                 _side_call_label())
+        except Exception:  # noqa: BLE001
+            pass
 
     # -- the accounting -----------------------------------------------------
     def on_llm_end(self, response, *, run_id, **kwargs):
+        self._account(response, run_id, self.model_id)
+
+    def _account(self, response, run_id, model_id: str) -> None:
         try:
             usage, source = None, None
             for row in getattr(response, "generations", None) or []:
@@ -364,11 +419,14 @@ class SpendMeter(BaseCallbackHandler):
                 usage = usage_from_raw(lo.get("usage"))
                 source = "llm_output" if usage else None
             t0 = self._starts.pop(str(run_id), None)
+            agent, side = self._agents.pop(str(run_id), (PRIMARY, None))
             rec = {"ts": time.time(), "scenario": self.scenario,
-                   "model": self.model_id, "usage_source": source,
-                   "run_id": str(run_id),
+                   "model": model_id, "agent": agent,
+                   "usage_source": source, "run_id": str(run_id),
                    "seconds": round(time.time() - t0, 2) if t0 else None}
-            priced = cost_of(self.model_id, usage, self.prices)
+            if side:
+                rec["side_call"] = side
+            priced = cost_of(model_id, usage, self.prices)
             if priced is None:
                 rec.update(usd=0.0, unmetered=True)
             else:
@@ -389,11 +447,16 @@ class SpendMeter(BaseCallbackHandler):
             self.accounting_errors.append(f"{type(exc).__name__}: {exc}")
 
     def on_llm_error(self, error, *, run_id, **kwargs):
+        self._error(error, run_id, self.model_id)
+
+    def _error(self, error, run_id, model_id: str) -> None:
         try:
             self._starts.pop(str(run_id), None)
+            agent, side = self._agents.pop(str(run_id), (PRIMARY, None))
             with self._lock:
                 self.calls.append({"ts": time.time(), "scenario": self.scenario,
-                                   "model": self.model_id, "usd": 0.0,
+                                   "model": model_id, "agent": agent,
+                                   "usd": 0.0,
                                    "error": f"{type(error).__name__}: "
                                             f"{str(error)[:300]}"})
         except Exception:  # noqa: BLE001
@@ -422,6 +485,51 @@ class SpendMeter(BaseCallbackHandler):
                     tot[k] += int(v)
         tot["usd"] = round(tot["usd"], 6)
         return tot
+
+    def by_agent(self, calls: Optional[List[dict]] = None) -> Dict[str, dict]:
+        """``{"<agent> on <model>": summary}``: :meth:`summary` per agent and
+        model (a vision side call counts under ``<agent> (vision)``)."""
+        calls = self.calls if calls is None else calls
+        groups: Dict[str, List[dict]] = {}
+        for c in calls:
+            agent = c.get("agent") or PRIMARY
+            if c.get("side_call"):
+                agent += " (vision)"
+            groups.setdefault(f"{agent} on {c.get('model')}", []).append(c)
+        out = {}
+        for key in sorted(groups):
+            s = self.summary(groups[key])
+            s["agent"], _, s["model"] = key.partition(" on ")
+            out[key] = s
+        return out
+
+
+class ModelMeter(BaseCallbackHandler):
+    """The meter for a second model object in a wave: the calls are priced
+    at ``model_id``'s rates and recorded on the parent :class:`SpendMeter`
+    (its cap, its ledger, its call list)."""
+
+    raise_error = True
+    run_inline = True
+
+    def __init__(self, parent: SpendMeter, model_id: str):
+        super().__init__()
+        self.parent = parent
+        self.model_id = model_id
+
+    def on_chat_model_start(self, serialized, messages, *, run_id,
+                            metadata=None, **kwargs):
+        self.parent._start(run_id, metadata)
+
+    def on_llm_start(self, serialized, prompts, *, run_id, metadata=None,
+                     **kwargs):
+        self.parent._start(run_id, metadata)
+
+    def on_llm_end(self, response, *, run_id, **kwargs):
+        self.parent._account(response, run_id, self.model_id)
+
+    def on_llm_error(self, error, *, run_id, **kwargs):
+        self.parent._error(error, run_id, self.model_id)
 
 
 def spend_line(ledger: SpendLedger, wave: str, cap: float,
@@ -546,6 +654,7 @@ def estimate_flows(flows: List[dict], model_id: str, runs_dir: str, *,
 
 
 __all__ = ["HARD_TOTAL_USD", "PRICES", "SpendLedger", "SpendMeter",
+           "ModelMeter", "PRIMARY", "call_agent_name",
            "WaveCapReached", "RefuseToStart", "UnpricedModel", "rates_for",
            "cost_of", "split_usage", "usage_from_raw", "spend_line",
            "DEFAULT_LEDGER", "recorded_costs", "estimate_flows"]

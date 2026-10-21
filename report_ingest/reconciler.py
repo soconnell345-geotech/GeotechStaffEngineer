@@ -767,7 +767,7 @@ def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
                 continue
             each = ", ".join(f"{str(b)!r} = {pen:.3f} m"
                              for b, (_c, pen) in zip(spt.blows, drives))
-            assumed = ("" if spt.increment is not None
+            assumed = ("" if spt.increment is not None or spt.increments
                        or not any(isinstance(b, int) or str(b).isdigit()
                                   for b in spt.blows)
                        else "; no increment was given, so each plain count "

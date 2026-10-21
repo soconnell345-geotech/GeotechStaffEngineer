@@ -134,6 +134,29 @@ def _env_check() -> dict:
     return _check("environment", PASS, " | ".join(parts))
 
 
+def _tls_check() -> dict:
+    """Foundry: which certificates the model proxy's TLS is checked against.
+    Says so plainly when no CA variable names a file and the SDKs fall back
+    to certifi's public list (INF-44). Names variables, never paths."""
+    from webapp import engine_config
+    name = "TLS certificates"
+    source = engine_config.foundry_ca_source()
+    if source:
+        return _check(name, PASS, f"the model proxy's certificate is "
+                      f"checked against the CA file {source[0]} names")
+    envs = engine_config.FOUNDRY_CA_ENVS
+    broken = [e for e in envs if str(os.environ.get(e) or "").strip()]
+    detail = (f"no CA variable names a file ({', '.join(envs)}), so the "
+              "model proxy's certificate is checked against certifi, the "
+              "public CA list that comes with Python's HTTP packages. If "
+              "requests fail with a certificate error, set one of them to "
+              "the CA file the container provides.")
+    if broken:
+        return _check(name, WARN, f"Set to a file that does not exist: "
+                      f"{', '.join(broken)}. {detail[0].upper()}{detail[1:]}")
+    return _check(name, PASS, detail)
+
+
 def _prompter_key_check(identity: Any = None) -> dict:
     """Tiny Apps: which Prompter key SOURCE serves this caller — per-tester
     secret, the PROMPTER-KEYS mapping or the shared key — and the per-tester
@@ -528,6 +551,8 @@ def run_diagnostics(model_id: Optional[str] = None,
               _upload_probe_check(), _reference_docs_check()]
     if engine_config.is_tinyapps_deployment():
         checks.append(_prompter_key_check(identity))
+    if engine_config.is_foundry_deployment():
+        checks.append(_tls_check())
     resolved = _resolution_check(model_id, identity)
     checks.append(resolved)
     agents, helpers = _helper_models(model_id, identity, helper_models)

@@ -84,9 +84,36 @@ specific check, the governing reference, and the corrective action.
    layer `toe_friction_angle` should reflect the actual bearing stratum.
 
 6. **Drilled shaft (`drilled_shaft`, GEC-10).** α (cohesive side), β
-   (cohesionless side) and rock-socket resistance selected per layer; clay end
-   bearing capped at N*c·su (N*c → 9); an N60-based side-resistance reduction for
-   sand; the unreliable top and bottom zones excluded from side resistance.
+   (cohesionless side) and rock-socket resistance selected per layer. In sand
+   the default is the GEC-10 (2018) β, Eq. 10-13 (K/Ko, σ'p from N60 and OCR);
+   the O'Neill-Reese depth method (`beta_method='depth'`, with its N60 < 15
+   reduction) is a named option, so check which one the run states. In clay
+   the default α is GEC-10 Eq. 10-18 on su(CIUC) (the O'Neill-Reese α 0.55 is
+   `alpha_method='aashto'`); check whether cu was a UC/UU strength
+   (`su_test_type`) or taken as su(CIUC). The clay base is Eq. 10-19 with
+   Table 10-2's N*c (6.5 to 9.0 by su; Eq. 10-20 where the depth is under
+   3B), su the mean of the cohesive soil over 2B below the base (p. 10-19):
+   check the choice names the layers it covers and says where the profile
+   ends short. The rock base is Eq. 10-23, 2.5 qu, only where the rock to
+   one diameter below the base meets its three conditions (p. 10-22); a
+   fractured rock mass takes the Hoek-Brown base, Eqs. 10-24 to 10-29, on
+   the tip rock layer's GSI and m_i, 2.5 qu its upper limit. The call
+   states the conditions (`rock_base_conditions_met`); left out, they are
+   taken as met where every layer within one diameter below the base is
+   rock with RQD 100 (the layer default), with the Hoek-Brown value beside
+   it, and the Hoek-Brown base is taken where a layer there has RQD below
+   100 or is soil (refused without GSI and m_i). Check the statement is the
+   engineer's, that a fractured rock mass is not given 2.5 qu (an RQD left
+   at its default with a low GSI given is the case to question), and where
+   GSI and m_i came from (the core descriptions; m_i by rock type, GEC 5
+   Table 9-10). The rock side C is 1.0, Eq. 10-21 for a
+   "normal" socket
+   (0.65 is Eq. 10-22, where caving is anticipated). The base resistance
+   factor is that of the base's own soil (0.40 clay, 0.50 sand and rock).
+   GEC-10 (2018) prints no large-base reduction and no bottom zone (Example
+   10-2), so `large_base_reduction` and `bottom_exclusion` are named
+   options. The top zone (1.5 m in cohesive soil, none in cohesionless soil
+   or rock unless `top_exclusion` is given) carries no side resistance.
 
 7. **Pile group (`pile_group`).** ONE right-hand sign convention end-to-end —
    the module's +Mx sense is a DOCUMENTED convention (an intentional change vs

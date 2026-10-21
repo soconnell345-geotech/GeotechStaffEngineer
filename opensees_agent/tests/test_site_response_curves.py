@@ -233,6 +233,13 @@ class TestInputs:
         (dict(SAND33, n_elem=0), "n_elem"),
         (dict(SAND33, nu=0.5), "nu"),
         (dict(SAND33, dilat1=-1), "dilat1"),
+        # GM-79
+        (dict(SAND33, permeability=0.0), "permeability"),
+        (dict(SAND33, K0=-0.5), "K0"),
+        (dict(SAND33, e_init=0.0), "e_init"),
+        (dict(SAND33, PTAng=0.0), "PTAng"),
+        (dict(SAND33, n_surf=0), "n_surf"),
+        (dict(SAND33, n_surf=20, curve="darendeli"), "pairs set the yield"),
     ])
     def test_refused(self, layer, match):
         with pytest.raises(ValueError, match=match):
@@ -293,6 +300,51 @@ class TestChoices:
         assert "capped" in c["basis"]
         c = _choices([CLAY60])["layers[0] (clay) Poisson's ratio"]
         assert c["chosen"] == 0.495 and c["how"] == "default"
+
+    def test_k0_places_only_the_reference_pressure(self):
+        """GM-79. Dry sand, mid-layer sigma'v 186.4 kPa: Jaky K0 0.455
+        gives the reference pressure 118.7 kPa; the column's own
+        horizontal stress after gravity is nu / (1 - nu) = 0.429 of the
+        vertical (measured 0.4286 in OpenSees), a mean stress of 115.4
+        kPa, so its Vs at mid-layer is (115.4 / 118.7)^0.25 - 1 = -0.7 %
+        off the layer's."""
+        c = _choices([SAND33])["layers[0] (sand) K0 and reference pressure"]
+        assert c["chosen"] == "K0 0.455: reference pressure 118.7 kPa"
+        assert c["how"] == "default" and c["basis"].startswith("Jaky")
+        assert "(0.429 at Poisson's ratio 0.3)" in c["basis"]
+        assert "115.4 kPa" in c["basis"] and "-0.7 %" in c["basis"]
+        assert "nu = K0 / (1 + K0) (0.313)" in c["alternatives"][1]
+        c = _choices([dict(SAND33, K0=0.5)])[
+            "layers[0] (sand) K0 and reference pressure"]
+        assert c["how"] == "given" and c["chosen"].startswith("K0 0.500")
+
+    def test_phase_transformation_void_ratio_surfaces_permeability(self):
+        ch = _choices([dict(SAND33, phi=24.0)])
+        c = ch["layers[0] (sand) phase transformation angle"]
+        assert c["chosen"] == "24 deg" and c["how"] == "default"
+        assert "26 capped at phi" in c["basis"]
+        c = ch["layers[0] (sand) void ratio"]
+        assert c["chosen"] == 0.77 and "Dr = 40 %" in c["basis"]
+        assert ch["layers[0] (sand) yield surfaces"]["chosen"] == 20
+        c = ch["layers[0] (sand) permeability"]
+        assert c["chosen"] == ("0.0001 m/s (the element takes k / (rho_f g) "
+                               "= 1.02e-05)")
+        assert c["how"] == "default" and "1e-3 to 1e-1 cm/s" in c["basis"]
+        ch = _choices([dict(CLAY60, permeability=1e-9, e_init=1.1,
+                            n_surf=25)])
+        assert ch["layers[0] (clay) void ratio"]["chosen"] == 1.1
+        assert ch["layers[0] (clay) yield surfaces"]["chosen"] == 25
+        c = ch["layers[0] (clay) permeability"]
+        assert c["how"] == "given" and c["chosen"].startswith("1e-09 m/s")
+        assert "layers[0] (clay) phase transformation angle" not in ch
+        # a fitted curve's pairs set the surfaces; a clay's reference
+        # pressure is reported only where a curve is evaluated at it
+        ch = _choices([dict(CLAY60, curve="darendeli")])
+        c = ch["layers[0] (clay) yield surfaces"]
+        assert c["how"] == "module" and 2 < c["chosen"] <= 31
+        c = ch["layers[0] (clay) reference pressure"]
+        assert c["chosen"].startswith("0.67 sigma'v")
+        assert "layers[0] (clay) reference pressure" not in _choices([CLAY60])
 
     def test_layer_inputs_a_call_did_not_get_from_the_user_are_assumed(self):
         """GM-180: a nested value reads 'assumed' when the call says its

@@ -22,8 +22,8 @@ import numpy as np
 from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp  # kept for backward compat
 from sheet_pile.cantilever import (
     WallSoilLayer, _get_soil_at_depth, _cumulative_stress,
-    _cumulative_stress_passive, _effective_gamma, _compute_Ka_Kp,
-    _with_log_spiral_source, _log_spiral_choices,
+    _cumulative_stress_passive, _effective_gamma, _layer_Ka_Kp,
+    _with_log_spiral_source, _log_spiral_choices, smooth_where_left_out,
 )
 from geotech_common.water import GAMMA_W
 
@@ -215,7 +215,7 @@ def analyze_anchored(
             arm = z - anchor_depth  # moment arm from anchor
 
             layer = _get_soil_at_depth(z, soil_layers)
-            Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
+            Ka, Kp = _layer_Ka_Kp(layer, pressure_method)
 
             if z <= H:
                 sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -282,7 +282,7 @@ def analyze_anchored(
     for i in range(n_points):
         z = (i + 0.5) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
+        Ka, Kp = _layer_Ka_Kp(layer, pressure_method)
 
         if z <= H:
             sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
@@ -326,7 +326,7 @@ def analyze_anchored(
         z = (i + 0.5) * dz
         z_end = (i + 1) * dz
         layer = _get_soil_at_depth(z, soil_layers)
-        Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
+        Ka, Kp = _layer_Ka_Kp(layer, pressure_method)
 
         pp_reduced = 0.0
         water = 0.0
@@ -360,6 +360,14 @@ def analyze_anchored(
             max_moment_depth = z
         profile.append([z, pa, pp_reduced, water, net_p, shear, moment])
 
+    # the embedment with no wall friction where it was left out (GM-242),
+    # for the wall friction choice
+    smooth = smooth_where_left_out(soil_layers, pressure_method)
+    smooth_D = None if smooth is None else analyze_anchored(
+        H, anchor_depth, smooth, gwt_depth_active, gwt_depth_passive,
+        surcharge, FOS_passive, gamma_w, "log_spiral",
+        pressure_method.split(":", 1)[1]).embedment_depth
+
     return AnchoredWallResult(
         embedment_depth=D_design,
         total_wall_length=total_wall,
@@ -371,5 +379,6 @@ def analyze_anchored(
         FOS_passive=FOS_passive,
         profile=profile,
         choices=_log_spiral_choices(pressure_method, soil_layers, H,
-                                    tied_back=True),
+                                    tied_back=True,
+                                    smooth_embedment=smooth_D),
     )

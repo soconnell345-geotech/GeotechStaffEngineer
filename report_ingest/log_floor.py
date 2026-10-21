@@ -115,6 +115,10 @@ _USCS = re.compile(
     r"\b((?:GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT)"
     r"(?:-(?:GW|GP|GM|GC|SW|SP|SM|SC|ML|CL|OL|MH|CH|OH|PT|ML))?)\b")
 _N_VALUE = re.compile(r"\bN\s*[=:]\s*(\d+)\b")
+#: An N the log prints as words or a bound, not a whole number: ">50",
+#: "50+", "R", "Refusal". Kept as printed in ``SPT.n_printed`` (RI-30).
+_N_PRINTED = re.compile(
+    r"\bN\s*[=:]\s*(>\s*\d+|\d+\s*\+|REF(?:USAL)?|R)(?![\w])", re.I)
 _INTERVAL = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$")
 _PAREN = re.compile(r"\(([^)]{1,14})\)")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -318,9 +322,30 @@ class _Group:
             self.cells.append(cell)
 
 
+def _drawn_box(group: _Group, boxes: Sequence[Any]) -> Any:
+    """The sample box ``log_grid`` drew round this group's rows, or None.
+
+    A box holds the group when its interval, widened by its own
+    uncertainty, takes every row's depth on a sheet the box is on; the
+    narrowest such box wins. A grid with no ``samples`` (an older planlens,
+    or a form that draws none) leaves the rows as they were.
+    """
+    best, best_span = None, None
+    for box in boxes:
+        pages = set(getattr(box, "pages", ()) or ()) | {getattr(box, "page", None)}
+        tol = float(getattr(box, "plus_minus", None) or 0.05)
+        if all(c.page in pages
+               and float(box.top) - tol <= float(c.depth) <= float(box.bottom) + tol
+               for c in group.cells):
+            span = float(box.bottom) - float(box.top)
+            if best is None or span < best_span:
+                best, best_span = box, span
+    return best
+
+
 def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
-                 template_note: str = ""
+                 template_note: str = "", drawn: Any = None
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
     top = min(float(c.depth) for c in group.cells)
     bottom: Optional[float] = None
@@ -329,6 +354,7 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     blows: List[Any] = []
     n: Optional[int] = None
     refusal = False
+    n_printed = ""
     values: Dict[str, Any] = {}
     units: Dict[str, str] = {}
     texts: List[str] = []
@@ -386,6 +412,12 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if match and ("blows" in names or "n_value" in names
                       or "sample_id" in names):
             n = int(match.group(1))
+            continue
+        printed = _N_PRINTED.search(text)
+        if printed and ("blows" in names or "n_value" in names
+                        or "sample_id" in names):
+            n_printed = re.sub(r"\s+", "", printed.group(1))
+            refusal = True
             continue
         tokens = _blow_tokens(text) if ("blows" in names or "n_value" in names
                                         or "sample_id" in names) else []
@@ -463,12 +495,27 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         kind = "spt"
     anchor = blow_cell or group.cells[0]
     page = int(anchor.page)
+    drawn_note = ""
+    if drawn is not None:
+        # The sample's box, drawn against the depth scale (planlens
+        # log_grid, PL-24). An interval the log PRINTS as numbers stays; the
+        # drawn box seats the rows that print none.
+        if bottom is None:
+            top, bottom = float(drawn.top), float(drawn.bottom)
+            pm = getattr(drawn, "plus_minus", None)
+            drawn_note = ("; interval from the sample box drawn on the log"
+                          + (f" (+/- {float(pm):.3g} {unit})".rstrip()
+                             if pm else ""))
+        label = str(getattr(drawn, "label", "") or "").strip()
+        if label and not sample_id:
+            sample_id = label
+            drawn_note += "; sample id from the drawn box"
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
         note=("seeded from the grid rows"
               + (f" ({template_note})" if template_note else "") + ": "
-              + "; ".join(t for t in texts if t)[:160]))
+              + "; ".join(t for t in texts if t)[:160] + drawn_note))
     sample = Sample(
         sample_id=sample_id, top=_q(top, unit), bottom=_q(bottom, unit),
         kind=kind,  # type: ignore[arg-type]
@@ -486,9 +533,10 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         pocket_pen=_q(values.get("pocket_pen"), units.get("pocket_pen", "")),
         prov=prov)
     spt = None
-    if blows or n is not None:
+    if blows or n is not None or n_printed:
         spt = SPT(depth_top=_q(top, unit), depth_bottom=_q(bottom, unit),
-                  blows=blows, n=n, refusal=refusal, sample_id=sample_id,
+                  blows=blows, n=n, n_printed=n_printed, refusal=refusal,
+                  sample_id=sample_id,
                   prov=prov.model_copy(deep=True))
     return sample, spt
 
@@ -989,9 +1037,13 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                 home.add(cell)
             else:
                 groups.append(_Group(cell))
+        boxes = list(getattr(grid, "samples", None) or [])
         for group in groups:
+            drawn = _drawn_box(group, boxes)
+            if drawn is not None:
+                boxes.remove(drawn)
             sample, drive = _seed_sample(group, grid, unit, confidence_floor,
-                                         by_column, template_note)
+                                         by_column, template_note, drawn)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:
@@ -1156,6 +1208,15 @@ def _same_blows(a: Sequence[Any], b: Sequence[Any]) -> Optional[bool]:
     return all(abs(x - y) <= 1e-9 for x, y in zip(left, right))
 
 
+def _same_drives(a: Sequence[Any], b: Sequence[Any]) -> Optional[bool]:
+    """Per-drive lengths agree: same count, each within 4 mm."""
+    if not a or not b:
+        return None
+    if len(a) != len(b):
+        return False
+    return all(same_depth(x, y, 0.004) is not False for x, y in zip(a, b))
+
+
 class _Merger:
     """Folds one model investigation onto one floor investigation."""
 
@@ -1247,6 +1308,8 @@ class _Merger:
                         else fold(fv) == fold(mv))
             elif kind == "blows":
                 same = _same_blows(fv, mv)
+            elif kind == "drives":
+                same = _same_drives(fv, mv)
             elif kind == "kind":
                 # The floor's sampler is a guess from a type code and the
                 # model's from the symbol; 'other' on either side is not an
@@ -1263,10 +1326,10 @@ class _Merger:
                 continue
             else:
                 same = None
-            if kind == "blows" and (not fv and not mv):
+            if kind in ("blows", "drives") and (not fv and not mv):
                 setattr(merged, name, [])
                 continue
-            if kind == "blows":
+            if kind in ("blows", "drives"):
                 fv = fv or None
                 mv = mv or None
             if kind in ("text", "exact_text"):
@@ -1279,8 +1342,9 @@ class _Merger:
                 value = "other"
             if kind == "when" and value is None:
                 value = "unknown"
-            if kind in ("text", "exact_text", "blows") and value is None:
-                value = "" if kind != "blows" else []
+            if (kind in ("text", "exact_text", "blows", "drives")
+                    and value is None):
+                value = "" if kind in ("text", "exact_text") else []
             if isinstance(value, Quantity):
                 value = value.model_copy(deep=True)
                 if value.prov is None:
@@ -1370,7 +1434,8 @@ class _Merger:
             out.append(self.merge_pair(
                 f"{base}[{show(f.depth_top)}]", what, f, m,
                 specs=[("depth_bottom", "depth"), ("blows", "blows"),
-                       ("n", "exact"), ("refusal", "flag"),
+                       ("n", "exact"), ("n_printed", "exact_text"),
+                       ("increments", "drives"), ("refusal", "flag"),
                        ("sample_id", "exact_text"),
                        ("depth_top", "depth")],
                 model_only=["hammer", "increment"]))

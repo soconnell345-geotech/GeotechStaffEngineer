@@ -397,7 +397,7 @@ def closest_api_inputs():
     pressure. K0 0.47 / 0.40 (the example's elastic nu / (1 - nu)) only
     places that reference pressure. Friction angles, densities, void
     ratios (0.77; 0.47 dense), water table 2 m, rock 700 m/s and 2.5 Mg/m3,
-    permeability 1e-4 m/s and the 20 yield surfaces map exactly; damping
+    the permeability and the 20 yield surfaces map exactly; damping
     is the example's Rayleigh ratio at the module's site frequency
     (0.40 % at 1.77 Hz). What it cannot set is listed under
     ``run_free_field_effective(module_inputs=True)``, plus the slope (the
@@ -406,6 +406,12 @@ def closest_api_inputs():
     GM-85 (1 m/s through gravity, then 1e-4 m/s through element
     parameters); until then the module ran gravity at 1e-4 m/s and its
     elastoplastic gravity stage failed on this column.
+
+    Permeability: the example passes its "1e-4 m/s" to the element as it
+    is, and the u-p element takes a hydraulic conductivity divided by the
+    unit weight of water (``site_response.element_permeability``; GM-79),
+    so the example's sand has k = 1e-4 x 9.81 = 9.81e-4 m/s. That is what
+    the module is given, so its element gets the example's 1e-4.
     """
     from opensees_agent.site_response import _sigma_v_eff
     from opensees_agent.tests.opensees_wiki_free_field import rayleigh_ratio
@@ -417,7 +423,8 @@ def closest_api_inputs():
         for _ in range(int(round(H / 2.0))):
             layers.append({"thickness": 2.0, "density": rho,
                            "material_type": "sand", "phi": phi,
-                           "e_init": e0, "K0": K0, "Vs": 1.0})
+                           "e_init": e0, "K0": K0, "Vs": 1.0,
+                           "permeability": 1.0e-4 * G_ACCEL})
             gr.append(Gr)
     top = 0.0
     for L, Gr in zip(layers, gr):

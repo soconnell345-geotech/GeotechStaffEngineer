@@ -1705,5 +1705,219 @@
       "BACKLOG.md OWN-80, INF-39, INF-26",
       "the AI FDE's handoff 2026-10-20 (local only)"
     ]
-  }
+  },
+ "OWN-81": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Drilled shafts in rock: resistance factor for side resistance, 0.50 or 0.55?",
+  "why": "GEC-10 (2018) gives two values for the same thing: Table 8-4 (p. 8-14) prints 0.50 for side resistance in rock, the chapter text on p. 10-21 says 0.55. The factored side resistance differs by 10 %.",
+  "background": "The tool now follows GEC-10 (2018) as printed elsewhere: side factor C = 1.0 by default (Eq. 10-21), base 2.5 qu only where the rock below meets the three conditions of p. 10-22. It uses Table 8-4's 0.50 and shows 0.55 as the alternative in its choices.",
+  "parts": [
+   {
+    "label": "The factor",
+    "options": [
+     {
+      "label": "Keep 0.50 (Table 8-4)",
+      "effect": "No change; the table's value, the lower one; 0.55 shown beside it."
+     },
+     {
+      "label": "Use 0.55 (the chapter text)",
+      "effect": "Factored side resistance in rock up 10 %; 0.50 shown beside it."
+     },
+     {
+      "label": "Ask on every rock socket",
+      "effect": "The tool refuses a rock socket with no factor stated."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Keep 0.50: it is the table the manual's LRFD chapter prints, it is the lower of the two, and the result shows 0.55 beside it.",
+  "if_no_answer": "0.50 stays, with 0.55 shown as the alternative.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-81, GM-244",
+   "GEC-10 (2018) Table 8-4 p. 8-14, p. 10-21"
+  ]
+ },
+ "OWN-82": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Passive wall friction when the user gives none: confirm three tool defaults",
+  "why": "Passive wall friction raises Kp a lot, and with it shortens embedment: a 4 m cantilever sheet pile in sand needs 5.06 m with 17 deg wall friction and 7.21 m with none. The manuals do not agree on when to take it, so each tool states its default and shows the other numbers, and you decide which default stands.",
+  "background": "UFC 3-220-20 Fig. 4-37 step 1 (p. 237): passive pressures for clean coarse-grained soils include wall friction (Table 4-1); for other soils, ignore it. EM 1110-2-2504 (p. 4-3) and the USS manual (pp. 23, 29) use Table 4-1's delta with Coulomb. Caltrans pp. 4-16/4-28 say to avoid Rankine where wall friction develops, yet its soldier-pile examples use Rankine with delta = 0.",
+  "parts": [
+   {
+    "label": "(a) Sheet piles, log-spiral, a layer without cohesion and no row named",
+    "options": [
+     {
+      "label": "Keep 17 deg for every such layer",
+      "effect": "No change; silty sand and silt also get clean sand's 17 deg."
+     },
+     {
+      "label": "17 deg only where the user marks clean sand or gravel, else 0",
+      "effect": "Follows UFC's 'clean coarse grained' wording; silty layers get Rankine's Kp and say so."
+     },
+     {
+      "label": "Ask for the row every time",
+      "effect": "The tool refuses a log-spiral sheet pile with no row named."
+     }
+    ]
+   },
+   {
+    "label": "(b) Sheet piles, Coulomb, no wall friction given",
+    "options": [
+     {
+      "label": "Keep delta = 0",
+      "effect": "No change; the result shows the table-delta numbers beside it."
+     },
+     {
+      "label": "Take Table 4-1's delta, as EM 2504 and USS do",
+      "effect": "Coulomb Kp up and embedment down for sands, matching the Corps and USS."
+     }
+    ]
+   },
+   {
+    "label": "(c) Support of excavation, passive theory by default",
+    "options": [
+     {
+      "label": "Keep Rankine",
+      "effect": "No change; matches Caltrans' own examples (delta = 0)."
+     },
+     {
+      "label": "Log-spiral with a stated wall friction",
+      "effect": "Shorter embedment; needs a delta default too."
+     }
+    ]
+   },
+   {
+    "label": "(d) The coefficient tool, 1948 log-spiral chart, no wall friction given",
+    "options": [
+     {
+      "label": "Refuse and ask for delta (now)",
+      "effect": "Caltrans p. 4-29 begins 'Given delta, beta, and phi' and prints no default; the tool names delta_deg and shows Kp at delta = 0."
+     },
+     {
+      "label": "Take delta = phi'/2 and say so",
+      "effect": "NHI-06-089 p. 10-17 gives phi'/2 as the maximum passive wall friction suggested for design; Kp is lower than the old delta = phi."
+     }
+    ]
+   }
+  ],
+  "recommendation": "(a) 17 deg only for layers marked clean sand or gravel, else 0 and say so; (b) take the table's delta as EM 2504 and USS do; (c) keep Rankine. (d) refuse, as now; NHI's phi'/2 is a fair stated default if refusals get in the way.",
+  "if_no_answer": "The defaults stay as now (17 deg for any layer without cohesion under log-spiral, 0 under Coulomb, Rankine for soe), each stated in the result with the alternatives' numbers. The coefficient tool keeps refusing a 1948-chart Kp with no delta.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-82, GM-242",
+   "UFC 3-220-20 Fig. 4-37 p. 237, Table 4-1 p. 184",
+   "EM 1110-2-2504 p. 4-3",
+   "Caltrans T&S pp. 4-16, 4-28, 4-29",
+   "NHI-06-089 p. 10-17"
+  ]
+ },
+ "OWN-83": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Downdrag: a clay's alpha when none is given, UFC's chart or 1.0?",
+  "why": "The alpha a clay takes sets both the drag above the neutral plane and the resistance below it. A chart value below 1.0 on a stiff clay lowers the drag force a lot (a soft-over-stiff case 1,148 -> 789 kN), and UFC itself notes that a higher alpha is conservative for drag.",
+  "background": "UFC 3-220-20's drag procedure (Sec. 6-7.4, p. 476) and GEC-12's (Sec. 7.3.6.1, p. 342) name no alpha chart. UFC's alpha method (Sec. 6-5.4.2, pp. 414-417) gives Table 6-16 (soft clay, alpha 1), Fig. 6-14 for firm to very stiff clay, and Eq. 6-9 for the top ten pile widths of a stiff clay under soft clay. UFC's own drag example (App. B-5.4, p. 636) uses those values; with them the tool now reproduces its printed 52 ft and 133 kips (it gave 56.6 ft and 224 kips with alpha 1.0).",
+  "parts": [
+   {
+    "label": "Default alpha for a clay in a downdrag run",
+    "options": [
+     {
+      "label": "UFC's chart and transition zone (now)",
+      "effect": "Follows UFC's method and reproduces its drag example; stiff clays carry less drag; the result states each alpha and its source."
+     },
+     {
+      "label": "Alpha 1.0, the chart's value shown beside it",
+      "effect": "The conservative drag UFC p. 476 mentions; the example's printed numbers are not reproduced by default."
+     },
+     {
+      "label": "Ask the user every time",
+      "effect": "The tool refuses a clay layer with no alpha and names both choices."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Keep UFC's chart, which is UFC's own method and example, and show the drag at alpha 1.0 beside it in the result.",
+  "if_no_answer": "The default stays UFC's chart with the transition zone; a given alpha is always kept.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-83, GM-255",
+   "UFC 3-220-20 pp. 414-417, 476, 636",
+   "GEC-12 pp. 246, 248, 342"
+  ]
+ },
+ "OWN-84": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Drilled shafts: a base in rock with no RQD given",
+  "why": "GEC-10 gives the larger rock base (2.5 qu, Eq. 10-23) only where the rock below the base meets three conditions (p. 10-22). The tool takes a rock layer's RQD as 100 when none is given, so a base in rock with no RQD is treated as meeting them. On one probe that is 89,722 kN against 47,378 kN by the Hoek-Brown base for fractured rock.",
+  "background": "GEC-10 (2018) p. 10-22 lists the conditions for Eq. 10-23; Eqs. 10-24 to 10-29 (pp. 10-23/10-24) give the base where they are not met, from GSI and m_i. Since GM-244 and GM-251 the tool takes Eq. 10-23 where every rock layer within one diameter below the base has RQD 100 or the call says `rock_base_conditions_met`, and the Hoek-Brown base otherwise. The RQD default of 100 is listed in the result's defaults_used.",
+  "parts": [
+   {
+    "label": "Rock at the base, no RQD and no conditions flag given",
+    "options": [
+     {
+      "label": "Keep RQD 100 by default (now)",
+      "effect": "Eq. 10-23 is taken; the default is stated in the result."
+     },
+     {
+      "label": "Refuse and ask",
+      "effect": "The tool names RQD, rock_base_conditions_met and GSI/m_i; nothing is assumed about the rock below the base."
+     },
+     {
+      "label": "Hoek-Brown where GSI and m_i are given",
+      "effect": "The smaller base unless the conditions are stated; still RQD 100 where GSI is not given."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Refuse and name the three inputs: the base can nearly double on this one input, and p. 10-22's conditions are a finding about the rock, not a default.",
+  "if_no_answer": "RQD stays 100 by default and Eq. 10-23 is taken, stated in defaults_used and choices.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-84, GM-251, GM-244",
+   "GEC-10 (2018) pp. 10-22 to 10-24, Table 8-4 p. 8-14"
+  ]
+ },
+ "OWN-85": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "MSE walls: backfill with Cu below 4 and no tested pullout factor",
+  "why": "The empirical pullout resistance factor F* is only accepted for the standard select backfill. For other fill the manual says pullout tests must be run, but the tool still gives a number from the empirical F*.",
+  "background": "GEC-11 Vol I Table 3-6 note (i) (p. 3-17): the empirical F* holds provided granular reinforced fill as specified in Table 3-1 is used and Cu >= 4; \"For fill outside these limits, tests must be run.\" The tool now takes a tested F* (F_star_tested). With Cu below 4 and none given, it computes the empirical F* and flags the fill as outside note (i).",
+  "parts": [
+   {
+    "label": "Cu below 4 with no tested F*",
+    "options": [
+     {
+      "label": "Compute and flag (now)",
+      "effect": "A number comes back with a note that the fill is outside note (i)."
+     },
+     {
+      "label": "Refuse and ask for F_star_tested",
+      "effect": "Follows 'tests must be run'; the user gives the tested F* or a Cu of 4 or more."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Refuse and ask for F_star_tested, now that the tool can take it.",
+  "if_no_answer": "The tool keeps computing the empirical F* for Cu below 4 and flags it.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-85, GM-256, GM-246",
+   "GEC-11 Vol I p. 3-17 (Table 3-6 note (i)), p. 3-20"
+  ]
+ }
 }

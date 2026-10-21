@@ -93,8 +93,8 @@ class TestTheSummaryPage:
     def test_every_answered_question_appears_with_its_pages(self, record):
         text = summary_markdown(record)
 
-        assert "| `boringCount` | 1 | p4 |" in text
-        assert "| `siteClass` | Site Class D | p4 |" in text
+        assert "| `boringCount` | 1 | p5 |" in text
+        assert "| `siteClass` | Site Class D | p5 |" in text
         assert "## The general questions" in text
         assert "## The natural-hazard questions" in text
 
@@ -356,7 +356,7 @@ class TestReportsBoundInsideThisOne:
         text = summary_markdown(self._child_record())
 
         assert "bound inside another one (`SYN`)" in text
-        assert "at pages 15-18 of that file" in text
+        assert "at pages 16-19 of that file" in text
         assert "Every page number below is a page of that same file" in text
 
     def test_the_child_gets_its_own_key_off_the_same_file(self, tmp_path):
@@ -455,7 +455,7 @@ class TestTheCalculationsSection:
         assert "shallow foundation bearing" in text
         assert "SLOPEWORKS 8.1" in text
         assert "strip footing on new fill" in text
-        assert "p371-373" in text and "p555" in text
+        assert "p372-374" in text and "p556" in text
 
     def test_only_the_first_three_results_are_printed(self):
         """A printout states dozens; the summary is for somebody deciding

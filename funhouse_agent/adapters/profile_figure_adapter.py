@@ -32,6 +32,18 @@ _VALID = {
 }
 
 
+def _image_name(path: str) -> str:
+    """``path`` as an image file name: one already ending .png, .jpg or
+    .jpeg is kept; a document extension (.html, .pdf, .svg) is replaced, not
+    stacked (``plot.html`` made ``plot.html.png``; REF-02)."""
+    if path.lower().endswith((".png", ".jpg", ".jpeg")):
+        return path
+    root, ext = os.path.splitext(path)
+    if ext.lower() in (".html", ".htm", ".pdf", ".svg", ".json"):
+        path = root
+    return path + ".png"
+
+
 def _default_output_path() -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return os.path.join(default_output_dir(), f"subsurface_profile_{ts}.png")
@@ -110,8 +122,7 @@ def _run_subsurface_profile(params: dict) -> dict:
 
     output_path = params.get("output_path") or _default_output_path()
     output_path = resolve_output_path(str(output_path))
-    if not output_path.lower().endswith((".png", ".jpg", ".jpeg")):
-        output_path += ".png"
+    output_path = _image_name(output_path)
 
     # Render in memory, then write through save_verified so a /Workspace
     # target goes via the durable Databricks workspace API and every write is
@@ -561,6 +572,22 @@ def _default_plot_path() -> str:
 _PLOT_ALIASES = {"x_label": "xlabel", "y_label": "ylabel"}
 
 
+#: The length units the scale bar is written in (GM-205); the bar's
+#: length is in the data's own units, so the unit is only its label.
+SCALE_UNITS = ("m", "km", "cm", "mm", "ft", "in", "yd", "mi")
+
+
+def _scale_units(value) -> str:
+    """``scale_units`` as one of ``SCALE_UNITS``, else refused by name."""
+    if value is None or value == "":
+        return "m"
+    if isinstance(value, str) and value.strip().lower() in SCALE_UNITS:
+        return value.strip().lower()
+    raise ValueError(
+        f"plot_data: scale_units {value!r} is not a length unit the scale "
+        f"bar is written in; use one of {', '.join(SCALE_UNITS)}.")
+
+
 def _run_plot_data(params: dict) -> dict:
     from profile_figure import render_data_plot
 
@@ -579,6 +606,7 @@ def _run_plot_data(params: dict) -> dict:
                 check_nested_keys(spec, _REF_LINE_KEYS, method="plot_data",
                                   label=f"{key}[{i}]", hints=_KEY_HINTS)
 
+    _scale_units(params.get("scale_units"))
     n_added, chart_said = 0, None
     if params.get("reference_chart"):
         params, n_added, chart_said = _reference_overlay(params)
@@ -592,8 +620,7 @@ def _run_plot_data(params: dict) -> dict:
 
     output_path = params.get("output_path") or _default_plot_path()
     output_path = resolve_output_path(str(output_path))
-    if not output_path.lower().endswith((".png", ".jpg", ".jpeg")):
-        output_path += ".png"
+    output_path = _image_name(output_path)
 
     try:
         result = render_data_plot(
@@ -618,7 +645,7 @@ def _run_plot_data(params: dict) -> dict:
             legend_position=params.get("legend_position"),
             plan_view=bool(params.get("plan_view", False)),
             north_deg=params.get("north_deg"),
-            scale_units=str(params.get("scale_units") or "m"),
+            scale_units=_scale_units(params.get("scale_units")),
             x_on_top=bool(params.get("x_on_top", False)),
             annotations=params.get("annotations"),
         )
@@ -918,7 +945,8 @@ METHOD_INFO = {
                     "project's other plans) shows it. Not given: drawn "
                     "straight up, and the result says so.")},
             "scale_units": {"type": "str", "required": False, "default": "m",
-                            "description": "Units written on the scale bar."},
+                            "description": "Length unit written on the scale bar: "
+                                           + ", ".join(SCALE_UNITS) + "."},
             "xlim": {"type": "array", "required": False,
                      "description": ("[start, end] of the x axis, kept in the "
                                      "order given: [100, 0.001] runs it from "

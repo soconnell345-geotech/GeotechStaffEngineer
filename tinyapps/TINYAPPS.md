@@ -275,7 +275,7 @@ budget returns).
 - `webapp/core.register_thread_root` — per-user, per-page conversation roots
   looked up by thread id (the detached worker needs no session).
 - Document OUTPUT (Opus build, same night): `write_docx` (Markdown → Word,
-  `calc_package/docx_renderer.py`, python-docx) and `annotate_document`
+  `funhouse_agent/docx_renderer.py`, python-docx) and `annotate_document`
   (planlens `markup_writer` + toolkit tool + app bridge: notes, highlights,
   boxes, callouts, replies onto a COPY of the PDF, readable back by planlens'
   own `markups()`).

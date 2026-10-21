@@ -32,6 +32,9 @@ _WALL_ALIASES = {"phi": "phi_backfill", "gamma": "gamma_backfill",
 # not alias c/cohesion to c_backfill (the reject message would name a key the
 # caller never sent).
 _MSE_ALIASES = {k: v for k, v in _WALL_ALIASES.items() if v != "c_backfill"}
+# mse_wall alone takes the backfill's uniformity coefficient (GM-246)
+_MSE_WALL_ALIASES = {**_MSE_ALIASES, "Cu": "Cu_backfill",
+                     "uniformity_coefficient": "Cu_backfill"}
 
 _REINFORCEMENT_DB = {
     "ribbed_steel_strip_75x4": RIBBED_STEEL_STRIP_75x4,
@@ -105,7 +108,9 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
          "gamma_concrete", "FOS_sliding_required", "FOS_overturning_required",
          "pressure_method", "include_passive", "gamma_foundation",
          "delta_base", "base_adhesion", "live_load_resists",
-         "dead_load_resists", "surcharge_in_bearing", "sliding_cohesion"),
+         "dead_load_resists", "surcharge_in_bearing", "sliding_cohesion",
+         "passive_theory", "log_spiral_source",
+         "passive_wall_friction_deg"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -146,6 +151,12 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         "sliding_cohesion": (params.get("sliding_cohesion")
                              or default_sliding_cohesion(
                                  params.get("phi_foundation"))),
+        # GM-242: the passive coefficient in front of the wall
+        "passive_theory": PASSIVE_THEORY_ALIASES.get(
+            params.get("passive_theory", "rankine"),
+            params.get("passive_theory", "rankine")),
+        "log_spiral_source": params.get("log_spiral_source"),
+        "passive_wall_friction_deg": params.get("passive_wall_friction_deg"),
     }
     result = analyze_cantilever_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -164,6 +175,9 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         dead_load_resists=used["dead_load_resists"],
         surcharge_in_bearing=used["surcharge_in_bearing"],
         sliding_cohesion=used["sliding_cohesion"],
+        passive_theory=used["passive_theory"],
+        log_spiral_source=used["log_spiral_source"],
+        passive_wall_friction_deg=used["passive_wall_friction_deg"],
     )
     return result, used
 
@@ -204,6 +218,16 @@ def _run_cantilever_wall(params):
     if sl.get("Pp_kN_per_m"):
         # with include_passive: on the base, or over the key depth (GM-210)
         output["sliding_basis"]["Pp_kN_per_m"] = sl["Pp_kN_per_m"]
+    terms = result.sliding_terms
+    if terms.get("passive_theory"):
+        # the coefficient it took (GM-242)
+        output["sliding_basis"]["passive_theory"] = terms["passive_theory"]
+        output["sliding_basis"]["Kp"] = round(terms["Kp"], 4)
+        if terms["log_spiral_source"]:
+            output["sliding_basis"]["log_spiral_source"] = \
+                terms["log_spiral_source"]
+            output["sliding_basis"]["passive_wall_friction_deg"] = round(
+                terms["passive_delta"], 4)
     return output
 
 
@@ -213,7 +237,7 @@ def run_mse_wall(params, *, method="mse_wall"):
     in force are the geometry (``geom``), the reinforcement and each input
     given or defaulted, by the tool's names. ``method`` names the caller in
     error messages."""
-    params = apply_aliases(params, _MSE_ALIASES)
+    params = apply_aliases(params, _MSE_WALL_ALIASES)
     reject_unknown_params(
         params,
         ("wall_height", "reinforcement_length", "reinforcement_spacing",
@@ -225,7 +249,7 @@ def run_mse_wall(params, *, method="mse_wall"):
          "reinforcement_transverse_spacing",
          "phi_foundation", "c_foundation", "q_allowable",
          "phi_retained", "gamma_retained", "traffic_vertical_resists",
-         "live_load_resists", "surcharge_in_bearing"),
+         "live_load_resists", "surcharge_in_bearing", "Cu_backfill"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -252,6 +276,7 @@ def run_mse_wall(params, *, method="mse_wall"):
         "live_load_resists": bool(params.get("live_load_resists", False)),
         "surcharge_in_bearing": bool(params.get("surcharge_in_bearing",
                                                 True)),
+        "Cu_backfill": params.get("Cu_backfill"),
     }
     result = analyze_mse_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -263,6 +288,7 @@ def run_mse_wall(params, *, method="mse_wall"):
         traffic_vertical_resists=used["traffic_vertical_resists"],
         live_load_resists=used["live_load_resists"],
         surcharge_in_bearing=used["surcharge_in_bearing"],
+        Cu_backfill=used["Cu_backfill"],
     )
     return result, used
 
@@ -331,6 +357,20 @@ def _run_mse_lrfd_external_stability(params):
     return result
 
 
+#: Names of the log-spiral passive Kp a theory input also takes (GM-242):
+#: 'log_spiral' is the method's name in UFC 3-220-20 and the Caltrans
+#: The log-spiral passive theory of the wall's toe by its other names
+#: (GM-242): 'caquot_kerisel' is what earth_pressure_coefficient calls it.
+PASSIVE_THEORY_ALIASES = {"caquot_kerisel": "log_spiral",
+                          "logspiral": "log_spiral",
+                          "log-spiral": "log_spiral"}
+#: Trenching and Shoring Manual; 'caquot_kerisel' stays the name results
+#: give.
+LOG_SPIRAL_THEORY_ALIASES = {"log_spiral": "caquot_kerisel",
+                             "logspiral": "caquot_kerisel",
+                             "log-spiral": "caquot_kerisel"}
+_LOG_SPIRAL_THEORY = ["caquot_kerisel", "log_spiral"]
+
 _K_ALIASES = {"phi": "phi_deg", "friction_angle": "phi_deg",
               "phi_backfill": "phi_deg",
               "delta": "delta_deg", "wall_friction": "delta_deg",
@@ -346,7 +386,9 @@ def _log_spiral_kp(p, phi, beta, source):
     the wall friction it used and its ``choices``: the route the UFC
     3-220-20 default took by the wall's geometry, its equation or figure
     and page, and every other printed source's Kp for the same case; and
-    the wall friction, given or left out, as the engineer's call."""
+    the wall friction, given or left out, as the engineer's call, with the
+    Kp at delta = 0 beside it (GM-253). A left-out wall friction is
+    refused where the source prints none (GM-253)."""
     from geotech_common import log_spiral as _ls
     from geotech_common.choices import choice, how_given
     theta = p.get("theta_deg", 0.0) or 0.0
@@ -359,13 +401,22 @@ def _log_spiral_kp(p, phi, beta, source):
         if route == "dm7_2_eq_4_12":
             basis += ". " + _ls.EQ_VS_CHARTS_NOTE
     else:
+        if delta is None and phi <= 0:
+            delta = 0.0
+        if delta is None and source in _ls.LEVEL_FRONT_NEEDS_DELTA:
+            # the 1948 chart and Eq. 4-12 by name print no wall friction
+            # (Caltrans p. 4-29 begins 'Given delta'): refused, as soe and
+            # the wall toe refuse it (GM-242, GM-253); the geometry the
+            # source takes is checked first, at a trial delta = phi
+            _ls.log_spiral_Kp(phi, phi, beta, source=source, theta_deg=theta)
+            raise ValueError(_ls.LEVEL_FRONT_NEEDS_DELTA[source].format(
+                name="delta_deg"))
         K = _ls.log_spiral_Kp(phi, delta, beta, source=source,
                               theta_deg=theta)
         if delta is None:
-            # the 1948 chart's Kp at full wall friction, the UFC charts'
-            # at the one they are drawn for
-            delta = phi if source == "caquot_kerisel_1948" \
-                else _ls.DM_DELTA_RATIO * phi
+            # UFC Figs. 4-12 and 4-13 by name: the one wall friction they
+            # are drawn for
+            delta = _ls.DM_DELTA_RATIO * phi
         basis = _ls.SOURCE_BASIS[source]
     if "dm7_2_eq_4_12" in (source, route) and _ls.above_the_charts(phi,
                                                                    delta):
@@ -377,15 +428,54 @@ def _log_spiral_kp(p, phi, beta, source):
         _ls.other_sources(phi, delta, beta, theta,
                           used=(source, route)))]
     # the wall friction, given or left out: the same words either way, the
-    # value it took in defaults_used when left out
+    # value it took in defaults_used when left out, and the Kp with none
     chosen = f"{delta:.3g} deg" + (
         f" (delta/phi' {delta / phi:.2f})" if phi else "")
     choices.append(choice(
         "Wall friction delta (delta_deg)", chosen,
         how_given(p.get("delta_deg"), None, name="delta_deg",
                   took=round(delta, 4)),
-        _ls.wall_friction_note(source)))
+        _ls.wall_friction_note(source, left_out=(
+            "With phi' = 0 there is no wall friction (delta runs 0 to "
+            "phi')." if phi <= 0 else None)),
+        [_no_wall_friction(phi, beta, theta, source)] if delta else ()))
     return K, delta, theta, route, choices
+
+
+def _no_wall_friction(phi, beta, theta, source):
+    """The log-spiral Kp at delta = 0, as an alternative beside the wall
+    friction used (GM-253), from what prints one for the geometry: on level
+    ground before a vertical face Rankine's Kp, which UFC 3-220-20 Eq. 4-12
+    gives at delta = 0; on sloping ground the Caquot-Kerisel (1948) chart
+    with R from its delta/phi = 0 column (UFC Fig. 4-13 is drawn for 0.66
+    only); before a battered face Coulomb's Kp, as no log-spiral chart here
+    takes a battered face at delta = 0."""
+    from geotech_common import log_spiral as _ls
+    coulomb = ("FHWA NHI-06-089 p. 10-19 calls Coulomb's passive results "
+               "'unreliable ... for wall friction angle values greater than "
+               "phi'/3' and says 'If the angle of wall friction delta is "
+               "small, the failure surface is almost linear'")
+    if theta:
+        K = _ep.coulomb_Kp(phi, 0.0, 90.0 - theta, beta)
+        how = (f"Coulomb's (theory 'coulomb', alpha_deg {90.0 - theta:g} "
+               "= 90 - theta_deg): no log-spiral chart here gives a "
+               "battered face at delta = 0, and " + coulomb)
+    elif beta:
+        try:
+            K = _ls.caquot_kerisel_1948_Kp(phi, 0.0, beta_deg=beta)
+            how = ("the Caquot-Kerisel (1948) chart's, with R from its "
+                   "delta/phi = 0 column (Caltrans T&S Fig. 4-20, p. 4-30)")
+            if source != "caquot_kerisel_1948":
+                how += "; UFC 3-220-20 Fig. 4-13 is drawn for 0.66 only"
+        except ValueError:
+            K = _ep.coulomb_Kp(phi, 0.0, 90.0, beta)
+            how = ("Coulomb's (theory 'coulomb'): the case is off the 1948 "
+                   "chart and UFC Fig. 4-13 is drawn for 0.66 only, and "
+                   + coulomb)
+    else:
+        K = _ep.rankine_Kp(phi)
+        how = "Rankine's, which UFC 3-220-20 Eq. 4-12 gives at delta = 0"
+    return f"delta = 0 (no wall friction): Kp {K:.3g}, {how}"
 
 
 def _run_earth_pressure_coefficient(params):
@@ -406,13 +496,16 @@ def _run_earth_pressure_coefficient(params):
     reject_unknown_params(p, names, method="earth_pressure_coefficient")
     require_params(p, ["phi_deg"], method="earth_pressure_coefficient",
                    valid=list(names))
-    theory = p.get("theory", "rankine")
+    # 'log_spiral' names the same coefficient as 'caquot_kerisel' (GM-242)
+    theory = LOG_SPIRAL_THEORY_ALIASES.get(p.get("theory", "rankine"),
+                                           p.get("theory", "rankine"))
     state = p.get("state", "active")
     phi = p["phi_deg"]
     beta = p.get("beta_deg", 0.0)
     if theory not in ("rankine", "coulomb", "caquot_kerisel"):
         raise ValueError(f"Unknown theory '{theory}'. Allowed: "
-                         "['rankine', 'coulomb', 'caquot_kerisel'].")
+                         "['rankine', 'coulomb', 'caquot_kerisel', "
+                         "'log_spiral'].")
     if state not in ("active", "passive", "at_rest"):
         raise ValueError(f"Unknown state '{state}'. Allowed: ['active', 'passive', 'at_rest'].")
     _refuse_unused_k_inputs(p, theory, state)
@@ -433,7 +526,8 @@ def _run_earth_pressure_coefficient(params):
         # over-predict Kp at high wall friction delta/phi.
         if state != "passive":
             raise ValueError(
-                "theory 'caquot_kerisel' is a passive (Kp) log-spiral coefficient; "
+                "theory 'caquot_kerisel' ('log_spiral') is a passive (Kp) "
+                "log-spiral coefficient; "
                 "use state='passive' (it has no active/at-rest form).")
         K, ls_delta, theta, route, ls_choices = _log_spiral_kp(
             p, phi, beta, source)
@@ -519,7 +613,10 @@ _K0_SLOPE_BASIS = (
     "slopes upwards from the wall at beta <= phi' to the horizontal, "
     "K0;beta relates the horizontal component of the effective at-rest "
     "earth pressure to the effective overburden pressure, and the resulting "
-    "force is taken parallel to the ground surface. beta (beta_deg) is the "
+    "force is taken parallel to the ground surface. K0;beta times the "
+    "effective vertical stress is the horizontal earth pressure itself, "
+    "the resultant acts at beta to the horizontal, and no further cos beta "
+    "reduction applies. beta (beta_deg) is the "
     "slope of the ground rising away from the back of the wall, from the "
     "horizontal; Eq. 9.2 does not cover ground falling away from the wall. "
     "K0 is EN 1997-1 Eq. 9.1 (p. 104), (1 - sin phi') times the square "
@@ -723,31 +820,34 @@ METHOD_INFO = {
             "sliding_cohesion": {"type": "str", "required": False, "default_depends_on": {"parameter": "phi_foundation", "values": {0: "undrained"}, "otherwise": "drained"}, "allowed_values": ["drained", "undrained", "friction_plus_adhesion"], "description": "How the sliding check counts the foundation soil's cohesion, by the rule a reference prints. Default depends on phi_foundation: 'undrained' when phi_foundation is 0 (c_foundation is then cu), else 'drained'. 'drained': R = V tan delta_b, c_foundation NOT counted (GEC-6 Sec. 5.4 Eq. 5-38, p. 100: 'Equations 5-38 and 5-39 should not be combined for use at the same time'; EN 1997-1 6.5.3(10): 'Any effective cohesion c' should be neglected'). 'undrained': R = ca B alone, no friction, ca = c_foundation taken as the undrained shear strength cu, or base_adhesion (GEC-6 Eq. 5-39: 'ca is typically taken as equal to the undrained shear strength'). 'friction_plus_adhesion': R = V tan delta_b + Ca Be, Ca from UFC 3-220-20 Table 4-1 (p. 184) at c_foundation taken as the undrained shear strength (up to 191.5 kPa), or base_adhesion; Be = B - 2e, the effective base width (UFC 3-220-20 Fig. 4-27 and Sec. 4-5.1.3, p. 223, which adds that the minimum FS 'may also need to be increased when base adhesion is included'). The result's choices give the rule used, its basis and each other rule's FOS_sliding on the same wall."},
             "delta_base": {"type": "float", "required": False, "description": "Base interface friction angle delta_b (deg), used DIRECTLY in the sliding check with NO 2/3 factor. Overrides the (2/3)*phi_foundation default. delta_b = phi_foundation for concrete cast against the ground (GEC-6 Sec. 5.4, p. 99: tan delta 'will be equal to the tangent of the friction angle (tan phi) for the soil supporting the footing'). The result's choices state the delta_b used, its basis and the other reading. Refused with sliding_cohesion 'undrained', which counts no friction."},
             "base_adhesion": {"type": "float", "required": False, "description": "Base adhesion ca (kPa), used DIRECTLY with sliding_cohesion 'undrained' (in place of cu) or 'friction_plus_adhesion' (in place of the UFC 3-220-20 Table 4-1 value). Refused with 'drained', which counts no adhesion: give sliding_cohesion with it."},
-            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include Rankine passive resistance in front of the wall in the sliding check, with the soil in front taken up to the top of the base: on the base thickness, or with has_shear_key over the depth of the key only (from base_thickness to base_thickness + key_depth below that surface, UFC 3-220-20 Fig. 4-29)."},
+            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include passive resistance in front of the wall in the sliding check (Rankine's Kp unless passive_theory says otherwise; UFC 3-220-20 p. 219: 'typically ignored', and with it considered FSL >= 2.0, Fig. 4-27), with the soil in front taken up to the top of the base: on the base thickness, or with has_shear_key over the depth of the key only (from base_thickness to base_thickness + key_depth below that surface, UFC 3-220-20 Fig. 4-29)."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3) for passive resistance. Defaults to gamma_backfill."},
+            "passive_theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "log_spiral", "caquot_kerisel"], "description": "With include_passive, the passive coefficient in front of the wall: 'rankine' (default) = Rankine's Kp, no wall friction; 'log_spiral' (or 'caquot_kerisel', the same) = the log-spiral Kp of log_spiral_source at passive_wall_friction_deg. UFC 3-220-20 (Sec. 4-5.1, Figs. 4-27 and 4-29, pp. 219-224) names no theory for it; choices give the other theory's Kp and FOS_sliding and the FOS with no passive."},
+            "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With passive_theory 'log_spiral', the printed source of Kp, as earth_pressure_coefficient takes it: 'ufc_3_220_20' (default) = UFC 3-220-20 Eq. 4-12 (p. 191), its log-spiral Kp for a vertical face and level ground at any wall friction; 'caquot_kerisel_1948' = the Caltrans Trenching and Shoring Manual Fig. 4-20 chart, and 'dm7_2_eq_4_12' = UFC Eq. 4-12 by name, both needing passive_wall_friction_deg given; 'dm7_2_fig_4_12' / 'dm7_2_fig_4_13' = UFC's charts, drawn for delta/phi' 0.66 only."},
+            "passive_wall_friction_deg": {"type": "float", "required": False, "description": "With passive_theory 'log_spiral', the wall friction delta in front of the wall (deg), 0 to phi_foundation: the engineer's call (UFC 3-220-20 Table 4-1, p. 184). Left out: delta/phi' = 0.66 (UFC p. 191, 'a common assumption'); refused with 'caquot_kerisel_1948' or 'dm7_2_eq_4_12', which need it given (Caltrans p. 4-29: 'Given delta')."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check. Without it the bearing check is NOT RUN: FOS_bearing and passes_bearing are null and checks_not_run lists 'bearing' (q_toe / q_heel are still reported)."},
             "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
             "FOS_sliding_required": {"type": "float", "required": False, "default": 1.5, "description": "Required sliding FOS."},
             "FOS_overturning_required": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
-        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / the larger of q_toe and q_heel; null when the bearing check was not run.", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "eccentricity_m": "Eccentricity of the resultant on the loads the overturning check counts (the eccentricity check, middle third).", "eccentricity_bearing_m": "Present when it differs: the eccentricity on the bearing check's loads (the surcharge over the heel counted), which gives q_toe / q_heel.", "choices": "How the sliding check counted the foundation cohesion (sliding_cohesion, when there is cohesion or adhesion: the rule, its quoted basis and each other rule's FOS_sliding), the base friction delta_b it used (2/3 phi_f by default, or delta_base; none with the undrained rule), and how the surcharges over the heel were counted in sliding / overturning / eccentricity and in bearing; each with the basis and the other reading. Tell the user.", "geometry": "The geometry analysed, auto-sized parts included; wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: sliding_cohesion (the rule for the foundation cohesion), delta_base_deg (null with the undrained rule), base_adhesion_kPa (0 with the drained rule) and adhesion_width_m (B, or Be = B - 2e with friction_plus_adhesion; null with drained), driving/resisting forces, Pa and its vertical component + inclination, and with include_passive the passive resistance Pp_kN_per_m counted — verify these match your intended assumptions."},
+        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / the larger of q_toe and q_heel; null when the bearing check was not run.", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "eccentricity_m": "Eccentricity of the resultant on the loads the overturning check counts (the eccentricity check, middle third).", "eccentricity_bearing_m": "Present when it differs: the eccentricity on the bearing check's loads (the surcharge over the heel counted), which gives q_toe / q_heel.", "choices": "How the sliding check counted the foundation cohesion (sliding_cohesion, when there is cohesion or adhesion: the rule, its quoted basis and each other rule's FOS_sliding), the base friction delta_b it used (2/3 phi_f by default, or delta_base; none with the undrained rule), how the surcharges over the heel were counted in sliding / overturning / eccentricity and in bearing, and with include_passive the passive coefficient in front of the wall (passive_theory, with the other theory's and no passive's FOS_sliding; with 'log_spiral' its source and wall friction); each with the basis and the other reading. Tell the user.", "geometry": "The geometry analysed, auto-sized parts included; wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: sliding_cohesion (the rule for the foundation cohesion), delta_base_deg (null with the undrained rule), base_adhesion_kPa (0 with the drained rule) and adhesion_width_m (B, or Be = B - 2e with friction_plus_adhesion; null with drained), driving/resisting forces, Pa and its vertical component + inclination, and with include_passive the passive resistance Pp_kN_per_m counted, its passive_theory and Kp (with 'log_spiral' its log_spiral_source and passive_wall_friction_deg) — verify these match your intended assumptions."},
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",
         "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine, Coulomb, or the log-spiral passive Kp: by default UFC 3-220-20's Eq. 4-12, Fig. 4-12 or Fig. 4-13 by wall geometry, or the Caquot-Kerisel 1948 chart; K0 also behind sloping ground).",
         "parameters": {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
-            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses K0 = (1 - sin(phi)) sqrt(OCR) (EN 1997-1 Eq. 9.1; OCR 1 is Jaky's 1 - sin(phi)), and behind ground rising from the wall (beta_deg > 0) EN 1997-1 Eq. 9.2, K0 (1 + sin beta)."},
+            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel", "log_spiral"], "description": "Earth pressure theory. 'caquot_kerisel' or 'log_spiral' (the same) = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses K0 = (1 - sin(phi)) sqrt(OCR) (EN 1997-1 Eq. 9.1; OCR 1 is Jaky's 1 - sin(phi)), and behind ground rising from the wall (beta_deg > 0) EN 1997-1 Eq. 9.2, K0 (1 + sin beta)."},
             "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
-            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for) and delta = phi (full wall friction, R = 1) with 'caquot_kerisel_1948'; 'dm7_2_eq_4_12' needs it given. With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil); the result's choices give the delta used."},
+            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for); 'caquot_kerisel_1948' and 'dm7_2_eq_4_12' need it given and refuse a call without it (Caltrans T&S p. 4-29: 'Given delta, beta, and phi'). With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil; FHWA NHI-06-089 p. 10-17 suggests at most 1/2 phi' for passive); the result's choices give the delta used and the Kp at delta = 0."},
             "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (by default UFC 3-220-20 Fig. 4-13: a vertical face, beta/phi' -0.6 to +1 at delta/phi' 0.66; the Caquot-Kerisel 1948 chart, Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg, any wall friction; Eq. 4-12 and Fig. 4-12 are for level ground) and at_rest (EN 1997-1:2004 Eq. 9.2, p. 104: K0;beta = K0 (1 + sin beta), the horizontal component of the at-rest pressure, for ground sloping upwards from the wall at 0 < beta <= phi'; ground falling away is refused). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
             "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical; below 90 when the soil overhangs the face, as UFC 3-220-20 Fig. 4-7 draws a gravity wall's back, where its theta = 90 - alpha_deg is positive). Coulomb only; the others take a vertical back and refuse another value (the log-spiral Kp takes a battered face as theta_deg = 90 - alpha_deg). Alias: alpha."},
             "theta_deg": {"type": "float", "required": False, "default": 0.0, "description": "With theory 'caquot_kerisel' (passive): the wall face's angle from vertical (degrees), UFC 3-220-20's theta (Figs. 4-7, 4-12): positive when the face slopes down into the soil it bears on, so the soil overhangs it (Kp falls; Fig. 4-12 draws the toe of the face farther into the soil than its top), negative the other way (Kp rises); theta_deg = 90 - Coulomb's alpha_deg. A non-zero value reads UFC 3-220-20 Fig. 4-12 (p. 192): level ground only, theta -30 to +40 deg, delta/phi' 0.66 only, Kp up to 15. Alias: theta."},
             "OCR": {"type": "float", "required": False, "default": 1.0, "description": "Overconsolidation ratio for the at-rest K0 only (state 'at_rest'): EN 1997-1:2004 Sec. 9.5.2(3), Eq. 9.1 (p. 104), K0 = (1 - sin phi') x sqrt(OCR), then Eq. 9.2 behind sloping ground. 1 = normally consolidated (the default; the result's choices say whether it was given or taken as 1). At least 1. The standard says 'The formula should not be used for very high values of OCR' and prints no limit, so the choices quote that for OCR above 1 and leave the call to you. Aliases: ocr, overconsolidation_ratio. Refused with active or passive, which take none."},
-            "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for (pp. 191-193): Eq. 4-12 (p. 191) for a vertical face and level ground, at any wall friction; Fig. 4-12 (p. 192) for a battered face (theta_deg) with level ground and Fig. 4-13 (p. 193) for a vertical face with sloping ground (beta_deg), both drawn for delta/phi' = 0.66 only. UFC prints nothing for a battered face with sloping ground, nor for those two charts at another wall friction: the default refuses those and names what covers them. 'caquot_kerisel_1948': the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; a vertical wall, level or sloping ground, any wall friction. 'dm7_2_eq_4_12', 'dm7_2_fig_4_12', 'dm7_2_fig_4_13': each UFC source on its own. They differ: at phi 30, delta/phi 0.66 on level ground the 1948 chart gives 5.4, Figs. 4-12 and 4-13 5.3, Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The result's choices give the route taken and each other source's Kp."},
+            "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for (pp. 191-193): Eq. 4-12 (p. 191) for a vertical face and level ground, at any wall friction; Fig. 4-12 (p. 192) for a battered face (theta_deg) with level ground and Fig. 4-13 (p. 193) for a vertical face with sloping ground (beta_deg), both drawn for delta/phi' = 0.66 only. UFC prints nothing for a battered face with sloping ground, nor for those two charts at another wall friction: the default refuses those and names what covers them. 'caquot_kerisel_1948': the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; a vertical wall, level or sloping ground, any wall friction, given as delta_deg. 'dm7_2_eq_4_12', 'dm7_2_fig_4_12', 'dm7_2_fig_4_13': each UFC source on its own. They differ: at phi 30, delta/phi 0.66 on level ground the 1948 chart gives 5.4, Figs. 4-12 and 4-13 5.3, Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The result's choices give the route taken and each other source's Kp."},
         },
-        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground at OCR 1, 'en_1997_1_eq_9_1' on level ground at OCR above 1, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources, phi with the 1948 chart).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, or for at_rest the K0 equation (EN 1997-1 Eq. 9.1, with whether OCR was given or taken as 1, and Eq. 9.2 behind sloping ground) with its arithmetic, page and the sign of beta. Tell the user."},
+        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground at OCR 1, 'en_1997_1_eq_9_1' on level ground at OCR above 1, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources; the 1948 chart and Eq. 4-12 by name refuse it).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, and the wall friction used, given or left out, with the Kp at delta = 0 beside it; or for at_rest the K0 equation (EN 1997-1 Eq. 9.1, with whether OCR was given or taken as 1, and Eq. 9.2 behind sloping ground) with its arithmetic, page and the sign of beta. Tell the user."},
     },
     "mse_wall": {
         "category": "MSE Wall",
@@ -757,7 +857,8 @@ METHOD_INFO = {
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable."},
-            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 2.0->tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geosynthetic (Kr/Ka 1.0)."},
+            "Cu_backfill": {"type": "float", "required": False, "default": 4.0, "description": "Uniformity coefficient Cu = D60/D10 of the reinforced backfill, for the pullout resistance factor of ribbed steel strips: F* = 1.2 + log Cu at the top of the wall, 2.0 maximum, falling linearly to tan phi_backfill at 20 ft (6 m) and below (GEC-11 Vol I Eqs. 3-4 and 3-5, p. 3-20). Left out, Cu = 4 (F* 1.8 at the top): p. 3-20, 'If the specific Cu for the wall backfill is unknown at design time, a Cu = 4 should be assumed' for fills meeting its Sec. 3.1. Table 3-6 note (i) (p. 3-17) accepts these empirical values only for Table 3-1 granular fill with Cu >= 4 ('For fill outside these limits, tests must be run'); a Cu below 4 is computed and the choices say so. A steel grid given t/St and a geosynthetic keep their own F*, which takes no Cu; given with them, Cu is checked against Table 3-6 note (i) only. The result's choices give the F* used and FOS_pullout at the top level and the lowest at the other reading, or for a grid or geosynthetic whether the given Cu is within note (i). Aliases: Cu, uniformity_coefficient."},
+            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 1.2 + log Cu (2.0 at most; Cu_backfill) -> tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geosynthetic (Kr/Ka 1.0)."},
             "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Allowable tensile strength (kN/m) for a custom reinforcement. Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
@@ -777,7 +878,7 @@ METHOD_INFO = {
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing, with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing, and for ribbed steel strips the pullout factor F* at the top of the wall (Cu_backfill, given or the Cu = 4 GEC-11 p. 3-20 says to assume when unknown; for another reinforcement a given Cu checked against GEC-11 Table 3-6 note (i)); each with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
@@ -820,7 +921,7 @@ METHOD_INFO = {
 
 declare_aliases(METHOD_INFO, {
     "cantilever_wall": _WALL_ALIASES,
-    "mse_wall": _MSE_ALIASES,
+    "mse_wall": _MSE_WALL_ALIASES,
     "mse_lrfd_external_stability": _MSE_ALIASES,
     "earth_pressure_coefficient": _K_ALIASES,
 })
@@ -833,6 +934,10 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
     "reinforcement_spacing": (
         "external stability does not depend on it; mse_wall's internal "
         "checks use it")}
+METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"][
+    "Cu_backfill"] = (
+        "external stability does not depend on it; mse_wall's pullout "
+        "check uses it (the ribbed steel strip F*, GEC-11 Eq. 3-4)")
 # GM-179: taken and not used before; mse_lrfd_external_stability uses it.
 METHOD_INFO["mse_wall"]["refused_parameters"] = {
     "gamma_foundation": (
@@ -870,11 +975,11 @@ declare_applies_when(METHOD_INFO, {
         # since GM-183 the log-spiral Kp and the at-rest K0 take a slope
         "beta_deg": [{"theory": ["rankine"], "state": ["active"]},
                      {"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
-                     {"theory": ["caquot_kerisel"], "state": ["passive"]},
+                     {"theory": _LOG_SPIRAL_THEORY, "state": ["passive"]},
                      {"state": ["at_rest"]}],
-        "theta_deg": {"theory": ["caquot_kerisel"], "state": ["passive"]},
+        "theta_deg": {"theory": _LOG_SPIRAL_THEORY, "state": ["passive"]},
         "OCR": {"state": ["at_rest"]},
-        "log_spiral_source": {"theory": ["caquot_kerisel"],
+        "log_spiral_source": {"theory": _LOG_SPIRAL_THEORY,
                               "state": ["passive"]}},
     "cantilever_wall": {
         # the key acts only through the passive resistance in front of it
@@ -882,6 +987,14 @@ declare_applies_when(METHOD_INFO, {
         "has_shear_key": {"include_passive": [True]},
         "key_depth": {"has_shear_key": [True], "include_passive": [True]},
         "gamma_foundation": {"include_passive": [True]},
+        # GM-242: the passive coefficient in front of the wall
+        "passive_theory": {"include_passive": [True]},
+        "log_spiral_source": {"include_passive": [True],
+                              "passive_theory": ["log_spiral",
+                                                 "caquot_kerisel"]},
+        "passive_wall_friction_deg": {"include_passive": [True],
+                                      "passive_theory": ["log_spiral",
+                                                         "caquot_kerisel"]},
         # GM-212: the rule for the foundation cohesion in sliding counts
         # the friction (drained, friction_plus_adhesion), the adhesion
         # (undrained, friction_plus_adhesion) or both
@@ -906,7 +1019,14 @@ declare_applies_when(METHOD_INFO, {
                      "reinforcement_transverse_spacing")}, **_TRAFFIC,
         "live_load_resists": {"surcharge": "set"},
         "surcharge_in_bearing": {"surcharge": "set"},
-        "broken_backslope_height": {"backfill_slope": "set"}},
+        "broken_backslope_height": {"backfill_slope": "set"},
+        # GM-246: the ribbed steel strip F*; a steel grid given no t/St
+        # falls back to it, and the choices then report the Cu it took
+        "Cu_backfill": [
+            {"reinforcement_name": ["ribbed_steel_strip_75x4"]},
+            {"reinforcement_Tallowable": "set", "reinforcement_name": "unset",
+             "reinforcement_type": ["metallic_strip", "strip",
+                                    "ribbed_strip"]}]},
     "mse_lrfd_external_stability": {
         **_TRAFFIC,
         "broken_backslope_height": {"backfill_slope": "set"},
@@ -950,6 +1070,11 @@ declare_when_absent(METHOD_INFO, {
         "q_allowable": ("bearing not checked",
                         "with no allowable bearing pressure the bearing "
                         "check is not run (checks_not_run lists it)"),
+        "passive_wall_friction_deg": (
+            "delta/phi' = 0.66",
+            "delta/phi' = 0.66 (UFC 3-220-20 p. 191, 'a common "
+            "assumption'); refused with 'caquot_kerisel_1948' or "
+            "'dm7_2_eq_4_12', which need it given"),
     },
     "mse_wall": {
         "reinforcement_length": _REINFORCEMENT_LENGTH,

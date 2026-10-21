@@ -331,7 +331,9 @@ class QueryResult:
 
 def _cite(report: str, pages: Sequence[Any]) -> str:
     """``(L02, p7, p8)``, or ``(L02)`` where the record carried no page."""
-    numbers = [f"p{page}" for page in (pages or ()) if isinstance(page, int)]
+    # the page a reader opens in a PDF viewer (the record's are 0-based)
+    numbers = [f"p{page + 1}" for page in (pages or ())
+               if isinstance(page, int)]
     return f"({report}{', ' + ', '.join(numbers) if numbers else ''})"
 
 
@@ -693,8 +695,8 @@ class Citation(BaseModel):
     report: str = Field(description="the report id")
     page: Optional[int] = Field(
         default=None,
-        description="the 0-based PDF page, or null where the record carried "
-                    "no page for that value")
+        description="the PDF page as a viewer numbers it (from 1), or null "
+                    "where the record carried no page for that value")
 
 
 class LibraryAnswer(BaseModel):
@@ -802,7 +804,8 @@ def build_answer(text: str, results: Sequence[Tuple[str, QueryResult]],
         if pages is None:
             gaps.append(f"the answer cites {report}, which no query returned")
             continue
-        if page is not None and page not in pages:
+        # the answer cites the page as a viewer numbers it (from 1)
+        if page is not None and (page - 1) not in pages:
             gaps.append(f"the answer cites {report} page {page}, which no "
                         f"query returned")
             continue

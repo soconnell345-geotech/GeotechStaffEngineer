@@ -26,7 +26,12 @@ import webapp.core as core
 import webapp.turn_jobs as tj
 from webapp import activity_log as al
 
-httpx = pytest.importorskip("httpx")
+pytest.importorskip("openai")
+from webapp.engine_config import sdk_http_package  # noqa: E402
+
+# the HTTP package openai's clients are built on (httpx; anthropic is on
+# httpx2): transports and responses must come from the same one
+httpx = sdk_http_package(__import__("openai"))
 
 
 @pytest.fixture(autouse=True)
@@ -80,14 +85,16 @@ SECRET = "sk-test-NEVER-RECORDED-0123456789"
 
 def _prompter_model(monkeypatch, handler, retries="0"):
     import webapp.tinyapps_engine as te
-    real = httpx.Client
+    real_init = httpx.Client.__init__
 
-    class Mocked(real):
-        def __init__(self, *a, **kw):
-            kw["transport"] = httpx.MockTransport(handler)
-            super().__init__(*a, **kw)
+    def mocked_init(self, *a, **kw):
+        kw["transport"] = httpx.MockTransport(handler)
+        real_init(self, *a, **kw)
 
-    monkeypatch.setattr(httpx, "Client", Mocked)
+    # the constructor, not the class: the Prompter client is the openai
+    # SDK's own class (a subclass of the real one), and a package first
+    # imported while the class is swapped would subclass the swap for good
+    monkeypatch.setattr(httpx.Client, "__init__", mocked_init)
     monkeypatch.setenv(te.MAX_RETRIES_ENV, retries)
     return te.build_chat_model(prompter=te.PrompterSettings(
         url="https://prompter.test/api/v1/chat/completions", model="m",

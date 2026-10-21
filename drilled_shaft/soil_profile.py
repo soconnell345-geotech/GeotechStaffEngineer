@@ -34,7 +34,8 @@ class ShaftSoilLayer:
     cu : float, optional
         Undrained shear strength (kPa). Required for cohesive.
     phi : float, optional
-        Drained friction angle (degrees). Used for cohesionless.
+        Drained friction angle (degrees). Used for cohesionless; given, it
+        is used, and (N1)60 is not (GM-244).
     N60 : float, optional
         Energy-corrected SPT blow count. Used for sand end bearing.
     qu : float, optional
@@ -43,8 +44,9 @@ class ShaftSoilLayer:
         Rock Quality Designation (%). Default 100.
     N1_60 : float, optional
         Overburden-corrected SPT blow count (N1)60. Only used by the GEC-10
-        rational beta method (``beta_method="rational"``) to seed phi' via
-        phi' = 27.5 + 9.2*log10[(N1)60]. Default 0.0 (unused).
+        rational beta method (``beta_method="rational"``), for phi' =
+        27.5 + 9.2*log10[(N1)60] where no phi is given. Default 0.0
+        (unused).
     sigma_v_ref : float, optional
         Reference effective vertical stress (kPa) for the OCR in the rational
         beta method — the historical / pre-scour maximum stress the layer has
@@ -63,6 +65,15 @@ class ShaftSoilLayer:
         sandy silts) or "gravel" (Eq. 10-12, sigma'p/pa = 0.15 N60).
     description : str, optional
         Layer description.
+    GSI : float, optional
+        Geological Strength Index of a rock layer's rock mass, 0 to 100
+        (GEC-10 p. 10-23; Table 10-1 lists it among the rock's properties).
+        With ``m_i``, the Hoek-Brown base of a fractured rock mass (Eqs.
+        10-24 to 10-29) when the base is in this layer (GM-251). Rock
+        only.
+    m_i : float, optional
+        Hoek-Brown constant m of the intact rock, by rock type (GEC-10 p.
+        10-24, which points to Table 9-10 of GEC 5). Rock only.
     """
     thickness: float
     soil_type: str
@@ -77,6 +88,8 @@ class ShaftSoilLayer:
     OCR: float = 0.0
     sigma_p_correlation: str = "clean_sand"
     description: str = ""
+    GSI: Optional[float] = None
+    m_i: Optional[float] = None
 
     def __post_init__(self):
         self.soil_type = self.soil_type.lower()
@@ -97,10 +110,26 @@ class ShaftSoilLayer:
 
         if self.soil_type == "cohesive" and self.cu <= 0:
             raise ValueError("Cohesive soil must have cu > 0")
-        if self.soil_type == "cohesionless" and self.phi <= 0:
-            raise ValueError("Cohesionless soil must have friction angle (phi) > 0")
+        if self.soil_type == "cohesionless" and self.phi <= 0 \
+                and self.N1_60 <= 0:
+            raise ValueError(
+                "Cohesionless soil must have friction angle (phi) > 0, or "
+                "(N1)60 (N1_60) for phi' = 27.5 + 9.2 log (N1)60 (GEC-10 "
+                "Example 10-1)")
         if self.soil_type == "rock" and self.qu <= 0:
             raise ValueError("Rock must have qu (UCS) > 0")
+        # GM-251: the Hoek-Brown parameters of a rock mass
+        given = [n for n in ("GSI", "m_i") if getattr(self, n) is not None]
+        if given and self.soil_type != "rock":
+            raise ValueError(
+                f"{' and '.join(given)} describe a rock mass (GEC-10 Eqs. "
+                "10-24 to 10-29, the Hoek-Brown base): only a rock layer "
+                f"takes them, and this layer is {self.soil_type}")
+        if self.GSI is not None and not 0 <= self.GSI <= 100:
+            raise ValueError(
+                f"GSI must be 0 to 100 (GEC-10 p. 10-23), got {self.GSI}")
+        if self.m_i is not None and not self.m_i > 0:
+            raise ValueError(f"m_i must be positive, got {self.m_i}")
 
 
 @dataclass

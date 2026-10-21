@@ -142,11 +142,14 @@ def test_v056_asd_path_is_the_service_column():
                                                    abs=0.005)
 
 
-def _e3_internal():
+def _e3_internal(Cu_backfill=7.0):
+    # E3 Step 2: reinforced backfill Cu = 7.0 (p. E3-2); Step 7.1 (p. E3-12)
+    # F* = 1.2 + log10(7.0) = 2.045 > 2.000, use 2.000 (GM-246)
     strip = Reinforcement(name="E3 ribbed strip 50x4 mm",
                           type="metallic_strip", Tallowable=1000.0,
                           width=0.050, Fy=448.0, thickness=0.004)
-    return check_internal_stability(_e3_geom(), GAMMA, 34.0, strip)
+    return check_internal_stability(_e3_geom(), GAMMA, 34.0, strip,
+                                    Cu_backfill=Cu_backfill)
 
 
 def test_v056_internal_level4_tension():
@@ -176,8 +179,24 @@ def test_v056_internal_level4_pullout_geometry():
     assert lv["Le_m"] / FT == pytest.approx(13.41, abs=0.05)
     assert lv["Zp_m"] / FT == pytest.approx(17.40, abs=0.05)
     assert GAMMA * lv["Zp_m"] / KSF == pytest.approx(2.175, rel=0.005)
-    # F*: 2.0 at Z = 0 to tan(34) at 20 ft, in the module as in E3
+    # F*: 2.0 at Z = 0 (Cu 7.0, at the 2.0 maximum) to tan(34) at 20 ft,
+    # in the module as in E3
     assert lv["F_star"] == pytest.approx(1.420, abs=0.001)
+
+
+def test_v056_internal_strip_F_star_by_level():
+    """E3 Table E3-7.3 (p. E3-19): F* 1.917 at Level 1 (Z = 1.25 ft) and
+    1.751 at Level 2 (Z = 3.75 ft), from 2.000 at Z = 0 (Cu 7.0) to 0.675
+    at 20 ft. Without the backfill's Cu the module takes Cu = 4, F* 1.8 at
+    the top, as GEC-11 Vol I p. 3-20 says to when it is unknown (GM-246)."""
+    levels = _e3_internal()
+    assert levels[0]["F_star"] == pytest.approx(1.917, abs=0.001)
+    assert levels[1]["F_star"] == pytest.approx(1.751, abs=0.001)
+    unknown = _e3_internal(None)
+    top = 1.2 + math.log10(4.0)
+    assert unknown[3]["F_star"] == pytest.approx(
+        0.675 + (20.0 - 8.75) * (top - 0.675) / 20.0, abs=0.002)
+    assert unknown[3]["Pr_kN_per_m"] < levels[3]["Pr_kN_per_m"]
 
 
 def test_v056_analyze_mse_wall_reports_the_basis():

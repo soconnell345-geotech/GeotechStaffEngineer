@@ -23,7 +23,9 @@ open-end pipe plugging; uplift.
   `alpha_t`, `n_q_prime`, `_limiting_tip_resistance` (Fig. 7-15),
   `toe_limit_chart_note`, `end_bearing_cohesionless` (Eq. 7-9 with the
   Step 8 and Step 9 limits).
-- `tomlinson.py` — the alpha-method: `adhesion_fig_7_17`, `api_alpha`
+- `tomlinson.py` — the alpha-method: `adhesion_fig_7_17` (the Fig. 7-17
+  curves and reading live in `geotech_common/alpha_method.py` since GM-255,
+  shared with `downdrag`; re-exported here), `api_alpha`
   (Eqs. 7-13/7-14), `adhesion` (the chart as drawn; past it the
   curve's end or API alpha), `alpha_fig_7_18` and `adhesion_fig_7_18`
   (Fig. 7-18's three stratigraphy cases), `alpha_tomlinson`,

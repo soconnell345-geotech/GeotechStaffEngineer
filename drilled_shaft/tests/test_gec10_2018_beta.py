@@ -202,7 +202,7 @@ def test_the_top_zone_is_by_soil_type_unless_given():
     assert top["how"] == "default"
     assert "cohesionless soil within the top 1.5 m (1-1.5 m)" in \
         top["chosen"]
-    assert "cohesive soil or rock there (0-1 m)" in top["chosen"]
+    assert "none in cohesive soil there (0-1 m)" in top["chosen"]
     given = DrillShaftAnalysis(shaft=shaft, soil=soil,
                                top_exclusion=1.5).compute()
     assert given.layer_breakdown[1]["effective_top_m"] == 1.5
@@ -249,4 +249,4 @@ def test_the_calc_steps_print_each_step_of_eq_10_13():
     assert layer.result_value == "3,220.3"
     top = steps["Top Exclusion Zone"]
     assert top.result_value == "1.50 / 0.00"
-    assert "cohesionless soil: max(0, 0.00) = 0.00 m" in top.substitution
+    assert "cohesionless soil and rock: max(0, 0.00) = 0.00 m" in         top.substitution

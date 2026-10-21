@@ -646,6 +646,57 @@ class TestGroundImprovementPackage:
         assert result["status"] == "success"
         assert os.path.exists(outfile)
 
+    def test_methods_return_their_numbers(self, tmp_path):
+        """GM-205: each method returns the numbers its PDF shows."""
+        import json
+        from funhouse_agent.adapters.calc_package import _generate_ground_improvement_package as gen
+        wick = gen({"method": "wick_drains", "spacing": 1.5, "ch": 3.0,
+                    "cv": 1.0, "Hdr": 5.0, "time": 1.0,
+                    "output_path": str(tmp_path / "w.html")})
+        assert wick["drain_spacing_m"] == 1.5 and "U_total_percent" in wick
+        ap = gen({"method": "aggregate_piers", "column_diameter": 0.76,
+                  "spacing": 2.0, "E_soil": 5000, "S_unreinforced": 0.05,
+                  "q_unreinforced": 150,
+                  "output_path": str(tmp_path / "a.html")})
+        assert ap["area_replacement_ratio"] > 0 and "composite_modulus_kPa" in ap
+        su = gen({"method": "surcharge", "S_ultimate": 0.30, "surcharge": 50,
+                  "cv": 3.0, "Hdr": 4.0, "target_consolidation": 90,
+                  "output_path": str(tmp_path / "s.html")})
+        assert su["surcharge_kPa"] == 50 and "time_to_target_years" in su
+        for r in (wick, ap, su):
+            assert len(json.dumps(r)) < 8000
+        # the choices the agent states travel with every method's numbers
+        vb = gen({"method": "vibro", "fines_content": 8, "N1_before": 12,
+                  "target_N_spt": 25, "output_path": str(tmp_path / "v.html")})
+        for r in (wick, ap, su, vb):
+            assert len(json.dumps(r)) < 8000
+        assert ap.get("choices"), "aggregate piers' choices were dropped"
+
+    def test_choices_survive_thinning(self):
+        """A result with choices and long curves keeps every choice."""
+        from funhouse_agent.adapters.calc_package import _vibro_numbers
+
+        class R:
+            def to_dict(self):
+                return {"time_settlement_curve": [
+                            {"time_years": i, "settlement_mm": i * 2.0}
+                            for i in range(400)],
+                        "choices": [{"name": f"c{i}", "basis": "x" * 150}
+                                    for i in range(10)]}
+        for method in ("wick_drains", "aggregate_piers", "surcharge", "vibro"):
+            out = _vibro_numbers(method, R())
+            assert len(out["choices"]) == 10
+            assert len(out["time_settlement_curve"]) < 400
+
+
+class TestPlotDataScaleUnits:
+    def test_unknown_unit_refused_by_name(self):
+        import pytest
+        from funhouse_agent.adapters.profile_figure_adapter import _scale_units
+        assert _scale_units(None) == "m" and _scale_units(" FT ") == "ft"
+        with pytest.raises(ValueError, match="scale_units.*furlongs.*m, km"):
+            _scale_units("furlongs")
+
 
 class TestSeismicEarthPressurePackage:
     def test_mononobe_okabe(self, tmp_path):
@@ -1151,3 +1202,53 @@ class TestCalcTables:
         assert "CSV" in json.dumps(cat["calc_package"]
                                    if isinstance(cat, dict) else cat)
         assert len(json.dumps(cat)) < 7500
+
+
+class TestInputLabelsArePlainNames:
+    """GM-166: a Given Inputs label is the quantity's plain name and units,
+    by a rule, not copied from the description."""
+
+    @pytest.mark.parametrize("desc, label", [
+        ("TOTAL wall height H (m), measured from the UNDERSIDE of the base "
+         "slab. A longer sentence follows.", "Total wall height H (m)"),
+        ("Foundation soil friction angle (deg), FULL value",
+         "Foundation soil friction angle (deg)"),
+        ("Required when method is wick_drains. method=wick_drains: "
+         "Horizontal coefficient of consolidation (m2/yr). | method=x: y",
+         "Horizontal coefficient of consolidation (m2/yr)"),
+        ("Default: cantilever 10.0; braced 10.0 (wall_type). "
+         "wall_type=cantilever: Surface surcharge (kPa).",
+         "Surface surcharge (kPa)"),
+        ("Uniform DEAD-load (permanent) surcharge on the backfill (kPa), "
+         "a permanent load", "Uniform dead-load (permanent) surcharge on "
+                              "the backfill (kPa)"),
+        ("SPT blow counts per USCS layer (use list_x)",
+         "SPT blow counts per USCS layer"),
+    ])
+    def test_the_rule(self, desc, label):
+        from funhouse_agent.adapters.calc_package import _input_words
+        assert _input_words("x", {"x": {"description": desc}}) == label
+
+    def test_a_label_with_nothing_but_a_condition_is_the_name(self):
+        from funhouse_agent.adapters.calc_package import _input_words
+        assert _input_words("layers", {"layers": {
+            "description": "Array of {thickness (m, required), cu}"}}) \
+            == "layers"
+        assert _input_words("w18", {"w18": {
+            "description": "Required when design_type is flexible"}}) == "w18"
+
+    def test_the_selector_row_is_the_name_of_the_pick(self):
+        from funhouse_agent.adapters.calc_package import (
+            _given_inputs, _run_tool)
+        params = {"wall_type": "cantilever", "wall_height": 5.0,
+                  "gamma_backfill": 18.0, "phi_backfill": 30.0,
+                  "base_width": 3.0, "toe_length": 0.8,
+                  "stem_thickness_top": 0.3, "stem_thickness_base": 0.5,
+                  "base_thickness": 0.5, "phi_foundation": 28.0,
+                  "gamma_foundation": 18.0,
+                  "given": ["wall_type", "wall_height"]}
+        run = _run_tool("retaining_wall_package", dict(params))
+        rows = {r["input"]: r["value"]
+                for r in _given_inputs(params, run, "retaining_wall_package")}
+        assert rows.get("Wall type") == "cantilever"
+        assert "Total wall height H (m)" in rows

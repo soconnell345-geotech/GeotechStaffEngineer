@@ -550,6 +550,33 @@ class TestTheFloor:
         assert all(s.prov.method == "grid" for s in seed.samples)
         assert all(0.0 < s.prov.confidence <= 1.0 for s in seed.samples)
 
+    def test_drawn_sample_boxes_seat_the_rows(self, imperial):
+        """RI-32: planlens' sample intervals (PL-24) give the floor's rows
+        a top, a bottom and, where the log prints none, the sample id; a
+        grid with no samples seeds exactly as before."""
+        doc, _gt = imperial
+        from planlens.document import loggrid
+        if not hasattr(loggrid, "Sample"):
+            pytest.skip("planlens without PL-24's Sample (released after 0.13.0)")
+        Sample, log_grid = loggrid.Sample, loggrid.log_grid
+        grid = log_grid(doc, [0])
+        before = seed_from_grid(grid, [0], "RXX")
+        grid.samples = [
+            Sample(page=0, top=t - 0.5, bottom=t + 1.5, label=f"S-{i + 1}",
+                   plus_minus=0.05)
+            for i, t in enumerate(s.top.value for s in before.samples)]
+        after = seed_from_grid(grid, [0], "RXX")
+        for b, a in zip(before.samples, after.samples):
+            assert b.bottom is None and b.sample_id == ""
+            assert a.top.value == pytest.approx(b.top.value - 0.5, abs=0.1)
+            assert a.bottom.value == pytest.approx(b.top.value + 1.5, abs=0.1)
+            assert a.sample_id.startswith("S-")
+            assert "sample box drawn" in a.prov.note
+        assert [r.n for r in after.spt] == [21, 14, 26, 10]   # nothing else moved
+        grid.samples = []
+        again = seed_from_grid(grid, [0], "RXX")
+        assert [(s.top.value, s.bottom) for s in again.samples] ==             [(s.top.value, s.bottom) for s in before.samples]
+
     def test_the_model_is_shown_the_starting_record(self, imperial):
         doc, _gt = imperial
         engine = FakeEngine([{"final": _good_imperial_reading()}])
@@ -851,3 +878,89 @@ class TestTheTestPit:
         assert result.model_investigation.pit.length is None
         assert any("greater than zero" in u["why"]
                    for u in result.unresolved)
+
+
+class TestRI37PrintedNAndDriveLengths:
+    """RI-37: the reader carries the N as printed and each drive's length."""
+
+    def test_a_model_row_with_a_printed_refusal_and_unequal_drives_lands(
+            self, metric):
+        doc, _gt = metric
+        reading = _good_imperial_reading(
+            depth_unit="m", total_depth=6.5, elevation_unit="m",
+            layers=[ReadLayer(top=0.0, bottom=1.2, description="FILL",
+                              prov=_prov())],
+            samples=[],
+            spt=[ReadSPT(depth_top=5.0, blows=["20", "50/8cm"],
+                         n_printed=">50", drive_lengths=[15.0, 8.0],
+                         drive_length_unit="cm", refusal=True,
+                         prov=_prov())],
+            water=[])
+        result = read_log(doc, [0], FakeEngine([{"final": reading}]))
+        rec = [r for r in result.investigation.spt
+               if abs(r.depth_top.value - 5.0) < 0.01][0]
+        assert rec.n_printed == ">50" and rec.n is None and rec.refusal
+        assert [(q.value, q.unit) for q in rec.increments] == [
+            (15.0, "cm"), (8.0, "cm")]
+
+    def test_drive_lengths_that_do_not_line_up_are_left_out(self, metric):
+        doc, _gt = metric
+        reading = _good_imperial_reading(
+            depth_unit="m", total_depth=6.5, elevation_unit="m",
+            layers=[ReadLayer(top=0.0, bottom=1.2, description="FILL",
+                              prov=_prov())],
+            samples=[],
+            spt=[ReadSPT(depth_top=5.0, blows=["4", "6", "8"],
+                         drive_lengths=[15.0, 15.0], drive_length_unit="cm",
+                         prov=_prov())],
+            water=[])
+        result = read_log(doc, [0], FakeEngine([{"final": reading}]))
+        rec = [r for r in result.investigation.spt
+               if abs(r.depth_top.value - 5.0) < 0.01][0]
+        assert rec.increments == []
+
+    def test_a_printed_n_that_differs_from_the_floors_keeps_both(self):
+        from report_ingest.log_floor import merge_investigations
+        from report_ingest.model import Investigation, Provenance, SPT
+        from report_ingest.model import Quantity
+
+        def inv(n_printed, method):
+            return Investigation(
+                investigation_id="B-1", depth_unit="m", units_known=True,
+                spt=[SPT(depth_top=Quantity(value=5.0, unit="m"),
+                         n_printed=n_printed, refusal=True,
+                         prov=Provenance(page=0, method=method))])
+        merged, log = merge_investigations(inv(">50", "grid"),
+                                           inv("50/3\"", "model"))
+        rows = [d for d in log.disagreements if d["what"].endswith(
+            ": n_printed")]
+        assert len(rows) == 1
+        assert rows[0]["floor"] == ">50" and rows[0]["model"] == "50/3\""
+        assert rows[0]["kept"] == "floor"
+        (alt,) = [a for a in merged.spt[0].prov.alternatives
+                  if a.field == "n_printed"]
+        assert alt.value == "50/3\""
+
+    def test_a_model_only_increment_list_is_added_and_written(self):
+        from report_ingest.diggs_writer import write_diggs
+        from report_ingest.log_floor import merge_investigations
+        from report_ingest.model import Investigation, Provenance, SPT
+        from report_ingest.model import Quantity
+        floor = Investigation(
+            investigation_id="B-1", depth_unit="m", units_known=True,
+            spt=[SPT(depth_top=Quantity(value=3.0, unit="m"),
+                     blows=[5, 7, 9],
+                     prov=Provenance(page=0, method="grid"))])
+        model = Investigation(
+            investigation_id="B-1", depth_unit="m", units_known=True,
+            spt=[SPT(depth_top=Quantity(value=3.0, unit="m"),
+                     blows=[5, 7, 9],
+                     increments=[Quantity(value=20, unit="cm"),
+                                 Quantity(value=15, unit="cm"),
+                                 Quantity(value=15, unit="cm")],
+                     prov=Provenance(page=0, method="model"))])
+        merged, _log = merge_investigations(floor, model)
+        assert [q.value for q in merged.spt[0].increments] == [20, 15, 15]
+        merged.x, merged.y = None, None
+        xml = write_diggs([merged])
+        assert "<diggs_geo:penetration uom=\"m\">0.2</" in xml

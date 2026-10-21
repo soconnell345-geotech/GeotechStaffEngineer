@@ -108,6 +108,39 @@ def test_unresolved_engine_skips_live_checks(monkeypatch):
     assert _by_name(checks, "plain request (invoke)")["status"] == diag.SKIP
 
 
+def test_tls_line_names_the_ca_variable_or_says_certifi(monkeypatch,
+                                                       tmp_path):
+    for env in engine_config.FOUNDRY_CA_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    c = diag._tls_check()
+    assert c["status"] == diag.PASS
+    assert "no CA variable names a file" in c["detail"]
+    assert "against certifi" in c["detail"]
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "missing.pem"))
+    c = diag._tls_check()
+    assert c["status"] == diag.WARN
+    assert "does not exist: SSL_CERT_FILE" in c["detail"]
+    assert str(tmp_path) not in c["detail"]          # variables, not paths
+    ca = tmp_path / "ca.pem"
+    ca.write_text("x")
+    monkeypatch.setenv("MAESTRO_CERT_PEM_PATH", str(ca))
+    c = diag._tls_check()
+    assert c["status"] == diag.PASS
+    assert "MAESTRO_CERT_PEM_PATH" in c["detail"]
+    assert "against certifi" not in c["detail"]
+    assert str(ca) not in c["detail"]
+
+
+def test_the_tls_line_is_foundrys_only(monkeypatch):
+    _patch_engine(monkeypatch, _GoodModel())
+    monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+    names = [c["name"] for c in diag.run_diagnostics("ri.fake")]
+    assert "TLS certificates" not in names
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", "foundry")
+    names = [c["name"] for c in diag.run_diagnostics("ri.fake")]
+    assert names.index("TLS certificates") < names.index("engine resolution")
+
+
 def test_format_report_readable():
     checks = [
         {"name": "a", "status": diag.PASS, "detail": "fine"},

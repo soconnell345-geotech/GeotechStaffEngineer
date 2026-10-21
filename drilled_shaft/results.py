@@ -44,6 +44,9 @@ class DrillShaftResult:
         Per-layer side resistance breakdown.
     sigma_v_tip : float
         Effective stress at shaft tip (kPa).
+    base_steps : dict
+        Each step of the unit base resistance (GM-244): the tip's soil
+        type, the method, its factors and ``qb`` (kPa).
     choices : list of dict
         What the analysis chose for the user (GM-115,
         ``geotech_common.choices``), e.g. the depth beta of a cohesionless
@@ -64,6 +67,7 @@ class DrillShaftResult:
     method: str = "GEC-10"
     layer_breakdown: Optional[List[Dict[str, Any]]] = None
     sigma_v_tip: float = 0.0
+    base_steps: Optional[Dict[str, Any]] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -141,13 +145,18 @@ class DrillShaftResult:
                 "coefficient (alpha=... for cohesive, beta=... for "
                 "cohesionless, rock socket); 'fs_kPa' is the unit side "
                 "resistance. effective_top_m/effective_bottom_m reflect the "
-                "GEC-10 exclusion zones (the top zone or the casing: unless "
-                "top_exclusion is given, the top 1.5 m in cohesive soil and "
-                "rock and none in cohesionless soil; bottom 1D in cohesive "
-                "layers) that carry no side resistance. Under the "
-                "GEC-10 (2018) beta, 'beta_steps' gives each cohesionless "
-                "layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta."
+                "zones that carry no side resistance: the top zone or the "
+                "casing (unless top_exclusion is given, the top 1.5 m in "
+                "cohesive soil and none in cohesionless soil or rock) and, "
+                "where bottom_exclusion is given, that much above the base "
+                "in cohesive soil. Under the GEC-10 (2018) beta, "
+                "'beta_steps' gives each cohesionless layer's phi', "
+                "sigma'p, OCR, Ko, Kp, K/Ko and beta; 'alpha_steps' each "
+                "cohesive layer's su, the su the alpha used (su(CIUC) under "
+                "GEC-10's Eq. 10-18), su/pa and alpha."
             )
+        if self.base_steps:
+            d["base_steps"] = dict(self.base_steps)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         return d
@@ -189,8 +198,9 @@ class DrillShaftResult:
                 note=("GEC-10 side resistance: α method in cohesive "
                       "layers, β method in cohesionless layers, rock "
                       "socket in rock; 'Effective' top and bottom leave out "
-                      "the exclusion zones (the top zone or the casing; 1D "
-                      "above the base in cohesive layers), which carry none"),
+                      "the zones that carry none (the top zone or the "
+                      "casing; bottom_exclusion above the base in cohesive "
+                      "layers, where given)"),
                 name="side_resistance",
             ))
 

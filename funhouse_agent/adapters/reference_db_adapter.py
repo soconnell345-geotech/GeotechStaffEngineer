@@ -17,6 +17,9 @@ drill-in.
 
 from __future__ import annotations
 
+import difflib
+import re
+
 from funhouse_agent.adapters import apply_aliases
 from funhouse_agent.adapters._reference_common import (
     RESULT_BUDGET_CHARS, as_result, extract_method_info, make_wrapper, takes,
@@ -25,6 +28,53 @@ from funhouse_agent.adapters._reference_common import (
 # Common guesses for the result-count parameter, mapped to ``limit``.
 _SEARCH_ALIASES = {"max_results": "limit", "top_k": "limit",
                    "n_results": "limit", "k": "limit", "n": "limit"}
+
+# FHWA report numbers the library's text files carry beyond the GECs (which
+# come from ``cited_documents.ALIASES``): printed number -> indexed id.
+_REPORT_IDS = {"fhwa-nhi-05-037": "fhwa_pavements"}
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(text).lower())
+
+
+def _report_key(text: str):
+    """``fhwa-nhi-18-024`` for "NHI-18-024", "FHWA NHI 18 024"...; else None."""
+    m = re.search(r"(?i)(?:fhwa[\W_]*)?(nhi|sa|if|hif)[\W_]*(\d{2})[\W_]*(\d{2,3})",
+                  str(text))
+    return f"fhwa-{m.group(1)}-{m.group(2)}-{m.group(3)}".lower() if m else None
+
+
+def resolve_reference(name: str, indexed) -> tuple:
+    """``(indexed id, None)`` for a printed name of an indexed reference
+    ("GEC-10", "GEC 10", "NHI-18-024", "dm7.2"), else ``(None, suggestions)``
+    with the closest indexed ids (REF-41: the filter returned an empty list
+    without a word)."""
+    ids = list(indexed)
+    if name in ids:
+        return name, None
+    by_squash = {_squash(i): i for i in ids}
+    hit = by_squash.get(_squash(name))
+    if hit:
+        return hit, None
+    key = _report_key(name)
+    if key:
+        from funhouse_agent.cited_documents import ALIASES
+        target = _REPORT_IDS.get(key) or ALIASES.get(key)
+        hit = by_squash.get(_squash(target)) if target else None
+        if hit:
+            return hit, None
+    near = difflib.get_close_matches(_squash(name), list(by_squash), n=5,
+                                     cutoff=0.5)
+    return None, [by_squash[n] for n in near] or ids
+
+
+def _unknown_reference(name: str, suggestions) -> dict:
+    return {"error": f"no reference named {name!r} is indexed",
+            "did_you_mean": suggestions,
+            "note": "Reference ids look like gec_10, dm7_2, micropile "
+                    "(GEC-10 and FHWA report numbers such as NHI-18-024 "
+                    "are accepted); list_indexed_references gives them all."}
 
 
 def _build():
@@ -38,6 +88,10 @@ def _build():
         _retrieval_db.reference_get).parameters
     # ... and before REF-26 no results shaped to a size (offset, max_chars).
     shaped = takes(_retrieval_db.reference_search, "max_chars")
+
+    def _indexed():
+        return [r["reference"] for r in
+                _retrieval_db.list_indexed_references()]
 
     def reference_search(query: str, reference: str = "",
                          chapter: int = 0, limit: int = 5,
@@ -89,6 +143,10 @@ def _build():
             ``next_offset`` and ``note``.
         """
         ref = reference if reference else None
+        if ref:
+            ref, near = resolve_reference(ref, _indexed())
+            if ref is None:
+                return {"result": [_unknown_reference(reference, near)]}
         ch = int(chapter) if chapter else None
         if not shaped:
             hits = _retrieval_db.reference_search(
@@ -134,6 +192,10 @@ def _build():
             ``children`` (``section_id`` and ``title`` of each section
             directly under it).
         """
+        reference_in = reference
+        reference, near = resolve_reference(reference, _indexed())
+        if reference is None:
+            return _unknown_reference(reference_in, near)
         if takes_include and include_subsections:
             return _retrieval_db.reference_get(
                 reference, section_id, include_subsections=True)

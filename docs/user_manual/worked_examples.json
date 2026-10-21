@@ -129,16 +129,18 @@
       "gwt_depth": 4.0
     },
     "result": {
-      "Q_ultimate_kN": 4212.1,
-      "Q_skin_kN": 2857.3,
+      "Q_ultimate_kN": 3718.7,
+      "Q_skin_kN": 2363.9,
       "Q_tip_kN": 1354.8,
-      "Q_allowable_kN": 1684.8,
-      "Q_side_clay_kN": 842.3,
-      "Q_side_sand_kN": 2014.9,
+      "Q_allowable_kN": 1487.5,
+      "Q_side_clay_kN": 811.2,
+      "Q_side_sand_kN": 1552.7,
       "Q_side_rock_kN": 0.0,
       "factor_of_safety": 2.5,
       "shaft_diameter_m": 1.0,
       "shaft_length_m": 15.0,
+      "base_diameter_m": 1.0,
+      "base_area_m2": 0.7854,
       "method": "GEC-10",
       "sigma_v_tip_kPa": 169.1,
       "side_resistance_by_layer": [
@@ -149,10 +151,18 @@
           "effective_bottom_m": 8.0,
           "soil_type": "cohesive",
           "description": "",
-          "method": "alpha=0.550",
-          "side_resistance_kN": 842.3,
-          "fs_kPa": 41.2,
-          "sigma_v_kPa": 78.1
+          "method": "alpha=0.530 (rational)",
+          "side_resistance_kN": 811.2,
+          "fs_kPa": 39.7,
+          "sigma_v_kPa": 78.1,
+          "alpha_steps": {
+            "alpha_method": "rational",
+            "su_kPa": 75.0,
+            "su_used_kPa": 75.0,
+            "su_over_pa": 0.74,
+            "alpha": 0.53,
+            "su_test_type": "ciuc"
+          }
         },
         {
           "depth_top_m": 8.0,
@@ -161,13 +171,100 @@
           "effective_bottom_m": 15.0,
           "soil_type": "cohesionless",
           "description": "",
-          "method": "beta=0.669",
-          "side_resistance_kN": 2014.9,
-          "fs_kPa": 91.6,
-          "sigma_v_kPa": 136.9
+          "method": "beta=0.516 (rational)",
+          "side_resistance_kN": 1552.7,
+          "fs_kPa": 70.6,
+          "sigma_v_kPa": 136.9,
+          "beta_steps": {
+            "phi_deg": 34.0,
+            "phi_from": "phi",
+            "OCR_from": "sigma_v",
+            "N60": 30,
+            "sigma_p_correlation": "clean_sand",
+            "sigma_p_kPa": 366.511,
+            "sigma_v_for_OCR_kPa": 136.925,
+            "shallow_limit": false,
+            "OCR": 2.677,
+            "Ko": 0.764,
+            "Kp": 3.537,
+            "K_over_Ko": 1.0,
+            "K": 0.764,
+            "beta": 0.516
+          }
         }
       ],
-      "side_resistance_note": "Per-layer side resistance. 'method' gives the mobilized coefficient (alpha=... for cohesive, beta=... for cohesionless, rock socket); 'fs_kPa' is the unit side resistance. effective_top_m/effective_bottom_m reflect the GEC-10 exclusion zones (the top zone or the casing: unless top_exclusion is given, the top 1.5 m in cohesive soil and rock and none in cohesionless soil; bottom 1D in cohesive layers) that carry no side resistance. Under the GEC-10 (2018) beta, 'beta_steps' gives each cohesionless layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta."
+      "side_resistance_note": "Per-layer side resistance. 'method' gives the mobilized coefficient (alpha=... for cohesive, beta=... for cohesionless, rock socket); 'fs_kPa' is the unit side resistance. effective_top_m/effective_bottom_m reflect the zones that carry no side resistance: the top zone or the casing (unless top_exclusion is given, the top 1.5 m in cohesive soil and none in cohesionless soil or rock) and, where bottom_exclusion is given, that much above the base in cohesive soil. Under the GEC-10 (2018) beta, 'beta_steps' gives each cohesionless layer's phi', sigma'p, OCR, Ko, Kp, K/Ko and beta; 'alpha_steps' each cohesive layer's su, the su the alpha used (su(CIUC) under GEC-10's Eq. 10-18), su/pa and alpha.",
+      "base_steps": {
+        "soil_type": "cohesionless",
+        "base_diameter_m": 1.0,
+        "N60_capped": 30,
+        "qb_unreduced": 1725.0,
+        "reduction": null,
+        "qb": 1725.0
+      },
+      "choices": [
+        {
+          "what": "side resistance in cohesionless soil",
+          "chosen": "GEC-10 (2018) beta, Eq. 10-13, on each layer's average sigma'v: Q_s in cohesionless soil 1,553 kN, Q_ult 3,719 kN",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Step 5 of the design for axial load (Sec. 10.3), pp. 10-10 to 10-12: R_SN = pi B dz f_SN with f_SN = beta sigma'v (Eqs. 10-5, 10-7), sigma'v the 'average vertical effective stress over the depth interval' dz, taken here over each layer (Table 10-1, p. 10-6; Example 10-1 takes it at mid-layer). beta = K tan(delta) (Eq. 10-6) with delta = phi'; K = Ko, 'a rational first-order approximation' (K/Ko = 1, p. 10-11); Ko = (1 - sin phi') OCR^(sin phi') <= Kp = tan^2(45 + phi'/2) (Eqs. 10-8, 10-10; Mayne and Kulhawy 1982); OCR = sigma'p / sigma'v (Eq. 10-9) with sigma'p from N60 by Eq. 10-11 or 10-12; together Eq. 10-13. 'The value of beta at shallow depths should be limited to the value corresponding to a depth of 7.5 ft' (pp. 10-11, 10-12). phi' is the layer's where given, else 27.5 + 9.2 log (N1)60 (Example 10-1, p. 10-13; Appendix A, Eq. A-2, p. A-8). GEC-10 prints no upper limit on f_SN in cohesionless soil. Resistance factor 0.55 (p. 10-12)",
+          "alternatives": [
+            "each layer split into sub-layers of 0.1 m, each on its own sigma'v (GEC-10 p. 10-7 splits a layer where its N-values vary by more than a COV of 45 %): Q_s in cohesionless soil 1,549 kN, Q_ult 3,715 kN",
+            "beta_method 'depth', O'Neill and Reese (1999) beta = 1.5 - 0.135 sqrt(z, ft), 0.25 to 1.2 (FHWA NHI-06-089 Eqs. 9-41 to 9-43), which GEC-10 (2018) does not print: Q_s in cohesionless soil 2,015 kN, Q_ult 4,181 kN"
+          ]
+        },
+        {
+          "what": "K/Ko in cohesionless soil (construction's effect on the horizontal stress)",
+          "chosen": "1",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) p. 10-11: 'A rational first-order approximation is that K/Ko = 1, assuming there is no stress change induced by construction'; p. 10-12: valid 'for dry, slurry (wet-hole), and casing methods of construction with minimal sidewall disturbance, proper handling of slurry and casing, and prompt placement of concrete'; 'when these aspects of construction quality are not controlled properly, the coefficient K can be reduced to 2/3 of its initial in-situ value (Ko), or lower if soil caving is allowed to occur. Judgment and understanding of the influence of construction activities are therefore needed'",
+          "alternatives": [
+            "2/3, where construction quality is not controlled properly (p. 10-12): Q_s in cohesionless soil 1,035 kN, Q_ult 3,201 kN"
+          ]
+        },
+        {
+          "what": "preconsolidation stress sigma'p of cohesionless soil from N60",
+          "chosen": "Eq. 10-11, sigma'p/pa = 0.47 N60^m with m = 0.6 (clean quartzitic sands): 8-15 m",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) p. 10-11: Eq. 10-11, sigma'p/pa = 0.47 (N60)^m, 'where m = 0.6 for clean quartzitic sands and m = 0.8 for silty sands to sandy silts (e.g., Piedmont residual soils)' (Mayne 2007); Eq. 10-12, sigma'p/pa = 0.15 N60, which 'Kulhawy and Chen (2007) suggest ... provides a good fit for gravelly soils'; 'sigma'p is estimated by Equation 10-11 for sandy soils and Equation 10-12 for gravelly soils'. The soil's description decides which; Example 10-1's silty sands take m = 0.8",
+          "alternatives": [
+            "sigma_p_correlation 'silty_sand' on these layers, Eq. 10-11, sigma'p/pa = 0.47 N60^m with m = 0.8 (silty sands to sandy silts): Q_s in cohesionless soil 2,271 kN, Q_ult 4,437 kN",
+            "sigma_p_correlation 'gravel' on these layers, Eq. 10-12, sigma'p/pa = 0.15 N60 (gravelly soils): Q_s in cohesionless soil 1,754 kN, Q_ult 3,920 kN"
+          ]
+        },
+        {
+          "what": "side resistance in cohesive soil",
+          "chosen": "GEC-10 (2018) alpha, Eq. 10-18, on su(CIUC) (1.5-8 m: su/pa 0.74, alpha 0.530): Q_s in cohesive soil 811 kN, Q_ult 3,719 kN",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2, Step 5 of the design for axial load, pp. 10-15 to 10-18: R_SN = pi B dz alpha su (Eq. 10-15); alpha = 0.30 + 0.17 / (su(CIUC) / pa) (Eq. 10-18, p. 10-16; Chen et al. 2011, Fig. 10-6, p. 10-17), 'recommended as a revision to the expressions for alpha currently given in the AASHTO LRFD Bridge Design Specifications (2017a)'; f_SN = alpha su(CIUC) (Example 10-2, p. 10-18). su is each layer's, with sigma'vo for a transform at the middle of the length that carries side resistance. Resistance factor 0.45 (Table 8-4, p. 8-14)",
+          "alternatives": [
+            "alpha_method 'aashto', O'Neill and Reese (1999) as FHWA NHI-06-089 prints it (Eqs. 9-37a, 9-37b, p. 9-129), alpha = 0.55 for su/pa <= 1.5: Q_s in cohesive soil 842 kN, Q_ult 3,750 kN"
+          ]
+        },
+        {
+          "what": "strength su in Eq. 10-18 (the test each cu came from)",
+          "chosen": "each layer's cu taken as su(CIUC), untransformed",
+          "how": "default",
+          "basis": "GEC-10 (FHWA-NHI-18-024) p. 10-16: Eq. 10-18 is fitted to su(CIUC) (Fig. 10-6); 'For values of undrained shear strength determined by UC or UU lab tests, the value of su should first be transformed to its equivalent CIUC value' by Eq. 10-16 (UC) or Eq. 10-17 (UU), Chen and Kulhawy (1993), on sigma'vo at the layer's middle (Example 10-2, p. 10-18). Which test each cu came from is the engineer's to state: left out, cu is taken as su(CIUC), untransformed",
+          "alternatives": [
+            "su_test_type 'uc', UC, transformed to su(CIUC) by Eq. 10-16: Q_s in cohesive soil 872 kN, Q_ult 3,779 kN",
+            "su_test_type 'uu', UU, transformed to su(CIUC) by Eq. 10-17: Q_s in cohesive soil 861 kN, Q_ult 3,769 kN"
+          ]
+        }
+      ],
+      "defaults_used": {
+        "factor_of_safety": 2.5,
+        "beta_method": "rational",
+        "K_over_Ko": 1.0,
+        "top_exclusion": "1.5 m in cohesive soil, 0 in cohesionless soil and rock: GEC-10 (FHWA-NHI-18-024) p. 10-17 prints the top 5 ft in Sec. 10.3.5.2, Cohesive Soils; Secs. 10.3.5.1 and 10.3.5.3 print no such zone in cohesionless soil or rock: Examples 10-1 and 10-5 take the sand's side resistance from the ground surface, Example 10-4 the socket's over its whole length",
+        "alpha_method": "rational",
+        "su_test_type": "ciuc",
+        "pa": 101.325,
+        "rock_side_C": 1.0,
+        "socket_diameter": 1.0,
+        "casing_depth": 0.0,
+        "fractured_rock_thickness": 0.0
+      }
     }
   },
   "lateral_pile.lateral_pile_analysis": {
@@ -919,8 +1016,7 @@
           "cu": 30.0,
           "Cc": 0.3,
           "e0": 1.0,
-          "settling": true,
-          "beta": 0.3
+          "settling": true
         },
         {
           "thickness": 14.0,
@@ -942,7 +1038,8 @@
       "neutral_plane_basis": "UFC 3-220-20 \u00a76-7.4 procedure: the load and resistance curves do not intersect with the toe at 100% of its resistance, so the neutral plane is where the pile and the soil settle equally, with the toe force the pile delivers there compatible with the toe penetration it causes (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19; Fellenius 2021). For an end-bearing pile in a stratum stiffer than the compressible soil this is near the top of the bearing layer (\u00a76-7.4 step 5). Unit skin friction (beta layers) and the toe in sand use the final effective stress, sigma'v0 plus the fill / drawdown change (UFC 3-220-20 \u00a76-7.4 step 2). The pile's own weight is left out of the load curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 \u00a77.3.6.1 do (include_pile_weight=False).",
       "methods_range": "The methods give neutral planes from 5.99 m to 18.00 m and drag forces from 226 kN to 969 kN (5 of 7 methods apply).",
       "warnings": [
-        "The load and resistance curves do not intersect: the toe resistance (2386.7 kN, ultimate unless Nt was given as a mobilized value) exceeds everything the pile can carry to its toe (1369.2 kN with the whole shaft in negative skin friction), so full base mobilization is impossible. The neutral plane is placed where the pile and the soil settle equally, with the toe force compatible with the toe penetration (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19): 5.99 m, toe force 0.0 kN. Upper bound if the soil settled relative to the pile down to the toe: neutral plane at the toe, drag load 969.2 kN. To intersect the curves instead, give toe_mobilization or Nt for the MOBILIZED toe resistance (UFC 3-220-20 \u00a76-5.8.4.2: try 0%, 50%, 100%)."
+        "The load and resistance curves do not intersect: the toe resistance (2386.7 kN, ultimate unless Nt was given as a mobilized value) exceeds everything the pile can carry to its toe (1369.2 kN with the whole shaft in negative skin friction), so full base mobilization is impossible. The neutral plane is placed where the pile and the soil settle equally, with the toe force compatible with the toe penetration (UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19): 5.99 m, toe force 0.0 kN. Upper bound if the soil settled relative to the pile down to the toe: neutral plane at the toe, drag load 969.2 kN. To intersect the curves instead, give toe_mobilization or Nt for the MOBILIZED toe resistance (UFC 3-220-20 \u00a76-5.8.4.2: try 0%, 50%, 100%).",
+        "The soil below the pile toe has no compressibility in this model (18.00-20.00 m (cohesionless)), so its settlement counts as zero (here 0.0 mm below the toe in all). The fill / drawdown stress increase does not decay with depth: give the profile down to the base of the compressible soil. Give Cc and e0 (or C_ec) for clay, or E_s for sand, to include it, and mark a layer settling if the fill / drawdown compresses it (UFC 3-220-20 Eqs 6-49 to 6-54, the equivalent footing at the toe)."
       ],
       "neutral_plane_comparison": [
         {
@@ -1080,6 +1177,61 @@
         }
       ],
       "pile_weight_basis": "Pile's own weight left out of the load curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 \u00a77.3.6.1 do",
+      "below_toe": {
+        "influence_depth_criterion": "bearing_stress",
+        "criterion": "10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449)",
+        "equivalent_footing_width_m": 0.4,
+        "toe_force_kN": 0.0,
+        "bearing_stress_kPa": 0.0,
+        "toe_load_depth_below_toe_m": 0.0,
+        "toe_load_counted_to_m": 18.0,
+        "toe_load_stopped_by": "no_toe_load",
+        "fill_counted_to_m": 20.0,
+        "fill_settlement_mm": 0.0,
+        "toe_load_compression_mm": 0.0,
+        "settlement_below_toe_mm": 0.0,
+        "depth_m": 20.0,
+        "basis": "Below the toe (18.00 m) the toe carries no load, so only the fill / drawdown can compress the soil there. The fill / drawdown stress increase does not decay with depth, but no layer between the toe and the bottom of the soil profile (20.00 m) is marked settling, so it adds no settlement there.",
+        "other_criterion": {
+          "influence_depth_criterion": "effective_stress",
+          "criterion": "10% of the existing vertical effective stress (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332)",
+          "toe_force_kN": 0.0,
+          "toe_load_depth_below_toe_m": 0.0,
+          "toe_load_counted_to_m": 18.0,
+          "toe_load_stopped_by": "no_toe_load",
+          "settlement_below_toe_mm": 0.0,
+          "neutral_plane_depth_m": 5.994,
+          "pile_settlement_mm": 0.29,
+          "drag_force_kN": 225.97
+        },
+        "rules_disagree": false
+      },
+      "choices": [
+        {
+          "what": "depth to which the settlement below the toe is computed",
+          "chosen": "10% of the bearing stress of the equivalent footing (UFC 3-220-20 \u00a76-5.8.4.3, p. 449)",
+          "how": "default",
+          "basis": "The module's default: its headline procedure is UFC 3-220-20's. The other rule's results are reported beside it (below_toe, other_criterion).",
+          "alternatives": [
+            "10% of the existing vertical effective stress (FHWA GEC-12 \u00a77.3.5.6 step 1c, p. 332)"
+          ]
+        },
+        {
+          "what": "difference between the UFC 3-220-20 and FHWA GEC-12 results that is warned about",
+          "chosen": "pile head settlements or drag forces more than 25 % apart: of the larger of the two",
+          "how": "default",
+          "basis": "The engineer's call, not a reference's figure: neither UFC 3-220-20 nor FHWA GEC-12 says how far two settlement estimates may differ before it matters (the default, 25 %, is a round figure). A check that passes with one rule and fails with the other is always warned about; the rule used is not changed."
+        },
+        {
+          "what": "skin friction method in the cohesive soil, 0-6 m",
+          "chosen": "Alpha method, fs = alpha x cu (UFC 3-220-20 Eq 6-8), alpha 1.0",
+          "how": "default",
+          "basis": "The module's default for cohesive soil: undrained, short-term conditions (UFC 3-220-20 \u00a76-5.4.2, p. 414, and p. 410), as in UFC's drag force example (App. B-5.4, p. 636); FHWA recommends the \u03b1-method in cohesive soils (GEC-12 \u00a77.2.1.2, p. 229). Alpha 1.0 where none is given. Either serves the drag procedures: 'an appropriate static analysis method' (GEC-12 \u00a77.3.6.1 Step 2, p. 342); higher alpha and beta are conservative for negative skin friction (UFC 3-220-20 \u00a76-7.4 step 2, p. 476).",
+          "alternatives": [
+            "Beta method, fs = beta x sigma'v (UFC 3-220-20 Eq 6-7), for long-term, drained conditions (UFC 3-220-20 \u00a76-5.4.1, p. 411; FHWA GEC-12 \u00a77.2.1.3.4, p. 255): skin_friction_method 'beta' with beta (GEC-12 Table 7-9, p. 256: clay 0.15-0.35)"
+          ]
+        }
+      ],
       "dragload_kN": 225.96870612907026,
       "drag_force_kN": 225.96870612907026,
       "max_pile_load_kN": 625.9687061290703,
@@ -1403,7 +1555,24 @@
       "neutral_plane_requested": "auto",
       "toe_mobilization": 1.0,
       "skin_friction_stress": "final",
-      "include_pile_weight": false
+      "include_pile_weight": false,
+      "influence_depth_criterion": "bearing_stress",
+      "influence_depth_warning_percent": 25.0,
+      "defaults_used": {
+        "gw_drawdown": 0.0,
+        "pile_E": 200000000.0,
+        "pile_perimeter": "pi D, from pile_diameter: the perimeter of a circular section",
+        "pile_area": "pi D^2 / 4, from pile_diameter: the solid circle; give the steel area for an H or pipe pile",
+        "Nt": "the ultimate value from the toe layer: Nt from the toe layer's friction angle (Fellenius 1991; GEC-12 Table 7-9), 9 in clay: the ultimate, not the mobilized, toe resistance",
+        "include_pile_weight": false,
+        "n_sublayers": 10,
+        "neutral_plane_method": "auto",
+        "toe_mobilization": 1.0,
+        "skin_friction_stress": "final",
+        "influence_depth_criterion": "bearing_stress",
+        "influence_depth_warning_percent": 25.0,
+        "ground_elevation": "no elevation: the figures plot depth below the ground and say no elevation was given; results are in depth either way"
+      }
     }
   },
   "wave_equation.bearing_graph": {

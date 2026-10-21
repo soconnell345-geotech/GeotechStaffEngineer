@@ -44,12 +44,13 @@ class TestDowndragSoilLayer:
         assert abs(layer.beta - expected_beta) < 1e-10
 
     def test_cohesive_layer(self):
-        """Cohesive layer with cu should default alpha=1.0."""
+        """A cohesive layer leaves alpha out for the analysis to read off
+        its chart (GM-255): no layer default."""
         layer = DowndragSoilLayer(
             thickness=8.0, soil_type="cohesive",
             unit_weight=17.0, cu=30.0,
         )
-        assert layer.alpha == 1.0
+        assert layer.alpha is None
 
     def test_settling_layer_requires_Cc(self):
         """Settling layer must have Cc > 0."""
@@ -2132,13 +2133,16 @@ class TestWhenTheTwoRulesDisagree:
     def _settling_clay(**kw):
         """14 m pile in 10 m of settling clay over stiffer clay, 2 m of
         fill, settlement compatibility: the toe force, and so the neutral
-        plane and the drag force, move with the rule."""
+        plane and the drag force, move with the rule. alpha is given 1.0
+        in both clays, so the numbers pin the rules alone (left out, the
+        firm clay would read 0.98 off UFC Fig 6-14, GM-255)."""
         soil = DowndragSoilProfile(layers=[
             DowndragSoilLayer(thickness=10.0, soil_type="cohesive",
-                              unit_weight=17.0, cu=25.0, settling=True,
-                              Cc=0.35, e0=1.1),
+                              unit_weight=17.0, cu=25.0, alpha=1.0,
+                              settling=True, Cc=0.35, e0=1.1),
             DowndragSoilLayer(thickness=20.0, soil_type="cohesive",
-                              unit_weight=18.0, cu=60.0, Cc=0.3, e0=0.9),
+                              unit_weight=18.0, cu=60.0, alpha=1.0,
+                              Cc=0.3, e0=0.9),
         ], gwt_depth=1.0)
         args = dict(soil=soil, pile_length=14.0, pile_diameter=0.4,
                     Q_dead=100.0, fill_thickness=2.0,
@@ -2392,7 +2396,12 @@ class TestWhenTheTwoRulesDisagree:
 
     def test_choices_dict_and_summary(self):
         r = self._sand_below().compute()
-        rule, limit = r.choices
+        # then the clay's skin friction method (GM-249) and alpha (GM-255)
+        rule, limit, clay, alpha = r.choices
+        assert clay["what"].startswith("skin friction method in the "
+                                       "cohesive soil")
+        assert alpha["what"] == "alpha in the cohesive soil, 0-10 m"
+        assert (alpha["chosen"], alpha["how"]) == ("alpha 0.50", "given")
         assert rule["what"] == ("depth to which the settlement below the "
                                 "toe is computed")
         assert rule["how"] == limit["how"] == "default"
@@ -2405,15 +2414,15 @@ class TestWhenTheTwoRulesDisagree:
         # an allowable settlement of 0 is not measured against, as in the
         # warning; a positive one is
         rule, limit = self._sand_below(allowable_settlement=0.0
-                                       ).compute().choices
+                                       ).compute().choices[:2]
         assert limit["chosen"].endswith("of the larger of the two")
         rule, limit = self._sand_below(allowable_settlement=0.05
-                                       ).compute().choices
+                                       ).compute().choices[:2]
         assert limit["chosen"].endswith(
             "of the allowable settlement given, else of the larger")
         r = self._sand_below(influence_depth_criterion="effective_stress",
                              influence_depth_warning_percent=10).compute()
-        rule, limit = r.choices
+        rule, limit = r.choices[:2]
         assert rule["how"] == limit["how"] == "given"
         assert "p. 332" in rule["chosen"]
         d = r.to_dict()
@@ -2523,3 +2532,196 @@ class TestBelowTheToeFollowUps:
         assert w and "15.00-20.00 m (cohesionless)" in w[0]
         assert "does not decay with depth" in w[0]
         assert "toe load counts down" not in w[0]
+
+
+# =============================================================================
+# GM-249: the Beta method on a cohesive layer, a cited option
+# =============================================================================
+
+def _f67(clay=None, **kw):
+    """Flow F67 (w15-model-split): a 0.4 m square pile 22 m long carrying
+    800 kN through 12 m of soft clay (su 25 kPa) under a 2.5 m fill; the
+    water table 2 m down. ``clay``: the clay layer's own inputs."""
+    clay_kw = dict(thickness=12.0, soil_type="cohesive", unit_weight=16.0,
+                   cu=25.0, Cc=0.6, e0=1.4, settling=True)
+    clay_kw.update(clay or {})
+    soil = DowndragSoilProfile(layers=[
+        DowndragSoilLayer(thickness=2.0, soil_type="cohesionless",
+                          unit_weight=18.0, phi=32.0),
+        DowndragSoilLayer(**clay_kw),
+        DowndragSoilLayer(thickness=15.0, soil_type="cohesionless",
+                          unit_weight=20.0, phi=38.0)], gwt_depth=2.0)
+    return DowndragAnalysis(
+        soil=soil, pile_length=22.0, pile_diameter=0.4, pile_perimeter=1.6,
+        pile_area=0.16, Q_dead=800.0, fill_thickness=2.5,
+        fill_unit_weight=20.0, **kw)
+
+
+def _friction_choices(result):
+    from downdrag.analysis import SKIN_FRICTION_CHOICE
+    return [c for c in result.choices
+            if c["what"].startswith(SKIN_FRICTION_CHOICE)]
+
+
+def _alpha_choices(result):
+    from downdrag.analysis import ALPHA_CHOICE
+    return [c for c in result.choices if c["what"].startswith(ALPHA_CHOICE)]
+
+
+class TestBetaInClay:
+    """GM-249: neither drag procedure prints a method for clay (GEC-12
+    §7.3.6.1 Step 2, p. 342; UFC 3-220-20 §6-7.4 step 2, p. 476), so the
+    Alpha method stays the default and the Beta method is an option on the
+    layer for long-term, drained conditions, beta given. An input the layer
+    would not use is refused, naming the one that takes effect."""
+
+    @staticmethod
+    def _in_clay(r):
+        return (r.z > 2.5) & (r.z < 13.5)
+
+    def test_the_alpha_method_stays_the_default(self):
+        r = _f67().compute()
+        assert np.allclose(r.unit_skin_friction[self._in_clay(r)], 25.0)
+        assert r.drag_force == pytest.approx(543.7, abs=0.1)
+        (c,) = _friction_choices(r)
+        assert c["what"] == ("skin friction method in the cohesive soil, "
+                             "2-14 m")
+        assert c["chosen"] == ("Alpha method, fs = alpha x cu (UFC 3-220-20 "
+                               "Eq 6-8)")
+        assert c["how"] == "default"
+        # alpha in its own entry (GM-255): F67's clay is soft (su 25 kPa,
+        # below 800 psf), alpha 1 by UFC 3-220-20 Table 6-16
+        (a,) = _alpha_choices(r)
+        assert a["what"] == "alpha in the cohesive soil, 2-14 m"
+        assert a["chosen"] == "alpha 1.00 at 2-14 m (Table 6-16, soft clay)"
+        assert a["how"] == "default"
+        for page in ("p. 414", "p. 636", "p. 229", "p. 342", "p. 476"):
+            assert page in c["basis"], page
+        (alt,) = c["alternatives"]
+        assert alt.startswith("Beta method, fs = beta x sigma'v")
+        assert "skin_friction_method 'beta'" in alt and "Table 7-9" in alt
+
+    @pytest.mark.parametrize("stress", ["final", "initial"])
+    def test_the_beta_method_is_beta_times_the_effective_stress(self,
+                                                                 stress):
+        r = _f67(dict(skin_friction_method="beta", beta=0.25),
+                 skin_friction_stress=stress).compute()
+        z = r.z[self._in_clay(r)]
+        sigma = 2.0 * 18.0 + (z - 2.0) * (16.0 - 9.81)
+        if stress == "final":
+            sigma = sigma + 2.5 * 20.0
+        assert np.allclose(r.unit_skin_friction[self._in_clay(r)],
+                           0.25 * sigma)
+
+    def test_the_numbers_move_with_beta(self):
+        """F67 re-pinned: the plane stays at the bearing sand (14.0 m);
+        the drag force is 543.7 kN by alpha (1.0 x 25 kPa), 654.6 kN by
+        beta 0.25 and 772.6 kN by beta 0.30 (the helpers' hand-built
+        inputs gave 684 and 790 kN)."""
+        for beta, drag in ((0.25, 654.6), (0.30, 772.6)):
+            r = _f67(dict(skin_friction_method="beta", beta=beta)).compute()
+            assert r.neutral_plane_depth == pytest.approx(13.99, abs=0.01)
+            assert r.drag_force == pytest.approx(drag, abs=0.1), beta
+
+    def test_the_choice_says_beta_was_given(self):
+        r = _f67(dict(skin_friction_method="beta", beta=0.25)).compute()
+        (c,) = _friction_choices(r)
+        assert c["chosen"] == ("Beta method, fs = beta x sigma'v (UFC "
+                               "3-220-20 Eq 6-7), beta 0.25")
+        assert c["how"] == "given"
+        for text in ("UFC 3-220-20 §6-5.4.1, p. 411",
+                     "FHWA GEC-12 §7.2.1.3.4, p. 255", "p. 10-48",
+                     "Table 7-9, p. 256", "clay 0.15-0.35",
+                     "sigma'v final (skin_friction_stress)"):
+            assert text in c["basis"], text
+        (alt,) = c["alternatives"]
+        assert alt.startswith("Alpha method, fs = alpha x cu")
+        assert "the module's default for cohesive soil" in alt
+
+    def test_each_method_has_its_entry(self):
+        """A soft clay by the Beta method over a stiff clay by the Alpha
+        method (default), each with its depths."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=6.0, soil_type="cohesive",
+                              unit_weight=16.5, cu=20.0, Cc=0.5, e0=1.3,
+                              settling=True, skin_friction_method="beta",
+                              beta=0.25),
+            DowndragSoilLayer(thickness=5.0, soil_type="cohesive",
+                              unit_weight=18.0, cu=60.0, alpha=0.5),
+            DowndragSoilLayer(thickness=14.0, soil_type="cohesionless",
+                              unit_weight=20.0, phi=36.0)], gwt_depth=1.5)
+        r = DowndragAnalysis(soil=soil, pile_length=20.0, pile_diameter=0.45,
+                             Q_dead=900.0, fill_thickness=2.0).compute()
+        beta, alpha = _friction_choices(r)
+        assert beta["what"].endswith(", 0-6 m") and beta["how"] == "given"
+        assert alpha["what"].endswith(", 6-11 m")
+        assert alpha["chosen"].startswith("Alpha method")
+        assert alpha["how"] == "default"
+        (a,) = _alpha_choices(r)
+        assert (a["what"], a["chosen"], a["how"]) == (
+            "alpha in the cohesive soil, 6-11 m", "alpha 0.50", "given")
+
+    @pytest.mark.parametrize("kw, words", [
+        (dict(soil_type="cohesive", cu=25.0, beta=0.25),
+         ("does not take beta", "alpha x cu", "skin_friction_method 'beta'",
+          "Table 7-9")),
+        (dict(soil_type="cohesive", cu=25.0, phi=25.0),
+         ("does not take phi", "Leave phi out",
+          # what a drained clay takes instead (GM-249 review)
+          "long-term, drained", "skin_friction_method 'beta'",
+          "for phi' 25-30 deg", "Table 6-15")),
+        (dict(soil_type="cohesive", skin_friction_method="beta", beta=0.25,
+              alpha=1.0), ("does not take alpha", "beta x sigma'v")),
+        (dict(soil_type="cohesive", cu=25.0, skin_friction_method="beta"),
+         ("needs beta > 0", "Table 7-9", "p. 257")),
+        (dict(soil_type="cohesionless", phi=30.0, alpha=0.5),
+         ("does not take alpha", "beta x sigma'v")),
+        (dict(soil_type="cohesionless", phi=30.0,
+              skin_friction_method="alpha"),
+         ("does not take skin_friction_method 'alpha'",
+          "for cohesive layers")),
+        (dict(soil_type="cohesive", cu=25.0, skin_friction_method="total"),
+         ("skin_friction_method must be one of",)),
+    ])
+    def test_an_input_the_layer_would_not_use_is_refused(self, kw, words):
+        with pytest.raises(ValueError) as err:
+            DowndragSoilLayer(thickness=5.0, unit_weight=17.0, **kw)
+        for w in words:
+            assert w in str(err.value), w
+
+    def test_a_beta_clay_needs_cu_only_at_the_toe(self):
+        r = _f67(dict(skin_friction_method="beta", beta=0.25,
+                      cu=0.0)).compute()
+        assert r.drag_force == pytest.approx(654.6, abs=0.1)
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=20.0, soil_type="cohesive",
+                              unit_weight=17.0, skin_friction_method="beta",
+                              beta=0.25, description="clay")])
+        with pytest.raises(ValueError, match=r"pile toe is in a cohesive "
+                           r"layer with no cu \(clay\).*Give that layer's cu"):
+            DowndragAnalysis(soil=soil, pile_length=15.0, pile_diameter=0.4)
+
+    def test_a_clay_toe_takes_nine_cu(self):
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=20.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=40.0,
+                              skin_friction_method="beta", beta=0.25)])
+        a = DowndragAnalysis(soil=soil, pile_length=15.0, pile_diameter=0.4)
+        assert a._compute_toe_resistance(100.0) == pytest.approx(
+            9.0 * 40.0 * a.pile_area)
+
+    def test_the_post_liquefaction_run_says_which_clay_takes_alpha(self):
+        """GEC-10 §10.7 states its 50 % for side resistance by the beta
+        method: the warning names an Alpha-method clay only, and the choice
+        of method is in the post-liquefaction choices."""
+        from downdrag import post_liquefaction_downdrag
+        zone = [{"top": 4.0, "bottom": 8.0, "volumetric_strain": 0.02}]
+        words = "lies in a cohesive layer (alpha method)"
+        alpha = post_liquefaction_downdrag(_f67(), liquefied_layers=zone)
+        assert any(words in w for w in alpha.warnings)
+        beta = post_liquefaction_downdrag(
+            _f67(dict(skin_friction_method="beta", beta=0.25)),
+            liquefied_layers=zone)
+        assert not any(words in w for w in beta.warnings)
+        assert [c["how"] for c in _friction_choices(beta)] == ["given"]
+        assert [c["how"] for c in _friction_choices(alpha)] == ["default"]

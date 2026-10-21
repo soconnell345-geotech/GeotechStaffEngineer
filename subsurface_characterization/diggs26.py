@@ -38,7 +38,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from subsurface_characterization.site_model import (
-    LithologyInterval, PointMeasurement,
+    LithologyInterval, PointMeasurement, Refusal,
 )
 
 __all__ = [
@@ -352,7 +352,14 @@ def parse_diggs26_tests(root, ns_map, investigations, gml_id_map, warnings, *,
             for klass, cell in zip(classes, rows[0]):
                 value = _one_number(cell)
                 if value is None:
-                    continue                      # text, or a missing cell
+                    # Text: a refusal the log printed as words (">50", "R")
+                    # is kept as printed; a missing cell ("-", blank) is not.
+                    printed = str(cell or "").strip()
+                    if (klass or "").strip() == "n_value"                             and printed not in ("", "-"):
+                        inv.refusals.append(Refusal(
+                            depth_m=depth, printed=printed,
+                            test_type=procedure or "SPT"))
+                    continue
                 mapped = PROPERTY_CLASS_MAP.get((klass or "").strip())
                 if mapped is None:
                     continue

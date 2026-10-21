@@ -6,10 +6,11 @@ See validation_examples/INVENTORY.md entries V-006/007/008 and RESULTS.md.
 v5.3 coverage Batch 2: the `drilled_shaft` module offers the GEC-10 RATIONAL
 side-resistance chains — `beta_method="rational"` (cohesionless OCR/Ko chain,
 GEC-10 Eq. 10-13; the default since GM-241) and `alpha_method="rational"`
-(cohesive Chen-2011 alpha with the UU/UC->CIUC transform, opt-in) — so V-006 and
-V-007 run through the HIGH-LEVEL `DrillShaftAnalysis` path with the built-in
-chains (no hand-fed coefficients). The base-resistance unit formula (V-008)
-already matches.
+(cohesive Chen-2011 alpha with the UU/UC->CIUC transform; the default since
+GM-244) — so V-006 and V-007 run through the HIGH-LEVEL `DrillShaftAnalysis`
+path with the built-in chains (no hand-fed coefficients). The base resistance
+(V-008) matches the example's unreduced value by default since GM-244: GEC-10
+(2018) prints no large-diameter reduction.
 
 Units: example is US customary; modules are SI. 1 ft=0.3048 m, 1 kip=4.448 kN,
 1 ksf=47.88 kPa, 1 tsf=95.76 kPa, 1 psf=0.04788 kPa.
@@ -49,19 +50,24 @@ def test_v008_base_unit_resistance_matches():
     assert RBN_unreduced / KIP == pytest.approx(2473, rel=0.01)  # example 2473 kips
 
 
-def test_v008b_large_diameter_reduction_is_applied():
-    """The module applies the O'Neill-Reese 1.27/Db reduction for Db>1.27 m
-    (GEC-10 13.3.4.3). The example value is unreduced — documented CONVENTION
-    difference, not a bug. This test pins the module's (correct) behavior."""
+def test_v008b_large_diameter_reduction_is_an_option():
+    """GEC-10 (2018) Eq. 10-14 prints no reduction for a large base, and the
+    example's 2,473 kips is unreduced: the module's default since GM-244.
+    O'Neill & Reese's (1999) 1.27/B for B > 1.27 m (the module's default
+    until GM-244) is large_base_reduction=True."""
     N60 = 41
     B_m = 8 * FT                            # 2.4384 m > 1.27 m
     area = math.pi / 4 * B_m**2
-    RBN_module = end_bearing_cohesionless(N60, area, diameter=B_m)
-    expected_factor = 1.27 / B_m            # 0.521
     RBN_unreduced = 57.5 * N60 * area
-    assert RBN_module == pytest.approx(RBN_unreduced * expected_factor, rel=1e-6)
-    # i.e. the module returns ~1289 kips vs the example's unreduced 2473 kips
-    assert RBN_module / KIP == pytest.approx(1289, rel=0.02)
+    RBN_module = end_bearing_cohesionless(N60, area, diameter=B_m)
+    assert RBN_module == pytest.approx(RBN_unreduced, rel=1e-9)
+    assert RBN_module / KIP == pytest.approx(2473, rel=0.01)  # example 2473 kips
+    RBN_option = end_bearing_cohesionless(N60, area, diameter=B_m,
+                                          large_base_reduction=True)
+    expected_factor = 1.27 / B_m            # 0.521
+    assert RBN_option == pytest.approx(RBN_unreduced * expected_factor, rel=1e-6)
+    # i.e. ~1289 kips with the option vs the example's unreduced 2473 kips
+    assert RBN_option / KIP == pytest.approx(1289, rel=0.02)
 
 
 # --- V-006 beta (sand): GEC-10 rational OCR/Ko chain reproduces beta=0.41 -----
@@ -159,8 +165,8 @@ def test_v007_high_level_rational_alpha():
     reproduces the published Layer 4 alpha and RSN through the built-in chain.
 
     The clay sits between a cased cover (overburden -> sigma'vo ~ 2,114 psf) and a
-    bearing layer below, so the full 15 ft is active (the bottom-1D cohesive
-    exclusion falls in the bearing layer, not the clay)."""
+    bearing layer below, so the full 15 ft is active (no zone above the base
+    by default since GM-244; one diameter would fall in the bearing layer)."""
     B = 8 * FT
     dz = 15 * FT
     shaft = DrillShaft(diameter=B, length=3.0 + dz + 3.0, casing_depth=3.0)
@@ -172,6 +178,8 @@ def test_v007_high_level_rational_alpha():
     ])
     result = DrillShaftAnalysis(shaft=shaft, soil=soil,
                                 alpha_method="rational", su_test_type="uc").compute()
+    # the base on the bearing sand, unreduced as the example takes it
+    assert result.Q_tip / KIP == pytest.approx(2473, rel=0.01)  # RBN 2473 kips
 
     clay = next(lb for lb in result.layer_breakdown
                 if lb.get("description") == "Layer 4 clay")
@@ -184,8 +192,26 @@ def test_v007_high_level_rational_alpha():
     assert clay["side_resistance_kN"] / KIP == pytest.approx(368.1, rel=0.07)  # RSN
 
 
-def test_v007_default_alpha_still_aashto():
-    """Default alpha_method='aashto' is byte-identical to the pre-v5.3 behavior:
-    the AASHTO simplified alpha=0.55 for cu/pa<=1.5."""
+def test_v007_aashto_alpha_is_the_named_option():
+    """alpha_method='aashto' (the default until GM-244) keeps the O'Neill &
+    Reese alpha = 0.55 for cu/pa <= 1.5 (FHWA NHI-06-089 Eq. 9-37a); the
+    default is GEC-10's Eq. 10-18."""
     cu = 1750 * PSF
     assert alpha_cohesive(cu, PA) == pytest.approx(0.55, abs=1e-6)
+    shaft = DrillShaft(diameter=8 * FT, length=3.0 + 15 * FT + 3.0,
+                       casing_depth=3.0)
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(3.0, "cohesive", 18.0, cu=100.0),
+        ShaftSoilLayer(15 * FT, "cohesive", 20.3, cu=cu,
+                       description="Layer 4 clay"),
+        ShaftSoilLayer(3.0, "cohesionless", 19.0, phi=35, N60=41)])
+    default = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                 su_test_type="uc").compute()
+    aashto = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                alpha_method="aashto").compute()
+    clay = {r: next(lb for lb in res.layer_breakdown
+                    if lb.get("description") == "Layer 4 clay")
+            for r, res in (("default", default), ("aashto", aashto))}
+    assert clay["default"]["alpha_steps"]["alpha"] == pytest.approx(0.47,
+                                                                    rel=0.05)
+    assert clay["aashto"]["alpha_steps"]["alpha"] == pytest.approx(0.55)

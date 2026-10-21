@@ -104,10 +104,16 @@ def test_v058_the_printed_rounding_gives_833():
 def test_v058_phi_from_the_blow_counts():
     """phi' by 27.5 + 9.2 log (N1)60 (Appendix A Eq. A-2) from the
     example's (N1)60 gives 38.0 and 40.8 degrees, which it rounds to 38
-    and 41."""
+    and 41. The correlation applies where a layer gives no phi'; a phi'
+    given is used (GM-244)."""
     params = {**_PARAMS, "layers": [
-        {**lay, "N1_60": n1} for lay, n1 in zip(_PARAMS["layers"], (14, 28))]}
+        {**{k: v for k, v in lay.items() if k != "phi"}, "N1_60": n1}
+        for lay, n1 in zip(_PARAMS["layers"], (14, 28))]}
     r = _run(params)
     phis = [lb["beta_steps"]["phi_deg"] for lb in r["side_resistance_by_layer"]]
     assert phis == pytest.approx([38.0, 40.8], abs=0.05)
     assert r["Q_side_sand_kN"] / KIP == pytest.approx(833, rel=0.02)
+    both = _run({**_PARAMS, "layers": [
+        {**lay, "N1_60": n1} for lay, n1 in zip(_PARAMS["layers"], (14, 28))]})
+    phis = [lb["beta_steps"]["phi_deg"] for lb in both["side_resistance_by_layer"]]
+    assert phis == [38, 41]

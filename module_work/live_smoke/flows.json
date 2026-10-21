@@ -1,5 +1,5 @@
 {
- "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26), and 'cards' (EV-24: the download cards the flow ends with, each {\"kind\": \"figure\" | \"image\" | \"chart\" | an extension, \"pattern\": a regex on the file name, \"count\" or \"min\"/\"max\", \"looked_at\": true}; with looked_at, a matching figure card no look read is a medium finding of detector (k)), 'given_inputs' (GM-155, GM-167, GM-181: {\"package_given\": every calc package call names the user's inputs in `given`, \"brief_given\": every brief to calc has a GIVEN block, \"not_given\": [{\"name\", \"inputs\": package input names, \"any\": regexes}] the user did not state, never in a package's `given`, what a report composed with html_to_pdf prints as given, or a brief's GIVEN block}) and 'pdf_cites_consult' (GM-155 w13b fix 10: each composed report, and each calc package's assumptions, cites a document or work the references consult named, the consult finished before it was written). 'reader_checks' lists what the trace read should check in the figure or answer; no code checks them, the transcript prints them. 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave.",
+ "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26), and 'cards' (EV-24: the download cards the flow ends with, each {\"kind\": \"figure\" | \"image\" | \"chart\" | an extension, \"pattern\": a regex on the file name, \"count\" or \"min\"/\"max\", \"looked_at\": true}; with looked_at, a matching figure card no look read is a medium finding of detector (k)), 'given_inputs' (GM-155, GM-167, GM-181: {\"package_given\": every calc package call names the user's inputs in `given`, \"brief_given\": every brief to calc has a GIVEN block, \"not_given\": [{\"name\", \"inputs\": package input names, \"any\": regexes}] the user did not state, never in a package's `given`, what a report composed with html_to_pdf prints as given, or a brief's GIVEN block}) and 'pdf_cites_consult' (GM-155 w13b fix 10: each composed report, and each calc package's assumptions, cites a document or work the references consult named, the consult finished before it was written). 'reader_checks' lists what the trace read should check in the figure or answer; no code checks them, the transcript prints them. 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave. 'behavior' sets the sidebar's Behavior settings at the start of each session (core.default_behavior() keys; e.g. {\"references\": \"anytime\"} for \"Consult references\", GM-239). 'truth' (BACKLOG EV-33, live_smoke/arms.py) is what a right answer contains, read by the arms results: 'helpers' the question should make work, 'key' {\"name\", \"near\": regex, \"units\": regex, \"ranges\": [[lo, hi], ...], \"value\", \"source\"}, 'methods' [{\"name\", \"any\"}] with 'methods_min', 'cites' [{\"ref\": regex, \"any\": [locator regexes]}] with 'cites_needed', and 'method' in words. The F67-F74 'ms' flows run in two arms by run.py arms (opus_all and split), each as the scenario <flow>@<arm>.",
  "flows": [
   {
    "id": "F01-review-orient-scale",
@@ -1001,6 +1001,180 @@
    ],
    "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
    "reader_checks": ["the 1,800 kN line; resistance in kN, length in m", "each option crosses 1,800 kN where straight-line reading puts it: concrete about 21.8 m, H-pile about 23.7 m, pipe about 21.1 m", "the three options told apart, best by labels on the lines", "any required length printed is a reading off the data, no more precise than they allow"]
+  },
+  {
+   "id": "F67-ms-downdrag-neutral-plane",
+   "title": "EV-33 model split: downdrag on a pile through soft clay under new fill; the neutral-plane methods the references give, side by side (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "A 0.4 m square precast concrete pile, 22 m long, carries a dead load of 800 kN. Soil from the ground surface: 2 m of medium dense sand (unit weight 18 kN/m3, phi' = 32 degrees); 12 m of soft normally consolidated clay (unit weight 16 kN/m3, su = 25 kPa, Cc = 0.6, e0 = 1.4); then dense sand (unit weight 20 kN/m3, phi' = 38 degrees) down to 29 m. The water table is 2 m below the ground surface. A 2.5 m embankment fill (unit weight 20 kN/m3) will be placed over the whole site, so the clay will settle. Where is the neutral plane, and what drag load does the pile take? The references give more than one way to locate the neutral plane: tell me which methods they give, what each assumes, and which you would use here."}
+   ],
+   "expect": {"tools_any": ["downdrag", "task"], "answer_names": [{"name": "the neutral plane", "any": ["neutral plane"]}, {"name": "more than one method", "any": ["toe (resistance )?mobili[sz]", "settlement compatib", "force equilibrium", "0 ?%[^\\n]{0,40}(50|100) ?%"]}, {"name": "the drag load", "any": ["drag ?(load|force)"]}]},
+   "reader_checks": ["every neutral-plane method the references give is named with what it assumes (toe at 0 %, 50 % and 100 % of its resistance, the settlement-compatible toe force); none presented as the only basis", "the neutral-plane depth and drag load are the tool's numbers, not worked out in the answer", "the citations name UFC 3-220-20 (pp. 447 to 450, 476 to 478) or GEC-12 (pp. 342 to 346) and match what the references helper actually opened", "compare the arms: did the references helper on Sonnet find the same methods and pages as on Opus?"],
+   "truth": {
+    "helpers": ["references"],
+    "key": {"name": "neutral plane depth", "near": "neutral plane", "units": "m\\b", "ranges": [[6.5, 22.5]], "value": "13.99 m by settlement compatibility (the module's headline, UFC 3-220-20 Sec. 6-5.8.4.3); 6.86 m with the toe at 0 %; the curves do not intersect at 50 % or 100 % toe mobilization; upper bound at the toe, 22 m. Drag load 258 to 1,317 kN, headline 544 kN, by the Alpha method in the clay (the module's default, alpha 1.0 x su 25 kPa). With the Beta method in the clay (skin_friction_method 'beta', GM-249): beta 0.25 gives 7.98 m at 0 %, the same 13.99 m headline, drag 314 to 1,428 kN, headline 655 kN; beta 0.30 gives 8.13 m at 0 %, drag 373 to 1,546 kN, headline 773 kN", "source": "downdrag.downdrag_analysis on the stated inputs (pile perimeter 1.6 m, area 0.16 m2), $0 local run 2026-10-20; re-pinned after GM-249 (the Beta method in clay by name)"},
+    "method": "UFC 3-220-20 Sec. 6-7.4 steps 3-5 and Sec. 6-5.8.4.2 (force equilibrium at 0/50/100 % toe mobilization) and Sec. 6-5.8.4.3, Fig. 6-19 (settlement compatibility); FHWA GEC-12 Sec. 7.3.6.1",
+    "methods": [{"name": "force equilibrium at a toe mobilization", "any": ["force equilibrium", "toe (resistance )?mobili[sz]", "intersect", "(0|50|100) ?% (of the )?toe"]}, {"name": "settlement compatibility", "any": ["settlement compatib", "settlement equilibri", "pile settlement equals", "settle equally", "equal settlement", "pile and (the )?soil settle"]}],
+    "methods_min": 2,
+    "cites": [{"ref": "UFC 3-220-20|DM[- ]?7\\.?0?2|NAVFAC", "any": ["\\b44[79]\\b", "\\b450\\b", "\\b47[6-8]\\b", "6-7\\.4", "6-5\\.8\\.4", "6-19", "6-26"]}, {"ref": "GEC[- ]?12|NHI[- ]?16[- ]?009", "any": ["\\b34[2-6]\\b", "7\\.3\\.6", "7-59", "7-60"]}],
+    "cites_needed": 1
+   }
+  },
+  {
+   "id": "F68-ms-passive-kp-sloping-ground",
+   "title": "EV-33 model split: log-spiral passive coefficient with the ground in front of the wall sloping down; the references give the chart for that geometry (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "A cantilever sheet-pile wall is in sand (phi' = 34 degrees, unit weight 19 kN/m3, no groundwater). In front of the wall the ground slopes DOWN away from the wall at 10 degrees. Take the wall friction as two-thirds of phi'. What passive earth pressure coefficient Kp should I use for the soil in front of the wall by the log-spiral method, and which chart or table in the references gives it for this geometry?"}
+   ],
+   "expect": {"tools_any": ["earth_pressure_coefficient", "task", "read_reference_figure"], "answer_names": [{"name": "Kp", "any": ["K_?p\\b", "passive"]}, {"name": "the log-spiral method", "any": ["log[- ]?spiral"]}, {"name": "the chart for sloping ground", "any": ["4-13", "Caquot", "Kerisel"]}]},
+   "reader_checks": ["Kp is a log-spiral value for ground sloping DOWN in front (beta negative), not Rankine or Coulomb for level ground", "the chart named is the one for this geometry (UFC 3-220-20 Fig. 4-13, p. 193, drawn for delta/phi' = 0.66), and its reading matches what the references helper read", "any Coulomb value is offered as an alternative, not the answer, and the answer says which is on the safe side", "compare the arms: same chart, same reading?"],
+   "truth": {
+    "helpers": ["references"],
+    "key": {"name": "Kp", "near": "K_?p|passive (earth pressure )?coefficient", "ranges": [[4.2, 5.0]], "value": "about 4.6 off UFC 3-220-20 Fig. 4-13 (vertical face, sloping ground, beta/phi' = -0.29, delta/phi' = 0.66); 4.77 by Caquot-Kerisel (1948) with the reduction factor; Coulomb at delta = 2/3 phi' gives 4.94 and Rankine for level ground 3.54", "source": "retaining_walls.earth_pressure_coefficient (caquot_kerisel, beta -10, both log-spiral sources) and Coulomb, $0 local run 2026-10-20"},
+    "method": "log-spiral passive coefficient for a vertical wall with sloping ground, UFC 3-220-20 Fig. 4-13 (p. 193)",
+    "methods": [{"name": "log-spiral", "any": ["log[- ]?spiral"]}, {"name": "the sloping-ground chart", "any": ["4-13", "Caquot", "Kerisel", "Absi"]}],
+    "methods_min": 2,
+    "cites": [{"ref": "UFC 3-220-20|DM[- ]?7\\.?0?2|NAVFAC", "any": ["Fig(ure)?\\.? ?4-13", "\\b19[1-3]\\b"]}, {"ref": "Caltrans|Trenching and Shoring|NHI[- ]?06[- ]?089", "any": ["4-20", "10-10", "4-30"]}],
+    "cites_needed": 1
+   }
+  },
+  {
+   "id": "F69-ms-drilled-shaft-sand-side",
+   "title": "EV-33 model split: drilled-shaft side resistance in sand by GEC-10 (2018); the references settle the method and the horizontal stress (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "A 1.2 m diameter drilled shaft, 15 m long, is in clean medium dense sand all the way down: unit weight 19 kN/m3 above and below the water table, phi' = 35 degrees, SPT N60 = 25 throughout. The water table is 3 m below the ground surface. What is the nominal side resistance of the shaft in the sand by the current FHWA drilled shaft manual (GEC-10)? Which method does it use for side resistance in cohesionless soil, and how does it get the horizontal stress?"}
+   ],
+   "expect": {"tools_any": ["drilled_shaft", "task"], "answer_names": [{"name": "the side resistance", "any": ["side resistance", "\\bQ_?s\\b", "skin"]}, {"name": "beta", "any": ["beta", "β"]}, {"name": "K0 from OCR", "any": ["OCR", "preconsolidation", "\\bK_?[0o]\\b"]}]},
+   "reader_checks": ["the method is GEC-10 (2018) Eq. 10-13: beta = (K/K0) K0 tan phi', K0 = (1 - sin phi') OCR^(sin phi') <= Kp, OCR from N60 by Eq. 10-11; not the older O'Neill and Reese depth-beta (a higher figure; the review did not reproduce 4,611 kN, so none is pinned here)", "K/K0 = 1 is stated as GEC-10's first-order assumption with what would lower it (construction quality, caving: 2/3)", "the side resistance is the tool's number", "compare the arms: same method and pages from the references helper?"],
+   "truth": {
+    "helpers": ["references"],
+    "key": {"name": "side resistance", "near": "side resistance|\\bQ_?s\\b|skin", "units": "kN\\b|MN\\b", "ranges": [[2900, 3500], [2.9, 3.5]], "value": "3,076 to 3,113 kN, the tool on the layered profile (3,113 kN split at the water table; 3,076 kN in 1 m layers); the one-layer form (beta 0.607 on the average sigma'v 95 kPa, OCR 3.44, K0 0.867) gives 3,274 kN", "source": "drilled_shaft.drilled_shaft_capacity (beta_method rational and depth), $0 local run 2026-10-20"},
+    "method": "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Eqs. 10-5 to 10-13 (pp. 10-10 to 10-12)",
+    "methods": [{"name": "the GEC-10 beta from K0 and OCR", "any": ["10-13", "OCR", "preconsolidation", "K_?[0o]\\s*=\\s*\\(?1"]}],
+    "methods_min": 1,
+    "cites": [{"ref": "GEC[- ]?10|NHI[- ]?18[- ]?024|drilled shaft manual", "any": ["10-1[0-3]\\b", "10\\.3\\.5", "Eq(uation)?\\.? ?10-"]}],
+    "cites_needed": 1
+   }
+  },
+  {
+   "id": "F70-ms-k0-sloping-backfill",
+   "title": "EV-33 model split: at-rest earth pressure behind a non-yielding wall with the ground rising behind it; the references give the sloping-ground K0 (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "A basement wall that cannot yield retains normally consolidated sand (phi' = 30 degrees, unit weight 18 kN/m3). Behind the wall the ground rises at 20 degrees from the top of the wall. What at-rest earth pressure coefficient should I use, and what do the references say about sloping ground behind a wall at rest?"}
+   ],
+   "expect": {"tools_any": ["earth_pressure_coefficient", "task"], "answer_names": [{"name": "K0", "any": ["K_?[0o]\\b", "at[- ]rest"]}, {"name": "the slope term", "any": ["1 ?\\+ ?sin", "9\\.2"]}]},
+   "reader_checks": ["K0 for level ground is Jaky's 1 - sin phi' = 0.50 and the slope raises it by (1 + sin beta) to about 0.67 (EN 1997-1 Eq. 9.2)", "the answer says where the resultant acts (parallel to the ground surface) and that Eq. 9.2 holds for beta <= phi'", "compare the arms"],
+   "truth": {
+    "helpers": ["references"],
+    "key": {"name": "K0 behind the slope", "near": "K_?[0o]|at[- ]rest", "ranges": [[0.62, 0.72]], "value": "0.671 = 0.500 (1 + sin 20); K0 = 1 - sin 30 = 0.500 on level ground", "source": "retaining_walls.earth_pressure_coefficient (at_rest, beta 20), $0 local run 2026-10-20"},
+    "method": "EN 1997-1:2004 Sec. 9.5.2(3)-(4), Eqs. 9.1 and 9.2 (p. 104)",
+    "methods": [{"name": "Jaky's K0 = 1 - sin phi'", "any": ["1 ?- ?sin", "Jaky"]}, {"name": "the slope term (1 + sin beta)", "any": ["1 ?\\+ ?sin", "9\\.2"]}],
+    "methods_min": 2,
+    "cites": [{"ref": "EN 1997|Eurocode 7|\\bEC ?7\\b", "any": ["9\\.2", "9\\.5\\.2", "\\b104\\b"]}],
+    "cites_needed": 1
+   }
+  },
+  {
+   "id": "F71-ms-chart-toe-limit",
+   "title": "EV-33 model split: a chart read-off, GEC-12 Fig. 7-15's limiting unit toe resistance at phi' = 34 degrees (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "For a driven pile with its toe in sand at phi' = 34 degrees, what limiting unit toe resistance qL does the FHWA driven pile manual (GEC-12) give? Read it off the chart and tell me which figure and page you read it from."}
+   ],
+   "expect": {"tools_any": ["read_reference_figure", "figure_7_15", "task"], "answer_names": [{"name": "qL", "any": ["q_?L\\b", "limiting"]}, {"name": "the figure", "any": ["7-15", "9-14"]}]},
+   "reader_checks": ["the value is read off GEC-12 Fig. 7-15 (p. 238), or the same Meyerhof (1976) chart in NHI-06-089 Fig. 9-14 (p. 9-45), at 34 degrees: about 36 tsf (3,440 kPa)", "units stated (tsf or kPa) and converted right", "who read the chart (read_reference_figure runs on the main model in both arms) and whether the helper used the digitized curve instead", "compare the arms"],
+   "truth": {
+    "helpers": ["references"],
+    "key": {"name": "qL", "near": "q_?L\\b|limiting (unit )?toe", "ranges": [[32, 40], [3060, 3830], [3.06, 3.83]], "value": "35.9 tsf (3,440 kPa) at 34 degrees; 24.5 tsf at 33 and 53.7 tsf at 35 (the curve is steep)", "source": "gec12.figure_7_15_limiting_toe_resistance (re-measured off the printed figure 2026-10-08), $0 local run 2026-10-20"},
+    "method": "Meyerhof (1976) limiting unit toe resistance, GEC-12 Fig. 7-15 (p. 238)",
+    "methods": [{"name": "Meyerhof's limiting toe resistance chart", "any": ["7-15", "9-14", "Meyerhof"]}],
+    "methods_min": 1,
+    "cites": [{"ref": "GEC[- ]?12|NHI[- ]?16[- ]?009", "any": ["7-15", "\\b238\\b"]}, {"ref": "NHI[- ]?06[- ]?089|Soils and Foundations", "any": ["9-14", "9-45"]}],
+    "cites_needed": 1
+   }
+  },
+  {
+   "id": "F72-ms-worked-example-source",
+   "title": "EV-33 model split: a published worked example and its printed source page (NHI-06-089 Example 9-3); the worked-example tools sit on the main agent, so the references helper should have little or nothing to do (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "Find the published worked example for a 1 ft square precast concrete pile through two clay layers: FHWA NHI-06-089 (Soils and Foundations, Volume II) Example 9-3. What pile length and ultimate capacity does the manual get, and does the app's pile tool reproduce it? Show me the printed source page."}
+   ],
+   "expect": {"tools_any": ["find_worked_examples", "get_worked_example", "view_worked_example_source", "worked_examples"], "answer_names": [{"name": "the ultimate capacity", "any": ["80 ?tons?", "71[0-9](\\.\\d)? ?kN"]}, {"name": "the pile length", "any": ["42 ?(ft|feet|')", "12\\.8 ?m"]}]},
+   "reader_checks": ["the manual's answer: about 42 ft (12.8 m) for Qu = 80 tons (711.7 kN), toe neglected, adhesion = cohesion in both clays", "the source page shown is printed pp. 9-58 to 9-59 (PDF pp. 168 to 169)", "the tool's own run is compared with the published numbers", "which agent did the work; any references consult here is extra"],
+   "truth": {
+    "helpers": [],
+    "key": {"name": "ultimate capacity", "near": "Q_?u\\b|ultimate|capacity", "ranges": [[690, 735], [78, 82]], "value": "Qu = 80 tons (711.7 kN) at 42 ft (12.8 m): 10 tons in the upper clay, 70 tons in the lower, toe neglected", "source": "funhouse_agent/worked_examples.json WE-SF-2 (published_result)"},
+    "method": "alpha method with adhesion = cohesion (alpha = 1) in both clays, as the example states",
+    "methods": [{"name": "adhesion equal to cohesion", "any": ["adhesion", "alpha ?= ?1", "α ?= ?1"]}],
+    "methods_min": 1,
+    "cites": [{"ref": "NHI[- ]?06[- ]?089|Soils and Foundations|Example 9-3", "any": ["9-5[89]", "\\b16[89]\\b", "Example 9-3"]}],
+    "cites_needed": 1
+   }
+  },
+  {
+   "id": "F73-ms-control-effective-stress",
+   "title": "EV-33 model split: the CONTROL, arithmetic that should not need the references (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "What is the vertical effective stress at 8 m depth? Sand with unit weight 18 kN/m3 above the water table, which is 2 m below the ground surface, and 20 kN/m3 below it; take the unit weight of water as 9.81 kN/m3. Just the number and the working."}
+   ],
+   "expect": {"answer_names": [{"name": "the effective stress", "any": ["97\\.1", "97 ?kPa"]}]},
+   "reader_checks": ["sigma_v = 2 x 18 + 6 x 20 = 156 kPa, u = 6 x 9.81 = 58.9 kPa, sigma'v = 97.1 kPa", "no references consult, no calc helper: a consult here is cost with nothing to settle", "compare the arms: both should cost about the same"],
+   "truth": {
+    "helpers": [],
+    "key": {"name": "vertical effective stress", "near": "effective|σ'|sigma'", "units": "kPa", "ranges": [[96.5, 97.8]], "value": "97.1 kPa = 156 - 58.9", "source": "arithmetic"},
+    "method": "total stress minus pore pressure",
+    "methods": [],
+    "cites": []
+   }
+  },
+  {
+   "id": "F74-ms-rock-socket-side",
+   "title": "EV-33 model split: unit side resistance of a rock socket; the references settle GEC-10's factor C (1.0 for a normal socket, 0.65 where caving is expected) (judgment calls ON, Consult references ON)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "behavior": {"references": "anytime"},
+   "steps": [
+    {"say": "A drilled shaft is socketed into sandstone with an unconfined compressive strength of 20 MPa. The socket will be drilled dry, with clean sidewalls and no caving expected. What unit side resistance should I use for the socket by GEC-10, and why that value of the coefficient?"}
+   ],
+   "expect": {"tools_any": ["drilled_shaft", "task"], "answer_names": [{"name": "the unit side resistance", "any": ["side resistance", "f_?s\\b", "f_?SN"]}, {"name": "the coefficient C", "any": ["\\bC ?= ?1", "\\bC ?= ?0\\.65", "coefficient"]}]},
+   "reader_checks": ["f_s = C pa sqrt(qu/pa), GEC-10 Eq. 10-21 (p. 10-20), with C = 1.0 for a normal socket as GEC-10 recommends for routine design (about 1,420 kPa); C = 0.65 (Eq. 10-22, O'Neill and Reese, caving expected) offered as the alternative (about 925 kPa)", "the reason for C ties to the stated socket condition (dry, clean, no caving)", "compare the arms"],
+   "truth": {
+    "helpers": ["references"],
+    "key": {"name": "unit side resistance", "near": "side resistance|f_?s\\b|f_?SN", "units": "kPa|MPa|ksf", "ranges": [[1300, 1550], [1.3, 1.55], [27, 32.5]], "value": "1,424 kPa = 1.0 x 101.3 x sqrt(20,000 / 101.3) with C = 1.0; 925 kPa with C = 0.65", "source": "GEC-10 Eq. 10-21 as the drilled_shaft tool's rock_side_C parameter describes it (pp. 10-20), arithmetic"},
+    "method": "GEC-10 (FHWA-NHI-18-024) Eq. 10-21 (p. 10-20) with C = 1.0 for a normal socket",
+    "methods": [{"name": "C = 1.0 for a normal socket", "any": ["\\bC ?= ?1(\\.0)?\\b", "C of 1(\\.0)?\\b", "coefficient of 1(\\.0)?\\b"]}],
+    "methods_min": 1,
+    "cites": [{"ref": "GEC[- ]?10|NHI[- ]?18[- ]?024|drilled shaft manual", "any": ["10-2[0-2]\\b", "Eq(uation)?\\.? ?10-2[0-2]"]}],
+    "cites_needed": 1
+   }
   }
  ]
 }
