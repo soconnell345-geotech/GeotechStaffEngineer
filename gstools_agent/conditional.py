@@ -48,6 +48,11 @@ import time
 
 import numpy as np
 
+from geotech_common.choices import MODULE, how_given
+from gstools_agent.choices import (
+    fit_choice, kriging_type_choice, method_choice, model_choice,
+    nugget_choice, realizations_choice, scale_choices, seed_choice,
+)
 from gstools_agent.gstools_utils import import_gstools
 from gstools_agent.models import model_class
 from gstools_agent.regions import (
@@ -955,6 +960,43 @@ def analyze_conditional_simulation(
             "field + unconditional randomization-method field scaled by the "
             "local kriging standard deviation.")
 
+    nugget_fitted = fitted and not nugget_given
+    chosen = [
+        model_choice(model_type, fitted=fitted),
+        fit_choice(fitted, fit_variogram, False, nugget_fitted,
+                   float(model.nugget)),
+    ]
+    if not fitted:
+        chosen += scale_choices(variance, len_scale, variance_v, len_v, "",
+                                n, False)
+    if nugget_given:
+        chosen.append(nugget_choice(
+            float(model.nugget), nugget_fitted,
+            how_given(nugget, None, name="nugget"),
+            "set by the user; GSTools treats the measurement error as part "
+            "of it"))
+    elif nugget_fitted:
+        chosen.append(nugget_choice(
+            float(model.nugget), True, MODULE,
+            "fitted with the sill and range"))
+    else:
+        chosen.append(nugget_choice(
+            float(model.nugget), False, MODULE,
+            "0, or the largest measurement error where one is given: the "
+            "field then passes exactly through the data only with both 0"))
+    chosen += [
+        kriging_type_choice(kriging_type),
+        method_choice(simulation_method,
+                      "conditioning by kriging (Journel & Huijbregts 1978): "
+                      "draws what the chosen model implies, including the "
+                      "correlation between cells"
+                      if simulation_method == "kriging_residual" else
+                      "GSTools CondSRF (Mueller et al. 2022): the totals can "
+                      "spread too much"),
+        realizations_choice(n_realizations, n_kept),
+        seed_choice(seed),
+    ]
+
     return ConditionalSimulationResult(
         simulation_method=simulation_method,
         method_basis=method_text,
@@ -1010,4 +1052,5 @@ def analyze_conditional_simulation(
         lattice_full=lat if k_scope == "lattice" else None,
         lattice_union=union,
         bounds_input=blist,
+        choices=chosen,
     )
