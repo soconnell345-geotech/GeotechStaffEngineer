@@ -961,10 +961,14 @@ class TestMseCustomReinforcement:
         from funhouse_agent.adapters.retaining_walls import METHOD_INFO
         av = METHOD_INFO["mse_wall"]["parameters"]["reinforcement_type"][
             "allowed_values"]
-        # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geosynthetic
+        # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geogrid,
+        # geotextile (GEC-11 Table 3-6's alpha 0.8, 0.6) + a geosynthetic of
+        # no stated kind, which needs alpha_tested (GM-256)
         assert av == ["metallic_strip", "metallic_grid", "bar_mat",
-                      "welded_grid", "geosynthetic"]
-        assert "geosynthetic" in av  # the documented default
+                      "welded_grid", "geogrid", "geotextile", "geosynthetic"]
+        # GM-256: no default type; it sets the alpha a custom one takes
+        assert "default" not in METHOD_INFO["mse_wall"]["parameters"][
+            "reinforcement_type"]
 
     def test_custom_bar_mat_with_transverse_geometry(self):
         """A custom steel bar mat (bar_mat / welded_grid) is accepted with its

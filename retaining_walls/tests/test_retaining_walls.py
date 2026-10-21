@@ -397,7 +397,8 @@ class TestReinforcement:
     def test_built_in_geogrid(self):
         r = GEOGRID_UX1600
         assert not r.is_metallic
-        assert r.type == "geosynthetic"
+        # GM-256: a geogrid, GEC-11 Table 3-6's alpha 0.8 (p. 3-17)
+        assert r.type == "geogrid"
 
     def test_custom_reinforcement(self):
         r = Reinforcement("Custom", "geosynthetic", Tallowable=35.0)

@@ -222,7 +222,9 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
                       "reinforcement", f"{reinforcement.Tallowable:.1f}",
                       "kN/m"),
             InputItem("Type_r", "Reinforcement type",
-                      "Metallic" if reinforcement.is_metallic else "Geosynthetic", ""),
+                      "Metallic" if reinforcement.is_metallic else
+                      {"geogrid": "Geogrid", "geotextile": "Geotextile"}.get(
+                          reinforcement.type, "Geosynthetic"), ""),
         ])
         # GM-256: the coverage ratio, GEC-11 Vol I Eq. 3-1
         from retaining_walls import mse as _mse
@@ -1171,9 +1173,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     Rc = (_mse.coverage_ratio(reinforcement) if reinforcement is not None
           else 1.0)
     alpha_t = _get(analysis, "alpha_tested")
-    alpha = (alpha_t if alpha_t is not None
-             else _mse.default_alpha(reinforcement) if reinforcement
-             else 1.0)
+    alpha = (_mse.pullout_alpha(reinforcement, alpha_t) if reinforcement
+             else alpha_t if alpha_t is not None else 1.0)
     int_items.append(CalcStep(
         title="Pullout Resistance",
         equation=("P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e "
@@ -1186,7 +1187,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
              "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
              "(extensible/geosynthetic reinforcement)")
             + f"; C = 2; \u03b1 = {alpha:g}"
-            + (" (from pullout tests)" if alpha_t is not None else "")
+            + (" (from pullout tests)" if alpha_t is not None
+               else " (GEC-11 Table 3-6, p. 3-17)")
             + f"; R_c = {Rc:.3f}"
         ),
         result_name="P_r",

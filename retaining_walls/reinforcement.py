@@ -22,7 +22,12 @@ class Reinforcement:
     name : str
         Product/designation name.
     type : str
-        "metallic_strip", "metallic_grid", or "geosynthetic".
+        "metallic_strip", "metallic_grid", "geogrid", "geotextile", or
+        "geosynthetic". The type sets the scale effect correction factor
+        alpha of the pullout resistance, GEC-11 Vol I Table 3-6 (p. 3-17):
+        1.0 for steel strips and grids, 0.8 for a geogrid, 0.6 for a
+        geotextile; a "geosynthetic" of no stated kind has no row and needs
+        a tested alpha (``mse.pullout_alpha``, GM-256).
     Tallowable : float
         Long-term allowable tensile strength per unit width of the
         reinforcement, Tal (kN/m): GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac /
@@ -68,7 +73,8 @@ class Reinforcement:
     horizontal_spacing: Optional[float] = None
 
     def __post_init__(self):
-        valid_types = ("metallic_strip", "metallic_grid", "geosynthetic")
+        valid_types = ("metallic_strip", "metallic_grid", "geogrid",
+                       "geotextile", "geosynthetic")
         if self.type not in valid_types:
             raise ValueError(f"type must be one of {valid_types}, got '{self.type}'")
         if self.Tallowable <= 0:
@@ -129,14 +135,17 @@ WELDED_WIRE_GRID_W11 = Reinforcement(
     transverse_spacing=0.1524,  # St = 6 in (densest level) -> t/St = 0.0623
 )
 
+# The geogrids are type "geogrid": GEC-11 Vol I Table 3-6's alpha 0.8 for
+# extensible grids (p. 3-17). They took alpha 1.0 as "geosynthetic" before
+# GM-256.
 GEOGRID_UX1600 = Reinforcement(
     name="Geogrid UX1600 (HDPE)",
-    type="geosynthetic",
+    type="geogrid",
     Tallowable=21.9,  # kN/m (LTDS after creep, damage, durability)
 )
 
 GEOGRID_UX1700 = Reinforcement(
     name="Geogrid UX1700 (HDPE)",
-    type="geosynthetic",
+    type="geogrid",
     Tallowable=29.2,  # kN/m
 )

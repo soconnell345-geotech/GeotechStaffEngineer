@@ -221,11 +221,58 @@ ALPHA_BASIS = (
     "default values, and its note (ii): 'Pullout testing to determine "
     "alpha is recommended if alpha shown in table is less than 1.0'")
 
+#: GEC-11 Vol I Table 3-6 (p. 3-17), "alpha Default Value", by the
+#: reinforcement's type, with the table's row. A "geosynthetic" of no
+#: stated kind has no row: its alpha is given (GM-256).
+ALPHA_TABLE_3_6 = {
+    "metallic_strip": (1.0, "inextensible strips"),
+    "metallic_grid": (1.0, "inextensible grids (bar mats and welded wire)"),
+    "geogrid": (0.8, "extensible grids (geogrids)"),
+    "geotextile": (0.6, "extensible sheets (geotextiles)"),
+}
+ALPHA_TABLE_BASIS = (
+    "GEC-11 Vol I Table 3-6 (p. 3-17), alpha default value: 1.0 for "
+    "inextensible strips and grids, 0.8 for extensible grids, 0.6 for "
+    "extensible sheets; p. 3-16: 'In the absence of test data, alpha = 0.8 "
+    "for geogrids and alpha = 0.6 for geotextiles (extensible sheets) is "
+    "recommended'; note (ii): 'Pullout testing to determine alpha is "
+    "recommended if alpha shown in table is less than 1.0. These values of "
+    "alpha represent highly extensible geosynthetics.'")
+_ALPHA_GRID_NOTE = (
+    "; Table 3-6 note *, on the steel grids' 1.0: 'For longitudinal "
+    "bars/wires spacing greater than 6 inches, alpha may be less than 1.0 "
+    "and pullout tests are required'")
+NEEDS_ALPHA = (
+    "the scale effect correction factor alpha of this geosynthetic in its "
+    "pullout resistance, F* alpha sigma_v Le C Rc (GEC-11 Vol I Eq. 3-2, "
+    "p. 3-16): 'In the absence of test data, alpha = 0.8 for geogrids and "
+    "alpha = 0.6 for geotextiles (extensible sheets) is recommended' (p. "
+    "3-16; Table 3-6, p. 3-17). Give reinforcement_type 'geogrid' (alpha "
+    "0.8) or 'geotextile' (alpha 0.6), or alpha_tested from pullout tests "
+    "(Appendix B). Before GM-256 a geosynthetic took alpha 1.0")
 
-def default_alpha(reinforcement: Reinforcement) -> float:
-    """The scale effect correction factor alpha the pullout check takes
-    when no tested one is given."""
-    return 1.0
+
+def table_alpha(reinforcement: Reinforcement) -> Optional[float]:
+    """GEC-11 Vol I Table 3-6's alpha for the reinforcement's type (p.
+    3-17): 1.0 for steel strips and grids, 0.8 for a geogrid, 0.6 for a
+    geotextile; None for a geosynthetic of no stated kind."""
+    row = ALPHA_TABLE_3_6.get(reinforcement.type)
+    return None if row is None else row[0]
+
+
+def pullout_alpha(reinforcement: Reinforcement,
+                  alpha_tested: float = None) -> float:
+    """The scale effect correction factor alpha the pullout check takes:
+    the tested one when given, else Table 3-6's for the type. A
+    geosynthetic of no stated kind given no tested alpha is refused, as
+    Table 3-6 prints 0.8 for a geogrid and 0.6 for a geotextile (GM-256;
+    every geosynthetic took 1.0 before)."""
+    if alpha_tested is not None:
+        return alpha_tested
+    alpha = table_alpha(reinforcement)
+    if alpha is None:
+        raise ValueError(NEEDS_ALPHA)
+    return alpha
 
 
 def _check_tested(F_star_tested, alpha_tested) -> None:
@@ -292,7 +339,8 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
     - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
       "metallic_grid"): 2.5 at z=0 -> 1.2 at z>=20 ft (6.096 m), constant below
       (GEC-11 Fig. E4-5 / AASHTO Fig. 11.10.6.2.1-3).
-    - geosynthetic / extensible ("geosynthetic"): constant 1.0.
+    - geosynthetic / extensible ("geosynthetic", "geogrid", "geotextile"):
+      constant 1.0.
 
     Parameters
     ----------
@@ -301,7 +349,7 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
     reinforcement_type : str, optional
         "metallic"/"metallic_strip" (ribbed strip, DEFAULT),
         "bar_mat"/"welded_grid"/"metallic_grid" (steel grid),
-        or "geosynthetic".
+        or "geosynthetic"/"geogrid"/"geotextile".
 
     Returns
     -------
@@ -312,7 +360,7 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
     ----------
     FHWA GEC-11, Figures 4-10 and E4-5; AASHTO LRFD Fig. 11.10.6.2.1-3
     """
-    if reinforcement_type == "geosynthetic":
+    if reinforcement_type in ("geosynthetic", "geogrid", "geotextile"):
         return 1.0
 
     if reinforcement_type in ("bar_mat", "welded_grid", "metallic_grid"):
@@ -804,16 +852,41 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
                 f"{lowest(other):.3g} (here {lowest(internal):.3g})")
 
     out = []
+    alpha_what = ("Scale effect correction factor alpha of the pullout "
+                  "resistance (alpha_tested)")
+    alpha0 = table_alpha(reinforcement)
+    row = ALPHA_TABLE_3_6.get(reinforcement.type, (None, ""))[1]
+    note = _ALPHA_GRID_NOTE if reinforcement.is_grid else ""
     if alpha_tested is not None:
-        alpha0 = default_alpha(reinforcement)
+        printed = ([(alpha0, row)] if alpha0 is not None
+                   else [(0.8, "geogrids"), (0.6, "geotextiles")])
         out.append(choice(
-            "Scale effect correction factor alpha of the pullout resistance "
-            "(alpha_tested)", f"alpha {alpha_tested:g}, from pullout tests",
-            how_given(alpha_tested, None, name="alpha_tested"), ALPHA_BASIS,
-            [f"alpha {alpha0:g}, the default for this reinforcement"
+            alpha_what, f"alpha {alpha_tested:g}, from pullout tests",
+            how_given(alpha_tested, None, name="alpha_tested"),
+            ALPHA_BASIS + note,
+            [f"alpha {a:g}, Table 3-6's default value for {r}"
              + against(check_internal_stability(
                  *args, Cu_backfill=Cu_backfill,
-                 F_star_tested=F_star_tested))]))
+                 F_star_tested=F_star_tested, alpha_tested=a))
+             for a, r in printed]))
+    elif alpha0 < 1.0 or reinforcement.is_grid:
+        # the table's value carries a condition: note (ii) below 1.0, the
+        # note * on a steel grid's 1.0
+        took = (f"alpha {alpha0:g}, GEC-11 Vol I Table 3-6's default value "
+                f"for {row}, p. 3-17")
+        alt = ("alpha from pullout tests (alpha_tested), "
+               + ("which note (ii) recommends" if alpha0 < 1.0 else
+                  "which note * requires for longitudinal bars more than "
+                  "6 in. (150 mm) apart"))
+        if alpha0 < 1.0:
+            alt += ("; at alpha 1.0, the most a test can give"
+                    + against(check_internal_stability(
+                        *args, Cu_backfill=Cu_backfill,
+                        F_star_tested=F_star_tested, alpha_tested=1.0)))
+        out.append(choice(
+            alpha_what, took,
+            how_given(None, None, name="alpha_tested", took=took),
+            ALPHA_TABLE_BASIS + note, [alt]))
     if F_star_tested is not None:
         if uses_strip_F_star(reinforcement) and Cu_backfill is None:
             empirical = ("Eqs. 3-4 and 3-5 at the Cu = 4 p. 3-20 takes when "
@@ -923,7 +996,10 @@ def check_internal_stability(
         empirical F* (Eqs. 3-4 to 3-8). Default None (the empirical F*).
     alpha_tested : float, optional
         The scale effect correction factor alpha from pullout tests (GEC-11
-        Vol I p. 3-16), 0 < alpha <= 1. Default None (alpha 1.0).
+        Vol I p. 3-16), 0 < alpha <= 1. Default None: Table 3-6's for the
+        reinforcement's type (p. 3-17), 1.0 for steel strips and grids, 0.8
+        for a geogrid, 0.6 for a geotextile; a "geosynthetic" of no stated
+        kind is refused (:func:`pullout_alpha`, GM-256).
 
     Returns
     -------
@@ -958,8 +1034,7 @@ def check_internal_stability(
     sloping = geom.backfill_slope > 0
     Rc = coverage_ratio(reinforcement)        # GEC-11 Eq. 3-1 (GM-256)
     _check_tested(F_star_tested, alpha_tested)
-    alpha = (default_alpha(reinforcement) if alpha_tested is None
-             else alpha_tested)
+    alpha = pullout_alpha(reinforcement, alpha_tested)
     Tal_Rc = reinforcement.Tallowable * Rc    # per metre of wall, p. 4-47
     if sloping:
         _check_backslope(geom, None, geom.surcharge)
@@ -2002,9 +2077,12 @@ def analyze_mse_wall(
         strips the F* at the top of the wall, or a tested F* or alpha
         (:func:`pullout_factor_choices`). A steel strip or grid with no
         coverage ratio and no horizontal spacing is refused
-        (:func:`coverage_ratio`, GM-256).
+        (:func:`coverage_ratio`, GM-256), and so is a geosynthetic of no
+        stated kind given no tested alpha (:func:`pullout_alpha`).
     """
     coverage_ratio(reinforcement)       # refuse before any work (GM-256)
+    _check_tested(F_star_tested, alpha_tested)
+    pullout_alpha(reinforcement, alpha_tested)
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)

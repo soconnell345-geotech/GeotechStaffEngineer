@@ -529,12 +529,51 @@ module does not take; its Level 4 Pr = 9.04 k a strip (p. E5-28) is
 reproduced by the primitive. Tests: `tests/test_mse_coverage_ratio.py`,
 V-056 in `validation_examples/test_published_v056_v057_gec11_slope.py`.
 
-**Left for the owner.** alpha for a geosynthetic stays 1.0 in the module,
-where Table 3-6 prints 0.8 for geogrids and 0.6 for geotextiles (p. 3-16:
-"In the absence of test data, alpha = 0.8 for geogrids and alpha = 0.6 for
-geotextiles"); `alpha_tested` sets it. Rc is one value for the wall: E3
-changes Sh with depth (2.50 ft to 1.67 ft), so a wall like it is run once
-per spacing.
+**The scale effect correction factor alpha (second GM-256 commit).** Table
+3-6 (p. 3-17), "alpha Default Value": 1.0 for inextensible strips, 1.0* for
+inextensible grids (bar mats and welded wire), 0.8 for extensible grids, 0.6
+for extensible sheets; note *: "For longitudinal bars/wires spacing greater
+than 6 inches, alpha may be less than 1.0 and pullout tests are required";
+note (ii): "Pullout testing to determine alpha is recommended if alpha shown
+in table is less than 1.0". p. 3-16: "In the absence of test data, alpha =
+0.8 for geogrids and alpha = 0.6 for geotextiles (extensible sheets) is
+recommended". The module took 1.0 for every reinforcement. `Reinforcement`
+now has the types `geogrid` and `geotextile` beside `geosynthetic`, and
+`mse.pullout_alpha` takes alpha as follows:
+- `alpha_tested` when given;
+- else Table 3-6's value for the type (`mse.table_alpha`): 1.0 for steel,
+  0.8 for a geogrid, 0.6 for a geotextile;
+- a `geosynthetic` of no stated kind, given no tested alpha, is refused,
+  and the refusal quotes both printed values.
+
+The built-in geogrids are now type `geogrid`. A choice states the alpha
+wherever the table attaches a condition to it: below 1.0 (note (ii)), and a
+steel grid's 1.0* (note *). Each choice quotes the table and p. 3-16. Its
+alternative gives FOS_pullout at alpha 1.0, or at the printed values beside
+a tested alpha. The tool's custom `reinforcement_type` has no default now:
+the type sets the alpha. Kr/Ka (1.0) and F* (0.67 tan phi) are the same for
+all three geosynthetic types.
+
+Numbers on the 6 m wall (phi 34, L 5 m, Sv 0.6 m), with FOS_rupture
+unchanged at 1.192:
+
+| Reinforcement | FOS_pullout before (alpha 1.0) | FOS_pullout now |
+|---|---|---|
+| Geogrid (UX1600) | 10.493 to 25.792 | 8.394 to 20.633 (alpha 0.8) |
+| Geotextile of the same Tal | 10.493 to 25.792 | 6.296 to 15.475 (alpha 0.6) |
+
+GEC-11 Vol II Example E1 takes "alpha = Scale correction factor, = 0.8 for
+these geogrids" (Step 7.8, p. E1-16). The module's geogrid alpha and F*
+reproduce every pullout CDR of Table E1-7.5 (p. E1-17) within 1.2 %. At
+alpha 1.0 each would be 25 % high. Tests:
+`tests/test_mse_scale_effect_alpha.py`, and V-057 in
+`validation_examples/test_published_v056_v057_gec11_slope.py`.
+
+**Left for the owner** (BACKLOG):
+- whether Cu < 4 with no tested F* is refused rather than computed and
+  flagged;
+- Rc is one value for the wall: E3 changes Sh with depth (2.50 ft to
+  1.67 ft), so a wall like it is run once per spacing.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
@@ -588,7 +627,9 @@ per spacing.
     (GEC-11 Fig. E4-5). The grid F* takes t/St from the `Reinforcement`
     geometry (`thickness`/`transverse_spacing`) or the `t_over_St` arg; if a
     grid lacks that geometry F* falls back to the strip curve.
-  - geosynthetic ("geosynthetic"): Kr/Ka 1.0; F* 0.67·tan(φ).
+  - geosynthetic ("geogrid", "geotextile", "geosynthetic"): Kr/Ka 1.0; F*
+    0.67·tan(φ); alpha by Table 3-6, 0.8 geogrid, 0.6 geotextile, a
+    "geosynthetic" of no stated kind given a tested alpha (GM-256, above).
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
   strip default unchanged; GM-246 changed its top value (above).

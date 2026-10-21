@@ -15,6 +15,7 @@ from retaining_walls.cantilever import (
 )
 from retaining_walls.mse import (
     NEEDS_PHI_FOUNDATION, analyze_mse_wall, check_external_stability_lrfd,
+    table_alpha,
 )
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_75x4, WELDED_WIRE_GRID_W11,
@@ -63,6 +64,8 @@ _REINFORCEMENT_TYPE_ALIASES = {
     "ribbed_strip": "metallic_strip",
     "metallic_strip": "metallic_strip",
     "metallic_grid": "metallic_grid",
+    "geogrid": "geogrid",
+    "geotextile": "geotextile",
     "geosynthetic": "geosynthetic",
 }
 
@@ -96,12 +99,25 @@ def _build_reinforcement(params):
         raise ValueError(
             f"mse_wall: {not_built_in}provide a built-in reinforcement_name "
             f"({sorted(_REINFORCEMENT_DB)}; see list_reinforcement) or a custom "
-            "reinforcement_Tallowable (kN/m) with optional reinforcement_type/"
-            "reinforcement_width/reinforcement_Fy/reinforcement_thickness "
+            "reinforcement_Tallowable (kN/m) with reinforcement_type and "
+            "optional reinforcement_width/reinforcement_Fy/"
+            "reinforcement_thickness "
             "(and, for a bar mat / welded grid: reinforcement_transverse_spacing "
             "= St with reinforcement_thickness = transverse-bar diameter t)."
         )
-    r_type_in = params.get("reinforcement_type", "geosynthetic")
+    r_type_in = params.get("reinforcement_type")
+    if r_type_in is None:
+        # GM-256: the type sets the alpha and the coverage a custom
+        # reinforcement takes; there is no default type
+        raise ValueError(
+            "mse_wall: a custom reinforcement (reinforcement_Tallowable) "
+            "needs its reinforcement_type: 'metallic_strip', "
+            "'metallic_grid' (bar mat, welded grid), 'geogrid' or "
+            "'geotextile'. The type sets the pullout curves and the scale "
+            "effect correction factor alpha, GEC-11 Vol I Table 3-6 (p. "
+            "3-17): 1.0 for steel, 0.8 for geogrids, 0.6 for geotextiles; "
+            "or 'geosynthetic' with alpha_tested, an alpha from pullout "
+            "tests")
     r_type = _REINFORCEMENT_TYPE_ALIASES.get(r_type_in, r_type_in)
     return Reinforcement(
         name=params.get("reinforcement_name", "Custom"),
@@ -815,6 +831,7 @@ def _run_list_reinforcement(params):
         result[key] = {"name": r.name, "type": r.type,
                        "Tallowable_kN_per_m": round(r.Tallowable, 2),
                        "width_m": r.width,
+                       "alpha": table_alpha(r),
                        "mse_wall_needs": _COVERAGE_NEEDS[r.type]}
     return {"reinforcement_types": result,
             "Tallowable": ("Tal per metre of the reinforcement's own width "
@@ -832,9 +849,10 @@ _COVERAGE_NEEDS = {
                      "outside longitudinal bars) with "
                      "reinforcement_horizontal_spacing (Sh, m), or "
                      "coverage_ratio",
-    "geosynthetic": "nothing: a continuous layer, Rc = 1; for strips at "
-                    "less than full coverage, reinforcement_width with "
-                    "reinforcement_horizontal_spacing, or coverage_ratio",
+    **{kind: "nothing: a continuous layer, Rc = 1; for strips at less "
+             "than full coverage, reinforcement_width with "
+             "reinforcement_horizontal_spacing, or coverage_ratio"
+       for kind in ("geogrid", "geotextile", "geosynthetic")},
 }
 
 
@@ -913,9 +931,9 @@ METHOD_INFO = {
             "reinforcement_horizontal_spacing": {"type": "float", "required": False, "description": "Centre-to-centre horizontal spacing Sh (m) of the strips, grids or sheets at one level (GEC-11 Vol I p. 3-12). With the reinforcement's width b it gives the coverage ratio Rc = b/Sh (Eq. 3-1), which scales the pullout resistance (Eq. 4-35, p. 4-49) and the tensile resistance (Tal x Rc, p. 4-47) to a metre of wall. Required for a steel strip or grid unless coverage_ratio is given instead; a call with neither is refused, since GEC-11 prints no spacing to assume (Vol II Example E3 uses 50 mm strips at 0.76 and 0.51 m, 2 or 3 per 1.5 m panel). A geosynthetic with neither is a continuous layer, Rc = 1 (p. 3-13). Aliases: Sh, horizontal_spacing."},
             "coverage_ratio": {"type": "float", "required": False, "description": "Coverage ratio Rc = b/Sh (GEC-11 Vol I Eq. 3-1, p. 3-12), more than 0 and at most 1, given directly instead of reinforcement_horizontal_spacing with reinforcement_width (not both). Alias: Rc."},
             "F_star_tested": {"type": "float or list", "required": False, "description": "Pullout resistance factor F* from pullout tests on the product in the wall's backfill (GEC-11 Vol I Table 3-6 note (i), p. 3-17; Appendix B): one number at every level, or [[depth_m, F*], ...] with depths below the top of the wall, linear between and the end value beyond. Replaces the empirical F* (Eqs. 3-4 to 3-8); note (i) accepts the empirical values only for Table 3-1 granular fill with Cu >= 4 ('For fill outside these limits, tests must be run'). The result's choices give FOS_pullout at the empirical F* beside it."},
-            "alpha_tested": {"type": "float", "required": False, "description": "Scale effect correction factor alpha from pullout tests on reinforcements of different lengths (GEC-11 Vol I p. 3-16, Appendix B), more than 0 and at most 1. Table 3-6 note (ii): 'Pullout testing to determine alpha is recommended if alpha shown in table is less than 1.0'. The result's choices give FOS_pullout at alpha 1.0 beside it."},
+            "alpha_tested": {"type": "float", "required": False, "description": "Scale effect correction factor alpha from pullout tests on reinforcements of different lengths (GEC-11 Vol I p. 3-16, Appendix B), more than 0 and at most 1. Left out, Table 3-6's alpha for the reinforcement type (p. 3-17): 1.0 for steel strips and grids, 0.8 for geogrids, 0.6 for geotextiles; a reinforcement_type 'geosynthetic' needs it. Table 3-6 note (ii): 'Pullout testing to determine alpha is recommended if alpha shown in table is less than 1.0'. The result's choices give FOS_pullout at the table's alpha beside a tested one."},
             "Cu_backfill": {"type": "float", "required": False, "default": 4.0, "description": "Uniformity coefficient Cu = D60/D10 of the reinforced backfill, for the pullout resistance factor of ribbed steel strips: F* = 1.2 + log Cu at the top of the wall, 2.0 maximum, falling linearly to tan phi_backfill at 20 ft (6 m) and below (GEC-11 Vol I Eqs. 3-4 and 3-5, p. 3-20). Left out, Cu = 4 (F* 1.8 at the top): p. 3-20, 'If the specific Cu for the wall backfill is unknown at design time, a Cu = 4 should be assumed' for fills meeting its Sec. 3.1. Table 3-6 note (i) (p. 3-17) accepts these empirical values only for Table 3-1 granular fill with Cu >= 4 ('For fill outside these limits, tests must be run'); a Cu below 4 is computed and the choices say so. A steel grid given t/St and a geosynthetic keep their own F*, which takes no Cu; given with them, Cu is checked against Table 3-6 note (i) only. The result's choices give the F* used and FOS_pullout at the top level and the lowest at the other reading, or for a grid or geosynthetic whether the given Cu is within note (i). Aliases: Cu, uniformity_coefficient."},
-            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 1.2 + log Cu (2.0 at most; Cu_backfill) -> tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geosynthetic (Kr/Ka 1.0)."},
+            "reinforcement_type": {"type": "str", "required": False, "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geogrid", "geotextile", "geosynthetic"], "description": "Custom reinforcement type, required with reinforcement_Tallowable. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 1.2 + log Cu (2.0 at most; Cu_backfill) -> tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geogrid / geotextile (Kr/Ka 1.0, F* 0.67 tan phi). It also sets the scale effect correction factor alpha, GEC-11 Vol I Table 3-6 (p. 3-17): 1.0 steel, 0.8 geogrid, 0.6 geotextile; 'geosynthetic' (either kind) needs alpha_tested."},
             "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Long-term allowable tensile strength Tal (kN/m) of a custom reinforcement, per metre of the reinforcement's own width (GEC-11 Vol I Eq. 3-11a, p. 3-22: Tal = Fy Ac / b for steel): a strength per strip or per mat is that divided by its width b. The rupture check takes Tal x Rc per metre of wall (p. 4-47). Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
@@ -1155,6 +1173,12 @@ declare_when_absent(METHOD_INFO, {
             "GEC-11 Vol I Eqs. 3-4 to 3-8 (pp. 3-20, 3-21), for use 'in "
             "the absence of product and backfill specific test data' "
             "(Table 3-6 note (i), p. 3-17)"),
+        "alpha_tested": (
+            "Table 3-6's alpha for the reinforcement type",
+            "GEC-11 Vol I Table 3-6 (p. 3-17): 1.0 for steel strips and "
+            "grids, 0.8 for geogrids, 0.6 for geotextiles (p. 3-16: 'In the "
+            "absence of test data'); a 'geosynthetic' of no stated kind is "
+            "refused"),
         "phi_retained": "phi_backfill",
         "gamma_retained": "gamma_backfill",
         "broken_backslope_height": _SLOPE_CONTINUES,

@@ -166,7 +166,8 @@ def test_a_Cu_below_4_is_computed_and_flagged():
 def test_a_grid_with_no_bar_geometry_says_it_took_the_strip_curve():
     bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
                               Tallowable=100.0, coverage_ratio=0.3)
-    (c,) = pullout_factor_choices(_geom(), 20.0, 34.0, bare_grid)
+    (c,) = [c for c in pullout_factor_choices(_geom(), 20.0, 34.0, bare_grid)
+            if "(Cu_backfill)" in c["what"]]
     assert "no transverse-bar geometry (t/St)" in c["basis"]
     assert check_internal_stability(_geom(), 20.0, 34.0, bare_grid,
                                     Cu_backfill=7.0)[0]["F_star"] > \

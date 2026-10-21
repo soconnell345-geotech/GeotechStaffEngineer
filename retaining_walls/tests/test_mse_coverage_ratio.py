@@ -77,16 +77,18 @@ def test_pullout_and_rupture_fall_in_proportion_to_the_spacing():
                                                  rel=2e-3)
 
 
-def test_a_geogrid_wall_is_unchanged():
+def test_a_geogrid_wall_keeps_Rc_1():
     """A geosynthetic given no spacing is a continuous layer, Rc = 1, as
-    before GM-256: FOS_pullout 10.493 to 25.792, FOS_rupture 1.192 at the
-    bottom level."""
+    before GM-256, and FOS_rupture is unchanged, 1.192 at the bottom level.
+    FOS_pullout is 8.394 to 20.633: 10.493 to 25.792 before, times the
+    alpha 0.8 GEC-11 Table 3-6 prints for a geogrid (p. 3-17; the GM-256
+    alpha commit, tests/test_mse_scale_effect_alpha.py)."""
     geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0,
                            reinforcement_spacing=0.6)
     r = analyze_mse_wall(geom, 19.0, 34.0, GEOGRID_UX1600)
     po = [lv["FOS_pullout"] for lv in r.internal_results]
-    assert min(po) == pytest.approx(10.493, abs=1e-3)
-    assert max(po) == pytest.approx(25.792, abs=1e-3)
+    assert min(po) == pytest.approx(8.394, abs=1e-3)
+    assert max(po) == pytest.approx(20.633, abs=1e-3)
     assert min(lv["FOS_rupture"] for lv in r.internal_results) == \
         pytest.approx(1.192, abs=1e-3)
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
@@ -181,7 +183,8 @@ def test_a_tested_alpha_scales_the_pullout():
     (c,) = [c for c in r.choices if "(alpha_tested)" in c["what"]]
     assert c["chosen"] == "alpha 0.8, from pullout tests"
     assert "p. 3-16" in c["basis"] and "note (ii)" in c["basis"]
-    assert c["alternatives"][0].startswith("alpha 1, the default")
+    assert c["alternatives"][0].startswith(
+        "alpha 1, Table 3-6's default value for inextensible strips")
 
 
 @pytest.mark.parametrize("kwargs, words", [

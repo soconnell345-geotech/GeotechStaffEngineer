@@ -382,3 +382,39 @@ def test_v057_internal_equivalent_height():
                          phi_foundation=30.0, phi_retained=30.0)
     # E1 rounds beta to 26.6 deg (tan 0.5008); 2H:1V gives 3.50 ft
     assert r.backslope["S_eq_m"] / FT == pytest.approx(3.51, abs=0.02)
+    # GM-256: E1's own pullout factors, alpha 0.8 for these geogrids
+    assert {lv["alpha"] for lv in r.internal_results} == {0.8}
+
+
+#: GEC-11 Vol II Table E1-7.5 (p. E1-17), per layer: Z (ft), available Le
+#: (ft), TMAX (lb/ft), Zp (ft), pullout CDR.
+E1_TABLE_7_5 = [
+    (0.67, 7.72, 346, 7.74, 14.0), (2.67, 8.78, 590, 9.47, 11.4),
+    (4.67, 9.84, 781, 11.21, 11.4), (6.67, 10.91, 972, 12.94, 11.8),
+    (8.67, 11.97, 1163, 14.68, 12.2), (10.67, 13.04, 1354, 16.41, 12.8),
+    (12.67, 14.10, 1545, 18.14, 13.4), (14.67, 15.16, 1736, 19.88, 14.1),
+    (16.67, 16.23, 1927, 21.61, 14.7), (18.67, 17.29, 1366, 23.35, 23.9),
+    (19.33, 17.64, 1091, 23.92, 31.1)]
+
+
+@pytest.mark.parametrize("z, Le, Tmax, Zp, cdr", E1_TABLE_7_5)
+def test_v057_pullout_cdr_by_layer(z, Le, Tmax, Zp, cdr):
+    """GM-256: E1 Step 7.8 (p. E1-16) takes F* 0.45, 'alpha = Scale
+    correction factor, = 0.8 for these geogrids', C = 2 and Rc = 1, and
+    Table E1-7.5 (p. E1-17) gives each layer's pullout CDR, phi Pr / TMAX
+    with phi 0.90, from its own Zp and Le. The module's built-in geogrid
+    takes GEC-11 Vol I Table 3-6's alpha 0.8 for a geogrid (p. 3-17) and
+    its own F*, 0.67 tan 34 = 0.452, and reproduces every CDR within 1.2 %
+    (F* 0.452 against 0.45 is 0.4 % of it). At the alpha 1.0 every
+    geosynthetic took before GM-256, each was 25 % high."""
+    geom = MSEWallGeometry(wall_height=20 * FT, reinforcement_length=18 * FT,
+                           backfill_slope=BETA,
+                           broken_backslope_height=9 * FT,
+                           surcharge=0.25 * KSF)
+    level = analyze_mse_wall(geom, GAMMA, 34.0, GEOGRID_UX1600,
+                             phi_foundation=30.0,
+                             phi_retained=30.0).internal_results[0]
+    assert level["alpha"] == 0.8
+    Pr = pullout_resistance(Zp * FT, GAMMA, Le * FT, level["F_star"],
+                            alpha_pullout=level["alpha"])
+    assert 0.90 * Pr / (Tmax * KFT / 1000) == pytest.approx(cdr, rel=0.015)
