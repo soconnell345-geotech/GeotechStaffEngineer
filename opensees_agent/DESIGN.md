@@ -719,7 +719,8 @@ after GM-260: 1e-6 1.86, 1e-5 1.89, 1e-4 2.35 (was 1.93), 9.81e-4 1.72,
 
 `pga_surface_g` stays the raw peak of the computed surface record. Beside
 it the result now gives two alternatives, each named with its basis in
-`choices`, and a test of whether the raw peak is a spike.
+`choices`, and says whether motion above the low-pass corner sets the raw
+peak.
 
 **What the references print.** The library (geotech-references: ASCE 7-22,
 FEMA P-2082, the GECs, UFC 3-220-20, the FHWA manuals) was searched for a
@@ -731,10 +732,13 @@ bears:
   "ratios of 5% damped response spectra of surface ground motions to
   input base ground motions"; the standard does not use the surface
   record's peak.
-- ASCE 7-22 Tables 19.3-1 and 19.3-2, note c (pp. 220, 223): for a
-  site-specific spectrum the SDS/2.5 headers "shall be replaced by the
-  MCER response spectral acceleration at 0.01 s natural period". That is
-  the basis given for `Sa_surface_0_01s_g`.
+- ASCE 7-22 Tables 19.3-1 and 19.3-2, note c (pp. 220, 223), the
+  soil-structure interaction tables of effective shear wave velocity and
+  shear modulus: to apply them to a site-specific spectrum, the SDS/2.5
+  headers "shall be replaced by the MCER response spectral acceleration
+  at 0.01 s natural period". That is the basis given for
+  `Sa_surface_0_01s_g`, ASCE's short-period stand-in for the spectrum at
+  zero period.
 - ASCE 7-22 C21.1.3 (p. 836): for liquefaction effects, "effective
   stress analyses" (OpenSees among the programs named), with the
   result again as ratios of response spectra; nothing on filtering
@@ -753,13 +757,20 @@ library, so they were not read here.
   measure the GM-260 review used. Where the corner is at or above the
   record's Nyquist frequency nothing is filtered, and `choices` says so.
 - `Sa_surface_0_01s_g`: the 5 % spectrum at 0.01 s.
-- The spike test: at the raw peak's instant, the share of the peak that
-  is motion above the corner (the record less the low-passed record).
-  Over one half, `pga_set_by_spike` is true and `pga_note` says so in
-  words. Two `choices` entries record the result: the surface PGA
-  reported (raw, the module's choice, with the test in its basis and both
-  alternatives with their values), and the low-pass filter (default or
-  given).
+- Whether motion above the corner sets the raw peak: at the raw peak's
+  instant, the share of the peak that is motion above the corner (the
+  record less the low-passed record), `pga_share_above_lowpass`. Over one
+  half (`ABOVE_LOWPASS_SHARE`, the tool's line), `pga_set_above_lowpass`
+  is true and `pga_note` says so in words. The input's share at its own
+  peak, `pga_input_share_above_lowpass`, is given beside it: a recorded
+  input carries such motion too (Gilroy: 0.46), so the share alone does
+  not say whether the column made the motion, as a dilating sand's spike
+  does (review 2026-10-21; first written as a "spike test" with
+  `pga_set_by_spike`, renamed because the test measures frequency
+  content, not the mechanism). Two `choices` entries record the result:
+  the surface PGA reported (raw, the module's choice, with the shares in
+  its basis and both alternatives with their values), and the low-pass
+  filter (default or given).
 
 **Dense sand** (GM-260's column: 20 m, Vs 300, phi 38, water 0 m, the
 synthetic pulse at 0.30 g; WSL, openseespy 3.8.0):
@@ -769,7 +780,7 @@ synthetic pulse at 0.30 g; WSL, openseespy 3.8.0):
 | raw PGA (g) | 0.194 | 0.223 | 0.295 | 0.406 | 0.453 |
 | low-passed at 10 Hz | 0.201 | 0.221 | 0.224 | 0.226 | 0.226 |
 | share above 10 Hz | 0.01 | 0.26 | 0.56 | 0.66 | 0.70 |
-| set by a spike | no | no | yes | yes | yes |
+| set above 10 Hz | no | no | yes | yes | yes |
 | Sa 0.01 s | 0.194 | 0.225 | 0.296 | 0.409 | 0.456 |
 | Sa 0.2 s (to_dict) | | 0.493 | 0.469 | 0.463 | 0.461 |
 | Sa 1.0 s (to_dict) | | 0.147 | 0.146 | 0.147 | 0.146 |
@@ -778,21 +789,39 @@ The low-passed peak holds within 2 % from 10 to 80 elements, where Sa at
 0.2 s and 1.0 s hold too. Sa at 0.01 s follows the spike: a 0.01 s
 oscillator moves with the ground at the spike's frequencies. It is given
 because ASCE 7-22 prints it, not as a cure. The input low-passed is
-0.300 g, the same as raw: the synthetic pulse has nothing above 10 Hz.
+0.300 g, the same as raw, and its share 0.00: the synthetic pulse has
+nothing above 10 Hz, so here the motion above 10 Hz is made in the
+column.
 
 **The filter's costs, measured** (raw / low-passed at 10 Hz / share):
 
 - loose sand (Vs 200) in 5, 20 and 80 elements: 0.150 / 0.156,
-  0.151 / 0.163, 0.152 / 0.165 g; share 0.13 or less, no spike. The
-  Butterworth's ringing raises the peak of a record that turns sharply by
-  up to 9 %. The basis says so.
+  0.151 / 0.163, 0.152 / 0.165 g; share 0.13 or less, not set above
+  10 Hz. The Butterworth's ringing raises the peak of a record that turns
+  sharply by up to 9 %. The basis says so. Why (review 2026-10-21, 20
+  elements): the record runs at about -0.15 g, the sand at its strength,
+  then reverses 0.165 g in 0.03 s (1.12-1.15 s). A zero-phase low-pass
+  overshoots on both sides of such a jump, like the Gibbs overshoot of a
+  step (about 9 % of the jump for an ideal cut-off), and the overshoot
+  lands 0.03 s before it on the plateau: -0.149 g raw, -0.163 g
+  low-passed. Other filters on the same record: Butterworth order 2,
+  0.157; order 8, 0.167; an ideal cut-off at 10 Hz, 0.170; Bessel order
+  4 (no overshoot), 0.149. A 2 Hz sine clipped at 0.15 g does the same
+  (0.158 g, `test_ringing_at_a_sharp_turn_raises_the_low_passed_peak`).
+  It is the filter, not a defect: padding the record with 5 s of zeros
+  instead of `sosfiltfilt`'s own odd extension changes no peak in the
+  fourth decimal.
 - dry sand, 10 elements: 0.545 / 0.577 g (+6 %).
 - the effective-stress example (Gilroy record): 0.298 / 0.276 g, share
-  0.58, so a spike. The Gilroy input itself: 0.473 / 0.445 g. Real
-  recorded motion above 10 Hz is cut by 6 %, which is why the raw peak
-  stays the reported one.
+  0.58, so set above 10 Hz, against 0.46 at the input's own peak. The
+  Gilroy input itself: 0.473 / 0.445 g. Real recorded motion above 10 Hz
+  is cut by 6 %, which is why the raw peak stays the reported one.
 - the wiki total-stress column (Gilroy): 0.433 / 0.317 g, share 0.41, not
-  flagged.
+  set above 10 Hz.
+- quiet cases (review 2026-10-21, synthetic pulse at 0.30 g): clay (Vs
+  150, su 60) 0.283 / 0.279 g, share 0.06; the dense column linear
+  elastic in 40 elements 0.461 / 0.461 g, share 0.00; dry dense sand in
+  10 elements 0.499 / 0.508 g, share 0.01. None set above 10 Hz.
 
 Variants tried on dense sand (10 to 80 elements), not adopted:
 
@@ -816,12 +845,40 @@ At 0.01 s on a 0.01 s record that is one Newmark step a period, so the
 first ordinate of the stored spectrum (`periods[0]` = 0.01 s) was off: on
 dense sand in 80 elements 0.402 g against a raw peak of 0.453 g, and on
 the wiki column 0.605 g against 0.433 g. A period shorter than ten record
-steps is now integrated on the record linearly interpolated to a step of
-T / 20 or less. That is within 2 % of a step 400 times finer, and
-`test_short_period_converges_to_a_fine_step` pins it. Periods of ten
-steps and longer are unchanged to the bit, so `to_dict`'s 0.1 to 3 s
-values and every pinned spectrum are unchanged. A spectrum costs about
-twice the time it did on a 0.01 s record.
+steps is now integrated in substeps of T / 20 or less on the record
+linearly interpolated between its samples: Newmark's average
+acceleration over the piecewise-linear excitation that Nigam and Jennings
+(1969) integrate exactly. `test_short_period_converges_to_a_fine_step`
+pins it against a step 200 times finer.
+
+Checked in review (2026-10-21) against the exact response to the
+piecewise-linear record (scipy `lsim`, first-order hold, read every
+dt / 50), Sa in g:
+
+| Record (dt) | T (s) | before | now | exact |
+|---|---|---|---|---|
+| dense sand, 80 el. (0.01 s), PGA 0.453 | 0.002 | 0.453 | 0.454 | 0.454 |
+| | 0.01 | 0.402 | 0.456 | 0.456 |
+| | 0.03 | 0.946 | 0.624 | 0.614 |
+| | 0.05 | 0.709 | 0.855 | 0.872 |
+| | 0.08 | 0.504 | 0.663 | 0.678 |
+| | 0.1 (unchanged) | 0.535 | 0.535 | 0.529 |
+| wiki column (0.005 s), PGA 0.433 | 0.01 | 0.605 | 0.438 | 0.437 |
+| | 0.02 | 0.915 | 0.844 | 0.845 |
+| | 0.05 (unchanged) | 0.670 | 0.670 | 0.672 |
+| effective example (0.005 s), PGA 0.298 | 0.01 | 0.314 | 0.304 | 0.304 |
+| | 0.02 | 0.658 | 0.414 | 0.403 |
+| | 0.05 (unchanged) | 0.635 | 0.635 | 0.668 |
+
+Below ten steps the new values are within 3 % of exact (worst +2.8 %, the
+effective example at 0.02 s; T / 40 would give 0.4 %), and Sa at short
+period now approaches the PGA as it must. Periods of ten steps and longer
+are unchanged to the bit, so `to_dict`'s 0.1 to 3 s values and every
+pinned spectrum are unchanged; on these records they sit within about
+5 % of exact (the worst, 0.05 s on a 0.005 s record, -5.0 %; 0.1 s on a
+0.01 s record, -1 to +3 %). The stored spectrum costs more: 100 periods
+on a 2,000-step record at 0.01 s 0.22 -> 2.05 s, on a 4,000-step record
+at 0.005 s 0.35 -> 0.84 s.
 
 ## Ground Motions
 

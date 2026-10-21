@@ -101,16 +101,19 @@ DEFAULT_PERMEABILITY = {"sand": 1.0e-4, "clay": 1.0e-7}
 # as ratios of the 5 % damped surface and input spectra).
 DEFAULT_PGA_LOWPASS_HZ = 10.0
 
-# The raw PGA is reported as set by a spike when, at its instant, the
-# motion above the low-pass corner (the record less the low-passed record)
-# carries more than this share of it.
-SPIKE_SHARE = 0.5
+# The raw PGA is reported as set by motion above the low-pass corner when,
+# at its instant, that motion (the record less the low-passed record)
+# carries more than this share of it: one half, the tool's choice. The
+# input's share at its own peak is reported beside it, since a recorded
+# input carries such motion too (the Gilroy record: 46 % at its peak).
+ABOVE_LOWPASS_SHARE = 0.5
 
 # The short period (s) whose 5 % spectral acceleration is reported beside
-# the PGA: for a site-specific spectrum, ASCE 7-22 Tables 19.3-1 and
-# 19.3-2, note c (pp. 220, 223), replace the SDS/2.5 headers (the design
-# spectrum's value at zero period) by "the MCER response spectral
-# acceleration at 0.01 s natural period".
+# the PGA: when ASCE 7-22's soil-structure interaction tables of effective
+# shear wave velocity and shear modulus (Tables 19.3-1 and 19.3-2, note c,
+# pp. 220, 223) are applied to a site-specific spectrum, their SDS/2.5
+# headers (the design spectrum's value at zero period) are replaced by
+# "the MCER response spectral acceleration at 0.01 s natural period".
 SHORT_PERIOD_S = 0.01
 
 
@@ -478,9 +481,10 @@ def analyze_site_response(
     pga_lowpass_hz : float
         Corner (Hz) of the low-pass behind ``pga_surface_lowpass_g`` and
         ``pga_input_lowpass_g`` (fourth-order Butterworth, run forward and
-        backward), and of the spike test on the raw PGA. The raw PGA
-        (``pga_surface_g``) is not filtered. Default 10, the tool's
-        choice (no reference in the library prints one).
+        backward), and of the test of whether motion above it sets the
+        raw PGA. The raw PGA (``pga_surface_g``) is not filtered.
+        Default 10, the tool's choice (no reference in the library
+        prints one).
 
     Returns
     -------
@@ -556,31 +560,43 @@ def analyze_site_response(
 # The surface PGA beside its raw value (GM-264)
 # ===========================================================================
 
+def _peak_above_lowpass(accel_g, dt, corner_hz):
+    """For one record: the index of its peak, the peak of the record
+    low-passed at ``corner_hz``, and the share of the peak, at its
+    instant, carried by motion above the corner (the record less the
+    low-passed record; negative where the low-passed record is the
+    larger there). An empty or all-zero record gives a share of 0."""
+    from opensees_agent.opensees_utils import lowpass
+    a = np.asarray(accel_g, dtype=float)
+    if len(a) == 0:
+        return 0, 0.0, 0.0
+    k = int(np.argmax(np.abs(a)))
+    low = lowpass(a, dt, corner_hz)
+    share = (a[k] - low[k]) / a[k] if a[k] != 0.0 else 0.0
+    return k, float(np.max(np.abs(low))), float(share)
+
+
 def set_pga_options(result, input_accel_g, dt, corner_hz):
     """Put the surface PGA's alternatives on ``result`` (GM-264): the
     surface and input records low-passed at ``corner_hz`` (fourth-order
     Butterworth, forward and backward), the 5 % spectral acceleration at
-    0.01 s, and the spike test on the raw peak: the share of the peak, at
-    its instant, carried by motion above the corner (the record less the
-    low-passed record); over ``SPIKE_SHARE`` it is set by a spike. The raw
-    peak (``pga_surface_g``) is left as computed."""
-    from opensees_agent.opensees_utils import (
-        compute_response_spectrum, lowpass)
+    0.01 s, and whether motion above the corner sets the raw peak: the
+    share of the peak, at its instant, carried by that motion (the record
+    less the low-passed record), over ``ABOVE_LOWPASS_SHARE``; the input's
+    share at its own peak beside it. The raw peak (``pga_surface_g``) is
+    left as computed."""
+    from opensees_agent.opensees_utils import compute_response_spectrum
     a = np.asarray(result.surface_accel_g, dtype=float)
-    a_in = np.asarray(input_accel_g, dtype=float)
     result.pga_lowpass_hz = float(corner_hz)
     if len(a) == 0:
         return result
-    k = int(np.argmax(np.abs(a)))
-    low = lowpass(a, dt, corner_hz)
+    k, result.pga_surface_lowpass_g, share = _peak_above_lowpass(
+        a, dt, corner_hz)
     result.pga_time_s = k * float(dt)
-    result.pga_surface_lowpass_g = float(np.max(np.abs(low)))
-    if len(a_in):
-        result.pga_input_lowpass_g = float(np.max(np.abs(
-            lowpass(a_in, dt, corner_hz))))
-    share = (a[k] - low[k]) / a[k] if a[k] != 0.0 else 0.0
-    result.pga_share_above_lowpass = float(share)
-    result.pga_set_by_spike = bool(share > SPIKE_SHARE)
+    result.pga_share_above_lowpass = share
+    result.pga_set_above_lowpass = bool(share > ABOVE_LOWPASS_SHARE)
+    _, result.pga_input_lowpass_g, result.pga_input_share_above_lowpass = (
+        _peak_above_lowpass(input_accel_g, dt, corner_hz))
     _, sa = compute_response_spectrum(a, dt, [SHORT_PERIOD_S])
     result.Sa_surface_0_01s_g = float(sa[0])
     return result
@@ -595,19 +611,26 @@ def _pga_choices(result, dt, corner_hz):
     fc = float(corner_hz)
     nyquist = 0.5 / float(dt)
     share = result.pga_share_above_lowpass
-    test = (f"at its instant ({result.pga_time_s:.2f} s) "
-            f"{share * 100:.0f} % of it is motion above {fc:g} Hz")
-    basis = "the record as computed, with no filter; " + (
-        test + ", so it is set by a spike (over half)"
-        if result.pga_set_by_spike else
-        test + " (a spike would be over half)")
+    test = (f"At its instant ({result.pga_time_s:.2f} s) "
+            f"{round(share * 100)} % of it is motion above {fc:g} Hz (the "
+            f"record less the record low-passed at {fc:g} Hz), against "
+            f"{round(result.pga_input_share_above_lowpass * 100)} % at the "
+            f"input's own peak")
+    basis = "the record as computed, with no filter. " + test + (
+        "; over half (the tool's line), so motion above the corner sets "
+        "it. In a sand that dilates that motion can be a short spike "
+        "whose height changes with the element size"
+        if result.pga_set_above_lowpass else
+        "; motion above the corner would set it over half (the tool's "
+        "line)")
     alternatives = [
         f"5 % spectral acceleration at 0.01 s: "
-        f"{result.Sa_surface_0_01s_g:.3f} g (Sa_surface_0_01s_g), which "
-        f"ASCE 7-22 puts in place of SDS/2.5 for a site-specific spectrum "
-        f"(Tables 19.3-1 and 19.3-2, note c); a 0.01 s oscillator moves "
-        f"with the ground at a spike's frequencies, so it carries a spike "
-        f"as the peak does"]
+        f"{result.Sa_surface_0_01s_g:.3f} g (Sa_surface_0_01s_g), the "
+        f"ordinate ASCE 7-22 puts in place of SDS/2.5 when its "
+        f"soil-structure interaction tables are applied to a "
+        f"site-specific spectrum (Tables 19.3-1 and 19.3-2, note c); a "
+        f"0.01 s oscillator moves with the ground at these frequencies, "
+        f"so it stays close to the raw peak"]
     if fc < nyquist:
         alternatives.insert(0, (
             f"the record low-passed at {fc:g} Hz: "
@@ -630,9 +653,10 @@ def _pga_choices(result, dt, corner_hz):
         "the tool's choice: no reference in the library prints a filter or "
         "a corner for reporting PGA from a site response analysis (ASCE "
         "7-22 Sec. 21.1.3 takes the result as ratios of the surface and "
-        "input spectra). A corner below a spike's frequencies keeps the "
-        "low-passed peak from following the element size; it also removes "
-        "real motion above the corner, from the input as from the surface, "
+        "input spectra). A corner below the frequencies of a dilating "
+        "sand's spikes keeps the low-passed peak from following the "
+        "element size; it also removes real motion above the corner, "
+        "from the input as from the surface, "
         "and the filter's ringing can raise a peak by up to about a tenth "
         "where the record turns sharply",
         ("pga_lowpass_hz (Hz)",))

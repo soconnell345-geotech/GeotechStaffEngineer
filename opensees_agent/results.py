@@ -263,8 +263,11 @@ class SiteResponseResult:
     pga_share_above_lowpass : float or None
         At the raw peak's instant, the share of it carried by motion
         above ``pga_lowpass_hz`` (the record less the low-passed record).
-    pga_set_by_spike : bool
-        That share is over one half: the raw PGA is set by a spike.
+    pga_input_share_above_lowpass : float or None
+        The same share for the input record at its own peak.
+    pga_set_above_lowpass : bool
+        ``pga_share_above_lowpass`` is over one half: motion above the
+        corner sets the raw PGA.
     Sa_surface_0_01s_g : float or None
         5 % damped spectral acceleration of the surface record at 0.01 s.
     """
@@ -297,26 +300,29 @@ class SiteResponseResult:
     pga_surface_lowpass_g: Optional[float] = None
     pga_input_lowpass_g: Optional[float] = None
     pga_share_above_lowpass: Optional[float] = None
-    pga_set_by_spike: bool = False
+    pga_input_share_above_lowpass: Optional[float] = None
+    pga_set_above_lowpass: bool = False
     Sa_surface_0_01s_g: Optional[float] = None
 
     def pga_note(self) -> str:
-        """What sets the surface PGA, when it is a spike (GM-264); else
-        empty."""
-        if not self.pga_set_by_spike:
+        """What sets the surface PGA, when it is motion above the
+        low-pass corner (GM-264); else empty."""
+        if not self.pga_set_above_lowpass:
             return ""
         fc = self.pga_lowpass_hz
         return (
             f"The surface PGA, {self.pga_surface_g:.3f} g at "
-            f"{self.pga_time_s:.2f} s, is set by a spike: at that instant "
-            f"{self.pga_share_above_lowpass * 100:.0f} % of it is motion "
-            f"above {fc:g} Hz (over half). The record low-passed at "
-            f"{fc:g} Hz peaks at {self.pga_surface_lowpass_g:.3f} g (the "
-            f"input, low-passed the same way, "
-            f"{self.pga_input_lowpass_g:.3f} g); Sa at 0.01 s is "
-            f"{self.Sa_surface_0_01s_g:.3f} g. Such a spike can change "
-            f"with the element size; the spectrum at 0.2 s and longer "
-            f"changes much less.")
+            f"{self.pga_time_s:.2f} s, is set by motion above {fc:g} Hz: "
+            f"at that instant {round(self.pga_share_above_lowpass * 100)} % "
+            f"of it is above {fc:g} Hz (over half, the tool's line), against "
+            f"{round(self.pga_input_share_above_lowpass * 100)} % at the "
+            f"input's own peak. In a sand that dilates it can be a short "
+            f"spike whose height changes with the element size; the "
+            f"spectrum at 0.2 s and longer changes much less. The record "
+            f"low-passed at {fc:g} Hz peaks at "
+            f"{self.pga_surface_lowpass_g:.3f} g (the input, low-passed "
+            f"the same way, {self.pga_input_lowpass_g:.3f} g); Sa at "
+            f"0.01 s is {self.Sa_surface_0_01s_g:.3f} g.")
 
     def summary(self) -> str:
         lines = [
@@ -341,8 +347,9 @@ class SiteResponseResult:
                 f"{self.pga_surface_lowpass_g:.3f} / "
                 f"{self.pga_input_lowpass_g:.3f} g",
                 f"  Sa at 0.01 s (surface): {self.Sa_surface_0_01s_g:.3f} g",
-                f"  Share of the surface PGA above {fc:g} Hz: "
-                f"{self.pga_share_above_lowpass * 100:.0f} %",
+                f"  Share of the PGA above {fc:g} Hz (surface / input): "
+                f"{round(self.pga_share_above_lowpass * 100)} / "
+                f"{round(self.pga_input_share_above_lowpass * 100)} %",
             ])
             note = self.pga_note()
             if note:
@@ -381,7 +388,8 @@ class SiteResponseResult:
             "amplification_factor": round(self.amplification_factor, 3),
         }
         if self.pga_surface_lowpass_g is not None:
-            # The raw PGA's alternatives and the spike test (GM-264)
+            # The raw PGA's alternatives, and whether motion above the
+            # low-pass corner sets it (GM-264)
             d.update({
                 "pga_time_s": round(self.pga_time_s, 4),
                 "pga_lowpass_hz": self.pga_lowpass_hz,
@@ -389,10 +397,12 @@ class SiteResponseResult:
                 "pga_input_lowpass_g": round(self.pga_input_lowpass_g, 4),
                 "pga_share_above_lowpass": round(
                     self.pga_share_above_lowpass, 3),
-                "pga_set_by_spike": self.pga_set_by_spike,
+                "pga_input_share_above_lowpass": round(
+                    self.pga_input_share_above_lowpass, 3),
+                "pga_set_above_lowpass": self.pga_set_above_lowpass,
                 "Sa_surface_0_01s_g": round(self.Sa_surface_0_01s_g, 4),
             })
-            if self.pga_set_by_spike:
+            if self.pga_set_above_lowpass:
                 d["pga_note"] = self.pga_note()
         if len(self.max_strain_pct) > 0:
             d["max_shear_strain_pct"] = round(float(np.max(self.max_strain_pct)), 4)

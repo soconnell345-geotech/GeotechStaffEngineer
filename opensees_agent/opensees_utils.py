@@ -64,12 +64,18 @@ def fresh_model(ndm: int = 2, ndf: int = 3):
 
 #: A spectral period shorter than this many record steps is integrated on
 #: the record linearly interpolated to a step of at most T / 20
-#: (_SUBSTEPS_PER_PERIOD) (GM-264). At the record's step, average
-#: acceleration lengthens the period by about (pi^2 / 12) (dt / T)^2 and
-#: the largest response falls between steps: at one step a period (0.01 s
-#: on a 0.01 s record) Sa(0.01 s) came out 0.40 g on a surface record
-#: peaking at 0.45 g, and 0.61 g on one peaking at 0.43 g. At T / 20 it is
-#: within 2 % of a step 400 times finer.
+#: (_SUBSTEPS_PER_PERIOD) (GM-264): Newmark's average acceleration method
+#: in substeps over the piecewise-linear record, the excitation Nigam and
+#: Jennings (1969) integrate exactly between samples. At the record's
+#: step, average acceleration lengthens the period by about
+#: (pi^2 / 12) (dt / T)^2 and the largest response falls between steps:
+#: at one step a period (0.01 s on a 0.01 s record) Sa(0.01 s) came out
+#: 0.40 g on a surface record peaking at 0.45 g, and 0.61 g on one peaking
+#: at 0.43 g. At T / 20 it is within 3 % of the exact response to the
+#: piecewise-linear record (scipy lsim, first-order hold, read at T / 400)
+#: on the site response records tried, and within 0.3 % at 0.01 s.
+#: Periods of ten steps and longer keep the record's step, as before;
+#: there it is within about 5 % (one 0.05 s ordinate on a 0.005 s record).
 _MIN_STEPS_PER_PERIOD = 10
 _SUBSTEPS_PER_PERIOD = 20
 
@@ -78,9 +84,10 @@ def compute_response_spectrum(accel_g, dt, periods=None, damping=0.05):
     """Compute pseudo-acceleration response spectrum via Newmark-beta SDOF.
 
     Pure numpy implementation — does not require openseespy. A period
-    shorter than 10 record steps is integrated on the record linearly
-    interpolated to a step of at most a twentieth of the period (GM-264);
-    longer periods use the record's own step.
+    shorter than 10 record steps is integrated in substeps of at most a
+    twentieth of the period on the record linearly interpolated between
+    its samples (the piecewise-linear excitation of Nigam and Jennings
+    1969; GM-264); longer periods use the record's own step.
 
     Parameters
     ----------

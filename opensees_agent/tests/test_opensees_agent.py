@@ -1606,6 +1606,11 @@ class TestSiteResponseBenchmarks:
         assert np.max(nl.max_strain_pct) < 0.05
         assert nl.amplification_factor == pytest.approx(
             lin.amplification_factor, rel=0.10)
+        # GM-264: no motion above 10 Hz sets either peak
+        for r in (lin, nl):
+            assert abs(r.pga_share_above_lowpass) < 0.2
+            assert not r.pga_set_above_lowpass and "pga_note" not in (
+                r.to_dict())
 
     @requires_opensees
     def test_nonlinear_against_equivalent_linear(self):
@@ -1818,9 +1823,9 @@ def _spiky_record(dt=0.01, duration=10.0, spike_g=0.3, spike_at=5.12):
 
 
 class TestShortPeriodSpectrum:
-    """A period shorter than ten record steps is integrated on the record
-    interpolated to a tenth of the period (GM-264); longer periods keep
-    the record's step."""
+    """A period shorter than ten record steps is integrated in substeps of
+    a twentieth of the period on the record interpolated between its
+    samples (GM-264); longer periods keep the record's step."""
 
     def test_short_period_converges_to_a_fine_step(self):
         from opensees_agent.opensees_utils import _newmark_peak_sa
@@ -1877,7 +1882,7 @@ class TestLowpass:
 
 class TestPGAOptions:
     """The raw PGA stays as computed; beside it the record low-passed,
-    Sa at 0.01 s and the spike test (GM-264)."""
+    Sa at 0.01 s and whether motion above the corner sets it (GM-264)."""
 
     def _result(self, a, dt=0.01):
         from opensees_agent.site_response import set_pga_options
@@ -1896,29 +1901,46 @@ class TestPGAOptions:
         # the low-passed record peaks near the 2 Hz sine's 0.2 g
         assert r.pga_surface_lowpass_g == pytest.approx(0.2, rel=0.08)
         assert r.pga_input_lowpass_g == pytest.approx(0.3, rel=0.01)
-        assert r.pga_share_above_lowpass > 0.5 and r.pga_set_by_spike
+        assert r.pga_share_above_lowpass > 0.5 and r.pga_set_above_lowpass
+        assert abs(r.pga_input_share_above_lowpass) < 0.01  # a 1 Hz sine
         assert r.Sa_surface_0_01s_g == pytest.approx(r.pga_surface_g,
                                                      rel=0.1)
         d = r.to_dict()
         assert d["pga_surface_g"] == pytest.approx(r.pga_surface_g, abs=1e-4)
-        assert d["pga_set_by_spike"] is True
-        assert "set by a spike" in d["pga_note"]
-        assert "10 Hz" in d["pga_note"] and "set by a spike" in r.summary()
+        assert d["pga_set_above_lowpass"] is True
+        assert "set by motion above 10 Hz" in d["pga_note"]
+        assert "against 0 % at the input's own peak" in d["pga_note"]
+        assert "set by motion above 10 Hz" in r.summary()
         json.dumps(d)
 
-    def test_a_smooth_record_is_not_a_spike(self):
+    def test_a_smooth_record_is_not_set_above_the_corner(self):
         dt = 0.01
         t = np.arange(0.0, 10.0, dt)
         a = 0.2 * np.sin(2.0 * np.pi * 2.0 * t)
         r = self._result(a, dt)
         assert abs(r.pga_share_above_lowpass) < 0.05
-        assert not r.pga_set_by_spike
+        assert not r.pga_set_above_lowpass
         assert r.pga_surface_lowpass_g == pytest.approx(0.2, rel=0.01)
         assert "pga_note" not in r.to_dict()
 
     def test_an_all_zero_record_has_no_share(self):
         r = self._result(np.zeros(500))
-        assert r.pga_share_above_lowpass == 0.0 and not r.pga_set_by_spike
+        assert r.pga_share_above_lowpass == 0.0
+        assert not r.pga_set_above_lowpass
+
+    def test_ringing_at_a_sharp_turn_raises_the_low_passed_peak(self):
+        """A record that turns sharply (a 2 Hz sine of 0.3 g clipped at
+        0.15 g, as a sand at its strength caps the acceleration): the
+        Butterworth's ringing next to each corner lifts the low-passed
+        peak about 5 % above the raw one (loose sand: up to 9 %, at an
+        abrupt reversal of 0.17 g in 0.03 s). The basis says so; the raw
+        peak is not set above the corner."""
+        dt = 0.01
+        t = np.arange(0.0, 10.0, dt)
+        a = np.clip(0.3 * np.sin(2.0 * np.pi * 2.0 * t), -0.15, 0.15)
+        r = self._result(a, dt)
+        assert 1.02 < r.pga_surface_lowpass_g / r.pga_surface_g < 1.10
+        assert not r.pga_set_above_lowpass
 
     def test_no_options_on_a_result_never_run(self):
         d = SiteResponseResult().to_dict()
@@ -1930,7 +1952,9 @@ class TestPGAOptions:
         _, a = _spiky_record()
         r = self._result(a)
         raw, filt = _pga_choices(r, 0.01, 10.0)
-        assert raw["how"] == "module" and "set by a spike" in raw["basis"]
+        assert raw["how"] == "module"
+        assert "motion above the corner sets it" in raw["basis"]
+        assert "(the tool's line)" in raw["basis"]
         assert any("low-passed at 10 Hz" in x for x in raw["alternatives"])
         assert any("0.01 s" in x and "19.3-1" in x
                    for x in raw["alternatives"])
@@ -1966,8 +1990,10 @@ class TestPGAOptions:
                                      target_pga_g=0.30, pga_lowpass_hz=8.0,
                                      time_limit_s=None)
         assert "pga_lowpass_hz" not in seen  # the model never sees it
-        assert r.pga_lowpass_hz == 8.0 and r.pga_set_by_spike
+        assert r.pga_lowpass_hz == 8.0 and r.pga_set_above_lowpass
         assert r.pga_input_lowpass_g == pytest.approx(0.30, rel=0.02)
+        assert r.pga_input_share_above_lowpass == pytest.approx(0.0,
+                                                                abs=0.01)
         whats = [c["what"] for c in r.choices]
         assert whats[-2:] == ["surface peak ground acceleration "
                               "(pga_surface_g)",
@@ -1984,7 +2010,8 @@ class TestPGAOptions:
         record low-passed at 10 Hz holds at 0.222 -> 0.226 g and Sa at
         0.2 s at 0.493 -> 0.463 g. Sa at 0.01 s follows the spike (0.225
         -> 0.411 g). At 10 elements 26 % of the peak is above 10 Hz, at
-        40, 66 %: a spike only on the finer mesh."""
+        40, 66 %, against none at the input's peak: motion above 10 Hz
+        sets the peak only on the finer mesh."""
         from opensees_agent.site_response import analyze_site_response
         layer = {"thickness": 20.0, "Vs": 300.0, "density": 2.0,
                  "material_type": "sand", "phi": 38.0}
@@ -1998,5 +2025,8 @@ class TestPGAOptions:
         assert r[40].pga_surface_lowpass_g == pytest.approx(
             r[10].pga_surface_lowpass_g, rel=0.03)
         assert r[40].Sa_surface_0_01s_g > 1.5 * r[10].Sa_surface_0_01s_g
-        assert not r[10].pga_set_by_spike and r[40].pga_set_by_spike
+        assert not r[10].pga_set_above_lowpass
+        assert r[40].pga_set_above_lowpass
         assert r[40].pga_input_lowpass_g == pytest.approx(0.30, abs=0.002)
+        assert r[40].pga_input_share_above_lowpass == pytest.approx(
+            0.0, abs=0.01)
