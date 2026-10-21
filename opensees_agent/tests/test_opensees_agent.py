@@ -1096,9 +1096,58 @@ class TestSiteResponseModelWiring:
         drained = {a[0] for a in ops.named("fix") if a[1:] == (0, 0, 1)}
         # left column tags 1, 2, 3 from the base: depth 10, 5, 0
         assert drained == {2, 3, 5, 6}
-        ops, _ = _build_fake([layer], gwt_depth=4.0)
+        # GM-79: a water table between nodes gets a node of its own (it
+        # sat at the surface node here, 4 m too shallow): the 10 m layer
+        # is meshed as 4 m above and 6 m below
+        ops, r = _build_fake([layer], gwt_depth=4.0)
         drained = {a[0] for a in ops.named("fix") if a[1:] == (0, 0, 1)}
-        assert drained == {3, 6}
+        assert drained == {2, 3, 5, 6}
+        y = {a[0]: a[2] for a in ops.named("node")}
+        assert (y[1], y[2], y[3]) == (0.0, 6.0, 10.0)
+        np.testing.assert_allclose(sorted(r.depths), [2.0, 7.0])
+
+    @pytest.mark.parametrize("top, thickness, n, gwt, heights", [
+        (0.0, 10.0, 2, 5.0, [5.0, 5.0]),          # on a node
+        (0.0, 10.0, 2, 0.0, [5.0, 5.0]),          # at the top
+        (0.0, 10.0, 2, 12.0, [5.0, 5.0]),         # below the layer
+        (5.0, 10.0, 4, 2.0, [2.5] * 4),           # above the layer
+        (0.0, 20.0, 4, 3.0, [3.0] + [17.0 / 3] * 3),
+        (0.0, 20.0, 4, 9.0, [4.5, 4.5, 11.0 / 2, 11.0 / 2]),
+        (0.0, 10.0, 1, 4.0, [4.0, 6.0]),          # one element -> two
+        (5.0, 10.0, 4, 14.9, [9.9 / 3] * 3 + [0.1]),
+        (0.0, 10.0, 2, 5.0 + 5e-7, [5.0, 5.0]),   # within 1e-6 m: on it
+    ])
+    def test_element_heights_put_a_node_at_the_water_table(
+            self, top, thickness, n, gwt, heights):
+        from opensees_agent.site_response import _element_heights
+        got, split = _element_heights(top, thickness, n, gwt)
+        np.testing.assert_allclose(got, heights, rtol=1e-12)
+        assert sum(got) == pytest.approx(thickness, rel=1e-12)
+        if split is not None:
+            n_above = split[0]
+            assert top + sum(got[:n_above]) == pytest.approx(gwt, abs=1e-12)
+
+    def test_the_split_is_in_choices(self):
+        from opensees_agent.site_response import (
+            _layer_plans, _site_response_choices)
+        plans = _layer_plans([SAND33], 3.0, 4)
+        ch = {c["what"]: c for c in _site_response_choices(
+            plans, 0.02, None, 4, False, gwt_depth=3.0)}
+        c = ch["layers[0] (sand) element count"]
+        assert c["chosen"] == 4
+        assert ("water table at 3 m is inside this layer" in c["basis"]
+                and "1 element(s) of 3 m above, 3 of 5.67 m below"
+                in c["basis"]), c["basis"]
+        assert ch["water table"]["chosen"] == "3 m, a node there"
+        plans = _layer_plans([dict(SAND33, n_elem=1)], 3.0, 4)
+        ch = {c["what"]: c for c in _site_response_choices(
+            plans, 0.02, None, 4, False, gwt_depth=3.0)}
+        c = ch["layers[0] (sand) element count"]
+        assert c["chosen"] == 2 and "(1 asked)" in c["basis"]
+        ch = {c["what"]: c for c in _site_response_choices(
+            _layer_plans([SAND33], 20.0, 4), 0.02, None, 4, False,
+            gwt_depth=20.0)}
+        assert "no pore water" in ch["water table"]["chosen"]
 
     def test_ru_is_excess_pore_pressure_over_initial_effective_stress(self):
         """GM-79: ru = (u - u0) / sigma'v0, u0 the pore pressure after
@@ -1564,11 +1613,14 @@ class TestPorePressureRatio:
     effective stress, read off the pore pressure the model carries."""
 
     @requires_opensees
-    def test_the_pore_pressure_read_is_hydrostatic_after_gravity(self):
+    @pytest.mark.parametrize("gwt", [2.5, 3.0])
+    def test_the_pore_pressure_read_is_hydrostatic_after_gravity(self, gwt):
         """What the module reads as pore pressure (the "velocity" of DOF
         3, as the OpenSees effective stress example records it) is, after
         gravity, 9.81 kPa per metre below the water table and 0 at and
-        above it: hydrostatic by definition."""
+        above it: hydrostatic by definition. At 3.0 m the water table
+        falls between the 2.5 m elements' nodes and gets a node of its own
+        (GM-79; it sat at the surface node)."""
         from opensees_agent.opensees_utils import fresh_model
         from opensees_agent.site_response import _run_site_response_model
         layer = dict(SAND33, thickness=10.0)
@@ -1577,12 +1629,33 @@ class TestPorePressureRatio:
             _run_site_response_model(
                 spy, layers=[layer],
                 accel_g=0.01 * np.sin(np.linspace(0.0, 6.0, 20)),
-                dt_motion=0.01, gwt_depth=2.5, bedrock_Vs=760.0,
+                dt_motion=0.01, gwt_depth=gwt, bedrock_Vs=760.0,
                 bedrock_density=2.4, damping=0.02, scale_factor=1.0,
                 n_elem_per_layer=4, motion_name="test")
         finally:
             spy.wipe()
         heights, pp = np.array(spy.after_gravity).T
-        hydrostatic = 9.81 * np.maximum(0.0, (10.0 - heights) - 2.5)
+        hydrostatic = 9.81 * np.maximum(0.0, (10.0 - heights) - gwt)
         assert len(pp) == 5
+        assert np.any(np.isclose(10.0 - heights, gwt, atol=1e-9))
         np.testing.assert_allclose(pp, hydrostatic, rtol=1e-3, atol=1e-6)
+
+    @requires_opensees
+    def test_effective_stress_with_the_water_table_between_nodes(self):
+        """20 m of sand in 5 m elements, water 3 m down: sigma'v0 within
+        0.1 % of the hand value at every element centre, and no ru above
+        the water table. Before GM-79 the water table sat at the surface
+        node: sigma'v0 22.07 kPa at 2.5 m against 46.6 by hand."""
+        from opensees_agent.site_response import (
+            analyze_site_response, _sigma_v_eff)
+        r = analyze_site_response([SAND33], motion="synthetic_pulse",
+                                  target_pga_g=0.10, gwt_depth=3.0,
+                                  n_elem_per_layer=4,
+                                  time_limit_s=TEST_TIME_LIMIT_S)
+        d = np.asarray(r.depths)
+        np.testing.assert_allclose(sorted(d), [1.5, 3 + 17 / 6, 3 + 17 / 2,
+                                               3 + 5 * 17 / 6])
+        hand = np.array([_sigma_v_eff([SAND33], x, 3.0) for x in d])
+        np.testing.assert_allclose(r.initial_sigma_v_eff_kPa, hand,
+                                   rtol=0.001)
+        assert np.all(np.asarray(r.max_pore_pressure_ratio)[d < 3.0] == 0)

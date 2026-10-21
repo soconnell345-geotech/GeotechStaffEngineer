@@ -82,8 +82,12 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
   fluid its weight, so pore pressure settles hydrostatic and effective
   stress buoyant. Checked: sigma'v after gravity within 0.05 % of the hand
   calculation on a sand/clay/sand profile.
-- Water table: nodes at or above gwt_depth have pp fixed at 0, so the water
-  table sits at the deepest node at or above gwt_depth (exact on a node).
+- Water table: nodes at or above gwt_depth have pp fixed at 0, and the
+  mesh has a node at gwt_depth (GM-79): a layer it falls inside is meshed
+  in two parts, the layer's element count shared in proportion to their
+  thicknesses (at least one each; a one-element layer gets two), and
+  `choices` gives the split. Until GM-79 the water table sat at the
+  deepest node at or above gwt_depth, up to an element too shallow.
 - Analysis phases: (1) gravity elastic 10 steps of 500 s, (2) elastoplastic
   40 steps of 500 s (skipped when `linear_elastic=True`), both with every
   element's permeability at 1 m/s, (3) each element's own permeability

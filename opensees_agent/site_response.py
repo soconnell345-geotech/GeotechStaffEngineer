@@ -334,8 +334,10 @@ def analyze_site_response(
         analysis (built-in motions have fixed PGAs). Default None.
     gwt_depth : float
         Groundwater table depth from surface (m). Default 0.0 (at surface).
-        The model puts it at the deepest node at or above this depth
-        (exact when it falls on a node, e.g. a layer boundary).
+        The mesh has a node at this depth: a layer it falls inside is
+        meshed in two parts, its elements shared in proportion (the
+        result's ``choices`` gives the split). Pore pressure is held at
+        zero at every node at or above it.
     bedrock_Vs : float
         Bedrock shear wave velocity (m/s). Default 760.
     bedrock_density : float
@@ -399,7 +401,7 @@ def analyze_site_response(
     plans = _layer_plans(layers, gwt_depth, n_elem_per_layer)
     choices = _site_response_choices(
         plans, damping, rayleigh_freqs_hz, n_elem_per_layer,
-        linear_elastic)
+        linear_elastic, gwt_depth=gwt_depth)
 
     job = dict(
         layers=[dict(L) for L in layers],
@@ -528,11 +530,12 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     # Layers are given top-to-bottom; we reverse for building bottom-up
     if plans is None:
         plans = _layer_plans(layers, gwt_depth, n_elem_per_layer)
-    layer_elems = []  # (layer_dict, elem_height, n_elems) per layer
+    # Each layer's element heights, bottom to top (a node at the water
+    # table splits the layer it falls in; _element_heights, GM-79)
+    layer_elems = []  # (layer_dict, elem_heights bottom-up, n_elems)
     for L, plan in zip(reversed(layers), reversed(plans)):
-        n_e = plan["n_elem"]
-        h = L["thickness"] / n_e
-        layer_elems.append((L, h, n_e))
+        heights = list(reversed(plan["heights"]))
+        layer_elems.append((L, heights, len(heights)))
     plans_bottom_up = list(reversed(plans))
 
     n_elem_total = sum(n_e for _, _, n_e in layer_elems)
@@ -547,8 +550,8 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
 
     # Compute node elevations (from base = 0 to surface = total_depth)
     elevations = [0.0]
-    for L_dict, h_elem, n_e in layer_elems:
-        for _ in range(n_e):
+    for L_dict, heights, n_e in layer_elems:
+        for h_elem in heights:
             elevations.append(elevations[-1] + h_elem)
 
     # ------------------------------------------------------------------
@@ -578,15 +581,15 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ops.fix(left_node(top_idx), 0, 0, 1)
     ops.fix(right_node(top_idx), 0, 0, 1)
 
-    # Nodes at or above the GWT: fix pore pressure at zero. The water
-    # table then sits at the deepest node at or above gwt_depth (exactly
-    # at gwt_depth when it falls on a node, e.g. a layer boundary).
-    # (Until GM-77 a node AT the water table was left free, which put the
-    # water table one element too shallow.)
+    # Nodes at or above the GWT: fix pore pressure at zero (open drainage,
+    # as the OpenSees effective stress example). The mesh has a node at
+    # gwt_depth (GM-79; until then the water table sat at the deepest node
+    # at or above it, up to an element too shallow), and that node is
+    # drained too (until GM-77 it was left free).
     drained = [i == top_idx for i in range(n_nodes_col)]
     for i in range(n_nodes_col):
         depth_from_surface = total_depth - elevations[i]
-        if depth_from_surface <= gwt_depth + 1.0e-9 and i != top_idx:
+        if depth_from_surface <= gwt_depth + _NODE_TOL_M and i != top_idx:
             ops.fix(left_node(i), 0, 0, 1)
             ops.fix(right_node(i), 0, 0, 1)
             drained[i] = True
@@ -602,7 +605,7 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     perms = []  # permeability per layer
     e_inits = []  # void ratio per layer
     mat_tag = 1
-    for (L_dict, h_elem, n_e), plan in zip(layer_elems, plans_bottom_up):
+    for (L_dict, _, n_e), plan in zip(layer_elems, plans_bottom_up):
         mat_type = plan["material"]
         if mat_type == "sand":
             perm = _create_sand_material(ops, mat_tag, L_dict, plan)
@@ -625,7 +628,7 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ei = 0  # element counter within current layer
     layer_idx = 0
 
-    for layer_idx_local, (L_dict, h_elem, n_e) in enumerate(layer_elems):
+    for layer_idx_local, (L_dict, heights, n_e) in enumerate(layer_elems):
         for _ in range(n_e):
             n1 = left_node(ei)
             n2 = right_node(ei)
@@ -1024,6 +1027,34 @@ def _sigma_v_eff(layers, depth, gwt_depth, g_accel=9.81):
 # Strains (%) at which a layer's curve is reported.
 _REPORT_STRAINS_PCT = (0.001, 0.01, 0.1, 1.0)
 
+# A water table within this distance (m) of a node counts as on it.
+_NODE_TOL_M = 1.0e-6
+
+
+def _element_heights(top, thickness, n_elem, gwt_depth):
+    """A layer's element heights (m), top to bottom (GM-79).
+
+    ``n_elem`` equal elements, unless the water table falls inside the
+    layer between two of their nodes: then the parts above and below it
+    are meshed apart, so a node sits at ``gwt_depth``, with the elements
+    shared in proportion to the parts' thicknesses (at least one each; a
+    layer of one element gets two). Returns ``(heights, split)``, split
+    ``(n_above, n_below)`` when the layer was split, else None.
+    """
+    h = thickness / n_elem
+    above = gwt_depth - top
+    below = top + thickness - gwt_depth
+    if above <= _NODE_TOL_M or below <= _NODE_TOL_M:
+        return [h] * n_elem, None
+    k = above / h
+    if abs(k - round(k)) * h <= _NODE_TOL_M:
+        return [h] * n_elem, None
+    n_above = int(math.floor(n_elem * above / thickness + 0.5))
+    n_above = min(max(1, n_above), max(1, n_elem - 1))
+    n_below = max(1, n_elem - n_above)
+    return ([above / n_above] * n_above + [below / n_below] * n_below,
+            (n_above, n_below))
+
 
 def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
     """What each layer's material will be, top to bottom: the stresses,
@@ -1039,6 +1070,9 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
         # layer above plus half this one, less hydrostatic pore pressure
         sigma_v_eff = _sigma_v_eff(layers, top + thickness / 2.0,
                                    gwt_depth, g_accel)
+        n_asked = int(L.get("n_elem", n_elem_per_layer))
+        heights, wt_split = _element_heights(top, thickness, n_asked,
+                                             gwt_depth)
         top += thickness
         g_max = L["density"] * L["Vs"] ** 2
         nu = float(L.get("nu", DEFAULT_NU[mat]))
@@ -1115,7 +1149,8 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
                 round(float(v) * 100, 3)
                 for v in C.masing_damping(pairs, g_max, strains)]
         plans.append(dict(
-            material=mat, n_elem=int(L.get("n_elem", n_elem_per_layer)),
+            material=mat, n_elem=len(heights), n_elem_asked=n_asked,
+            heights=heights, wt_split=wt_split, gwt_depth=gwt_depth,
             nu=nu, nu_used=nu_used, g_max=g_max, b_max=b_max, p_ref=p_ref,
             tau_f=tau_f, constants=constants, curve=curve,
             curve_params=curve_params, pairs=pairs, report=report,
@@ -1139,12 +1174,25 @@ _CURVE_BASIS = {
 
 
 def _site_response_choices(plans, damping, rayleigh_freqs_hz,
-                           n_elem_per_layer, linear_elastic):
+                           n_elem_per_layer, linear_elastic,
+                           gwt_depth=None):
     """The result's ``choices`` (GM-115): what the column was built with,
     each with its basis and alternatives."""
     from geotech_common.choices import MODULE, choice, how_given
     from opensees_agent.curves import CURVES
     out = []
+    if gwt_depth is not None:
+        depth = sum(sum(p["heights"]) for p in plans)
+        out.append(choice(
+            "water table",
+            (f"{gwt_depth:g} m, a node there"
+             if gwt_depth < depth - _NODE_TOL_M
+             else f"{gwt_depth:g} m, at or below the base: no pore water"),
+            how_given(gwt_depth, 0.0, name="gwt_depth"),
+            "pore pressure held at zero at every node at or above it "
+            "(open drainage, as the OpenSees effective stress example); "
+            "hydrostatic below it after gravity",
+            ("gwt_depth",)))
     for i, plan in enumerate(plans):
         label = f"layers[{i}] ({plan['material']})"
         curve = plan["curve"]
@@ -1170,12 +1218,21 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
             f"{label} Poisson's ratio", round(plan["nu_used"], 4),
             _layer_how(plans, i, "nu"), nu_basis,
             ("any value in [0, 0.5) as layers[i]['nu']",)))
+        count_basis = "layers[i]['n_elem'], else n_elem_per_layer"
+        if plan["wt_split"] is not None:
+            (n_a, n_b), hs = plan["wt_split"], plan["heights"]
+            count_basis += (
+                f"; the water table at {plan['gwt_depth']:g} m is inside this "
+                f"layer, so it is meshed in two parts with a node there: "
+                f"{n_a} element(s) of {hs[0]:.3g} m above, {n_b} of "
+                f"{hs[-1]:.3g} m below")
+            if plan["n_elem"] != plan["n_elem_asked"]:
+                count_basis += f" ({plan['n_elem_asked']} asked)"
         out.append(choice(
             f"{label} element count", plan["n_elem"],
             _layer_how(plans, i, "n_elem") if _layer_has(plans, i, "n_elem")
             else how_given(n_elem_per_layer, 4, name="n_elem_per_layer"),
-            "layers[i]['n_elem'], else n_elem_per_layer",
-            ("layers[i]['n_elem']",)))
+            count_basis, ("layers[i]['n_elem']",)))
         if plan["material"] == "sand":
             given = sorted(k for k in plan["constants"]
                            if _layer_has(plans, i, k))
