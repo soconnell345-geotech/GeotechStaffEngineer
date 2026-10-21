@@ -879,6 +879,20 @@ class DrillShaftAnalysis:
                 used.update(j for j, lay, _, _ in
                             self._layers_below_base(L, B)
                             if lay.soil_type == "rock")
+        if self.rock_base_conditions_met is not None and not any(
+                layers[i].soil_type == "rock" for i in tips):
+            if len(lengths) > 1:
+                where = (f"no trial base from {min(lengths):g} to "
+                         f"{max(lengths):g} m is in rock")
+            else:
+                where = (f"the base at {lengths[0]:g} m is in "
+                         f"{layers[min(tips)].soil_type} soil")
+            raise ValueError(
+                "The shaft does not take rock_base_conditions_met: it is "
+                "the engineer's judgment on the three conditions GEC-10 "
+                "(2018) p. 10-22 sets on a base in rock (q_BN = 2.5 qu, "
+                f"Eq. 10-23), and {where}. Leave it out, or give the shaft "
+                "length that puts the base in rock.")
         top = 0.0
         for i, layer in enumerate(layers):
             given = [n for n in ("GSI", "m_i")
