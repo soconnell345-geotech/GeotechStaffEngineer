@@ -622,7 +622,7 @@ def summary_markdown(record: ReportRecord) -> str:
             answer = row.get("answer") or "_the narrative does not say_"
             page = row.get("page")
             out.append(f"| {_md(row.get('question', ''))} | {_md(answer)} | "
-                       f"{'p' + str(page) if page is not None else ''} |")
+                       f"{'p' + str(page + 1) if page is not None else ''} |")
 
     out += ["", "## What was extracted", ""]
     counts = record.counts()
@@ -679,6 +679,12 @@ def _yaml_value(value: Any) -> str:
     return json.dumps(str(value))
 
 
+#: The first page number the written p-marks use. It is stamped in the page
+#: front matter so the library can tell a folder written before RI-01 (whose
+#: marks count from 0, and which carries no stamp) from a later one.
+PAGE_NUMBERING_FROM = 1
+
+
 def front_matter(record: ReportRecord, key: str,
                  source: str = "") -> Dict[str, Any]:
     """The library page's front matter, field for field.
@@ -733,6 +739,9 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
         if value == "" or value == []:
             continue
         out.append(f"{name}: {_yaml_value(value)}")
+    # the marker the library reads: the p-marks below count from 1 (a folder
+    # written before RI-01 has none and counts them from 0)
+    out.append(f"page_numbering: {PAGE_NUMBERING_FROM}")
     out += ["---", "", f"# {meta['title']}", ""]
 
     byline = " · ".join(x for x in (
