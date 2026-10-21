@@ -218,11 +218,26 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
     if reinforcement is not None:
         items.extend([
             InputItem("Reinf.", "Reinforcement product", reinforcement.name, ""),
-            InputItem("T_al", "Allowable tensile strength", f"{reinforcement.Tallowable:.1f}",
+            InputItem("T_al", "Allowable tensile strength per unit width of "
+                      "reinforcement", f"{reinforcement.Tallowable:.1f}",
                       "kN/m"),
             InputItem("Type_r", "Reinforcement type",
-                      "Metallic" if reinforcement.is_metallic else "Geosynthetic", ""),
+                      "Metallic" if reinforcement.is_metallic else
+                      {"geogrid": "Geogrid", "geotextile": "Geotextile"}.get(
+                          reinforcement.type, "Geosynthetic"), ""),
         ])
+        # GM-256: the coverage ratio, GEC-11 Vol I Eq. 3-1
+        from retaining_walls import mse as _mse
+        if reinforcement.horizontal_spacing is not None:
+            items.extend([
+                InputItem("b", "Reinforcement width",
+                          f"{reinforcement.width:.3f}", "m"),
+                InputItem("S_h", "Horizontal spacing, centre to centre",
+                          f"{reinforcement.horizontal_spacing:.3f}", "m"),
+            ])
+        items.append(InputItem(
+            "R_c", "Coverage ratio b/S_h (1 for a continuous layer)",
+            f"{_mse.coverage_ratio(reinforcement):.3f}", ""))
 
     if phi_f is not None:
         items.append(InputItem("\u03c6_foundation", "Foundation friction angle",
@@ -1116,7 +1131,19 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     ))
 
     from retaining_walls import mse as _mse
-    if reinforcement is not None and _mse.uses_strip_F_star(reinforcement):
+    f_tested = _get(analysis, "F_star_tested")
+    if f_tested is not None:
+        # GM-256: F* from pullout tests (GEC-11 Table 3-6 note (i))
+        int_items.append(CalcStep(
+            title="Pullout Resistance Factor F* (from pullout tests)",
+            equation="F* from product- and backfill-specific pullout tests",
+            substitution=_mse._tested_text(f_tested),
+            result_name="F*",
+            result_value="tested",
+            reference="GEC-11 Vol I Table 3-6 note (i) (p. 3-17), "
+                      "Appendix B",
+        ))
+    elif reinforcement is not None and _mse.uses_strip_F_star(reinforcement):
         # GM-246: the ribbed steel strip F*, from the backfill's Cu
         cu_given = _get(analysis, "Cu_backfill")
         cu = _mse.CU_UNKNOWN if cu_given is None else cu_given
@@ -1143,22 +1170,46 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             reference="GEC-11 Vol I Eqs. 3-4, 3-5 (p. 3-20)",
         ))
 
+    Rc = (_mse.coverage_ratio(reinforcement) if reinforcement is not None
+          else 1.0)
+    alpha_t = _get(analysis, "alpha_tested")
+    alpha = (_mse.pullout_alpha(reinforcement, alpha_t) if reinforcement
+             else alpha_t if alpha_t is not None else 1.0)
     int_items.append(CalcStep(
         title="Pullout Resistance",
-        equation="P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e \u00d7 C",
+        equation=("P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e "
+                  "\u00d7 C \u00d7 R_c"),
         substitution=(
-            "L_e = L - L_a; L_a per bilinear coherent-gravity surface "
-            "(0.3H over upper H/2, tapering to toe) for inextensible "
-            "(metallic) reinforcement; C = 2"
-            if r_type == "Metallic" else
-            "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
-            "(extensible/geosynthetic reinforcement); C = 2"
+            ("L_e = L - L_a; L_a per bilinear coherent-gravity surface "
+             "(0.3H over upper H/2, tapering to toe) for inextensible "
+             "(metallic) reinforcement"
+             if r_type == "Metallic" else
+             "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
+             "(extensible/geosynthetic reinforcement)")
+            + f"; C = 2; \u03b1 = {alpha:g}"
+            + (" (from pullout tests)" if alpha_t is not None
+               else " (GEC-11 Table 3-6, p. 3-17)")
+            + f"; R_c = {Rc:.3f}"
         ),
         result_name="P_r",
         result_value="(per level)",
-        result_unit="kN/m",
-        reference="GEC-11, Eq. 4-18; AASHTO Fig. 11.10.6.3.1-1",
+        result_unit="kN/m of wall",
+        reference="GEC-11 Vol I Eq. 3-2 (p. 3-16), Eq. 4-35 (p. 4-49); "
+                  "AASHTO Fig. 11.10.6.3.1-1",
     ))
+
+    if reinforcement is not None:
+        int_items.append(CalcStep(
+            title="Tensile Resistance per Metre of Wall",
+            equation="T_al \u00d7 R_c \u2265 T_max",
+            substitution=(f"{reinforcement.Tallowable:.1f} kN/m of "
+                          f"reinforcement width \u00d7 {Rc:.3f}"),
+            result_name="T_al \u00d7 R_c",
+            result_value=f"{reinforcement.Tallowable * Rc:.1f}",
+            result_unit="kN/m of wall",
+            reference="GEC-11 Vol I Eq. 3-11a (p. 3-22), p. 4-47, "
+                      "Eqs. 4-33 and 4-34 (pp. 4-48, 4-49)",
+        ))
 
     # Per-level results table
     if result.internal_results:
@@ -1169,7 +1220,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                 f"{r['depth_m']:.2f}",
                 f"{r.get('Kr_Ka', 0):.3f}",
                 f"{r['Tmax_kN_per_m']:.2f}",
-                f"{r.get('Tallowable_kN_per_m', 0):.1f}",
+                f"{r.get('Tal_Rc_kN_per_m', 0):.1f}",
                 f"{r.get('Le_m', 0):.2f}",
                 f"{r.get('F_star', 0):.3f}",
                 f"{r['Pr_kN_per_m']:.2f}",
@@ -1180,12 +1231,14 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
         int_items.append(TableData(
             title="Internal Stability per Reinforcement Level",
-            headers=["z (m)", "Kr/Ka", "T_max (kN/m)", "T_al (kN/m)",
+            headers=["z (m)", "Kr/Ka", "T_max (kN/m)", "T_al R_c (kN/m)",
                      "L_e (m)", "F*", "P_r (kN/m)",
                      "FOS_po", "FOS_ru", "Status"],
             rows=int_rows,
             notes=(
                 f"FOS_pullout required: 1.5. FOS_rupture required: 1.0. "
+                f"T_al R_c and P_r per metre of wall, coverage ratio "
+                f"R_c = {Rc:.3f}. "
                 f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}"
             ),
         ))

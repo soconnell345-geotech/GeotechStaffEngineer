@@ -68,6 +68,11 @@ PHI_R = 34.0               # reinforced fill
 PHI_F = 30.0               # retained fill
 PHI_FD = 30.0              # foundation
 Q_LL = 0.25 * KSF          # live-load surcharge (heq = 2 ft of soil)
+# GM-256: the bar mat's coverage, E4 p. E4-18: Level 4 is "4W11 + W11x0.5'",
+# 4 longitudinal wires at 0.5 ft, so b = 1.5 ft between the outside wires,
+# "for each panel of 5 ft width" (Rc = 0.30). The external checks and the
+# internal Kr/Ka and F* pinned here do not depend on it.
+_E4_MAT = {"width": 1.5 * FT, "horizontal_spacing": 5.0 * FT}
 
 
 # ── V-009 : MSE external stability — unfactored loads + LRFD CDRs ────────────
@@ -208,7 +213,8 @@ def test_v009_highlevel_api_reports_asd_fos_not_lrfd_cdr():
     geom = MSEWallGeometry(wall_height=H, reinforcement_length=L,
                            reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
     rebar = Reinforcement(name="bar mat", type="metallic_grid",
-                          Tallowable=200.0, Fy=448000.0, thickness=0.0095)
+                          Tallowable=200.0, Fy=448000.0, thickness=0.0095,
+                          **_E4_MAT)
     res = analyze_mse_wall(
         geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
         gamma_foundation=GAMMA, phi_foundation=PHI_FD,
@@ -289,7 +295,8 @@ def test_v009_analyze_mse_wall_lrfd_flag_attaches_cdrs():
     geom = MSEWallGeometry(wall_height=H, reinforcement_length=L,
                            reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
     rebar = Reinforcement(name="bar mat", type="metallic_grid",
-                          Tallowable=200.0, Fy=448000.0, thickness=0.0095)
+                          Tallowable=200.0, Fy=448000.0, thickness=0.0095,
+                          **_E4_MAT)
     # default: LRFD not requested -> external_lrfd absent, ASD FOS unchanged
     res_default = analyze_mse_wall(
         geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
@@ -441,6 +448,7 @@ def test_v010_highlevel_path_barmat_curves_match_published():
     no hand-fed coefficients. At the published E4 level depths the high-level
     Kr/Ka (2.5->1.2) and F* (20 t/St->10 t/St, St=6 in) match GEC-11 Fig E4-5:
     Kr/Ka(L4 z=9.37 ft)=1.891, F*(L1)=1.246, F*(L4)=0.955."""
+    import dataclasses
     from retaining_walls.mse import check_internal_stability
     from retaining_walls.reinforcement import WELDED_WIRE_GRID_W11
 
@@ -451,7 +459,8 @@ def test_v010_highlevel_path_barmat_curves_match_published():
                            reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
     rows = check_internal_stability(geom, gamma_backfill=GAMMA,
                                     phi_backfill=PHI_R,
-                                    reinforcement=WELDED_WIRE_GRID_W11)
+                                    reinforcement=dataclasses.replace(
+                                        WELDED_WIRE_GRID_W11, **_E4_MAT))
     tSt = WELDED_WIRE_GRID_W11.t_over_St
     assert tSt == pytest.approx(0.374 / 6.0, abs=0.002)   # W11 t / 6-in St
     for r in rows:

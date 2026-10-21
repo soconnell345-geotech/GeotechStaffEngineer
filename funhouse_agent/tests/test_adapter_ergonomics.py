@@ -942,8 +942,12 @@ class TestMseCustomReinforcement:
             "wall_height": 6.0, "gamma_backfill": 19.0, "phi_backfill": 34.0,
             "reinforcement_type": "metallic_strip",
             "reinforcement_Tallowable": 40.0,
+            # GM-256: a strip's coverage, Rc = b/Sh = 0.05 / 0.5
+            "reinforcement_width": 0.05,
+            "reinforcement_horizontal_spacing": 0.5,
         })
         assert r["FOS_sliding"] > 0
+        assert r["internal_results"][0]["Rc"] == pytest.approx(0.1)
 
     def test_unknown_name_without_strength_clear_error(self):
         from funhouse_agent.adapters.retaining_walls import METHOD_REGISTRY as R
@@ -957,10 +961,14 @@ class TestMseCustomReinforcement:
         from funhouse_agent.adapters.retaining_walls import METHOD_INFO
         av = METHOD_INFO["mse_wall"]["parameters"]["reinforcement_type"][
             "allowed_values"]
-        # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geosynthetic
+        # ribbed strip + steel bar-mat/welded-grid (+ aliases) + geogrid,
+        # geotextile (GEC-11 Table 3-6's alpha 0.8, 0.6) + a geosynthetic of
+        # no stated kind, which needs alpha_tested (GM-256)
         assert av == ["metallic_strip", "metallic_grid", "bar_mat",
-                      "welded_grid", "geosynthetic"]
-        assert "geosynthetic" in av  # the documented default
+                      "welded_grid", "geogrid", "geotextile", "geosynthetic"]
+        # GM-256: no default type; it sets the alpha a custom one takes
+        assert "default" not in METHOD_INFO["mse_wall"]["parameters"][
+            "reinforcement_type"]
 
     def test_custom_bar_mat_with_transverse_geometry(self):
         """A custom steel bar mat (bar_mat / welded_grid) is accepted with its
@@ -972,6 +980,7 @@ class TestMseCustomReinforcement:
             "reinforcement_Tallowable": 200.0,
             "reinforcement_thickness": 0.0095,        # W11 transverse t
             "reinforcement_transverse_spacing": 0.1524,  # St = 6 in
+            "coverage_ratio": 0.3,    # GM-256: 1.5 ft mat per 5 ft panel
         })
         assert r["FOS_sliding"] > 0
         # the shallowest internal level uses the bar-mat Kr/Ka (>2), not strip
@@ -1121,7 +1130,8 @@ class TestWallChecksReported:
         out = call_agent("retaining_walls", "mse_wall",
                          {"wall_height": 6.0, "gamma_backfill": 18.0,
                           "phi_backfill": 34.0,
-                          "reinforcement_name": "ribbed_steel_strip_75x4"})
+                          "reinforcement_name": "ribbed_steel_strip_75x4",
+                          "reinforcement_horizontal_spacing": 0.75})
         assert out["FOS_bearing"] is None
         assert out["checks_not_run"] == ["bearing"]
         assert out["passes_external"] is None

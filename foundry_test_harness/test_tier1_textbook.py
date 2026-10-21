@@ -372,6 +372,8 @@ class TestRetainingWalls:
             "reinforcement_length": 4.2,
             "reinforcement_spacing": 0.6,
             "reinforcement_Tallowable": 30.0,
+            # GM-256: a geosynthetic's kind sets its alpha (GEC-11 Table 3-6)
+            "reinforcement_type": "geogrid",
         })
         assert r["FOS_sliding"] > 0
         assert r["FOS_overturning"] > 0
