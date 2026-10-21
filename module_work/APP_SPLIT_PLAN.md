@@ -348,8 +348,8 @@ step 4).
 
 **The figure helper** (about 7,900; OWN-77 (b), 2.8):
 `deep/figure_helper.py` (789), `plot_box/__init__.py` (932), `child.py`
-(1,189), `figures.py` (608), `drawing_wait.py` (64), `progress_notes.py`
-(46); the chart stack behind `plot_data`: `profile_figure/data_plot.py`
+(1,189), `figures.py` (608), and beside them `funhouse_agent/drawing_wait.py`
+(64) and `progress_notes.py` (46); the chart stack behind `plot_data`: `profile_figure/data_plot.py`
 (1,845), `geotech_common/layout_ink.py` (1,283), `plan_furniture.py` (138),
 `figure_to_png` and `get_pyplot` (about 35); the worked examples
 `profile_figure/figure_examples.py` (994). The old paths keep aliases; GSE's
@@ -553,6 +553,10 @@ talked about with the planlens fold."
   (drawings, schedules, quantities) and checklist lines, registered with
   the helper and measured on the suite. Column (b)'s extra work is DR-35's,
   not a split step.
+- The core's total in 2.1 (about 37,900) already counted all of this, so
+  (b) leaves it unchanged. Re-counted on 2026-10-21 by counting the lines
+  of each file in 2.3: the helper, box and examples 4,622, the chart stack
+  about 3,300, about 7,900 in all.
 
 The options as they were measured follow.
 
@@ -573,7 +577,7 @@ under all three options.
 
 | | (a) To the core; GSE hands in the chart lines | (b) As (a), then Document Review's own examples | (c) Document Review drops both |
 |---|---|---|---|
-| Files to the core | `deep/figure_helper.py` (789; `FigureLooks` already left at step 5), `plot_box/` (932 + 1,189 + 608), `profile_figure/figure_examples.py` (994): about 4,500 lines | The same; Document Review's own examples and checklist lines live in its private source and register with the helper | None; both stay in GSE |
+| Files to the core | `deep/figure_helper.py` (789; `FigureLooks` already left at step 5), `plot_box/` (932 + 1,189 + 608), `drawing_wait.py` and `progress_notes.py` (64 + 46), `profile_figure/figure_examples.py` (994): about 4,600 lines | The same; Document Review's own examples and checklist lines live in its private source and register with the helper | None; both stay in GSE |
 | Imports still to cut | The worked examples (`figure_helper.py` imports `profile_figure.figure_examples` at 202-241) → the core's copy; `plot_box/child.py`'s loads of `layout_ink` and `plan_furniture` → the core's chart folder (step 6); the box's chart lines → a source GSE registers | The same, plus an examples-and-checklist registration each app fills | The review build leaves out the helper, its main-agent middleware and `plot_data_replaces` |
 | New code | One hook (the chart lines) | The hook, Document Review's examples file and checklist lines, a suite task, a live wave | None |
 | Document Review's fingerprint | Unchanged, except the box's chart-lines note goes at step 13 | Changes (helper prompt and examples): measured on the suite | Loses the figure helper and `plot_code` |
