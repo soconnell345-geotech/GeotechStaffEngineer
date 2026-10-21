@@ -8,6 +8,7 @@ E1) are pinned in validation_examples/test_published_v056_v057_gec11_slope.py;
 these tests check the equations by hand and the level case unchanged.
 """
 
+import dataclasses
 import math
 
 import pytest
@@ -23,6 +24,9 @@ from retaining_walls.mse import (
 from retaining_walls.reinforcement import (
     GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4,
 )
+
+# GM-256: a steel strip needs its horizontal spacing (Rc = b/Sh = 0.1)
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
 
 H, L, G, PHI = 6.0, 5.0, 19.0, 34.0
 BETA = math.degrees(math.atan(0.5))          # 2H:1V
@@ -243,7 +247,7 @@ class TestInternal:
         geom = _geom(backfill_slope=BETA)
         H1 = H + T * 0.3 * H / (1 - 0.3 * T)
         for lv in check_internal_stability(geom, G, PHI,
-                                           RIBBED_STEEL_STRIP_75x4):
+                                           _STRIP):
             z = lv["depth_m"]
             La = 0.3 * H1 if (H - z) >= H1 / 2 else 0.6 * (H - z)
             assert lv["La_m"] == pytest.approx(La, abs=0.01)
@@ -258,7 +262,7 @@ class TestInternal:
         """Fig. 4-15 / Fig. E3-5: Zp = Z + 1/2 tan(beta) (La + L)."""
         geom = _geom(backfill_slope=BETA)
         for lv in check_internal_stability(geom, G, PHI,
-                                           RIBBED_STEEL_STRIP_75x4):
+                                           _STRIP):
             La = L - lv["Le_m"]
             assert lv["Zp_m"] == pytest.approx(
                 lv["depth_m"] + 0.5 * T * (La + L), abs=0.02)
@@ -269,9 +273,9 @@ class TestInternal:
         """GEC-11 p. 4-49: pullout sigma_v 'neglecting traffic loads'; the
         surcharge (the live load) still raises Tmax (Eq. 4-30)."""
         base = check_internal_stability(_geom(**extra), G, PHI,
-                                        RIBBED_STEEL_STRIP_75x4)
+                                        _STRIP)
         traffic = check_internal_stability(_geom(surcharge=12.0, **extra), G,
-                                           PHI, RIBBED_STEEL_STRIP_75x4)
+                                           PHI, _STRIP)
         for a, b in zip(base, traffic):
             assert b["Pr_kN_per_m"] == a["Pr_kN_per_m"]
             assert b["Tmax_kN_per_m"] > a["Tmax_kN_per_m"]

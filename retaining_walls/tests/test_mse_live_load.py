@@ -12,6 +12,7 @@ surcharge, both readings of each choice, a broken backslope with level
 ground on the zone, the adapter and the calc steps.
 """
 
+import dataclasses
 import math
 
 import pytest
@@ -24,6 +25,9 @@ from retaining_walls.mse import (
     check_external_stability,
 )
 from retaining_walls.reinforcement import GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4
+
+# GM-256: a steel strip needs its horizontal spacing (Rc = b/Sh = 0.1)
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
 
 H, L, G, PHI, G_F, PHI_F, Q = 6.0, 4.2, 18.0, 34.0, 19.0, 30.0, 12.0
 Q_ALL = 300.0
@@ -137,7 +141,7 @@ class TestBrokenBackslope:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0,
                                backfill_slope=self.BETA,
                                broken_backslope_height=3.0, surcharge=Q)
-        r = analyze_mse_wall(geom, 19.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        r = analyze_mse_wall(geom, 19.0, 34.0, _STRIP)
         assert _live(r) == []
 
 
@@ -149,23 +153,25 @@ def _live(r):
 
 class TestResult:
     def test_choices_with_a_surcharge(self):
-        r = analyze_mse_wall(_geom(), G, PHI, RIBBED_STEEL_STRIP_75x4,
+        r = analyze_mse_wall(_geom(), G, PHI, _STRIP,
                              gamma_foundation=G_F, phi_foundation=PHI_F)
         assert [c["how"] for c in _live(r)] == ["default", "default"]
         assert "live_load_resists=False" in r.choices[0]["chosen"]
         assert "surcharge_in_bearing=True" in r.choices[1]["chosen"]
         assert r.to_dict()["choices"] == r.choices
         assert "Choices:" in r.summary()
-        given = analyze_mse_wall(_geom(), G, PHI, RIBBED_STEEL_STRIP_75x4,
+        given = analyze_mse_wall(_geom(), G, PHI, _STRIP,
                                  phi_foundation=PHI_F, live_load_resists=True)
         assert given.choices[0]["how"] == "given"
         assert given.FOS_sliding > r.FOS_sliding
 
     def test_no_surcharge_no_choices(self):
-        r = analyze_mse_wall(_geom(q=0.0), G, PHI, RIBBED_STEEL_STRIP_75x4)
+        r = analyze_mse_wall(_geom(q=0.0), G, PHI, _STRIP)
         assert _live(r) == []
         r = analyze_mse_wall(_geom(q=0.0), G, PHI, GEOGRID_UX1600)
-        assert r.choices == [] and "choices" not in r.to_dict()
+        # only the coverage ratio, Rc 1 for a continuous layer (GM-256)
+        assert [c["what"].split()[0] for c in r.choices] == ["Coverage"]
+        assert r.choices[0]["how"] == "default"
 
 
 class TestCalcSteps:
@@ -173,7 +179,7 @@ class TestCalcSteps:
         analysis = {"wall_type": "mse", "geom": _geom(), "gamma_backfill": G,
                     "phi_backfill": PHI, "phi_foundation": PHI_F,
                     "gamma_foundation": G_F, "q_allowable": Q_ALL,
-                    "reinforcement": RIBBED_STEEL_STRIP_75x4, **extra}
+                    "reinforcement": _STRIP, **extra}
         return get_calc_steps(result, analysis)
 
     @staticmethod
@@ -181,7 +187,7 @@ class TestCalcSteps:
         return next(s for s in sections if s.title == title).items
 
     def test_steps_print_the_terms_the_analysis_used(self):
-        r = analyze_mse_wall(_geom(), G, PHI, RIBBED_STEEL_STRIP_75x4,
+        r = analyze_mse_wall(_geom(), G, PHI, _STRIP,
                              gamma_foundation=G_F, phi_foundation=PHI_F,
                              q_allowable=Q_ALL)
         ext = self._items(self._steps(r), "External Stability")
@@ -206,7 +212,7 @@ class TestCalcSteps:
                                                            abs=0.05)
 
     def test_a_result_built_by_hand_works_the_terms_out(self):
-        r = analyze_mse_wall(_geom(), G, PHI, RIBBED_STEEL_STRIP_75x4,
+        r = analyze_mse_wall(_geom(), G, PHI, _STRIP,
                              gamma_foundation=G_F, phi_foundation=PHI_F,
                              q_allowable=Q_ALL, live_load_resists=True)
         own = self._steps(r, live_load_resists=True)

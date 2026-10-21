@@ -34,6 +34,7 @@ from retaining_walls.geometry import MSEWallGeometry
 from retaining_walls.mse import (
     analyze_mse_wall, check_external_stability,
     check_external_stability_lrfd, check_internal_stability,
+    pullout_resistance,
 )
 from retaining_walls.reinforcement import Reinforcement, GEOGRID_UX1600
 
@@ -142,12 +143,21 @@ def test_v056_asd_path_is_the_service_column():
                                                    abs=0.005)
 
 
-def _e3_internal(Cu_backfill=7.0):
+KIP = 4.4482216
+B_STRIP = 1.969 * 0.0254        # E3's 50 mm strip, b = 1.969 in = 0.164 ft
+TN_STRIP = 13.00 * KIP          # E3 Step 7.4 (p. E3-16): Tn = 13.00 k/strip
+
+
+def _e3_internal(Cu_backfill=7.0, strips_per_panel=2):
     # E3 Step 2: reinforced backfill Cu = 7.0 (p. E3-2); Step 7.1 (p. E3-12)
-    # F* = 1.2 + log10(7.0) = 2.045 > 2.000, use 2.000 (GM-246)
+    # F* = 1.2 + log10(7.0) = 2.045 > 2.000, use 2.000 (GM-246). GM-256:
+    # E3's strips at their own spacing, Sh = 5 ft panel / Ng strips (Table
+    # E3-7.3, p. E3-19: Sh 2.50 ft at Levels 1-8, 1.67 ft at 9-12), and Tal
+    # per metre of strip width = Tn / b, so FOS_rupture is Tn Rc / Tmax
     strip = Reinforcement(name="E3 ribbed strip 50x4 mm",
-                          type="metallic_strip", Tallowable=1000.0,
-                          width=0.050, Fy=448.0, thickness=0.004)
+                          type="metallic_strip", Tallowable=TN_STRIP / B_STRIP,
+                          width=B_STRIP, Fy=448.0, thickness=0.004,
+                          horizontal_spacing=5.0 * FT / strips_per_panel)
     return check_internal_stability(_e3_geom(), GAMMA, 34.0, strip,
                                     Cu_backfill=Cu_backfill)
 
@@ -197,6 +207,48 @@ def test_v056_internal_strip_F_star_by_level():
     assert unknown[3]["F_star"] == pytest.approx(
         0.675 + (20.0 - 8.75) * (top - 0.675) / 20.0, abs=0.002)
     assert unknown[3]["Pr_kN_per_m"] < levels[3]["Pr_kN_per_m"]
+
+
+#: GEC-11 Vol II Table E3-7.3 (p. E3-19), Strength I (max): Level: (Tmax
+#: k per 5 ft panel, factored; phi_p Pr k/strip; Ng strips per panel).
+E3_TABLE_7_3 = {
+    1: (6.46, 9.40, 2), 2: (8.63, 10.76, 2), 3: (10.58, 11.70, 2),
+    4: (12.35, 12.23, 2), 5: (13.96, 12.36, 2), 6: (15.40, 12.70, 2),
+    7: (16.59, 13.05, 2), 8: (17.60, 12.76, 2), 9: (18.98, 13.33, 3),
+    10: (20.77, 15.50, 3), 11: (22.56, 17.79, 3), 12: (24.36, 20.24, 3)}
+
+
+@pytest.mark.parametrize("level", sorted(E3_TABLE_7_3))
+def test_v056_internal_pullout_and_tension_by_level(level):
+    """GM-256: E3's pullout and tension at every level of Table E3-7.3.
+    E3 Step 7.5 (p. E3-18): Pr = (1.0)(1.420)(2)(0.164 ft)(13.41 ft)(2.175
+    ksf) = 13.58 k/strip at Level 4, b = 0.164 ft; Step 7.4 (p. E3-16):
+    phi_t Tn = 0.75 x 13.00 = 9.75 k/strip; Ng strips per 5 ft panel. The module works per metre of wall, Pr and Tal times
+    Rc = b/Sh (GEC-11 Vol I Eq. 4-35, p. 4-47), unfactored: its Pr times Sh
+    is E3's Pr per strip, and its FOS times phi / gamma_EV (0.90 / 1.35
+    pullout, 0.75 / 1.35 tension) is E3's Ng phi R / Tmax. Before GM-256 it
+    took Rc = 1: FOS_pullout at Level 4 was 45.2 (Ng phi Pr / Tmax 30.2)
+    where E3 prints 2 x 12.23 / 12.35 = 1.98."""
+    Tmax, phi_Pr, Ng = E3_TABLE_7_3[level]
+    lv = _e3_internal(strips_per_panel=Ng)[level - 1]
+    Sh = 5.0 * FT / Ng
+    assert lv["Rc"] == pytest.approx(B_STRIP / Sh, abs=1e-4)
+    assert 0.90 * lv["Pr_kN_per_m"] * Sh / KIP == pytest.approx(phi_Pr,
+                                                                rel=0.003)
+    assert lv["FOS_pullout"] * 0.90 / 1.35 == pytest.approx(
+        Ng * phi_Pr / Tmax, rel=0.004)
+    assert lv["FOS_rupture"] * 0.75 / 1.35 == pytest.approx(
+        Ng * 0.75 * 13.00 / Tmax, rel=0.004)
+
+
+def test_v056_e5_level4_pullout_per_strip():
+    """GEC-11 Vol II Example E5, Level 4 (p. E5-28): Pr = (1.0)(0.832)(2)
+    (0.164 ft)(15.06 ft)(2.20 ksf) = 9.04 k/strip. E5 is a bridge abutment
+    whose footing loads the module does not take, so only the per-strip
+    pullout is checked: per metre of strip width (Rc = 1) times b."""
+    Pr = pullout_resistance(z=17.62 * FT, gamma_backfill=GAMMA,
+                            Le=15.06 * FT, F_star=0.832, Rc=1.0)
+    assert Pr * B_STRIP / KIP == pytest.approx(9.04, rel=0.003)
 
 
 def test_v056_analyze_mse_wall_reports_the_basis():

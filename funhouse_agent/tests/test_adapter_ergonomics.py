@@ -942,8 +942,12 @@ class TestMseCustomReinforcement:
             "wall_height": 6.0, "gamma_backfill": 19.0, "phi_backfill": 34.0,
             "reinforcement_type": "metallic_strip",
             "reinforcement_Tallowable": 40.0,
+            # GM-256: a strip's coverage, Rc = b/Sh = 0.05 / 0.5
+            "reinforcement_width": 0.05,
+            "reinforcement_horizontal_spacing": 0.5,
         })
         assert r["FOS_sliding"] > 0
+        assert r["internal_results"][0]["Rc"] == pytest.approx(0.1)
 
     def test_unknown_name_without_strength_clear_error(self):
         from funhouse_agent.adapters.retaining_walls import METHOD_REGISTRY as R
@@ -972,6 +976,7 @@ class TestMseCustomReinforcement:
             "reinforcement_Tallowable": 200.0,
             "reinforcement_thickness": 0.0095,        # W11 transverse t
             "reinforcement_transverse_spacing": 0.1524,  # St = 6 in
+            "coverage_ratio": 0.3,    # GM-256: 1.5 ft mat per 5 ft panel
         })
         assert r["FOS_sliding"] > 0
         # the shallowest internal level uses the bar-mat Kr/Ka (>2), not strip
@@ -1121,7 +1126,8 @@ class TestWallChecksReported:
         out = call_agent("retaining_walls", "mse_wall",
                          {"wall_height": 6.0, "gamma_backfill": 18.0,
                           "phi_backfill": 34.0,
-                          "reinforcement_name": "ribbed_steel_strip_75x4"})
+                          "reinforcement_name": "ribbed_steel_strip_75x4",
+                          "reinforcement_horizontal_spacing": 0.75})
         assert out["FOS_bearing"] is None
         assert out["checks_not_run"] == ["bearing"]
         assert out["passes_external"] is None

@@ -8,6 +8,7 @@ GM-246 every strip took 2.0 at the top, the value only a backfill with Cu
 6.3 or more reaches.
 """
 
+import dataclasses
 import math
 
 import pytest
@@ -24,6 +25,13 @@ from retaining_walls.reinforcement import (
 )
 
 TAN34 = math.tan(math.radians(34.0))
+
+# GM-256: a steel strip or grid needs its horizontal spacing. The 75 mm
+# strips at Sh 0.75 m (Rc 0.1); the W11 grid as GEC-11 Example E4's 4-wire
+# mat, b 0.457 m, one per 1.524 m panel (Rc 0.3)
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
+_GRID = dataclasses.replace(WELDED_WIRE_GRID_W11, width=0.4572,
+                            horizontal_spacing=1.524)
 
 
 def _geom():
@@ -74,7 +82,7 @@ def test_which_reinforcement_takes_the_strip_curve():
 
 
 @pytest.mark.parametrize("reinforcement, words", [
-    (WELDED_WIRE_GRID_W11, "20 t/St at the top to 10 t/St"),
+    (_GRID, "20 t/St at the top to 10 t/St"),
     (GEOGRID_UX1600, "0.67 tan phi_backfill")])
 def test_where_the_F_star_takes_no_Cu_a_given_Cu_is_checked_by_note_i(
         reinforcement, words):
@@ -106,14 +114,14 @@ def test_a_Cu_of_4_given_reads_as_given():
     """The library call says 'given' for a Cu the call gave, though it
     equals the value taken when it is left out."""
     c = _choice(analyze_mse_wall(_geom(), 20.0, 34.0,
-                                 RIBBED_STEEL_STRIP_75x4, Cu_backfill=4.0))
+                                 _STRIP, Cu_backfill=4.0))
     assert c["how"] == "given"
     assert _choice(analyze_mse_wall(
-        _geom(), 20.0, 34.0, RIBBED_STEEL_STRIP_75x4))["how"] == "default"
+        _geom(), 20.0, 34.0, _STRIP))["how"] == "default"
 
 
 def test_the_choice_states_the_printed_default_and_the_other_reading():
-    r = analyze_mse_wall(_geom(), 20.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+    r = analyze_mse_wall(_geom(), 20.0, 34.0, _STRIP)
     c = _choice(r)
     assert c["how"] == "default"
     assert c["chosen"].startswith("F* 1.80 at the top of the wall (Cu 4)")
@@ -126,14 +134,14 @@ def test_the_choice_states_the_printed_default_and_the_other_reading():
     # the top level's FOS_pullout at Cu 7 (2.0) against Cu 4 (1.8)
     top = r.internal_results[0]
     at_cap = check_internal_stability(_geom(), 20.0, 34.0,
-                                      RIBBED_STEEL_STRIP_75x4,
+                                      _STRIP,
                                       Cu_backfill=7.0)[0]
     assert top["F_star"] < at_cap["F_star"]
     assert (f"FOS_pullout {at_cap['FOS_pullout']:.3g} at the top level, "
             f"{top['depth_m']:g} m (here {top['FOS_pullout']:.3g})") in alt
 
     given = _choice(analyze_mse_wall(_geom(), 20.0, 34.0,
-                                     RIBBED_STEEL_STRIP_75x4,
+                                     _STRIP,
                                      Cu_backfill=7.0))
     assert given["how"] == "given"
     assert given["chosen"].startswith(
@@ -150,14 +158,14 @@ def test_a_Cu_below_4_is_computed_and_flagged():
     Table 3-1 fill with Cu >= 4; 'For fill outside these limits, tests
     must be run'."""
     c = _choice(analyze_mse_wall(_geom(), 20.0, 34.0,
-                                 RIBBED_STEEL_STRIP_75x4, Cu_backfill=2.5))
+                                 _STRIP, Cu_backfill=2.5))
     assert c["chosen"].startswith("F* 1.60 at the top of the wall (Cu 2.5)")
     assert "tests must be run" in c["chosen"]
 
 
 def test_a_grid_with_no_bar_geometry_says_it_took_the_strip_curve():
     bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
-                              Tallowable=100.0)
+                              Tallowable=100.0, coverage_ratio=0.3)
     (c,) = pullout_factor_choices(_geom(), 20.0, 34.0, bare_grid)
     assert "no transverse-bar geometry (t/St)" in c["basis"]
     assert check_internal_stability(_geom(), 20.0, 34.0, bare_grid,
@@ -167,11 +175,11 @@ def test_a_grid_with_no_bar_geometry_says_it_took_the_strip_curve():
 
 def test_the_calc_steps_show_the_Cu_and_the_F_star_curve():
     def step(cu):
-        r = analyze_mse_wall(_geom(), 20.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+        r = analyze_mse_wall(_geom(), 20.0, 34.0, _STRIP,
                              Cu_backfill=cu)
         analysis = {"wall_type": "mse", "geom": _geom(),
                     "gamma_backfill": 20.0, "phi_backfill": 34.0,
-                    "reinforcement": RIBBED_STEEL_STRIP_75x4,
+                    "reinforcement": _STRIP,
                     "Cu_backfill": cu}
         found = [it for sec in get_calc_steps(r, analysis)
                  for it in sec.items

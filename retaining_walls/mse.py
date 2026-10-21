@@ -96,6 +96,190 @@ F_STAR_STRIP_BASIS = (
     "between, as Vol II Examples E3 and E5 interpolate it, over the same "
     "depths as Kr/Ka (p. 4-49)")
 
+#: GEC-11 Vol I (FHWA-NHI-10-024), read on the rendered pages (GM-256).
+COVERAGE_BASIS = (
+    "GEC-11 Vol I Eq. 3-1 (p. 3-12): Rc = b/Sh, b 'the gross width of the "
+    "strip, sheet, or grid' (for grids from the centre to centre of the "
+    "outside longitudinal bars) and Sh the 'center-to-center horizontal "
+    "spacing between strips, sheets, or grids'; p. 3-13: 'Rc = 1 in the "
+    "case of continuous reinforcement, i.e., each reinforcement layer "
+    "covers the entire horizontal surface of the reinforced soil zone'. "
+    "Eq. 3-2 (p. 3-16) gives the pullout resistance per unit width of "
+    "reinforcement, and Eq. 4-35 (p. 4-49) checks it per unit width of "
+    "wall as F* alpha sigma_v Le C Rc; the tensile resistance per unit "
+    "width of wall is the reinforcement's Tal times Rc (p. 4-47)")
+
+#: Typical spacings GEC-11 Vol II prints, named in a refusal and never
+#: used for one.
+_TYPICAL_COVERAGE = (
+    "For scale only, not taken: GEC-11 Vol II Example E3 (pp. E3-2, E3-19) "
+    "uses 50 mm (1.969 in.) ribbed strips at Sh 0.76 m and 0.51 m (2.50 and "
+    "1.67 ft: 2 or 3 strips per 1.5 m panel), Rc 0.066 and 0.098, with 'a "
+    "minimum 2 strips at a horizontal spacing not exceeding 2.5 ft'; "
+    "Example E5 (p. E5-30) Sh 0.40 to 0.52 m (1.3 to 1.7 ft); Example E4 "
+    "(p. E4-18) bar mats of 4 longitudinal W11 wires at 0.15 m (0.5 ft), b "
+    "0.46 m between the outside wires, one mat per 1.5 m (5 ft) panel, Rc "
+    "0.30")
+
+NEEDS_COVERAGE = (
+    "the coverage ratio Rc = b/Sh of this {kind}: a steel strip or grid "
+    "covers only part of each level, and GEC-11 Vol I takes its pullout "
+    "and tensile resistance per unit width of wall times Rc (Eq. 3-1, p. "
+    "3-12; Eq. 4-35, p. 4-49; p. 4-47). Give coverage_ratio, or "
+    "reinforcement_horizontal_spacing (Sh, m, centre to centre) with "
+    "reinforcement_width (b, m{width}). " + _TYPICAL_COVERAGE)
+
+
+def coverage_ratio(reinforcement: Reinforcement) -> float:
+    """The coverage ratio Rc = b/Sh of ``reinforcement`` (GEC-11 Vol I Eq.
+    3-1, p. 3-12; GM-256): its ``coverage_ratio`` when given; else its
+    width b over its horizontal spacing Sh; else 1 for a geosynthetic, a
+    continuous layer ("Rc = 1 in the case of continuous reinforcement", p.
+    3-13). A steel strip or grid given neither is refused (ValueError,
+    :data:`NEEDS_COVERAGE`): GEC-11 prints no spacing to assume, and
+    taking Rc = 1 overstated a strip wall's pullout and rupture many times
+    (before GM-256)."""
+    r = reinforcement
+    Rc, Sh, b = r.coverage_ratio, r.horizontal_spacing, r.width
+    if Rc is not None and Sh is not None:
+        raise ValueError(
+            "give the coverage ratio (coverage_ratio) or the horizontal "
+            "spacing (reinforcement_horizontal_spacing) with the width, not "
+            f"both: Rc {Rc:g} against b/Sh from Sh {Sh:g} m")
+    if Rc is not None:
+        return Rc
+    kind = ("steel grid" if r.is_grid else "steel strip"
+            if r.is_metallic else "geosynthetic")
+    if Sh is not None:
+        if b is None:
+            raise ValueError(
+                f"reinforcement_horizontal_spacing Sh {Sh:g} m needs the "
+                f"{kind}'s width b (reinforcement_width, m"
+                + (", centre to centre of the outside longitudinal bars"
+                   if r.is_grid else "") + "): Rc = b/Sh (GEC-11 Vol I "
+                "Eq. 3-1, p. 3-12). " + _TYPICAL_COVERAGE)
+        if b > Sh:
+            raise ValueError(
+                f"the {kind}'s width b {b:g} m is more than its horizontal "
+                f"spacing Sh {Sh:g} m: Rc = b/Sh is at most 1 (GEC-11 Vol I "
+                "Eq. 3-1; Rc = 1 is a continuous layer, p. 3-13)")
+        return b / Sh
+    if not r.is_metallic:
+        return 1.0
+    width = ""
+    if r.is_grid:
+        width = ", centre to centre of the outside longitudinal bars"
+    elif b is not None:
+        width = f"; this strip is {b:g} m wide, so Sh alone will do"
+    raise ValueError(NEEDS_COVERAGE.format(kind=kind, width=width))
+
+
+def coverage_choice(reinforcement: Reinforcement,
+                    internal: Optional[List[Dict[str, Any]]] = None) -> dict:
+    """The coverage ratio Rc the internal checks took, as a ``choices``
+    entry (``geotech_common.choices``; GM-256), with its b and Sh."""
+    from geotech_common.choices import choice, how_given
+    r = reinforcement
+    Rc = coverage_ratio(r)
+    alts = []
+    if r.coverage_ratio is not None:
+        chosen = f"Rc {Rc:.3g}, given"
+        how = how_given(Rc, None, name="coverage_ratio")
+    elif r.horizontal_spacing is not None:
+        chosen = (f"Rc {Rc:.3g} = b {r.width:g} m / Sh "
+                  f"{r.horizontal_spacing:g} m")
+        how = how_given(r.horizontal_spacing, None,
+                        name="reinforcement_horizontal_spacing")
+    else:
+        chosen = "Rc 1, a continuous geosynthetic layer"
+        how = how_given(None, None, name="coverage_ratio")
+        alts.append(
+            "geosynthetic strips at less than full coverage: Rc = b/Sh "
+            "(reinforcement_width with reinforcement_horizontal_spacing, or "
+            "coverage_ratio); the pullout and tensile resistance per metre "
+            "of wall then fall in proportion")
+    if internal:
+        chosen += (f"; tensile resistance Tal x Rc "
+                   f"{r.Tallowable * Rc:.4g} kN/m of wall (Tal "
+                   f"{r.Tallowable:.4g} kN/m of reinforcement width)")
+    return choice(
+        "Coverage ratio Rc of the reinforcement (pullout and tensile "
+        "resistance per metre of wall)", chosen, how, COVERAGE_BASIS, alts)
+
+
+#: GEC-11 Vol I, read on the rendered pages (GM-256).
+F_STAR_TESTED_BASIS = (
+    "GEC-11 Vol I Table 3-6 note (i) (p. 3-17): the empirical F* values "
+    "are for use 'in the absence of product and backfill specific test "
+    "data'; p. 3-20: 'Some additional economy can be obtained from "
+    "site/product specific testing', the procedures in Appendix B. The "
+    "tested F* replaces Eqs. 3-4 to 3-8 at every level")
+ALPHA_BASIS = (
+    "GEC-11 Vol I p. 3-16: the scale effect correction factor alpha 'can "
+    "be obtained from pullout tests on reinforcements with different "
+    "lengths as presented in Appendix B'; Table 3-6 (p. 3-17) prints the "
+    "default values, and its note (ii): 'Pullout testing to determine "
+    "alpha is recommended if alpha shown in table is less than 1.0'")
+
+
+def default_alpha(reinforcement: Reinforcement) -> float:
+    """The scale effect correction factor alpha the pullout check takes
+    when no tested one is given."""
+    return 1.0
+
+
+def _check_tested(F_star_tested, alpha_tested) -> None:
+    """Refuse a tested F* or alpha that is not one (GM-256)."""
+    if alpha_tested is not None and not 0 < alpha_tested <= 1:
+        raise ValueError(
+            "alpha_tested is the scale effect correction factor from pullout "
+            "tests, more than 0 and at most 1 (GEC-11 Vol I p. 3-16: "
+            "'generally 1.0 for metallic reinforcements and 0.6 to 1.0 for "
+            f"geosynthetic reinforcements'); got {alpha_tested}")
+    if F_star_tested is None:
+        return
+    if isinstance(F_star_tested, (int, float)):
+        if not F_star_tested > 0:
+            raise ValueError(f"F_star_tested must be positive, got "
+                             f"{F_star_tested}")
+        return
+    try:
+        pts = [(float(z), float(f)) for z, f in F_star_tested]
+    except (TypeError, ValueError):
+        raise ValueError(
+            "F_star_tested is the pullout resistance factor from pullout "
+            "tests: one number for every level, or [[depth_m, F*], ...] "
+            "with depth below the top of the wall, taken linearly between "
+            "and at the end values beyond") from None
+    if not pts or any(z < 0 or not f > 0 for z, f in pts) or any(
+            b[0] <= a[0] for a, b in zip(pts, pts[1:])):
+        raise ValueError(
+            "F_star_tested as [[depth_m, F*], ...] needs depths of 0 or "
+            "more in increasing order and each F* more than 0; got "
+            f"{F_star_tested}")
+
+
+def F_star_from_tests(F_star_tested, z: float) -> float:
+    """The tested F* at depth ``z`` (m below the top of the wall): the one
+    value, or linear between the [depth, F*] points and the end value
+    beyond them."""
+    if isinstance(F_star_tested, (int, float)):
+        return float(F_star_tested)
+    pts = [(float(a), float(f)) for a, f in F_star_tested]
+    if z <= pts[0][0]:
+        return pts[0][1]
+    for (z0, f0), (z1, f1) in zip(pts, pts[1:]):
+        if z <= z1:
+            return f0 + (f1 - f0) * (z - z0) / (z1 - z0)
+    return pts[-1][1]
+
+
+def _tested_text(F_star_tested) -> str:
+    if isinstance(F_star_tested, (int, float)):
+        return f"F* {F_star_tested:g} at every level"
+    return "F* " + ", ".join(f"{f:g} at {z:g} m" for z, f in F_star_tested) \
+        + " (linear between)"
+
 
 def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
     """Ratio Kr/Ka as a function of depth per GEC-11 / AASHTO.
@@ -298,8 +482,10 @@ def pullout_resistance(z: float, gamma_backfill: float,
         Distributed dead-load surcharge (kPa). Default 0. Traffic loads are
         left out of pullout (GEC-11 p. 4-49).
     Rc : float, optional
-        Coverage ratio (b/Sh for strips, 1.0 for continuous grids).
-        Default 1.0.
+        Coverage ratio Rc = b/Sh (GEC-11 Vol I Eq. 3-1); 1 for a continuous
+        layer. Default 1.0: Pr per metre of reinforcement width (Eq. 3-2).
+        With the wall's Rc, Pr is per metre of wall (Eq. 4-35), which is
+        what :func:`check_internal_stability` takes (:func:`coverage_ratio`).
 
     Returns
     -------
@@ -585,7 +771,8 @@ def uses_strip_F_star(reinforcement: Reinforcement) -> bool:
 def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
                            phi_backfill: float, reinforcement: Reinforcement,
                            Cu_backfill: float = None,
-                           internal: Optional[List[Dict[str, Any]]] = None
+                           internal: Optional[List[Dict[str, Any]]] = None,
+                           F_star_tested=None, alpha_tested: float = None,
                            ) -> list:
     """The ribbed steel strip F* at the top of the wall (GM-246), as a
     result's ``choices`` (``geotech_common.choices``): the Cu it took,
@@ -594,14 +781,65 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     reading (Cu = 4, or a Cu of 6.3 or more, where F* reaches its 2.0
     maximum). For a reinforcement whose F* takes no Cu: nothing when Cu
     is left out, and a given Cu checked against GEC-11 Table 3-6 note
-    (i), which accepts every empirical F* only for Cu >= 4."""
+    (i), which accepts every empirical F* only for Cu >= 4. A tested F*
+    (``F_star_tested``) replaces all of that with one entry, and a tested
+    alpha adds one (GM-256), each with the FOS_pullout at the printed
+    empirical value."""
     from geotech_common.choices import choice, how_given
+    args = (geom, gamma_backfill, phi_backfill, reinforcement)
+    if internal is None:
+        internal = check_internal_stability(
+            *args, Cu_backfill=Cu_backfill, F_star_tested=F_star_tested,
+            alpha_tested=alpha_tested)
+
+    def lowest(levels):
+        return min(lv["FOS_pullout"] for lv in levels)
+
+    def against(other):
+        if not (internal and other):
+            return ""
+        return (f"; FOS_pullout {other[0]['FOS_pullout']:.3g} at the top "
+                f"level, {other[0]['depth_m']:g} m (here "
+                f"{internal[0]['FOS_pullout']:.3g}), lowest "
+                f"{lowest(other):.3g} (here {lowest(internal):.3g})")
+
+    out = []
+    if alpha_tested is not None:
+        alpha0 = default_alpha(reinforcement)
+        out.append(choice(
+            "Scale effect correction factor alpha of the pullout resistance "
+            "(alpha_tested)", f"alpha {alpha_tested:g}, from pullout tests",
+            how_given(alpha_tested, None, name="alpha_tested"), ALPHA_BASIS,
+            [f"alpha {alpha0:g}, the default for this reinforcement"
+             + against(check_internal_stability(
+                 *args, Cu_backfill=Cu_backfill,
+                 F_star_tested=F_star_tested))]))
+    if F_star_tested is not None:
+        if uses_strip_F_star(reinforcement) and Cu_backfill is None:
+            empirical = ("Eqs. 3-4 and 3-5 at the Cu = 4 p. 3-20 takes when "
+                         "the backfill's is unknown (F* 1.8 at the top)")
+        elif uses_strip_F_star(reinforcement):
+            empirical = (f"Eqs. 3-4 and 3-5 at Cu {Cu_backfill:g} (F* "
+                         f"{F_star_strip_top(Cu_backfill):.2f} at the top)")
+        elif reinforcement.is_metallic:
+            empirical = "20 t/St at the top to 10 t/St at 20 ft (Eqs. 3-6, 3-7)"
+        else:
+            empirical = "(2/3) tan phi_backfill (Eq. 3-8)"
+        out.append(choice(
+            "Pullout resistance factor F* (F_star_tested)",
+            _tested_text(F_star_tested) + ", from pullout tests",
+            how_given(F_star_tested, None, name="F_star_tested"),
+            F_STAR_TESTED_BASIS,
+            ["the empirical F*, " + empirical + against(
+                check_internal_stability(*args, Cu_backfill=Cu_backfill,
+                                         alpha_tested=alpha_tested))]))
+        return out
     if not uses_strip_F_star(reinforcement):
         if Cu_backfill is None:
-            return []
+            return out
         own = ("20 t/St at the top to 10 t/St at 20 ft (GEC-11 Fig. E4-5)"
                if reinforcement.is_metallic else "0.67 tan phi_backfill")
-        return [choice(
+        return out + [choice(
             "Backfill uniformity coefficient (Cu_backfill) against the "
             "empirical pullout factor F*",
             f"Cu {Cu_backfill:g}: "
@@ -620,13 +858,6 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
               f"(6.1 m) and below")
     if Cu < CU_UNKNOWN:
         chosen += "; Cu is " + _NOTE_I_OUTSIDE
-    if internal is None:
-        internal = check_internal_stability(
-            geom, gamma_backfill, phi_backfill, reinforcement,
-            Cu_backfill=Cu)
-
-    def lowest(levels):
-        return min(lv["FOS_pullout"] for lv in levels)
 
     if Cu == CU_UNKNOWN:
         alt_cu = 10.0 ** (F_STAR_STRIP_MAX - 1.2)    # 6.31: F* 2.0
@@ -637,19 +868,13 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
         alt_cu = CU_UNKNOWN
         alt = ("Cu 4, which GEC-11 Vol I p. 3-20 says to assume when the "
                "backfill's Cu is unknown: F* 1.8 at the top")
-    other = check_internal_stability(
-        geom, gamma_backfill, phi_backfill, reinforcement,
-        Cu_backfill=alt_cu)
-    if internal and other:
-        alt += (f"; FOS_pullout {other[0]['FOS_pullout']:.3g} at the top "
-                f"level, {other[0]['depth_m']:g} m (here "
-                f"{internal[0]['FOS_pullout']:.3g}), lowest "
-                f"{lowest(other):.3g} (here {lowest(internal):.3g})")
+    alt += against(check_internal_stability(
+        *args, Cu_backfill=alt_cu, alpha_tested=alpha_tested))
     basis = F_STAR_STRIP_BASIS
     if reinforcement.is_grid:
         basis += (". This steel grid was given no transverse-bar geometry "
                   "(t/St), so its pullout takes the ribbed strip curve")
-    return [choice(
+    return out + [choice(
         "Pullout resistance factor F* of ribbed steel strips, from the "
         "backfill's uniformity coefficient (Cu_backfill)", chosen,
         how_given(Cu_backfill, None, name="Cu_backfill"), basis, [alt])]
@@ -663,6 +888,8 @@ def check_internal_stability(
     FOS_pullout: float = 1.5,
     FOS_rupture: float = 1.0,
     Cu_backfill: float = None,
+    F_star_tested=None,
+    alpha_tested: float = None,
 ) -> List[Dict[str, Any]]:
     """Check internal stability at each reinforcement level.
 
@@ -688,12 +915,25 @@ def check_internal_stability(
         keeps its F*; the Cu is then only checked against GEC-11 Table 3-6
         note (i), which accepts every empirical F* only for Cu >= 4
         (:func:`pullout_factor_choices`).
+    F_star_tested : float or list of [depth_m, F*], optional
+        The pullout resistance factor F* from pullout tests on the product
+        in the wall's backfill (GEC-11 Vol I Table 3-6 note (i), Appendix
+        B): one value at every level, or values at depths below the top of
+        the wall, linear between and the end value beyond. Replaces the
+        empirical F* (Eqs. 3-4 to 3-8). Default None (the empirical F*).
+    alpha_tested : float, optional
+        The scale effect correction factor alpha from pullout tests (GEC-11
+        Vol I p. 3-16), 0 < alpha <= 1. Default None (alpha 1.0).
 
     Returns
     -------
     list of dict
         Per-level results. With a sloping backfill each level also gives
         ``Zp_m``, the depth below the slope surface used for pullout.
+        ``Pr_kN_per_m`` and ``Tal_Rc_kN_per_m`` are per metre of wall, the
+        reinforcement's pullout and tensile resistance times its coverage
+        ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-47; GM-256);
+        ``Tallowable_kN_per_m`` is Tal per metre of reinforcement width.
 
     Notes
     -----
@@ -716,6 +956,11 @@ def check_internal_stability(
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
     sloping = geom.backfill_slope > 0
+    Rc = coverage_ratio(reinforcement)        # GEC-11 Eq. 3-1 (GM-256)
+    _check_tested(F_star_tested, alpha_tested)
+    alpha = (default_alpha(reinforcement) if alpha_tested is None
+             else alpha_tested)
+    Tal_Rc = reinforcement.Tallowable * Rc    # per metre of wall, p. 4-47
     if sloping:
         _check_backslope(geom, None, geom.surcharge)
         bs = backslope_geometry(geom)
@@ -774,7 +1019,10 @@ def check_internal_stability(
         Le = max(L - La, 1.0)  # minimum 1m effective length
 
         # Pullout resistance
-        if reinforcement.is_grid and t_over_St is not None:
+        if F_star_tested is not None:
+            # from pullout tests (GEC-11 Table 3-6 note (i))
+            F_star = F_star_from_tests(F_star_tested, z)
+        elif reinforcement.is_grid and t_over_St is not None:
             # Steel bar-mat / welded-grid F* = 20(t/St) -> 10(t/St)
             F_star = F_star_metallic(z, phi_backfill, "metallic_grid", t_over_St)
         elif reinforcement.is_metallic:
@@ -794,18 +1042,17 @@ def check_internal_stability(
             # the resistant zone (GEC-11 Fig. 4-15, Fig. E3-5)
             Zp = z + _mean_rise(max(L - Le, 0.0), L, geom)
             Pr = pullout_resistance(
-                Zp, gamma_backfill, Le, F_star,
-                Rc=reinforcement.coverage_ratio,
+                Zp, gamma_backfill, Le, F_star, alpha_pullout=alpha, Rc=Rc,
             )
         else:
             Pr = pullout_resistance(
-                z, gamma_backfill, Le, F_star,
-                Rc=reinforcement.coverage_ratio,
+                z, gamma_backfill, Le, F_star, alpha_pullout=alpha, Rc=Rc,
             )
 
-        # FOS checks
+        # FOS checks, both per metre of wall: the tensile resistance is Tal
+        # times the coverage ratio (GEC-11 p. 4-47, Eqs. 4-33 and 4-34)
         FOS_po = Pr / T if T > 0 else 99.9
-        FOS_ru = reinforcement.Tallowable / T if T > 0 else 99.9
+        FOS_ru = Tal_Rc / T if T > 0 else 99.9
 
         passes = (FOS_po >= FOS_pullout) and (FOS_ru >= FOS_rupture)
 
@@ -817,9 +1064,12 @@ def check_internal_stability(
             "Le_m": round(Le, 2),
             "Kr_Ka": round(kr_ka, 3),
             "F_star": round(F_star, 3),
+            "alpha": alpha,
+            "Rc": round(Rc, 4),
             "FOS_pullout": round(FOS_po, 3),
             "FOS_rupture": round(FOS_ru, 3),
-            "Tallowable_kN_per_m": reinforcement.Tallowable,
+            "Tallowable_kN_per_m": round(reinforcement.Tallowable, 2),
+            "Tal_Rc_kN_per_m": round(Tal_Rc, 2),
             "passes": passes,
         }
         if sloping:
@@ -1674,6 +1924,8 @@ def analyze_mse_wall(
     live_load_resists: bool = False,
     surcharge_in_bearing: bool = True,
     Cu_backfill: float = None,
+    F_star_tested=None,
+    alpha_tested: float = None,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -1733,6 +1985,9 @@ def analyze_mse_wall(
         ribbed steel strip F* (GEC-11 Vol I Eq. 3-4). Default None: 4, as
         GEC-11 p. 3-20 takes when it is unknown (F* 1.8 at the top). See
         :func:`check_internal_stability`.
+    F_star_tested, alpha_tested : optional
+        F* and alpha from pullout tests (GEC-11 Vol I Table 3-6 note (i),
+        p. 3-16); see :func:`check_internal_stability`. Default None.
 
     Returns
     -------
@@ -1742,10 +1997,14 @@ def analyze_mse_wall(
         see ``check_external_stability`` and ``check_internal_stability``.
         ``external_terms`` holds the ASD terms as the checks used them
         (:func:`_external_terms`) and ``choices`` how a live load over the
-        reinforced zone was counted (:func:`live_load_choices`), and for
-        ribbed steel strips the F* at the top of the wall
-        (:func:`pullout_factor_choices`).
+        reinforced zone was counted (:func:`live_load_choices`), the
+        coverage ratio Rc (:func:`coverage_choice`), and for ribbed steel
+        strips the F* at the top of the wall, or a tested F* or alpha
+        (:func:`pullout_factor_choices`). A steel strip or grid with no
+        coverage ratio and no horizontal spacing is refused
+        (:func:`coverage_ratio`, GM-256).
     """
+    coverage_ratio(reinforcement)       # refuse before any work (GM-256)
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)
@@ -1763,7 +2022,8 @@ def analyze_mse_wall(
 
     internal = check_internal_stability(
         geom, gamma_backfill, phi_backfill, reinforcement,
-        Cu_backfill=Cu_backfill,
+        Cu_backfill=Cu_backfill, F_star_tested=F_star_tested,
+        alpha_tested=alpha_tested,
     )
 
     all_pass_internal = all(r["passes"] for r in internal)
@@ -1811,6 +2071,8 @@ def analyze_mse_wall(
         external_terms=terms,
         choices=live_load_choices(geom, live_load_resists,
                                   surcharge_in_bearing)
+        + [coverage_choice(reinforcement, internal)]
         + pullout_factor_choices(geom, gamma_backfill, phi_backfill,
-                                 reinforcement, Cu_backfill, internal),
+                                 reinforcement, Cu_backfill, internal,
+                                 F_star_tested, alpha_tested),
     )

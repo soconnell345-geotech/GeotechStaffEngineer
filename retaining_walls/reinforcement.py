@@ -24,9 +24,18 @@ class Reinforcement:
     type : str
         "metallic_strip", "metallic_grid", or "geosynthetic".
     Tallowable : float
-        Long-term allowable tensile strength per unit width (kN/m).
+        Long-term allowable tensile strength per unit width of the
+        reinforcement, Tal (kN/m): GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac /
+        b for a steel strip or grid. The rupture check takes Tal x Rc, the
+        strength per metre of wall (p. 4-47: "the product of the nominal
+        long-term strength, coverage ratio, and applicable resistance
+        factor"); a strength per strip or per mat (Ptal, Eq. 3-11b) is Ptal
+        / b (GM-256).
     width : float, optional
-        Strip width (m). For strips only. Default 0.05 (50mm).
+        Gross width b (m) of the strip, sheet or grid; for a grid, from the
+        centre to centre of the outside longitudinal bars (GEC-11 Vol I p.
+        3-12, Fig. 3-3). With ``horizontal_spacing`` it gives the coverage
+        ratio Rc = b/Sh. Default None (not given).
     Fy : float, optional
         Yield strength of steel (kPa). Default 0 (not metallic).
     thickness : float, optional
@@ -34,23 +43,29 @@ class Reinforcement:
         bar-mat / welded-grid reinforcement (the ``t`` in the F* = 20·t/St
         bearing-resistance ratio). Default 0.
     coverage_ratio : float, optional
-        Coverage ratio Rc = b/Sh (strip width / horizontal spacing).
-        For metallic strips, typically 0.10-0.15.
-        For continuous geogrids, Rc = 1.0 (default).
+        Coverage ratio Rc = b/Sh (GEC-11 Vol I Eq. 3-1, p. 3-12), given
+        directly, 0 < Rc <= 1. Default None: worked out from ``width`` and
+        ``horizontal_spacing``, or 1 for a geosynthetic given neither (a
+        continuous layer, p. 3-13); a steel strip or grid given neither is
+        refused (``mse.coverage_ratio``, GM-256).
     transverse_spacing : float, optional
         Transverse-bar (grid) spacing St (m) for steel bar-mat / welded-grid
         reinforcement (the ``St`` in F* = 20·t/St). Only used for
         ``metallic_grid``. Default 0 (then the per-call ``t_over_St`` /
         F* default applies).
+    horizontal_spacing : float, optional
+        Centre-to-centre horizontal spacing Sh (m) between the strips,
+        sheets or grids of one level (GEC-11 Vol I p. 3-12). Default None.
     """
     name: str
     type: str
     Tallowable: float
-    width: float = 0.05
+    width: Optional[float] = None
     Fy: float = 0.0
     thickness: float = 0.0
-    coverage_ratio: float = 1.0
+    coverage_ratio: Optional[float] = None
     transverse_spacing: float = 0.0
+    horizontal_spacing: Optional[float] = None
 
     def __post_init__(self):
         valid_types = ("metallic_strip", "metallic_grid", "geosynthetic")
@@ -58,6 +73,16 @@ class Reinforcement:
             raise ValueError(f"type must be one of {valid_types}, got '{self.type}'")
         if self.Tallowable <= 0:
             raise ValueError(f"Tallowable must be positive, got {self.Tallowable}")
+        for name in ("width", "horizontal_spacing"):
+            value = getattr(self, name)
+            if value is not None and not value > 0:
+                raise ValueError(f"{name} must be positive, got {value}")
+        if self.coverage_ratio is not None \
+                and not 0 < self.coverage_ratio <= 1:
+            raise ValueError(
+                "coverage_ratio is Rc = b/Sh, the reinforcement's width over "
+                "its horizontal spacing (GEC-11 Vol I Eq. 3-1): more than 0 "
+                f"and at most 1; got {self.coverage_ratio}")
 
     @property
     def is_metallic(self) -> bool:
@@ -78,24 +103,27 @@ class Reinforcement:
         return None
 
 
-# Built-in reinforcement types
-# NOTE: For metallic strips, coverage_ratio Rc = b/Sh must be set by
-# the user based on horizontal spacing. Typical values: 0.10-0.15.
-# Default Rc=1.0 is conservative (overestimates pullout resistance).
+# Built-in reinforcement types. The values are representative of their
+# class, not a manufacturer's catalog (DESIGN.md). A steel strip or grid has
+# no coverage ratio of its own: the wall's horizontal spacing Sh sets it,
+# Rc = b/Sh (GEC-11 Vol I Eq. 3-1), and a call gives Sh or Rc (GM-256).
 RIBBED_STEEL_STRIP_75x4 = Reinforcement(
     name="Ribbed Steel Strip 75x4mm",
     type="metallic_strip",
-    Tallowable=43.1,  # kN/m (Grade 65 steel, 75mm wide, 4mm thick, after corrosion)
+    # Tal per metre of strip width (GEC-11 Eq. 3-11a): the representative
+    # allowable load of 43.1 kN per strip (Grade 65 steel, 75 mm x 4 mm,
+    # after corrosion) over b = 75 mm. Until GM-256 the module compared 43.1
+    # "kN/m" with the tension per metre of wall, at no spacing.
+    Tallowable=43.1 / 0.075,
     width=0.075,
     Fy=450000.0,
     thickness=0.004,
-    coverage_ratio=1.0,  # User should set Rc = b/Sh for actual design
 )
 
 WELDED_WIRE_GRID_W11 = Reinforcement(
     name="Welded Wire Grid W11xW11",
     type="metallic_grid",
-    Tallowable=32.0,  # kN/m
+    Tallowable=32.0,  # kN/m of grid width
     Fy=450000.0,
     thickness=0.0095,           # W11 transverse-bar diameter t = 0.374 in
     transverse_spacing=0.1524,  # St = 6 in (densest level) -> t/St = 0.0623

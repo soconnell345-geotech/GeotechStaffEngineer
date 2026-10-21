@@ -459,6 +459,83 @@ broken backslope with 3 m of level ground on a 5 m zone: sliding 2.428 /
 no live load on the zone and does not move. Tests:
 `tests/test_mse_live_load.py`.
 
+## The coverage ratio Rc, and F* and alpha from tests (GM-256, 2026-10-20)
+
+**The print** (GEC-11 Vol I, FHWA-NHI-10-024, read on the pages). Eq. 3-1
+(p. 3-12): Rc = b/Sh, b "the gross width of the strip, sheet, or grid"
+(for a grid, centre to centre of the outside longitudinal bars, Fig. 3-3)
+and Sh the "center-to-center horizontal spacing between strips, sheets, or
+grids"; p. 3-13: "Rc = 1 in the case of continuous reinforcement". Eq. 3-2
+(p. 3-16) is the pullout resistance per unit width of reinforcement; Eq.
+4-35 (p. 4-49) checks it per unit width of wall, F* alpha sigma_v Le C Rc.
+Eq. 3-11a (p. 3-22): Tal = Fy Ac / b, per unit reinforcement width; p.
+4-47: the factored tensile resistance per unit width of wall is "the product
+of the nominal long-term strength, coverage ratio, and applicable resistance
+factor"; Eqs. 4-33 and 4-34 (pp. 4-48, 4-49): Tr = phi Tal >= Tmax.
+
+**What the code took.** `Reinforcement.coverage_ratio` defaulted to 1.0 and
+no route set it: the adapter had no spacing input, the built-ins left it at
+1, and `width` (default 0.05 m) was never used. So every steel strip and
+bar mat was checked as a continuous sheet, in pullout AND in rupture: the
+rupture check was `Tallowable / Tmax` with no Rc, and the built-in strip's
+43.1 (a representative allowable load per 75 mm strip) was compared with the
+tension per metre of wall. Geosynthetics took Rc = 1, which is right for a
+continuous layer.
+
+**Now.** `mse.coverage_ratio`: Rc given (0 < Rc <= 1), or b/Sh from the
+reinforcement's `width` and `horizontal_spacing`, or 1 for a geosynthetic
+given neither (p. 3-13). A steel strip or grid given neither is REFUSED,
+naming `coverage_ratio`, `reinforcement_horizontal_spacing` and
+`reinforcement_width`; the refusal quotes GEC-11 Vol II's spacings "for scale
+only, not taken" (E3: 50 mm strips at 0.76 and 0.51 m, 2 or 3 a 1.5 m panel,
+"a minimum 2 strips at a horizontal spacing not exceeding 2.5 ft"; E5: 0.40
+to 0.52 m; E4: one 4-wire mat, b 0.46 m, a panel). No spacing is assumed.
+Pullout is F* alpha sigma_v Le C Rc and the rupture resistance Tal x Rc,
+both per metre of wall; each level reports `Rc`, `alpha` and
+`Tal_Rc_kN_per_m`, and the result's choices say how Rc was set. `Tallowable`
+is Tal per metre of the reinforcement's own width (Eq. 3-11a): the built-in
+strip's is 43.1 / 0.075 = 574.7 kN/m, the only reading of 43.1 that is a
+steel strip's strength (per unit strip width it would be 3.2 kN a strip);
+the built-in grid's 32 kN/m stays per metre of grid width. A built-in strip
+carries its own b (a different `reinforcement_width` is refused); the
+built-in grid takes one. `mse_lrfd_external_stability` refuses the new
+inputs with the reason.
+
+**Tested F* and alpha.** `F_star_tested` (one value, or [[depth_m, F*], ...]
+linear between and held beyond) replaces the empirical F* (Eqs. 3-4 to 3-8)
+at every level: Table 3-6 note (i) accepts those only "in the absence of
+product and backfill specific test data" and for Table 3-1 fill with Cu >= 4.
+`alpha_tested` (0 < alpha <= 1) replaces alpha: p. 3-16, alpha "can be
+obtained from pullout tests on reinforcements with different lengths as
+presented in Appendix B"; note (ii), "Pullout testing to determine alpha is
+recommended if alpha shown in table is less than 1.0". Each is a choice
+with FOS_pullout at the empirical value beside it. A Cu below 4 with no
+tested F* is still computed and flagged (GM-246); refusing it is the
+owner's call.
+
+**Numbers.** The 9 m strip wall (H 9 m, L 7 m, Sv 0.75 m, gamma 20, phi
+34, 75 mm strips): FOS_pullout 28.76 to 42.10 and FOS_rupture 0.982 to
+16.24 before; at Sh 0.75 m (Rc 0.1) 2.876 to 4.210 and 1.309 to 21.65 now
+(pullout x Rc; rupture 43.1 kN a strip / Sh). A 6 m geogrid wall (UX1600,
+L 5 m, Sv 0.6 m, phi 34): unchanged, FOS_pullout 10.493 to 25.792,
+FOS_rupture 1.192 at the bottom. GEC-11 Vol II Example E3 (Table E3-7.3, p.
+E3-19) with its own b 0.164 ft and Sh 2.50 ft (Levels 1-8) and 1.67 ft
+(9-12): the module's Pr times Sh is E3's Pr per strip and its FOS times
+0.90 / 1.35 (pullout) or 0.75 / 1.35 (tension) is E3's Ng phi R / Tmax, at
+every level within 0.4 %; Level 4: phi Pr 12.23 k a strip, 2 x 12.23 /
+12.35 = 1.98 printed. With Rc = 1 that level read FOS_pullout 45.2 (30.2
+against the printed 1.98). E5 is a bridge abutment whose footing loads the
+module does not take; its Level 4 Pr = 9.04 k a strip (p. E5-28) is
+reproduced by the primitive. Tests: `tests/test_mse_coverage_ratio.py`,
+V-056 in `validation_examples/test_published_v056_v057_gec11_slope.py`.
+
+**Left for the owner.** alpha for a geosynthetic stays 1.0 in the module,
+where Table 3-6 prints 0.8 for geogrids and 0.6 for geotextiles (p. 3-16:
+"In the absence of test data, alpha = 0.8 for geogrids and alpha = 0.6 for
+geotextiles"); `alpha_tested` sets it. Rc is one value for the wall: E3
+changes Sh with depth (2.50 ft to 1.67 ft), so a wall like it is run once
+per spacing.
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):
