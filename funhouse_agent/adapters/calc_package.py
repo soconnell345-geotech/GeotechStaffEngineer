@@ -63,18 +63,21 @@ def _default_output_path(module_name: str, fmt: str = "html") -> str:
     return os.path.join(default_output_dir(), f"{module_name}_calc_{ts}.{fmt}")
 
 
-#: Figure-only mode for the CURRENT ``render_figures`` call: ``None`` normally,
-#: else ``{"output_dir": ..., "name_prefix": ...}``. It rides a context var
+#: The part of a package the CURRENT ``render_figures`` or ``render_tables``
+#: call writes: ``None`` normally (the whole package), else
+#: ``{"kind": "figures", "output_dir": ..., "name_prefix": ...}`` or
+#: ``{"kind": "tables", "output_path": ...}``. It rides a context var
 #: rather than the params dict because a package handler validates its params
 #: strictly (``reject_unknown_params``) and forwards them as ``**kwargs`` into
 #: the module function — a router-injected key would be rejected as unknown
 #: (slope_report_package) or arrive as an unexpected kwarg (pavement_design_
 #: package). Keeping it out of band means every package, present and future,
-#: renders figures without knowing this mode exists.
-_FIGURE_MODE = contextvars.ContextVar("calc_package_figure_mode", default=None)
+#: renders its figures and its calculation without knowing this mode exists.
+_RENDER_MODE = contextvars.ContextVar("calc_package_render_mode", default=None)
 
-#: Packages that cannot be rendered figures-only (no analysis behind them).
-_NO_FIGURES = {"html_to_pdf", "render_figures"}
+#: Methods that are not packages (no analysis behind them), so cannot be
+#: rendered in part.
+_NOT_PACKAGES = {"html_to_pdf", "render_figures", "render_tables"}
 
 
 def _slug(text: str, n: int = 40) -> str:
@@ -127,7 +130,7 @@ def _figures_response(module: str, result, analysis, opts: dict,
                       analysis_type: str, extra: dict = None) -> dict:
     """Save the module's calc-package figures as standalone PNGs.
 
-    ``opts`` is the ``_FIGURE_MODE`` payload (``output_dir``/``name_prefix``),
+    ``opts`` is the ``_RENDER_MODE`` payload (``output_dir``/``name_prefix``),
     not the package's own params.
 
     Owner feedback 2026-09-11: ~25 ready matplotlib figures (slope sections,
@@ -213,6 +216,36 @@ def _figures_response(module: str, result, analysis, opts: dict,
     return response
 
 
+def _package_named(params: dict, what: str):
+    """``(package, the rest of params)`` for ``render_figures`` or
+    ``render_tables``, or ``(None, error response)``."""
+    p = dict(params)
+    package = p.pop("package", None) or p.pop("method", None)
+    options = ", ".join(sorted(k for k in METHOD_REGISTRY
+                               if k not in _NOT_PACKAGES))
+    if not package:
+        return None, {"status": "error",
+                      "error": f"Provide 'package' — the *_package method "
+                               f"whose {what} you want, e.g. "
+                               "'slope_stability_package', plus that "
+                               "package's own inputs. Options: " + options}
+    if package in _NOT_PACKAGES or package not in METHOD_REGISTRY:
+        return None, {"status": "error",
+                      "error": f"'{package}' is not a renderable package. "
+                               "Options: " + options}
+    p.pop("format", None)          # meaningless without a package
+    return package, p
+
+
+def _in_mode(package: str, params: dict, mode: dict) -> dict:
+    """The package run with ``mode`` set for this call only."""
+    token = _RENDER_MODE.set(mode)
+    try:
+        return METHOD_REGISTRY[package](params)
+    finally:
+        _RENDER_MODE.reset(token)
+
+
 def _render_figures(params: dict) -> dict:
     """``render_figures``: a canned package's figures as standalone PNGs.
 
@@ -220,29 +253,112 @@ def _render_figures(params: dict) -> dict:
     optional "output_dir", "name_prefix"}``. The analysis runs exactly as the
     package would run it; only the figures are written.
     """
-    p = dict(params)
-    package = p.pop("package", None) or p.pop("method", None)
-    if not package:
-        return {"status": "error",
-                "error": "Provide 'package' — the *_package method whose "
-                         "figures you want, e.g. 'slope_stability_package', "
-                         "plus that package's own inputs. Options: "
-                         + ", ".join(sorted(k for k in METHOD_REGISTRY
-                                            if k not in _NO_FIGURES))}
-    if package in _NO_FIGURES or package not in METHOD_REGISTRY:
-        return {"status": "error",
-                "error": f"'{package}' is not a renderable package. Options: "
-                         + ", ".join(sorted(k for k in METHOD_REGISTRY
-                                            if k not in _NO_FIGURES))}
-    p.pop("format", None)          # meaningless without a package
+    package, p = _package_named(params, "figures")
+    if package is None:
+        return p
     p.pop("output_path", None)     # figures go to output_dir, one PNG each
-    mode = {"output_dir": p.pop("output_dir", None),
+    mode = {"kind": "figures", "output_dir": p.pop("output_dir", None),
             "name_prefix": p.pop("name_prefix", None)}
-    token = _FIGURE_MODE.set(mode)
-    try:
-        return METHOD_REGISTRY[package](p)
-    finally:
-        _FIGURE_MODE.reset(token)
+    return _in_mode(package, p, mode)
+
+
+def _render_tables(params: dict) -> dict:
+    """``render_tables`` (BACKLOG GM-67): a canned package's calculation,
+    its inputs, steps, checks, calculation tables and references, as an
+    HTML file for a report of the caller's own, with no package built.
+
+    ``params`` = ``{"package": "<name>_package", ...that package's inputs,
+    optional "output_path"}`` (the HTML file). The analysis runs exactly as
+    the package would run it.
+    """
+    package, p = _package_named(params, "calculation")
+    if package is None:
+        return p
+    mode = {"kind": "tables", "output_path": p.pop("output_path", None)}
+    return _in_mode(package, p, mode)
+
+
+def _calculation_path(module: str, asked: str = None) -> str:
+    """Where ``render_tables`` writes: ``asked`` as an ``.html`` file, else
+    ``<module>_calculation_<time>.html`` in the working folder (``_2``,
+    ``_3`` ... when that is taken)."""
+    if asked:
+        path = resolve_output_path(str(asked))
+        if not path.lower().endswith((".html", ".htm")):
+            path = os.path.splitext(path)[0] + ".html"
+        return os.path.abspath(path)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = os.path.join(default_output_dir(), f"{module}_calculation_{ts}")
+    path, n = base + ".html", 1
+    while os.path.exists(path):
+        n += 1
+        path = f"{base}_{n}.html"
+    return os.path.abspath(path)
+
+
+#: A section heading in ``render_tables``' file.
+_SECTION_TITLE_RE = re.compile(r"<h3>(.*?)</h3>", re.DOTALL)
+
+
+def _tables_response(module: str, result, analysis, path: str, calc_tables,
+                     table_names, table_error, given, assumed,
+                     analysis_type: str) -> dict:
+    """Write ``render_tables``' file and the table CSVs beside it."""
+    import html as _html
+
+    from calc_package import calculation_html
+
+    content = calculation_html(module, result, analysis, tables=calc_tables,
+                               table_files=table_names, given_inputs=given,
+                               assumed_inputs=assumed)
+    saved = save_verified(path, content)
+    abs_path = saved.get("saved", path)
+    response = {
+        "status": "success",
+        "analysis_type": f"{analysis_type} — calculation",
+        "module": module,
+        "output_path": abs_path,
+        "file_exists": bool(saved.get("file_exists")),
+        "file_size_bytes": saved.get("file_size_bytes", 0),
+        "html_include_tag": f'<div data-include="{abs_path}"></div>',
+        "sections": [_html.unescape(t.strip()) for t in
+                     _SECTION_TITLE_RE.findall(content)],
+        "include_note": _INCLUDE_NOTE,
+    }
+    for key in ("rescue_path", "workspace_api_note"):
+        if saved.get(key):
+            response[key] = saved[key]
+    if not response["file_exists"]:
+        response["status"] = "error"
+        response["error"] = (f"The calculation was rendered but did not "
+                             f"save: {saved.get('error')}")
+    tables_out = _save_tables(calc_tables, table_names, os.path.dirname(path))
+    if tables_out:
+        response["tables"] = tables_out
+        response["tables_note"] = _TABLES_FILE_NOTE
+        failed = [t["title"] for t in tables_out if not t["file_exists"]]
+        if failed:
+            table_error = ("these table CSVs did not save: "
+                           + "; ".join(failed))
+    if table_error:
+        response["tables_error"] = table_error
+    return response
+
+
+#: Said once beside every ``render_tables`` file.
+_INCLUDE_NOTE = (
+    "Paste html_include_tag into your report HTML where the calculation "
+    "goes, under a heading of your own: html_to_pdf puts the file's "
+    "calculation there, with its styles. Its values, units and citations "
+    "are the package's; do not retype them. The figures are "
+    "render_figures'.")
+
+#: Said once beside the table list of every ``render_tables`` file.
+_TABLES_FILE_NOTE = (
+    "Each calculation table is also saved as a CSV beside the file (the "
+    "input echo is the *_inputs.csv); a table printed in part names the CSV "
+    "with every row. They show as downloads under your reply; name them to "
+    "the user.")
 
 
 def _build_response(module: str, result, analysis, params: dict,
@@ -252,20 +368,28 @@ def _build_response(module: str, result, analysis, params: dict,
 
     Always saves to disk.  Auto-generates output_path if not provided.
 
-    Inside a ``render_figures`` call (``_FIGURE_MODE`` set), the package is NOT
-    generated: the module's ``get_figures`` runs on the same result and each
-    figure is saved as a standalone PNG instead.
+    Inside a ``render_figures`` call (``_RENDER_MODE`` kind ``figures``), the
+    package is NOT generated: the module's ``get_figures`` runs on the same
+    result and each figure is saved as a standalone PNG instead. Inside a
+    ``render_tables`` call (kind ``tables``), the package's calculation is
+    written as an HTML file of its own (``_tables_response``), with the
+    same inputs, tables and CSVs the package would have.
     """
     from calc_package import generate_calc_package
 
-    figure_mode = _FIGURE_MODE.get()
-    if figure_mode is not None:
-        return _figures_response(module, result, analysis, figure_mode,
+    mode = _RENDER_MODE.get()
+    if mode is not None and mode.get("kind") == "figures":
+        return _figures_response(module, result, analysis, mode,
                                  analysis_type=analysis_type, extra=extra)
+    tables_only = mode is not None and mode.get("kind") == "tables"
 
     meta = _extract_metadata(params)
     fmt = params.get("format", "html")
-    output_path = params.get("output_path") or _default_output_path(module, fmt)
+    if tables_only:
+        output_path = _calculation_path(module, mode.get("output_path"))
+    else:
+        output_path = (params.get("output_path")
+                       or _default_output_path(module, fmt))
     if not _statements(params, package)[1]:
         # the call names no input as the user's, so no choice the module
         # calls given is the user's either (GM-167)
@@ -291,6 +415,19 @@ def _build_response(module: str, result, analysis, params: dict,
         calc_tables, os.path.splitext(os.path.basename(output_path))[0],
         table_dir)
 
+    # given and assumed kept apart in the package (GM-155)
+    given = _given_inputs(params, run, package)
+    assumed = _assumed_inputs(params, run, result, analysis, package)
+    if tables_only:
+        response = _tables_response(module, result, analysis, output_path,
+                                    calc_tables, table_names, table_error,
+                                    given, assumed, analysis_type)
+        if extra:
+            response.update(extra)
+        if run is not None and run.defaults_used:
+            response["defaults_used"] = dict(run.defaults_used)
+        return response
+
     render_report = {}
     content = generate_calc_package(
         module=module,
@@ -301,10 +438,8 @@ def _build_response(module: str, result, analysis, params: dict,
         render_report=render_report,
         tables=calc_tables,
         table_files=table_names,
-        # given and assumed kept apart in the package (GM-155)
-        given_inputs=_given_inputs(params, run, package),
-        assumed_inputs=_assumed_inputs(params, run, result, analysis,
-                                       package),
+        given_inputs=given,
+        assumed_inputs=assumed,
         **meta,
     )
     tables_out = _save_tables(calc_tables, table_names, table_dir)
@@ -2252,6 +2387,94 @@ def _embed_local_images(html: str, base_dir: str = None):
     return "".join(out), inlined, problems
 
 
+#: An element ``html_to_pdf`` replaces with an HTML file's body (BACKLOG
+#: GM-67): ``<div data-include="file.html"></div>``, empty, as
+#: ``render_tables``' ``html_include_tag`` gives it.
+_INCLUDE_RE = re.compile(
+    r"<(?P<tag>div|section)\b[^>]*?\bdata-include\s*=\s*"
+    r"(?:\"(?P<dq>[^\"]*)\"|'(?P<sq>[^']*)'|(?P<bare>[^\s>\"']+))"
+    r"[^>]*?(?:/>|>\s*</(?P=tag)\s*>)", re.IGNORECASE)
+#: Any ``data-include`` attribute (one left after the includes: not empty).
+_INCLUDE_ATTR_RE = re.compile(r"\bdata-include\s*=", re.IGNORECASE)
+_BODY_RE = re.compile(r"<body\b[^>]*>(.*)</body\s*>",
+                      re.IGNORECASE | re.DOTALL)
+_STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>.*?</style\s*>",
+                             re.IGNORECASE | re.DOTALL)
+_INCLUDE_EXT = (".html", ".htm")
+
+
+def _include_files(html: str, base_dir: str = None):
+    """Each ``data-include`` element replaced by its file's body, and the
+    file's ``<style>`` blocks put in the page's head (once each), so a
+    ``render_tables`` calculation prints in a report as the package prints
+    it. Returns ``(html, included paths, problems)``; a file that cannot be
+    read is a problem, never a silent gap.
+
+    Only a file ``render_tables`` wrote (its ``.calc-tables`` wrapper) in
+    the working folder is taken: the path is followed through any link
+    and ``..`` first, so nothing outside the folder is read into a PDF,
+    and no other page's styles land in the report's head."""
+    from calc_package.renderer import TABLES_SCOPE
+    from funhouse_agent._fileio import _inside
+    folder = os.path.realpath(default_output_dir() or os.getcwd())
+    marker = f'<div class="{TABLES_SCOPE}">'
+    included, problems, styles, out, cursor = [], [], [], [], 0
+    for m in _INCLUDE_RE.finditer(html):
+        tag = m.group(0)
+        snippet = tag if len(tag) <= 120 else tag[:117] + "..."
+        out.append(html[cursor:m.start()])
+        cursor = m.end()
+        src = next(g for g in (m.group("dq"), m.group("sq"), m.group("bare"))
+                   if g is not None).strip()
+        if not src:
+            problems.append(f"{snippet} — data-include names no file")
+            continue
+        path = _resolve_image_path(src, base_dir)
+        if not os.path.isfile(path):
+            path = find_in_working_folder(src) or path
+        path = os.path.realpath(path)
+        if not _inside(path, folder):
+            problems.append(f"{snippet} — outside the working folder: run "
+                            "render_tables with no output_path and paste "
+                            "its html_include_tag")
+            continue
+        if not os.path.isfile(path):
+            problems.append(f'{snippet} — no such file on the REAL '
+                            f'filesystem ("{path}")')
+            continue
+        if not path.lower().endswith(_INCLUDE_EXT):
+            problems.append(f"{snippet} — not an HTML file")
+            continue
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        if marker not in text:
+            problems.append(f"{snippet} — not a calculation render_tables "
+                            "wrote: data-include takes only that file; put "
+                            "HTML of your own in the report itself")
+            continue
+        body = _BODY_RE.search(text)
+        inner = body.group(1) if body else text
+        styles += _STYLE_BLOCK_RE.findall(text[:body.start()] if body
+                                          else "")
+        styles += _STYLE_BLOCK_RE.findall(inner)
+        out.append(_STYLE_BLOCK_RE.sub("", inner))
+        included.append(path)
+    out.append(html[cursor:])
+    html = "".join(out)
+    if _INCLUDE_ATTR_RE.search(html):
+        problems.append(
+            "an element with data-include holds content: paste "
+            'html_include_tag as given, <div data-include="file.html">'
+            "</div>, with nothing inside it")
+    styles = list(dict.fromkeys(styles))
+    if styles:
+        sheet = "\n".join(styles)
+        head_end = re.search(r"</head\s*>", html, re.IGNORECASE)
+        html = (html[:head_end.start()] + sheet + html[head_end.start():]
+                if head_end else sheet + html)
+    return html, included, problems
+
+
 def _unembeddable_findings(html: str, img_problems) -> list:
     """Everything in the HTML that would silently vanish from the PDF."""
     findings = list(img_problems)
@@ -2426,6 +2649,21 @@ def _generate_html_to_pdf(params: dict) -> dict:
             html = f.read()
         base_dir = os.path.dirname(src)  # relative <img> paths sit beside it
 
+    # A calculation from render_tables goes in where its tag stands (GM-67);
+    # one that cannot be read stops the PDF, as a figure does.
+    html, included, include_problems = _include_files(html, base_dir)
+    if include_problems:
+        lines = "\n".join(f"  {i}. {f}"
+                          for i, f in enumerate(include_problems, 1))
+        return {"status": "error",
+                "analysis_type": "HTML report to PDF",
+                "error": ("html_to_pdf: these data-include elements cannot "
+                          "be filled, so the report would lose what they "
+                          "hold:\n" + lines + "\nFix: paste the "
+                          "html_include_tag render_tables returned, "
+                          "unchanged, or run render_tables again."),
+                "include_problems": include_problems}
+
     # Embed what can be embedded (real local PNG/JPEG paths), then refuse
     # loudly if anything the engine would silently drop is left.
     html, inlined, img_problems = _embed_local_images(html, base_dir)
@@ -2463,6 +2701,8 @@ def _generate_html_to_pdf(params: dict) -> dict:
         "format": "pdf",
         "renderer": "story",
     }
+    if included:
+        response["included"] = included
     if inlined:
         response["images_embedded"] = len(inlined)
         response["embedded_images"] = [item["path"] for item in inlined]
@@ -2562,6 +2802,7 @@ def _generate_pavement_design_package(params: dict) -> dict:
 METHOD_REGISTRY = {
     "html_to_pdf": _generate_html_to_pdf,
     "render_figures": _render_figures,
+    "render_tables": _render_tables,
     "pavement_design_package": _generate_pavement_design_package,
     "bearing_capacity_package": _generate_bearing_capacity_package,
     "lateral_pile_package": _generate_lateral_pile_package,
@@ -2715,6 +2956,61 @@ METHOD_INFO = {
                     "fos) are echoed too."),
         },
     },
+    "render_tables": {
+        "category": "Calculation Package",
+        "brief": ("The CALCULATION of any canned *_package as an HTML file, "
+                  "WITHOUT building the package, for a report you compose "
+                  "with html_to_pdf: the given and assumed inputs, the "
+                  "values used, the method choices, each step with its "
+                  "equation, the values put in, its result and its "
+                  "reference, the checks, the calculation tables and the "
+                  "reference list, printed as the package prints them. "
+                  "Same inputs as the package. Paste the returned "
+                  "html_include_tag into your report HTML where the "
+                  "calculation goes. The figures come from render_figures."),
+        "parameters": {
+            "package": {"type": "str", "required": True,
+                        "description": ("Which package's calculation: e.g. "
+                                        "'bearing_capacity_package', "
+                                        "'retaining_wall_package', "
+                                        "'soe_package'. Any *_package "
+                                        "method of this module. PLUS every "
+                                        "input the named package takes, "
+                                        "beside it, given and assumptions "
+                                        "included: describe_method("
+                                        "'calc_package', '<package>') lists "
+                                        "them. The analysis runs exactly as "
+                                        "the package would.")},
+            "output_path": {"type": "str", "required": False,
+                            "description": ("The HTML file to write. "
+                                            "Defaults to <module>_calculation"
+                                            "_<time>.html in the working "
+                                            "folder.")},
+        },
+        # Dispatch also accepts the named package's parameters (GM-110).
+        "parameters_of": "package",
+        "parameter_aliases": {"method": "package"},
+        "returns": {
+            "status": "success or error.",
+            "output_path": ("The HTML file: the calculation with its own "
+                            "styles. It also opens on its own."),
+            "file_exists": ("True if the file was verified on disk after "
+                            "writing."),
+            "html_include_tag": ("<div data-include=\"...\"></div>: paste "
+                                 "it, unchanged and empty, into your report "
+                                 "HTML where the calculation goes, under a "
+                                 "heading of your own; html_to_pdf puts the "
+                                 "file's calculation there."),
+            "sections": "The calculation's section titles, in order.",
+            "tables": ("[{title, output_path, rows, file_exists}]: one CSV "
+                       "per calculation table, saved beside the file (the "
+                       "input echo is *_inputs.csv); a table printed in "
+                       "part names the CSV that holds every row."),
+            "tables_error": "Only when a table could not be built or saved.",
+            "...": ("The package's own key results (e.g. q_ultimate_kPa, "
+                    "FOS) are echoed too."),
+        },
+    },
     "html_to_pdf": {
         "category": "Calculation Package",
         "brief": "Render self-contained HTML (e.g. a custom report YOU composed) to a "
@@ -2725,7 +3021,9 @@ METHOD_INFO = {
                  "never a silent blank. A figure that does not fit what is left of a "
                  "page starts the next page at its full size; one taller than a page is "
                  "scaled to fit a page. Backgrounds are not drawn: set things off with "
-                 "borders, bold or coloured text. Pure-Python (PyMuPDF Story engine).",
+                 "borders, bold or coloured text. A canned package's calculation "
+                 "(inputs, steps, tables) goes in from render_tables, its figures "
+                 "from render_figures. Pure-Python (PyMuPDF Story engine).",
         "parameters": {
             "html": {"type": "str", "required": False,
                      "description": "Self-contained HTML content to render: the "
@@ -2741,6 +3039,10 @@ METHOD_INFO = {
                                     "base64 PNG/JPEG data URI. Inline <svg>, remote "
                                     "image URLs and literal '[image]' placeholders are "
                                     "REJECTED with a list of what to fix. "
+                                    "CALCULATIONS: paste render_tables' "
+                                    "html_include_tag, <div data-include=\"file.html\">"
+                                    "</div>, empty; that file's calculation is put "
+                                    "there, with its styles. "
                                     "Provide this or 'html_path'."},
             "html_path": {"type": "str", "required": False,
                           "description": "Path to an existing HTML file on the REAL "
@@ -2768,6 +3070,9 @@ METHOD_INFO = {
             "file_size_bytes": "Size of the saved PDF.",
             "renderer": "'story' (pure-Python PyMuPDF engine).",
             "images_embedded": "How many local image files were inlined into the PDF.",
+            "included": "The HTML files a data-include put in the PDF.",
+            "include_problems": ("On error: each data-include that could not be "
+                                 "filled, and why."),
             "pages": "How many pages the PDF has.",
             "page_contents": "What landed on each page, read back from the PDF: "
                              "pdf_page (from 1, as a PDF viewer shows), its "

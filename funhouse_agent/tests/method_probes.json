@@ -29,6 +29,7 @@
 "calc_package|reliability_package#monte_carlo": {"params": {"engine": "monte_carlo", "g_expression": "R/100", "n": 500, "seed": 1, "variables": {"R": {"cov": 0.15, "mean": 200.0}}}},
 "calc_package|reliability_package#pem": {"params": {"engine": "pem", "g_expression": "R/100", "variables": {"R": {"cov": 0.15, "mean": 200.0}}}},
 "calc_package|render_figures": {"params": {"friction_angle": 30.0, "output_dir": "figures", "package": "bearing_capacity_package", "unit_weight": 18.0, "width": 2.0}},
+"calc_package|render_tables": {"params": {"friction_angle": 30.0, "output_path": "calculation.html", "package": "bearing_capacity_package", "unit_weight": 18.0, "width": 2.0}},
 "calc_package|retaining_wall_package": {"params": {"gamma_backfill": 18.0, "phi_backfill": 30.0, "wall_height": 4.0}},
 "calc_package|retaining_wall_package#surcharge": {"params": {"gamma_backfill": 18.0, "phi_backfill": 30.0, "surcharge": 10.0, "wall_height": 4.0}},
 "calc_package|retaining_wall_package#key": {"params": {"gamma_backfill": 18.0, "has_shear_key": true, "include_passive": true, "key_depth": 0.5, "phi_backfill": 30.0, "wall_height": 4.0}},

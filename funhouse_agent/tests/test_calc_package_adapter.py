@@ -64,6 +64,9 @@ class TestHelpers:
             if name == "render_figures":   # figures-only: output_dir, no package
                 assert "output_dir" in params and "package" in params
                 continue
+            if name == "render_tables":    # the calculation: no header
+                assert "output_path" in params and "package" in params
+                continue
             assert "output_path" in params, f"{name} missing output_path"
             if name == "html_to_pdf":  # renderer utility, not an analysis package
                 continue
@@ -814,7 +817,8 @@ class TestDispatchIntegration:
         methods = list_methods("calc_package")
         # list_methods returns {category: {method: brief}}
         total = sum(len(v) for v in methods.values())
-        assert total == 19  # 17 packages + html_to_pdf + render_figures
+        # 17 packages + html_to_pdf + render_figures + render_tables
+        assert total == 20
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
