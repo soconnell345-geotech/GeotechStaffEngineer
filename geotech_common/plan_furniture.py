@@ -10,7 +10,8 @@ other plans you reviewed on a project. If there is not, it can default to
 north arrow up."
 
 Shared by every module that draws a plan (``profile_figure.plot_data`` with
-``plan_view``, the ``gstools`` probability map), so the drawings read alike.
+``plan_view``, the ``gstools`` probability and kriging maps), so the drawings
+read alike.
 Both renderings: matplotlib (the PNG for reports) and Plotly (the chat).
 """
 
@@ -94,34 +95,39 @@ def mpl_north_arrow(ax, xy, north_deg: float) -> List:
 
 def plotly_scale_bar(fig, x0: float, y: float, length: float,
                      height: float, units: str = "m",
-                     text_color: str = INK) -> None:
-    """The Plotly twin of :func:`mpl_scale_bar` (data coordinates)."""
+                     text_color: str = INK, xref: str = "x",
+                     yref: str = "y") -> None:
+    """The Plotly twin of :func:`mpl_scale_bar` (data coordinates of the
+    axes ``xref`` / ``yref``, e.g. ``"x2"`` / ``"y2"`` for a second plan
+    beside the first)."""
     seg = length / BAR_SEGMENTS
     for k in range(BAR_SEGMENTS):
         fig.add_shape(type="rect", x0=x0 + k * seg, x1=x0 + (k + 1) * seg,
-                      y0=y, y1=y + height, xref="x", yref="y",
+                      y0=y, y1=y + height, xref=xref, yref=yref,
                       fillcolor=INK if k % 2 == 0 else "white",
                       line={"color": INK, "width": 1})
     for xv, lab in ((x0, "0"), (x0 + length, f"{length:g} {units}".strip())):
-        fig.add_annotation(x=xv, y=y + height, xref="x", yref="y", text=lab,
-                           showarrow=False, yanchor="bottom", yshift=2,
-                           font={"size": 10, "color": text_color})
+        fig.add_annotation(x=xv, y=y + height, xref=xref, yref=yref,
+                           text=lab, showarrow=False, yanchor="bottom",
+                           yshift=2, font={"size": 10, "color": text_color})
 
 
-def plotly_north_arrow(fig, xy, north_deg: float) -> None:
-    """The Plotly twin of :func:`mpl_north_arrow` (data coordinates)."""
+def plotly_north_arrow(fig, xy, north_deg: float, xref: str = "x",
+                       yref: str = "y") -> None:
+    """The Plotly twin of :func:`mpl_north_arrow` (data coordinates of the
+    axes ``xref`` / ``yref``)."""
     th = math.radians(float(north_deg))
     ux, uy = math.sin(th), math.cos(th)
     px = ARROW_PT * PT_TO_PX
     x, y = xy
     # the tail sits (ax, ay) px from the head, y downward; xshift / yshift
     # move the whole arrow so it is centred on its spot
-    fig.add_annotation(x=x, y=y, xref="x", yref="y", text="",
+    fig.add_annotation(x=x, y=y, xref=xref, yref=yref, text="",
                        showarrow=True, arrowhead=2, arrowsize=1.3,
                        arrowwidth=1.6, arrowcolor=INK,
                        ax=-ux * px, ay=uy * px,
                        xshift=ux * px / 2, yshift=uy * px / 2)
-    fig.add_annotation(x=x, y=y, xref="x", yref="y", text="N",
+    fig.add_annotation(x=x, y=y, xref=xref, yref=yref, text="N",
                        showarrow=False, xshift=ux * (px / 2 + 11),
                        yshift=uy * (px / 2 + 11),
                        font={"size": 13, "color": INK})

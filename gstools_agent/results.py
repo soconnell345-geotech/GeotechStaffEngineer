@@ -59,6 +59,16 @@ class KrigingResult:
     #: cell arrays behind ``regions``, for :meth:`regions_csv`.
     region_cells: Optional[list] = None
     quantity: str = "above"
+    #: Not serialized: what the kriging map draws
+    #: (``gstools_agent.plan_map.kriging_map_figure``) -- the observations,
+    #: the regions' outlines, and whether the variogram (and with it the
+    #: nugget) was fitted.
+    obs_x: Optional[np.ndarray] = None
+    obs_y: Optional[np.ndarray] = None
+    obs_values: Optional[np.ndarray] = None
+    regions_geom: Optional[list] = None
+    variogram_fitted: bool = False
+    nugget_fitted: bool = False
 
     def regions_csv(self) -> str:
         """Per region and level, every cell: the kriged mean, the kriging

@@ -6,27 +6,24 @@ Each figure is drawn TWICE from the same arrays: a matplotlib PNG (the report
 copy) and a Plotly figure (the interactive twin the app renders from a
 ``.plotly.json`` sidecar), the way ``profile_figure.plot_data`` does it.
 matplotlib is used through its object API (``Figure`` + the Agg canvas), so
-no global pyplot state is touched.
+no global pyplot state is touched. The map is drawn by the module's one
+plan-map path, :mod:`gstools_agent.plan_map`, which the kriging map shares.
 """
 
 import io
-import math
 
 import numpy as np
 
+#: A raster map up to this many lattice cells; beyond, cells as markers.
+#: ``_what`` names z in words (owner, 2026-10-15: "need to define z").
+from gstools_agent.plan_map import MAX_RASTER as _MAX_RASTER, _what
+
 _TEXT = "#222222"
 _GRID = "#dddddd"
-_MAP_BG = "#f4f4f4"
-_OBS = "#1f4e79"
-_BOUND = "#7a1f1f"
 _PALETTE = ["#1f4e79", "#c0504d", "#4f8f3a", "#8064a2", "#e08a1e",
             "#3b8ea5", "#7f7f7f", "#a05d2c"]
-_OUTLINES = ["#111111", "#3b8ea5", "#8064a2", "#4f8f3a", "#e08a1e",
-             "#7f7f7f"]
 #: Curves drawn on one exceedance figure; the rest are listed in the JSON.
 MAX_CURVES = 12
-#: A raster map up to this many lattice cells; beyond, cells as markers.
-_MAX_RASTER = 100000
 
 
 def _new_figure(width_in, height_in, dpi):
@@ -102,11 +99,6 @@ def exceedance_curves(result, max_curves=MAX_CURVES):
                     "P90": float(np.percentile(v, 90)),
                     "p_any": float(np.mean(v > 0))})
     return out
-
-
-def _what(value_name):
-    """What z is, in words (owner, 2026-10-15: "need to define z")."""
-    return (str(value_name).strip() if value_name else "") or "value"
 
 
 def exceedance_figure(result, dpi=150, width_in=7.0, height_in=4.8,
@@ -194,13 +186,17 @@ def _map_points(result, region=None, level=None):
     return region, level, p_cells
 
 
-def probability_map_arrays(result, region=None, level=None):
+def probability_map_arrays(result, region=None, level=None, outlines=()):
     """What both renderings draw: the probability at every simulated cell
-    (all regions, the chosen region's level) on the lattice, the outlines,
-    the observations and bounds, and the view."""
+    (all regions, the chosen region's level) on the lattice, and the view:
+    the simulated cells plus a margin and the ``outlines`` (parsed, see
+    :func:`gstools_agent.plan_map.parse_outlines`), widened to take in the
+    observations and bounds that are near (within one view diagonal)."""
+    from gstools_agent.plan_map import plan_view
+
     region, level, p_cells = _map_points(result, region, level)
     lat = result.lattice
-    nx, ny = int(lat["nx"]), int(lat["ny"])
+    ny = int(lat["ny"])
     cell = float(result.cell_size)
     idx = np.flatnonzero(result.lattice_union)
     ii, jj = idx // ny, idx % ny
@@ -211,200 +207,67 @@ def probability_map_arrays(result, region=None, level=None):
     if gx.size * gy.size <= _MAX_RASTER:
         raster = np.full((gy.size, gx.size), np.nan)
         raster[jj - j0, ii - i0] = p_cells
-    # the view: the simulated cells plus a margin, widened to take in the
-    # observations and bounds that are near (within one view diagonal)
-    x_lo, x_hi = gx[0] - cell / 2, gx[-1] + cell / 2
-    y_lo, y_hi = gy[0] - cell / 2, gy[-1] + cell / 2
-    pad = max(float(lat.get("margin", 0.0)), 2 * cell)
-    x_lo, x_hi, y_lo, y_hi = x_lo - pad, x_hi + pad, y_lo - pad, y_hi + pad
-    diag = math.hypot(x_hi - x_lo, y_hi - y_lo)
-    cx, cy = (x_lo + x_hi) / 2, (y_lo + y_hi) / 2
-    near = np.hypot(result.obs_x - cx, result.obs_y - cy) <= diag
+    core_x = [gx[0] - cell / 2, gx[-1] + cell / 2]
+    core_y = [gy[0] - cell / 2, gy[-1] + cell / 2]
+    for o in outlines:
+        core_x += o["xy"][:, 0].tolist()
+        core_y += o["xy"][:, 1].tolist()
     bnds = list(result.bounds_input or [])
-    bnear = [b for b in bnds if math.hypot(b["x"] - cx, b["y"] - cy) <= diag]
-    xs = np.concatenate([[x_lo, x_hi], result.obs_x[near],
-                         [b["x"] for b in bnear]])
-    ys = np.concatenate([[y_lo, y_hi], result.obs_y[near],
-                         [b["y"] for b in bnear]])
-    span = max(xs.max() - xs.min(), ys.max() - ys.min())
-    extra = 0.04 * span
+    xr, yr, near, bnear = plan_view(
+        core_x, core_y, max(float(lat.get("margin", 0.0)), 2 * cell),
+        result.obs_x, result.obs_y, [b["x"] for b in bnds],
+        [b["y"] for b in bnds])
     return {
         "region": region, "level": level, "gx": gx, "gy": gy,
         "raster": raster, "cells_x": result.cell_x, "cells_y": result.cell_y,
-        "p_cells": p_cells, "cell": cell,
-        "xlim": (xs.min() - extra, xs.max() + extra),
-        "ylim": (ys.min() - extra, ys.max() + extra),
+        "p_cells": p_cells, "cell": cell, "xlim": xr, "ylim": yr,
         "obs_mask": near, "n_obs_off": int((~near).sum()),
-        "bounds": bnear,
+        "bounds": [b for b, k in zip(bnds, bnear) if k],
     }
 
 
 def probability_map_figure(result, region=None, level=None, dpi=150,
                            width_in=7.0, value_name=None, value_unit="",
-                           north_deg=None):
+                           north_deg=None, outlines=None):
     """Plan map of the probability that the value (``value_name``: what z
     is, e.g. 'top of hard rock elevation') is above (or below) the level at
-    each simulated cell, drawn as a plan (owner, 2026-10-15): to scale, no
-    axes or grid, a scale bar and a north arrow (``north_deg`` clockwise
+    each simulated cell, drawn as a plan (owner, 2026-10-15) through the
+    module's one plan-map path (:mod:`gstools_agent.plan_map`): to scale,
+    no axes or grid, a scale bar and a north arrow (``north_deg`` clockwise
     from up, as the source plan shows it; up when not given), with the
-    region outlines, the named observations and the bounds. Returns
+    region outlines, the ``outlines`` given (a property line drawn
+    dash-dot, plan outlines), the named observations and the bounds.
+    ``width_in`` is kept for callers; the plan is 7 in wide. Returns
     ``(png_bytes, plotly_figure_or_None, meta)``."""
-    from geotech_common import plan_furniture as pf
+    from gstools_agent.plan_map import parse_outlines, plan_map_figure
 
-    a = probability_map_arrays(result, region, level)
+    extra = parse_outlines(outlines)
+    a = probability_map_arrays(result, region, level, extra)
     word = "above" if result.quantity == "above" else "below"
     rel = ">" if result.quantity == "above" else "<"
     what = _what(value_name)
-    lev = f"{a['level']:g}" + (f" {value_unit}" if value_unit else "")
-    ctitle = "Probability"
-    hover_p = f"P({what} {rel} {lev})"
-    title = (f"Probability that the {what} is {word} {lev}\n"
-             f"{a['region']}, {result.n_kept:,} realizations")
-    xlabel, ylabel = "", ""
-    names = list(result.obs_names)
-    ox, oy, ov = result.obs_x, result.obs_y, result.obs_values
-    m = a["obs_mask"]
-
-    (x0, x1), (y0, y1) = a["xlim"], a["ylim"]
-    # a band below the map for the scale bar and the north arrow
-    span_y = y1 - y0
-    y0 = y0 - 0.2 * span_y
-    length = pf.nice_length(x1 - x0)
-    bar_y = a["ylim"][0] - 0.11 * span_y
-    bar_x = x1 - 0.12 * (x1 - x0) - length
-    arrow_xy = (x1 - 0.05 * (x1 - x0), a["ylim"][0] - 0.12 * span_y)
-    angle, north_note = pf.north_or_default(north_deg)
-    aspect = (y1 - y0) / max(x1 - x0, 1e-9)
-    height_in = min(max(5.2 * aspect + 2.0, 4.0), 10.0)
-    fig = _new_figure(width_in, height_in, dpi)
-    ax = fig.add_subplot(111)
-    ax.set_facecolor(_MAP_BG)
-    if a["raster"] is not None:
-        c = a["cell"]
-        im = ax.imshow(a["raster"], origin="lower", cmap="YlOrRd",
-                       vmin=0.0, vmax=1.0, interpolation="nearest",
-                       extent=(a["gx"][0] - c / 2, a["gx"][-1] + c / 2,
-                               a["gy"][0] - c / 2, a["gy"][-1] + c / 2))
-    else:
-        im = ax.scatter(a["cells_x"], a["cells_y"], c=a["p_cells"],
-                        cmap="YlOrRd", vmin=0.0, vmax=1.0, marker="s",
-                        s=4, linewidths=0)
-    for k, g in enumerate(result.regions_geom):
-        poly = np.vstack([g["polygon"], g["polygon"][:1]])
-        ax.plot(poly[:, 0], poly[:, 1], color=_OUTLINES[k % len(_OUTLINES)],
-                lw=2.0 if g["name"] == a["region"] else 1.3,
-                ls="-" if g["name"] == a["region"] else "--",
-                label=g["name"])
-    ax.scatter(ox[m], oy[m], marker="^", s=55, color=_OBS,
-               edgecolors="white", linewidths=0.8, zorder=5,
-               label="Observations")
-    for k in np.flatnonzero(m):
-        ax.annotate(names[k], (ox[k], oy[k]), xytext=(5, 4),
-                    textcoords="offset points", fontsize=8, color=_TEXT,
-                    zorder=6)
-    if a["bounds"]:
-        bxs = [b["x"] for b in a["bounds"]]
-        bys = [b["y"] for b in a["bounds"]]
-        ax.scatter(bxs, bys, marker="X", s=50, color=_BOUND,
-                   edgecolors="white", linewidths=0.6, zorder=5,
-                   label="Bounds (inequality data)")
-        for b in a["bounds"]:
-            ax.annotate(b["name"], (b["x"], b["y"]), xytext=(5, -10),
-                        textcoords="offset points", fontsize=8,
-                        color=_BOUND, zorder=6)
-    ax.set_xlim(x0, x1)
-    ax.set_ylim(y0, y1)
-    ax.set_aspect("equal")                        # 1 m across = 1 m up
-    ax.set_autoscale_on(False)
-    pf.mpl_scale_bar(ax, bar_x, bar_y, length, 0.014 * span_y, "m",
-                     fontsize=7.5, text_color=_TEXT)
-    pf.mpl_north_arrow(ax, arrow_xy, angle)
-    ax.set_axis_off()                 # a plan: the scale bar gives the scale
+    unit = str(value_unit or "").strip()
+    lev = f"{a['level']:g}" + (f" {unit}" if unit else "")
     sub = (f", {a['n_obs_off']} observation(s) beyond the map"
            if a["n_obs_off"] else "")
-    ax.set_title(title + sub, color=_TEXT, fontsize=11, loc="left")
-    cb = fig.colorbar(im, ax=ax, shrink=0.85, pad=0.02)
-    cb.set_label(ctitle, color=_TEXT)
-    cb.ax.tick_params(colors=_TEXT)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3,
-              frameon=False, fontsize=8, labelcolor=_TEXT)
-    png = _png(fig, dpi)
-
-    pfig = None
-    try:
-        import plotly.graph_objects as go
-    except Exception:                                  # noqa: BLE001
-        go = None
-    if go is not None:
-        pfig = go.Figure()
-        cbar = {"title": {"text": ctitle, "font": {"color": _TEXT}},
-                "tickfont": {"color": _TEXT}}
-        if a["raster"] is not None:
-            z = [[None if not np.isfinite(v) else float(v) for v in row]
-                 for row in a["raster"]]
-            pfig.add_trace(go.Heatmap(
-                z=z, x=a["gx"].tolist(), y=a["gy"].tolist(),
-                colorscale="YlOrRd", zmin=0.0, zmax=1.0, colorbar=cbar,
-                name=ctitle, showscale=True,
-                hovertemplate=("x %{x:.1f} m<br>y %{y:.1f} m<br>"
-                               + hover_p + " %{z:.2f}<extra></extra>")))
-        else:
-            pfig.add_trace(go.Scattergl(
-                x=a["cells_x"].tolist(), y=a["cells_y"].tolist(),
-                mode="markers", name=ctitle, showlegend=False,
-                marker={"color": a["p_cells"].tolist(),
-                        "colorscale": "YlOrRd", "cmin": 0.0, "cmax": 1.0,
-                        "symbol": "square", "size": 4, "colorbar": cbar},
-                hovertemplate=("x %{x:.1f} m<br>y %{y:.1f} m<br>"
-                               + hover_p + " %{marker.color:.2f}"
-                               "<extra></extra>")))
-        for k, g in enumerate(result.regions_geom):
-            poly = np.vstack([g["polygon"], g["polygon"][:1]])
-            main = g["name"] == a["region"]
-            pfig.add_trace(go.Scatter(
-                x=poly[:, 0].tolist(), y=poly[:, 1].tolist(), mode="lines",
-                name=g["name"], hoverinfo="name",
-                line={"color": _OUTLINES[k % len(_OUTLINES)],
-                      "width": 2.5 if main else 1.6,
-                      "dash": "solid" if main else "dash"}))
-        idx = np.flatnonzero(m)
-        pfig.add_trace(go.Scatter(
-            x=ox[idx].tolist(), y=oy[idx].tolist(), mode="markers+text",
-            name="Observations", text=[names[k] for k in idx],
-            textposition="top right", textfont={"color": _TEXT, "size": 11},
-            marker={"symbol": "triangle-up", "size": 11, "color": _OBS,
-                    "line": {"color": "white", "width": 1}},
-            hovertext=[f"{names[k]}<br>value {ov[k]:g}<br>x {ox[k]:g} m, "
-                       f"y {oy[k]:g} m" for k in idx],
-            hoverinfo="text"))
-        if a["bounds"]:
-            pfig.add_trace(go.Scatter(
-                x=[b["x"] for b in a["bounds"]],
-                y=[b["y"] for b in a["bounds"]], mode="markers+text",
-                name="Bounds (inequality data)",
-                text=[b["name"] for b in a["bounds"]],
-                textposition="bottom right",
-                textfont={"color": _BOUND, "size": 11},
-                marker={"symbol": "x", "size": 10, "color": _BOUND},
-                hovertext=[
-                    f"{b['name']}<br>"
-                    + (f"max {b['max']:g}" if b["max"] is not None else "")
-                    + (" " if b["max"] is not None and b["min"] is not None
-                       else "")
-                    + (f"min {b['min']:g}" if b["min"] is not None else "")
-                    + f"<br>x {b['x']:g} m, y {b['y']:g} m"
-                    for b in a["bounds"]],
-                hoverinfo="text"))
-        _plotly_layout(pfig, title.replace("\n", "<br>") + sub, xlabel,
-                       ylabel)
-        pfig.update_layout(plot_bgcolor="white",
-                           title={"x": 0.0, "xanchor": "left"})
-        pfig.update_xaxes(range=[x0, x1], visible=False)
-        pfig.update_yaxes(range=[y0, y1], visible=False,
-                          scaleanchor="x", scaleratio=1)
-        pf.plotly_scale_bar(pfig, bar_x, bar_y, length, 0.014 * span_y, "m",
-                            text_color=_TEXT)
-        pf.plotly_north_arrow(pfig, arrow_xy, angle)
+    title = (f"Probability that the {what} is {word} {lev}\n"
+             f"{a['region']}, {result.n_kept:,} realizations{sub}")
+    panel = {"title": title, "kind": "raster", "gx": a["gx"], "gy": a["gy"],
+             "z": a["raster"], "cell": a["cell"], "cells_x": a["cells_x"],
+             "cells_y": a["cells_y"], "values": a["p_cells"],
+             "cmap": "YlOrRd", "vmin": 0.0, "vmax": 1.0,
+             "cbar_label": "Probability", "hover": f"P({what} {rel} {lev})"}
+    outl = [{"name": g["name"], "xy": np.asarray(g["polygon"], float),
+             "closed": True, "kind": "region",
+             "main": g["name"] == a["region"]}
+            for g in result.regions_geom] + extra
+    png, pfig, north_note = plan_map_figure(
+        [panel], view=(a["xlim"], a["ylim"]), title=title,
+        observations={"x": result.obs_x, "y": result.obs_y,
+                      "names": list(result.obs_names),
+                      "values": result.obs_values, "mask": a["obs_mask"],
+                      "value_label": what, "unit": unit},
+        outlines=outl, bounds=a["bounds"], north_deg=north_deg, dpi=dpi)
     meta = {"region": a["region"], "level": a["level"],
             "observations_beyond_map": a["n_obs_off"],
             "value_name": what, "north_note": north_note}

@@ -60,6 +60,35 @@ def _save(path: str, content) -> dict:
     return out
 
 
+def _save_figure(prefix: str, kind: str, what: str, png, pfig) -> dict:
+    """Write one figure's PNG (and its Plotly twin beside it) to the working
+    folder; returns the result's figure entry."""
+    saved = _save(_out_path(f"{prefix}_{kind}.png"), png)
+    entry = {"figure": kind, "shows": what, "output_path": saved["path"],
+             "file_exists": saved["file_exists"]}
+    if saved["file_exists"] and pfig is not None:
+        try:
+            side = write_plotly_sidecar(saved["path"], pfig.to_json())
+        except Exception:                                  # noqa: BLE001
+            side = None
+        if side:
+            entry.update(side)
+    for key in ("error", "rescue_path"):
+        if key in saved:
+            entry[key] = saved[key]
+    entry["html_img_tag"] = (
+        f'<img src="{saved["path"]}" alt="{kind}" '
+        f'style="width:100%;max-width:640px;">')
+    return entry
+
+
+_EMBED_NOTE = (
+    "Each figure is a PNG plus an interactive chart; the web app shows the "
+    "interactive chart under your reply. Paste html_img_tag into report "
+    "HTML and html_to_pdf embeds the PNG. Do not put a markdown image link "
+    "to a local path in the reply.")
+
+
 def _prefix(params, default: str) -> str:
     p = params.get("output_prefix")
     if p is None or not str(p).strip():
@@ -78,8 +107,9 @@ def _prefix(params, default: str) -> str:
 _KRIGING_VALID = (
     "x", "y", "values", "model_type", "kriging_type", "grid_x_min",
     "grid_x_max", "grid_y_min", "grid_y_max", "n_grid_x", "n_grid_y",
-    "variance", "len_scale", "nugget", "fit_variogram", "regions",
-    "cell_size", "quantity", "margin", "output_prefix")
+    "variance", "len_scale", "nugget", "fit_variogram", "fit_nugget",
+    "regions", "cell_size", "quantity", "margin", "output_prefix",
+    "figures", "names", "value_name", "value_unit", "north_deg", "outlines")
 
 
 def _kriging_grid_csv(result) -> str:
@@ -99,6 +129,14 @@ def _run_kriging(params: dict) -> dict:
 
     reject_unknown_params(params, _KRIGING_VALID, method="kriging")
     require_params(params, ["x", "y", "values"], method="kriging")
+    if params.get("outlines") is not None:      # refused before the run
+        from gstools_agent.plan_map import parse_outlines
+        parse_outlines(params["outlines"])
+    names = params.get("names")
+    if names is not None and len(names) != len(params["x"]):
+        raise ValueError(f"names must be a list with one name per "
+                         f"observation ({len(params['x'])}), got "
+                         f"{len(names)}")
     result = analyze_kriging(
         x=params["x"],
         y=params["y"],
@@ -115,6 +153,7 @@ def _run_kriging(params: dict) -> dict:
         len_scale=params.get("len_scale"),
         nugget=params.get("nugget", 0.0),
         fit_variogram=params.get("fit_variogram", True),
+        fit_nugget=params.get("fit_nugget", True),
         regions=params.get("regions"),
         cell_size=params.get("cell_size"),
         quantity=params.get("quantity", "above"),
@@ -122,6 +161,8 @@ def _run_kriging(params: dict) -> dict:
     )
     d = result.to_dict()
     prefix = _prefix(params, "kriging")
+    if params.get("figures", True):
+        _kriging_figures(params, result, prefix, d)
     if result.region_cells:
         saved = _save(_out_path(f"{prefix}_regions.csv"),
                       result.regions_csv())
@@ -150,6 +191,36 @@ def _run_kriging(params: dict) -> dict:
             f"instead of inline; field_min / field_max / field_mean and "
             f"krige_variance_max summarise it.")
     return clean_result(d)
+
+
+def _kriging_figures(params: dict, result, prefix: str, d: dict) -> None:
+    """The kriging map (mean and standard deviation on the plan) into
+    ``d['figures']``; a grid of one line or one point has no map."""
+    if int(result.n_grid_x) < 2 or int(result.n_grid_y) < 2:
+        if params.get("figures") is True:
+            d.setdefault("notes", []).append(
+                "No kriging map: the grid is one line or one point.")
+        return
+    from gstools_agent.plan_map import kriging_map_figure
+    try:
+        png, pfig, meta = kriging_map_figure(
+            result, names=params.get("names"),
+            outlines=params.get("outlines"),
+            value_name=params.get("value_name"),
+            value_unit=params.get("value_unit") or "",
+            north_deg=params.get("north_deg"))
+    except Exception as exc:                               # noqa: BLE001
+        d.setdefault("warnings", []).append(
+            f"The kriging map could not be drawn: {exc}")
+        return
+    if meta.get("north_note"):
+        d.setdefault("notes", []).append(meta["north_note"])
+    d["figures"] = [_save_figure(
+        prefix, "kriging_map",
+        "plan, to scale: the kriged mean and the kriging standard deviation "
+        "as labelled contours, with the observations, the regions and the "
+        "outlines given", png, pfig)]
+    d["embed_note"] = _EMBED_NOTE
 
 
 # ---------------------------------------------------------------------------
@@ -213,11 +284,11 @@ _COND_VALID = (
     "measurement_error", "anis", "angle_deg", "cell_size", "margin",
     "quantity", "n_realizations", "seed", "simulation_method", "bounds",
     "bounds_mode", "report_values", "figures", "output_prefix",
-    "value_name", "value_unit", "north_deg")
+    "value_name", "value_unit", "north_deg", "outlines")
 
 #: Figure settings, not simulation inputs.
 _COND_FIGURE_ONLY = ("figures", "output_prefix", "value_name", "value_unit",
-                     "north_deg")
+                     "north_deg", "outlines")
 
 #: GSTools' own name for the measurement error, and common spellings.
 _COND_ALIASES = {"cond_err": "measurement_error",
@@ -235,6 +306,9 @@ def _run_conditional_simulation(params: dict) -> dict:
                           method="conditional_simulation")
     require_params(params, ["x", "y", "values", "regions"],
                    method="conditional_simulation", valid=_COND_VALID)
+    if params.get("outlines") is not None:      # refused before the run
+        from gstools_agent.plan_map import parse_outlines
+        parse_outlines(params["outlines"])
     kw = {k: params[k] for k in _COND_VALID
           if params.get(k) is not None and k not in _COND_FIGURE_ONLY}
     result = analyze_conditional_simulation(**kw)
@@ -275,7 +349,7 @@ def _run_conditional_simulation(params: dict) -> dict:
         exceedance_figure = functools.partial(exceedance_figure, **named)
         probability_map_figure = functools.partial(
             probability_map_figure, north_deg=params.get("north_deg"),
-            **named)
+            outlines=params.get("outlines"), **named)
         figs = []
         for kind, fn, what in (
                 ("exceedance", exceedance_figure,
@@ -283,8 +357,8 @@ def _run_conditional_simulation(params: dict) -> dict:
                  "marked"),
                 ("probability_map", probability_map_figure,
                  "plan map, to scale, of the probability at each cell for "
-                 "the first region and level, with the outlines and the "
-                 "named observations")):
+                 "the first region and level, with the region outlines, "
+                 "the outlines given and the named observations")):
             try:
                 png, pfig, _meta = fn(result)
                 if isinstance(_meta, dict) and _meta.get("north_note"):
@@ -293,30 +367,9 @@ def _run_conditional_simulation(params: dict) -> dict:
                 d.setdefault("warnings", []).append(
                     f"The {kind} figure could not be drawn: {exc}")
                 continue
-            saved = _save(_out_path(f"{prefix}_{kind}.png"), png)
-            entry = {"figure": kind, "shows": what,
-                     "output_path": saved["path"],
-                     "file_exists": saved["file_exists"]}
-            if saved["file_exists"] and pfig is not None:
-                try:
-                    side = write_plotly_sidecar(saved["path"], pfig.to_json())
-                except Exception:                          # noqa: BLE001
-                    side = None
-                if side:
-                    entry.update(side)
-            for key in ("error", "rescue_path"):
-                if key in saved:
-                    entry[key] = saved[key]
-            entry["html_img_tag"] = (
-                f'<img src="{saved["path"]}" alt="{kind}" '
-                f'style="width:100%;max-width:640px;">')
-            figs.append(entry)
+            figs.append(_save_figure(prefix, kind, what, png, pfig))
         d["figures"] = figs
-        d["embed_note"] = (
-            "Each figure is a PNG plus an interactive chart; the web app "
-            "shows the interactive chart under your reply. Paste "
-            "html_img_tag into report HTML and html_to_pdf embeds the PNG. "
-            "Do not put a markdown image link to a local path in the reply.")
+        d["embed_note"] = _EMBED_NOTE
     return clean_result(d)
 
 
@@ -357,13 +410,20 @@ METHOD_INFO = {
             "n_grid_y": {"type": "int", "required": False, "default": 50, "description": "Grid points in Y."},
             "variance": {"type": "float", "required": False, "description": "Sill variance (value units squared). Omitted: the sample variance of THESE observations. With fit_variogram=true (the default) it is only the starting guess and is overridden by the fit."},
             "len_scale": {"type": "float", "required": False, "description": "Correlation length (m). Omitted: a third of the data extent. With fit_variogram=true it is only the starting guess and is overridden by the fit."},
-            "nugget": {"type": "float", "required": False, "default": 0.0, "description": "Nugget variance (measurement error + variation below the data spacing); with a nugget the surface does not pass exactly through the data. With fit_variogram=true the nugget is fitted too."},
+            "nugget": {"type": "float", "required": False, "default": 0.0, "description": "Nugget variance (measurement error + variation below the data spacing); with a nugget the surface does not pass exactly through the data. With fit_variogram=true the nugget is fitted too, unless fit_nugget=false."},
             "fit_variogram": {"type": "bool", "required": False, "default": True, "description": "Fit variance, len_scale AND nugget to the empirical variogram, overriding values given for them (the fitted values are returned). Refused with too few lag classes: then set false and give variance and len_scale."},
+            "fit_nugget": {"type": "bool", "required": False, "default": True, "description": "With fit_variogram: false holds the nugget at the value given (e.g. from the measurement error or twinned borings) and fits only variance and len_scale."},
             "regions": {"type": "array", "required": False, "description": _REGIONS_DESC + " Here from the kriging only: the kriged surface's totals, and Gaussian POINTWISE expectations (expected volume, expected area, mean cell probability). These are expectations cell by cell; the probability that a TOTAL exceeds a value needs conditional_simulation."},
             "cell_size": {"type": "float", "required": False, "description": "Cell size (m) for the region totals; default the smallest round size giving at most ~3,000 cells."},
             "quantity": {"type": "str", "required": False, "default": "above", "allowed_values": ["above", "below"], "description": "Region totals above (e.g. rock above an excavation level) or below (e.g. fill to a grade) the level."},
             "margin": {"type": "float", "required": False, "description": "Margin (m) of the region lattice around the regions."},
-            "output_prefix": {"type": "str", "required": False, "description": "File name stem for the files this call writes (<stem>_grid.csv for a grid over 2,500 points, <stem>_regions.csv with regions); default kriging_<time>."},
+            "output_prefix": {"type": "str", "required": False, "description": "File name stem for the files this call writes (<stem>_grid.csv for a grid over 2,500 points, <stem>_regions.csv with regions, <stem>_kriging_map.png); default kriging_<time>."},
+            "figures": {"type": "bool", "required": False, "default": True, "description": "Draw the kriging map: a plan, to scale, of the kriged mean and the kriging standard deviation as labelled contours (PNG + interactive). Set false in a sweep of many calls."},
+            "names": {"type": "array", "required": False, "description": "Observation names (e.g. boring IDs), one per point; label the map."},
+            "value_name": {"type": "str", "required": False, "description": "What the values are, in the logs' words (e.g. 'top of hard rock elevation'); names the map. Give it."},
+            "value_unit": {"type": "str", "required": False, "description": "Unit of the values (e.g. 'm')."},
+            "north_deg": {"type": "float", "required": False, "description": "North on the map, degrees clockwise from up, as the source plan shows it; up when not given."},
+            "outlines": {"type": "array", "required": False, "description": "Outlines from the source plan to draw on the map, in the x, y coordinates: [{name, polygon: [[x, y], ...]} or {name, line: [[x, y], ...]}, kind 'property_line' (drawn dash-dot) or 'outline'] -- the property line, buildings, walls. Drawing only."},
         },
         "returns": {
             "n_data": "Number of observations used.",
@@ -391,6 +451,8 @@ METHOD_INFO = {
                         "nearest_observation_to_centroid (m)."),
             "regions_csv": "With regions: CSV path, per cell: region, level, x, y, kriged_mean, kriging_std, pointwise probability.",
             "regions_csv_columns": "The columns of regions_csv.",
+            "figures": "With figures: the kriging map's PNG path with a .plotly.json twin and an html_img_tag.",
+            "embed_note": "How to show the figure in the reply and in a report.",
             "warnings": "Poorly constrained or degenerate variogram fit.",
             "notes": "Defaults computed from these observations, the fit override, kriging type details, what the region numbers mean.",
         },
@@ -481,6 +543,7 @@ METHOD_INFO = {
             "value_name": {"type": "str", "required": False, "description": "What the values are, in the logs' words (e.g. 'top of hard rock elevation'); names the figures. Give it."},
             "value_unit": {"type": "str", "required": False, "description": "Unit of the values and the levels (e.g. 'm')."},
             "north_deg": {"type": "float", "required": False, "description": "North on the map, degrees clockwise from up, as the source plan shows it; up when not given."},
+            "outlines": {"type": "array", "required": False, "description": "Outlines from the source plan to draw on the map, in the x, y coordinates: [{name, polygon: [[x, y], ...]} or {name, line: [[x, y], ...]}, kind 'property_line' (drawn dash-dot) or 'outline'] -- the property line, buildings, walls. Drawing only; the regions are drawn anyway."},
         },
         "returns": {
             "results": ("Per region and level: polygon_area, cell_area_sum, volume_above / area_above (or _below) "
@@ -507,14 +570,17 @@ METHOD_INFO = {
 declare_aliases(METHOD_INFO, {"conditional_simulation": _COND_ALIASES})
 
 # When each default applies (GM-119): kriging's nugget only when the
-# variogram is not fitted (a fit fits the nugget too), its quantity only
-# with regions; since GM-184 kriging's cell size only with regions (it
-# sizes the region totals) and the simulation's bounds mode only with
-# bounds.
+# variogram is not fitted or the nugget is held (a fit fits the nugget
+# too), fit_nugget only with a fit, its quantity only with regions; since
+# GM-184 kriging's cell size only with regions (it sizes the region totals)
+# and the simulation's bounds mode only with bounds; north only on a map.
 declare_applies_when(METHOD_INFO, {
-    "kriging": {"nugget": {"fit_variogram": [False]},
+    "kriging": {"nugget": [{"fit_variogram": [False]},
+                           {"fit_nugget": [False]}],
+                "fit_nugget": {"fit_variogram": [True]},
                 "quantity": {"regions": "set"},
-                "cell_size": {"regions": "set"}},
+                "cell_size": {"regions": "set"},
+                "north_deg": {"figures": [True]}},
     "conditional_simulation": {"bounds_mode": {"bounds": "set"}},
 })
 
@@ -542,7 +608,9 @@ declare_when_absent(METHOD_INFO, {
                      "with fit_variogram, the starting guess for the fit"),
         "len_scale": ("a third of the data extent",
                       "with fit_variogram, the starting guess for the fit"),
-        "cell_size": _CELL},
+        "cell_size": _CELL,
+        "north_deg": ("north straight up",
+                      "the source plan's north was not given")},
     "conditional_simulation": {
         "variance": _VARIANCE, "len_scale": _LEN_SCALE, "cell_size": _CELL,
         "nugget": ("0, or the largest measurement_error",
