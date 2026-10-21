@@ -195,7 +195,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 - Each old id is noted on its new item as *was: H A1* and so on.
 - The old text is in git history (commit 414525a, HANDOFF.md lines 192–487).
 
-**Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps** (details in BACKLOG §0). CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) moved to Next until they arrive.
+**Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps** (details in BACKLOG §0). CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-29, OWN-30, OWN-43 to OWN-47, OWN-49, OWN-50, OWN-52, TA-03) moved to Next until they arrive, and on 2026-10-21 the owner deferred them to Later; the FIPS and metered-route questions are answered.
 - **Done on master 2026-10-14 (unreleased; the owner holds the release):** see CLAUDE.md's state block and BACKLOG "Done since the last sweep" for every item and commit. In short:
   - unsafe-side module answers: downdrag (every method side by side, final stress), the slope search (sand slopes, toe circles, reinforcement), fem2d (the slope mesher's soil-filled notch, the failure criterion, staged `n_steps`, straight T6 excavation walls, a staged excavation that unloads in lifts), SOE free earth with no solution, the anchored sheet-pile moment, Terzaghi factors;
   - Ensoft-style calculation tables in 13 modules' calc packages;
