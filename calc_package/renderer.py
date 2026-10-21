@@ -7,6 +7,7 @@ All figures embedded as base64 data URIs — no external files needed.
 
 import io
 import base64
+import re
 from datetime import date
 from pathlib import Path
 
@@ -16,7 +17,10 @@ from calc_package.data_model import (
     CalcPackageData, CalcSection, CalcStep, InputItem,
     CheckItem, FigureData, TableData,
 )
-from calc_package.template import CALC_PACKAGE_TEMPLATE
+from calc_package.template import (
+    CALC_PACKAGE_TEMPLATE, CALC_SECTIONS_CSS, CALC_TABLES_HEADING_CSS,
+    CALC_TABLES_TEMPLATE,
+)
 
 
 #: The width a package figure prints at in the package's PDF: the
@@ -148,7 +152,12 @@ def render_html(data: CalcPackageData) -> str:
     """
     if not data.date:
         data.date = date.today().strftime("%Y-%m-%d")
+    return _render(CALC_PACKAGE_TEMPLATE, data, heading="h2", numbered=True)
 
+
+def _render(template_text: str, data: CalcPackageData, **extra) -> str:
+    """``template_text`` rendered over ``data``'s sections (CP-1:
+    autoescaped)."""
     # Preprocess: gather InputItems into tables
     processed_sections = _preprocess_sections(data.sections)
 
@@ -156,8 +165,50 @@ def render_html(data: CalcPackageData) -> str:
     # unless explicitly marked | safe in the template (equations only).
     env = Environment(loader=BaseLoader(), autoescape=True)
     env.globals['item_type'] = _item_type
-    template = env.from_string(CALC_PACKAGE_TEMPLATE)
-    return template.render(data=data, sections=processed_sections)
+    template = env.from_string(template_text)
+    return template.render(data=data, sections=processed_sections, **extra)
+
+
+#: Every rule of a style sheet: its selectors and its body. The sections'
+#: CSS has no at-rule, comment inside a rule or nested braces.
+_CSS_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+_CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+#: The class ``render_tables``' file puts round the sections; its CSS
+#: applies only inside it, so a report's own classes keep their styles.
+TABLES_SCOPE = "calc-tables"
+
+
+def _scoped(css: str, scope: str) -> str:
+    """``css`` with every selector inside ``.<scope>``."""
+    def rule(m):
+        sel = ",".join(f".{scope} {s.strip()}"
+                       for s in m.group(1).split(",") if s.strip())
+        return f"{sel} {{{m.group(2)}}}\n"
+    return "".join(rule(m) for m in _CSS_RULE.finditer(
+        _CSS_COMMENT.sub("", css)))
+
+
+def tables_css() -> str:
+    """The CSS of ``render_tables``' file: the package's sections' rules
+    and its own section headings, scoped to ``.calc-tables``, with no
+    background (the PDF draws none, BACKLOG GM-219, and says so of every
+    fill; light text made dark)."""
+    from calc_package.latex_renderer import _without_backgrounds
+    sheet = _without_backgrounds(
+        "<style>" + CALC_SECTIONS_CSS + CALC_TABLES_HEADING_CSS + "</style>")
+    return _scoped(sheet[len("<style>"):-len("</style>")], TABLES_SCOPE)
+
+
+def render_tables_html(data: CalcPackageData) -> str:
+    """``data``'s sections and reference list as ``render_tables``' file
+    (BACKLOG GM-67): the package's own rendering of them, with no title
+    block or footer, the sections unnumbered under ``h3`` headings, for a
+    report of the caller's own (``html_to_pdf``'s ``data-include``)."""
+    if not data.date:
+        data.date = date.today().strftime("%Y-%m-%d")
+    return _render(CALC_TABLES_TEMPLATE, data, heading="h3", numbered=False,
+                   css=tables_css())
 
 
 def save_html(data: CalcPackageData, filepath: str) -> str:

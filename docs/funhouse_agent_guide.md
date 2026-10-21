@@ -198,7 +198,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `downdrag` | Pile downdrag (Fellenius neutral plane, UFC 3-220-20) |
 | `soe` | Support of excavation (braced/cantilever walls, stability, anchors) |
 | `dxf_export` | Export cross-section geometry to DXF file format |
-| `calc_package` | Calc packages (HTML/LaTeX/PDF) for 15 modules; `render_figures` = a package's figures as standalone PNGs; `html_to_pdf` for bespoke reports |
+| `calc_package` | Calc packages (HTML/LaTeX/PDF) for 15 modules; `render_figures` = a package's figures as standalone PNGs; `render_tables` = a package's calculation (inputs, steps, tables) as HTML for a bespoke report; `html_to_pdf` for bespoke reports |
 
 #### External Library Adapters (6)
 

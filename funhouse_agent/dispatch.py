@@ -237,7 +237,7 @@ STRUCTURAL_REFERENCES = frozenset({
 #: allowed (both list calc_package in their own sets as well). Each
 #: specialist's prompt keeps it to its domain.
 DELIVERABLE_MODULES = frozenset({
-    "calc_package",     # *_package reports, render_figures, html_to_pdf
+    "calc_package",     # *_package, render_figures/_tables, html_to_pdf
     "profile_figure",   # subsurface_profile schematic, plot_data
 })
 
@@ -890,6 +890,12 @@ _METHOD_ALIASES = {
     ("calc_package", "render_figure"): "render_figures",
     ("calc_package", "get_figures"): "render_figures",
     ("calc_package", "plot_results"): "render_figures",
+    # a package's calculation on its own (GM-67)
+    ("calc_package", "tables"): "render_tables",
+    ("calc_package", "render_table"): "render_tables",
+    ("calc_package", "calc_tables"): "render_tables",
+    ("calc_package", "calculation_tables"): "render_tables",
+    ("calc_package", "package_tables"): "render_tables",
 }
 
 
@@ -954,6 +960,7 @@ _CROSS_MODULE_REDIRECTS = {
     "plot_data": ("profile_figure", "plot_data"),
     "data_plot": ("profile_figure", "plot_data"),
     "render_figures": ("calc_package", "render_figures"),
+    "render_tables": ("calc_package", "render_tables"),
 }
 
 

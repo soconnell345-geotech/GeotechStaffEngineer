@@ -711,9 +711,13 @@ def _same(echo, value) -> bool:
 
 def _specs(agent: str, method: str, params: dict = None) -> dict:
     """The declared inputs of a run: ``method``'s own and, for a calc
-    package, its tools' (a case is a tool's declaration)."""
+    package, its tools' (a case is a tool's declaration); for a method
+    that takes a package's inputs (render_tables), that package's."""
     mod = D._load_adapter(agent)
     out = {}
+    of = (mod.METHOD_INFO.get(method) or {}).get("parameters_of")
+    if of and (params or {}).get(of) in mod.METHOD_INFO:
+        out.update(_specs(agent, params[of], params))
     if agent == "calc_package" and method in getattr(mod, "_PACKAGE_TOOLS",
                                                      {}):
         tools = mod._PACKAGE_TOOLS[method]

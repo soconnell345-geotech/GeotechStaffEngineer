@@ -170,6 +170,85 @@ def package_tables(module: str, result, analysis=None) -> list:
     return out
 
 
+def _package_sections(reg: dict, module: str, result, analysis, *,
+                      tables=True, table_files=None, output_path=None,
+                      render_report=None, given_inputs=None,
+                      assumed_inputs=None, with_figures=True) -> list:
+    """The sections of ``module``'s calc package, in order (the arguments
+    are :func:`generate_calc_package`'s). ``with_figures=False`` leaves
+    the Figures section out (:func:`calculation_html`)."""
+    # Build sections
+    sections = []
+
+    # The inputs given, then those assumed (GM-155): kept apart, so an
+    # assumption never reads as given.
+    given_part = given_section(given_inputs)
+    if given_part is not None:
+        sections.append(given_part)
+    assumed_part = assumed_section(assumed_inputs)
+    if assumed_part is not None:
+        sections.append(assumed_part)
+
+    # Section 1: the module's echo of every value used -- given, assumed
+    # and worked out from them (a wall's heel length), so not "inputs".
+    input_items = reg["get_input_summary"](result, analysis)
+    if input_items:
+        sections.append(CalcSection(title="Values Used", items=input_items))
+
+    # What the analysis chose (GM-115): beside the inputs, before the steps.
+    choices_part = choices_section(result, analysis)
+    if choices_part is not None:
+        sections.append(choices_part)
+
+    # Section 2+: Calculation Steps (may return multiple sections)
+    calc_sections = reg["get_calc_steps"](result, analysis)
+    if isinstance(calc_sections, list) and calc_sections:
+        if isinstance(calc_sections[0], CalcSection):
+            sections.extend(calc_sections)
+        else:
+            # Flat list of CalcStep — wrap in one section
+            sections.append(CalcSection(title="Calculations", items=calc_sections))
+
+    # Figures section
+    figures = reg["get_figures"](result, analysis) if with_figures else None
+    if figures:
+        sections.append(CalcSection(title="Figures", items=figures))
+
+    # Calculation tables (GM-39): printed here, and one CSV per table saved
+    # beside the package.
+    if tables is True:
+        echo = input_table(input_items)
+        try:
+            own = module_tables(reg, result, analysis)
+        except Exception as exc:        # noqa: BLE001 - never cost the package
+            import warnings
+            own = []
+            message = (f"the calculation tables of '{module}' could not be "
+                       f"built ({type(exc).__name__}: {exc})")
+            warnings.warn(message)
+            if render_report is not None:
+                render_report["tables_error"] = message
+        calc_tables = ([echo] if echo is not None else []) + own
+    else:
+        calc_tables = list(tables or [])
+    csv_names = list(table_files or [])
+    if calc_tables and not csv_names and output_path:
+        import os
+        paths = export_tables(
+            tables=calc_tables,
+            out_dir=os.path.dirname(os.path.abspath(output_path)),
+            stem=os.path.splitext(os.path.basename(output_path))[0])
+        csv_names = [os.path.basename(p) for p in paths]
+        if render_report is not None:
+            render_report["tables"] = [
+                {"title": t.title, "name": t.name, "path": p,
+                 "rows": t.n_rows} for t, p in zip(calc_tables, paths)]
+    tables_part = tables_section(calc_tables, csv_names)
+    if tables_part is not None:
+        sections.append(tables_part)
+    return sections
+
+
 def generate_calc_package(
     module: str,
     result,
@@ -261,76 +340,11 @@ def generate_calc_package(
         raise ValueError("output_path is required for format='pdf'")
 
     reg = _ensure_registered(module)
-
-    # Build sections
-    sections = []
-
-    # The inputs given, then those assumed (GM-155): kept apart, so an
-    # assumption never reads as given.
-    given_part = given_section(given_inputs)
-    if given_part is not None:
-        sections.append(given_part)
-    assumed_part = assumed_section(assumed_inputs)
-    if assumed_part is not None:
-        sections.append(assumed_part)
-
-    # Section 1: the module's echo of every value used -- given, assumed
-    # and worked out from them (a wall's heel length), so not "inputs".
-    input_items = reg["get_input_summary"](result, analysis)
-    if input_items:
-        sections.append(CalcSection(title="Values Used", items=input_items))
-
-    # What the analysis chose (GM-115): beside the inputs, before the steps.
-    choices_part = choices_section(result, analysis)
-    if choices_part is not None:
-        sections.append(choices_part)
-
-    # Section 2+: Calculation Steps (may return multiple sections)
-    calc_sections = reg["get_calc_steps"](result, analysis)
-    if isinstance(calc_sections, list) and calc_sections:
-        if isinstance(calc_sections[0], CalcSection):
-            sections.extend(calc_sections)
-        else:
-            # Flat list of CalcStep — wrap in one section
-            sections.append(CalcSection(title="Calculations", items=calc_sections))
-
-    # Figures section
-    figures = reg["get_figures"](result, analysis)
-    if figures:
-        sections.append(CalcSection(title="Figures", items=figures))
-
-    # Calculation tables (GM-39): printed here, and one CSV per table saved
-    # beside the package.
-    if tables is True:
-        echo = input_table(input_items)
-        try:
-            own = module_tables(reg, result, analysis)
-        except Exception as exc:        # noqa: BLE001 - never cost the package
-            import warnings
-            own = []
-            message = (f"the calculation tables of '{module}' could not be "
-                       f"built ({type(exc).__name__}: {exc})")
-            warnings.warn(message)
-            if render_report is not None:
-                render_report["tables_error"] = message
-        calc_tables = ([echo] if echo is not None else []) + own
-    else:
-        calc_tables = list(tables or [])
-    csv_names = list(table_files or [])
-    if calc_tables and not csv_names and output_path:
-        import os
-        paths = export_tables(
-            tables=calc_tables,
-            out_dir=os.path.dirname(os.path.abspath(output_path)),
-            stem=os.path.splitext(os.path.basename(output_path))[0])
-        csv_names = [os.path.basename(p) for p in paths]
-        if render_report is not None:
-            render_report["tables"] = [
-                {"title": t.title, "name": t.name, "path": p,
-                 "rows": t.n_rows} for t, p in zip(calc_tables, paths)]
-    tables_part = tables_section(calc_tables, csv_names)
-    if tables_part is not None:
-        sections.append(tables_part)
+    sections = _package_sections(
+        reg, module, result, analysis, tables=tables,
+        table_files=table_files, output_path=output_path,
+        render_report=render_report, given_inputs=given_inputs,
+        assumed_inputs=assumed_inputs)
 
     # Assemble
     data = CalcPackageData(
@@ -369,3 +383,42 @@ def generate_calc_package(
         if output_path:
             save_html(data, output_path)
         return render_html(data)
+
+
+def calculation_html(
+    module: str,
+    result,
+    analysis=None,
+    *,
+    tables=True,
+    table_files: list = None,
+    given_inputs: list = None,
+    assumed_inputs: list = None,
+    render_report: dict = None,
+) -> str:
+    """A calc package's calculation without the package (BACKLOG GM-67),
+    for a report of the caller's own: the given and assumed inputs, the
+    values used, the method choices, the steps with their equations and
+    references, the checks, the calculation tables and the reference list,
+    rendered by the package's own template (``renderer.render_tables_html``),
+    so the values, units and citations print exactly as the package prints
+    them. Left out: the title block, the figures (``render_figures`` gives
+    those) and the footer.
+
+    The arguments are :func:`generate_calc_package`'s; ``table_files``
+    names the CSVs the caller wrote (a thinned table's note names the CSV
+    that holds every row). Returns an HTML document whose ``<body>`` holds
+    the calculation inside ``<div class="calc-tables">`` and whose
+    ``<head>`` holds its CSS, scoped to that class.
+    """
+    from calc_package.renderer import render_tables_html
+
+    reg = _ensure_registered(module)
+    sections = _package_sections(
+        reg, module, result, analysis, tables=tables,
+        table_files=table_files, render_report=render_report,
+        given_inputs=given_inputs, assumed_inputs=assumed_inputs,
+        with_figures=False)
+    data = CalcPackageData(analysis_type=reg["display_name"],
+                           sections=sections, references=reg["references"])
+    return render_tables_html(data)

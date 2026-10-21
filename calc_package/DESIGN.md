@@ -22,7 +22,8 @@ step-by-step computation, engineering checks (pass/fail), and figures.
 - `latex_renderer.py`, `latex_template.py`, `latex_compiler.py` — the LaTeX / PDF
   output (`format="latex"` / `"pdf"`)
 - `__init__.py` — `generate_calc_package()` entry point + lazy module registry,
-  `package_tables()`
+  `package_tables()`, `calculation_html()` (a package's calculation alone,
+  for `render_tables`)
 
 ### Per-Module (module_name/calc_steps.py)
 Each supported module provides:
@@ -62,7 +63,7 @@ standalone PNG (`save_verified`, one file per figure, in the working folder or
 results. Every `*_package` generator routes through `_build_response`, so all
 15 modules get it for free.
 
-The mode rides a context var (`_FIGURE_MODE`), NOT a key in the params dict:
+The mode rides a context var (`_RENDER_MODE`), NOT a key in the params dict:
 package handlers validate their params strictly (`reject_unknown_params`) and
 forward them as `**kwargs` into the module function, so a router-injected key
 would be rejected as unknown (`slope_report_package`) or arrive as an
@@ -77,6 +78,35 @@ The saved files are named from the figure's title (GM-171, 2026-10-19):
 (less where the folder is deep, `fig<i>` when under 8 would be left), and
 `_2`, `_3` ... when the package or the folder already has the name. Before
 this a deep folder gave `f1_<time>.png`.
+
+### The calculation on its own (`render_tables`, GM-67, 2026-10-20)
+
+Live (F18): a bearing-capacity report the agent composed with `html_to_pdf`
+had no calculation tables; they were only in the second, standard package
+PDF. `render_tables` is `render_figures`' twin for the rest of the package:
+inside a call (`_RENDER_MODE` kind `tables`) `_build_response` builds what
+the package would print (given and assumed inputs, values used, method
+choices, the steps with their equations and references, the checks, the
+calculation tables and the reference list) and writes it as an HTML file of
+its own, with the table CSVs beside it, instead of the package.
+
+One rendering, not a copy. `generate_calc_package` and `calculation_html`
+build their sections with the same `_package_sections` (the latter without
+the Figures section), and the template is split so both print the same
+`CALC_SECTIONS_TEMPLATE`: the package between its title block and footer
+(`h2`, numbered), `render_tables` alone (`h3`, unnumbered, so the report's
+own heading sits above it). The package's HTML did not change by a byte.
+The file's CSS is the sections' CSS scoped to `.calc-tables` (a report's
+own classes keep their styles) with no fills (the Story PDF draws none,
+GM-219, and would otherwise report every one as `fills_not_drawn`).
+
+The result's `html_include_tag` is `<div data-include="<file>"></div>`.
+`html_to_pdf` replaces each such element with the file's body and puts the
+file's `<style>` blocks in the report's head, once each; an element it
+cannot fill (no file, not HTML, content inside it) stops the PDF with
+`include_problems`, as a figure it cannot embed does. The citation check
+on `html_to_pdf` (EV-21) reads the agent's own HTML only, never the
+included calculation, which is the module's.
 
 ### Figures in the Story PDF (GM-168, 2026-10-19)
 

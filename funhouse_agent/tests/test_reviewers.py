@@ -528,6 +528,7 @@ class TestSpecialistDeliverables:
         for mod, method in (("profile_figure", "subsurface_profile"),
                             ("profile_figure", "plot_data"),
                             ("calc_package", "render_figures"),
+                            ("calc_package", "render_tables"),
                             ("calc_package", "html_to_pdf")):
             listed = list_methods(mod, allowed_agents=agent._allowed_agents)
             assert "error" not in listed, (name, mod)
