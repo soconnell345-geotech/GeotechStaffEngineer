@@ -24,10 +24,12 @@ from retaining_walls.mse import (
     BEARING_BASIS, LIVE_LOAD_BASIS, _external_terms, analyze_mse_wall,
     check_external_stability,
 )
-from retaining_walls.reinforcement import GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4
+from retaining_walls.reinforcement import (
+    GEOGRID_GEC11_E1_GG1, RIBBED_STEEL_STRIP_50x4,
+)
 
 # GM-256: a steel strip needs its horizontal spacing (Rc = b/Sh = 0.1)
-_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_50x4, horizontal_spacing=0.75)
 
 H, L, G, PHI, G_F, PHI_F, Q = 6.0, 4.2, 18.0, 34.0, 19.0, 30.0, 12.0
 Q_ALL = 300.0
@@ -168,7 +170,7 @@ class TestResult:
     def test_no_surcharge_no_choices(self):
         r = analyze_mse_wall(_geom(q=0.0), G, PHI, _STRIP)
         assert _live(r) == []
-        r = analyze_mse_wall(_geom(q=0.0), G, PHI, GEOGRID_UX1600)
+        r = analyze_mse_wall(_geom(q=0.0), G, PHI, GEOGRID_GEC11_E1_GG1)
         # only the coverage ratio, Rc 1 for a continuous layer, the
         # geogrid's Tal with the factor of safety 1.5 its rupture check
         # requires (GM-262 review), and GEC-11 Table 3-6's alpha 0.8 for a

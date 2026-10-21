@@ -238,9 +238,9 @@ def test_mse_section_says_what_its_axes_measure_from():
     from retaining_walls.calc_steps import (
         _plot_mse_internal, _plot_mse_section)
     import dataclasses
-    from retaining_walls.reinforcement import RIBBED_STEEL_STRIP_75x4
-    # GM-256: the strip at its horizontal spacing (Rc = 0.1)
-    strip = dataclasses.replace(RIBBED_STEEL_STRIP_75x4,
+    from retaining_walls.reinforcement import RIBBED_STEEL_STRIP_50x4
+    # GM-256: the strip at its horizontal spacing (Rc = 0.0667, GM-267)
+    strip = dataclasses.replace(RIBBED_STEEL_STRIP_50x4,
                                 horizontal_spacing=0.75)
     geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
     r = analyze_mse_wall(geom, 18.0, 34.0, strip)

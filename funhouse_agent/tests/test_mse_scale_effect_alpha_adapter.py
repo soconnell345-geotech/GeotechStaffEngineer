@@ -21,7 +21,7 @@ def _lowest(r):
 
 
 @pytest.mark.parametrize("params, alpha, lowest", [
-    ({"reinforcement_name": "geogrid_ux1600"}, 0.8, 8.394),
+    ({"reinforcement_name": "geogrid_gec11_e1_gg1"}, 0.8, 8.394),
     ({"reinforcement_type": "geogrid", "reinforcement_Tallowable": 21.9},
      0.8, 8.394),
     ({"reinforcement_type": "geotextile", "reinforcement_Tallowable": 21.9},
@@ -37,11 +37,11 @@ def test_alpha_by_type_or_test(params, alpha, lowest):
 
 
 def test_defaults_used_says_the_alpha_it_took():
-    r = _mse(reinforcement_name="geogrid_ux1600")
+    r = _mse(reinforcement_name="geogrid_gec11_e1_gg1")
     assert r["defaults_used"]["alpha_tested"] == (
         "alpha 0.8, GEC-11 Vol I Table 3-6's default value for extensible "
         "grids (geogrids), p. 3-17")
-    given = _mse(reinforcement_name="geogrid_ux1600", alpha_tested=0.9)
+    given = _mse(reinforcement_name="geogrid_gec11_e1_gg1", alpha_tested=0.9)
     assert "alpha_tested" not in given["defaults_used"]
 
 
@@ -59,9 +59,9 @@ def test_a_geosynthetic_with_no_alpha_or_no_type_is_refused():
 def test_list_reinforcement_gives_each_alpha():
     out = D.call_agent("retaining_walls", "list_reinforcement", {})
     types = out["reinforcement_types"]
-    assert types["geogrid_ux1600"]["type"] == "geogrid"
-    assert types["geogrid_ux1600"]["alpha"] == 0.8
-    assert types["ribbed_steel_strip_75x4"]["alpha"] == 1.0
+    assert types["geogrid_gec11_e1_gg1"]["type"] == "geogrid"
+    assert types["geogrid_gec11_e1_gg1"]["alpha"] == 0.8
+    assert types["ribbed_steel_strip_50x4"]["alpha"] == 1.0
 
 
 def test_the_tool_text_names_the_table():

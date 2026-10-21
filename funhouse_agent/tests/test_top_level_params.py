@@ -466,7 +466,7 @@ class TestUnusedValuesPass:
     _GROUP = {"n_rows": 2, "n_cols": 2, "spacing": 1.5, "Vz": 1000}
 
     @pytest.mark.parametrize("method, extra", [
-        ("mse_wall", {"reinforcement_name": "geogrid_ux1600"}),
+        ("mse_wall", {"reinforcement_name": "geogrid_gec11_e1_gg1"}),
         ("mse_lrfd_external_stability", {})])
     def test_level_backfill_slope_runs(self, method, extra):
         given = {**self._MSE, **extra}

@@ -20,16 +20,17 @@ from retaining_walls.mse import (
     check_internal_stability, pullout_factor_choices, uses_strip_F_star,
 )
 from retaining_walls.reinforcement import (
-    GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4, Reinforcement,
+    GEOGRID_GEC11_E1_GG1, RIBBED_STEEL_STRIP_50x4, Reinforcement,
     WELDED_WIRE_GRID_W11,
 )
 
 TAN34 = math.tan(math.radians(34.0))
 
-# GM-256: a steel strip or grid needs its horizontal spacing. The 75 mm
-# strips at Sh 0.75 m (Rc 0.1); the W11 grid as GEC-11 Example E4's 4-wire
+# GM-256: a steel strip or grid needs its horizontal spacing. GEC-11's
+# 50 mm strips at Sh 0.75 m (Rc 0.0667; 75 mm, Rc 0.1, before GM-267); the
+# W11 grid as GEC-11 Example E4's 4-wire
 # mat, b 0.457 m, one per 1.524 m panel (Rc 0.3)
-_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_50x4, horizontal_spacing=0.75)
 _GRID = dataclasses.replace(WELDED_WIRE_GRID_W11, width=0.4572,
                             horizontal_spacing=1.524)
 
@@ -73,9 +74,9 @@ def test_before_and_after_at_0_3_and_6_m():
 
 
 def test_which_reinforcement_takes_the_strip_curve():
-    assert uses_strip_F_star(RIBBED_STEEL_STRIP_75x4)
+    assert uses_strip_F_star(RIBBED_STEEL_STRIP_50x4)
     assert not uses_strip_F_star(WELDED_WIRE_GRID_W11)
-    assert not uses_strip_F_star(GEOGRID_UX1600)
+    assert not uses_strip_F_star(GEOGRID_GEC11_E1_GG1)
     bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
                               Tallowable=100.0)
     assert uses_strip_F_star(bare_grid)
@@ -83,7 +84,7 @@ def test_which_reinforcement_takes_the_strip_curve():
 
 @pytest.mark.parametrize("reinforcement, words", [
     (_GRID, "20 t/St at the top to 10 t/St"),
-    (GEOGRID_UX1600, "0.67 tan phi_backfill")])
+    (GEOGRID_GEC11_E1_GG1, "0.67 tan phi_backfill")])
 def test_where_the_F_star_takes_no_Cu_a_given_Cu_is_checked_by_note_i(
         reinforcement, words):
     """GEC-11 Table 3-6 note (i) (p. 3-17) accepts every empirical F* in

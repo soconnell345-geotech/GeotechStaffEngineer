@@ -22,11 +22,11 @@ from retaining_walls.mse import (
     check_internal_stability, Kr_Ka_ratio,
 )
 from retaining_walls.reinforcement import (
-    GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4,
+    GEOGRID_GEC11_E1_GG1, RIBBED_STEEL_STRIP_50x4,
 )
 
 # GM-256: a steel strip needs its horizontal spacing (Rc = b/Sh = 0.1)
-_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_50x4, horizontal_spacing=0.75)
 
 H, L, G, PHI = 6.0, 5.0, 19.0, 34.0
 BETA = math.degrees(math.atan(0.5))          # 2H:1V
@@ -143,7 +143,7 @@ class TestLoads:
         with pytest.raises(ValueError, match="Eq. 4-16"):
             check_external_stability_lrfd(geom, G, PHI, PHI)
         with pytest.raises(ValueError, match="Eq. 4-16"):
-            check_internal_stability(geom, G, PHI, GEOGRID_UX1600)
+            check_internal_stability(geom, G, PHI, GEOGRID_GEC11_E1_GG1)
 
 
 class TestExternalASD:
@@ -237,7 +237,7 @@ class TestInternal:
         geom = _geom(backfill_slope=BETA)
         S_eq = 0.5 * 0.7 * H * T
         Ka = rankine_Ka(PHI)
-        for lv in check_internal_stability(geom, G, PHI, GEOGRID_UX1600):
+        for lv in check_internal_stability(geom, G, PHI, GEOGRID_GEC11_E1_GG1):
             z = lv["depth_m"]
             expect = Kr_Ka_ratio(z, "geosynthetic") * Ka * G * (z + S_eq) * 0.6
             assert lv["Tmax_kN_per_m"] == pytest.approx(expect, abs=0.01)
@@ -253,9 +253,9 @@ class TestInternal:
             assert lv["La_m"] == pytest.approx(La, abs=0.01)
 
     def test_extensible_active_zone_unchanged(self):
-        level = check_internal_stability(_geom(), G, PHI, GEOGRID_UX1600)
+        level = check_internal_stability(_geom(), G, PHI, GEOGRID_GEC11_E1_GG1)
         slope = check_internal_stability(_geom(backfill_slope=BETA), G, PHI,
-                                         GEOGRID_UX1600)
+                                         GEOGRID_GEC11_E1_GG1)
         assert [lv["La_m"] for lv in slope] == [lv["La_m"] for lv in level]
 
     def test_pullout_depth_below_the_slope(self):
@@ -281,9 +281,9 @@ class TestInternal:
             assert b["Tmax_kN_per_m"] > a["Tmax_kN_per_m"]
 
     def test_slope_raises_tension_and_pullout(self):
-        level = check_internal_stability(_geom(), G, PHI, GEOGRID_UX1600)
+        level = check_internal_stability(_geom(), G, PHI, GEOGRID_GEC11_E1_GG1)
         slope = check_internal_stability(_geom(backfill_slope=BETA), G, PHI,
-                                         GEOGRID_UX1600)
+                                         GEOGRID_GEC11_E1_GG1)
         for a, b in zip(level, slope):
             assert b["Tmax_kN_per_m"] > a["Tmax_kN_per_m"]
             assert b["Pr_kN_per_m"] > a["Pr_kN_per_m"]
@@ -334,7 +334,7 @@ class TestTrafficVerticalComponent:
 class TestAnalyzeAndResult:
     def test_result_carries_the_basis(self):
         r = analyze_mse_wall(_geom(backfill_slope=BETA), G, PHI,
-                             GEOGRID_UX1600, lrfd_external=True)
+                             GEOGRID_GEC11_E1_GG1, lrfd_external=True)
         d = r.to_dict()
         b = d["backslope"]
         assert b["backfill_slope_deg"] == pytest.approx(BETA)
@@ -346,7 +346,7 @@ class TestAnalyzeAndResult:
         assert "Backfill slope" in r.summary()
 
     def test_level_result_has_no_backslope(self):
-        r = analyze_mse_wall(_geom(), G, PHI, GEOGRID_UX1600)
+        r = analyze_mse_wall(_geom(), G, PHI, GEOGRID_GEC11_E1_GG1)
         assert r.backslope is None
         assert "backslope" not in r.to_dict()
         assert "Backfill slope" not in r.summary()
@@ -355,8 +355,8 @@ class TestAnalyzeAndResult:
         """The MSE calc steps re-derive a level backfill; they refuse a
         sloping one rather than print numbers the result contradicts."""
         geom = _geom(backfill_slope=BETA)
-        r = analyze_mse_wall(geom, G, PHI, GEOGRID_UX1600)
+        r = analyze_mse_wall(geom, G, PHI, GEOGRID_GEC11_E1_GG1)
         with pytest.raises(ValueError, match="level backfill only"):
             get_calc_steps(r, {"wall_type": "mse", "geom": geom,
                                "gamma_backfill": G, "phi_backfill": PHI,
-                               "reinforcement": GEOGRID_UX1600})
+                               "reinforcement": GEOGRID_GEC11_E1_GG1})

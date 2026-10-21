@@ -229,7 +229,8 @@ module's one surcharge, `MSEWallGeometry.surcharge`, is the live load (the
 LRFD check factors it with γLL; there is no separate dead-load surcharge),
 so `check_internal_stability` keeps it in Tmax (Eq. 4-30) and no longer
 adds it to the pullout σv. Before, it did, on the unsafe side: on a 6 m wall
-(L 5 m, Sv 0.6 m, γ 19, φ 34°, geogrid UX1600) with q = 12 kPa, the top
+(L 5 m, Sv 0.6 m, γ 19, φ 34°, the built-in geogrid of the time, Tal
+21.9 kN/m) with q = 12 kPa, the top
 level's (z = 0.3 m) pullout resistance is 10.15 kN/m (FOS 3.38), where it
 was 31.50 (FOS 10.49); at z = 5.7 m 473.8 where it was 526.3.
 `pullout_resistance`'s `q_surcharge` remains, for a dead-load surcharge.
@@ -516,8 +517,8 @@ owner's call.
 **Numbers.** The 9 m strip wall (H 9 m, L 7 m, Sv 0.75 m, gamma 20, phi
 34, 75 mm strips): FOS_pullout 28.76 to 42.10 and FOS_rupture 0.982 to
 16.24 before; at Sh 0.75 m (Rc 0.1) 2.876 to 4.210 and 1.309 to 21.65 now
-(pullout x Rc; rupture 43.1 kN a strip / Sh). A 6 m geogrid wall (UX1600,
-L 5 m, Sv 0.6 m, phi 34): unchanged, FOS_pullout 10.493 to 25.792,
+(pullout x Rc; rupture 43.1 kN a strip / Sh). A 6 m geogrid wall (the
+built-in geogrid of the time, Tal 21.9 kN/m, L 5 m, Sv 0.6 m, phi 34): unchanged, FOS_pullout 10.493 to 25.792,
 FOS_rupture 1.192 at the bottom. GEC-11 Vol II Example E3 (Table E3-7.3, p.
 E3-19) with its own b 0.164 ft and Sh 2.50 ft (Levels 1-8) and 1.67 ft
 (9-12): the module's Pr times Sh is E3's Pr per strip and its FOS times
@@ -559,7 +560,7 @@ unchanged at 1.192:
 
 | Reinforcement | FOS_pullout before (alpha 1.0) | FOS_pullout now |
 |---|---|---|
-| Geogrid (UX1600) | 10.493 to 25.792 | 8.394 to 20.633 (alpha 0.8) |
+| Geogrid (Tal 21.9 kN/m, the built-in of the time) | 10.493 to 25.792 | 8.394 to 20.633 (alpha 0.8) |
 | Geotextile of the same Tal | 10.493 to 25.792 | 6.296 to 15.475 (alpha 0.6) |
 
 GEC-11 Vol II Example E1 takes "alpha = Scale correction factor, = 0.8 for
@@ -643,7 +644,8 @@ a wire per panel where E4's mat has four.
   the allowable.
 - The built-in is now E4's mat, named "Bar mat 4W11 + W11x0.5' (GEC-11 Vol
   II Example E4)": 4 W11 wires, **b = 1.5 ft (0.4572 m) carried on the
-  built-in** as the strip carries its 75 mm, Fy 65 ksi, W11 transverse at 6
+  built-in** as the strip carries its width (75 mm then, E3's 50 mm since
+  GM-267), Fy 65 ksi, W11 transverse at 6
   in. Tal = 0.48 x 65 ksi x 4 pi (0.318 in.)^2 / 4 / 1.5 ft = **96.44 kN/m
   of mat width** (11.02 kN a wire). So `reinforcement_horizontal_spacing`
   alone gives its Rc; a different width is refused.
@@ -877,7 +879,8 @@ strength after creep, installation damage and durability, i.e. Tult / RF,
 and the check now takes them so; their basis says the value is not
 checked against the product's published strength.
 
-Numbers: the 6 m geogrid wall (UX1600, L 5 m, Sv 0.6 m, gamma 19, phi
+Numbers: the 6 m geogrid wall (the built-in geogrid of the time, 21.9
+kN/m, L 5 m, Sv 0.6 m, gamma 19, phi
 34) keeps FOS_rupture 1.192 at the bottom level, and now fails rupture at
 5.1 m (1.332) and 5.7 m (1.192), where every level passed before. Steel
 results are unchanged. Tests: `tests/test_mse_rupture_factor_of_safety.py`.
@@ -885,10 +888,11 @@ results are unchanged. Tests: `tests/test_mse_rupture_factor_of_safety.py`.
 **Left for the owner and the lead** (BACKLOG):
 - a reinforcement per level (another Tal and width at the deeper levels,
   as E4's 4W15 mats, or E1's GG-II geogrids below Layer 4);
-- the built-in strip's 75 mm width, where GEC-11's strip is 50 mm;
-- the built-in geogrids' Tal (21.9, 29.2 kN/m) and their product names:
-  no source is recorded; check them against the products' published
-  long-term strengths, or rename them as generic geogrids;
+- the built-in strip's 75 mm width, where GEC-11's strip is 50 mm.
+  Done: GM-267 below;
+- the built-in geogrids' Tal (21.9, 29.2 kN/m) and their names, one
+  maker's product line: no source is recorded. Done: GM-271 below, E1's
+  generic geogrids;
 - `reinforcement_Fy` is used in no check, for a custom reinforcement too.
   Done: GM-269 below.
 
@@ -927,6 +931,98 @@ give the allowable worked out from Fy and the corroded section: Eq. 3-11a,
 0.55 Fy for strips and 0.48 Fy for bar mats. The `Reinforcement` dataclass
 keeps `Fy`, since the built-ins record theirs. Tests:
 `funhouse_agent/tests/test_gm179_unused_inputs.py`.
+
+## GEC-11's printed strip and geogrids as the built-ins (GM-267, GM-271, 2026-10-21)
+
+Every built-in reinforcement is now one a GEC-11 Vol II worked example
+prints, with its Tal as printed and the pages in its basis, which every
+result carries in the Tal choice and `list_reinforcement` gives as
+`Tallowable_basis`. E4's 4W11 mat was the first (GM-262, above).
+
+**The strip (GM-267): `ribbed_steel_strip_50x4`.** Example E3's strip,
+"Grade 65 (Fy = 65 ksi), 1.969 in. x 0.157 in. (50 mm wide x 4 mm)", Ec =
+0.102 in. after 75 years, Tn = 65 ksi x 0.200 in.^2 = 13.00 k a strip
+(p. E3-16); GEC-11 Vol I p. 2-16 gives the 50 mm strip as the one
+commercially available. Tal = 0.55 Fy Ec (p. 4-77; Ac = b Ec, Fig. 3-5a,
+Eq. 3-11a) = 638.6 kN/m of strip width, the same per metre of width as the
+75 mm strip had, and 31.93 kN a strip against E3's 0.55 Tn = 7.15 k =
+31.80 kN on its rounded 0.200 in.^2 (0.4 %). Tal per strip is Tal per unit
+width x b, so with Rc = b/Sh the tensile resistance per metre of wall is
+the strip's strength / Sh.
+- The old `ribbed_steel_strip_75x4` (75 mm, the tool's own width) is
+  refused by the tool, naming the 50 mm strip and its Tal, or a custom
+  `metallic_strip` with its Tal and width. `RIBBED_STEEL_STRIP_75x4` stays
+  importable for the retired `foundry/` wrapper only.
+- The Tal choice no longer offers the 50 mm strip as the other reading,
+  since it is now the built-in. The `_COMMERCIAL_STRIP` alternative in
+  `mse.tensile_strength_choice` is gone with it.
+- Every strip pin moves by 50/75 = 2/3 (Rc 0.1 -> 0.0667 at Sh 0.75 m).
+  The 9 m strip wall (H 9 m, L 7 m, Sv 0.75 m, gamma 20, phi 34, Cu 4, Sh
+  0.75 m): FOS_pullout 2.876 to 4.210 -> **1.917 to 2.807**; FOS_rupture
+  1.455 to 24.06 -> **0.970 to 16.04**, Tal x Rc 63.86 -> 42.57 kN/m of
+  wall. The bottom level (8.62 m, Tmax 43.89 kN/m) now **fails rupture**;
+  the choice gives a closer spacing per level, as E3 takes 3 strips a
+  panel below Level 8.
+- **E3 reproduced with the built-in** (V-056,
+  `test_v056_the_built_in_strip_is_E3s`): at E3's Sh per level, its Pr at
+  all 12 levels of Table E3-7.3 (p. E3-19) within 0.3 %, and FOS_rupture
+  is E3's tension CDR times 0.55 x 1.35 / 0.75 (0.99) and 31.93 / 31.80.
+  The published-example pins are unchanged.
+
+**The geogrids (GM-271): `geogrid_gec11_e1_gg1`, `_gg2`, `_gg3`.** The two
+built-in geogrids carried one maker's product-line names, and their Tal
+(21.9 and 29.2 kN/m) had no recorded source. GEC-11 prints a full Tal =
+Tult / RF for generic geogrids in Example E1, Table E1-7.3 (p. E1-15):
+
+| Built-in | Tult (lb/ft) | RFID | RFCR | RFD | Tal (lb/ft) | Tal (kN/m) |
+|---|---|---|---|---|---|---|
+| GG-I | 3,000 | 1.3 | 1.85 | 1.15 | 1,085 | 15.83 |
+| GG-II | 6,000 | 1.3 | 1.85 | 1.15 | 2,169 | 31.66 |
+| GG-III | 9,000 | 1.2 | 1.85 | 1.15 | 3,525 | 51.45 |
+
+`reinforcement.geosynthetic_Tal` is Eq. 3-12 (Vol I p. 3-28). For pullout
+E1 takes F* = 0.45 and alpha = 0.8 "for these geogrids", C = 2, Rc = 1
+(Step 7.8, p. E1-16); the module takes F* = 0.67 tan phi for a geogrid
+(Eq. 3-8, p. 3-21), 0.452 at E1's 34 deg, and alpha 0.8 (Table 3-6, p.
+3-17). A product's own Tult (its minimum average roll value from ASTM
+D6637 tests, p. 3-28) and reduction factors for the wall's backfill and
+design life are a custom reinforcement (`reinforcement_type` 'geogrid'
+with `reinforcement_Tallowable`).
+- The reduction factors E1 prints: RF = RFID x RFCR x RFD = 2.77 for GG-I
+  and GG-II (RFID 1.3) and 2.55 for GG-III (RFID 1.2); RFCR 1.85 and RFD
+  1.15 for all three. E1 gives no reason for GG-III's lower RFID. Each
+  basis now prints the RF beside its factors (review, 2026-10-21).
+- The print disagrees with itself: Table E1-7.1 (p. E1-11) lists the
+  grades' ultimate strength as 6,000, 9,000 and 12,000 lb/ft, Table E1-7.3
+  as 3,000, 6,000 and 9,000, so Table E1-7.1's values are Table E1-7.3's
+  one grade up. Dividing Table E1-7.1's Tult by Table E1-7.3's Tal gives
+  5.5, 4.1 and 3.4, which are not RFs E1 prints anywhere; they only show
+  the two tables' mismatch. E1's Tal and its rupture CDRs (Table E1-7.4)
+  follow Table E1-7.3, and so do the built-ins; the basis says so.
+- The built-ins are worked-example values, not products (review,
+  2026-10-21). The tool description says so, `list_reinforcement` returns
+  a `built_ins` note saying so, and the Tal choice of every result with a
+  built-in carries the reinforcement specified for the wall as its other
+  way: a custom reinforcement with the product's own Tal, Fy Ac / b at
+  0.55 Fy or 0.48 Fy (Eq. 3-11a, p. 4-77) for steel, Tult / RF (Eq. 3-12)
+  for a geosynthetic (`mse._SPECIFIED_PRODUCT`).
+- `geogrid_ux1600` and `geogrid_ux1700` are refused by the tool, giving
+  E1's three geogrids with their Tal, or a custom geogrid Tal = Tult / RF.
+  `GEOGRID_UX1600` and `GEOGRID_UX1700` stay importable for the retired
+  `foundry/` wrapper only, which imports them; no tool text names them.
+- Not taken: Example E9 (p. E9-2) uses a 22 kN/m geogrid, but in a
+  reinforced slope, not a wall.
+- The 6 m geogrid wall (L 5 m, Sv 0.6 m, gamma 19, phi 34) with GG-I:
+  FOS_pullout unchanged (8.394 to 20.633; pullout does not take Tal);
+  FOS_rupture 0.862 at the bottom (1.192 on 21.9 kN/m), below 1.5 from 3.3
+  m down. With GG-II every level passes (lowest 1.723).
+- V-057 checks that each built-in is Table E1-7.3's Tal to the pound, and
+  that a whole run with the built-in GG-I is the run with E1's GG-I.
+
+Tests: `tests/test_mse_coverage_ratio.py`,
+`tests/test_mse_rupture_factor_of_safety.py`,
+`funhouse_agent/tests/test_mse_builtin_reinforcement_adapter.py`, V-056
+and V-057.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
@@ -986,12 +1082,12 @@ keeps `Fy`, since the built-ins record theirs. Tests:
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
   strip default unchanged; GM-246 changed its top value (above).
-  - **Source basis (built-in reinforcement products).** The product constants
-    (the `WELDED_WIRE_GRID_W11` grid geometry, the 75x4 mm ribbed-strip
-    `T_allowable`, etc.) are **representative values typical of the reinforcement
-    class, NOT a specific manufacturer's catalog** — they exist to exercise the
-    Kr/F* selection logic and give sensible defaults. For a real design the user
-    should supply the actual product's certified properties. The Kr/F* CURVES
+  - **Source basis (built-in reinforcements).** Since GM-262, GM-267 and
+    GM-271 each built-in is a GEC-11 Vol II worked example's reinforcement
+    as printed, with its pages in its basis: E3's 50 x 4 mm strip, E4's 4W11
+    mat, E1's geogrids GG-I to GG-III (sections above). They are not a
+    manufacturer's catalog; for a real design the user supplies the actual
+    product's certified properties as a custom reinforcement. The Kr/F* CURVES
     themselves are digitized from GEC-11 Figs 4-11/E4-5 (see `mse.py`), anchored
     by the GEC-11 Example E4 reproduction.
   Active-zone length La branches on reinforcement extensibility (RW-2):

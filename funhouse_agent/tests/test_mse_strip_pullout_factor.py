@@ -10,16 +10,16 @@ from funhouse_agent import dispatch as D
 _WALL = dict(wall_height=9.0, gamma_backfill=20.0, phi_backfill=34.0,
              reinforcement_length=7.0, reinforcement_spacing=0.75)
 #: GM-256: each built-in's coverage, Rc = b/Sh (a geogrid is continuous)
-_COVER = {"ribbed_steel_strip_75x4": {"reinforcement_horizontal_spacing": 0.75},
+_COVER = {"ribbed_steel_strip_50x4": {"reinforcement_horizontal_spacing": 0.75},
           "welded_wire_grid_w11": {"reinforcement_width": 0.4572,
                                    "reinforcement_horizontal_spacing": 1.524},
-          "geogrid_ux1600": {}}
-_STRIP = dict(_WALL, reinforcement_name="ribbed_steel_strip_75x4",
-              **_COVER["ribbed_steel_strip_75x4"])
+          "geogrid_gec11_e1_gg1": {}}
+_STRIP = dict(_WALL, reinforcement_name="ribbed_steel_strip_50x4",
+              **_COVER["ribbed_steel_strip_50x4"])
 
 
 def _mse(**extra):
-    name = extra.get("reinforcement_name", "ribbed_steel_strip_75x4")
+    name = extra.get("reinforcement_name", "ribbed_steel_strip_50x4")
     return D.call_agent("retaining_walls", "mse_wall",
                         {**_WALL, "reinforcement_name": name,
                          **_COVER.get(name, {}), **extra})
@@ -54,14 +54,14 @@ def test_a_custom_strip_takes_it_and_a_geogrid_does_not_list_it():
                   reinforcement_Tallowable=40.0, reinforcement_width=0.05,
                   reinforcement_horizontal_spacing=0.5)
     assert custom["defaults_used"]["Cu_backfill"] == 4.0
-    grid = _mse(reinforcement_name="geogrid_ux1600")
+    grid = _mse(reinforcement_name="geogrid_gec11_e1_gg1")
     assert "Cu_backfill" not in grid["defaults_used"]
     assert not [c for c in grid.get("choices", [])
                 if "(Cu_backfill)" in c["what"]]
 
 
 @pytest.mark.parametrize("name, cu", [
-    ("welded_wire_grid_w11", 5.0), ("geogrid_ux1600", 2.5)])
+    ("welded_wire_grid_w11", 5.0), ("geogrid_gec11_e1_gg1", 2.5)])
 def test_a_grid_or_geogrid_takes_it_as_a_note_i_check(name, cu):
     """GEC-11 Table 3-6 note (i) (p. 3-17) holds every empirical F* to Cu
     >= 4, so a Cu given with a grid or a geogrid is checked, not refused
@@ -78,7 +78,7 @@ def test_a_grid_or_geogrid_takes_it_as_a_note_i_check(name, cu):
 
 @pytest.mark.parametrize("method, params, words", [
     ("mse_wall", {**_STRIP, "Cu_backfill": 0.5}, "1 or more"),
-    ("mse_wall", {**_WALL, "reinforcement_name": "geogrid_ux1600",
+    ("mse_wall", {**_WALL, "reinforcement_name": "geogrid_gec11_e1_gg1",
                   "Cu_backfill": 0.5}, "1 or more"),
     ("mse_lrfd_external_stability",
      dict(wall_height=9.0, gamma_backfill=20.0, phi_backfill=34.0,

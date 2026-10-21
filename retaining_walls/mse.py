@@ -38,11 +38,12 @@ References:
     Figs 4-10/4-11/E4-5 (also AASHTO Fig. 11.10.6.2.1-3). Authoring-time in-hand
     status not recorded, but the curves are anchored by the GEC-11 Example E4
     reproduction (CDRs and F* within ~3%; see tests). The built-in
-    reinforcements are NOT a manufacturer's catalog: the W11 bar mat is
-    GEC-11 Vol II Example E4's 4W11 mat, its Tal from E4's corroded wire
-    (GM-262); the 75x4 mm strip's Tal is 0.55 Fy Ec at Example E3's
-    corroded thickness, its 75 mm width the tool's own (GM-262 review) —
-    see DESIGN.md.
+    reinforcements are NOT a manufacturer's catalog, each is a GEC-11 Vol
+    II worked example's as printed: the W11 bar mat is Example E4's 4W11
+    mat, its Tal from E4's corroded wire (GM-262); the strip is Example
+    E3's 50 x 4 mm ribbed strip, Tal 0.55 Fy Ec at E3's corroded thickness
+    (GM-267); the geogrids are Example E1's GG-I to GG-III, Tal = Tult / RF
+    from Table E1-7.3 (GM-271) — see DESIGN.md.
 """
 
 import math
@@ -354,18 +355,6 @@ _FLEXIBLE_FACING = (
     "every FOS_rupture x {ratio:.3f} (lowest {low:.3g}); give it as a "
     "custom reinforcement (reinforcement_Tallowable)")
 
-#: GEC-11 Vol I p. 2-16: the ribbed strips "currently commercially
-#: available" are "2 in. (50 mm) wide" (GM-262 review).
-_COMMERCIAL_STRIP_B = 0.05
-_COMMERCIAL_STRIP = (
-    "GEC-11's ribbed strip, '2 in. (50 mm) wide and 5/32-inch (4 mm) "
-    "thick' (Vol I p. 2-16; Vol II Example E3): the same Tal per metre of "
-    "strip width over {ratio:.3g} of the width, so at the same spacing the "
-    "tensile and pullout resistance are {ratio:.3g} of these (lowest "
-    "FOS_rupture {ru:.3g}, lowest FOS_pullout {po:.3g}); give it as a "
-    "custom reinforcement (reinforcement_type 'metallic_strip', "
-    "reinforcement_Tallowable {Tal:.4g}, reinforcement_width 0.05)")
-
 _ONE_REINFORCEMENT = (
     "a stronger reinforcement, or a closer spacing, at the levels where "
     "FOS_rupture is below {req:.1f}: this tool takes one reinforcement (one "
@@ -373,6 +362,23 @@ _ONE_REINFORCEMENT = (
     "its own for those levels, and a closer spacing is "
     "reinforcement_horizontal_spacing per level, as GEC-11 Vol II Example "
     "E3 takes 3 strips a panel below Level 8 (Table E3-7.3, p. E3-19)")
+
+#: A built-in is a GEC-11 Vol II worked example's reinforcement (GM-271
+#: review): the one specified for the wall is a custom reinforcement.
+_SPECIFIED_PRODUCT = (
+    "the reinforcement specified for the wall, where there is one: {name} "
+    "is the worked example's, with its Tal as printed, not a product. Give "
+    "the specified one as a custom reinforcement, reinforcement_type "
+    "'{type}' with reinforcement_Tallowable{width}: {tal}")
+_SPECIFIED_STEEL_TAL = (
+    "Fy Ac / b with Ac after the corrosion loss over the wall's design life "
+    "(GEC-11 Vol I Eq. 3-11a, p. 3-22), as the allowable 0.55 Fy for strips "
+    "or 0.48 Fy for bar mats (p. 4-77)")
+_SPECIFIED_GEOSYNTHETIC_TAL = (
+    "Tult / RF, the product's Tult (its minimum average roll value from "
+    "wide-width tests, ASTM D6637 for geogrids, D4595 for geotextiles) over "
+    "RF = RFID x RFCR x RFD for the wall's backfill and design life (GEC-11 "
+    "Vol I Eq. 3-12, p. 3-28)")
 
 _ONE_GEOSYNTHETIC = (
     "a stronger grade at the levels where FOS_rupture is below {req:.1f}: "
@@ -422,8 +428,9 @@ def tensile_strength_choice(reinforcement: Reinforcement,
                             internal: List[Dict[str, Any]]) -> list:
     """The reinforcement's long-term tensile strength Tal in the rupture
     check, as a result's ``choices`` (GM-262 review): a built-in's, with
-    where it comes from (``Reinforcement.basis``) and for the built-in
-    grid the flexible-facing reading; a geosynthetic's, with the factor of
+    where it comes from (``Reinforcement.basis``), the reinforcement
+    specified for the wall as the other way (GM-271 review), and for the
+    built-in grid the flexible-facing reading; a geosynthetic's, with the factor of
     safety 1.5 the check requires of it (:func:`rupture_FOS_required`);
     for any reinforcement whose FOS_rupture is below the required value at
     some level, that the same Tal and width are taken at every level.
@@ -451,13 +458,6 @@ def tensile_strength_choice(reinforcement: Reinforcement,
         alts.append(_FLEXIBLE_FACING.format(
             Tal=r.Tallowable * ratio, ratio=ratio,
             low=ratio * min(lv["FOS_rupture"] for lv in internal)))
-    elif r.basis and r.is_metallic and r.width is not None \
-            and r.width != _COMMERCIAL_STRIP_B:
-        ratio = _COMMERCIAL_STRIP_B / r.width
-        alts.append(_COMMERCIAL_STRIP.format(
-            ratio=ratio, Tal=r.Tallowable,
-            ru=ratio * min(lv["FOS_rupture"] for lv in internal),
-            po=ratio * min(lv["FOS_pullout"] for lv in internal)))
     if low:
         z = [lv["depth_m"] for lv in low]
         chosen += (f"; FOS_rupture is below {req:.1f} at "
@@ -466,6 +466,12 @@ def tensile_strength_choice(reinforcement: Reinforcement,
                    + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
         alts.append((_ONE_REINFORCEMENT if r.is_metallic
                      else _ONE_GEOSYNTHETIC).format(req=req))
+    if r.basis:
+        alts.append(_SPECIFIED_PRODUCT.format(
+            name=r.name, type=r.type,
+            width=" and reinforcement_width" if r.is_metallic else "",
+            tal=(_SPECIFIED_STEEL_TAL if r.is_metallic
+                 else _SPECIFIED_GEOSYNTHETIC_TAL)))
     how = MODULE if r.basis else how_given(
         r.Tallowable, None, name="reinforcement_Tallowable")
     if r.is_metallic:

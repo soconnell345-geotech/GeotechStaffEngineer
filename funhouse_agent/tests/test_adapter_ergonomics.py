@@ -1130,7 +1130,7 @@ class TestWallChecksReported:
         out = call_agent("retaining_walls", "mse_wall",
                          {"wall_height": 6.0, "gamma_backfill": 18.0,
                           "phi_backfill": 34.0,
-                          "reinforcement_name": "ribbed_steel_strip_75x4",
+                          "reinforcement_name": "ribbed_steel_strip_50x4",
                           "reinforcement_horizontal_spacing": 0.75})
         assert out["FOS_bearing"] is None
         assert out["checks_not_run"] == ["bearing"]

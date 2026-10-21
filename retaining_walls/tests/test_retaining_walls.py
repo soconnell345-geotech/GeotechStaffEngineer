@@ -28,15 +28,16 @@ from retaining_walls.mse import (
     check_external_stability, analyze_mse_wall,
 )
 from retaining_walls.reinforcement import (
-    Reinforcement, RIBBED_STEEL_STRIP_75x4, GEOGRID_UX1600,
+    Reinforcement, RIBBED_STEEL_STRIP_50x4, GEOGRID_GEC11_E1_GG1,
     WELDED_WIRE_GRID_W11,
 )
 from retaining_walls.results import CantileverWallResult, MSEWallResult
 
-# GM-256: a steel strip or grid needs its horizontal spacing. The 75 mm
-# strips at Sh 0.75 m (Rc 0.1); the W11 grid as a 4-wire mat at 0.5 ft, b
-# 1.5 ft (0.457 m), one per 5 ft (1.524 m) panel, as GEC-11 Example E4.
-_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
+# GM-256: a steel strip or grid needs its horizontal spacing. GEC-11's
+# 50 mm strips at Sh 0.75 m (Rc 0.0667; 75 mm, Rc 0.1, before GM-267); the
+# W11 grid as a 4-wire mat at 0.5 ft, b 1.5 ft (0.457 m), one per 5 ft
+# (1.524 m) panel, as GEC-11 Example E4.
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_50x4, horizontal_spacing=0.75)
 _GRID = dataclasses.replace(WELDED_WIRE_GRID_W11, width=0.4572,
                             horizontal_spacing=1.524)
 
@@ -320,7 +321,7 @@ class TestMSEInternal:
     def test_internal_check_geosynthetic(self):
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
         results = check_internal_stability(
-            geom, 18.0, 34.0, GEOGRID_UX1600
+            geom, 18.0, 34.0, GEOGRID_GEC11_E1_GG1
         )
         assert len(results) == 10
         # Geosynthetic has lower Tallowable, check Kr/Ka = 1.0
@@ -380,7 +381,7 @@ class TestMSEFull:
 
     def test_geosynthetic_wall(self):
         geom = MSEWallGeometry(wall_height=4.0, reinforcement_spacing=0.4)
-        result = analyze_mse_wall(geom, 18.0, 30.0, GEOGRID_UX1600)
+        result = analyze_mse_wall(geom, 18.0, 30.0, GEOGRID_GEC11_E1_GG1)
         assert result.n_levels == 10  # 4.0/0.4
 
 
@@ -389,13 +390,13 @@ class TestMSEFull:
 # ================================================================
 class TestReinforcement:
     def test_built_in_steel_strip(self):
-        r = RIBBED_STEEL_STRIP_75x4
+        r = RIBBED_STEEL_STRIP_50x4
         assert r.is_metallic
         assert r.Tallowable > 0
         assert r.type == "metallic_strip"
 
     def test_built_in_geogrid(self):
-        r = GEOGRID_UX1600
+        r = GEOGRID_GEC11_E1_GG1
         assert not r.is_metallic
         # GM-256: a geogrid, GEC-11 Table 3-6's alpha 0.8 (p. 3-17)
         assert r.type == "geogrid"
@@ -413,7 +414,7 @@ class TestReinforcement:
         assert r.coverage_ratio is None
         assert coverage_ratio(r) == 1.0
         with pytest.raises(ValueError, match="reinforcement_horizontal_spacing"):
-            coverage_ratio(RIBBED_STEEL_STRIP_75x4)
+            coverage_ratio(RIBBED_STEEL_STRIP_50x4)
 
     def test_coverage_ratio_custom(self):
         """Metallic strip with user-specified Rc."""
@@ -883,7 +884,8 @@ class TestMSEActiveZoneSurface:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         phi = 34.0
-        results = check_internal_stability(geom, 18.0, phi, GEOGRID_UX1600)
+        results = check_internal_stability(geom, 18.0, phi,
+                                           GEOGRID_GEC11_E1_GG1)
         H = geom.wall_height
         for r in results:
             expected = (H - r["depth_m"]) * math.tan(
@@ -1563,11 +1565,12 @@ class TestMSELRFDBearingNotChecked:
                 bearing_resistance_strength=500.0)
 
     def test_analyze_mse_wall_takes_it_on_the_lrfd_path(self):
-        r = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
+        r = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1,
                              gamma_foundation=18.0, phi_foundation=30.0,
                              lrfd_external=True)
         assert r.external_lrfd["bearing"]["CDR_strength"] is not None
-        given = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
+        given = analyze_mse_wall(self._geom(), 19.0, 34.0,
+                                 GEOGRID_GEC11_E1_GG1,
                                  gamma_foundation=18.0, lrfd_external=True,
                                  bearing_resistance_strength=500.0)
         assert "qn_strength_max_kPa" not in given.external_lrfd["bearing"]
@@ -1576,7 +1579,7 @@ class TestMSELRFDBearingNotChecked:
     def test_the_resistance_takes_the_foundation_soils_own_phi(self):
         # GM-179 review: never the reinforced fill's phi_backfill
         with pytest.raises(ValueError, match="give phi_foundation"):
-            analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
+            analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1,
                              gamma_foundation=18.0, lrfd_external=True)
 
     def test_the_worked_out_resistance_is_a_stated_choice(self):
