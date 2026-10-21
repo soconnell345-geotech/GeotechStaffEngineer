@@ -588,11 +588,103 @@ steel strip needs its coverage ratio Rc = b/Sh ...").
   below E4's W11 mat (Tn 5.2 k a wire at 0.5 ft, b 1.5 ft: about 202 kN/m of
   grid width). At E4's layout (Rc 0.30) the built-in grid shows FOS_rupture
   about 0.4 where E4's mat passes. Conservative; re-derive it or drop the
-  built-in strength;
+  built-in strength. Done: GM-262 below;
 - whether Cu < 4 with no tested F* is refused rather than computed and
   flagged;
 - Rc is one value for the wall: E3 changes Sh with depth (2.50 ft to
   1.67 ft), so a wall like it is run once per spacing.
+
+## The tensile strength of a steel bar mat (GM-262, 2026-10-20)
+
+**What GEC-11 prints.** GEC-11 Vol I (FHWA-NHI-10-024), read on the
+rendered pages:
+- Eq. 3-11a (p. 3-22): Tal = Fy Ac / b, "in strength per unit reinforcement
+  width"; Eq. 3-11b, Ptal = Fy Ac, per strip or per mat;
+- Fig. 3-5 (p. 3-24), for metallic grids and bar mats: Ac = (No. of
+  longitudinal bars) x (D*)^2 / 4, D* the bar's diameter corrected for
+  corrosion loss (the figure prints no pi; Vol II Example E4 takes pi);
+  b is the width of the grid, and Tmax <= phi Rc Tal;
+- p. 3-23: Ac is the area after corrosion, and phi is 0.75 for strips,
+  0.65 for grids connected to a rigid facing and 0.75 for grids connected
+  to a flexible facing; Table 4-7 (p. 4-48) prints the same factors;
+- p. 4-77 (checklist IX.5): "Is the correct value of nominal strength of
+  steel used? (e.g., 0.55 Fy for strips and 0.48Fy for bar mats)".
+
+Vol II (FHWA-NHI-10-025) Example E4, a precast-panel wall on bar mats:
+- p. E4-14: W11 D = 0.374 in., W15 D = 0.437 in.; after 75 years
+  (galvanizing gone in 16, then 0.47 mil/year/side of carbon steel for 59)
+  0.318 in. and 0.381 in. The page's "Steel loss = 0.16 mil/year/side" is
+  the zinc's rate; the calculation takes 0.47;
+- p. E4-15: Tn = Fy A = 65 ksi x 0.0795 in.2 = 5.17 k a W11 wire, Tr =
+  0.65 Tn = 3.36 k; W15 7.42 k and 4.82 k;
+- p. E4-17: Nt = Tmax / Tr; Level 4, Tmax 12.75 k a 5 ft panel, Nt = 3.8,
+  so 4 wires;
+- p. E4-18, Table E4-7.4: every level's mat. Levels 1, 3 and 4 are "4W11 +
+  W11x0.5'", 4 W11 wires at 0.5 ft, one mat a 5 ft panel; Level 2 is
+  3W11; Levels 5 to 10 are 4W15.
+
+**What was wrong.** The built-in `WELDED_WIRE_GRID_W11` carried
+Tallowable 32.0 kN/m with no recorded source: Fy times ONE uncorroded W11
+wire. Since GM-256 it is read per metre of grid width and multiplied by Rc,
+so at E4's layout (b 1.5 ft, Sh 5 ft) it gave the strength of about 0.9 of
+a wire per panel where E4's mat has four.
+
+**What changed.**
+- `reinforcement.steel_grid_Tal(n_longitudinal, D_corroded, Fy, b,
+  fraction)`: Eq. 3-11a with Fig. 3-5's Ac, pi taken as E4 takes it.
+  `fraction` 1 gives the nominal strength; `BAR_MAT_ALLOWABLE_FY` = 0.48
+  the allowable.
+- The built-in is now E4's mat, named "Bar mat 4W11 + W11x0.5' (GEC-11 Vol
+  II Example E4)": 4 W11 wires, **b = 1.5 ft (0.4572 m) carried on the
+  built-in** as the strip carries its 75 mm, Fy 65 ksi, W11 transverse at 6
+  in. Tal = 0.48 x 65 ksi x 4 pi (0.318 in.)^2 / 4 / 1.5 ft = **96.44 kN/m
+  of mat width** (11.02 kN a wire). So `reinforcement_horizontal_spacing`
+  alone gives its Rc; a different width is refused.
+- Why 0.48 Fy and not phi: the module's rupture check compares Tal x Rc
+  with the UNFACTORED Tmax at a factor of safety of 1.0, so Tal must be an
+  allowable. E4's LRFD check takes phi 0.65 against Tmax times 1.35, and
+  0.65 / 1.35 = 0.481: the same check to 0.3 %.
+- The mat's basis (`Reinforcement.basis`) is in the coverage choice of
+  every result and in `list_reinforcement` (`Tallowable_basis`). The tool
+  text for `reinforcement_Tallowable` now says the check is at FOS 1.0 on
+  the unfactored Tmax, so a custom steel Tal is an allowable: 0.55 Fy for
+  strips and 0.48 Fy for bar mats (p. 4-77), and a mat's Ac is the number
+  of longitudinal bars times one bar's corroded area. It said Fy Ac / b
+  before, the nominal.
+
+**Numbers** at E4's layout (H 25.64 ft, L 18 ft, Sv 2.5 ft, 250 psf live
+load, Sh 5 ft, Rc 0.30; the module's levels sit at 1.25 + 2.5i ft, E4's at
+1.87 + 2.5i ft):
+
+| Level depth | FOS_rupture before (Tal 32.0) | FOS_rupture now |
+|---|---|---|
+| 1.25 ft | 0.947 | 2.854 |
+| 8.76 ft (beside E4's Level 4) | 0.359 | 1.081 |
+| 11.25 ft | 0.318 | 0.957 |
+| 23.75 ft (bottom) | 0.241 | 0.726 |
+
+Tal x Rc is 28.93 kN/m of wall (9.60 before); FOS_pullout is unchanged
+(1.680 to 6.860). Below about 10 ft the 4W11 mat does not carry E4's
+loads, as in E4, which changes to 4W15 mats from Level 5; the module takes
+one reinforcement for the wall, so such a wall is a custom reinforcement
+for its lower levels.
+
+**E4 reproduced** (`validation_examples/test_published_v009_v011.py`,
+V-010): Tn and Tr a wire for W11 and W15 within 0.2 % of p. E4-15; Nt at
+all ten levels of Table E4-7.4 within 0.07 of the printed one-decimal
+values, and each level's Ng wires carry its factored Tmax; at Level 4 the
+built-in mat's Tal x Rc over the unfactored Tmax is 1.044, against E4's 4 x
+3.36 / 12.75 = 1.054. Module tests: `tests/test_mse_bar_mat_strength.py`.
+
+**Left for the owner** (BACKLOG):
+- the ribbed strip's 43.1 kN a strip has no recorded source either (it is
+  about 0.32 x 450 MPa x 75 x 4 mm, uncorroded);
+- a grid connected to a flexible facing takes phi 0.75 (p. 3-23), so 0.55
+  Fy; the built-in is E4's rigid-facing mat at 0.48 Fy;
+- whether the built-in geogrids' Tal (21.9 and 29.2 kN/m) is a long-term
+  design strength or an allowable: the check takes it at FOS 1.0;
+- a reinforcement per level (E4's 3W11 at Level 2 and 4W15 below Level 4)
+  is not taken; GM-261 takes the spacing per level.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height

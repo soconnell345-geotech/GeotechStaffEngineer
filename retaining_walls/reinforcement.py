@@ -9,8 +9,41 @@ References:
     FHWA GEC-11, Chapter 3
 """
 
+import math
 from dataclasses import dataclass
 from typing import Optional
+
+#: The allowable stress of a steel bar mat as a fraction of Fy, for the
+#: module's rupture check, which compares Tal x Rc with the unfactored Tmax
+#: at a factor of safety of 1.0: GEC-11 Vol I p. 4-77 (checklist IX.5), "Is
+#: the correct value of nominal strength of steel used? (e.g., 0.55 Fy for
+#: strips and 0.48Fy for bar mats)". The LRFD check of Example E4 (Vol II
+#: p. E4-15, Table E4-7.4) takes phi 0.65 (a grid on a rigid facing, Vol I
+#: Table 4-7, p. 4-48) against Tmax times 1.35: 0.65 / 1.35 = 0.48 (GM-262).
+BAR_MAT_ALLOWABLE_FY = 0.48
+
+
+def steel_grid_Tal(n_longitudinal: int, D_corroded: float, Fy: float,
+                   b: float, fraction: float = 1.0) -> float:
+    """Tal of a steel grid or bar mat per metre of its own width b (kN/m;
+    GM-262): ``fraction`` x Fy Ac / b, GEC-11 Vol I Eq. 3-11a (p. 3-22),
+    with Ac = (No. of longitudinal bars) x pi D*^2 / 4, D* the bar's
+    diameter after corrosion (Fig. 3-5, p. 3-24, which prints D*^2 / 4 with
+    no pi; Vol II Example E4, p. E4-15, takes pi (0.318 in.)^2 / 4 = 0.0795
+    in.^2 a wire). ``fraction`` 1 gives GEC-11's nominal long-term strength,
+    which its LRFD check multiplies by the resistance factor (Table 4-7, p.
+    4-48); :data:`BAR_MAT_ALLOWABLE_FY` the allowable this module's rupture
+    check takes.
+
+    Parameters: n_longitudinal, the number of longitudinal bars in the grid;
+    D_corroded (m); Fy (kPa); b (m), centre to centre of the outside
+    longitudinal bars (p. 3-12)."""
+    if n_longitudinal < 1 or D_corroded <= 0 or Fy <= 0 or b <= 0:
+        raise ValueError(
+            "steel_grid_Tal needs at least one longitudinal bar and a "
+            "positive corroded diameter, Fy and grid width b")
+    Ac = n_longitudinal * math.pi * D_corroded ** 2 / 4.0
+    return fraction * Fy * Ac / b
 
 
 @dataclass
@@ -30,11 +63,14 @@ class Reinforcement:
         a tested alpha (``mse.pullout_alpha``, GM-256).
     Tallowable : float
         Long-term allowable tensile strength per unit width of the
-        reinforcement, Tal (kN/m): GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac /
-        b for a steel strip or grid. The rupture check takes Tal x Rc, the
+        reinforcement, Tal (kN/m). The rupture check takes Tal x Rc, the
         strength per metre of wall (p. 4-47: "the product of the nominal
         long-term strength, coverage ratio, and applicable resistance
-        factor"); a strength per strip or per mat (Ptal, Eq. 3-11b) is Ptal
+        factor"), against the unfactored Tmax at a factor of safety of 1.0,
+        so Tal here is an allowable: for steel a fraction of GEC-11 Vol I
+        Eq. 3-11a (p. 3-22), Fy Ac / b with Ac after corrosion, 0.55 Fy for
+        strips and 0.48 Fy for bar mats (p. 4-77; :func:`steel_grid_Tal`,
+        GM-262). A strength per strip or per mat (Ptal, Eq. 3-11b) is Ptal
         / b (GM-256).
     width : float, optional
         Gross width b (m) of the strip, sheet or grid; for a grid, from the
@@ -61,6 +97,9 @@ class Reinforcement:
     horizontal_spacing : float, optional
         Centre-to-centre horizontal spacing Sh (m) between the strips,
         sheets or grids of one level (GEC-11 Vol I p. 3-12). Default None.
+    basis : str, optional
+        Where ``Tallowable`` comes from, for the result's choices. Default
+        None (not stated).
     """
     name: str
     type: str
@@ -71,6 +110,7 @@ class Reinforcement:
     coverage_ratio: Optional[float] = None
     transverse_spacing: float = 0.0
     horizontal_spacing: Optional[float] = None
+    basis: Optional[str] = None
 
     def __post_init__(self):
         valid_types = ("metallic_strip", "metallic_grid", "geogrid",
@@ -126,19 +166,48 @@ RIBBED_STEEL_STRIP_75x4 = Reinforcement(
     thickness=0.004,
 )
 
+_IN = 0.0254
+_FT = 0.3048
+_KSI = 6894.757                 # kPa
+
+# GEC-11 Vol II (FHWA-NHI-10-025) Example E4's bar mat at Levels 1, 3 and
+# 4, read on the pages (GM-262): "4W11 + W11x0.5' which means a bar mat
+# with 4 W11 longitudinal wires spaced at 0.5 ft on centers with W11
+# transverse wires spaced at 0.5 ft on centers" (p. E4-18); a W11 wire is
+# D = 0.374 in., 0.318 in. after 75 years (p. E4-14: galvanized, the AASHTO
+# (2007) Art. 11.10.6.4.2a rates, 0.47 mil/year/side of carbon steel after
+# the zinc's 16 years), 0.0795 in.^2; Grade 65 steel, Tn = 65 ksi x 0.0795
+# in.^2 = 5.17 k a wire (p. E4-15).
+_W11_D = 0.374 * _IN
+_W11_D75 = 0.318 * _IN
+_W11_MAT_WIRES = 4
+_W11_MAT_WIDTH = round((_W11_MAT_WIRES - 1) * 0.5 * _FT, 4)  # b 1.5 ft
+_FY_GRADE_65 = 65.0 * _KSI
+
+W11_MAT_BASIS = (
+    "GEC-11 Vol II Example E4's bar mat at Levels 1, 3 and 4, '4W11 + "
+    "W11x0.5'' (p. E4-18): 4 W11 longitudinal wires at 0.5 ft (0.152 m), "
+    "b = 1.5 ft (0.457 m) between the outside wires, W11 transverse wires "
+    "at 0.5 ft; Tal = 0.48 Fy Ac / b (GEC-11 Vol I Eq. 3-11a, p. 3-22; "
+    "'0.48Fy for bar mats', p. 4-77, the allowable for a check at a factor "
+    "of safety of 1.0 on the unfactored Tmax), Ac = 4 pi (0.318 in.)^2 / 4, "
+    "the W11 wire after E4's 75 years of corrosion (p. E4-14), Fy = 65 ksi "
+    "(p. E4-15). Another mat, design life or backfill is a custom "
+    "reinforcement (reinforcement_Tallowable)")
+
 WELDED_WIRE_GRID_W11 = Reinforcement(
-    name="Welded Wire Grid W11xW11",
+    name="Bar mat 4W11 + W11x0.5' (GEC-11 Vol II Example E4)",
     type="metallic_grid",
-    # kN/m of grid width since GM-256, times Rc per metre of wall. Its
-    # source is not recorded: 32.0 is Fy x the area of ONE uncorroded W11
-    # wire (450 MPa x 70.9 mm2 = 31.9 kN), and GEC-11 Vol II Example E4's
-    # 4-wire W11 mat (Tn 5.2 k a wire, b 1.5 ft) is about 202 kN/m of grid
-    # width, so per grid width this is several times low (conservative).
-    # Left for the owner (GM-256 review).
-    Tallowable=32.0,
-    Fy=450000.0,
-    thickness=0.0095,           # W11 transverse-bar diameter t = 0.374 in
-    transverse_spacing=0.1524,  # St = 6 in (densest level) -> t/St = 0.0623
+    # kN/m of mat width, times Rc per metre of wall (GM-256). It was 32.0,
+    # of no recorded source (Fy x ONE uncorroded W11 wire), about a third
+    # of this mat's 96.4 (FOS_rupture about 0.36 at E4's Level 4; GM-262).
+    Tallowable=steel_grid_Tal(_W11_MAT_WIRES, _W11_D75, _FY_GRADE_65,
+                              _W11_MAT_WIDTH, BAR_MAT_ALLOWABLE_FY),
+    width=_W11_MAT_WIDTH,
+    Fy=_FY_GRADE_65,
+    thickness=_W11_D,               # transverse W11, t = 0.374 in.
+    transverse_spacing=0.5 * _FT,   # St = 6 in. -> t/St = 0.0623 (p. E4-15)
+    basis=W11_MAT_BASIS,
 )
 
 # The geogrids are type "geogrid": GEC-11 Vol I Table 3-6's alpha 0.8 for

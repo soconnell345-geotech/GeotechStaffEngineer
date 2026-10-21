@@ -479,6 +479,76 @@ def test_v010_highlevel_path_barmat_curves_match_published():
         1.246, abs=0.001)
 
 
+# ── V-010 : E4's tension (rupture) check, GM-262 ─────────────────────────────
+
+IN = 0.0254
+KSI = 6894.757
+#: E4 p. E4-14: wire diameters after 75 years, D75 = D - (0.47 mil/year/
+#: side)(59 years)(2 sides): W11 0.374 -> 0.318 in., W15 0.437 -> 0.381 in.
+#: (the page also lists "Steel loss = 0.16 mil/year/side", the zinc's rate;
+#: the calculation takes 0.47, AASHTO's carbon steel rate).
+E4_D75_IN = {"W11": 0.318, "W15": 0.381}
+#: GEC-11 Vol II Table E4-7.4 (p. E4-18), Strength I (max): Level: (Z ft,
+#: Tmax k per 5 ft panel (factored), phi_s Tn k per wire, Nt, Ng, wire).
+E4_TABLE_7_4 = {
+    1: (1.87, 6.25, 3.38, 1.9, 4, "W11"), 2: (4.37, 8.36, 3.38, 2.5, 3, "W11"),
+    3: (6.87, 10.80, 3.38, 3.2, 4, "W11"), 4: (9.37, 12.77, 3.38, 3.8, 4, "W11"),
+    5: (11.87, 14.26, 4.84, 2.9, 4, "W15"), 6: (14.37, 15.23, 4.84, 3.1, 4, "W15"),
+    7: (16.87, 15.71, 4.84, 3.2, 4, "W15"), 8: (19.37, 16.03, 4.84, 3.3, 4, "W15"),
+    9: (21.87, 17.10, 4.84, 3.5, 4, "W15"), 10: (24.37, 19.05, 4.84, 3.9, 4, "W15")}
+
+
+def test_v010_tensile_resistance_per_wire():
+    """PASS (GM-262): E4 Step 7.4 (p. E4-15), Grade 65 (Fy = 65 ksi):
+    W11 Tn = 65 (0.0795 in.2) = 5.17 k, Tr = 0.65 Tn = 3.36 k; W15 Tn = 7.42
+    k, Tr = 4.82 k (phi_t 0.65, Table E4-5.2, p. E4-6), from the module's
+    Eq. 3-11a / Fig. 3-5 expression with one wire (b = 1 makes it Ptal,
+    Eq. 3-11b). Table E4-7.4's spreadsheet prints 3.38 and 4.84 (its note,
+    p. E4-18: hand and spreadsheet values differ slightly)."""
+    from retaining_walls.reinforcement import steel_grid_Tal
+    for wire, Tn_pub, Tr_pub, Tr_table in (("W11", 5.17, 3.36, 3.38),
+                                           ("W15", 7.42, 4.82, 4.84)):
+        Tn = steel_grid_Tal(1, E4_D75_IN[wire] * IN, 65.0 * KSI, 1.0) / KIP
+        assert Tn == pytest.approx(Tn_pub, rel=0.002), wire
+        assert 0.65 * Tn == pytest.approx(Tr_pub, rel=0.002), wire
+        assert 0.65 * Tn == pytest.approx(Tr_table, rel=0.008), wire
+
+
+@pytest.mark.parametrize("level", sorted(E4_TABLE_7_4))
+def test_v010_tension_check_by_level(level):
+    """PASS (GM-262): Table E4-7.4 (p. E4-18) at every level: Nt = Tmax /
+    (phi_s Tn) wires a 5 ft panel, and the mat chosen, Ng wires, carries the
+    factored Tmax (Ng phi_s Tn >= Tmax). phi_s Tn from the module; the
+    printed Nt are to one decimal from 3.38 / 4.84, so within 0.07."""
+    from retaining_walls.reinforcement import steel_grid_Tal
+    _, Tmax, _, Nt, Ng, wire = E4_TABLE_7_4[level]
+    Tr = 0.65 * steel_grid_Tal(1, E4_D75_IN[wire] * IN, 65.0 * KSI, 1.0) / KIP
+    assert Tmax / Tr == pytest.approx(Nt, abs=0.07)
+    assert Ng * Tr >= Tmax
+
+
+def test_v010_tension_level4_through_the_built_in_mat():
+    """PASS (GM-262): E4 Level 4 (Z = 9.37 ft) needs Nt = Tmax / Tr = 12.75
+    / 3.36 = 3.8 wires a 5 ft panel and takes "4W11 + W11x0.5'" (pp. E4-17,
+    E4-18), so its four wires carry 4 x 3.36 / 12.75 = 1.05 times the
+    factored Tmax. The built-in mat (WELDED_WIRE_GRID_W11,
+    this mat since GM-262) at Sh 5 ft: Tal x Rc = 4 x 0.48 Fy Ac / Sh, the
+    ASD allowable (GEC-11 Vol I p. 4-77; 0.65 / 1.35 = 0.48), against the
+    unfactored Tmax at the level (the point value of
+    test_v010_Tmax_at_level_pointvalue_level4): FOS_rupture 1.044. Before
+    GM-262 the mat's Tal was 32.0 kN/m of grid width: 0.347."""
+    import dataclasses
+    from retaining_walls.mse import coverage_ratio
+    from retaining_walls.reinforcement import WELDED_WIRE_GRID_W11
+    mat = dataclasses.replace(WELDED_WIRE_GRID_W11, **_E4_MAT)
+    Tal_Rc = mat.Tallowable * coverage_ratio(mat)          # kN/m of wall
+    T = Tmax_at_level(z=9.37 * FT, gamma_backfill=GAMMA, Ka=rankine_Ka(PHI_R),
+                      Kr_Ka=_kr_ka_barmat(9.37), Sv=2.5 * FT, q_surcharge=Q_LL)
+    assert Tal_Rc / T == pytest.approx(4 * 3.36 / 12.75, rel=0.01)
+    assert Tal_Rc / T == pytest.approx(1.044, abs=0.001)
+    assert 32.0 * coverage_ratio(mat) / T == pytest.approx(0.347, abs=0.001)
+
+
 # ── V-011 : Mononobe-Okabe KAE + seismic sliding CDR (Example E7) ────────────
 #   REGRESSION ANCHOR for the M-O delta-handling / battered-wall fix.
 

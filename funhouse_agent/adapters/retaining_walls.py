@@ -75,7 +75,7 @@ def _with_coverage(reinforcement, params):
     coverage ratio (GM-256): a copy, never the shared built-in."""
     width = params.get("reinforcement_width")
     if width is not None and reinforcement.width is not None \
-            and width != reinforcement.width:
+            and not math.isclose(width, reinforcement.width, rel_tol=1e-6):
         raise ValueError(
             f"mse_wall: {reinforcement.name} is {reinforcement.width:g} m "
             f"wide, and its Tallowable is per metre of that width; for "
@@ -84,7 +84,8 @@ def _with_coverage(reinforcement, params):
             f"reinforcement_width)")
     return dataclasses.replace(
         reinforcement,
-        width=reinforcement.width if width is None else width,
+        width=reinforcement.width if reinforcement.width is not None
+        else width,
         horizontal_spacing=params.get("reinforcement_horizontal_spacing"),
         coverage_ratio=params.get("coverage_ratio"))
 
@@ -856,13 +857,17 @@ def _run_list_reinforcement(params):
                        "Tallowable_kN_per_m": round(r.Tallowable, 2),
                        "width_m": r.width,
                        "alpha": table_alpha(r),
-                       "mse_wall_needs": _COVERAGE_NEEDS[r.type]}
+                       "mse_wall_needs": _coverage_needs(r)}
+        if r.basis:
+            result[key]["Tallowable_basis"] = r.basis    # GM-262
     return {"reinforcement_types": result,
             "Tallowable": ("Tal per metre of the reinforcement's own width "
                            "(GEC-11 Vol I Eq. 3-11a); mse_wall multiplies "
                            "it by the coverage ratio Rc = b/Sh for the "
                            "tensile resistance per metre of wall (p. "
-                           "4-47)")}
+                           "4-47) and compares that with the unfactored "
+                           "Tmax at a factor of safety of 1.0, so Tal is "
+                           "an allowable strength")}
 
 
 #: What mse_wall needs besides a built-in reinforcement's name (GM-256).
@@ -878,6 +883,14 @@ _COVERAGE_NEEDS = {
              "reinforcement_horizontal_spacing, or coverage_ratio"
        for kind in ("geogrid", "geotextile", "geosynthetic")},
 }
+
+
+def _coverage_needs(r):
+    """What mse_wall needs for a built-in's coverage: a steel one that
+    carries its own width needs only its spacing (GM-262)."""
+    if r.is_metallic and r.width is not None:
+        return _COVERAGE_NEEDS["metallic_strip"]
+    return _COVERAGE_NEEDS[r.type]
 
 
 METHOD_REGISTRY = {
@@ -958,10 +971,10 @@ METHOD_INFO = {
             "alpha_tested": {"type": "float", "required": False, "description": "Scale effect correction factor alpha from pullout tests on reinforcements of different lengths (GEC-11 Vol I p. 3-16, Appendix B), more than 0 and at most 1. Left out, Table 3-6's alpha for the reinforcement type (p. 3-17): 1.0 for steel strips and grids, 0.8 for geogrids, 0.6 for geotextiles; a reinforcement_type 'geosynthetic' needs it. Table 3-6 note (ii): 'Pullout testing to determine alpha is recommended if alpha shown in table is less than 1.0'. The result's choices give FOS_pullout at the table's alpha beside a tested one."},
             "Cu_backfill": {"type": "float", "required": False, "default": 4.0, "description": "Uniformity coefficient Cu = D60/D10 of the reinforced backfill, for the pullout resistance factor of ribbed steel strips: F* = 1.2 + log Cu at the top of the wall, 2.0 maximum, falling linearly to tan phi_backfill at 20 ft (6 m) and below (GEC-11 Vol I Eqs. 3-4 and 3-5, p. 3-20). Left out, Cu = 4 (F* 1.8 at the top): p. 3-20, 'If the specific Cu for the wall backfill is unknown at design time, a Cu = 4 should be assumed' for fills meeting its Sec. 3.1. Table 3-6 note (i) (p. 3-17) accepts these empirical values only for Table 3-1 granular fill with Cu >= 4 ('For fill outside these limits, tests must be run'); a Cu below 4 is computed and the choices say so. A steel grid given t/St and a geosynthetic keep their own F*, which takes no Cu; given with them, Cu is checked against Table 3-6 note (i) only. The result's choices give the F* used and FOS_pullout at the top level and the lowest at the other reading, or for a grid or geosynthetic whether the given Cu is within note (i). Aliases: Cu, uniformity_coefficient."},
             "reinforcement_type": {"type": "str", "required": False, "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geogrid", "geotextile", "geosynthetic"], "description": "Custom reinforcement type, required with reinforcement_Tallowable. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 1.2 + log Cu (2.0 at most; Cu_backfill) -> tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geogrid / geotextile (Kr/Ka 1.0, F* 0.67 tan phi). It also sets the scale effect correction factor alpha, GEC-11 Vol I Table 3-6 (p. 3-17): 1.0 steel, 0.8 geogrid, 0.6 geotextile; 'geosynthetic' (either kind) needs alpha_tested."},
-            "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Long-term allowable tensile strength Tal (kN/m) of a custom reinforcement, per metre of the reinforcement's own width (GEC-11 Vol I Eq. 3-11a, p. 3-22: Tal = Fy Ac / b for steel): a strength per strip or per mat is that divided by its width b. The rupture check takes Tal x Rc per metre of wall (p. 4-47). Required when reinforcement_name is not a built-in."},
+            "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Long-term allowable tensile strength Tal (kN/m) of a custom reinforcement, per metre of the reinforcement's own width: a strength per strip or per mat is that divided by its width b. The rupture check compares Tal x Rc, per metre of wall (p. 4-47), with the unfactored Tmax at a factor of safety of 1.0, so Tal is an allowable: for steel a fraction of GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac / b with Ac the area after corrosion, 0.55 Fy for strips and 0.48 Fy for bar mats (p. 4-77); a bar mat's Ac is the number of longitudinal bars times one bar's corroded area (Fig. 3-5, p. 3-24). Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
-            "reinforcement_width": {"type": "float", "required": False, "description": "Gross width b (m) of the strip, grid or sheet; for a grid, centre to centre of the outside longitudinal bars (GEC-11 Vol I p. 3-12, Fig. 3-3). Required with reinforcement_horizontal_spacing for Rc = b/Sh, except for a built-in that carries its own (ribbed_steel_strip_75x4: 0.075 m)."},
+            "reinforcement_width": {"type": "float", "required": False, "description": "Gross width b (m) of the strip, grid or sheet; for a grid, centre to centre of the outside longitudinal bars (GEC-11 Vol I p. 3-12, Fig. 3-3). Required with reinforcement_horizontal_spacing for Rc = b/Sh, except for a built-in that carries its own (ribbed_steel_strip_75x4: 0.075 m; welded_wire_grid_w11: 0.457 m, 4 wires at 0.152 m)."},
             "reinforcement_Fy": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel yield strength (MPa)."},
             "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},

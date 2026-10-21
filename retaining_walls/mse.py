@@ -37,9 +37,10 @@ References:
     Source basis (Kr/K0 ratio and F* pullout curves): DIGITIZED from GEC-11
     Figs 4-10/4-11/E4-5 (also AASHTO Fig. 11.10.6.2.1-3). Authoring-time in-hand
     status not recorded, but the curves are anchored by the GEC-11 Example E4
-    reproduction (CDRs and F* within ~3%; see tests). The reinforcement PRODUCT
-    constants (W11 grid geometry, 75x4 mm strip T_allowable) are representative
-    values, NOT a specific manufacturer catalog — see DESIGN.md.
+    reproduction (CDRs and F* within ~3%; see tests). The 75x4 mm strip's
+    T_allowable is a representative value, NOT a specific manufacturer
+    catalog; the W11 bar mat is GEC-11 Vol II Example E4's 4W11 mat, its Tal
+    from E4's corroded wire (GM-262) — see DESIGN.md.
 """
 
 import math
@@ -179,10 +180,11 @@ def coverage_ratio(reinforcement: Reinforcement) -> float:
     if not r.is_metallic:
         return 1.0
     width = ""
-    if r.is_grid:
+    if b is not None:
+        width = (f"; this {'grid' if r.is_grid else 'strip'} is {b:g} m "
+                 "wide, so Sh alone will do")
+    elif r.is_grid:
         width = ", centre to centre of the outside longitudinal bars"
-    elif b is not None:
-        width = f"; this strip is {b:g} m wide, so Sh alone will do"
     raise ValueError(NEEDS_COVERAGE.format(kind=kind, width=width))
 
 
@@ -217,9 +219,12 @@ def coverage_choice(reinforcement: Reinforcement,
         chosen += (f"; tensile resistance Tal x Rc "
                    f"{r.Tallowable * Rc:.4g} kN/m of wall (Tal "
                    f"{r.Tallowable:.4g} kN/m of reinforcement width)")
+    basis = COVERAGE_BASIS
+    if r.basis:
+        basis += ". The reinforcement's Tal: " + r.basis     # GM-262
     return choice(
         "Coverage ratio Rc of the reinforcement (pullout and tensile "
-        "resistance per metre of wall)", chosen, how, COVERAGE_BASIS, alts)
+        "resistance per metre of wall)", chosen, how, basis, alts)
 
 
 #: GEC-11 Vol I, read on the rendered pages (GM-256).

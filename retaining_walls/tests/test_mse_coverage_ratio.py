@@ -121,11 +121,15 @@ def test_a_steel_strip_or_grid_with_no_spacing_is_refused():
                   "reinforcement_width", "Eq. 3-1", "Sh alone will do",
                   "the tool assumes none of them", "E3-19"):
         assert words in text, words
+    grid = Reinforcement("a grid", "metallic_grid", 100.0)
     with pytest.raises(ValueError, match="outside longitudinal bars"):
-        coverage_ratio(WELDED_WIRE_GRID_W11)
+        coverage_ratio(grid)
     with pytest.raises(ValueError, match="needs the steel grid's width b"):
-        coverage_ratio(dataclasses.replace(WELDED_WIRE_GRID_W11,
-                                           horizontal_spacing=1.5))
+        coverage_ratio(dataclasses.replace(grid, horizontal_spacing=1.5))
+    # GM-262: the built-in mat carries its own b, as the strip does
+    with pytest.raises(ValueError,
+                       match="this grid is 0.4572 m wide, so Sh alone"):
+        coverage_ratio(WELDED_WIRE_GRID_W11)
     with pytest.raises(ValueError, match="not both"):
         coverage_ratio(dataclasses.replace(_strip(), coverage_ratio=0.1))
     with pytest.raises(ValueError, match="at most 1"):
