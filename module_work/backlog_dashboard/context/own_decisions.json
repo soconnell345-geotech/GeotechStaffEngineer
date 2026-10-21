@@ -1463,7 +1463,7 @@
         ]
       }
     ],
-    "recommendation": "The smaller shared package, each app keeping its own chat page, as you leaned (2026-10-21). Your broad Document Review feedback and your narrower geotech feedback can each change their own page freely, and fixes to the tools, vision and connections land once, in the core. It needs three habits: each app pins a core version, the core carries its own tests, and nothing Department-specific goes in it, since it is public (the rule planlens already lives under).",
+    "recommendation": "The smaller shared package, each app keeping its own chat page, as you leaned (2026-10-21). Your broad Document Review feedback and your narrower geotech feedback can each change their own page freely, and fixes to the tools, vision and connections land once, in the core. It needs three habits: each app pins a core version, the core carries its own tests, and nothing Department-specific goes in it, since it is public (the rule planlens already lives under). You asked (2026-10-21) whether it should go into planlens: partly. The document-tool wrappers (opening, markups and their check, find_like) fit planlens, which already has planlens.tools and ReviewToolkit, and would shrink the core; the model connections, the vision calls (each one a model call) and the figure helper do not, since they would pull model and agent dependencies into a library that works without a model and tie every retry or vision fix to a planlens release. If the core ends up tiny, folding it in can be revisited.",
     "if_no_answer": "The steps that need no decision go ahead; the shared package is not built.",
     "message_to_send": null,
     "steps": [],
