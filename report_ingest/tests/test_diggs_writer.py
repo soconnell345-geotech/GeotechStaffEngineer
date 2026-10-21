@@ -936,24 +936,27 @@ def _validation_checks(xml):
 
 class TestPointsWithAndWithoutAHeight:
     """pydiggs 2.5.a Example_2-DIGGS.XML names a point with a height
-    ``urn:diggs:def:crs:DIGGS:0.1:4326_5702`` and writes ``srsDimension="3"``,
-    longitude, latitude, height. A point without a height is two-dimensional
-    under its plain name; a projected name has no compound in any file in
-    hand, so its point is two-dimensional and the height is read from the
-    centre line (RI-30)."""
+    ``urn:diggs:def:crs:DIGGS:0.1:4326_5702`` (``srsDimension="3"``,
+    longitude, latitude, height); that is READ, never written, because it
+    names a vertical datum the record may not have given. Under any name the
+    writer's point is two-dimensional and the height is in the centre line
+    (RI-30)."""
 
     @pytest.mark.parametrize("cs", ["EPSG:4326", "CRS84", "WGS 84"])
-    def test_geographic_with_a_height_uses_the_samples_compound(self, cs):
+    def test_geographic_with_a_height_is_2d_crs84_and_never_claims_a_datum(
+            self, cs):
         hole = _hole(x=-77.0, y=38.9, coordinate_system=cs,
                      elevation=_m(150.5))
-        notes = []
-        xml = write_diggs([hole], notes=notes)
+        project = Project(elevation_datum="NAVD 88")
+        xml = write_diggs([hole], project=project)
         _validation_checks(xml)
+        assert "5702" not in xml
         pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
-        assert pos.get("srsName") == SAMPLE_3D
-        assert pos.get("srsDimension") == "3"
-        assert pos.text == "-77 38.9 150.5"
-        assert any(SAMPLE_3D in a for a in notes[0].assumed)
+        assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
+        assert (pos.get("srsDimension"), pos.text) == ("2", "-77 38.9")
+        desc = _root(xml).find(
+            ".//diggs:referencePoint//gml:description", NS).text
+        assert "NAVD 88" in desc
         back = _read_back(xml)["B-1"]
         assert (back.x, back.y, back.elevation_m) == (-77.0, 38.9, 150.5)
         assert diggs_roundtrip_gate(xml, [hole])[0]
