@@ -169,13 +169,34 @@ _WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _PAGE_CITE = re.compile(r"\bp(\d+)\b")
 
 
-def _marked_pages(text: str) -> List[int]:
+_FRONT_NUMBERING = re.compile(r"^page_numbering:\s*(\d+)\s*$", re.MULTILINE)
+
+
+def _page_base(folder: str) -> int:
+    """The number the written p-marks of this folder start from.
+
+    Since RI-01 the page front matter says ``page_numbering: 1`` (a viewer's
+    page). A folder written before it has no such line and counts from 0.
+    """
+    try:
+        with open(os.path.join(folder, PAGE_NAME), encoding="utf-8") as handle:
+            head = handle.read(4000)
+    except OSError:
+        return 0
+    front = head.split("\n---", 1)[0]
+    match = _FRONT_NUMBERING.search(front)
+    return int(match.group(1)) if match else 0
+
+
+def _marked_pages(text: str, base: int = 1) -> List[int]:
     """The ``p12`` marks in written text as the record's 0-based pages.
 
-    The writers print the page a PDF viewer opens (from 1); the library keeps
-    the record's 0-based pages, so this is the one place a mark is converted.
+    The writers print the page a PDF viewer opens (from 1; an older folder
+    from 0), the library keeps the record's 0-based pages, so this is the one
+    place a mark is converted.
     """
-    return [int(n) - 1 for n in _PAGE_CITE.findall(text) if int(n) >= 1]
+    return [int(n) - base for n in _PAGE_CITE.findall(text)
+            if int(n) >= base]
 
 
 _FRONT_ID = re.compile(r'^id:\s*"?([0-9a-f]{6,64})"?\s*$', re.MULTILINE)
@@ -1233,8 +1254,10 @@ def _chunks(record: ReportRecord,
                     f"bound inside {record.parent.report_id} at pages "
                     f"{record.parent.pages}"))
 
-    out += _markdown_chunks(os.path.join(folder, PAGE_NAME), "page")
-    out += _markdown_chunks(os.path.join(folder, SUMMARY_NAME), "summary")
+    base = _page_base(folder)
+    out += _markdown_chunks(os.path.join(folder, PAGE_NAME), "page", base)
+    out += _markdown_chunks(os.path.join(folder, SUMMARY_NAME), "summary",
+                             base)
     return [(section, subject, pages, " ".join(text.split())[:2000])
             for section, subject, pages, text in out if text.strip()]
 
@@ -1245,8 +1268,8 @@ def _page_span(span: str) -> List[int]:
     return [int(match.group(1))] if match else []
 
 
-def _markdown_chunks(path: str,
-                     section: str) -> List[Tuple[str, str, List[int], str]]:
+def _markdown_chunks(path: str, section: str,
+                     base: int = 1) -> List[Tuple[str, str, List[int], str]]:
     """One written page, block by block, with the pages its blocks cite.
 
     The front matter is skipped (its fields are indexed off the record with
@@ -1278,11 +1301,11 @@ def _markdown_chunks(path: str,
                 if not line.startswith("|") or set(line) <= set("|- "):
                     continue
                 out.append((section, heading or "table",
-                            _marked_pages(line),
+                            _marked_pages(line, base),
                             line.strip("| ").replace("|", " ")))
             continue
         out.append((section, heading or section,
-                    _marked_pages(block), block))
+                    _marked_pages(block, base), block))
     return out
 
 

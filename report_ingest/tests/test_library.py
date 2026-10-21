@@ -240,6 +240,41 @@ class TestFind:
         assert ("L05", 5) not in places
 
 
+    def test_a_folder_written_before_ri01_counts_its_marks_from_zero(
+            self, tmp_path):
+        # old style: no page_numbering line, "p4" is the record's page 4
+        import re
+        folder = tmp_path / "old"
+        build_library(folder)
+        os.remove(folder / "reports.db")
+        for name in ("report.page.md", "report.summary.md"):
+            path = folder / "L05" / name
+            text = path.read_text(encoding="utf-8")
+            text = re.sub(r"^page_numbering:.*\n", "", text, flags=re.M)
+            text = re.sub(r"\bp(\d+)\b",
+                          lambda m: f"p{int(m.group(1)) - 1}", text)
+            path.write_text(text, encoding="utf-8")
+
+        old = Library(str(folder))
+        try:
+            found = old.find("sulfate 2,100 ppm", k=8, report_id="L05",
+                             section="page")
+            places = {(r["report"], r["page"])
+                      for r in old.where_is("sulfate 2,100 ppm",
+                                            k=8)["locations"]}
+        finally:
+            old.close()
+        assert [h["pages"] for h in found["hits"]
+                if "sulfate" in h["snippet"]] == [[4]] * len(
+                    [h for h in found["hits"] if "sulfate" in h["snippet"]])
+        assert ("L05", 4) in places and ("L05", 5) not in places
+
+    def test_a_new_page_says_which_numbering_it_uses(self, root):
+        head = open(os.path.join(root, "L05", "report.page.md"),
+                    encoding="utf-8").read(2000)
+        assert "page_numbering: 1" in head
+
+
 class TestWhereIs:
 
     def test_it_answers_with_places(self, library):
