@@ -139,7 +139,7 @@ class TestBearingCapacityPackage:
     def test_pdf_response_carries_renderer(self, tmp_path):
         """A PDF package response reports which engine produced it (F7 QC:
         renderer propagation) — here the pure-Python Story fallback."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         from funhouse_agent.adapters.calc_package import _generate_bearing_capacity_package
         out = str(tmp_path / "bc.pdf")
         result = _generate_bearing_capacity_package({
@@ -326,8 +326,8 @@ class TestSlopeReportPackage:
             os.remove(t["output_path"])
 
     def test_pdf_output_fitz_verified(self, tmp_path):
-        pytest.importorskip("fitz")
-        import fitz
+        pytest.importorskip("pymupdf")
+        import pymupdf
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         out = str(tmp_path / "report.pdf")
         res = _generate_slope_report_package({
@@ -335,7 +335,7 @@ class TestSlopeReportPackage:
             "output_path": out})
         assert res["status"] == "success"
         assert res["file_exists"] is True
-        doc = fitz.open(out)
+        doc = pymupdf.open(out)
         try:
             assert doc.page_count > 0
         finally:
@@ -702,7 +702,7 @@ class TestPileGroupPackage:
         and its caption; the package said nothing. Both figures print, the
         plan view under its heading and over its caption."""
         import shutil
-        fitz = pytest.importorskip("fitz")
+        pymupdf = pytest.importorskip("pymupdf")
         if shutil.which("pdflatex"):
             pytest.skip("pdflatex renders the PDF; this is the Story path")
         from funhouse_agent.adapters.calc_package import _generate_pile_group_package
@@ -713,7 +713,7 @@ class TestPileGroupPackage:
             "format": "pdf", "output_path": outfile,
         })
         assert result["status"] == "success"
-        with fitz.open(outfile) as doc:
+        with pymupdf.open(outfile) as doc:
             pictures = [(page.number, page.get_text())
                         for page in doc for _ in page.get_image_info()]
         assert len(pictures) == 2
@@ -928,7 +928,7 @@ class TestRenderFigures:
         assert res["q_ultimate_kPa"] > 0
 
     def test_html_to_pdf_embeds_rendered_figures(self, tmp_path):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         from funhouse_agent.adapters.calc_package import (
             _generate_html_to_pdf, _render_figures)
         res = _render_figures({"package": "bearing_capacity_package",

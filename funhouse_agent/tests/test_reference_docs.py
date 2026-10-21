@@ -23,8 +23,8 @@ def _isolated(monkeypatch, tmp_path):
 
 
 def _pdf(path, text="Figure 4-12"):
-    fitz = pytest.importorskip("fitz")
-    doc = fitz.open()
+    pymupdf = pytest.importorskip("pymupdf")
+    doc = pymupdf.open()
     doc.new_page().insert_text((72, 72), text)
     doc.save(str(path))
     return path

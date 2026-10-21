@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 pytest.importorskip("cv2")
 tf = pytest.importorskip("planlens.testing.tag_fixtures")
 pytest.importorskip("planlens.document.findlike")

@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import _fileio, document_tools, vision_tools  # noqa: E402
 
@@ -38,7 +38,7 @@ def folder(tmp_path, monkeypatch):
 
 
 def _pdf(n=2) -> bytes:
-    d = fitz.open()
+    d = pymupdf.open()
     for i in range(n):
         page = d.new_page(width=612, height=792)
         page.insert_text((72, 100), f"Sheet {i + 1} STD. NO. 21.01",

@@ -385,7 +385,7 @@ def as_pdf(picture: Picture) -> bytes:
     goes in as the file's own bytes when it can (a PNG or JPEG that is not
     turned), else re-encoded upright: a JPEG photo as JPEG, anything else as
     PNG."""
-    import fitz
+    import pymupdf
     s = page_scale(picture)
     if picture.as_is and picture.kind in ("png", "jpeg"):
         stream = picture.data
@@ -399,7 +399,7 @@ def as_pdf(picture: Picture) -> bytes:
         else:
             im.save(buf, format="PNG")
         stream = buf.getvalue()
-    doc = fitz.open()
+    doc = pymupdf.open()
     try:
         page = doc.new_page(width=picture.width * s,
                             height=picture.height * s)

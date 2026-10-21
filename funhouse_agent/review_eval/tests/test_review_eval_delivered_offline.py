@@ -20,7 +20,7 @@ import uuid
 import pytest
 
 pytest.importorskip("planlens.tools")
-pytest.importorskip("fitz")
+pytest.importorskip("pymupdf")
 
 from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.review_eval import checks as C  # noqa: E402

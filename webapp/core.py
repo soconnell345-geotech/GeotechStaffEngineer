@@ -422,8 +422,8 @@ def pdf_page_pngs(path, max_pages: int = PDF_PREVIEW_PAGES,
     if hit is not None:
         return hit
     try:
-        import fitz  # PyMuPDF
-        with fitz.open(str(path)) as doc:
+        import pymupdf  # PyMuPDF
+        with pymupdf.open(str(path)) as doc:
             count = doc.page_count
             pngs = [doc[i].get_pixmap(dpi=dpi).tobytes("png")
                     for i in range(min(count, max(0, max_pages)))]

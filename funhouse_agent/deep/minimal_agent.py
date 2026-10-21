@@ -159,8 +159,8 @@ def _page_count_tool(attachments):
         from funhouse_agent.vision_tools import _resolve_attachment_or_path
         try:
             data, _src = _resolve_attachment_or_path(source, attachments)
-            import fitz
-            with fitz.open(stream=data, filetype="pdf") as doc:
+            import pymupdf
+            with pymupdf.open(stream=data, filetype="pdf") as doc:
                 sizes = [[round(p.rect.width), round(p.rect.height)]
                          for p in doc]
         except Exception as exc:  # noqa: BLE001 - reported to the model

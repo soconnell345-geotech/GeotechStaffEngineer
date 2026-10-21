@@ -23,7 +23,7 @@ from report_ingest.log_reader import (
 from report_ingest.log_scoring import score_grid, score_record
 from report_ingest.tests.fake_engine import FakeEngine, ScriptExhausted
 
-fitz = pytest.importorskip("fitz", reason="the fixtures are drawn with PyMuPDF")
+pymupdf = pytest.importorskip("pymupdf", reason="the fixtures are drawn with PyMuPDF")
 
 
 # ---------------------------------------------------------------------------

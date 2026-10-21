@@ -13,7 +13,7 @@ import sys
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeMessagesListChatModel)

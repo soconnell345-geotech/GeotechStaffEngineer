@@ -15,7 +15,7 @@ import pytest
 
 docx = pytest.importorskip("docx")
 openpyxl = pytest.importorskip("openpyxl")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import _fileio  # noqa: E402
 from funhouse_agent.vision_tools import (  # noqa: E402
@@ -39,7 +39,7 @@ def folder(tmp_path, monkeypatch):
 
 
 def _png(path):
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 16, 16), False)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 16, 16), False)
     pix.set_rect(pix.irect, (40, 120, 200))
     path.write_bytes(pix.tobytes("png"))
 

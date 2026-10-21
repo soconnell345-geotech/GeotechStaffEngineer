@@ -10,7 +10,7 @@ import json
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeMessagesListChatModel)
@@ -430,7 +430,7 @@ def test_vision_prompt_is_unchanged_with_the_switches_off():
 def test_text_context_lists_the_view_s_lines_or_says_there_are_none(gt):
     lines, reliable = vision_view.page_lines(gt.pdf, gt.sheet_page)
     assert any("GENERAL NOTE A" in t for t, _ in lines)
-    doc = fitz.open(stream=gt.pdf, filetype="pdf")
+    doc = pymupdf.open(stream=gt.pdf, filetype="pdf")
     rect = doc[gt.sheet_page].rect
     whole = vision_view.text_context(lines, (0, 0, rect.width, rect.height),
                                      reliable)
@@ -677,7 +677,7 @@ def test_sweep_asks_for_pixels_and_converts_them_with_the_size_sent():
                 pages="8", look="always")
     (row,) = out["relevant"]
     (item,) = row["items"]
-    with fitz.open(stream=pdf, filetype="pdf") as doc:
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
         r = doc[8].rect
     assert item["page_bbox"] == pytest.approx(
         [r.width / 4, r.height / 4, r.width / 2, r.height / 2], abs=0.1)

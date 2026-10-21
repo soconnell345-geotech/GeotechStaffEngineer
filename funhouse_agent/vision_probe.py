@@ -170,8 +170,8 @@ def _cache_key(model) -> Any:
 
 
 def _blank_png(side: int, height: Optional[int] = None) -> str:
-    import fitz  # PyMuPDF, a planlens dependency
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, side, height or side), 0)
+    import pymupdf  # PyMuPDF, a planlens dependency
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, side, height or side), 0)
     pix.clear_with(255)
     return base64.b64encode(pix.tobytes("png")).decode()
 

@@ -91,17 +91,17 @@ def assert_public(path: str) -> str:
 
 
 def _render(spec: dict) -> Tuple[str, bytes]:
-    import fitz
+    import pymupdf
     name, data = resolve(spec["doc"])
-    doc = fitz.open(stream=data, filetype="pdf")
+    doc = pymupdf.open(stream=data, filetype="pdf")
     try:
         page = doc[int(spec.get("page", 0))]
         r = page.rect
         x0, y0, x1, y1 = spec.get("clip") or (0.0, 0.0, 1.0, 1.0)
-        clip = fitz.Rect(r.x0 + x0 * r.width, r.y0 + y0 * r.height,
+        clip = pymupdf.Rect(r.x0 + x0 * r.width, r.y0 + y0 * r.height,
                          r.x0 + x1 * r.width, r.y0 + y1 * r.height)
         z = float(spec.get("zoom", 2.0))
-        pix = page.get_pixmap(matrix=fitz.Matrix(z, z), clip=clip)
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(z, z), clip=clip)
         return spec.get("name") or "image.png", pix.tobytes("png")
     finally:
         doc.close()
@@ -228,8 +228,8 @@ SUBMITTAL_LOG = [
 
 
 def _spec_pdf() -> bytes:
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     W, H, L, R, TOP, BOT = 612.0, 792.0, 72.0, 540.0, 96.0, 720.0
     page, y = None, 0.0
 
@@ -252,7 +252,7 @@ def _spec_pdf() -> bytes:
         words, line, lines = text.split(), "", []
         for w in words:
             trial = (line + " " + w).strip()
-            if fitz.get_text_length(trial, fontname=font,
+            if pymupdf.get_text_length(trial, fontname=font,
                                     fontsize=size) > R - x0:
                 lines.append(line)
                 line = w
@@ -352,13 +352,13 @@ def _set_pdf(spec: dict) -> Tuple[str, bytes]:
     """Sheets bound into one PDF, each stamped bottom-right with the
     project and ``SHEET <prefix><n> OF <N>`` (in the text layer, in the
     displayed frame, so a rotated sheet's stamp reads upright)."""
-    import fitz
+    import pymupdf
     refs = spec.get("docs") or SET_ORDER
     prefix = spec.get("sheet_prefix", "C-")
-    out = fitz.open()
+    out = pymupdf.open()
     try:
         for r in refs:
-            src = fitz.open(stream=resolve(r)[1], filetype="pdf")
+            src = pymupdf.open(stream=resolve(r)[1], filetype="pdf")
             try:
                 out.insert_pdf(src)
             finally:
@@ -366,7 +366,7 @@ def _set_pdf(spec: dict) -> Tuple[str, bytes]:
         n = out.page_count
         for i, page in enumerate(out, 1):
             r = page.rect                                  # displayed
-            box = fitz.Rect(r.width - 312, r.height - 44, r.width - 12,
+            box = pymupdf.Rect(r.width - 312, r.height - 44, r.width - 12,
                             r.height - 12)
             unrot = box * page.derotation_matrix
             unrot.normalize()
@@ -388,10 +388,10 @@ def _set_pdf(spec: dict) -> Tuple[str, bytes]:
 def _photo(spec: dict) -> Tuple[str, bytes]:
     """A JPEG "phone photo" of a page: tilted, a little soft, compressed."""
     import io
-    import fitz
+    import pymupdf
     from PIL import Image, ImageFilter
     _n, data = resolve(spec["doc"])
-    doc = fitz.open(stream=data, filetype="pdf")
+    doc = pymupdf.open(stream=data, filetype="pdf")
     try:
         page = doc[int(spec.get("page", 0))]
         pix = page.get_pixmap(dpi=int(spec.get("dpi", 150)))
@@ -410,17 +410,17 @@ def _image_pdf(spec: dict) -> Tuple[str, bytes]:
     """The document's pages re-made as greyscale JPEG images (a scan: no
     text layer), optionally a fraction of a degree askew."""
     import io
-    import fitz
+    import pymupdf
     from PIL import Image
     name, data = resolve(spec["doc"])
-    src = fitz.open(stream=data, filetype="pdf")
-    out = fitz.open()
+    src = pymupdf.open(stream=data, filetype="pdf")
+    out = pymupdf.open()
     try:
         pages = spec.get("pages") or list(range(src.page_count))
         for pno in pages:
             page = src[int(pno)]
             pix = page.get_pixmap(dpi=int(spec.get("dpi", 110)),
-                                  colorspace=fitz.csGRAY)
+                                  colorspace=pymupdf.csGRAY)
             img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
             skew = float(spec.get("skew", 0.0))
             if skew:
@@ -442,17 +442,17 @@ def _rotated(spec: dict) -> Tuple[str, bytes]:
     drawn turned ``rotate`` degrees on a page of swapped size, as a sheet
     plotted sideways arrives (use an unrotated source); ``"flag"``: the
     page's ``/Rotate`` changed by ``rotate``."""
-    import fitz
+    import pymupdf
     name, data = resolve(spec["doc"])
     rot = int(spec.get("rotate", 90))
-    src = fitz.open(stream=data, filetype="pdf")
+    src = pymupdf.open(stream=data, filetype="pdf")
     try:
         if spec.get("mode", "content") == "flag":
             for page in src:
                 page.set_rotation((page.rotation + rot) % 360)
             return spec.get("name") or name, src.tobytes(garbage=3,
                                                           deflate=True)
-        out = fitz.open()
+        out = pymupdf.open()
         try:
             for pno, page in enumerate(src):
                 w, h = page.rect.width, page.rect.height
@@ -468,8 +468,8 @@ def _rotated(spec: dict) -> Tuple[str, bytes]:
 
 
 def _blank(spec: dict) -> Tuple[str, bytes]:
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     for _ in range(int(spec.get("pages", 1))):
         doc.new_page(width=612, height=792)
     return spec.get("name") or "scan_0001.pdf", doc.tobytes()

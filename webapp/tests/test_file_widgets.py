@@ -17,7 +17,7 @@ import re
 import pytest
 
 pytest.importorskip("streamlit")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 import webapp.core as core
 from webapp import file_widgets
@@ -155,7 +155,7 @@ def test_elsewhere_it_is_streamlits_own_button(monkeypatch):
 
 
 def _pdf(path, pages):
-    doc = fitz.open()
+    doc = pymupdf.open()
     for i in range(pages):
         doc.new_page(width=300, height=400).insert_text((40, 60),
                                                          f"page {i + 1}")
@@ -170,7 +170,7 @@ def test_pdf_pages_are_drawn_once_per_file_version(tmp_path, monkeypatch):
     assert count == 3 and len(pngs) == 2
     assert all(p.startswith(b"\x89PNG") for p in pngs)
     # cached: a rerun does not draw the pages again
-    monkeypatch.setattr(fitz, "open", lambda *_a, **_k: 1 / 0)
+    monkeypatch.setattr(pymupdf, "open", lambda *_a, **_k: 1 / 0)
     assert core.pdf_page_pngs(str(pdf), max_pages=2) == (pngs, count)
     assert core.pdf_page_pngs(str(tmp_path / "missing.pdf")) == ([], 0)
 

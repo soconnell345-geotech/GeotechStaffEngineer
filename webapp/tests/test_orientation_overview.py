@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 pytest.importorskip("planlens.testing")
 
 from planlens.testing import build_synthetic_submittal  # noqa: E402
@@ -36,9 +36,9 @@ def submittal():
 
 def _long(pdf: bytes, copies: int = 2) -> bytes:
     """``copies`` of ``pdf`` bound into one (22 pages from the submittal)."""
-    out = fitz.open()
+    out = pymupdf.open()
     for _ in range(copies):
-        src = fitz.open(stream=pdf, filetype="pdf")
+        src = pymupdf.open(stream=pdf, filetype="pdf")
         out.insert_pdf(src)
         src.close()
     data = out.tobytes()

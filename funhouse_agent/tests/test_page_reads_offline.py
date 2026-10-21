@@ -22,7 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import _fileio, vision_tools  # noqa: E402
 from funhouse_agent.deep.vision_engine import VisionAnswer  # noqa: E402
@@ -33,11 +33,11 @@ TILE = re.compile(r"tile row (\d) of \d, column (\d)")
 
 
 def _pdf(text="B-1  B-2  B-3", blank=False) -> bytes:
-    d = fitz.open()
+    d = pymupdf.open()
     page = d.new_page(width=612, height=792)
     if not blank:
         page.insert_text((72, 100), text, fontsize=12)
-        page.draw_rect(fitz.Rect(300, 300, 500, 500), color=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(300, 300, 500, 500), color=(0, 0, 0))
     data = d.tobytes()
     d.close()
     return data
@@ -236,7 +236,7 @@ def test_a_zoom_and_an_image_repeat_too(conv, tmp_path):
     engine, pdf = Reader(), _pdf()
     region = {"attachment_key": "sheet.pdf", "page": 0,
               "bbox": [60, 80, 260, 120], "prompt": "Read the tags"}
-    png = fitz.open(stream=pdf, filetype="pdf")[0].get_pixmap().tobytes("png")
+    png = pymupdf.open(stream=pdf, filetype="pdf")[0].get_pixmap().tobytes("png")
     with conv("alice"):
         for _ in range(2):
             r = json.loads(dispatch_extended_tool(

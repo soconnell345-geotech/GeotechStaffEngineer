@@ -83,14 +83,14 @@ class TestHtmlToPdfLoudFailure:
 
     def test_figure_cross_reference_is_not_a_placeholder(self, tmp_path):
         """'[Figure 3]' is a citation, not a missing figure — no false alarm."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         res = _generate_html_to_pdf({
             "html": _doc("<p>See [Figure 3] and [Table 2].</p>"),
             "output_path": str(tmp_path / "r.pdf")})
         assert res["status"] == "success"
 
     def test_allow_unembeddable_renders_and_warns(self, tmp_path):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         res = _generate_html_to_pdf({
             "html": _doc("<p>[image]</p>"), "allow_unembeddable": True,
             "output_path": str(tmp_path / "r.pdf")})
@@ -100,7 +100,7 @@ class TestHtmlToPdfLoudFailure:
         assert "missing from the PDF" in res["renderer_warnings"][0]
 
     def test_base64_data_uri_still_passes(self, tmp_path):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         png = base64.b64encode(_tiny_png()).decode("ascii")
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="data:image/png;base64,{png}">'),
@@ -114,7 +114,7 @@ class TestHtmlToPdfLoudFailure:
 
     def test_fills_left_out_are_said(self, tmp_path):
         """GM-219: the PDF draws no backgrounds, and the caller is told."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         res = _generate_html_to_pdf({
             "html": _doc('<p>Key: <span style="background:#e41a1c">'
                          "&nbsp;&nbsp;</span> clay</p>"),
@@ -130,7 +130,7 @@ class TestHtmlToPdfLoudFailure:
 
 class TestHtmlToPdfEmbedsLocalImages:
     def test_local_png_path_is_inlined(self, tmp_path):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         png = tmp_path / "fig.png"
         png.write_bytes(_tiny_png())
         out = tmp_path / "r.pdf"
@@ -143,7 +143,7 @@ class TestHtmlToPdfEmbedsLocalImages:
 
     def test_relative_src_resolves_in_the_working_folder(self, tmp_path,
                                                          monkeypatch):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
         (tmp_path / "fig.png").write_bytes(_tiny_png())
         res = _generate_html_to_pdf({"html": _doc('<img src="fig.png">'),
@@ -152,7 +152,7 @@ class TestHtmlToPdfEmbedsLocalImages:
         assert res["images_embedded"] == 1
 
     def test_relative_src_resolves_beside_the_html_file(self, tmp_path):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         (tmp_path / "fig.png").write_bytes(_tiny_png())
         page = tmp_path / "report.html"
         page.write_text(_doc('<img src="fig.png">'), encoding="utf-8")
@@ -163,7 +163,7 @@ class TestHtmlToPdfEmbedsLocalImages:
 
     def test_profile_figure_output_flows_into_a_pdf_report(self, tmp_path):
         """The workflow the field session could not do: draw it, then embed it."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         fig = _run_subsurface_profile({
             "layers": LAYERS, "water_depth": 2.0,
             "foundation": {"type": "micropile", "diameter": 0.25,
@@ -237,7 +237,7 @@ class TestHtmlToPdfFigureSizes:
     def test_page_contents_count_from_one_as_pdf_page(self, tmp_path):
         """GM-154's convention: ``pdf_page`` counts from 1, ``page`` from
         0; a 1-based number is never called ``page``."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         _plot(tmp_path, "a.png", 6.5, 4)
         res = _generate_html_to_pdf({
             "html": _doc(f'{TEXT}<img src="{tmp_path / "a.png"}" '
@@ -250,7 +250,7 @@ class TestHtmlToPdfFigureSizes:
 
     def test_each_figure_reports_its_printed_size_and_lettering(
             self, tmp_path):
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         _plot(tmp_path, "a.png", 6.5, 4, fontsize=10)
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="{tmp_path / "a.png"}" '
@@ -266,7 +266,7 @@ class TestHtmlToPdfFigureSizes:
     def test_a_figure_at_a_page_foot_moves_to_the_next_page(self, tmp_path):
         """The live case: a figure after most of a page of text printed
         0.3 in wide; it now starts the next page at its width."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         _plot(tmp_path, "wall.png", 6.5, 5)
         res = _generate_html_to_pdf({
             "html": _doc(TEXT * 4 + f'<img src="{tmp_path / "wall.png"}" '
@@ -280,7 +280,7 @@ class TestHtmlToPdfFigureSizes:
 
     def test_a_narrow_figure_with_small_lettering_is_warned(self, tmp_path):
         """A figure the plotting box drew: the caller has its code."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         _plot(tmp_path, "small.png", 10, 4, fontsize=8, checked_in=6.5)
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="{tmp_path / "small.png"}" '
@@ -298,7 +298,7 @@ class TestHtmlToPdfFigureSizes:
         drawn for the width a package prints it at (GM-186); squeezed into
         a third of the page its lettering prints under 7 pt, and that is
         warned. It has no checked width, so nothing is said of one."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         _plot(tmp_path, "small.png", 10, 4, fontsize=8)
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="{tmp_path / "small.png"}" '
@@ -314,7 +314,7 @@ class TestHtmlToPdfFigureSizes:
         """The same figure given the page width prints its lettering at
         7 pt or more: drawn 10 in wide with 8 pt lettering, it is saved
         for the 5 in a package prints it at."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         _plot(tmp_path, "wide.png", 10, 4, fontsize=8)
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="{tmp_path / "wide.png"}" '
@@ -328,7 +328,7 @@ class TestHtmlToPdfFigureSizes:
             self, tmp_path):
         """A photo, a drawing or a logo carries no lettering record; its
         width is the caller's choice."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         (tmp_path / "dot.png").write_bytes(_tiny_png())
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="{tmp_path / "dot.png"}" '

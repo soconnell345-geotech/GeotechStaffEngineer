@@ -151,8 +151,8 @@ def probe_page(doc, pno, ocg_names):
 
 def probe_document(path, pages=None):
     """Probe one document; returns ``(doc_facts, [page stats])``."""
-    import fitz
-    doc = fitz.open(path)
+    import pymupdf
+    doc = pymupdf.open(path)
     ocgs = doc.get_ocgs() or {}
     names = {v.get("name"): v for v in ocgs.values()}
     facts = {

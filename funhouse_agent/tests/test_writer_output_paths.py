@@ -131,7 +131,7 @@ def test_dxf_export_lands_in_the_folder_and_reports_output_path(folder,
 
 
 def test_html_to_pdf_lands_in_the_folder(folder, elsewhere):
-    pytest.importorskip("fitz")
+    pytest.importorskip("pymupdf")
     res = _j(call_agent("calc_package", "html_to_pdf", {
         "html": "<h1>Memo</h1><p>Bearing 150 kPa.</p>",
         "output_path": str(elsewhere / "memo.pdf")}))
@@ -151,8 +151,8 @@ def test_plot_data_lands_in_the_folder(folder, elsewhere):
 
 
 def test_snip_region_lands_in_the_folder(folder, elsewhere, tmp_path):
-    fitz = pytest.importorskip("fitz")
-    doc = fitz.open()
+    pymupdf = pytest.importorskip("pymupdf")
+    doc = pymupdf.open()
     doc.new_page(width=300, height=200).insert_text((40, 60), "B-1")
     src = tmp_path / "sheet.pdf"
     doc.save(str(src))

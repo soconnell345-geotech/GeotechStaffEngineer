@@ -547,7 +547,7 @@ def _measure_tables(html: str, where) -> "dict | None":
     that holds no other table and no picture, laid out at the width of
     ``where`` on pages no row meets the foot of; ``None`` when the engine
     loops on it."""
-    import fitz
+    import pymupdf
 
     tables = []
     for m in re.finditer(r"<table(?=[\s/>])", html, re.IGNORECASE):
@@ -570,12 +570,12 @@ def _measure_tables(html: str, where) -> "dict | None":
             if pos.id in opened:
                 looped.append(pos.id)
             opened.add(pos.id)
-        r = fitz.Rect(pos.rect)
+        r = pymupdf.Rect(pos.rect)
         rects[pos.id] = rects[pos.id] | r if pos.id in rects else r
 
-    tall = fitz.Rect(where.x0, where.y0, where.x1,
+    tall = pymupdf.Rect(where.x0, where.y0, where.x1,
                      where.y0 + _MEASURE_PAGE_PT)
-    story = fitz.Story(html=tagged)
+    story = pymupdf.Story(html=tagged)
     more, pages = 1, 0
     while more:
         if pages >= _MAX_MEASURE_PAGES or looped:
@@ -740,7 +740,7 @@ def _compress_pdf_images(html: str, jpg_quality: int = 90,
                          max_px: int = 1100) -> str:
     """Re-encode inline base64 PNG figures to JPEG for the Story PDF.
 
-    ``fitz.Story`` embeds a PNG ``<img>`` by decoding it to a RAW, uncompressed
+    ``pymupdf.Story`` embeds a PNG ``<img>`` by decoding it to a RAW, uncompressed
     pixmap — a 72 kB PNG plot balloons to a ~4 MB raw image in the PDF, so a
     handful of figures made the report ~13-19 MB. A JPEG source, by contrast, is
     preserved as DCT-compressed image data. So every figure is re-encoded to
@@ -754,22 +754,22 @@ def _compress_pdf_images(html: str, jpg_quality: int = 90,
     import re
 
     try:
-        import fitz
-    except Exception:  # pragma: no cover - fitz is required to reach here
+        import pymupdf
+    except Exception:  # pragma: no cover - pymupdf is required to reach here
         return html
 
     def _repl(match: "re.Match") -> str:
         try:
             raw = base64.b64decode(match.group(1))
-            pix = fitz.Pixmap(raw)
+            pix = pymupdf.Pixmap(raw)
             if pix.alpha:                       # JPEG has no alpha channel
-                pix = fitz.Pixmap(pix, 0)
+                pix = pymupdf.Pixmap(pix, 0)
             longest = max(pix.width, pix.height)
             if longest > max_px:                # scaled to the cap
                 # (halving left a tall figure under the text width at the
                 # engine's 96 px an inch, so it printed smaller; GM-186)
                 s = max_px / longest
-                pix = fitz.Pixmap(pix, max(1, round(pix.width * s)),
+                pix = pymupdf.Pixmap(pix, max(1, round(pix.width * s)),
                                   max(1, round(pix.height * s)))
             jpg = pix.tobytes("jpeg", jpg_quality=jpg_quality)
             return ('src="data:image/jpeg;base64,'
@@ -1071,13 +1071,13 @@ def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
     next one after it is moved; :data:`_MAX_FOOT_TRIALS` layouts in all.
     Where the engine loops on the HTML itself, the same breaks go before
     the last element it placed (:func:`_unlooped`)."""
-    import fitz
+    import pymupdf
 
     html, pdf, at, _edits = _unlooped(html, mediabox, where, max_pages)
     if at is None:
         return pdf
     # a break adds a page at most, so a trial past this is the engine looping
-    with fitz.open("pdf", pdf) as doc:
+    with pymupdf.open("pdf", pdf) as doc:
         limit = min(max_pages or _MAX_STORY_PAGES,
                     doc.page_count + _MAX_FOOT_BREAKS + 2)
     after = -1                     # elements up to here are left as they are
@@ -1365,7 +1365,7 @@ def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
     loops it); its ``at`` is the last element placed before that."""
     import io
 
-    import fitz
+    import pymupdf
 
     tagged, starts = _tag_blocks(html)
     texts = {key for key, at in starts.items()
@@ -1395,9 +1395,9 @@ def _story_pass(html: str, mediabox, where, max_pages=None, after=-1,
             past_foot.append(starts[pos.id])
 
     limit = max_pages or _MAX_STORY_PAGES
-    story = fitz.Story(html=tagged)
+    story = pymupdf.Story(html=tagged)
     buf = io.BytesIO()
-    writer = fitz.DocumentWriter(buf)
+    writer = pymupdf.DocumentWriter(buf)
     more, pages = 1, 0
     while more:
         if pages >= limit or (loop_early and again):
@@ -1423,16 +1423,16 @@ def _story_images(pdf: bytes) -> list:
     """``[(page index, rect, at_top)]`` for each picture drawn in ``pdf``,
     in the order drawn (document order). ``at_top``: nothing is printed
     above it on its page."""
-    import fitz
+    import pymupdf
 
     out = []
-    with fitz.open("pdf", pdf) as doc:
+    with pymupdf.open("pdf", pdf) as doc:
         for page in doc:
             infos = page.get_image_info()
             tops = [b[3] for b in page.get_text("blocks")]
-            tops += [fitz.Rect(i["bbox"]).y1 for i in infos]
+            tops += [pymupdf.Rect(i["bbox"]).y1 for i in infos]
             for info in infos:
-                r = fitz.Rect(info["bbox"])
+                r = pymupdf.Rect(info["bbox"])
                 out.append((page.number, r,
                             not any(y <= r.y0 + 1 for y in tops)))
     return out
@@ -1473,7 +1473,7 @@ def _lay_out_figures(html: str, mediabox, where):
     picture, in document order, ``{"pdf_page", "width_pt", "height_pt",
     "laid_out_width_pt", "moved", "scaled"}``; ``None`` when the pictures
     drawn cannot be matched to the HTML's ``<img>`` tags."""
-    import fitz
+    import pymupdf
 
     try:
         pdf = _story_bytes(html, mediabox, where)
@@ -1491,11 +1491,11 @@ def _lay_out_figures(html: str, mediabox, where):
         return pdf, None
     # the size each figure is laid out at on a page of its own: one frame
     # tall enough for the whole document, so nothing reaches a page foot
-    with fitz.open("pdf", pdf) as doc:
+    with pymupdf.open("pdf", pdf) as doc:
         pages = doc.page_count
         tall_h = (pages + 2) * where.height
-    tall_box = fitz.Rect(0, 0, mediabox.width, tall_h + 2 * where.y0)
-    tall_where = fitz.Rect(where.x0, where.y0, where.x1, where.y0 + tall_h)
+    tall_box = pymupdf.Rect(0, 0, mediabox.width, tall_h + 2 * where.y0)
+    tall_where = pymupdf.Rect(where.x0, where.y0, where.x1, where.y0 + tall_h)
     laid_out = [r for _p, r, _t in
                 _story_images(_story_bytes(html, tall_box, tall_where))]
     if len(laid_out) != n:
@@ -1614,7 +1614,7 @@ def _png_letterings(html: str) -> list:
 
 
 def save_html_pdf_story(html: str, filepath: str) -> str:
-    """Render ARBITRARY self-contained HTML to a paginated PDF (fitz.Story).
+    """Render ARBITRARY self-contained HTML to a paginated PDF (pymupdf.Story).
 
     Public generic entry point (also exposed to LLM agents as the
     ``calc_package.html_to_pdf`` method) for report content that no canned
@@ -1626,7 +1626,7 @@ def save_html_pdf_story(html: str, filepath: str) -> str:
 
 
 def render_html_pdf_story(html: str, filepath: str) -> dict:
-    """Render self-contained HTML to a paginated PDF (fitz.Story) and say
+    """Render self-contained HTML to a paginated PDF (pymupdf.Story) and say
     where each figure printed.
 
     Five Story-only adjustments are applied: inline base64 PNG figures are
@@ -1661,10 +1661,10 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     many (none is drawn).
     """
     try:
-        import fitz  # PyMuPDF, installed via the [pdf] extra
+        import pymupdf  # PyMuPDF, installed via the [pdf] extra
     except Exception as exc:  # pragma: no cover - environment dependent
         raise RuntimeError(
-            "PyMuPDF (fitz) is not installed, so the pure-Python PDF fallback "
+            "PyMuPDF is not installed, so the pure-Python PDF fallback "
             "is unavailable. Install the [pdf] extra: "
             "pip install 'geotech-staff-engineer[pdf]'."
         ) from exc
@@ -1681,7 +1681,7 @@ def render_html_pdf_story(html: str, filepath: str) -> dict:
     output_path = Path(filepath).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    mediabox = fitz.paper_rect("letter")
+    mediabox = pymupdf.paper_rect("letter")
     m = _STORY_MARGIN_PT
     where = mediabox + (m, m, -m, -m)
     html = _reflow_tables(html, where)

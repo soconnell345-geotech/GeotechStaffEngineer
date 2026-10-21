@@ -1733,10 +1733,10 @@ def remove_markups(pdf: bytes, remove, signer: str):
     reply to it. An entry is a markup id as document_markups lists it
     (``"p0.m1"``) or words from its comment, which must name exactly one
     mark this app wrote. Only this app's marks are removed."""
-    import fitz
+    import pymupdf
     from planlens.document.annotations import extract_annotations
 
-    doc = fitz.open(stream=bytes(pdf), filetype="pdf")
+    doc = pymupdf.open(stream=bytes(pdf), filetype="pdf")
     try:
         per_page = {i: extract_annotations(doc[i], i)[0]
                     for i in range(doc.page_count)}
@@ -2104,8 +2104,8 @@ def _scaled_markup(markup, sx: float, sy: float):
 
 def _page_size_pt(pdf_path: str):
     """``(w, h)`` of page 0 of the PDF at ``pdf_path`` as displayed."""
-    import fitz
-    with fitz.open(pdf_path) as doc:
+    import pymupdf
+    with pymupdf.open(pdf_path) as doc:
         rect = doc[0].rect
         return float(rect.width), float(rect.height)
 

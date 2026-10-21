@@ -13,7 +13,7 @@ import re
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.review_eval import checks as C  # noqa: E402
@@ -30,7 +30,7 @@ def _no_switches(monkeypatch):
 
 def test_the_report_fixture_is_what_its_tasks_say():
     gt = RF.build_synthetic_extraction_report()
-    doc = fitz.open(stream=gt.pdf, filetype="pdf")
+    doc = pymupdf.open(stream=gt.pdf, filetype="pdf")
     try:
         assert doc.page_count == gt.n_pages == 30
         for p in RF.SCANNED_LOG_PAGES:            # scans: no text at all

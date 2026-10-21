@@ -89,16 +89,16 @@ class NarrativeGT:
 
 def build_narrative_report() -> NarrativeGT:
     """The synthetic report with the four extra narrative sentences."""
-    import fitz
+    import pymupdf
     from planlens.testing.report_fixtures import build_synthetic_report
 
     base = build_synthetic_report()
-    doc = fitz.open(stream=base.pdf, filetype="pdf")
+    doc = pymupdf.open(stream=base.pdf, filetype="pdf")
     page = doc[NARRATIVE_PAGE]
     # Below the prose that is already on the page and above its footer. The
     # existing text box runs from y=120 and the prose fills roughly half of
     # it, so this sits in blank paper rather than on top of anything.
-    page.insert_textbox(fitz.Rect(72, 430, 540, 700), EXTRA_NARRATIVE,
+    page.insert_textbox(pymupdf.Rect(72, 430, 540, 700), EXTRA_NARRATIVE,
                         fontsize=10)
     pdf = doc.tobytes()
     doc.close()

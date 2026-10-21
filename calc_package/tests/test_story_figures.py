@@ -10,7 +10,7 @@ import re
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from calc_package import latex_renderer                     # noqa: E402
 from calc_package.latex_renderer import render_html_pdf_story  # noqa: E402
@@ -42,10 +42,10 @@ def _png(width_in: float, height_in: float, dpi: int = 100,
 def _images(path) -> list:
     """``[(pdf_page, width_in, height_in, y0_in)]`` of every picture."""
     out = []
-    with fitz.open(path) as doc:
+    with pymupdf.open(path) as doc:
         for page in doc:
             for info in page.get_image_info():
-                r = fitz.Rect(info["bbox"])
+                r = pymupdf.Rect(info["bbox"])
                 out.append((page.number + 1, r.width / 72, r.height / 72,
                             r.y0 / 72))
     return out
@@ -73,7 +73,7 @@ def test_a_figure_after_most_of_a_page_moves_to_the_next_page_whole(
     assert width > 6.0 and top < 1.0                 # full width, page top
     fig = out["figures"][0]
     assert fig["pdf_page"] == 2 and fig["moved"] and fig["scaled"] is None
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert "After the drawing." in doc[1].get_text()
         assert "After the drawing." not in doc[0].get_text()
 
@@ -84,8 +84,8 @@ def test_master_squeezed_that_figure(tmp_path):
     html = (f"<html><body><h1>Footing</h1>{TEXT * 4}{_figure(_png(6.5, 5))}"
             "</body></html>")
     pdf = latex_renderer._story_bytes(
-        html, fitz.paper_rect("letter"),
-        fitz.paper_rect("letter") + (54, 54, -54, -54))
+        html, pymupdf.paper_rect("letter"),
+        pymupdf.paper_rect("letter") + (54, 54, -54, -54))
     (page, rect, _top), = latex_renderer._story_images(pdf)
     assert page == 0 and rect.width / 72 < 4.0
 
@@ -105,7 +105,7 @@ def test_the_heading_goes_with_its_figure(tmp_path):
             f"{_figure(_png(6.5, 5))}</body></html>")
     out = render_html_pdf_story(html, str(tmp_path / "heading.pdf"))
     assert out["figures"][0]["pdf_page"] == 2
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert "8. Figures" in doc[1].get_text()
         assert "8. Figures" not in doc[0].get_text()
 
@@ -120,7 +120,7 @@ def test_a_figure_taller_than_a_page_is_scaled_to_one_page(tmp_path):
     assert fig["pdf_page"] == 2 and fig["moved"]
     assert fig["scaled"] is not None and fig["scaled"] < 1
     assert fig["height_in"] <= 9.5 - 0.4               # room for a caption
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert "Figure 2: Log" in doc[1].get_text()
 
 
@@ -132,7 +132,7 @@ def test_a_tall_first_figure_is_not_moved(tmp_path):
     out = render_html_pdf_story(html, str(tmp_path / "first.pdf"))
     fig, = out["figures"]
     assert fig["pdf_page"] == 1 and not fig["moved"]
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert doc.page_count <= 2
 
 
@@ -223,7 +223,7 @@ TABLE = ("<table border='1'><tr><th>Case</th><th>FS</th></tr>"
 
 
 def _words(path) -> str:
-    with fitz.open(path) as doc:
+    with pymupdf.open(path) as doc:
         return " ".join(page.get_text() for page in doc)
 
 
@@ -240,8 +240,8 @@ def test_a_page_break_after_a_table_does_not_make_the_engine_loop(
     with pytest.raises(RuntimeError):                  # the engine's trap
         latex_renderer._story_bytes(
             latex_renderer._PAGE_BREAK.join(html.split("<img", 1)),
-            fitz.paper_rect("letter"),
-            fitz.paper_rect("letter") + (54, 54, -54, -54))
+            pymupdf.paper_rect("letter"),
+            pymupdf.paper_rect("letter") + (54, 54, -54, -54))
     out = render_html_pdf_story(html, str(tmp_path / "table.pdf"))
     fig, = out["figures"]
     assert fig["moved"] and fig["width_in"] > 6.0
@@ -255,7 +255,7 @@ def test_a_page_break_the_html_carries_after_a_table_renders(tmp_path,
     html = (f"<html><body><h1>Report</h1>{TABLE}"
             f"{latex_renderer._PAGE_BREAK}<p>Appendix.</p></body></html>")
     out = render_html_pdf_story(html, str(tmp_path / "own.pdf"))
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert doc.page_count == 2
         assert "Appendix." in doc[1].get_text()
 
@@ -273,9 +273,9 @@ def test_no_text_is_lost_after_figures_at_a_page_foot(tmp_path):
             "<h2>Conclusions</h2><p>The wall is adequate.</p>"
             "</body></html>")
     master, _at = latex_renderer._story_pass(
-        html, fitz.paper_rect("letter"),
-        fitz.paper_rect("letter") + (54, 54, -54, -54))
-    with fitz.open("pdf", master) as doc:
+        html, pymupdf.paper_rect("letter"),
+        pymupdf.paper_rect("letter") + (54, 54, -54, -54))
+    with pymupdf.open("pdf", master) as doc:
         assert "Conclusions" not in " ".join(p.get_text() for p in doc)
     out = render_html_pdf_story(html, str(tmp_path / "lost.pdf"))
     text = _words(out["path"])
@@ -319,13 +319,13 @@ def test_a_heading_left_at_the_foot_of_the_page_before_follows(tmp_path):
     html = (f"<html><body><h1>Report</h1>{filler}<h2>8. Figures</h2>"
             f"{block}</body></html>")
     master = latex_renderer._story_bytes(
-        html, fitz.paper_rect("letter"),
-        fitz.paper_rect("letter") + (54, 54, -54, -54))
-    with fitz.open("pdf", master) as doc:
+        html, pymupdf.paper_rect("letter"),
+        pymupdf.paper_rect("letter") + (54, 54, -54, -54))
+    with pymupdf.open("pdf", master) as doc:
         assert doc.page_count == 2
         assert "8. Figures" in doc[0].get_text()       # the orphan
     out = render_html_pdf_story(html, str(tmp_path / "orphan.pdf"))
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert "8. Figures" not in doc[0].get_text()
         assert "8. Figures" in doc[1].get_text()
     assert out["figures"][0]["pdf_page"] == 2
@@ -427,12 +427,12 @@ def _steps_html(margin_pt: float) -> str:
             "</div><p>References follow.</p></body></html>")
 
 
-_LETTER = fitz.paper_rect("letter")
+_LETTER = pymupdf.paper_rect("letter")
 _WHERE = _LETTER + (54, 54, -54, -54)
 
 
 def _texts(pdf: bytes) -> list:
-    with fitz.open("pdf", pdf) as doc:
+    with pymupdf.open("pdf", pdf) as doc:
         return [page.get_text() for page in doc]
 
 
@@ -461,7 +461,7 @@ def test_a_dropped_figure_prints_on_the_next_page(tmp_path):
     assert "figures_not_printed" not in out
     first, second = out["figures"]
     assert first["scaled"] is None
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert sum(len(page.get_image_info()) for page in doc) == 2
         text = doc[first["pdf_page"] - 1].get_text()
     assert "8. FIGURES" in text.upper() and "Figure 1: Plan view" in text
@@ -654,8 +654,8 @@ def _choices_html(words: int, ident: str = "every_slice") -> str:
 
 def _placed(path) -> list:
     """``(word, rect)`` as printed, page by page."""
-    with fitz.open(path) as doc:
-        return [(w[4], fitz.Rect(w[:4])) for page in doc
+    with pymupdf.open(path) as doc:
+        return [(w[4], pymupdf.Rect(w[:4])) for page in doc
                 for w in page.get_text("words")]
 
 
@@ -775,7 +775,7 @@ def test_a_table_that_ends_at_a_page_foot_prints(tmp_path, margin_pt):
         latex_renderer._story_pass(html, _LETTER, _WHERE, 60,
                                    loop_early=True)
     out = render_html_pdf_story(html, str(tmp_path / "foot.pdf"))
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         pages = [page.get_text() for page in doc]
     assert re.findall(r"Row \d+", " ".join(pages)) == [
         f"Row {i}" for i in range(30)]
@@ -831,7 +831,7 @@ def _fills(path) -> list:
     """``(pdf_page, colour, rect)`` of every fill that is not a rule (a
     border or a line under a heading)."""
     out = []
-    with fitz.open(path) as doc:
+    with pymupdf.open(path) as doc:
         for page in doc:
             for d in page.get_drawings():
                 r = d["rect"]
@@ -848,7 +848,7 @@ def test_the_engine_draws_a_background_again_on_every_later_page():
     ten pages, over text); a step's at the top of every page."""
     html = _shaded_html()
     pdf, _at = latex_renderer._story_pass(html, _LETTER, _WHERE)
-    with fitz.open("pdf", pdf) as doc:
+    with pymupdf.open("pdf", pdf) as doc:
         assert doc.page_count >= 4
         bars = [d["rect"] for d in doc[3].get_drawings()
                 if d.get("fill") is not None
@@ -859,7 +859,7 @@ def test_the_engine_draws_a_background_again_on_every_later_page():
 def test_no_background_is_drawn_again_on_a_later_page(tmp_path):
     out = render_html_pdf_story(_shaded_html(), str(tmp_path / "bg.pdf"))
     assert _fills(out["path"]) == []
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         assert doc.page_count >= 4
         first = doc[0]
         heading = [w for w in first.get_text("words")
@@ -886,7 +886,7 @@ def test_text_left_white_by_its_background_going_prints_black(tmp_path):
             '</tr></thead><tbody><tr><td style="color:rgb(255, 255, 255);'
             'background:#c00">Cell</td></tr></tbody></table></body></html>')
     out = render_html_pdf_story(html, str(tmp_path / "white.pdf"))
-    with fitz.open(out["path"]) as doc:
+    with pymupdf.open(out["path"]) as doc:
         colours = {s["text"].strip(): s["color"]
                    for b in doc[0].get_text("dict")["blocks"]
                    for line in b.get("lines", []) for s in line["spans"]}
