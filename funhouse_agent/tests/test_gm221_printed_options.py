@@ -49,9 +49,14 @@ def test_example_10_4_through_the_tools():
     err = _call("drilled_shaft", "lrfd_capacity",
                 {**_EX_10_4, "tip_soil_type": "cohesive"})["error"]
     assert "not the soil the base was computed in" in err
-    (f,) = [c for c in r["choices"]
-            if c["what"] == "resistance factor for side resistance in rock"]
-    assert f["chosen"] == 0.50 and "0.55" in f["alternatives"][0]
+    # GM-278: Table 8-4's 0.50 governs; 0.55 is never offered for rock
+    assert r["lrfd"]["phi_Qs_rock_kN"] == pytest.approx(
+        0.50 * r["Q_side_rock_kN"], abs=0.1)
+    text = json.dumps(r["choices"])
+    assert "Table 8-4" in text and "prints 0.50" in text
+    assert "0.55" not in text
+    assert not any("resistance factor for side resistance in rock"
+                   in c["what"] for c in r["choices"])
 
 
 def test_the_default_c_is_listed_and_the_curve_carries_c():

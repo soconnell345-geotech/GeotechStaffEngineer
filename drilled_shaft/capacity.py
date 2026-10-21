@@ -495,8 +495,7 @@ ROCK_SIDE_C_BASIS = (
     "qu as given and does not check it. Whether a socket is "
     "normal is the engineer's judgment. Resistance factor: Table 8-4 (p. "
     "8-14) prints 0.50 for side resistance in rock by Eq. 10-21 (0.40 in "
-    "uplift), which lrfd_capacity takes; the text of p. 10-21 gives 0.55 "
-    "for Eqs. 10-21 and 10-22, 'as presented in Table 8-4'")
+    "uplift), which lrfd_capacity takes")
 
 #: The values of C GEC-10 names, each with where it applies.
 _ROCK_SIDE_C_NAMED = {
