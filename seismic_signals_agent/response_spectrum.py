@@ -1,12 +1,23 @@
 """
-Response spectrum analysis using eqsig (Nigam-Jennings algorithm).
+Response spectrum of one ground motion record, every period by Nigam and
+Jennings (1969) with sub-steps.
 
-Provides exact piecewise-linear response spectrum computation,
-which is more accurate than Newmark-beta for a given time step.
+The record is taken as linear between its samples and each oscillator's
+response to it is solved in closed form, in sub-steps of at most a
+twentieth of the period below 20 record steps a period, the peak read
+between points (``geotech_common.response_spectrum``, the OpenSees site
+response's code too, so the two tools give the same Sa; GM-274). PGV and
+PGD come from eqsig's integration of the record.
+
+Until GM-274 the spectrum was eqsig's: the same step, but the whole record
+at one step no finer than a quarter of the record's, the peak read only at
+its points and the PGA below six of them, so up to 2.5 % low below ten
+record steps a period.
 """
 
 import numpy as np
 
+from geotech_common.response_spectrum import pseudo_spectral_accel
 from seismic_signals_agent.signal_utils import import_eqsig, _G
 from seismic_signals_agent.results import ResponseSpectrumResult
 
@@ -37,7 +48,8 @@ def analyze_response_spectrum(
     periods=None,
     damping=0.05,
 ) -> ResponseSpectrumResult:
-    """Compute response spectrum using Nigam-Jennings algorithm (eqsig).
+    """Compute the response spectrum, every period by Nigam and Jennings
+    (1969) with sub-steps (GM-274); PGV and PGD by eqsig.
 
     Parameters
     ----------
@@ -81,14 +93,12 @@ def analyze_response_spectrum(
     sort_idx = np.argsort(periods)
     periods = periods[sort_idx]
 
-    # Import eqsig and create AccSignal (convert g -> m/s²)
+    # Import eqsig and create AccSignal (convert g -> m/s²): PGV and PGD
     eqsig = import_eqsig()
     acc = eqsig.AccSignal(accel_g * _G, dt_val)
 
-    # Compute response spectrum
-    acc.generate_response_spectrum(periods, xi=damping)
-    Sa_m_s2 = acc.s_a  # spectral acceleration in m/s²
-    Sa_g = Sa_m_s2 / _G
+    # The spectrum, the OpenSees site response's code (GM-274)
+    Sa_g = pseudo_spectral_accel(accel_g, dt_val, periods, damping)
 
     # Time array
     time = np.arange(len(accel_g)) * dt_val

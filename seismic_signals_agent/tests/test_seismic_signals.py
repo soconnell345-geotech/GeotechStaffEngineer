@@ -667,32 +667,26 @@ class TestSignalProcessingIntegration:
         assert r.pgv_processed_m_per_s > 0
 
 
-class TestEqsigVsOpenseesSpectrum:
+class TestOneSpectrumCode:
     @requires_eqsig
-    def test_comparison(self):
-        """eqsig and opensees_utils.compute_response_spectrum (both
-        Nigam-Jennings since GM-272; Newmark before) give similar spectra."""
+    def test_the_same_sa_as_opensees(self):
+        """analyze_response_spectrum and opensees_utils.compute_response_
+        spectrum are one code, geotech_common.response_spectrum (GM-274):
+        the same Sa. Until GM-274 this module's came from eqsig, up to
+        2.5 % low under ten record steps a period (opensees_agent's
+        TestOneSpectrumCode checks the two against scipy's lsim there);
+        until GM-272 the OpenSees one was Newmark's, within 11 %."""
         from seismic_signals_agent import analyze_response_spectrum
         from opensees_agent.opensees_utils import compute_response_spectrum
         from opensees_agent.ground_motions import get_motion
 
         accel_g, dt = get_motion("synthetic_pulse")
-        periods = np.logspace(-1, 0.5, 20)
-
-        # eqsig (Nigam-Jennings)
+        periods = np.logspace(-2, 0.5, 30)
         r = analyze_response_spectrum(motion="synthetic_pulse",
                                       periods=periods, damping=0.05)
-
-        # opensees_utils (Nigam-Jennings, peak read between samples)
         _, Sa_nb = compute_response_spectrum(accel_g, dt, periods,
                                              damping=0.05)
-
-        # Within 0.2 % at every period (measured 2026-10-21: 0.06 % at most,
-        # eqsig a little lower: it reads the peak only at the samples).
-        # Until GM-272 this divided by the (periods, Sa) tuple and checked
-        # the median within 15 %.
-        ratio = r.Sa_g / Sa_nb
-        np.testing.assert_allclose(ratio, 1.0, atol=0.002)
+        np.testing.assert_array_equal(r.Sa_g, Sa_nb)
 
 
 # ===================================================================

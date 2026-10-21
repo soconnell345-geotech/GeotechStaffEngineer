@@ -12,6 +12,7 @@ results dataclass — the LLM agent never touches raw OpenSees commands.
 ```
 opensees_agent/
   opensees_utils.py    -- import guard, fresh_model(), response spectrum
+                          (wraps geotech_common.response_spectrum, GM-274)
   ground_motions.py    -- built-in earthquake records
   results.py           -- PM4SandDSSResult, SiteResponseResult
   pm4sand_dss.py       -- analyze_pm4sand_dss()
@@ -970,6 +971,23 @@ Sa at 0.2 s now holds within 3 % from 10 to 80 elements, where the tables
 above, read through the old spectrum, said 7 %. The OpenSees-pystrata
 linear comparison (0.1 to 1 s) moved to at most 3.3 % (3.26 %, at 0.5 s;
 3.31 % before).
+
+## GM-274 (2026-10-21): one spectrum code with seismic_signals
+
+The spectrum's code moved to `geotech_common/response_spectrum.py`:
+`pseudo_spectral_accel`, with `nigam_jennings`, `substeps`,
+`peak_between_points` and `POINTS_PER_PERIOD` (here `_nigam_jennings`,
+`_substeps`, `_peak_between_points` and `_POINTS_PER_PERIOD` until now).
+`compute_response_spectrum` keeps its signature and its default periods
+(100, 0.01-10 s) and calls it, so no number in this module moved.
+seismic_signals' `analyze_response_spectrum` calls it too, in place of
+eqsig's spectrum, which was up to 2.5 % low under ten record steps a
+period. `TestOneSpectrumCode` checks that the two tools give the same Sa,
+bit for bit, at the 27 periods on the Gilroy input and the dense sand
+surface, and that under ten steps the Sa is within -0.01 to +0.1 % of
+scipy's lsim read at least 100 times a period (measured -0.001 to
++0.03 %). seismic_signals' RotD path, measured the same way, is in
+`seismic_signals_agent/DESIGN.md`.
 
 ## Ground Motions
 
