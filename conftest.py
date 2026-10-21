@@ -45,3 +45,43 @@ def _shared_host_flag_reset():
     saved = _fileio._REQUIRE_BINDING
     yield
     _fileio._REQUIRE_BINDING = saved
+
+
+def pytest_terminal_summary(terminalreporter):
+    """Say so when every test of a top-level package skipped.
+
+    Smart App Control blocks the openseespy DLL on the Windows host, so every
+    ``opensees_agent`` test skips with nothing but an ``s`` in the dots. This
+    only prints; it never changes the exit code."""
+    stats = terminalreporter.stats
+    total = {}
+    skipped = {}
+    reasons = {}
+    for outcome, reports in stats.items():
+        if outcome not in ("passed", "failed", "error", "skipped",
+                           "xfailed", "xpassed"):
+            continue
+        for rep in reports:
+            nodeid = getattr(rep, "nodeid", "")
+            if "/" not in nodeid:
+                continue
+            if outcome in ("passed", "xpassed") and getattr(
+                    rep, "when", "call") != "call":
+                continue                      # count a test once, at its call
+            pkg = nodeid.split("/", 1)[0]
+            total[pkg] = total.get(pkg, 0) + 1
+            if outcome == "skipped":
+                skipped[pkg] = skipped.get(pkg, 0) + 1
+                if pkg not in reasons:
+                    lr = getattr(rep, "longrepr", None)
+                    text = lr[2] if isinstance(lr, tuple) and len(lr) == 3 \
+                        else str(lr)
+                    reasons[pkg] = text.removeprefix("Skipped: ").strip()
+    all_skipped = [p for p in sorted(total) if skipped.get(p) == total[p]]
+    if not all_skipped:
+        return
+    terminalreporter.section("ALL SKIPPED (no test of these packages ran)",
+                             yellow=True)
+    for pkg in all_skipped:
+        terminalreporter.write_line(
+            f"ALL SKIPPED: {pkg} ({total[pkg]} tests): {reasons[pkg]}")
