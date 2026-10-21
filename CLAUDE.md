@@ -317,7 +317,7 @@ Key conventions:
       and planlens (0ff9056, planlens c79d1f3); a GSTools defect behind an all-NaN Exponential
       field worked around, a kriging plan map (6cbd94c) and choices (68bbc67); MSE bar mat and strip Tal as GEC-11
       prints them, E4 reproduced, spacing per level (1729383), geosynthetic rupture at FOS 1.5 (31bd1bf); E1 through the module, Fy refused (0004620);
-      calc packages' `render_tables` for bespoke reports (b676889); report ingest's units (a78c275); the record's gaps (7d8ae9b); the library's page marks (53dc254); dependency skips named in every test run (INF-13); DIGGS positions as CRS84 (RI-30); MSE built-ins as GEC-11 prints them, E3 strip and E1 geogrids (287cdf1); OpenSees low-passed PGA and short-period spectrum (2311a8d); spectra by Nigam-Jennings at every period (56d65e3); MSE reinforcement per level, delta_deg declared (bdd1bae); one spectrum code in geotech_common (GM-274); RotD in the time domain (GM-275); release notes for each in HANDOFF;
+      calc packages' `render_tables` for bespoke reports (b676889); report ingest's units (a78c275); the record's gaps (7d8ae9b); the library's page marks (53dc254); dependency skips named in every test run (INF-13); DIGGS positions as CRS84 (RI-30); MSE built-ins as GEC-11 prints them, E3 strip and E1 geogrids (287cdf1); OpenSees low-passed PGA and short-period spectrum (2311a8d); spectra by Nigam-Jennings at every period (56d65e3); MSE reinforcement per level, delta_deg declared (bdd1bae); one spectrum code in geotech_common (GM-274); RotD in the time domain (GM-275); pyrotd dropped (INF-47); release notes for each in HANDOFF;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
@@ -2009,7 +2009,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | geotech_common | 331 | SoilProfile + checks + adapters + plots + the calculation-table layer (`tables.py`) + the plan furniture (`plan_furniture.py`: the scale bar and north arrow shared by `plot_data(plan_view=True)` and the gstools probability map) |
 | opensees_agent | 134 | PM4Sand cyclic DSS, 1D site response (pinned to the OpenSees wiki's total-stress and the OpenSeesPy docs' effective-stress examples) |
 | pystrata_agent | 63 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
-| seismic_signals | 84 | Earthquake signal processing (eqsig/pyrotd) |
+| seismic_signals | 89 | Earthquake signal processing (eqsig; RotD computed in the time domain, Boore 2010) |
 | liquepy_agent | 80 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |
 | gstools_agent | 140 | Geostatistics (GSTools): kriging (the mean surface; region totals + Gaussian pointwise expectations), variogram fitting, unconditioned random fields, and conditional simulation — realizations that honour the borings, integrated over plan polygons for probabilities of totals (volume above/below a level, area, any encounter), CSVs + figures |
 | salib_agent | 43 | Sobol & Morris sensitivity analysis (KEPT by owner ruling 2026-09-22 — it was never retired) |
