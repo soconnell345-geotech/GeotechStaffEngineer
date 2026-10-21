@@ -345,25 +345,21 @@
  "OWN-11": {
   "kind": "decision",
   "ask_who": null,
-  "question": "Should report ingest be offered on the geotech page as an opt-in switch, after one measured run?",
-  "why": "Report ingest turns a geotechnical report into a cited record and a DIGGS file that the geotech page could analyse. It is built but no user can reach it. It is also expensive, and it cannot yet run on Tiny Apps.",
-  "background": "From the 2026-10-06 geotech-page session: measure ingest on one Funhouse run of a similar report, then offer an off-by-default sidebar switch; the engine and output folder are not plumbed today. Three defects come first: summary and library citations print 0-based pages (RI-01); the sub-agent's limits are declared but not enforced (RI-02); the ingest engine needs the Funhouse SDK prompter, so it cannot run on Tiny Apps (RI-03). Cost on Foundry (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average; up to roughly $14 a report at GPT-5.4 rates (my estimate; some calls used a cheaper model). Report ingest is parked at 5.25.0.",
+  "question": "Should report ingest be offered on the geotech page on Foundry as an opt-in switch, after one measured Foundry run?",
+  "why": "Report ingest turns a geotechnical report into a cited record and a DIGGS file that the geotech page can analyse. It is built but no user can reach it. It runs only on Foundry now (your answer of 2026-10-21), so the Funhouse $50 limit no longer applies, but a report can still take many model calls.",
+  "background": "Your answer of 2026-10-21: keep parked for now; report ingest only on Foundry; cost-conscious; more Foundry testing first. Being built now (off by default): the sub-agent's limits enforced (RI-02) and a record built on demand with the report checklist run on it (RI-35); RI-03 is now the ingest engine on Foundry's models. Cost on Foundry so far (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average.",
   "options": [
    {
-    "label": "Yes: fix RI-01 to RI-03, measure, switch",
-    "effect": "Ingest reaches the geotech page on both hosts, off by default; one Funhouse run's tokens are needed to measure it."
-   },
-   {
-    "label": "Funhouse only, skip RI-03",
-    "effect": "Quicker; testers on Tiny Apps never see it."
+    "label": "Yes: after one measured Foundry run, an opt-in switch",
+    "effect": "Ingest reaches the geotech page on Foundry, off by default, once RI-01 to RI-03 are done and one run is measured."
    },
    {
     "label": "Keep parked",
-    "effect": "No work now; revisit when report ingest is unparked."
+    "effect": "No switch yet; the work toward it continues off by default, and Foundry testing comes first."
    }
   ],
-  "recommendation": "Keep parked until the tester deploy settles: a tool costing up to about $14 a report needs a cost cap before it sits beside $50-a-month tester keys. When picked up, option 1.",
-  "if_no_answer": "Report ingest stays unreachable from either page.",
+  "recommendation": "Keep parked until RI-01 to RI-03 are done and one Foundry run is measured, then the switch, off by default.",
+  "if_no_answer": "Report ingest stays unreachable from the geotech page; the work toward it continues off by default.",
   "message_to_send": null,
   "unblocks": [
    "RI-01",
@@ -371,9 +367,9 @@
    "RI-03"
   ],
   "sources": [
-   "git 414525a HANDOFF.md (old item 8a(i))",
-   "BACKLOG.md (§6, RI-01 to RI-03)",
-   "module_work/harness_theory/report_ingest.md (§7, stage b numbers)"
+   "BACKLOG.md (§2, RI-01 to RI-03, RI-35)",
+   "module_work/harness_theory/report_ingest.md (§7, stage b numbers)",
+   "owner, desk 2026-10-21"
   ]
  },
  "OWN-12": {
