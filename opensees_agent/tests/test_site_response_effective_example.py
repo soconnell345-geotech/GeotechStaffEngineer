@@ -83,10 +83,15 @@ class TestEffectiveExampleMapping:
         example's G = Gr (p/101)^0.5 at the module's reference pressure;
         the damping is the example's Rayleigh ratio at the module's site
         frequency."""
-        from opensees_agent.site_response import _sigma_v_eff
+        from opensees_agent.site_response import (
+            _sigma_v_eff, element_permeability)
         inputs, f1 = eff.closest_api_inputs()
         layers = inputs["layers"]
         assert len(layers) == 15 and inputs["n_elem_per_layer"] == 4
+        # the element gets the example's 1e-4 (a k of 9.81e-4 m/s; GM-79)
+        for L in layers:
+            assert element_permeability(L["permeability"]) == pytest.approx(
+                1.0e-4, rel=1e-12)
         assert f1 == pytest.approx(1.7746, abs=1e-4)
         assert inputs["damping"] == pytest.approx(0.003989, abs=1e-6)
         # the loose layer's top sublayer (2-4 m) and the deepest (28-30 m)
