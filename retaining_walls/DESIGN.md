@@ -831,8 +831,10 @@ changes to 4W15 from Level 5 (11.87 ft) because four W11 wires carry only
 unchanged (FOS_rupture 2.854 at the top level, 1.081 at 8.76 ft, 0.726 at
 the bottom). The 9 m strip wall at Sh 0.75 m: FOS_rupture 1.309 to 21.65
 before, 1.455 to 24.06 now (Tal x Rc 57.47 -> 63.86 kN/m of wall);
-FOS_pullout unchanged (2.876 to 4.210). The cited Cu beside a tested F*
-was already stated in the F* choice (GM-256 review, 4c2a641). Tests:
+FOS_pullout unchanged (2.876 to 4.210). A Cu_backfill given beside a
+tested F* enters no check; the F* choice says so (caa622f, above in the
+GM-256 section) and it is not refused, since it still sets a strip's
+empirical F* given beside the tested one. Tests:
 `tests/test_mse_bar_mat_strength.py`, `tests/test_mse_coverage_ratio.py`,
 and `funhouse_agent/tests/test_mse_coverage_ratio_adapter.py`.
 
