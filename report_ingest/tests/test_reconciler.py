@@ -357,6 +357,63 @@ class TestUnitsAndPages:
         assert "fathoms" in entry.detail
         assert record.lab_tests[0].depth_top.value == 3.0
 
+    def test_a_value_with_no_unit_printed_is_named_and_not_converted(self):
+        # RI-20: until then a blank unit converted as the dimensionless one,
+        # so this depth of 3 went into the SI view as 3 m.
+        sheet = atterberg()
+        sheet.depth_top = Quantity(value=3.0, unit="")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        (entry,) = kinds_of(record, "unconverted")
+        assert "no unit printed" in entry.detail
+        assert "unknown" in entry.detail
+        assert entry.values == ["lab_tests.depth_top"]
+        assert record.lab_tests[0].depth_top.value == 3.0
+        view = si_view(record)
+        assert "depth_top" not in view["lab_tests.atterberg[0]"]
+
+    def test_a_ph_has_no_unit_and_is_not_named(self):
+        from report_ingest.model import ChemicalResult
+        test = LabTest(kind="chemical", investigation_id="B-1",
+                       depth_top=q(2.0, "ft"),
+                       result=ChemicalResult(pH=Quantity(value=7.4, unit="")))
+        record = reconcile(build_record(lab_tests=[test]))
+
+        assert kinds_of(record, "unconverted") == []
+
+    def test_a_water_analysis_in_mg_per_litre_needs_no_note(self):
+        # RI-20: mg/L had no entry, so every water analysis carried an
+        # "unconverted" note though DIGGS takes it as printed.
+        from report_ingest.diggs_writer import (
+            diggs_roundtrip_gate, diggs_schema_gate, write_diggs,
+        )
+        from report_ingest.model import ChemicalResult
+        test = LabTest(kind="chemical", investigation_id="B-1",
+                       depth_top=q(2.0, "ft"),
+                       result=ChemicalResult(
+                           # a pH has no unit: written with no uom (the
+                           # schema has no code for "none" there)
+                           pH=Quantity(value=7.4, unit=""),
+                           sulfate=Quantity(value=250.0, unit="mg/L"),
+                           chloride=Quantity(value=80.0, unit="mg/l"),
+                           conductivity=Quantity(value=1500.0,
+                                                 unit="uS/cm")))
+        record = reconcile(build_record(lab_tests=[test]))
+        assert kinds_of(record, "unconverted") == []
+
+        notes = []
+        xml = write_diggs(record, notes=notes)
+        assert not any("Sulfate" in line or "Chloride" in line
+                       or "Conductivity" in line or "pH" in line
+                       for line in notes[0].skipped), notes[0].skipped
+        assert "<uom>1</uom>" not in xml
+        assert "<uom>mg/L</uom>" in xml or ">mg/L<" in xml
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(
+            xml, record.investigations, project=record.project,
+            lab_tests=record.lab_tests, notes=notes[0])
+        assert ok, diffs
+
     def test_the_si_view_converts_and_leaves_the_record_as_printed(self):
         record = reconcile(build_record())
         view = si_view(record)

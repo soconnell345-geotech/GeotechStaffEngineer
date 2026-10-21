@@ -78,7 +78,7 @@ from report_ingest.model import (
     CompactionResult, ConsolidationPoint, ConsolidationResult,
     GradationResult, LabTest, MoistureDensityResult, OtherResult, Provenance,
     Quantity, RESULT_CLASS, ShearPoint, SievePoint, StrengthResult,
-    StrengthSpecimen, SummaryRow, SummaryTableResult,
+    StrengthSpecimen, SummaryRow, SummaryTableResult, unit_printed,
 )
 
 __all__ = [
@@ -952,6 +952,18 @@ class _Builder:
         value = float(value)
         quantity = Quantity(value=value, unit=self.unit)
         metres = quantity.si_value
+        if metres is None and not unit_printed(self.unit):
+            # No depth unit printed: feet or metres, nobody can say which,
+            # and the value stays as printed (RI-20). A number that is no
+            # depth in EITHER -- past the window in feet -- is still a
+            # column read wrong and refused.
+            if not (0.0 <= value <= MAX_DEPTH_M / 0.3048):
+                self._refuse(what, f"depth {value:g} (no unit printed) is "
+                                   f"past {MAX_DEPTH_M:g} m even read as "
+                                   f"feet; refused rather than accepted",
+                             value)
+                return None
+            return quantity
         if metres is None:
             # An unrecognised depth unit cannot be checked against a window
             # in metres. The value is kept as printed -- that is the record's

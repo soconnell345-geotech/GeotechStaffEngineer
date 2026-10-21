@@ -43,7 +43,8 @@ from pydantic import BaseModel, Field
 
 __all__ = [
     "build_report_ingest_subagent", "build_report_ingest_graph",
-    "run_ingest", "IngestSummary", "parse_request", "SUBAGENT_NAME",
+    "run_ingest", "diggs_verdict", "IngestSummary", "parse_request",
+    "SUBAGENT_NAME",
     "SUBAGENT_DESCRIPTION", "SUMMARY_LINES",
 ]
 
@@ -105,8 +106,11 @@ class IngestSummary(BaseModel):
     model_calls: int = Field(default=0)
     diggs_ok: Optional[bool] = Field(
         default=None,
-        description="whether the DIGGS file passed both of its gates; null "
-                    "when no DIGGS file was written")
+        description="whether the DIGGS file passed both of its gates: "
+                    "false when either failed; null when no DIGGS file was "
+                    "written, or when a gate could not run here (no schema "
+                    "check installed), which is neither a pass nor a "
+                    "failure -- the record's QA says which")
     paths: Dict[str, str] = Field(
         default_factory=dict,
         description="where the record, the summary, the library page, the "
@@ -149,6 +153,25 @@ def _head(path: str, lines: int = SUMMARY_LINES) -> str:
     return "\n".join(kept)[:SUMMARY_CHARS]
 
 
+def diggs_verdict(qa: Sequence[Any]) -> Optional[bool]:
+    """The DIGGS file's two gates as one answer, off the record's QA.
+
+    True only when both gates RAN and passed; False when either failed;
+    None when no file was written, or when a gate could not run here (a
+    ``not_run`` entry: no schema check installed) and none failed -- a check
+    that did not run is neither a pass nor a failure (RI-20).
+    """
+    verdicts = [entry for entry in qa
+                if entry.where in ("diggs.schema", "diggs.roundtrip")]
+    if not verdicts:
+        return None
+    if any(entry.kind not in ("note", "not_run") for entry in verdicts):
+        return False
+    if any(entry.kind == "not_run" for entry in verdicts):
+        return None
+    return True
+
+
 def run_ingest(source: str, questions: Sequence[str], *,
                engine: Any, out_dir: str, budgets: Any = None,
                report_id: str = "", db_path: Any = None,
@@ -180,10 +203,7 @@ def run_ingest(source: str, questions: Sequence[str], *,
                            ingest_bound=ingest_bound)
     paths = output_paths(out_dir)
     counts = record.counts()
-    verdicts = [entry for entry in record.qa
-                if entry.where in ("diggs.schema", "diggs.roundtrip")]
-    diggs_ok = (all(entry.kind == "note" for entry in verdicts)
-                if verdicts else None)
+    diggs_ok = diggs_verdict(record.qa)
     from report_ingest.writers import title_of
     return IngestSummary(
         report=title_of(record),

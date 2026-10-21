@@ -39,6 +39,29 @@ and the DIGGS file are three exports of it. Three rules hold it together.
 `to_si()` converts once, in the writer that needs SI, so a reviewer setting the
 record beside the page sees the page's own numbers.
 
+**A blank unit is a unit the page did not print** (RI-20). It converts to
+nothing: a depth of "4" read with no unit is not 4 m, and until RI-20 it went
+into the SI view and the DIGGS file as exactly that. The reconciler names every
+such value in one `unconverted` entry ("no unit printed ... unknown"), and the
+DIGGS writer leaves it out and names it. A quantity that has no unit by its own
+kind — a pH, a water content — is recognised by its field
+(`UNITLESS_FIELDS`), or by a caller passing `to_si(..., kind="ratio")`, never
+by the blank. A liquid limit, a plasticity index and an N value are plain
+numbers already.
+
+**One table of units** (`UNIT_TO_SI`, with `_UNIT_ALIASES` for spellings). It
+covers what a log, a lab sheet and a calculation printout print: lengths,
+stresses (psf, ksf, tsf, ksi, kPa, kN/m², N/mm², bar), unit weights and the
+densities a sheet means as one (pcf, kcf, kN/m³, kg/m³, g/cm³, and kPa/m or
+psf/ft for a pressure that grows with depth), forces (kN, kips), line loads
+(kN/m, lb/ft, kips/ft), moments (kN-m, kip-ft), flexural rigidity, areas, times
+(sec, hours, days, years), angles in radians, a water analysis's mg/L and its
+conductivity (µS/cm, mmhos/cm), and a dynamic cone's mm/blow. Spelling is
+folded before lookup: case, ² and ^2, "SQ. M" and "CU.FT", spaces ("KG/M 3"),
+one trailing full stop ("M.", "DEG."). Left unconverted on purpose, because a
+factor would be a guess: `N` (a newton or a blow count), `min`, `h`, `s`, `d`,
+`tons`, `ft-lb`, °F, meq/L and anything garbled.
+
 **Every value-bearing field carries `Provenance`** — the page, the box, how it
 was read, and a confidence from 0 to 1. Since 5.23.0 the method names the
 VOTER: `grid` and `tables` are the deterministic first voter (the log grid's
@@ -644,6 +667,11 @@ SI once, here, with a `uom` on every measure. A coordinate gets nine decimals,
 because a latitude to four is eleven metres. A unit not in the record's
 conversion table is **not** written with a guessed one: it is left out and named
 in `DiggsWriteNotes.skipped`, which the round-trip gate then does not look for.
+So is a value printed with no unit (RI-20), except a grading's D-value
+(millimetres, named in `assumed`) and a property that has no unit (a pH,
+written with no `uom`). A water analysis in mg/L is written in mg/L with no
+note; a DCP index in mm/blow is written as `report_ingest:mm/blow`, the
+schema's own form for a unit its list does not hold.
 A layer whose base the sheet never printed is written as a contact and named the
 same way — DIGGS can carry it, the app's `LithologyInterval` holds intervals
 only.
@@ -918,7 +946,7 @@ carry them:
 
 | File | What it is |
 |---|---|
-| `report.diggs.xml` | DIGGS 2.6 through the existing writer, with BOTH gates run — the bundled XSD and a round trip through the app's own readers, value by value. Each verdict goes into the record's QA, because a file that failed its gate and a file nothing checked must not look the same. |
+| `report.diggs.xml` | DIGGS 2.6 through the existing writer, with BOTH gates run — the bundled XSD and a round trip through the app's own readers, value by value. Each verdict goes into the record's QA, because a file that failed its gate and a file nothing checked must not look the same: a schema check that could not run here (no validator) is a `not_run` entry with its reason, neither a pass nor a failure (RI-20; until then it was filed as a failure). `diggs_schema_gate` answers `None` for it, the summary's `diggs_ok` is null, and the cluster scorecard says `not run`. |
 | `report.record.json` | The record. Everything else is derived from it. |
 | `report.summary.md` | The two schemas answered, each with its pages; the bearing values and the profile as tables; the caller's own questions; what was extracted; the QA list. |
 | `report.page.md` | The owner's WikiLLM page: front matter (`id`, `report_id`, `title`, `authors`, `year`, `source`, `doc_type`, `tier`, `disciplines`, `topics`, `methods`, `materials`, `standards_referenced`, `confidence`, `status`, `n_pages`, `original_path`), then the summary, the key takeaways, the key parameters, the questions answered, and the record's sections as tables. |
@@ -1397,7 +1425,12 @@ It returns a `DocumentProfile`: `document_type` (the owner's enumeration),
 `languages`, `toc_agreement`, `anomalies`, `rationale`, the measured fractions,
 and a `workflow` in `standard`, `appendix_only`, `partial`, `multi_document`,
 `scanned`, `needs_person`. The workflow chooses the readers that follow, so an
-odd file is flagged rather than forced down the standard path.
+odd file is flagged rather than forced down the standard path. It is an `enum`
+in the schema the model answers in, and `settle_workflow` folds a spelling
+("Appendix Only", "needs a person") onto the list; an answer that still does
+not fit runs the standard workflow and the record's QA says what triage
+answered (RI-20). The record's `DocumentFacts.workflow` refuses anything off
+the list.
 
 ### `review_labels(doc, roles, outline, profile, budget, engine=...) -> Review`
 

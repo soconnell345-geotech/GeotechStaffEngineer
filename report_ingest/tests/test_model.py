@@ -49,9 +49,113 @@ class TestQuantity:
         assert Quantity(value=5.0, unit="furlongs").to_si() is None
         assert to_si(5.0, "cubits") is None
 
-    def test_an_empty_unit_is_dimensionless_and_is_not_a_failure(self):
-        got = Quantity(value=0.6, unit="").to_si()
-        assert got is not None and got.value == pytest.approx(0.6)
+    # RI-20: a blank unit is a unit the page did not print, not the
+    # dimensionless one. It converts to nothing -- a depth of "4" is not
+    # 4 m -- unless the caller says the quantity's kind has no unit.
+    @pytest.mark.parametrize("blank", ["", "  "])
+    def test_an_empty_unit_is_unknown_and_converts_to_nothing(self, blank):
+        assert Quantity(value=4.0, unit=blank).to_si() is None
+        assert to_si(4.0, blank) is None
+        assert "" not in UNIT_TO_SI
+
+    def test_a_blank_converts_only_for_a_kind_that_has_no_unit(self):
+        got = Quantity(value=7.2, unit="").to_si(kind="ratio")
+        assert got is not None and (got.value, got.unit) == (7.2, "1")
+        assert to_si(12.0, "", kind="percent") == (12.0, "%")
+        # a kind with a unit does not make a blank complete
+        assert to_si(4.0, "", kind="length") is None
+
+    def test_the_record_walk_recognises_a_ph_by_its_field_not_its_blank(
+            self):
+        from report_ingest.model import ChemicalResult
+        result = ChemicalResult(pH=Quantity(value=7.2, unit=""),
+                                sulfate=Quantity(value=120.0, unit=""))
+        got = {path: (v, u) for path, v, u in si_numbers(result)}
+        assert got["pH"] == (7.2, "1")
+        assert "sulfate" not in got          # unknown unit: no SI value
+        printed = {path: (v, u) for path, v, u in
+                   si_numbers(result, unitless_as_printed=True)}
+        assert printed["sulfate"] == (120.0, "")
+
+    @pytest.mark.parametrize("value,unit,want,si_unit", [
+        # calculation printouts
+        (10.0, "kips", 44.4822, "kN"), (5.0, "KN.", 5.0, "kN"),
+        (2.0, "kip-ft", 2.71164, "kN.m"), (3.0, "kN-m", 3.0, "kN.m"),
+        (3.0, "m-kN", 3.0, "kN.m"), (1.0, "kN-m^2", 1.0, "kN.m2"),
+        (1.0, "kN/m", 1.0, "kN/m"), (1.0, "N/mm", 1.0, "kN/m"),
+        (100.0, "lb/ft", 1.45939, "kN/m"), (1.0, "ksi", 6894.757, "kPa"),
+        (1.0, "N/mm2", 1000.0, "kPa"), (1.0, "kips/ft2", 47.8803, "kPa"),
+        (1.0, "KN/SQ M", 1.0, "kPa"), (2.0, "bars", 200.0, "kPa"),
+        (1.0, "radians", 57.29578, "deg"), (30.0, "DEG.", 30.0, "deg"),
+        (3.0, "M.", 3.0, "m"), (2.0, "SQ. M", 2.0, "m2"),
+        (144.0, "in2", 0.092903, "m2"), (1.0, "CU. M", 1.0, "m3"),
+        (2.0, "yrs", 63115200.0, "s"), (1.0, "m/m", 1.0, "1"),
+        # unit weights written as a density or a gradient
+        (1800.0, "Kg/m3", 17.65197, "kN/m3"),
+        (1800.0, "KG/M 3", 17.65197, "kN/m3"),
+        (18.0, "KN /CU.M", 18.0, "kN/m3"), (0.12, "kips/ft3", 18.8505, "kN/m3"),
+        (9.8, "kPa/m", 9.8, "kN/m3"), (62.4, "psf/ft", 9.80226, "kN/m3"),
+        (100.0, "pci", 27144.71, "kN/m3"),
+        # a water analysis and a corrosivity suite
+        (250.0, "mg/l", 250.0, "mg/L"), (250.0, "mg/dm3", 250.0, "mg/L"),
+        (1500.0, "uS/cm", 0.15, "S/m"), (1.5, "mmhos/cm", 0.15, "S/m"),
+        (120.0, "mg/Kg-dry", 120.0, "mg/kg"), (2000.0, "ohms*cm", 20.0, "ohm.m"),
+        (4.0, "kΩ - cm", 40.0, "ohm.m"), (7.0, "pH units", 7.0, "1"),
+        # a dynamic cone's index
+        (25.0, "mm/blow", 25.0, "mm/blow"), (1.0, "in/blow", 25.4, "mm/blow"),
+    ])
+    def test_the_units_a_printout_and_a_sheet_add_convert(
+            self, value, unit, want, si_unit):
+        got = Quantity(value=value, unit=unit).to_si()
+        assert got is not None, unit
+        assert got.value == pytest.approx(want, rel=1e-4)
+        assert got.unit == si_unit
+
+    @pytest.mark.parametrize("unit", [
+        # a newton or a blow count; minutes or a minimum; hours or a
+        # height; seconds or a plural; days or a diameter
+        "N", "min", "h", "s", "d",
+        # short or metric; a moment or an energy; an offset, not a factor
+        "tons", "tons/ft", "ft-lb", "°F",
+        # needs the ion's weight
+        "meq/L",
+        # garbled on the page, or not a unit
+        "Kg/m13", "KG/CM*", "kPa*", "H2 kN/m", "kN or kN/m", "PP",
+        # "cum" is as often cumulative as cubic metres
+        "cum",
+    ])
+    def test_an_ambiguous_unit_stays_unconverted(self, unit):
+        assert to_si(1.0, unit) is None
+
+    # RI-20 review: the factors the table above does not pin, each worked
+    # from its definition here rather than from the module's constants
+    # (1 lbf = 4.4482216 N, 1 ft = 0.3048 m, 1 in = 0.0254 m, 1 daN = 10 N).
+    @pytest.mark.parametrize("value,unit,want,si_unit", [
+        (1.0, "kcf", 4.4482216 / 0.3048 ** 3, "kN/m3"),
+        (1.0, "ksf/ft", 4.4482216 / 0.3048 ** 3, "kN/m3"),
+        (1.0, "daN/cm2", 10.0 / 1e-4 / 1000.0, "kPa"),
+        (1.0, "ft/s", 0.3048, "m/s"),
+        (1.0, "kips/ft", 4.4482216 / 0.3048, "kN/m"),
+        (1.0, "kip-in2", 4.4482216 * 0.0254 ** 2, "kN.m2"),
+        (1.0, "lb-in2", 0.0044482216 * 0.0254 ** 2, "kN.m2"),
+        (1.0, "psi/in", 0.0044482216 / 0.0254 ** 3, "kN/m3"),
+        (1.0, "dS/m", 0.1, "S/m"),
+        (1.0, "kg/l", 9.80665, "kN/m3"),
+    ])
+    def test_the_factors_worked_from_their_definitions(
+            self, value, unit, want, si_unit):
+        got = Quantity(value=value, unit=unit).to_si()
+        assert got is not None, unit
+        assert got.value == pytest.approx(want, rel=1e-6)
+        assert got.unit == si_unit
+
+    @pytest.mark.parametrize("unit,mass", [
+        ("kg/m3", True), ("Kg/m³", True), ("g/cm3", True), ("Mg/m3", True),
+        ("t/m3", True), ("kg/l", True), ("pcf", False), ("kN/m3", False),
+        ("kPa/m", False), ("", False)])
+    def test_a_mass_per_volume_is_named(self, unit, mass):
+        from report_ingest.model import is_mass_density
+        assert is_mass_density(unit) is mass
 
     @pytest.mark.parametrize("spelling", [
         "FT", "ft.", "Feet", "lb/ft3", "KG / CM2", "kg/cm²", "kN/m^3",

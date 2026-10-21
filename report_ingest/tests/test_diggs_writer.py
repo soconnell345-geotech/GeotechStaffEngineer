@@ -517,20 +517,51 @@ class TestTheSoundings:
         assert notes[0].cpt == 1
         assert notes[0].dcp == 1
 
-    def test_a_sounding_whose_unit_cannot_convert_is_said_not_guessed(self):
+    @staticmethod
+    def _dcp(index_unit: str):
         from report_ingest.model import DCPData, DCPPoint
-        inv = Investigation(
+        return Investigation(
             investigation_id="DPT-2", kind="dcp", depth_unit="m",
             dcp=DCPData(points=[
                 DCPPoint(depth=Quantity(value=d, unit="m"),
                          blows=5.0,
-                         index=Quantity(value=44.8, unit="daN/cm2"))
+                         index=Quantity(value=44.8, unit=index_unit))
                 for d in (0.2, 0.4, 0.6)]))
-        xml = write_diggs([inv])
+
+    @pytest.mark.parametrize("unit,said", [
+        ("", "44.8 with no unit printed"),
+        ("furlongs/blow", "'furlongs/blow' -- unit not in the conversion"),
+    ])
+    def test_a_sounding_whose_unit_cannot_convert_is_said_not_guessed(
+            self, unit, said):
+        # RI-20: an index with no unit printed is mm/blow on one sheet and
+        # in/blow on the next. It used to go in as a bare number with no
+        # word; now it is left out and the notes say so, once.
+        inv = self._dcp(unit)
+        notes = []
+        xml = write_diggs([inv], notes=notes)
         # The blows are written; the unconvertible index is not guessed at.
         assert "blow_count" in xml
+        (line,) = [s for s in notes[0].skipped if "Penetration index" in s]
+        assert "3 Penetration index reading(s)" in line and said in line
         ok, _errors = diggs_schema_gate(xml)
         assert ok
+        ok, diffs = diggs_roundtrip_gate(xml, [inv])
+        assert ok, diffs
+
+    @pytest.mark.parametrize("unit,uom", [("daN/cm2", "kPa"),
+                                          ("mm/blow", "report_ingest:mm/blow"),
+                                          ("in/blow", "report_ingest:mm/blow")])
+    def test_a_sounding_index_in_a_unit_ri20_added_is_written(self, unit,
+                                                             uom):
+        inv = self._dcp(unit)
+        notes = []
+        xml = write_diggs([inv], notes=notes)
+        assert not any("Penetration index" in s for s in notes[0].skipped)
+        assert f"<uom>{uom}</uom>" in xml or f">{uom}<" in xml
+        assert diggs_schema_gate(xml)[0] is True
+        ok, diffs = diggs_roundtrip_gate(xml, [inv])
+        assert ok, diffs
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +792,10 @@ class TestAValuePrintedWithNoUnit:
 
     def test_a_pocket_penetrometer_with_no_unit_is_left_out_not_guessed(
             self):
+        # RI-20: a blank is a unit the page did not print. The value has no
+        # SI value, so it is left out and named as printed with no unit --
+        # never converted as a bare number -- and the gate has nothing to
+        # look for.
         pit = Investigation(
             investigation_id="STP-02", kind="test_pit", depth_unit="m",
             samples=[Sample(sample_id="1", top=_m(0.65), kind="bulk",
@@ -770,13 +805,28 @@ class TestAValuePrintedWithNoUnit:
         notes = []
         xml = write_diggs([pit], notes=notes)
         assert diggs_schema_gate(xml)[0] is True
-        assert notes[0].unwritten == [("STP-02", pytest.approx(0.65), 8.0)]
+        assert notes[0].unwritten == []
+        assert any("STP-02/1" in s and "8 with no unit printed" in s
+                   for s in notes[0].skipped), notes[0].skipped
         ok, diffs = diggs_roundtrip_gate(xml, [pit])
         assert ok, diffs
         # what WAS written is still checked
         pit.samples[1].pocket_pen = Quantity(value=2.5, unit="tsf")
         ok, diffs = diggs_roundtrip_gate(xml, [pit])
         assert not ok and any("pocket_pen" in d for d in diffs)
+
+    def test_a_pocket_penetrometer_in_the_wrong_kind_of_unit_is_named(self):
+        pit = Investigation(
+            investigation_id="STP-02", kind="test_pit", depth_unit="m",
+            samples=[Sample(sample_id="1", top=_m(0.65), kind="bulk",
+                            pocket_pen=Quantity(value=8.0, unit="mm"))])
+        notes = []
+        xml = write_diggs([pit], notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert notes[0].unwritten == [("STP-02", pytest.approx(0.65),
+                                       pytest.approx(0.008))]
+        ok, diffs = diggs_roundtrip_gate(xml, [pit])
+        assert ok, diffs
 
     def test_a_summary_rows_cohesion_with_no_unit_is_left_out(self):
         from report_ingest.diggs_writer import DiggsWriteNotes
@@ -789,13 +839,34 @@ class TestAValuePrintedWithNoUnit:
         notes = []
         xml = write_diggs([table], Project(name="R"), notes=notes)
         assert diggs_schema_gate(xml)[0] is True
+        assert notes[0].unwritten == []
+        assert any("Cohesion 21.5 with no unit printed" in s
+                   for s in notes[0].skipped), notes[0].skipped
+        # no SI value, so nothing for the gate to look for, notes or none
+        ok, diffs = diggs_roundtrip_gate(xml, [table],
+                                         notes=DiggsWriteNotes())
+        assert ok, diffs
+
+    def test_a_summary_rows_cohesion_in_a_wrong_unit_is_excused_by_name(
+            self):
+        from report_ingest.diggs_writer import DiggsWriteNotes
+        from report_ingest.model import (
+            LabTest, SummaryRow, SummaryTableResult,
+        )
+        table = LabTest(kind="summary_table", result=SummaryTableResult(rows=[
+            SummaryRow(investigation_id="LB-12", depth_top=_m(0.0),
+                       wc=12.0, c=Quantity(value=21.5, unit="pcf"))]))
+        notes = []
+        xml = write_diggs([table], Project(name="R"), notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
         assert notes[0].unwritten
         ok, diffs = diggs_roundtrip_gate(xml, [table])
         assert ok, diffs
         # notes that do NOT excuse it: the gate says so
         ok, diffs = diggs_roundtrip_gate(xml, [table],
                                          notes=DiggsWriteNotes())
-        assert not ok and any("21.5" in d for d in diffs)
+        assert not ok and any("3.377" in d or "3.38" in d for d in diffs), \
+            diffs
 
 
 # ---------------------------------------------------------------------------

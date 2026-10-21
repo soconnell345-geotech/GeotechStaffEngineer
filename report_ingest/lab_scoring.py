@@ -374,7 +374,12 @@ class Expectation:
 
 
 def _si(value: Any, unit: str) -> Optional[Tuple[float, str]]:
-    got = to_si(value, unit)
+    # A truth key with no unit suffix (a liquid limit, a ratio, a percent
+    # passing on a curve's y) is dimensionless BY THE TRUTH SHEET'S OWN
+    # CONVENTION -- the hand that typed it says so by leaving the suffix off
+    # -- so the blank is read as a ratio here. The record is not: a blank on
+    # a record's quantity is a unit the page did not print (RI-20).
+    got = to_si(value, unit, kind="ratio")
     return got if got is not None else None
 
 
@@ -774,7 +779,8 @@ def _pool_for(tests: Sequence[Any], expect: Expectation) -> List[float]:
         holders = [test.result for test in near if test.result is not None]
     pool: List[float] = []
     for holder in holders:
-        pool.extend(value for _path, value, _unit in si_numbers(holder))
+        pool.extend(value for _path, value, _unit in
+                    si_numbers(holder, unitless_as_printed=True))
     texts: List[str] = []
     for test in near:
         texts.extend(str(v) for v in test.fields.values())
@@ -862,7 +868,8 @@ def _pool_all(tests: Sequence[Any]) -> List[float]:
     for test in tests:
         result = test.result
         if result is not None:
-            pool.extend(v for _p, v, _u in si_numbers(result))
+            pool.extend(v for _p, v, _u in
+                        si_numbers(result, unitless_as_printed=True))
             if isinstance(result, SummaryTableResult):
                 for row in result.rows:
                     texts.extend(str(v) for _name, v in row.other)

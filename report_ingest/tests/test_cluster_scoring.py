@@ -2209,7 +2209,7 @@ class TestTheIngestStage:
         assert row["lab_by_kind"] == {"atterberg": 1, "gradation": 1}
         assert row["narrative"]["answered"] > 0
         assert row["diggs"]["written"] == "yes"
-        assert row["diggs"]["schema"] in ("valid", "not checked here")
+        assert row["diggs"]["schema"] in ("valid", "not run")
         assert row["diggs"]["roundtrip"] == "equal"
         assert row["qa_by_kind"].get("disagreement", 0) >= 1
         assert row["triage_reused"] is False and row["review_reused"] is False
@@ -2235,7 +2235,7 @@ class TestTheIngestStage:
         assert "## The page labels: the vote, and what went to the review" \
             in text
         assert "R36" in text and "1 boring, 1 test_pit" in text
-        assert "yes/valid/equal" in text or "yes/not checked here/equal" in text
+        assert "yes/valid/equal" in text or "yes/not run/equal" in text
         assert "Rosewood" not in text          # the project name stays out
         blob = json.loads((out / "results.json").read_text(encoding="utf-8"))
         assert blob["ingest"]["per_report"][0]["id"] == "R36"

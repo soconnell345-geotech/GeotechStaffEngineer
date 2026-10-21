@@ -267,12 +267,13 @@ def _q_m(quantity: Any) -> Optional[float]:
 def _si(quantity: Any) -> Optional[float]:
     """A reading's number in SI, or its PRINTED number where nothing converts.
 
-    A dynamic resistance in daN/cm2 and a penetration index in mm/blow are
-    real units that the record's conversion table has no entry for. Falling
-    back to the printed number is right because :func:`_si_of` falls back
-    the same way on the truth's side, so the two are compared in the same
-    unit -- the sheet's own. Returning None instead would mark every such
-    reading a miss however exactly the reader read it.
+    A reading can be in a real unit the record's conversion table has no
+    entry for (until RI-20, a dynamic resistance in daN/cm2 and a penetration
+    index in mm/blow), or have no unit printed at all. Falling back to the
+    printed number is right because :func:`_si_of` falls back the same way
+    on the truth's side, so the two are compared in the same unit -- the
+    sheet's own. Returning None instead would mark every such reading a miss
+    however exactly the reader read it.
     """
     if quantity is None:
         return None

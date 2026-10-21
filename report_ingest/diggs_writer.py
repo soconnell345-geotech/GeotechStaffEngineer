@@ -119,10 +119,16 @@ round-trip gate does about it:
   head (the lab scorer's and the tables floor's own rule); the assumption is
   in :attr:`DiggsWriteNotes.assumed`.
 * A value that converts to the WRONG kind of unit for its property -- a
-  pocket penetrometer or a cohesion printed with no unit, which cannot be
-  written as the kPa the property needs -- is left out, and named with its
-  hole, depth and value in :attr:`DiggsWriteNotes.unwritten`; the gate does
-  not look for exactly those.
+  pocket penetrometer printed in mm, which cannot be written as the kPa the
+  property needs -- is left out, and named with its hole, depth and value in
+  :attr:`DiggsWriteNotes.unwritten`; the gate does not look for exactly
+  those.
+* A value printed with NO unit (other than a D-value, above, and a property
+  that has none, a pH) has an unknown unit and converts to nothing (RI-20):
+  it is left out and named in :attr:`DiggsWriteNotes.skipped` as printed
+  with no unit. Until RI-20 such a value converted as a bare number, so a
+  depth of "4" on a log in feet went into the file as 4 m. The gate does not
+  look for it, because it has no SI value to look for.
 
 WHAT THE FIELD SESSION OF 2026-10-14 TAUGHT (RI-27), and what the gate does:
 
@@ -161,7 +167,8 @@ from report_ingest.model import (
     ConsolidationResult, DCPData, GradationResult, Investigation, LabTest,
     Layer, MoistureDensityResult, OtherResult, Project, Quantity,
     ReportRecord, Sample, SPT, StrengthResult, SummaryRow,
-    SummaryTableResult, WaterLevel, si_numbers,
+    SummaryTableResult, WaterLevel, G, is_mass_density, si_numbers,
+    unit_printed,
 )
 # The remark a pit's "groundwater not encountered" is written as (a TrialPit
 # has no waterStrike in 2.6). ONE definition, the reader's, so the writer and
@@ -254,13 +261,22 @@ TOLERANCE: Dict[str, float] = {
     "unit_weight_kNm3": 0.005,
 }
 
-#: The record's SI unit -> the code the DIGGS schema accepts for it. Only
-#: one entry, and it is the one that fails loudly rather than quietly: the
-#: schema's plane-angle unit is ``dega``, ``deg`` is not in its list at all,
-#: and a friction angle written in degrees fails validation on the whole
-#: file. Everything else the record converts to -- m, mm, kPa, kN/m3, %, mV,
-#: mg/kg, ohm.m, degC, m3, kg, m/s -- is a code the schema already knows.
-UOM_IN_FILE: Dict[str, str] = {"deg": "dega"}
+#: The record's SI unit -> the code the DIGGS schema accepts for it. The
+#: entries are the ones that fail loudly rather than quietly: the schema's
+#: plane-angle unit is ``dega``, ``deg`` is not in its list at all, and a
+#: friction angle written in degrees fails validation on the whole file. A
+#: dynamic cone's penetration per blow has no code in the list either, so it
+#: is written the way the schema lets a file name a unit of its own -- an
+#: ``authority:unit`` pair, the colon mandatory (``eml:UnitOfMeasureExt``,
+#: whose ``EnumExtensionPattern`` is ``.*:.*``; ``diggs:AllUnits`` takes it)
+#: -- under this package's name. A ratio (a pH) has no unit. ``1`` is not in
+#: the list (its dimensionless code is ``Euc``) and ``uom`` is optional, so a
+#: ratio is written with no uom, as a plain number is. Everything else the
+#: record converts to -- m, mm, kPa, kN/m3, %, mV,
+#: mg/kg, mg/L, S/m, ohm.m, degC, m3, kg, m/s -- is a code the schema
+#: already knows.
+UOM_IN_FILE: Dict[str, str] = {"deg": "dega", "1": "",
+                               "mm/blow": "report_ingest:mm/blow"}
 
 #: Depths and measures are written to this many decimals. Four is about
 #: 0.1 mm on a depth and is well inside every tolerance above.
@@ -328,14 +344,62 @@ def _coord_or_unknown(value: Optional[float]) -> str:
     return _UNKNOWN_COORD if value is None else _coord(value)
 
 
-def _si(q: Optional[Quantity]) -> Optional[Tuple[float, str]]:
-    """``(value, SI unit)`` for a quantity, or None when it cannot convert."""
+def _si(q: Optional[Quantity], kind: Optional[str] = None
+        ) -> Optional[Tuple[float, str]]:
+    """``(value, SI unit)`` for a quantity, or None when it cannot convert.
+
+    A quantity printed with no unit does not convert unless ``kind`` says it
+    has none (a pH: ``"ratio"``); see :func:`report_ingest.model.to_si`.
+    """
     if q is None:
         return None
-    converted = q.to_si()
+    converted = q.to_si(kind=kind)
     if converted is None:
         return None
     return converted.value, converted.unit
+
+
+def _as_printed(q: Quantity) -> str:
+    """A value that did not convert, as the notes name it, and why.
+
+    Two reasons, said differently: a unit that WAS printed and has no factor
+    in the table, and a value read with no unit at all -- whose unit is
+    unknown, which is not the same as having none (RI-20).
+    """
+    if not unit_printed(q.unit):
+        return f"{q.value:g} with no unit printed -- its unit is unknown"
+    return f"{q.value:g} {q.unit!r} -- unit not in the conversion table"
+
+
+def _quantities_in(value: Any) -> List[Quantity]:
+    """Every :class:`Quantity` inside a model, a list or a tuple."""
+    if isinstance(value, Quantity):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [q for item in value for q in _quantities_in(item)]
+    fields = getattr(type(value), "model_fields", None)
+    if not fields:
+        return []
+    return [q for name in fields
+            for q in _quantities_in(getattr(value, name, None))]
+
+
+def _say_gravity(notes: "DiggsWriteNotes", items: Sequence[Any]) -> None:
+    """Name, once, the mass densities written as unit weights.
+
+    A density printed in kg/m3, g/cm3, Mg/m3 or t/m3 is a mass per volume.
+    The record's density properties are unit weights in kN/m3 (the trade's
+    pcf), so such a value goes into the file multiplied by g; the file
+    cannot say so, and the notes do.
+    """
+    printed = sorted({q.unit.strip() for item in items
+                      for q in _quantities_in(item)
+                      if is_mass_density(q.unit)})
+    if printed:
+        notes.normalised.append(
+            f"densities printed as a mass per volume ({', '.join(printed)}) "
+            f"are written as unit weights in kN/m3: the printed density "
+            f"times standard gravity, g = {G} m/s2")
 
 
 def _water_readings(inv: Investigation) -> List[WaterLevel]:
@@ -409,9 +473,10 @@ class DiggsWriteNotes:
     left_out: List[Dict[str, Any]] = field(default_factory=list)
     #: ``(hole, depth in m, value in SI)`` for every VALUE the writer left out
     #: because it converts to the wrong kind of unit for its property -- a
-    #: cohesion or a pocket penetrometer printed with no unit at all is the
-    #: common case. The round-trip gate does not look for these, and the
-    #: reason for each is in :attr:`skipped`.
+    #: pocket penetrometer in mm, a cohesion in kN/m3. The round-trip gate
+    #: does not look for these, and the reason for each is in
+    #: :attr:`skipped`. A value printed with no unit is not here: it has no
+    #: SI value, so the gate never looks for it (RI-20).
     unwritten: List[Tuple[str, Optional[float], float]] = field(
         default_factory=list)
     #: A unit the writer took from a convention of the trade rather than
@@ -683,8 +748,7 @@ class _Writer:
         if inv.elevation is not None and elev is None:
             self.notes.skipped.append(
                 f"{inv.investigation_id}: ground elevation "
-                f"{inv.elevation.value:g} {inv.elevation.unit!r} -- unit not "
-                f"in the conversion table; written as unknown")
+                f"{_as_printed(inv.elevation)}; written as unknown")
         # An x, y or elevation nobody gave stays UNKNOWN: None here, NaN in
         # the file. DIGGS requires the reference point, so it cannot be left
         # out -- and a 0 would read as a real place (RI-27).
@@ -782,8 +846,7 @@ class _Writer:
         elif inv.total_depth is not None:
             self.notes.skipped.append(
                 f"{inv.investigation_id}: total depth "
-                f"{inv.total_depth.value:g} {inv.total_depth.unit!r} -- unit "
-                f"not in the conversion table")
+                f"{_as_printed(inv.total_depth)}")
         if element == "Borehole":
             self.drilling(inv, gml_id)
             self.water_strikes(inv, gml_id)
@@ -996,8 +1059,8 @@ class _Writer:
             if top is None:
                 self.notes.skipped.append(
                     f"{inv.investigation_id}: sample "
-                    f"{sample.sample_id or n} depth {sample.top.value:g} "
-                    f"{sample.top.unit!r} -- unit not in the conversion table")
+                    f"{sample.sample_id or n} depth "
+                    f"{_as_printed(sample.top)}")
                 continue
             bottom = _si(sample.bottom)
             sa_id = self.uid(f"sa_{_ncname(gml_id)}_{n}")
@@ -1085,8 +1148,8 @@ class _Writer:
         for ly in inv.layers:
             if _si(ly.top) is None:
                 self.notes.skipped.append(
-                    f"{inv.investigation_id}: layer top {ly.top.value:g} "
-                    f"{ly.top.unit!r} -- unit not in the conversion table")
+                    f"{inv.investigation_id}: layer top "
+                    f"{_as_printed(ly.top)}")
         if not layers:
             return
         layers = self._resolve_dittos(inv, layers)
@@ -1266,7 +1329,10 @@ class _Writer:
             self.notes.skipped.append(
                 f"{inv.investigation_id}: the sounding's depths are in "
                 f"{inv.depth_unit!r}, which is not in the conversion table; "
-                f"the series was not written")
+                f"the series was not written" if unit_printed(inv.depth_unit)
+                else f"{inv.investigation_id}: the sounding's depths have no "
+                     f"unit printed, so their unit is unknown; the series "
+                     f"was not written")
             return None
         if data.vertical_axis == "elevation" if isinstance(data, CPTData) \
                 else False:
@@ -1332,8 +1398,9 @@ class _Writer:
             rows.append(row)
         if dropped:
             self.notes.skipped.append(
-                f"{inv.investigation_id}: {dropped} cone reading(s) are in a "
-                f"unit not in the conversion table and are not in the file")
+                f"{inv.investigation_id}: {dropped} cone reading(s) have a "
+                f"depth in a unit not in the conversion table, or with no "
+                f"unit printed, and are not in the file")
         if not rows:
             return
         test_id = self.uid(f"cpt_{_ncname(gml_id)}")
@@ -1409,12 +1476,16 @@ class _Writer:
             return
         rows: List[List[Any]] = []
         index_uom = ""
+        # A reading whose unit did not convert is left out of its cell, and
+        # the notes say so once per field -- an index printed with no unit
+        # is mm/blow on one sheet and in/blow on the next (RI-20).
+        unconverted: Dict[str, List[Quantity]] = {}
         for point in data.points:
             depth = _si(point.depth)
             if depth is None:
                 continue
             row: List[Any] = [depth[0]]
-            for _label, _klass, field_name, _uom, _d in present:
+            for label, _klass, field_name, _uom, _d in present:
                 raw = getattr(point, field_name)
                 if raw is None:
                     row.append("-")
@@ -1422,6 +1493,7 @@ class _Writer:
                     got = _si(raw)
                     if got is None:
                         row.append("-")
+                        unconverted.setdefault(label, []).append(raw)
                     else:
                         row.append(got[0])
                         if field_name == "index":
@@ -1429,6 +1501,11 @@ class _Writer:
                 else:
                     row.append(float(raw))
             rows.append(row)
+        for label, raws in unconverted.items():
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: {len(raws)} {label} reading(s) "
+                f"left out of the dynamic probe series, the first "
+                f"{_as_printed(raws[0])}")
         if not rows:
             return
         # The index column's unit is whatever the sheet's own index
@@ -1528,10 +1605,9 @@ class _Writer:
                      else APP_CODESPACE)
             self.out(f'<propertyClass codeSpace={quoteattr(space)}>'
                      f"{escape(column.klass)}</propertyClass>", 11)
-            if column.uom:
-                self.out(f"<uom>"
-                         f"{escape(UOM_IN_FILE.get(column.uom, column.uom))}"
-                         f"</uom>", 11)
+            uom = UOM_IN_FILE.get(column.uom, column.uom)
+            if uom:
+                self.out(f"<uom>{escape(uom)}</uom>", 11)
             self.out("</Property>", 10)
         self.out("</properties>", 9)
         self.out("</PropertyParameters>", 8)
@@ -1559,8 +1635,7 @@ class _Writer:
         if top is None:
             self.notes.skipped.append(
                 f"{inv.investigation_id}: driven record at "
-                f"{record.depth_top.value:g} {record.depth_top.unit!r} -- "
-                f"unit not in the conversion table")
+                f"{_as_printed(record.depth_top)}")
             return
         bottom = _si(record.depth_bottom)
         said_assumed: List[str] = []
@@ -1659,8 +1734,7 @@ class _Writer:
             if got is None:
                 self.notes.skipped.append(
                     f"{inv.investigation_id}/{sample.sample_id}: {label} "
-                    f"{q.value:g} {q.unit!r} -- unit not in the conversion "
-                    f"table")
+                    f"{_as_printed(q)}")
                 return
             if got[1] != uom:
                 self.notes.skipped.append(
@@ -1740,8 +1814,7 @@ class _Writer:
         top = _si(depth)
         if top is None:
             self.notes.skipped.append(
-                f"{where}: depth {depth.value:g} {depth.unit!r} -- unit not "
-                f"in the conversion table")
+                f"{where}: depth {_as_printed(depth)}")
             return None
         base = _si(bottom) if bottom is not None else None
         return gml_id, top[0], (base[0] if base else None)
@@ -2137,9 +2210,8 @@ class _Writer:
                 density = _si(point.dry_density)
                 if density is None:
                     self.notes.skipped.append(
-                        f"compaction point {point.dry_density.value:g} "
-                        f"{point.dry_density.unit!r} -- unit not in the "
-                        f"conversion table")
+                        f"compaction point "
+                        f"{_as_printed(point.dry_density)}")
                     continue
                 rows.append([float(point.water_content), density[0]])
             if rows:
@@ -2203,7 +2275,7 @@ class _Writer:
                     [[float(v)] for v in result.water_contents]))
 
         elif isinstance(result, ChemicalResult):
-            values.reported("pH", "pH", result.pH)
+            values.reported("pH", "pH", result.pH, kind="ratio")
             values.reported("Resistivity", "resistivity", result.resistivity,
                             "ohm.m")
             values.reported("Minimum resistivity", "resistivity_minimum",
@@ -2222,7 +2294,9 @@ class _Writer:
             values.reported("Temperature", "temperature", result.temperature,
                             "degC")
             values.reported("Water content", "water_content_natural",
-                            result.wc, "%")
+                            result.wc, "%", kind="percent")
+            values.reported("Loss on ignition", "LOI",
+                            result.organic_percent, "%", kind="percent")
             values.reported("Reporting limit", "reporting_limit",
                             result.reporting_limit, dictionary=False)
             values.text("Laboratory sample", "lab_sample_id",
@@ -2302,7 +2376,7 @@ class _Writer:
             if x is None or y is None:
                 self.notes.skipped.append(
                     f"strength curve point ({point.x}, {point.y}) -- a unit "
-                    f"not in the conversion table")
+                    f"not in the conversion table, or none printed")
                 continue
             row = [x[0], y[0], point.specimen or "-"]
             (strain if x[1] == "%" else envelope).append(row)
@@ -2384,7 +2458,8 @@ class _Writer:
                         dictionary=False)
         values.number("Water content", "water_content_natural", row.wc, "%")
         values.number("Liquid limit", "liquid_limit", row.ll, "%")
-        values.reported("Plastic limit", "plastic_limit", row.pl, "%")
+        values.reported("Plastic limit", "plastic_limit", row.pl, "%",
+                        kind="percent")
         values.number("Plasticity index", "plasticity_index", row.pi, "%")
         values.number("Percent fines", "percent_fines", row.fines_percent,
                       "%")
@@ -2411,7 +2486,7 @@ class _Writer:
         values.number("Swell", "swell_percent", row.swell_percent, "%",
                       dictionary=False)
         values.number("Loss on ignition", "LOI", row.organic_percent, "%")
-        values.reported("pH", "pH", row.pH)
+        values.reported("pH", "pH", row.pH, kind="ratio")
         values.reported("Resistivity", "resistivity", row.resistivity,
                         "ohm.m")
         values.reported("Sulfate", "sulfate_content", row.sulfate)
@@ -2480,21 +2555,23 @@ class _Values:
         self.row.append("true")
 
     def quantity(self, name: str, klass: str, quantity: Optional[Quantity],
-                 uom: Optional[str] = None, dictionary: bool = True) -> None:
+                 uom: Optional[str] = None, dictionary: bool = True,
+                 kind: Optional[str] = None) -> None:
         """A value with a unit, converted once, or a note saying why not.
 
         ``uom`` pins the unit the property must be written in; leave it None
         where the sheet's own kind decides -- a sulfate content is a
-        percentage on one form and milligrams per kilogram on the next, and
-        both are right.
+        percentage on one form, milligrams per kilogram on the next and
+        milligrams per litre of water on a third, and all are right.
+        ``kind`` is for a property that has no unit (a pH: ``"ratio"``), so
+        a blank there is complete rather than unknown.
         """
         if quantity is None:
             return
-        got = _si(quantity)
+        got = _si(quantity, kind)
         if got is None:
             self.writer.notes.skipped.append(
-                f"{self.where}: {name} {quantity.value:g} "
-                f"{quantity.unit!r} -- unit not in the conversion table")
+                f"{self.where}: {name} {_as_printed(quantity)}")
             return
         if uom is not None and got[1] != uom:
             self.writer.notes.skipped.append(
@@ -2517,13 +2594,7 @@ class _Values:
         """
         if quantity is None:
             return
-        got = _si(quantity)
-        if got is None:
-            self.writer.notes.skipped.append(
-                f"{self.where}: {name} {quantity.value:g} "
-                f"{quantity.unit!r} -- unit not in the conversion table")
-            return
-        if got[1] == "1" and not str(quantity.unit or "").strip():
+        if not unit_printed(quantity.unit):
             # A D-value printed with NO unit. A particle size is not a
             # dimensionless number, and the trade prints every D-value in
             # millimetres without ever writing the unit into the column head
@@ -2535,6 +2606,11 @@ class _Values:
                 f"D-values in")
             self.number(name, klass, float(quantity.value), "mm", dictionary)
             return
+        got = _si(quantity)
+        if got is None:
+            self.writer.notes.skipped.append(
+                f"{self.where}: {name} {_as_printed(quantity)}")
+            return
         if got[1] != "m":
             self.writer.notes.skipped.append(
                 f"{self.where}: {name} {quantity.value:g} {quantity.unit!r} "
@@ -2544,7 +2620,8 @@ class _Values:
         self.number(name, klass, got[0] * 1000.0, "mm", dictionary)
 
     def reported(self, name: str, klass: str, value: Any,
-                 uom: Optional[str] = None, dictionary: bool = True) -> None:
+                 uom: Optional[str] = None, dictionary: bool = True,
+                 kind: Optional[str] = None) -> None:
         """A value a sheet printed as a number, with a unit, or as words."""
         if value is None:
             return
@@ -2552,7 +2629,7 @@ class _Values:
             self.text(name, klass, value, dictionary)
             return
         if isinstance(value, Quantity):
-            self.quantity(name, klass, value, uom, dictionary)
+            self.quantity(name, klass, value, uom, dictionary, kind)
             return
         self.number(name, klass, float(value), "", dictionary)
 
@@ -2713,6 +2790,7 @@ def write_diggs(record_or_investigations: Any,
     writer = _Writer(investigations, project, document_id, lab,
                      left_out=left_out)
     xml = writer.build()
+    _say_gravity(writer.notes, list(investigations) + list(lab))
     if notes is not None:
         notes.append(writer.notes)
     return xml
@@ -2723,24 +2801,28 @@ def write_diggs(record_or_investigations: Any,
 # ---------------------------------------------------------------------------
 
 def diggs_schema_gate(xml: str, *, schema_version: str = "2.6"
-                      ) -> Tuple[bool, List[str]]:
+                      ) -> Tuple[Optional[bool], List[str]]:
     """``(ok, errors)`` from the DIGGS XSD.
 
     DIGGS 2.6 is checked against the schema bundled with
     ``subsurface_characterization`` (lxml, no optional package, no network),
     so this runs on every host. Until 2026-10-08 it needed pydiggs, which the
-    cluster does not have. ``(False, ["... is not installed ..."])`` when no
-    check is possible here (2.5.a without pydiggs, or lxml missing), so a
-    caller can tell "the file is wrong" from "nothing checked it" -- which a
-    bare False could not.
+    cluster does not have.
+
+    ``ok`` is True (valid), False (the file is wrong; ``errors`` says where)
+    or None: the check could NOT RUN here (2.5.a without pydiggs, or lxml
+    missing), and ``errors`` holds the one reason. None is neither a pass nor
+    a failure. Until RI-20 it was returned as False, so a file nothing had
+    checked was recorded as one that had failed; a caller must not read None
+    as a pass either.
     """
     from subsurface_characterization.formats.diggs_validation import (
         has_schema_check, validate_diggs_schema,
     )
     if not has_schema_check(schema_version):
-        return False, [f"the DIGGS {schema_version} schema check is not "
-                       "installed here, so nothing checked this file against "
-                       "the DIGGS schema"]
+        return None, [f"the DIGGS {schema_version} schema check is not "
+                      "installed here (no lxml, or no pydiggs for 2.5.a), so "
+                      "nothing checked this file against the DIGGS schema"]
     result = validate_diggs_schema(content=xml, schema_version=schema_version)
     return bool(result.is_valid), list(result.errors)
 
@@ -3043,8 +3125,8 @@ def _compare_lab(xml: str, lab: Sequence[LabTest],
     """Every laboratory value, against what the file gives back.
 
     A value the writer named in :attr:`DiggsWriteNotes.unwritten` -- a
-    cohesion printed with no unit, which no property can be written in -- is
-    not looked for; the writer's notes say why.
+    cohesion in a unit that is not a stress -- is not looked for; the
+    writer's notes say why.
     """
     in_file = _file_tests(xml)
     dt = TOLERANCE["depth_m"]
@@ -3271,8 +3353,8 @@ def _compare_measurements(name: str, want: Investigation, got: Any,
     """Every N value, drive and index value, against what came back.
 
     A value the writer named in :attr:`DiggsWriteNotes.unwritten` -- a
-    pocket penetrometer printed with no unit, which cannot be written as the
-    kPa its property needs -- is not looked for.
+    pocket penetrometer in a unit that is not a stress, which cannot be
+    written as the kPa its property needs -- is not looked for.
     """
     by_parameter: Dict[str, List[Tuple[float, float]]] = {}
     for m in got.measurements:

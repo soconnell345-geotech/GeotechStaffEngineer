@@ -3983,8 +3983,11 @@ def _diggs_verdicts(record: Any, outputs: Dict[str, str]) -> Dict[str, str]:
         if entry.where == "diggs.schema":
             if entry.kind == "note":
                 schema = "valid"
-            elif any("pydiggs is not installed" in v for v in entry.values):
-                schema = "not checked here"
+            elif entry.kind == "not_run" or any(
+                    "not installed" in v for v in entry.values):
+                # The second test reads a record written before RI-20, when
+                # a check that could not run was filed as a failure.
+                schema = "not run"
             else:
                 schema = "INVALID"
         elif entry.where == "diggs.roundtrip":
@@ -4193,7 +4196,7 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         "labels": {"pages_voted": 0, "split": 0, "review_changed": 0,
                    "review_changed_off_split": 0, "disagreements_left": 0,
                    "scored_pages": 0, "modes": {}, "policies": {}},
-        "diggs": {"written": 0, "valid": 0, "not_checked": 0, "invalid": 0,
+        "diggs": {"written": 0, "valid": 0, "not_run": 0, "invalid": 0,
                   "equal": 0, "differs": 0},
         "scores": {"logs": {"found": 0, "total": 0, "n": 0},
                    "lab": {"found": 0, "total": 0, "n": 0},
@@ -4248,8 +4251,8 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
             totals["diggs"]["written"] += 1
         if diggs.get("schema") == "valid":
             totals["diggs"]["valid"] += 1
-        elif diggs.get("schema") == "not checked here":
-            totals["diggs"]["not_checked"] += 1
+        elif diggs.get("schema") == "not run":
+            totals["diggs"]["not_run"] += 1
         elif diggs.get("schema") == "INVALID":
             totals["diggs"]["invalid"] += 1
         if diggs.get("roundtrip") == "equal":
@@ -4398,7 +4401,8 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
         "",
         "**DIGGS** reads `written / schema / read back`: whether a file was "
         "written, whether it validated against the bundled 2.6 schema "
-        "(`not checked here` when pydiggs is not installed), and whether "
+        "(`not run` when no schema check is installed on the host: "
+        "neither a pass nor a failure), and whether "
         "reading it back with the app's own parser gives the record's "
         "values. **qa** counts the record's QA entries: `disagreement` is "
         "the two voters inside a reader (the grid or the tables against the "
@@ -4488,7 +4492,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"QA entries {totals['qa']}: "
             f"{_kinds_cell(totals['qa_by_kind'])}",
             f"DIGGS: {diggs['written']} written, {diggs['valid']} valid, "
-            f"{diggs['not_checked']} not checked here, {diggs['invalid']} "
+            f"{diggs['not_run']} not run, {diggs['invalid']} "
             f"invalid; {diggs['equal']} read back equal, {diggs['differs']} "
             f"differ",
             "```"]

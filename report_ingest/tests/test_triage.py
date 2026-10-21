@@ -228,6 +228,53 @@ def test_every_enumeration_is_named_in_the_schema_the_model_sees():
         assert value in props["toc_agreement"]["description"]
 
 
+# -- the workflow, settled onto its list (RI-20) ------------------------------
+
+@pytest.mark.parametrize("answer,want", [
+    ("standard", "standard"), ("Appendix Only", "appendix_only"),
+    ("appendix-only", "appendix_only"), ("needs a person", "needs_person"),
+    ("needs_a_person", "needs_person"), (" MULTI_DOCUMENT ", "multi_document"),
+])
+def test_a_workflow_spelt_another_way_is_settled_onto_the_list(answer, want):
+    from report_ingest.triage import settle_workflow
+    assert settle_workflow(answer) == (want, "")
+
+
+@pytest.mark.parametrize("answer", ["unsure", "", "standard-ish"])
+def test_a_workflow_off_the_list_is_standard_and_named(answer):
+    from report_ingest.triage import settle_workflow
+    workflow, note = settle_workflow(answer)
+    assert workflow == "standard"
+    assert repr(answer) in note and "not one of" in note
+
+
+def test_the_profile_carries_the_settled_workflow_and_the_note(synthetic,
+                                                               roles):
+    doc, _ = synthetic
+    profile = triage(doc, roles, engine=FakeEngine(
+        [{"final": _findings(workflow="Appendix Only")}]))
+    assert profile.workflow == "appendix_only" and profile.workflow_note == ""
+    profile = triage(doc, roles, engine=FakeEngine(
+        [{"final": _findings(workflow="unsure")}]))
+    assert profile.workflow == "standard"
+    assert "'unsure'" in profile.to_dict()["workflow_note"]
+
+
+def test_the_workflow_is_an_enum_in_the_strict_schema():
+    from report_ingest.engine import strict_schema
+    prop = strict_schema(TriageFindings)["properties"]["workflow"]
+    assert prop["enum"] == list(WORKFLOWS)
+
+
+def test_the_record_refuses_a_workflow_off_the_list():
+    from pydantic import ValidationError
+    from report_ingest.model import DocumentFacts
+    assert DocumentFacts(workflow="appendix_only").workflow == "appendix_only"
+    assert DocumentFacts().workflow == ""
+    with pytest.raises(ValidationError):
+        DocumentFacts(workflow="needs_a_person")
+
+
 def test_the_findings_model_asks_for_no_counted_number():
     # scan_fraction and friends are measured, never requested: a model that
     # is asked to count 455 ledger lines will be nearly right, which is the

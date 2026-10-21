@@ -974,6 +974,7 @@ class WrittenOutputs:
                 ("page", self.page), ("diggs", self.diggs), ("db", self.db))
                 if value},
             "diggs": {"schema_ok": self.schema_ok,
+                      "schema": self.schema_verdict,
                       "roundtrip_ok": self.roundtrip_ok,
                       "schema_errors": self.schema_errors[:5],
                       "roundtrip_diffs": self.roundtrip_diffs[:5]},
@@ -985,6 +986,20 @@ class WrittenOutputs:
             ("record", self.record), ("summary", self.summary),
             ("page", self.page), ("diggs", self.diggs), ("db", self.db))
             if value}
+
+    @property
+    def schema_verdict(self) -> str:
+        """``valid``, ``INVALID``, ``not run`` or ``not written``, in words.
+
+        ``schema_ok`` is None both when no file was written and when a file
+        was written but no schema check could run here; this tells the two
+        apart, so neither reads as a pass or as a failure.
+        """
+        if not self.diggs:
+            return "not written"
+        if self.schema_ok is None:
+            return "not run"
+        return "valid" if self.schema_ok else "INVALID"
 
 
 def write_outputs(record: ReportRecord, out_dir: Any, *,
@@ -1005,8 +1020,8 @@ def write_outputs(record: ReportRecord, out_dir: Any, *,
 
     The DIGGS file is written and gated FIRST so that its two verdicts are in
     the record's QA before the record is written. Both verdicts are always
-    recorded -- including "nothing checked this", which is what an absent
-    pydiggs means and is not the same as a pass.
+    recorded -- including "not run" when no schema check is possible here,
+    which is neither a pass nor a failure.
     """
     out = str(out_dir)
     os.makedirs(out, exist_ok=True)
@@ -1082,11 +1097,21 @@ def _write_diggs(record: ReportRecord, out: str,
 
     ok, errors = diggs_schema_gate(xml)
     written.schema_ok, written.schema_errors = ok, list(errors)
-    record.qa.append(QAEntry(
-        kind="note" if ok else "out_of_range", where="diggs.schema",
-        detail=("the DIGGS file is valid against the bundled 2.6 schema"
-                if ok else "the DIGGS file did NOT pass the 2.6 schema"),
-        values=list(errors)[:5]))
+    if ok is None:
+        # No validator here: the file was not checked, so it neither passed
+        # nor failed, and the entry says why (RI-20; until then this was
+        # recorded as a failure).
+        record.qa.append(QAEntry(
+            kind="not_run", where="diggs.schema",
+            detail="the DIGGS schema check did not run here, so the file "
+                   "was neither passed nor failed: "
+                   + ("; ".join(errors) or "no reason was given")))
+    else:
+        record.qa.append(QAEntry(
+            kind="note" if ok else "out_of_range", where="diggs.schema",
+            detail=("the DIGGS file is valid against the bundled 2.6 schema"
+                    if ok else "the DIGGS file did NOT pass the 2.6 schema"),
+            values=list(errors)[:5]))
 
     ok, diffs = diggs_roundtrip_gate(xml, record.investigations,
                                      project=record.project,

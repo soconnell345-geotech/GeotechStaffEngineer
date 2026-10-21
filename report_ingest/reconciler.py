@@ -55,8 +55,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from pydantic import BaseModel, Field
 
 from report_ingest.model import (
-    Investigation, LabTest, QAEntry, Quantity, ReportRecord, Sample,
-    si_numbers,
+    UNITLESS_FIELDS, Investigation, LabTest, QAEntry, Quantity, ReportRecord,
+    Sample, si_numbers, unit_printed,
 )
 from report_ingest.scoring import KEY_CONTENT
 
@@ -895,15 +895,31 @@ def _check_below_total_depth(record: ReportRecord,
 # -- units, pages and what the readers could not settle ---------------------
 
 def _check_units(record: ReportRecord, qa: List[QAEntry]) -> None:
-    """Every printed unit with no conversion, named once with its fields."""
+    """Every unit with no conversion, named once with its fields.
+
+    Two different things, named differently. A unit that WAS printed and has
+    no factor in the table is one entry per unit. A value read with NO unit
+    printed beside it is one entry for all of them: its unit is unknown, so
+    it is not converted -- a depth of "4" is not 4 m -- unless its field is
+    one whose kind has no unit (a pH; :data:`UNITLESS_FIELDS`). Calculations
+    are not walked: the calculation reader names its own units, and an empty
+    one there is a count or a factor of safety by that reader's schema.
+    """
     seen: Dict[str, List[str]] = {}
+    blank: List[str] = []
     for where, holder in ([("investigations", inv)
                            for inv in record.investigations]
                           + [("lab_tests", test) for test in record.lab_tests]
                           + [("general", record.general)]):
         for path, value in _quantities(holder, where):
-            if value.to_si() is None:
+            names = re.findall(r"[A-Za-z_]\w*", path)
+            kind = UNITLESS_FIELDS.get(names[-1]) if names else None
+            if value.to_si(kind=kind) is not None:
+                continue
+            if unit_printed(value.unit):
                 seen.setdefault(value.unit, []).append(path)
+            else:
+                blank.append(path)
     for unit, paths in sorted(seen.items()):
         qa.append(QAEntry(
             kind="unconverted", where="units",
@@ -911,6 +927,13 @@ def _check_units(record: ReportRecord, qa: List[QAEntry]) -> None:
                    f"no conversion in the record's unit table, so they are "
                    f"stored as printed and are absent from the SI view",
             values=paths[:10]))
+    if blank:
+        qa.append(QAEntry(
+            kind="unconverted", where="units",
+            detail=f"{len(blank)} value(s) were read with no unit printed "
+                   f"beside them, so their unit is unknown: they are stored "
+                   f"as printed, not converted, and absent from the SI view",
+            values=blank[:10]))
 
 
 def _quantities(value: Any, path: str = "") -> List[Tuple[str, Quantity]]:

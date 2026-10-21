@@ -908,7 +908,9 @@ def _run_write_diggs(params: dict) -> dict:
         fh.write(xml)
     note = notes[0] if notes else None
     schema_ok, schema_errors = diggs_schema_gate(xml)
-    checked = not any("not installed" in e for e in schema_errors)
+    # None from the gate: no schema check could run here. Neither a pass nor
+    # a failure, and never reported as valid (RI-20).
+    checked = schema_ok is not None
     back_ok, diffs = diggs_roundtrip_gate(xml, investigations,
                                           project=project, lab_tests=lab,
                                           notes=note)
@@ -916,8 +918,9 @@ def _run_write_diggs(params: dict) -> dict:
         verdict = ("valid DIGGS 2.6: it passed the schema and reads back "
                    "equal to the data given")
     elif not checked:
-        verdict = ("written, but the schema could NOT be checked here "
-                   "(no schema check is installed); "
+        verdict = ("written, but the schema check did not run here "
+                   "(no schema check is installed), so it is not known to "
+                   "be valid DIGGS -- do not call it valid; "
                    + ("it reads back equal to the data given" if back_ok
                       else "and it does NOT read back equal to the data "
                            "given -- see read_back.diffs"))
@@ -991,7 +994,8 @@ def _run_write_diggs(params: dict) -> dict:
                                    "entries": cross[:20]} if cross else {})}),
         **({"cited_pages": pages_check}
            if pages_check.get("why") != "no record cites a page" else {}),
-        "schema_check": {"checked": checked, "valid": bool(schema_ok),
+        "schema_check": {"checked": checked,
+                         "valid": schema_ok if checked else None,
                          "errors": list(schema_errors)[:10]},
         "read_back": {"equal": bool(back_ok), "diffs": list(diffs)[:15],
                       "n_diffs": len(diffs)},
