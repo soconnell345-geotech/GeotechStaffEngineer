@@ -305,14 +305,29 @@ WELDED_WIRE_GRID_W11 = Reinforcement(
 # The geogrids are type "geogrid": GEC-11 Vol I Table 3-6's alpha 0.8 for
 # extensible grids (p. 3-17). They took alpha 1.0 as "geosynthetic" before
 # GM-256.
+#: The geogrids' Tal has no recorded source (GM-262 review): the code
+#: called it the long-term design strength after creep, installation
+#: damage and durability, GEC-11's Tal = Tult / RF, and the rupture check
+#: takes it so, at a factor of safety of 1.5 (mse.rupture_FOS_required).
+_GEOGRID_BASIS = (
+    "the long-term strength after installation damage, creep and "
+    "durability, Tult / RF (GEC-11 Vol I Eq. 3-12, p. 3-28): {Tal:g} kN/m "
+    "(about {lbft:,.0f} lb/ft). No source is "
+    "recorded for this value and it has not been checked against the "
+    "product's published strength; a product's own Tult / RF for the "
+    "wall's backfill and design life is a custom reinforcement "
+    "(reinforcement_Tallowable)")
+
 GEOGRID_UX1600 = Reinforcement(
     name="Geogrid UX1600 (HDPE)",
     type="geogrid",
     Tallowable=21.9,  # kN/m (LTDS after creep, damage, durability)
+    basis=_GEOGRID_BASIS.format(Tal=21.9, lbft=round(21.9e3 * _FT / 4.4482216, -1)),
 )
 
 GEOGRID_UX1700 = Reinforcement(
     name="Geogrid UX1700 (HDPE)",
     type="geogrid",
     Tallowable=29.2,  # kN/m
+    basis=_GEOGRID_BASIS.format(Tal=29.2, lbft=round(29.2e3 * _FT / 4.4482216, -1)),
 )

@@ -8,6 +8,11 @@ measurements onto a regular grid.
 import numpy as np
 
 from gstools_agent.gstools_utils import import_gstools
+from geotech_common.choices import how_given
+from gstools_agent.choices import (
+    fit_choice, kriging_type_choice, model_choice, nugget_choice,
+    scale_choices,
+)
 from gstools_agent.results import KrigingResult
 
 
@@ -136,6 +141,7 @@ def analyze_kriging(
     x_arr = np.asarray(x, dtype=float)
     y_arr = np.asarray(y, dtype=float)
     val_arr = np.asarray(values, dtype=float)
+    variance_arg, len_scale_arg = variance, len_scale
 
     # Auto grid bounds
     buf = 0.1
@@ -232,6 +238,28 @@ def analyze_kriging(
             krig, model, regions, cell_size, quantity, margin, x_arr, y_arr,
             notes)
 
+    nugget_fitted = bool(fit_variogram and fit_nugget)
+    chosen = [
+        model_choice(model_type, fitted=bool(fit_variogram)),
+        fit_choice(bool(fit_variogram), fit_variogram, True, nugget_fitted,
+                   float(nugget)),
+    ]
+    if not fit_variogram:
+        chosen += scale_choices(variance_arg, len_scale_arg, float(variance),
+                                float(len_scale), "", len(val_arr), False)
+    if nugget_fitted:
+        chosen.append(nugget_choice(
+            float(model.nugget), True,
+            how_given(fit_nugget, True, name="fit_nugget"),
+            "fitted with the sill and correlation length; fit_nugget=false "
+            "holds it at a number (the measurement error, twinned borings)"))
+    else:
+        chosen.append(nugget_choice(
+            float(nugget), False, how_given(nugget, 0.0, name="nugget"),
+            "no nugget unless one is given: the surface then passes "
+            "exactly through the data"))
+    chosen.append(kriging_type_choice(kriging_type))
+
     return KrigingResult(
         n_data=len(x_arr),
         n_grid_x=n_grid_x,
@@ -255,7 +283,8 @@ def analyze_kriging(
         obs_values=val_arr,
         regions_geom=regions_geom,
         variogram_fitted=bool(fit_variogram),
-        nugget_fitted=bool(fit_variogram and fit_nugget),
+        nugget_fitted=nugget_fitted,
+        choices=chosen,
     )
 
 
