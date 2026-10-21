@@ -85,6 +85,15 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
   A/A_sc = (5.7/3.0)^2 = 3.61 the curve reads 2.55 on both copies, so 27 in
   becomes 10.6 in; GEC-13 prints 2.7 and 10 in, its arrows (Fig. 5-27)
   drawn at A/A_sc 3.53, n' 2.63 on the curve, and labelled 3.6 and 2.7.
+  The owner's note on OWN-70, "print hard number, leave to engineer to decide
+  with note": the result leads with the curve value, and its note and choice
+  quote GEC-13 as printed (`PRIEBE_GEC13_WORDS`): p. 5-37, the Priebe curve
+  "may be used to evaluate the upper bound effectiveness and cost at various
+  spacings" for preliminary estimates, and the Equilibrium Method, roughly the
+  Balaam curves, "an average or lower bound estimate"; p. 5-27, theoretical
+  results "supplemented by past experience and sound engineering judgment".
+  The design value is the engineer's. A test checks each quoted sentence on
+  its page of the PDF when the PDF is present.
   The settlement and composite-modulus steps cited "Priebe (1995)": they
   are GEC-13's stress reduction method (Sec. 4.1.2.6, p. 5-36) with the
   soil stress by Eq. 5-4 (p. 5-32), on the unit cell under equal strain

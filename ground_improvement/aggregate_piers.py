@@ -127,33 +127,56 @@ def composite_modulus(as_ratio: float, E_soil: float,
 #: What the Priebe tool reads (GM-221, GM-276), for a result's choices and
 #: notes: GEC-13's printed curve, its only basis.
 PRIEBE_BASIS = (
-    "GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21, p. 5-36, curve (4) "
-    "'PRIEBE phi = 37.5 deg', read off the printed figure (A/A_c 1.6 to "
-    "8.0, about +/- 0.03 in n'; from A/A_c about 4.0 on it is drawn on "
-    "one line with Balaam's curve (5a)). GEC-13 prints this curve and no "
-    "formula for it, so the tool takes the area ratio alone: the column "
-    "friction angle is the curve's 37.5 deg. GEC-13 reads it in Example 2 "
-    "(Sec. 4.3.2, Fig. 5-27, p. 5-49), and p. 5-37: 'For preliminary "
-    "estimates, the Priebe curve may be used to evaluate the upper bound "
-    "effectiveness'")
+    "GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21 (p. 5-36), curve (4) "
+    "'PRIEBE phi = 37.5 deg', read off the printed figure at A/A_c 1.6 to "
+    "8.0. GEC-13 prints this curve and no formula for it, so the tool takes "
+    "the area ratio alone: the column friction angle is the curve's 37.5 "
+    "deg. GEC-13 reads the same curve in Example 2 (Sec. 4.3.2, Fig. 5-27, "
+    "p. 5-49)")
+
+#: GEC-13's own words on the Priebe curve and on judgment (GM-276, the
+#: owner's OWN-70 note: "print hard number, leave to engineer to decide with
+#: note"), as (page, sentence), each copied from the printed page. GEC-13
+#: prints no other bound for it.
+PRIEBE_GEC13_WORDS = (
+    ("5-37", "For preliminary estimates, the Priebe curve may be used to "
+             "evaluate the upper bound effectiveness and cost at various "
+             "spacings."),
+    ("5-37", "It should be further noted that the Equilibrium Method "
+             "outlined in FHWA (1983) Design and Construction of Stone "
+             "Columns is roughly equivalent to the Balaam relationships "
+             "shown in Figure 5-21 and represents an average or lower bound "
+             "estimate suitable for preliminary analyses."),
+    ("5-27", "Theoretical results, of course, should always be supplemented "
+             "by past experience and sound engineering judgment."),
+)
+
+PRIEBE_NOTE = (
+    "GEC-13 calls the Priebe curve the upper bound, for preliminary "
+    "estimates; the settlement ratio for design is the engineer's to judge "
+    "from there. In GEC-13's words: "
+    + " ".join(f"p. {page}: '{words}'" for page, words in PRIEBE_GEC13_WORDS))
 
 
-def priebe_choices(as_ratio: float, n_prime: float) -> list:
+def priebe_choices(as_ratio: float, n_ratio: float) -> list:
     """What ``priebe_improvement_factor`` stands on (GM-221, GM-276):
-    GEC-13's printed Priebe curve, the tool's one basis, with the other
-    Fig. 5-21 curves the module reads as the alternatives."""
+    GEC-13's printed Priebe curve, the tool's one basis, with GEC-13's note
+    on it and the other Fig. 5-21 curves the module reads as alternatives."""
     from geotech_common.choices import MODULE, choice
     return [choice(
-        "settlement ratio n'",
-        f"GEC-13 Fig. 5-21 curve (4), Priebe phi = 37.5 deg: n' = "
-        f"{n_prime:.2f} at A/A_c = {1.0 / as_ratio:.2f}", MODULE,
-        PRIEBE_BASIS,
-        ["GEC-13 Fig. 5-21's Balaam curves (5), by E_c/E_s; p. 5-37: "
-         "'an average or lower bound estimate suitable for preliminary "
-         "analyses' (aggregate_piers settlement_method 'balaam_rigid' or "
-         "'balaam_flexible')",
-         "GEC-13 Fig. 5-21's weighted-modulus curve (2), by E_c/E_s "
-         "(aggregate_piers settlement_method 'weighted_modulus')"])]
+        "settlement ratio",
+        f"{n_ratio:.2f} at A/A_c = {1.0 / as_ratio:.2f}, off GEC-13 Fig. "
+        f"5-21 curve (4), Priebe phi = 37.5 deg: GEC-13's upper bound, for "
+        f"preliminary estimates (p. 5-37)", MODULE,
+        PRIEBE_BASIS + ". " + PRIEBE_NOTE,
+        ["GEC-13 Fig. 5-21's Balaam curves (5), by E_c/E_s (aggregate_piers "
+         "settlement_method 'balaam_rigid' or 'balaam_flexible'); p. 5-37: "
+         "the Equilibrium Method of FHWA (1983), 'roughly equivalent to the "
+         "Balaam relationships shown in Figure 5-21', 'represents an "
+         "average or lower bound estimate suitable for preliminary analyses'",
+         "GEC-13 Fig. 5-21's 'weighted modulus' method curves (2), by "
+         "E_c/E_s (aggregate_piers settlement_method 'weighted_modulus'); "
+         "GEC-13 states no bound for them"])]
 
 
 def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,

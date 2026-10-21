@@ -102,6 +102,17 @@ def test_the_priebe_tool_reads_the_printed_curve():
     assert c["how"] == "module" and "p. 5-36" in c["basis"]
     assert "GEC-13 prints this curve and no formula" in c["basis"]
     assert "defaults_used" not in r
+    # GM-276: the value first, then GEC-13's own words on it, with the page,
+    # and the design value left to the engineer; in the note and the choice.
+    assert r["note"].startswith("Settlement ratio 2.55 at A/A_c = 3.61")
+    upper = ("p. 5-37: 'For preliminary estimates, the Priebe curve may be "
+             "used to evaluate the upper bound effectiveness and cost at "
+             "various spacings.'")
+    for text in (r["note"], c["basis"]):
+        assert upper in text and "the engineer's to judge" in text
+    assert "upper bound" in c["chosen"]
+    assert any("average or lower bound estimate" in a
+               for a in c["alternatives"])
 
 
 @pytest.mark.parametrize("name, value", [

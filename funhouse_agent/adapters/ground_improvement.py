@@ -174,7 +174,7 @@ _PRIEBE_REFUSED = {name: _ON_THE_CURVE for name in (
 
 def _run_priebe_improvement_factor(p):
     from ground_improvement.aggregate_piers import (
-        PRIEBE_BASIS, priebe_choices)
+        PRIEBE_NOTE, priebe_choices)
     from ground_improvement.settlement_ratio import (
         priebe_curve_settlement_ratio)
     hits = sorted(set(p) & set(_PRIEBE_REFUSED))
@@ -186,14 +186,17 @@ def _run_priebe_improvement_factor(p):
     reject_unknown_params(p, {"as_ratio"}, method="priebe_improvement_factor")
     require_params(p, ["as_ratio"], method="priebe_improvement_factor",
                    valid={"as_ratio"})
-    n_prime = priebe_curve_settlement_ratio(p["as_ratio"])
-    return {"settlement_ratio": round(n_prime, 3), "as_ratio": p["as_ratio"],
+    n_ratio = priebe_curve_settlement_ratio(p["as_ratio"])
+    return {"settlement_ratio": round(n_ratio, 3), "as_ratio": p["as_ratio"],
             "area_ratio_A_Ac": round(1.0 / p["as_ratio"], 3),
             "phi_column_deg": 37.5,
-            "choices": priebe_choices(p["as_ratio"], n_prime),
-            "note": ("settlement_ratio = n', the settlement without columns "
-                     "over the settlement with them (GEC-13 p. 5-36). "
-                     + PRIEBE_BASIS + ".")}
+            "choices": priebe_choices(p["as_ratio"], n_ratio),
+            "note": (f"Settlement ratio {n_ratio:.2f} at A/A_c = "
+                     f"{1.0 / p['as_ratio']:.2f}, off GEC-13 Fig. 5-21 curve "
+                     "(4), Priebe phi = 37.5 deg (p. 5-36): the settlement "
+                     "without stone columns over the settlement with them. "
+                     "GEC-13 prints this curve and no formula for it. "
+                     + PRIEBE_NOTE)}
 
 
 METHOD_REGISTRY = {
@@ -230,11 +233,11 @@ METHOD_INFO = {
     },
     "priebe_improvement_factor": {
         "category": "Aggregate Piers",
-        "brief": "Stone columns: the settlement ratio n' off the Priebe curve GEC-13 prints, Fig. 5-21 curve (4), phi = 37.5 deg (p. 5-36); GEC-13's upper bound (p. 5-37).",
+        "brief": "Stone columns: the settlement ratio off the Priebe curve GEC-13 prints, Fig. 5-21 curve (4), phi = 37.5 deg (p. 5-36), which GEC-13 calls the upper bound, for preliminary estimates (p. 5-37).",
         "parameters": {
-            "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1. The curve is read at A/A_c = 1/as from 1.6 to 8.0 (as 0.125 to 0.625), about +/- 0.03 in n'; off that range it is refused, not extended. GEC-13 Example 2 takes A/A_sc = (s/d)^2 (p. 5-48). Alias: area_replacement_ratio."},
+            "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1. The curve is read at A/A_c = 1/as from 1.6 to 8.0 (as 0.125 to 0.625); off that range it is refused, not extended. GEC-13 Example 2 takes A/A_sc = (s/d)^2 (p. 5-48). Alias: area_replacement_ratio."},
         },
-        "returns": {"settlement_ratio": "n' off GEC-13 Fig. 5-21 curve (4): the settlement without columns over the settlement with them (p. 5-36); S with columns = S without / n'.", "phi_column_deg": "37.5, the column friction angle the printed curve is drawn for.", "note": "Where n' comes from. Tell the user it is GEC-13's printed Priebe curve, which p. 5-37 calls 'the upper bound effectiveness'."},
+        "returns": {"settlement_ratio": "The settlement ratio off GEC-13 Fig. 5-21 curve (4): the settlement without stone columns over the settlement with them (p. 5-36), so the settlement with columns is the settlement without them divided by it.", "phi_column_deg": "37.5, the column friction angle the printed curve is drawn for.", "note": "The value, where it comes from, and GEC-13's own words on it (p. 5-37: the upper bound, for preliminary estimates; p. 5-27: engineering judgment). Give the user the value with this note: the settlement ratio for design is the engineer's to judge."},
     },
     "wick_drains": {
         "category": "Wick Drains",

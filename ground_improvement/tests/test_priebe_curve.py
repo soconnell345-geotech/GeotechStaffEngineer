@@ -2,8 +2,10 @@
 
 GEC-13 (FHWA-NHI-16-027) Vol. I prints no Priebe formula. It prints the
 Priebe curve, Fig. 5-21 curve (4) "PRIEBE phi = 37.5°" (p. 5-36), reads it
-in Example 2 (Sec. 4.3.2, Fig. 5-27, p. 5-49) and says on p. 5-37 that
-"the Priebe curve may be used to evaluate the upper bound effectiveness".
+in Example 2 (Sec. 4.3.2, Fig. 5-27, p. 5-49) and says on p. 5-37 "For
+preliminary estimates, the Priebe curve may be used to evaluate the upper
+bound effectiveness and cost at various spacings." The tool's note quotes
+that, with the page, and leaves the design value to the engineer.
 The curve was traced off the rendered page on its grid lines and drawn
 back over the figure; a read is good to about one line width, +/- 0.03.
 Since GM-276 (owner, OWN-70: "just the printed curve. discard your
@@ -67,6 +69,48 @@ def test_the_formula_is_gone():
     assert not hasattr(aggregate_piers, "priebe_basic_improvement_factor")
     assert not hasattr(aggregate_piers, "PRIEBE_METHODS")
     assert "37.5" in aggregate_piers.PRIEBE_BASIS
+
+
+def test_the_note_is_gec_13s_own_words():
+    """GM-276 (owner, OWN-70: "print hard number, leave to engineer to
+    decide with note"): the note gives GEC-13's upper-bound sentence and
+    leaves the design value to the engineer, quoting only the page."""
+    note = aggregate_piers.PRIEBE_NOTE
+    assert "the upper bound, for preliminary estimates" in note
+    assert "the engineer's to judge" in note
+    for page, words in aggregate_piers.PRIEBE_GEC13_WORDS:
+        assert f"p. {page}: '{words}'" in note
+
+
+def _printed(text):
+    """Page text with its line breaks and typographic quotes made plain."""
+    for a, b in (("“", '"'), ("”", '"'), ("’", "'")):
+        text = text.replace(a, b)
+    return " ".join(text.split())
+
+
+def test_the_quoted_words_are_on_the_printed_pages():
+    """Every sentence the note quotes is on its GEC-13 page as printed
+    (the owner: nothing from memory). Needs the GEC-13 PDF
+    (GEOTECH_REFERENCES_DOCS or geotech-references/docs)."""
+    pymupdf = pytest.importorskip("pymupdf")
+    from funhouse_agent import worked_examples
+    try:
+        pdf = worked_examples.resolve_source_pdf(
+            {"id": "GM-276", "source_doc": "GEC 13 Vol 1.pdf"})
+    except FileNotFoundError:
+        pytest.skip("GEC-13 Vol. 1 PDF not available")
+    doc = pymupdf.open(str(pdf))
+    try:
+        pages = {}
+        for page in doc:
+            text = _printed(page.get_text())
+            label = text.split(" ", 1)[0]
+            pages.setdefault(label, text)
+    finally:
+        doc.close()
+    for page, words in aggregate_piers.PRIEBE_GEC13_WORDS:
+        assert words in pages[page], (page, words)
 
 
 def test_between_the_reads_linear_in_a_s():
