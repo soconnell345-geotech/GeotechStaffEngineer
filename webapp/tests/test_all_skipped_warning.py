@@ -12,9 +12,7 @@ ROOT_CONFTEST = Path(__file__).resolve().parents[2] / "conftest.py"
 
 def _hook_source():
     src = ROOT_CONFTEST.read_text(encoding="utf-8")
-    return ("import pytest
-import re as _re
-"
+    return ("import pytest\nimport re as _re\n"
             + src[src.index("_MISSING_DEP"):])
 
 
