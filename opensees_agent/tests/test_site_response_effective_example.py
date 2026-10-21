@@ -121,9 +121,9 @@ class TestAgainstTheOpenSeesPyEffectiveExample:
     @requires_opensees
     def test_module_matches_the_port_it_can_express(self):
         """Sa from 0.1 to 1.5 s within 10 % of the port with the module's
-        inputs (measured -6.2 to +4.5 %), and peak r_u at 3, 7 and 16 m
-        within 0.1 (measured 0.36 / 0.89 / 0.98 against 0.38 / 0.91 /
-        0.97). Until GM-85 the gravity stage raised."""
+        inputs (measured -8.6 to +4.4 %; -6.2 to +4.5 % with the fixed
+        alpha 1e-5 before GM-260), and peak r_u at 3, 7 and 16 m within
+        0.1 (measured 0.36 / 0.90 / 0.98 against 0.38 / 0.91 / 0.97). Until GM-85 the gravity stage raised."""
         from opensees_agent.site_response import analyze_site_response
         accel, dt = wiki.load_record()
         inputs, _ = eff.closest_api_inputs()

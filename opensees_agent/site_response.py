@@ -109,6 +109,33 @@ def element_permeability(k_m_per_s):
     """
     return float(k_m_per_s) / (_FLUID_DENSITY * _G_ACCEL)
 
+
+def stabilization_alpha(h_m, bulk_kpa, shear_kpa):
+    """SSPquadUP's pressure-stabilization parameter for an element of
+    size ``h_m`` (m) whose solid phase has bulk and shear moduli
+    ``bulk_kpa`` and ``shear_kpa``: h^2 / (4 (K + 4/3 G)) (GM-260).
+
+    The formula is the element's documentation's: the SSPquadUP page
+    (OpenSees wiki and the OpenSeesPy docs) gives alpha = 0.25 h^2 /
+    (den c^2), c the speed of elastic waves in the solid phase and den
+    its mass density; the SSPbrickUP page writes the same as h^2 / (4 (Ks
+    + 4/3 Gs)). The element adds alpha times the Laplacian of the
+    pressure rate to its mass balance (SSPquadUP.cpp, getMass), which
+    spreads a pressure change over about sqrt(alpha / storage), at most
+    h / 2 with this alpha. Until GM-260 every element took 1e-5, which
+    spread the pore pressure of a liquefied sand about 4 m into clay.
+    """
+    return float(h_m) ** 2 / (4.0 * (float(bulk_kpa)
+                                     + 4.0 / 3.0 * float(shear_kpa)))
+
+
+def _element_alpha(plan, h_m):
+    """The layer's ``stabilization_alpha`` where it gives one, else the
+    formula for an element ``h_m`` tall."""
+    if plan.get("alpha_given") is not None:
+        return plan["alpha_given"]
+    return stabilization_alpha(h_m, plan["b_max"], plan["g_max"])
+
 # Dynamic stage (GM-84). Full Newton, as McGann & Arduino's total stress
 # example: it converges quadratically, so once a correction is under the
 # examples' 1 mm test the step is in balance whatever the element size.
@@ -279,7 +306,8 @@ def _validate_layer_options(i, layer, mat):
         if key in layer and layer[key] < 0:
             raise ValueError(f"{label}['{key}'] must be >= 0")
     for key in ("ocr", "freq_hz", "n_cycles", "uniformity_coeff",
-                "diam_mean", "permeability", "K0", "e_init", "PTAng"):
+                "diam_mean", "permeability", "K0", "e_init", "PTAng",
+                "stabilization_alpha"):
         if key in layer and not layer[key] > 0:
             raise ValueError(f"{label}['{key}'] must be positive, got "
                              f"{layer[key]!r}")
@@ -358,7 +386,10 @@ def analyze_site_response(
         ``n_elem_per_layer``), ``nu`` (Poisson's ratio of the skeleton;
         default 0.3 sand, 0.495 clay), ``permeability`` (hydraulic
         conductivity k, m/s; default 1e-4 sand, 1e-7 clay; the u-p element
-        is given k / (rho_f g), see ``element_permeability``).
+        is given k / (rho_f g), see ``element_permeability``),
+        ``stabilization_alpha`` (the u-p element's pressure stabilization;
+        default h^2 / (4 (K + 4/3 G)) for each element, the element
+        documentation's formula, see ``stabilization_alpha``).
         Sand optional: the PressureDependMultiYield02 constants
         ``contrac1``, ``contrac2``, ``contrac3``, ``dilat1``, ``dilat2``,
         ``dilat3``, ``liquefac1``, ``liquefac2`` (default the OpenSees
@@ -680,7 +711,8 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     layer_idx = 0
 
     for layer_idx_local, (L_dict, heights, n_e) in enumerate(layer_elems):
-        for _ in range(n_e):
+        plan = plans_bottom_up[layer_idx_local]
+        for h_elem in heights:
             n1 = left_node(ei)
             n2 = right_node(ei)
             n3 = right_node(ei + 1)
@@ -697,7 +729,10 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             # nodal loads on a Linear time series, factor = time, so at
             # t = 10,000 s the column carried 10,000 times its weight.)
             # Permeability: the example's 1.0 for the gravity stages, the
-            # layer's own set after them (step 8; GM-85).
+            # layer's own set after them (step 8; GM-85). Pressure
+            # stabilization from the element's height and the layer's
+            # moduli, as the element's documentation gives it (GM-260;
+            # until then 1e-5 for every element).
             ops.element('SSPquadUP', elem_tag,
                         n1, n2, n3, n4,
                         mat_tags[layer_idx_local],
@@ -707,7 +742,7 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
                         _GRAVITY_PERMEABILITY,  # horizontal permeability
                         _GRAVITY_PERMEABILITY,  # vertical permeability
                         e_val,     # void ratio
-                        1.0e-5,    # alpha (pressure stabilization)
+                        _element_alpha(plan, h_elem),  # alpha
                         0.0,       # b1: horizontal gravity component
                         -g_accel)  # b2: vertical gravity component
 
@@ -1220,6 +1255,8 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
             n_surf=int(L.get("n_surf", DEFAULT_N_SURF)),
             permeability=float(L.get("permeability",
                                      DEFAULT_PERMEABILITY[mat])),
+            alpha_given=(float(L["stabilization_alpha"])
+                         if "stabilization_alpha" in L else None),
             material=mat, n_elem=len(heights), n_elem_asked=n_asked,
             heights=heights, wt_split=wt_split, gwt_depth=gwt_depth,
             nu=nu, nu_used=nu_used, g_max=g_max, b_max=b_max, p_ref=p_ref,
@@ -1335,7 +1372,8 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
 
 def _material_choices(plans, i, label, linear_elastic=False):
     """A layer's K0 and reference pressure, phase transformation angle,
-    void ratio, yield surfaces and permeability (GM-79)."""
+    void ratio, yield surfaces and permeability (GM-79), and its pressure
+    stabilization (GM-260)."""
     from geotech_common.choices import DEFAULT, MODULE, choice
     plan = plans[i]
     sand = plan["material"] == "sand"
@@ -1427,6 +1465,28 @@ def _material_choices(plans, i, label, linear_elastic=False):
         + ". The u-p element takes k over the unit weight of water "
         "(Yang's quadUP example on the OpenSees wiki)",
         ("layers[i]['permeability'] (m/s)",)))
+    alphas = sorted({_element_alpha(plan, h) for h in plan["heights"]})
+    how = _layer_how(plans, i, "stabilization_alpha")
+    formula = (
+        "h^2 / (4 (K + 4/3 G)), the element documentation's formula "
+        "(SSPquadUP and SSPbrickUP pages, OpenSees wiki), h the element's "
+        f"height, K {plan['b_max']:.4g} and G {plan['g_max']:.4g} kPa the "
+        "layer's moduli")
+    out.append(choice(
+        f"{label} pressure stabilization",
+        (f"{alphas[0]:.3g}" if len(alphas) == 1
+         else f"{alphas[0]:.3g} to {alphas[-1]:.3g}"),
+        MODULE if how == DEFAULT else how,
+        ("SSPquadUP's alpha as given; the default is " + formula
+         if how != DEFAULT else
+         "SSPquadUP's alpha, " + formula + ". It spreads a pore pressure "
+         "change over at most half an element; an element sharing a node "
+         "with a liquefied layer still reads part of that layer's pore "
+         "pressure at its centre (the mean of its corners)"
+         + ("" if not sand else
+            ". In a sand that dilates, the surface's peak acceleration is "
+            "a short spike that rises as the elements get smaller")),
+        ("layers[i]['stabilization_alpha']",)))
     return out
 
 

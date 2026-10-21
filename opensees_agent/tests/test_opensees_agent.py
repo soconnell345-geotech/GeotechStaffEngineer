@@ -1257,6 +1257,39 @@ class TestSiteResponseModelWiring:
         values = [v for _, v in ops.named("updateParameter")]
         assert values == pytest.approx([1.0e-3] * 4)  # 2 elements, h and v
 
+    def test_pressure_stabilization_from_element_size_and_moduli(self):
+        """GM-260: alpha = h^2 / (4 (K + 4/3 G)), the SSPquadUP and
+        SSPbrickUP pages' formula, per element (it was 1e-5 for all). By
+        hand: sand G = 1.9 x 200^2 = 76,000 kPa, nu 0.3, K = 164,667,
+        K + 4/3 G = 266,000; clay G = 1.7 x 150^2 = 38,250, nu 0.495,
+        K = 3,812,250, K + 4/3 G = 3,863,250."""
+        from opensees_agent.site_response import stabilization_alpha
+        assert stabilization_alpha(5.0, 164666.667, 76000.0) == \
+            pytest.approx(25.0 / 1.064e6, rel=1e-6)
+        sand = dict(SAND33, thickness=10.0)
+        ops, _ = _build_fake([sand, CLAY60])
+        elements = [a for a in ops.named("element") if a[0] == "SSPquadUP"]
+        # ... e[12] alpha[13] b1 b2; built from the base: clay (7.5 m
+        # elements), then sand (5 m)
+        alphas = [a[13] for a in elements]
+        assert alphas == pytest.approx(
+            [56.25 / 15.453e6] * 2 + [25.0 / 1.064e6] * 2, rel=1e-6)
+        # a layer the water table splits: each element by its own height
+        ops, _ = _build_fake([sand], gwt_depth=4.0)
+        alphas = [a[13] for a in ops.named("element") if a[0] == "SSPquadUP"]
+        assert alphas == pytest.approx(
+            [9.0 / 1.064e6, 9.0 / 1.064e6, 16.0 / 1.064e6], rel=1e-6)
+        # a layer's own value, as given, for every element of that layer
+        ops, _ = _build_fake([dict(sand, stabilization_alpha=1.0e-5),
+                              CLAY60])
+        alphas = [a[13] for a in ops.named("element") if a[0] == "SSPquadUP"]
+        assert alphas == pytest.approx(
+            [56.25 / 15.453e6] * 2 + [1.0e-5] * 2, rel=1e-6)
+        from opensees_agent.site_response import _validate_layer_options
+        with pytest.raises(ValueError, match="stabilization_alpha"):
+            _validate_layer_options(
+                0, dict(sand, stabilization_alpha=0.0), "sand")
+
     def test_dynamic_stage_is_newton_at_the_examples_test(self):
         """GM-84: KrylovNewton at NormDispIncr 1e-3 m accepted unconverged
         steps on small elements; the dynamic stage now starts on Newton
@@ -1710,3 +1743,42 @@ class TestPorePressureRatio:
                                       time_limit_s=TEST_TIME_LIMIT_S)
             peak[k] = float(np.max(r.max_pore_pressure_ratio))
         assert peak[None] > 0.95 and peak[0.1] < 0.4, peak
+
+    @requires_opensees
+    def test_clay_between_liquefied_sands_keeps_its_own_ru(self):
+        """GM-260. 10 m of clay in 1 m elements between sands that
+        liquefy, water 2 m, 0.30 g. The clay generates no excess pore
+        pressure of its own (its total vertical stress holds), so what
+        reaches its inside is flow from the sands: by hand, 1D diffusion
+        at k 1e-7 m/s (cv = k_e / (n/Kf + 1/M) = 0.016 m2/s) penetrates
+        2 sqrt(cv t) = 1.1 m in the 20 s motion, erfc(2 / 1.1) = 1 % of
+        the sands' excess at 2 m in; the stabilization spreads at most
+        half an element (0.5 m). So ru stays under 0.05 from 2 m inside
+        both faces (measured 0.03). With alpha fixed at 1e-5 it was 0.53
+        at mid-layer whatever the clay's k. At k 1e-6 (cv ten times) more
+        reaches the middle: the pore pressure there comes by flow."""
+        from opensees_agent.site_response import analyze_site_response
+        mid = {}
+        for k in (1.0e-7, 1.0e-6):
+            layers = [
+                {"thickness": 5.0, "Vs": 150.0, "density": 1.8,
+                 "material_type": "sand", "phi": 30.0},
+                {"thickness": 10.0, "Vs": 120.0, "density": 1.6,
+                 "material_type": "clay", "su": 40.0, "n_elem": 10,
+                 "permeability": k},
+                {"thickness": 10.0, "Vs": 250.0, "density": 1.9,
+                 "material_type": "sand", "phi": 35.0},
+            ]
+            r = analyze_site_response(layers, motion="synthetic_pulse",
+                                      target_pga_g=0.30, gwt_depth=2.0,
+                                      n_elem_per_layer=2,
+                                      time_limit_s=TEST_TIME_LIMIT_S)
+            d = np.asarray(r.depths)
+            ru = np.asarray(r.max_pore_pressure_ratio)
+            inside = (d > 7.0) & (d < 13.0)  # 2 m and more from both faces
+            assert inside.sum() == 6
+            if k == 1.0e-7:
+                assert np.max(ru[d > 15.0]) > 0.95  # the sand liquefies
+                assert np.all(ru[inside] < 0.05), ru[inside]
+            mid[k] = float(np.mean(ru[(d > 9.0) & (d < 11.0)]))
+        assert mid[1.0e-6] > mid[1.0e-7] + 0.02, mid
