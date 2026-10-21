@@ -483,6 +483,7 @@ METHOD_INFO = {
             "figures": "With figures: the kriging map's PNG path with a .plotly.json twin and an html_img_tag.",
             "embed_note": "How to show the figure in the reply and in a report.",
             "warnings": "Poorly constrained or degenerate variogram fit.",
+            "choices": "What the run chose, each given or default with its basis and the alternatives: covariance model, whether the variogram was fitted, the nugget (fitted or held), the kriging type, the variance and correlation length when not fitted.",
             "notes": "Defaults computed from these observations, the fit override, kriging type details, what the region numbers mean.",
         },
     },
@@ -507,6 +508,7 @@ METHOD_INFO = {
             "gamma": "Empirical semivariance per class.",
             "pair_counts": "Point pairs per class.",
             "warnings": "Poorly constrained or degenerate fit.",
+            "choices": "What the run chose, each given or default with its basis and the alternatives: covariance model and whether the nugget was fitted or held.",
         },
     },
     "random_field": {
@@ -534,6 +536,7 @@ METHOD_INFO = {
             "field": "The generated field [n_x][n_y].",
             "field_mean": "Actual mean of generated field.",
             "field_std": "Actual std of generated field.",
+            "choices": "What the field was drawn with, each given or default with its basis: covariance model, variance, correlation length, nugget, mean and seed.",
         },
     },
     "conditional_simulation": {
@@ -592,6 +595,7 @@ METHOD_INFO = {
             "files": "realizations_csv, probability_csv, kriging_csv paths in the working folder.",
             "figures": "PNG paths with .plotly.json twins: exceedance curve, probability map.",
             "warnings": "Few observations, regions far from data, level outside the data range, coarse cells, unconverged P90, low acceptance.",
+            "choices": "What the run chose, each given or default with its basis and the alternatives: covariance model, variogram fit, nugget, kriging type, simulation method, number of realizations and seed.",
             "assumptions": "Gaussian stationary field, how the nugget enters, common random numbers.",
         },
     },

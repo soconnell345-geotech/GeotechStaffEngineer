@@ -69,6 +69,8 @@ class KrigingResult:
     regions_geom: Optional[list] = None
     variogram_fitted: bool = False
     nugget_fitted: bool = False
+    #: What the run chose (``geotech_common.choices``, GM-265).
+    choices: Optional[list] = None
 
     def regions_csv(self) -> str:
         """Per region and level, every cell: the kriged mean, the kriging
@@ -98,6 +100,8 @@ class KrigingResult:
         ]
         if self.field is not None:
             lines.append(f"  Field range:        [{self.field.min():.3f}, {self.field.max():.3f}]")
+        from geotech_common.choices import choices_lines
+        lines += choices_lines(self.choices or [])
         lines.append("=" * 60)
         return "\n".join(lines)
 
@@ -130,6 +134,8 @@ class KrigingResult:
             d["notes"] = list(self.notes)
         if self.regions:
             d["regions"] = [dict(r) for r in self.regions]
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def plot_field(self, ax=None, show=True, **kwargs):
@@ -190,6 +196,8 @@ class VariogramResult:
     gamma: Optional[np.ndarray] = None
     pair_counts: Optional[np.ndarray] = None
     warnings: list = field(default_factory=list)
+    #: What the run chose (``geotech_common.choices``, GM-265).
+    choices: Optional[list] = None
 
     def summary(self) -> str:
         lines = [
@@ -202,8 +210,10 @@ class VariogramResult:
             f"  Variance (sill):    {self.variance:.4f}",
             f"  Correlation length: {self.len_scale:.2f}",
             f"  Nugget:             {self.nugget:.4f}",
-            "=" * 60,
         ]
+        from geotech_common.choices import choices_lines
+        lines += choices_lines(self.choices or [])
+        lines.append("=" * 60)
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
@@ -224,6 +234,8 @@ class VariogramResult:
             d["pair_counts"] = [int(c) for c in self.pair_counts]
         if self.warnings:
             d["warnings"] = list(self.warnings)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def plot_variogram(self, ax=None, show=True, **kwargs):
@@ -298,6 +310,8 @@ class RandomFieldResult:
     field: Optional[np.ndarray] = None
     grid_x: Optional[np.ndarray] = None
     grid_y: Optional[np.ndarray] = None
+    #: What the run chose (``geotech_common.choices``, GM-265).
+    choices: Optional[list] = None
 
     def summary(self) -> str:
         lines = [
@@ -313,6 +327,8 @@ class RandomFieldResult:
         ]
         if self.field is not None:
             lines.append(f"  Field range:        [{self.field.min():.3f}, {self.field.max():.3f}]")
+        from geotech_common.choices import choices_lines
+        lines += choices_lines(self.choices or [])
         lines.append("=" * 60)
         return "\n".join(lines)
 
@@ -336,6 +352,8 @@ class RandomFieldResult:
             d["grid_x"] = self.grid_x.tolist()
         if self.grid_y is not None:
             d["grid_y"] = self.grid_y.tolist()
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def plot_field(self, ax=None, show=True, **kwargs):
@@ -445,6 +463,8 @@ class ConditionalSimulationResult:
     lattice_full: Optional[dict] = None
     lattice_union: Optional[np.ndarray] = None
     bounds_input: Optional[list] = None
+    #: What the run chose (``geotech_common.choices``, GM-265).
+    choices: Optional[list] = None
 
     # -- convenience ---------------------------------------------------------
 
@@ -553,6 +573,8 @@ class ConditionalSimulationResult:
             d["notes"] = list(self.notes)
         if self.assumptions:
             d["assumptions"] = list(self.assumptions)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def summary(self) -> str:
@@ -575,6 +597,8 @@ class ConditionalSimulationResult:
                 f"{v['mean']:.4g}, P50 {v['P50']:.4g}, P90 {v['P90']:.4g}; "
                 f"P(>0) {r['p_any']:.3f}; kriged surface "
                 f"{r['kriged_surface'][f'volume_{q}']:.4g}")
+        from geotech_common.choices import choices_lines
+        lines += choices_lines(self.choices or [])
         lines.append("=" * 64)
         return "\n".join(lines)
 
