@@ -1950,5 +1950,38 @@
    "BACKLOG.md OWN-86, GM-96",
    "gstools_agent/DESIGN.md (the drafted issue)"
   ]
+ },
+ "OWN-87": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Where should the private copy of Document Review be worked on?",
+  "why": "After the split, Document Review is private source in the GHE wrapper repo, which is the Department's. Sessions like this one and the automatic tests need a copy they can change and test. Testers always run the GHE copy.",
+  "background": "This is not needed until the split's step 13, which comes after the release point and the core package, and Document Review and Tiny Apps are last in your order (2026-10-21). The plan is module_work/APP_SPLIT_PLAN.md (D10).",
+  "parts": [
+   {
+    "label": "Where it is worked on",
+    "options": [
+     {
+      "label": "A private repository on your GitHub account",
+      "effect": "Like the PM bot's. It has its own automatic tests; at each tester release it is copied into the GHE repo (pushed, then CfA asked to sync)."
+     },
+     {
+      "label": "The GHE repo itself",
+      "effect": "Only if this laptop can push to it and its tests can run there; then there is one copy."
+     }
+    ]
+   }
+  ],
+  "recommendation": "A private repository on your GitHub account, unless the GHE repo can be pushed to and tested from this laptop.",
+  "if_no_answer": "Nothing waits on it before step 13 of the split.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [
+   "INF-33"
+  ],
+  "sources": [
+   "BACKLOG.md OWN-87",
+   "module_work/APP_SPLIT_PLAN.md D10"
+  ]
  }
 }
