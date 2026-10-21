@@ -183,6 +183,11 @@ class PM4SandDSSResult:
 # 1D Site Response Result
 # ===========================================================================
 
+#: Periods (s) at which ``SiteResponseResult.to_dict`` gives the 5 %
+#: damped surface and input spectra (GM-260).
+REPORTED_PERIODS_S = (0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 2.0, 3.0)
+
+
 @dataclass
 class SiteResponseResult:
     """Results from 1D effective-stress site response analysis.
@@ -325,6 +330,18 @@ class SiteResponseResult:
             d["max_shear_strain_pct"] = round(float(np.max(self.max_strain_pct)), 4)
         if len(self.max_pore_pressure_ratio) > 0:
             d["max_ru"] = round(float(np.max(self.max_pore_pressure_ratio)), 4)
+        if len(self.periods) > 0 and len(self.Sa_surface_g) > 0:
+            # The 5 % spectra at a few periods (GM-260): in a sand that
+            # dilates the surface PGA is a short spike the element size
+            # sets, while Sa at 0.2 s and longer moves little with it
+            T = np.log(np.asarray(self.periods, dtype=float))
+            at = np.log(REPORTED_PERIODS_S)
+            d["periods_s"] = list(REPORTED_PERIODS_S)
+            d["Sa_surface_g"] = [round(float(v), 4) for v in
+                                 np.interp(at, T, self.Sa_surface_g)]
+            if len(self.Sa_input_g) > 0:
+                d["Sa_input_g"] = [round(float(v), 4) for v in
+                                   np.interp(at, T, self.Sa_input_g)]
         if self.solver_steps:
             d["solver_steps"] = dict(self.solver_steps)
         if self.rayleigh_freqs_hz:

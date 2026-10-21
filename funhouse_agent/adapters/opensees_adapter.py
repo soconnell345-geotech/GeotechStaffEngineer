@@ -10,6 +10,7 @@ from funhouse_agent.adapters import (
 # 1 - sin(phi) (GM-58).
 _LAYER_COMMON_KEYS = ("thickness", "Vs", "density", "material_type",
                       "n_surf", "e_init", "n_elem", "nu", "permeability",
+                      "stabilization_alpha",
                       # the stress-strain curve and its keys (GM-80)
                       "curve", "plas_index", "ocr", "freq_hz", "n_cycles",
                       "uniformity_coeff", "diam_mean", "G_Gmax_curve",
@@ -20,23 +21,28 @@ _MATERIAL_KEYS = {
     "clay": ("su",),
 }
 # Words the near-miss matcher cannot place; only the keys the layer's own
-# material reads are offered. Suggestions only, never renamed.
+# material reads are offered. Suggestions only, never renamed. Keys are
+# the checker's normalised form: lower case, letters and digits only.
 _LAYER_KEY_HINTS = {
-    "rho": ("density",), "mass_density": ("density",),
+    "rho": ("density",), "massdensity": ("density",),
     "cohesion": ("su",), "c": ("su",),
     "frictionangle": ("phi",), "phaseangle": ("PTAng",),
     "phasetransformationangle": ("PTAng",), "e": ("e_init",),
-    "pi": ("plas_index",), "plasticity_index": ("plas_index",),
+    "pi": ("plas_index",), "plasticityindex": ("plas_index",),
     "cu": ("su", "uniformity_coeff"), "d50": ("diam_mean",),
-    "poisson": ("nu",), "poissons_ratio": ("nu",),
-    "n_elements": ("n_elem",), "model": ("curve",),
-    "soil_model": ("curve",),
+    "poisson": ("nu",), "poissonsratio": ("nu",),
+    "nelements": ("n_elem",), "model": ("curve",),
+    "soilmodel": ("curve",),
     "e0": ("e_init",), "voidratio": ("e_init",), "type": ("material_type",),
     "soiltype": ("material_type",), "h": ("thickness",),
     # 'k' is hydraulic conductivity, or a sand layer's K0 written short
     "k": ("permeability", "K0"), "perm": ("permeability",),
     "hydraulicconductivity": ("permeability",),
     "conductivity": ("permeability",), "ksat": ("permeability",),
+    # the u-p element's pressure stabilization (GM-260)
+    "alpha": ("stabilization_alpha",),
+    "stabilization": ("stabilization_alpha",),
+    "pressurestabilization": ("stabilization_alpha",),
 }
 
 
@@ -188,7 +194,7 @@ METHOD_INFO = {
         "category": "OpenSees",
         "brief": "1D effective-stress site response analysis (PDMY02/PIMY + Lysmer dashpot).",
         "parameters": {
-            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0 (default Jaky 1 - sin phi; it sets only the reference pressure where G = density Vs^2, while the column's own horizontal stress after gravity follows nu), PTAng and the PressureDependMultiYield02 constants contrac1, contrac2, contrac3, dilat1, dilat2, dilat3, liquefac1, liquefac2, default the OpenSees wiki's Dr = 40 % column), 'clay' needs su (kPa, undrained strength in simple shear). Optional for any layer: n_elem (its element count, default n_elem_per_layer; a layer the water table falls inside is meshed in two parts with a node at the water table), nu (Poisson's ratio, default 0.3 sand, 0.495 clay), permeability (hydraulic conductivity k, m/s, default 1e-4 sand, 1e-7 clay), e_init (void ratio, default 0.77 sand, 0.85 clay), n_surf (yield surfaces, default 20; not with a fitted curve), and curve, the modulus-reduction curve the material's backbone follows to the layer's strength: 'opensees' (default, the material's own hyperbolic backbone, much stiffer than laboratory curves in sand), 'darendeli' (Darendeli 2001; optional plas_index 0, ocr 1, freq_hz 1, n_cycles 10), 'menq' (Menq 2003; needs uniformity_coeff Cu and diam_mean D50 in mm) or 'user' (needs G_Gmax_curve {strain_pct: [...], G_Gmax: [...]}; optional damping_curve {strain_pct: [...], damping_pct: [...]}, reported, not imposed)."},
+            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0 (default Jaky 1 - sin phi; it sets only the reference pressure where G = density Vs^2, while the column's own horizontal stress after gravity follows nu), PTAng and the PressureDependMultiYield02 constants contrac1, contrac2, contrac3, dilat1, dilat2, dilat3, liquefac1, liquefac2, default the OpenSees wiki's Dr = 40 % column), 'clay' needs su (kPa, undrained strength in simple shear). Optional for any layer: n_elem (its element count, default n_elem_per_layer; a layer the water table falls inside is meshed in two parts with a node at the water table), nu (Poisson's ratio, default 0.3 sand, 0.495 clay), permeability (hydraulic conductivity k, m/s, default 1e-4 sand, 1e-7 clay), stabilization_alpha (the u-p element's pressure stabilization, default h^2 / (4 (K + 4/3 G)) per element, the element documentation's formula), e_init (void ratio, default 0.77 sand, 0.85 clay), n_surf (yield surfaces, default 20; not with a fitted curve), and curve, the modulus-reduction curve the material's backbone follows to the layer's strength: 'opensees' (default, the material's own hyperbolic backbone, much stiffer than laboratory curves in sand), 'darendeli' (Darendeli 2001; optional plas_index 0, ocr 1, freq_hz 1, n_cycles 10), 'menq' (Menq 2003; needs uniformity_coeff Cu and diam_mean D50 in mm) or 'user' (needs G_Gmax_curve {strain_pct: [...], G_Gmax: [...]}; optional damping_curve {strain_pct: [...], damping_pct: [...]}, reported, not imposed)."},
             "motion": {"type": "str", "brief": "Built-in motion name (e.g. 'synthetic_pulse'), taken as a rock outcrop motion.", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},
             "dt": {"type": "float", "brief": "Time step for custom motion (s).", "default": None},
@@ -208,15 +214,18 @@ METHOD_INFO = {
             "n_layers": "Number of layers.",
             "site_period_s": "Site period 4H/Vs (s).",
             "motion_name": "Input motion name (notes any PGA scaling).",
-            "pga_surface_g": "Peak ground acceleration at surface (g).",
+            "pga_surface_g": "Peak ground acceleration at surface (g). In a sand that dilates it can be a spike a few hundredths of a second long whose height depends on the element size; Sa_surface_g at 0.2 s and longer depends on it much less.",
             "pga_input_g": "Peak input acceleration (g).",
             "amplification_factor": "PGA surface / PGA input.",
+            "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2 and 3 s.",
+            "Sa_surface_g": "Surface spectral acceleration (g, 5 % damping), one per period in periods_s.",
+            "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "max_shear_strain_pct": "Peak shear strain in the profile (%).",
             "max_ru": "Peak excess pore pressure ratio in the profile: excess pore pressure over the initial vertical effective stress (not capped at 1).",
             "solver_steps": "Dynamic steps by algorithm, the steps that needed a fallback algorithm and those taken in substeps (substeps can move a peak).",
             "layer_curves": "Each layer's curve: G/Gmax and the curve's damping at 0.001-1 % strain, and the Masing damping its fitted backbone gives.",
             "rayleigh_freqs_hz": "The two Rayleigh damping frequencies used (Hz).",
-            "choices": "What the column was built with (water table, curve, Poisson's ratio, element count, sand constants, K0 and reference pressure, phase transformation angle, void ratio, yield surfaces, permeability, Rayleigh frequencies), each with its basis.",
+            "choices": "What the column was built with (water table, curve, Poisson's ratio, element count, sand constants, K0 and reference pressure, phase transformation angle, void ratio, yield surfaces, permeability, pressure stabilization, Rayleigh frequencies), each with its basis.",
         },
     },
 }
