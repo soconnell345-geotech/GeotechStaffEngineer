@@ -16,7 +16,7 @@ the owner, GSE's only user.
 
 ## In one page (for the owner)
 
-> **2026-10-21, the owner on the desk (OWN-72, OWN-74, OWN-76 updated to match, not yet confirmed):** Document Review's code can live as plain source in the GHE repository, nothing of it a package; never the same base code in two places; leaning to a small shared core with each app keeping its own chat page (OWN-74 option (d)). If confirmed, the `de-docreview` wheel below becomes a source folder in the GHE wrapper repo (private), the core stays a public PyPI package that Tiny Apps gets through Nexus like planlens, and the chat page is copied into each app rather than moved to the core. Steps 9-16 change accordingly; steps 1-8 do not.
+> **2026-10-21, the owner on the desk, CONFIRMED ("Ok, sounds good. You can proceed."; OWN-74 and OWN-76 decided, OWN-72 narrowed to the core's name and the CfA question; this plan's rewrite is INF-48):** the document-tool wrappers that only wrap planlens move into planlens, and the core keeps the model connections, vision calls and figure helper. Document Review's code can live as plain source in the GHE repository, nothing of it a package; never the same base code in two places; leaning to a small shared core with each app keeping its own chat page (OWN-74 option (d)). If confirmed, the `de-docreview` wheel below becomes a source folder in the GHE wrapper repo (private), the core stays a public PyPI package that Tiny Apps gets through Nexus like planlens, and the chat page is copied into each app rather than moved to the core. Steps 9-16 change accordingly; steps 1-8 do not.
 
 **What you get.**
 - Document Review installs on Tiny Apps without any geotechnical code. The
