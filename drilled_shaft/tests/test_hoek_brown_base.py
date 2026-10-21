@@ -188,3 +188,96 @@ def test_the_calc_steps_print_eqs_10_28_and_10_29():
     q = steps["Unit End Bearing (Fractured Rock Mass), GEC-10 Eq. 10-29"]
     assert float(q.result_value.replace(",", "")) == pytest.approx(
         r.base_steps["qb"], abs=0.1)
+
+
+# GM-251 review: where the conditions of p. 10-22 hold, GEC-10 gives Eq.
+# 10-23 (2.5 is 'recommended for design ... when the following conditions
+# are met'); the Hoek-Brown base is 'For fractured rock mass' (p. 10-23).
+# GSI and m_i given do not make the lower value the base by themselves.
+
+def test_conditions_taken_as_met_keep_eq_10_23_with_hoek_brown_beside():
+    """RQD 100 (the default) within one diameter below the base, GSI and
+    m_i given, the conditions not stated: Eq. 10-23, 2.5 qu; the
+    Hoek-Brown value is given beside it in both choices."""
+    r = _run(_soil(GSI=45.0, m_i=10.0))
+    assert r.base_steps["equation"] == "10-23"
+    assert r.base_steps["factor"] == 2.5
+    hb = _run(_soil(GSI=45.0, m_i=10.0), rock_base_conditions_met=False)
+    assert hb.base_steps["equation"] == "10-29"
+    assert hb.Q_tip < r.Q_tip
+    met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
+    assert met["how"] == "default" and met["chosen"].startswith(
+        "taken as met")
+    assert "GSI 45 and m_i 10" in met["chosen"]
+    assert "RQD is 100 where none is given" in met["chosen"]
+    (alt,) = [a for a in met["alternatives"]
+              if a.startswith("rock_base_conditions_met false")]
+    assert f"Q_b {hb.Q_tip:,.0f} kN" in alt
+    base = _choice(r, "base resistance in rock")
+    assert base["chosen"].startswith("GEC-10 (2018) Eq. 10-23")
+    assert any(f"Q_b {hb.Q_tip:,.0f} kN" in a for a in base["alternatives"])
+
+
+def test_rqd_below_100_without_a_statement_takes_hoek_brown():
+    """The same rock at RQD 40: the conditions are not taken as met, and
+    the reason given is the layer below the base, not the GSI."""
+    r = _run(_soil(RQD=40.0, GSI=45.0, m_i=10.0))
+    assert r.base_steps["equation"] == "10-29"
+    met = _choice(r, "rock below the base (the conditions of Eq. 10-23)")
+    assert "give rock with RQD 40 % at 14-15.2 m" in met["chosen"]
+
+
+def test_rock_below_the_base_shown_where_eq_10_23_is_taken():
+    """A rock layer within one diameter below the base with its own GSI and
+    m_i: shown with its Hoek-Brown value where the base takes Eq. 10-23,
+    and under the 'rqd' base."""
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
+        ShaftSoilLayer(6.5, "rock", 23.0, qu=20000.0),
+        ShaftSoilLayer(5.0, "rock", 23.0, qu=8000.0, GSI=30.0, m_i=7.0)])
+    hb = hoek_brown_base(8000.0, 30.0, 7.0, 8 * 18.5 + 6 * 23.0)
+    area = math.pi / 4 * 1.2 ** 2
+    for options in ({}, {"rock_base_method": "rqd"}):
+        r = _run(soil, **options)
+        base = _choice(r, "base resistance in rock")
+        (other,) = [a for a in base["alternatives"] if "14.5-15.2 m" in a]
+        assert "GSI 30, m_i 7" in other
+        assert f"Q_b {hb['qb'] * area:,.0f} kN" in other
+
+
+@pytest.mark.parametrize("layers, why", [
+    # GSI and m_i on the socket rock above the base
+    ([ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
+      ShaftSoilLayer(3.0, "rock", 23.0, qu=20000.0, GSI=30.0, m_i=7.0),
+      ShaftSoilLayer(7.0, "rock", 23.0, qu=20000.0)],
+     "above the base at 14 m"),
+    # on rock more than one base diameter below the base
+    ([ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
+      ShaftSoilLayer(8.0, "rock", 23.0, qu=20000.0),
+      ShaftSoilLayer(5.0, "rock", 23.0, qu=8000.0, GSI=30.0, m_i=7.0)],
+     "more than one base diameter (1.2 m) below the base at 14 m"),
+    # the base in clay
+    ([ShaftSoilLayer(15.0, "cohesive", 18.5, cu=75.0),
+      ShaftSoilLayer(5.0, "rock", 23.0, qu=8000.0, GSI=30.0)],
+     "the base at 14 m is in cohesive soil"),
+])
+def test_gsi_and_m_i_no_base_takes_are_refused(layers, why):
+    """As GM-179 and GM-249: an input a layer would not use is refused
+    with its reason, not dropped."""
+    with pytest.raises(ValueError) as e:
+        _run(ShaftSoilProfile(layers=layers))
+    msg = str(e.value)
+    assert "does not take" in msg and why in msg
+
+
+def test_capacity_vs_depth_takes_gsi_where_a_trial_base_is():
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
+        ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0, RQD=40.0, GSI=45.0,
+                       m_i=10.0)])
+    a = DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=14.0),
+                           soil=soil)
+    curve = a.capacity_vs_depth(depth_min=6.0, depth_max=14.0, n_points=5)
+    assert len(curve) == 5
+    with pytest.raises(ValueError, match="no trial base from 3 to 7 m"):
+        a.capacity_vs_depth(depth_min=3.0, depth_max=7.0, n_points=5)

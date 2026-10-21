@@ -837,8 +837,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                        + ("; 2.5 is the upper-bound limit 'unless local "
                           "experience or load tests can be used to validate "
                           "higher values' (p. 10-24)" if st["capped"] else "")
-                       + ("; the rock below the base not stated to meet the "
-                          "conditions of Eq. 10-23 (p. 10-22)"
+                       + ("; the call does not state the conditions of Eq. "
+                          "10-23 (p. 10-22) met, and the layers within one "
+                          "base diameter below the base show an RQD below "
+                          "100 or soil"
                           if analysis.rock_base_conditions_met is None
                           else "; the rock below the base stated not to "
                           "meet the conditions of Eq. 10-23 (p. 10-22)")),

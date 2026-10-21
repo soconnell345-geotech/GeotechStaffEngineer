@@ -66,3 +66,29 @@ def test_the_clay_base_su_over_2b_through_the_tool():
                     "unit_weight": 17.0, "cu": 40.0}]})
     assert "error" not in r, r
     assert r["base_steps"]["su_kPa"] == pytest.approx(70.0)
+
+
+def test_gsi_on_a_layer_no_base_takes_is_refused():
+    """GM-251 review: GSI and m_i on the socket rock above the base were
+    accepted and dropped; refused as GM-179 refuses an unused input."""
+    layers = [dict(_ROCK["layers"][0]),
+              {"thickness": 3.0, "soil_type": "rock", "unit_weight": 23.0,
+               "qu": 20000.0, "GSI": 30.0, "m_i": 7.0},
+              {"thickness": 7.0, "soil_type": "rock", "unit_weight": 23.0,
+               "qu": 20000.0}]
+    for method in ("drilled_shaft_capacity", "lrfd_capacity"):
+        r = _call(method, {**_ROCK, "layers": layers})
+        assert "does not take GSI and m_i" in r.get("error", ""), r
+
+
+def test_conditions_left_out_at_rqd_100_take_eq_10_23():
+    """GM-251 review: with the rock at its default RQD 100 and GSI and m_i
+    given, Eq. 10-23 as GEC-10 p. 10-22 recommends, the Hoek-Brown base
+    beside it."""
+    layers = [dict(_ROCK["layers"][0]),
+              {k: v for k, v in _ROCK["layers"][1].items() if k != "RQD"}]
+    r = _call("drilled_shaft_capacity", {**_ROCK, "layers": layers})
+    assert r["base_steps"]["equation"] == "10-23"
+    (base,) = [c for c in r["choices"]
+               if c["what"] == "base resistance in rock"]
+    assert any("GSI 45 and m_i 10" in a for a in base["alternatives"])

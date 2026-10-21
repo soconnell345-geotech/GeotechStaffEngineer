@@ -133,12 +133,16 @@ judgment, the call's `rock_base_conditions_met`: true takes 2.5 qu as
 stated (Example 10-4 does so with RQD 37 to 100 because "Rock coring and
 local experience indicate the rock mass below the socket tip is
 competent"); false takes the Hoek-Brown base, refused where the tip rock
-layer gives no `GSI` or `m_i`; left out, the Hoek-Brown base where the tip
-rock layer gives `GSI` and `m_i`, else the conditions are taken as met and
-said so when every layer within one base diameter below the base is rock
-with RQD 100 (the layer default), and the call is refused, naming GSI and
-m_i, when any is soil or has a lower RQD, so 2.5 qu is never applied
-silently to fractured rock. No RQD threshold is built: GEC-10 prints none.
+layer gives no `GSI` or `m_i`; left out, the conditions are taken as met
+and said so when every layer within one base diameter below the base is
+rock with RQD 100 (the layer default), with the Hoek-Brown value beside
+2.5 qu where the tip rock layer gives `GSI` and `m_i` (p. 10-22 recommends
+2.5 for rock that meets the conditions; the Hoek-Brown base is "For
+fractured rock mass", p. 10-23, so the lower value is not taken silently);
+when any is soil or has a lower RQD, the Hoek-Brown base on the tip rock
+layer's `GSI` and `m_i`, and the call is refused, naming them, where it
+gives none, so 2.5 qu is never applied silently to fractured rock. No RQD
+or GSI threshold is built: GEC-10 prints none.
 
 The Hoek-Brown base (GM-251) is built as printed: Eq. 10-24 (p. 10-23),
 Eqs. 10-25 to 10-29 (p. 10-24), on the tip rock layer's `qu`, `GSI` and
@@ -149,10 +153,17 @@ value). GEC-10 names GSI only (not RMR) and points to GEC 5 Table 9-10 for
 m_i, so both are the engineer's inputs. No GEC-10 worked example uses
 these equations; the check is Fig. 10-8 (p. 10-25, sigma'vb = 0, m_i 4 to
 33), whose plotted curves the equations match within 0.02 in N*cr from
-GSI 30 to 95 (`tests/test_hoek_brown_base.py`). GEC-10 gives no depth
-below the base over which the rock mass is taken: the tip layer's GSI and
-m_i are used, and the choices list each other rock layer within one base
-diameter below the base on its own. Resistance factor 0.50: p. 10-24 ("The
+GSI 50 to the 2.5 limit (`tests/test_hoek_brown_base.py`); below GSI 50
+the curves are drawn above the equations, by up to 0.03 at GSI 40, 0.04
+at GSI 30 and 0.07 at GSI 10 (read from the figure's vector paths,
+2026-10-20 review). The equations are coded as printed; at low GSI they
+give the smaller value. GEC-10 gives no depth below the base over
+which the rock mass is taken: the tip layer's GSI and m_i are used, and the
+choices give the Hoek-Brown base on each other rock layer within one base
+diameter below the base that gives GSI and m_i, with its value, whichever
+base was taken. GSI or m_i on any other layer is refused (nothing would
+use it, as GM-179 and GM-249 refuse such inputs); `capacity_vs_depth`
+takes them on any layer a trial base is in. Resistance factor 0.50: p. 10-24 ("The
 recommend resistance factor for application to Equation 10-29 is phi =
 0.50") and Table 8-4 (p. 8-14, "Eq. 10-23 or Eq. 10-29"), which agree.
 

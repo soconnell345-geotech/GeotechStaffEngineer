@@ -313,8 +313,9 @@ def rock_base_factor(RQD: float, method: str = "gec10") -> float:
     return 2.5 if method == "gec10" else rock_end_bearing_multiplier(RQD)
 
 
-#: GEC-10 (2018) p. 10-24: 'A value of N*cr equal to 2.5 can be used as an
-#: upper-bound limit' to the Hoek-Brown base, 'unless local experience or
+#: GEC-10 (2018) p. 10-24, of q_BN by Eq. 10-29 normalized by qu as N*cr:
+#: 'A value of N*cr equal to 2.5 can be used as an upper-bound limit to
+#: base resistance calculated by Equation 10-23, unless local experience or
 #: load tests can be used to validate higher values'; Fig. 10-8 draws
 #: 'maximum qBN/qu = 2.5'.
 HOEK_BROWN_NCR_MAX = 2.5

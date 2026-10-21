@@ -98,11 +98,15 @@ specific check, the governing reference, and the corrective action.
    one diameter below the base meets its three conditions (p. 10-22); a
    fractured rock mass takes the Hoek-Brown base, Eqs. 10-24 to 10-29, on
    the tip rock layer's GSI and m_i, 2.5 qu its upper limit. The call
-   states the conditions (`rock_base_conditions_met`) or gives GSI and m_i,
-   or is refused when a layer there has RQD below 100 or is soil; check the
-   statement is the engineer's, that a fractured rock mass is not given 2.5
-   qu, and where GSI and m_i came from (the core descriptions; m_i by rock
-   type, GEC 5 Table 9-10). The rock side C is 1.0, Eq. 10-21 for a
+   states the conditions (`rock_base_conditions_met`); left out, they are
+   taken as met where every layer within one diameter below the base is
+   rock with RQD 100 (the layer default), with the Hoek-Brown value beside
+   it, and the Hoek-Brown base is taken where a layer there has RQD below
+   100 or is soil (refused without GSI and m_i). Check the statement is the
+   engineer's, that a fractured rock mass is not given 2.5 qu (an RQD left
+   at its default with a low GSI given is the case to question), and where
+   GSI and m_i came from (the core descriptions; m_i by rock type, GEC 5
+   Table 9-10). The rock side C is 1.0, Eq. 10-21 for a
    "normal" socket
    (0.65 is Eq. 10-22, where caving is anticipated). The base resistance
    factor is that of the base's own soil (0.40 clay, 0.50 sand and rock).
