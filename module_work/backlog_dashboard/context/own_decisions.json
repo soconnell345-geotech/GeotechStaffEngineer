@@ -1919,5 +1919,36 @@
    "BACKLOG.md OWN-85, GM-256, GM-246",
    "GEC-11 Vol I p. 3-17 (Table 3-6 note (i)), p. 3-20"
   ]
+ },
+ "OWN-86": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Report the GSTools random-field defect to the GSTools project?",
+  "why": "A defect in the GSTools library, which the app uses for geostatistics, made one simulated field come out blank in a field session. The app now works around it, but other GSTools users still hit it.",
+  "background": "In GSTools 1.7.0 the 2-D Exponential covariance model gives an infinite value for about one random draw in 65,000, which turns the whole simulated field into NaN (seeds 47863 and 137080 reach it). The app now uses its own corrected copy of that model, identical to GSTools on every other draw. An issue text for the GSTools GitHub page is drafted in gstools_agent/DESIGN.md. Posting it is public and goes out under a GitHub account.",
+  "parts": [
+   {
+    "label": "The upstream report",
+    "options": [
+     {
+      "label": "Post it",
+      "effect": "The drafted issue goes on GSTools' public GitHub, posted by you or by Claude under your account. The app keeps its fix either way."
+     },
+     {
+      "label": "Keep the local fix only",
+      "effect": "Nothing is posted; the app's own fix stays."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Post it: the fix is small and other users of GSTools will hit the same blank fields.",
+  "if_no_answer": "Nothing is posted; the app keeps its own fix.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-86, GM-96",
+   "gstools_agent/DESIGN.md (the drafted issue)"
+  ]
  }
 }

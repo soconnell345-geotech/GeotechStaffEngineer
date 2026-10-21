@@ -362,13 +362,13 @@ def _page_count(data) -> Optional[int]:
     """How many pages ``data`` (PDF or image bytes) has, or ``None`` when it
     cannot be opened here (the renderer then says what is wrong)."""
     try:
-        import fitz
+        import pymupdf
     except ImportError:
         return None
     for kind in ("pdf", None):
         try:
-            doc = (fitz.open(stream=bytes(data), filetype=kind) if kind
-                   else fitz.open(stream=bytes(data)))
+            doc = (pymupdf.open(stream=bytes(data), filetype=kind) if kind
+                   else pymupdf.open(stream=bytes(data)))
         except Exception:  # noqa: BLE001 - not this kind of file
             continue
         try:
@@ -1186,14 +1186,14 @@ def _dispatch_read_pdf_text(arguments, attachments):
         return json.dumps({"error": str(e)})
 
     try:
-        import fitz
+        import pymupdf
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF text extraction. "
                      "pip install PyMuPDF"
         })
     try:
-        doc = fitz.open(stream=data, filetype="pdf")
+        doc = pymupdf.open(stream=data, filetype="pdf")
     except Exception as e:
         return json.dumps({
             "error": f"Could not open '{key}' as a PDF: {type(e).__name__}: {e}"
@@ -4150,9 +4150,9 @@ def _has_ink(image_bytes) -> bool:
     """Whether a rendered page shows anything at all. Unknown = yes, so a
     page is never left untiled on a guess."""
     try:
-        import fitz
+        import pymupdf
         import numpy as np
-        pix = fitz.Pixmap(image_bytes)
+        pix = pymupdf.Pixmap(image_bytes)
         colour = pix.n - (1 if pix.alpha else 0)
         a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width, pix.n)[:, :, :max(1, colour)]

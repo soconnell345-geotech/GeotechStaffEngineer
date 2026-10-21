@@ -399,10 +399,10 @@ def test_a_page_look_at_an_image_file_is_in_the_images_pixels_too():
 
 
 def test_a_pdf_still_zooms_as_a_page():
-    fitz = pytest.importorskip("fitz")
-    doc = fitz.open()
+    pymupdf = pytest.importorskip("pymupdf")
+    doc = pymupdf.open()
     doc.new_page(width=612, height=792).draw_rect(
-        fitz.Rect(100, 100, 130, 112), color=(1, 0, 0), fill=(1, 0, 0))
+        pymupdf.Rect(100, 100, 130, 112), color=(1, 0, 0), fill=(1, 0, 0))
     pdf = doc.tobytes()
     doc.close()
     out = json.loads(dispatch_extended_tool(
@@ -674,7 +674,7 @@ def _needs_annotate():
 
 def _review_tools(engine, attachments, tmp_path, monkeypatch):
     from funhouse_agent.deep.tools import make_vision_tools
-    pytest.importorskip("fitz")
+    pytest.importorskip("pymupdf")
     _needs_annotate()
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
     return {t.name: t for t in make_vision_tools(
@@ -692,8 +692,8 @@ def _annotate(tools, source, markups, out_name="marked.pdf", **args):
 def _copy_page(path):
     """``(page size, red-ink box)`` of a marked copy, the page rendered at
     one pixel a point."""
-    import fitz
-    with fitz.open(path) as doc:
+    import pymupdf
+    with pymupdf.open(path) as doc:
         page = doc[0]
         size = (round(page.rect.width, 2), round(page.rect.height, 2))
         pix = page.get_pixmap(dpi=72)
@@ -783,8 +783,8 @@ def test_a_mark_off_the_image_is_refused_naming_its_size(tmp_path,
 
 
 def test_a_mark_off_a_pdf_page_is_refused_too(tmp_path, monkeypatch):
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     doc.new_page(width=612, height=792).insert_text((72, 72), "GENERAL NOTES")
     pdf = doc.tobytes()
     doc.close()
@@ -805,10 +805,10 @@ def test_marks_added_to_a_copy_at_another_scale_are_converted_exactly(
     """A copy made before this fix (planlens' page, 0.75 pt a pixel) still
     takes new marks in the image's pixels: converted to its page, and the
     result's boxes given back in pixels."""
-    import fitz
+    import pymupdf
     photo = _photo(fmt="PNG", exif_turn=False)
-    with fitz.open(stream=photo) as img:
-        old = fitz.open("pdf", img.convert_to_pdf())
+    with pymupdf.open(stream=photo) as img:
+        old = pymupdf.open("pdf", img.convert_to_pdf())
     assert round(old[0].rect.width, 2) == 420.0          # 560 px at 0.75
     old.save(str(tmp_path / "old_marked.pdf"))
     old.close()

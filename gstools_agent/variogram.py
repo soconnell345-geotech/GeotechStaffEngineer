@@ -5,6 +5,8 @@ Variogram estimation and fitting using GSTools.
 import numpy as np
 
 from gstools_agent.gstools_utils import import_gstools
+from geotech_common.choices import how_given
+from gstools_agent.choices import model_choice, nugget_choice
 from gstools_agent.results import VariogramResult
 
 
@@ -185,4 +187,13 @@ def analyze_variogram(
         gamma=gamma,
         pair_counts=counts,
         warnings=warnings,
+        choices=[
+            model_choice(model_type, fitted=True),
+            nugget_choice(
+                float(model.nugget), nugget is None,
+                how_given(nugget, None, name="nugget"),
+                "fitted with the sill and range" if nugget is None else
+                "held at the number given; only the sill and range are "
+                "fitted (0 = no nugget)"),
+        ],
     )

@@ -118,8 +118,8 @@ class InlineImageMiddleware(AgentMiddleware):
 
 def _probe_png() -> bytes:
     """A 96 px red square, drawn with PyMuPDF (no other image library)."""
-    import fitz
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 96, 96), False)
+    import pymupdf
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 96, 96), False)
     pix.set_rect(pix.irect, (210, 20, 20))
     return pix.tobytes("png")
 

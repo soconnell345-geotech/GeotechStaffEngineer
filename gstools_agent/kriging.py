@@ -8,6 +8,11 @@ measurements onto a regular grid.
 import numpy as np
 
 from gstools_agent.gstools_utils import import_gstools
+from geotech_common.choices import how_given
+from gstools_agent.choices import (
+    fit_choice, kriging_type_choice, model_choice, nugget_choice,
+    scale_choices,
+)
 from gstools_agent.results import KrigingResult
 
 
@@ -76,6 +81,7 @@ def analyze_kriging(
     cell_size=None,
     quantity="above",
     margin=None,
+    fit_nugget=True,
 ) -> KrigingResult:
     """Krige soil property values onto a regular grid.
 
@@ -105,9 +111,16 @@ def analyze_kriging(
     len_scale : float or None
         Correlation length. None = estimate from data.
     nugget : float
-        Nugget variance. Default 0.
+        Nugget variance. Default 0. With ``fit_variogram`` and
+        ``fit_nugget`` both true it is only a starting guess.
     fit_variogram : bool
         If True, fit variogram model to data. Default True.
+    fit_nugget : bool
+        With ``fit_variogram``: True (the default) fits the nugget with the
+        variance and len_scale; False holds it at ``nugget`` and fits only
+        those two (GSTools' ``fit_variogram(..., nugget=False)``), e.g. a
+        nugget set from the measurement error or from twinned borings.
+        Ignored without ``fit_variogram``.
     regions : list of dict or None
         ``{name, polygon: [[x, y], ...], level}`` (level one number or a
         list): the kriged surface's volume and area above (or below) each
@@ -128,6 +141,7 @@ def analyze_kriging(
     x_arr = np.asarray(x, dtype=float)
     y_arr = np.asarray(y, dtype=float)
     val_arr = np.asarray(values, dtype=float)
+    variance_arg, len_scale_arg = variance, len_scale
 
     # Auto grid bounds
     buf = 0.1
@@ -168,11 +182,18 @@ def analyze_kriging(
         len_scale = extent / 3.0
         notes.append(f"len_scale not given: one third of the data extent "
                      f"({len_scale:.4g} m) is {role}.")
-    if fit_variogram:
+    if fit_variogram and fit_nugget:
         notes.append("fit_variogram=true: variance, len_scale and nugget "
                      "are fitted to the empirical variogram; values given "
                      "for them are only starting guesses (the fitted values "
-                     "are reported).")
+                     "are reported). fit_nugget=false holds the nugget at "
+                     "the value given.")
+    elif fit_variogram:
+        notes.append(f"fit_variogram=true, fit_nugget=false: variance and "
+                     f"len_scale are fitted to the empirical variogram with "
+                     f"the nugget held at {float(nugget):.4g}; values given "
+                     f"for variance and len_scale are only starting guesses "
+                     f"(the fitted values are reported).")
 
     model = model_cls(dim=2, var=variance, len_scale=len_scale, nugget=nugget)
 
@@ -187,7 +208,7 @@ def analyze_kriging(
             raise ValueError(
                 f"{exc} To krige anyway, pass fit_variogram=false with "
                 f"variance and len_scale.") from None
-        model.fit_variogram(bin_center, gamma, nugget=nugget >= 0)
+        model.fit_variogram(bin_center, gamma, nugget=bool(fit_nugget))
         warnings += fit_warnings(model, val_arr, float(
             np.max(np.hypot(x_arr[:, None] - x_arr[None, :],
                             y_arr[:, None] - y_arr[None, :]))))
@@ -211,11 +232,33 @@ def analyze_kriging(
     grid_y = np.linspace(grid_y_min, grid_y_max, n_grid_y)
     field, krige_var = krig.structured([grid_x, grid_y])
 
-    region_rows = region_cells = None
+    region_rows = region_cells = regions_geom = None
     if regions is not None:
-        region_rows, region_cells = _region_totals(
+        region_rows, region_cells, regions_geom = _region_totals(
             krig, model, regions, cell_size, quantity, margin, x_arr, y_arr,
             notes)
+
+    nugget_fitted = bool(fit_variogram and fit_nugget)
+    chosen = [
+        model_choice(model_type, fitted=bool(fit_variogram)),
+        fit_choice(bool(fit_variogram), fit_variogram, True, nugget_fitted,
+                   float(nugget)),
+    ]
+    if not fit_variogram:
+        chosen += scale_choices(variance_arg, len_scale_arg, float(variance),
+                                float(len_scale), "", len(val_arr), False)
+    if nugget_fitted:
+        chosen.append(nugget_choice(
+            float(model.nugget), True,
+            how_given(fit_nugget, True, name="fit_nugget"),
+            "fitted with the sill and correlation length; fit_nugget=false "
+            "holds it at a number (the measurement error, twinned borings)"))
+    else:
+        chosen.append(nugget_choice(
+            float(nugget), False, how_given(nugget, 0.0, name="nugget"),
+            "no nugget unless one is given: the surface then passes "
+            "exactly through the data"))
+    chosen.append(kriging_type_choice(kriging_type))
 
     return KrigingResult(
         n_data=len(x_arr),
@@ -235,6 +278,13 @@ def analyze_kriging(
         regions=region_rows,
         region_cells=region_cells,
         quantity=quantity,
+        obs_x=x_arr,
+        obs_y=y_arr,
+        obs_values=val_arr,
+        regions_geom=regions_geom,
+        variogram_fitted=bool(fit_variogram),
+        nugget_fitted=nugget_fitted,
+        choices=chosen,
     )
 
 
@@ -317,4 +367,6 @@ def _region_totals(krig, model, regions, cell_size, quantity, margin,
         f"fraction of the area {q} the level. These are pointwise "
         f"expectations: the probability that a TOTAL exceeds a value (a P90 "
         f"volume, the chance of any rock) needs conditional_simulation.")
-    return rows, cell_rows
+    geom = [{"name": r["name"], "polygon": r["polygon"],
+             "levels": list(r["levels"])} for r in regs]
+    return rows, cell_rows, geom

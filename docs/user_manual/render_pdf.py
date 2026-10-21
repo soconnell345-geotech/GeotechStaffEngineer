@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf  # PyMuPDF
 
 HERE = Path(__file__).resolve().parent
 HTML = HERE / "manual.html"
@@ -47,7 +47,7 @@ def render():
 
 
 def add_outline():
-    doc = fitz.open(OUT)
+    doc = pymupdf.open(OUT)
     entries = json.loads(TOC.read_text(encoding="utf-8"))
 
     # Start the search past the front matter (cover / disclaimer / contents).
@@ -78,7 +78,7 @@ def add_outline():
 
 
 def verify():
-    doc = fitz.open(OUT)
+    doc = pymupdf.open(OUT)
     n = doc.page_count
     blank = sum(1 for i in range(n) if len(doc[i].get_text().strip()) < 5)
     print(f"Pages: {n}   blank/near-blank: {blank}   outline: {len(doc.get_toc())}")

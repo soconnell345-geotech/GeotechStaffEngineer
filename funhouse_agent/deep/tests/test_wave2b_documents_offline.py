@@ -22,7 +22,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import document_tools  # noqa: E402
 from funhouse_agent.deep.tools import make_vision_tools  # noqa: E402

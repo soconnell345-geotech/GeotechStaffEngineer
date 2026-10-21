@@ -198,12 +198,12 @@ def _footer(p, n: int) -> None:
 
 
 def _cover(doc) -> None:
-    import fitz
+    import pymupdf
     p = _page(doc)
     p.insert_text((90, 250), "GEOTECHNICAL INVESTIGATION REPORT", fontsize=20,
                   fontname="hebo")
     p.insert_text((90, 285), PROJECT, fontsize=18)
-    p.insert_textbox(fitz.Rect(90, 420, 520, 620),
+    p.insert_textbox(pymupdf.Rect(90, 420, 520, 620),
                      "Prepared for:\nHarbour Road Utilities Board\n\n"
                      f"Prepared by:\n{FIRM}\n20 April 2026", fontsize=11)
 
@@ -271,12 +271,12 @@ NARRATIVE = (
 
 
 def _narrative(doc, n: int) -> None:
-    import fitz
+    import pymupdf
     heading, prose = NARRATIVE[n - 1]
     p = _page(doc)
     _footer(p, n)
     p.insert_text((72, 100), heading, fontsize=14, fontname="hebo")
-    p.insert_textbox(fitz.Rect(72, 120, 540, 720), prose * 2, fontsize=10)
+    p.insert_textbox(pymupdf.Rect(72, 120, 540, 720), prose * 2, fontsize=10)
 
 
 #: Where each boring is drawn on the site plan (page points).
@@ -308,10 +308,10 @@ def _site_plan(doc) -> None:
 
 
 def _divider(doc, title: str, contents: str) -> None:
-    import fitz
+    import pymupdf
     p = _page(doc)
     p.insert_text((90, 300), title, fontsize=18, fontname="hebo")
-    p.insert_textbox(fitz.Rect(90, 340, 520, 520), contents, fontsize=11)
+    p.insert_textbox(pymupdf.Rect(90, 340, 520, 520), contents, fontsize=11)
 
 
 LOG_FIELDS = ("DEPTH (m)", "SAMPLE", "BLOWS", "N", "USCS",
@@ -350,8 +350,8 @@ def _vector_log(doc, boring: str, rows, sheet: str) -> None:
 def _scanned_log(doc, boring: str) -> None:
     """A 2011 log as a SCAN: drawn on a scratch page, rasterised, speckled,
     and placed as a picture - no text layer at all."""
-    import fitz
-    scratch = fitz.open()
+    import pymupdf
+    scratch = pymupdf.open()
     p = scratch.new_page(width=LETTER[0], height=LETTER[1])
     water, total = OLD_LOG_HEADERS[boring]
     p.insert_text((72, 60), "BOREHOLE LOG", fontsize=15, fontname="hebo")
@@ -373,13 +373,13 @@ def _scanned_log(doc, boring: str) -> None:
         p.insert_text((xs[0] + 3, y), depth, fontsize=10)
         p.insert_text((xs[1] + 3, y), n, fontsize=10)
         p.insert_text((xs[2] + 3, y), desc, fontsize=10)
-    pix = p.get_pixmap(dpi=150, colorspace=fitz.csGRAY)
+    pix = p.get_pixmap(dpi=150, colorspace=pymupdf.csGRAY)
     scratch.close()
     # A scan's grain: a light speckle, deterministic.
     data = bytearray(pix.samples)
     for i in range(0, len(data), 997):
         data[i] = 120
-    img = fitz.Pixmap(fitz.csGRAY, pix.width, pix.height, bytes(data), False)
+    img = pymupdf.Pixmap(pymupdf.csGRAY, pix.width, pix.height, bytes(data), False)
     page = _page(doc)
     page.insert_image(page.rect, stream=img.tobytes("jpeg", jpg_quality=70))
 
@@ -430,8 +430,8 @@ def _summary_table(doc) -> None:
 
 def build_synthetic_extraction_report() -> ExtractionReportGT:
     """The report in this module's docstring, with its ground truth."""
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     _cover(doc)                                                   # 0
     _contents(doc)                                                # 1
     for n in (1, 2, 3):                                           # 2-4

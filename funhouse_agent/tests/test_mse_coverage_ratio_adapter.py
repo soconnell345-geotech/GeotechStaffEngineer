@@ -66,15 +66,43 @@ def test_a_geogrid_is_a_continuous_layer_and_says_so():
     assert _coverage(r)["how"] == "default"
 
 
-def test_the_built_in_grid_takes_a_width_and_the_strip_keeps_its_own():
-    grid = _mse(reinforcement_name="welded_wire_grid_w11",
-                reinforcement_width=0.4572, Sh=1.524)
+def test_the_built_in_grid_and_strip_keep_their_own_width():
+    """GM-262: the built-in mat is GEC-11 Vol II Example E4's 4W11 mat, b
+    1.5 ft (0.4572 m), and carries it as the strip carries its 75 mm."""
+    grid = _mse(reinforcement_name="welded_wire_grid_w11", Sh=1.524)
     assert {lv["Rc"] for lv in grid["internal_results"]} == {0.3}
-    no_b = _mse(reinforcement_name="welded_wire_grid_w11", Sh=1.524)
-    assert "needs the steel grid's width b" in no_b["error"]
+    same = _mse(reinforcement_name="welded_wire_grid_w11",
+                reinforcement_width=0.4572, Sh=1.524)
+    assert same["internal_results"] == grid["internal_results"]
+    other = _mse(reinforcement_name="welded_wire_grid_w11",
+                 reinforcement_width=0.3, Sh=1.524)
+    assert "is 0.4572 m wide" in other["error"]
     other = _mse(reinforcement_name="ribbed_steel_strip_75x4",
                  reinforcement_width=0.05, Sh=0.75)
     assert "is 0.075 m wide" in other["error"]
+
+
+def test_the_spacing_or_ratio_per_level_through_the_tool():
+    """GM-261: a list, one value a level from the top down, as GEC-11 Vol
+    II Example E3 changes Sh with depth (Table E3-7.3, p. E3-19)."""
+    r = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+             Sh=[0.75] * 8 + [0.5] * 4)
+    assert "error" not in r, r.get("error")
+    assert [lv["Rc"] for lv in r["internal_results"]] == \
+        [0.1] * 8 + [0.15] * 4
+    assert "Sh 0.5 m at levels 9-12 (Rc 0.15)" in _coverage(r)["chosen"]
+    short = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+                 Sh=[0.75] * 10)
+    assert "this wall has 12 levels" in short["error"]
+    rc = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+              Rc=[0.1] * 11 + [0.2])
+    assert rc["internal_results"][-1]["Rc"] == 0.2
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    p = METHOD_INFO["mse_wall"]["parameters"]
+    for name in ("reinforcement_horizontal_spacing", "coverage_ratio"):
+        assert p[name]["type"] == "float or list"
+        assert "one per reinforcement level from the top down" in p[name][
+            "description"]
 
 
 def test_a_custom_strip_takes_its_width_and_spacing():
@@ -101,14 +129,61 @@ def test_tested_F_star_and_alpha_through_the_tool():
     assert not any("(Cu_backfill)" in w for w in whats)
 
 
+@pytest.mark.parametrize("extra, words", [
+    ({"reinforcement_name": "ribbed_steel_strip_75x4", "Sh": 0.75},
+     "which is what takes Cu"),
+    ({"reinforcement_name": "geogrid_ux1600"},
+     "this reinforcement's empirical F* takes no Cu")])
+def test_a_Cu_beside_a_tested_F_star_is_said_to_be_in_no_check(extra, words):
+    """GM-256 review: a strip or a geogrid given Cu and a tested F*."""
+    r = _mse(F_star_tested=1.0, Cu=5.0, **extra)
+    assert "error" not in r, r.get("error")
+    (c,) = [c for c in r["choices"] if "(F_star_tested)" in c["what"]]
+    assert "Cu_backfill 5 is not used in the checks" in c["chosen"]
+    assert words in c["chosen"]
+    assert not [c for c in r["choices"] if "(Cu_backfill)" in c["what"]]
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    assert "With F_star_tested it is in no check" in METHOD_INFO[
+        "mse_wall"]["parameters"]["Cu_backfill"]["description"]
+
+
 def test_list_reinforcement_says_what_each_needs():
     out = D.call_agent("retaining_walls", "list_reinforcement", {})
     strip = out["reinforcement_types"]["ribbed_steel_strip_75x4"]
     assert strip["width_m"] == 0.075
-    assert strip["Tallowable_kN_per_m"] == pytest.approx(574.67, abs=0.01)
+    # 0.55 Fy Ec at GEC-11 E3's corroded thickness since the GM-262 review
+    # (574.67 before, 43.1 kN a strip of no recorded source)
+    assert strip["Tallowable_kN_per_m"] == pytest.approx(638.6, abs=0.01)
+    assert "p. E3-16" in strip["Tallowable_basis"]
     assert strip["mse_wall_needs"].startswith(
         "reinforcement_horizontal_spacing")
     assert "Eq. 3-11a" in out["Tallowable"]
+    # GM-262: the mat carries its b and says where its Tal comes from
+    grid = out["reinforcement_types"]["welded_wire_grid_w11"]
+    assert grid["width_m"] == 0.4572
+    assert grid["Tallowable_kN_per_m"] == pytest.approx(96.44, abs=0.01)
+    assert grid["mse_wall_needs"] == strip["mse_wall_needs"]
+    assert "p. E4-18" in grid["Tallowable_basis"]
+    assert "allowable" in out["Tallowable"]
+
+
+@pytest.mark.parametrize("name, value", [
+    ("reinforcement_Tallowable", 138.4), ("reinforcement_type", "strip"),
+    ("reinforcement_Fy", 448.0), ("reinforcement_thickness", 0.01),
+    ("reinforcement_transverse_spacing", 0.3)])
+def test_a_built_in_refuses_the_custom_inputs_it_would_not_use(name, value):
+    """GM-262 review: a built-in carries its own Tal, type and bar
+    geometry, so a custom input beside its name was taken and not used: a
+    4W15 mat's Tal 138.4 given with welded_wire_grid_w11 ran the 4W11
+    mat's 96.44."""
+    err = _mse(reinforcement_name="welded_wire_grid_w11", Sh=1.524,
+               **{name: value}).get("error", "")
+    assert "does not take" in err and name in err, err
+    assert "custom reinforcement" in err
+    r = _mse(reinforcement_name="my mat", reinforcement_type="bar_mat",
+             reinforcement_Tallowable=138.4, reinforcement_width=0.4572,
+             Sh=1.524)
+    assert "error" not in r, r.get("error")
 
 
 @pytest.mark.parametrize("name", ["reinforcement_horizontal_spacing",
@@ -127,6 +202,10 @@ def test_the_tool_text_says_per_unit_width_and_names_the_equations():
     assert "per metre of the reinforcement's own width" in p[
         "reinforcement_Tallowable"]["description"]
     assert "Eq. 3-11a" in p["reinforcement_Tallowable"]["description"]
+    # GM-262: the check is at FOS 1.0 on the unfactored Tmax: an allowable
+    for words in ("unfactored Tmax at a factor of safety of 1.0",
+                  "0.48 Fy for bar mats (p. 4-77)", "Fig. 3-5, p. 3-24"):
+        assert words in p["reinforcement_Tallowable"]["description"], words
     sh = p["reinforcement_horizontal_spacing"]["description"]
     assert "Rc = b/Sh (Eq. 3-1)" in sh and "refused" in sh
     assert "default" not in p["reinforcement_width"]

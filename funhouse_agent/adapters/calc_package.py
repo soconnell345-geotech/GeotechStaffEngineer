@@ -2546,8 +2546,8 @@ def _pdf_layout(path: str, figures=None, max_pages: int = 20) -> dict:
     the renderer's (``render_html_pdf_story``); without it the sizes are
     read from the PDF. ``{}`` when it cannot be read."""
     try:
-        import fitz                                        # PyMuPDF
-        doc = fitz.open(path)
+        import pymupdf                                        # PyMuPDF
+        doc = pymupdf.open(path)
     except Exception:                                      # noqa: BLE001
         return {}
     try:
@@ -2555,7 +2555,7 @@ def _pdf_layout(path: str, figures=None, max_pages: int = 20) -> dict:
             figures = []
             for page in doc:
                 for info in page.get_image_info():
-                    r = fitz.Rect(info["bbox"])
+                    r = pymupdf.Rect(info["bbox"])
                     figures.append({"pdf_page": page.number + 1,
                                     "width_in": round(r.width / 72, 2),
                                     "height_in": round(r.height / 72, 2)})

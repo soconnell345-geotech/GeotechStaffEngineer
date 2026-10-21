@@ -80,23 +80,23 @@ def _rebuild(src, zoom: float = 1.0, rotate: float = 0.0,
     those copies from a real page so the drift can be measured against the
     distance between pages that are genuinely different.
     """
-    import fitz
-    matrix = fitz.Matrix(zoom, zoom)
+    import pymupdf
+    matrix = pymupdf.Matrix(zoom, zoom)
     if rotate:
         matrix = matrix.prerotate(rotate)
     pix = src.get_pixmap(matrix=matrix)
     data = (pix.tobytes("jpeg", jpg_quality=jpeg) if jpeg
             else pix.tobytes("png"))
-    out = fitz.open()
+    out = pymupdf.open()
     page = out.new_page(width=src.rect.width, height=src.rect.height)
-    rect = fitz.Rect(src.rect.x0 + dx, src.rect.y0 + dy,
+    rect = pymupdf.Rect(src.rect.x0 + dx, src.rect.y0 + dy,
                      src.rect.x1 + dx, src.rect.y1 + dy)
     page.insert_image(rect, stream=data)
     return out, page
 
 
 def probe_submittal() -> List[int]:
-    import fitz
+    import pymupdf
     from planlens.document import open_document
     from planlens.document.imagehash import (
         hamming, page_dhash, wants_image_hash,
@@ -111,7 +111,7 @@ def probe_submittal() -> List[int]:
     t_map = time.perf_counter() - t0
     print(f"pages {len(summaries)}   page map {t_map:.1f} s")
 
-    raw = fitz.open(PDF)
+    raw = pymupdf.open(PDF)
     hashes: Dict[int, str] = {}
     times: Dict[int, float] = {}
     gated: List[int] = []
@@ -182,7 +182,7 @@ def probe_submittal() -> List[int]:
               and size[a] == size[a + 1]]
     _pairs_table("consecutive form pages (the text rule covers these)", consec)
 
-    raw2 = fitz.open(PDF)
+    raw2 = pymupdf.open(PDF)
     probe_pages = (list(hashes)[:6] + gated[:6])[:10]
     unstable = [p for p in probe_pages if page_dhash(raw2[p]) != hashes[p]]
     print(f"\nstability: {len(probe_pages)} pages re-hashed from a second "
@@ -213,13 +213,13 @@ DEGRADATIONS = [
 
 def probe_degradations(pages: Sequence[int], side: int = 8) -> None:
     """How far does a page drift from ITSELF when it comes back as a scan?"""
-    import fitz
+    import pymupdf
     from planlens.document.imagehash import hamming, page_dhash
 
     print("\n" + "=" * 72)
     print(f"C. how far a TRUE copy drifts ({side}x{side} = {side * side} bits)")
     print("=" * 72)
-    raw = fitz.open(PDF)
+    raw = pymupdf.open(PDF)
     for index in pages:
         base = page_dhash(raw[index], side)
         print(f"\n  page {index} ({round(raw[index].rect.width)}x"
@@ -235,7 +235,7 @@ def probe_degradations(pages: Sequence[int], side: int = 8) -> None:
 
 def probe_contrast() -> None:
     """Does the page carry a picture at all? A uniform page hashes to zero."""
-    import fitz
+    import pymupdf
     from planlens.document import open_document
     from planlens.document.imagehash import _gray_grid, wants_image_hash
 
@@ -244,7 +244,7 @@ def probe_contrast() -> None:
     print("=" * 72)
     doc = open_document(PDF)
     summaries = doc.page_map()
-    raw = fitz.open(PDF)
+    raw = pymupdf.open(PDF)
     gated_spread, flat = [], []
     for s in summaries:
         grid = _gray_grid(raw[s.page], 9, 8)
@@ -267,12 +267,12 @@ def probe_contrast() -> None:
 
     # The failure mode a contrast floor exists to stop.
     from planlens.document.imagehash import hamming, page_dhash
-    out = fitz.open()
+    out = pymupdf.open()
     out.new_page(width=612, height=792)                       # plain white
     p2 = out.new_page(width=612, height=792)
     p2.draw_rect(p2.rect, color=None, fill=(0.97, 0.97, 0.97))  # grey wash
     p3 = out.new_page(width=612, height=792)
-    p3.draw_rect(fitz.Rect(0, 0, 612, 400), color=None,
+    p3.draw_rect(pymupdf.Rect(0, 0, 612, 400), color=None,
                  fill=(0.98, 0.98, 0.98))                     # half wash
     print("\nthree DIFFERENT near-uniform pages:")
     for i in range(3):
@@ -288,13 +288,13 @@ def probe_contrast() -> None:
 
 def probe_template_runs() -> None:
     """Different pages off ONE template, rebuilt as scans: the worst case."""
-    import fitz
+    import pymupdf
     from planlens.document.imagehash import hamming, page_dhash
 
     print("\n" + "=" * 72)
     print("E. same-template pages rebuilt as scans (150 dpi JPEG q60)")
     print("=" * 72)
-    raw = fitz.open(PDF)
+    raw = pymupdf.open(PDF)
     for label, pages in TEMPLATE_RUNS:
         pages = list(pages)
         hashes, keep = {}, []
@@ -315,13 +315,13 @@ def probe_template_runs() -> None:
 
 def probe_grid_size() -> None:
     """Does a finer grid separate the two classes any better?"""
-    import fitz
+    import pymupdf
     from planlens.document.imagehash import hamming, page_dhash
 
     print("\n" + "=" * 72)
     print("F. 64 bits vs 256 bits on the hard pairs")
     print("=" * 72)
-    raw = fitz.open(PDF)
+    raw = pymupdf.open(PDF)
     pairs = [(96, 115, "two figures off one template"),
              (163, 256, "two program outputs, one template"),
              (32, 33, "two boring logs"), (7, 8, "two drawing sheets")]
@@ -343,7 +343,7 @@ def probe_grid_size() -> None:
 
 
 def probe_corpus() -> None:
-    import fitz
+    import pymupdf
     from planlens.document import open_document
     from planlens.document.imagehash import hamming, page_dhash
 
@@ -357,7 +357,7 @@ def probe_corpus() -> None:
         name = os.path.basename(path)
         with open_document(path) as doc:
             s = doc.summary(0)
-        raw = fitz.open(path)
+        raw = pymupdf.open(path)
         h = page_dhash(raw[0])
         size = (round(raw[0].rect.width, 1), round(raw[0].rect.height, 1))
         raw.close()
@@ -378,9 +378,9 @@ def probe_corpus() -> None:
     print(f"of those, pairs of equal page size: {_stats(same_size)}")
 
     if hashes:
-        raw = fitz.open(files[0])
+        raw = pymupdf.open(files[0])
         again = page_dhash(raw[0])
-        rot = fitz.open(files[0])
+        rot = pymupdf.open(files[0])
         rot[0].set_rotation((rot[0].rotation + 90) % 360)
         turned = page_dhash(rot[0])
         print(f"\nsame sheet re-rendered: distance "

@@ -1,4 +1,4 @@
-import fitz, glob, os, re, sys
+import pymupdf, glob, os, re, sys
 
 docs = r"C:/Users/socon/OneDrive/dev/GeotechStaffEngineer/.claude/worktrees/v5.1-todos/geotech-references/docs"
 pat = re.compile(r'(design example|example problem|sample problem|illustrative example|example calculation|EXAMPLE \d|Example \d+[-.:]|STEP 1\b)', re.I)
@@ -9,7 +9,7 @@ for pdf in sorted(glob.glob(docs + "/*.pdf")):
     if targets and not any(t.lower() in name.lower() for t in targets):
         continue
     try:
-        doc = fitz.open(pdf)
+        doc = pymupdf.open(pdf)
     except Exception as e:
         print("ERR", name, e); continue
     hits = []

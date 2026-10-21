@@ -242,6 +242,42 @@ def test_v056_internal_pullout_and_tension_by_level(level):
         Ng * 0.75 * 13.00 / Tmax, rel=0.004)
 
 
+def test_v056_internal_by_level_in_one_run():
+    """GM-261: E3 in ONE run, its spacing per level as Table E3-7.3 (p.
+    E3-19) prints it, Sh = wp / Ng: 2.50 ft at Levels 1 to 8 and 1.67 ft at
+    Levels 9 to 12. Every level's pullout and tension as the per-Ng runs
+    above, and each level the same as the run at its own spacing. One
+    spacing for the wall (2.50 ft, the run before GM-261) leaves Levels 9
+    to 12 at two thirds of their resistance."""
+    Sh = [5.0 * FT / E3_TABLE_7_3[i][2] for i in sorted(E3_TABLE_7_3)]
+    strip = Reinforcement(name="E3 ribbed strip 50x4 mm",
+                          type="metallic_strip", Tallowable=TN_STRIP / B_STRIP,
+                          width=B_STRIP, Fy=448.0, thickness=0.004,
+                          horizontal_spacing=Sh)
+    levels = check_internal_stability(_e3_geom(), GAMMA, 34.0, strip,
+                                      Cu_backfill=7.0)
+    assert len(levels) == 12
+    one = _e3_internal(strips_per_panel=2)
+    for level, (Tmax, phi_Pr, Ng) in E3_TABLE_7_3.items():
+        lv = levels[level - 1]
+        assert lv == _e3_internal(strips_per_panel=Ng)[level - 1]
+        assert lv["Rc"] == pytest.approx(B_STRIP / (5.0 * FT / Ng), abs=1e-4)
+        assert 0.90 * lv["Pr_kN_per_m"] * Sh[level - 1] / KIP == \
+            pytest.approx(phi_Pr, rel=0.003)
+        assert lv["FOS_pullout"] * 0.90 / 1.35 == pytest.approx(
+            Ng * phi_Pr / Tmax, rel=0.004)
+        assert lv["FOS_rupture"] * 0.75 / 1.35 == pytest.approx(
+            Ng * 0.75 * 13.00 / Tmax, rel=0.004)
+        assert lv["FOS_rupture"] == pytest.approx(
+            one[level - 1]["FOS_rupture"] * Ng / 2, rel=2e-3)
+    # Level 12: Ng phi_t Tn / Tmax = 3 x 9.75 / 24.36 = 1.20 (E3); at one
+    # spacing of 2.50 ft, 2 x 9.75 / 24.36 = 0.80
+    assert levels[-1]["FOS_rupture"] * 0.75 / 1.35 == pytest.approx(
+        1.20, abs=0.005)
+    assert one[-1]["FOS_rupture"] * 0.75 / 1.35 == pytest.approx(
+        0.80, abs=0.005)
+
+
 def test_v056_e5_level4_pullout_per_strip():
     """GEC-11 Vol II Example E5, Level 4 (p. E5-28): Pr = (1.0)(0.832)(2)
     (0.164 ft)(15.06 ft)(2.20 ksf) = 9.04 k/strip. E5 is a bridge abutment

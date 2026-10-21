@@ -18,7 +18,7 @@ import json
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import vision_tools, vision_view  # noqa: E402
 from funhouse_agent.vision_tools import dispatch_extended_tool  # noqa: E402
@@ -27,10 +27,10 @@ QUESTION = "Read every label and dimension in this region verbatim."
 
 
 def _pdf() -> bytes:
-    d = fitz.open()
+    d = pymupdf.open()
     page = d.new_page(width=612, height=792)
     page.insert_text((72, 100), "Sheet 1  B-1  B-2", fontsize=12)
-    page.draw_rect(fitz.Rect(300, 300, 500, 500), color=(0, 0, 0))
+    page.draw_rect(pymupdf.Rect(300, 300, 500, 500), color=(0, 0, 0))
     data = d.tobytes()
     d.close()
     return data

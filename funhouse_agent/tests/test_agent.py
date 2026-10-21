@@ -256,9 +256,9 @@ class TestDirectMethods:
 
     def test_extract_geometry_from_pdf(self):
         """Test PDF geometry extraction (requires PyMuPDF for rendering)."""
-        import fitz
+        import pymupdf
         # Create a minimal PDF
-        doc = fitz.open()
+        doc = pymupdf.open()
         doc.new_page()
         pdf_bytes = doc.tobytes()
         doc.close()
@@ -278,8 +278,8 @@ class TestDirectMethods:
         assert "Clay" in result.boundary_profiles
 
     def test_analyze_pdf_report(self):
-        import fitz
-        doc = fitz.open()
+        import pymupdf
+        doc = pymupdf.open()
         doc.new_page()
         pdf_bytes = doc.tobytes()
         doc.close()

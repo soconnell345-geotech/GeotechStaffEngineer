@@ -28,7 +28,7 @@ from report_ingest.model import (
 )
 from report_ingest.tests.fake_engine import FakeEngine, ScriptExhausted
 
-fitz = pytest.importorskip("fitz", reason="the fixtures are drawn with PyMuPDF")
+pymupdf = pytest.importorskip("pymupdf", reason="the fixtures are drawn with PyMuPDF")
 
 
 # ---------------------------------------------------------------------------

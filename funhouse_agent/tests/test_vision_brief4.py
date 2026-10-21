@@ -25,7 +25,7 @@ import re
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 np = pytest.importorskip("numpy")
 
 from funhouse_agent import vision_probe, vision_tools, vision_view  # noqa: E402
@@ -51,10 +51,10 @@ def clean_env(monkeypatch):
 
 
 def _sheet(*boxes) -> bytes:
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=1224, height=792)
     for b in boxes:
-        page.draw_rect(fitz.Rect(*b), color=(0, 0, 0), fill=(0, 0, 0))
+        page.draw_rect(pymupdf.Rect(*b), color=(0, 0, 0), fill=(0, 0, 0))
     data = doc.tobytes()
     doc.close()
     return data
@@ -62,7 +62,7 @@ def _sheet(*boxes) -> bytes:
 
 def _blobs(image_bytes):
     """``(size, [pixel boxes of the ink blobs, left to right])``."""
-    pix = fitz.Pixmap(image_bytes)
+    pix = pymupdf.Pixmap(image_bytes)
     a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
         pix.height, pix.width, pix.n)[:, :, 0] < 100
     cols = a.any(axis=0)

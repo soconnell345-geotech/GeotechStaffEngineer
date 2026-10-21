@@ -125,13 +125,13 @@ def test_no_readings_adds_nothing(tmp_path, monkeypatch):
 def test_the_note_reads_the_real_record(tmp_path):
     """End to end on disk: a page read in a conversation folder shows in
     that conversation's next turn note."""
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     from funhouse_agent import _fileio, vision_tools
     conv = tmp_path / "alice"
     (conv / "files").mkdir(parents=True)
     (conv / "meta.json").write_text(json.dumps({"thread_id": "alice"}),
                                     encoding="utf-8")
-    d = fitz.open()
+    d = pymupdf.open()
     d.new_page().insert_text((72, 100), "Sheet 1")
     pdf = d.tobytes()
     d.close()

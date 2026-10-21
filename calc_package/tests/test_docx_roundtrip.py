@@ -13,7 +13,7 @@ import os
 import pytest
 
 docx = pytest.importorskip("docx")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 pytest.importorskip("markdown_it")
 
 from calc_package.docx_renderer import (  # noqa: E402
@@ -62,7 +62,7 @@ code line 2
 
 
 def _png(path):
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 16, 16), False)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 16, 16), False)
     pix.set_rect(pix.irect, (200, 120, 40))
     path.write_bytes(pix.tobytes("png"))
 
