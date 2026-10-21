@@ -561,12 +561,10 @@ of the pressure rate to the mass balance (SSPquadUP.cpp, getMass: `Kp =
 about sqrt(alpha / storage): with the fixed alpha 1e-5 and the clay's
 storage n/Kf + 1/M (6.4e-7 per kPa), about 4 m. The total vertical stress
 in the clay stays within 1 kPa while its effective stress halves. The
-element's documentation gives alpha = 0.25 h^2 / (rho c^2) (2.7e-6 for a
-5 m clay element of these properties if c is the P wave speed), and with
-alpha 1e-7 everywhere the elastic gravity stage of this column does not
-converge, so it is not changed here (BACKLOG). Until then the clay's ru
-next to a liquefied sand is the sand's pore pressure spread into it, not
-the clay's own.
+element's documentation gives alpha = 0.25 h^2 / (rho c^2); GM-260 (below)
+takes it. (This review also wrote that alpha 1e-7 everywhere fails the
+gravity stage. That was wrong: its script had replaced the vertical
+permeability, the argument before alpha, not alpha.)
 
 The OpenSees manual's typical ranges (quadUP element): sand 1e-3 to
 1e-1 cm/s, silty sand 1e-5 to 1e-3, silt 1e-7 to 1e-5, clay below 1e-7.
@@ -598,10 +596,124 @@ default, basis, alternatives):
 
 Left: ground slope (no cited source for the module's 1D column yet);
 the strength-corrected curve option with a peak shear strain input (no
-cited source); the SSPquadUP alpha, fixed at 1e-5 where the element's
-documentation gives 0.25 h^2 / (rho c^2): it spreads pore pressure about
-4 m into clay (measured above), and a smaller one fails gravity on the
-same column.
+cited source).
+
+## GM-260 (2026-10-20): the pressure stabilization from the element's formula
+
+SSPquadUP's `alpha` is now h^2 / (4 (K + 4/3 G)) for each element
+(`stabilization_alpha`), h the element's height and K, G the layer's
+moduli as the material is given them. Source: the SSPquadUP page (OpenSees
+wiki and OpenSeesPy docs), alpha = 0.25 h^2 / (den c^2), c the speed of
+elastic waves in the solid phase and den its mass density; the SSPbrickUP
+page writes the same as h^2 / (4 (Ks + 4/3 Gs)). The element is McGann,
+Arduino and Mackenzie-Helnwein (2012), Acta Geotechnica 7(4), 297-311 (the
+paper was not read here). The formula has no analysis time step in it;
+h / c is the time a wave takes to cross the element. Until GM-260 every
+element took 1e-5. A layer may give its own `stabilization_alpha`
+(reported as given): McGann and Arduino's own SSPbrickUP site response on
+the wiki (freeField3D.tcl) uses 1.5e-6 with 0.5 m elements, about ten
+times the formula for its layers (1.4e-7 to 1.8e-7).
+
+Units (checked in review against both pages and SSPquadUP.cpp). den c^2
+with c = sqrt((K + 4/3 G) / den) is the constrained modulus K + 4/3 G
+whichever density is meant, so no density is missing from the code's
+form; in the module's units (Mg/m3 x (m/s)^2 = kPa) alpha comes out in
+m^2/kPa. That is the unit the element needs: getMass puts -4 alpha J0 t
+(dN dN^T), alpha times the Laplacian of the pressure rate, beside the
+storage term n / Kf (1/kPa) times the pressure rate. "Element size" is
+read as the element's height, the direction the pore pressure varies in
+a 1D column (the column is 1 m wide); the choice is stated in `choices`.
+
+The term spreads a pressure change over about sqrt(alpha / storage), and
+with storage n/Kf + 1/M of at least 1/M this alpha keeps that under half
+an element. For 5 m sand elements (the default mesh of a 20 m layer) the
+formula gives about 1e-5 (2.35e-5 for Vs 200, 1.0e-5 for Vs 300), so those
+columns hardly move; it is smaller in clay (K near 100 G: 1.1e-7 for a 1 m
+element) and in finer meshes.
+
+Gravity passes on every column run here: the examples' pins, sand meshes
+down to 0.25 m, clay in 0.5 m elements. In the shaking, one step was
+substepped (dense sand in 80 elements) and none fell back.
+
+**Clay between liquefied sands** (5 m loose sand / 10 m clay in 1 m
+elements / 10 m sand, water 2 m, 0.30 g). Peak ru in the clay:
+
+| Depth (m) | 5.5 | 6.5 | 7.5 | 8.5 | 9.5 | 10.5 | 11.5 | 12.5 | 13.5 | 14.5 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| alpha 1e-5, clay k 1e-7 m/s | 0.91 | 0.72 | 0.61 | 0.55 | 0.53 | 0.55 | 0.60 | 0.67 | 0.78 | 0.93 |
+| alpha 1e-5, k 1e-6 | 0.91 | 0.73 | 0.62 | 0.56 | 0.54 | 0.56 | 0.60 | 0.68 | 0.78 | 0.93 |
+| formula, k 1e-7 | 0.50 | 0.06 | 0.03 | 0.03 | 0.03 | 0.03 | 0.03 | 0.02 | 0.12 | 0.62 |
+| formula, k 1e-6 | 0.67 | 0.27 | 0.13 | 0.08 | 0.07 | 0.10 | 0.19 | 0.35 | 0.58 | 0.86 |
+
+The clay now answers to its permeability (1e-7, 1e-9 and 1e-12 m/s give
+the same: undrained through the shaking). By hand, at 1e-7: cv = (k /
+gamma_w) / (n/Kf + 1/M) = 0.016 m2/s, so flow from the sand reaches about
+2 sqrt(cv t) = 1.1 m in the 20 s motion, and erfc(2 / 1.1), about 1 % of
+the sand's excess, 2 m in. The two edge elements share a node with the
+sand, and their centre value (the mean of the four corners) carries about
+half of it. Amplification 0.695 before, 0.697 after; the sands' ru is
+unchanged. Pinned: `test_clay_between_liquefied_sands_keeps_its_own_ru`.
+
+**Columns that hardly move** (0.30 g, before -> after): 20 m loose sand,
+water 0 m, 4 elements: amplification 0.492 -> 0.494; the same, water 2 m,
+20 elements: 0.613 -> 0.614, ru the same to 0.01; 15 m clay: 0.944 ->
+0.944. Loose sand (Vs 200) in 5 to 80 elements: surface PGA 0.150 to
+0.152 g either way. The effective-stress example: Sa -8.6 to +4.4 % of the
+port (was -6.2 to +4.5 %; the worst at 0.5 s both times, where the
+other periods moved 2.1 points or less; the test allows 10 % because the
+module's 4-node element needs a stabilization the example's 9-node
+9_4_QuadUP does not, and the example states no tolerance), ru at 3 / 7 /
+16 m 0.364 / 0.899 / 0.984 (was 0.982). The wiki's total-stress pins
+pass.
+
+**Dense sand: the peak is a spike that the mesh sets.** 20 m dense sand
+(Vs 300, density 2.0, phi 38), water 0 m, 0.30 g, surface PGA (g):
+
+| Elements (height) | 5 (4 m) | 10 (2 m) | 20 (1 m) | 40 (0.5 m) | 80 (0.25 m) |
+|---|---|---|---|---|---|
+| alpha 1e-5 | 0.191 | 0.208 | 0.226 | 0.237 | 0.244 |
+| formula | 0.194 | 0.223 | 0.295 | 0.406 | 0.453 |
+
+The review re-ran it (WSL, openseespy 3.8.0) with the 5 % spectrum and the
+PGA of the surface record low-passed at 10 Hz (fourth-order Butterworth,
+run both ways; a measure for this check only, not an output):
+
+| Elements | 10 | 20 | 40 | 80 |
+|---|---|---|---|---|
+| PGA 10 Hz low-passed, formula | 0.221 | 0.224 | 0.226 | 0.226 |
+| the same, alpha 1e-5 | 0.216 | 0.220 | 0.221 | 0.221 |
+| Sa 0.1 s, formula | 0.466 | 0.523 | 0.528 | 0.535 |
+| Sa 0.1 s, alpha 1e-5 | 0.436 | 0.477 | 0.488 | 0.478 |
+| Sa 0.2 s, formula | 0.493 | 0.469 | 0.463 | 0.461 |
+| Sa 0.2 s, alpha 1e-5 | 0.511 | 0.493 | 0.489 | 0.486 |
+| Sa 1.0 s, formula | 0.147 | 0.146 | 0.147 | 0.146 |
+| Sa 1.0 s, alpha 1e-5 | 0.149 | 0.148 | 0.148 | 0.148 |
+
+So the spike lives above 10 Hz. From 10 to 80 elements the formula's
+peak doubles, while its low-passed PGA moves 2 %, Sa at 0.2 s 7 %
+(0.469 / 0.463 / 0.461 from 20 elements on) and Sa at 1.0 s under 1 %;
+the two alphas agree within 5 % on all three. Sa at 0.1 s carries part
+of the spike (+15 %). The answer is to read the spectrum, not to pick an
+alpha that smooths the peak: `to_dict` gives the 5 % surface and input
+spectra at 0.1 to 3 s (`periods_s`, `Sa_surface_g`, `Sa_input_g`), and
+the `pga_surface_g` description says the peak can be such a spike.
+
+Drained (k 1 m/s) the same column gives 0.409 g in 10 elements and 0.417
+in 40, either alpha. It is not a reference for the column above: drained,
+ru stays under 0.03 and Sa at 0.5 s is 3.2 g, against ru above 1 and
+0.80 g undrained, so its PGA lying near the formula's fine-mesh peak says
+nothing about which alpha is right. Halving and quartering the time
+step at 40 elements gives 0.392 and 0.393 g, so it is not the time step. With the formula the
+peak is one dilation spike (at 1.93 s, half its height for 0.02 s), which
+grows sharper as the elements get smaller; the fixed 1e-5 smoothed the
+pore pressure over about 2.4 m (sqrt(1e-5 / 1.8e-6 per kPa)) whatever the
+mesh, which held it down. Neither is a converged PGA. Arias intensity
+moves less: 0.373 to 0.468 m/s from 10 to 80 elements with the formula,
+0.375 to 0.425 with 1e-5. As GM-79 found across k, in dense sand under
+partial drainage the surface PGA is set by these spikes; a sand layer's
+`choices` entry now says so. GM-79's k table above (10 elements, 0.10 g)
+after GM-260: 1e-6 1.86, 1e-5 1.89, 1e-4 2.35 (was 1.93), 9.81e-4 1.72,
+1e-2 1.62, 1 1.63.
 
 ## Ground Motions
 

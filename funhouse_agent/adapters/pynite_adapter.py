@@ -26,7 +26,7 @@ _POINT_LOAD_KEYS = ("span", "x", "P")
 # Words the near-miss matcher cannot place. Suggestions only, never renamed.
 _KEY_HINTS = {
     "i": ("Iz",), "inertia": ("Iz",), "ix": ("Iz",), "area": ("A",),
-    "node_i": ("i",), "nodei": ("i",), "start": ("i",), "end": ("j",),
+    "nodei": ("i",), "start": ("i",), "end": ("j",),
     "nodej": ("j",), "dir": ("direction",), "load": ("value", "P"),
     "p": ("value",), "force": ("value", "P"), "q": ("w",), "udl": ("w",),
     "support": ("type",), "fixity": ("type",), "position": ("x",),

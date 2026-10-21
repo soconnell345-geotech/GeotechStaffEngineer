@@ -24,7 +24,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-import fitz
+import pymupdf
 
 SUBMITTAL = (r"C:\Users\socon\OneDrive\dev\GeotechStaffEngineer\module_work"
              r"\field_feedback\2026-09-09_nairobi-soe_v5.11.2\raw\files"
@@ -190,7 +190,7 @@ def page_vp_raw(doc, page) -> Optional[str]:
 
 
 def probe(path: str, max_dump: int = 1) -> Dict[str, Any]:
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     t0 = time.perf_counter()
     vp_pages: List[int] = []
     empty_vp_pages: List[int] = []

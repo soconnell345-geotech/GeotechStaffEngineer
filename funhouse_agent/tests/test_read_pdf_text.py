@@ -14,19 +14,19 @@ from funhouse_agent.vision_tools import (
     sanitize_upload_name, iter_upload_files, EXTENDED_TOOLS,
 )
 
-fitz = pytest.importorskip("fitz")  # PyMuPDF
+pymupdf = pytest.importorskip("pymupdf")  # PyMuPDF
 
 
 def _make_pdf(n_text=2, scanned=False):
     """A programmatic PDF: n_text text-layer pages + optional 1 scanned page."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     for i in range(n_text):
         pg = doc.new_page()
         pg.insert_text((72, 72),
                        f"PAGE {i}\nBoring log B-{i + 1}: SPT N=15, w=22%.\n"
                        + ("lorem ipsum " * 40))
     if scanned:
-        tmp = fitz.open()
+        tmp = pymupdf.open()
         t = tmp.new_page()
         t.insert_text((72, 72), "scanned only")
         pix = t.get_pixmap()

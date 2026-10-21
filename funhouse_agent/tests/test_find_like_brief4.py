@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 tf = pytest.importorskip("planlens.testing.tag_fixtures")
 pytest.importorskip("planlens.document.findlike")
 

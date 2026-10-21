@@ -368,7 +368,7 @@ class TestGroundSurfaceBlockProvenance:
 # Phase 2: composition queries, snip_region, search_drawing_set
 # ---------------------------------------------------------------------------
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 # planlens.testing, NOT planlens.ir.tests: the *.tests packages are excluded
 # from the planlens wheel, so importing fixtures from there works in a source
@@ -580,11 +580,11 @@ class TestOcrIsNotRunPointlessly:
 
     @pytest.fixture
     def pdf_with_text(self, tmp_path):
-        fitz = pytest.importorskip("fitz")
-        doc = fitz.open()
+        pymupdf = pytest.importorskip("pymupdf")
+        doc = pymupdf.open()
         page = doc.new_page(width=400, height=300)
         page.insert_text((50, 100), "TANGENT PILE (TYP)", fontsize=11)
-        page.draw_line(fitz.Point(20, 20), fitz.Point(380, 20))
+        page.draw_line(pymupdf.Point(20, 20), pymupdf.Point(380, 20))
         p = tmp_path / "sheet.pdf"
         doc.save(str(p))
         doc.close()

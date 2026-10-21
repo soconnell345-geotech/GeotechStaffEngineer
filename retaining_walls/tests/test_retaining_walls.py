@@ -10,6 +10,7 @@ References:
     FHWA GEC-11
 """
 
+import dataclasses
 import math
 import pytest
 
@@ -31,6 +32,13 @@ from retaining_walls.reinforcement import (
     WELDED_WIRE_GRID_W11,
 )
 from retaining_walls.results import CantileverWallResult, MSEWallResult
+
+# GM-256: a steel strip or grid needs its horizontal spacing. The 75 mm
+# strips at Sh 0.75 m (Rc 0.1); the W11 grid as a 4-wire mat at 0.5 ft, b
+# 1.5 ft (0.457 m), one per 5 ft (1.524 m) panel, as GEC-11 Example E4.
+_STRIP = dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=0.75)
+_GRID = dataclasses.replace(WELDED_WIRE_GRID_W11, width=0.4572,
+                            horizontal_spacing=1.524)
 
 
 # ================================================================
@@ -301,7 +309,7 @@ class TestMSEInternal:
     def test_internal_check_metallic(self):
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
         results = check_internal_stability(
-            geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4
+            geom, 18.0, 34.0, _STRIP
         )
         assert len(results) == 10
         for r in results:
@@ -322,7 +330,7 @@ class TestMSEInternal:
     def test_deeper_levels_more_Tmax(self):
         """Deeper reinforcement levels have higher Tmax."""
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        results = check_internal_stability(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        results = check_internal_stability(geom, 18.0, 34.0, _STRIP)
         # Last level should have higher Tmax than first
         # (despite Kr/Ka decreasing, sigma_v increases faster)
         assert results[-1]["Tmax_kN_per_m"] > results[0]["Tmax_kN_per_m"]
@@ -357,14 +365,14 @@ class TestMSEExternal:
 class TestMSEFull:
     def test_complete_analysis(self):
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        result = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        result = analyze_mse_wall(geom, 18.0, 34.0, _STRIP)
         assert isinstance(result, MSEWallResult)
         assert result.FOS_sliding > 0
         assert result.n_levels == 10
 
     def test_summary_and_dict(self):
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        result = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        result = analyze_mse_wall(geom, 18.0, 34.0, _STRIP)
         assert "MSE WALL" in result.summary()
         d = result.to_dict()
         assert "FOS_sliding" in d
@@ -389,16 +397,23 @@ class TestReinforcement:
     def test_built_in_geogrid(self):
         r = GEOGRID_UX1600
         assert not r.is_metallic
-        assert r.type == "geosynthetic"
+        # GM-256: a geogrid, GEC-11 Table 3-6's alpha 0.8 (p. 3-17)
+        assert r.type == "geogrid"
 
     def test_custom_reinforcement(self):
         r = Reinforcement("Custom", "geosynthetic", Tallowable=35.0)
         assert r.Tallowable == 35.0
 
     def test_coverage_ratio_default(self):
-        """Default coverage_ratio is 1.0 (for geogrids)."""
+        """GM-256: no coverage_ratio of its own; a geosynthetic given no
+        spacing is a continuous layer, Rc = 1 (GEC-11 Vol I p. 3-13), and a
+        steel strip given none is refused."""
+        from retaining_walls.mse import coverage_ratio
         r = Reinforcement("Custom", "geosynthetic", Tallowable=35.0)
-        assert r.coverage_ratio == 1.0
+        assert r.coverage_ratio is None
+        assert coverage_ratio(r) == 1.0
+        with pytest.raises(ValueError, match="reinforcement_horizontal_spacing"):
+            coverage_ratio(RIBBED_STEEL_STRIP_75x4)
 
     def test_coverage_ratio_custom(self):
         """Metallic strip with user-specified Rc."""
@@ -611,9 +626,9 @@ class TestMSERetainedFill:
     def test_analyze_mse_passes_retained(self):
         """analyze_mse_wall should forward retained params."""
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        r1 = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        r1 = analyze_mse_wall(geom, 18.0, 34.0, _STRIP)
         r2 = analyze_mse_wall(
-            geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+            geom, 18.0, 34.0, _STRIP,
             phi_retained=25.0, gamma_retained=17.0,
         )
         assert r2.FOS_sliding < r1.FOS_sliding
@@ -847,7 +862,7 @@ class TestMSEActiveZoneSurface:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         results = check_internal_stability(geom, 18.0, 34.0,
-                                           RIBBED_STEEL_STRIP_75x4)
+                                           _STRIP)
         H = geom.wall_height
         for r in results:
             if r["depth_m"] <= H / 2.0:
@@ -857,7 +872,7 @@ class TestMSEActiveZoneSurface:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         results = check_internal_stability(geom, 18.0, 34.0,
-                                           RIBBED_STEEL_STRIP_75x4)
+                                           _STRIP)
         H = geom.wall_height
         for r in results:
             if r["depth_m"] > H / 2.0:
@@ -1110,7 +1125,7 @@ class TestBarMatCurves:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         results = check_internal_stability(geom, 18.0, 34.0,
-                                           WELDED_WIRE_GRID_W11)
+                                           _GRID)
         Ka = rankine_Ka(34.0)
         tSt = WELDED_WIRE_GRID_W11.t_over_St
         top = results[0]               # shallowest level (z = 0.3 m)
@@ -1127,7 +1142,7 @@ class TestBarMatCurves:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         results = check_internal_stability(geom, 18.0, 34.0,
-                                           RIBBED_STEEL_STRIP_75x4)
+                                           _STRIP)
         top = results[0]
         assert top["Kr_Ka"] == pytest.approx(
             round(Kr_Ka_ratio(top["depth_m"], "metallic"), 3), abs=0.002)
@@ -1139,7 +1154,7 @@ class TestBarMatCurves:
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
-                                  Tallowable=100.0)
+                                  Tallowable=100.0, coverage_ratio=0.3)
         results = check_internal_stability(geom, 18.0, 34.0, bare_grid)
         top = results[0]
         # Kr/Ka still bar-mat (geometry not needed for Kr), F* strip fallback
@@ -1430,11 +1445,11 @@ class TestCalcPackageBearingWording:
     def test_mse_package_bearing_not_checked(self):
         from calc_package import generate_calc_package
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        r = analyze_mse_wall(geom, 18.0, 34.0, _STRIP)
         html = generate_calc_package(
             "retaining_walls", r,
             {"wall_type": "mse", "geom": geom, "gamma_backfill": 18.0,
-             "phi_backfill": 34.0, "reinforcement": RIBBED_STEEL_STRIP_75x4},
+             "phi_backfill": 34.0, "reinforcement": _STRIP},
             tables=False)
         assert "Bearing capacity: NOT CHECKED" in html
         assert "bearing NOT CHECKED" in html
@@ -1454,7 +1469,7 @@ class TestMSEBearingNotChecked:
     def test_result_and_summary(self):
         import json
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        r = analyze_mse_wall(geom, 18.0, 34.0, _STRIP)
         assert r.FOS_bearing is None and r.bearing_checked is False
         assert r.checks_not_run == ["bearing"]
         assert r.all_checks_pass is not True
@@ -1469,7 +1484,7 @@ class TestMSEBearingNotChecked:
 
     def test_checked_with_q_allowable(self):
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+        r = analyze_mse_wall(geom, 18.0, 34.0, _STRIP,
                              q_allowable=400.0)
         assert r.bearing_checked is True
         assert r.FOS_bearing == pytest.approx(400.0 / r.sigma_v, abs=0.01)
@@ -1477,7 +1492,7 @@ class TestMSEBearingNotChecked:
 
     def test_failed_bearing_named(self):
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+        r = analyze_mse_wall(geom, 18.0, 34.0, _STRIP,
                              q_allowable=50.0)
         assert r.passes_bearing is False
         assert "bearing" in r.checks_failed

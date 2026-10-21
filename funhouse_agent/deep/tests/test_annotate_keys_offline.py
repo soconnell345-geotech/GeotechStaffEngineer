@@ -30,7 +30,7 @@ import json
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import document_tools  # noqa: E402
 from funhouse_agent.deep.tools import (MIN_SCORE_UNUSED_NOTE,  # noqa: E402
@@ -77,7 +77,7 @@ def _shown(tool):
 def _signed(path, comments):
     """``(author, comment)`` of each mark in the copy saying one of
     ``comments`` (its label left out)."""
-    doc = fitz.open(str(path))
+    doc = pymupdf.open(str(path))
     try:
         return [((a.info or {}).get("title"), (a.info or {}).get("content"))
                 for p in doc for a in p.annots() or []

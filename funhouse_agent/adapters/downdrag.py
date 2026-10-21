@@ -181,7 +181,7 @@ _LIQUEFIED_KEY_HINTS = {
     "settle": ("settlement",), "settlementm": ("settlement",),
     "fos": ("fs_liq",), "fosliq": ("fs_liq",), "fs": ("fs_liq",),
     "n160": ("N1_60",), "sr": ("su_r",), "residualstrength": ("su_r",),
-    "z_top": ("top",), "ztop": ("top",), "zbot": ("bottom",),
+    "ztop": ("top",), "zbot": ("bottom",),
     "zbottom": ("bottom",),
 }
 

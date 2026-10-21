@@ -17,7 +17,7 @@ import re
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 pytest.importorskip("planlens.testing.visual_scale_fixtures")
 
 from funhouse_agent import document_tools, review_flags, scale_labels  # noqa: E402
@@ -69,7 +69,7 @@ def test_the_log_is_what_its_task_says(log_fx):
     assert "silty sandy GRAVEL" in _LOG_DESCRIPTIONS[D.SCALE_LOG_CONTACT + 1]
     assert "silty sandy GRAVEL" in task.question
     # one image-only page with no text layer, stored as the real scans are
-    doc = fitz.open(stream=log_fx.pdf, filetype="pdf")
+    doc = pymupdf.open(stream=log_fx.pdf, filetype="pdf")
     try:
         assert doc.page_count == 1
         assert not doc[0].get_text().strip() and doc[0].get_images()
@@ -99,7 +99,7 @@ def test_the_plan_is_what_its_task_says(plan_fx):
     sc = plan_fx.scales["distance"]
     assert sc["winner"] == "bar"
     assert sc["per_point"] == pytest.approx(2.0 * sc["stated_per_point"])
-    doc = fitz.open(stream=plan_fx.pdf, filetype="pdf")
+    doc = pymupdf.open(stream=plan_fx.pdf, filetype="pdf")
     try:
         text = doc[0].get_text()
     finally:

@@ -248,11 +248,11 @@ def test_vision_tools_build_and_error_without_engine():
 def test_read_pdf_text_offline(tmp_path):
     """read_pdf_text is a pure-PyMuPDF tool: works with engine=None on a real
     path, extracts the text layer, and flags a scanned page."""
-    fitz = pytest.importorskip("fitz")
-    doc = fitz.open()
+    pymupdf = pytest.importorskip("pymupdf")
+    doc = pymupdf.open()
     doc.new_page().insert_text((72, 72), "Report page zero. SPT N=15.")
     # scanned page (image only, no text layer)
-    tmp = fitz.open()
+    tmp = pymupdf.open()
     tmp.new_page().insert_text((72, 72), "x")
     pix = tmp[0].get_pixmap()
     sp = doc.new_page()
@@ -306,11 +306,11 @@ def test_write_docx_writes_a_word_file_a_reader_can_open(tmp_path,
     """The agent writes markdown; the reviewer gets a .docx in the working
     folder, with the figure the agent saved there already in it."""
     pytest.importorskip("docx")
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     import docx as docx_pkg
 
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 16, 16), False)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 16, 16), False)
     pix.set_rect(pix.irect, (10, 90, 160))
     (tmp_path / "profile.png").write_bytes(pix.tobytes("png"))
 

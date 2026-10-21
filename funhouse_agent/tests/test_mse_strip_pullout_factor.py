@@ -7,13 +7,22 @@ import pytest
 
 from funhouse_agent import dispatch as D
 
-_STRIP = dict(wall_height=9.0, gamma_backfill=20.0, phi_backfill=34.0,
-              reinforcement_name="ribbed_steel_strip_75x4",
-              reinforcement_length=7.0, reinforcement_spacing=0.75)
+_WALL = dict(wall_height=9.0, gamma_backfill=20.0, phi_backfill=34.0,
+             reinforcement_length=7.0, reinforcement_spacing=0.75)
+#: GM-256: each built-in's coverage, Rc = b/Sh (a geogrid is continuous)
+_COVER = {"ribbed_steel_strip_75x4": {"reinforcement_horizontal_spacing": 0.75},
+          "welded_wire_grid_w11": {"reinforcement_width": 0.4572,
+                                   "reinforcement_horizontal_spacing": 1.524},
+          "geogrid_ux1600": {}}
+_STRIP = dict(_WALL, reinforcement_name="ribbed_steel_strip_75x4",
+              **_COVER["ribbed_steel_strip_75x4"])
 
 
 def _mse(**extra):
-    return D.call_agent("retaining_walls", "mse_wall", {**_STRIP, **extra})
+    name = extra.get("reinforcement_name", "ribbed_steel_strip_75x4")
+    return D.call_agent("retaining_walls", "mse_wall",
+                        {**_WALL, "reinforcement_name": name,
+                         **_COVER.get(name, {}), **extra})
 
 
 def _choice(r):
@@ -42,7 +51,8 @@ def test_given_by_any_name_it_sets_the_top_value(name):
 
 def test_a_custom_strip_takes_it_and_a_geogrid_does_not_list_it():
     custom = _mse(reinforcement_name="my strip", reinforcement_type="strip",
-                  reinforcement_Tallowable=40.0)
+                  reinforcement_Tallowable=40.0, reinforcement_width=0.05,
+                  reinforcement_horizontal_spacing=0.5)
     assert custom["defaults_used"]["Cu_backfill"] == 4.0
     grid = _mse(reinforcement_name="geogrid_ux1600")
     assert "Cu_backfill" not in grid["defaults_used"]
@@ -68,7 +78,7 @@ def test_a_grid_or_geogrid_takes_it_as_a_note_i_check(name, cu):
 
 @pytest.mark.parametrize("method, params, words", [
     ("mse_wall", {**_STRIP, "Cu_backfill": 0.5}, "1 or more"),
-    ("mse_wall", {**_STRIP, "reinforcement_name": "geogrid_ux1600",
+    ("mse_wall", {**_WALL, "reinforcement_name": "geogrid_ux1600",
                   "Cu_backfill": 0.5}, "1 or more"),
     ("mse_lrfd_external_stability",
      dict(wall_height=9.0, gamma_backfill=20.0, phi_backfill=34.0,

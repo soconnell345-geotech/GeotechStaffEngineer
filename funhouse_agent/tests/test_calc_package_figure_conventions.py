@@ -237,12 +237,16 @@ def test_mse_section_says_what_its_axes_measure_from():
     from retaining_walls import MSEWallGeometry, analyze_mse_wall
     from retaining_walls.calc_steps import (
         _plot_mse_internal, _plot_mse_section)
+    import dataclasses
     from retaining_walls.reinforcement import RIBBED_STEEL_STRIP_75x4
+    # GM-256: the strip at its horizontal spacing (Rc = 0.1)
+    strip = dataclasses.replace(RIBBED_STEEL_STRIP_75x4,
+                                horizontal_spacing=0.75)
     geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
-    r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+    r = analyze_mse_wall(geom, 18.0, 34.0, strip)
     analysis = {"wall_type": "mse", "geom": geom, "gamma_backfill": 18.0,
                 "phi_backfill": 34.0,
-                "reinforcement": RIBBED_STEEL_STRIP_75x4}
+                "reinforcement": strip}
     fig = _plot_mse_section(r, analysis)
     assert fig.axes[0].get_ylabel() == (
         "Height above the base of the reinforced zone (m)")

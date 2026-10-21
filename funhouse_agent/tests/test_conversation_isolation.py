@@ -22,7 +22,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import _fileio, document_tools, vision_tools  # noqa: E402
 from funhouse_agent.vision_tools import (  # noqa: E402
@@ -36,7 +36,7 @@ def gt():
 
 
 def _pdf(text: str) -> bytes:
-    d = fitz.open()
+    d = pymupdf.open()
     d.new_page().insert_text((72, 72), text)
     data = d.tobytes()
     d.close()

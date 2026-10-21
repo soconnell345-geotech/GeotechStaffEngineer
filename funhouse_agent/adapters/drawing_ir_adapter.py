@@ -413,9 +413,9 @@ def _run_snip_region(params):
         # Rotation-aware IR->render conversion via planlens (a bare y-flip
         # mispoints on /Rotate pages — every real Mecklenburg sheet is
         # /Rotate 270; independent-verifier finding, fixed 2026-09-05).
-        import fitz
+        import pymupdf
         from planlens.ir.render import ir_to_page_point
-        with fitz.open(file_path) as doc:
+        with pymupdf.open(file_path) as doc:
             if page >= len(doc):
                 raise ValueError(f"Page {page} out of range "
                                  f"(document has {len(doc)} pages)")
@@ -521,8 +521,8 @@ def _run_search_drawing_set(params):
     for fp in file_paths:
         source = _auto_source(fp)
         if source == "pdf_vector":
-            import fitz
-            with fitz.open(fp) as doc:
+            import pymupdf
+            with pymupdf.open(fp) as doc:
                 n_pages = len(doc)
             pages = params.get("pages")
             page_list = (list(range(n_pages)) if pages is None

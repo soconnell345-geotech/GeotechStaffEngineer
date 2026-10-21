@@ -492,15 +492,15 @@ def align_to_patches(data: bytes, info: Dict[str, Any],
     if (tw, th) == (w, h) or (cap and max(tw, th) > cap):
         return data, info
     try:
-        import fitz
-        src = fitz.Pixmap(data)
+        import pymupdf
+        src = pymupdf.Pixmap(data)
         if src.alpha:
-            src = fitz.Pixmap(src, 0)
+            src = pymupdf.Pixmap(src, 0)
         if (src.width, src.height) != (w, h):
             return data, info
-        canvas = fitz.Pixmap(src.colorspace, fitz.IRect(0, 0, tw, th), False)
+        canvas = pymupdf.Pixmap(src.colorspace, pymupdf.IRect(0, 0, tw, th), False)
         canvas.clear_with(255)
-        canvas.copy(src, fitz.IRect(0, 0, w, h))
+        canvas.copy(src, pymupdf.IRect(0, 0, w, h))
         fmt = str(info.get("format") or "png").lower()
         out = (canvas.tobytes("jpeg", jpg_quality=85) if fmt == "jpeg"
                else canvas.tobytes("png"))
@@ -1299,13 +1299,13 @@ def turn_image(data: bytes, info: Dict[str, Any], turn: int
     if quarter not in TURNS or not quarter:
         return data, info
     try:
-        import fitz
+        import pymupdf
         import numpy as np
-        pix = fitz.Pixmap(data)
+        pix = pymupdf.Pixmap(data)
         a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
             pix.height, pix.width, pix.n)
         r = np.ascontiguousarray(np.rot90(a, k=-(quarter // 90)))
-        out = fitz.Pixmap(pix.colorspace, r.shape[1], r.shape[0], r.tobytes(),
+        out = pymupdf.Pixmap(pix.colorspace, r.shape[1], r.shape[0], r.tobytes(),
                           pix.alpha)
         fmt = str(info.get("format") or "png").lower()
         body = (out.tobytes("jpeg", jpg_quality=TURN_JPEG_QUALITY)

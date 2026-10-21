@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent.vision_tools import (
     EXTENDED_TOOLS, _dispatch_render_region, dispatch_extended_tool,

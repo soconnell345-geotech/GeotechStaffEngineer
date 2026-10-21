@@ -23,7 +23,8 @@ E3 = {"wall_height": 30 * FT, "reinforcement_length": 24 * FT,
       "bearing_resistance_service": 7.5 * KSF}
 
 MSE = {"wall_height": 6, "gamma_backfill": 19, "phi_backfill": 34,
-       "reinforcement_name": "ribbed_steel_strip_75x4"}
+       "reinforcement_name": "ribbed_steel_strip_75x4",
+       "reinforcement_horizontal_spacing": 0.75}     # GM-256: Rc 0.1
 
 
 def _call(method, params):
@@ -93,6 +94,7 @@ def test_surcharge_on_a_slope_that_continues_refused(method, extra):
     params = {**MSE, "backfill_slope": 20, "surcharge": 10}
     if method != "mse_wall":
         params.pop("reinforcement_name")
+        params.pop("reinforcement_horizontal_spacing")
     err = _call(method, params)["error"]
     assert "Eq. 4-16" in err and "broken_backslope_height" in err
 

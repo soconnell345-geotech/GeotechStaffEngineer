@@ -196,11 +196,11 @@ def _fixture(name: str) -> bytes:
 
 
 def _concat(members: Sequence[bytes]) -> bytes:
-    import fitz
-    out = fitz.open()
+    import pymupdf
+    out = pymupdf.open()
     try:
         for data in members:
-            src = fitz.open(stream=data, filetype="pdf")
+            src = pymupdf.open(stream=data, filetype="pdf")
             try:
                 out.insert_pdf(src)
             finally:

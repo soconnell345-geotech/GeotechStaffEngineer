@@ -3,7 +3,7 @@
 pdflatex (best, unchanged) -> PyMuPDF Story (pure-Python HTML->PDF) -> clear
 error. All branches are forced offline WITHOUT a LaTeX install by mocking
 ``shutil.which``; the Story branch is exercised for real (PyMuPDF is a [pdf]
-dependency) and the produced PDF is opened + read back with fitz.
+dependency) and the produced PDF is opened + read back with pymupdf.
 """
 
 import os
@@ -46,12 +46,12 @@ def _sample() -> CalcPackageData:
 def test_story_branch_produces_valid_readable_pdf(tmp_path):
     """The pure-Python Story renderer produces a valid, non-empty PDF whose
     text carries the package content."""
-    import fitz
+    import pymupdf
     out = str(tmp_path / "calc.pdf")
     rep = render_pdf(_sample(), out, renderer="pymupdf_story")
     assert rep["renderer"] == "pymupdf_story"
     assert rep["path"] == out and os.path.getsize(out) > 0
-    doc = fitz.open(out)
+    doc = pymupdf.open(out)
     assert doc.page_count >= 1
     text = "".join(doc[i].get_text() for i in range(doc.page_count))
     assert "Bearing Capacity" in text and "Width" in text and "Nq" in text
@@ -93,7 +93,7 @@ def test_error_branch_when_neither_available(tmp_path):
     missing), render_pdf raises a clear error with the print-to-PDF advice."""
     with mock.patch("shutil.which", return_value=None), \
          mock.patch.object(latex_renderer, "_save_pdf_story",
-                           side_effect=RuntimeError("fitz missing")):
+                           side_effect=RuntimeError("pymupdf missing")):
         with pytest.raises(RuntimeError, match="Print -> Save as PDF"):
             render_pdf(_sample(), str(tmp_path / "x.pdf"), renderer="auto")
 
@@ -117,8 +117,8 @@ def test_save_pdf_returns_path_string(tmp_path):
 def _big_png_b64() -> str:
     """A 1400x900 PNG that would embed as a ~3.8 MB RAW image in a Story PDF."""
     import base64
-    import fitz
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 1400, 900), False)
+    import pymupdf
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 1400, 900), False)
     pix.clear_with(210)
     return base64.b64encode(pix.tobytes("png")).decode("ascii")
 
@@ -158,14 +158,14 @@ def test_fit_wide_tables_only_tags_wide_tables():
 def test_story_pdf_is_compact_and_wide_table_not_clipped(tmp_path):
     """The Story PDF re-encodes figures to JPEG (so it stays small) and compacts
     a wide table so every column survives (no right-edge clip)."""
-    import fitz
+    import pymupdf
     out = str(tmp_path / "r.pdf")
     rep = render_pdf(_sample_with_figure_and_wide_table(), out,
                      renderer="pymupdf_story")
     assert rep["renderer"] == "pymupdf_story"
     # raw-embedding one 1400x900 figure alone would be ~3.8 MB; JPEG keeps it small
     assert os.path.getsize(out) < 2_000_000, os.path.getsize(out)
-    doc = fitz.open(out)
+    doc = pymupdf.open(out)
     text = "".join(doc[i].get_text() for i in range(doc.page_count))
     doc.close()
     assert all(f"C{i}" in text for i in range(15)), "wide table columns clipped"

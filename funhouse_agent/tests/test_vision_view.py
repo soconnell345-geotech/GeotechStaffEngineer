@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import vision_view  # noqa: E402
 from funhouse_agent.deep.vision_engine import LangChainVisionEngine  # noqa: E402
@@ -30,10 +30,10 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"png-body"
 
 @pytest.fixture
 def pdf_bytes():
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=1224, height=792)       # tabloid, landscape
     page.insert_text((100, 100), "BORING B-1", fontsize=10)
-    page.draw_rect(fitz.Rect(600, 400, 700, 450))
+    page.draw_rect(pymupdf.Rect(600, 400, 700, 450))
     data = doc.tobytes()
     doc.close()
     return data

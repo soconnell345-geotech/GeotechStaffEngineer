@@ -103,7 +103,7 @@ def label_sheets(doc: Any, items: Sequence[Tuple[int, Sequence[float]]],
     a band carrying ``#n`` (``n`` counting from ``start``). Returns
     ``[(png, [item indices], (width, height))]``.
     """
-    import fitz
+    import pymupdf
     fz = getattr(doc, "_doc", doc)
     out: List[Tuple[bytes, List[int], Tuple[int, int]]] = []
     for s0 in range(0, len(items), max(1, int(per_sheet))):
@@ -111,7 +111,7 @@ def label_sheets(doc: Any, items: Sequence[Tuple[int, Sequence[float]]],
         rows = math.ceil(len(chunk) / COLS)
         cols = min(COLS, len(chunk))
         width, height = cols * CELL_W, rows * (CELL_H + BAND)
-        sheet = fitz.open()
+        sheet = pymupdf.open()
         spg = sheet.new_page(width=width, height=height)
         for n, i in enumerate(chunk):
             page, box = items[i]
@@ -122,11 +122,11 @@ def label_sheets(doc: Any, items: Sequence[Tuple[int, Sequence[float]]],
             mx, my = max(3.0, 1.2 * h), max(1.5, 0.3 * h)
             src = fz[int(page)]
             r = src.rect
-            clip = fitz.Rect(max(r.x0, x0 - mx), max(r.y0, y0 - my),
+            clip = pymupdf.Rect(max(r.x0, x0 - mx), max(r.y0, y0 - my),
                              min(r.x1, x1 + mx), min(r.y1, y1 + my))
             c0 = (n % COLS) * CELL_W
             r0 = (n // COLS) * (CELL_H + BAND)
-            spg.draw_rect(fitz.Rect(c0 + 1, r0 + 1, c0 + CELL_W - 1,
+            spg.draw_rect(pymupdf.Rect(c0 + 1, r0 + 1, c0 + CELL_W - 1,
                                     r0 + BAND + CELL_H - 1),
                           color=(0.55, 0.55, 0.55), width=1)
             spg.insert_text((c0 + 8, r0 + BAND - 7), f"#{start + i}",
@@ -138,12 +138,12 @@ def label_sheets(doc: Any, items: Sequence[Tuple[int, Sequence[float]]],
             zoom = min(zoom, (CELL_W - 12) / max(clip.width, 1.0),
                        (CELL_H - 8) / max(clip.height, 1.0) * 1.0)
             zoom = max(zoom, 0.5)
-            pix = src.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=clip,
-                                 colorspace=fitz.csGRAY, alpha=False)
+            pix = src.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), clip=clip,
+                                 colorspace=pymupdf.csGRAY, alpha=False)
             pw, ph = pix.width, pix.height
             ox = c0 + (CELL_W - pw) / 2.0
             oy = r0 + BAND + (CELL_H - ph) / 2.0
-            spg.insert_image(fitz.Rect(ox, oy, ox + pw, oy + ph), pixmap=pix)
+            spg.insert_image(pymupdf.Rect(ox, oy, ox + pw, oy + ph), pixmap=pix)
         png = spg.get_pixmap(dpi=72, alpha=False).tobytes("png")
         sheet.close()
         out.append((png, chunk, (int(width), int(height))))
