@@ -1107,8 +1107,9 @@ SIGMA_H_NEEDS_DEPTHS = (
     "sigma_H_average applies to level depths given (level_depths): it says "
     "how sigma_H is averaged over each level's contributory height (GEC-11 "
     "Vol I p. 4-47). The levels at reinforcement_spacing (i + 1/2) each "
-    "take Sv and sigma_H at the level's depth; give level_depths, or leave "
-    "sigma_H_average out")
+    "take sigma_H at the middle of their contributory height, Sv with the "
+    "level at its middle, the bottom level's down to the base of the wall "
+    "(GM-277); give level_depths, or leave sigma_H_average out")
 
 
 def sigma_H_average_of(value: Optional[str]) -> str:
@@ -1732,7 +1733,8 @@ def check_internal_stability(
         midpoint), GEC-11 Vol I p. 4-47 (:func:`contributory_Tmax`).
         Default None: 'trapezoidal', as Vol II Examples E3 and E4 (pp.
         E3-15, E4-13). Refused without level depths, whose levels each
-        take Sv and sigma_H at the level (:data:`SIGMA_H_NEEDS_DEPTHS`).
+        take sigma_H at the middle of their contributory height
+        (:data:`SIGMA_H_NEEDS_DEPTHS`).
 
     Returns
     -------
@@ -1752,6 +1754,13 @@ def check_internal_stability(
 
     Notes
     -----
+    Without ``geom.level_depths`` the levels sit at Sv (i + 1/2), each
+    taking Sv and sigma_H at its depth, the middle of its contributory
+    height (GEC-11 Vol I p. 4-46); when the wall is not a whole number of
+    spacings high the bottom level's contributory height runs from the
+    midpoint above it down to the base (p. 4-47, Fig. 4-14), with sigma_H
+    at its middle (GM-277; :func:`level_depths_choices`).
+
     A sloping backfill (``geom.backfill_slope`` > 0) follows GEC-11 Vol I:
     Ka stays the level-backfill Rankine value (Eq. 4-25, beta = 0); the slope
     adds sigma_2 = S_eq gamma_r to the vertical stress for Tmax, S_eq =
@@ -1775,9 +1784,14 @@ def check_internal_stability(
     given = geom.level_depths is not None
     if not given and sigma_H_average is not None:
         raise ValueError(SIGMA_H_NEEDS_DEPTHS)
+    heights = geom.contributory_heights
     if given:
         average = sigma_H_average_of(sigma_H_average)
-        heights = geom.contributory_heights
+    # without depths, a wall that is not a whole number of spacings: the
+    # bottom level's contributory height runs to the base (GEC-11 Vol I p.
+    # 4-47, Fig. 4-14), not Sv (GM-277)
+    bottom = (len(heights) - 1 if not given and not geom.whole_spacings
+              else None)
     source = levels_source(geom)
     # one reinforcement a level, all steel or all geosynthetic (GM-266)
     rs = level_reinforcements(reinforcement, geom.reinforcement_depths,
@@ -1830,6 +1844,13 @@ def check_internal_stability(
             T = contributory_Tmax(
                 z_top, z_bottom, gamma_backfill, Ka, r_type,
                 (q_int + sigma_2) if sloping else geom.surcharge, average)
+        elif i == bottom:
+            # from the midpoint above it down to the base, sigma_H at its
+            # middle as at the levels above (GEC-11 Vol I p. 4-47; GM-277)
+            z_top, z_bottom = heights[i]
+            T = contributory_Tmax(
+                z_top, z_bottom, gamma_backfill, Ka, r_type,
+                (q_int + sigma_2) if sloping else geom.surcharge, "midpoint")
         elif sloping:
             T = Tmax_at_level(z, gamma_backfill, Ka, kr_ka, Sv,
                               q_int + sigma_2)
@@ -2205,17 +2226,79 @@ def live_load_choices(geom: MSEWallGeometry,
     return out
 
 
+#: The levels equally spaced at Sv (i + 1/2), each over its contributory
+#: height (GM-277), GEC-11 Vol I read on the rendered pages.
+EQUAL_SPACING_BASIS = (
+    "GEC-11 Vol I p. 4-46: Sv 'is equal to the vertical reinforcement "
+    "spacing for a layer where vertically adjacent reinforcements are "
+    "equally spaced from the layer under consideration. In this case, "
+    "sigma_H, calculated at the level of the reinforcement, is at the "
+    "center of the contributory height'; p. 4-47: for the top and bottom "
+    "layers Sv 'is the distance from top or bottom of wall, respectively, "
+    "to the midpoint between the first and second layer' (Fig. 4-14), and "
+    "their TMAX is 'the product of the contributory height and the average "
+    "factored horizontal stress acting upon that contributory height', the "
+    "average taken 'based upon the tributary trapezoidal area' or 'at the "
+    "midpoint of the contributory height'. The levels here take the "
+    "midpoint at every level, which at a level in the middle of its "
+    "contributory height is sigma_H at the level")
+
+EQUAL_SPACING_ALTERNATIVE = (
+    "the levels' depths as designed (level_depths), each level over its "
+    "contributory height with sigma_H averaged by the tributary trapezoid, "
+    "as GEC-11 Vol II Examples E3 and E4 take it (pp. E3-15, E4-13), or at "
+    "the midpoint (sigma_H_average)")
+
+
+def _equal_spacing_choice(geom: MSEWallGeometry) -> dict:
+    """How Tmax took each level's share of the wall for the levels the
+    module places at Sv (i + 1/2) (GM-277): Sv with the level at the middle
+    of it, the top level's from the top of the wall, and the bottom level's
+    to the base, more than Sv when the wall is not a whole number of
+    spacings (GEC-11 Vol I pp. 4-46, 4-47, Fig. 4-14)."""
+    from geotech_common.choices import choice, how_given
+    Sv, H = geom.reinforcement_spacing, geom.wall_height
+    n = geom.n_reinforcement_levels
+    z_top, z_bottom = geom.contributory_heights[-1]
+    if n == 1:
+        chosen = (f"one level, at Sv/2 = {Sv / 2:.3g} m below the top of "
+                  f"the wall; its contributory height the whole wall, "
+                  f"{H:.3g} m, with sigma_H at its middle ({H / 2:.3g} m)")
+    else:
+        chosen = (f"{n} levels equally spaced at Sv {Sv:.3g} m, the top "
+                  f"level at Sv/2 = {Sv / 2:.3g} m below the top of the "
+                  "wall; each level's contributory height Sv with the level "
+                  "at its middle, so sigma_H at the level, the top level's "
+                  "from the top of the wall")
+        if geom.whole_spacings:
+            chosen += " and the bottom level's to its base"
+        else:
+            chosen += (
+                f"; the bottom level's (z = "
+                f"{geom.reinforcement_depths[-1]:.3g} m) from the midpoint "
+                f"above it at {z_top:.3g} m down to the base at {H:.3g} m, "
+                f"{z_bottom - z_top:.3g} m, with sigma_H at its middle "
+                f"({(z_top + z_bottom) / 2:.3g} m): the wall height is not a "
+                "whole number of spacings")
+    return choice(
+        "Tmax at each level, the levels equally spaced at "
+        "reinforcement_spacing: its contributory height and sigma_H over it",
+        chosen, how_given(geom.level_depths, None, name="level_depths"),
+        EQUAL_SPACING_BASIS, [EQUAL_SPACING_ALTERNATIVE])
+
+
 def level_depths_choices(geom: MSEWallGeometry,
                          sigma_H_average: Optional[str] = None) -> list:
-    """How Tmax took each level's share of the wall when the levels' depths
-    are given (``geom.level_depths``, GM-273), as a result's ``choices``:
-    its contributory height Svt (GEC-11 Vol I pp. 4-46, 4-47) and how
-    sigma_H was averaged over it (``sigma_H_average``,
-    :data:`SIGMA_H_AVERAGES`). None for the levels the module places at Sv
-    (i + 1/2), each taking Sv and sigma_H at its depth."""
+    """How Tmax took each level's share of the wall, as a result's
+    ``choices``: with the levels' depths given (``geom.level_depths``,
+    GM-273), its contributory height Svt (GEC-11 Vol I pp. 4-46, 4-47) and
+    how sigma_H was averaged over it (``sigma_H_average``,
+    :data:`SIGMA_H_AVERAGES`); for the levels the module places at Sv (i +
+    1/2), each level's contributory height, the bottom level's to the base,
+    and sigma_H at its middle (:func:`_equal_spacing_choice`, GM-277)."""
     from geotech_common.choices import choice, how_given
     if geom.level_depths is None:
-        return []
+        return [_equal_spacing_choice(geom)]
     average = sigma_H_average_of(sigma_H_average)
     svt = [b - a for a, b in geom.contributory_heights]
     ends = (f"the top level's from the top of the wall ({svt[0]:.3g} m)"
@@ -2879,8 +2962,9 @@ def analyze_mse_wall(
         a FOS_rupture below 1.0 (:func:`tensile_strength_choice`), and for
         ribbed steel strips the F* at the top of the wall, or a tested F*
         or alpha
-        (:func:`pullout_factor_choices`), and with the levels' depths given
-        each level's contributory height and sigma_H average
+        (:func:`pullout_factor_choices`), and each level's contributory
+        height with the sigma_H average, the levels' depths given or
+        equally spaced at Sv, the bottom level's to the base (GM-277)
         (:func:`level_depths_choices`). A steel strip or grid with no
         coverage ratio and no horizontal spacing is refused
         (:func:`coverage_ratio`, GM-256), and so is a geosynthetic of no

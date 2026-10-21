@@ -62,9 +62,35 @@ def test_without_depths_the_spacing_places_them_and_says_so():
     assert "sigma_H_average" not in r["defaults_used"]
     case = r["defaults_used"]["level_depths"]
     assert case.startswith("the levels at reinforcement_spacing (i + 1/2)")
-    assert "pp. 4-46, 4-47" in case and "Give level_depths" in case
-    assert not [c for c in r["choices"]
-                if "contributory height" in c["what"]]
+    for words in ("the bottom level's contributory height down to the "
+                  "base", "p. 4-46", "p. 4-47 and Fig. 4-14",
+                  "Give level_depths"):
+        assert words in case, words
+    # GM-277: the layout's contributory heights, the default
+    (c,) = [c for c in r["choices"] if "contributory height" in c["what"]]
+    assert c["what"].startswith("Tmax at each level, the levels equally "
+                                "spaced at reinforcement_spacing")
+    assert c["how"] == "default"
+    assert "the bottom level's to its base" in c["chosen"]
+
+
+def test_without_depths_the_bottom_level_runs_to_the_base():
+    """GM-277: 6.32 m at Sv 0.6 m is ten levels, the bottom one at 5.7 m
+    carrying the wall from 5.4 m down to the base, 0.92 m; 4.8 m at Sv
+    0.8 m is six levels, not the five floating-point rounding gave."""
+    r = _mse(wall_height=6.32)
+    assert r["n_levels"] == 10
+    (c,) = [c for c in r["choices"] if "contributory height" in c["what"]]
+    assert ("from the midpoint above it at 5.4 m down to the base at 6.32 "
+            "m, 0.92 m") in c["chosen"]
+    whole = _mse()
+    assert r["internal_results"][-1]["Tmax_kN_per_m"] > \
+        whole["internal_results"][-1]["Tmax_kN_per_m"] * 0.92 / 0.6
+    short = _mse(wall_height=4.8, reinforcement_spacing=0.8)
+    assert short["n_levels"] == 6
+    assert short["internal_results"][-1]["depth_m"] == 4.4
+    refused = _mse(wall_height=0.5, reinforcement_spacing=1.2)
+    assert "at or below the base of the wall" in refused["error"]
 
 
 @pytest.mark.parametrize("extra, words", [

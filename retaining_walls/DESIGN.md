@@ -1203,13 +1203,13 @@ results, summaries and calc-package steps are byte-identical to master.
 The tool's result differs only by the `level_depths` line in
 `defaults_used`.
 
-**For the owner.** The even layout (no depths) leaves the strip of wall
+**For the owner.** The even layout (no depths) left the strip of wall
 between the bottom level's Sv and the base unassigned when H is not a
 whole number of spacings: E4's wall at Sv 2.5 ft (H 25.64 ft) has its last
-level at 23.75 ft carrying 22.5 to 25.0 ft, so 0.64 ft goes to no level,
+level at 23.75 ft carrying 22.5 to 25.0 ft, so 0.64 ft went to no level,
 and its first level sits at 1.25 ft where E4's is at 1.87 ft (Level 1
-Tmax 4.69 k a panel against E4's 6.25 k). It is kept for byte-identity;
-`defaults_used` says it is a trial layout.
+Tmax 4.69 k a panel against E4's 6.25 k). It was kept at GM-273 for
+byte-identity; GM-277 (below) gives the bottom level the strip.
 
 **E4 reproduced at its depths** (`test_v010_e4_in_one_run_at_its_depths`,
 `test_v010_e4_mats_per_level`): Tmax x 1.35 over a 5 ft panel against
@@ -1267,6 +1267,95 @@ given (reinforcement_spacing would be refused beside them).
 Tests: `tests/test_mse_level_depths.py`,
 `funhouse_agent/tests/test_mse_level_depths_adapter.py`, V-010, V-056,
 V-057, the probe `retaining_walls|mse_wall#depths`.
+
+## The even layout's bottom level and its count (GM-277, 2026-10-21)
+
+Without `level_depths` the module places the levels at Sv (i + 1/2) below
+the top, H / Sv of them rounded down. Two defects, both on the unsafe
+side, found by the GM-273 review:
+
+- **A dropped level.** `int(H / Sv)` on a wall a whole number of spacings
+  high fell one short where floating point puts H / Sv under the whole
+  number: 4.8 m at Sv 0.8 m is 5.999..., so five levels and the bottom
+  0.8 m of wall in none. 22 such heights up to 20 m at Sv 0.4, 0.8 and
+  0.9 m, and in feet (as the metres they convert to) 7 ft at 1 ft, 7.5
+  ft at 1.5 ft, 14 ft at 2 ft, 15 ft at 3 ft and others. The count now
+  adds a tolerance of 1e-9 of a spacing (`geometry.
+  WHOLE_SPACING_TOLERANCE`), and `whole_spacings` says whether the wall
+  is a whole number of spacings high.
+- **The bottom strip in no level.** When H is not a whole number of
+  spacings the bottom level took Sv, so the wall below n Sv was in no
+  level's Tmax.
+
+**What GEC-11 prints** (Vol I, read on the rendered pages; the GM-273
+section quotes them): equally spaced levels take Sv, with sigma_H at the
+level "at the center of the contributory height" (p. 4-46); the top and
+bottom layers' Sv runs "from top or bottom of wall, respectively, to the
+midpoint between the first and second layer" (p. 4-47), Fig. 4-14 drawing
+Sv(1) from the midpoint above the bottom layer down to the base, and their
+TMAX is the contributory height times the average stress over it, on the
+trapezoid or at the midpoint (p. 4-47).
+
+**What the module does now.** `contributory_heights` works for both
+layouts: without depths, i Sv to (i + 1) Sv, the bottom level's from
+(n - 1) Sv down to H. Every level but the bottom one is unchanged (Sv,
+sigma_H at the level, which is the middle of its contributory height).
+The bottom level of a wall that is not a whole number of spacings takes
+Tmax = sigma_H x (H - (n - 1) Sv), sigma_H at the middle of that height
+(`contributory_Tmax(..., 'midpoint')`): the midpoint, so the one average
+the whole layout uses, and for steel above 6 m, where sigma_H is concave
+in depth, the higher of p. 4-47's two. One level (H under 2 Sv) takes the
+whole wall. Pullout, La and Le are unchanged (they do not depend on the
+contributory height). A spacing that puts the first level at or below
+the base (Sv / 2 >= H) is refused; it had put a level outside the wall.
+
+**The top level** at Sv/2 already matched the print: its contributory
+height from the top of the wall to the midpoint between it and the
+second level is Sv, the level at its middle, so sigma_H at the level is
+p. 4-47's midpoint average. Nothing moved there.
+
+**Said in the result.** `level_depths_choices` gives the even layout a
+choice ("Tmax at each level, the levels equally spaced at
+reinforcement_spacing ..."): how many levels at what Sv, the top level at
+Sv/2, each level's contributory height, and for a wall that is not a
+whole number of spacings the bottom level's from the midpoint above it to
+the base with its height and the depth sigma_H is taken at; the basis
+quotes pp. 4-46 and 4-47 and Fig. 4-14; the other option is the depths as
+designed (`level_depths`), with the trapezoid as E3 and E4. The summary
+prints it with the other choices; the calc package's Tmax step says where
+the bottom level's contributory height ends and cites Eq. 4-32a, pp.
+4-46, 4-47 (it had cited "Eq. 4-10", which is the sloping-backfill
+thrust). The tool's `defaults_used` case for `level_depths` and the
+`reinforcement_spacing` description say the same.
+
+**What moved** (every other number is byte-identical; a sweep of 882
+even-layout walls, 14 heights x 7 spacings x 3 reinforcements x level /
+surcharged / sloping, moved only the bottom level, always up, or added
+the dropped level):
+
+- the bottom level's Tmax, FOS_pullout and FOS_rupture on every wall that
+  is not a whole number of spacings: Tmax up by 2.6 % to 130 % in the
+  sweep, the most where the strip is nearly a spacing;
+- the dropped level restored on walls a whole number of spacings high
+  (one more level; the levels above unchanged);
+- `test_mse_bar_mat_strength.py`, E4's wall at Sv 2.5 ft (the module's
+  layout, not E4's): the bottom level at 23.75 ft takes 22.5 to 25.64 ft,
+  3.14 ft, sigma_H at 24.07 ft: Tmax 39.84 -> 50.66 kN/m, FOS_rupture
+  0.726 -> 0.571 (the 32 kN/m Tal 0.241 -> 0.189), the flexible-facing
+  reading's lowest 0.832 -> 0.654. At Sv the bottom level carried less
+  than the 41.2 kN/m E4 prints for its own Level 10 over 2.52 ft (19.05 /
+  1.35 k a 5 ft panel, Table E4-7.4, p. E4-18);
+- the published examples did not move: E1, E3 and E4 at their depths,
+  V-009, V-010, V-011, V-021, V-022, V-056, V-057 (the even-layout E4
+  checks there are at the top level, and V-057's walls at Sv 2 ft are a
+  whole number of spacings).
+
+Tests: `tests/test_mse_even_layout.py` (the count over heights and
+spacings in metres and feet, the 32 walls that lost a level, the bottom
+level for strips, mats and geogrids, level, surcharged and sloping, the
+top level, one level, the refusal, the choice and the calc package),
+`tests/test_mse_level_depths.py`,
+`funhouse_agent/tests/test_mse_level_depths_adapter.py`.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height

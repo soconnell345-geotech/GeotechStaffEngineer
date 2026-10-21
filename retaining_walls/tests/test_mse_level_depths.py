@@ -1,7 +1,9 @@
 """GM-273: the reinforcement levels' depths as an input.
 
-Without them the module places int(H / Sv) levels at Sv (i + 1/2) below
-the top, each taking Sv and sigma_H at its depth. GEC-11 gives each level
+Without them the module places H / Sv levels (rounded down) at Sv (i +
+1/2) below the top, each taking Sv and sigma_H at its depth, the bottom
+level's contributory height down to the base (GM-277,
+test_mse_even_layout.py). GEC-11 gives each level
 its contributory height: "the midpoint between vertically adjacent
 reinforcement elevations, except for the top and bottom layers
 reinforcement" (Vol I p. 4-46), whose Sv "is the distance from top or
@@ -161,17 +163,23 @@ def test_sigma_H_average_needs_the_depths_and_one_of_two_values():
         analyze_mse_wall(_wall(), 19.0, 34.0, STRIP, sigma_H_average="mean")
 
 
-def test_without_depths_nothing_changes():
-    """No depths: no Svt or sigma_H key, no choice, the levels at Sv."""
+def test_without_depths_the_levels_take_sv():
+    """No depths: no Svt or sigma_H key and no sigma_H average; each level
+    of a wall a whole number of spacings high takes Sv, and the choice
+    says so (GM-277, test_mse_even_layout.py)."""
     even = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0,
                            reinforcement_spacing=0.75)
     r = analyze_mse_wall(even, 19.0, 34.0, STRIP)
     assert all("Svt_m" not in lv and "sigma_H_kPa" not in lv
                for lv in r.internal_results)
-    assert level_depths_choices(even) == []
-    assert not [c for c in r.choices if "contributory" in c["what"]]
-    with pytest.raises(ValueError, match="for level_depths given"):
-        even.contributory_heights
+    (c,) = level_depths_choices(even)
+    assert c["what"].startswith("Tmax at each level, the levels equally "
+                                "spaced")
+    assert "sigma_H_average" not in c["chosen"]
+    assert [c] == [c for c in r.choices if "contributory" in c["what"]]
+    assert [v for ab in even.contributory_heights for v in ab] == \
+        pytest.approx([v for i in range(8) for v in (0.75 * i,
+                                                     0.75 * (i + 1))])
 
 
 def test_the_choice_says_svt_and_which_average_with_the_other():
