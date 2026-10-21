@@ -339,6 +339,27 @@ def _coord(value: float) -> str:
 _UNKNOWN_COORD = "NaN"
 
 
+#: The srsName written for geographic WGS 84 positions. The app holds x =
+#: longitude, y = latitude, and writes ``x y``. ``urn:ogc:def:crs:EPSG::4326``
+#: means latitude FIRST in GML 3.2, so naming it over lon-lat text would be a
+#: swapped position to any strict reader. CRS84 is the same datum with the axes
+#: longitude, latitude, so the text and the name agree. DIGGS' own example
+#: file (pydiggs, ``urn:diggs:def:crs:DIGGS:0.1:4326_5702``) also lists
+#: longitude first.
+_CRS84 = "urn:ogc:def:crs:OGC:1.3:CRS84"
+_GEOGRAPHIC_WGS84 = re.compile(
+    r"^\s*(?:EPSG\s*[:/ ]*\s*4326|CRS\s*84|WGS\s*-?\s*84|"
+    r"urn:ogc:def:crs:(?:EPSG:[\d.]*:4326|OGC:1\.3:CRS84))\s*$",
+    re.IGNORECASE)
+
+
+def _srs_name(coordinate_system: str) -> str:
+    """The srsName for ``coordinate_system`` as printed: CRS84 when it is
+    plain geographic WGS 84 (see :data:`_CRS84`), else the text itself."""
+    text = coordinate_system.strip()
+    return _CRS84 if _GEOGRAPHIC_WGS84.match(text) else text
+
+
 def _coord_or_unknown(value: Optional[float]) -> str:
     """A coordinate, or :data:`_UNKNOWN_COORD` when nobody gave one."""
     return _UNKNOWN_COORD if value is None else _coord(value)
@@ -822,9 +843,14 @@ class _Writer:
                 f"north is ({inv.coordinate_system.strip()!r}); DIGGS has no "
                 f"element for a grid rotation, so it is written as text in "
                 f"the reference point's description")
+        if (_srs_name(inv.coordinate_system) == _CRS84
+                and inv.coordinate_system.strip() != _CRS84):
+            said.append(f"coordinate system as printed: "
+                        f"{inv.coordinate_system.strip()}; positions are "
+                        f"longitude then latitude (CRS84)")
         if said:
             self.text_element("gml:description", " ".join(said), 5)
-        srs = (f' srsName={quoteattr(inv.coordinate_system)}'
+        srs = (f' srsName={quoteattr(_srs_name(inv.coordinate_system))}'
                if inv.coordinate_system.strip() else "")
         point = (f"{_coord_or_unknown(x)} {_coord_or_unknown(y)} "
                  f"{_coord_or_unknown(z)}")

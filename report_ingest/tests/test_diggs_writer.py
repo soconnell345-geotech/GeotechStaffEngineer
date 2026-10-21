@@ -887,6 +887,38 @@ def _read_back(xml: str):
             for inv in parse_diggs(content=xml).site.investigations}
 
 
+class TestGeographicAxisOrder:
+    """EPSG:4326 in GML 3.2 is latitude first; the app holds x = longitude.
+    Plain WGS 84 is written under CRS84 (longitude first), so the srsName and
+    the text agree (RI-30)."""
+
+    @pytest.mark.parametrize("cs", ["EPSG:4326", "WGS 84", "WGS84", "CRS84"])
+    def test_lon_lat_text_is_named_crs84(self, cs):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system=cs)
+        xml = write_diggs([hole])
+        assert diggs_schema_gate(xml)[0] is True
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
+        assert pos.text == "-77 38.9 NaN"           # longitude, then latitude
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y) == (-77.0, 38.9)
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_a_projected_system_keeps_its_printed_name(self):
+        hole = _hole(x=1.0, y=2.0, coordinate_system="WGS 84 / UTM zone 11N")
+        xml = write_diggs([hole])
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsName") == "WGS 84 / UTM zone 11N"
+
+    def test_a_foreign_epsg_4326_urn_is_latitude_first(self):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system="EPSG:4326")
+        xml = write_diggs([hole]).replace(
+            "urn:ogc:def:crs:OGC:1.3:CRS84", "urn:ogc:def:crs:EPSG::4326"
+        ).replace("-77 38.9", "38.9 -77")
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y) == (-77.0, 38.9)
+
+
 class TestAnUnknownPosition:
     """33 of 40 explorations at elevation 0, one at the grid's origin: the
     writer filled 0 and the reader defaulted to 0. DIGGS requires the
