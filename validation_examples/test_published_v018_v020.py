@@ -11,7 +11,8 @@ Sources (FHWA GEC-13 Vol 1, Ground Modification Methods Reference Manual):
            Published: unimproved S = 22 in; improved suz = qg/kg = 0.68 ~ 0.7 in.
            extract: extracts/g13_v1_ex.txt (PDF pp. 370-373).
   - V-019  Ch. 5 Sec 4.3.2 (Example Problem 2) + Figure 5-27 — stone-column
-           settlement improvement by the Priebe (1995) improvement factor.
+           settlement improvement by the Priebe curve as GEC-13 prints it
+           (Fig. 5-21 curve (4), phi = 37.5 deg; p. 5-36).
            Embankment q = 125 pcf * 15 ft = 1,875 psf over 50 ft soft clay
            (gamma_sat = 120 pcf, WT at surface; po(mid, 25 ft) = 1,440 psf;
            Cc = 0.2, eo = 0.6) over dense sand (no settlement). Stone columns
@@ -46,18 +47,18 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   because SRF for as=0.27, n=6 is 0.43, i.e. ~9.4 in, not 0.7 in -- a fundamentally
   different model).
 
-- V-019 unimproved is a PASS; the Priebe improvement ratio is a CONVENTION. The
-  baseline S = 27.2 in is reproduced exactly. The module DOES expose the genuine
-  Priebe (1995) basic improvement factor (`priebe_basic_improvement_factor`). The
-  published ratio 2.7 is a CHART read (Figure 5-27, after Wallays et al. 1983) and
-  the answer depends on (a) the area-ratio convention and (b) the column friction
-  angle. With the SOURCE's area ratio as = Ac/A = 1/3.6 = 0.277 and the module's
-  default phi_col = 42.5 deg, Priebe n0 = 3.06 (Δ +13%, outside ±0.3). With the
-  module's OWN geometric triangular as = 0.251 (sqrt(3)/2 tributary) and phi_col =
-  42.5, n0 = 2.806 -- WITHIN 2.7±0.3. The chart value 2.7 corresponds to phi_col
-  ~ 39 deg at as = 0.277. So the formula is correct; the ~13% spread is the
-  area-ratio-convention + phi_col + chart-read latitude, exactly as the inventory
-  flagged. Module NOT tuned to the chart.
+- V-019 unimproved is a PASS, and the settlement ratio is a PASS on the chart
+  read (2.7 +/- 0.3). The baseline S = 27.2 in is reproduced exactly. Since GM-276
+  (owner, OWN-70: "just the printed curve. discard your formula") the module's
+  only Priebe basis is the curve GEC-13 prints, Fig. 5-21 curve (4), phi = 37.5
+  deg, read off the page (`settlement_ratio.PRIEBE_CURVE_4`); the Priebe formula
+  and its 42.5 deg default, printed nowhere in GEC-13, are gone. At the source's
+  A/A_sc = (5.7/3.0)^2 = 3.61 (as = 0.277) the curve reads 2.55 on both printed
+  copies (Fig. 5-21 p. 5-36, Fig. 5-27 p. 5-49): S = 27/2.55 = 10.6 in. GEC-13
+  prints 2.7 and 10 in; Fig. 5-27's arrows are drawn at A/A_sc 3.53 and n' 2.63
+  on the curve and labelled 3.6 and 2.7, so the printed read is 0.15 (6 %) above
+  the curve at 3.61. With the module's geometric triangular as = 0.251 (A/A_c
+  3.98) the curve gives 2.31: the example takes A/A_sc = (s/d)^2.
 
 - V-020 is a PASS (radial-only ideal Barron). With ch only (no vertical, no smear,
   no well resistance) the module's Barron-Hansbo radial solution
@@ -79,9 +80,9 @@ import pytest
 
 # ground_improvement (all three entries)
 from ground_improvement.aggregate_piers import (
-    area_replacement_ratio, priebe_basic_improvement_factor,
-    settlement_reduction_factor, improved_settlement,
+    area_replacement_ratio, settlement_reduction_factor, improved_settlement,
 )
+from ground_improvement.settlement_ratio import priebe_curve_settlement_ratio
 from ground_improvement.wick_drains import (
     influence_diameter, drain_function_F, time_for_radial_consolidation,
     radial_time_factor, radial_degree_of_consolidation, analyze_wick_drains,
@@ -200,7 +201,7 @@ def test_v018_improved_rap_stiffness_modulus_is_scope_gap():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# V-019 : GEC-13 Ex 2 — stone-column settlement improvement (Priebe)
+# V-019 : GEC-13 Ex 2 — stone-column settlement improvement (Priebe curve)
 # ════════════════════════════════════════════════════════════════════════════
 #
 # Soft clay H = 50 ft on dense sand; embankment dq = 125 pcf * 15 ft = 1875 psf;
@@ -237,47 +238,40 @@ def test_v019_unimproved_consolidation_pass():
     assert S_in == pytest.approx(S_cf_in, rel=1e-6)
 
 
-def test_v019_priebe_improvement_factor_convention():
-    """CONVENTION: the module exposes the genuine Priebe (1995) basic improvement
-    factor `priebe_basic_improvement_factor(as, phi_col, nu_s)`. The published
-    ratio 2.7 is a CHART read (Figure 5-27, after Wallays et al. 1983), and the
-    factor depends on (a) the area-ratio convention and (b) the column friction
-    angle:
+def test_v019_priebe_curve_reads_example_2():
+    """PASS on the chart read (2.7 +/- 0.3): the module reads GEC-13's printed
+    Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg (p. 5-36), its only
+    Priebe basis since GM-276. GEC-13 Example 2 (pp. 5-48, 5-49):
 
-      - SOURCE area ratio as = Ac/A = 1/(s/d)^2 = 1/3.6 = 0.277, phi_col = 42.5
-        (module default) -> Priebe n0 = 3.06 (Δ +13%, OUTSIDE 2.7±0.3).
-      - module's OWN geometric triangular as = 0.251 (sqrt(3)/2 tributary),
-        phi_col = 42.5 -> n0 = 2.806 (WITHIN 2.7±0.3).
-      - the chart 2.7 corresponds to phi_col ~ 39 deg at as = 0.277.
-
-    The formula is correct; the spread is the area-ratio-convention + phi_col +
-    chart-read latitude the inventory flagged. The module is NOT tuned to the
-    chart. Improved S = 27/n0 brackets the published 10 in (8.8-9.6 in)."""
+      - the source's A/A_sc = (s/d)^2 = (5.7/3.0)^2 = 3.61, as = 0.277: the
+        curve reads 2.55 (both printed copies, Fig. 5-21 and Fig. 5-27), so
+        S = 27/2.55 = 10.6 in;
+      - GEC-13 prints 2.7 and 10 in. Fig. 5-27's arrows are drawn at A/A_sc
+        3.53, where the curve reads 2.63, and labelled 3.6 and 2.7: the
+        printed read is 0.15 above the curve at 3.61, within the inventory's
+        +/- 0.3;
+      - the module's geometric triangular as = 0.251 (A/A_c 3.98) gives 2.31;
+        the example takes (s/d)^2, so feed as = 1/(s/d)^2 to follow it."""
     as_src = 1.0 / (_V019_S_FT / _V019_D_FT) ** 2          # Ac/A, source convention
-    assert as_src == pytest.approx(0.277, abs=0.002)
+    assert 1.0 / as_src == pytest.approx(3.61, abs=0.005)
 
-    n0_src = priebe_basic_improvement_factor(as_src, phi_column=42.5)
-    assert n0_src == pytest.approx(3.06, abs=0.05)         # default phi, OUTSIDE 0.3
-    assert abs(n0_src - _V019_RATIO_PUB) > 0.3
+    n_src = priebe_curve_settlement_ratio(as_src)
+    assert n_src == pytest.approx(2.55, abs=0.03)          # +/- one line width
+    assert n_src == pytest.approx(_V019_RATIO_PUB, abs=0.3)
+    assert _V019_RATIO_PUB - n_src == pytest.approx(0.15, abs=0.03)
+    # where Fig. 5-27's arrows are drawn
+    assert priebe_curve_settlement_ratio(1.0 / 3.53) == pytest.approx(
+        2.63, abs=0.03)
 
-    # module's own geometric triangular as -> within the soft tolerance
+    S_improved = 27.0 / n_src
+    assert S_improved == pytest.approx(10.6, abs=0.15)
+    assert S_improved - 27.0 / _V019_RATIO_PUB == pytest.approx(0.6, abs=0.15)
+
+    # the module's own geometric triangular as, a different area ratio
     as_tri = area_replacement_ratio(_V019_D_FT * FT, _V019_S_FT * FT, "triangular")
-    n0_tri = priebe_basic_improvement_factor(as_tri, phi_column=42.5)
     assert as_tri == pytest.approx(0.251, abs=0.003)
-    assert n0_tri == pytest.approx(2.81, abs=0.05)
-    assert n0_tri == pytest.approx(_V019_RATIO_PUB, abs=0.3)   # within 2.7±0.3
-
-    # the chart 2.7 corresponds to a softer column phi (~39 deg) at as=0.277
-    n0_phi39 = priebe_basic_improvement_factor(as_src, phi_column=39.0)
-    assert n0_phi39 == pytest.approx(2.7, abs=0.15)
-
-    # improved settlement = 27 in / n0 brackets the published 10 in
-    S_improved_src = 27.0 / n0_src
-    S_improved_tri = 27.0 / n0_tri
-    assert S_improved_src == pytest.approx(8.8, abs=0.5)
-    assert S_improved_tri == pytest.approx(9.6, abs=0.5)
-    # published improved 10 in (27/2.7); ours bracket it from below
-    assert 8.0 < S_improved_tri < 11.0
+    assert priebe_curve_settlement_ratio(as_tri) == pytest.approx(2.31,
+                                                                  abs=0.03)
 
 
 # ════════════════════════════════════════════════════════════════════════════

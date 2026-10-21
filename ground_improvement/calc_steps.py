@@ -5,7 +5,8 @@ Provides input summaries, step-by-step equation output, and figures
 for Mathcad-style calc package generation.  Supports all four
 ground improvement methods plus the feasibility screening:
 
-- Aggregate piers (Barksdale & Bachus, Priebe)
+- Aggregate piers (Barksdale & Bachus; GEC-13's stress reduction method and
+  Fig. 5-21 settlement ratios)
 - Wick drains / PVD (Barron/Hansbo radial consolidation)
 - Surcharge preloading (with/without drains)
 - Vibro-compaction feasibility (GEC-13)
@@ -19,7 +20,6 @@ References:
     FHWA GEC-13: Ground Modification Methods Reference Manual
     Barron (1948) / Hansbo (1981) — radial consolidation
     Barksdale & Bachus (1983) — aggregate pier / stone column design
-    Priebe (1995) — vibro-replacement improvement factors
 """
 
 import math
@@ -38,8 +38,6 @@ REFERENCES = [
     "FHWA NHI-06-019/020: Ground Improvement Methods, Vols. I & II.",
     'Barksdale, R.D. & Bachus, R.C. (1983). "Design and Construction of '
     'Stone Columns." FHWA/RD-83/026.',
-    'Priebe, H.J. (1995). "The Design of Vibro Replacement." '
-    "Ground Engineering, Dec 1995, pp. 31-37.",
     'Barron, R.A. (1948). "Consolidation of Fine-Grained Soils by Drain '
     'Wells." Trans. ASCE, Vol. 113, pp. 718-742.',
     'Hansbo, S. (1981). "Consolidation of Fine-Grained Soils by '
@@ -407,8 +405,9 @@ def _bearing_and_settlement_steps(r, sections, n, a_s):
             reference="Stress-concentration estimate (Barksdale & Bachus "
                       "1983; GEC-13)",
             notes="First-order estimate using the equal-strain "
-                  "stress-concentration factor — not Priebe's n₀ "
-                  "improvement factor.",
+                  "stress-concentration factor. GEC-13's Priebe curve "
+                  "(Fig. 5-21 curve 4) is a settlement ratio, not a "
+                  "bearing factor.",
         ))
 
         bc_items.append(CheckItem(

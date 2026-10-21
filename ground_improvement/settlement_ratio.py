@@ -33,8 +33,9 @@ Curve (4), "PRIEBE phi = 37.5°", is the Priebe curve GEC-13 reads in its
 Example 2 (Sec. 4.3.2, Fig. 5-27, p. 5-49) and of which p. 5-37 says "for
 preliminary estimates, the Priebe curve may be used to evaluate the upper
 bound effectiveness". It takes no moduli: :data:`PRIEBE_CURVE_4` holds it,
-read off the page as the Balaam curves were (GM-221), and
-``priebe_improvement_factor`` method 'fig_5_21' reads it. From A/A_c about
+read off the page as the Balaam curves were (GM-221), and the tool
+``priebe_improvement_factor`` reads it. It is the tool's only basis
+(GM-276): GEC-13 prints the curve, not a formula for it. From A/A_c about
 4.0 on, the printed curve (4) runs on one line with curve (5a).
 """
 
@@ -63,13 +64,14 @@ BALAAM_FLEXIBLE_10 = {
     6.0: 1.79, 6.5: 1.72, 7.0: 1.65, 7.5: 1.57, 8.0: 1.50, 8.5: 1.42,
 }
 
-#: GEC-13 Fig. 5-21 curve (4): Priebe, phi = 37.5 deg (GM-221). A/A_c ->
-#: n'. Traced and drawn back as the Balaam curves; the table is within 1 %
-#: of the trace between its nodes, and a read is good to about one line
-#: width, +/- 0.03 in n'. Priebe's basic factor n0 at phi_c = 37.5 deg, nu
-#: = 1/3 (``priebe_basic_improvement_factor``) is within 1.5 % of it at
-#: A/A_c 2.25 to 3.5, +2 to +7 % from 3.75 to 8.0, and +6 % at 2.0 rising
-#: to +31 % at 1.6.
+#: GEC-13 Fig. 5-21 curve (4): Priebe, phi = 37.5 deg (GM-221), p. 5-36.
+#: A/A_c -> n'. Traced and drawn back as the Balaam curves; the table is
+#: within 1 % of the trace between its nodes, and a read is good to about
+#: one line width, +/- 0.03 in n'. Checked again on both printed copies
+#: (GM-276): on p. 5-36 the table sits on the line within 0.015 (95 % of
+#: reads) from A/A_c 2.25 to 8.0 and within 0.04 above it, where the curve
+#: is steep; Fig. 5-27 (p. 5-49), the same chart printed again for Example
+#: 2, agrees to the same order. At A/A_c 3.61 both read 2.54 to 2.55.
 PRIEBE_CURVE_4 = {
     1.6: 6.01, 1.75: 5.55, 2.0: 4.82, 2.25: 4.26, 2.5: 3.80, 2.75: 3.41,
     3.0: 3.11, 3.25: 2.85, 3.5: 2.63, 3.75: 2.45, 4.0: 2.30, 4.25: 2.16,
@@ -177,12 +179,16 @@ def balaam_settlement_ratio(as_ratio: float, modular_ratio: float,
 
 def priebe_curve_settlement_ratio(as_ratio: float) -> float:
     """n' off GEC-13 Fig. 5-21 curve (4), Priebe phi = 37.5 deg (GM-221),
-    A/A_c 1.6 to 8.0; refused off the drawn range."""
+    A/A_c 1.6 to 8.0; refused off the drawn range, not extended."""
     if not 0.0 < as_ratio < 1.0:
         raise ValueError(
             f"Area replacement ratio must be in (0, 1), got {as_ratio}")
-    return _on_curve(PRIEBE_CURVE_4, as_ratio, "the Priebe curve (4)",
-                     instead="method 'formula' (Priebe's basic n0)")
+    return _on_curve(
+        PRIEBE_CURVE_4, as_ratio, "the Priebe curve (4)",
+        instead="another of Fig. 5-21's curves: the weighted-modulus curve "
+                "(2) takes any A/A_c (aggregate_piers settlement_method "
+                "'weighted_modulus', with E_column). The printed Priebe "
+                "curve is not extended")
 
 
 def settlement_ratio(method: str, as_ratio: float,

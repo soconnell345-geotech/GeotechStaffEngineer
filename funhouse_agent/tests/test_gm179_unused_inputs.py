@@ -5,8 +5,10 @@ Refused: axial E (the static capacity methods), drilled shaft
 socket_length, the aggregate piers' column modulus (E_column,
 column_modulus; the package's older E_pier), the feasibility screen's
 water table, the CPT correlations' i_c_limit and s_g, a continuous
-beam's area and an MSE wall reinforcement's yield strength (GM-269: the
-rupture check takes the Tal given). Used: the LRFD MSE wall's gamma_foundation (GEC-11 Eq. 4-22;
+beam's area, an MSE wall reinforcement's yield strength (GM-269: the
+rupture check takes the Tal given) and the Priebe tool's column friction
+angle and Poisson's ratio (GM-276: GEC-13's printed curve, drawn for 37.5
+deg, is its only basis). Used: the LRFD MSE wall's gamma_foundation (GEC-11 Eq. 4-22;
 mse_wall refuses it) and the feasibility screen's depth_to_top_m
 (GEC-13 pp. 5-9, 4-65).
 """
@@ -45,6 +47,10 @@ def _probe(key):
      "Give n"),
     ("ground_improvement", "feasibility", "gwt_depth_m", 2.0,
      "above and below the natural groundwater level"),
+    ("ground_improvement", "priebe_improvement_factor", "phi_column", 42.5,
+     "drawn for a column friction angle of 37.5 deg"),
+    ("ground_improvement", "priebe_improvement_factor", "nu_soil", 0.33,
+     "with no Poisson's ratio"),
     ("liquepy", "field_correlations", "i_c_limit", 1.8,
      "cpt_liquefaction"),
     ("liquepy", "field_correlations", "s_g", 2.7, "void_ratio"),
