@@ -122,9 +122,16 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
 - `linear_elastic=True`: materials stay in stage 0 (G = rho*Vs^2), a check
   of the column, not a design analysis.
 - Output: surface accel time history, response spectra, depth profiles of
-  max accel, max shear strain, max pore pressure ratio (ru = 1 -
-  sigma'v/sigma'v0; 0 in elements with no pore water) and the initial
+  max accel, max shear strain, max pore pressure ratio and the initial
   vertical effective stress; `analysis_type`, `site_period_s` (4H/Vs).
+  ru (GM-79) is the excess pore pressure over the initial vertical
+  effective stress, the OpenSees effective stress example's r_u: at each
+  element's centre, (u - u0) / sigma'v0, u the mean of its four nodes'
+  pore pressure (the "velocity" of DOF 3, which the example records), u0
+  the same after gravity, sigma'v0 the element's vertical effective stress
+  then; 0 in elements with no pore water. Not capped at 1: once sand has
+  liquefied the pore pressure also carries the column's swings in total
+  vertical stress (1.016 in 20 m of loose sand at 0.30 g).
 - Reference: Lysmer & Kuhlemeyer (1969); Joyner & Chen (1975); Yang,
   Elgamal & Parra (2003); Kramer (1996) Sec. 7.2
 
@@ -155,8 +162,8 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
 8. Elements with no pore water reported ru up to 0.34 (dry loose sand at
    0.5 g): ru = 1 - sigma'v / sigma'v0 picks up the column's vertical
    stress swings (+/-15-25 % there). ru is now 0 where an element has no
-   pore water; below the water table the same swings remain in ru
-   (BACKLOG GM-79: take ru from the pore pressure instead).
+   pore water; below the water table the same swings remained in ru
+   until GM-79 took ru from the pore pressure.
 
 ## Validation (site response, GM-77)
 

@@ -212,7 +212,10 @@ class SiteResponseResult:
     max_accel_g : numpy.ndarray
         Max acceleration profile (g).
     max_pore_pressure_ratio : numpy.ndarray
-        Max excess pore pressure ratio profile.
+        Peak excess pore pressure ratio at each element centre: the
+        excess pore pressure over the initial vertical effective stress,
+        (u - u0) / sigma'v0 (GM-79); 0 where there is no pore water. Not
+        capped at 1.
     periods : numpy.ndarray
         Spectral periods (s).
     Sa_surface_g : numpy.ndarray

@@ -758,7 +758,11 @@ class TestSiteResponseIntegration:
         assert result.pga_surface_g < 5.0
         assert np.all(result.max_strain_pct >= 0)
         assert np.all(result.max_pore_pressure_ratio >= 0)
-        assert np.all(result.max_pore_pressure_ratio <= 1.0)
+        # ru = excess pore pressure / sigma'v0 (GM-79), not capped: once
+        # the sand has liquefied the pore pressure also carries the
+        # column's swings in total vertical stress (measured 1.016 here;
+        # the old 1 - sigma'v / sigma'v0 was capped at 1).
+        assert np.all(result.max_pore_pressure_ratio <= 1.05)
 
         d = result.to_dict()
         json.dumps(d)
@@ -882,6 +886,11 @@ class _FakeOps:
     the first full dynamic step (dt = 0.01), so it is taken in substeps.
     """
 
+    # Pore pressure at every node free to carry it: PP0 kPa after
+    # gravity, PP0 + EXCESS once the shaking starts.
+    PP0 = 10.0
+    EXCESS = 30.0
+
     def __init__(self, fail_dynamic=False, fail_gravity=False,
                  fail_first=(), fail_first_full_step=False):
         self.calls = []
@@ -931,6 +940,16 @@ class _FakeOps:
 
     def nodeAccel(self, node, dof):
         return 0.0
+
+    def nodeVel(self, node, dof):
+        """DOF 3 is the pore pressure (kPa); 0 where it is fixed."""
+        if dof != 3:
+            return 0.0
+        drained = {a[0] for a in self.named("fix")
+                   if len(a) == 4 and a[3] == 1}
+        if node in drained:
+            return 0.0
+        return self.PP0 + (self.EXCESS if self.shaking else 0.0)
 
     def __getattr__(self, name):
         def record(*args):
@@ -1081,18 +1100,37 @@ class TestSiteResponseModelWiring:
         drained = {a[0] for a in ops.named("fix") if a[1:] == (0, 0, 1)}
         assert drained == {3, 6}
 
-    def test_ru_only_where_there_is_pore_water(self):
-        """ru = 1 - sigma'v / sigma'v0 below the water table; 0 in an
-        element with no pore water (its sigma'v still swings with the
-        column's vertical motion, which is not pore pressure)."""
+    def test_ru_is_excess_pore_pressure_over_initial_effective_stress(self):
+        """GM-79: ru = (u - u0) / sigma'v0, u0 the pore pressure after
+        gravity, at the element's centre (the mean of its four nodes). In
+        the fake, u rises by 30 kPa at every free node and sigma'v0 is
+        100 kPa, while sigma'v halves: the old ru, 1 - sigma'v / sigma'v0,
+        read 0.5 from that swing in vertical stress."""
         layer = dict(SAND33, thickness=10.0)  # elements 0-5 m, 5-10 m
+        # element order is from the base; the surface node is drained
         _, wet = _build_fake([layer], gwt_depth=0.0)
-        np.testing.assert_allclose(wet.max_pore_pressure_ratio, [0.5, 0.5])
+        np.testing.assert_allclose(wet.max_pore_pressure_ratio,
+                                   [0.30, 0.15])
         _, dry = _build_fake([layer], gwt_depth=40.0)
         np.testing.assert_allclose(dry.max_pore_pressure_ratio, [0.0, 0.0])
+        # water table on the 5 m node: 5-10 m drained at its top only,
+        # 0-5 m no pore water
         _, half = _build_fake([layer], gwt_depth=5.0)
-        # element order is from the base: 5-10 m wet, 0-5 m dry
-        np.testing.assert_allclose(half.max_pore_pressure_ratio, [0.5, 0.0])
+        np.testing.assert_allclose(half.max_pore_pressure_ratio, [0.15, 0.0])
+
+    def test_ru_does_not_count_the_pore_pressure_after_gravity(self):
+        """u0 (here 10 kPa) is the reference; a fall in pore pressure
+        (dilation) gives no ru."""
+        layer = dict(SAND33, thickness=10.0)
+        ops = _FakeOps()
+        ops.EXCESS = -5.0
+        from opensees_agent.site_response import _run_site_response_model
+        r = _run_site_response_model(
+            ops, layers=[layer], accel_g=0.1 * np.sin(np.linspace(0, 6, 50)),
+            dt_motion=0.01, gwt_depth=0.0, bedrock_Vs=760.0,
+            bedrock_density=2.4, damping=0.02, scale_factor=1.0,
+            n_elem_per_layer=2, motion_name="test")
+        np.testing.assert_allclose(r.max_pore_pressure_ratio, [0.0, 0.0])
 
     def test_sigma_v_eff_hand_calculation(self):
         from opensees_agent.site_response import _sigma_v_eff
@@ -1499,3 +1537,52 @@ class TestSiteResponseBenchmarks:
             assert np.all(np.isfinite(r.surface_accel_g))
         # the dry run (water below the column) reports no pore pressure
         assert np.all(r.max_pore_pressure_ratio == 0.0)
+
+
+class _PorePressureSpy:
+    """Wraps openseespy and reads every node's pore pressure (DOF 3
+    "velocity") and height when the clock is set back after gravity."""
+
+    def __init__(self, ops):
+        self._ops = ops
+        self.after_gravity = None
+
+    def __getattr__(self, name):
+        return getattr(self._ops, name)
+
+    def setTime(self, t):
+        # the left column's nodes; the last tag is the dashpot's node
+        self.after_gravity = [
+            (self._ops.nodeCoord(n)[1], self._ops.nodeVel(n, 3))
+            for n in sorted(self._ops.getNodeTags())[:-1]
+            if self._ops.nodeCoord(n)[0] == 0.0]
+        return self._ops.setTime(t)
+
+
+class TestPorePressureRatio:
+    """GM-79: ru is the excess pore pressure over the initial vertical
+    effective stress, read off the pore pressure the model carries."""
+
+    @requires_opensees
+    def test_the_pore_pressure_read_is_hydrostatic_after_gravity(self):
+        """What the module reads as pore pressure (the "velocity" of DOF
+        3, as the OpenSees effective stress example records it) is, after
+        gravity, 9.81 kPa per metre below the water table and 0 at and
+        above it: hydrostatic by definition."""
+        from opensees_agent.opensees_utils import fresh_model
+        from opensees_agent.site_response import _run_site_response_model
+        layer = dict(SAND33, thickness=10.0)
+        spy = _PorePressureSpy(fresh_model(ndm=2, ndf=3))
+        try:
+            _run_site_response_model(
+                spy, layers=[layer],
+                accel_g=0.01 * np.sin(np.linspace(0.0, 6.0, 20)),
+                dt_motion=0.01, gwt_depth=2.5, bedrock_Vs=760.0,
+                bedrock_density=2.4, damping=0.02, scale_factor=1.0,
+                n_elem_per_layer=4, motion_name="test")
+        finally:
+            spy.wipe()
+        heights, pp = np.array(spy.after_gravity).T
+        hydrostatic = 9.81 * np.maximum(0.0, (10.0 - heights) - 2.5)
+        assert len(pp) == 5
+        np.testing.assert_allclose(pp, hydrostatic, rtol=1e-3, atol=1e-6)

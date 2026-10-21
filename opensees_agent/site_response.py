@@ -591,8 +591,7 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             ops.fix(right_node(i), 0, 0, 1)
             drained[i] = True
     # An element with zero pore pressure at both its node rows holds no
-    # pore water: its ru is 0 (its vertical effective stress still swings
-    # with the column's vertical motion, which is not pore pressure).
+    # pore water: its ru is 0.
     elem_dry = [drained[e] and drained[e + 1]
                 for e in range(n_nodes_col - 1)]
 
@@ -724,13 +723,21 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ops.wipeAnalysis()
 
     # ------------------------------------------------------------------
-    # 9. Record initial stresses for ru computation
+    # 9. Record the initial state for ru: each element's vertical
+    #    effective stress and each node's pore pressure after gravity
     # ------------------------------------------------------------------
     initial_sigma_v = np.zeros(n_elem_total)
     for e in range(n_elem_total):
         stress = ops.eleResponse(e + 1, 'stress')
         # stress[1] = sigma_yy (negative = compression in OpenSees)
         initial_sigma_v[e] = -stress[1] if len(stress) > 1 else 1.0
+    # The u-p elements keep a node's pore pressure (kPa) as the "velocity"
+    # of its third DOF, which is what the OpenSees effective stress
+    # example records (checked: hydrostatic after gravity, 9.81 kPa per
+    # metre below the water table; the "displacement" of that DOF is its
+    # time integral).
+    pp_nodes = [(left_node(i), right_node(i)) for i in range(n_nodes_col)]
+    initial_pp = _node_pore_pressures(ops, pp_nodes)
 
     # ------------------------------------------------------------------
     # 10. Set up dynamic loading
@@ -834,6 +841,12 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
         a_surf = ops.nodeAccel(surface_node, 1)
         surface_accel[step] = a_surf / g_accel
 
+        # Excess pore pressure at each element's centre: the mean of its
+        # four nodes' (the element's pressure field is bilinear; its
+        # stress is recorded at the centre)
+        excess = _node_pore_pressures(ops, pp_nodes) - initial_pp
+        excess_elem = 0.5 * (excess[:-1] + excess[1:])
+
         # Element profiles
         for e in range(n_elem_total):
             e_tag = e + 1
@@ -853,12 +866,14 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
                 if gamma > max_strain[e]:
                     max_strain[e] = gamma
 
-            # Pore pressure ratio
-            if (len(stress) > 1 and initial_sigma_v[e] > 1.0
-                    and not elem_dry[e]):
-                sigma_v_curr = -stress[1]
-                ru = 1.0 - sigma_v_curr / initial_sigma_v[e]
-                ru = max(0.0, min(ru, 1.0))
+            # Excess pore pressure ratio, by its definition: the excess
+            # pore pressure over the initial vertical effective stress
+            # (the OpenSees effective stress example's r_u). Until GM-79
+            # it was 1 - sigma'v / sigma'v0, which also picked up the
+            # column's swings in total vertical stress (+/-15-25 % in
+            # loose sand at 0.5 g), not pore pressure.
+            if not elem_dry[e] and initial_sigma_v[e] > 0.0:
+                ru = excess_elem[e] / initial_sigma_v[e]
                 if ru > max_ru[e]:
                     max_ru[e] = ru
 
@@ -921,6 +936,13 @@ def _gravity_stage(ops, n_steps, stage):
                 f"with these properties: check su (clay) and phi (sand) "
                 f"against the layers' stresses, or use more elements per "
                 f"layer.")
+
+
+def _node_pore_pressures(ops, node_pairs):
+    """Pore pressure (kPa) at each node row: the mean of the row's left
+    and right nodes, each read as the "velocity" of DOF 3."""
+    return np.array([0.5 * (ops.nodeVel(a, 3) + ops.nodeVel(b, 3))
+                     for a, b in node_pairs])
 
 
 def _set_shaking_permeability(ops, perm_by_element, first_tag=10001):
