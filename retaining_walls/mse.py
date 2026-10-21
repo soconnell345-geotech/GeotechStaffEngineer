@@ -167,21 +167,36 @@ def coverage_ratio(reinforcement: Reinforcement) -> float:
     return _coverage_at(r, r.coverage_ratio, r.horizontal_spacing)
 
 
+#: Where a wall's levels come from, for a refusal that names them (GM-273).
+SV_SETS_THEM = "the reinforcement spacing Sv sets them"
+DEPTHS_GIVE_THEM = ("level_depths gives them: give one entry for each "
+                    "depth there, or one depth for each entry")
+
+
+def levels_source(geom: MSEWallGeometry) -> str:
+    """:data:`SV_SETS_THEM`, or :data:`DEPTHS_GIVE_THEM` for a wall whose
+    level depths are given (GM-273)."""
+    return SV_SETS_THEM if geom.level_depths is None else DEPTHS_GIVE_THEM
+
+
 def coverage_ratios(reinforcement: Reinforcement,
-                    depths: Sequence[float]) -> List[float]:
+                    depths: Sequence[float],
+                    source: str = SV_SETS_THEM) -> List[float]:
     """The coverage ratio Rc = b/Sh at each reinforcement level, the
     levels at ``depths`` (m) from the top down (GM-261): a spacing or
     coverage ratio given per level takes one value a level, as GEC-11 Vol
     II Example E3 changes Sh with depth (Table E3-7.3, p. E3-19); a single
     value holds at every level. A list whose length is not the number of
-    levels is refused, naming the levels; otherwise as
+    levels is refused, naming the levels and where they come from
+    (``source``, :func:`levels_source`); otherwise as
     :func:`coverage_ratio`. A reinforcement given per level (a list, one a
     level; :func:`level_reinforcements`, GM-266) takes each level's own
     width and Sh or Rc."""
     r = reinforcement
     if not isinstance(r, Reinforcement):
         out = []
-        for i, ri in enumerate(level_reinforcements(r, depths), start=1):
+        for i, ri in enumerate(level_reinforcements(r, depths, source),
+                               start=1):
             try:
                 _not_both(ri)
                 out.append(_coverage_at(ri, ri.coverage_ratio,
@@ -200,8 +215,7 @@ def coverage_ratios(reinforcement: Reinforcement,
                 f"{name} gives {len(values)} values of {given}, one per "
                 "reinforcement level from the top down, and this wall has "
                 f"{n} levels, at depths "
-                + ", ".join(f"{z:.2f}" for z in depths) + " m (the "
-                "reinforcement spacing Sv sets them)")
+                + ", ".join(f"{z:.2f}" for z in depths) + f" m ({source})")
 
     def at(values, i):
         return values[i] if isinstance(values, tuple) else values
@@ -226,14 +240,16 @@ ONE_KIND_PER_WALL = (
     "outside this tool")
 
 
-def level_reinforcements(reinforcement, depths: Sequence[float]
+def level_reinforcements(reinforcement, depths: Sequence[float],
+                         source: str = SV_SETS_THEM
                          ) -> List[Reinforcement]:
     """The reinforcement at each level, the levels at ``depths`` (m) from
     the top down (GM-266): one :class:`Reinforcement` at every level, or a
     list of them, one a level, as GEC-11 Vol II Example E4 takes 4W11 mats
     at Levels 1, 3 and 4, a 3W11 mat at Level 2 and 4W15 mats from Level 5
     down (Table E4-7.4, p. E4-18). A list is refused when its length is not
-    the number of levels (naming the levels), when it mixes steel with
+    the number of levels (naming the levels and ``source``, where they come
+    from: :func:`levels_source`), when it mixes steel with
     geosynthetic reinforcement (:data:`ONE_KIND_PER_WALL`), and when an
     entry gives its spacing or coverage ratio per level: each entry is one
     level's, with its own Sh or Rc."""
@@ -252,7 +268,7 @@ def level_reinforcements(reinforcement, depths: Sequence[float]
             f"reinforcement_per_level gives {len(rs)} reinforcements, one "
             "per reinforcement level from the top down, and this wall has "
             f"{n} levels, at depths " + ", ".join(f"{z:.2f}" for z in depths)
-            + " m (the reinforcement spacing Sv sets them)")
+            + f" m ({source})")
     if len({r.is_metallic for r in rs}) > 1:
         kinds = ["steel" if r.is_metallic else "geosynthetic" for r in rs]
         raise ValueError(ONE_KIND_PER_WALL.format(got=" and ".join(
@@ -528,8 +544,15 @@ _ONE_GEOSYNTHETIC = (
     "a stronger grade at the levels where FOS_rupture is below {req:.1f}: "
     "reinforcement_per_level, each level its own reinforcement, as GEC-11 "
     "Vol II Example E1 takes its GG-I geogrid at Layers 1 to 4 and GG-II "
-    "below (Table E1-7.4, p. E1-16); or a closer vertical spacing "
-    "(reinforcement_spacing)")
+    "below (Table E1-7.4, p. E1-16); or {vertical}")
+
+
+def _closer_vertical(internal: List[Dict[str, Any]]) -> str:
+    """The input that brings a wall's levels closer together: the depths
+    given (``Svt_m`` in the levels, GM-273), else the spacing Sv."""
+    if internal and "Svt_m" in internal[0]:
+        return "the levels closer together (level_depths)"
+    return "a closer vertical spacing (reinforcement_spacing)"
 
 #: GEC-11 Vol I, read on the rendered pages (GM-262 review). The factored
 #: tensile resistance is phi Tal Rc (Eq. 4-33, p. 4-48) against Tmax
@@ -614,7 +637,8 @@ def tensile_strength_choice(reinforcement: Reinforcement,
                       else f"{len(z)} levels, z = {z[0]:g} to {z[-1]:g} m")
                    + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
         alts.append((_ONE_REINFORCEMENT if r.is_metallic
-                     else _ONE_GEOSYNTHETIC).format(req=req))
+                     else _ONE_GEOSYNTHETIC).format(
+                         req=req, vertical=_closer_vertical(internal)))
     if r.basis:
         alts.append(_SPECIFIED_PRODUCT.format(
             name=r.name, type=r.type,
@@ -701,7 +725,7 @@ def _level_list_tensile_choice(rs, internal) -> list:
                    + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
         alts.append(_STRONGER_AT_LEVELS.format(
             req=req, vertical="" if metallic else
-            ", or a closer vertical spacing (reinforcement_spacing)"))
+            ", or " + _closer_vertical(internal)))
     if built_in:
         names = [r.name for r, _ in _grouped(built_in, key=lambda r: r.name)]
         alts.append(_SPECIFIED_PRODUCTS.format(
@@ -1031,6 +1055,99 @@ def Tmax_at_level(z: float, gamma_backfill: float, Ka: float,
     sigma_v = gamma_backfill * z + q_surcharge
     sigma_h = Kr_Ka * Ka * sigma_v
     return sigma_h * Sv
+
+
+#: How sigma_H is averaged over a level's contributory height (GM-273),
+#: GEC-11 Vol I p. 4-47, read on the rendered page: "calculated as the
+#: product of the contributory height and the average factored horizontal
+#: stress acting upon that contributory height. The average stress can be
+#: calculated based upon the tributary trapezoidal area (i.e. average of the
+#: stress at top and at the bottom of the contributory height) or at the
+#: midpoint of the contributory height, as illustrated in Figure 4-14."
+SIGMA_H_AVERAGES = ("trapezoidal", "midpoint")
+
+CONTRIBUTORY_HEIGHT_BASIS = (
+    "GEC-11 Vol I p. 4-46: 'The contributory height is defined as the "
+    "midpoint between vertically adjacent reinforcement elevations, except "
+    "for the top and bottom layers reinforcement'; p. 4-47: for those, Sv "
+    "'is the distance from top or bottom of wall, respectively, to the "
+    "midpoint between the first and second layer', and TMAX is 'the product "
+    "of the contributory height and the average factored horizontal stress "
+    "acting upon that contributory height', the average 'based upon the "
+    "tributary trapezoidal area (i.e. average of the stress at top and at "
+    "the bottom of the contributory height) or at the midpoint of the "
+    "contributory height' (Fig. 4-14). Vol II Examples E3 and E4 tabulate "
+    "it as the 'vertical tributary spacing' Svt = Z+ - Z- (Tables E3-7.1, "
+    "p. E3-13, and E4-7.1, p. E4-11) and take "
+    "sigma_H as the average of its values at Z- and Z+ at every level (pp. "
+    "E3-15, E4-13)")
+
+SIGMA_H_AVERAGE_TEXT = {
+    "trapezoidal": ("sigma_H the average of its values at the top and the "
+                    "bottom of Svt, the tributary trapezoidal area"),
+    "midpoint": "sigma_H at the midpoint of Svt",
+}
+
+SIGMA_H_AVERAGE_ALTERNATIVE = {
+    "trapezoidal": (
+        "sigma_H at the midpoint of each contributory height "
+        "(sigma_H_average 'midpoint'), GEC-11 Vol I p. 4-47's other "
+        "average; at a level midway between its neighbours it is sigma_H "
+        "at the level (p. 4-46), as Vol II Example E1 takes its layers, "
+        "Layer 1 at ZAve 0.835 ft, the middle of its 1.67 ft (p. E1-14)"),
+    "midpoint": (
+        "the tributary trapezoidal area (sigma_H_average 'trapezoidal'), "
+        "the average of sigma_H at the top and the bottom of each "
+        "contributory height, GEC-11 Vol I p. 4-47's first average, as Vol "
+        "II Examples E3 and E4 take it at every level (pp. E3-15, E4-13)"),
+}
+
+#: sigma_H_average given for a wall whose levels the module places.
+SIGMA_H_NEEDS_DEPTHS = (
+    "sigma_H_average applies to level depths given (level_depths): it says "
+    "how sigma_H is averaged over each level's contributory height (GEC-11 "
+    "Vol I p. 4-47). The levels at reinforcement_spacing (i + 1/2) each "
+    "take Sv and sigma_H at the level's depth; give level_depths, or leave "
+    "sigma_H_average out")
+
+
+def sigma_H_average_of(value: Optional[str]) -> str:
+    """``value`` checked against :data:`SIGMA_H_AVERAGES`; None is
+    'trapezoidal' (GM-273)."""
+    if value is None:
+        return "trapezoidal"
+    if value not in SIGMA_H_AVERAGES:
+        raise ValueError(
+            "sigma_H_average takes 'trapezoidal' (the average of sigma_H at "
+            "the top and the bottom of each level's contributory height) or "
+            "'midpoint' (sigma_H at its midpoint), GEC-11 Vol I p. 4-47; got "
+            f"{value!r}")
+    return value
+
+
+def contributory_Tmax(z_top: float, z_bottom: float, gamma_backfill: float,
+                      Ka: float, reinforcement_type: str,
+                      q_surcharge: float = 0.0,
+                      average: str = "trapezoidal") -> float:
+    """Tmax at a level over its contributory height, from ``z_top`` to
+    ``z_bottom`` below the top of the wall (GM-273): Svt = z_bottom - z_top
+    times sigma_H averaged over it (GEC-11 Vol I p. 4-47,
+    :data:`SIGMA_H_AVERAGES`). sigma_H at a depth is :func:`Tmax_at_level`'s,
+    Kr/Ka there by ``reinforcement_type`` (:func:`Kr_Ka_ratio`):
+    'trapezoidal' the mean of sigma_H at z_top and z_bottom, as Vol II
+    Example E4 takes Level 4 (p. E4-13: 0.5 (0.76 + 0.92) ksf from the soil,
+    0.5 (0.19 + 0.17) from the surcharge, times Svt 2.50 ft); 'midpoint'
+    sigma_H at (z_top + z_bottom) / 2. Unfactored, kN/m of wall."""
+    average = sigma_H_average_of(average)
+    Svt = z_bottom - z_top
+
+    def T(z):
+        return Tmax_at_level(z, gamma_backfill, Ka,
+                             Kr_Ka_ratio(z, reinforcement_type), Svt,
+                             q_surcharge)
+    if average == "midpoint":
+        return T(0.5 * (z_top + z_bottom))
+    return 0.5 * (T(z_top) + T(z_bottom))
 
 
 def pullout_resistance(z: float, gamma_backfill: float,
@@ -1563,6 +1680,7 @@ def check_internal_stability(
     Cu_backfill: float = None,
     F_star_tested=None,
     alpha_tested: float = None,
+    sigma_H_average: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Check internal stability at each reinforcement level.
 
@@ -1607,12 +1725,23 @@ def check_internal_stability(
         reinforcement's type (p. 3-17), 1.0 for steel strips and grids, 0.8
         for a geogrid, 0.6 for a geotextile; a "geosynthetic" of no stated
         kind is refused (:func:`pullout_alpha`, GM-256).
+    sigma_H_average : str, optional
+        For ``geom.level_depths`` given (GM-273): how sigma_H is averaged
+        over each level's contributory height, 'trapezoidal' (the average
+        of sigma_H at its top and bottom) or 'midpoint' (sigma_H at its
+        midpoint), GEC-11 Vol I p. 4-47 (:func:`contributory_Tmax`).
+        Default None: 'trapezoidal', as Vol II Examples E3 and E4 (pp.
+        E3-15, E4-13). Refused without level depths, whose levels each
+        take Sv and sigma_H at the level (:data:`SIGMA_H_NEEDS_DEPTHS`).
 
     Returns
     -------
     list of dict
         Per-level results. With a sloping backfill each level also gives
-        ``Zp_m``, the depth below the slope surface used for pullout.
+        ``Zp_m``, the depth below the slope surface used for pullout. With
+        ``geom.level_depths`` each level also gives ``Svt_m``, its
+        contributory height, and ``sigma_H_kPa``, the unfactored sigma_H
+        averaged over it (Tmax = sigma_H Svt; GM-273).
         ``Pr_kN_per_m`` and ``Tal_Rc_kN_per_m`` are per metre of wall, the
         reinforcement's pullout and tensile resistance times its coverage
         ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-49; p. 4-47; GM-256),
@@ -1642,13 +1771,22 @@ def check_internal_stability(
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
     sloping = geom.backfill_slope > 0
+    # the levels' depths given: each level's contributory height (GM-273)
+    given = geom.level_depths is not None
+    if not given and sigma_H_average is not None:
+        raise ValueError(SIGMA_H_NEEDS_DEPTHS)
+    if given:
+        average = sigma_H_average_of(sigma_H_average)
+        heights = geom.contributory_heights
+    source = levels_source(geom)
     # one reinforcement a level, all steel or all geosynthetic (GM-266)
-    rs = level_reinforcements(reinforcement, geom.reinforcement_depths)
+    rs = level_reinforcements(reinforcement, geom.reinforcement_depths,
+                              source)
     per_level = not isinstance(reinforcement, Reinforcement)
     if FOS_rupture is None:
         FOS_rupture = rupture_FOS_required(rs[0])   # GM-262 review
     # GEC-11 Eq. 3-1 (GM-256), one value a level (GM-261)
-    Rcs = coverage_ratios(reinforcement, geom.reinforcement_depths)
+    Rcs = coverage_ratios(reinforcement, geom.reinforcement_depths, source)
     _check_tested(F_star_tested, alpha_tested)
     alphas = _level_alphas(reinforcement, rs, alpha_tested)
     if sloping:
@@ -1671,7 +1809,8 @@ def check_internal_stability(
         F_star_strip_top(Cu_backfill)
 
     results = []
-    for z, Rc, r, alpha in zip(geom.reinforcement_depths, Rcs, rs, alphas):
+    for i, (z, Rc, r, alpha) in enumerate(zip(geom.reinforcement_depths, Rcs,
+                                              rs, alphas)):
         if r.is_grid:
             r_type = "metallic_grid"
         elif r.is_metallic:
@@ -1684,7 +1823,14 @@ def check_internal_stability(
         kr_ka = Kr_Ka_ratio(z, r_type)
 
         # Tmax at this level (a sloping backfill adds sigma_2, Eq. 4-29)
-        if sloping:
+        if given:
+            # over the level's contributory height, GEC-11 Vol I p. 4-47
+            z_top, z_bottom = heights[i]
+            Svt = z_bottom - z_top
+            T = contributory_Tmax(
+                z_top, z_bottom, gamma_backfill, Ka, r_type,
+                (q_int + sigma_2) if sloping else geom.surcharge, average)
+        elif sloping:
             T = Tmax_at_level(z, gamma_backfill, Ka, kr_ka, Sv,
                               q_int + sigma_2)
         else:
@@ -1751,6 +1897,9 @@ def check_internal_stability(
         level = {"depth_m": round(z, 2)}
         if per_level:
             level["reinforcement"] = r.name
+        if given:
+            level["Svt_m"] = round(Svt, 3)
+            level["sigma_H_kPa"] = round(T / Svt, 2)
         level.update({
             "Tmax_kN_per_m": round(T, 2),
             "Pr_kN_per_m": round(Pr, 2),
@@ -2054,6 +2203,32 @@ def live_load_choices(geom: MSEWallGeometry,
         [f"{'left out' if flag else 'counted'} "
          f"(surcharge_in_bearing={not flag}): {BEARING_BASIS[not flag]}"]))
     return out
+
+
+def level_depths_choices(geom: MSEWallGeometry,
+                         sigma_H_average: Optional[str] = None) -> list:
+    """How Tmax took each level's share of the wall when the levels' depths
+    are given (``geom.level_depths``, GM-273), as a result's ``choices``:
+    its contributory height Svt (GEC-11 Vol I pp. 4-46, 4-47) and how
+    sigma_H was averaged over it (``sigma_H_average``,
+    :data:`SIGMA_H_AVERAGES`). None for the levels the module places at Sv
+    (i + 1/2), each taking Sv and sigma_H at its depth."""
+    from geotech_common.choices import choice, how_given
+    if geom.level_depths is None:
+        return []
+    average = sigma_H_average_of(sigma_H_average)
+    svt = [b - a for a, b in geom.contributory_heights]
+    ends = (f"the top level's from the top of the wall ({svt[0]:.3g} m)"
+            + (f" and the bottom level's to its base ({svt[-1]:.3g} m)"
+               if len(svt) > 1 else ", to its base"))
+    return [choice(
+        "Tmax at each level from the depths given: its contributory height "
+        "Svt and sigma_H over it",
+        f"Svt from the midpoints between levels, {ends}; "
+        f"{SIGMA_H_AVERAGE_TEXT[average]} (sigma_H_average '{average}')",
+        how_given(sigma_H_average, None, name="sigma_H_average"),
+        CONTRIBUTORY_HEIGHT_BASIS,
+        [SIGMA_H_AVERAGE_ALTERNATIVE[average]])]
 
 
 def _external_dict(t: Dict[str, Any], q_allowable: float = None,
@@ -2621,6 +2796,7 @@ def analyze_mse_wall(
     Cu_backfill: float = None,
     F_star_tested=None,
     alpha_tested: float = None,
+    sigma_H_average: Optional[str] = None,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -2684,6 +2860,11 @@ def analyze_mse_wall(
     F_star_tested, alpha_tested : optional
         F* and alpha from pullout tests (GEC-11 Vol I Table 3-6 note (i),
         p. 3-16); see :func:`check_internal_stability`. Default None.
+    sigma_H_average : str, optional
+        With ``geom.level_depths``: 'trapezoidal' or 'midpoint', how
+        sigma_H is averaged over each level's contributory height (GEC-11
+        Vol I p. 4-47); see :func:`check_internal_stability`. Default None:
+        'trapezoidal'. Refused without level depths (GM-273).
 
     Returns
     -------
@@ -2698,14 +2879,22 @@ def analyze_mse_wall(
         a FOS_rupture below 1.0 (:func:`tensile_strength_choice`), and for
         ribbed steel strips the F* at the top of the wall, or a tested F*
         or alpha
-        (:func:`pullout_factor_choices`). A steel strip or grid with no
+        (:func:`pullout_factor_choices`), and with the levels' depths given
+        each level's contributory height and sigma_H average
+        (:func:`level_depths_choices`). A steel strip or grid with no
         coverage ratio and no horizontal spacing is refused
         (:func:`coverage_ratio`, GM-256), and so is a geosynthetic of no
         stated kind given no tested alpha (:func:`pullout_alpha`).
     """
-    # refuse before any work (GM-256; per level, GM-261 and GM-266)
-    rs = level_reinforcements(reinforcement, geom.reinforcement_depths)
-    coverage_ratios(reinforcement, geom.reinforcement_depths)
+    # refuse before any work (GM-256; per level, GM-261 and GM-266; the
+    # levels' depths, GM-273)
+    if geom.level_depths is None and sigma_H_average is not None:
+        raise ValueError(SIGMA_H_NEEDS_DEPTHS)
+    sigma_H_average_of(sigma_H_average)
+    source = levels_source(geom)
+    rs = level_reinforcements(reinforcement, geom.reinforcement_depths,
+                              source)
+    coverage_ratios(reinforcement, geom.reinforcement_depths, source)
     _check_tested(F_star_tested, alpha_tested)
     _level_alphas(reinforcement, rs, alpha_tested)
     if (lrfd_external and gamma_foundation is not None
@@ -2726,7 +2915,7 @@ def analyze_mse_wall(
     internal = check_internal_stability(
         geom, gamma_backfill, phi_backfill, reinforcement,
         Cu_backfill=Cu_backfill, F_star_tested=F_star_tested,
-        alpha_tested=alpha_tested,
+        alpha_tested=alpha_tested, sigma_H_average=sigma_H_average,
     )
 
     all_pass_internal = all(r["passes"] for r in internal)
@@ -2778,5 +2967,6 @@ def analyze_mse_wall(
         + tensile_strength_choice(reinforcement, internal)
         + pullout_factor_choices(geom, gamma_backfill, phi_backfill,
                                  reinforcement, Cu_backfill, internal,
-                                 F_star_tested, alpha_tested),
+                                 F_star_tested, alpha_tested)
+        + level_depths_choices(geom, sigma_H_average),
     )

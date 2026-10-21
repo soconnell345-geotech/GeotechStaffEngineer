@@ -346,7 +346,8 @@ NOT_REACHED = {
         "retaining_walls|mse_lrfd_external_stability",
         "retaining_walls|mse_wall", "retaining_walls|mse_wall#surcharge",
         "retaining_walls|mse_wall#per_level",
-        "retaining_walls|mse_wall#geogrid")},
+        "retaining_walls|mse_wall#geogrid",
+        "retaining_walls|mse_wall#depths")},
     ("calc_package|retaining_wall_package#surcharge",
      "surcharge_in_bearing"):
         "the probe gives no q_allowable, so the bearing check it enters "

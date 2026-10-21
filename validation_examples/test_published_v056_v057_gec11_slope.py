@@ -282,6 +282,42 @@ def test_v056_internal_by_level_in_one_run():
         0.80, abs=0.005)
 
 
+def test_v056_e3_at_its_depths():
+    """GM-273: E3's twelve levels given as the depths Table E3-7.1 prints
+    (Z = 1.25 to 28.75 ft, p. E3-13), each over its contributory height
+    Svt = Z+ - Z- = 2.50 ft, with sigma_H the average of its values at Z-
+    and Z+ as E3 takes it (Level 4: 0.5 (0.38 + 0.36) ksf from the slope,
+    p. E3-15), the default. Tmax times 1.35 over a 5 ft panel reproduces
+    Table E3-7.3 (p. E3-19) within 0.4 % at every level, as the module's
+    own layout does (sigma_H at the level, within 0.25 %): E3's levels are
+    the module's at Sv 2.5 ft in its 30 ft wall, and the two readings of
+    sigma_H differ only by the curvature of Kr/Ka times the depth."""
+    Sh = [5.0 * FT / E3_TABLE_7_3[i][2] for i in sorted(E3_TABLE_7_3)]
+    strip = Reinforcement(name="E3 ribbed strip 50x4 mm",
+                          type="metallic_strip", Tallowable=TN_STRIP / B_STRIP,
+                          width=B_STRIP, Fy=448.0, thickness=0.004,
+                          horizontal_spacing=Sh)
+    geom = MSEWallGeometry(
+        wall_height=30 * FT, reinforcement_length=24 * FT,
+        backfill_slope=BETA,
+        level_depths=[(1.25 + 2.5 * i) * FT for i in range(12)])
+    levels = check_internal_stability(geom, GAMMA, 34.0, strip,
+                                      Cu_backfill=7.0)
+    even = check_internal_stability(_e3_geom(), GAMMA, 34.0, strip,
+                                    Cu_backfill=7.0)
+    for level, (Tmax, phi_Pr, Ng) in E3_TABLE_7_3.items():
+        lv = levels[level - 1]
+        assert lv["Svt_m"] / FT == pytest.approx(2.5, abs=0.005)
+        assert 1.35 * lv["Tmax_kN_per_m"] * 5 * FT / KIP == pytest.approx(
+            Tmax, rel=0.004), level
+        assert 1.35 * even[level - 1]["Tmax_kN_per_m"] * 5 * FT / KIP == \
+            pytest.approx(Tmax, rel=0.0025), level
+        assert lv["FOS_rupture"] * 0.75 / 1.35 == pytest.approx(
+            Ng * 0.75 * 13.00 / Tmax, rel=0.004)
+        # pullout does not depend on Svt
+        assert lv["Pr_kN_per_m"] == even[level - 1]["Pr_kN_per_m"]
+
+
 def test_v056_the_built_in_strip_is_E3s():
     """GM-267: the tool's built-in strip is E3's 50 x 4 mm strip, 0.55 Fy
     Ec (GEC-11 Vol I p. 4-77) at E3's Ec 0.102 in. (p. E3-16): 31.93 kN a
@@ -578,8 +614,9 @@ def test_v057_rupture_cdr_by_layer(z, Sv, Tmax, grade, cdr):
 
 def test_v057_rupture_in_one_run():
     """GM-268: the whole wall through ``analyze_mse_wall`` with E1's GG-I
-    at every level and Sv 2 ft (the module takes one spacing and one
-    reinforcement; E1's layout varies both): every level requires 1.5 of
+    at every level and Sv 2 ft (E1's own layout, its layers' depths and
+    grades, is test_v057_e1_in_one_run_at_its_layers): every level
+    requires 1.5 of
     FOS_rupture = Tal / Tmax; the levels at 1, 3 and 5 ft pass and those
     from 7 ft down fail (1.46 at 7 ft), GG-I being at its limit at E1's
     layer 4 (CDR 1.00 at Z 6.67 ft), and the Tal choice says so."""
@@ -608,3 +645,48 @@ def test_v057_rupture_in_one_run():
     for a, b in zip(r.internal_results, built_in.internal_results):
         assert a["FOS_rupture"] == pytest.approx(b["FOS_rupture"],
                                                  abs=1e-3)
+
+
+def test_v057_e1_in_one_run_at_its_layers():
+    """GM-273: E1's whole wall in one run, its eleven layers at the depths
+    Tables E1-7.4 and E1-7.5 print (0.67 ft, 2 ft apart to 16.67 ft, then
+    18.67 and 19.33 ft; pp. E1-16, E1-17) with their grades (GG-I at
+    Layers 1 to 4, GG-II below; Table E1-7.4, reinforcement_per_level,
+    GM-266). Each layer's contributory height is E1's Sv: 1.67 ft at
+    Layer 1, 2.0 ft at Layers 2 to 9, 1.33 and 1.0 ft at Layers 10 and 11
+    (Table E1-7.4). E1 takes Layer 1's TMAX at ZAve 0.835 ft, the middle
+    of its 1.67 ft (p. E1-14), and the others at Z; for a geogrid (Kr/Ka
+    = 1) the average over the contributory height is sigma_H at its middle,
+    which is Z for Layers 2 to 9. TMAX times 1.35 reproduces Table E1-7.2
+    (p. E1-14) within 0.3 % at Layers 1 to 9 and 0.6 % at Layer 11; at
+    Layer 10, where Z is not the middle of its 1.33 ft (17.67 to 19.0 ft),
+    it is 1.4 % over the printed 1,366 lb/ft, the safe side (at Z it was
+    3.0 % over; test_v057_rupture_cdr_by_layer). The rupture CDRs follow
+    within 0.6 % (Layer 10 1.5 % under), and the module's own La, Le and
+    Zp give the pullout CDRs of Table E1-7.5 within 1.1 %."""
+    z = [lv[0] for lv in E1_TABLE_7_5]
+    grades = [lv[3] for lv in E1_TABLE_7_4]
+    geom = MSEWallGeometry(wall_height=20 * FT, reinforcement_length=18 * FT,
+                           backfill_slope=BETA,
+                           broken_backslope_height=9 * FT,
+                           surcharge=0.25 * KSF,
+                           level_depths=[v * FT for v in z])
+    r = analyze_mse_wall(geom, GAMMA, 34.0,
+                         [_e1_geogrid(g) for g in grades],
+                         phi_foundation=30.0, phi_retained=30.0)
+    rows = r.internal_results
+    assert len(rows) == 11
+    for layer, (lv, (_, Sv, Tmax, grade, cdr), (zz, Le, _, Zp, po)) in \
+            enumerate(zip(rows, E1_TABLE_7_4, E1_TABLE_7_5), start=1):
+        assert lv["reinforcement"] == f"E1 {grade}"
+        assert lv["Svt_m"] / FT == pytest.approx(Sv, abs=0.005), layer
+        assert 1.35 * lv["Tmax_kN_per_m"] * 1000 / KFT == pytest.approx(
+            Tmax, rel={10: 0.015, 11: 0.006}.get(layer, 0.003)), layer
+        assert lv["FOS_rupture"] / 1.5 == pytest.approx(
+            cdr, rel=0.015 if layer == 10 else 0.0065), layer
+        assert lv["Le_m"] / FT == pytest.approx(Le, abs=0.03), layer
+        assert lv["Zp_m"] / FT == pytest.approx(Zp, abs=0.02), layer
+        assert lv["FOS_pullout"] * 0.90 / 1.35 == pytest.approx(
+            po, rel=0.011), layer
+    assert 1.35 * rows[9]["Tmax_kN_per_m"] * 1000 / KFT == pytest.approx(
+        1386, abs=1)

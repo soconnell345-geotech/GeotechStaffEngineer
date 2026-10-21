@@ -11,7 +11,7 @@ References:
 import math
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Sequence, Tuple
 
 
 @dataclass
@@ -123,7 +123,17 @@ class MSEWallGeometry:
         If None, auto-sized to max(0.7*H, 2.5).
     reinforcement_spacing : float, optional
         Vertical spacing between reinforcement levels Sv (m).
-        Default 0.60.
+        Default 0.60. Without ``level_depths`` the levels sit at Sv (i +
+        1/2) below the top, int(H / Sv) of them, and each takes Sv as its
+        spacing in Tmax. Not used with ``level_depths``.
+    level_depths : sequence of float, optional
+        Depths z of the reinforcement levels below the top of the wall (m),
+        from the top down, as GEC-11 Vol II's examples print Z (Example E4,
+        Table E4-7.1, p. E4-11: 1.87 ft, then 2.5 ft apart to 24.37 ft).
+        Each must lie inside the wall (0 < z < H) and below the one above.
+        Each level then takes its contributory height (:attr:`
+        contributory_heights`, GEC-11 Vol I pp. 4-46, 4-47). Default None:
+        the levels at Sv (i + 1/2) (GM-273).
     backfill_slope : float, optional
         Slope of the backfill surface above the wall, beta (degrees from
         horizontal), rising away from the face. Default 0 (level).
@@ -142,12 +152,16 @@ class MSEWallGeometry:
     backfill_slope: float = 0.0
     surcharge: float = 0.0
     broken_backslope_height: Optional[float] = None
+    level_depths: Optional[Sequence[float]] = None
 
     def __post_init__(self):
         if self.wall_height <= 0:
             raise ValueError(f"Wall height must be positive, got {self.wall_height}")
         if self.reinforcement_spacing <= 0:
             raise ValueError(f"Spacing must be positive, got {self.reinforcement_spacing}")
+        if self.level_depths is not None:
+            self.level_depths = _checked_depths(self.level_depths,
+                                                self.wall_height)
         if not 0 <= self.backfill_slope < 90:
             raise ValueError(
                 f"backfill_slope must be from 0 to below 90 degrees, rising "
@@ -169,13 +183,71 @@ class MSEWallGeometry:
     @property
     def n_reinforcement_levels(self) -> int:
         """Number of reinforcement levels."""
+        if self.level_depths is not None:
+            return len(self.level_depths)
         return max(1, int(self.wall_height / self.reinforcement_spacing))
 
     @property
     def reinforcement_depths(self) -> List[float]:
-        """Depth of each reinforcement level from top of wall (m)."""
+        """Depth of each reinforcement level from top of wall (m): the
+        ``level_depths`` given, else Sv (i + 1/2)."""
+        if self.level_depths is not None:
+            return list(self.level_depths)
         n = self.n_reinforcement_levels
         return [
             round(self.reinforcement_spacing * (i + 0.5), 3)
             for i in range(n)
         ]
+
+    @property
+    def contributory_heights(self) -> List[Tuple[float, float]]:
+        """Each level's contributory height (z-, z+), depths below the top
+        of the wall (m), for ``level_depths`` given (GM-273). GEC-11 Vol I
+        p. 4-46: "The contributory height is defined as the midpoint between
+        vertically adjacent reinforcement elevations, except for the top
+        and bottom layers reinforcement"; p. 4-47: for those, Sv "is the
+        distance from top or bottom of wall, respectively, to the midpoint
+        between the first and second layer" (Fig. 4-14). Vol II Example E4
+        tabulates it as Svt = Z+ - Z- (Table E4-7.1, p. E4-11). Raises
+        without ``level_depths``: the module's own levels each take Sv."""
+        if self.level_depths is None:
+            raise ValueError(
+                "contributory_heights is for level_depths given; the levels "
+                "at reinforcement_spacing (i + 1/2) each take Sv")
+        z = list(self.level_depths)
+        mids = [(a + b) / 2.0 for a, b in zip(z, z[1:])]
+        return list(zip([0.0] + mids, mids + [self.wall_height]))
+
+
+def _checked_depths(depths, H: float) -> Tuple[float, ...]:
+    """``level_depths`` as a tuple of floats, refused unless each lies
+    inside the wall and below the one above it (GM-273)."""
+    takes = ("level_depths takes the depths z (m) of the reinforcement "
+             "levels below the top of the wall, from the top down, as GEC-11 "
+             "Vol II's examples print Z (Example E4, Table E4-7.1, p. E4-11)")
+    if isinstance(depths, (str, bytes)) or not hasattr(depths, "__len__") \
+            or not len(depths):
+        raise ValueError(f"{takes}; got {depths!r}")
+    try:
+        z = tuple(float(v) for v in depths)
+    except (TypeError, ValueError):
+        raise ValueError(f"{takes}: one number a level; got "
+                         f"{depths!r}") from None
+    if any(isinstance(v, bool) or not math.isfinite(f)
+           for v, f in zip(depths, z)):
+        raise ValueError(f"{takes}: one number a level; got {depths!r}")
+    for i, zi in enumerate(z, start=1):
+        if not 0.0 < zi < H:
+            raise ValueError(
+                f"level_depths: level {i} at z = {zi:g} m is outside the "
+                f"wall: give each level's depth below the top of the wall "
+                f"(z > 0) and above its base (z < wall_height = {H:g} m), "
+                "from the top down")
+    for i in range(1, len(z)):
+        if not z[i] > z[i - 1]:
+            raise ValueError(
+                f"level_depths must increase from the top down, each level "
+                f"below the one above it: level {i + 1} at z = {z[i]:g} m is "
+                f"not below level {i} at z = {z[i - 1]:g} m; give the depths "
+                "in order, one a level")
+    return z

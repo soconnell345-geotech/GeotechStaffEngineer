@@ -566,24 +566,20 @@ E4_TABLE_7_4_MATS = {
     10: (0.208, 17.24, 19.66, "4W15+W11x1.5'")}
 
 
-class _E4Levels(MSEWallGeometry):
-    """E4's wall with its levels at the printed Z (Table E4-7.4, p. E4-18):
-    1.87 ft, then 2.5 ft apart to 24.37 ft. The module's levels sit at
-    Sv (i + 1/2), which for Sv 2.5 ft puts the first at 1.25 ft."""
-
-    @property
-    def reinforcement_depths(self):
-        return [E4_TABLE_7_4[k][0] * FT for k in sorted(E4_TABLE_7_4)]
-
-    @property
-    def n_reinforcement_levels(self):
-        return len(E4_TABLE_7_4)
+def _e4_geom():
+    """E4's wall with its levels at the printed Z (Table E4-7.1, p. E4-11;
+    Table E4-7.4, p. E4-18): 1.87 ft, then 2.5 ft apart to 24.37 ft, given
+    as level_depths (GM-273). Each level takes its contributory height Svt
+    = Z+ - Z-, 3.12 ft at Level 1 and 2.52 ft at Level 10, and sigma_H
+    averaged over it (p. E4-13). Without the depths the module puts its
+    levels at Sv (i + 1/2), the first at 1.25 ft for Sv 2.5 ft."""
+    return MSEWallGeometry(
+        wall_height=H, reinforcement_length=L, surcharge=Q_LL,
+        level_depths=[E4_TABLE_7_4[k][0] * FT for k in sorted(E4_TABLE_7_4)])
 
 
-def _e4_by_level(reinforcement):
-    geom = _E4Levels(wall_height=H, reinforcement_length=L,
-                     reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
-    return analyze_mse_wall(geom, GAMMA, PHI_R, reinforcement)
+def _e4_by_level(reinforcement, **kw):
+    return analyze_mse_wall(_e4_geom(), GAMMA, PHI_R, reinforcement, **kw)
 
 
 def _e4_mats():
@@ -613,12 +609,14 @@ def test_v010_e4_mats_per_level():
     table to 0.3 %. The tension check is the ASD one (Tal = 0.48 Fy Ac,
     GEC-11 Vol I p. 4-77, against the unfactored Tmax), so FOS_rupture is
     set against Ng phi_s Tn / Tmax, the LRFD ratio Table E4-7.4 implies.
-    They match to 2 % at Levels 2 to 10, and Level 10 gives 1.018 against
-    4 x 4.84 / 19.05 = 1.016. Level 1 is 13 % over, from the top level's
-    tributary depth: E4 gives it the wall from the top to midway to Level
-    2, Svt = 3.12 ft (Table E4-7.1, p. E4-11), with sigma_H averaged over
-    it (p. E4-13); the module gives every level Sv = 2.5 ft and sigma_H at
-    the level (3.12 / 2.5 x 0.910 = 1.136; BACKLOG GM-273)."""
+    At E4's own depths (GM-273) they match within 1.1 % at every level,
+    each about 1 % under: the ASD Tal 0.48 Fy against E4's phi_s Tn /
+    1.35 = 0.65 Fy / 1.35 = 0.481 Fy, and E4's spreadsheet 3.38 and 4.84 k
+    against 3.36 and 4.82 by hand (p. E4-18). Level 1 gives 2.145 against
+    4 x 3.38 / 6.25 = 2.163, and Level 10 1.009 against 4 x 4.84 / 19.05 =
+    1.016. Before GM-273 the levels sat at E4's Z through a test geometry
+    that took Sv = 2.5 ft and sigma_H at the level, so Level 1 was 13 %
+    over (Svt 3.12 ft, Table E4-7.1, p. E4-11)."""
     res = _e4_by_level(_e4_mats())
     rows = res.internal_results
     assert [r["reinforcement"] for r in rows] == [m.name for m in _e4_mats()]
@@ -631,19 +629,65 @@ def test_v010_e4_mats_per_level():
         assert r["Le_m"] / FT == pytest.approx(Le_ft, abs=0.03), level
         assert 0.90 * r["Pr_kN_per_m"] / r["Rc"] / KFT == pytest.approx(
             phiPr, rel=0.003), level
-        if level > 1:
-            assert r["FOS_rupture"] == pytest.approx(
-                Ng * phiTn / Tmax, rel=0.02), level
-    assert rows[9]["FOS_rupture"] == pytest.approx(1.018, abs=0.001)
+        assert r["FOS_rupture"] == pytest.approx(
+            Ng * phiTn / Tmax, rel=0.011), level
+    assert rows[9]["FOS_rupture"] == pytest.approx(1.009, abs=0.001)
     assert 4 * 4.84 / 19.05 == pytest.approx(1.016, abs=0.001)
-    assert rows[0]["FOS_rupture"] / (4 * 3.38 / 6.25) == pytest.approx(
-        1.127, abs=0.002)
+    assert rows[0]["FOS_rupture"] == pytest.approx(2.145, abs=0.001)
+    assert 4 * 3.38 / 6.25 == pytest.approx(2.163, abs=0.001)
+
+
+#: Table E4-7.4 (p. E4-18) sigma_H (ksf, factored) where the hand steps
+#: print it (p. E4-13 for Level 4; test_v010_Tmax_primitive_matches_
+#: barmat_levels for the others), Level: sigma_H.
+E4_SIGMA_H = {1: 0.40, 4: 1.02, 7: 1.26, 10: 1.51}
+
+
+def test_v010_e4_in_one_run_at_its_depths():
+    """PASS (GM-273): E4's ten levels through ``analyze_mse_wall`` at the
+    depths Table E4-7.1 prints (p. E4-11), each over its contributory
+    height Svt = Z+ - Z- (3.12 ft at Level 1, 2.50 ft at Levels 2 to 9,
+    2.52 ft at Level 10) with sigma_H the average of its values at Z- and
+    Z+ (p. E4-13), the default. Tmax times gamma_EV 1.35 over a 5 ft
+    panel reproduces Table E4-7.4's (p. E4-18) at every level within 0.2 %
+    and sigma_H within 0.01 ksf. The other average GEC-11 Vol I p. 4-47
+    gives, sigma_H at the middle of Svt, is within 1.7 % (Level 1 6.36 k,
+    Level 8 1.3 % under, where Svt spans the end of Kr/Ka at 20 ft), and
+    the module's own layout (Sv 2.5 ft, the first level at 1.25 ft) puts
+    Level 1 at 4.69 k, 25 % under."""
+    wp = 5.0 * FT
+    rows = _e4_by_level(_e4_mats()).internal_results
+    assert len(rows) == 10
+    for level, r in zip(sorted(E4_TABLE_7_4), rows):
+        Z, Tmax = E4_TABLE_7_4[level][:2]
+        assert r["depth_m"] / FT == pytest.approx(Z, abs=0.02), level
+        assert 1.35 * r["Tmax_kN_per_m"] * wp / KIP == pytest.approx(
+            Tmax, rel=0.002), level
+        if level in E4_SIGMA_H:
+            assert 1.35 * r["sigma_H_kPa"] / KSF == pytest.approx(
+                E4_SIGMA_H[level], abs=0.01), level
+    assert [round(r["Svt_m"] / FT, 2) for r in rows] == \
+        [3.12] + [2.5] * 8 + [2.52]
+    (c,) = [c for c in _e4_by_level(_e4_mats()).choices
+            if "contributory height" in c["what"]]
+    assert "sigma_H_average 'trapezoidal'" in c["chosen"]
+    mid = _e4_by_level(_e4_mats(),
+                       sigma_H_average="midpoint").internal_results
+    for level, r in zip(sorted(E4_TABLE_7_4), mid):
+        assert 1.35 * r["Tmax_kN_per_m"] * wp / KIP == pytest.approx(
+            E4_TABLE_7_4[level][1], rel=0.017), level
+    even = analyze_mse_wall(
+        MSEWallGeometry(wall_height=H, reinforcement_length=L,
+                        reinforcement_spacing=2.5 * FT, surcharge=Q_LL),
+        GAMMA, PHI_R, _e4_mats()).internal_results
+    assert 1.35 * even[0]["Tmax_kN_per_m"] * wp / KIP == pytest.approx(
+        4.69, abs=0.01)
 
 
 def test_v010_e4_level10_needs_its_w15_mat():
     """PASS (GM-266): at Level 10 (Z = 24.37 ft) E4's 4W15 + W11x1.5' mat
-    carries the tension, FOS_rupture 1.018, and the 4W11 mat of Levels 1
-    to 4 would not: 0.709, its four W11 wires (4 x 3.38 = 13.5 k a panel)
+    carries the tension, FOS_rupture 1.009, and the 4W11 mat of Levels 1
+    to 4 would not: 0.703, its four W11 wires (4 x 3.38 = 13.5 k a panel)
     against the 19.05 k factored Tmax (Table E4-7.4, p. E4-18): 0.71. With
     one reinforcement for the wall (welded_wire_grid_w11) the rupture
     check fails from Level 5 down, where E4 changes to W15."""
@@ -652,7 +696,7 @@ def test_v010_e4_level10_needs_its_w15_mat():
     one = _e4_by_level(dataclasses.replace(WELDED_WIRE_GRID_W11,
                                            horizontal_spacing=5.0 * FT))
     rows = one.internal_results
-    assert rows[9]["FOS_rupture"] == pytest.approx(0.709, abs=0.001)
+    assert rows[9]["FOS_rupture"] == pytest.approx(0.703, abs=0.001)
     assert 4 * 3.38 / 19.05 == pytest.approx(0.71, abs=0.001)
     assert [r["FOS_rupture"] >= 1.0 for r in rows] == [True] * 4 + [False] * 6
     per_level = _e4_by_level(_e4_mats()).internal_results

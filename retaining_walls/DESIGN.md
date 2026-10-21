@@ -1087,8 +1087,10 @@ phi 0.65 as for the 4W11 mat.
 
 **E4 reproduced, mats per level** (`validation_examples/
 test_published_v009_v011.py`, `test_v010_e4_mats_per_level`), at E4's
-level depths (a test geometry puts the levels at the printed Z; the
-module's own levels sit at Sv (i + 1/2)). F*, Le and phi_p Pr match Table
+level depths (at GM-266 a test geometry put the levels at the printed Z,
+each taking Sv = 2.5 ft; since GM-273 they are given as `level_depths`,
+and the FOS_rupture table below is GM-266's, before it: GM-273's section
+has E4 at its contributory heights). F*, Le and phi_p Pr match Table
 E4-7.4 to 0.3 % at all ten levels (F* 0.438 to 0.208 at Levels 5 to 10,
 the W15 mats' 1 ft and 1.5 ft transverse spacings). FOS_rupture (Tal x Rc
 over the unfactored Tmax, ASD) against Ng phi_s Tn / Tmax (LRFD), the
@@ -1114,10 +1116,9 @@ as an input). With the 4W11 mat at every
 level the check fails from Level 5 down, 0.709 at Level 10 against E4's
 4 x 3.38 / 19.05 = 0.71 (`test_v010_e4_level10_needs_its_w15_mat`).
 
-**Not covered** (for the owner): the module takes one Sv, so a wall's
-level depths are Sv (i + 1/2); E4's (1.87 ft, then 2.5 ft apart) and E1's
-are reproduced only through a test geometry. Level depths, or Sv per
-level, as an input would close it.
+**Not covered at GM-266** (closed by GM-273, below): the module took
+one Sv, so a wall's level depths were Sv (i + 1/2); E4's (1.87 ft, then
+2.5 ft apart) and E1's were reproduced only through a test geometry.
 
 Tests: `tests/test_mse_per_level_reinforcement.py`,
 `funhouse_agent/tests/test_mse_per_level_reinforcement_adapter.py`,
@@ -1140,6 +1141,132 @@ basis (as a strip wall already did), each level gives the value it took
 (`alpha`), and the alpha choice names the value and Table 3-6's row. The
 per-level probe runs without alpha_tested, and a geogrid probe covers the
 0.8 row. No number changed.
+
+## The levels' depths as an input (GM-273, 2026-10-21)
+
+**What GEC-11 prints.** Vol I (FHWA-NHI-10-024), read on the rendered
+pages:
+
+- p. 4-46: with equally spaced levels, "sigma_H, calculated at the level
+  of the reinforcement, is at the center of the contributory height. The
+  contributory height is defined as the midpoint between vertically
+  adjacent reinforcement elevations, except for the top and bottom layers
+  reinforcement."
+- p. 4-47: "For the top and bottom layers of reinforcement, Sv is the
+  distance from top or bottom of wall, respectively, to the midpoint
+  between the first and second layer (from top or bottom of wall,
+  respectively) of reinforcement" (Fig. 4-14). TMAX for those layers,
+  "and for intermediate layers that do not have equally spaced adjacent
+  layers, is calculated as the product of the contributory height and the
+  average factored horizontal stress acting upon that contributory height.
+  The average stress can be calculated based upon the tributary
+  trapezoidal area (i.e. average of the stress at top and at the bottom of
+  the contributory height) or at the midpoint of the contributory height."
+
+Vol II (FHWA-NHI-10-025): Examples E3 and E4 tabulate Svt = Z+ - Z-
+(Table E3-7.1, p. E3-13; Table E4-7.1, p. E4-11) and take sigma_H as the
+average of its values at Z- and Z+ at every level (p. E3-15, Level 4:
+sigma_H-surcharge = 0.5 (0.38 + 0.36) ksf; p. E4-13), Kr/Ka at each. E1
+takes its layers' TMAX at Z, Layer 1's at ZAve 0.835 ft, the middle of its
+1.67 ft (p. E1-14); for a geogrid (Kr/Ka = 1) the trapezoid and the
+midpoint agree, and for Layers 2 to 9 the midpoint is Z.
+
+**What the module does.** `MSEWallGeometry(level_depths=...)` takes the
+levels' depths below the top of the wall, from the top down, as the
+examples print Z; each must lie inside the wall (0 < z < H) and below the
+one above, else it is refused with what to give. `contributory_heights`
+gives each level's (z-, z+): the midpoints between levels, 0 for the top
+level and H for the bottom. `check_internal_stability` and
+`analyze_mse_wall` then take Tmax = sigma_H x Svt
+(`contributory_Tmax`), sigma_H averaged over Svt by `sigma_H_average`:
+'trapezoidal' (the default, as E3 and E4) or 'midpoint'. A sloping
+backfill's sigma_2 and a live load enter sigma_H as before. Each level
+also gives `Svt_m` and `sigma_H_kPa` (unfactored), and the result's
+`choices` say how Svt was taken and which average, with the other
+(`level_depths_choices`). A reinforcement list (GM-266) or a spacing or
+coverage ratio per level (GM-261) of another length than the depths is
+refused, naming the depths and that `level_depths` gives them.
+`sigma_H_average` without depths is refused (the levels at Sv take sigma_H
+at the level). Pullout is unchanged: it does not depend on Svt.
+
+The tool (`mse_wall`) takes `level_depths` (alias `reinforcement_depths`)
+and `sigma_H_average` (default 'trapezoidal', applies only with depths);
+`reinforcement_spacing` with `level_depths` is refused, since the depths
+place every level. Left out, `level_depths` is declared (GM-165) as "the
+levels at reinforcement_spacing (i + 1/2) below the top, wall_height /
+reinforcement_spacing of them rounded down, each taking Sv and sigma_H at
+its depth", a trial layout, so `defaults_used` lists it.
+
+**Without depths nothing moved.** Strip, bar mat (E4's wall and mats per
+level), geogrid and a sloping strip wall through `analyze_mse_wall`: the
+results, summaries and calc-package steps are byte-identical to master.
+The tool's result differs only by the `level_depths` line in
+`defaults_used`.
+
+**For the owner.** The even layout (no depths) leaves the strip of wall
+between the bottom level's Sv and the base unassigned when H is not a
+whole number of spacings: E4's wall at Sv 2.5 ft (H 25.64 ft) has its last
+level at 23.75 ft carrying 22.5 to 25.0 ft, so 0.64 ft goes to no level,
+and its first level sits at 1.25 ft where E4's is at 1.87 ft (Level 1
+Tmax 4.69 k a panel against E4's 6.25 k). It is kept for byte-identity;
+`defaults_used` says it is a trial layout.
+
+**E4 reproduced at its depths** (`test_v010_e4_in_one_run_at_its_depths`,
+`test_v010_e4_mats_per_level`): Tmax x 1.35 over a 5 ft panel against
+Table E4-7.4 (p. E4-18), and FOS_rupture against Ng phi_s Tn / Tmax:
+
+| Level | Z (ft) | Svt (ft) | Tmax (k) | Table | FOS_rupture | Ng phi_s Tn / Tmax |
+|---|---|---|---|---|---|---|
+| 1 | 1.87 | 3.12 | 6.24 | 6.25 | 2.145 | 2.163 |
+| 2 | 4.37 | 2.50 | 8.36 | 8.36 | 1.201 | 1.213 |
+| 3 | 6.87 | 2.50 | 10.80 | 10.80 | 1.239 | 1.252 |
+| 4 | 9.37 | 2.50 | 12.76 | 12.77 | 1.049 | 1.059 |
+| 5 | 11.87 | 2.50 | 14.24 | 14.26 | 1.349 | 1.358 |
+| 6 | 14.37 | 2.50 | 15.23 | 15.23 | 1.261 | 1.271 |
+| 7 | 16.87 | 2.50 | 15.73 | 15.71 | 1.221 | 1.232 |
+| 8 | 19.37 | 2.50 | 16.03 | 16.03 | 1.199 | 1.208 |
+| 9 | 21.87 | 2.50 | 17.08 | 17.10 | 1.124 | 1.132 |
+| 10 | 24.37 | 2.52 | 19.03 | 19.05 | 1.009 | 1.016 |
+
+Tmax within 0.2 % at every level (Level 1 was 13 % over through the test
+geometry). FOS_rupture is about 1 % under at every level: the ASD Tal 0.48
+Fy against E4's phi_s Tn / 1.35 = 0.481 Fy, and the table's spreadsheet
+3.38 and 4.84 k a wire against 3.36 and 4.82 by hand (p. E4-18). With
+'midpoint' Tmax is within 1.7 % (Level 1 6.36 k; Level 8 1.3 % under,
+where its Svt spans the end of Kr/Ka at 20 ft). The 4W11 mat at Level 10
+gives 0.703 (E4: 4 x 3.38 / 19.05 = 0.71).
+
+**E1 and E3 at their depths.** E1's eleven layers with their grades
+(`test_v057_e1_in_one_run_at_its_layers`): the contributory heights are
+Table E1-7.4's Sv (1.67, 2.0, 1.33, 1.0 ft); TMAX x 1.35 within 0.3 % of
+Table E1-7.2 at Layers 1 to 9 and 0.6 % at Layer 11; Layer 10 is 1.4 %
+over (1,386 against 1,366 lb/ft), where E1 takes Z = 18.67 ft, not the
+middle of 17.67 to 19.0 ft, and prints less than either; its rupture CDR
+is 1.5 % under, the others within 0.6 %; La, Le and Zp give Table E1-7.5's
+pullout CDRs within 1.1 %. E3's twelve levels (`test_v056_e3_at_its_
+depths`) are the module's own at Sv 2.5 ft (H 30 ft), each Svt 2.5 ft; the
+trapezoid gives Table E3-7.3's Tmax within 0.4 % and sigma_H at the level
+within 0.25 %, the two differing by the curvature of Kr/Ka times depth.
+No test geometry is left: E4's `_E4Levels` subclass is gone, and E1 and E3
+never had one (their per-layer tests are hand primitives at the printed Z
+and Sv).
+
+**Review (2026-10-21).** Checked by hand, formulas written out apart
+from the module: a strip wall under a 15 degree slope (sigma_2 = gamma
+0.35 H tan beta, constant with depth) at uneven depths, both averages,
+and a level bar-mat wall with a 12 kPa live load whose contributory
+heights straddle 20 ft. Tmax agrees at every level to rounding (0.03 %).
+Where Kr/Ka changes with depth sigma_H is not linear over Svt; the
+trapezoid then reads within about 1 % of the true mean of sigma_H over
+Svt (under it above 20 ft, 0.7 % over it at the level that straddles
+20 ft) and the midpoint within 0.3 % above it: the approximation p. 4-47
+offers. Where a geosynthetic wall's FOS_rupture is short, the choices now
+name the input in use for closer levels: level_depths when the depths are
+given (reinforcement_spacing would be refused beside them).
+
+Tests: `tests/test_mse_level_depths.py`,
+`funhouse_agent/tests/test_mse_level_depths_adapter.py`, V-010, V-056,
+V-057, the probe `retaining_walls|mse_wall#depths`.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
