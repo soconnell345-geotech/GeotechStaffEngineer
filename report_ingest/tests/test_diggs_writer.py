@@ -997,6 +997,8 @@ class TestPointsWithAndWithoutAHeight:
         pydiggs = pytest.importorskip("pydiggs")
         path = os.path.join(os.path.dirname(pydiggs.__file__), "schemas",
                             "diggs-schema-2.5.a", "Example_2-DIGGS.XML")
+        if not os.path.exists(path):
+            pytest.skip("this pydiggs build ships no 2.5.a Example_2-DIGGS.XML")
         from subsurface_characterization import parse_diggs
         with open(path, encoding="utf-8") as fh:
             site = parse_diggs(content=fh.read()).site
