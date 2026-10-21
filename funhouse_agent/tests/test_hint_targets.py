@@ -101,3 +101,25 @@ def test_every_hint_key_is_in_the_normalised_form_the_lookup_uses():
            for m, a, t in _all_hint_tables()}
     bad = {k: v for k, v in bad.items() if v}
     assert not bad, f"hint keys the lookup can never match: {bad}"
+
+
+def test_every_hint_is_offered_through_the_real_checker():
+    """Hand each hint key to check_nested_keys as written and require the
+    message to offer the hint's target (an underscored key never was)."""
+    from funhouse_agent.arg_checks import check_nested_keys
+    missed = []
+    for mod, attr, table in _all_hint_tables():
+        for key, targets in table.items():
+            if not targets:
+                continue
+            valid = tuple(targets) + ("zz_other_key",)
+            if key in valid:
+                continue
+            try:
+                check_nested_keys({key: 1}, valid, method="m", label="item",
+                                  hints=table)
+            except ValueError as exc:
+                msg = str(exc)
+                if f"{key} -> {' or '.join(targets)}" not in msg:
+                    missed.append(f"{mod}.{attr}[{key!r}]")
+    assert not missed, f"hints the checker does not offer: {missed}"
