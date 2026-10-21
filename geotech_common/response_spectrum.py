@@ -97,6 +97,53 @@ def pseudo_spectral_accel(accel_g, dt, periods, damping=0.05):
     return Sa
 
 
+def oscillator_response(accel_g, dt, period, damping=0.05):
+    """The displacement and velocity history of one oscillator under the
+    record, at the points ``pseudo_spectral_accel`` reads: Nigam and
+    Jennings (1969), the record linear between its samples, in equal
+    sub-steps of at most a twentieth of the period below 20 record steps a
+    period (GM-275, for the rotated spectra).
+
+    The response runs over the record's length, from rest at its first
+    sample. The largest response between two points is
+    ``peak_between_points``; Sa is ``(2 pi / period)^2`` times it, over g.
+
+    Parameters
+    ----------
+    accel_g : array_like
+        Ground acceleration time history (g).
+    dt : float
+        Time step (s).
+    period : float
+        Oscillator period (s), above 0.
+    damping : float
+        Damping ratio, at least 0 and below 1. Default 0.05 (5 %).
+
+    Returns
+    -------
+    u : numpy.ndarray
+        Relative displacement (m) at every point: the record's samples and
+        the sub-steps between them.
+    v : numpy.ndarray
+        Relative velocity (m/s) at the same points.
+    h : float
+        The time between points (s), ``dt`` over the number of sub-steps.
+    """
+    period = float(period)
+    if not period > 0.0:
+        raise ValueError(f"period must be above 0 s; got {period}")
+    if not 0.0 <= damping < 1.0:
+        raise ValueError(f"damping is a ratio of critical, at least 0 and "
+                         f"below 1; got {damping}")
+    p = -np.asarray(accel_g, dtype=float) * G
+    n_sub = max(1, math.ceil(POINTS_PER_PERIOD * dt / period - 1e-9))
+    if n_sub > 1:
+        p = substeps(p, n_sub)
+    h = dt / n_sub
+    u, v = nigam_jennings(p, h, 2.0 * math.pi / period, damping)
+    return u, v, h
+
+
 def substeps(p, n):
     """``p`` with ``n - 1`` points put evenly on the straight line between
     each pair of its samples."""

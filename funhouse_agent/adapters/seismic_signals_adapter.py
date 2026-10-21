@@ -57,9 +57,9 @@ def _run_intensity_measures(params: dict) -> dict:
 
 
 def _run_rotd_spectrum(params: dict) -> dict:
-    # No pyrotd check: analyze_rotd_spectrum uses pyrotd when it imports and
-    # the numpy implementation of the same procedure (rotd_native) when it
-    # does not, and says which in 'engine' (live smoke G10).
+    # No pyrotd check: analyze_rotd_spectrum computes each component's
+    # response in the time domain and needs neither pyrotd nor eqsig
+    # (GM-275).
     from seismic_signals_agent import analyze_rotd_spectrum
 
     _require_motion(params, method="rotd_spectrum",
@@ -159,7 +159,7 @@ METHOD_INFO = {
     },
     "rotd_spectrum": {
         "category": "Seismic Signals",
-        "brief": "Compute rotated spectral acceleration (RotD0/RotD50/RotD100 or any percentile) from two horizontal components. Uses pyrotd when it imports, otherwise a numpy implementation of the same procedure ('engine' says which).",
+        "brief": "Compute rotated spectral acceleration (RotD0/RotD50/RotD100 or any percentile) from two horizontal components (Boore 2010): each component's oscillator response by Nigam and Jennings (1969), the record linear between samples, rotated through 0-179 deg, the peak at each angle read between samples. RotD100 of a component paired with zeros is that component's response_spectrum.",
         "parameters": {
             "motion_a": {"type": "str", "brief": "Built-in motion name for component A.", "default": None},
             "accel_history_a": {"type": "array", "brief": "Custom acceleration for component A (g).", "default": None},
@@ -183,8 +183,8 @@ METHOD_INFO = {
             "periods_s": "Spectral period array (s).",
             "percentiles": "Percentile labels computed, e.g. ['0', '50', '100'].",
             "spectra": "Dict mapping each percentile label to its Sa array (g), one value per period in periods_s; spectra['50'] is RotD50.",
-            "engine": "'pyrotd', or 'numpy' when pyrotd could not be imported.",
-            "engine_note": "Why the numpy engine ran (the pyrotd import error); only when engine is 'numpy'.",
+            "engine": "'nigam_jennings' (the time-domain responses).",
+            "engine_note": "The method, in words.",
         },
     },
     "signal_processing": {

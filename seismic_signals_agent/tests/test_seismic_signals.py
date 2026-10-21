@@ -1,8 +1,9 @@
 """
 Tests for seismic_signals_agent module.
 
-Tier 1: No eqsig/pyrotd required (result dataclasses, validation, metadata).
-Tier 2: Requires eqsig or pyrotd (integration tests).
+Tier 1: No eqsig required (result dataclasses, validation, metadata).
+Tier 2: Requires eqsig (integration tests), except RotD, which needs
+neither eqsig nor pyrotd since GM-275.
 """
 
 import json
@@ -23,7 +24,6 @@ from seismic_signals_agent.results import (
 from seismic_signals_agent.signal_utils import has_eqsig, has_pyrotd
 
 requires_eqsig = pytest.mark.skipif(not has_eqsig(), reason="eqsig not installed")
-requires_pyrotd = pytest.mark.skipif(not has_pyrotd(), reason="pyrotd not installed")
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ class TestRotDSpectrumResult:
         assert set(d["spectra"]) == {"0", "50", "100"}
         assert max(d["spectra"]["50"]) == pytest.approx(d["peak_rotd50_g"],
                                                         abs=1e-4)
-        assert d["engine"] == "pyrotd"
+        assert d["engine"] == "nigam_jennings"
 
     def test_to_dict_json_serializable(self):
         r = _make_rotd_spectrum_result()
@@ -690,85 +690,197 @@ class TestOneSpectrumCode:
 
 
 # ===================================================================
-# Tier 2: RotD integration tests — pyrotd when it imports, otherwise the
-# numpy implementation of the same procedure (rotd_native), so these run
-# everywhere.
+# Tier 2: RotD from time-domain oscillator responses (GM-275); numpy and
+# scipy only, so these run everywhere.
 # ===================================================================
 
-def _load_pyrotd_bypassing_pkg_resources():
-    """pyrotd 0.6 only uses pkg_resources for its __version__; load it with
-    a stub so it can serve as the oracle for the numpy implementation."""
-    import importlib
-    import importlib.metadata as md
-    import importlib.util
-    import sys
-    import types
-    if importlib.util.find_spec("pyrotd") is None:
-        pytest.skip("pyrotd not installed; no oracle")
-    added = "pkg_resources" not in sys.modules
-    if added:
-        stub = types.ModuleType("pkg_resources")
-        stub.get_distribution = lambda n: types.SimpleNamespace(
-            version=md.version(n))
-        sys.modules["pkg_resources"] = stub
-    try:
-        pyrotd = importlib.import_module("pyrotd")
-    finally:
-        if added:
-            del sys.modules["pkg_resources"]
-    pyrotd.processes = 1   # no worker pool (Windows spawn re-imports)
-    return pyrotd
+_ANGLES = np.radians(np.arange(180))
 
 
-class TestRotDNative:
-    def test_matches_pyrotd(self):
-        """The fallback reproduces pyrotd 0.6.1 to round-off (measured
-        max relative difference ~2e-16 on these records)."""
-        from opensees_agent.ground_motions import validate_motion_input
-        from seismic_signals_agent.rotd_native import rotated_spectral_accels
-        pyrotd = _load_pyrotd_bypassing_pkg_resources()
-        a, dt = validate_motion_input("synthetic_pulse", None, None)
-        b, _ = validate_motion_input("synthetic_long", None, None)
-        n = max(len(a), len(b))
-        a = np.pad(a, (0, n - len(a)))
-        b = np.pad(b, (0, n - len(b)))
-        periods = np.logspace(-2, 1, 30)
-        ref = pyrotd.calc_rotated_spec_accels(
-            dt, a, b, 1.0 / periods, osc_damping=0.05,
-            percentiles=[0, 50, 100])
-        ours = rotated_spectral_accels(dt, a, b, periods, 0.05, [0, 50, 100])
-        for p in (0, 50, 100):
-            expected = np.asarray(ref[ref.percentile == p].spec_accel, float)
-            np.testing.assert_allclose(ours[float(p)], expected, rtol=1e-9)
+def _rotd_of(ya, yb, period, percentiles=(0, 50, 100)):
+    """RotDnn (g) of two displacement histories (m) on the same points:
+    the peak |ya cos + yb sin| at each of 0-179 deg, linear percentiles."""
+    peaks = np.empty(len(_ANGLES))
+    for i in range(0, len(_ANGLES), 10):
+        c, s = np.cos(_ANGLES[i:i + 10]), np.sin(_ANGLES[i:i + 10])
+        peaks[i:i + 10] = np.max(np.abs(np.outer(c, ya) + np.outer(s, yb)),
+                                 axis=1)
+    w = 2.0 * np.pi / period
+    return {float(p): w * w * np.percentile(peaks, p) / 9.81
+            for p in percentiles}
+
+
+def _lsim_rotd(a, b, dt, period, damping=0.05):
+    """RotD of the two records taken as linear between samples, by scipy's
+    lsim (the matrix exponential, first-order hold) read at least 100 times
+    a period and 10 times a record step."""
+    from scipy.signal import lsim
+    w = 2.0 * np.pi / period
+    n = max(10, math.ceil(100 * dt / period))
+    t = np.arange(len(a)) * dt
+    tf = np.arange((len(a) - 1) * n + 1) * (dt / n)
+    system = ([[0.0, 1.0], [-w * w, -2.0 * damping * w]], [[0.0], [1.0]],
+              [[1.0, 0.0]], [[0.0]])
+    ya = lsim(system, -np.interp(tf, t, a) * 9.81, tf)[1]
+    yb = lsim(system, -np.interp(tf, t, b) * 9.81, tf)[1]
+    return _rotd_of(ya, yb, period)
+
+
+def _padded_fft_rotd(a, b, dt, period, damping=0.05, pad_s=60.0, up=8):
+    """RotD from the frequency domain, as pyrotd computed it but with the
+    records padded by ``pad_s`` of zeros (no wrap-around) and read every
+    dt / ``up``: the records taken as band-limited."""
+    n = len(a) + int(round(pad_s / dt))
+    n += n % 2
+    w0 = 2.0 * np.pi / period
+    w = 2.0 * np.pi * np.fft.rfftfreq(n, dt)
+    h = -9.81 / (w0 ** 2 - w ** 2 + 2j * damping * w0 * w)
+    ys = []
+    for x in (a, b):
+        spectrum = np.zeros(n * up // 2 + 1, dtype=complex)
+        spectrum[:n // 2 + 1] = np.fft.rfft(x, n) * h
+        ys.append(np.fft.irfft(spectrum, n * up) * up)
+    return _rotd_of(ys[0], ys[1], period)
+
+
+def _gilroy_pair():
+    """The stored Gilroy No. 1 EW record (0.005 s, 20 s) and, as the
+    second component, the same record reversed in time (only EW is
+    stored): the same frequency content, its peaks elsewhere."""
+    from opensees_agent.tests import opensees_wiki_free_field as wiki
+    a, dt = wiki.load_record()
+    return a, a[::-1].copy(), dt
+
+
+def _synthetic_pair():
+    """The built-in synthetic pulse (20 s, padded to 40 s) and synthetic
+    long motion (40 s), 0.01 s."""
+    from opensees_agent.ground_motions import get_motion
+    a, dt = get_motion("synthetic_pulse")
+    b, _ = get_motion("synthetic_long")
+    return np.pad(a, (0, len(b) - len(a))), b, dt
+
+
+class TestRotDTimeDomain:
+    """RotD as Boore (2010) defines it, from each component's oscillator
+    response in the time domain (GM-275). Until GM-275 the responses came
+    from the FFT (pyrotd's procedure, or rotd_native's copy of it): on the
+    Gilroy pair +2.1 to +3.3 % at 0.014-0.026 s (the record read as
+    band-limited) and at 3 s RotD0 +29 %, RotD50 -11.6 %, RotD100 -7.3 %
+    (the response wrapped round the unpadded record's end)."""
 
     def test_rotd100_of_one_component_is_its_spectrum(self):
-        """Component B = 0: every rotation is a cos-scaled copy of A, so
-        RotD100 = A's own pseudo-spectral acceleration (theta = 0)."""
-        from seismic_signals_agent.rotd_native import (
-            rotated_spectral_accels, _psa_response,
-        )
-        dt = 0.01
-        t = np.arange(1500) * dt
-        a = 0.2 * np.sin(2 * np.pi * 1.5 * t) * np.exp(-0.2 * t)
-        periods = np.array([0.2, 0.5, 1.0])
+        """Component B zero: every angle is a cos-scaled copy of A, so
+        RotD100 is A's spectrum, value for value, and RotD0 is zero."""
+        from geotech_common.response_spectrum import pseudo_spectral_accel
+        from seismic_signals_agent.rotd_time_domain import (
+            rotated_spectral_accels)
+        a, _, dt = _gilroy_pair()
+        periods = np.logspace(-2, 1, 25)
         out = rotated_spectral_accels(dt, a, np.zeros_like(a), periods)
-        fa = np.fft.rfft(a)
-        freqs = np.linspace(0, 1 / (2 * dt), fa.size)
-        own = [np.abs(_psa_response(freqs, fa, 0.05, 1 / T, 5.0)).max()
-               for T in periods]
-        np.testing.assert_allclose(out[100.0], own, rtol=1e-12)
+        np.testing.assert_array_equal(out[100.0],
+                                      pseudo_spectral_accel(a, dt, periods))
+        assert np.all(out[0.0] < 1e-12)
 
-    def test_analysis_falls_back_and_says_why(self, monkeypatch):
-        from seismic_signals_agent import rotd_spectrum
-        monkeypatch.setattr(rotd_spectrum, "pyrotd_import_error",
-                            lambda: "pyrotd is installed but cannot be "
-                                    "imported: ModuleNotFoundError: x")
+    def test_turning_the_pair_turns_nothing(self):
+        """The pair turned 30 deg (a whole number of the 1 deg steps):
+        the same peaks at shifted angles, so the same RotD."""
+        from seismic_signals_agent.rotd_time_domain import (
+            rotated_spectral_accels)
+        a, b, dt = _synthetic_pair()
+        c, s = math.cos(math.radians(30.0)), math.sin(math.radians(30.0))
+        periods = [0.05, 0.3, 2.0]
+        one = rotated_spectral_accels(dt, a, b, periods)
+        two = rotated_spectral_accels(dt, c * a + s * b, -s * a + c * b,
+                                      periods)
+        for p in (0.0, 50.0, 100.0):
+            np.testing.assert_allclose(two[p], one[p], rtol=1e-9)
+
+    def test_no_angle_loses_its_peak(self):
+        """Motion mostly along 45 deg, and later a smaller motion across
+        it: the angles across peak in the later motion, where the vector
+        is short. Every angle read over every step (the shared
+        peak_between_points) gives the same RotD as the steps the module
+        rotates. The fixed level rotd_native used (0.7 of the smaller
+        component's peak) dropped those steps: RotD0 0.0005 g where all
+        the steps give 0.29 g."""
+        from geotech_common.response_spectrum import (
+            oscillator_response, peak_between_points)
+        from seismic_signals_agent.rotd_time_domain import (
+            rotated_spectral_accels)
+        dt = 0.01
+        t = np.arange(0.0, 20.0, dt)
+        wave = np.sin(4.0 * np.pi * t)
+        along = 0.3 * wave * np.exp(-((t - 5.0) / 1.0) ** 2)
+        across = 0.08 * wave * np.exp(-((t - 14.0) / 0.5) ** 2)
+        a = (along - across) / math.sqrt(2.0)
+        b = (along + across) / math.sqrt(2.0)
+        for period in (0.05, 0.5):
+            ua, va, h = oscillator_response(a, dt, period)
+            ub, vb, _ = oscillator_response(b, dt, period)
+            every = [peak_between_points(math.cos(x) * ua + math.sin(x) * ub,
+                                         math.cos(x) * va + math.sin(x) * vb,
+                                         h) for x in _ANGLES]
+            w2 = (2.0 * np.pi / period) ** 2 / 9.81
+            got = rotated_spectral_accels(dt, a, b, [period],
+                                          percentiles=[0, 10, 50, 100])
+            for p in (0, 10, 50, 100):
+                assert got[float(p)][0] == pytest.approx(
+                    w2 * np.percentile(every, p), rel=1e-12), (period, p)
+        assert got[0.0][0] > 0.2
+
+    @pytest.mark.parametrize("pair, periods", [
+        (_gilroy_pair, (0.0137, 0.2, 3.0)),
+        (_synthetic_pair, (0.05, 0.5, 3.0)),
+    ])
+    def test_against_lsim(self, pair, periods):
+        """RotD0/50/100 at a short, a mid and a long period against lsim's
+        responses rotated the same way: from 0.001 % below to 0.01 % above
+        lsim (which reads only at its points); measured -0.0001 to
+        +0.003 %."""
+        from seismic_signals_agent import analyze_rotd_spectrum
+        a, b, dt = pair()
+        r = analyze_rotd_spectrum(accel_history_a=a, accel_history_b=b,
+                                  dt=dt, periods=periods)
+        for j, period in enumerate(periods):
+            ref = _lsim_rotd(a, b, dt, period)
+            for p in (0.0, 50.0, 100.0):
+                got = r.spectra[p][j]
+                assert ref[p] * (1 - 1e-5) <= got <= ref[p] * (1 + 1e-4), (
+                    period, p, got / ref[p] - 1)
+
+    @pytest.mark.parametrize("pair", [_gilroy_pair, _synthetic_pair])
+    def test_against_the_padded_fft_at_mid_periods(self, pair):
+        """At 0.2, 0.5 and 1 s, where reading the records as band-limited
+        or as straight lines between samples makes little difference:
+        within 0.3 % of the padded FFT (measured 0.01 to 0.16 % below it:
+        the straight lines carry slightly less near the period)."""
+        from seismic_signals_agent.rotd_time_domain import (
+            rotated_spectral_accels)
+        a, b, dt = pair()
+        periods = (0.2, 0.5, 1.0)
+        out = rotated_spectral_accels(dt, a, b, periods)
+        for j, period in enumerate(periods):
+            ref = _padded_fft_rotd(a, b, dt, period)
+            for p in (0.0, 50.0, 100.0):
+                assert out[p][j] == pytest.approx(ref[p], rel=3e-3), (
+                    period, p)
+
+    def test_analysis_names_the_method_and_needs_no_pyrotd(self,
+                                                           monkeypatch):
+        from seismic_signals_agent import rotd_spectrum, signal_utils
+
+        def no_pyrotd():
+            raise ImportError("pyrotd is not installed")
+
+        monkeypatch.setattr(signal_utils, "import_pyrotd", no_pyrotd)
         r = rotd_spectrum.analyze_rotd_spectrum(
             motion_a="synthetic_pulse", motion_b="synthetic_long",
-            percentiles=[0, 50, 84, 100])
+            periods=[0.1, 1.0], percentiles=[0, 50, 84, 100])
         d = r.to_dict()
-        assert d["engine"] == "numpy"
-        assert "cannot be imported" in d["engine_note"]
+        assert d["engine"] == "nigam_jennings"
+        assert "Nigam and Jennings" in d["engine_note"]
+        assert "Boore 2010" in d["engine_note"]
         assert d["percentiles"] == ["0", "50", "84", "100"]
         assert len(d["spectra"]["84"]) == len(d["periods_s"])
 

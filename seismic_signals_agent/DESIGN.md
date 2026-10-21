@@ -2,10 +2,11 @@
 
 ## Purpose
 
-Wraps the eqsig and pyrotd libraries for earthquake signal processing.
-Provides response spectra (Nigam-Jennings, the shared
+Wraps the eqsig library for earthquake signal processing. Provides
+response spectra (Nigam-Jennings, the shared
 `geotech_common.response_spectrum` since GM-274), intensity measures,
-orientation-independent spectra (RotD50/RotD100), and signal processing
+orientation-independent spectra (RotD0/RotD50/RotD100, from the same
+time-domain responses since GM-275; pyrotd before), and signal processing
 (filtering + baseline correction).
 
 ## Architecture
@@ -17,6 +18,7 @@ seismic_signals_agent/
   response_spectrum.py     # analyze_response_spectrum()
   intensity_measures.py    # analyze_intensity_measures()
   rotd_spectrum.py         # analyze_rotd_spectrum()
+  rotd_time_domain.py      # RotD from rotated time-domain responses (GM-275)
   signal_processing.py     # analyze_signal_processing()
   results.py               # 4 result dataclasses
   tests/
@@ -48,12 +50,12 @@ seismic_signals_agent_foundry.py  # Foundry wrapper (project root)
    no longer ships, so on a fresh environment it is installed but
    `import pyrotd` fails. `pyrotd_import_error()` reports which case it is
    (not installed / installed but failing, with the real exception), and
-   `analyze_rotd_spectrum` falls back to `rotd_native.py`, a numpy
+   `analyze_rotd_spectrum` fell back to `rotd_native.py`, a numpy
    implementation of the same procedure (frequency-domain SDOF response,
    rotation 0-179 deg, linear percentiles, the Stewart et al. 2017 reduced
-   rotation set). It matches pyrotd to round-off (test `TestRotDNative`,
-   which loads pyrotd with a stub `pkg_resources` as the oracle). The
-   result says which engine ran (`engine`, `engine_note`).
+   rotation set), equal to pyrotd to round-off. Both went in GM-275 (below);
+   `has_pyrotd()` and `pyrotd_import_error()` stay for callers that check
+   them (the Foundry wrapper).
 
 6. **Results carry what the tool docs promise (2026-10-09, live smoke G6).**
    `ResponseSpectrumResult.to_dict` returns `Sa_max_g`, `T_peak_s`,
@@ -86,13 +88,39 @@ on the Gilroy input, 0.005 s) and within 0.04 % from ten steps up. So Sa
 under ten record steps now rises by up to about 2.5 % (synthetic pulse,
 0.01 s: 0.3000 -> 0.3023 g); no test pinned those values.
 
-## RotD: measured against lsim, not changed (GM-274)
+## RotD from time-domain responses (GM-275, 2026-10-21)
 
-`analyze_rotd_spectrum` (pyrotd's procedure, or `rotd_native`, the same to
-2e-16 on the records below) computes each response in the frequency
-domain. Its RotD100 of one component with the other zero is that
-component's spectrum, so it was checked against lsim like the spectrum
-above: 27 periods 0.01-4 s, the GM-272 records (20 s each).
+**Method.** RotD as Boore (2010) defines it: for each period, each
+component's oscillator displacement history, the two combined at every
+angle (`u_a cos theta + u_b sin theta`, theta 0-179 deg in 1 deg steps), the
+peak at each angle, and RotDnn the nn-th percentile of those peaks over the
+angles (linear interpolation; RotD0 the least, RotD50 the median, RotD100
+the largest). The histories come from the response spectrum's own code,
+`geotech_common.response_spectrum.oscillator_response`: Nigam and Jennings
+(1969), the record linear between samples, sub-steps of at most T / 20
+below 20 record steps a period, over the record's length. The peak at each
+angle is read between points as the spectrum reads it, off the cubic
+through the rotated displacement and velocity at both ends of each step.
+So RotD100 of a component paired with zeros is that component's
+`analyze_response_spectrum` Sa, value for value (test). Boore (2010) is not
+in the reference library; the definition is as the module has always
+cited it. `engine` is `"nigam_jennings"` and `engine_note` states the
+method; the other result fields are unchanged.
+
+Only the steps that can hold an angle's peak are rotated, none that can is
+left out: on a step no projection of the vector (u_a, u_b) exceeds the
+larger of its lengths at the two ends plus 4/27 of the two end velocities
+times the step (the cubic's bound). Each angle's peak starts from the
+points of largest vector length; the steps are rotated in blocks, largest
+bound first, and an angle stops once its peak reaches the bound of the
+steps left. (The fixed level `rotd_native` used, 0.7 of the smaller
+component's peak, can leave out the peak of an angle whose peak is below
+it: on a record moving mostly along one line with a later, smaller motion
+across it, RotD0 0.0005 g at 0.5 s where every step gives 0.29 g; test
+`test_no_angle_loses_its_peak`.)
+
+**Before (GM-274's check, one component with the other zero, 27 periods
+0.01-4 s, 20 s records):**
 
 | Record (dt) | under ten steps a period | ten steps and up |
 |---|---|---|
@@ -102,23 +130,51 @@ above: 27 periods 0.01-4 s, the GM-272 records (20 s each).
 | effective example surface (0.005 s) | +2.0 to +10.1 % | -8.1 to +30.0 % |
 | Gilroy input (0.005 s) | -0.1 to +3.2 % | -3.5 to +25.4 % |
 
-Two causes:
+Two causes. The record was not padded, so the FFT took it as periodic and
+the oscillator still ringing at its end ran on into its start (with 80 s
+of zeros, -0.4 to +1.6 % from ten steps up). And below ten steps the FFT
+read the record as band-limited, sine waves through the samples rather
+than straight lines between them (padded, still up to +61 % on the dense
+sand surface at 0.02 s, the record's Nyquist period).
 
-- **The record is not padded.** The FFT takes the record as periodic, so
-  the oscillator still ringing at its end runs on into its start. With
-  80 s of zeros after each record, the procedure is within -0.4 to +1.6 %
-  of Nigam and Jennings on the same padded record from ten steps a period
-  up (the rest is the peak read only at its points, ten or more a period).
-- **Under ten steps it reads the record as band-limited**, sine waves
-  through the samples rather than straight lines between them: padded,
-  still up to +61 % on the dense sand surface (0.02 s, two steps a period,
-  the record's Nyquist frequency), +15 % on the wiki surface and +3.7 % on
-  the Gilroy input.
+**After, two-component pairs, RotD0/50/100 against scipy's lsim** (the
+same records linear between samples, the two responses read at least 100
+times a period and 10 times a record step, rotated the same way):
 
-So RotD100 of one component is not, as it stands, the spectrum
-`analyze_response_spectrum` gives for it. Which reading of a record
-between its samples a short-period spectrum should use is a method choice;
-padding is not. Left for the backlog (see `BACKLOG.md`).
+| Pair (dt, length) | T (s) | before (FFT) | after |
+|---|---|---|---|
+| Gilroy No. 1 EW + the same reversed in time (0.005 s, 20 s) | 0.0137 | +2.1 to +2.2 % | +0.001 to +0.002 % |
+| | 0.026 | +2.5 to +3.3 % | 0.000 to +0.003 % |
+| | 0.2 | 0.00 % | 0.000 % |
+| | 1.0 | -0.5 to +0.3 % | 0.000 % |
+| | 3.0 | -11.6 to +29.1 % | 0.000 % |
+| synthetic pulse + synthetic long (0.01 s, 40 s) | 0.0137 | 0.0 to +0.1 % | 0.000 % |
+| | 0.2 | +0.1 to +0.2 % | 0.000 to +0.001 % |
+| | 1.0 | -0.1 to +0.2 % | 0.000 % |
+| | 3.0 | +0.4 to +1.1 % | 0.000 % |
+
+(Only Gilroy's EW component is stored, so its second component is the
+same record reversed in time: the same frequency content, its peaks
+elsewhere.) Against the FFT with the records padded by 60 s of zeros and
+read every dt / 8, at 0.2, 0.5 and 1 s, the new RotD is 0.01 to 0.16 %
+lower: there the straight lines between samples carry slightly less than
+the band-limited record near the period.
+
+**Time.** 100 periods x 180 angles on a 40 s pair: 0.8 s at 0.005 s
+(Gilroy pair repeated), 1.1 s at 0.01 s (synthetic pair); the FFT took
+0.4 and 0.7 s. The default 200 periods take about twice that. Two
+identical components (the motion along one line, so the angles across it
+peak near zero and read every step) take about 4 s for 200 periods on a
+20 s record.
+
+**The FFT path went rather than stay as an alternative.** Kept honest it
+needs padding long enough for the longest period's free vibration to die
+out, and below ten record steps it still answers a different question
+(the record read as band-limited, up to 61 % apart on an OpenSees surface
+record), so a second engine would give two RotD for one record with
+nothing to choose between them. `rotd_native.py` is deleted; pyrotd is no
+longer imported by any analysis (the `[seismic-signals]` extra still lists
+it; whether to drop it is a packaging call).
 
 ## Intensity Measures
 
@@ -135,8 +191,8 @@ padding is not. Left for the backlog (see `BACKLOG.md`).
 ## RotD50/RotD100 (Boore 2010)
 
 Rotated spectral acceleration computes the PSA for all rotation angles
-(0° to 180°, 1° increment) of two orthogonal components, then takes
-percentiles across orientations:
+(0° to 179°, 1° increment) of two orthogonal components, then takes
+percentiles across orientations (computed as in GM-275 above):
 
 - **RotD0**: minimum over all orientations
 - **RotD50**: median over all orientations (orientation-independent)
@@ -156,8 +212,9 @@ geometric mean).
 - **Processing order**: Bandpass is applied before baseline correction
   (standard seismological practice).
 
-- **RotD with identical components**: RotD0 = RotD50 = RotD100 (degenerate
-  but valid).
+- **RotD with identical components**: the motion is along one line at
+  45 deg, so RotD0 is 0, RotD50 the component's Sa and RotD100 the square
+  root of two times it (degenerate but valid).
 
 - **Unequal record lengths for RotD**: Shorter record is zero-padded
   to match the longer one.
