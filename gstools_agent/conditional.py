@@ -49,6 +49,7 @@ import time
 import numpy as np
 
 from gstools_agent.gstools_utils import import_gstools
+from gstools_agent.models import model_class
 from gstools_agent.regions import (
     QUANTITIES, auto_cell_size, build_lattice, integrate, parse_regions,
     pointwise_gaussian, region_geometry, region_masks,
@@ -533,7 +534,7 @@ def analyze_conditional_simulation(
             f"({nug:.4g}). GSTools treats the measurement error as part of "
             f"the nugget (cond_err <= nugget): give nugget >= "
             f"{float(me.max()):.4g}, or leave nugget out.")
-    model_cls = getattr(gs, model_type)
+    model_cls = model_class(model_type)     # GSTools' own, Exponential fixed
     model = model_cls(dim=2, var=variance_v, len_scale=len_v, nugget=nug,
                       anis=anis, angles=math.radians(angle_deg))
     fitted = False
@@ -696,9 +697,10 @@ def analyze_conditional_simulation(
             Zc = draw(np.arange(attempts, attempts + count))
         ids = np.arange(attempts, attempts + count)
         attempts += count
-        # A realization with any non-finite value (GSTools has returned an
-        # all-NaN field for one seed in a thousand) is redrawn with a fresh
-        # seed, so NaN never reaches a statistic.
+        # A realization with any non-finite value is redrawn with a fresh
+        # seed, so NaN never reaches a statistic. The one cause found, GSTools'
+        # 2-D Exponential ppf (seed 47863 of the 2026-10-15 field session),
+        # is fixed in gstools_agent.models; this stays as the guard.
         bad_cols = np.flatnonzero(~np.all(np.isfinite(Zc), axis=0))
         for k in bad_cols:
             for _try in range(MAX_REDRAW_TRIES):

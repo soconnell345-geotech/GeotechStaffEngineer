@@ -5,6 +5,7 @@ Spatial random field generation using GSTools.
 import numpy as np
 
 from gstools_agent.gstools_utils import import_gstools
+from gstools_agent.models import model_class
 from gstools_agent.results import RandomFieldResult
 
 
@@ -82,7 +83,7 @@ def generate_random_field(
 
     gs = import_gstools()
 
-    model_cls = getattr(gs, model_type)
+    model_cls = model_class(model_type)     # GSTools' own, Exponential fixed
     model = model_cls(dim=2, var=variance, len_scale=len_scale, nugget=nugget)
 
     srf = gs.SRF(model, mean=mean, seed=seed)

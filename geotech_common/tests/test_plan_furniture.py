@@ -36,3 +36,14 @@ def test_both_renderings_draw_the_furniture():
     pf.plotly_north_arrow(f, (90, 8), 30.0)
     assert len(f.layout.shapes) == pf.BAR_SEGMENTS
     assert [a.text for a in f.layout.annotations] == ["0", "20 m", "", "N"]
+
+
+def test_plotly_furniture_on_a_second_plan():
+    """Two plans side by side (the gstools kriging map): the furniture goes
+    on the axes named, not always the first."""
+    go = pytest.importorskip("plotly.graph_objects")
+    f = go.Figure()
+    pf.plotly_scale_bar(f, 10, 5, 20, 1.0, "m", xref="x2", yref="y2")
+    pf.plotly_north_arrow(f, (90, 8), 0.0, xref="x2", yref="y2")
+    assert {(s.xref, s.yref) for s in f.layout.shapes} == {("x2", "y2")}
+    assert {(a.xref, a.yref) for a in f.layout.annotations} == {("x2", "y2")}
