@@ -27,6 +27,12 @@ The owner's words:
   fold"; on releasing the held train first (OWN-75), release it, and "If
   it's too late, no big deal, just go with hold. Don't expend big effort to
   revert back."
+- 2026-10-21, evening (Backlog Desk): the testers' notice as proposed and
+  their SharePoint folder kept (OWN-78, D9); the private copy worked on in a
+  private repository on the owner's GitHub account (OWN-87, D10); the core's
+  name `docreview-core` and Document Review from its source folder in the
+  GHE repo (OWN-72), the name asked again because the owner's note assumed
+  the core is not shared with GSE, and it is.
 
 ## In one page (for the owner)
 
