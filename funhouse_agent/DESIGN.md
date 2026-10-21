@@ -747,6 +747,15 @@ the eyes). What changed on master after 5.33.0, in short:
   keeps `reference_mode="off"` and its own prompt, so the chat's
   references and analysis-depth settings still do not apply to it. Why
   `profile_figure` is now in specialist scopes: `profile_figure/DESIGN.md`.
+  The prompt, not the scope, keeps a specialist off another discipline's
+  `*_package` (or `render_figures` naming one), which re-runs that
+  discipline's analysis. A scope check would need a package-to-module map
+  kept in step with `calc_package` (its `_PACKAGE_TOOLS` names adapter
+  files such as `reliability_adapter`, and the two slope packages are not
+  in it) and a method-level check dispatch has nowhere else; the pavement
+  and structural specialists have carried the same opening since they were
+  built. Revisit if a trace shows a specialist running another
+  discipline's package.
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`. Three are ON by default by the owner's

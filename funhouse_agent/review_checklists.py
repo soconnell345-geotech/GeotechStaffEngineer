@@ -741,9 +741,11 @@ modules: calc_package (a module's *_package calculation package,
 render_figures for a package's own figures, html_to_pdf for a report of your
 own) and profile_figure (subsurface_profile for a layered profile, plot_data
 for data plots). Use them when the user asks for a calculation package, a
-figure or a PDF. They report and draw; they do not widen your domain — a
-package for another discipline's analysis is out of scope, as that analysis
-is.
+figure or a PDF. They report and draw; they do not widen your domain.
+calc_package lists a package for every discipline, and each one re-runs the
+analysis it is named for, so build packages only for your own analyses.
+Asked for another discipline's package, say it is outside your scope, as
+that analysis is, and that the full geotech agent can build it.
 """
 
 

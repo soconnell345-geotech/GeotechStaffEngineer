@@ -570,6 +570,13 @@ Funhouse factory (`make_*_reviewer` + a `_deep` variant), a
 | **earth-retention** | `make_earth_retention_reviewer` | sheet_pile, soe, retaining_walls, seismic_geotech (M-O only) | dm7, gec4/7/11, california_trenching | Ka/K0/Kp state, single-FOS embedment basis, apparent-vs-triangular envelope, MSE LRFD CDRs, battered-wall M-O |
 | **slope / FEM** | `make_slope_fem_reviewer` | slope_stability, fem2d, reliability, dxf_import, pdf_import, drawing_ir | dm7, gec7/11 | LE method ordering + Bishop fixed point, noncircular rejection diagnostics, SRM-vs-LE + mesh convergence, T6-not-CST, reliability COV basis, ingest scale/provenance |
 
+The table lists each reviewer's own scope. Every specialist (these four, the
+seismic reviewer, and the pavement and structural specialists) also gets the
+full agent's report and drawing modules, `calc_package` and `profile_figure`
+(`dispatch.DELIVERABLE_MODULES`), with one shared prompt paragraph saying
+they report and draw but do not widen its domain
+(`review_checklists.SPECIALIST_DELIVERABLES`; BACKLOG GM-40).
+
 ```python
 from funhouse_agent import make_foundations_reviewer, NativeToolEngine
 rev = make_foundations_reviewer(NativeToolEngine(fh_prompter))
@@ -583,9 +590,9 @@ its Mononobe-Okabe seismic earth pressure (each checklist says so). Note
 `geotech_common` is a shared library, not a registered agent, so it is NOT a
 scope member (adding it would be a no-op). More families (e.g. deep-foundations
 split out, characterization) can be added by the same recipe: a scope pair in
-`dispatch.py`, a checklist + preamble in `review_checklists.py`, a factory pair
-in `reviewers.py`, and a `.md` agent def that pastes the checklist with a sync
-pointer.
+`dispatch.py` (the scope adds `DELIVERABLE_MODULES`), a checklist + preamble
+in `review_checklists.py`, a factory pair in `reviewers.py`, and a `.md` agent
+def that pastes the checklist with a sync pointer.
 
 ## Model Setup (v5 deep agent)
 
