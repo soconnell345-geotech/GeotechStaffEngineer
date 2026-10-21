@@ -68,7 +68,7 @@ _MEASUREMENT_KEYS = ("depth_m", "parameter", "value", "source", "test_type",
 _SITE_KEY_HINTS = {
     "id": ("investigation_id",), "name": ("investigation_id",
                                           "project_name"),
-    "boring_id": ("investigation_id",), "type": ("investigation_type",),
+    "boringid": ("investigation_id",), "type": ("investigation_type",),
     "elevation": ("elevation_m",), "depth": ("depth_m", "total_depth_m"),
     "gwl": ("gwl_depth_m",), "gwt": ("gwl_depth_m",),
     "top": ("top_depth_m",), "bottom": ("bottom_depth_m",),
