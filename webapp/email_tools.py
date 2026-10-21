@@ -5,7 +5,8 @@ report PDF, plot) to a colleague during a conversation:
 
     email_file(to, file_path, subject="", body="")
 
-It is injected into the deep agent by ``webapp.core.build_agent`` via
+It is injected into the deep agent (the full agent's and every
+specialist's: ``webapp.core._add_file_tools``) via
 ``build_deep_agent(extra_tools=...)`` ONLY when the Funhouse email module is
 importable (``tools_if_available()``, mirroring
 ``sharepoint_tools.tools_if_configured``), so non-Funhouse deployments carry
@@ -170,8 +171,8 @@ def email_file(to: str, file_path: str, subject: str = "",
         return f"Email error: {type(exc).__name__}: {exc}"
 
 
-#: Prompt block injected alongside the tool (build_agent), so the agent knows
-#: the capability exists and its ground rules.
+#: Prompt block injected alongside the tool (core._add_file_tools), so the
+#: agent knows the capability exists and its ground rules.
 EMAIL_PROMPT = (
     "EMAIL: You have an email_file tool that emails a local file (a calc "
     "package, report, or plot you produced) to a colleague as an attachment. "

@@ -5,6 +5,7 @@ capture (save_fn + directory watch), engine-config resolution (including the
 no-engine path), disclaimer presence, and a fake-agent stream.
 """
 
+import json
 import os
 
 import pytest
@@ -897,6 +898,99 @@ def test_build_reviewer_agent_builds_each_kind(tmp_path):
         assert core.build_reviewer_agent(kind, model, {}, d, []) is not None
     # unknown / "full" falls back to the full agent build (no exception)
     assert core.build_reviewer_agent("full", model, {}, d, []) is not None
+
+
+def test_specialists_get_the_full_agents_file_tools(monkeypatch, tmp_path):
+    """GM-40: a specialist from the Agent picker gets the same SharePoint and
+    email tools, with their instructions, as the full agent wherever the
+    deployment offers them (before, ``build_reviewer_agent`` spliced in only
+    the feedback tool)."""
+    from types import SimpleNamespace
+    import funhouse_agent.deep.agent as deep_agent
+    from webapp import email_tools, sharepoint_tools
+    calls = []
+    monkeypatch.setattr(deep_agent, "build_deep_agent",
+                        lambda model=None, **kw: calls.append(kw) or object())
+    monkeypatch.setattr(
+        sharepoint_tools, "tools_if_configured",
+        lambda **_k: ([SimpleNamespace(name="sharepoint_upload")],
+                      "SHAREPOINT RULES"))
+    monkeypatch.setattr(
+        email_tools, "tools_if_available",
+        lambda: ([SimpleNamespace(name="email_file")], "EMAIL RULES"))
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
+    files = os.path.join(core.conversation_dir("t-gm40"), "files")
+    os.makedirs(files)
+
+    def file_tools(kw):
+        return [t.name for t in kw["extra_tools"]
+                if t.name in ("sharepoint_upload", "email_file")]
+
+    core.build_agent(object(), {}, files, [])
+    full = calls[-1]
+    assert file_tools(full) == ["sharepoint_upload", "email_file"]
+    for kind in core._REVIEWER_BUILDERS:
+        core.build_reviewer_agent(kind, object(), {}, files, [])
+        kw = calls[-1]
+        assert file_tools(kw) == file_tools(full), kind
+        prompt = kw["extra_system_prompt"]
+        assert "SHAREPOINT RULES" in prompt and "EMAIL RULES" in prompt, kind
+        # the specialist's own preamble still leads the prompt
+        assert prompt.index("SHAREPOINT RULES") > 200, kind
+
+
+def test_specialists_without_file_tools_where_none_are_offered(monkeypatch,
+                                                               tmp_path):
+    """Where neither is configured (Foundry, a laptop) a specialist carries
+    no extra file tools, as the full agent does not."""
+    import funhouse_agent.deep.agent as deep_agent
+    from webapp import email_tools, sharepoint_tools
+    calls = []
+    monkeypatch.setattr(deep_agent, "build_deep_agent",
+                        lambda model=None, **kw: calls.append(kw) or object())
+    monkeypatch.setattr(sharepoint_tools, "tools_if_configured",
+                        lambda **_k: ([], ""))
+    monkeypatch.setattr(email_tools, "tools_if_available", lambda: ([], ""))
+    monkeypatch.setenv("GEOTECH_WEBAPP_DATA", str(tmp_path))
+    files = os.path.join(core.conversation_dir("t-gm40b"), "files")
+    os.makedirs(files)
+    core.build_reviewer_agent("foundations", object(), {}, files, [])
+    names = [t.name for t in calls[-1]["extra_tools"]]
+    assert names == ["record_feedback"]
+
+
+def test_specialist_build_kwargs_follow_route_calc():
+    """A specialist takes the calc helper under the full agent's "Route
+    calculations through a calc agent" setting, and nothing else from the
+    behavior settings (its references and prompt are its own)."""
+    assert core.specialist_build_kwargs(None) == {"enable_calc_subagent": True}
+    on = {**core.default_behavior(), "references": "off",
+          "analysis_depth": "comprehensive", "ref_max_calls": 3}
+    assert core.specialist_build_kwargs(on) == {"enable_calc_subagent": True}
+    off = {**core.default_behavior(), "route_calc": False}
+    assert core.specialist_build_kwargs(off) == {}
+
+
+def test_specialist_builds_with_the_calc_helper_and_deliverables(tmp_path):
+    """Built for real on a fake model: a specialist's compiled agent has the
+    calc helper, and its list_agents shows the report and drawing modules."""
+    pytest.importorskip("deepagents")
+    import re
+    from langchain_core.language_models.fake_chat_models import (
+        GenericFakeChatModel)
+    from langchain_core.messages import AIMessage
+    from funhouse_agent.dispatch import DELIVERABLE_MODULES
+    model = GenericFakeChatModel(messages=iter([AIMessage(content="ok")]))
+    d = str(tmp_path)
+    agent = core.build_reviewer_agent(
+        "earth_retention", model, {}, d, [],
+        **core.specialist_build_kwargs(None))
+    tools = agent.nodes["tools"].bound.tools_by_name
+    helpers = set(re.findall(r"^- ([\w-]+):", tools["task"].description,
+                             re.M))
+    assert "calc" in helpers
+    listed = json.loads(tools["list_agents"].invoke({}))
+    assert DELIVERABLE_MODULES <= set(listed)
 
 
 class _ConfigRecordingAgent:

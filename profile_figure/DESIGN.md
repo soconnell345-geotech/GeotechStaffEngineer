@@ -16,15 +16,33 @@ axial pile, bearing, walls, liquefaction, …) can call it with the profile it
 already has. Anything computed must be passed in, either as a layer
 `description` or as an `annotation`.
 
-**General pool, not a specialist scope.** The agent tool is deliberately NOT a
-member of `PAVEMENT_MODULES` / `STRUCTURAL_MODULES` or any reviewer scope in
-`funhouse_agent/dispatch.py`: subsurface stratigraphy is a geotech capability,
-and those scopes are minimal by doctrine (see their comments). The unscoped
-agent — the one the prompt nudge is written for — sees every analysis module,
-so it reaches this tool without a scope entry. `worked_examples` is the same
-shape: named in the shared prompt, in no specialist scope. Add it to a scope
-only if that specialist's owner decides it belongs there, and bump the pinned
-count in `test_reviewers.py` with it (2026-09-05 decision).
+**Every specialist has it (since BACKLOG GM-40, 2026-10-20).** It is in
+`DELIVERABLE_MODULES` in `funhouse_agent/dispatch.py`, beside `calc_package`,
+which `funhouse_agent/reviewers.py` adds to every specialist's scope; each
+specialist's own `*_MODULES` set is unchanged.
+
+The 2026-09-05 decision kept it out of every specialist scope: subsurface
+stratigraphy is a geotech capability, the scopes are minimal by doctrine,
+and the unscoped agent the prompt nudge was written for reaches it anyway;
+add it to a scope only if the owner decides it belongs there. That reason no
+longer held:
+- **The owner decided.** GM-40 ("Specialists cannot draw or report") is the
+  owner's backlog item.
+- **The shared prompt already asks for it.** The deep agent's working style
+  (`funhouse_agent/deep/prompt.py`), which every specialist's prompt carries,
+  tells the agent to draw a layered profile with
+  `call_agent('profile_figure', 'subsurface_profile', ...)`. A specialist
+  told to do that and refused the module got "Unknown module".
+- **Minimal scopes are about methods, and this module has none.** The scopes
+  are kept small so a specialist does not run another discipline's analysis.
+  This module computes nothing and draws only what it is handed, so it cannot
+  widen a domain. For the geotech specialists (foundations, earth retention,
+  slope / FEM, seismic) a subsurface profile is core: a pile, a wall or a
+  liquefiable layer in the ground.
+
+`worked_examples` is still in no specialist scope. The scope counts pinned in
+`test_reviewers.py` count each specialist's own `*_MODULES` set and did not
+move.
 
 ## Conventions
 

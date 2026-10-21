@@ -31,6 +31,7 @@ from funhouse_agent.dispatch import (
     FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,
     EARTH_RETENTION_MODULES, EARTH_RETENTION_REFERENCES,
     SLOPE_FEM_MODULES, SLOPE_FEM_REFERENCES,
+    DELIVERABLE_MODULES,
     list_agents, list_methods, call_agent,
 )
 from funhouse_agent.adapters import MODULE_REGISTRY
@@ -39,6 +40,7 @@ from funhouse_agent.review_checklists import (
     FOUNDATIONS_CHECKLIST, FOUNDATIONS_REVIEWER_PREAMBLE,
     EARTH_RETENTION_CHECKLIST, EARTH_RETENTION_REVIEWER_PREAMBLE,
     SLOPE_FEM_CHECKLIST, SLOPE_FEM_REVIEWER_PREAMBLE,
+    SPECIALIST_DELIVERABLES,
 )
 
 
@@ -79,7 +81,8 @@ class TestSeismicScopeSets:
             assert name in MODULE_REGISTRY, f"{name} not in MODULE_REGISTRY"
 
     def test_scope_is_union(self):
-        assert SEISMIC_REVIEWER_SCOPE == (SEISMIC_MODULES | SEISMIC_REFERENCES)
+        assert SEISMIC_REVIEWER_SCOPE == (
+            SEISMIC_MODULES | SEISMIC_REFERENCES | DELIVERABLE_MODULES)
 
     def test_core_seismic_modules_present(self):
         for name in ("seismic_geotech", "liquefaction", "liquepy",
@@ -258,7 +261,7 @@ class TestPavementSpecialist:
         mods, refs, _, scope, _ = self._imports()
         assert mods <= ANALYSIS_MODULES
         assert refs <= REFERENCE_MODULES
-        assert scope == (mods | refs)
+        assert scope == (mods | refs | DELIVERABLE_MODULES)
         assert "pavement_design" in mods and "calc_package" in mods
         assert "aashto_1993" in refs
         for name in scope:
@@ -305,7 +308,7 @@ class TestStructuralSpecialist:
         mods, refs, _, scope, _ = self._imports()
         assert mods <= ANALYSIS_MODULES
         assert refs <= REFERENCE_MODULES
-        assert scope == (mods | refs)
+        assert scope == (mods | refs | DELIVERABLE_MODULES)
         assert len(mods) == 7
         for name in ("section_props", "concrete_props", "pynite", "opensees",
                      "fem2d", "reliability", "calc_package"):
@@ -367,7 +370,7 @@ class TestF8ReviewerFamily:
         assert r.references <= REFERENCE_MODULES
 
     def test_scope_is_union(self, r):
-        assert r.scope == (r.modules | r.references)
+        assert r.scope == (r.modules | r.references | DELIVERABLE_MODULES)
 
     def test_every_scope_name_registered(self, r):
         for name in r.scope:
@@ -410,8 +413,8 @@ class TestF8ReviewerFamily:
                                            allowed_agents=rev._allowed_agents)
 
     def test_extra_modules_widen_scope(self, r):
-        rev = r.make(MockEngine([]), extra_modules={"calc_package"})
-        assert "calc_package" in rev._allowed_agents
+        rev = r.make(MockEngine([]), extra_modules={r.out_scope})
+        assert r.out_scope in rev._allowed_agents
         assert set(r.scope) <= set(rev._allowed_agents)
 
     def test_kwargs_forwarded(self, r):
@@ -474,3 +477,89 @@ class TestF8ReviewerDeep:
         assert agent is not None
         names = set(agent.nodes["tools"].bound.tools_by_name.keys())
         assert "call_agent" in names
+
+
+# ---------------------------------------------------------------------------
+# Every specialist draws and reports (BACKLOG GM-40)
+# ---------------------------------------------------------------------------
+
+def _specialists():
+    """(name, make, make_deep, scope, own modules) for every specialist the
+    web app's Agent picker builds."""
+    from funhouse_agent import reviewers as rv
+    from funhouse_agent.dispatch import PAVEMENT_MODULES, STRUCTURAL_MODULES
+    return [
+        ("seismic", rv.make_seismic_reviewer, rv.make_seismic_reviewer_deep,
+         rv.SEISMIC_REVIEWER_SCOPE, SEISMIC_MODULES),
+        *[(r.name, r.make, r.make_deep, r.scope, r.modules) for r in _F8],
+        ("pavement", rv.make_pavement_specialist,
+         rv.make_pavement_specialist_deep, rv.PAVEMENT_SPECIALIST_SCOPE,
+         PAVEMENT_MODULES),
+        ("structural", rv.make_structural_specialist,
+         rv.make_structural_specialist_deep, rv.STRUCTURAL_SPECIALIST_SCOPE,
+         STRUCTURAL_MODULES),
+    ]
+
+
+class TestSpecialistDeliverables:
+    """The foundations, earth-retention, slope-FEM and seismic scopes left out
+    calc_package and profile_figure, while the shared prompt told every agent
+    to draw and report with them: one shared set now reaches all six."""
+
+    def test_the_shared_set(self):
+        assert DELIVERABLE_MODULES == {"calc_package", "profile_figure"}
+        assert DELIVERABLE_MODULES <= ANALYSIS_MODULES
+
+    def test_matches_the_web_app_picker(self):
+        import webapp.core as core
+        names = {s[0] for s in _specialists()}
+        assert names == set(core._REVIEWER_BUILDERS)
+
+    @pytest.mark.parametrize("name", ["seismic", "foundations",
+                                      "earth_retention", "slope_fem",
+                                      "pavement", "structural"])
+    def test_every_specialist_has_them(self, name):
+        _, make, _, scope, own = {s[0]: s for s in _specialists()}[name]
+        assert DELIVERABLE_MODULES <= scope
+        agent = make(MockEngine([]))
+        assert DELIVERABLE_MODULES <= set(agent._allowed_agents)
+        # the module the shared prompt names for a layered profile, and the
+        # package, figure and PDF methods, are callable in scope
+        for mod, method in (("profile_figure", "subsurface_profile"),
+                            ("profile_figure", "plot_data"),
+                            ("calc_package", "render_figures"),
+                            ("calc_package", "html_to_pdf")):
+            listed = list_methods(mod, allowed_agents=agent._allowed_agents)
+            assert "error" not in listed, (name, mod)
+            assert any(method in v for v in listed.values()), (name, method)
+        # the specialist's own analysis modules are unchanged
+        assert own - DELIVERABLE_MODULES <= set(agent._allowed_agents)
+        assert SPECIALIST_DELIVERABLES in agent._system_prompt
+
+    def test_domain_counts_did_not_move(self):
+        # the pinned counts count each specialist's OWN modules
+        assert len(SEISMIC_MODULES) == 8
+        assert not (DELIVERABLE_MODULES & (SEISMIC_MODULES | FOUNDATIONS_MODULES
+                                           | EARTH_RETENTION_MODULES
+                                           | SLOPE_FEM_MODULES))
+
+    def test_paragraph_says_it_does_not_widen_the_domain(self):
+        for word in ("calc_package", "profile_figure", "html_to_pdf",
+                     "subsurface_profile", "do not widen your domain"):
+            assert word in SPECIALIST_DELIVERABLES
+
+    def test_deep_builders_pass_scope_and_paragraph(self, monkeypatch):
+        import funhouse_agent.deep.agent as deep_agent
+        seen = []
+        monkeypatch.setattr(deep_agent, "build_deep_agent",
+                            lambda model=None, **kw: seen.append(kw) or object())
+        for name, _, make_deep, scope, _ in _specialists():
+            seen.clear()
+            make_deep(object(), extra_system_prompt="CALLER TAIL")
+            kw = seen[-1]
+            assert DELIVERABLE_MODULES <= set(kw["allowed_agents"]), name
+            assert set(kw["allowed_agents"]) == set(scope), name
+            prompt = kw["extra_system_prompt"]
+            assert SPECIALIST_DELIVERABLES in prompt, name
+            assert prompt.endswith("CALLER TAIL"), name
+            assert kw["reference_mode"] == "off", name

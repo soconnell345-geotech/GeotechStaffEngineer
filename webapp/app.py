@@ -166,9 +166,11 @@ def _build_agent_for_session() -> None:
                     ss.engine.model, ss.attachments, ss.temp_dir, ss.artifacts,
                     **_kw)
             else:                                                         # A5e
+                _kw = core.specialist_build_kwargs(ss.get("behavior"))
+                _kw.update(_helper_kw)
                 ss.agent = core.build_reviewer_agent(
                     _kind, ss.engine.model, ss.attachments, ss.temp_dir,
-                    ss.artifacts, **_helper_kw)
+                    ss.artifacts, **_kw)
         except Exception as exc:  # surface, don't crash the app
             ss.agent_error = f"{type(exc).__name__}: {exc}"
 

@@ -1888,5 +1888,36 @@
    "BACKLOG.md OWN-84, GM-251, GM-244",
    "GEC-10 (2018) pp. 10-22 to 10-24, Table 8-4 p. 8-14"
   ]
+ },
+ "OWN-85": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "MSE walls: backfill with Cu below 4 and no tested pullout factor",
+  "why": "The empirical pullout resistance factor F* is only accepted for the standard select backfill. For other fill the manual says pullout tests must be run, but the tool still gives a number from the empirical F*.",
+  "background": "GEC-11 Vol I Table 3-6 note (i) (p. 3-17): the empirical F* holds provided granular reinforced fill as specified in Table 3-1 is used and Cu >= 4; \"For fill outside these limits, tests must be run.\" The tool now takes a tested F* (F_star_tested). With Cu below 4 and none given, it computes the empirical F* and flags the fill as outside note (i).",
+  "parts": [
+   {
+    "label": "Cu below 4 with no tested F*",
+    "options": [
+     {
+      "label": "Compute and flag (now)",
+      "effect": "A number comes back with a note that the fill is outside note (i)."
+     },
+     {
+      "label": "Refuse and ask for F_star_tested",
+      "effect": "Follows 'tests must be run'; the user gives the tested F* or a Cu of 4 or more."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Refuse and ask for F_star_tested, now that the tool can take it.",
+  "if_no_answer": "The tool keeps computing the empirical F* for Cu below 4 and flags it.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-85, GM-256, GM-246",
+   "GEC-11 Vol I p. 3-17 (Table 3-6 note (i)), p. 3-20"
+  ]
  }
 }
