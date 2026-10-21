@@ -106,5 +106,26 @@ def test_the_tool_text_names_no_product():
         "description"]
     for words in ("Example E3's 50 x 4 mm ribbed strip",
                   "Example E4's 4W11 bar mat",
-                  "Example E1's geogrids GG-I to GG-III"):
+                  "Example E1's geogrids GG-I to GG-III",
+                  "not products: where the wall's reinforcement is "
+                  "specified, give it as a custom reinforcement"):
         assert words in desc, words
+
+
+def test_the_built_ins_are_said_to_be_worked_examples_not_products():
+    """GM-271 review: list_reinforcement and every result with a built-in
+    say the built-ins are GEC-11's worked examples' reinforcements, and
+    give the reinforcement specified for the wall as the other way."""
+    out = D.call_agent("retaining_walls", "list_reinforcement", {})
+    for words in ("worked example", "not products",
+                  "Eq. 3-11a, p. 3-22", "Eq. 3-12, p. 3-28"):
+        assert words in out["built_ins"], words
+    for extra in ({"reinforcement_name": "geogrid_gec11_e1_gg2"},
+                  {"reinforcement_name": "welded_wire_grid_w11",
+                   "reinforcement_horizontal_spacing": 1.5}):
+        r = _mse(**extra)
+        (tal,) = [c for c in r["choices"]
+                  if c["what"].startswith("Long-term tensile strength")]
+        (alt,) = [a for a in tal["alternatives"]
+                  if a.startswith("the reinforcement specified")]
+        assert "not a product" in alt and "reinforcement_Tallowable" in alt

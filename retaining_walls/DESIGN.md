@@ -981,16 +981,31 @@ Tult / RF for generic geogrids in Example E1, Table E1-7.3 (p. E1-15):
 | GG-III | 9,000 | 1.2 | 1.85 | 1.15 | 3,525 | 51.45 |
 
 `reinforcement.geosynthetic_Tal` is Eq. 3-12 (Vol I p. 3-28). For pullout
-E1 takes F* = 0.45 (0.67 tan 34 deg) and alpha = 0.8 "for these geogrids",
-C = 2, Rc = 1 (Step 7.8, p. E1-16), which is what the module takes for a
-geogrid (Eq. 3-8, p. 3-21; Table 3-6, p. 3-17). A product's own Tult and
-reduction factors for the wall's backfill and design life are a custom
-reinforcement (`reinforcement_type` 'geogrid' with
-`reinforcement_Tallowable`).
+E1 takes F* = 0.45 and alpha = 0.8 "for these geogrids", C = 2, Rc = 1
+(Step 7.8, p. E1-16); the module takes F* = 0.67 tan phi for a geogrid
+(Eq. 3-8, p. 3-21), 0.452 at E1's 34 deg, and alpha 0.8 (Table 3-6, p.
+3-17). A product's own Tult (its minimum average roll value from ASTM
+D6637 tests, p. 3-28) and reduction factors for the wall's backfill and
+design life are a custom reinforcement (`reinforcement_type` 'geogrid'
+with `reinforcement_Tallowable`).
+- The reduction factors E1 prints: RF = RFID x RFCR x RFD = 2.77 for GG-I
+  and GG-II (RFID 1.3) and 2.55 for GG-III (RFID 1.2); RFCR 1.85 and RFD
+  1.15 for all three. E1 gives no reason for GG-III's lower RFID. Each
+  basis now prints the RF beside its factors (review, 2026-10-21).
 - The print disagrees with itself: Table E1-7.1 (p. E1-11) lists the
   grades' ultimate strength as 6,000, 9,000 and 12,000 lb/ft, Table E1-7.3
-  as 3,000, 6,000 and 9,000. E1's Tal and its rupture CDRs (Table E1-7.4)
+  as 3,000, 6,000 and 9,000, so Table E1-7.1's values are Table E1-7.3's
+  one grade up. Dividing Table E1-7.1's Tult by Table E1-7.3's Tal gives
+  5.5, 4.1 and 3.4, which are not RFs E1 prints anywhere; they only show
+  the two tables' mismatch. E1's Tal and its rupture CDRs (Table E1-7.4)
   follow Table E1-7.3, and so do the built-ins; the basis says so.
+- The built-ins are worked-example values, not products (review,
+  2026-10-21). The tool description says so, `list_reinforcement` returns
+  a `built_ins` note saying so, and the Tal choice of every result with a
+  built-in carries the reinforcement specified for the wall as its other
+  way: a custom reinforcement with the product's own Tal, Fy Ac / b at
+  0.55 Fy or 0.48 Fy (Eq. 3-11a, p. 4-77) for steel, Tult / RF (Eq. 3-12)
+  for a geosynthetic (`mse._SPECIFIED_PRODUCT`).
 - `geogrid_ux1600` and `geogrid_ux1700` are refused by the tool, giving
   E1's three geogrids with their Tal, or a custom geogrid Tal = Tult / RF.
   `GEOGRID_UX1600` and `GEOGRID_UX1700` stay importable for the retired

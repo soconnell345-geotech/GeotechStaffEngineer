@@ -199,8 +199,17 @@ def test_the_built_in_strip_is_GEC11s_50_mm_strip_as_printed():
                   "p. 2-16", "50 mm wide x 4 mm", "13.00 k a strip"):
         assert words in c["basis"], words
     assert "tool's own" not in c["basis"]
-    (alt,) = c["alternatives"]
+    alt, specified = c["alternatives"]
     assert alt.startswith("a stronger reinforcement, or a closer spacing")
+    # GM-271 review: the built-in is E3's, not a product
+    assert specified.startswith(
+        "the reinforcement specified for the wall, where there is one: "
+        "Ribbed steel strip 50 x 4 mm (GEC-11 Vol II Example E3) is the "
+        "worked example's")
+    for words in ("reinforcement_type 'metallic_strip' with "
+                  "reinforcement_Tallowable and reinforcement_width",
+                  "Eq. 3-11a, p. 3-22", "0.55 Fy for strips"):
+        assert words in specified, words
     with pytest.raises(ValueError, match="positive corroded"):
         steel_strip_Tal(0.0, 65 * KSI)
 

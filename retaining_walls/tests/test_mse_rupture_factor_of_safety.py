@@ -138,9 +138,18 @@ def test_the_geogrids_choice_states_the_1_5_and_its_basis():
                   "Table 4-7", "p. 4-40", "p. E1-15", "1.35 / 0.90 = 1.5",
                   "0.48 Fy"):
         assert words in c["basis"], words
-    (alt,) = c["alternatives"]
+    alt, specified = c["alternatives"]
     assert "a stronger grade" in alt and "Table E1-7.4" in alt
     assert "reinforcement_spacing" in alt
+    # GM-271 review: the built-in is E1's, not a product
+    assert specified.startswith(
+        "the reinforcement specified for the wall, where there is one: "
+        "Geogrid GG-I (GEC-11 Vol II Example E1) is the worked example's, "
+        "with its Tal as printed, not a product")
+    for words in ("reinforcement_type 'geogrid' with "
+                  "reinforcement_Tallowable: Tult / RF", "ASTM D6637",
+                  "RF = RFID x RFCR x RFD", "Eq. 3-12, p. 3-28"):
+        assert words in specified, words
     assert "6,000 lb/ft" in GEOGRID_GEC11_E1_GG2.basis
     assert "2,169 lb/ft, 31.66 kN/m" in GEOGRID_GEC11_E1_GG2.basis
 

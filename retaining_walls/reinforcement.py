@@ -264,7 +264,7 @@ RIBBED_STEEL_STRIP_50x4 = Reinforcement(
     type="metallic_strip",
     # kN/m of strip width, times Rc per metre of wall (GM-256)
     Tallowable=steel_strip_Tal(_E3_EC, _FY_GRADE_65, STRIP_ALLOWABLE_FY),
-    width=0.050,                    # 1.969 in.; E3's b = 0.164 ft (p. E3-18)
+    width=0.050,                    # 1.969 in.; E3's b = 0.164 ft (p. E3-17)
     Fy=_FY_GRADE_65,
     thickness=0.004,
     basis=STRIP_BASIS,
@@ -367,17 +367,19 @@ _E1_TABLE_7_1 = {"GG-I": 6000, "GG-II": 9000, "GG-III": 12000}
 _E1_GEOGRID_BASIS = (
     "GEC-11 Vol II Example E1's geogrid {grade}, as Table E1-7.3 (p. E1-15) "
     "prints it: Tult {Tult:,.0f} lb/ft, RFCR 1.85, RFD 1.15, RFID {RFID:g}; "
-    "Tal = Tult / (RFID x RFCR x RFD) (Vol I Eq. 3-12, p. 3-28) = "
-    "{Tal_lb:,} lb/ft, {Tal:.4g} kN/m. Table E1-7.1 (p. E1-11) lists "
-    "{grade}'s ultimate tensile strength as {T71:,} lb/ft; E1's Tal and its "
-    "rupture CDRs (Table E1-7.4, p. E1-16) follow Table E1-7.3, as this "
-    "does. For pullout E1 takes F* = 0.45 (0.67 tan 34 deg) and alpha = 0.8 "
-    "'for these geogrids', with C = 2 and Rc = 1 (Step 7.8, p. E1-16); this "
-    "tool takes the same for a geogrid, F* = 0.67 tan phi_backfill (Vol I "
-    "Eq. 3-8, p. 3-21) and alpha 0.8 (Table 3-6, p. 3-17). The reduction "
-    "factors are E1's; a product's own Tult and RF for the wall's backfill "
-    "and design life are a custom reinforcement (reinforcement_Tallowable "
-    "with reinforcement_type 'geogrid')")
+    "Tal = Tult / RF, RF = RFID x RFCR x RFD = {RF:.3g} (Vol I Eq. 3-12, p. "
+    "3-28) = {Tal_lb:,} lb/ft, {Tal:.4g} kN/m. Table E1-7.1 (p. E1-11) "
+    "lists {grade}'s ultimate tensile strength as {T71:,} lb/ft; E1's Tal "
+    "and its rupture CDRs (Table E1-7.4, p. E1-16) follow Table E1-7.3, as "
+    "this does. For pullout E1 takes F* = 0.45 and alpha = 0.8 'for these "
+    "geogrids', with C = 2 and Rc = 1 (Step 7.8, p. E1-16); for a geogrid "
+    "this tool takes F* = 0.67 tan phi_backfill (Vol I Eq. 3-8, p. 3-21), "
+    "0.452 at E1's 34 deg, and alpha 0.8 (Table 3-6, p. 3-17). The Tult and "
+    "reduction factors are E1's, for its example, not a product's: a "
+    "product's own Tult (its minimum average roll value from ASTM D6637 "
+    "tests, p. 3-28) and reduction factors for the wall's backfill and "
+    "design life are a custom reinforcement (reinforcement_Tallowable with "
+    "reinforcement_type 'geogrid')")
 
 
 def _e1_geogrid(grade: str) -> Reinforcement:
@@ -388,7 +390,8 @@ def _e1_geogrid(grade: str) -> Reinforcement:
         type="geogrid",
         Tallowable=Tal,                 # kN/m, Tult / RF
         basis=_E1_GEOGRID_BASIS.format(
-            grade=grade, Tult=T_ult, RFID=RF_ID, Tal_lb=Tal_lb, Tal=Tal,
+            grade=grade, Tult=T_ult, RFID=RF_ID,
+            RF=RF_ID * _E1_RF_CR * _E1_RF_D, Tal_lb=Tal_lb, Tal=Tal,
             T71=_E1_TABLE_7_1[grade]),
     )
 
