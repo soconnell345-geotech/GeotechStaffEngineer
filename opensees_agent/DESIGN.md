@@ -70,7 +70,8 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
   suggested parameters, Dr = 40 % column (`PDMY02_DR40`): PTAng 26 (capped
   at phi), contrac1/3 0.067/0.23, dilat1/3 0.06/0.27, e 0.77; contrac2 5,
   dilat2 3, liquefac1/2 1/0, cs1-3 0.9/0.02/0.7, pa 101 (command defaults).
-  Layer keys `PTAng`, `e_init`, `n_surf` override.
+  Layer keys `K0`, `PTAng`, `e_init`, `n_surf` override; each is in
+  `choices` with its basis (GM-79).
 - Clay: `PressureIndependMultiYield` (phi = 0, total stress,
   near-incompressible bulk modulus capped at 100*Gmax). cohesi =
   sqrt(3)/2 * su: von Mises peaks at 2c/sqrt(3) in simple shear, so the
@@ -90,10 +91,13 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
   deepest node at or above gwt_depth, up to an element too shallow.
 - Analysis phases: (1) gravity elastic 10 steps of 500 s, (2) elastoplastic
   40 steps of 500 s (skipped when `linear_elastic=True`), both with every
-  element's permeability at 1 m/s, (3) each element's own permeability
-  (sand 1e-4, clay 1e-7 m/s) set through element parameters (`parameter
-  ... 'element' tag 'hPerm' / 'vPerm'`, `updateParameter`), as the
-  effective stress example does (GM-85), (4) clock set back to 0
+  element's permeability at 1.0 (the example's value; a hydraulic
+  conductivity of 9.81 m/s), (3) each element's own permeability set
+  through element parameters (`parameter ... 'element' tag 'hPerm' /
+  'vPerm'`, `updateParameter`), as the effective stress example does
+  (GM-85): the layer's hydraulic conductivity k (`permeability`, m/s;
+  default sand 1e-4, clay 1e-7) divided by rho_f g (GM-79), (4) clock set
+  back to 0
   (`setTime(0.0)`), (5) dynamic Newmark (0.5, 0.25) with Rayleigh damping
 - Lysmer-Kuhlemeyer dashpot at base: `Viscous` uniaxial material with
   c = rho_bedrock * Vs_bedrock * area (zeroLength element)
@@ -466,6 +470,95 @@ spike -6 to -20 % on the wiki column).
 constants `contrac1..3`, `dilat1..3`, `liquefac1..2` (default the Dr =
 40 % column). Top level: `rayleigh_freqs_hz` (default the site frequency
 and five times it). Each is in the result's `choices`, given or default.
+
+## GM-79 (2026-10-20): ru, the water-table node, permeability units
+
+Measured in WSL, openseespy 3.8.0, synthetic pulse at 0.30 g unless said.
+
+**ru from the pore pressure.** Until GM-79 ru was 1 - sigma'v/sigma'v0
+from the element's vertical stress, capped at 1. It is now (u - u0) /
+sigma'v0 (Output above). In saturated sand the two agree to a few per
+cent, since the vertical stress swings go mostly to the pore water: 20 m
+of loose sand, water at the surface, ru 1.0 / 0.988 / 1.0 / 0.974 ->
+1.016 / 0.995 / 1.008 / 0.982; the effective stress example's column at
+3 / 7 / 16 m 0.36 / 0.89 / 0.98 -> 0.364 / 0.899 / 0.982 (its port 0.38
+/ 0.91 / 0.97). Tests: the pore pressure read is hydrostatic after
+gravity (9.81 kPa/m below the water table, to 0.1 %), and on fake
+OpenSees ru is the excess over sigma'v0 by definition.
+
+**The water-table node.** The water table sat at the deepest node at or
+above gwt_depth. 20 m of sand in 5 m elements with water 3 m down ran
+with water at the surface: sigma'v0 at the element centres 22 / 66 / 110
+/ 155 kPa against the hand 28 / 81 / 131 / 181. With the node: the hand
+values to 0.1 %, amplification 0.496 -> 0.632, ru in the top element
+(dry) 1.0 -> 0. Sand / clay / sand, 2 elements a layer, water 2 m:
+amplification 0.504 -> 0.672. Thin elements (water 0.01 m below the
+surface, 0.05 m above the base, 0.02 m either side of a layer boundary)
+run with Newton at every step.
+
+**Permeability units.** The u-p elements' flow term is q = -k_e (grad p -
+rho_f b) (SSPquadUP.cpp: `fDens*dN*k*body`), so with p in kPa the element
+takes k_e = k / (rho_f g), k the hydraulic conductivity in m/s. Zhaohui
+Yang's quadUP example on the OpenSees wiki ("PressureDependMultiYield-
+quadUP element") does that division: "vperm 5.e-4 ;#vertical permeability
+(m/s)", then "$vperm/$accGravity/$fmass ;#actual value used in
+computation". The effective stress example (McGann & Arduino) passes its
+"1e-4 m/s" to the element as it is, and so did this module: its sand
+drained as k = 9.81e-4 m/s, ten times the stated value. `permeability`
+(m/s) is now a layer input, divided by rho_f g (`element_permeability`).
+The port of the effective example gives the module k = 9.81e-4 so its
+element still gets the example's 1e-4 (its pins do not move: Sa -6.2 to
++4.5 % of the port, ru 0.364 / 0.899 / 0.982). With k = 9.81e-4 the
+module gives the old numbers exactly.
+
+At the new default (sand 1e-4 m/s, ten times slower drainage), 0.30 g:
+
+| Column | Before (amplification; ru) | After |
+|---|---|---|
+| 20 m loose sand, water 0 m | 0.499; 1.02 / 0.99 / 1.01 / 0.98 | 0.492; 1.01 / 0.99 / 1.01 / 1.00 |
+| 20 m loose sand, 20 elements, water 2 m | 0.666; ru 0.16 at 2.5 m, 0.97 at 19.5 m | 0.613; 0.20, 1.00 |
+| Sand / clay / sand, water 2 m (with the node) | 0.672; top sand 0 / 0.09 | 0.713; 0 / 0.62 |
+| Dense sand (phi 38, contrac1 0.013, dilat1 0.3), 0.10 g | 1.72; 0.32 at 1 m, 0.19 at 19 m | 2.51; 1.01, 0.55 |
+| 15 m clay | 0.982 | 0.982 (1e-7 and 1e-8 are both undrained here) |
+
+The dense column moves most: it drained during the pulse at k = 9.8e-4
+and does not at 1e-4. On 20 m of loose sand, water at the surface, k
+1e-3 / 1e-2 / 1e-1 m/s gives peak ru 1.02 / 0.84 / 0.25 and
+amplification 0.50 / 0.63 / 1.03.
+
+The OpenSees manual's typical ranges (quadUP element): sand 1e-3 to
+1e-1 cm/s, silty sand 1e-5 to 1e-3, silt 1e-7 to 1e-5, clay below 1e-7.
+The defaults are the module's values, now stated as k: sand 1e-4 m/s
+(1e-2 cm/s, in the sand range); clay 1e-7 m/s (1e-5 cm/s, the top of the
+silt range, above the clay range), which drains little through the
+shaking all the same (15 m of clay: the same response at 1e-7 and 1e-8).
+
+**The other fixed material inputs**, each now in `choices` (given or
+default, basis, alternatives):
+- K0 (sand, default Jaky 1 - sin phi) places only the reference pressure,
+  the mid-layer mean effective stress at which G = rho Vs^2. The column's
+  own horizontal stress after gravity is nu / (1 - nu) of the vertical
+  (measured in OpenSees: 0.4286 at nu 0.3, 0.98 at 0.495), so with Jaky
+  K0 0.455 at phi 33 its mean stress is 2.8 % under the reference
+  pressure and Vs at mid-layer 0.7 % under the layer's. `choices` gives
+  both and the alternative nu = K0 / (1 + K0). Clay: 0.67 sigma'v (K0
+  about 0.5), not settable; it sets nothing in the material's own
+  backbone (pressure dependence 0) and is reported where a laboratory
+  curve is evaluated at it.
+- PTAng (sand, default 26, the wiki's Dr = 40 % column; capped at phi):
+  the other columns are given as alternatives.
+- e_init (default sand 0.77, the wiki's Dr = 40 %; clay 0.85, the
+  module's own value): in sand the material reads it against its
+  critical-state line; in both, the porosity in the fluid storage term.
+- n_surf (default 20, as the effective stress example; the total stress
+  example uses 25): refused with a fitted curve, whose pairs set the
+  surfaces.
+
+Left: ground slope (no cited source for the module's 1D column yet);
+the strength-corrected curve option with a peak shear strain input (no
+cited source); the SSPquadUP alpha, fixed at 1e-5 where the element's
+documentation gives 0.25 h^2 / (rho c^2) (possible over-stabilization on
+small elements; not measured).
 
 ## Ground Motions
 

@@ -66,15 +66,48 @@ _GRAVITY_DT_S = 500.0
 _GRAVITY_ELASTIC_STEPS = 10
 _GRAVITY_PLASTIC_STEPS = 40
 
-# Permeability (m/s) of every element during the gravity stages. As in the
-# OpenSees effective stress example (freeFieldEffective.py: "permeabilities
-# 1.0 m/s for the gravity analysis", then each layer's own value set
-# through element parameters before the shaking). Gravity run at the
-# shaking permeability (1e-4 m/s) failed at the first elastoplastic step
+# Permeability every element takes during the gravity stages, as the
+# element's own input (element_permeability, below). As in the OpenSees
+# effective stress example (freeFieldEffective.py: "permeabilities 1.0 m/s
+# for the gravity analysis", then each layer's own value set through
+# element parameters before the shaking); the example passes 1.0 to the
+# element, which reads it as a hydraulic conductivity of 9.81 m/s. Gravity
+# run at the shaking permeability failed at the first elastoplastic step
 # on sand columns with elements of about 2 m and less (GM-85). The update
 # sets the same quantity the element takes (checked: updating to the
 # constructor's own value changes nothing, to machine zero).
 _GRAVITY_PERMEABILITY = 1.0
+
+# The pore fluid is water: mass density 1.0 Mg/m3, bulk modulus 2.2e6 kPa.
+_FLUID_DENSITY = 1.0
+_FLUID_BULK_KPA = 2.2e6
+_G_ACCEL = 9.81
+
+# Hydraulic conductivity k (m/s) of a layer that gives none (GM-79), the
+# module's values: sand 1e-4 m/s, in the OpenSees manual's typical range
+# for sand (quadUP element: 1e-3 to 1e-1 cm/s); clay 1e-7 m/s, the top of
+# the manual's silt range (1e-7 to 1e-5 cm/s), above its clay (below
+# 1e-7 cm/s), and undrained through the shaking all the same (15 m of
+# clay: the same response at 1e-7 and 1e-8 m/s).
+DEFAULT_PERMEABILITY = {"sand": 1.0e-4, "clay": 1.0e-7}
+
+
+def element_permeability(k_m_per_s):
+    """The u-p element's permeability input for a hydraulic conductivity
+    ``k_m_per_s`` (m/s): k / (rho_f g), with rho_f = 1.0 Mg/m3 and g =
+    9.81 m/s2, pressures in kPa (GM-79).
+
+    The u-p elements do not take k itself: their flow term is
+    q = -k_e (grad p - rho_f b) (SSPquadUP.cpp, the fDens*k*body term),
+    so with p in kPa, k_e is k over the fluid's unit weight. The OpenSees
+    wiki example by the author of the u-p elements and of
+    PressureDependMultiYield (Zhaohui Yang, "PressureDependMultiYield-
+    quadUP element") gives k in m/s and passes k / g / rho_f to the
+    element, the "actual value used in computation". The effective stress
+    example passes its 1e-4 "m/s" as it is, a k of 9.8e-4 m/s; until
+    GM-79 so did this module.
+    """
+    return float(k_m_per_s) / (_FLUID_DENSITY * _G_ACCEL)
 
 # Dynamic stage (GM-84). Full Newton, as McGann & Arduino's total stress
 # example: it converges quadratically, so once a correction is under the
@@ -194,6 +227,13 @@ CURVE_KEYS = {
 # Poisson's ratio of each material's skeleton when a layer gives none:
 # drained sand 0.3, and clay 0.495 (nearly incompressible, undrained).
 DEFAULT_NU = {"sand": 0.3, "clay": 0.495}
+# Void ratio of a layer that gives none: sand the OpenSees wiki's Dr = 40 %
+# column (PDMY02_DR40); clay the module's own value, no reference (it sets
+# only the porosity in the pore fluid's storage term, n / Kf).
+DEFAULT_E_INIT = {"sand": 0.77, "clay": 0.85}
+# Yield surfaces of the material's own backbone, as the OpenSees effective
+# stress example (its total stress example uses 25).
+DEFAULT_N_SURF = 20
 # Darendeli's optional inputs and their defaults, in darendeli_params'
 # order: non-plastic, normally consolidated, and his base case of 1 Hz
 # and 10 cycles (the last two set only the reported damping).
@@ -239,15 +279,21 @@ def _validate_layer_options(i, layer, mat):
         if key in layer and layer[key] < 0:
             raise ValueError(f"{label}['{key}'] must be >= 0")
     for key in ("ocr", "freq_hz", "n_cycles", "uniformity_coeff",
-                "diam_mean"):
+                "diam_mean", "permeability", "K0", "e_init", "PTAng"):
         if key in layer and not layer[key] > 0:
             raise ValueError(f"{label}['{key}'] must be positive, got "
                              f"{layer[key]!r}")
-    if "n_elem" in layer:
-        n = layer["n_elem"]
-        if isinstance(n, bool) or not isinstance(n, int) or n < 1:
-            raise ValueError(f"{label}['n_elem'] must be a whole number "
-                             f">= 1, got {n!r}")
+    for key in ("n_elem", "n_surf"):
+        if key in layer:
+            n = layer[key]
+            if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+                raise ValueError(f"{label}['{key}'] must be a whole number "
+                                 f">= 1, got {n!r}")
+    if "n_surf" in layer and curve != "opensees":
+        raise ValueError(
+            f"{label} gives n_surf, but its curve is '{curve}': the fitted "
+            f"curve's strain, G/Gmax pairs set the yield surfaces, one "
+            f"each. Leave n_surf out, or use curve='opensees'")
     if "nu" in layer and not (0.0 <= layer["nu"] < 0.5):
         raise ValueError(f"{label}['nu'] must be in [0, 0.5), got "
                          f"{layer['nu']!r}")
@@ -296,15 +342,23 @@ def analyze_site_response(
         Soil layers from top to bottom. Each dict must contain:
         ``thickness`` (m), ``Vs`` (m/s), ``density`` (Mg/m3),
         ``material_type`` ('sand' or 'clay').
-        Sand requires: ``phi`` (degrees). Optional: ``K0``, ``PTAng``
-        (phase-transformation angle, degrees; default 26, capped at phi).
+        Sand requires: ``phi`` (degrees). Optional: ``K0`` (default Jaky,
+        1 - sin phi; it places only the reference pressure, the mid-layer
+        mean effective stress at which G = rho Vs^2: the column's own
+        horizontal stress after gravity is nu / (1 - nu) of the
+        vertical), ``PTAng`` (phase-transformation angle, degrees;
+        default 26, capped at phi).
         Clay requires: ``su`` (kPa), the undrained strength in simple
         shear (the column shears in simple shear; the model's peak
         stress there equals su).
-        Optional for all: ``n_surf`` (default 20), ``e_init`` (void
-        ratio; default 0.77 sand, 0.85 clay), ``n_elem`` (this layer's
-        element count; default ``n_elem_per_layer``), ``nu`` (Poisson's
-        ratio of the skeleton; default 0.3 sand, 0.495 clay).
+        Optional for all: ``n_surf`` (yield surfaces of the material's own
+        backbone, default 20; refused with a fitted ``curve``, whose pairs
+        set them), ``e_init`` (void ratio; default 0.77 sand, 0.85 clay),
+        ``n_elem`` (this layer's element count; default
+        ``n_elem_per_layer``), ``nu`` (Poisson's ratio of the skeleton;
+        default 0.3 sand, 0.495 clay), ``permeability`` (hydraulic
+        conductivity k, m/s; default 1e-4 sand, 1e-7 clay; the u-p element
+        is given k / (rho_f g), see ``element_permeability``).
         Sand optional: the PressureDependMultiYield02 constants
         ``contrac1``, ``contrac2``, ``contrac3``, ``dilat1``, ``dilat2``,
         ``dilat3``, ``liquefac1``, ``liquefac2`` (default the OpenSees
@@ -602,22 +656,18 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     # 4. Create materials (one per layer)
     # ------------------------------------------------------------------
     mat_tags = []
-    perms = []  # permeability per layer
-    e_inits = []  # void ratio per layer
+    # Each layer's permeability as the element takes it, k / (rho_f g)
+    # (element_permeability; until GM-79 k itself), and void ratio
+    perms = [element_permeability(p["permeability"])
+             for p in plans_bottom_up]
+    e_inits = [p["e_init"] for p in plans_bottom_up]
     mat_tag = 1
     for (L_dict, _, n_e), plan in zip(layer_elems, plans_bottom_up):
-        mat_type = plan["material"]
-        if mat_type == "sand":
-            perm = _create_sand_material(ops, mat_tag, L_dict, plan)
+        if plan["material"] == "sand":
+            _create_sand_material(ops, mat_tag, L_dict, plan)
         else:
-            perm = _create_clay_material(ops, mat_tag, L_dict, plan)
-
-        e_init = L_dict.get(
-            "e_init", PDMY02_DR40["e"] if mat_type == "sand" else 0.85)
-
+            _create_clay_material(ops, mat_tag, L_dict, plan)
         mat_tags.append(mat_tag)
-        perms.append(perm)
-        e_inits.append(e_init)
         mat_tag += 1
 
     # ------------------------------------------------------------------
@@ -645,14 +695,14 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             # buoyant below the water table. (Until GM-77 the weight was
             # nodal loads on a Linear time series, factor = time, so at
             # t = 10,000 s the column carried 10,000 times its weight.)
-            # Permeability: 1 m/s for the gravity stages, the layer's own
-            # value set after them (step 8; GM-85).
+            # Permeability: the example's 1.0 for the gravity stages, the
+            # layer's own set after them (step 8; GM-85).
             ops.element('SSPquadUP', elem_tag,
                         n1, n2, n3, n4,
                         mat_tags[layer_idx_local],
                         1.0,       # thickness (plane strain)
-                        2.2e6,     # fluid bulk modulus (water, kPa)
-                        1.0,       # fluid mass density (Mg/m3)
+                        _FLUID_BULK_KPA,  # fluid bulk modulus (water, kPa)
+                        _FLUID_DENSITY,   # fluid mass density (Mg/m3)
                         _GRAVITY_PERMEABILITY,  # horizontal permeability
                         _GRAVITY_PERMEABILITY,  # vertical permeability
                         e_val,     # void ratio
@@ -710,10 +760,11 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             ops.updateMaterialStage('-material', mt, '-stage', 1)
         _gravity_stage(ops, _GRAVITY_PLASTIC_STEPS, "elastoplastic")
 
-    # Each element's own permeability for the shaking (sand 1e-4, clay
-    # 1e-7 m/s), set through element parameters as the OpenSees effective
-    # stress example does after its gravity stages (GM-85). Without it the
-    # column would shake drained (ru about 0.2 where it liquefies).
+    # Each element's own permeability for the shaking (by default sand
+    # 1e-4, clay 1e-7 m/s, each divided by rho_f g), set through element
+    # parameters as the OpenSees effective stress example does after its
+    # gravity stages (GM-85). Without it the column would shake drained
+    # (ru about 0.2 where it liquefies).
     _set_shaking_permeability(
         ops, [perms[i] for i in elem_mat_idx])
 
@@ -949,9 +1000,10 @@ def _node_pore_pressures(ops, node_pairs):
 
 
 def _set_shaking_permeability(ops, perm_by_element, first_tag=10001):
-    """Set each SSPquadUP element's permeability (m/s) for the shaking.
+    """Set each SSPquadUP element's permeability for the shaking.
 
-    ``perm_by_element[k]`` is element k + 1's. As the OpenSees effective
+    ``perm_by_element[k]`` is element k + 1's, as the element takes it
+    (element_permeability). As the OpenSees effective
     stress example does after gravity: one parameter per element and
     direction ('hPerm', 'vPerm'), then updateParameter.
     """
@@ -1078,19 +1130,28 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
         nu = float(L.get("nu", DEFAULT_NU[mat]))
         b_max = 2.0 * g_max * (1.0 + nu) / (3.0 * (1.0 - 2.0 * nu))
         if mat == "sand":
-            k0 = L.get("K0", 1.0 - math.sin(math.radians(L["phi"])))
+            k0 = float(L.get("K0", 1.0 - math.sin(math.radians(L["phi"]))))
             # Reference confining pressure: mean effective stress there,
             # so the layer's Vs holds at its mid-depth
             p_ref = max(sigma_v_eff * (1.0 + 2.0 * k0) / 3.0, 5.0)
             tau_f = C.sand_strength(L["phi"], p_ref)
             constants = {k: float(L.get(k, PDMY02_DR40[k]))
                          for k in SAND_CONSTANTS}
+            # Phase transformation cannot exceed the friction angle (at
+            # phi it means no dilation, the table's loosest column)
+            pt_asked = float(L.get("PTAng", PDMY02_DR40["PTAng"]))
+            pt_ang = min(pt_asked, float(L["phi"]))
         else:
             # Cap to prevent numerical issues (nu above about 0.495)
             b_max = min(b_max, g_max * 100.0)
+            # 0.67 sigma'v: K0 about 0.5. With pressDependCoe 0 it sets
+            # nothing in the material's own backbone; it is the mean
+            # stress a laboratory curve is evaluated at.
+            k0 = 0.505
             p_ref = max(sigma_v_eff * 0.67, 5.0)
             tau_f = float(L["su"])
             constants = {}
+            pt_asked = pt_ang = None
         # The Poisson's ratio the moduli give, after the clay's cap
         nu_used = (3.0 * b_max - 2.0 * g_max) / (2.0 * (3.0 * b_max + g_max))
         curve = str(L.get("curve", "opensees")).lower().strip()
@@ -1149,6 +1210,12 @@ def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
                 round(float(v) * 100, 3)
                 for v in C.masing_damping(pairs, g_max, strains)]
         plans.append(dict(
+            k0=k0, sigma_v_eff=sigma_v_eff, pt_ang=pt_ang,
+            pt_asked=pt_asked,
+            e_init=float(L.get("e_init", DEFAULT_E_INIT[mat])),
+            n_surf=int(L.get("n_surf", DEFAULT_N_SURF)),
+            permeability=float(L.get("permeability",
+                                     DEFAULT_PERMEABILITY[mat])),
             material=mat, n_elem=len(heights), n_elem_asked=n_asked,
             heights=heights, wt_split=wt_split, gwt_depth=gwt_depth,
             nu=nu, nu_used=nu_used, g_max=g_max, b_max=b_max, p_ref=p_ref,
@@ -1245,6 +1312,7 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
                 + (f"; given: {', '.join(given)}" if given else
                    "; a dense layer with these liquefies like Dr = 40 %"),
                 ("contrac1..3, dilat1..3, liquefac1..2 per layer",)))
+        out.extend(_material_choices(plans, i, label, linear_elastic))
     f_how = how_given(rayleigh_freqs_hz, None, name="rayleigh_freqs_hz")
     out.append(choice(
         "Rayleigh damping frequencies",
@@ -1259,6 +1327,103 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
         "the multi-yield materials damp by hysteresis on Masing's rules "
         "and take no damping curve; a curve's damping is reported beside "
         "the backbone's Masing damping (layer_curves)"))
+    return out
+
+
+def _material_choices(plans, i, label, linear_elastic=False):
+    """A layer's K0 and reference pressure, phase transformation angle,
+    void ratio, yield surfaces and permeability (GM-79)."""
+    from geotech_common.choices import DEFAULT, MODULE, choice
+    plan = plans[i]
+    sand = plan["material"] == "sand"
+    unused = ("; not used: the column stays linear elastic"
+              if linear_elastic else "")
+    out = []
+    # The column's own horizontal stress after gravity is nu / (1 - nu)
+    # of the vertical (measured: 0.4286 at nu 0.3, 0.980 at 0.495)
+    k0_model = plan["nu_used"] / (1.0 - plan["nu_used"])
+    p_model = plan["sigma_v_eff"] * (1.0 + 2.0 * k0_model) / 3.0
+    if sand:
+        vs_pct = ((p_model / plan["p_ref"]) ** 0.25 - 1.0) * 100.0
+        out.append(choice(
+            f"{label} K0 and reference pressure",
+            f"K0 {plan['k0']:.3f}: reference pressure "
+            f"{plan['p_ref']:.1f} kPa",
+            _layer_how(plans, i, "K0"),
+            ("Jaky, 1 - sin phi; " if not _layer_has(plans, i, "K0")
+             else "")
+            + "K0 sets only the reference pressure, the mean effective "
+            "stress sigma'v (1 + 2 K0) / 3 at mid-layer where G = rho "
+            "Vs^2. The column's own horizontal stress after gravity is "
+            f"nu / (1 - nu) of the vertical ({k0_model:.3f} at Poisson's "
+            f"ratio {plan['nu_used']:g}), so its mean stress at mid-layer "
+            f"is {p_model:.1f} kPa and its Vs there {vs_pct:+.1f} % of "
+            f"the layer's",
+            ("layers[i]['K0']",
+             f"nu = K0 / (1 + K0) ({plan['k0'] / (1.0 + plan['k0']):.3f}) "
+             f"so the column's horizontal stress matches K0")))
+        capped = plan["pt_asked"] > plan["pt_ang"]
+        out.append(choice(
+            f"{label} phase transformation angle",
+            f"{plan['pt_ang']:g} deg",
+            _layer_how(plans, i, "PTAng"),
+            "the angle at which the sand turns from contraction to "
+            "dilation; default 26, the OpenSees wiki's suggested "
+            "PressureDependMultiYield02 parameters, Dr = 40 % column"
+            + (f"; {plan['pt_asked']:g} capped at phi, at which the sand "
+               f"does not dilate" if capped else "") + unused,
+            ("the wiki table's other columns: 31 deg at Dr 30 %, 25.5 at "
+             "50 %, 26 at 60 and 75 %",)))
+    elif plan["curve"] in ("darendeli", "menq"):
+        out.append(choice(
+            f"{label} reference pressure",
+            f"0.67 sigma'v: {plan['p_ref']:.1f} kPa", MODULE,
+            "the mean effective stress the laboratory curve is evaluated "
+            "at (the material's pressure dependence is 0). The column's "
+            "own horizontal stress after gravity is nu / (1 - nu) of the "
+            f"vertical ({k0_model:.3f}), a mean stress of {p_model:.1f} "
+            f"kPa at mid-layer"))
+    out.append(choice(
+        f"{label} void ratio", plan["e_init"],
+        _layer_how(plans, i, "e_init"),
+        ("PressureDependMultiYield02's initial void ratio, read against "
+         "its critical-state line (cs1-cs3), and the porosity in the pore "
+         "fluid's storage term; default 0.77, the OpenSees wiki's Dr = "
+         "40 % column (0.85 at Dr 30 %, 0.70 at 50 %, 0.65 at 60 %, 0.55 "
+         "at 75 %)") if sand else
+        ("the porosity in the pore fluid's storage term only; default "
+         "0.85, the module's own value, no reference"),
+        ("layers[i]['e_init']",)))
+    if plan["pairs"] is None:
+        out.append(choice(
+            f"{label} yield surfaces", plan["n_surf"],
+            _layer_how(plans, i, "n_surf"),
+            "the material's own backbone in this many surfaces; default "
+            "20, as the OpenSees effective stress example (its total "
+            "stress example uses 25)" + unused,
+            ("layers[i]['n_surf']",)))
+    else:
+        out.append(choice(
+            f"{label} yield surfaces", len(plan["pairs"]) // 2, MODULE,
+            "one per strain, G/Gmax pair of the fitted curve"))
+    k = plan["permeability"]
+    how = _layer_how(plans, i, "permeability")
+    out.append(choice(
+        f"{label} permeability",
+        f"{k:.3g} m/s (the element takes k / (rho_f g) = "
+        f"{element_permeability(k):.3g})",
+        how,
+        ("hydraulic conductivity" + (
+            "; default 1e-4 m/s, in the OpenSees manual's typical range "
+            "for sand (1e-3 to 1e-1 cm/s)" if sand else
+            "; default 1e-7 m/s, the module's value: the top of the "
+            "OpenSees manual's range for silt (1e-7 to 1e-5 cm/s), above "
+            "its clay (below 1e-7 cm/s); the clay drains little through "
+            "the shaking at either")
+         if how == DEFAULT else "hydraulic conductivity")
+        + ". The u-p element takes k over the unit weight of water "
+        "(Yang's quadUP example on the OpenSees wiki)",
+        ("layers[i]['permeability'] (m/s)",)))
     return out
 
 
@@ -1355,21 +1520,13 @@ def _create_sand_material(ops, mat_tag, layer, plan):
     mid-layer mean effective stress, and either the material's own
     backbone (noYieldSurf > 0) or the fitted user-defined one
     (noYieldSurf < 0 followed by strain, G/Gmax pairs).
-
-    Returns permeability (m/s) for use in element creation.
     """
     phi = layer["phi"]
-    n_surf = int(layer.get("n_surf", 20))
-    e_init = layer.get("e_init", PDMY02_DR40["e"])
-    # Phase transformation cannot exceed the friction angle (at phi it
-    # means no dilation, the table's loosest column).
-    pt_ang = min(float(layer.get("PTAng", PDMY02_DR40["PTAng"])), phi)
     gamma_max = 0.1  # 10% peak shear strain
     p = PDMY02_DR40
     c = plan["constants"]
-    perm = 1.0e-4  # m/s (sand)
     if plan["pairs"] is None:
-        surfaces = [n_surf]
+        surfaces = [plan["n_surf"]]
     else:
         surfaces = [-(len(plan["pairs"]) // 2)] + list(plan["pairs"])
 
@@ -1388,28 +1545,22 @@ def _create_sand_material(ops, mat_tag, layer, plan):
                    gamma_max,      # peakShearStra
                    plan["p_ref"],  # refPress (kPa)
                    0.5,            # pressDependCoe
-                   pt_ang,         # PTAng (degrees)
+                   plan["pt_ang"],  # PTAng (degrees)
                    c["contrac1"], c["contrac3"],
                    c["dilat1"], c["dilat3"],
                    *surfaces,      # noYieldSurf (and the user pairs)
                    c["contrac2"], c["dilat2"],
                    c["liquefac1"], c["liquefac2"],
-                   e_init,         # e (void ratio)
+                   plan["e_init"],  # e (void ratio)
                    p["cs1"], p["cs2"], p["cs3"], p["pa"])
-
-    return perm
 
 
 def _create_clay_material(ops, mat_tag, layer, plan):
     """Create PressureIndependMultiYield material for a clay layer from
     its plan (_layer_plans); with a pressure dependence coefficient of 0
     the reference pressure changes nothing in the backbone.
-
-    Returns permeability (m/s) for use in element creation.
     """
-    n_surf = int(layer.get("n_surf", 20))
     gamma_max = 0.1  # 10%
-    perm = 1.0e-7  # m/s (clay, effectively undrained)
 
     # PIMY with phi = 0 is von Mises: its strength in simple shear (how a
     # 1D column shears) is 2c/sqrt(3) = 1.155c, not c. The OpenSees wiki
@@ -1422,7 +1573,7 @@ def _create_clay_material(ops, mat_tag, layer, plan):
     # same way, and the fit ends that pair at su.
     cohesion = math.sqrt(3.0) / 2.0 * layer["su"]
     if plan["pairs"] is None:
-        surfaces = [n_surf]
+        surfaces = [plan["n_surf"]]
     else:
         surfaces = [-(len(plan["pairs"]) // 2)] + list(plan["pairs"])
 
@@ -1437,5 +1588,3 @@ def _create_clay_material(ops, mat_tag, layer, plan):
                    plan["p_ref"],  # reference pressure (kPa)
                    0.0,          # pressure dependence coefficient
                    *surfaces)    # number of yield surfaces (and pairs)
-
-    return perm

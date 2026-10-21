@@ -1220,16 +1220,29 @@ class TestSiteResponseModelWiring:
             kind, ele, name = params[tag]
             assert kind == "element"
             set_to[(ele, name)] = value
-        # built from the base: elements 1-2 clay, 3-4 sand
+        # built from the base: elements 1-2 clay, 3-4 sand; the element
+        # takes k / (rho_f g) (GM-79; until then k itself)
         expected = {1: 1.0e-7, 2: 1.0e-7, 3: 1.0e-4, 4: 1.0e-4}
-        assert set_to == {(e, n): k for e, k in expected.items()
-                          for n in ("hPerm", "vPerm")}
+        assert set_to == pytest.approx(
+            {(e, n): k / 9.81 for e, k in expected.items()
+             for n in ("hPerm", "vPerm")}, rel=1e-12)
         last_gravity = ops.index("analyze", lambda a: a[1] >= 1.0,
                                  last=True)
         first_update = ops.index("updateParameter")
         last_update = ops.index("updateParameter", last=True)
         reset = ops.index("setTime")
         assert last_gravity < first_update <= last_update < reset
+
+    def test_a_layers_permeability_is_k_over_the_unit_weight_of_water(self):
+        """GM-79: the u-p element's flow term is q = -k_e (grad p -
+        rho_f b) with p in kPa, so k_e = k / (rho_f g): a hydraulic
+        conductivity of 9.81e-3 m/s goes in as 1e-3 (as Yang's quadUP
+        example on the OpenSees wiki divides by g and rho_f)."""
+        from opensees_agent.site_response import element_permeability
+        assert element_permeability(9.81e-3) == pytest.approx(1.0e-3)
+        ops, _ = _build_fake([dict(SAND33, permeability=9.81e-3)])
+        values = [v for _, v in ops.named("updateParameter")]
+        assert values == pytest.approx([1.0e-3] * 4)  # 2 elements, h and v
 
     def test_dynamic_stage_is_newton_at_the_examples_test(self):
         """GM-84: KrylovNewton at NormDispIncr 1e-3 m accepted unconverged
@@ -1659,3 +1672,18 @@ class TestPorePressureRatio:
         np.testing.assert_allclose(r.initial_sigma_v_eff_kPa, hand,
                                    rtol=0.001)
         assert np.all(np.asarray(r.max_pore_pressure_ratio)[d < 3.0] == 0)
+
+    @requires_opensees
+    def test_a_layers_permeability_reaches_the_shaking(self):
+        """GM-79: 20 m of loose sand, water at the surface, 0.30 g. At the
+        default k (1e-4 m/s) it liquefies (peak ru 1.01 measured); at
+        k = 0.1 m/s it drains through the pulse (0.25 measured)."""
+        from opensees_agent.site_response import analyze_site_response
+        peak = {}
+        for k in (None, 0.1):
+            layer = SAND33 if k is None else dict(SAND33, permeability=k)
+            r = analyze_site_response([layer], motion="synthetic_pulse",
+                                      n_elem_per_layer=4,
+                                      time_limit_s=TEST_TIME_LIMIT_S)
+            peak[k] = float(np.max(r.max_pore_pressure_ratio))
+        assert peak[None] > 0.95 and peak[0.1] < 0.4, peak
