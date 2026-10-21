@@ -683,11 +683,13 @@ values, and each level's Ng wires carry its factored Tmax; at Level 4 the
 built-in mat's Tal x Rc over the unfactored Tmax is 1.044, against E4's 4 x
 3.36 / 12.75 = 1.054. Module tests: `tests/test_mse_bar_mat_strength.py`.
 
-**Left for the owner** (BACKLOG):
+**Left for the owner** (BACKLOG; the review below took the first two):
 - the ribbed strip's 43.1 kN a strip has no recorded source either (it is
-  about 0.32 x 450 MPa x 75 x 4 mm, uncorroded);
+  about 0.32 x 450 MPa x 75 x 4 mm, uncorroded) - now 0.55 Fy Ec at E3's
+  corroded thickness, 47.9 kN (review below);
 - a grid connected to a flexible facing takes phi 0.75 (p. 3-23), so 0.55
-  Fy; the built-in is E4's rigid-facing mat at 0.48 Fy;
+  Fy; the built-in is E4's rigid-facing mat at 0.48 Fy - now stated, with
+  the flexible-facing Tal as the alternative (review below);
 - whether the built-in geogrids' Tal (21.9 and 29.2 kN/m) is a long-term
   design strength or an allowable: the check takes it at FOS 1.0;
 - a reinforcement per level (E4's 3W11 at Level 2 and 4W15 below Level 4)
@@ -741,6 +743,108 @@ E3-7.3, each level equal to the run at its own spacing. Module tests:
 **Not covered:** a reinforcement per level (another Tal, another width, or
 E4's W15 mats below Level 4) is not taken; only the spacing or the ratio
 varies.
+
+## Review of GM-262 and GM-261 (2026-10-20)
+
+**The pages, rendered and read.**
+- Fig. 3-5 (Vol I p. 3-24) prints "Ac = (No. of longitudinal bars) x
+  ((D*)^2 / 4)", with no pi, read at 300 dpi. It is a misprint: the area
+  of a round bar is pi D^2 / 4, and Vol II Example E4 takes "(pi)(0.318
+  in.)^2/4 = 0.0795 in^2/wire" (p. E4-15). The code takes pi, as E4 does;
+  without it Tal would be 21 % low.
+- p. 4-77 (checklist IX.5) prints "Is the correct value of nominal
+  strength of steel used? (e.g., 0.55 Fy for strips and 0.48Fy for bar
+  mats)". The checklist calls them "nominal", but Eq. 3-11a's nominal is
+  Fy Ac / b: these are the allowables of a check on the unfactored load,
+  and they equal phi over the load factor, 0.75 / 1.35 = 0.56 and 0.65 /
+  1.35 = 0.48.
+- The module's rupture check is that check: `check_internal_stability`
+  takes FOS_rupture = Tal x Rc / Tmax with Tmax unfactored (E4 Level 4:
+  the module's 9.50 k a 5 ft panel, E4's factored 12.75 k / 1.35 = 9.44 k)
+  and requires 1.0, beside FOS_pullout 1.5. So 0.48 Fy is the consistent
+  allowable for a bar mat on a rigid facing.
+- p. 3-23: phi "is 0.65 when reinforcement is connected to a rigid facing
+  element and is 0.75 when connected to a flexible facing"; it points to
+  "Table 4-8", but the table is Table 4-7 on p. 4-48, whose note C reads
+  "For grid reinforcements connected to a flexible facing mat or which are
+  continuous with the facing mat, use the resistance factor for strip
+  reinforcements".
+- Vol II E3 p. E3-16: "Grade 65 (Fy = 65 ksi), 1.969 in. x 0.157 in. (50
+  mm wide x 4 mm) thick galvanized steel ribbed strips"; "EC = 0.157 in. -
+  0.055 in. = 0.102 in."; area 0.200 in.^2; "Tn = 65 ksi (0.200 in2) =
+  13.00 k/strip"; Tr = 0.75 Tn = 9.75 k. Vol I p. 2-16: "The currently
+  commercially available strips are ribbed top and bottom, 2 in. (50 mm)
+  wide and 5/32-inch (4 mm) thick".
+
+**E4 Level 4, 1.044 against 1.054.** E4's 4 x 3.36 / 12.75 = 1.054 times
+1.0436 / 1.0541, the product of four small differences:
+- 0.48 against 0.65 / 1.35 = 0.4815: x 0.9969;
+- the module's area pi (0.318)^2 / 4 = 0.07942 in.^2 against E4's 0.0795:
+  x 0.9990;
+- E4 rounds Tr to 3.36 (0.65 x 65 x 0.0795 = 3.359): x 0.9997;
+- Tmax: the module takes sigma_H at the level times Sv, 9.497 k a panel
+  unfactored; E4 averages sigma_H over the tributary height and rounds
+  each step, 12.75 k / 1.35 = 9.444 (its spreadsheet 12.77): x 0.9944.
+
+**Rupture at the bottom, 0.726.** It comes only from taking the 4W11 mat
+at every level. At E4's Level 10 (24.37 ft) the module's 4W11 mat gives
+0.709, and E4's own numbers for four W11 wires give 4 x 3.38 / 19.05 =
+0.710; a 4W15 mat gives 1.018 against E4's 4 x 4.84 / 19.05 = 1.016. E4
+changes to 4W15 from Level 5 (11.87 ft) because four W11 wires carry only
+4 x 3.38 / 14.26 = 0.95 of the factored Tmax there.
+
+**What the review changed.**
+- The reinforcement's Tal is its own choice in the result,
+  `mse.tensile_strength_choice` ("Long-term tensile strength Tal of the
+  reinforcement (tensile rupture check)"). It was a sentence appended to
+  the coverage choice's basis. It is given for a built-in (how "module",
+  with its basis), and for any reinforcement whose FOS_rupture is below
+  1.0 somewhere: the result then names those levels, and its alternative
+  says that this tool takes one reinforcement (one Tal and one width) for
+  every level, so a stronger one is a run of its own and a closer spacing
+  is `reinforcement_horizontal_spacing` per level (E3's 3 strips a panel
+  below Level 8). The built-in mat's basis now says E4 uses it to Level 4,
+  and gives E4's 4W15 mat (Tal 138.4 kN/m of mat width) for the levels
+  below.
+- The facing is stated, with the other reading: the mat's basis says
+  0.48 Fy is for a grid on a rigid facing, as E4's panels (phi 0.65); the
+  alternative gives a grid on a flexible facing, or continuous with it,
+  phi 0.75 and so the strips' 0.55 Fy: Tal 110.5 kN/m, every FOS_rupture x
+  1.146. It is not an input: a custom reinforcement takes that Tal.
+- **The built-in strip's Tal is from the print** (it was 43.1 kN a strip,
+  574.7 kN/m, of no recorded source): `reinforcement.steel_strip_Tal`,
+  0.55 Fy Ec (Ac = b Ec, Fig. 3-5a), Ec = 0.102 in. (E3's 4 mm strip after
+  75 years), Fy 65 ksi: 638.6 kN/m of strip width, 47.9 kN a 75 mm strip,
+  11 % more than before. E3's printed 0.55 Tn / b is 636 kN/m on its
+  rounded 0.200 in.^2. The 75 mm width is the tool's own, and its basis
+  says so; the choice's alternative gives GEC-11's 50 mm strip (two thirds
+  of the tensile and pullout resistance at the same spacing).
+- A built-in `reinforcement_name` given with `reinforcement_Tallowable`,
+  `reinforcement_type`, `reinforcement_Fy`, `reinforcement_thickness` or
+  `reinforcement_transverse_spacing` is refused: they were taken and not
+  used, so a 4W15 mat's 138.4 given beside `welded_wire_grid_w11` ran the
+  4W11 mat's 96.44.
+- A per-level Rc or Sh whose levels all take the same Tal x Rc prints one
+  value, not "57.47 to 57.47".
+
+**Numbers after the review.** E4's layout with the built-in mat is
+unchanged (FOS_rupture 2.854 at the top level, 1.081 at 8.76 ft, 0.726 at
+the bottom). The 9 m strip wall at Sh 0.75 m: FOS_rupture 1.309 to 21.65
+before, 1.455 to 24.06 now (Tal x Rc 57.47 -> 63.86 kN/m of wall);
+FOS_pullout unchanged (2.876 to 4.210). The cited Cu beside a tested F*
+was already stated in the F* choice (GM-256 review, 4c2a641). Tests:
+`tests/test_mse_bar_mat_strength.py`, `tests/test_mse_coverage_ratio.py`,
+and `funhouse_agent/tests/test_mse_coverage_ratio_adapter.py`.
+
+**Left for the owner and the lead** (BACKLOG):
+- a reinforcement per level (another Tal and width at the deeper levels,
+  as E4's 4W15 mats);
+- the built-in strip's 75 mm width, where GEC-11's strip is 50 mm;
+- the geosynthetic rupture check: the built-in geogrids' Tal (21.9 and
+  29.2 kN/m) is the long-term design strength, and GEC-11 checks it at phi
+  0.90 against Tmax times 1.35, an allowable of 0.67 Tal, where this module
+  takes Tal itself at a factor of safety of 1.0;
+- `reinforcement_Fy` is used in no check, for a custom reinforcement too.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height

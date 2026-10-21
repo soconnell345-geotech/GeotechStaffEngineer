@@ -46,7 +46,8 @@ def test_each_level_takes_its_own_spacing():
     assert [lv["Rc"] for lv in levels] == [0.1] * 8 + [0.15] * 4
     assert levels[:8] == wide[:8]
     assert levels[8:] == close[8:]
-    assert levels[-1]["Tal_Rc_kN_per_m"] == pytest.approx(43.1 / 0.5,
+    # the built-in strip's 47.9 kN a strip since the GM-262 review
+    assert levels[-1]["Tal_Rc_kN_per_m"] == pytest.approx(47.895 / 0.5,
                                                           abs=0.01)
 
 
@@ -115,7 +116,7 @@ def test_the_choice_lists_the_spacings_by_level():
     assert c["chosen"].startswith(
         "Rc = b 0.075 m / Sh per level, from the top: Sh 0.75 m at levels "
         "1-8 (Rc 0.1); Sh 0.5 m at levels 9-12 (Rc 0.15)")
-    assert "Tal x Rc 57.47 to 86.2 kN/m of wall" in c["chosen"]
+    assert "Tal x Rc 63.86 to 95.79 kN/m of wall" in c["chosen"]
     assert "Table E3-7.3" in c["basis"] and "p. E3-19" in c["basis"]
     given = coverage_choice(dataclasses.replace(
         RIBBED_STEEL_STRIP_75x4, coverage_ratio=[0.1] * 11 + [0.2]))
@@ -134,7 +135,7 @@ def test_the_calc_package_shows_the_spacing_per_level():
     text = repr(get_calc_steps(result, analysis))
     assert "R_c = 0.100 × 8, 0.150 × 4 per level from the top" \
         in text
-    assert "57.5 to 86.2" in text
+    assert "63.9 to 95.8" in text
     one = {"geom": _wall(), "gamma_backfill": 20.0, "phi_backfill": 34.0,
            "reinforcement": _strip(0.75)}
     items = {i.name: i for i in get_input_summary(

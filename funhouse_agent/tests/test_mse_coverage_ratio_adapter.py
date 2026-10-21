@@ -151,7 +151,10 @@ def test_list_reinforcement_says_what_each_needs():
     out = D.call_agent("retaining_walls", "list_reinforcement", {})
     strip = out["reinforcement_types"]["ribbed_steel_strip_75x4"]
     assert strip["width_m"] == 0.075
-    assert strip["Tallowable_kN_per_m"] == pytest.approx(574.67, abs=0.01)
+    # 0.55 Fy Ec at GEC-11 E3's corroded thickness since the GM-262 review
+    # (574.67 before, 43.1 kN a strip of no recorded source)
+    assert strip["Tallowable_kN_per_m"] == pytest.approx(638.6, abs=0.01)
+    assert "p. E3-16" in strip["Tallowable_basis"]
     assert strip["mse_wall_needs"].startswith(
         "reinforcement_horizontal_spacing")
     assert "Eq. 3-11a" in out["Tallowable"]

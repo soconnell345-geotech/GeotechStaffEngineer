@@ -45,16 +45,19 @@ def _strip(Sh=0.75):
 def test_the_strip_wall_before_and_after():
     """At Sh 0.75 m, Rc = 0.075/0.75 = 0.1: pullout a tenth of the Rc = 1
     reading (28.762 to 42.101 before GM-256), and the rupture resistance
-    43.1 kN a strip / 0.75 m = 57.5 kN per metre of wall (0.982 at the
-    bottom level before, 43.1 against Tmax 43.89 kN/m)."""
+    47.9 kN a strip / 0.75 m = 63.9 kN per metre of wall (0.982 at the
+    bottom level before GM-256, 43.1 against Tmax 43.89 kN/m; 1.309 at
+    43.1 kN a strip / 0.75 m until the GM-262 review, which took the
+    strip's Tal from GEC-11's print: 0.55 Fy Ec at Example E3's corroded
+    thickness, 638.6 kN/m of strip width)."""
     levels = check_internal_stability(_strip_wall(), 20.0, 34.0, _strip())
     po = [lv["FOS_pullout"] for lv in levels]
     ru = [lv["FOS_rupture"] for lv in levels]
     assert min(po) == pytest.approx(2.876, abs=1e-3)
     assert max(po) == pytest.approx(4.210, abs=1e-3)
-    assert min(ru) == pytest.approx(1.309, abs=1e-3)
+    assert min(ru) == pytest.approx(1.455, abs=1e-3)
     assert levels[-1]["Tmax_kN_per_m"] == pytest.approx(43.89, abs=0.01)
-    assert levels[-1]["Tal_Rc_kN_per_m"] == pytest.approx(43.1 / 0.75,
+    assert levels[-1]["Tal_Rc_kN_per_m"] == pytest.approx(47.895 / 0.75,
                                                           abs=0.01)
     full = check_internal_stability(
         _strip_wall(), 20.0, 34.0,
@@ -140,12 +143,49 @@ def test_a_steel_strip_or_grid_with_no_spacing_is_refused():
 
 
 def test_the_built_in_strip_strength_is_per_metre_of_strip_width():
-    """Eq. 3-11a: Tal = Fy Ac / b. The built-in's 43.1 kN a strip over b =
-    75 mm; per metre of wall at Sh it is 43.1 / Sh."""
-    assert RIBBED_STEEL_STRIP_75x4.Tallowable * 0.075 == pytest.approx(43.1)
+    """Eq. 3-11a: Tal = Fy Ac / b, per metre of strip width; per metre of
+    wall at Sh it is the strip's strength / Sh. Since the GM-262 review
+    the built-in's Tal is 0.55 Fy Ec (p. 4-77; Ac = b Ec, Fig. 3-5a), Ec =
+    0.102 in. (GEC-11 Vol II Example E3, p. E3-16), Fy 65 ksi: 638.6 kN/m,
+    47.9 kN a 75 mm strip (it was 43.1 kN a strip, 574.67 kN/m, of no
+    recorded source)."""
+    assert RIBBED_STEEL_STRIP_75x4.Tallowable * 0.075 == pytest.approx(
+        47.895, abs=1e-3)
     lv = check_internal_stability(_strip_wall(), 20.0, 34.0, _strip(0.6))[0]
-    assert lv["Tal_Rc_kN_per_m"] == pytest.approx(43.1 / 0.6, abs=0.01)
-    assert lv["Tallowable_kN_per_m"] == pytest.approx(574.67, abs=0.01)
+    assert lv["Tal_Rc_kN_per_m"] == pytest.approx(47.895 / 0.6, abs=0.01)
+    assert lv["Tallowable_kN_per_m"] == pytest.approx(638.60, abs=0.01)
+
+
+def test_the_built_in_strip_states_its_Tal_and_GEC11s_50_mm_strip():
+    """GM-262 review: E3's strip, 'Grade 65 (Fy = 65 ksi), 1.969 in. x
+    0.157 in. (50 mm wide x 4 mm)', Ec = 0.102 in. after 75 years, Tn =
+    13.00 k a strip (p. E3-16); 0.55 Tn / b = 636 kN/m on E3's rounded
+    0.200 in.^2, 638.6 on Ec. The 75 mm width is the tool's own: GEC-11
+    Vol I p. 2-16 gives the commercially available strips as 50 mm wide."""
+    from retaining_walls.reinforcement import (
+        STRIP_ALLOWABLE_FY, steel_strip_Tal)
+    IN, KSI, KIP = 0.0254, 6894.757, 4.4482216
+    assert steel_strip_Tal(0.102 * IN, 65 * KSI) * 1.969 * IN / KIP == \
+        pytest.approx(13.00, rel=0.005)
+    assert RIBBED_STEEL_STRIP_75x4.Tallowable == pytest.approx(
+        STRIP_ALLOWABLE_FY * 13.00 * KIP / (1.969 * IN), rel=0.005)
+    r = analyze_mse_wall(_strip_wall(), 20.0, 34.0, _strip())
+    (c,) = [c for c in r.choices if c["what"].startswith("Long-term")]
+    assert c["how"] == "module"
+    assert c["chosen"] == ("Ribbed Steel Strip 75x4mm: Tal 638.6 kN/m of "
+                           "strip width (47.9 kN a 0.075 m strip), the same "
+                           "at every level")
+    for words in ("0.55 Fy", "p. 4-77", "p. E3-16", "0.102 in.",
+                  "p. 2-16", "tool's own"):
+        assert words in c["basis"], words
+    (alt,) = c["alternatives"]
+    lv = r.internal_results
+    for words in ("50 mm", "0.667 of the width", "reinforcement_width 0.05",
+                  f"lowest FOS_rupture "
+                  f"{min(x['FOS_rupture'] for x in lv) * 2 / 3:.3g}"):
+        assert words in alt, words
+    with pytest.raises(ValueError, match="positive corroded"):
+        steel_strip_Tal(0.0, 65 * KSI)
 
 
 def test_the_choice_says_how_Rc_was_set():
@@ -153,7 +193,7 @@ def test_the_choice_says_how_Rc_was_set():
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
     assert c["how"] == "given"
     assert c["chosen"].startswith("Rc 0.1 = b 0.075 m / Sh 0.75 m")
-    assert "Tal x Rc 57.47 kN/m of wall" in c["chosen"]
+    assert "Tal x Rc 63.86 kN/m of wall" in c["chosen"]   # GM-262 review
     grid = dataclasses.replace(WELDED_WIRE_GRID_W11, coverage_ratio=0.3)
     r = analyze_mse_wall(_strip_wall(), 20.0, 34.0, grid)
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
@@ -265,10 +305,11 @@ def test_the_calc_steps_carry_Rc():
     by_title = {getattr(it, "title", ""): it for it in items}
     assert by_title["Pullout Resistance"].equation.endswith("× C × R_c")
     assert "R_c = 0.100" in by_title["Pullout Resistance"].substitution
+    # 47.9 kN a strip / 0.75 m since the GM-262 review (43.1 before)
     assert by_title["Tensile Resistance per Metre of Wall"].result_value == \
-        "57.5"
+        "63.9"
     tested = by_title["Pullout Resistance Factor F* (from pullout tests)"]
     assert tested.substitution == "F* 1.6 at 0 m, 0.8 at 6 m (linear between)"
     table = by_title["Internal Stability per Reinforcement Level"]
     assert "T_al R_c (kN/m)" in table.headers
-    assert table.rows[0][3] == "57.5"
+    assert table.rows[0][3] == "63.9"

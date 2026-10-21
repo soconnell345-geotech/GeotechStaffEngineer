@@ -26,6 +26,26 @@ PerLevel = Union[float, Sequence[float]]
 #: Table 4-7, p. 4-48) against Tmax times 1.35: 0.65 / 1.35 = 0.48 (GM-262).
 BAR_MAT_ALLOWABLE_FY = 0.48
 
+#: The same for a steel strip: "0.55 Fy for strips" (GEC-11 Vol I p. 4-77);
+#: phi 0.75 (Table 4-7, p. 4-48) against Tmax times 1.35, 0.75 / 1.35 =
+#: 0.56 (GM-262 review).
+STRIP_ALLOWABLE_FY = 0.55
+
+
+def steel_strip_Tal(E_corroded: float, Fy: float,
+                    fraction: float = 1.0) -> float:
+    """Tal of a steel strip per metre of its own width (kN/m; GM-262
+    review): ``fraction`` x Fy Ac / b, GEC-11 Vol I Eq. 3-11a (p. 3-22),
+    with Ac = b Ec (Fig. 3-5a, p. 3-24), so Fy Ec whatever the width; Ec
+    the strip's thickness after corrosion (Eq. 3-10). ``fraction`` as
+    :func:`steel_grid_Tal`; :data:`STRIP_ALLOWABLE_FY` the allowable.
+
+    Parameters: E_corroded (m); Fy (kPa)."""
+    if E_corroded <= 0 or Fy <= 0:
+        raise ValueError("steel_strip_Tal needs a positive corroded "
+                         "thickness and Fy")
+    return fraction * Fy * E_corroded
+
 
 def steel_grid_Tal(n_longitudinal: int, D_corroded: float, Fy: float,
                    b: float, fraction: float = 1.0) -> float:
@@ -95,9 +115,9 @@ class Reinforcement:
         factor"), against the unfactored Tmax at a factor of safety of 1.0,
         so Tal here is an allowable: for steel a fraction of GEC-11 Vol I
         Eq. 3-11a (p. 3-22), Fy Ac / b with Ac after corrosion, 0.55 Fy for
-        strips and 0.48 Fy for bar mats (p. 4-77; :func:`steel_grid_Tal`,
-        GM-262). A strength per strip or per mat (Ptal, Eq. 3-11b) is Ptal
-        / b (GM-256).
+        strips and 0.48 Fy for bar mats (p. 4-77; :func:`steel_strip_Tal`,
+        :func:`steel_grid_Tal`, GM-262). A strength per strip or per mat
+        (Ptal, Eq. 3-11b) is Ptal / b (GM-256).
     width : float, optional
         Gross width b (m) of the strip, sheet or grid; for a grid, from the
         centre to centre of the outside longitudinal bars (GEC-11 Vol I p.
@@ -194,26 +214,46 @@ class Reinforcement:
         return None
 
 
-# Built-in reinforcement types. The values are representative of their
-# class, not a manufacturer's catalog (DESIGN.md). A steel strip or grid has
-# no coverage ratio of its own: the wall's horizontal spacing Sh sets it,
-# Rc = b/Sh (GEC-11 Vol I Eq. 3-1), and a call gives Sh or Rc (GM-256).
-RIBBED_STEEL_STRIP_75x4 = Reinforcement(
-    name="Ribbed Steel Strip 75x4mm",
-    type="metallic_strip",
-    # Tal per metre of strip width (GEC-11 Eq. 3-11a): the representative
-    # allowable load of 43.1 kN per strip (Grade 65 steel, 75 mm x 4 mm,
-    # after corrosion) over b = 75 mm. Until GM-256 the module compared 43.1
-    # "kN/m" with the tension per metre of wall, at no spacing.
-    Tallowable=43.1 / 0.075,
-    width=0.075,
-    Fy=450000.0,
-    thickness=0.004,
-)
-
+# Built-in reinforcement types, not a manufacturer's catalog (DESIGN.md).
+# A steel strip or grid has no coverage ratio of its own: the wall's
+# horizontal spacing Sh sets it, Rc = b/Sh (GEC-11 Vol I Eq. 3-1), and a
+# call gives Sh or Rc (GM-256).
 _IN = 0.0254
 _FT = 0.3048
 _KSI = 6894.757                 # kPa
+_FY_GRADE_65 = 65.0 * _KSI
+
+# GEC-11 Vol II Example E3's strip, read on the page (GM-262 review):
+# "Grade 65 (Fy = 65 ksi), 1.969 in. x 0.157 in. (50 mm wide x 4 mm) thick
+# galvanized steel ribbed strips"; after 75 years "EC = 0.157 in. - 0.055
+# in. = 0.102 in." (p. E3-16: the zinc gone in 16 years, then 0.47
+# mil/year/side for 59).
+_E3_EC = 0.102 * _IN
+
+STRIP_BASIS = (
+    "Tal = 0.55 Fy Ec per metre of strip width (GEC-11 Vol I Eq. 3-11a, "
+    "p. 3-22, with Ac = b Ec, Fig. 3-5a, p. 3-24; '0.55 Fy for strips', p. "
+    "4-77, the allowable for a check at a factor of safety of 1.0 on the "
+    "unfactored Tmax), Ec = 0.102 in. (2.59 mm), the 4 mm (0.157 in.) "
+    "galvanized ribbed strip of GEC-11 Vol II Example E3 after 75 years of "
+    "corrosion (p. E3-16), Fy = 65 ksi (Grade 65, as E3): 638.6 kN/m of "
+    "strip width, 47.9 kN a 75 mm strip. The 75 mm width is the tool's "
+    "own: GEC-11 gives the ribbed strips 'currently commercially available' "
+    "as '2 in. (50 mm) wide and 5/32-inch (4 mm) thick' (Vol I p. 2-16), "
+    "E3's. Another width, design life or backfill is a custom "
+    "reinforcement (reinforcement_Tallowable)")
+
+RIBBED_STEEL_STRIP_75x4 = Reinforcement(
+    name="Ribbed Steel Strip 75x4mm",
+    type="metallic_strip",
+    # kN/m of strip width, times Rc per metre of wall (GM-256). It was 43.1
+    # kN a strip / 0.075 m = 574.7, of no recorded source (GM-262 review).
+    Tallowable=steel_strip_Tal(_E3_EC, _FY_GRADE_65, STRIP_ALLOWABLE_FY),
+    width=0.075,
+    Fy=_FY_GRADE_65,
+    thickness=0.004,
+    basis=STRIP_BASIS,
+)
 
 # GEC-11 Vol II (FHWA-NHI-10-025) Example E4's bar mat at Levels 1, 3 and
 # 4, read on the pages (GM-262): "4W11 + W11x0.5' which means a bar mat
@@ -227,7 +267,6 @@ _W11_D = 0.374 * _IN
 _W11_D75 = 0.318 * _IN
 _W11_MAT_WIRES = 4
 _W11_MAT_WIDTH = round((_W11_MAT_WIRES - 1) * 0.5 * _FT, 4)  # b 1.5 ft
-_FY_GRADE_65 = 65.0 * _KSI
 
 W11_MAT_BASIS = (
     "GEC-11 Vol II Example E4's bar mat at Levels 1, 3 and 4, '4W11 + "
@@ -237,8 +276,16 @@ W11_MAT_BASIS = (
     "'0.48Fy for bar mats', p. 4-77, the allowable for a check at a factor "
     "of safety of 1.0 on the unfactored Tmax), Ac = 4 pi (0.318 in.)^2 / 4, "
     "the W11 wire after E4's 75 years of corrosion (p. E4-14), Fy = 65 ksi "
-    "(p. E4-15). Another mat, design life or backfill is a custom "
-    "reinforcement (reinforcement_Tallowable)")
+    "(p. E4-15). The 0.48 Fy is for a grid connected to a rigid facing, as "
+    "E4's precast panels: phi 0.65 (p. 3-23; Table 4-7, p. 4-48) against "
+    "Tmax times 1.35, 0.65 / 1.35 = 0.48. E4 uses this mat to Level 4 "
+    "(9.37 ft, 2.86 m deep) and 4W15 mats from Level 5 (11.87 ft, 3.62 m) "
+    "down, where four W11 wires carry 0.95 of the factored Tmax (Table "
+    "E4-7.4, p. E4-18); a 4W15 mat, W15 0.381 in. after 75 years (p. "
+    "E4-14), is Tal = 0.48 Fy 4 pi (0.381 in.)^2 / 4 / 1.5 ft = 138.4 kN/m "
+    "of mat width, with W11 transverse wires at 1 ft or 1.5 ft. Another "
+    "mat, design life or backfill is a custom reinforcement "
+    "(reinforcement_Tallowable)")
 
 WELDED_WIRE_GRID_W11 = Reinforcement(
     name="Bar mat 4W11 + W11x0.5' (GEC-11 Vol II Example E4)",

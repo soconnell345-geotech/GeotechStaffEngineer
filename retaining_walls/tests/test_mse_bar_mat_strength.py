@@ -109,17 +109,81 @@ def test_E4s_layout_before_and_after():
         assert a["FOS_pullout"] == b["FOS_pullout"]
 
 
+def _tal_choice(r):
+    found = [c for c in r.choices
+             if c["what"].startswith("Long-term tensile strength Tal")]
+    assert len(found) <= 1
+    return found[0] if found else None
+
+
 def test_the_choice_says_where_the_mats_Tal_comes_from():
+    """GM-262 review: the mat's Tal is its own choice (it was a sentence in
+    the coverage choice's basis), with the facing it assumes and the
+    levels E4 uses it at."""
     r = analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0, _e4_mat())
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
     assert c["chosen"].startswith("Rc 0.3 = b 0.4572 m / Sh 1.524 m")
     assert "Tal x Rc 28.93 kN/m of wall" in c["chosen"]
-    assert "The reinforcement's Tal: GEC-11 Vol II Example E4" in c["basis"]
+    assert "Example E4" not in c["basis"]
+    tal = _tal_choice(r)
+    assert tal["how"] == "module"
+    assert tal["chosen"].startswith(
+        "Bar mat 4W11 + W11x0.5' (GEC-11 Vol II Example E4): Tal 96.44 kN/m "
+        "of mat width (44.1 kN a 0.4572 m mat), the same at every level")
+    for words in ("p. E4-18", "0.48 Fy", "p. 4-77", "rigid facing",
+                  "0.65 / 1.35", "4W15 mats from Level 5", "138.4 kN/m"):
+        assert words in tal["basis"], words
     custom = Reinforcement("a mat", "metallic_grid", 100.0, width=0.5,
                            horizontal_spacing=1.5)
     r = analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0, custom)
-    (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
-    assert "The reinforcement's Tal" not in c["basis"]
+    assert _tal_choice(r)["how"] == "given"      # it fails rupture deeper
+    passing = dataclasses.replace(custom, Tallowable=1000.0)
+    assert _tal_choice(analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0,
+                                        passing)) is None
+
+
+def test_the_mats_flexible_facing_reading_is_offered():
+    """GEC-11 Vol I p. 3-23 and Table 4-7 note C (p. 4-48): a grid on a
+    flexible facing, or continuous with it, takes the strips' 0.75, so the
+    strips' 0.55 Fy (p. 4-77): Tal 96.44 x 0.55 / 0.48 = 110.5 kN/m."""
+    tal = _tal_choice(analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0,
+                                       _e4_mat()))
+    (facing,) = [a for a in tal["alternatives"] if "flexible facing" in a]
+    for words in ("Table 4-7 note C", "p. 3-23", "0.55 Fy",
+                  "Tal 110.5 kN/m of mat width", "x 1.146",
+                  "lowest 0.832"):
+        assert words in facing, words
+
+
+def test_a_rupture_below_one_says_one_reinforcement_is_taken_at_every_level():
+    """At E4's layout the 4W11 mat's FOS_rupture is below 1.0 from 3.43 m
+    (11.25 ft) down, 0.726 at the bottom: E4 itself changes to 4W15 mats
+    from Level 5 (11.87 ft), where four W11 wires carry 0.95 of the
+    factored Tmax (Table E4-7.4). At E4's Level 10 (24.37 ft) the module's
+    4W11 mat gives 0.709 against E4's 4 x 3.38 / 19.05 = 0.710 for four
+    W11 wires, and a 4W15 mat 1.018 against 4 x 4.84 / 19.05 = 1.016."""
+    tal = _tal_choice(analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0,
+                                       _e4_mat()))
+    assert ("FOS_rupture is below 1.0 at 6 levels, z = 3.43 to 7.24 m "
+            "(lowest 0.726)") in tal["chosen"]
+    (one,) = [a for a in tal["alternatives"] if "one reinforcement" in a]
+    assert "reinforcement_horizontal_spacing per level" in one
+    w15 = steel_grid_Tal(4, 0.381 * IN, 65.0 * KSI, 1.5 * FT,
+                         BAR_MAT_ALLOWABLE_FY)
+    assert w15 == pytest.approx(138.4, abs=0.05)
+    deep = MSEWallGeometry(wall_height=25.64 * FT,
+                           reinforcement_length=18 * FT,
+                           reinforcement_spacing=2.5 * FT,
+                           surcharge=0.25 * KSF)
+    from retaining_walls.mse import Kr_Ka_ratio, Tmax_at_level, rankine_Ka
+    z = 24.37 * FT
+    T = Tmax_at_level(z, 125 * PCF, rankine_Ka(34.0),
+                      Kr_Ka_ratio(z, "metallic_grid"), 2.5 * FT,
+                      deep.surcharge)
+    Rc = 1.5 / 5.0
+    assert WELDED_WIRE_GRID_W11.Tallowable * Rc / T == pytest.approx(
+        4 * 3.38 / 19.05, abs=0.003)
+    assert w15 * Rc / T == pytest.approx(4 * 4.84 / 19.05, abs=0.003)
 
 
 def test_a_mat_that_is_not_one_is_refused():
