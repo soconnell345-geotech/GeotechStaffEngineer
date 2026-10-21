@@ -1346,20 +1346,20 @@
   "OWN-72": {
     "kind": "decision",
     "ask_who": null,
-    "question": "The split's two new packages: what are they called, and how does Tiny Apps get Document Review?",
-    "why": "The split plan (INF-26) builds three packages of our own from this repository: Document Review (not on PyPI, a wheel for Tiny Apps), a shared package that both apps run (the chat page, the document and vision tools, the model connections), and GeotechStaffEngineer as today. The names are needed before the shared package is built. Tiny Apps installs only from CfA's Nexus mirror, so a package that is not on PyPI needs CfA's agreement to another route; their answer is needed before the Tiny Apps wrapper is changed. Testers keep today's two-page package from Nexus until then, so nothing is lost by waiting.",
-    "background": "Python's convention is a lower-case install name with hyphens and an import name with underscores. The shared package is public like planlens (OWN-74), so its name carries no \"DE\". You decided this morning that the geotech page leaves Tiny Apps and runs on Foundry. The plan is module_work/APP_SPLIT_PLAN.md; section 1.3 compares the four routes.",
+    "question": "The shared core package's name, and how Tiny Apps gets Document Review",
+    "why": "You said on the desk (2026-10-21): Document Review's code can live as plain source in the GHE repository, nothing of it a package. So only the shared core (OWN-74) needs a name. The core is public on PyPI like planlens, so Tiny Apps installs it from Nexus the way it installs planlens today: no new route for it. Document Review as a source folder in the GHE repo needs CfA's yes (question 6a below); testers keep today's two-page package until then.",
+    "background": "Python's convention is a lower-case install name with hyphens and an import name with underscores. The core holds the document, vision and markup tools and the model connections (and the figure helper, OWN-77), not either app's page. You decided on 2026-10-20 that the geotech page leaves Tiny Apps and runs on Foundry. The plan is module_work/APP_SPLIT_PLAN.md.",
     "parts": [
       {
-        "label": "Names",
+        "label": "The core's name",
         "options": [
           {
-            "label": "de-docreview for the app, docreview-core for the shared part",
-            "effect": "Imported as de_docreview and docreview_core."
+            "label": "docreview-core",
+            "effect": "Imported as docreview_core."
           },
           {
             "label": "Other (see notes)",
-            "effect": "Write the names you want in the notes."
+            "effect": "Write the name you want in the notes."
           }
         ]
       },
@@ -1367,27 +1367,23 @@
         "label": "How Tiny Apps gets Document Review",
         "options": [
           {
-            "label": "A: our two wheels in the wrapper repo",
-            "effect": "Pure Python, copied in and installed by path; every other package still from Nexus. Needs CfA's yes (question 6a)."
+            "label": "Its source folder in the GHE wrapper repo",
+            "effect": "Your comment. It runs from the repo; the core and planlens come from Nexus. Needs CfA's yes (6a)."
           },
           {
-            "label": "B: the source folder in the wrapper repo",
-            "effect": "The same code, unzipped, if CfA would rather read source (question 6b)."
+            "label": "One wheel of ours in the GHE wrapper repo",
+            "effect": "The same code as a file installed by path, if CfA would rather install a file than run a folder (6b)."
           },
           {
-            "label": "C: a hosted repository on CfA's Nexus",
-            "effect": "Keeps everything through Nexus, if one exists for teams (question 6c)."
-          },
-          {
-            "label": "D: PyPI through Nexus",
-            "effect": "Installs like everything else, but Document Review goes on PyPI, which you did not want."
+            "label": "A hosted repository on CfA's Nexus",
+            "effect": "Keeps everything through Nexus, if one exists for teams (6c)."
           }
         ]
       }
     ],
-    "recommendation": "de-docreview and docreview-core; send CfA the four questions below now and plan on A, falling back to B, then C, then D only on your word.",
+    "recommendation": "docreview-core for the core; send CfA the questions below and plan on the source folder in the GHE repo, as you said.",
     "if_no_answer": "The plan keeps the working names and the route open; the steps that need neither go ahead.",
-    "message_to_send": "Questions on installing our Document Review app (replaces our earlier question 6):\n6a. May our wrapper repo carry our own two wheel files (small, pure Python, built by us), installed by path from packages.txt, with every other package from Nexus? Or must every package come through Nexus?\n6b. If you would rather read source than a wheel, may the app's source folder live in the GHE repo instead? (Same code, unzipped.)\n6c. Does your Nexus have a hosted repository where a team publishes its own package?\n6d. Are the fleet pins our tree must accept still streamlit 1.62.0, pandas 3.0.2, PyJWT 2.13.0, msal 1.37.0, azure-identity 1.21.0 and azure-keyvault-secrets 4.9.0?",
+    "message_to_send": "Questions on installing our Document Review app (replaces our earlier question 6):\n6a. May our app's source folder live in the GHE wrapper repo and run from there, with every installed package coming from Nexus (our shared package is public on PyPI, like planlens)?\n6b. If you would rather install a file than run a folder, may the repo carry one small pure-Python wheel of ours, installed by path from packages.txt?\n6c. Does your Nexus have a hosted repository where a team publishes its own package?\n6d. Are the fleet pins our tree must accept still streamlit 1.62.0, pandas 3.0.2, PyJWT 2.13.0, msal 1.37.0, azure-identity 1.21.0 and azure-keyvault-secrets 4.9.0?",
     "steps": [],
     "unblocks": [
       "INF-32",
@@ -1443,7 +1439,7 @@
     "ask_who": null,
     "question": "Where should the code both apps use live once they are split?",
     "why": "Both apps run the same chat page, document, vision and markup tools, figure helper and model connections, about 46,000 lines. It has to be somewhere both can install: GeotechStaffEngineer from PyPI on Foundry, Document Review as a wheel on Tiny Apps.",
-    "background": "planlens, which reads the documents, is already its own public package on PyPI. This code is public today, in this public repository and in every GSE release since 5.26.",
+    "background": "planlens, which reads the documents, is already its own public package on PyPI. This code is public today, in this public repository and in every GSE release since 5.26. You said on the desk (2026-10-21): never the same base code in two places, and Document Review can be plain source in the GHE repo; that rules out two copies, and the code living inside Document Review (GSE from PyPI could not install it).",
     "parts": [
       {
         "label": "Where it lives",
@@ -1467,7 +1463,7 @@
         ]
       }
     ],
-    "recommendation": "Its own public package on PyPI, or the smaller shared package with a chat page per app if you expect the two pages to differ. Both keep GSE on PyPI and Document Review off it with one copy of the tools; two full copies, or the code inside Document Review, do not.",
+    "recommendation": "The smaller shared package, each app keeping its own chat page, as you leaned (2026-10-21). Your broad Document Review feedback and your narrower geotech feedback can each change their own page freely, and fixes to the tools, vision and connections land once, in the core. It needs three habits: each app pins a core version, the core carries its own tests, and nothing Department-specific goes in it, since it is public (the rule planlens already lives under).",
     "if_no_answer": "The steps that need no decision go ahead; the shared package is not built.",
     "message_to_send": null,
     "steps": [],
@@ -1517,7 +1513,7 @@
     "kind": "decision",
     "ask_who": null,
     "question": "Should the Document Review code be private?",
-    "why": "Keeping Document Review off PyPI does not make it private: its code is in this public repository and in every GeotechStaffEngineer release since 5.26.",
+    "why": "Keeping Document Review off PyPI does not make it private: its code is in this public repository and in every GeotechStaffEngineer release since 5.26. You said on the desk (2026-10-21): Document Review's code can live in the GHE repository, which is the Department's, so it would be private there.",
     "background": "Moving it to a private repository after the split is a short, mechanical step, so this can wait until the end of the split.",
     "parts": [
       {
@@ -1534,7 +1530,7 @@
         ]
       }
     ],
-    "recommendation": "Public, unless the Department or CfA asks otherwise.",
+    "recommendation": "Private, in the GHE repository after the split, as your comment implies. The code already published stays published.",
     "if_no_answer": "It stays public in this repository.",
     "message_to_send": null,
     "steps": [],
