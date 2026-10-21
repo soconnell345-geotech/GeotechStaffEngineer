@@ -132,6 +132,7 @@ def _run_site_response_1d(params: dict) -> dict:
         n_elem_per_layer=params.get("n_elem_per_layer", 4),
         linear_elastic=bool(params.get("linear_elastic", False)),
         rayleigh_freqs_hz=params.get("rayleigh_freqs_hz"),
+        pga_lowpass_hz=params.get("pga_lowpass_hz", 10.0),
     )
     return clean_result(result.to_dict())
 
@@ -206,6 +207,7 @@ METHOD_INFO = {
             "scale_factor": {"type": "float", "brief": "Scale factor for input acceleration.", "default": 1.0},
             "n_elem_per_layer": {"type": "int", "brief": "Elements per soil layer (a layer's own n_elem overrides it).", "default": 4},
             "rayleigh_freqs_hz": {"type": "array", "brief": "The two frequencies [f1, f2] (Hz) at which the Rayleigh damping equals damping.", "default": None},
+            "pga_lowpass_hz": {"type": "float", "brief": "Corner (Hz) of the low-pass (fourth-order Butterworth, run forward and backward) behind pga_surface_lowpass_g and pga_input_lowpass_g, and of the test of whether motion above it sets the raw PGA; the tool's choice, no reference prints one. pga_surface_g is never filtered.", "default": 10.0},
             "linear_elastic": {"type": "bool", "brief": "Keep the soil linear elastic through the shaking (Gmax = rho*Vs^2, Rayleigh damping only): a check of the column, not a design analysis.", "default": False},
         },
         "returns": {
@@ -214,9 +216,18 @@ METHOD_INFO = {
             "n_layers": "Number of layers.",
             "site_period_s": "Site period 4H/Vs (s).",
             "motion_name": "Input motion name (notes any PGA scaling).",
-            "pga_surface_g": "Peak ground acceleration at surface (g). In a sand that dilates it can be a spike a few hundredths of a second long whose height depends on the element size; Sa_surface_g at 0.2 s and longer depends on it much less.",
+            "pga_surface_g": "Peak ground acceleration at surface (g), the raw peak of the computed record. In a sand that dilates it can be a spike a few hundredths of a second long whose height depends on the element size; pga_surface_lowpass_g and Sa_surface_g at 0.2 s and longer depend on it much less.",
             "pga_input_g": "Peak input acceleration (g).",
             "amplification_factor": "PGA surface / PGA input.",
+            "pga_time_s": "Time of the surface PGA (s).",
+            "pga_lowpass_hz": "Corner (Hz) of the low-pass behind pga_surface_lowpass_g and pga_input_lowpass_g.",
+            "pga_surface_lowpass_g": "Peak of the surface record low-passed at pga_lowpass_hz (g): an alternative to the raw PGA that a spike above the corner does not set; it also removes real motion above the corner.",
+            "pga_input_lowpass_g": "Peak of the input record low-passed the same way (g), for an amplification on the same basis.",
+            "pga_share_above_lowpass": "At the raw PGA's instant, the share of it that is motion above pga_lowpass_hz (the record less the low-passed record; negative where the low-passed record is the larger there).",
+            "pga_input_share_above_lowpass": "The same share for the input record at its own peak: a recorded input carries motion above the corner too.",
+            "pga_set_above_lowpass": "True when pga_share_above_lowpass is over one half (the tool's line): motion above the corner sets the raw PGA; in a sand that dilates it can be a short spike whose height changes with the element size.",
+            "pga_note": "Only when pga_set_above_lowpass: the peak, its time, both shares and the alternatives, in words.",
+            "Sa_surface_0_01s_g": "Surface spectral acceleration at 0.01 s (g, 5 % damping), the ordinate ASCE 7-22 puts in place of SDS/2.5 when its soil-structure interaction tables are applied to a site-specific spectrum (Tables 19.3-1 and 19.3-2, note c); it stays close to the raw PGA, spike or not.",
             "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2 and 3 s.",
             "Sa_surface_g": "Surface spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
@@ -225,7 +236,7 @@ METHOD_INFO = {
             "solver_steps": "Dynamic steps by algorithm, the steps that needed a fallback algorithm and those taken in substeps (substeps can move a peak).",
             "layer_curves": "Each layer's curve: G/Gmax and the curve's damping at 0.001-1 % strain, and the Masing damping its fitted backbone gives.",
             "rayleigh_freqs_hz": "The two Rayleigh damping frequencies used (Hz).",
-            "choices": "What the column was built with (water table, curve, Poisson's ratio, element count, sand constants, K0 and reference pressure, phase transformation angle, void ratio, yield surfaces, permeability, pressure stabilization, Rayleigh frequencies), each with its basis.",
+            "choices": "What the column was built with (water table, curve, Poisson's ratio, element count, sand constants, K0 and reference pressure, phase transformation angle, void ratio, yield surfaces, permeability, pressure stabilization, Rayleigh frequencies) and the surface PGA reported with its alternatives and the low-pass, each with its basis.",
         },
     },
 }
