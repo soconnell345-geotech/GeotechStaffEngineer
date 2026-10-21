@@ -8,7 +8,10 @@ GEC-10 (FHWA-NHI-18-024, 2018) as printed, the default:
 - cohesive soil: q_BN = N*c su (Eq. 10-19), N*c from Table 10-2 by su, and
   q_BN = (2/3)[1 + D/(6B)] N*c su where the depth D is less than 3B (Eq.
   10-20; p. 10-19);
-- rock: q_BN = N*cr qu, N*cr = 2.5 (Eq. 10-23, p. 10-22).
+- rock: q_BN = N*cr qu, N*cr = 2.5 (Eq. 10-23, p. 10-22), where the rock
+  below the base meets the conditions of p. 10-22; for a fractured rock
+  mass the Hoek-Brown base, Eqs. 10-24 to 10-29 (pp. 10-23, 10-24), with
+  2.5 qu as its upper limit (GM-251).
 
 The older methods are named options: in cohesive soil O'Neill and Reese
 (1999) as FHWA NHI-06-089 prints it (Eqs. 9-39, 9-40, p. 9-131); the
@@ -36,8 +39,9 @@ PSF_PER_KPA = 1000.0 / KPA_PER_KSF
 #: 10-2 (the default); O'Neill and Reese (1999) as FHWA NHI-06-089 prints it.
 CLAY_BASE_METHODS = ("gec10", "oneill_reese")
 
-#: The rock base methods: GEC-10 (2018) Eq. 10-23 with N*cr = 2.5 (the
-#: default); q_b/q_u reduced by RQD.
+#: The rock base methods: GEC-10 (2018), Eq. 10-23 with N*cr = 2.5 where
+#: the conditions of p. 10-22 hold and the Hoek-Brown base (Eqs. 10-24 to
+#: 10-29) for a fractured rock mass (the default); q_b/q_u reduced by RQD.
 ROCK_BASE_METHODS = ("gec10", "rqd")
 
 #: GEC-10 (2018) Table 10-2 (p. 10-19): (su in psf, N*c). 'Linear
@@ -309,6 +313,69 @@ def rock_base_factor(RQD: float, method: str = "gec10") -> float:
     return 2.5 if method == "gec10" else rock_end_bearing_multiplier(RQD)
 
 
+#: GEC-10 (2018) p. 10-24, of q_BN by Eq. 10-29 normalized by qu as N*cr:
+#: 'A value of N*cr equal to 2.5 can be used as an upper-bound limit to
+#: base resistance calculated by Equation 10-23, unless local experience or
+#: load tests can be used to validate higher values'; Fig. 10-8 draws
+#: 'maximum qBN/qu = 2.5'.
+HOEK_BROWN_NCR_MAX = 2.5
+
+
+def hoek_brown_base(qu: float, GSI: float, m_i: float,
+                    sigma_vb: float) -> dict:
+    """The unit base resistance of a fractured rock mass, GEC-10 (2018)
+    Eqs. 10-24 to 10-29 (Turner and Ramey 2010, pp. 10-23, 10-24), and each
+    step to it:
+
+        m_b / m_i = exp[(GSI - 100) / 28]                    (Eq. 10-25)
+        s = exp[(GSI - 100) / 9]                             (Eq. 10-26)
+        a = 1/2 + (1/6)[exp(-GSI/15) - exp(-20/3)]           (Eq. 10-27)
+        A = sigma'vb + qu [m_b (sigma'vb / qu) + s]^a        (Eq. 10-28)
+        q_BN = A + qu [m_b (A / qu) + s]^a                   (Eq. 10-29)
+
+    with N*cr = q_BN / qu limited to 2.5 (:data:`HOEK_BROWN_NCR_MAX`, p.
+    10-24 and Fig. 10-8).
+
+    Parameters
+    ----------
+    qu : float
+        Uniaxial compressive strength of the intact rock (kPa).
+    GSI : float
+        Geological Strength Index of the rock mass, 0 to 100.
+    m_i : float
+        Hoek-Brown constant of the intact rock, by rock type (GEC-10 p.
+        10-24 points to Table 9-10 of GEC 5).
+    sigma_vb : float
+        Vertical effective stress at the base (kPa).
+
+    Returns
+    -------
+    dict
+        ``GSI``, ``m_i``, ``m_b``, ``s``, ``a``, ``sigma_vb_kPa``, ``A_kPa``,
+        ``qb_uncapped`` (kPa, Eq. 10-29), ``Ncr_uncapped``, ``capped``
+        (N*cr above 2.5), ``factor`` (N*cr taken) and ``qb`` (kPa).
+    """
+    if not qu > 0:
+        raise ValueError(f"qu must be positive, got {qu}")
+    if not 0 <= GSI <= 100:
+        raise ValueError(
+            f"GSI must be 0 to 100 (GEC-10 p. 10-23), got {GSI}")
+    if not m_i > 0:
+        raise ValueError(f"m_i must be positive, got {m_i}")
+    m_b = m_i * math.exp((GSI - 100) / 28)
+    s = math.exp((GSI - 100) / 9)
+    a = 0.5 + (math.exp(-GSI / 15) - math.exp(-20 / 3)) / 6
+    sv = max(sigma_vb, 0.0)
+    A = sv + qu * (m_b * sv / qu + s) ** a
+    qb0 = A + qu * (m_b * A / qu + s) ** a
+    ncr = qb0 / qu
+    factor = min(ncr, HOEK_BROWN_NCR_MAX)
+    return {"GSI": GSI, "m_i": m_i, "m_b": m_b, "s": s, "a": a,
+            "sigma_vb_kPa": sv, "A_kPa": A, "qb_uncapped": qb0,
+            "Ncr_uncapped": ncr, "capped": ncr > HOEK_BROWN_NCR_MAX,
+            "factor": factor, "qb": factor * qu}
+
+
 def rock_end_bearing_multiplier(RQD: float) -> float:
     """q_b / q_u of ``rock_base_method='rqd'``: 2.5 at RQD >= 70 %, then
     linear to 1.5 at 50 %, 0.8 at 25 % and 0.4 at 0 %. This module's
@@ -316,7 +383,8 @@ def rock_end_bearing_multiplier(RQD: float) -> float:
     the Canadian Foundation Engineering Manual, neither in the reference
     library, so not checked against a printed page. GEC-10 (2018) gives
     N*cr = 2.5 (Eq. 10-23) for competent rock and the Hoek-Brown base
-    (Eqs. 10-24 to 10-29, pp. 10-23, 10-24) for a fractured rock mass."""
+    (Eqs. 10-24 to 10-29, pp. 10-23, 10-24; :func:`hoek_brown_base`) for a
+    fractured rock mass."""
     if RQD >= 70:
         return 2.5
     if RQD >= 50:

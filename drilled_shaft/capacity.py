@@ -36,8 +36,9 @@ from drilled_shaft.side_resistance import (
 )
 from drilled_shaft.end_bearing import (
     CLAY_BASE_METHODS, LARGE_BASE_DIAMETER, LARGE_BASE_DIAMETER_SAND,
-    ROCK_BASE_METHODS, nc_below_table_10_2, rock_base_factor,
-    unit_end_bearing_cohesionless, unit_end_bearing_cohesive,
+    ROCK_BASE_METHODS, hoek_brown_base, nc_below_table_10_2,
+    rock_base_factor, unit_end_bearing_cohesionless,
+    unit_end_bearing_cohesive,
 )
 from drilled_shaft.results import DrillShaftResult
 
@@ -199,10 +200,65 @@ _PARTS = {"sand": ("Q_s in cohesionless soil", "Q_side_sand"),
           "base": ("Q_b", "Q_tip")}
 
 
-def _rounded(d: dict) -> dict:
-    """``d`` with its floats rounded to 3 places, for a result."""
-    return {k: (round(v, 3) if isinstance(v, float) else v)
+def _rounded(d: dict, sig: tuple = ()) -> dict:
+    """``d`` with its floats rounded to 3 places, for a result; those named
+    in ``sig`` to 4 significant figures (the Hoek-Brown s, GM-251, is
+    0.0004 at GSI 30)."""
+    return {k: ((float(f"{v:.4g}") if k in sig else round(v, 3))
+                if isinstance(v, float) else v)
             for k, v in d.items()}
+
+
+def _zone_steps(zone: dict) -> dict:
+    """The result's record of the mean su over 2B below the base
+    (GM-252): the tip layer's su, the zone, each layer's part of it with
+    its su (None where it has none) and, where the profile ends inside
+    the zone, its last depth."""
+    out = {"su_tip_kPa": zone["su_tip_kPa"],
+           "su_zone_m": [round(zone["top_m"], 3), round(zone["bottom_m"], 3)],
+           "su_layers": [
+               {"top_m": round(r["top_m"], 3),
+                "bottom_m": round(r["bottom_m"], 3),
+                "soil_type": r["soil_type"],
+                "su_kPa": (None if r["su_kPa"] is None
+                           else round(r["su_kPa"], 3))}
+               for r in zone["rows"]]}
+    if zone["profile_bottom_m"] < zone["bottom_m"] - 1e-9:
+        out["su_profile_ends_m"] = zone["profile_bottom_m"]
+    return out
+
+
+def _su_zone_words(steps: dict, tip_words: str) -> str:
+    """The su of the clay base in words (GM-252), from the base steps of
+    :func:`_zone_steps`: the mean over 2B below the base, the layers it
+    covers and what it leaves out."""
+    z1, z2 = steps["su_zone_m"]
+    head = f"the mean over 2B = {z2 - z1:g} m below the base ({z1:g}-{z2:g} m)"
+    rows = steps["su_layers"]
+    clay = [r for r in rows if r["su_kPa"] is not None]
+    other = [r for r in rows if r["su_kPa"] is None]
+    end = steps.get("su_profile_ends_m", z2)
+    if not rows:
+        return (tip_words + f", as the profile ends at {end:g} m and gives "
+                "nothing below the base")
+    if not clay:
+        words = (tip_words + ", as the profile gives no cohesive soil "
+                 f"within 2B below the base ({z1:g}-{z2:g} m)")
+    elif len(clay) == 1 and abs(clay[0]["su_kPa"] - steps["su_tip_kPa"]) \
+            < 1e-3:
+        words = f"{head}, all in the tip layer: {tip_words}"
+    else:
+        words = (f"{head}, by thickness, of the cohesive soil: " + "; ".join(
+            f"{r['top_m']:g}-{r['bottom_m']:g} m {r['su_kPa']:.1f} kPa"
+            for r in clay))
+    if other:
+        words += "; " + ", ".join(
+            f"{r['soil_type']} at {r['top_m']:g}-{r['bottom_m']:g} m"
+            for r in other) + " left out (no su)"
+    if end < z2 - 1e-9:
+        words += (f"; the profile ends at {end:g} m, {z2 - end:g} m short "
+                  "of 2B below the base: the mean is over the soil given")
+    return words
 
 
 def _spans(rows, key_top="depth_top_m", key_bottom="depth_bottom_m") -> str:
@@ -277,9 +333,15 @@ CLAY_BASE_BASIS = (
     "on q_BN and no reduction for a large base is printed. 'it is unusual "
     "to locate the base of a drilled shaft in cohesive soil with su less "
     "than 2,000 psf when compression loads are supported' (p. 10-19). "
-    "Resistance factor 0.40 (Table 8-4, p. 8-14). su here is the strength "
-    "of the layer the base sits in, not a mean over 2B below the base: "
-    "where the soil below differs, that mean is the engineer's to give")
+    "Resistance factor 0.40 (Table 8-4, p. 8-14). su is taken as the mean "
+    "of the cohesive soil between the base and 2B below it, by thickness, "
+    "B the base's diameter (GM-252): the layer the base is in at its su as "
+    "its side resistance took it (Example 10-3 applies N*c to Example "
+    "10-2's su), each cohesive layer below on its own cu, transformed by "
+    "Eq. 10-16 or 10-17 at the middle of its part within 2B where cu is a "
+    "UC or UU strength. A cohesionless or rock layer within 2B has no su "
+    "and is left out of the mean; where the profile ends less than 2B "
+    "below the base, the mean is over the soil the profile gives")
 
 #: The older base in clay, as FHWA NHI-06-089 prints it (GM-244).
 ONEILL_REESE_CLAY_BASE_BASIS = (
@@ -306,27 +368,62 @@ ROCK_BASE_BASIS = (
     "experience indicate the rock mass below the socket tip is competent': "
     "2.5 x 360 ksf = 900 ksf. For a fractured rock mass, the Hoek-Brown "
     "base (Eqs. 10-24 to 10-29, pp. 10-23, 10-24), for which 2.5 'can be "
-    "used as an upper-bound limit'; this tool does not compute it. "
-    "Resistance factor 0.50 (Table 8-4, p. 8-14; p. 10-22). Whether the "
-    "three conditions hold is the engineer's judgment "
-    "(rock_base_conditions_met)")
+    "used as an upper-bound limit'. Resistance factor 0.50 (Table 8-4, p. "
+    "8-14; p. 10-22). Whether the three conditions hold is the engineer's "
+    "judgment (rock_base_conditions_met)")
+
+#: GEC-10 (FHWA-NHI-18-024) pp. 10-23 to 10-25 on the base of a fractured
+#: rock mass, as printed (GM-251).
+HOEK_BROWN_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, pp. 10-23, 10-24: 'For "
+    "fractured rock mass, bearing capacity theory in combination with the "
+    "Hoek-Brown failure criterion provides a framework for evaluating "
+    "drilled shaft base resistance (Turner and Ramey, 2010)'. Eq. 10-24 "
+    "(p. 10-23), sigma'1 = sigma'3 + qu [m_b (sigma'3 / qu) + s]^a (Hoek et "
+    "al. 2002), qu the uniaxial compressive strength of the intact rock; "
+    "Eqs. 10-25 to 10-27 (p. 10-24), m_b / m_i = exp[(GSI - 100) / 28], s = "
+    "exp[(GSI - 100) / 9], a = 1/2 + (1/6)[exp(-GSI / 15) - exp(-20 / 3)]; "
+    "Eq. 10-28, A = sigma'vb + qu [m_b (sigma'vb / qu) + s]^a, sigma'vb the "
+    "'vertical effective stress at the socket bearing elevation (tip "
+    "elevation)'; Eq. 10-29, q_BN = A + qu [m_b (A / qu) + s]^a, which "
+    "'can be normalized by the rock uniaxial compressive strength to "
+    "provide a bearing capacity factor N*cr as defined by Equation 10-23. "
+    "A value of N*cr equal to 2.5 can be used as an upper-bound limit to "
+    "base resistance calculated by Equation 10-23, unless local experience "
+    "or load tests can be used to validate higher values' (p. 10-24); this "
+    "tool limits it to 2.5 and gives the value past it in the choices. "
+    "Fig. 10-8 (p. 10-25) draws N*cr = "
+    "q_BN / qu against GSI for m_i 4 to 33 at sigma'vb = 0, up to that "
+    "limit. GSI comes from the rock core descriptions (p. 10-23 points to "
+    "Marinos and Hoek 2000, Hoek et al. 2013 and GEC 5) and m_i from the "
+    "rock type (p. 10-24 points to GEC 5 Table 9-10): both are the "
+    "engineer's. GEC-10 gives the resistance factor 0.50 (p. 10-24; Table "
+    "8-4, p. 8-14, 'Eq. 10-23 or Eq. 10-29')")
 
 #: Why the default rock base is refused where the conditions of Eq. 10-23
-#: are said not to hold, or the layers below the base put them in doubt
-#: and the call does not say (GM-244 review).
+#: are in doubt and the Hoek-Brown base's inputs are not given (GM-244
+#: review, GM-251).
 ROCK_BASE_REFUSAL = (
     "GEC-10 (FHWA-NHI-18-024) p. 10-22 recommends N*cr = 2.5 (Eq. 10-23) "
     "only where the rock below the base is massive or tightly jointed (no "
     "compressible seams or joints) to at least one diameter below it, no "
     "solution cavities or voids exist beneath it, and a clean base can be "
     "achieved and verified; for a fractured rock mass it gives the "
-    "Hoek-Brown base, Eqs. 10-24 to 10-29 (pp. 10-23, 10-24), which this "
-    "tool does not compute. Give rock_base_conditions_met true where the "
-    "engineer judges the three conditions met (Example 10-4 takes 2.5 with "
-    "RQD 37 to 100 because coring and local experience showed the rock "
-    "below the tip competent); or rock_base_method 'rqd' (this tool's "
-    "older reduction of q_b/q_u by RQD, not checked against a printed "
-    "page); or work Eq. 10-29 by hand from GSI and m_i")
+    "Hoek-Brown base, Eqs. 10-24 to 10-29 (pp. 10-23, 10-24), from the "
+    "rock's qu, GSI and m_i and the vertical effective stress at the base. "
+    "Give the tip rock layer's GSI (Geological Strength Index, 0 to 100, "
+    "from the core descriptions) and m_i (the Hoek-Brown constant of the "
+    "intact rock, by rock type: GEC 5 Table 9-10) for that base; or "
+    "rock_base_conditions_met true where the engineer judges the three "
+    "conditions met (Example 10-4 takes 2.5 with RQD 37 to 100 because "
+    "coring and local experience showed the rock below the tip competent); "
+    "or rock_base_method 'rqd' (this tool's older reduction of q_b/q_u by "
+    "RQD, not checked against a printed page)")
+
+
+def hoek_brown_missing(layer: ShaftSoilLayer) -> List[str]:
+    """The Hoek-Brown base's inputs a rock layer does not give (GM-251)."""
+    return [n for n in ("GSI", "m_i") if getattr(layer, n) is None]
 
 #: The earlier rock base of this tool (GM-244).
 RQD_BASE_BASIS = (
@@ -547,25 +644,31 @@ class DrillShaftAnalysis:
         (GEC-10 Eq. 10-16), or "uu" (Eq. 10-17).
     clay_base_method : str, optional
         Base resistance with the tip in cohesive soil: "gec10" (default,
-        GEC-10 (2018) Eqs. 10-19, 10-20 with Table 10-2; see
+        GEC-10 (2018) Eqs. 10-19, 10-20 with Table 10-2, su the mean of
+        the cohesive soil over 2B below the base (GM-252); see
         :data:`CLAY_BASE_BASIS`) or "oneill_reese" (FHWA NHI-06-089 Eqs.
         9-39, 9-40: Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 where su < 0.5 ksf,
-        q <= 80 ksf).
+        q <= 80 ksf, on the tip layer's cu).
     rock_base_method : str, optional
         Base resistance with the tip in rock: "gec10" (default, GEC-10
-        (2018) Eq. 10-23, N*cr = 2.5; see :data:`ROCK_BASE_BASIS`) or
-        "rqd" (q_b/q_u reduced by the tip layer's RQD; see
-        :data:`RQD_BASE_BASIS`).
+        (2018): Eq. 10-23, N*cr = 2.5, where the conditions of p. 10-22
+        hold (:data:`ROCK_BASE_BASIS`), else the Hoek-Brown base of a
+        fractured rock mass, Eqs. 10-24 to 10-29 on the tip rock layer's
+        GSI and m_i (:data:`HOEK_BROWN_BASIS`, GM-251)) or "rqd" (q_b/q_u
+        reduced by the tip layer's RQD; see :data:`RQD_BASE_BASIS`).
     rock_base_conditions_met : bool, optional
         For ``rock_base_method`` "gec10": whether the rock below the base
         meets the three conditions GEC-10 p. 10-22 sets on N*cr = 2.5
         (massive or tightly jointed to one diameter below the base, no
-        cavities or voids, a clean base). True: 2.5 qu, the engineer's
-        statement. False: refused (the Hoek-Brown base of a fractured
-        rock mass is not built). Left out (None): 2.5 qu with the
-        conditions taken as met, stated in the choices, unless the layers
-        within one base diameter below the base show an RQD below 100 or
-        soil, when it is refused (:data:`ROCK_BASE_REFUSAL`).
+        cavities or voids, a clean base). True: 2.5 qu by Eq. 10-23, the
+        engineer's statement. False: the Hoek-Brown base (Eqs. 10-24 to
+        10-29), refused where the tip rock layer gives no GSI or m_i. Left
+        out (None): 2.5 qu with the conditions taken as met, stated in the
+        choices, where the layers within one base diameter below the base
+        show no RQD below 100 and no soil (the Hoek-Brown base beside it
+        where the tip rock layer gives GSI and m_i); where they show
+        either, the Hoek-Brown base on the tip rock layer's GSI and m_i,
+        refused where it gives none (:data:`ROCK_BASE_REFUSAL`).
     large_base_reduction : bool, optional
         O'Neill and Reese's (1999) reduction of base resistance for a large
         base: 1.27/B in cohesionless soil (B > 1.27 m), F_r in cohesive
@@ -753,7 +856,75 @@ class DrillShaftAnalysis:
             Complete results with side resistance, end bearing,
             and per-layer breakdown.
         """
+        self._check_hoek_brown_layers([self.shaft.length], below=True)
         return self._compute()
+
+    def _check_hoek_brown_layers(self, lengths, below: bool) -> None:
+        """Refuse GSI or m_i on a rock layer no base at ``lengths`` takes
+        them from (GM-251 review; as GM-179 and GM-249, an input a layer
+        would not use is refused, not dropped). The Hoek-Brown base takes
+        the GSI and m_i of the rock layer the base is in; the single-length
+        result (``below``) also gives the base on each rock layer within
+        one base diameter below it, among the choices' alternatives."""
+        layers = self.soil.layers
+        used, tips = set(), set()
+        for L in lengths:
+            i = self._tip_index(L)
+            tips.add(i)
+            if layers[i].soil_type != "rock":
+                continue
+            used.add(i)
+            if below:
+                B = self.shaft.base_diameter(True)
+                used.update(j for j, lay, _, _ in
+                            self._layers_below_base(L, B)
+                            if lay.soil_type == "rock")
+        if self.rock_base_conditions_met is not None and not any(
+                layers[i].soil_type == "rock" for i in tips):
+            if len(lengths) > 1:
+                where = (f"no trial base from {min(lengths):g} to "
+                         f"{max(lengths):g} m is in rock")
+            else:
+                where = (f"the base at {lengths[0]:g} m is in "
+                         f"{layers[min(tips)].soil_type} soil")
+            raise ValueError(
+                "The shaft does not take rock_base_conditions_met: it is "
+                "the engineer's judgment on the three conditions GEC-10 "
+                "(2018) p. 10-22 sets on a base in rock (q_BN = 2.5 qu, "
+                f"Eq. 10-23), and {where}. Leave it out, or give the shaft "
+                "length that puts the base in rock.")
+        top = 0.0
+        for i, layer in enumerate(layers):
+            given = [n for n in ("GSI", "m_i")
+                     if getattr(layer, n) is not None]
+            span = f"{top:g}-{top + layer.thickness:g} m"
+            top += layer.thickness
+            if not given or i in used:
+                continue
+            if len(lengths) > 1:
+                where = (f"no trial base from {min(lengths):g} to "
+                         f"{max(lengths):g} m is in it")
+            else:
+                L = lengths[0]
+                tip = layers[min(tips)]
+                if tip.soil_type != "rock":
+                    where = (f"the base at {L:g} m is in {tip.soil_type} "
+                             "soil")
+                elif i < min(tips):
+                    where = f"it is above the base at {L:g} m"
+                else:
+                    where = (f"it is more than one base diameter "
+                             f"({self.shaft.base_diameter(True):g} m) below "
+                             f"the base at {L:g} m")
+            raise ValueError(
+                f"The rock layer at {span} does not take "
+                f"{' and '.join(given)}: they give GEC-10's base for a "
+                "fractured rock mass, the Hoek-Brown base (Eqs. 10-24 to "
+                "10-29), which takes the GSI and m_i of the rock layer the "
+                "base is in and shows the rock within one base diameter "
+                f"below the base beside it, and {where}. Leave them out of "
+                "that layer, or give the shaft length that puts the base in "
+                "it.")
 
     def _compute(self, sublayer: Optional[float] = None,
                  report: bool = True) -> DrillShaftResult:
@@ -916,7 +1087,8 @@ class DrillShaftAnalysis:
         # Each step of the unit base resistance, for the result and the
         # calc package (GM-148, GM-244)
         if tip_layer.soil_type == "cohesive":
-            su_b, su_from = self._base_su(tip_layer, layer_results)
+            su_b, su_from, zone = self._base_su(tip_layer, layer_results,
+                                                base_D)
             u = unit_end_bearing_cohesive(
                 su_b, L_over_D, base_diameter=base_D,
                 shaft_length=L, method=self.clay_base_method,
@@ -926,16 +1098,13 @@ class DrillShaftAnalysis:
             u = unit_end_bearing_cohesionless(N60, base_D,
                                               self.large_base_reduction)
         else:  # rock
-            if self.rock_base_method == "gec10":
-                self._check_rock_base(L, base_D)
-            factor = rock_base_factor(tip_layer.RQD, self.rock_base_method)
-            u = {"method": self.rock_base_method, "qu_kPa": tip_layer.qu,
-                 "RQD": tip_layer.RQD, "factor": factor,
-                 "qb": factor * tip_layer.qu}
+            u = self._rock_base(tip_layer, L, base_D)
         base_steps = {"soil_type": tip_layer.soil_type,
                       "base_diameter_m": base_D, **u}
         if tip_layer.soil_type == "cohesive":
             base_steps.update(su_kPa=su_b, su_from=su_from)
+            if zone is not None:
+                base_steps.update(_zone_steps(zone))
         Qt = u["qb"] * base_area
 
         Q_ultimate = total_Qs + Qt
@@ -972,9 +1141,35 @@ class DrillShaftAnalysis:
             method="GEC-10",
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
-            base_steps=_rounded(base_steps),
+            base_steps=_rounded(base_steps, sig=("s",)),
             choices=choices,
         )
+
+    def _tip_index(self, L: float) -> int:
+        """Index of the layer the base is in (``layer_at_depth(L - 0.01)``,
+        the last layer below the profile)."""
+        top = 0.0
+        for i, layer in enumerate(self.soil.layers):
+            if top <= L - 0.01 < top + layer.thickness:
+                return i
+            top += layer.thickness
+        return len(self.soil.layers) - 1
+
+    def _layers_below_base(self, L: float, depth: float):
+        """(index, layer, top, bottom) of each layer within ``depth`` below
+        the base at ``L``, its part there in m. The last layer is taken to
+        go on below the profile."""
+        out = []
+        top = 0.0
+        layers = self.soil.layers
+        for i, layer in enumerate(layers):
+            bottom = top + layer.thickness
+            if i == len(layers) - 1:
+                bottom = max(bottom, L + depth)
+            if bottom > L + 1e-9 and top < L + depth - 1e-9:
+                out.append((i, layer, max(top, L), min(bottom, L + depth)))
+            top += layer.thickness
+        return out
 
     def _rock_below_base(self, L: float, B: float) -> List[str]:
         """What the layers within one base diameter ``B`` below the base at
@@ -984,72 +1179,265 @@ class DrillShaftAnalysis:
         below 100, and each soil layer, in words. The last layer is taken
         to go on below the profile."""
         out = []
-        top = 0.0
-        layers = self.soil.layers
-        for i, layer in enumerate(layers):
-            bottom = top + layer.thickness
-            if i == len(layers) - 1:
-                bottom = max(bottom, L + B)
-            if bottom > L + 1e-9 and top < L + B - 1e-9:
-                where = f"{max(top, L):g}-{min(bottom, L + B):g} m"
-                if layer.soil_type != "rock":
-                    out.append(f"{layer.soil_type} soil at {where}")
-                elif layer.RQD < 100:
-                    out.append(f"rock with RQD {layer.RQD:g} % at {where}")
-            top += layer.thickness
+        for _, layer, a, b in self._layers_below_base(L, B):
+            where = f"{a:g}-{b:g} m"
+            if layer.soil_type != "rock":
+                out.append(f"{layer.soil_type} soil at {where}")
+            elif layer.RQD < 100:
+                out.append(f"rock with RQD {layer.RQD:g} % at {where}")
         return out
 
-    def _rock_conditions_choice(self, B: float) -> dict:
+    def _rock_base_equation(self, tip_layer, L: float, B: float) -> str:
+        """Which of GEC-10's rock bases applies under ``rock_base_method``
+        "gec10": "10-23" (N*cr = 2.5) where the call states the conditions
+        of p. 10-22 met, or leaves them out and nothing within one base
+        diameter ``B`` below the base is against them, GSI and m_i given or
+        not (p. 10-22 recommends 2.5 for rock that meets them; the
+        Hoek-Brown base is 'For fractured rock mass', p. 10-23); "10-29"
+        (the Hoek-Brown base, GM-251) where the call states them not met,
+        or leaves them out and the layers there show an RQD below 100 or
+        soil. Refused where the Hoek-Brown base is needed and the tip rock
+        layer does not give its inputs."""
+        missing = hoek_brown_missing(tip_layer)
+        if self.rock_base_conditions_met:
+            return "10-23"
+        if self.rock_base_conditions_met is False:
+            if missing:
+                raise ValueError(
+                    "rock_base_conditions_met is false, and the base GEC-10 "
+                    "gives for a fractured rock mass, the Hoek-Brown base "
+                    "(Eqs. 10-24 to 10-29, pp. 10-23, 10-24), needs the tip "
+                    f"rock layer's {' and '.join(missing)}, which it does "
+                    "not give. " + ROCK_BASE_REFUSAL)
+            return "10-29"
+        below = self._rock_below_base(L, B)
+        if below and not missing:
+            return "10-29"
+        if below:
+            raise ValueError(
+                f"the base at {L:g} m bears on rock, and within one "
+                f"base diameter ({B:g} m) below it the layers give "
+                + "; ".join(below) + ". Whether that rock meets the "
+                "conditions of Eq. 10-23 is the engineer's call, and "
+                "the call does not say; the tip rock layer gives no "
+                + " and no ".join(missing) + " for the Hoek-Brown base. "
+                + ROCK_BASE_REFUSAL)
+        return "10-23"
+
+    def _rock_base(self, tip_layer, L: float, B: float) -> dict:
+        """The unit base resistance in rock and each step to it: by RQD
+        under ``rock_base_method`` "rqd"; under "gec10" Eq. 10-23 or the
+        Hoek-Brown base, Eqs. 10-24 to 10-29, on sigma'vb at the base
+        (:meth:`_rock_base_equation`, GM-251)."""
+        out = {"method": self.rock_base_method, "qu_kPa": tip_layer.qu,
+               "RQD": tip_layer.RQD}
+        if self.rock_base_method == "rqd":
+            factor = rock_base_factor(tip_layer.RQD, "rqd")
+            return {**out, "factor": factor, "qb": factor * tip_layer.qu}
+        eq = self._rock_base_equation(tip_layer, L, B)
+        if eq == "10-23":
+            return {**out, "equation": eq, "factor": 2.5,
+                    "qb": 2.5 * tip_layer.qu}
+        return {**out, "equation": eq, **hoek_brown_base(
+            tip_layer.qu, tip_layer.GSI, tip_layer.m_i,
+            self.soil.effective_stress_at_depth(L))}
+
+    def _rock_conditions_choice(self, B: float, equation: str) -> dict:
         """The choice made for the conditions of Eq. 10-23 (GEC-10 p.
-        10-22) under the default rock base: stated by the call, or taken
-        as met where it does not say and the layers below the base show
-        nothing against them (GM-244 review)."""
+        10-22) under the default rock base: stated by the call, or, where
+        it does not say, taken as met where the layers within one base
+        diameter ``B`` below the base show nothing against them (GM-244
+        review) and not taken as met where they show an RQD below 100 or
+        soil (the Hoek-Brown base, GM-251)."""
         from geotech_common.choices import choice, how_given
         below = self._rock_below_base(self.shaft.length, B)
-        if self.rock_base_conditions_met:
+        below_words = ("; the layers within one base diameter below the "
+                       "base give " + "; ".join(below)) if below else ""
+        met = self.rock_base_conditions_met
+        hb = "the Hoek-Brown base of a fractured rock mass (Eqs. 10-24 to 10-29)"
+        tip = self.soil.layers[self._tip_index(self.shaft.length)]
+        if met:
             chosen = ("met, as the call states: the rock below the base is "
                       "massive or tightly jointed to one diameter below "
-                      "it, with no cavities or voids, and a clean base")
-            if below:
-                chosen += ("; the layers within one base diameter below "
-                           "the base give " + "; ".join(below))
+                      "it, with no cavities or voids, and a clean base"
+                      + below_words)
+        elif met is False:
+            chosen = ("not met, as the call states: the base is " + hb
+                      + below_words)
+        elif equation == "10-29":
+            chosen = ("not taken as met, as the call does not say and the "
+                      f"layers within one base diameter ({B:g} m) below "
+                      "the base give " + "; ".join(below) + ": the base is "
+                      + hb + " on the tip rock layer's GSI and m_i, which "
+                      "2.5 qu bounds above (p. 10-24)")
         else:
             chosen = ("taken as met, as the call does not say: the layers "
                       f"within one base diameter ({B:g} m) below the base "
-                      "give no RQD below 100 and no soil; no cavities or "
+                      "give no RQD below 100 (a rock layer's RQD is 100 "
+                      "where none is given) and no soil; no cavities or "
                       "voids and a clean base are assumed")
+            if not hoek_brown_missing(tip):
+                chosen += (
+                    f"; the tip rock layer's GSI {tip.GSI:g} and m_i "
+                    f"{tip.m_i:g} give {hb}, GEC-10's base for rock that "
+                    "does not meet the conditions (p. 10-23), beside it as "
+                    "the alternative")
+        alternatives = []
+        if equation == "10-29":
+            alternatives.append(
+                "rock_base_conditions_met true, the engineer judging the "
+                "three conditions met: 2.5 qu by Eq. 10-23: "
+                + self._alternative(rock_base_conditions_met=True,
+                                    part="base"))
+        else:
+            alternatives.append(
+                "rock_base_conditions_met false, the rock below the base "
+                "fractured: " + self._hoek_brown_alternative())
+        alternatives.append(
+            "side resistance alone, the base neglected: AASHTO Article "
+            "C.10.8.3.5.4a as GEC-10 quotes it (p. 10-25), for 'cases in "
+            "which the base of the drilled hole cannot be cleaned and "
+            "inspected'; the result's Q_skin is that resistance")
         return choice(
             "rock below the base (the conditions of Eq. 10-23)", chosen,
-            how_given(self.rock_base_conditions_met, None,
-                      name="rock_base_conditions_met"),
-            basis=ROCK_BASE_BASIS,
-            alternatives=[
-                "rock_base_conditions_met false, the rock below the base "
-                "fractured: refused, as GEC-10 gives the Hoek-Brown base "
-                "of a fractured rock mass (Eqs. 10-24 to 10-29, pp. "
-                "10-23, 10-24), which this tool does not compute",
-                "side resistance alone, the base neglected: AASHTO Article "
-                "C.10.8.3.5.4a as GEC-10 quotes it (p. 10-25), for 'cases "
-                "in which the base of the drilled hole cannot be cleaned "
-                "and inspected'; the result's Q_skin is that resistance"])
+            how_given(met, None, name="rock_base_conditions_met"),
+            basis=ROCK_BASE_BASIS, alternatives=alternatives)
 
-    def _check_rock_base(self, L: float, B: float) -> None:
-        """Refuse GEC-10's rock base, N*cr = 2.5 (Eq. 10-23), where the
-        call says the conditions of p. 10-22 do not hold, or where it does
-        not say and the layers within one base diameter below the base
-        show an RQD below 100 or soil (GM-244 review)."""
-        if self.rock_base_conditions_met is False:
-            raise ValueError(
-                "rock_base_conditions_met is false: " + ROCK_BASE_REFUSAL)
-        if self.rock_base_conditions_met is None:
-            below = self._rock_below_base(L, B)
-            if below:
-                raise ValueError(
-                    f"the base at {L:g} m bears on rock, and within one "
-                    f"base diameter ({B:g} m) below it the layers give "
-                    + "; ".join(below) + ". Whether that rock meets the "
-                    "conditions of Eq. 10-23 is the engineer's call, and "
-                    "the call does not say. " + ROCK_BASE_REFUSAL)
+    def _hoek_brown_alternative(self) -> str:
+        """The Hoek-Brown base as an alternative, in words: its values on
+        the tip rock layer's GSI and m_i, or the inputs it needs."""
+        tip = self.soil.layers[self._tip_index(self.shaft.length)]
+        missing = hoek_brown_missing(tip)
+        words = ("the Hoek-Brown base, Eqs. 10-24 to 10-29 (pp. 10-23, "
+                 "10-24)")
+        if missing:
+            return (words + ", which needs the tip rock layer's "
+                    + " and ".join(missing) + " (not given)")
+        return (f"{words}, on the tip rock layer's GSI {tip.GSI:g} and m_i "
+                f"{tip.m_i:g}: "
+                + self._alternative(rock_base_method="gec10",
+                                    rock_base_conditions_met=False,
+                                    part="base"))
+
+    def _hoek_brown_below(self, B: float, Q_side: float, area: float,
+                          skip: Optional[tuple] = None):
+        """(below, alternatives): each layer within one base diameter ``B``
+        below the base other than the one the base is in, in words, and
+        the Hoek-Brown base (GEC-10 Eqs. 10-24 to 10-29) on each rock layer
+        there that gives GSI and m_i, with its Q_b and Q_ult (``Q_side``
+        plus that Q_b on the base ``area``); a layer whose (GSI, m_i, qu)
+        is ``skip``, the rock the base already takes, is passed over
+        (GM-251)."""
+        L = self.shaft.length
+        tip_i = self._tip_index(L)
+        sigma_vb = self.soil.effective_stress_at_depth(L)
+        below, alternatives = [], []
+        for i, layer, a, b in self._layers_below_base(L, B):
+            if i == tip_i:
+                continue
+            where = f"{a:g}-{b:g} m"
+            missing = hoek_brown_missing(layer)
+            if layer.soil_type != "rock":
+                below.append(f"{layer.soil_type} soil at {where}")
+            elif missing:
+                below.append(f"rock at {where} with no "
+                             + " and no ".join(missing))
+            elif (layer.GSI, layer.m_i, layer.qu) != skip:
+                rock = (f"rock at {where} with GSI {layer.GSI:g}, m_i "
+                        f"{layer.m_i:g}, qu {layer.qu:,.0f} kPa")
+                below.append(rock)
+                hb = hoek_brown_base(layer.qu, layer.GSI, layer.m_i,
+                                     sigma_vb)
+                Qb = hb["qb"] * area
+                alternatives.append(
+                    f"the Hoek-Brown base on the {rock}: N*cr "
+                    f"{hb['factor']:.3f}, Q_b {Qb:,.0f} kN, Q_ult "
+                    f"{Q_side + Qb:,.0f} kN")
+        return below, alternatives
+
+    def _hoek_brown_below_alternatives(self, tip_layer, B: float, Qt: float,
+                                       Q_ultimate: float,
+                                       qb: float) -> List[str]:
+        """Where the base takes Eq. 10-23 or the 'rqd' base: the Hoek-Brown
+        base on each other rock layer within one base diameter ``B`` below
+        the base that gives GSI and m_i (:meth:`_hoek_brown_below`), so a
+        GSI and m_i given there are shown, not dropped (GM-251 review)."""
+        skip = (None if hoek_brown_missing(tip_layer)
+                else (tip_layer.GSI, tip_layer.m_i, tip_layer.qu))
+        area = Qt / qb if qb > 0 else 0.0
+        _, others = self._hoek_brown_below(B, Q_ultimate - Qt, area,
+                                           skip=skip)
+        L = self.shaft.length
+        tip_i = self._tip_index(L)
+        for i, layer, a, b in self._layers_below_base(L, B):
+            missing = hoek_brown_missing(layer)
+            if i != tip_i and len(missing) == 1:
+                others.append(
+                    f"the Hoek-Brown base on the rock at {a:g}-{b:g} m, "
+                    f"which needs its {missing[0]} (not given)")
+        return ["the base of a fractured rock mass, with the rock below the "
+                "base governing (GEC-10 gives no depth for it): " + a
+                for a in others]
+
+    def _clay_base_with(self, su: float) -> float:
+        """Q_b (kN) of the base in cohesive soil by this analysis's method
+        at ``su`` (kPa), for a choice's alternatives (GM-252)."""
+        L = self.shaft.length
+        u = unit_end_bearing_cohesive(
+            su, L / self.shaft.diameter,
+            base_diameter=self.shaft.base_diameter(False), shaft_length=L,
+            method=self.clay_base_method,
+            large_base_reduction=self.large_base_reduction)
+        return u["qb"] * self.shaft.base_area(False)
+
+    def _hoek_brown_choice(self, steps: dict, Qt: float, Q_ultimate: float,
+                           here: str):
+        """(chosen, basis, alternatives) of the choice made for the base
+        in rock where it is the Hoek-Brown base of a fractured rock mass,
+        GEC-10 Eqs. 10-24 to 10-29 (GM-251). The alternatives: Eq. 10-23
+        with the conditions stated met; N*cr past 2.5 where it is limited;
+        the rock within one base diameter below the base on its own GSI and
+        m_i, where a layer there gives them."""
+        B = steps["base_diameter_m"]
+        qu = steps["qu_kPa"]
+        area = Qt / steps["qb"] if steps["qb"] > 0 else 0.0
+        chosen = (
+            "GEC-10 (2018) Eqs. 10-24 to 10-29, the Hoek-Brown base of a "
+            f"fractured rock mass (Turner and Ramey 2010): GSI "
+            f"{steps['GSI']:g}, m_i {steps['m_i']:g}, qu {qu:,.0f} kPa, "
+            f"sigma'vb {steps['sigma_vb_kPa']:.1f} kPa; m_b "
+            f"{steps['m_b']:.3f}, s {steps['s']:.3g}, a {steps['a']:.3f} "
+            f"(Eqs. 10-25 to 10-27), A {steps['A_kPa']:,.0f} kPa (Eq. "
+            f"10-28), q_BN {steps['qb_uncapped']:,.0f} kPa (Eq. 10-29), N*cr "
+            f"= q_BN / qu = {steps['Ncr_uncapped']:.3f}"
+            + (", limited to 2.5 (p. 10-24)" if steps["capped"] else "")
+            + ": " + here)
+        basis = HOEK_BROWN_BASIS
+        alternatives = [
+            "rock_base_conditions_met true, Eq. 10-23, q_BN = 2.5 qu, where "
+            "the engineer judges the rock below the base massive or tightly "
+            "jointed to one diameter below it, with no cavities or voids "
+            "and a clean base (p. 10-22): "
+            + self._alternative(rock_base_conditions_met=True, part="base")]
+        if steps["capped"]:
+            Qb = steps["qb_uncapped"] * area
+            alternatives.append(
+                f"N*cr {steps['Ncr_uncapped']:.2f}, not limited to 2.5, where "
+                "'local experience or load tests' validate it (p. 10-24): "
+                f"Q_b {Qb:,.0f} kN, Q_ult {Q_ultimate - Qt + Qb:,.0f} kN")
+        # the other layers within one base diameter below the base: the
+        # depth of the first condition of Eq. 10-23 (p. 10-22)
+        below, others = self._hoek_brown_below(
+            B, Q_ultimate - Qt, area, skip=(steps["GSI"], steps["m_i"], qu))
+        alternatives += others
+        if below:
+            basis += (
+                ". GSI, m_i and qu are the tip layer's, the rock the base is "
+                "in; within one base diameter below the base the profile "
+                "gives " + "; ".join(below) + ". GEC-10 gives no depth "
+                "below the base over which the rock mass is taken: which "
+                "rock governs is the engineer's judgment")
+        return chosen, basis, alternatives
 
     def _alternative(self, sublayer: Optional[float] = None,
                      correlation: Optional[str] = None,
@@ -1262,12 +1650,66 @@ class DrillShaftAnalysis:
                     f"{Q_ultimate - Qs_sand + capped:,.0f} kN"]))
         return out
 
-    def _base_su(self, tip_layer, layer_results):
-        """su (kPa) for the base in cohesive soil and where it came from:
-        under GEC-10's base and alpha with cu a UC or UU strength, the tip
-        layer's su(CIUC) as its side resistance took it ("su_ciuc";
-        Example 10-3, p. 10-20, applies N*c to Example 10-2's su(CIUC));
-        else the tip layer's cu as given ("cu")."""
+    def _base_su(self, tip_layer, layer_results, B: float):
+        """(su kPa, where the tip layer's came from, the zone) for the base
+        in cohesive soil. Under GEC-10's base, su is the mean of the
+        cohesive soil over 2B below the base (p. 10-19; GM-252,
+        :meth:`_su_zone`); under O'Neill and Reese's, the tip layer's
+        (zone None)."""
+        su_tip, su_from = self._tip_su(tip_layer, layer_results)
+        if self.clay_base_method != "gec10":
+            return su_tip, su_from, None
+        zone = self._su_zone(B, su_tip, su_from == "su_ciuc")
+        return zone["su_kPa"], su_from, zone
+
+    def _su_zone(self, B: float, su_tip: float, transform: bool) -> dict:
+        """The mean su (kPa) of the cohesive soil between the base and 2B
+        below it, by thickness (GEC-10 p. 10-19: 'su = mean undrained shear
+        strength of the cohesive soil over a depth of 2B below the base';
+        GM-252). The layer the base is in counts at ``su_tip``, as its side
+        resistance took it; each cohesive layer below at its cu, made
+        su(CIUC) by Eq. 10-16 or 10-17 on sigma'vo at the middle of its
+        part within 2B where ``transform``. A cohesionless or rock layer
+        has no su and is left out; the profile is not carried on below its
+        last layer, so where it ends less than 2B below the base the mean
+        is over what it gives, and where nothing cohesive is given there
+        su is ``su_tip``."""
+        L = self.shaft.length
+        z2 = L + 2 * B
+        tip_i = self._tip_index(L)
+        rows, top = [], 0.0
+        for i, layer in enumerate(self.soil.layers):
+            bottom = top + layer.thickness
+            a, b = max(top, L), min(bottom, z2)
+            top = bottom
+            if b <= a + 1e-9:
+                continue
+            if layer.soil_type != "cohesive":
+                su = None
+            elif i == tip_i:
+                su = su_tip
+            elif transform:
+                su = su_to_ciuc(
+                    layer.cu, self.soil.effective_stress_at_depth((a + b) / 2),
+                    self.su_test_type)
+            else:
+                su = layer.cu
+            rows.append({"top_m": a, "bottom_m": b,
+                         "soil_type": layer.soil_type, "su_kPa": su})
+        clay = [r for r in rows if r["su_kPa"] is not None]
+        t = sum(r["bottom_m"] - r["top_m"] for r in clay)
+        su = (sum(r["su_kPa"] * (r["bottom_m"] - r["top_m"]) for r in clay)
+              / t if t > 0 else su_tip)
+        return {"top_m": L, "bottom_m": z2,
+                "profile_bottom_m": self.soil.total_thickness,
+                "rows": rows, "su_kPa": su, "su_tip_kPa": su_tip}
+
+    def _tip_su(self, tip_layer, layer_results):
+        """su (kPa) of the layer the base is in and where it came from:
+        under GEC-10's base and alpha with cu a UC or UU strength, its
+        su(CIUC) as its side resistance took it ("su_ciuc"; Example 10-3,
+        p. 10-20, applies N*c to Example 10-2's su(CIUC)); else its cu as
+        given ("cu")."""
         if (self.clay_base_method != "gec10"
                 or self.alpha_method != "rational"
                 or self.su_test_type == "ciuc"):
@@ -1467,10 +1909,11 @@ class DrillShaftAnalysis:
                 eq = base_steps["equation"]
                 factor = ("" if eq == "10-19"
                           else f"{base_steps['depth_factor']:.3f} x ")
-                su_words = (
+                tip_words = (
                     "the tip layer's su(CIUC), as its side resistance took "
                     "it" if base_steps["su_from"] == "su_ciuc"
                     else "the tip layer's cu")
+                su_words = _su_zone_words(base_steps, tip_words)
                 chosen = (f"GEC-10 (2018) Eq. {eq}, q_BN = {factor}N*c su, "
                           f"su = {base_steps['su_kPa']:.1f} kPa ({su_words}), "
                           f"N*c = {Nc:.2f} (Table 10-2 at "
@@ -1480,9 +1923,17 @@ class DrillShaftAnalysis:
                     "clay_base_method 'oneill_reese', O'Neill and Reese "
                     "(1999) as FHWA NHI-06-089 prints it (Eqs. 9-39, 9-40, "
                     "p. 9-131): Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 where su < "
-                    "0.5 ksf, q_t <= 80 ksf: "
+                    "0.5 ksf, q_t <= 80 ksf, on the tip layer's cu: "
                     + self._alternative(clay_base_method="oneill_reese",
                                         part="base")]
+                su_tip = base_steps["su_tip_kPa"]
+                if abs(su_tip - base_steps["su_kPa"]) > 1e-6:
+                    Qb = self._clay_base_with(su_tip)
+                    alternatives.append(
+                        f"su = the tip layer's alone, {su_tip:.1f} kPa (the "
+                        "layer the base is in; this tool's su until "
+                        f"GM-252): Q_b {Qb:,.0f} kN, Q_ult "
+                        f"{Q_ultimate - Qt + Qb:,.0f} kN")
                 if base_steps["below_table"]:
                     line = nc_below_table_10_2(base_steps["su_kPa"])
                     Qb = Qt * line / Nc
@@ -1502,13 +1953,10 @@ class DrillShaftAnalysis:
                         "su(CIUC) of Example 10-2, transformed from the UU "
                         "strength; here the tip layer's, on sigma'vo at the "
                         "middle of the length that carries side resistance")
-                    plain_u = unit_end_bearing_cohesive(
-                        tip_layer.cu, self.shaft.length / self.shaft.diameter,
-                        base_diameter=B, shaft_length=self.shaft.length,
-                        large_base_reduction=self.large_base_reduction)
-                    Qb = Qt * plain_u["qb"] / base_steps["qb"]
+                    plain = self._su_zone(B, tip_layer.cu, False)["su_kPa"]
+                    Qb = self._clay_base_with(plain)
                     alternatives.append(
-                        f"su = cu as given, {tip_layer.cu:.1f} kPa, "
+                        f"su = cu as given, {plain:.1f} kPa, "
                         f"untransformed: Q_b {Qb:,.0f} kN, Q_ult "
                         f"{Q_ultimate - Qt + Qb:,.0f} kN")
                 if eq == "10-20" and self.shaft.bell_diameter is not None:
@@ -1535,18 +1983,23 @@ class DrillShaftAnalysis:
                             name="rock_base_method")
             RQD = base_steps["RQD"]
             conditions = None
-            if self.rock_base_method == "gec10":
+            rqd = (f"rock_base_method 'rqd', q_b/q_u = "
+                   f"{rock_base_factor(RQD, 'rqd'):.2f} at RQD {RQD:g} %: "
+                   + self._alternative(rock_base_method="rqd", part="base"))
+            if self.rock_base_method == "gec10" \
+                    and base_steps["equation"] == "10-29":
+                chosen, basis, alternatives = self._hoek_brown_choice(
+                    base_steps, Qt, Q_ultimate, here)
+                alternatives.insert(1, rqd)
+                conditions = self._rock_conditions_choice(B, "10-29")
+            elif self.rock_base_method == "gec10":
                 chosen = "GEC-10 (2018) Eq. 10-23, q_BN = 2.5 qu: " + here
                 basis = ROCK_BASE_BASIS
-                conditions = self._rock_conditions_choice(B)
-                alternatives = [
-                    f"rock_base_method 'rqd', q_b/q_u = "
-                    f"{rock_base_factor(RQD, 'rqd'):.2f} at RQD {RQD:g} %: "
-                    + self._alternative(rock_base_method="rqd",
-                                        part="base"),
-                    "the Hoek-Brown base of a fractured rock mass, GEC-10 "
-                    "Eqs. 10-24 to 10-29 (pp. 10-23, 10-24), from GSI and "
-                    "m_i: not computed by this tool"]
+                conditions = self._rock_conditions_choice(B, "10-23")
+                alternatives = [rqd, "the base of a fractured rock mass: "
+                                + self._hoek_brown_alternative()]
+                alternatives += self._hoek_brown_below_alternatives(
+                    tip_layer, B, Qt, Q_ultimate, base_steps["qb"])
             else:
                 chosen = (f"q_b/q_u = {base_steps['factor']:.2f} at RQD "
                           f"{RQD:g} %: " + here)
@@ -1558,7 +2011,12 @@ class DrillShaftAnalysis:
                     "true): "
                     + self._alternative(rock_base_method="gec10",
                                         rock_base_conditions_met=True,
-                                        part="base")]
+                                        part="base"),
+                    "rock_base_method 'gec10' with rock_base_conditions_met "
+                    "false, the base of a fractured rock mass: "
+                    + self._hoek_brown_alternative()]
+                alternatives += self._hoek_brown_below_alternatives(
+                    tip_layer, B, Qt, Q_ultimate, base_steps["qb"])
             out.append(choice("base resistance in rock", chosen, how,
                               basis=basis, alternatives=alternatives))
             if conditions:
@@ -1623,6 +2081,8 @@ class DrillShaftAnalysis:
 
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
+        self._check_hoek_brown_layers([float(d) for d in depths],
+                                      below=False)
 
         # A cohesionless tip with no N60 is refused (GM-142), not left out
         # of the curve by the guard below.

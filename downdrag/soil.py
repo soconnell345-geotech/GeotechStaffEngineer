@@ -66,8 +66,12 @@ class DowndragSoilLayer:
         ``skin_friction_method="beta"``, which requires it.
     alpha : float, optional
         Alpha coefficient for cohesive skin friction (fs = alpha cu), Alpha
-        method only. If None, defaults to 1.0 (conservative for soft clay).
-        A cohesionless layer does not take it.
+        method only, kept as given. If None, the analysis reads it off the
+        chart its ``alpha_chart`` names: by default UFC 3-220-20 Table 6-16
+        (soft clay, alpha 1) and Fig 6-14 (firm to very stiff clay, by su
+        and Z/b), with the transition zone of pp. 416-417 (GM-255; see
+        :meth:`DowndragAnalysis.alpha_readings`). A cohesionless layer
+        does not take it.
     Cc : float
         Compression index. Required if settling=True and cohesive. Given
         with e0 on any clay, C_ec and C_er are derived from them, settling
@@ -262,10 +266,8 @@ class DowndragSoilLayer:
         if self.beta is None and self.phi > 0:
             phi_rad = math.radians(self.phi)
             self.beta = (1.0 - math.sin(phi_rad)) * math.tan(phi_rad)
-
-        # Default alpha for cohesive layers with the Alpha method
-        if self.alpha is None and self.fs_method == "alpha":
-            self.alpha = 1.0
+        # alpha left out stays None: the analysis reads it off its chart,
+        # which needs the pile's width and length (GM-255)
 
 
 @dataclass

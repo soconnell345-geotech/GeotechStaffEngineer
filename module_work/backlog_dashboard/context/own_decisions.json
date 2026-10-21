@@ -1817,5 +1817,76 @@
    "Caltrans T&S pp. 4-16, 4-28, 4-29",
    "NHI-06-089 p. 10-17"
   ]
+ },
+ "OWN-83": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Downdrag: a clay's alpha when none is given, UFC's chart or 1.0?",
+  "why": "The alpha a clay takes sets both the drag above the neutral plane and the resistance below it. A chart value below 1.0 on a stiff clay lowers the drag force a lot (a soft-over-stiff case 1,148 -> 789 kN), and UFC itself notes that a higher alpha is conservative for drag.",
+  "background": "UFC 3-220-20's drag procedure (Sec. 6-7.4, p. 476) and GEC-12's (Sec. 7.3.6.1, p. 342) name no alpha chart. UFC's alpha method (Sec. 6-5.4.2, pp. 414-417) gives Table 6-16 (soft clay, alpha 1), Fig. 6-14 for firm to very stiff clay, and Eq. 6-9 for the top ten pile widths of a stiff clay under soft clay. UFC's own drag example (App. B-5.4, p. 636) uses those values; with them the tool now reproduces its printed 52 ft and 133 kips (it gave 56.6 ft and 224 kips with alpha 1.0).",
+  "parts": [
+   {
+    "label": "Default alpha for a clay in a downdrag run",
+    "options": [
+     {
+      "label": "UFC's chart and transition zone (now)",
+      "effect": "Follows UFC's method and reproduces its drag example; stiff clays carry less drag; the result states each alpha and its source."
+     },
+     {
+      "label": "Alpha 1.0, the chart's value shown beside it",
+      "effect": "The conservative drag UFC p. 476 mentions; the example's printed numbers are not reproduced by default."
+     },
+     {
+      "label": "Ask the user every time",
+      "effect": "The tool refuses a clay layer with no alpha and names both choices."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Keep UFC's chart, which is UFC's own method and example, and show the drag at alpha 1.0 beside it in the result.",
+  "if_no_answer": "The default stays UFC's chart with the transition zone; a given alpha is always kept.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-83, GM-255",
+   "UFC 3-220-20 pp. 414-417, 476, 636",
+   "GEC-12 pp. 246, 248, 342"
+  ]
+ },
+ "OWN-84": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Drilled shafts: a base in rock with no RQD given",
+  "why": "GEC-10 gives the larger rock base (2.5 qu, Eq. 10-23) only where the rock below the base meets three conditions (p. 10-22). The tool takes a rock layer's RQD as 100 when none is given, so a base in rock with no RQD is treated as meeting them. On one probe that is 89,722 kN against 47,378 kN by the Hoek-Brown base for fractured rock.",
+  "background": "GEC-10 (2018) p. 10-22 lists the conditions for Eq. 10-23; Eqs. 10-24 to 10-29 (pp. 10-23/10-24) give the base where they are not met, from GSI and m_i. Since GM-244 and GM-251 the tool takes Eq. 10-23 where every rock layer within one diameter below the base has RQD 100 or the call says `rock_base_conditions_met`, and the Hoek-Brown base otherwise. The RQD default of 100 is listed in the result's defaults_used.",
+  "parts": [
+   {
+    "label": "Rock at the base, no RQD and no conditions flag given",
+    "options": [
+     {
+      "label": "Keep RQD 100 by default (now)",
+      "effect": "Eq. 10-23 is taken; the default is stated in the result."
+     },
+     {
+      "label": "Refuse and ask",
+      "effect": "The tool names RQD, rock_base_conditions_met and GSI/m_i; nothing is assumed about the rock below the base."
+     },
+     {
+      "label": "Hoek-Brown where GSI and m_i are given",
+      "effect": "The smaller base unless the conditions are stated; still RQD 100 where GSI is not given."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Refuse and name the three inputs: the base can nearly double on this one input, and p. 10-22's conditions are a finding about the rock, not a default.",
+  "if_no_answer": "RQD stays 100 by default and Eq. 10-23 is taken, stated in defaults_used and choices.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-84, GM-251, GM-244",
+   "GEC-10 (2018) pp. 10-22 to 10-24, Table 8-4 p. 8-14"
+  ]
  }
 }
