@@ -7,6 +7,7 @@ test files don't each need to do it themselves.
 
 import os
 import shutil
+import re as _re
 import tempfile
 
 import matplotlib
@@ -47,16 +48,22 @@ def _shared_host_flag_reset():
     _fileio._REQUIRE_BINDING = saved
 
 
-def pytest_terminal_summary(terminalreporter):
-    """Say so when every test of a top-level package skipped.
+_MISSING_DEP = _re.compile(
+    r"not installed|not importable|No module named|could not import|DLL",
+    _re.IGNORECASE)
 
-    Smart App Control blocks the openseespy DLL on the Windows host, so every
-    ``opensees_agent`` test skips with nothing but an ``s`` in the dots. This
-    only prints; it never changes the exit code."""
+
+def pytest_terminal_summary(terminalreporter):
+    """Say so when skips hide a missing dependency or a whole package.
+
+    Smart App Control blocks the openseespy DLL on the Windows host, so the
+    openseespy tests skip with nothing but an ``s`` in the dots. This only
+    prints; it never changes the exit code."""
     stats = terminalreporter.stats
     total = {}
     skipped = {}
-    reasons = {}
+    first_reason = {}
+    missing = {}                         # reason -> {pkg: count}
     for outcome, reports in stats.items():
         if outcome not in ("passed", "failed", "error", "skipped",
                            "xfailed", "xpassed"):
@@ -70,18 +77,29 @@ def pytest_terminal_summary(terminalreporter):
                 continue                      # count a test once, at its call
             pkg = nodeid.split("/", 1)[0]
             total[pkg] = total.get(pkg, 0) + 1
-            if outcome == "skipped":
-                skipped[pkg] = skipped.get(pkg, 0) + 1
-                if pkg not in reasons:
-                    lr = getattr(rep, "longrepr", None)
-                    text = lr[2] if isinstance(lr, tuple) and len(lr) == 3 \
-                        else str(lr)
-                    reasons[pkg] = text.removeprefix("Skipped: ").strip()
+            if outcome != "skipped":
+                continue
+            skipped[pkg] = skipped.get(pkg, 0) + 1
+            lr = getattr(rep, "longrepr", None)
+            text = lr[2] if isinstance(lr, tuple) and len(lr) == 3 else str(lr)
+            reason = text.removeprefix("Skipped: ").strip()
+            first_reason.setdefault(pkg, reason)
+            if _MISSING_DEP.search(reason):
+                by_pkg = missing.setdefault(reason, {})
+                by_pkg[pkg] = by_pkg.get(pkg, 0) + 1
+    if missing:
+        terminalreporter.section(
+            "SKIPPED, a dependency missing (these tests did not run)",
+            yellow=True)
+        for reason, by_pkg in sorted(missing.items()):
+            terminalreporter.write_line(
+                f"SKIPPED, a dependency missing: {reason} "
+                f"({sum(by_pkg.values())} tests: {', '.join(sorted(by_pkg))})")
     all_skipped = [p for p in sorted(total) if skipped.get(p) == total[p]]
-    if not all_skipped:
-        return
-    terminalreporter.section("ALL SKIPPED (no test of these packages ran)",
-                             yellow=True)
-    for pkg in all_skipped:
-        terminalreporter.write_line(
-            f"ALL SKIPPED: {pkg} ({total[pkg]} tests): {reasons[pkg]}")
+    if all_skipped:
+        terminalreporter.section(
+            "ALL SKIPPED (no test of these packages ran)", yellow=True)
+        for pkg in all_skipped:
+            terminalreporter.write_line(
+                f"ALL SKIPPED: {pkg} ({total[pkg]} tests): "
+                f"{first_reason[pkg]}")

@@ -12,7 +12,10 @@ ROOT_CONFTEST = Path(__file__).resolve().parents[2] / "conftest.py"
 
 def _hook_source():
     src = ROOT_CONFTEST.read_text(encoding="utf-8")
-    return "import pytest\n" + src[src.index("def pytest_terminal_summary"):]
+    return ("import pytest
+import re as _re
+"
+            + src[src.index("_MISSING_DEP"):])
 
 
 @pytest.fixture
@@ -54,3 +57,27 @@ def test_exit_code_unchanged(tree):
     result = tree.runpytest("pkg_a", "pkg_c")
     assert result.ret == 1
     result.stdout.fnmatch_lines(["*ALL SKIPPED: pkg_a*"])
+
+
+def test_mixed_missing_dependency_listed(pytester):
+    pytester.makeconftest(_hook_source())
+    pytester.makepyfile(**{
+        "pkg_m/test_m": textwrap.dedent("""
+            import pytest
+            def test_ok(): pass
+            @pytest.mark.skip(reason="openseespy not installed")
+            def test_a(): pass
+            @pytest.mark.skip(reason="openseespy not installed")
+            def test_b(): pass
+            @pytest.mark.skip(reason="needs a key")
+            def test_c(): pass
+        """),
+    })
+    result = pytester.runpytest("pkg_m")
+    result.stdout.fnmatch_lines([
+        "*SKIPPED, a dependency missing: openseespy not installed "
+        "(2 tests: pkg_m)*"])
+    out = result.stdout.str()
+    assert "needs a key" not in out.split("a dependency missing")[1]
+    assert "ALL SKIPPED" not in out
+    assert result.ret == 0
