@@ -95,7 +95,10 @@ def test_the_tool_text_names_no_product():
     for word in ("ux1600", "ux1700", "tensar", "hdpe", "75x4", "uniaxial"):
         assert word not in text, word
     out = D.call_agent("retaining_walls", "list_reinforcement", {})
+    # GM-266: E4's other mats, Table E4-7.4 (p. E4-18)
     assert sorted(out["reinforcement_types"]) == [
+        "bar_mat_e4_3w11_w11x0_5", "bar_mat_e4_4w15_w11x1",
+        "bar_mat_e4_4w15_w11x1_5",
         "geogrid_gec11_e1_gg1", "geogrid_gec11_e1_gg2",
         "geogrid_gec11_e1_gg3", "ribbed_steel_strip_50x4",
         "welded_wire_grid_w11"]
