@@ -1192,9 +1192,14 @@ def _check_parameter_names(mod, method: str, parameters: dict) -> None:
     else:
         also = ""
     if hits:
+        # Names refused for the same reason share one sentence.
+        why = {}
+        for k in hits:
+            why.setdefault(refused_reason(refused[k]), []).append(k)
         raise ValueError(
             f"{method} does not take {hits}: "
-            + "; ".join(f"{k}: {refused_reason(refused[k])}" for k in hits)
+            + "; ".join(f"{', '.join(names)}: {reason}"
+                        for reason, names in why.items())
             + "." + also)
 
 

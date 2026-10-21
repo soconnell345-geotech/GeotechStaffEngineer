@@ -133,6 +133,17 @@ def test_the_formula_and_its_inputs_are_refused(name, value):
     assert "Did you mean" not in err
 
 
+def test_several_refused_inputs_get_one_message():
+    """The old formula's inputs given together: one sentence names them
+    all, not the same sentence once per name."""
+    err = _call("ground_improvement", "priebe_improvement_factor",
+                {"as_ratio": 0.277, "phi_column": 42.5, "nu_soil": 0.3,
+                 "method": "formula"})["error"]
+    assert "does not take ['method', 'nu_soil', 'phi_column']" in err
+    assert "method, nu_soil, phi_column: the tool reads" in err
+    assert err.count("Fig. 5-21 curve (4)") == 1
+
+
 def test_the_pier_package_cites_the_stress_reduction_method(tmp_path,
                                                              monkeypatch):
     monkeypatch.chdir(tmp_path)

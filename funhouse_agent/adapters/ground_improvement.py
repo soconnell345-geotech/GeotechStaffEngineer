@@ -181,7 +181,7 @@ def _run_priebe_improvement_factor(p):
     if hits:
         raise ValueError(
             f"priebe_improvement_factor does not take {hits}: "
-            + "; ".join(f"{k}: {_PRIEBE_REFUSED[k]}" for k in hits) + ".")
+            f"{', '.join(hits)}: {_ON_THE_CURVE}.")
     p = dict(apply_aliases(p, _PRIEBE_ALIASES))
     reject_unknown_params(p, {"as_ratio"}, method="priebe_improvement_factor")
     require_params(p, ["as_ratio"], method="priebe_improvement_factor",
