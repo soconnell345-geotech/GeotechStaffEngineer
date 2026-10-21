@@ -316,7 +316,7 @@ Key conventions:
       reproduced (7b4c0f4); did-you-mean hints that never matched (5f4e58a); `import pymupdf` in the app
       and planlens (0ff9056, planlens c79d1f3); a GSTools defect behind an all-NaN Exponential
       field worked around, a kriging plan map (6cbd94c) and choices (68bbc67); MSE bar mat and strip Tal as GEC-11
-      prints them, E4 reproduced, spacing per level (1729383); release notes for each in HANDOFF;
+      prints them, E4 reproduced, spacing per level (1729383), geosynthetic rupture at FOS 1.5 (31bd1bf); release notes for each in HANDOFF;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted

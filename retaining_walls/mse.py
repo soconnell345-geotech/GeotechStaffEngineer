@@ -368,11 +368,54 @@ _COMMERCIAL_STRIP = (
 
 _ONE_REINFORCEMENT = (
     "a stronger reinforcement, or a closer spacing, at the levels where "
-    "FOS_rupture is below 1.0: this tool takes one reinforcement (one Tal "
-    "and one width b) for every level, so a stronger one is a run of its "
-    "own for those levels, and a closer spacing is "
+    "FOS_rupture is below {req:.1f}: this tool takes one reinforcement (one "
+    "Tal and one width b) for every level, so a stronger one is a run of "
+    "its own for those levels, and a closer spacing is "
     "reinforcement_horizontal_spacing per level, as GEC-11 Vol II Example "
     "E3 takes 3 strips a panel below Level 8 (Table E3-7.3, p. E3-19)")
+
+_ONE_GEOSYNTHETIC = (
+    "a stronger grade at the levels where FOS_rupture is below {req:.1f}: "
+    "this tool takes one reinforcement (one Tal) for every level, so a "
+    "stronger grade is a run of its own for those levels, as GEC-11 Vol "
+    "II Example E1 takes its GG-I geogrid at Layers 1 to 4 and GG-II below "
+    "(Table E1-7.4, p. E1-16); or a closer vertical spacing "
+    "(reinforcement_spacing)")
+
+#: GEC-11 Vol I, read on the rendered pages (GM-262 review). The factored
+#: tensile resistance is phi Tal Rc (Eq. 4-33, p. 4-48) against Tmax
+#: factored by gamma_P-EV 1.35 (p. 4-40); Tal is "the nominal long-term
+#: reinforcement design strength" for steel and geosynthetics alike (p.
+#: 4-47), Fy Ac / b (Eq. 3-11a) or Tult / RF (Eq. 3-12). This module
+#: checks the unfactored Tmax, so it requires Tal Rc / Tmax >= 1.35 / phi:
+#: 1.0 on a steel reinforcement's Tal given as GEC-11's allowable 0.55 Fy
+#: or 0.48 Fy (p. 4-77), phi / 1.35 already in it, and 1.35 / 0.90 = 1.5
+#: on a geosynthetic's Tult / RF (phi 0.90, Table 4-7), as on pullout (phi
+#: 0.90, FOS_pullout 1.5).
+GEOSYNTHETIC_RUPTURE_FOS = 1.5
+
+GEOSYNTHETIC_RUPTURE_BASIS = (
+    "GEC-11 Vol I: Tal is 'the nominal long-term reinforcement design "
+    "strength' (p. 4-47), for a geosynthetic Tal = Tult / RF, RF = RFID x "
+    "RFCR x RFD (Eq. 3-12, p. 3-28); the factored tensile resistance phi "
+    "Tal Rc (Eq. 4-33, p. 4-48), phi 0.90 for geosynthetic reinforcement, "
+    "static (Table 4-7, p. 4-48), against Tmax factored by gamma_P-EV "
+    "1.35 (p. 4-40), as Vol II Example E1 takes its geogrids (Tr = 0.90 "
+    "Tal, Table E1-7.3, p. E1-15). Against the unfactored Tmax that is "
+    "Tal Rc / Tmax >= 1.35 / 0.90 = 1.5, the factor of safety this tool "
+    "requires of a geosynthetic, as of pullout (phi 0.90, 1.5); a steel "
+    "reinforcement's Tal is GEC-11's allowable, 0.55 Fy or 0.48 Fy (p. "
+    "4-77), phi / 1.35 already in it, at 1.0")
+
+
+def rupture_FOS_required(reinforcement: Reinforcement) -> float:
+    """The factor of safety the tensile rupture check requires of Tal x Rc
+    over the unfactored Tmax (GM-262 review): 1.35 / phi with GEC-11's
+    phi (Table 4-7) and gamma_P-EV 1.35 (p. 4-40). 1.0 for steel, whose
+    Tal is given as the 0.55 Fy or 0.48 Fy allowable (p. 4-77); 1.5 for a
+    geosynthetic, whose Tal is Tult / RF (Eq. 3-12)
+    (:data:`GEOSYNTHETIC_RUPTURE_BASIS`)."""
+    return 1.0 if reinforcement.is_metallic else GEOSYNTHETIC_RUPTURE_FOS
 
 
 def tensile_strength_choice(reinforcement: Reinforcement,
@@ -380,13 +423,17 @@ def tensile_strength_choice(reinforcement: Reinforcement,
     """The reinforcement's long-term tensile strength Tal in the rupture
     check, as a result's ``choices`` (GM-262 review): a built-in's, with
     where it comes from (``Reinforcement.basis``) and for the built-in
-    grid the flexible-facing reading; for any reinforcement whose
-    FOS_rupture is below 1.0 at some level, that the same Tal and width
-    are taken at every level. Nothing for a given Tal that passes."""
+    grid the flexible-facing reading; a geosynthetic's, with the factor of
+    safety 1.5 the check requires of it (:func:`rupture_FOS_required`);
+    for any reinforcement whose FOS_rupture is below the required value at
+    some level, that the same Tal and width are taken at every level.
+    Nothing for a given steel Tal that passes."""
     from geotech_common.choices import choice, how_given, MODULE
     r = reinforcement
-    low = [lv for lv in internal if lv["FOS_rupture"] < 1.0]
-    if not (r.basis or low):
+    req = rupture_FOS_required(r)
+    low = [lv for lv in internal
+           if lv["FOS_rupture"] < lv.get("FOS_rupture_required", req)]
+    if not (r.basis or low or not r.is_metallic):
         return []
     unit = ("mat" if r.is_grid else "strip" if r.is_metallic
             else "reinforcement") + " width"
@@ -395,6 +442,9 @@ def tensile_strength_choice(reinforcement: Reinforcement,
         chosen += f" ({r.Tallowable * r.width:.3g} kN a {r.width:g} m " \
                   f"{'mat' if r.is_grid else 'strip'})"
     chosen += ", the same at every level"
+    if not r.is_metallic:
+        chosen += (f"; FOS_rupture required {req:.1f} (1.35 / phi 0.90) on "
+                   "this Tal, the long-term strength Tult / RF")
     alts = []
     if r.basis and r.is_grid:
         ratio = STRIP_ALLOWABLE_FY / BAR_MAT_ALLOWABLE_FY
@@ -410,19 +460,26 @@ def tensile_strength_choice(reinforcement: Reinforcement,
             po=ratio * min(lv["FOS_pullout"] for lv in internal)))
     if low:
         z = [lv["depth_m"] for lv in low]
-        chosen += (f"; FOS_rupture is below 1.0 at "
+        chosen += (f"; FOS_rupture is below {req:.1f} at "
                    + (f"z = {z[0]:g} m" if len(z) == 1
                       else f"{len(z)} levels, z = {z[0]:g} to {z[-1]:g} m")
                    + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
-        alts.append(_ONE_REINFORCEMENT)
+        alts.append((_ONE_REINFORCEMENT if r.is_metallic
+                     else _ONE_GEOSYNTHETIC).format(req=req))
     how = MODULE if r.basis else how_given(
         r.Tallowable, None, name="reinforcement_Tallowable")
+    if r.is_metallic:
+        basis = r.basis or (
+            "GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac / b, given as the "
+            "allowable 0.55 Fy for strips or 0.48 Fy for bar mats (p. "
+            "4-77); the rupture check compares Tal x Rc with the "
+            "unfactored Tmax at a factor of safety of 1.0 (p. 4-47)")
+    else:
+        basis = ((r.basis + ". ") if r.basis else "") \
+            + GEOSYNTHETIC_RUPTURE_BASIS
     return [choice(
         "Long-term tensile strength Tal of the reinforcement (tensile "
-        "rupture check)", chosen, how,
-        r.basis or ("GEC-11 Vol I Eq. 3-11a (p. 3-22); the rupture check "
-                    "compares Tal x Rc with the unfactored Tmax at a factor "
-                    "of safety of 1.0 (p. 4-47)"), alts)]
+        "rupture check)", chosen, how, basis, alts)]
 
 
 #: GEC-11 Vol I, read on the rendered pages (GM-256).
@@ -1196,7 +1253,7 @@ def check_internal_stability(
     phi_backfill: float,
     reinforcement: Reinforcement,
     FOS_pullout: float = 1.5,
-    FOS_rupture: float = 1.0,
+    FOS_rupture: Optional[float] = None,
     Cu_backfill: float = None,
     F_star_tested=None,
     alpha_tested: float = None,
@@ -1216,7 +1273,11 @@ def check_internal_stability(
     FOS_pullout : float, optional
         Required FOS for pullout. Default 1.5.
     FOS_rupture : float, optional
-        Required FOS for rupture. Default 1.0.
+        Required FOS for rupture, Tal x Rc over the unfactored Tmax.
+        Default None: :func:`rupture_FOS_required`, 1.0 for steel (Tal
+        the 0.55 Fy or 0.48 Fy allowable) and 1.5 for a geosynthetic (Tal
+        = Tult / RF), GEC-11's 1.35 / phi (GM-262 review). Each level
+        gives it as ``FOS_rupture_required``.
     Cu_backfill : float, optional
         Uniformity coefficient D60/D10 of the reinforced backfill, for the
         ribbed steel strip F* (:func:`F_star_strip_top`). Default None: 4,
@@ -1271,6 +1332,8 @@ def check_internal_stability(
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
     sloping = geom.backfill_slope > 0
+    if FOS_rupture is None:
+        FOS_rupture = rupture_FOS_required(reinforcement)   # GM-262 review
     # GEC-11 Eq. 3-1 (GM-256), one value a level (GM-261)
     Rcs = coverage_ratios(reinforcement, geom.reinforcement_depths)
     _check_tested(F_star_tested, alpha_tested)
@@ -1383,6 +1446,7 @@ def check_internal_stability(
             "Rc": round(Rc, 4),
             "FOS_pullout": round(FOS_po, 3),
             "FOS_rupture": round(FOS_ru, 3),
+            "FOS_rupture_required": FOS_rupture,
             "Tallowable_kN_per_m": round(reinforcement.Tallowable, 2),
             "Tal_Rc_kN_per_m": round(Tal_Rc, 2),
             "passes": passes,
