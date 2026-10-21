@@ -1228,10 +1228,15 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                   "AASHTO Fig. 11.10.6.3.1-1",
     ))
 
+    # GM-262 review: 1.0 on a steel allowable, 1.5 on a geosynthetic's
+    # Tult / RF (GEC-11's 1.35 / phi)
+    FS_ru = (_mse.rupture_FOS_required(reinforcement)
+             if reinforcement is not None else 1.0)
     if reinforcement is not None:
         int_items.append(CalcStep(
             title="Tensile Resistance per Metre of Wall",
-            equation="T_al \u00d7 R_c \u2265 T_max",
+            equation=("T_al \u00d7 R_c \u2265 T_max" if FS_ru == 1.0 else
+                      f"T_al \u00d7 R_c \u2265 {FS_ru:g} T_max"),
             substitution=(f"{reinforcement.Tallowable:.1f} kN/m of "
                           f"reinforcement width \u00d7 {Rc_text}"),
             result_name="T_al \u00d7 R_c",
@@ -1269,8 +1274,11 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                      "FOS_po", "FOS_ru", "Status"],
             rows=int_rows,
             notes=(
-                f"FOS_pullout required: 1.5. FOS_rupture required: 1.0. "
-                f"T_al R_c and P_r per metre of wall, coverage ratio "
+                f"FOS_pullout required: 1.5. FOS_rupture required: "
+                + ("1.0 (T_al the steel allowable, 0.55 or 0.48 F_y). "
+                   if FS_ru == 1.0 else
+                   f"{FS_ru:g} (1.35 / phi 0.90 on T_al = T_ult / RF). ")
+                + f"T_al R_c and P_r per metre of wall, coverage ratio "
                 f"R_c = {Rc_text}. "
                 f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}"
             ),
