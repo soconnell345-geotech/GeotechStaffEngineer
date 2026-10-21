@@ -890,6 +890,43 @@ results are unchanged. Tests: `tests/test_mse_rupture_factor_of_safety.py`.
   no source is recorded; check them against the products' published
   long-term strengths, or rename them as generic geogrids;
 - `reinforcement_Fy` is used in no check, for a custom reinforcement too.
+  Done: GM-269 below.
+
+## Example E1's rupture CDRs, and `reinforcement_Fy` (GM-268, GM-269, 2026-10-21)
+
+**E1 reproduced through the module.** The review's test pins E1's Layer 4
+by hand. The module's own path is set beside every layer of Table E1-7.4
+(p. E1-16) in `validation_examples/test_published_v056_v057_gec11_slope.py`
+(V-057):
+- Tal and Tr of GG-I, GG-II and GG-III (Table E1-7.3, p. E1-15) to the
+  pound, Tr = 1.35 Tal / 1.5.
+- At each layer the module's Tmax is taken at E1's own Z and Sv, under the
+  slope's S_eq. It is within 0.22 % of E1's TMAX / 1.35 (Table E1-7.2, p.
+  E1-14). FOS_rupture / 1.5 is then within 0.6 % of E1's CDR: Layer 4 is
+  1.006 against 1.00, Layer 9 is 1.015 against 1.01.
+- The exception is Layer 10 (Z 18.67 ft, Sv 1.33 ft). The module's Tmax
+  there is 3.0 % over the printed 1,366 lb/ft, and Layer 11 below agrees
+  within 0.2 %. So the ratio is 1.39 against 1.43, on the safe side.
+- A whole run with GG-I at Sv 2 ft fails rupture from 7 ft down (1.46 at
+  7 ft), as GG-I reaches its limit at E1's Layer 4.
+
+E1's text cites "Table 4-8" for the resistance factors (p. E1-15); in Vol
+I it is Table 4-7.
+
+**`reinforcement_Fy` is refused (GM-269).** `mse_wall` took it and used it
+in no check:
+- The rupture check works from the Tal given.
+- The tool has no section inputs (number of bars, corroded diameter or
+  thickness, design life) to work a Tal out of Fy. Adding them would make
+  a second way to give the same number.
+- Its description said MPa, while the dataclass is in kPa.
+
+Refusing it is the plainer choice. Dispatch refuses it with or without a
+built-in name (`refused_parameters`, the gm179 pattern). The reason says to
+give the allowable worked out from Fy and the corroded section: Eq. 3-11a,
+0.55 Fy for strips and 0.48 Fy for bar mats. The `Reinforcement` dataclass
+keeps `Fy`, since the built-ins record theirs. Tests:
+`funhouse_agent/tests/test_gm179_unused_inputs.py`.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
