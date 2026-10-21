@@ -592,7 +592,7 @@ steel strip needs its coverage ratio Rc = b/Sh ...").
 - whether Cu < 4 with no tested F* is refused rather than computed and
   flagged;
 - Rc is one value for the wall: E3 changes Sh with depth (2.50 ft to
-  1.67 ft), so a wall like it is run once per spacing.
+  1.67 ft), so a wall like it is run once per spacing. Done: GM-261 below.
 
 ## The tensile strength of a steel bar mat (GM-262, 2026-10-20)
 
@@ -685,6 +685,55 @@ built-in mat's Tal x Rc over the unfactored Tmax is 1.044, against E4's 4 x
   design strength or an allowable: the check takes it at FOS 1.0;
 - a reinforcement per level (E4's 3W11 at Level 2 and 4W15 below Level 4)
   is not taken; GM-261 takes the spacing per level.
+
+## The spacing per reinforcement level (GM-261, 2026-10-20)
+
+**What GEC-11 prints.** Vol II Example E3 sizes the strips at each level
+and spaces them to suit: "The last column of Table E3-7.3 provides
+horizontal spacing of the reinforcing strips which is obtained by dividing
+the panel width, wp, by the governing number of strips, Ng" (p. E3-19).
+Ng is 2 a 5 ft panel at Levels 1 to 8 (Sh 2.50 ft) and 3 at Levels 9 to 12
+(Sh 1.67 ft). Vol I Eq. 3-1 (p. 3-12), Rc = b/Sh, holds level by level.
+
+**What changed.** `Reinforcement.horizontal_spacing` and
+`Reinforcement.coverage_ratio` take one value for the wall, as before, or
+a list with one value a level from the top down (kept as a tuple;
+`Reinforcement.per_level`). `mse.coverage_ratios(reinforcement, depths)`
+gives Rc at each level; `check_internal_stability` takes Rc and Tal x Rc
+level by level, and each level's result carries its own `Rc`. A list whose
+length is not the number of levels is refused, naming the levels and their
+depths (Sv sets them); a level whose b is more than its Sh is refused,
+naming the level. `coverage_ratio(reinforcement)` stays the one-value
+function and refuses a per-level input. The coverage choice lists the
+spacings by runs of levels ("Sh 0.762 m at levels 1-8 (Rc 0.0656); Sh 0.508
+m at levels 9-12 (Rc 0.0984)") with Tal x Rc as a range, and cites p.
+E3-19. The calc package shows S_h and R_c per level ("0.750 x 8, 0.500 x
+4"). The tool takes a list for `reinforcement_horizontal_spacing` or
+`coverage_ratio` ("float or list").
+
+**Numbers.** E3 at one spacing for the wall (2.50 ft, the run before
+GM-261) against E3's spacing per level, Levels 9 to 12 (the module's
+levels at 21.26 to 28.74 ft; Levels 1 to 8 are the same):
+
+| Level | FOS_pullout one Sh | per level | FOS_rupture one Sh | per level |
+|---|---|---|---|---|
+| 9 | 2.110 | 3.165 | 1.851 | 2.776 |
+| 10 | 2.237 | 3.355 | 1.691 | 2.537 |
+| 11 | 2.365 | 3.548 | 1.557 | 2.336 |
+| 12 | 2.494 | 3.741 | 1.443 | 2.164 |
+
+At Level 12, E3's tension check is Ng phi Tn / Tmax = 3 x 9.75 / 24.36 =
+1.20; at one spacing it would be 0.80.
+
+**E3 reproduced in one run** (`validation_examples/
+test_published_v056_v057_gec11_slope.py`, V-056): the pullout per strip
+and Ng phi R / Tmax for pullout and tension at all twelve levels of Table
+E3-7.3, each level equal to the run at its own spacing. Module tests:
+`tests/test_mse_per_level_spacing.py`.
+
+**Not covered:** a reinforcement per level (another Tal, another width, or
+E4's W15 mats below Level 4) is not taken; only the spacing or the ratio
+varies.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height

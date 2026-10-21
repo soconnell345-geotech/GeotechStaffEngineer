@@ -11,7 +11,11 @@ References:
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence, Tuple, Union
+
+#: One value for the wall, or one per reinforcement level from the top down
+#: (GM-261).
+PerLevel = Union[float, Sequence[float]]
 
 #: The allowable stress of a steel bar mat as a fraction of Fy, for the
 #: module's rupture check, which compares Tal x Rc with the unfactored Tmax
@@ -44,6 +48,28 @@ def steel_grid_Tal(n_longitudinal: int, D_corroded: float, Fy: float,
             "positive corroded diameter, Fy and grid width b")
     Ac = n_longitudinal * math.pi * D_corroded ** 2 / 4.0
     return fraction * Fy * Ac / b
+
+
+def _per_level(value, name):
+    """A list given per level as a tuple of floats; a single value as it
+    is (GM-261)."""
+    if value is None or not isinstance(value, (list, tuple)):
+        return value
+    if not value:
+        raise ValueError(f"{name} per level needs at least one value")
+    try:
+        return tuple(float(v) for v in value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{name} per level is a list of numbers, one per reinforcement "
+            f"level from the top down; got {list(value)!r}") from None
+
+
+def _values(value) -> Tuple[float, ...]:
+    """Every value of a per-level input, or the one value, or none."""
+    if value is None:
+        return ()
+    return value if isinstance(value, tuple) else (value,)
 
 
 @dataclass
@@ -83,20 +109,26 @@ class Reinforcement:
         Strip thickness (m) for strips; transverse-bar diameter (m) for steel
         bar-mat / welded-grid reinforcement (the ``t`` in the F* = 20·t/St
         bearing-resistance ratio). Default 0.
-    coverage_ratio : float, optional
+    coverage_ratio : float or sequence of float, optional
         Coverage ratio Rc = b/Sh (GEC-11 Vol I Eq. 3-1, p. 3-12), given
-        directly, 0 < Rc <= 1. Default None: worked out from ``width`` and
-        ``horizontal_spacing``, or 1 for a geosynthetic given neither (a
-        continuous layer, p. 3-13); a steel strip or grid given neither is
-        refused (``mse.coverage_ratio``, GM-256).
+        directly, 0 < Rc <= 1: one value for the wall, or one per
+        reinforcement level from the top down (GM-261). Default None: worked
+        out from ``width`` and ``horizontal_spacing``, or 1 for a
+        geosynthetic given neither (a continuous layer, p. 3-13); a steel
+        strip or grid given neither is refused (``mse.coverage_ratio``,
+        GM-256).
     transverse_spacing : float, optional
         Transverse-bar (grid) spacing St (m) for steel bar-mat / welded-grid
         reinforcement (the ``St`` in F* = 20·t/St). Only used for
         ``metallic_grid``. Default 0 (then the per-call ``t_over_St`` /
         F* default applies).
-    horizontal_spacing : float, optional
+    horizontal_spacing : float or sequence of float, optional
         Centre-to-centre horizontal spacing Sh (m) between the strips,
-        sheets or grids of one level (GEC-11 Vol I p. 3-12). Default None.
+        sheets or grids of one level (GEC-11 Vol I p. 3-12): one value for
+        the wall, or one per reinforcement level from the top down, as Vol
+        II Example E3 changes it with depth (Table E3-7.3, p. E3-19: 2
+        strips a 5 ft panel at Levels 1 to 8, 3 at Levels 9 to 12; GM-261).
+        Default None.
     basis : str, optional
         Where ``Tallowable`` comes from, for the result's choices. Default
         None (not stated).
@@ -107,9 +139,9 @@ class Reinforcement:
     width: Optional[float] = None
     Fy: float = 0.0
     thickness: float = 0.0
-    coverage_ratio: Optional[float] = None
+    coverage_ratio: Optional[PerLevel] = None
     transverse_spacing: float = 0.0
-    horizontal_spacing: Optional[float] = None
+    horizontal_spacing: Optional[PerLevel] = None
     basis: Optional[str] = None
 
     def __post_init__(self):
@@ -119,16 +151,29 @@ class Reinforcement:
             raise ValueError(f"type must be one of {valid_types}, got '{self.type}'")
         if self.Tallowable <= 0:
             raise ValueError(f"Tallowable must be positive, got {self.Tallowable}")
-        for name in ("width", "horizontal_spacing"):
-            value = getattr(self, name)
-            if value is not None and not value > 0:
-                raise ValueError(f"{name} must be positive, got {value}")
-        if self.coverage_ratio is not None \
-                and not 0 < self.coverage_ratio <= 1:
-            raise ValueError(
-                "coverage_ratio is Rc = b/Sh, the reinforcement's width over "
-                "its horizontal spacing (GEC-11 Vol I Eq. 3-1): more than 0 "
-                f"and at most 1; got {self.coverage_ratio}")
+        if self.width is not None and not self.width > 0:
+            raise ValueError(f"width must be positive, got {self.width}")
+        self.horizontal_spacing = _per_level(self.horizontal_spacing,
+                                             "horizontal_spacing")
+        self.coverage_ratio = _per_level(self.coverage_ratio,
+                                         "coverage_ratio")
+        for value in _values(self.horizontal_spacing):
+            if not value > 0:
+                raise ValueError(
+                    f"horizontal_spacing must be positive, got {value}")
+        for value in _values(self.coverage_ratio):
+            if not 0 < value <= 1:
+                raise ValueError(
+                    "coverage_ratio is Rc = b/Sh, the reinforcement's width "
+                    "over its horizontal spacing (GEC-11 Vol I Eq. 3-1): "
+                    f"more than 0 and at most 1; got {value}")
+
+    @property
+    def per_level(self) -> bool:
+        """True when the spacing or the coverage ratio is given per
+        reinforcement level (GM-261)."""
+        return (isinstance(self.horizontal_spacing, tuple)
+                or isinstance(self.coverage_ratio, tuple))
 
     @property
     def is_metallic(self) -> bool:

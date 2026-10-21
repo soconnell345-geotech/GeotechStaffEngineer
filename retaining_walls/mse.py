@@ -44,7 +44,7 @@ References:
 """
 
 import math
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Sequence
 
 from retaining_walls.geometry import MSEWallGeometry
 from retaining_walls.earth_pressure import (
@@ -151,14 +151,68 @@ def coverage_ratio(reinforcement: Reinforcement) -> float:
     strip or grid given neither is refused (ValueError,
     :data:`NEEDS_COVERAGE`): GEC-11 prints no spacing to assume, and taking
     Rc = 1 overstated a strip wall's pullout and rupture many times (before
-    GM-256)."""
+    GM-256). One value for the wall: a spacing or ratio given per level is
+    taken by :func:`coverage_ratios` (GM-261)."""
     r = reinforcement
-    Rc, Sh, b = r.coverage_ratio, r.horizontal_spacing, r.width
-    if Rc is not None and Sh is not None:
+    _not_both(r)
+    if r.per_level:
+        raise ValueError(
+            f"{r.name}'s coverage is given per reinforcement level: take "
+            "it with coverage_ratios(reinforcement, depths) (GM-261)")
+    return _coverage_at(r, r.coverage_ratio, r.horizontal_spacing)
+
+
+def coverage_ratios(reinforcement: Reinforcement,
+                    depths: Sequence[float]) -> List[float]:
+    """The coverage ratio Rc = b/Sh at each reinforcement level, the
+    levels at ``depths`` (m) from the top down (GM-261): a spacing or
+    coverage ratio given per level takes one value a level, as GEC-11 Vol
+    II Example E3 changes Sh with depth (Table E3-7.3, p. E3-19); a single
+    value holds at every level. A list whose length is not the number of
+    levels is refused, naming the levels; otherwise as
+    :func:`coverage_ratio`."""
+    r = reinforcement
+    _not_both(r)
+    n = len(depths)
+    for name, given, values in (
+            ("reinforcement_horizontal_spacing", "Sh", r.horizontal_spacing),
+            ("coverage_ratio", "Rc", r.coverage_ratio)):
+        if isinstance(values, tuple) and len(values) != n:
+            raise ValueError(
+                f"{name} gives {len(values)} values of {given}, one per "
+                "reinforcement level from the top down, and this wall has "
+                f"{n} levels, at depths "
+                + ", ".join(f"{z:.2f}" for z in depths) + " m (the "
+                "reinforcement spacing Sv sets them)")
+
+    def at(values, i):
+        return values[i] if isinstance(values, tuple) else values
+    return [_coverage_at(r, at(r.coverage_ratio, i),
+                         at(r.horizontal_spacing, i),
+                         level=i + 1 if r.per_level else None)
+            for i in range(n)]
+
+
+def _per_level_text(values, unit=""):
+    """A per-level input in a message: the one value, or the list."""
+    if isinstance(values, tuple):
+        return ("[" + ", ".join(f"{v:g}" for v in values) + "]"
+                + (f" {unit}" if unit else "") + " per level")
+    return f"{values:g}" + (f" {unit}" if unit else "")
+
+
+def _not_both(r: Reinforcement) -> None:
+    if r.coverage_ratio is not None and r.horizontal_spacing is not None:
         raise ValueError(
             "give the coverage ratio (coverage_ratio) or the horizontal "
             "spacing (reinforcement_horizontal_spacing) with the width, not "
-            f"both: Rc {Rc:g} against b/Sh from Sh {Sh:g} m")
+            f"both: Rc {_per_level_text(r.coverage_ratio)} against b/Sh "
+            f"from Sh {_per_level_text(r.horizontal_spacing, 'm')}")
+
+
+def _coverage_at(r: Reinforcement, Rc, Sh, level=None) -> float:
+    """Rc at one level from its given Rc or Sh (GM-256, GM-261)."""
+    b = r.width
     if Rc is not None:
         return Rc
     kind = ("steel grid" if r.is_grid else "steel strip"
@@ -166,7 +220,8 @@ def coverage_ratio(reinforcement: Reinforcement) -> float:
     if Sh is not None:
         if b is None:
             raise ValueError(
-                f"reinforcement_horizontal_spacing Sh {Sh:g} m needs the "
+                f"reinforcement_horizontal_spacing Sh "
+                f"{_per_level_text(r.horizontal_spacing, 'm')} needs the "
                 f"{kind}'s width b (reinforcement_width, m"
                 + (", centre to centre of the outside longitudinal bars"
                    if r.is_grid else "") + "): Rc = b/Sh (GEC-11 Vol I "
@@ -174,8 +229,10 @@ def coverage_ratio(reinforcement: Reinforcement) -> float:
         if b > Sh:
             raise ValueError(
                 f"the {kind}'s width b {b:g} m is more than its horizontal "
-                f"spacing Sh {Sh:g} m: Rc = b/Sh is at most 1 (GEC-11 Vol I "
-                "Eq. 3-1; Rc = 1 is a continuous layer, p. 3-13)")
+                f"spacing Sh {Sh:g} m"
+                + (f" at level {level} from the top" if level else "")
+                + ": Rc = b/Sh is at most 1 (GEC-11 Vol I Eq. 3-1; Rc = 1 "
+                "is a continuous layer, p. 3-13)")
         return b / Sh
     if not r.is_metallic:
         return 1.0
@@ -194,6 +251,11 @@ def coverage_choice(reinforcement: Reinforcement,
     entry (``geotech_common.choices``; GM-256), with its b and Sh."""
     from geotech_common.choices import choice, how_given
     r = reinforcement
+    basis = COVERAGE_BASIS
+    if r.basis:
+        basis += ". The reinforcement's Tal: " + r.basis     # GM-262
+    if r.per_level:
+        return _per_level_coverage_choice(r, internal, basis)
     Rc = coverage_ratio(r)
     alts = []
     if r.coverage_ratio is not None:
@@ -219,12 +281,63 @@ def coverage_choice(reinforcement: Reinforcement,
         chosen += (f"; tensile resistance Tal x Rc "
                    f"{r.Tallowable * Rc:.4g} kN/m of wall (Tal "
                    f"{r.Tallowable:.4g} kN/m of reinforcement width)")
-    basis = COVERAGE_BASIS
-    if r.basis:
-        basis += ". The reinforcement's Tal: " + r.basis     # GM-262
     return choice(
         "Coverage ratio Rc of the reinforcement (pullout and tensile "
         "resistance per metre of wall)", chosen, how, basis, alts)
+
+
+#: GEC-11 Vol II, read on the rendered page (GM-261).
+PER_LEVEL_BASIS = (
+    "; a spacing per level as GEC-11 Vol II Example E3 takes it: 'The last "
+    "column of Table E3-7.3 provides horizontal spacing of the reinforcing "
+    "strips which is obtained by dividing the panel width, wp, by the "
+    "governing number of strips, Ng' (p. E3-19), 2 strips a 5 ft panel at "
+    "Levels 1 to 8 and 3 at Levels 9 to 12")
+
+
+def _level_runs(values):
+    """Consecutive levels with the same value: (first, last, value), the
+    levels counted from 1 at the top."""
+    runs = []
+    for i, v in enumerate(values, start=1):
+        if runs and runs[-1][2] == v:
+            runs[-1][1] = i
+        else:
+            runs.append([i, i, v])
+    return runs
+
+
+def _levels(first, last):
+    return f"level {first}" if first == last else f"levels {first}-{last}"
+
+
+def _per_level_coverage_choice(r, internal, basis):
+    """The coverage choice for a spacing or ratio given per level
+    (GM-261)."""
+    from geotech_common.choices import choice, how_given
+    Rcs = [lv["Rc"] for lv in internal] if internal else None
+    if isinstance(r.coverage_ratio, tuple):
+        chosen = "Rc given per level, from the top: " + "; ".join(
+            f"{v:.3g} at {_levels(a, z)}"
+            for a, z, v in _level_runs(r.coverage_ratio))
+        how = how_given(r.coverage_ratio, None, name="coverage_ratio")
+    else:
+        chosen = (f"Rc = b {r.width:g} m / Sh per level, from the top: "
+                  + "; ".join(f"Sh {v:g} m at {_levels(a, z)} (Rc "
+                              f"{r.width / v:.3g})"
+                              for a, z, v in _level_runs(
+                                  r.horizontal_spacing)))
+        how = how_given(r.horizontal_spacing, None,
+                        name="reinforcement_horizontal_spacing")
+    if Rcs:
+        lo, hi = min(Rcs), max(Rcs)
+        chosen += (f"; tensile resistance Tal x Rc {r.Tallowable * lo:.4g} "
+                   f"to {r.Tallowable * hi:.4g} kN/m of wall (Tal "
+                   f"{r.Tallowable:.4g} kN/m of reinforcement width)")
+    return choice(
+        "Coverage ratio Rc of the reinforcement (pullout and tensile "
+        "resistance per metre of wall)", chosen, how,
+        basis + PER_LEVEL_BASIS, [])
 
 
 #: GEC-11 Vol I, read on the rendered pages (GM-256).
@@ -1028,8 +1141,10 @@ def check_internal_stability(
         ``Zp_m``, the depth below the slope surface used for pullout.
         ``Pr_kN_per_m`` and ``Tal_Rc_kN_per_m`` are per metre of wall, the
         reinforcement's pullout and tensile resistance times its coverage
-        ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-49; p. 4-47; GM-256);
-        ``Tallowable_kN_per_m`` is Tal per metre of reinforcement width.
+        ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-49; p. 4-47; GM-256),
+        the level's own when the spacing or ratio is given per level
+        (:func:`coverage_ratios`, GM-261); ``Tallowable_kN_per_m`` is Tal
+        per metre of reinforcement width.
 
     Notes
     -----
@@ -1052,10 +1167,10 @@ def check_internal_stability(
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
     sloping = geom.backfill_slope > 0
-    Rc = coverage_ratio(reinforcement)        # GEC-11 Eq. 3-1 (GM-256)
+    # GEC-11 Eq. 3-1 (GM-256), one value a level (GM-261)
+    Rcs = coverage_ratios(reinforcement, geom.reinforcement_depths)
     _check_tested(F_star_tested, alpha_tested)
     alpha = pullout_alpha(reinforcement, alpha_tested)
-    Tal_Rc = reinforcement.Tallowable * Rc    # per metre of wall, p. 4-47
     if sloping:
         _check_backslope(geom, None, geom.surcharge)
         bs = backslope_geometry(geom)
@@ -1082,7 +1197,8 @@ def check_internal_stability(
         F_star_strip_top(Cu_backfill)
 
     results = []
-    for z in geom.reinforcement_depths:
+    for z, Rc in zip(geom.reinforcement_depths, Rcs):
+        Tal_Rc = reinforcement.Tallowable * Rc   # per metre of wall, p. 4-47
         # Kr/Ka ratio
         kr_ka = Kr_Ka_ratio(z, r_type)
 
@@ -2100,7 +2216,8 @@ def analyze_mse_wall(
         (:func:`coverage_ratio`, GM-256), and so is a geosynthetic of no
         stated kind given no tested alpha (:func:`pullout_alpha`).
     """
-    coverage_ratio(reinforcement)       # refuse before any work (GM-256)
+    # refuse before any work (GM-256; per level, GM-261)
+    coverage_ratios(reinforcement, geom.reinforcement_depths)
     _check_tested(F_star_tested, alpha_tested)
     pullout_alpha(reinforcement, alpha_tested)
     if (lrfd_external and gamma_foundation is not None

@@ -82,6 +82,29 @@ def test_the_built_in_grid_and_strip_keep_their_own_width():
     assert "is 0.075 m wide" in other["error"]
 
 
+def test_the_spacing_or_ratio_per_level_through_the_tool():
+    """GM-261: a list, one value a level from the top down, as GEC-11 Vol
+    II Example E3 changes Sh with depth (Table E3-7.3, p. E3-19)."""
+    r = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+             Sh=[0.75] * 8 + [0.5] * 4)
+    assert "error" not in r, r.get("error")
+    assert [lv["Rc"] for lv in r["internal_results"]] == \
+        [0.1] * 8 + [0.15] * 4
+    assert "Sh 0.5 m at levels 9-12 (Rc 0.15)" in _coverage(r)["chosen"]
+    short = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+                 Sh=[0.75] * 10)
+    assert "this wall has 12 levels" in short["error"]
+    rc = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+              Rc=[0.1] * 11 + [0.2])
+    assert rc["internal_results"][-1]["Rc"] == 0.2
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    p = METHOD_INFO["mse_wall"]["parameters"]
+    for name in ("reinforcement_horizontal_spacing", "coverage_ratio"):
+        assert p[name]["type"] == "float or list"
+        assert "one per reinforcement level from the top down" in p[name][
+            "description"]
+
+
 def test_a_custom_strip_takes_its_width_and_spacing():
     r = _mse(reinforcement_type="strip", reinforcement_Tallowable=600.0,
              reinforcement_width=0.05, Sh=0.5)
