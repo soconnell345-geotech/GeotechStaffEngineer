@@ -47,7 +47,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI", "UNITLESS_KINDS",
-    "UNITLESS_FIELDS", "unit_printed",
+    "UNITLESS_FIELDS", "unit_printed", "G", "MASS_DENSITY_UNITS",
+    "is_mass_density",
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
     "Layer", "Sample",
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
@@ -147,8 +148,13 @@ SI_UNITS: Dict[str, str] = {
 #: sheet uses where it means a unit WEIGHT. g/cm3, Mg/m3, t/m3 and kg/m3 are
 #: densities; multiplying by g is the geotechnical convention and the only way
 #: a density and a pcf column can be compared, so it is done here and said
-#: out loud.
+#: out loud: :func:`is_mass_density` names the spellings, and the DIGGS
+#: writer says in its notes which ones it wrote as unit weights by way of g.
 G = 9.80665
+
+#: The table's keys that are a MASS per volume and reach the unit-weight
+#: kind only through :data:`G`.
+MASS_DENSITY_UNITS: Tuple[str, ...] = ("g/cm3", "mg/m3", "t/m3", "kg/m3")
 
 #: One pound-force and one kip, in kilonewtons; and one foot and one inch in
 #: metres. Every US customary force, moment and line-load factor below is
@@ -424,6 +430,15 @@ def _canonical_unit(unit: str) -> Optional[str]:
 def unit_printed(unit: Any) -> bool:
     """Did the page print a unit at all? An empty or blank one is not."""
     return bool(str(unit or "").strip())
+
+
+def is_mass_density(unit: Any) -> bool:
+    """Is this printed unit a mass per volume (kg/m3, g/cm3, Mg/m3, t/m3)?
+
+    Such a value converts to a unit weight only by multiplying by g
+    (:data:`G`), and a writer that does so says it did.
+    """
+    return _canonical_unit(str(unit or "")) in MASS_DENSITY_UNITS
 
 
 #: The kinds of quantity that have NO unit: a ratio (a pH, a void ratio, a

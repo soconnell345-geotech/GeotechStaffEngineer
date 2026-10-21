@@ -127,6 +127,36 @@ class TestQuantity:
     def test_an_ambiguous_unit_stays_unconverted(self, unit):
         assert to_si(1.0, unit) is None
 
+    # RI-20 review: the factors the table above does not pin, each worked
+    # from its definition here rather than from the module's constants
+    # (1 lbf = 4.4482216 N, 1 ft = 0.3048 m, 1 in = 0.0254 m, 1 daN = 10 N).
+    @pytest.mark.parametrize("value,unit,want,si_unit", [
+        (1.0, "kcf", 4.4482216 / 0.3048 ** 3, "kN/m3"),
+        (1.0, "ksf/ft", 4.4482216 / 0.3048 ** 3, "kN/m3"),
+        (1.0, "daN/cm2", 10.0 / 1e-4 / 1000.0, "kPa"),
+        (1.0, "ft/s", 0.3048, "m/s"),
+        (1.0, "kips/ft", 4.4482216 / 0.3048, "kN/m"),
+        (1.0, "kip-in2", 4.4482216 * 0.0254 ** 2, "kN.m2"),
+        (1.0, "lb-in2", 0.0044482216 * 0.0254 ** 2, "kN.m2"),
+        (1.0, "psi/in", 0.0044482216 / 0.0254 ** 3, "kN/m3"),
+        (1.0, "dS/m", 0.1, "S/m"),
+        (1.0, "kg/l", 9.80665, "kN/m3"),
+    ])
+    def test_the_factors_worked_from_their_definitions(
+            self, value, unit, want, si_unit):
+        got = Quantity(value=value, unit=unit).to_si()
+        assert got is not None, unit
+        assert got.value == pytest.approx(want, rel=1e-6)
+        assert got.unit == si_unit
+
+    @pytest.mark.parametrize("unit,mass", [
+        ("kg/m3", True), ("Kg/m³", True), ("g/cm3", True), ("Mg/m3", True),
+        ("t/m3", True), ("kg/l", True), ("pcf", False), ("kN/m3", False),
+        ("kPa/m", False), ("", False)])
+    def test_a_mass_per_volume_is_named(self, unit, mass):
+        from report_ingest.model import is_mass_density
+        assert is_mass_density(unit) is mass
+
     @pytest.mark.parametrize("spelling", [
         "FT", "ft.", "Feet", "lb/ft3", "KG / CM2", "kg/cm²", "kN/m^3",
         "Percent", "blows per foot",

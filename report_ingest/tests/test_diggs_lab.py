@@ -358,3 +358,41 @@ def test_a_report_record_writes_its_lab_tests_too():
 def test_something_that_is_neither_is_refused():
     with pytest.raises(TypeError):
         write_diggs([ONE_OF_EACH[0], "not a record"], Project(name="R"))
+
+
+def test_a_water_analysis_with_unitless_values_is_valid_and_comes_back():
+    """RI-20 review: a pH and an organic content printed with no unit (they
+    have none), a water analysis in mg/L and a conductivity in uS/cm pass the
+    schema and read back; the organic content was held and never written."""
+    test = _one("chemical", ChemicalResult(
+        pH=q(7.2, ""), sulfate=q(120.0, "mg/L"), chloride=q(35.0, "mg/l"),
+        conductivity=q(350.0, "µS/cm"), organic_percent=q(3.1, ""),
+        wc=q(14.0, "")))
+    notes = []
+    xml = write_diggs([test], Project(name="R"), notes=notes)
+    assert diggs_schema_gate(xml)[0] is True
+    assert "<uom>mg/L</uom>" in xml and "<uom>S/m</uom>" in xml
+    assert ">LOI</propertyClass>" in xml
+    assert not notes[0].skipped
+    ok, diffs = diggs_roundtrip_gate(xml, [test])
+    assert ok, diffs
+
+
+@pytest.mark.parametrize("unit,value", [("kg/m3", 1850.0), ("Mg/m3", 1.85),
+                                        ("g/cm3", 1.85)])
+def test_a_mass_density_written_as_a_unit_weight_says_g(unit, value):
+    test = _one("density", MoistureDensityResult(
+        kind="density", dry_density=q(value, unit)))
+    notes = []
+    xml = write_diggs([test], Project(name="R"), notes=notes)
+    (said,) = [s for s in notes[0].normalised if "standard gravity" in s]
+    assert unit in said and "kN/m3" in said and "9.80665" in said
+    assert diggs_roundtrip_gate(xml, [test])[0]
+
+
+def test_a_unit_weight_printed_as_one_needs_no_word_about_g():
+    test = _one("density", MoistureDensityResult(
+        kind="density", dry_density=q(115.0, "pcf")))
+    notes = []
+    write_diggs([test], Project(name="R"), notes=notes)
+    assert not any("gravity" in s for s in notes[0].normalised)

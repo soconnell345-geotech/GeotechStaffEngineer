@@ -422,7 +422,8 @@ class TestTheWorkflows:
         again = ingest_report(pdf, FakeEngine([]), out_dir=tmp_path,
                               report_id="SYN")
         assert again.document.workflow == "standard"
-        assert [e.detail for e in again.qa if e.where == "workflow"] ==             [entry.detail]
+        assert [e.detail for e in again.qa if e.where == "workflow"] == \
+            [entry.detail]
 
     def test_appendix_only_skips_the_narrative_reader(self, pdf, tmp_path):
         script = ([triage_turn("appendix_only")] + vision_turns()

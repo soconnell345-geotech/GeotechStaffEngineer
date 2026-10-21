@@ -865,7 +865,8 @@ class TestAValuePrintedWithNoUnit:
         # notes that do NOT excuse it: the gate says so
         ok, diffs = diggs_roundtrip_gate(xml, [table],
                                          notes=DiggsWriteNotes())
-        assert not ok and any("3.377" in d or "3.38" in d for d in diffs),             diffs
+        assert not ok and any("3.377" in d or "3.38" in d for d in diffs), \
+            diffs
 
 
 # ---------------------------------------------------------------------------

@@ -167,7 +167,8 @@ from report_ingest.model import (
     ConsolidationResult, DCPData, GradationResult, Investigation, LabTest,
     Layer, MoistureDensityResult, OtherResult, Project, Quantity,
     ReportRecord, Sample, SPT, StrengthResult, SummaryRow,
-    SummaryTableResult, WaterLevel, si_numbers, unit_printed,
+    SummaryTableResult, WaterLevel, G, is_mass_density, si_numbers,
+    unit_printed,
 )
 # The remark a pit's "groundwater not encountered" is written as (a TrialPit
 # has no waterStrike in 2.6). ONE definition, the reader's, so the writer and
@@ -266,10 +267,12 @@ TOLERANCE: Dict[str, float] = {
 #: friction angle written in degrees fails validation on the whole file. A
 #: dynamic cone's penetration per blow has no code in the list either, so it
 #: is written the way the schema lets a file name a unit of its own -- an
-#: ``authority:unit`` pair, the colon mandatory -- under this package's name.
-#: A ratio (a pH) has no unit, and the schema's list has no code for "none"
-#: that this element takes, so it is written with no uom, as a plain number
-#: is. Everything else the record converts to -- m, mm, kPa, kN/m3, %, mV,
+#: ``authority:unit`` pair, the colon mandatory (``eml:UnitOfMeasureExt``,
+#: whose ``EnumExtensionPattern`` is ``.*:.*``; ``diggs:AllUnits`` takes it)
+#: -- under this package's name. A ratio (a pH) has no unit. ``1`` is not in
+#: the list (its dimensionless code is ``Euc``) and ``uom`` is optional, so a
+#: ratio is written with no uom, as a plain number is. Everything else the
+#: record converts to -- m, mm, kPa, kN/m3, %, mV,
 #: mg/kg, mg/L, S/m, ohm.m, degC, m3, kg, m/s -- is a code the schema
 #: already knows.
 UOM_IN_FILE: Dict[str, str] = {"deg": "dega", "1": "",
@@ -366,6 +369,37 @@ def _as_printed(q: Quantity) -> str:
     if not unit_printed(q.unit):
         return f"{q.value:g} with no unit printed -- its unit is unknown"
     return f"{q.value:g} {q.unit!r} -- unit not in the conversion table"
+
+
+def _quantities_in(value: Any) -> List[Quantity]:
+    """Every :class:`Quantity` inside a model, a list or a tuple."""
+    if isinstance(value, Quantity):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return [q for item in value for q in _quantities_in(item)]
+    fields = getattr(type(value), "model_fields", None)
+    if not fields:
+        return []
+    return [q for name in fields
+            for q in _quantities_in(getattr(value, name, None))]
+
+
+def _say_gravity(notes: "DiggsWriteNotes", items: Sequence[Any]) -> None:
+    """Name, once, the mass densities written as unit weights.
+
+    A density printed in kg/m3, g/cm3, Mg/m3 or t/m3 is a mass per volume.
+    The record's density properties are unit weights in kN/m3 (the trade's
+    pcf), so such a value goes into the file multiplied by g; the file
+    cannot say so, and the notes do.
+    """
+    printed = sorted({q.unit.strip() for item in items
+                      for q in _quantities_in(item)
+                      if is_mass_density(q.unit)})
+    if printed:
+        notes.normalised.append(
+            f"densities printed as a mass per volume ({', '.join(printed)}) "
+            f"are written as unit weights in kN/m3: the printed density "
+            f"times standard gravity, g = {G} m/s2")
 
 
 def _water_readings(inv: Investigation) -> List[WaterLevel]:
@@ -2261,6 +2295,8 @@ class _Writer:
                             "degC")
             values.reported("Water content", "water_content_natural",
                             result.wc, "%", kind="percent")
+            values.reported("Loss on ignition", "LOI",
+                            result.organic_percent, "%", kind="percent")
             values.reported("Reporting limit", "reporting_limit",
                             result.reporting_limit, dictionary=False)
             values.text("Laboratory sample", "lab_sample_id",
@@ -2754,6 +2790,7 @@ def write_diggs(record_or_investigations: Any,
     writer = _Writer(investigations, project, document_id, lab,
                      left_out=left_out)
     xml = writer.build()
+    _say_gravity(writer.notes, list(investigations) + list(lab))
     if notes is not None:
         notes.append(writer.notes)
     return xml
