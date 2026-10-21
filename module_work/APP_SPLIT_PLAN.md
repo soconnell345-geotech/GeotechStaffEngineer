@@ -3,11 +3,12 @@
 BACKLOG: **INF-26** (this plan; its steps are INF-30 to INF-35 and the
 planlens item of step 9), **INF-48** (this rewrite), the owner's open
 decisions **OWN-72** (the core's name; CfA's yes for a source folder in the
-GHE repo), **OWN-75** (release the waiting train first), **OWN-77** (the
-figure helper), **OWN-78** (the testers' notice and SharePoint folder), and
-the decided **OWN-74** and **OWN-76**. **RI-34** (every geotech-report
-question goes to report_ingest) is done. **INF-25** is GSE on Foundry.
-Steps 1-5 are built; nothing else in this document is. It changes no code.
+GHE repo) and **OWN-78** (the testers' notice and SharePoint folder), and
+the decided **OWN-74**, **OWN-75** (release the held train first),
+**OWN-76** and **OWN-77** (the figure helper: option (b); its follow-up is
+**DR-35**). **RI-34** (every geotech-report question goes to report_ingest)
+is done. **INF-25** is GSE on Foundry. Steps 1-5 are built; nothing else in
+this document is. It changes no code.
 
 The owner's words:
 - 2026-10-20 (Backlog Desk): "I want to divorce the two apps.
@@ -21,12 +22,18 @@ The owner's words:
   the GHE repository. Nothing needs to be a package"; "I def don't want the
   same base code in two places"; "Leaning towards the small core package";
   and, on the layout below: "Ok, sounds good. You can proceed."
+- 2026-10-21, later the same day (Backlog Desk): on the figure helper
+  (OWN-77), option (b), "Follow what we talked about with the planlens
+  fold"; on releasing the held train first (OWN-75), release it, and "If
+  it's too late, no big deal, just go with hold. Don't expend big effort to
+  revert back."
 
 ## In one page (for the owner)
 
-**2026-10-21: rewritten for your decisions of that day (OWN-74, OWN-76).**
-The earlier version planned a `de-docreview` wheel and a shared core that
-held the chat page.
+**2026-10-21: rewritten for your decisions of that day (OWN-74, OWN-76),
+then updated for your answers to OWN-75 and OWN-77 the same day.** The
+earlier version planned a `de-docreview` wheel and a shared core that held
+the chat page.
 
 **The layout.**
 - **Document Review:** private source in the GHE wrapper repo. No package,
@@ -36,8 +43,9 @@ held the chat page.
   own release.
 - **A thin core package** (public, on PyPI like planlens; its name is yours
   to pick, OWN-72): the model connections, the vision calls, the figure
-  helper (OWN-77), and the guards and records both agents run. Tiny Apps
-  gets it from Nexus, the way it gets planlens.
+  helper and plotting code with the nine geotech worked examples for now
+  (OWN-77 (b)), and the guards and records both agents run. Tiny Apps gets
+  it from Nexus, the way it gets planlens.
 - **GeotechStaffEngineer** (public, on PyPI as today) runs on Foundry.
 - **Each app keeps its own chat page.** The page is copied once, at the
   split. After that, each changes with its own users' feedback. It is the
@@ -60,24 +68,30 @@ held the chat page.
   Leaving them out of the core would put them in two places.
 - The chat page, about 12,900 lines, is in two places from the copy on, by
   design.
-- Two releases come before testers move: planlens with the document tools,
-  and the core's first.
+- Three releases come before testers move: the held train (your timing,
+  before the first file leaves this repository), planlens with the
+  document tools, and the core's first.
 - Document Review's private copy needs its own tests and CI.
 
 **What is still open.**
 - **OWN-72:** the core's name (before step 10), and CfA's yes to running
   Document Review from a source folder in the GHE repo (before step 14).
   Until CfA answers, testers keep today's two-page package from Nexus.
-- **OWN-75:** release the waiting train first (before step 10).
-- **OWN-77:** where the figure helper goes (before step 6).
 - **OWN-78:** the testers' notice and SharePoint folder (before step 14).
 - **New (D10, section 7):** where the private copy is worked on day to day.
   Either a private repository you carry to GHE, or GHE itself (before
   step 13).
+- **Decided the same day:** the figure helper and plotting code go into the
+  core, with the nine geotech worked examples for now; Document Review's
+  own examples follow the split (OWN-77 (b), DR-35). The held train is
+  released before the first file leaves this repository, or held if that
+  is no longer practical (OWN-75).
 
 **The steps.**
 - Steps 1-5 are done.
 - Steps 6-8 stand. Step 7 now prepares the copy.
+- Then the held train is released (OWN-75), or held if that is no longer
+  practical.
 - Steps 9-16 are new:
   - planlens takes the document tools (9);
   - the core is built and filled (10, 11) and released (12);
@@ -93,7 +107,7 @@ held the chat page.
 |---|---|---|---|---|---|
 | `planlens` / `planlens` | The document layer as today: reading PDFs and DXFs, page maps, markups, render budgets. From step 9 it also holds the document tools that only wrap it (2.6). It still calls no model: when a tool needs a look, the host hands it a look function. | Both apps | numpy, PyMuPDF, ezdxf, opencv-headless, rapidfuzz (unchanged) | PyPI (Nexus mirrors it) | yes |
 | `geotech-references` / `geotech_references` | The cited reference library and chart catalogs | GSE only | numpy | PyPI | yes |
-| **The core** (working name `docreview-core` / `docreview_core`, OWN-72; NEW) | What both agents run below the chat page: the model connections, the vision calls and the file tools beside them, the figure helper with its plotting box and chart stack (OWN-77), the agent's guards, limits and kept work, Word and Excel, the run record and its checks, the switches, the suite's framework (2.3). It has no Streamlit page and nothing that encodes a Department deployment. | Both apps, every host | planlens, deepagents/langchain/langgraph (today's caps), openai <3, langchain-openai, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy, scipy (the plotting box lets code import it); an `[anthropic]` extra for langchain-anthropic | PyPI → Nexus; each app pins an exact version | yes |
+| **The core** (working name `docreview-core` / `docreview_core`, OWN-72; NEW) | What both agents run below the chat page: the model connections, the vision calls and the file tools beside them, the figure helper with its plotting box, chart stack and the nine geotech worked examples for now (OWN-77 (b)), the agent's guards, limits and kept work, Word and Excel, the run record and its checks, the switches, the suite's framework (2.3). It has no Streamlit page and nothing that encodes a Department deployment. | Both apps, every host | planlens, deepagents/langchain/langgraph (today's caps), openai <3, langchain-openai, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy, scipy (the plotting box lets code import it); an `[anthropic]` extra for langchain-anthropic | PyPI → Nexus; each app pins an exact version | yes |
 | `geotech-staff-engineer` / `funhouse_agent`, `webapp`, the module packages | The geotech app: 33 modules, dispatch, the geotech agent and its helpers (calc, references, setup, reviewers), the chart lines it hands the figure helper, report_ingest, its own chat page, the Foundry and Funhouse entries | The owner on Foundry (Funhouse as backup) | the core with `[anthropic]` (exact), planlens, geotech-references, the analysis back ends as today | PyPI (Foundry's Libraries panel) or uploaded wheels | yes |
 | **Document Review** (a source folder in the GHE wrapper repo, for example `docreview/`; NEW) | The Document Review app: its own chat page, its agent builds (today's agent, `lean` and `minimal` behind their switches), its prompt and orientation, the review-only tools (findings, geometry, sweep, digest), the Tiny Apps host files (settings, sign-in header, Graph SharePoint), its 38 suite tasks and its tests (2.2) | Testers on Tiny Apps; suite runs on Foundry | the core (exact), planlens (exact), streamlit and the fleet pins | Runs from the repo folder (needs CfA's yes, 1.4) | **no**: private from the copy (step 13) |
 
@@ -274,7 +288,7 @@ twelve of them geotech; building the Document Review agent offline at
 | **The core** (steps 10-11) | about 37,900 | The eight groups below, plus the assembly both agents share, which step 8 extracts and measures |
 | - model connections | 3,869 | Your list |
 | - vision calls and the file tools beside them | 9,335 | Your list |
-| - the figure helper, plotting box, chart stack and worked examples | about 7,900 | Your list. The helper, box and examples (about 4,600) follow OWN-77; the chart stack behind `plot_data` (about 3,300) goes to the core either way |
+| - the figure helper, plotting box, chart stack and worked examples | about 7,900 | Your list: the helper, box and examples (about 4,600; OWN-77 (b)) and the chart stack behind `plot_data` (about 3,300) |
 | - guards, limits, kept work, `calculate`, file handling, switches | 5,561 | What both agents also run |
 | - Word and Excel | 1,753 | |
 | - the run record and its checks | 6,457 | |
@@ -332,7 +346,7 @@ worked-example readers at 4480-4740, their read roots at 468-502 and the
 chart note at 5046-5067, which GSE registers through `added_tools` since
 step 4).
 
-**The figure helper** (about 7,900, if OWN-77 (a); 2.8):
+**The figure helper** (about 7,900; OWN-77 (b), 2.8):
 `deep/figure_helper.py` (789), `plot_box/__init__.py` (932), `child.py`
 (1,189), `figures.py` (608), `drawing_wait.py` (64), `progress_notes.py`
 (46); the chart stack behind `plot_data`: `profile_figure/data_plot.py`
@@ -399,7 +413,7 @@ its page (2.7 B).
 
 **Everything else:** every analysis package, `calc_package`,
 `report_ingest`, `geo_project`, `profile_figure` and `geotech_common` (less
-the chart stack and the worked examples, if OWN-77 (a)),
+the chart stack and the worked examples, OWN-77 (b)),
 `validation_examples`, and the repository's notes, desk and gates.
 
 The four geotech suite tasks also stay: `report-extract-all`,
@@ -472,8 +486,7 @@ couplings down to 13. Gone:
    leave it at step 13. Document Review shows its own notice (OWN-78).
 4. **The chart stack:** `deep/vision_kit.py` → `dispatch`, the
    profile_figure adapter and `profile_figure`; `plot_box/child.py` →
-   `geotech_common` and `layout_ink` (loaded by file at 680-700). Step 6,
-   per OWN-77.
+   `geotech_common` and `layout_ink` (loaded by file at 680-700). Step 6.
 
 The other soft ones (inside `try`; the review page works without them):
 - `plot_box` → `geotech_references.chart_lines`: step 6 makes it a source
@@ -527,7 +540,21 @@ lines both read as step 13. Its "step 7", "step 8", "step 11" and
 - `pages_entry.py` puts the review page in GSE's navigation, and
   `databricks_launcher.py` boots the two-page entry by default (step 15).
 
-### 2.8 The figure helper and plotting box: three options (OWN-77)
+### 2.8 The figure helper and plotting box (OWN-77: DECIDED (b))
+
+**Decided 2026-10-21 (OWN-77): option (b).** The owner: "Follow what we
+talked about with the planlens fold."
+- During the split the code moves as in column (a): the helper, the
+  plotting box, the chart stack and the nine geotech worked examples all go
+  into the core. GSE hands in the reference chart lines.
+- The move into the core comes after the planlens fold: step 9 first, then
+  step 11 (b).
+- After the split, **DR-35** gives Document Review its own general examples
+  (drawings, schedules, quantities) and checklist lines, registered with
+  the helper and measured on the suite. Column (b)'s extra work is DR-35's,
+  not a split step.
+
+The options as they were measured follow.
 
 Since GM-227 (b4b9a08), `GEOTECH_FIGURE_HELPER` and `GEOTECH_PLOT_CODE`
 are on by default on both pages. The owner on GM-92: "on everywhere".
@@ -541,8 +568,8 @@ small:
 - a few checklist lines (elevation axis, kPa and kN, "the FIGURE HELPER of
   a geotechnical agent").
 
-`plot_data` and its chart stack are on both pages whatever the choice, so
-they go to the core under all three options.
+`plot_data` and its chart stack are on both pages, so they go to the core
+under all three options.
 
 | | (a) To the core; GSE hands in the chart lines | (b) As (a), then Document Review's own examples | (c) Document Review drops both |
 |---|---|---|---|
@@ -551,10 +578,11 @@ they go to the core under all three options.
 | New code | One hook (the chart lines) | The hook, Document Review's examples file and checklist lines, a suite task, a live wave | None |
 | Document Review's fingerprint | Unchanged, except the box's chart-lines note goes at step 13 | Changes (helper prompt and examples): measured on the suite | Loses the figure helper and `plot_code` |
 | Install | The core keeps SciPy: the box lets code import it | The same | SciPy can leave the core |
-| The owner | Fits GM-92 | Fits GM-92 | Reverses GM-92 |
+| The owner | Fits GM-92 | Fits GM-92; **chosen** | Reverses GM-92 |
 
-**Recommendation: (a) during the split, (b) after it**, as its own item
-(one change at a time, as with D5).
+The plan had recommended (a) during the split and (b) after it, as its own
+item (one change at a time, as with D5). The owner's (b) is the same order:
+the split moves the code, then DR-35 changes the examples.
 
 ### 2.9 Each app's chat page (copied at step 13)
 
@@ -672,11 +700,15 @@ mechanical copy of one folder.
 ### Step 0. Decisions and preconditions (no code)
 - **Decided:**
   - OWN-74 and OWN-76 (2026-10-21; this layout);
+  - OWN-77 (2026-10-21; option (b): the figure helper and plotting code
+    into the core at step 11 (b), Document Review's own examples after the
+    split, DR-35);
+  - OWN-75 (2026-10-21; the held train is released at the release point
+    below, or held if that is no longer practical);
   - D4 (2026-10-20; the geotech page leaves Tiny Apps);
   - D5 (the lead's default; testers keep today's agent).
 - **Still open, each with when it is needed:**
-  - OWN-77: before step 6;
-  - OWN-72's name and OWN-75: before step 10;
+  - OWN-72's name: before step 10;
   - D10: before step 13;
   - OWN-72's CfA answer and OWN-78: before step 14.
 - RI-34 is merged (done).
@@ -716,7 +748,7 @@ mechanical copy of one folder.
 - The rule is also the test's docstring
   (`webapp/tests/test_page_fingerprints.py`).
 
-### Step 6. The chart stack to a neutral package (no behaviour change; unchanged; needs OWN-77)
+### Step 6. The chart stack to a neutral package (no behaviour change; unchanged)
 - **Change:**
   - A new `funhouse_agent/charts/` package holds `data_plot.py`,
     `layout_ink.py`, `plan_furniture.py`, `figure_to_png` and `get_pyplot`,
@@ -724,8 +756,8 @@ mechanical copy of one folder.
     `geotech_common.plan_furniture` and `geotech_common.plotting`.
   - `reference_chart` stays in the GSE adapter, which wraps the chart
     function.
-  - Under OWN-77 (a) or (b) the worked examples
-    (`profile_figure/figure_examples.py`) join the package.
+  - The worked examples (`profile_figure/figure_examples.py`) join the
+    package (OWN-77 (b)).
   - The plotting box follows the move. It loads `layout_ink` and
     `plan_furniture` by file (`plot_box/child.py:680-700` and the plan
     furniture load).
@@ -792,9 +824,32 @@ mechanical copy of one folder.
     builds**, apart from the soft ones, which now go through hooks.
   - The step measures the shared assembly's lines for 2.1.
 
+### The release point: the held train goes out first (OWN-75, decided 2026-10-21)
+- **The owner:** release the held train before the files move. "If it's
+  too late, no big deal, just go with hold. Don't expend big effort to
+  revert back."
+- **Where it falls:** after step 8, before step 9 (b), the first step that
+  takes files out of this repository (the document tools, to planlens).
+  Steps 1-8 only rearrange files inside it, behind aliases, with the
+  fingerprints unchanged, so they may already be in the held train.
+- **What goes out:** the app with everything on master since 5.33.0
+  (among it the pandas fix that lets the testers' install restore
+  pandas==3.0.2), with planlens and geotech-references as the held train
+  pairs them (OWN-55, REF-39). The release gate and the owner's word are
+  as for any release.
+- **If that is no longer practical** (the owner still holding the release
+  when step 9 (b) is ready, or master not releasable without undoing
+  merged work): nothing is reverted. The split goes on, and the held work
+  goes out with the next release, at the latest the core's first at
+  step 12.
+- **Why first:** a clean version from before the split to fall back to, and
+  the pandas fix on Nexus while CfA works.
+
 ### Step 9. planlens takes the document tools (new; a planlens item with its own release)
 - **When:**
   - It can run beside steps 6-8: different files, and no new package.
+  - Part (a) is planlens' own and can go ahead at any time. Part (b), in
+    the app, comes after the release point above.
   - It needs the owner's word for a planlens release.
   - It is not waiting on OWN-80 or the Tiny Apps start.
 - **(a) In planlens:**
@@ -829,8 +884,8 @@ mechanical copy of one folder.
     offline with a fake engine, as today.
 
 ### Step 10. The core package, empty, with its build and CI (was step 9)
-- **Needs:** OWN-72's name; OWN-75 settled (the waiting train released
-  first, or held by the owner's choice).
+- **Needs:** OWN-72's name; the release point passed (the held train
+  released, or held as no longer practical; OWN-75).
 - **Change:**
   - `packages/<core>/pyproject.toml`: version 1.0.0.dev0, the dependency
     list of 1.1, the `[anthropic]` extra.
@@ -856,7 +911,9 @@ mechanical copy of one folder.
   - **(a)** model connections and vision calls. `tinyapps_engine.py`'s Key
     Vault lookup and per-tester key become a hook; GSE's two-page page
     fills it until step 13, then Document Review's page does.
-  - **(b)** the figure helper, plotting box and chart stack (per OWN-77).
+  - **(b)** the figure helper, plotting box, chart stack and the nine
+    geotech worked examples (OWN-77 (b)). GSE hands in the reference chart
+    lines. Document Review's own examples come after the split (DR-35).
   - **(c)** everything else in 2.3: guards and records, Word and Excel, the
     checks, the suite's framework (with the page's turn handed in, 2.7 B),
     the document tools' binding, and step 8's shared assembly.
@@ -881,7 +938,8 @@ mechanical copy of one folder.
 ### Step 12. The core's first release, and GSE on it (new)
 - **Needs:** the owner's release word.
 - **Release order:** planlens (already at step 9), then the core, then GSE
-  pinned to the core exactly.
+  pinned to the core exactly. If the held train was held at the release
+  point (OWN-75), it goes out here with GSE.
 - **GSE still carries both pages.** Testers get it from Nexus as today,
   with the core arriving beside it. The core is a new public package for
   the Nexus scan, pure Python, like planlens.
@@ -1120,7 +1178,7 @@ packages.
 | A wheel missing a package or data file (5.19.0) | The wheel test in CI for GSE and the core |
 | GSE and the core released out of step | Exact `==` pins; `version_guard` names the core; the release order is fixed (planlens, the core, GSE) |
 | CfA refuses a source folder | Routes B and C (1.4); testers stay on the two-page GSE from Nexus meanwhile |
-| Charts or the figure helper change for one app because of the other's needs | One copy, in the core; geotech content (chart lines; later the examples, OWN-77 (b)) handed in by the app that owns it (steps 6, 11) |
+| Charts or the figure helper change for one app because of the other's needs | One copy, in the core; the chart lines handed in by GSE, which owns them (steps 6, 11); the nine geotech worked examples ride along until Document Review has its own (OWN-77 (b), DR-35) |
 | Old paths in notes, notebooks, the Harness Map and helper prompts | Aliases for one release; the notebook cell given anew in step 16; docs swept in step 16 |
 | Session limits during the large moves (steps 10-11) | One group per merge; helpers in worktrees; targeted tests per helper, the full gate in chunks by the lead |
 | Existing conversations lost | Same data root, same folder layout, same SharePoint base folder (1.3) |
@@ -1155,15 +1213,22 @@ card.
     fingerprint, with `lean` and `minimal` behind their switches as now.
   - DR-05 decides the default afterwards, on the suite.
   - The owner can overrule.
-- **D6, release what is waiting before files move → OWN-75 (open).**
-  Recommendation (a): release before step 10, for a clean version to fall
-  back to and the pandas fix on Nexus while CfA works.
+- **D6, release what is waiting before files move → OWN-75, DECIDED
+  2026-10-21:** release first, or hold if that is no longer practical,
+  with no effort spent undoing work. The release point falls after step 8,
+  before step 9 (b) (section 4). The plan had recommended releasing before
+  the core's first move, for a clean version to fall back to and the
+  pandas fix on Nexus while CfA works; step 9 (b) is now the first file to
+  leave.
 - **D7, should the Document Review code be private → OWN-76, DECIDED
   2026-10-21:** private, as plain source in the GHE repo, from the copy
   (step 13). The code already published stays published.
-- **D8, the figure helper and plotting code → OWN-77 (open).**
-  Recommendation (a) during the split, (b) after it (2.8). Needed before
-  step 6.
+- **D8, the figure helper and plotting code → OWN-77, DECIDED
+  2026-10-21:** (b). The helper, plotting box, chart stack and the nine
+  geotech worked examples go into the core (steps 6 and 11 (b)); GSE hands
+  in the reference chart lines; Document Review's own general examples
+  (drawings, schedules, quantities) follow the split, measured on the
+  suite (DR-35; 2.8).
 - **D9, what testers see named → OWN-78 (open).**
   - The proposed notice: "Document Review reads drawings, specifications,
     submittals, reports and calculation packages and hands back memos and
