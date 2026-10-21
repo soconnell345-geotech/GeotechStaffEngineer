@@ -48,6 +48,19 @@ def test_ppf_is_the_exact_finite_inverse_near_zero():
     assert k[0] == pytest.approx(exact, rel=1e-12)
 
 
+def test_ppf_inverts_gstools_own_cdf_and_is_finite_everywhere():
+    # F(k) = 1 - 1/sqrt(1 + (k len)^2); GSTools draws k = F^-1(1 - u)
+    own, fixed = _models()
+    u = np.concatenate([np.random.RandomState(5).uniform(size=5000),
+                        np.logspace(-8, -1e-9, 2000)])
+    back = own.spectral_rad_cdf(fixed.spectral_rad_ppf(u))
+    assert np.max(np.abs(back - (1.0 - u))) < 1e-12
+    tiny = np.concatenate([[0.0, 5e-324, 1e-300, 2.0 ** -53],
+                           np.logspace(-320, -8, 500)])
+    assert np.all(np.isfinite(fixed.spectral_rad_ppf(tiny)))
+    assert not np.all(np.isfinite(own.spectral_rad_ppf(tiny)))
+
+
 def test_the_fixed_class_is_still_gstools_exponential():
     import gstools as gs
     from gstools_agent.models import model_class

@@ -5,19 +5,26 @@ GSTools' own model classes, with one fix: GSTools 1.7.0's two-dimensional
 ``Exponential.spectral_rad_ppf`` returns an infinite wavenumber for every
 uniform draw ``u`` within 1e-8 of zero (it tests ``np.isclose(u, 0)``,
 whose absolute tolerance is 1e-8), where the exact inverse,
-``sqrt(1/u^2 - 1) / len``, is large but finite. One infinite mode makes
-the whole randomization-method field NaN. The draw is rare (of GSTools'
-65,535 random substreams only 12837 draws a ``u`` that small among a
-field's 1,000 modes; master seeds 47863 and 137080 reach it below 200,000)
-and it is what put a NaN realization in the owner's 2026-10-15 field
-session: realization 863 of a run seeded 47000, i.e. seed 47863 (GM-91,
-GM-96). Here only ``u == 0`` exactly is out of range, and it is clipped to
-the smallest uniform draw, 2**-53, so every wavenumber is finite and every
-other draw gives GSTools' own number, bit for bit.
+``sqrt(1/u^2 - 1) / len``, is large but finite. (The radial spectral CDF
+is ``F(k) = 1 - 1/sqrt(1 + (k len)^2)``; GSTools inverts it at ``1 - u``,
+which has the same distribution as ``u``, and the fix keeps that so its
+draws match.) One infinite mode makes the whole randomization-method field
+NaN. The draw is rare (of GSTools' 65,535 random substreams only 12837
+draws a ``u`` that small among a field's 1,000 modes; master seeds 47863
+and 137080 reach it below 200,000) and it is what put a NaN realization in
+the owner's 2026-10-15 field session: realization 863 of a run seeded
+47000, i.e. seed 47863 (GM-91, GM-96).
+
+Here a ``u`` below 2**-53, the smallest positive uniform draw (only
+``u == 0`` itself can be drawn below it), is raised to 2**-53, so every
+wavenumber is finite. A draw above 1e-8 gives GSTools' own number, bit for
+bit; one at or below 1e-8 gives the exact inverse where GSTools gave
+infinity. If GSTools fixes its test, this override still draws the same
+fields (finite either way) and can then go.
 
 Kriging and variogram fitting never call the ppf; the module uses
-:func:`model_class` wherever it draws a field (``conditional``,
-``random_field``).
+:func:`model_class` wherever it draws a field (``conditional``, both
+methods, and ``random_field``).
 """
 
 import numpy as np

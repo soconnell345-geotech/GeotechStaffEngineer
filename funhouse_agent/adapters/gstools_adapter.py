@@ -109,7 +109,25 @@ _KRIGING_VALID = (
     "grid_x_max", "grid_y_min", "grid_y_max", "n_grid_x", "n_grid_y",
     "variance", "len_scale", "nugget", "fit_variogram", "fit_nugget",
     "regions", "cell_size", "quantity", "margin", "output_prefix",
-    "figures", "names", "value_name", "value_unit", "north_deg", "outlines")
+    "figures", "names", "value_name", "value_unit", "north_deg", "outlines",
+    "observations_name")
+
+#: Inputs that only label a map (kriging, conditional_simulation): with
+#: figures=false they change nothing.
+_MAP_ONLY = ("value_name", "value_unit", "north_deg", "outlines",
+            "observations_name")
+
+
+def _map_inputs_unused(params: dict, map_only, d: dict) -> None:
+    """With figures=false, say which inputs given only label a map, so an
+    input that changed nothing is not taken for one that did (GM-179)."""
+    if params.get("figures", True):
+        return
+    unused = [k for k in map_only if params.get(k) is not None]
+    if unused:
+        d.setdefault("notes", []).append(
+            f"figures=false: {', '.join(unused)} only label the map, and no "
+            f"map was drawn.")
 
 
 def _kriging_grid_csv(result) -> str:
@@ -129,6 +147,12 @@ def _run_kriging(params: dict) -> dict:
 
     reject_unknown_params(params, _KRIGING_VALID, method="kriging")
     require_params(params, ["x", "y", "values"], method="kriging")
+    if (params.get("fit_nugget") is True
+            and params.get("fit_variogram", True) is False):
+        raise ValueError(
+            "fit_nugget=true asks for the nugget to be fitted, but "
+            "fit_variogram=false fits nothing: the nugget given (default 0) "
+            "is used as it is. Give the nugget, or set fit_variogram=true.")
     if params.get("outlines") is not None:      # refused before the run
         from gstools_agent.plan_map import parse_outlines
         parse_outlines(params["outlines"])
@@ -163,6 +187,7 @@ def _run_kriging(params: dict) -> dict:
     prefix = _prefix(params, "kriging")
     if params.get("figures", True):
         _kriging_figures(params, result, prefix, d)
+    _map_inputs_unused(params, ("names",) + _MAP_ONLY, d)
     if result.region_cells:
         saved = _save(_out_path(f"{prefix}_regions.csv"),
                       result.regions_csv())
@@ -208,7 +233,8 @@ def _kriging_figures(params: dict, result, prefix: str, d: dict) -> None:
             outlines=params.get("outlines"),
             value_name=params.get("value_name"),
             value_unit=params.get("value_unit") or "",
-            north_deg=params.get("north_deg"))
+            north_deg=params.get("north_deg"),
+            observations_name=params.get("observations_name"))
     except Exception as exc:                               # noqa: BLE001
         d.setdefault("warnings", []).append(
             f"The kriging map could not be drawn: {exc}")
@@ -284,11 +310,11 @@ _COND_VALID = (
     "measurement_error", "anis", "angle_deg", "cell_size", "margin",
     "quantity", "n_realizations", "seed", "simulation_method", "bounds",
     "bounds_mode", "report_values", "figures", "output_prefix",
-    "value_name", "value_unit", "north_deg", "outlines")
+    "value_name", "value_unit", "north_deg", "outlines", "observations_name")
 
 #: Figure settings, not simulation inputs.
 _COND_FIGURE_ONLY = ("figures", "output_prefix", "value_name", "value_unit",
-                     "north_deg", "outlines")
+                     "north_deg", "outlines", "observations_name")
 
 #: GSTools' own name for the measurement error, and common spellings.
 _COND_ALIASES = {"cond_err": "measurement_error",
@@ -349,7 +375,8 @@ def _run_conditional_simulation(params: dict) -> dict:
         exceedance_figure = functools.partial(exceedance_figure, **named)
         probability_map_figure = functools.partial(
             probability_map_figure, north_deg=params.get("north_deg"),
-            outlines=params.get("outlines"), **named)
+            outlines=params.get("outlines"),
+            observations_name=params.get("observations_name"), **named)
         figs = []
         for kind, fn, what in (
                 ("exceedance", exceedance_figure,
@@ -370,6 +397,7 @@ def _run_conditional_simulation(params: dict) -> dict:
             figs.append(_save_figure(prefix, kind, what, png, pfig))
         d["figures"] = figs
         d["embed_note"] = _EMBED_NOTE
+    _map_inputs_unused(params, _MAP_ONLY, d)
     return clean_result(d)
 
 
@@ -412,18 +440,19 @@ METHOD_INFO = {
             "len_scale": {"type": "float", "required": False, "description": "Correlation length (m). Omitted: a third of the data extent. With fit_variogram=true it is only the starting guess and is overridden by the fit."},
             "nugget": {"type": "float", "required": False, "default": 0.0, "description": "Nugget variance (measurement error + variation below the data spacing); with a nugget the surface does not pass exactly through the data. With fit_variogram=true the nugget is fitted too, unless fit_nugget=false."},
             "fit_variogram": {"type": "bool", "required": False, "default": True, "description": "Fit variance, len_scale AND nugget to the empirical variogram, overriding values given for them (the fitted values are returned). Refused with too few lag classes: then set false and give variance and len_scale."},
-            "fit_nugget": {"type": "bool", "required": False, "default": True, "description": "With fit_variogram: false holds the nugget at the value given (e.g. from the measurement error or twinned borings) and fits only variance and len_scale."},
+            "fit_nugget": {"type": "bool", "required": False, "default": True, "description": "With fit_variogram: false holds the nugget at the value given (e.g. from the measurement error or twinned borings) and fits only variance and len_scale. Without fit_variogram nothing is fitted and true is refused."},
             "regions": {"type": "array", "required": False, "description": _REGIONS_DESC + " Here from the kriging only: the kriged surface's totals, and Gaussian POINTWISE expectations (expected volume, expected area, mean cell probability). These are expectations cell by cell; the probability that a TOTAL exceeds a value needs conditional_simulation."},
             "cell_size": {"type": "float", "required": False, "description": "Cell size (m) for the region totals; default the smallest round size giving at most ~3,000 cells."},
             "quantity": {"type": "str", "required": False, "default": "above", "allowed_values": ["above", "below"], "description": "Region totals above (e.g. rock above an excavation level) or below (e.g. fill to a grade) the level."},
             "margin": {"type": "float", "required": False, "description": "Margin (m) of the region lattice around the regions."},
             "output_prefix": {"type": "str", "required": False, "description": "File name stem for the files this call writes (<stem>_grid.csv for a grid over 2,500 points, <stem>_regions.csv with regions, <stem>_kriging_map.png); default kriging_<time>."},
-            "figures": {"type": "bool", "required": False, "default": True, "description": "Draw the kriging map: a plan, to scale, of the kriged mean and the kriging standard deviation as labelled contours (PNG + interactive). Set false in a sweep of many calls."},
+            "figures": {"type": "bool", "required": False, "default": True, "description": "Draw the kriging map: a plan, to scale, of the kriged mean and the kriging standard deviation as labelled contours, the standard deviation with a colour scale too (PNG + interactive). Set false in a sweep of many calls."},
             "names": {"type": "array", "required": False, "description": "Observation names (e.g. boring IDs), one per point; label the map."},
             "value_name": {"type": "str", "required": False, "description": "What the values are, in the logs' words (e.g. 'top of hard rock elevation'); names the map. Give it."},
             "value_unit": {"type": "str", "required": False, "description": "Unit of the values (e.g. 'm')."},
             "north_deg": {"type": "float", "required": False, "description": "North on the map, degrees clockwise from up, as the source plan shows it; up when not given."},
-            "outlines": {"type": "array", "required": False, "description": "Outlines from the source plan to draw on the map, in the x, y coordinates: [{name, polygon: [[x, y], ...]} or {name, line: [[x, y], ...]}, kind 'property_line' (drawn dash-dot) or 'outline'] -- the property line, buildings, walls. Drawing only."},
+            "outlines": {"type": "array", "required": False, "description": "What the source plan shows besides the borings, drawn on the map for orientation: the property line, buildings, walls, roads. A list of {name, polygon: [[x, y], ...]} (closed, 3 points or more) or {name, line: [[x, y], ...]} (open, 2 or more), in the same x, y as the observations, with kind 'property_line' (drawn dash-dot) or 'outline' (default). Drawing only: they change no number."},
+            "observations_name": {"type": "str", "required": False, "description": "What the observation points are, in the logs' words (e.g. 'Borings', 'CPT soundings'): the map legend's name for them. 'Observations' when not given."},
         },
         "returns": {
             "n_data": "Number of observations used.",
@@ -543,7 +572,8 @@ METHOD_INFO = {
             "value_name": {"type": "str", "required": False, "description": "What the values are, in the logs' words (e.g. 'top of hard rock elevation'); names the figures. Give it."},
             "value_unit": {"type": "str", "required": False, "description": "Unit of the values and the levels (e.g. 'm')."},
             "north_deg": {"type": "float", "required": False, "description": "North on the map, degrees clockwise from up, as the source plan shows it; up when not given."},
-            "outlines": {"type": "array", "required": False, "description": "Outlines from the source plan to draw on the map, in the x, y coordinates: [{name, polygon: [[x, y], ...]} or {name, line: [[x, y], ...]}, kind 'property_line' (drawn dash-dot) or 'outline'] -- the property line, buildings, walls. Drawing only; the regions are drawn anyway."},
+            "outlines": {"type": "array", "required": False, "description": "What the source plan shows besides the borings, drawn on the probability map for orientation: the property line, buildings, walls, roads. A list of {name, polygon: [[x, y], ...]} (closed, 3 points or more) or {name, line: [[x, y], ...]} (open, 2 or more), in the same x, y as the observations, with kind 'property_line' (drawn dash-dot) or 'outline' (default). Drawing only: they change no number, and the regions are drawn anyway."},
+            "observations_name": {"type": "str", "required": False, "description": "What the observation points are, in the logs' words (e.g. 'Borings', 'CPT soundings'): the map legend's name for them. 'Observations' when not given."},
         },
         "returns": {
             "results": ("Per region and level: polygon_area, cell_area_sum, volume_above / area_above (or _below) "

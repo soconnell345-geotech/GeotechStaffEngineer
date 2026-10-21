@@ -79,13 +79,24 @@ or `outline`); the view takes them in.
 `<prefix>_kriging_map.png` and its Plotly twin, the kriged mean and the
 kriging standard deviation of the value at a point, side by side (stacked
 for a site more than about twice as long as it is wide) at the same scale,
-each as filled bands between contour lines labelled with their values --
-the labels are the scale, so there is no colour bar -- with the
-observations (named when `names` is given, else marked only), the regions
-and the `outlines`, one scale bar and one north arrow. The title names z
+each as filled bands between contour lines. Each level is labelled once,
+written level, at the spot on its line farthest from the observations,
+their names, the outlines, the field's edge and the other labels
+(`plan_map.label_spots`); a level with no clear spot is left unlabelled
+rather than written over a boring's name or a building line. The mean's
+labels are its scale. The standard deviation rises from the observations,
+so its lowest levels ring them too tightly to label: its bands also get a
+colour scale beside the plan. The observations are named when `names` is
+given (else marked only) and called by `observations_name` in the legend
+('Borings'; 'Observations' without it); the regions and the `outlines` are
+drawn, with one scale bar and one north arrow. The title names z
 (`value_name`), each plan names its quantity and unit, and a caption under
-the plans states the kriging type, the covariance model and its parameters
-and whether they were fitted. A grid of one line or one point has no map.
+the plans states the kriging type, the covariance model and its parameters,
+whether they were fitted, and whether the standard deviation is zero at an
+observation (nugget 0) or not (the nugget is in it). A grid of one line or
+one point has no map. With `figures=false` the inputs that only label the
+map are listed in a note, and `fit_nugget=true` with `fit_variogram=false`
+is refused (nothing is fitted).
 Both maps go through `plan_map.plan_map_figure`, one layout in printed
 points (the margins, bar and arrow of `profile_figure`'s plan view) and the
 furniture of `geotech_common/plan_furniture.py`; nothing in it is drawn
@@ -229,6 +240,26 @@ GSTools' class with the exact 2-D inverse for every u > 0 (u = 0, possible
 but at odds of 2⁻⁵³, is clipped to 2⁻⁵³), bit-identical to GSTools for
 u > 1e-8; `conditional` and `random_field` draw with it (kriging and the
 variogram fit never sample the spectrum). Pinned in `tests/test_models.py`.
+GSTools' ppf inverts the radial CDF F(k) = 1 − 1/√(1 + (k·len)²) at 1 − u
+(the same distribution as u); the fix keeps that, so draws match. If GSTools
+fixes its test, the override still draws the same fields and can go.
+
+*Upstream issue, drafted for the owner to post (not posted):*
+
+> **Exponential (2-D): `spectral_rad_ppf` returns inf for every u ≤ 1e-8,
+> so `SRF` can return an all-NaN field.** In GSTools 1.7.0,
+> `Exponential.spectral_rad_ppf` for `dim == 2` computes
+> `np.divide(1, u**2, out=np.full_like(u, np.inf),
+> where=np.logical_not(np.isclose(u, 0)))`. `np.isclose` uses an absolute
+> tolerance of 1e-8, so every u ≤ 1e-8 maps to an infinite wavenumber, not
+> only u = 0; `sqrt(1/u² − 1)/len` is finite there (about 1e8/len at
+> u = 1e-8). One infinite mode makes `cos(k·x)` NaN at every point.
+> Reproduce: `gs.SRF(gs.Exponential(dim=2, var=2, len_scale=40),
+> seed=47863)((np.linspace(-15, 75, 46), np.linspace(0, 50, 26)),
+> mesh_type="structured")` is all NaN (also seed 137080); of the 65,535
+> substreams `MasterRNG` hands out, `RandomState(12837).uniform(size=1000)`
+> is the one whose minimum is ≤ 1e-8. Suggested fix: test `u > 0` (or clip u
+> to the smallest positive uniform draw, 2⁻⁵³) instead of `np.isclose(u, 0)`.
 
 *The scan* (2026-10-15 and 2026-10-20): GSTools' generator alone over seeds
 0–999 (1,000 modes, 2,500 points) for Spherical, Matern, Exponential and

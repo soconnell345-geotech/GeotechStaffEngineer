@@ -122,11 +122,52 @@ class TestKrigingMap:
         ([{"name": "x", "line": [[0, 0], [1, 1]], "kind": "fence"}],
          "kind must be"),
         ([{"name": "x", "polygon": PROP, "colour": "red"}], "unknown key"),
+        ([{"name": "x", "polygon": PROP, "line": [[0, 0], [1, 1]]}],
+         "not both"),
+        (PROP, "not a list of points"),
+        ("property line", "must be a list"),
     ])
     def test_outlines_are_checked(self, bad, match):
         from gstools_agent.plan_map import parse_outlines
         with pytest.raises(ValueError, match=match):
             parse_outlines(bad)
+
+    def test_the_caption_says_where_the_std_is_zero(self):
+        from gstools_agent.plan_map import kriging_map_figure
+
+        def caption(**kw):
+            _png, pfig, _m = kriging_map_figure(_krige(**kw))
+            return " ".join(a.text or "" for a in pfig.layout.annotations)
+        assert "zero at each observation, as the nugget is 0" in caption()
+        assert "so it is not zero at an observation" in caption(nugget=0.3)
+
+    def test_the_std_plan_has_its_own_scale_and_the_points_their_name(self):
+        from gstools_agent.plan_map import kriging_map_figure
+        _png, pfig, _meta = kriging_map_figure(
+            _krige(), names=NAMES, observations_name="Borings")
+        mean, sd = [t for t in pfig.data if t.type == "contour"]
+        assert not mean.showscale and sd.showscale
+        assert sd.colorbar.x > pfig.layout.xaxis2.domain[1]
+        assert _traces(pfig, "Borings") and not _traces(pfig, "Observations")
+
+    def test_contour_labels_keep_clear_of_lines_names_and_edges(self):
+        from gstools_agent.plan_map import _LABEL_CLEAR_PT, label_spots
+        s = 0.25                                  # m per printed point
+        wall = {"name": "w", "xy": np.array([[0.0, 25.0], [60.0, 25.0]]),
+                "closed": False, "kind": "outline"}
+        spots = label_spots(
+            [96.0, 97.0], [[np.array([[30.0, 0.0], [30.0, 50.0]])],
+                           [np.array([[0.0, 25.0], [60.0, 25.0]])]],
+            1.0, s, (0.0, 60.0, 0.0, 50.0), [30.0], [40.0], ["B-1"],
+            [wall])
+        # 97 runs along the wall itself: no spot is clear, so no label
+        assert [t for _xy, t in spots] == ["96"]
+        (x, y), _t = spots[0]
+        assert x == pytest.approx(30.0)
+        half_h = (0.5 * 0.8 * 7.0 + 1.0) * s
+        assert abs(y - 25.0) - half_h >= (_LABEL_CLEAR_PT + 0.8) * s
+        assert abs(y - 40.0) - half_h >= (_LABEL_CLEAR_PT + 4.5) * s
+        assert half_h + _LABEL_CLEAR_PT * s <= y <= 50.0 - half_h
 
     def test_contour_levels_are_round(self):
         from gstools_agent.plan_map import contour_levels
@@ -246,6 +287,31 @@ class TestAdapter:
                 params.pop("n_grid_y")
             r = call_agent("gstools", method, params)
             assert "outlines[0]" in r.get("error", ""), (method, r)
+
+    def test_fit_nugget_without_a_fit_is_refused(self):
+        from funhouse_agent.dispatch import call_agent
+        r = call_agent("gstools", "kriging", dict(
+            self.BASE, fit_nugget=True, figures=False))
+        err = r.get("error", "")
+        assert "fit_nugget=true" in err and "fit_variogram=false" in err
+        held = call_agent("gstools", "kriging", dict(
+            self.BASE, fit_nugget=False, figures=False))
+        assert "error" not in held, held.get("error")
+
+    def test_map_inputs_with_figures_false_are_noted(self, tmp_path,
+                                                     monkeypatch):
+        from funhouse_agent.dispatch import call_agent
+        monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+        r = call_agent("gstools", "kriging", dict(
+            self.BASE, figures=False, north_deg=20,
+            observations_name="Borings"))
+        note = [n for n in r.get("notes", []) if "figures=false" in n]
+        assert note and "north_deg" in note[0] and "names" in note[0]
+        assert "observations_name" in note[0]
+        plain = call_agent("gstools", "kriging", dict(
+            x=BX, y=BY, values=BZ, fit_variogram=False, variance=2.0,
+            len_scale=40.0, n_grid_x=12, n_grid_y=10, figures=False))
+        assert not any("figures=false" in n for n in plain.get("notes", []))
 
     def test_fit_nugget_through_the_adapter(self, tmp_path, monkeypatch):
         from funhouse_agent.dispatch import call_agent

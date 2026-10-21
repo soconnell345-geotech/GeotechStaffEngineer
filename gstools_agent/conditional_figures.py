@@ -228,7 +228,8 @@ def probability_map_arrays(result, region=None, level=None, outlines=()):
 
 def probability_map_figure(result, region=None, level=None, dpi=150,
                            width_in=7.0, value_name=None, value_unit="",
-                           north_deg=None, outlines=None):
+                           north_deg=None, outlines=None,
+                           observations_name=None):
     """Plan map of the probability that the value (``value_name``: what z
     is, e.g. 'top of hard rock elevation') is above (or below) the level at
     each simulated cell, drawn as a plan (owner, 2026-10-15) through the
@@ -237,9 +238,13 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
     from up, as the source plan shows it; up when not given), with the
     region outlines, the ``outlines`` given (a property line drawn
     dash-dot, plan outlines), the named observations and the bounds.
-    ``width_in`` is kept for callers; the plan is 7 in wide. Returns
-    ``(png_bytes, plotly_figure_or_None, meta)``."""
-    from gstools_agent.plan_map import parse_outlines, plan_map_figure
+    ``observations_name`` is what the points are ('Borings'; the legend
+    says 'Observations' without it). ``width_in`` is kept for callers; the
+    plan is 7 in wide. Returns ``(png_bytes, plotly_figure_or_None,
+    meta)``."""
+    from gstools_agent.plan_map import (
+        _points_word, parse_outlines, plan_map_figure,
+    )
 
     extra = parse_outlines(outlines)
     a = probability_map_arrays(result, region, level, extra)
@@ -266,7 +271,8 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
         observations={"x": result.obs_x, "y": result.obs_y,
                       "names": list(result.obs_names),
                       "values": result.obs_values, "mask": a["obs_mask"],
-                      "value_label": what, "unit": unit},
+                      "value_label": what, "unit": unit,
+                      "legend": _points_word(observations_name)},
         outlines=outl, bounds=a["bounds"], north_deg=north_deg, dpi=dpi)
     meta = {"region": a["region"], "level": a["level"],
             "observations_beyond_map": a["n_obs_off"],

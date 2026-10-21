@@ -48,13 +48,17 @@ _WIDTH_IN = 7.0
 _SIDE_IN = 0.1
 _GAP_IN = 0.3
 _CBAR_IN = 0.95             #: room a colour scale takes beside its plan
+_KEY_MIN_IN = 0.9           #: a colour scale's least height, room allowing
 _TITLE_LINE_IN = 0.24
 _PANEL_TITLE_IN = 0.28
 _FOOT_IN = 0.55             #: the legend and the caption below
 #: A raster map up to this many cells; beyond, cells as markers.
 MAX_RASTER = 100000
-#: No contour label within this many points of an observation (its name).
-_LABEL_CLEAR_PT = 18.0
+#: Contour labels, in points as printed: the font size, and the least
+#: clearance a label keeps from an observation, a name, an outline, the
+#: field's edge and another label (fewer and it is left off).
+_LABEL_FONT = 7.0
+_LABEL_CLEAR_PT = 2.5
 #: Two plans stack (one above the other) when the site is this much wider
 #: than tall; otherwise they sit side by side.
 _STACK_ASPECT = 0.55
@@ -86,20 +90,28 @@ def plan_view(core_x, core_y, pad, obs_x=(), obs_y=(), extra_x=(),
             (float(ys.min()), float(ys.max())), near, enear)
 
 
-def _layout(view, n_panels, colorbar):
-    """Where everything goes. The plans are as wide as the figure allows;
-    their scale (data units per printed point) follows, then the margins,
-    the band below and the figure's height."""
+def _layout(view, keys):
+    """Where everything goes. ``keys``: per plan, whether it carries a
+    colour scale beside it. The plans are as wide as the figure allows
+    (each column with a scale gives it room); their scale (data units per
+    printed point) follows, then the margins, the band below and the
+    figure's height."""
     from geotech_common.plan_furniture import nice_length
 
     (x0, x1), (y0, y1) = view
+    n_panels = len(keys)
     dx, dy = max(x1 - x0, 1e-9), max(y1 - y0, 1e-9)
     stacked = n_panels > 1 and dy / dx < _STACK_ASPECT
     ncols = 1 if (n_panels == 1 or stacked) else n_panels
     nrows = n_panels if stacked else 1
-    cbar = _CBAR_IN if colorbar else 0.0
-    w_in = ((_WIDTH_IN - 2 * _SIDE_IN - (ncols - 1) * _GAP_IN) / ncols
-            - cbar)
+    # room for a colour scale after a column that has one
+    cbar_cols = [_CBAR_IN if any(keys[k] for k in range(n_panels)
+                                 if k % ncols == c) else 0.0
+                 for c in range(ncols)]
+    w_in = (_WIDTH_IN - 2 * _SIDE_IN - (ncols - 1) * _GAP_IN
+            - sum(cbar_cols)) / ncols
+    lefts = [_SIDE_IN + c * (w_in + _GAP_IN) + sum(cbar_cols[:c])
+             for c in range(ncols)]
     w_pt = w_in * 72.0
     length = nice_length(dx)
     side, above, below = _PT["side"], _PT["above"], _PT["below"]
@@ -122,10 +134,9 @@ def _layout(view, n_panels, colorbar):
             "bar_x": bx, "bar_y": y0 - _BAR_DROP * s,
             "bar_h": _BAR_HEIGHT * s,
             "arrow": (x1 - _ARROW_IN * s, y0 - _ARROW_DROP * s),
-            "ncols": ncols, "nrows": nrows, "w_in": w_in,
+            "ncols": ncols, "nrows": nrows, "w_in": w_in, "lefts": lefts,
             "h_in": (ylim[1] - ylim[0]) / s / 72.0,
-            "h_plain_in": (ylim_plain[1] - ylim_plain[0]) / s / 72.0,
-            "cbar_in": cbar}
+            "h_plain_in": (ylim_plain[1] - ylim_plain[0]) / s / 72.0}
 
 
 def _panel_ylim(lay, k, n):
@@ -182,6 +193,28 @@ def _decimals(step):
     return 6
 
 
+def _has_key(p):
+    """Whether a plan carries a colour scale beside it: a raster with a
+    ``cbar_label``, or contours asked for one (``key``)."""
+    return bool(p.get("cbar_label") or (p.get("kind") == "contour"
+                                        and p.get("key")))
+
+
+def _key_axes(fig, lay, left, bottom, ylim, h_in, fig_h):
+    """The axes of a colour scale beside a plan: as tall as the site (not
+    the band below it), just right of the plan, in the room the layout
+    left for it."""
+    y0v, y1v = lay["view_y"]
+    f0 = (y0v - ylim[0]) / (ylim[1] - ylim[0])
+    f1 = (y1v - ylim[0]) / (ylim[1] - ylim[0])
+    # a long flat site: at least _KEY_MIN_IN tall where the plan has room
+    mid = bottom + (f0 + f1) / 2 * h_in
+    tall = min(max((f1 - f0) * h_in, _KEY_MIN_IN), h_in)
+    lo = min(max(mid - tall / 2, bottom), bottom + h_in - tall)
+    return fig.add_axes([(left + lay["w_in"] + 0.12) / _WIDTH_IN,
+                         lo / fig_h, 0.14 / _WIDTH_IN, tall / fig_h])
+
+
 def _halo(width=2.4):
     from matplotlib import patheffects
     return [patheffects.withStroke(linewidth=width, foreground="white")]
@@ -220,6 +253,12 @@ def parse_outlines(outlines):
     if not isinstance(outlines, (list, tuple)):
         raise ValueError("outlines must be a list of {name, polygon} or "
                          "{name, line} dicts")
+    if outlines and all(isinstance(o, (list, tuple)) and len(o) == 2
+                        for o in outlines):
+        raise ValueError(
+            "outlines is a list of outlines, each a dict, not a list of "
+            "points: wrap the points, e.g. [{\"name\": \"Property line\", "
+            "\"polygon\": [[x, y], ...], \"kind\": \"property_line\"}]")
     out = []
     for i, o in enumerate(outlines):
         if not isinstance(o, dict):
@@ -229,6 +268,10 @@ def parse_outlines(outlines):
         if unknown:
             raise ValueError(f"outlines[{i}] has unknown key(s) {unknown}; "
                              f"valid keys are name, polygon, line, kind")
+        if o.get("polygon") is not None and o.get("line") is not None:
+            raise ValueError(f"outlines[{i}] gives both polygon and line: "
+                             f"polygon for a closed outline, line for an "
+                             f"open one, not both")
         kind = o.get("kind") or "outline"
         if kind not in ("outline", "property_line"):
             raise ValueError(f"outlines[{i}] kind must be 'outline' or "
@@ -250,6 +293,120 @@ def parse_outlines(outlines):
                                      if kind == "property_line"
                                      else "Outline"))
         out.append({"name": name, "xy": xy, "closed": closed, "kind": kind})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Contour labels
+# ---------------------------------------------------------------------------
+
+def _resample(xy, step):
+    """Points along the polyline ``xy`` about ``step`` apart (ends kept)."""
+    xy = np.asarray(xy, float)
+    if len(xy) < 2:
+        return xy
+    seg = np.hypot(*np.diff(xy, axis=0).T)
+    s = np.concatenate([[0.0], np.cumsum(seg)])
+    if s[-1] <= step:
+        return xy
+    t = np.linspace(0.0, s[-1], int(math.ceil(s[-1] / step)) + 1)
+    return np.column_stack([np.interp(t, s, xy[:, 0]),
+                            np.interp(t, s, xy[:, 1])])
+
+
+def _box_to_points(c, half, p, r):
+    """Clearance (points) from boxes centred on ``c`` (m, 2) with half sizes
+    ``half`` (2,) to discs at ``p`` (k, 2) of radius ``r`` (k,): (m,)."""
+    if len(p) == 0:
+        return np.full(len(c), np.inf)
+    dx = np.clip(np.abs(c[:, None, 0] - p[None, :, 0]) - half[0], 0, None)
+    dy = np.clip(np.abs(c[:, None, 1] - p[None, :, 1]) - half[1], 0, None)
+    return np.min(np.hypot(dx, dy) - r[None, :], axis=1)
+
+
+def _box_to_boxes(c, half, b):
+    """Clearance (points) from boxes centred on ``c`` with half sizes
+    ``half`` to boxes ``b`` (k, 4: centre x, centre y, half w, half h)."""
+    if len(b) == 0:
+        return np.full(len(c), np.inf)
+    b = np.asarray(b, float)
+    dx = np.clip(np.abs(c[:, None, 0] - b[None, :, 0]) - half[0]
+                 - b[None, :, 2], 0, None)
+    dy = np.clip(np.abs(c[:, None, 1] - b[None, :, 1]) - half[1]
+                 - b[None, :, 3], 0, None)
+    return np.min(np.hypot(dx, dy), axis=1)
+
+
+def label_spots(levels, segs, step, scale, field, obs_x, obs_y, names,
+                outlines, font=_LABEL_FONT, every=None):
+    """Where the contour labels go: one per level (every other level when
+    there are more than ten), written level, at the spot on its line
+    farthest from what a label must not cover -- the observations, their
+    names, the outlines, the field's edge and the labels already placed --
+    and, among spots clear of those, away from the neighbouring contour
+    lines. A level with no spot at least ``_LABEL_CLEAR_PT`` clear is left
+    unlabelled: its neighbours' labels and the even interval give it, and a
+    label on a boring's name or a building line is worse than none.
+
+    ``levels`` and ``segs`` are a matplotlib contour set's ``levels`` and
+    ``allsegs``; ``scale`` is data units per printed point; ``field`` is the
+    grid's ``(x0, x1, y0, y1)``; ``names`` are the observations' names
+    ('' for none), drawn 5 pt right of and 4 pt above each marker as
+    :func:`plan_map_figure` draws them. Returns ``[((x, y), text), ...]``
+    in data units."""
+    s = float(scale)
+    d = _decimals(step)
+    texts = [f"{v:.{d}f}" for v in levels]
+    if every is None:
+        every = 1 if len(levels) <= 10 else 2
+    # everything in points from here on
+    obs = np.column_stack([np.asarray(obs_x, float),
+                           np.asarray(obs_y, float)]) / s
+    marker_r = np.full(len(obs), 4.5)
+    char = 0.6 * 8.0                       # a name's characters, 8 pt
+    name_boxes = [(o[0] + 5 + char * len(n) / 2, o[1] + 6.5,
+                   char * len(n) / 2, 4.5)
+                  for o, n in zip(obs, names) if n]
+    outline_pts = []
+    for o in outlines:
+        xy = np.asarray(o["xy"], float)
+        if o.get("closed"):
+            xy = np.vstack([xy, xy[:1]])
+        outline_pts.append(_resample(xy / s, 1.5))
+    lines = (np.vstack(outline_pts) if outline_pts else np.zeros((0, 2)))
+    line_r = np.full(len(lines), 0.8)
+    x0, x1, y0, y1 = (v / s for v in field)
+    per_level = [[_resample(np.asarray(g, float) / s, 2.0) for g in lv
+                  if len(g) > 1] for lv in segs]
+    placed = []
+    out = []
+    for i in range(0, len(levels), every):
+        if not per_level[i]:
+            continue
+        c = np.vstack([_resample(g, 3.0) for g in per_level[i]])
+        half = np.array([0.5 * 0.6 * font * len(texts[i]) + 1.0,
+                         0.5 * 0.8 * font + 1.0])
+        hard = np.minimum.reduce([
+            _box_to_points(c, half, obs, marker_r),
+            _box_to_boxes(c, half, name_boxes),
+            _box_to_points(c, half, lines, line_r),
+            _box_to_boxes(c, half, placed),
+            np.minimum.reduce([c[:, 0] - half[0] - x0,
+                               x1 - c[:, 0] - half[0],
+                               c[:, 1] - half[1] - y0,
+                               y1 - c[:, 1] - half[1]]),
+        ])
+        others = [g for j, lv in enumerate(per_level) if j != i for g in lv]
+        soft = (_box_to_points(c, half, np.vstack(others),
+                               np.zeros(sum(len(g) for g in others)))
+                if others else np.full(len(c), np.inf))
+        ok = hard >= _LABEL_CLEAR_PT
+        if not ok.any():
+            continue
+        score = np.minimum(hard, 12.0) + 0.5 * np.minimum(soft, 6.0)
+        k = int(np.argmax(np.where(ok, score, -np.inf)))
+        placed.append((c[k, 0], c[k, 1], half[0], half[1]))
+        out.append(((float(c[k, 0] * s), float(c[k, 1] * s)), texts[i]))
     return out
 
 
@@ -279,8 +436,7 @@ def plan_map_figure(panels, *, view, title, observations, outlines=(),
     from geotech_common import plan_furniture as pf
 
     angle, north_note = pf.north_or_default(north_deg)
-    lay = _layout(view, len(panels),
-                  any(p.get("cbar_label") for p in panels))
+    lay = _layout(view, [_has_key(p) for p in panels])
     png = _draw_png(panels, lay, title, observations, outlines, bounds,
                     caption, angle, units, dpi)
     pfig = _draw_plotly(panels, lay, title, observations, outlines, bounds,
@@ -318,7 +474,7 @@ def _draw_png(panels, lay, title, obs, outlines, bounds, caption, angle,
     for k, p in enumerate(panels):
         r, c = divmod(k, ncols)
         ylim, h_in = _panel_ylim(lay, k, n)
-        left = _SIDE_IN + c * (lay["w_in"] + lay["cbar_in"] + _GAP_IN)
+        left = lay["lefts"][c]
         bottom = (fig_h - top - sum(row_h[:r + 1]) - (r + 1) * ptitle
                   - r * 0.15)
         ax = fig.add_axes([left / _WIDTH_IN, bottom / fig_h,
@@ -339,39 +495,44 @@ def _draw_png(panels, lay, title, obs, outlines, bounds, caption, angle,
                 im = ax.scatter(p["cells_x"], p["cells_y"], c=p["values"],
                                 cmap=cmap, vmin=p["vmin"], vmax=p["vmax"],
                                 marker="s", s=4, linewidths=0)
-            if p.get("cbar_label"):     # the scale beside the site, not
-                y0v, y1v = lay["view_y"]          # the band below it
-                f0 = (y0v - ylim[0]) / (ylim[1] - ylim[0])
-                f1 = (y1v - ylim[0]) / (ylim[1] - ylim[0])
-                cax = fig.add_axes([(left + lay["w_in"] + 0.12) / _WIDTH_IN,
-                                    (bottom + f0 * h_in) / fig_h,
-                                    0.14 / _WIDTH_IN,
-                                    (f1 - f0) * h_in / fig_h])
-                cb = fig.colorbar(im, cax=cax)
+            if p.get("cbar_label"):
+                cb = fig.colorbar(im, cax=_key_axes(
+                    fig, lay, left, bottom, ylim, h_in, fig_h))
                 cb.set_label(p["cbar_label"], color=_INK)
                 cb.ax.tick_params(colors=_INK, labelsize=8)
                 cb.outline.set_visible(False)
         else:
             levels, step = contour_levels(p["z"], p.get("bands", 8))
-            ax.contourf(p["gx"], p["gy"], p["z"], levels=levels, cmap=cmap)
+            filled = ax.contourf(p["gx"], p["gy"], p["z"], levels=levels,
+                                 cmap=cmap)
+            if p.get("key") and step > 0:
+                # the bands' own scale: the lowest levels may ring the
+                # observations too tightly for a label on the plan
+                d = _decimals(step)
+                cax = _key_axes(fig, lay, left, bottom, ylim, h_in, fig_h)
+                # as many level values as the scale's height holds
+                tall_pt = cax.get_position().height * fig_h * 72.0
+                fit = max(2, int(tall_pt // 11.0))
+                ticks = levels[::int(math.ceil(len(levels) / fit))]
+                cb = fig.colorbar(filled, cax=cax, ticks=ticks)
+                cb.ax.set_yticklabels([f"{v:.{d}f}" for v in ticks])
+                cb.ax.tick_params(colors=_INK, labelsize=7.5, length=2)
+                cb.outline.set_visible(False)
+                if p.get("key_label"):
+                    cb.set_label(p["key_label"], color=_INK, fontsize=8)
             if step > 0:
                 cs = ax.contour(p["gx"], p["gy"], p["z"], levels=levels,
                                 colors=_CONTOUR_LINE, linewidths=0.6,
                                 linestyles="solid")
-                d = _decimals(step)
-                lab = cs.levels if len(cs.levels) <= 10 else cs.levels[::2]
-                # labels on the lines, haloed; none on the small rings
-                # round an observation, where they would sit on its name
-                clear = _LABEL_CLEAR_PT * lay["scale"]
-                for t in ax.clabel(cs, levels=lab, inline=False, fontsize=7,
-                                   fmt=lambda v, d=d: f"{v:.{d}f}"):
-                    tx, ty = t.get_position()
-                    if mask.any() and float(np.min(np.hypot(
-                            ox[mask] - tx, oy[mask] - ty))) < clear:
-                        t.remove()
-                        continue
-                    t.set_color(_INK)
-                    t.set_path_effects(_halo(2.0))
+                for (x, y), text in label_spots(
+                        cs.levels, cs.allsegs, step, lay["scale"],
+                        (p["gx"][0], p["gx"][-1], p["gy"][0], p["gy"][-1]),
+                        ox[mask], oy[mask],
+                        [names[i] for i in np.flatnonzero(mask)],
+                        outlines):
+                    ax.text(x, y, text, ha="center", va="center",
+                            fontsize=_LABEL_FONT, color=_INK, zorder=3.5,
+                            path_effects=_halo(2.0))
         ax.set_title(p["title"] if multi else title, loc="left",
                      fontsize=9.5 if multi else 11, color=_INK,
                      pad=4 if multi else 6)
@@ -491,10 +652,24 @@ def _draw_plotly(panels, lay, title, obs, outlines, bounds, caption, angle,
             levels, step = contour_levels(p["z"], p.get("bands", 8))
             z = [[None if not np.isfinite(v) else float(v) for v in row]
                  for row in p["z"]]
+            key = {}
+            if p.get("key") and step > 0:         # beside its own plan
+                kx = "" if k == 0 else str(k + 1)
+                xd = fig.layout[f"xaxis{kx}"].domain or (0.0, 1.0)
+                yd = fig.layout[f"yaxis{kx}"].domain or (0.0, 1.0)
+                key = {"colorbar": {
+                    "x": float(xd[1]) + 0.01, "xanchor": "left",
+                    "y": (float(yd[0]) + float(yd[1])) / 2,
+                    "yanchor": "middle",
+                    "len": float(yd[1]) - float(yd[0]), "thickness": 12,
+                    "tickfont": {"color": _INK, "size": 10},
+                    "tickformat": f".{_decimals(step)}f",
+                    "title": {"text": p.get("key_label", ""),
+                              "font": {"color": _INK}}}}
             fig.add_trace(go.Contour(
                 z=z, x=list(map(float, p["gx"])),
                 y=list(map(float, p["gy"])), colorscale=scale,
-                showscale=False, name=p["title"],
+                showscale=bool(key), name=p["title"], **key,
                 contours={"start": float(levels[0]),
                           "end": float(levels[-1]),
                           "size": float(step or (levels[-1] - levels[0])),
@@ -590,8 +765,16 @@ def _what(value_name):
     return (str(value_name).strip() if value_name else "") or "value"
 
 
+def _points_word(observations_name):
+    """What the observation points are, for the legend: the caller's word
+    in the logs' terms ('Borings', 'CPT soundings'), else 'Observations'."""
+    return ((str(observations_name).strip() if observations_name else "")
+            or "Observations")
+
+
 def kriging_map_figure(result, names=None, outlines=None, value_name=None,
-                       value_unit="", north_deg=None, dpi=150):
+                       value_unit="", north_deg=None, dpi=150,
+                       observations_name=None):
     """Plan map of a kriging (:func:`gstools_agent.analyze_kriging`): the
     kriged mean and the kriging standard deviation side by side, at the same
     scale, as contours labelled with their values over the grid, with the
@@ -599,7 +782,8 @@ def kriging_map_figure(result, names=None, outlines=None, value_name=None,
     plan outlines; see :func:`parse_outlines`) drawn, a scale bar and a north
     arrow (``north_deg`` clockwise from up, as the source plan shows it; up
     when not given). ``value_name`` says what the values are (e.g. 'top of
-    rock elevation'), ``value_unit`` their unit.
+    rock elevation'), ``value_unit`` their unit, ``observations_name`` what
+    the points are ('Borings'; the legend says 'Observations' without it).
 
     Returns ``(png_bytes, plotly_figure_or_None, meta)``."""
     gx = np.asarray(result.grid_x, float)
@@ -633,17 +817,19 @@ def kriging_map_figure(result, names=None, outlines=None, value_name=None,
                                 for v in o["xy"][:, 1]]
     xr, yr, near, _ = plan_view(core_x, core_y, 0.0, result.obs_x,
                                 result.obs_y)
-    # the title names z; the plans name what each shows of it. The
-    # standard deviation's contours are fewer: it rises from the
-    # observations, and rings of labels round every one would crowd them.
+    # the title names z; the plans name what each shows of it. Both at
+    # the same number of bands, each level labelled once on the plan clear
+    # of the names and outlines (label_spots). The standard deviation rises
+    # from the observations, so its lowest levels ring them too tightly to
+    # label: its bands also get a scale beside the plan.
     panels = [
         {"title": f"Kriged mean{u}", "kind": "contour", "gx": gx, "gy": gy,
          "z": z, "cmap": "YlOrBr", "cmap_top": 0.55, "bands": 8,
          "hover": f"kriged mean {what}", "hover_unit": unit},
         {"title": f"Kriging standard deviation{u}", "kind": "contour",
          "gx": gx, "gy": gy, "z": sd, "cmap": "PuBu", "cmap_top": 0.55,
-         "bands": 5, "hover": "kriging standard deviation",
-         "hover_unit": unit},
+         "bands": 8, "key": True, "key_label": unit,
+         "hover": "kriging standard deviation", "hover_unit": unit},
     ]
     fit = ""
     if getattr(result, "variogram_fitted", False):
@@ -653,18 +839,24 @@ def kriging_map_figure(result, names=None, outlines=None, value_name=None,
     off = int((~near).sum())
     off = (f" {off} observation(s) beyond the map, more than the map's "
            f"diagonal from its centre." if off else "")
+    if float(result.nugget) > 0:
+        sd_note = ("The standard deviation is of the value at a point, the "
+                   "nugget included, so it is not zero at an observation.")
+    else:
+        sd_note = ("The standard deviation is of the value at a point: "
+                   "zero at each observation, as the nugget is 0.")
     caption = (f"{result.kriging_type.capitalize()} kriging of {n} "
                f"observations, {result.model_type} covariance model: "
                f"variance {result.variance:.3g}{u2}, correlation length "
                f"{result.len_scale:.3g} m, nugget {result.nugget:.3g}{u2}"
-               f"{fit}.\nThe standard deviation is of the value at a "
-               f"point (nugget included).{off}")
+               f"{fit}.\n{sd_note}{off}")
     title = f"Kriging of the {what}"
     png, pfig, north_note = plan_map_figure(
         panels, view=(xr, yr), title=title,
         observations={"x": result.obs_x, "y": result.obs_y,
                       "names": names, "values": result.obs_values,
-                      "mask": near, "value_label": what, "unit": unit},
+                      "mask": near, "value_label": what, "unit": unit,
+                      "legend": _points_word(observations_name)},
         outlines=outl, caption=caption, north_deg=north_deg, dpi=dpi)
     meta = {"value_name": what, "north_note": north_note,
             "observations_beyond_map": int((~near).sum())}
