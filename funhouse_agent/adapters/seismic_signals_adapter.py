@@ -111,7 +111,7 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "response_spectrum": {
         "category": "Seismic Signals",
-        "brief": "Compute response spectrum using Nigam-Jennings algorithm (eqsig).",
+        "brief": "Compute the response spectrum, every period by Nigam and Jennings (1969): the record linear between samples, in sub-steps of at most a twentieth of the period, the peak read between samples (the OpenSees site response uses the same code).",
         "parameters": {
             "motion": {"type": "str", "brief": "Built-in motion name (e.g. 'synthetic_pulse').", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},

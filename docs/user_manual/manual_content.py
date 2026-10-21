@@ -853,7 +853,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "problems": "Ground-motion signal processing: response spectra, intensity measures, and rotated "
             "components from an acceleration record &mdash; the quantities behind a seismic demand.",
         "methods": [
-            "Response spectra and Fourier processing (**eqsig**); rotated-component spectra RotD50/RotD100 "
+            "Response spectra by Nigam and Jennings (1969), in sub-steps at short periods (the OpenSees site "
+            "response's code); Fourier processing (**eqsig**); rotated-component spectra RotD50/RotD100 "
             "(**pyrotd**); Arias intensity, significant duration, and other intensity measures.",
             "References: the eqsig and pyrotd libraries. Requires the <code>[seismic-signals]</code> extra.",
         ],
