@@ -1986,7 +1986,7 @@ check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); th
 suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
 `/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 
-## Module Inventory (31 analysis + geo_project setup layer + 30 reference, + foundry harness; reference layer QC'd 2026-06, its open QC items in `BACKLOG.md` §8; all figure catalogs page-accurate, 0 of 3,394 figures `page_estimated` on 2026-10-19)
+## Module Inventory (31 analysis + geo_project setup layer + 30 reference, + foundry harness; reference layer QC'd 2026-06, its open QC items in `BACKLOG.md` §5; all figure catalogs page-accurate, 0 of 3,394 figures `page_estimated` on 2026-10-19)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -2233,7 +2233,7 @@ identity and memory live as **version-controlled files**:
   `pytest <module>/ -v` → updates its ledger → returns a diff (does NOT commit; the lead reviews).
 - `module_work/BOARD.md` — HISTORY of the v5.1 module-fix round (the triaged feedback categories
   and the 28-clean / 40-recovered / 0-failed agent-suite baseline). It is NOT the backlog: open
-  module work is in `BACKLOG.md` §7 (GM-nn) since 2026-10-12.
+  module work is in `BACKLOG.md` §4 (GM-nn) since 2026-10-12.
 - `module_work/<domain>.md` — per-domain progress ledgers (owned modules, reference map, log). A
   specialist reads its ledger at task start and logs its work at the end; new open items go to
   `BACKLOG.md`, not the ledger.
@@ -2258,7 +2258,7 @@ A separate ongoing effort builds/QCs the geotech-references library. Infrastruct
   `page_estimated → 0` (finds each figure's true PDF page via caption/footer/List-of-Figures
   search) and builds catalogs for new references; can fan out one worker per reference.
 - `reference_work/BOARD.md` — HISTORY of the June 2026 reference build/QC effort. Open reference
-  work is in `BACKLOG.md` §8 (REF-nn) since 2026-10-12.
+  work is in `BACKLOG.md` §5 (REF-nn) since 2026-10-12.
 
 **Working model (user preference, 2026-06-05): autonomous, milestone-level — NOT per-step.**
 Drive the multi-agent work to completion; pick sensible defaults for ordering / which-first and
@@ -2285,7 +2285,7 @@ decisions. See memory `feedback-reference-layer-autonomy`.
   (`module_work/module_feedback.json`). (A `fdm2d` wall-clock guard was added here too; `fdm2d`
   has since been removed in the Phase 1 consolidation — see `CONSOLIDATION_CHANGES.md`.)
 
-**Open backlog (history; current status is `BACKLOG.md` §8 and the "Done since the last sweep" list there and `BACKLOG_DONE.md`):** the ~23 per-module param-name/value bugs and the `retaining_walls`
+**Open backlog (history; current status is `BACKLOG.md` §5 and the "Done since the last sweep" list there and `BACKLOG_DONE.md`):** the ~23 per-module param-name/value bugs and the `retaining_walls`
 earth-pressure-coefficient gap were FIXED in v5.1 (adapter-ergonomics stream). Open at the
 time: module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and a `fem2d`
 footing convenience method, since built as `fem2d.analyze_footing_capacity` (load to collapse;

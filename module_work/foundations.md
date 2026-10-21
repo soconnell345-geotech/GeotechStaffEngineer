@@ -1,6 +1,6 @@
 # Ledger — foundations
 
-> Progress log only. Open items for these modules are in `BACKLOG.md` §7 (GM-nn).
+> Progress log only. Open items for these modules are in `BACKLOG.md` §4 (GM-nn).
 
 **Owned modules:** bearing_capacity, settlement, retaining_walls, ground_improvement, downdrag
 
