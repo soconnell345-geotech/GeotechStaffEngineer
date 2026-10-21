@@ -848,6 +848,106 @@ and `funhouse_agent/tests/test_mse_coverage_ratio_adapter.py`.
   takes Tal itself at a factor of safety of 1.0;
 - `reinforcement_Fy` is used in no check, for a custom reinforcement too.
 
+## The geosynthetic rupture check and `reinforcement_Fy` (GM-268, GM-269, 2026-10-21)
+
+**What the print says** (GEC-11 Vol I, FHWA-NHI-10-024, and Vol II,
+FHWA-NHI-10-025, read on the rendered pages):
+- Eq. 3-12 (p. 3-28): a geosynthetic's long-term strength Tal = Tult /
+  (RFID x RFCR x RFD), per unit reinforcement width. It is the nominal
+  strength, not divided by a factor of safety.
+- Eq. 4-33 (p. 4-48): Tr = phi Tal, checked against the factored Tmax (Eq.
+  4-34, p. 4-49). Table 4-7 (p. 4-48): phi 0.90 for geosynthetic
+  reinforcement under static loading, with no distinction by facing; p.
+  3-38: "For Strength I limit state conditions, a resistance factor (phi)
+  equal to 0.90 is used for geosynthetic reinforcements".
+- p. 4-40: Tmax is factored by gamma_P-EV = 1.35, a traffic surcharge over
+  the reinforced zone included (item 2).
+- There is no geosynthetic counterpart to p. 4-77's "0.48 Fy for bar mats,
+  0.55 Fy for strips". Vol II Example E9 (a reinforced soil slope) puts "A
+  FS = 1.5 ... to the geogrid reinforcement in stability analysis" (p.
+  E9-2), which is phi / 1.35 = 0.667 by another name.
+- Vol II Example E1 (geogrids GG-I and GG-II): Tal from Eq. 3-12 and Tr =
+  0.90 Tal (Step 7.6, Table E1-7.3, p. E1-15: Tal 1,085 and 2,169 lb/ft,
+  Tr 976 and 1,952); TMAX factored by 1.35 (Table E1-7.2, p. E1-14); CDR
+  = Tr / TMAX by layer (Table E1-7.4, p. E1-16). E1's text cites "Table
+  4-8" for the resistance factors; in Vol I it is Table 4-7.
+
+**What changed (GM-268).** The module checks an allowable Ta times Rc
+against the unfactored Tmax at a factor of safety of 1.0
+(`mse.rupture_allowable`). For steel Ta is Tal itself, which is already
+0.48 or 0.55 Fy (GM-262). For a geogrid, a geotextile or a "geosynthetic",
+Ta = 0.90 / 1.35 Tal (`reinforcement.GEOSYNTHETIC_ALLOWABLE_FRACTION`), so
+FOS_rupture is GEC-11's CDR phi Tal Rc / (1.35 Tmax). Before, a
+geosynthetic's Tal was taken itself, which is 1.5 times GEC-11's
+resistance. Each level gives `Ta_Rc_kN_per_m` beside `Tal_Rc_kN_per_m`.
+A geosynthetic's result has a choice, "Allowable tensile strength Ta of
+the geosynthetic in the tensile rupture check" (how "module"), with the
+print quoted and, as the alternative, Tal itself at 1.0 (every FOS_rupture
+x 1.5). The calc step and table show Ta. A custom geosynthetic's Tal is
+asked for plainly as Tult / (RFID x RFCR x RFD); the tool text says so,
+and that a Tal already divided by a factor of safety would be reduced
+twice.
+
+**The built-in geogrids.** No source is recorded for their Tal. 21.9 and
+29.2 kN/m are 1,500 and 2,000 lb/ft, and they have been in the module
+since its first version, never checked against a manufacturer's data.
+Their `basis` now says so and reads them as Eq. 3-12's Tal. It quotes p.
+3-30 on where a product's Tal comes from (agency or third-party evaluation:
+HITEC, NTPEP). The Tal choice's alternative is the product's own Tal as a
+custom geogrid.
+
+**Numbers.**
+- The 6 m geogrid wall (H 6 m, L 5 m, Sv 0.6 m, gamma 19, phi 34), UX1600:
+  - Before: FOS_rupture 22.65 at the top to 1.192 at the bottom, every
+    level passing.
+  - Now: 15.10 to 0.795. It fails at 5.1 m (0.888) and 5.7 m, and 4.5 m
+    is at 1.007.
+  - With UX1700: 1.589 before, 1.060 now.
+- Pullout is unchanged.
+- Steel walls are unchanged.
+
+**Example E1 reproduced** (`validation_examples/test_published_v056_v057_gec11_slope.py`, V-057):
+- Tal and Tr for GG-I, GG-II and GG-III to the pound.
+- Per layer, the module's Tmax at E1's own Z and Sv under the slope's S_eq
+  is within 0.22 % of E1's TMAX / 1.35. Its FOS_rupture is within 0.6 % of
+  E1's CDR, for example layer 4 (GG-I, Z 6.67 ft): 1.006 against 1.00, and
+  layer 9: 1.015 against 1.01.
+- The exception is layer 10 (Z 18.67 ft, Sv 1.33 ft). The module's Tmax
+  there is 3.0 % over the printed 1,366 lb/ft (layer 11 agrees within 0.2
+  %), so its CDR is 1.39 against 1.43, on the safe side.
+- Before, every value was 1.5 times E1's: layer 4 was 1.509 and layer 9
+  1.522.
+- A whole run with GG-I at Sv 2 ft fails from 7 ft down, as GG-I reaches
+  its limit at E1's layer 4.
+
+**`reinforcement_Fy` (GM-269) is refused.** The tool took it and used it in
+no check: the rupture check works from the Tal given, and the tool has no
+section inputs (number of bars, corroded diameter or thickness) to work a
+Tal out of Fy. Working Tal out from Fy would need those inputs, a design
+life and a corrosion loss, which makes a second way to give the same
+number. Refusing it is the plainer choice. Dispatch now refuses it
+(`refused_parameters`, the gm179 pattern), with or without a built-in name,
+and says to give the allowable from Fy and the corroded section, Eq. 3-11a
+(0.55 Fy for strips, 0.48 Fy for bar mats). The `Reinforcement` dataclass
+keeps `Fy`, since the built-ins record theirs. Its description had said
+"MPa" while the dataclass is in kPa.
+
+**GM-267 is not done here.** The built-in strip's basis has said since the
+GM-262 review that its 75 mm width is the tool's own, quoting GEC-11's 50
+mm commercial strip (p. 2-16), and the choice's alternative gives the 50
+mm strip. Making the built-in E3's 50 x 4 mm strip would:
+- move every strip-wall pin by two thirds at the same Sh;
+- need a new key, since `ribbed_steel_strip_75x4` would name the wrong
+  strip;
+- keep `RIBBED_STEEL_STRIP_75x4` importable for the retired `foundry/`
+  wrapper;
+- touch some 15 test files and the method probes.
+
+It is left to the lead and the owner.
+
+Tests: `tests/test_mse_geosynthetic_rupture.py`, the V-057 additions, and
+`funhouse_agent/tests/test_gm179_unused_inputs.py`.
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):
@@ -902,7 +1002,8 @@ and `funhouse_agent/tests/test_mse_coverage_ratio_adapter.py`.
     grid lacks that geometry F* falls back to the strip curve.
   - geosynthetic ("geogrid", "geotextile", "geosynthetic"): Kr/Ka 1.0; F*
     0.67·tan(φ); alpha by Table 3-6, 0.8 geogrid, 0.6 geotextile, a
-    "geosynthetic" of no stated kind given a tested alpha (GM-256, above).
+    "geosynthetic" of no stated kind given a tested alpha (GM-256, above);
+    rupture at Ta = 0.90 / 1.35 Tal (GM-268, above).
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
   strip default unchanged; GM-246 changed its top value (above).

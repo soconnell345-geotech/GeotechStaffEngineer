@@ -31,6 +31,29 @@ BAR_MAT_ALLOWABLE_FY = 0.48
 #: 0.56 (GM-262 review).
 STRIP_ALLOWABLE_FY = 0.55
 
+#: GEC-11 Vol I Table 4-7 (p. 4-48), geosynthetic reinforcement, static
+#: loading: phi 0.90; p. 3-38, "For Strength I limit state conditions, a
+#: resistance factor (phi) equal to 0.90 is used for geosynthetic
+#: reinforcements". Tr = phi Tal (Eq. 4-33) (GM-268).
+GEOSYNTHETIC_PHI = 0.90
+
+#: The load factor GEC-11 puts on Tmax in internal stability: p. 4-40,
+#: "Vertical pressure due to the weight of the reinforced soil zone is
+#: assigned a load type 'EV' with a corresponding (maximum) load factor,
+#: gamma_P-EV = 1.35", a traffic surcharge over the zone included (item 2)
+#: (GM-268).
+GAMMA_EV_MAX = 1.35
+
+#: The allowable of a geosynthetic's long-term strength Tal (Eq. 3-12, p.
+#: 3-28) for the module's rupture check, which compares the allowable x Rc
+#: with the UNFACTORED Tmax at a factor of safety of 1.0: phi / gamma_EV-MAX
+#: = 0.90 / 1.35 = 2/3, so FOS_rupture is GEC-11's capacity:demand ratio phi
+#: Tal Rc / (1.35 Tmax); Vol II Example E9 (a reinforced soil slope) puts the
+#: same factor of safety, 1.5, on a geogrid's Tal (p. E9-2). A steel
+#: reinforcement's Tallowable is already its allowable (0.48 or 0.55 Fy)
+#: (GM-268).
+GEOSYNTHETIC_ALLOWABLE_FRACTION = GEOSYNTHETIC_PHI / GAMMA_EV_MAX
+
 
 def steel_strip_Tal(E_corroded: float, Fy: float,
                     fraction: float = 1.0) -> float:
@@ -108,16 +131,20 @@ class Reinforcement:
         geotextile; a "geosynthetic" of no stated kind has no row and needs
         a tested alpha (``mse.pullout_alpha``, GM-256).
     Tallowable : float
-        Long-term allowable tensile strength per unit width of the
-        reinforcement, Tal (kN/m). The rupture check takes Tal x Rc, the
+        Long-term tensile strength per unit width of the reinforcement, Tal
+        (kN/m). The rupture check takes an allowable Ta times Rc, the
         strength per metre of wall (p. 4-47: "the product of the nominal
         long-term strength, coverage ratio, and applicable resistance
-        factor"), against the unfactored Tmax at a factor of safety of 1.0,
-        so Tal here is an allowable: for steel a fraction of GEC-11 Vol I
-        Eq. 3-11a (p. 3-22), Fy Ac / b with Ac after corrosion, 0.55 Fy for
-        strips and 0.48 Fy for bar mats (p. 4-77; :func:`steel_strip_Tal`,
-        :func:`steel_grid_Tal`, GM-262). A strength per strip or per mat
-        (Ptal, Eq. 3-11b) is Ptal / b (GM-256).
+        factor"), against the unfactored Tmax at a factor of safety of 1.0
+        (``mse.rupture_allowable``). For steel Tal here IS that allowable:
+        a fraction of GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac / b with Ac
+        after corrosion, 0.55 Fy for strips and 0.48 Fy for bar mats (p.
+        4-77; :func:`steel_strip_Tal`, :func:`steel_grid_Tal`, GM-262). For
+        a geosynthetic it is the long-term strength Tal = Tult / (RFID x
+        RFCR x RFD), Eq. 3-12 (p. 3-28), not divided by a factor of safety;
+        the check takes :data:`GEOSYNTHETIC_ALLOWABLE_FRACTION` of it
+        (GM-268). A strength per strip or per mat (Ptal, Eq. 3-11b) is Ptal
+        / b (GM-256).
     width : float, optional
         Gross width b (m) of the strip, sheet or grid; for a grid, from the
         centre to centre of the outside longitudinal bars (GEC-11 Vol I p.
@@ -198,6 +225,13 @@ class Reinforcement:
     @property
     def is_metallic(self) -> bool:
         return self.type.startswith("metallic")
+
+    @property
+    def is_geosynthetic(self) -> bool:
+        """True for a geogrid, a geotextile or a geosynthetic of no stated
+        kind: its Tallowable is the long-term strength Tal of GEC-11 Eq.
+        3-12, not an allowable (GM-268)."""
+        return not self.is_metallic
 
     @property
     def is_grid(self) -> bool:
@@ -304,15 +338,34 @@ WELDED_WIRE_GRID_W11 = Reinforcement(
 
 # The geogrids are type "geogrid": GEC-11 Vol I Table 3-6's alpha 0.8 for
 # extensible grids (p. 3-17). They took alpha 1.0 as "geosynthetic" before
-# GM-256.
+# GM-256. Their Tal has no recorded source (GM-268): 21.9 and 29.2 kN/m are
+# 1,500 and 2,000 lb/ft, in the module since its first version, not checked
+# against the manufacturer's data.
+_LB_PER_FT = 0.0145939          # kN/m
+
+GEOGRID_BASIS = (
+    "No source is recorded for this Tal: {Tal:g} kN/m (about {lbft:,.0f} "
+    "lb/ft) is not checked against the manufacturer's published data. It "
+    "is read as the long-term strength Tal = Tult / (RFID x RFCR x RFD) of "
+    "GEC-11 "
+    "Vol I Eq. 3-12 (p. 3-28), which the rupture check takes at 0.90 / "
+    "1.35. GEC-11 recommends a product's Tal from 'in-house, agency "
+    "evaluation or third-party evaluation of independent test results such "
+    "as the Highway Innovative Technology Evaluation Center (HITEC) or "
+    "AASHTO National Transportation Product Evaluation Program (NTPEP)' (p. "
+    "3-30). For a design give the product's own Tal as a custom geogrid "
+    "(reinforcement_type 'geogrid', reinforcement_Tallowable)")
+
 GEOGRID_UX1600 = Reinforcement(
     name="Geogrid UX1600 (HDPE)",
     type="geogrid",
     Tallowable=21.9,  # kN/m (LTDS after creep, damage, durability)
+    basis=GEOGRID_BASIS.format(Tal=21.9, lbft=round(21.9 / _LB_PER_FT, -1)),
 )
 
 GEOGRID_UX1700 = Reinforcement(
     name="Geogrid UX1700 (HDPE)",
     type="geogrid",
     Tallowable=29.2,  # kN/m
+    basis=GEOGRID_BASIS.format(Tal=29.2, lbft=round(29.2 / _LB_PER_FT, -1)),
 )

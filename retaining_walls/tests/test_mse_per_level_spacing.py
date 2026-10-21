@@ -68,9 +68,11 @@ def test_the_ratio_per_level():
     geogrid = dataclasses.replace(GEOGRID_UX1600, coverage_ratio=[1.0] * 10
                                   + [0.5] * 2)
     lv = check_internal_stability(_wall(), 20.0, 34.0, geogrid)
+    # a geogrid's Tal at 0.90 / 1.35 in the rupture check (GM-268)
+    assert lv[-1]["Ta_Rc_kN_per_m"] == pytest.approx(
+        0.5 * 0.90 / 1.35 * lv[-1]["Tallowable_kN_per_m"], abs=0.01)
     assert lv[-1]["FOS_rupture"] == pytest.approx(
-        0.5 * lv[-1]["Tallowable_kN_per_m"] / lv[-1]["Tmax_kN_per_m"],
-        abs=1e-3)
+        lv[-1]["Ta_Rc_kN_per_m"] / lv[-1]["Tmax_kN_per_m"], abs=1e-3)
 
 
 def test_a_list_of_the_wrong_length_is_refused_naming_the_levels():
