@@ -12,7 +12,7 @@ detailed Phase-E history; this file supersedes it.
 
 - **Order of work (owner, 2026-10-21; BACKLOG §0 and its sections follow it):** report ingest and GSE on Foundry first, then the geotech calc modules, then Document Review and Tiny Apps last. Nothing is released; the owner holds the release (everything since 5.33.0 is on master).
 - **First on Friday:**
-  1. Check CI on master (the run on e7159c0 was in progress; its watcher was stopped for memory). Push the local notes commits if CI is green.
+  1. CI was green on e7159c0 (all of today's code); the notes commits after it were pushed the same evening. Check the run on the newest commit.
   2. Opus review of branch `wip/ripath` (RI-02, RI-35: report ingest on the geotech page behind `GEOTECH_REPORT_INGEST`, off; the helpers' call budgets enforced). It touches `funhouse_agent/deep/agent.py` and `tools.py`, so review before merging.
   3. Then RI-03 (the ingest engine on Foundry's chat models; the plan is in the item), then OWN-11's one-run check (in the item).
 - **Waiting on the owner:** the Foundry build c results (INF-40; read every run in full); the Claude-on-Foundry check, which needs the next wheel (INF-40); marking up the Report Questions Desk, https://claude.ai/artifact/RuUVqrbNnaHPaX1YaCyEjd (fold with RI-42); the core's name, reopened because the core is shared with GSE (OWN-72).
