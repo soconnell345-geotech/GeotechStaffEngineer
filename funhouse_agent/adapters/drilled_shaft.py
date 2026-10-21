@@ -141,9 +141,6 @@ def _run_lrfd_capacity(params):
     output = result.to_dict()
     output["lrfd"] = lrfd
     extra = []
-    if result.Q_side_rock > 0:
-        extra.append(_rock_side_factor_choice(result, lrfd,
-                                              analysis.rock_side_C))
     if (result.base_steps or {}).get("method") == "rqd":
         extra.append(_rqd_tip_factor_choice(lrfd))
     elif (result.base_steps or {}).get("equation") == "10-29":
@@ -151,31 +148,6 @@ def _run_lrfd_capacity(params):
     if extra:
         output["choices"] = list(output.get("choices") or []) + extra
     return output
-
-
-def _rock_side_factor_choice(result, lrfd, C: float) -> dict:
-    """The resistance factor taken for side resistance in rock (GM-244):
-    Table 8-4's 0.50 against the 0.55 the text of p. 10-21 gives."""
-    from geotech_common.choices import MODULE, choice
-    phi = RESISTANCE_FACTORS["side_rock"]
-    other = lrfd["phi_Qn_kN"] + (0.55 - phi) * result.Q_side_rock
-    basis = ("GEC-10 (FHWA-NHI-18-024) Table 8-4 (p. 8-14) prints 0.50 "
-             "for side resistance in rock by Eq. 10-21 (0.40 in uplift), "
-             "which this tool takes; the text of p. 10-21 says 'The "
-             "resistance factor recommended with use of Equations 10-21 "
-             "and 10-22 is phi = 0.55 ... as presented in Table 8-4'. "
-             "Which governs is the engineer's judgment")
-    if C == 0.65:
-        basis += (". C = 0.65 is Eq. 10-22 (where caving is anticipated, "
-                  "alpha_E = 1.0), "
-                  "for which Table 8-4 prints no row: the text's 0.55 is "
-                  "the only factor GEC-10 gives for it")
-    return choice(
-        "resistance factor for side resistance in rock", phi, MODULE,
-        basis=basis,
-        alternatives=[
-            f"0.55, the text of p. 10-21: factored rock side resistance "
-            f"{0.55 * result.Q_side_rock:,.0f} kN, phi R_n {other:,.0f} kN"])
 
 
 def _rqd_tip_factor_choice(lrfd) -> dict:

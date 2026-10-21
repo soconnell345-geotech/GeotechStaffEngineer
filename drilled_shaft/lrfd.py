@@ -12,8 +12,8 @@ from drilled_shaft.results import DrillShaftResult
 
 
 # Resistance factors for drilled shafts as GEC-10 Table 8-4 (p. 8-14) prints
-# them. Side resistance in rock (Eq. 10-21) is 0.50 in the table; the text
-# of p. 10-21 gives 0.55 'as presented in Table 8-4' (GM-244).
+# them. Side resistance in rock (Eq. 10-21) is 0.50 in the table; the table
+# governs over the 0.55 in the text of p. 10-21 (owner, GM-278).
 RESISTANCE_FACTORS = {
     "side_cohesive": 0.45,
     "side_cohesionless": 0.55,
