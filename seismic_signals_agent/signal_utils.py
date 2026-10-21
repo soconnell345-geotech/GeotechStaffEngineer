@@ -1,7 +1,7 @@
 """
 Utility functions for the seismic signals agent module.
 
-Provides runtime dependency checking and import helpers for eqsig and pyrotd,
+Provides runtime dependency checking and import helpers for eqsig (pyrotd is checked only for the Foundry wrapper),
 following the same pattern as pystrata_agent/pystrata_utils.py.
 """
 
@@ -36,7 +36,7 @@ def pyrotd_import_error():
     is present yet ``import pyrotd`` raises ``ModuleNotFoundError: No module
     named 'pkg_resources'`` (live smoke G10, 2026-10-08). No analysis
     here uses pyrotd since GM-275 (``analyze_rotd_spectrum`` computes the
-    responses in the time domain); this and ``has_pyrotd`` stay for callers
+    responses in the time domain); this and ``has_pyrotd`` stay for the Foundry wrapper
     that check it.
     """
     import importlib.util
@@ -79,27 +79,3 @@ def import_eqsig():
             "eqsig is required for response spectrum and intensity measures. "
             "Install with: pip install eqsig"
         )
-
-
-def import_pyrotd():
-    """Import and return pyrotd with a helpful error message.
-
-    Returns
-    -------
-    module
-        The pyrotd module.
-
-    Raises
-    ------
-    ImportError
-        If pyrotd is not installed or its import fails; the message says
-        which, with the underlying error.
-    """
-    err = pyrotd_import_error()
-    if err is None:
-        import pyrotd
-        return pyrotd
-    if err == "pyrotd is not installed":
-        raise ImportError(
-            "pyrotd is not installed. Install with: pip install pyrotd")
-    raise ImportError(err)

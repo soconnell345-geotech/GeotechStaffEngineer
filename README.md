@@ -172,7 +172,7 @@ Each wraps a third-party geotechnical library behind a dict-based API for LLM to
 |--------|---------|---------|
 | `opensees_agent` | OpenSeesPy | PM4Sand cyclic DSS, 1D site response |
 | `pystrata_agent` | pystrata | 1D equivalent-linear site response |
-| `seismic_signals_agent` | eqsig + pyrotd | Earthquake signal processing |
+| `seismic_signals_agent` | eqsig | Earthquake signal processing (RotD computed in the time domain, Boore 2010, by the app's own code) |
 | `liquepy_agent` | liquepy | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) and SPT |
 | `gstools_agent` | gstools | Geostatistical kriging, random fields and conditional simulation |
 | `salib_agent` | SALib | Sobol and Morris sensitivity analysis |
@@ -244,7 +244,7 @@ At every altitude it's the *same* validated method underneath. The deterministic
 
 ## Optional extras
 
-A plain `pip install geotech-staff-engineer` brings every analysis backend (matplotlib, jinja2, openseespy, pystrata, eqsig, pyrotd, liquepy, gstools, SALib, pystra, pygef, ezdxf, PyNiteFEA), the deep agent and the webapp. The older extra names (`plot`, `calc`, `opensees`, `pystrata`, `seismic-signals`, `liquepy`, `gstools`, `salib`, `pystra`, `pygef`, `dxf`, `deep`, `webapp`, `full` and others) are kept as empty aliases, so older install commands still work. Two extras add a library:
+A plain `pip install geotech-staff-engineer` brings every analysis backend (matplotlib, jinja2, openseespy, pystrata, eqsig, liquepy, gstools, SALib, pystra, pygef, ezdxf, PyNiteFEA), the deep agent and the webapp. The older extra names (`plot`, `calc`, `opensees`, `pystrata`, `seismic-signals`, `liquepy`, `gstools`, `salib`, `pystra`, `pygef`, `dxf`, `deep`, `webapp`, `full` and others) are kept as empty aliases, so older install commands still work. Two extras add a library:
 
 | Extra | Adds | Why it is not in the plain install |
 |-------|------|------------------------------------|

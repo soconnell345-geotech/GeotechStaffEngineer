@@ -262,8 +262,8 @@ class TestSeismicSignalsCalls:
         """No pyrotd gate in the adapter, and the module does not use
         pyrotd since GM-275 (time-domain responses), so a missing
         pyrotd is not an error."""
-        with patch("seismic_signals_agent.signal_utils.import_pyrotd",
-                   side_effect=ImportError("pyrotd is not installed")):
+        with patch("seismic_signals_agent.signal_utils.pyrotd_import_error",
+                   return_value="pyrotd is not installed"):
             from funhouse_agent.dispatch import call_agent
             result = call_agent("seismic_signals", "rotd_spectrum", {
                 "motion_a": "synthetic_pulse", "motion_b": "synthetic_pulse",

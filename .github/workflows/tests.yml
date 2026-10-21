@@ -60,7 +60,7 @@ jobs:
           # v5.0 deepagents stack ([deep] extra) so funhouse_agent/deep tests run in CI
           pip install deepagents langchain langgraph langchain-anthropic "typing_extensions>=4.13" || true
           pip install pystrata || true
-          pip install eqsig pyrotd || true
+          pip install eqsig || true
           pip install liquepy || true
           pip install pygef || true
           pip install gstools || true

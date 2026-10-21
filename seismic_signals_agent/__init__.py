@@ -1,19 +1,18 @@
 """
 Seismic Signals Agent Module
 
-Earthquake signal processing using eqsig and pyrotd.
+Earthquake signal processing using eqsig; RotD is computed by the app's own code.
 
 Current analyses:
   - Response spectrum (Nigam-Jennings with sub-steps,
     geotech_common.response_spectrum; PGV and PGD via eqsig)
   - Intensity measures (Arias intensity, CAV, significant duration)
   - Rotated spectral acceleration (RotD0/RotD50/RotD100, Boore 2010,
-    from time-domain Nigam-Jennings responses; pyrotd until GM-275)
+    from time-domain Nigam-Jennings responses, the app's own code)
   - Signal processing (filtering + baseline correction via eqsig)
 
 References:
     - eqsig: https://github.com/eng-tools/eqsig
-    - pyrotd: https://github.com/arkottke/pyrotd
     - Nigam & Jennings (1969). "Calculation of Response Spectra from
       Strong-Motion Earthquake Records." BSSA 59(2).
 """
