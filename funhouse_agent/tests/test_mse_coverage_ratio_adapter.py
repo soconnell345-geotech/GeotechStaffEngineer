@@ -24,27 +24,28 @@ def _coverage(r):
 @pytest.mark.parametrize("name", ["reinforcement_horizontal_spacing", "Sh",
                                   "horizontal_spacing"])
 def test_a_strip_takes_its_spacing_by_any_name(name):
-    r = _mse(reinforcement_name="ribbed_steel_strip_75x4", **{name: 0.75})
+    r = _mse(reinforcement_name="ribbed_steel_strip_50x4", **{name: 0.75})
     assert "error" not in r, r.get("error")
-    assert {lv["Rc"] for lv in r["internal_results"]} == {0.1}
+    # GM-267: GEC-11's 50 mm strip, Rc 0.05 / 0.75 (0.1 and 2.876 at 75 mm)
+    assert {lv["Rc"] for lv in r["internal_results"]} == {0.0667}
     assert min(lv["FOS_pullout"] for lv in r["internal_results"]) == \
-        pytest.approx(2.876, abs=1e-3)
+        pytest.approx(2.876 * 2 / 3, abs=1e-3)
     assert _coverage(r)["how"] == "given"
     assert "coverage_ratio" not in r["defaults_used"]
 
 
 def test_a_strip_with_no_spacing_is_refused_naming_the_inputs():
-    err = _mse(reinforcement_name="ribbed_steel_strip_75x4")["error"]
+    err = _mse(reinforcement_name="ribbed_steel_strip_50x4")["error"]
     for words in ("coverage_ratio", "reinforcement_horizontal_spacing",
                   "Sh alone will do", "the tool assumes none of them"):
         assert words in err, words
 
 
 def test_the_coverage_ratio_given_directly():
-    r = _mse(reinforcement_name="ribbed_steel_strip_75x4", Rc=0.12)
+    r = _mse(reinforcement_name="ribbed_steel_strip_50x4", Rc=0.12)
     assert {lv["Rc"] for lv in r["internal_results"]} == {0.12}
     assert _coverage(r)["chosen"].startswith("Rc 0.12, given")
-    both = _mse(reinforcement_name="ribbed_steel_strip_75x4", Rc=0.12,
+    both = _mse(reinforcement_name="ribbed_steel_strip_50x4", Rc=0.12,
                 Sh=0.75)
     assert "not both" in both["error"]
     # GM-256 review: a width serves only Rc = b/Sh, so beside a given Rc it
@@ -59,7 +60,7 @@ def test_the_coverage_ratio_given_directly():
 
 
 def test_a_geogrid_is_a_continuous_layer_and_says_so():
-    r = _mse(reinforcement_name="geogrid_ux1600")
+    r = _mse(reinforcement_name="geogrid_gec11_e1_gg1")
     assert {lv["Rc"] for lv in r["internal_results"]} == {1.0}
     assert r["defaults_used"]["coverage_ratio"].startswith(
         "Rc 1, a continuous geosynthetic layer: GEC-11 Vol I p. 3-13")
@@ -68,7 +69,8 @@ def test_a_geogrid_is_a_continuous_layer_and_says_so():
 
 def test_the_built_in_grid_and_strip_keep_their_own_width():
     """GM-262: the built-in mat is GEC-11 Vol II Example E4's 4W11 mat, b
-    1.5 ft (0.4572 m), and carries it as the strip carries its 75 mm."""
+    1.5 ft (0.4572 m), and carries it as the strip carries its 50 mm
+    (GEC-11 Vol II Example E3's strip since GM-267)."""
     grid = _mse(reinforcement_name="welded_wire_grid_w11", Sh=1.524)
     assert {lv["Rc"] for lv in grid["internal_results"]} == {0.3}
     same = _mse(reinforcement_name="welded_wire_grid_w11",
@@ -77,24 +79,25 @@ def test_the_built_in_grid_and_strip_keep_their_own_width():
     other = _mse(reinforcement_name="welded_wire_grid_w11",
                  reinforcement_width=0.3, Sh=1.524)
     assert "is 0.4572 m wide" in other["error"]
-    other = _mse(reinforcement_name="ribbed_steel_strip_75x4",
-                 reinforcement_width=0.05, Sh=0.75)
-    assert "is 0.075 m wide" in other["error"]
+    other = _mse(reinforcement_name="ribbed_steel_strip_50x4",
+                 reinforcement_width=0.075, Sh=0.75)
+    assert "is 0.05 m wide" in other["error"]
 
 
 def test_the_spacing_or_ratio_per_level_through_the_tool():
     """GM-261: a list, one value a level from the top down, as GEC-11 Vol
     II Example E3 changes Sh with depth (Table E3-7.3, p. E3-19)."""
-    r = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+    r = _mse(reinforcement_name="ribbed_steel_strip_50x4",
              Sh=[0.75] * 8 + [0.5] * 4)
     assert "error" not in r, r.get("error")
+    # GM-267: b 0.05 m (0.1 and 0.15 at 75 mm)
     assert [lv["Rc"] for lv in r["internal_results"]] == \
-        [0.1] * 8 + [0.15] * 4
-    assert "Sh 0.5 m at levels 9-12 (Rc 0.15)" in _coverage(r)["chosen"]
-    short = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+        [0.0667] * 8 + [0.1] * 4
+    assert "Sh 0.5 m at levels 9-12 (Rc 0.1)" in _coverage(r)["chosen"]
+    short = _mse(reinforcement_name="ribbed_steel_strip_50x4",
                  Sh=[0.75] * 10)
     assert "this wall has 12 levels" in short["error"]
-    rc = _mse(reinforcement_name="ribbed_steel_strip_75x4",
+    rc = _mse(reinforcement_name="ribbed_steel_strip_50x4",
               Rc=[0.1] * 11 + [0.2])
     assert rc["internal_results"][-1]["Rc"] == 0.2
     from funhouse_agent.adapters.retaining_walls import METHOD_INFO
@@ -114,10 +117,10 @@ def test_a_custom_strip_takes_its_width_and_spacing():
 
 
 def test_tested_F_star_and_alpha_through_the_tool():
-    base = _mse(reinforcement_name="ribbed_steel_strip_75x4", Sh=0.75)
+    base = _mse(reinforcement_name="ribbed_steel_strip_50x4", Sh=0.75)
     assert base["defaults_used"]["F_star_tested"].startswith(
         "the empirical F*: GEC-11 Vol I Eqs. 3-4 to 3-8")
-    r = _mse(reinforcement_name="ribbed_steel_strip_75x4", Sh=0.75,
+    r = _mse(reinforcement_name="ribbed_steel_strip_50x4", Sh=0.75,
              F_star_tested=[[0, 1.5], [6, 0.8]], alpha_tested=0.9)
     assert "F_star_tested" not in r["defaults_used"]
     assert r["internal_results"][0]["F_star"] == pytest.approx(
@@ -130,9 +133,9 @@ def test_tested_F_star_and_alpha_through_the_tool():
 
 
 @pytest.mark.parametrize("extra, words", [
-    ({"reinforcement_name": "ribbed_steel_strip_75x4", "Sh": 0.75},
+    ({"reinforcement_name": "ribbed_steel_strip_50x4", "Sh": 0.75},
      "which is what takes Cu"),
-    ({"reinforcement_name": "geogrid_ux1600"},
+    ({"reinforcement_name": "geogrid_gec11_e1_gg1"},
      "this reinforcement's empirical F* takes no Cu")])
 def test_a_Cu_beside_a_tested_F_star_is_said_to_be_in_no_check(extra, words):
     """GM-256 review: a strip or a geogrid given Cu and a tested F*."""
@@ -149,8 +152,8 @@ def test_a_Cu_beside_a_tested_F_star_is_said_to_be_in_no_check(extra, words):
 
 def test_list_reinforcement_says_what_each_needs():
     out = D.call_agent("retaining_walls", "list_reinforcement", {})
-    strip = out["reinforcement_types"]["ribbed_steel_strip_75x4"]
-    assert strip["width_m"] == 0.075
+    strip = out["reinforcement_types"]["ribbed_steel_strip_50x4"]
+    assert strip["width_m"] == 0.05             # GM-267 (0.075 before)
     # 0.55 Fy Ec at GEC-11 E3's corroded thickness since the GM-262 review
     # (574.67 before, 43.1 kN a strip of no recorded source)
     assert strip["Tallowable_kN_per_m"] == pytest.approx(638.6, abs=0.01)
@@ -216,7 +219,7 @@ def test_the_tool_text_says_per_unit_width_and_names_the_equations():
     grid = D.call_agent("retaining_walls", "mse_wall", {
         "wall_height": 6.0, "gamma_backfill": 19.0, "phi_backfill": 34.0,
         "reinforcement_length": 5.0, "reinforcement_spacing": 0.6,
-        "reinforcement_name": "geogrid_ux1600"})
+        "reinforcement_name": "geogrid_gec11_e1_gg1"})
     assert {lv["FOS_rupture_required"] for lv in grid["internal_results"]} \
         == {1.5}
     sh = p["reinforcement_horizontal_spacing"]["description"]

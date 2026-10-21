@@ -28,6 +28,7 @@ Units: the examples are US customary; the module is SI.
   1 kip/ft = 14.594 kN/m.
 """
 
+import dataclasses
 import math
 
 import pytest
@@ -39,7 +40,7 @@ from retaining_walls.mse import (
     check_internal_stability, pullout_resistance, rankine_Ka,
     rupture_FOS_required,
 )
-from retaining_walls.reinforcement import Reinforcement, GEOGRID_UX1600
+from retaining_walls.reinforcement import Reinforcement, GEOGRID_GEC11_E1_GG1
 
 FT = 0.3048
 PCF = 0.157087
@@ -281,6 +282,36 @@ def test_v056_internal_by_level_in_one_run():
         0.80, abs=0.005)
 
 
+def test_v056_the_built_in_strip_is_E3s():
+    """GM-267: the tool's built-in strip is E3's 50 x 4 mm strip, 0.55 Fy
+    Ec (GEC-11 Vol I p. 4-77) at E3's Ec 0.102 in. (p. E3-16): 31.93 kN a
+    strip against 0.55 Tn = 7.15 k = 31.80 kN on E3's rounded 0.200 in.^2.
+    Run at E3's spacing per level it gives E3's pullout at all 12 levels,
+    and its FOS_rupture, an allowable over the unfactored Tmax, is E3's
+    tension CDR Ng phi_t Tn / Tmax times 0.55 x 1.35 / 0.75 (= 0.99) and
+    31.93 / 31.80."""
+    from retaining_walls.reinforcement import RIBBED_STEEL_STRIP_50x4
+    assert RIBBED_STEEL_STRIP_50x4.width == pytest.approx(B_STRIP, rel=5e-4)
+    assert RIBBED_STEEL_STRIP_50x4.Tallowable * 0.05 / KIP == pytest.approx(
+        0.55 * 13.00, rel=0.005)
+    Sh = [5.0 * FT / E3_TABLE_7_3[i][2] for i in sorted(E3_TABLE_7_3)]
+    levels = check_internal_stability(
+        _e3_geom(), GAMMA, 34.0,
+        dataclasses.replace(RIBBED_STEEL_STRIP_50x4, horizontal_spacing=Sh),
+        Cu_backfill=7.0)
+    assert len(levels) == 12
+    ratio = 0.55 * 1.35 / 0.75 * RIBBED_STEEL_STRIP_50x4.Tallowable * 0.05 \
+        / (0.55 * 13.00 * KIP)
+    for level, (Tmax, phi_Pr, Ng) in E3_TABLE_7_3.items():
+        lv = levels[level - 1]
+        assert 0.90 * lv["Pr_kN_per_m"] * Sh[level - 1] / KIP == \
+            pytest.approx(phi_Pr, rel=0.003)
+        assert lv["FOS_pullout"] * 0.90 / 1.35 == pytest.approx(
+            Ng * phi_Pr / Tmax, rel=0.004)
+        assert lv["FOS_rupture"] == pytest.approx(
+            ratio * Ng * 0.75 * 13.00 / Tmax, rel=0.004)
+
+
 def test_v056_e5_level4_pullout_per_strip():
     """GEC-11 Vol II Example E5, Level 4 (p. E5-28): Pr = (1.0)(0.832)(2)
     (0.164 ft)(15.06 ft)(2.20 ksf) = 9.04 k/strip. E5 is a bridge abutment
@@ -292,7 +323,7 @@ def test_v056_e5_level4_pullout_per_strip():
 
 
 def test_v056_analyze_mse_wall_reports_the_basis():
-    r = analyze_mse_wall(_e3_geom(), GAMMA, 34.0, GEOGRID_UX1600,
+    r = analyze_mse_wall(_e3_geom(), GAMMA, 34.0, GEOGRID_GEC11_E1_GG1,
                          phi_foundation=30.0, phi_retained=30.0,
                          lrfd_external=True)
     b = r.to_dict()["backslope"]
@@ -418,7 +449,7 @@ def test_v057_internal_equivalent_height():
                            backfill_slope=BETA,
                            broken_backslope_height=9 * FT,
                            surcharge=0.25 * KSF)
-    r = analyze_mse_wall(geom, GAMMA, 34.0, GEOGRID_UX1600,
+    r = analyze_mse_wall(geom, GAMMA, 34.0, GEOGRID_GEC11_E1_GG1,
                          phi_foundation=30.0, phi_retained=30.0)
     # E1 rounds beta to 26.6 deg (tan 0.5008); 2H:1V gives 3.50 ft
     assert r.backslope["S_eq_m"] / FT == pytest.approx(3.51, abs=0.02)
@@ -451,7 +482,7 @@ def test_v057_pullout_cdr_by_layer(z, Le, Tmax, Zp, cdr):
                            backfill_slope=BETA,
                            broken_backslope_height=9 * FT,
                            surcharge=0.25 * KSF)
-    level = analyze_mse_wall(geom, GAMMA, 34.0, GEOGRID_UX1600,
+    level = analyze_mse_wall(geom, GAMMA, 34.0, GEOGRID_GEC11_E1_GG1,
                              phi_foundation=30.0,
                              phi_retained=30.0).internal_results[0]
     assert level["alpha"] == 0.8
@@ -500,6 +531,22 @@ def test_v057_geogrid_tal_and_tr(grade):
     assert r.Tallowable * 1000 / KFT == pytest.approx(Tal, abs=0.5)
     assert 1.35 / rupture_FOS_required(r) * r.Tallowable * 1000 / KFT == \
         pytest.approx(Tr, abs=0.5)
+
+
+@pytest.mark.parametrize("grade", sorted(E1_TABLE_7_3))
+def test_v057_the_built_in_geogrids_are_table_E1_7_3s(grade):
+    """GM-271: the tool's built-in geogrids are E1's GG-I to GG-III, Tal =
+    Tult / (RFID x RFCR x RFD) as Table E1-7.3 (p. E1-15) prints it, and
+    say so in their basis."""
+    from retaining_walls import reinforcement as R
+    built_in = getattr(R, "GEOGRID_GEC11_E1_GG" + str(grade.count("I")))
+    _, _, Tal, _ = E1_TABLE_7_3[grade]
+    assert built_in.type == "geogrid"
+    assert built_in.Tallowable == pytest.approx(
+        _e1_geogrid(grade).Tallowable, rel=1e-4)      # KFT 14.594
+    assert built_in.Tallowable * 1000 / KFT == pytest.approx(Tal, abs=0.5)
+    assert f"geogrid {grade}, as Table E1-7.3 (p. E1-15)" in built_in.basis
+    assert f"= {Tal:,} lb/ft" in built_in.basis
 
 
 @pytest.mark.parametrize("z, Sv, Tmax, grade, cdr", E1_TABLE_7_4)
@@ -555,3 +602,9 @@ def test_v057_rupture_in_one_run():
     for words in ("Table 4-7, p. 4-48", "p. 4-40", "Table E1-7.3, p. E1-15",
                   "1.35 / 0.90 = 1.5"):
         assert words in c["basis"], words
+    # GM-271: the built-in GG-I is the same reinforcement
+    built_in = analyze_mse_wall(geom, GAMMA, 34.0, GEOGRID_GEC11_E1_GG1,
+                                phi_foundation=30.0, phi_retained=30.0)
+    for a, b in zip(r.internal_results, built_in.internal_results):
+        assert a["FOS_rupture"] == pytest.approx(b["FOS_rupture"],
+                                                 abs=1e-3)

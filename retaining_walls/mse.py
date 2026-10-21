@@ -38,11 +38,12 @@ References:
     Figs 4-10/4-11/E4-5 (also AASHTO Fig. 11.10.6.2.1-3). Authoring-time in-hand
     status not recorded, but the curves are anchored by the GEC-11 Example E4
     reproduction (CDRs and F* within ~3%; see tests). The built-in
-    reinforcements are NOT a manufacturer's catalog: the W11 bar mat is
-    GEC-11 Vol II Example E4's 4W11 mat, its Tal from E4's corroded wire
-    (GM-262); the 75x4 mm strip's Tal is 0.55 Fy Ec at Example E3's
-    corroded thickness, its 75 mm width the tool's own (GM-262 review) —
-    see DESIGN.md.
+    reinforcements are NOT a manufacturer's catalog, each is a GEC-11 Vol
+    II worked example's as printed: the W11 bar mat is Example E4's 4W11
+    mat, its Tal from E4's corroded wire (GM-262); the strip is Example
+    E3's 50 x 4 mm ribbed strip, Tal 0.55 Fy Ec at E3's corroded thickness
+    (GM-267); the geogrids are Example E1's GG-I to GG-III, Tal = Tult / RF
+    from Table E1-7.3 (GM-271) — see DESIGN.md.
 """
 
 import math
@@ -354,18 +355,6 @@ _FLEXIBLE_FACING = (
     "every FOS_rupture x {ratio:.3f} (lowest {low:.3g}); give it as a "
     "custom reinforcement (reinforcement_Tallowable)")
 
-#: GEC-11 Vol I p. 2-16: the ribbed strips "currently commercially
-#: available" are "2 in. (50 mm) wide" (GM-262 review).
-_COMMERCIAL_STRIP_B = 0.05
-_COMMERCIAL_STRIP = (
-    "GEC-11's ribbed strip, '2 in. (50 mm) wide and 5/32-inch (4 mm) "
-    "thick' (Vol I p. 2-16; Vol II Example E3): the same Tal per metre of "
-    "strip width over {ratio:.3g} of the width, so at the same spacing the "
-    "tensile and pullout resistance are {ratio:.3g} of these (lowest "
-    "FOS_rupture {ru:.3g}, lowest FOS_pullout {po:.3g}); give it as a "
-    "custom reinforcement (reinforcement_type 'metallic_strip', "
-    "reinforcement_Tallowable {Tal:.4g}, reinforcement_width 0.05)")
-
 _ONE_REINFORCEMENT = (
     "a stronger reinforcement, or a closer spacing, at the levels where "
     "FOS_rupture is below {req:.1f}: this tool takes one reinforcement (one "
@@ -451,13 +440,6 @@ def tensile_strength_choice(reinforcement: Reinforcement,
         alts.append(_FLEXIBLE_FACING.format(
             Tal=r.Tallowable * ratio, ratio=ratio,
             low=ratio * min(lv["FOS_rupture"] for lv in internal)))
-    elif r.basis and r.is_metallic and r.width is not None \
-            and r.width != _COMMERCIAL_STRIP_B:
-        ratio = _COMMERCIAL_STRIP_B / r.width
-        alts.append(_COMMERCIAL_STRIP.format(
-            ratio=ratio, Tal=r.Tallowable,
-            ru=ratio * min(lv["FOS_rupture"] for lv in internal),
-            po=ratio * min(lv["FOS_pullout"] for lv in internal)))
     if low:
         z = [lv["depth_m"] for lv in low]
         chosen += (f"; FOS_rupture is below {req:.1f} at "

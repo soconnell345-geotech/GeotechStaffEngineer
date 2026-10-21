@@ -13,7 +13,9 @@ GEC-11 Vol I (FHWA-NHI-10-024), read on the pages:
     obtained from pullout tests".
 Before GM-256 every reinforcement took Rc = 1: a 9 m wall of 75 mm strips
 showed FOS_pullout 28.8 to 42.1, and the strip's 43.1 kN was compared with
-the tension per metre of wall at no spacing.
+the tension per metre of wall at no spacing. Since GM-267 the built-in
+strip is GEC-11 Example E3's 50 mm strip, so the strip wall's pins below are
+2/3 of the 75 mm strip's.
 """
 
 import dataclasses
@@ -27,7 +29,7 @@ from retaining_walls.mse import (
     coverage_ratio, F_star_from_tests,
 )
 from retaining_walls.reinforcement import (
-    GEOGRID_UX1600, RIBBED_STEEL_STRIP_75x4, Reinforcement,
+    GEOGRID_GEC11_E1_GG1, RIBBED_STEEL_STRIP_50x4, Reinforcement,
     WELDED_WIRE_GRID_W11,
 )
 
@@ -39,33 +41,37 @@ def _strip_wall():
 
 
 def _strip(Sh=0.75):
-    return dataclasses.replace(RIBBED_STEEL_STRIP_75x4, horizontal_spacing=Sh)
+    return dataclasses.replace(RIBBED_STEEL_STRIP_50x4, horizontal_spacing=Sh)
 
 
 def test_the_strip_wall_before_and_after():
-    """At Sh 0.75 m, Rc = 0.075/0.75 = 0.1: pullout a tenth of the Rc = 1
-    reading (28.762 to 42.101 before GM-256), and the rupture resistance
-    47.9 kN a strip / 0.75 m = 63.9 kN per metre of wall (0.982 at the
-    bottom level before GM-256, 43.1 against Tmax 43.89 kN/m; 1.309 at
-    43.1 kN a strip / 0.75 m until the GM-262 review, which took the
-    strip's Tal from GEC-11's print: 0.55 Fy Ec at Example E3's corroded
-    thickness, 638.6 kN/m of strip width)."""
+    """At Sh 0.75 m, Rc = 0.05/0.75 = 0.0667 for GEC-11's 50 mm strip
+    (GM-267): pullout 0.0667 of the Rc = 1 reading (28.762 to 42.101
+    before GM-256), and the rupture resistance 31.9 kN a strip / 0.75 m =
+    42.6 kN per metre of wall. Before GM-256: 0.982 at the bottom level,
+    43.1 against Tmax 43.89 kN/m; 1.309 at 43.1 kN a 75 mm strip / 0.75 m
+    until the GM-262 review, which took the strip's Tal from GEC-11's
+    print, 0.55 Fy Ec at Example E3's corroded thickness, 638.6 kN/m of
+    strip width; 1.455 at 47.9 kN a 75 mm strip until GM-267, and with
+    pullout 2.876 to 4.210 (Rc 0.1). The 75 mm width was the tool's own:
+    every pin moves by 50/75 = 2/3, and the bottom level now fails
+    rupture, 0.970."""
     levels = check_internal_stability(_strip_wall(), 20.0, 34.0, _strip())
     po = [lv["FOS_pullout"] for lv in levels]
     ru = [lv["FOS_rupture"] for lv in levels]
-    assert min(po) == pytest.approx(2.876, abs=1e-3)
-    assert max(po) == pytest.approx(4.210, abs=1e-3)
-    assert min(ru) == pytest.approx(1.455, abs=1e-3)
+    assert min(po) == pytest.approx(2.876 * 2 / 3, abs=1e-3)      # 1.917
+    assert max(po) == pytest.approx(4.210 * 2 / 3, abs=1e-3)      # 2.807
+    assert min(ru) == pytest.approx(1.455 * 2 / 3, abs=1e-3)      # 0.970
     assert levels[-1]["Tmax_kN_per_m"] == pytest.approx(43.89, abs=0.01)
-    assert levels[-1]["Tal_Rc_kN_per_m"] == pytest.approx(47.895 / 0.75,
+    assert levels[-1]["Tal_Rc_kN_per_m"] == pytest.approx(31.93 / 0.75,
                                                           abs=0.01)
     full = check_internal_stability(
         _strip_wall(), 20.0, 34.0,
-        dataclasses.replace(RIBBED_STEEL_STRIP_75x4, coverage_ratio=1.0))
+        dataclasses.replace(RIBBED_STEEL_STRIP_50x4, coverage_ratio=1.0))
     for a, b in zip(levels, full):
-        assert a["Rc"] == pytest.approx(0.1)
-        assert a["Pr_kN_per_m"] == pytest.approx(0.1 * b["Pr_kN_per_m"],
-                                                 abs=0.01)
+        assert a["Rc"] == pytest.approx(0.0667)
+        assert a["Pr_kN_per_m"] == pytest.approx(
+            0.05 / 0.75 * b["Pr_kN_per_m"], abs=0.01)
     assert min(lv["FOS_pullout"] for lv in full) == pytest.approx(
         28.76, abs=0.01)
 
@@ -82,18 +88,20 @@ def test_pullout_and_rupture_fall_in_proportion_to_the_spacing():
 
 def test_a_geogrid_wall_keeps_Rc_1():
     """A geosynthetic given no spacing is a continuous layer, Rc = 1, as
-    before GM-256, and FOS_rupture is unchanged, 1.192 at the bottom level.
-    FOS_pullout is 8.394 to 20.633: 10.493 to 25.792 before, times the
-    alpha 0.8 GEC-11 Table 3-6 prints for a geogrid (p. 3-17; the GM-256
-    alpha commit, tests/test_mse_scale_effect_alpha.py)."""
+    before GM-256. FOS_pullout is 8.394 to 20.633: 10.493 to 25.792 before,
+    times the alpha 0.8 GEC-11 Table 3-6 prints for a geogrid (p. 3-17; the
+    GM-256 alpha commit, tests/test_mse_scale_effect_alpha.py). FOS_rupture
+    is 0.862 at the bottom level with Example E1's GG-I (Tal 15.83 kN/m,
+    GM-271); it was 1.192 with the retired built-in geogrid's 21.9 kN/m,
+    whose source was not recorded."""
     geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0,
                            reinforcement_spacing=0.6)
-    r = analyze_mse_wall(geom, 19.0, 34.0, GEOGRID_UX1600)
+    r = analyze_mse_wall(geom, 19.0, 34.0, GEOGRID_GEC11_E1_GG1)
     po = [lv["FOS_pullout"] for lv in r.internal_results]
     assert min(po) == pytest.approx(8.394, abs=1e-3)
     assert max(po) == pytest.approx(20.633, abs=1e-3)
     assert min(lv["FOS_rupture"] for lv in r.internal_results) == \
-        pytest.approx(1.192, abs=1e-3)
+        pytest.approx(1.192 * 15.83 / 21.9, abs=1e-3)          # 0.862
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
     assert c["how"] == "default"
     assert c["chosen"].startswith("Rc 1, a continuous geosynthetic layer")
@@ -118,7 +126,7 @@ def test_a_geosynthetic_width_with_no_spacing_is_said_to_be_unused():
 
 def test_a_steel_strip_or_grid_with_no_spacing_is_refused():
     with pytest.raises(ValueError) as err:
-        analyze_mse_wall(_strip_wall(), 20.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        analyze_mse_wall(_strip_wall(), 20.0, 34.0, RIBBED_STEEL_STRIP_50x4)
     text = str(err.value)
     for words in ("coverage_ratio", "reinforcement_horizontal_spacing",
                   "reinforcement_width", "Eq. 3-1", "Sh alone will do",
@@ -136,7 +144,7 @@ def test_a_steel_strip_or_grid_with_no_spacing_is_refused():
     with pytest.raises(ValueError, match="not both"):
         coverage_ratio(dataclasses.replace(_strip(), coverage_ratio=0.1))
     with pytest.raises(ValueError, match="at most 1"):
-        coverage_ratio(_strip(0.05))
+        coverage_ratio(_strip(0.04))
     for Rc in (0.0, 1.2):
         with pytest.raises(ValueError, match="more than 0 and at most 1"):
             Reinforcement("s", "metallic_strip", 500.0, coverage_ratio=Rc)
@@ -147,43 +155,52 @@ def test_the_built_in_strip_strength_is_per_metre_of_strip_width():
     wall at Sh it is the strip's strength / Sh. Since the GM-262 review
     the built-in's Tal is 0.55 Fy Ec (p. 4-77; Ac = b Ec, Fig. 3-5a), Ec =
     0.102 in. (GEC-11 Vol II Example E3, p. E3-16), Fy 65 ksi: 638.6 kN/m,
-    47.9 kN a 75 mm strip (it was 43.1 kN a strip, 574.67 kN/m, of no
-    recorded source)."""
-    assert RIBBED_STEEL_STRIP_75x4.Tallowable * 0.075 == pytest.approx(
-        47.895, abs=1e-3)
+    31.9 kN a 50 mm strip since GM-267 (47.9 kN a 75 mm strip before; 43.1
+    kN a strip, 574.67 kN/m, of no recorded source, before the GM-262
+    review). Tal per strip and Rc agree: Tal x b / Sh = Tal x Rc."""
+    assert RIBBED_STEEL_STRIP_50x4.width == 0.05
+    assert RIBBED_STEEL_STRIP_50x4.Tallowable * 0.05 == pytest.approx(
+        31.930, abs=1e-3)
     lv = check_internal_stability(_strip_wall(), 20.0, 34.0, _strip(0.6))[0]
-    assert lv["Tal_Rc_kN_per_m"] == pytest.approx(47.895 / 0.6, abs=0.01)
+    assert lv["Tal_Rc_kN_per_m"] == pytest.approx(31.930 / 0.6, abs=0.01)
+    assert lv["Tal_Rc_kN_per_m"] == pytest.approx(
+        lv["Tallowable_kN_per_m"] * lv["Rc"], rel=1e-3)
     assert lv["Tallowable_kN_per_m"] == pytest.approx(638.60, abs=0.01)
 
 
-def test_the_built_in_strip_states_its_Tal_and_GEC11s_50_mm_strip():
-    """GM-262 review: E3's strip, 'Grade 65 (Fy = 65 ksi), 1.969 in. x
-    0.157 in. (50 mm wide x 4 mm)', Ec = 0.102 in. after 75 years, Tn =
-    13.00 k a strip (p. E3-16); 0.55 Tn / b = 636 kN/m on E3's rounded
-    0.200 in.^2, 638.6 on Ec. The 75 mm width is the tool's own: GEC-11
-    Vol I p. 2-16 gives the commercially available strips as 50 mm wide."""
+def test_the_built_in_strip_is_GEC11s_50_mm_strip_as_printed():
+    """GM-267: E3's strip, 'Grade 65 (Fy = 65 ksi), 1.969 in. x 0.157 in.
+    (50 mm wide x 4 mm)', Ec = 0.102 in. after 75 years, Tn = 65 ksi x
+    0.200 in.^2 = 13.00 k a strip (p. E3-16), the strip GEC-11 Vol I p.
+    2-16 gives as 'currently commercially available'. The built-in's 0.55
+    Fy Ec over b = 50 mm is 31.93 kN a strip, against 0.55 Tn = 7.15 k =
+    31.80 kN on E3's rounded 0.200 in.^2 (0.4 %). It was 75 mm wide, the
+    tool's own width; the choice no longer offers the 50 mm strip as the
+    other reading, since it is the built-in."""
     from retaining_walls.reinforcement import (
         STRIP_ALLOWABLE_FY, steel_strip_Tal)
     IN, KSI, KIP = 0.0254, 6894.757, 4.4482216
     assert steel_strip_Tal(0.102 * IN, 65 * KSI) * 1.969 * IN / KIP == \
         pytest.approx(13.00, rel=0.005)
-    assert RIBBED_STEEL_STRIP_75x4.Tallowable == pytest.approx(
+    assert RIBBED_STEEL_STRIP_50x4.Tallowable == pytest.approx(
         STRIP_ALLOWABLE_FY * 13.00 * KIP / (1.969 * IN), rel=0.005)
+    assert RIBBED_STEEL_STRIP_50x4.Tallowable * 0.05 / KIP == \
+        pytest.approx(0.55 * 13.00, rel=0.005)
+    assert RIBBED_STEEL_STRIP_50x4.width == pytest.approx(1.969 * IN,
+                                                          rel=5e-4)
     r = analyze_mse_wall(_strip_wall(), 20.0, 34.0, _strip())
     (c,) = [c for c in r.choices if c["what"].startswith("Long-term")]
     assert c["how"] == "module"
-    assert c["chosen"] == ("Ribbed Steel Strip 75x4mm: Tal 638.6 kN/m of "
-                           "strip width (47.9 kN a 0.075 m strip), the same "
-                           "at every level")
+    assert c["chosen"].startswith(
+        "Ribbed steel strip 50 x 4 mm (GEC-11 Vol II Example E3): Tal 638.6 "
+        "kN/m of strip width (31.9 kN a 0.05 m strip), the same at every "
+        "level; FOS_rupture is below 1.0 at z = 8.62 m (lowest 0.97)")
     for words in ("0.55 Fy", "p. 4-77", "p. E3-16", "0.102 in.",
-                  "p. 2-16", "tool's own"):
+                  "p. 2-16", "50 mm wide x 4 mm", "13.00 k a strip"):
         assert words in c["basis"], words
+    assert "tool's own" not in c["basis"]
     (alt,) = c["alternatives"]
-    lv = r.internal_results
-    for words in ("50 mm", "0.667 of the width", "reinforcement_width 0.05",
-                  f"lowest FOS_rupture "
-                  f"{min(x['FOS_rupture'] for x in lv) * 2 / 3:.3g}"):
-        assert words in alt, words
+    assert alt.startswith("a stronger reinforcement, or a closer spacing")
     with pytest.raises(ValueError, match="positive corroded"):
         steel_strip_Tal(0.0, 65 * KSI)
 
@@ -192,8 +209,9 @@ def test_the_choice_says_how_Rc_was_set():
     r = analyze_mse_wall(_strip_wall(), 20.0, 34.0, _strip())
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
     assert c["how"] == "given"
-    assert c["chosen"].startswith("Rc 0.1 = b 0.075 m / Sh 0.75 m")
-    assert "Tal x Rc 63.86 kN/m of wall" in c["chosen"]   # GM-262 review
+    # GM-267: the 50 mm strip (Rc 0.1 and 63.86 kN/m at 75 mm)
+    assert c["chosen"].startswith("Rc 0.0667 = b 0.05 m / Sh 0.75 m")
+    assert "Tal x Rc 42.57 kN/m of wall" in c["chosen"]
     grid = dataclasses.replace(WELDED_WIRE_GRID_W11, coverage_ratio=0.3)
     r = analyze_mse_wall(_strip_wall(), 20.0, 34.0, grid)
     (c,) = [c for c in r.choices if c["what"].startswith("Coverage ratio")]
@@ -236,7 +254,7 @@ def test_a_Cu_beside_a_tested_F_star_is_said_to_be_in_no_check():
         "the empirical F*, Eqs. 3-4 and 3-5 at Cu 7 (F* 2.00 at the top)")
     geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0,
                            reinforcement_spacing=0.6)
-    g = analyze_mse_wall(geom, 19.0, 34.0, GEOGRID_UX1600,
+    g = analyze_mse_wall(geom, 19.0, 34.0, GEOGRID_GEC11_E1_GG1,
                          F_star_tested=0.6, Cu_backfill=2.5)
     assert not [c for c in g.choices if "(Cu_backfill)" in c["what"]]
     (c,) = [c for c in g.choices if "(F_star_tested)" in c["what"]]
@@ -300,16 +318,18 @@ def test_the_calc_steps_carry_Rc():
                 "reinforcement": strip,
                 "F_star_tested": [[0.0, 1.6], [6.0, 0.8]]}
     inputs = {i.name: i.value for i in get_input_summary(r, analysis)}
-    assert inputs["R_c"] == "0.100" and inputs["S_h"] == "0.750"
+    # GM-267: the 50 mm strip, b 0.05 m / Sh 0.75 m (0.100 at 75 mm)
+    assert inputs["R_c"] == "0.067" and inputs["S_h"] == "0.750"
     items = [it for sec in get_calc_steps(r, analysis) for it in sec.items]
     by_title = {getattr(it, "title", ""): it for it in items}
     assert by_title["Pullout Resistance"].equation.endswith("× C × R_c")
-    assert "R_c = 0.100" in by_title["Pullout Resistance"].substitution
-    # 47.9 kN a strip / 0.75 m since the GM-262 review (43.1 before)
+    assert "R_c = 0.067" in by_title["Pullout Resistance"].substitution
+    # 31.9 kN a 50 mm strip / 0.75 m since GM-267 (47.9 kN a 75 mm strip
+    # since the GM-262 review, 63.9; 43.1 before)
     assert by_title["Tensile Resistance per Metre of Wall"].result_value == \
-        "63.9"
+        "42.6"
     tested = by_title["Pullout Resistance Factor F* (from pullout tests)"]
     assert tested.substitution == "F* 1.6 at 0 m, 0.8 at 6 m (linear between)"
     table = by_title["Internal Stability per Reinforcement Level"]
     assert "T_al R_c (kN/m)" in table.headers
-    assert table.rows[0][3] == "63.9"
+    assert table.rows[0][3] == "42.6"

@@ -23,8 +23,8 @@ E3 = {"wall_height": 30 * FT, "reinforcement_length": 24 * FT,
       "bearing_resistance_service": 7.5 * KSF}
 
 MSE = {"wall_height": 6, "gamma_backfill": 19, "phi_backfill": 34,
-       "reinforcement_name": "ribbed_steel_strip_75x4",
-       "reinforcement_horizontal_spacing": 0.75}     # GM-256: Rc 0.1
+       "reinforcement_name": "ribbed_steel_strip_50x4",
+       "reinforcement_horizontal_spacing": 0.75}     # Rc 0.0667 (GM-267)
 
 
 def _call(method, params):

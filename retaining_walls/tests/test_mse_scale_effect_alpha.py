@@ -23,8 +23,8 @@ from retaining_walls.mse import (
     analyze_mse_wall, check_internal_stability, pullout_alpha, table_alpha,
 )
 from retaining_walls.reinforcement import (
-    GEOGRID_UX1600, GEOGRID_UX1700, RIBBED_STEEL_STRIP_75x4, Reinforcement,
-    WELDED_WIRE_GRID_W11,
+    GEOGRID_GEC11_E1_GG1, GEOGRID_GEC11_E1_GG2, RIBBED_STEEL_STRIP_50x4,
+    Reinforcement, WELDED_WIRE_GRID_W11,
 )
 
 
@@ -50,26 +50,29 @@ def _alpha_choice(r):
 
 
 def test_table_3_6_by_type():
-    assert table_alpha(RIBBED_STEEL_STRIP_75x4) == 1.0
+    assert table_alpha(RIBBED_STEEL_STRIP_50x4) == 1.0
     assert table_alpha(WELDED_WIRE_GRID_W11) == 1.0
-    assert table_alpha(GEOGRID_UX1600) == table_alpha(GEOGRID_UX1700) == 0.8
+    assert table_alpha(GEOGRID_GEC11_E1_GG1) == \
+        table_alpha(GEOGRID_GEC11_E1_GG2) == 0.8
     assert table_alpha(_geotextile()) == 0.6
     assert table_alpha(Reinforcement("g", "geosynthetic", 20.0)) is None
-    assert pullout_alpha(GEOGRID_UX1600, 0.95) == 0.95
+    assert pullout_alpha(GEOGRID_GEC11_E1_GG1, 0.95) == 0.95
 
 
 def test_a_geogrid_wall_before_and_after():
     """FOS_pullout 10.493 to 25.792 at the alpha 1.0 taken before; 8.394 to
-    20.633 at Table 3-6's 0.8. Rupture does not take alpha: 1.192."""
-    lo, hi, ru = _pullout(GEOGRID_UX1600)
+    20.633 at Table 3-6's 0.8. Rupture does not take alpha: 0.862 on E1's
+    GG-I since GM-271 (1.192 on the retired built-in geogrid's 21.9
+    kN/m)."""
+    lo, hi, ru = _pullout(GEOGRID_GEC11_E1_GG1)
     assert (lo, hi) == (pytest.approx(8.394, abs=1e-3),
                         pytest.approx(20.633, abs=1e-3))
-    assert ru == pytest.approx(1.192, abs=1e-3)
-    lo1, hi1, ru1 = _pullout(GEOGRID_UX1600, alpha_tested=1.0)
+    assert ru == pytest.approx(0.862, abs=1e-3)
+    lo1, hi1, ru1 = _pullout(GEOGRID_GEC11_E1_GG1, alpha_tested=1.0)
     assert (lo1, hi1) == (pytest.approx(10.493, abs=1e-3),
                           pytest.approx(25.792, abs=1e-3))
     assert ru1 == ru
-    r = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_UX1600)
+    r = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1)
     c = _alpha_choice(r)
     assert c["how"] == "default"
     assert c["chosen"] == ("alpha 0.8, GEC-11 Vol I Table 3-6's default "
@@ -122,7 +125,7 @@ def test_a_tested_alpha_is_kept_and_set_beside_the_printed_ones():
     assert a8.startswith("alpha 0.8, Table 3-6's default value for geogrids")
     assert a6.startswith("alpha 0.6, Table 3-6's default value for "
                          "geotextiles")
-    grid = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_UX1600,
+    grid = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1,
                             alpha_tested=1.0)
     assert {lv["alpha"] for lv in grid.internal_results} == {1.0}
     (alt,) = _alpha_choice(grid)["alternatives"]
@@ -131,7 +134,7 @@ def test_a_tested_alpha_is_kept_and_set_beside_the_printed_ones():
 
 
 def test_steel_takes_1_and_a_steel_grid_says_note_star():
-    strip = dataclasses.replace(RIBBED_STEEL_STRIP_75x4,
+    strip = dataclasses.replace(RIBBED_STEEL_STRIP_50x4,
                                 horizontal_spacing=0.75)
     r = analyze_mse_wall(_wall(), 19.0, 34.0, strip)
     assert {lv["alpha"] for lv in r.internal_results} == {1.0}
@@ -149,9 +152,9 @@ def test_steel_takes_1_and_a_steel_grid_says_note_star():
 
 
 def test_the_calc_steps_name_the_table():
-    r = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_UX1600)
+    r = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1)
     analysis = {"wall_type": "mse", "geom": _wall(), "gamma_backfill": 19.0,
-                "phi_backfill": 34.0, "reinforcement": GEOGRID_UX1600}
+                "phi_backfill": 34.0, "reinforcement": GEOGRID_GEC11_E1_GG1}
     items = [it for sec in get_calc_steps(r, analysis) for it in sec.items]
     (step,) = [it for it in items
                if getattr(it, "title", "") == "Pullout Resistance"]

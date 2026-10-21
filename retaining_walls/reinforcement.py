@@ -1,7 +1,8 @@
 """
 MSE wall reinforcement properties.
 
-Defines reinforcement types and built-in common products.
+Defines reinforcement types and the built-in reinforcements, each as a
+GEC-11 Vol II worked example prints it (GM-262, GM-267, GM-271).
 
 All units are SI: kN/m, m, kPa.
 
@@ -68,6 +69,18 @@ def steel_grid_Tal(n_longitudinal: int, D_corroded: float, Fy: float,
             "positive corroded diameter, Fy and grid width b")
     Ac = n_longitudinal * math.pi * D_corroded ** 2 / 4.0
     return fraction * Fy * Ac / b
+
+
+def geosynthetic_Tal(T_ult: float, RF_ID: float, RF_CR: float,
+                     RF_D: float) -> float:
+    """Tal of a geosynthetic, the long-term strength Tult / RF with RF =
+    RFID x RFCR x RFD (GEC-11 Vol I Eq. 3-12, p. 3-28; GM-271), in the
+    units of ``T_ult``. The rupture check takes it at a factor of safety
+    of 1.5 (``mse.rupture_FOS_required``)."""
+    if T_ult <= 0 or min(RF_ID, RF_CR, RF_D) < 1:
+        raise ValueError("geosynthetic_Tal needs a positive Tult and "
+                         "reduction factors of at least 1")
+    return T_ult / (RF_ID * RF_CR * RF_D)
 
 
 def _per_level(value, name):
@@ -214,13 +227,14 @@ class Reinforcement:
         return None
 
 
-# Built-in reinforcement types, not a manufacturer's catalog (DESIGN.md).
-# A steel strip or grid has no coverage ratio of its own: the wall's
-# horizontal spacing Sh sets it, Rc = b/Sh (GEC-11 Vol I Eq. 3-1), and a
-# call gives Sh or Rc (GM-256).
+# Built-in reinforcements, each as a GEC-11 Vol II worked example prints it
+# (DESIGN.md), not a manufacturer's catalog. A steel strip or grid has no
+# coverage ratio of its own: the wall's horizontal spacing Sh sets it, Rc =
+# b/Sh (GEC-11 Vol I Eq. 3-1), and a call gives Sh or Rc (GM-256).
 _IN = 0.0254
 _FT = 0.3048
 _KSI = 6894.757                 # kPa
+_LB_PER_FT = 4.4482216 / _FT / 1000.0    # kN/m
 _FY_GRADE_65 = 65.0 * _KSI
 
 # GEC-11 Vol II Example E3's strip, read on the page (GM-262 review):
@@ -231,6 +245,35 @@ _FY_GRADE_65 = 65.0 * _KSI
 _E3_EC = 0.102 * _IN
 
 STRIP_BASIS = (
+    "GEC-11 Vol II Example E3's strip, 'Grade 65 (Fy = 65 ksi), 1.969 in. "
+    "x 0.157 in. (50 mm wide x 4 mm) thick galvanized steel ribbed strips' "
+    "(p. E3-16), the ribbed strip GEC-11 Vol I gives as 'currently "
+    "commercially available' (p. 2-16): b = 50 mm. After E3's 75-year design "
+    "life Ec = 0.157 in. - 0.055 in. = 0.102 in. (2.59 mm; p. E3-16: the "
+    "zinc gone in 16 years, then 0.47 mil/year/side of steel for 59). Tal = "
+    "0.55 Fy Ec per metre of strip width (Vol I Eq. 3-11a, p. 3-22, with Ac "
+    "= b Ec, Fig. 3-5a, p. 3-24; '0.55 Fy for strips', p. 4-77, the "
+    "allowable for a check at a factor of safety of 1.0 on the unfactored "
+    "Tmax): 638.6 kN/m of strip width, 31.9 kN a strip (E3: Tn = 65 ksi x "
+    "0.200 in.^2 = 13.00 k a strip, 0.55 Tn = 7.15 k = 31.8 kN). Another "
+    "strip, design life or backfill is a custom reinforcement "
+    "(reinforcement_Tallowable)")
+
+RIBBED_STEEL_STRIP_50x4 = Reinforcement(
+    name="Ribbed steel strip 50 x 4 mm (GEC-11 Vol II Example E3)",
+    type="metallic_strip",
+    # kN/m of strip width, times Rc per metre of wall (GM-256)
+    Tallowable=steel_strip_Tal(_E3_EC, _FY_GRADE_65, STRIP_ALLOWABLE_FY),
+    width=0.050,                    # 1.969 in.; E3's b = 0.164 ft (p. E3-18)
+    Fy=_FY_GRADE_65,
+    thickness=0.004,
+    basis=STRIP_BASIS,
+)
+
+# Retained for the retired foundry/ wrapper only, which imports it; no
+# longer offered: the tool refuses its name and gives the 50 mm strip
+# instead (GM-267). Its 75 mm width was the tool's own.
+_STRIP_75_BASIS = (
     "Tal = 0.55 Fy Ec per metre of strip width (GEC-11 Vol I Eq. 3-11a, "
     "p. 3-22, with Ac = b Ec, Fig. 3-5a, p. 3-24; '0.55 Fy for strips', p. "
     "4-77, the allowable for a check at a factor of safety of 1.0 on the "
@@ -252,7 +295,7 @@ RIBBED_STEEL_STRIP_75x4 = Reinforcement(
     width=0.075,
     Fy=_FY_GRADE_65,
     thickness=0.004,
-    basis=STRIP_BASIS,
+    basis=_STRIP_75_BASIS,
 )
 
 # GEC-11 Vol II (FHWA-NHI-10-025) Example E4's bar mat at Levels 1, 3 and
@@ -302,13 +345,61 @@ WELDED_WIRE_GRID_W11 = Reinforcement(
     basis=W11_MAT_BASIS,
 )
 
-# The geogrids are type "geogrid": GEC-11 Vol I Table 3-6's alpha 0.8 for
-# extensible grids (p. 3-17). They took alpha 1.0 as "geosynthetic" before
-# GM-256.
-#: The geogrids' Tal has no recorded source (GM-262 review): the code
-#: called it the long-term design strength after creep, installation
-#: damage and durability, GEC-11's Tal = Tult / RF, and the rupture check
-#: takes it so, at a factor of safety of 1.5 (mse.rupture_FOS_required).
+# GEC-11 Vol II (FHWA-NHI-10-025) Example E1's geogrids, read on the pages
+# (GM-271). Table E1-7.3 (p. E1-15), "Geogrid Nominal and Factored
+# Resistance": Tult 3,000, 6,000 and 9,000 lb/ft for GG-I, GG-II and
+# GG-III, RFCR 1.85 and RFD 1.15 for all three, RFID 1.3, 1.3 and 1.2, Tal
+# 1,085, 2,169 and 3,525 lb/ft, Tr = 0.90 Tal. Table E1-7.1 (p. E1-11)
+# lists the three grades' ultimate tensile strengths as 6,000, 9,000 and
+# 12,000 lb/ft; E1's Tal and its rupture CDRs (Table E1-7.4, p. E1-16)
+# follow Table E1-7.3, and so do these. Step 7.8 (p. E1-16): "F* = Pullout
+# resistance factor, = 0.45 for these geogrids", "alpha = Scale correction
+# factor, = 0.8 for these geogrids", C = 2, Rc = 1. Type "geogrid": GEC-11
+# Vol I Table 3-6's alpha 0.8 for extensible grids (p. 3-17).
+_E1_RF_CR = 1.85
+_E1_RF_D = 1.15
+#: grade: (Tult lb/ft, RFID, Tal lb/ft as printed), Table E1-7.3
+_E1_GEOGRIDS = {"GG-I": (3000.0, 1.3, 1085), "GG-II": (6000.0, 1.3, 2169),
+                "GG-III": (9000.0, 1.2, 3525)}
+#: grade: ultimate tensile strength lb/ft, Table E1-7.1
+_E1_TABLE_7_1 = {"GG-I": 6000, "GG-II": 9000, "GG-III": 12000}
+
+_E1_GEOGRID_BASIS = (
+    "GEC-11 Vol II Example E1's geogrid {grade}, as Table E1-7.3 (p. E1-15) "
+    "prints it: Tult {Tult:,.0f} lb/ft, RFCR 1.85, RFD 1.15, RFID {RFID:g}; "
+    "Tal = Tult / (RFID x RFCR x RFD) (Vol I Eq. 3-12, p. 3-28) = "
+    "{Tal_lb:,} lb/ft, {Tal:.4g} kN/m. Table E1-7.1 (p. E1-11) lists "
+    "{grade}'s ultimate tensile strength as {T71:,} lb/ft; E1's Tal and its "
+    "rupture CDRs (Table E1-7.4, p. E1-16) follow Table E1-7.3, as this "
+    "does. For pullout E1 takes F* = 0.45 (0.67 tan 34 deg) and alpha = 0.8 "
+    "'for these geogrids', with C = 2 and Rc = 1 (Step 7.8, p. E1-16); this "
+    "tool takes the same for a geogrid, F* = 0.67 tan phi_backfill (Vol I "
+    "Eq. 3-8, p. 3-21) and alpha 0.8 (Table 3-6, p. 3-17). The reduction "
+    "factors are E1's; a product's own Tult and RF for the wall's backfill "
+    "and design life are a custom reinforcement (reinforcement_Tallowable "
+    "with reinforcement_type 'geogrid')")
+
+
+def _e1_geogrid(grade: str) -> Reinforcement:
+    T_ult, RF_ID, Tal_lb = _E1_GEOGRIDS[grade]
+    Tal = geosynthetic_Tal(T_ult, RF_ID, _E1_RF_CR, _E1_RF_D) * _LB_PER_FT
+    return Reinforcement(
+        name=f"Geogrid {grade} (GEC-11 Vol II Example E1)",
+        type="geogrid",
+        Tallowable=Tal,                 # kN/m, Tult / RF
+        basis=_E1_GEOGRID_BASIS.format(
+            grade=grade, Tult=T_ult, RFID=RF_ID, Tal_lb=Tal_lb, Tal=Tal,
+            T71=_E1_TABLE_7_1[grade]),
+    )
+
+
+GEOGRID_GEC11_E1_GG1 = _e1_geogrid("GG-I")      # Tal 15.83 kN/m
+GEOGRID_GEC11_E1_GG2 = _e1_geogrid("GG-II")     # Tal 31.66 kN/m
+GEOGRID_GEC11_E1_GG3 = _e1_geogrid("GG-III")    # Tal 51.45 kN/m
+
+# Retained for the retired foundry/ wrapper only, which imports them; no
+# longer offered: the tool refuses their names and gives E1's geogrids or a
+# custom Tal instead (GM-271). Their Tal had no recorded source.
 _GEOGRID_BASIS = (
     "the long-term strength after installation damage, creep and "
     "durability, Tult / RF (GEC-11 Vol I Eq. 3-12, p. 3-28): {Tal:g} kN/m "
