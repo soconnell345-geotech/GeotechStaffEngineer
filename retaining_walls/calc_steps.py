@@ -187,19 +187,52 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
     return items
 
 
-def _per_level_text(values) -> str:
+def _per_level_text(values, fmt=".3f") -> str:
     """A value given for the wall, or per level from the top (GM-261):
-    runs of the same value as 'v x n'."""
+    runs of the same value as 'v x n'; a level with none, a dash."""
+    def one(v):
+        return "—" if v is None else f"{v:{fmt}}"
     if not isinstance(values, (list, tuple)):
-        return f"{values:.3f}"
+        return one(values)
     runs = []
     for v in values:
         if runs and runs[-1][0] == v:
             runs[-1][1] += 1
         else:
             runs.append([v, 1])
-    return ", ".join(f"{v:.3f}" + (f" × {n}" if n > 1 else "")
+    return ", ".join(one(v) + (f" × {n}" if n > 1 else "")
                      for v, n in runs)
+
+
+def _level_reinforcements(reinforcement, geom):
+    """The reinforcement at each level and whether it was given per level
+    (GM-266), or (None, False) with none."""
+    if reinforcement is None:
+        return None, False
+    from retaining_walls import mse as _mse
+    return (_mse.level_reinforcements(reinforcement,
+                                      geom.reinforcement_depths),
+            isinstance(reinforcement, (list, tuple)))
+
+
+def _reinforcement_keys(rs):
+    """A letter for each distinct reinforcement, in the order they first
+    appear from the top, for a table column and its notes (GM-266): the
+    name with its Tal -> the letter."""
+    keys = {}
+    for r in rs:
+        keys.setdefault(_reinforcement_label(r), chr(ord("A") + len(keys)))
+    return keys
+
+
+def _reinforcement_label(r) -> str:
+    return f"{r.name}, T_al {r.Tallowable:.4g} kN/m"
+
+
+def _kind_text(r) -> str:
+    return ("Metallic" if r.is_metallic else
+            {"geogrid": "Geogrid", "geotextile": "Geotextile"}.get(
+                r.type, "Geosynthetic"))
 
 
 def _from_top(values) -> str:
@@ -235,7 +268,37 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
         InputItem("\u03c6_backfill", "Backfill friction angle", f"{phi:.1f}", "deg"),
     ])
 
-    if reinforcement is not None:
+    rs, per_r = _level_reinforcements(reinforcement, geom)
+    if per_r:
+        # GM-266: a reinforcement per level, each with its own Tal, b, Sh
+        from retaining_walls import mse as _mse
+        keys = _reinforcement_keys(rs)
+        items.extend([
+            InputItem("Reinf.", "Reinforcement per level, from the top",
+                      _per_level_text(tuple(keys[_reinforcement_label(r)]
+                                            for r in rs), "s")
+                      + " (" + "; ".join(f"{k} = {n}" for n, k
+                                         in keys.items()) + ")", ""),
+            InputItem("T_al", "Allowable tensile strength per unit width of "
+                      "reinforcement, per level from the top",
+                      _per_level_text(tuple(r.Tallowable for r in rs),
+                                      ".1f"), "kN/m"),
+            InputItem("Type_r", "Reinforcement type", _kind_text(rs[0]), ""),
+        ])
+        if any(r.horizontal_spacing is not None for r in rs):
+            items.extend([
+                InputItem("b", "Reinforcement width, per level from the top",
+                          _per_level_text(tuple(r.width for r in rs)), "m"),
+                InputItem("S_h", "Horizontal spacing, centre to centre, per "
+                          "level from the top",
+                          _per_level_text(tuple(r.horizontal_spacing
+                                                for r in rs)), "m"),
+            ])
+        Rcs = _mse.coverage_ratios(reinforcement, geom.reinforcement_depths)
+        items.append(InputItem(
+            "R_c", "Coverage ratio b/S_h (1 for a continuous layer), per "
+            "level from the top", _per_level_text(tuple(Rcs)), ""))
+    elif reinforcement is not None:
         items.extend([
             InputItem("Reinf.", "Reinforcement product", reinforcement.name, ""),
             InputItem("T_al", "Allowable tensile strength per unit width of "
@@ -1129,7 +1192,18 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     # ── Section 3: Internal Stability ──────────────────────────
     int_items = []
 
-    r_type = "Metallic" if (reinforcement and reinforcement.is_metallic) else "Geosynthetic"
+    rs, per_r = _level_reinforcements(reinforcement, geom)
+    first = rs[0] if rs else None
+    r_type = "Metallic" if (first and first.is_metallic) else "Geosynthetic"
+    # GM-266: the curve for each kind of steel reinforcement the wall has
+    kr_text = "; ".join(
+        text for kind, text in (
+            ("strip", "strips: Kr/Ka = 1.7 at z=0 to 1.2 at z\u226520 ft "
+                      "(6.096 m)"),
+            ("grid", "bar mats and welded wire grids: Kr/Ka = 2.5 at z=0 "
+                     "to 1.2 at z\u226520 ft (6.096 m)"))
+        if any((r.is_grid if kind == "grid" else not r.is_grid)
+               for r in (rs or [])))
 
     int_items.append(CalcStep(
         title="Lateral Earth Pressure Ratio (Kr/Ka)",
@@ -1137,7 +1211,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                  if r_type == "Metallic"
                  else "Kr/Ka = 1.0 for geosynthetic reinforcement",
         substitution=(
-            "Metallic: Kr/Ka = 1.7 at z=0 to 1.2 at z\u226520 ft (6.096 m)"
+            "Metallic " + kr_text
             if r_type == "Metallic"
             else "Geosynthetic: Kr/Ka = 1.0 (constant)"
         ),
@@ -1169,7 +1243,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             reference="GEC-11 Vol I Table 3-6 note (i) (p. 3-17), "
                       "Appendix B",
         ))
-    elif reinforcement is not None and _mse.uses_strip_F_star(reinforcement):
+    elif rs is not None and any(_mse.uses_strip_F_star(r) for r in rs):
         # GM-246: the ribbed steel strip F*, from the backfill's Cu
         cu_given = _get(analysis, "Cu_backfill")
         cu = _mse.CU_UNKNOWN if cu_given is None else cu_given
@@ -1197,14 +1271,18 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         ))
 
     # GM-261: one R_c a level when the spacing is given per level
-    per_level = reinforcement is not None and reinforcement.per_level
+    per_level = reinforcement is not None and (
+        per_r or reinforcement.per_level)
     Rcs = (_mse.coverage_ratios(reinforcement, geom.reinforcement_depths)
            if reinforcement is not None else [1.0])
     Rc_text = (_per_level_text(tuple(Rcs)) + " per level from the top"
                if per_level else f"{Rcs[0]:.3f}")
     alpha_t = _get(analysis, "alpha_tested")
-    alpha = (_mse.pullout_alpha(reinforcement, alpha_t) if reinforcement
-             else alpha_t if alpha_t is not None else 1.0)
+    alphas = ([_mse.pullout_alpha(r, alpha_t) for r in rs] if rs
+              else [alpha_t if alpha_t is not None else 1.0])
+    alpha_text = (f"{alphas[0]:g}" if len(set(alphas)) == 1 else
+                  _per_level_text(tuple(alphas), "g")
+                  + " per level from the top")
     int_items.append(CalcStep(
         title="Pullout Resistance",
         equation=("P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e "
@@ -1216,7 +1294,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
              if r_type == "Metallic" else
              "L_e = L - L_a; L_a from Rankine 45+\u03c6/2 plane "
              "(extensible/geosynthetic reinforcement)")
-            + f"; C = 2; \u03b1 = {alpha:g}"
+            + f"; C = 2; \u03b1 = {alpha_text}"
             + (" (from pullout tests)" if alpha_t is not None
                else " (GEC-11 Table 3-6, p. 3-17)")
             + f"; R_c = {Rc_text}"
@@ -1232,7 +1310,25 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     # Tult / RF (GEC-11's 1.35 / phi)
     FS_ru = (_mse.rupture_FOS_required(reinforcement)
              if reinforcement is not None else 1.0)
-    if reinforcement is not None:
+    if per_r:
+        # GM-266: each level's own Tal times its own R_c
+        tal_rc = [r.Tallowable * Rc for r, Rc in zip(rs, Rcs)]
+        int_items.append(CalcStep(
+            title="Tensile Resistance per Metre of Wall",
+            equation=("T_al \u00d7 R_c \u2265 T_max" if FS_ru == 1.0 else
+                      f"T_al \u00d7 R_c \u2265 {FS_ru:g} T_max"),
+            substitution=(
+                "T_al " + _per_level_text(tuple(r.Tallowable for r in rs),
+                                          ".1f")
+                + " kN/m of reinforcement width per level from the top "
+                f"\u00d7 R_c {Rc_text}"),
+            result_name="T_al \u00d7 R_c",
+            result_value=f"{min(tal_rc):.1f} to {max(tal_rc):.1f}",
+            result_unit="kN/m of wall",
+            reference="GEC-11 Vol I Eq. 3-11a (p. 3-22), p. 4-47, "
+                      "Eqs. 4-33 and 4-34 (pp. 4-48, 4-49)",
+        ))
+    elif reinforcement is not None:
         int_items.append(CalcStep(
             title="Tensile Resistance per Metre of Wall",
             equation=("T_al \u00d7 R_c \u2265 T_max" if FS_ru == 1.0 else
@@ -1252,10 +1348,12 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     # Per-level results table
     if result.internal_results:
         int_rows = []
-        for r in result.internal_results:
+        keys = _reinforcement_keys(rs) if per_r else {}
+        for i, r in enumerate(result.internal_results):
             status = "OK" if r.get("passes", False) else "FAIL"
             int_rows.append([
-                f"{r['depth_m']:.2f}",
+                f"{r['depth_m']:.2f}"] + (
+                [keys[_reinforcement_label(rs[i])]] if per_r else []) + [
                 f"{r.get('Kr_Ka', 0):.3f}",
                 f"{r['Tmax_kN_per_m']:.2f}",
                 f"{r.get('Tal_Rc_kN_per_m', 0):.1f}",
@@ -1269,7 +1367,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
         int_items.append(TableData(
             title="Internal Stability per Reinforcement Level",
-            headers=["z (m)", "Kr/Ka", "T_max (kN/m)", "T_al R_c (kN/m)",
+            headers=["z (m)"] + (["Reinf."] if per_r else []) + [
+                     "Kr/Ka", "T_max (kN/m)", "T_al R_c (kN/m)",
                      "L_e (m)", "F*", "P_r (kN/m)",
                      "FOS_po", "FOS_ru", "Status"],
             rows=int_rows,
@@ -1280,7 +1379,9 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                    f"{FS_ru:g} (1.35 / phi 0.90 on T_al = T_ult / RF). ")
                 + f"T_al R_c and P_r per metre of wall, coverage ratio "
                 f"R_c = {Rc_text}. "
-                f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}"
+                + ("Reinforcement per level: " + "; ".join(
+                    f"{k} = {n}" for n, k in keys.items()) if per_r else
+                   f"Reinforcement: {reinforcement.name if reinforcement else 'N/A'}")
             ),
         ))
 
@@ -1895,15 +1996,23 @@ def _plot_mse_section(result, analysis):
     ax.plot([0, 0], [0, H], 'k-', linewidth=3)
 
     # Reinforcement layers
-    r_color = '#2563eb' if (reinforcement and reinforcement.is_metallic) else '#16a34a'
-    for z in geom.reinforcement_depths:
+    rs, per_r = _level_reinforcements(reinforcement, geom)
+    first = rs[0] if rs else None
+    r_color = '#2563eb' if (first and first.is_metallic) else '#16a34a'
+    # GM-266: one line style a reinforcement when given per level
+    styles = ['-', '--', '-.', ':']
+    keys = _reinforcement_keys(rs) if per_r else {}
+    for i, z in enumerate(geom.reinforcement_depths):
         y = H - z  # convert depth to elevation
-        ax.plot([0, L], [y, y], color=r_color, linewidth=1.5, alpha=0.7)
+        style = (styles[(ord(keys[_reinforcement_label(rs[i])])
+                         - ord("A")) % len(styles)] if per_r else '-')
+        ax.plot([0, L], [y, y], color=r_color, linewidth=1.5, alpha=0.7,
+                linestyle=style)
         ax.plot(L, y, '|', color=r_color, markersize=8, markeredgewidth=2)
 
     # Failure surface: bilinear coherent-gravity surface for inextensible
     # (metallic) reinforcement, Rankine 45+phi/2 plane for extensible (RW-2)
-    if reinforcement is not None and reinforcement.is_metallic:
+    if first is not None and first.is_metallic:
         x_fail_top = 0.3 * H
         ax.plot([0, 0.3 * H, 0.3 * H], [0, H / 2.0, H], 'r--',
                 linewidth=2, alpha=0.7,
@@ -1968,7 +2077,7 @@ def _plot_mse_section(result, analysis):
     levels = sorted(H - z for z in geom.reinforcement_depths)
     bands = list(zip(levels, levels[1:])) or [(0.4 * H, 0.6 * H)]
     lo, hi = min(bands, key=lambda b: abs((b[0] + b[1]) / 2 - H / 2))
-    if reinforcement is not None and reinforcement.is_metallic:
+    if first is not None and first.is_metallic:
         x_surface = x_fail_top * min(1.0, hi / (H / 2.0))
     else:
         x_surface = x_fail_top * hi / H
@@ -1980,8 +2089,14 @@ def _plot_mse_section(result, analysis):
             fontsize=9, alpha=0.5)
 
     # Reinforcement legend
-    r_name = reinforcement.name if reinforcement else "Reinforcement"
-    ax.plot([], [], color=r_color, linewidth=2, label=r_name)
+    if per_r:
+        for name, k in keys.items():
+            ax.plot([], [], color=r_color, linewidth=2,
+                    linestyle=styles[(ord(k) - ord("A")) % len(styles)],
+                    label=name)
+    else:
+        r_name = reinforcement.name if reinforcement else "Reinforcement"
+        ax.plot([], [], color=r_color, linewidth=2, label=r_name)
 
     # The factors of safety head the key, under the drawing: the box in
     # the axes covered the zone's top corner and the key covered L at the

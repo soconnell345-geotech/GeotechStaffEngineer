@@ -155,7 +155,7 @@ def test_the_mats_flexible_facing_reading_is_offered():
         assert words in facing, words
 
 
-def test_a_rupture_below_one_says_one_reinforcement_is_taken_at_every_level():
+def test_a_rupture_below_one_offers_a_stronger_mat_at_those_levels():
     """At E4's layout the 4W11 mat's FOS_rupture is below 1.0 from 3.43 m
     (11.25 ft) down, 0.726 at the bottom: E4 itself changes to 4W15 mats
     from Level 5 (11.87 ft), where four W11 wires carry 0.95 of the
@@ -166,8 +166,11 @@ def test_a_rupture_below_one_says_one_reinforcement_is_taken_at_every_level():
                                        _e4_mat()))
     assert ("FOS_rupture is below 1.0 at 6 levels, z = 3.43 to 7.24 m "
             "(lowest 0.726)") in tal["chosen"]
-    (one,) = [a for a in tal["alternatives"] if "one reinforcement" in a]
+    (one,) = [a for a in tal["alternatives"]
+              if "reinforcement_per_level" in a]
     assert "reinforcement_horizontal_spacing per level" in one
+    # GM-266: a stronger mat at those levels, as E4 takes from Level 5
+    assert "4W15 mats from Level 5 down (Table E4-7.4, p. E4-18)" in one
     w15 = steel_grid_Tal(4, 0.381 * IN, 65.0 * KSI, 1.5 * FT,
                          BAR_MAT_ALLOWABLE_FY)
     assert w15 == pytest.approx(138.4, abs=0.05)

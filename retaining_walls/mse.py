@@ -175,8 +175,21 @@ def coverage_ratios(reinforcement: Reinforcement,
     II Example E3 changes Sh with depth (Table E3-7.3, p. E3-19); a single
     value holds at every level. A list whose length is not the number of
     levels is refused, naming the levels; otherwise as
-    :func:`coverage_ratio`."""
+    :func:`coverage_ratio`. A reinforcement given per level (a list, one a
+    level; :func:`level_reinforcements`, GM-266) takes each level's own
+    width and Sh or Rc."""
     r = reinforcement
+    if not isinstance(r, Reinforcement):
+        out = []
+        for i, ri in enumerate(level_reinforcements(r, depths), start=1):
+            try:
+                _not_both(ri)
+                out.append(_coverage_at(ri, ri.coverage_ratio,
+                                        ri.horizontal_spacing, level=i))
+            except ValueError as e:
+                raise ValueError(f"level {i} from the top ({ri.name}): "
+                                 f"{e}") from None
+        return out
     _not_both(r)
     n = len(depths)
     for name, given, values in (
@@ -196,6 +209,91 @@ def coverage_ratios(reinforcement: Reinforcement,
                          at(r.horizontal_spacing, i),
                          level=i + 1 if r.per_level else None)
             for i in range(n)]
+
+
+#: GEC-11 Vol I, read on the rendered page (GM-266). The refusal is this
+#: tool's choice, not a rule GEC-11 states: GEC-11 draws the surface (and
+#: Kr/Ka, F*) for one kind or the other and is silent on a wall with both.
+ONE_KIND_PER_WALL = (
+    "this tool takes a reinforcement per level only when every level is "
+    "inextensible (steel) or every level extensible (geosynthetic), since "
+    "the internal checks need one critical failure surface: GEC-11 Vol I "
+    "p. 4-33 takes it as 'approximately bilinear in the case of "
+    "inextensible reinforcements' and 'approximately linear in the case of "
+    "extensible reinforcements' (Fig. 4-9, p. 4-34), through the toe of "
+    "the wall in both cases, and gives no surface for a wall that mixes "
+    "them; got {got}. Run the wall with one kind, or check a mixed wall "
+    "outside this tool")
+
+
+def level_reinforcements(reinforcement, depths: Sequence[float]
+                         ) -> List[Reinforcement]:
+    """The reinforcement at each level, the levels at ``depths`` (m) from
+    the top down (GM-266): one :class:`Reinforcement` at every level, or a
+    list of them, one a level, as GEC-11 Vol II Example E4 takes 4W11 mats
+    at Levels 1, 3 and 4, a 3W11 mat at Level 2 and 4W15 mats from Level 5
+    down (Table E4-7.4, p. E4-18). A list is refused when its length is not
+    the number of levels (naming the levels), when it mixes steel with
+    geosynthetic reinforcement (:data:`ONE_KIND_PER_WALL`), and when an
+    entry gives its spacing or coverage ratio per level: each entry is one
+    level's, with its own Sh or Rc."""
+    if isinstance(reinforcement, Reinforcement):
+        return [reinforcement] * len(depths)
+    rs = (list(reinforcement)
+          if isinstance(reinforcement, (list, tuple)) else [])
+    if not rs or not all(isinstance(r, Reinforcement) for r in rs):
+        raise ValueError(
+            "reinforcement is one Reinforcement for every level, or a list "
+            "of them, one per reinforcement level from the top down; got "
+            f"{reinforcement!r}")
+    n = len(depths)
+    if len(rs) != n:
+        raise ValueError(
+            f"reinforcement_per_level gives {len(rs)} reinforcements, one "
+            "per reinforcement level from the top down, and this wall has "
+            f"{n} levels, at depths " + ", ".join(f"{z:.2f}" for z in depths)
+            + " m (the reinforcement spacing Sv sets them)")
+    if len({r.is_metallic for r in rs}) > 1:
+        kinds = ["steel" if r.is_metallic else "geosynthetic" for r in rs]
+        raise ValueError(ONE_KIND_PER_WALL.format(got=" and ".join(
+            f"{kind} at {_levels_of(spans)}"
+            for kind, spans in _grouped(kinds))))
+    for i, r in enumerate(rs, start=1):
+        if r.per_level:
+            raise ValueError(
+                f"level {i}'s reinforcement ({r.name}) gives its horizontal "
+                "spacing or coverage ratio per level; in a reinforcement "
+                "given per level each entry is one level's, with one Sh or "
+                "Rc")
+    return rs
+
+
+def _grouped(values, key=None):
+    """Each distinct value (by ``key``) with the spans of levels holding
+    it, in the order the values first appear from the top: [(value,
+    [(first, last), ...]), ...], levels counted from 1 (GM-266)."""
+    key = key or (lambda v: v)
+    out = []
+    for first, last, v in _level_runs([key(v) for v in values]):
+        for entry in out:
+            if entry[0] == v:
+                entry[1].append((first, last))
+                break
+        else:
+            out.append((v, [(first, last)]))
+    # the values themselves, not their keys
+    firsts = {}
+    for i, v in enumerate(values, start=1):
+        firsts.setdefault(key(v), v)
+    return [(firsts[k], spans) for k, spans in out]
+
+
+def _levels_of(spans):
+    """'level 2', 'levels 5-7' or 'levels 1, 3-4'."""
+    if len(spans) == 1:
+        return _levels(*spans[0])
+    return "levels " + ", ".join(str(a) if a == z else f"{a}-{z}"
+                                 for a, z in spans)
 
 
 def _per_level_text(values, unit=""):
@@ -257,6 +355,8 @@ def coverage_choice(reinforcement: Reinforcement,
     from geotech_common.choices import choice, how_given
     r = reinforcement
     basis = COVERAGE_BASIS
+    if not isinstance(r, Reinforcement):
+        return _level_list_coverage_choice(r, internal, basis)
     if r.per_level:
         return _per_level_coverage_choice(r, internal, basis)
     Rc = coverage_ratio(r)
@@ -344,6 +444,49 @@ def _per_level_coverage_choice(r, internal, basis):
         basis + PER_LEVEL_BASIS, [])
 
 
+def _level_list_coverage_choice(rs, internal, basis):
+    """The coverage choice for a reinforcement given per level (GM-266):
+    each level's Rc from its own width and Sh, or its Rc given."""
+    from geotech_common.choices import choice, how_given
+    rs = list(rs)
+
+    def rc_text(r):
+        if r.coverage_ratio is not None:
+            return f"Rc {r.coverage_ratio:.3g}, given"
+        if r.horizontal_spacing is not None:
+            return (f"Rc {r.width / r.horizontal_spacing:.3g} = b "
+                    f"{r.width:g} m / Sh {r.horizontal_spacing:g} m")
+        return "Rc 1, a continuous geosynthetic layer"
+    chosen = "Rc per level, from the top: " + "; ".join(
+        f"{text} at {_levels_of(spans)}"
+        for text, spans in _grouped([rc_text(r) for r in rs]))
+    alts = []
+    if any(r.coverage_ratio is not None for r in rs):
+        how = how_given(tuple(r.coverage_ratio for r in rs), None,
+                        name="coverage_ratio")
+    elif any(r.horizontal_spacing is not None for r in rs):
+        how = how_given(tuple(r.horizontal_spacing for r in rs), None,
+                        name="reinforcement_horizontal_spacing")
+    else:
+        how = how_given(None, None, name="coverage_ratio")
+        alts.append(
+            "geosynthetic strips at less than full coverage: Rc = b/Sh "
+            "(reinforcement_horizontal_spacing with each level's width, or "
+            "coverage_ratio); the pullout and tensile resistance per metre "
+            "of wall then fall in proportion")
+    if len({r.horizontal_spacing for r in rs}) > 1:
+        basis += PER_LEVEL_BASIS
+    if internal:
+        tal_rc = [lv["Tal_Rc_kN_per_m"] for lv in internal]
+        lo, hi = f"{min(tal_rc):.4g}", f"{max(tal_rc):.4g}"
+        chosen += ("; tensile resistance Tal x Rc "
+                   + (lo if lo == hi else f"{lo} to {hi}")
+                   + " kN/m of wall, each level's Tal times its Rc")
+    return choice(
+        "Coverage ratio Rc of the reinforcement (pullout and tensile "
+        "resistance per metre of wall)", chosen, how, basis, alts)
+
+
 #: GEC-11 Vol I, read on the rendered pages (GM-262 review).
 _FLEXIBLE_FACING = (
     "a grid connected to a flexible facing (a welded wire facing) or "
@@ -351,17 +494,18 @@ _FLEXIBLE_FACING = (
     "Vol I p. 3-23; Table 4-7 note C, p. 4-48: 'For grid reinforcements "
     "connected to a flexible facing mat or which are continuous with the "
     "facing mat, use the resistance factor for strip reinforcements'), and "
-    "so the strips' 0.55 Fy (p. 4-77): Tal {Tal:.4g} kN/m of mat width, "
-    "every FOS_rupture x {ratio:.3f} (lowest {low:.3g}); give it as a "
-    "custom reinforcement (reinforcement_Tallowable)")
+    "so the strips' 0.55 Fy (p. 4-77): {tal}, every FOS_rupture{where} x "
+    "{ratio:.3f} (lowest {low:.3g}); give it as a custom reinforcement "
+    "({how})")
 
 _ONE_REINFORCEMENT = (
     "a stronger reinforcement, or a closer spacing, at the levels where "
-    "FOS_rupture is below {req:.1f}: this tool takes one reinforcement (one "
-    "Tal and one width b) for every level, so a stronger one is a run of "
-    "its own for those levels, and a closer spacing is "
-    "reinforcement_horizontal_spacing per level, as GEC-11 Vol II Example "
-    "E3 takes 3 strips a panel below Level 8 (Table E3-7.3, p. E3-19)")
+    "FOS_rupture is below {req:.1f}: a stronger one is "
+    "reinforcement_per_level, each level its own reinforcement, as GEC-11 "
+    "Vol II Example E4 takes 4W15 mats from Level 5 down (Table E4-7.4, p. "
+    "E4-18), and a closer spacing is reinforcement_horizontal_spacing per "
+    "level, as Example E3 takes 3 strips a panel below Level 8 (Table "
+    "E3-7.3, p. E3-19)")
 
 #: A built-in is a GEC-11 Vol II worked example's reinforcement (GM-271
 #: review): the one specified for the wall is a custom reinforcement.
@@ -382,10 +526,9 @@ _SPECIFIED_GEOSYNTHETIC_TAL = (
 
 _ONE_GEOSYNTHETIC = (
     "a stronger grade at the levels where FOS_rupture is below {req:.1f}: "
-    "this tool takes one reinforcement (one Tal) for every level, so a "
-    "stronger grade is a run of its own for those levels, as GEC-11 Vol "
-    "II Example E1 takes its GG-I geogrid at Layers 1 to 4 and GG-II below "
-    "(Table E1-7.4, p. E1-16); or a closer vertical spacing "
+    "reinforcement_per_level, each level its own reinforcement, as GEC-11 "
+    "Vol II Example E1 takes its GG-I geogrid at Layers 1 to 4 and GG-II "
+    "below (Table E1-7.4, p. E1-16); or a closer vertical spacing "
     "(reinforcement_spacing)")
 
 #: GEC-11 Vol I, read on the rendered pages (GM-262 review). The factored
@@ -420,7 +563,10 @@ def rupture_FOS_required(reinforcement: Reinforcement) -> float:
     phi (Table 4-7) and gamma_P-EV 1.35 (p. 4-40). 1.0 for steel, whose
     Tal is given as the 0.55 Fy or 0.48 Fy allowable (p. 4-77); 1.5 for a
     geosynthetic, whose Tal is Tult / RF (Eq. 3-12)
-    (:data:`GEOSYNTHETIC_RUPTURE_BASIS`)."""
+    (:data:`GEOSYNTHETIC_RUPTURE_BASIS`). A reinforcement given per level
+    is one kind at every level (:func:`level_reinforcements`)."""
+    if not isinstance(reinforcement, Reinforcement):
+        reinforcement = list(reinforcement)[0]
     return 1.0 if reinforcement.is_metallic else GEOSYNTHETIC_RUPTURE_FOS
 
 
@@ -436,6 +582,8 @@ def tensile_strength_choice(reinforcement: Reinforcement,
     some level, that the same Tal and width are taken at every level.
     Nothing for a given steel Tal that passes."""
     from geotech_common.choices import choice, how_given, MODULE
+    if not isinstance(reinforcement, Reinforcement):
+        return _level_list_tensile_choice(list(reinforcement), internal)
     r = reinforcement
     req = rupture_FOS_required(r)
     low = [lv for lv in internal
@@ -456,7 +604,8 @@ def tensile_strength_choice(reinforcement: Reinforcement,
     if r.basis and r.is_grid:
         ratio = STRIP_ALLOWABLE_FY / BAR_MAT_ALLOWABLE_FY
         alts.append(_FLEXIBLE_FACING.format(
-            Tal=r.Tallowable * ratio, ratio=ratio,
+            tal=f"Tal {r.Tallowable * ratio:.4g} kN/m of mat width",
+            where="", ratio=ratio, how="reinforcement_Tallowable",
             low=ratio * min(lv["FOS_rupture"] for lv in internal)))
     if low:
         z = [lv["depth_m"] for lv in low]
@@ -475,17 +624,104 @@ def tensile_strength_choice(reinforcement: Reinforcement,
     how = MODULE if r.basis else how_given(
         r.Tallowable, None, name="reinforcement_Tallowable")
     if r.is_metallic:
-        basis = r.basis or (
-            "GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac / b, given as the "
-            "allowable 0.55 Fy for strips or 0.48 Fy for bar mats (p. "
-            "4-77); the rupture check compares Tal x Rc with the "
-            "unfactored Tmax at a factor of safety of 1.0 (p. 4-47)")
+        basis = r.basis or _STEEL_TAL_GIVEN
     else:
         basis = ((r.basis + ". ") if r.basis else "") \
             + GEOSYNTHETIC_RUPTURE_BASIS
     return [choice(
         "Long-term tensile strength Tal of the reinforcement (tensile "
         "rupture check)", chosen, how, basis, alts)]
+
+
+_STRONGER_AT_LEVELS = (
+    "a stronger reinforcement, or a closer spacing, at the levels where "
+    "FOS_rupture is below {req:.1f}: another entry of "
+    "reinforcement_per_level at those levels, or a closer "
+    "reinforcement_horizontal_spacing there"
+    "{vertical}")
+
+_SPECIFIED_PRODUCTS = (
+    "the reinforcement specified for the wall, where there is one: "
+    "{names} {verb} the worked example's, with {its} Tal as printed, not a "
+    "product. Give the specified one as a custom entry of "
+    "reinforcement_per_level, type {type} with Tallowable{width}: {tal}")
+
+_STEEL_TAL_GIVEN = (
+    "GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac / b, given as the "
+    "allowable 0.55 Fy for strips or 0.48 Fy for bar mats (p. "
+    "4-77); the rupture check compares Tal x Rc with the "
+    "unfactored Tmax at a factor of safety of 1.0 (p. 4-47)")
+
+
+def _level_list_tensile_choice(rs, internal) -> list:
+    """The tensile strength choice for a reinforcement given per level
+    (GM-266): each level's Tal, by runs of the same reinforcement, where
+    each built-in's comes from, and the levels below the required
+    FOS_rupture."""
+    from geotech_common.choices import choice, how_given, MODULE
+    req = rupture_FOS_required(rs[0])
+    low = [lv for lv in internal
+           if lv["FOS_rupture"] < lv.get("FOS_rupture_required", req)]
+    metallic = rs[0].is_metallic
+    built_in = [r for r in rs if r.basis]
+
+    def unit(r):
+        return ("mat" if r.is_grid else "strip" if r.is_metallic
+                else "reinforcement") + " width"
+    groups = _grouped(rs, key=lambda r: (r.name, r.Tallowable, r.width))
+    chosen = "Tal per level, from the top: " + "; ".join(
+        f"{r.name}: Tal {r.Tallowable:.4g} kN/m of {unit(r)} at "
+        f"{_levels_of(spans)}" for r, spans in groups)
+    if not metallic:
+        chosen += (f"; FOS_rupture required {req:.1f} (1.35 / phi 0.90) on "
+                   "each Tal, the long-term strength Tult / RF")
+    alts = []
+    grids = [i for i, r in enumerate(rs) if r.basis and r.is_grid]
+    if grids:
+        ratio = STRIP_ALLOWABLE_FY / BAR_MAT_ALLOWABLE_FY
+        mats = _grouped([rs[i] for i in grids],
+                        key=lambda r: (r.name, r.Tallowable))
+        spans = [s for s in _level_runs([i in grids
+                                         for i in range(len(rs))])
+                 if s[2]]
+        alts.append(_FLEXIBLE_FACING.format(
+            tal="Tal " + ", ".join(
+                f"{r.Tallowable * ratio:.4g} kN/m of mat width for "
+                f"{r.name}" for r, _ in mats),
+            where=("" if len(grids) == len(rs) else
+                   " at " + _levels_of([(a, z) for a, z, _ in spans])),
+            ratio=ratio, how="an entry of reinforcement_per_level with "
+            "Tallowable",
+            low=ratio * min(internal[i]["FOS_rupture"] for i in grids)))
+    if low:
+        z = [lv["depth_m"] for lv in low]
+        chosen += (f"; FOS_rupture is below {req:.1f} at "
+                   + (f"z = {z[0]:g} m" if len(z) == 1
+                      else f"{len(z)} levels, z = {z[0]:g} to {z[-1]:g} m")
+                   + f" (lowest {min(lv['FOS_rupture'] for lv in low):.3g})")
+        alts.append(_STRONGER_AT_LEVELS.format(
+            req=req, vertical="" if metallic else
+            ", or a closer vertical spacing (reinforcement_spacing)"))
+    if built_in:
+        names = [r.name for r, _ in _grouped(built_in, key=lambda r: r.name)]
+        alts.append(_SPECIFIED_PRODUCTS.format(
+            names=", ".join(names), verb="is" if len(names) == 1 else "are",
+            its="its" if len(names) == 1 else "their",
+            type=(f"'{rs[0].type}'" if len({r.type for r in rs}) == 1
+                  else "its type"),
+            width=" and width" if metallic else "",
+            tal=(_SPECIFIED_STEEL_TAL if metallic
+                 else _SPECIFIED_GEOSYNTHETIC_TAL)))
+    how = MODULE if len(built_in) == len(rs) else how_given(
+        tuple(r.Tallowable for r in rs), None, name="reinforcement_per_level")
+    bases = [r.basis for r, _ in _grouped(built_in, key=lambda r: r.basis)]
+    if len(built_in) < len(rs) and metallic:
+        bases.append(_STEEL_TAL_GIVEN)
+    if not metallic:
+        bases.append(GEOSYNTHETIC_RUPTURE_BASIS)
+    return [choice(
+        "Long-term tensile strength Tal of the reinforcement (tensile "
+        "rupture check), per level", chosen, how, ". ".join(bases), alts)]
 
 
 #: GEC-11 Vol I, read on the rendered pages (GM-256).
@@ -554,6 +790,21 @@ def pullout_alpha(reinforcement: Reinforcement,
     if alpha is None:
         raise ValueError(NEEDS_ALPHA)
     return alpha
+
+
+def _level_alphas(reinforcement, rs, alpha_tested) -> List[float]:
+    """Each level's alpha (:func:`pullout_alpha`); with a reinforcement
+    per level a refusal names the level (GM-266)."""
+    if isinstance(reinforcement, Reinforcement):
+        return [pullout_alpha(reinforcement, alpha_tested)] * len(rs)
+    out = []
+    for i, r in enumerate(rs, start=1):
+        try:
+            out.append(pullout_alpha(r, alpha_tested))
+        except ValueError as e:
+            raise ValueError(
+                f"level {i} from the top ({r.name}): {e}") from None
+    return out
 
 
 def _check_tested(F_star_tested, alpha_tested) -> None:
@@ -1115,9 +1366,20 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     alpha adds one (GM-256), each with the FOS_pullout at the printed
     empirical value; a Cu given beside a tested F* is in no check, and the
     entry says so and what it bears on: the empirical F* beside it (a
-    strip's) and note (i)'s check on that F*."""
+    strip's) and note (i)'s check on that F*. A reinforcement given per
+    level (GM-266) gives alpha and the empirical F* by the levels each
+    type is at, and the strip F*'s Cu where a level takes it."""
     from geotech_common.choices import choice, how_given
     args = (geom, gamma_backfill, phi_backfill, reinforcement)
+    rs = level_reinforcements(reinforcement, geom.reinforcement_depths)
+
+    def by_levels(key, text):
+        """``text(r)`` for the one kind, or each kind with its levels."""
+        kinds = _grouped(rs, key=key)
+        if len(kinds) == 1:
+            return text(kinds[0][0])
+        return "; ".join(f"{text(r)} at {_levels_of(spans)}"
+                         for r, spans in kinds)
     if internal is None:
         internal = check_internal_stability(
             *args, Cu_backfill=Cu_backfill, F_star_tested=F_star_tested,
@@ -1137,55 +1399,88 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     out = []
     alpha_what = ("Scale effect correction factor alpha of the pullout "
                   "resistance (alpha_tested)")
-    alpha0 = table_alpha(reinforcement)
-    row = ALPHA_TABLE_3_6.get(reinforcement.type, (None, ""))[1]
-    note = _ALPHA_GRID_NOTE if reinforcement.is_grid else ""
+    def row_of(r):
+        return ALPHA_TABLE_3_6.get(r.type, (None, ""))[1]
+    alpha0s = [table_alpha(r) for r in rs]
+    one_type = len({r.type for r in rs}) == 1
+    any_grid = any(r.is_grid for r in rs)
+    below_1 = any(a is not None and a < 1.0 for a in alpha0s)
+    alpha0 = alpha0s[0]
+    note = _ALPHA_GRID_NOTE if any_grid else ""
     if alpha_tested is not None:
-        printed = ([(alpha0, row)] if alpha0 is not None
-                   else [(0.8, "geogrids"), (0.6, "geotextiles")])
+        if one_type:
+            printed = ([(alpha0, row_of(rs[0]))] if alpha0 is not None
+                       else [(0.8, "geogrids"), (0.6, "geotextiles")])
+            alts = [f"alpha {a:g}, Table 3-6's default value for {r}"
+                    + against(check_internal_stability(
+                        *args, Cu_backfill=Cu_backfill,
+                        F_star_tested=F_star_tested, alpha_tested=a))
+                    for a, r in printed]
+        else:
+            alts = ["Table 3-6's default values by type: " + by_levels(
+                lambda r: r.type, lambda r: (
+                    f"alpha {table_alpha(r):g} for {row_of(r)}"
+                    if table_alpha(r) is not None else
+                    "none printed for a geosynthetic of no stated kind"))
+                + (against(check_internal_stability(
+                    *args, Cu_backfill=Cu_backfill,
+                    F_star_tested=F_star_tested))
+                   if None not in alpha0s else "")]
         out.append(choice(
-            alpha_what, f"alpha {alpha_tested:g}, from pullout tests",
+            alpha_what, f"alpha {alpha_tested:g}, from pullout tests"
+            + ("" if isinstance(reinforcement, Reinforcement)
+               else ", at every level"),
             how_given(alpha_tested, None, name="alpha_tested"),
-            ALPHA_BASIS + note,
-            [f"alpha {a:g}, Table 3-6's default value for {r}"
-             + against(check_internal_stability(
-                 *args, Cu_backfill=Cu_backfill,
-                 F_star_tested=F_star_tested, alpha_tested=a))
-             for a, r in printed]))
-    elif alpha0 < 1.0 or reinforcement.is_grid:
+            ALPHA_BASIS + note, alts))
+    elif below_1 or any_grid:
         # the table's value carries a condition: note (ii) below 1.0, the
         # note * on a steel grid's 1.0
         took = (f"alpha {alpha0:g}, GEC-11 Vol I Table 3-6's default value "
-                f"for {row}, p. 3-17")
-        alt = ("alpha from pullout tests (alpha_tested), "
-               + ("which note (ii) recommends" if alpha0 < 1.0 else
-                  "which note * requires for longitudinal bars more than "
-                  "6 in. (150 mm) apart"))
-        if alpha0 < 1.0:
+                f"for {row_of(rs[0])}, p. 3-17" if one_type else
+                "GEC-11 Vol I Table 3-6's default values (p. 3-17) by type: "
+                + by_levels(lambda r: r.type, lambda r: (
+                    f"alpha {table_alpha(r):g} for {row_of(r)}")))
+        why = []
+        if below_1:
+            why.append("which note (ii) recommends")
+        if any_grid:
+            why.append("which note * requires for longitudinal bars more "
+                       "than 6 in. (150 mm) apart")
+        alt = "alpha from pullout tests (alpha_tested), " + (
+            why[0] if len(why) == 1 else
+            why[0] + " below 1.0, and " + why[1] + " in a steel grid")
+        if below_1:
             alt += ("; at alpha 1.0, the most a test can give"
                     + against(check_internal_stability(
                         *args, Cu_backfill=Cu_backfill,
                         F_star_tested=F_star_tested, alpha_tested=1.0)))
+        # GM-266 review: no ``took``. alpha_tested is an alpha FROM TESTS,
+        # so the table's value given back under that name would claim a
+        # test; defaults_used gives the declared case (Table 3-6's alpha by
+        # type, with its basis), each level its alpha, and this entry both
         out.append(choice(
             alpha_what, took,
-            how_given(None, None, name="alpha_tested", took=took),
+            how_given(None, None, name="alpha_tested"),
             ALPHA_TABLE_BASIS + note, [alt]))
+    any_strip = any(uses_strip_F_star(r) for r in rs)
     if F_star_tested is not None:
-        if uses_strip_F_star(reinforcement) and Cu_backfill is None:
-            empirical = ("Eqs. 3-4 and 3-5 at the Cu = 4 p. 3-20 takes when "
-                         "the backfill's is unknown (F* 1.8 at the top)")
-        elif uses_strip_F_star(reinforcement):
-            empirical = (f"Eqs. 3-4 and 3-5 at Cu {Cu_backfill:g} (F* "
-                         f"{F_star_strip_top(Cu_backfill):.2f} at the top)")
-        elif reinforcement.is_metallic:
-            empirical = "20 t/St at the top to 10 t/St at 20 ft (Eqs. 3-6, 3-7)"
-        else:
-            empirical = "(2/3) tan phi_backfill (Eq. 3-8)"
+        def empirical_of(r):
+            if uses_strip_F_star(r) and Cu_backfill is None:
+                return ("Eqs. 3-4 and 3-5 at the Cu = 4 p. 3-20 takes when "
+                        "the backfill's is unknown (F* 1.8 at the top)")
+            if uses_strip_F_star(r):
+                return (f"Eqs. 3-4 and 3-5 at Cu {Cu_backfill:g} (F* "
+                        f"{F_star_strip_top(Cu_backfill):.2f} at the top)")
+            if r.is_metallic:
+                return ("20 t/St at the top to 10 t/St at 20 ft (Eqs. 3-6, "
+                        "3-7)")
+            return "(2/3) tan phi_backfill (Eq. 3-8)"
+        empirical = by_levels(empirical_of, empirical_of)
         chosen = _tested_text(F_star_tested) + ", from pullout tests"
         if Cu_backfill is not None:
             # GM-256 review: a Cu given beside a tested F* is in no check;
             # say what it does bear on
-            if uses_strip_F_star(reinforcement):
+            if any_strip:
                 role = ("the tested F* replaces the empirical F* of Eqs. "
                         "3-4 and 3-5, which is what takes Cu. It sets only "
                         "that empirical F*, given beside this, and is GEC-11 "
@@ -1207,11 +1502,11 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
                 check_internal_stability(*args, Cu_backfill=Cu_backfill,
                                          alpha_tested=alpha_tested))]))
         return out
-    if not uses_strip_F_star(reinforcement):
+    if not any_strip:
         if Cu_backfill is None:
             return out
         own = ("20 t/St at the top to 10 t/St at 20 ft (GEC-11 Fig. E4-5)"
-               if reinforcement.is_metallic else "0.67 tan phi_backfill")
+               if rs[0].is_metallic else "0.67 tan phi_backfill")
         return out + [choice(
             "Backfill uniformity coefficient (Cu_backfill) against the "
             "empirical pullout factor F*",
@@ -1231,6 +1526,11 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
               f"(6.1 m) and below")
     if Cu < CU_UNKNOWN:
         chosen += "; Cu is " + _NOTE_I_OUTSIDE
+    if not all(uses_strip_F_star(r) for r in rs):
+        strip = [s for s in _level_runs([uses_strip_F_star(r) for r in rs])
+                 if s[2]]
+        chosen += (", at " + _levels_of([(a, z) for a, z, _ in strip])
+                   + ", whose F* is the ribbed strip curve")
 
     if Cu == CU_UNKNOWN:
         alt_cu = 10.0 ** (F_STAR_STRIP_MAX - 1.2)    # 6.31: F* 2.0
@@ -1244,7 +1544,7 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     alt += against(check_internal_stability(
         *args, Cu_backfill=alt_cu, alpha_tested=alpha_tested))
     basis = F_STAR_STRIP_BASIS
-    if reinforcement.is_grid:
+    if any(r.is_grid and uses_strip_F_star(r) for r in rs):
         basis += (". This steel grid was given no transverse-bar geometry "
                   "(t/St), so its pullout takes the ribbed strip curve")
     return out + [choice(
@@ -1274,8 +1574,11 @@ def check_internal_stability(
         Backfill unit weight (kN/m³).
     phi_backfill : float
         Backfill friction angle (degrees).
-    reinforcement : Reinforcement
-        Reinforcement properties.
+    reinforcement : Reinforcement or list of Reinforcement
+        Reinforcement properties: one for every level, or one per level
+        from the top down (:func:`level_reinforcements`, GM-266), each
+        level then taking its own Tal, width and Sh or Rc, Kr/Ka, F* and
+        alpha.
     FOS_pullout : float, optional
         Required FOS for pullout. Default 1.5.
     FOS_rupture : float, optional
@@ -1315,7 +1618,8 @@ def check_internal_stability(
         ratio ``Rc`` (GEC-11 Vol I Eq. 4-35, p. 4-49; p. 4-47; GM-256),
         the level's own when the spacing or ratio is given per level
         (:func:`coverage_ratios`, GM-261); ``Tallowable_kN_per_m`` is Tal
-        per metre of reinforcement width.
+        per metre of reinforcement width. With a reinforcement per level
+        each level also gives ``reinforcement``, its name (GM-266).
 
     Notes
     -----
@@ -1338,12 +1642,15 @@ def check_internal_stability(
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
     sloping = geom.backfill_slope > 0
+    # one reinforcement a level, all steel or all geosynthetic (GM-266)
+    rs = level_reinforcements(reinforcement, geom.reinforcement_depths)
+    per_level = not isinstance(reinforcement, Reinforcement)
     if FOS_rupture is None:
-        FOS_rupture = rupture_FOS_required(reinforcement)   # GM-262 review
+        FOS_rupture = rupture_FOS_required(rs[0])   # GM-262 review
     # GEC-11 Eq. 3-1 (GM-256), one value a level (GM-261)
     Rcs = coverage_ratios(reinforcement, geom.reinforcement_depths)
     _check_tested(F_star_tested, alpha_tested)
-    alpha = pullout_alpha(reinforcement, alpha_tested)
+    alphas = _level_alphas(reinforcement, rs, alpha_tested)
     if sloping:
         _check_backslope(geom, None, geom.surcharge)
         bs = backslope_geometry(geom)
@@ -1356,13 +1663,7 @@ def check_internal_stability(
     #  - ribbed metallic strip       -> strip curves (Kr/Ka 1.7->1.2,
     #    F* 1.2 + log Cu (2.0 at most) -> tan-phi)  [the default]
     #  - geosynthetic                -> Kr/Ka 1.0, F* 0.67*tan-phi
-    if reinforcement.is_grid:
-        r_type = "metallic_grid"
-    elif reinforcement.is_metallic:
-        r_type = "metallic"
-    else:
-        r_type = "geosynthetic"
-    t_over_St = reinforcement.t_over_St if reinforcement.is_grid else None
+    # each level by its own reinforcement (GM-266)
     if Cu_backfill is not None:
         # a grid with t/St or a geosynthetic takes no Cu in its F*; GEC-11
         # Table 3-6 note (i) still asks Cu >= 4 of every empirical F*
@@ -1370,8 +1671,15 @@ def check_internal_stability(
         F_star_strip_top(Cu_backfill)
 
     results = []
-    for z, Rc in zip(geom.reinforcement_depths, Rcs):
-        Tal_Rc = reinforcement.Tallowable * Rc   # per metre of wall, p. 4-47
+    for z, Rc, r, alpha in zip(geom.reinforcement_depths, Rcs, rs, alphas):
+        if r.is_grid:
+            r_type = "metallic_grid"
+        elif r.is_metallic:
+            r_type = "metallic"
+        else:
+            r_type = "geosynthetic"
+        t_over_St = r.t_over_St if r.is_grid else None
+        Tal_Rc = r.Tallowable * Rc   # per metre of wall, p. 4-47
         # Kr/Ka ratio
         kr_ka = Kr_Ka_ratio(z, r_type)
 
@@ -1394,9 +1702,9 @@ def check_internal_stability(
         #    upper H1/2 at 0.3*H1, the lower H1/2 tapering to the toe.
         #  - Extensible (geosynthetic): Rankine wedge at 45+phi/2:
         #       La = (H - z)*tan(45 - phi/2)
-        if reinforcement.is_metallic and sloping:
+        if r.is_metallic and sloping:
             La = 0.3 * H1 if (H - z) >= H1 / 2.0 else 0.6 * (H - z)
-        elif reinforcement.is_metallic:
+        elif r.is_metallic:
             La = 0.3 * H if z <= H / 2.0 else 0.6 * (H - z)
         else:
             La = (H - z) * math.tan(math.radians(45 - phi_backfill / 2))
@@ -1406,10 +1714,10 @@ def check_internal_stability(
         if F_star_tested is not None:
             # from pullout tests (GEC-11 Table 3-6 note (i))
             F_star = F_star_from_tests(F_star_tested, z)
-        elif reinforcement.is_grid and t_over_St is not None:
+        elif r.is_grid and t_over_St is not None:
             # Steel bar-mat / welded-grid F* = 20(t/St) -> 10(t/St)
             F_star = F_star_metallic(z, phi_backfill, "metallic_grid", t_over_St)
-        elif reinforcement.is_metallic:
+        elif r.is_metallic:
             # Ribbed strip F* = 1.2 + log Cu -> tan(phi) (also the fallback
             # for a grid whose transverse geometry t/St was not supplied)
             F_star = F_star_metallic(z, phi_backfill, Cu=Cu_backfill)
@@ -1440,8 +1748,10 @@ def check_internal_stability(
 
         passes = (FOS_po >= FOS_pullout) and (FOS_ru >= FOS_rupture)
 
-        level = {
-            "depth_m": round(z, 2),
+        level = {"depth_m": round(z, 2)}
+        if per_level:
+            level["reinforcement"] = r.name
+        level.update({
             "Tmax_kN_per_m": round(T, 2),
             "Pr_kN_per_m": round(Pr, 2),
             "La_m": round(La, 2),
@@ -1453,10 +1763,10 @@ def check_internal_stability(
             "FOS_pullout": round(FOS_po, 3),
             "FOS_rupture": round(FOS_ru, 3),
             "FOS_rupture_required": FOS_rupture,
-            "Tallowable_kN_per_m": round(reinforcement.Tallowable, 2),
+            "Tallowable_kN_per_m": round(r.Tallowable, 2),
             "Tal_Rc_kN_per_m": round(Tal_Rc, 2),
             "passes": passes,
-        }
+        })
         if sloping:
             level["Zp_m"] = round(Zp, 2)
         results.append(level)
@@ -2322,8 +2632,9 @@ def analyze_mse_wall(
         Reinforced fill unit weight (kN/m³).
     phi_backfill : float
         Reinforced fill friction angle (degrees).
-    reinforcement : Reinforcement
-        Reinforcement properties.
+    reinforcement : Reinforcement or list of Reinforcement
+        Reinforcement properties: one for every level, or one per level
+        from the top down (GM-266; :func:`level_reinforcements`).
     gamma_foundation : float, optional
         Foundation soil unit weight (kN/m3). Used only on the LRFD path
         (``lrfd_external=True``) with no ``bearing_resistance_strength``:
@@ -2392,10 +2703,11 @@ def analyze_mse_wall(
         (:func:`coverage_ratio`, GM-256), and so is a geosynthetic of no
         stated kind given no tested alpha (:func:`pullout_alpha`).
     """
-    # refuse before any work (GM-256; per level, GM-261)
+    # refuse before any work (GM-256; per level, GM-261 and GM-266)
+    rs = level_reinforcements(reinforcement, geom.reinforcement_depths)
     coverage_ratios(reinforcement, geom.reinforcement_depths)
     _check_tested(F_star_tested, alpha_tested)
-    pullout_alpha(reinforcement, alpha_tested)
+    _level_alphas(reinforcement, rs, alpha_tested)
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
         raise ValueError(NEEDS_PHI_FOUNDATION)

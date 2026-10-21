@@ -540,10 +540,14 @@ class MSEWallResult:
 
         for r in self.internal_results:
             status = "OK" if r.get("passes", False) else "FAIL"
+            # the level's own reinforcement when given per level (GM-266)
+            name = f" {r['reinforcement']}" if "reinforcement" in r else ""
+            rupture = (f", FOS_ru={r['FOS_rupture']:.2f}"
+                       if "FOS_rupture" in r else "")
             lines.append(
-                f"    z={r['depth_m']:.1f}m: "
+                f"    z={r['depth_m']:.1f}m{name}: "
                 f"Tmax={r['Tmax_kN_per_m']:.1f}, "
-                f"FOS_po={r['FOS_pullout']:.2f}  [{status}]"
+                f"FOS_po={r['FOS_pullout']:.2f}{rupture}  [{status}]"
             )
 
         failed = self.checks_failed
