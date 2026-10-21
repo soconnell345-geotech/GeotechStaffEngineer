@@ -8,6 +8,18 @@ detailed Phase-E history; this file supersedes it.
 
 ## 0a-current. PICKUP LIST (2026-10-15, supersedes everything below)
 
+### Start here (2026-10-21 evening; the owner is away until Friday 2026-10-23, weekly limit nearly used)
+
+- **Order of work (owner, 2026-10-21; BACKLOG §0 and its sections follow it):** report ingest and GSE on Foundry first, then the geotech calc modules, then Document Review and Tiny Apps last. Nothing is released; the owner holds the release (everything since 5.33.0 is on master).
+- **First on Friday:**
+  1. Check CI on master (the run on e7159c0 was in progress; its watcher was stopped for memory). Push the local notes commits if CI is green.
+  2. Opus review of branch `wip/ripath` (RI-02, RI-35: report ingest on the geotech page behind `GEOTECH_REPORT_INGEST`, off; the helpers' call budgets enforced). It touches `funhouse_agent/deep/agent.py` and `tools.py`, so review before merging.
+  3. Then RI-03 (the ingest engine on Foundry's chat models; the plan is in the item), then OWN-11's one-run check (in the item).
+- **Waiting on the owner:** the Foundry build c results (INF-40; read every run in full); the Claude-on-Foundry check, which needs the next wheel (INF-40); marking up the Report Questions Desk, https://claude.ai/artifact/RuUVqrbNnaHPaX1YaCyEjd (fold with RI-42); the core's name, reopened because the core is shared with GSE (OWN-72).
+- **Held until the Foundry results:** GM-230, GM-270, GM-196, GM-239. Still no slope_stability changes (GM-140).
+- **Filed today, Later:** GM-279 (GEC-13 never writes n'), REF-44 (a GEC-13 figure label), RI-41 (pydiggs 1.x has no 2.5.a schema folder).
+- **Housekeeping:** many `.claude/worktrees/*` belong to branches already merged; only `wip/ripath` holds unmerged work from this week. `wip/ev06` must never be pushed (Department text in its history).
+
 ### Where things stand (5.33.0 released 2026-10-09; master through 2026-10-21)
 
 **0. 5.33.0 RELEASED 2026-10-09 with planlens 0.13.0 and geotech-references 1.4.1.** The owner's word, 2026-10-09: "go ahead and release when you're done".
