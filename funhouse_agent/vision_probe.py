@@ -225,10 +225,12 @@ def _parallel(calls):
 
 def _is_claude(model, answered_by: Optional[str]) -> bool:
     """A Claude model: the reply names one, or the chat model is an
-    Anthropic one (``ChatAnthropic`` and its Foundry subclass)."""
+    Anthropic one (``ChatAnthropic`` and its Foundry subclass, or the
+    Foundry ``palantir_models`` Claude leg, INF-27)."""
     if str(answered_by or "").strip().lower().startswith("claude"):
         return True
-    return "anthropic" in type(model).__name__.lower()
+    name = type(model).__name__.lower()
+    return "anthropic" in name or "claude" in name
 
 
 def _claude_budgets(budget_for_model, answered_by: Optional[str]):

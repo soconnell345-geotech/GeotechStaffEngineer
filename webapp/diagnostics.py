@@ -105,7 +105,8 @@ def _env_check() -> dict:
             "GEOTECH_FOUNDRY_MODELS", "GEOTECH_HELPER_MODELS",
             "GEOTECH_WEBAPP_MAX_TOKENS",
             "GEOTECH_FOUNDRY_DISABLE_STREAMING",
-            "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE")
+            "GEOTECH_FOUNDRY_PROMPT_CACHE",
+            engine_config.FOUNDRY_CLAUDE_SDK_ENV, "GEOTECH_TRACE")
     if engine_config.is_tinyapps_deployment():
         # The Tiny Apps engine settings, named as CfA names them; the key
         # (and the per-tester key mapping) itself only ever as a length.
@@ -124,7 +125,8 @@ def _env_check() -> dict:
         elif e in ("GEOTECH_FOUNDRY_MODELS", "GEOTECH_HELPER_MODELS",
                    "GEOTECH_WEBAPP_MAX_TOKENS",
                    "GEOTECH_FOUNDRY_DISABLE_STREAMING",
-                   "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE",
+                   "GEOTECH_FOUNDRY_PROMPT_CACHE",
+                   engine_config.FOUNDRY_CLAUDE_SDK_ENV, "GEOTECH_TRACE",
                    "PROMPTER_URL", "PROMPTER_MODEL",
                    "PROMPTER_SHARED_KEY_FALLBACK",
                    "GEOTECH_PROMPTER_DISABLE_STREAMING"):

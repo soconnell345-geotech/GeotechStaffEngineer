@@ -74,9 +74,35 @@ limit, HTTP 503) — are retried with jittered exponential backoff, at most
 ``retry_total_s`` of waiting per call; anything else (a bad request, a
 content filter, a context too long) is raised at once.
 
+**The Claude leg** (:class:`PalantirClaudeChatModel`, BACKLOG INF-27). The
+same SDK serves Claude through its own class, verified on Foundry by the AI
+FDE on 2026-10-20 (text, a tool call and an image on Opus 5.5; Sonnet 5.5
+once imported in the workspace's Models panel)::
+
+    from palantir_models.models import AnthropicClaudeLanguageModel
+    m = AnthropicClaudeLanguageModel.get("AnthropicClaude_5_5_Opus")
+    m.create_chat_completion(ClaudeChatCompletionRequest(
+        messages=[ClaudeChatMessage(role=ClaudeChatMessageRole.USER,
+                                    content=[ClaudeChatMessageContent(
+                                        text=ClaudeChatTextContent(text=...))])],
+        max_tokens=..., system=..., tools=[ClaudeTool(custom=ClaudeCustomTool(
+            name, description, input_schema))]),
+        max_rate_limit_retries=4)
+
+The reply is Anthropic's shape: ``content`` items carrying ``text``,
+``tool_use`` (``id``, ``name``, ``input``) or ``thinking``, a
+``stop_reason`` and ``usage``. A tool call goes back as a ``tool_use`` block
+and its result as a ``tool_result`` block (``tool_use_id``, ``content``,
+``is_error``), the field names the public ``langchain-palantir`` adapter
+(Apache-2.0) uses; those two, the thinking blocks and the system block's
+cache mark are not yet seen on Foundry. A Claude model takes this leg only
+when ``GEOTECH_FOUNDRY_CLAUDE_SDK`` is on (``webapp.engine_config``); the
+LLM proxy stays Claude's route by default.
+
 The SDK is only installed on Foundry, so all SDK imports are lazy (call-time);
 this module itself imports cleanly anywhere, and the offline tests fake the SDK
-modules in ``sys.modules`` (``webapp/tests/test_palantir_sdk_engine.py``).
+modules in ``sys.modules`` (``webapp/tests/test_palantir_sdk_engine.py``,
+``webapp/tests/test_palantir_claude_engine.py``).
 """
 
 from __future__ import annotations
@@ -85,6 +111,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 from typing import Any, Callable, Optional, Sequence
 
@@ -196,6 +223,20 @@ def transient_kind(exc: BaseException) -> Optional[str]:
         if name in _CONNECTION_TYPES or isinstance(e, ConnectionError):
             return "connection"
     return None
+
+
+def _raise_read_timeout(handle, read_timeout_s: Optional[float]) -> None:
+    """Long reasoning calls outlast the SDK client's default read timeout;
+    raise it where the handle exposes its client."""
+    if not read_timeout_s:
+        return
+    service = getattr(handle, "_llm_service", None)
+    old = getattr(service, "_read_timeout", None)
+    if isinstance(old, (int, float)) and old < read_timeout_s:
+        try:
+            service._read_timeout = read_timeout_s
+        except Exception:  # noqa: BLE001 - a nicety, never a failure
+            pass
 
 
 def call_with_retries(fn: Callable[[], Any], *, total_s: float = 300.0,
@@ -718,17 +759,7 @@ class PalantirSdkChatModel(BaseChatModel):
         return self._vision_model
 
     def _raise_read_timeout(self, handle) -> None:
-        """Long reasoning calls outlast the SDK client's default read
-        timeout; raise it where the handle exposes its client."""
-        if not self.read_timeout_s:
-            return
-        service = getattr(handle, "_llm_service", None)
-        old = getattr(service, "_read_timeout", None)
-        if isinstance(old, (int, float)) and old < self.read_timeout_s:
-            try:
-                service._read_timeout = self.read_timeout_s
-            except Exception:  # noqa: BLE001 - a nicety, never a failure
-                pass
+        _raise_read_timeout(handle, self.read_timeout_s)
 
     def _complete(self, sdk_model, request):
         self._raise_read_timeout(sdk_model)
@@ -925,10 +956,543 @@ class PalantirSdkChatModel(BaseChatModel):
                            generation_info=generation_info)])
 
 
+# ---------------------------------------------------------------------------
+# The Claude leg (BACKLOG INF-27)
+# ---------------------------------------------------------------------------
+
+def _claude_sdk():
+    """The Claude model class and the v3 request types. Raises ImportError
+    where this SDK has no Claude class."""
+    from palantir_models.models import AnthropicClaudeLanguageModel
+    import language_model_service_api.languagemodelservice_api_completion_v3 \
+        as v3
+    return AnthropicClaudeLanguageModel, v3
+
+
+def claude_sdk_available() -> bool:
+    """True when ``palantir_models`` offers ``AnthropicClaudeLanguageModel``."""
+    try:
+        _claude_sdk()
+        return True
+    except Exception:
+        return False
+
+
+class FoundryModelNotImported(RuntimeError):
+    """Foundry refused a model the workspace has not imported (403
+    ``UseModelPermissionDenied``). The message says what to do."""
+
+
+def model_not_imported(exc: BaseException) -> bool:
+    """Whether a failed call is Foundry's 403 ``UseModelPermissionDenied``
+    (the model is not imported in the workspace's Models panel)."""
+    for e in (exc, getattr(exc, "__cause__", None)):
+        if e is None:
+            continue
+        name = str(getattr(e, "error_name", None)
+                   or getattr(e, "_error_name", None) or "")
+        if ("UseModelPermissionDenied" in name
+                or "UseModelPermissionDenied" in str(e)[:4000]):
+            return True
+    return False
+
+
+def _claude_label(api_name: str) -> str:
+    """``AnthropicClaude_5_5_Sonnet`` -> ``Claude Sonnet 5.5``; else the
+    name as given."""
+    m = re.fullmatch(r"AnthropicClaude_(\d+)_(\d+)_([A-Za-z]+)", api_name or "")
+    return (f"Claude {m.group(3)} {m.group(1)}.{m.group(2)}" if m
+            else api_name)
+
+
+def not_imported_message(api_name: str) -> str:
+    """The plain words for :class:`FoundryModelNotImported`."""
+    return (f"Foundry refused the model {api_name} ({_claude_label(api_name)}) "
+            "with 403 UseModelPermissionDenied: this workspace has not "
+            "imported it. To fix it, open the Code Workspace's Models panel, "
+            f"import {_claude_label(api_name)}, restart the workspace and, "
+            "for the published app, publish it again. Until then, choose a "
+            "model the workspace has imported in the sidebar.")
+
+
+#: The same switch as the Foundry proxy route's (``webapp.engine_config``):
+#: ``0`` / ``off`` sends no cache mark on the system prompt.
+PROMPT_CACHE_ENV = "GEOTECH_FOUNDRY_PROMPT_CACHE"
+
+#: Model API names whose service refused the system block's cache mark: one
+#: refused call per process, then the plain ``system`` text only. Kept here,
+#: not on the model, because ``bind_tools`` makes a copy for each call.
+_CACHE_REFUSED: set = set()
+
+#: Where a reply's thinking blocks are kept (with their signatures) so the
+#: next call of the same tool loop sends them back, as Anthropic's API asks.
+THINKING_KEY = "claude_thinking"
+
+#: Anthropic's stop reasons as the OpenAI-style finish reasons the agent's
+#: guards read (``max_tokens`` -> ``length``: a reply cut at the output cap).
+_CLAUDE_FINISH = {"end_turn": "stop", "stop_sequence": "stop",
+                  "tool_use": "tool_calls", "max_tokens": "length",
+                  "refusal": "content_filter", "pause_turn": "stop"}
+
+_MEDIA_TYPES = {"image/png": "IMAGE_PNG", "image/jpeg": "IMAGE_JPEG",
+                "image/jpg": "IMAGE_JPEG", "image/gif": "IMAGE_GIF",
+                "image/webp": "IMAGE_WEBP"}
+
+_DATA_URI = re.compile(r"data:([^;,]*)(?:;[^,]*)?,(.*)", re.S)
+
+
+def prompt_cache_on() -> bool:
+    return str(os.environ.get(PROMPT_CACHE_ENV, "")).strip().lower() not in (
+        "0", "off", "false", "no")
+
+
+def _claude_text(text: str, v3):
+    return v3.ClaudeChatMessageContent(text=v3.ClaudeChatTextContent(text=text))
+
+
+def _claude_image(url: str, v3):
+    """A data URI as a base64 image block; ``None`` for anything else."""
+    m = _DATA_URI.match(url or "")
+    if not m or not m.group(2):
+        return None
+    mime = (m.group(1) or "image/png").strip().lower()
+    name = _MEDIA_TYPES.get(mime, mime.upper().replace("/", "_"))
+    kinds = getattr(v3, "ClaudeChatMediaType", None)
+    media = getattr(kinds, name, name) if kinds is not None else name
+    return v3.ClaudeChatMessageContent(image=v3.ClaudeChatImageContent(
+        source=v3.ClaudeImageSource(base64=v3.ClaudeImageBase64Source(
+            data=m.group(2), media_type=media))))
+
+
+def _claude_contents(content: Any, v3, images_only: bool = False) -> list:
+    """LangChain content -> text and image blocks (Anthropic refuses an
+    empty text block, so none is sent). An image by web address cannot go
+    on this route and is said in a line of text instead."""
+    if isinstance(content, str):
+        return ([] if images_only or not content.strip()
+                else [_claude_text(content, v3)])
+    out = []
+    for block in content or []:
+        if isinstance(block, str):
+            if not images_only and block.strip():
+                out.append(_claude_text(block, v3))
+        elif isinstance(block, dict):
+            if block.get("type") == "text":
+                text = block.get("text") or ""
+                if not images_only and text.strip():
+                    out.append(_claude_text(text, v3))
+                continue
+            url = _image_url(block)
+            if not url:
+                continue
+            image = _claude_image(url, v3)
+            if image is not None:
+                out.append(image)
+            elif not images_only:
+                out.append(_claude_text(
+                    "[An image given by web address was left out: this "
+                    "route sends images as data only.]", v3))
+    return out
+
+
+def _claude_thinking(blocks: Any, v3) -> list:
+    """Thinking blocks (Anthropic's shape, signatures kept) as request
+    content; any this SDK cannot build are left out."""
+    out = []
+    for b in blocks or []:
+        if not isinstance(b, dict):
+            continue
+        try:
+            if b.get("type") == "thinking" and b.get("signature"):
+                out.append(v3.ClaudeChatMessageContent(
+                    thinking=v3.ClaudeChatThinkingContent(
+                        thinking=b.get("thinking") or "",
+                        signature=b["signature"])))
+            elif b.get("type") == "redacted_thinking" and b.get("data"):
+                out.append(v3.ClaudeChatMessageContent(
+                    redacted_thinking=v3.ClaudeChatRedactedThinkingContent(
+                        data=b["data"])))
+        except (AttributeError, TypeError, ValueError) as exc:
+            log.debug("Claude thinking block not sent: %s", exc)
+    return out
+
+
+def _claude_assistant(message: AIMessage, v3, keep_thinking: bool) -> list:
+    """An assistant turn: its thinking (in the current tool loop only), its
+    text, then one ``tool_use`` block per tool call."""
+    out = []
+    if keep_thinking:
+        blocks = message.additional_kwargs.get(THINKING_KEY)
+        if not blocks and isinstance(message.content, list):
+            blocks = [b for b in message.content if isinstance(b, dict)
+                      and b.get("type") in ("thinking", "redacted_thinking")]
+        out.extend(_claude_thinking(blocks, v3))
+    text = _text_content(message.content)
+    if text.strip():
+        out.append(_claude_text(text, v3))
+    for tc in message.tool_calls or []:
+        out.append(v3.ClaudeChatMessageContent(
+            tool_use=v3.ClaudeChatToolUseContent(
+                id=tc.get("id") or "", name=tc.get("name", ""),
+                input=tc.get("args") or {})))
+    return out
+
+
+def _claude_tool_result(message: ToolMessage, v3):
+    kwargs = {"tool_use_id": message.tool_call_id or "",
+              "content": _text_content(message.content) or "(no output)"}
+    if getattr(message, "status", None) == "error":
+        kwargs["is_error"] = True
+    return v3.ClaudeChatMessageContent(
+        tool_result=v3.ClaudeChatToolResultContent(**kwargs))
+
+
+def _lc_messages_to_claude(messages: Sequence[BaseMessage], v3):
+    """``(system text, [ClaudeChatMessage])`` for LangChain messages.
+
+    Every system message goes into the one system prompt. Tool results
+    become ``tool_result`` blocks in a user turn; consecutive turns of one
+    role are merged (the results of parallel calls, an image shown after
+    them), results first. Thinking blocks go back only for the assistant
+    turns after the last question the user asked (the current tool loop),
+    which is where Anthropic's API needs them.
+    """
+    system_parts = []
+    turns: list = []                     # [role, items, has_tool_result]
+    for message in messages:
+        if isinstance(message, SystemMessage):
+            text = _text_content(message.content)
+            if text.strip():
+                system_parts.append(text)
+            continue
+        if isinstance(message, ToolMessage):
+            role, item, result = "user", ("result", message), True
+        elif isinstance(message, AIMessage):
+            role, item, result = "assistant", ("ai", message), False
+        else:
+            role, item, result = "user", ("ask", message), False
+        if turns and turns[-1][0] == role:
+            turns[-1][1].append(item)
+            turns[-1][2] = turns[-1][2] or result
+        else:
+            turns.append([role, [item], result])
+    last_ask = max((i for i, t in enumerate(turns)
+                    if t[0] == "user" and not t[2]), default=-1)
+
+    Role = v3.ClaudeChatMessageRole
+    built: list = []                     # [role, contents]
+    for i, (role, items, _) in enumerate(turns):
+        first, rest = [], []
+        for kind, message in items:
+            if kind == "result":
+                first.append(_claude_tool_result(message, v3))
+                rest.extend(_claude_contents(message.content, v3,
+                                             images_only=True))
+            elif kind == "ai":
+                rest.extend(_claude_assistant(message, v3,
+                                              keep_thinking=i > last_ask))
+            else:
+                rest.extend(_claude_contents(message.content, v3))
+        contents = first + rest
+        if not contents:
+            continue
+        if built and built[-1][0] == role:
+            built[-1][1].extend(contents)
+        else:
+            built.append([role, contents])
+    if built and built[0][0] == "assistant":
+        built.insert(0, ["user", [_claude_text("(continued)", v3)]])
+    return ("\n\n".join(system_parts),
+            [v3.ClaudeChatMessage(
+                role=Role.USER if role == "user" else Role.ASSISTANT,
+                content=contents) for role, contents in built])
+
+
+def _openai_tools_to_claude(openai_tools: list, v3) -> list:
+    out = []
+    for tool in openai_tools:
+        fn = tool.get("function", tool)
+        out.append(v3.ClaudeTool(custom=v3.ClaudeCustomTool(
+            name=fn.get("name", ""), description=fn.get("description"),
+            input_schema=fn.get("parameters") or {"type": "object",
+                                                  "properties": {}})))
+    return out
+
+
+def _cached_system(system: str, v3) -> Optional[list]:
+    """The system prompt as one block with an ephemeral cache mark (which
+    caches the tools and the system prompt together), or ``None`` where
+    this SDK cannot build it."""
+    try:
+        mark = v3.ClaudeChatCacheControl(
+            ephemeral=v3.ClaudeChatEphemeralCacheControl())
+        return [v3.ClaudeChatSystemBlock(text=system, cache_control=mark)]
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _refused_cache(exc: BaseException) -> bool:
+    """Whether a failed call may be the service refusing the system block
+    or its cache mark (a 400 naming a field, or an invalid request)."""
+    text = str(exc).lower()
+    name = str(getattr(exc, "error_name", None)
+               or getattr(exc, "_error_name", None) or "")
+    return ("cache" in text or "system" in text
+            or "InvalidRequest" in name or "InvalidArgument" in name
+            or "invalid_argument" in text or "unrecognized" in text)
+
+
+def _claude_value(value: Any) -> str:
+    """A conjure enum or string (``END_TURN``, ``end_turn``) as lower case."""
+    return str(getattr(value, "value", value) or "").rsplit(".", 1)[-1].lower()
+
+
+def _claude_response_to_ai_message(resp) -> AIMessage:
+    """Text blocks joined, ``tool_use`` blocks as tool calls, thinking
+    blocks kept in ``additional_kwargs`` (signatures, for the tool loop;
+    their text as ``reasoning``, which the activity log records)."""
+    texts, tool_calls, thinking = [], [], []
+    for item in getattr(resp, "content", None) or []:
+        text = getattr(item, "text", None)
+        if text is not None:
+            texts.append(str(getattr(text, "text", text) or ""))
+            continue
+        use = getattr(item, "tool_use", None)
+        if use is not None:
+            args = getattr(use, "input", None)
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args) if args.strip() else {}
+                except json.JSONDecodeError:
+                    args = {}
+            tool_calls.append({"name": getattr(use, "name", "") or "",
+                               "args": args if isinstance(args, dict) else {},
+                               "id": getattr(use, "id", None),
+                               "type": "tool_call"})
+            continue
+        thought = getattr(item, "thinking", None)
+        if thought is not None:
+            words = getattr(thought, "thinking", None)
+            if words is None:
+                words = getattr(thought, "text", None)
+            thinking.append({"type": "thinking", "thinking": str(words or ""),
+                             "signature": getattr(thought, "signature", None)})
+            continue
+        hidden = getattr(item, "redacted_thinking", None)
+        if hidden is not None:
+            thinking.append({"type": "redacted_thinking",
+                             "data": getattr(hidden, "data", None)})
+    message = AIMessage(content="".join(texts), tool_calls=tool_calls)
+    if thinking:
+        message.additional_kwargs[THINKING_KEY] = thinking
+        words = "\n\n".join(t["thinking"] for t in thinking
+                            if t.get("thinking"))
+        if words:
+            message.additional_kwargs["reasoning"] = words
+    return message
+
+
+def _claude_usage(u) -> Optional[dict]:
+    """Anthropic's usage as LangChain's, the cache reads and writes counted
+    into the input as ``langchain-anthropic`` counts them. ``max_tokens``
+    on this SDK's usage is the model's limit, not a count, and is ignored."""
+    inp, out = getattr(u, "input_tokens", None), getattr(u, "output_tokens", None)
+    if inp is None or out is None:
+        return None
+    read = getattr(u, "cache_read_input_tokens", None) or 0
+    made = getattr(u, "cache_creation_input_tokens", None) or 0
+    total_in = inp + read + made
+    meta = {"input_tokens": total_in, "output_tokens": out,
+            "total_tokens": total_in + out}
+    if read or made:
+        meta["input_token_details"] = {"cache_read": read,
+                                       "cache_creation": made}
+    return meta
+
+
+class PalantirClaudeChatModel(BaseChatModel):
+    """LangChain chat model over ``palantir_models``' Claude class on
+    Foundry (BACKLOG INF-27).
+
+    Parameters
+    ----------
+    model_api_name : str
+        The Palantir model API name, e.g. ``"AnthropicClaude_5_5_Opus"`` or
+        ``"AnthropicClaude_5_5_Sonnet"`` (NOT the ``ri....`` RID).
+    max_tokens : int
+        Per-response output cap; Claude's request requires one.
+    temperature : float, optional
+        ``None`` (default) omits it.
+    rate_limit_retries : int, optional
+        Passed as the SDK's ``max_rate_limit_retries`` (its default is 4).
+    prompt_cache : bool
+        Mark the system prompt for caching (``GEOTECH_FOUNDRY_PROMPT_CACHE=0``
+        turns it off too); a service that refuses the mark is asked once
+        more without it, and not again.
+    retry_total_s, read_timeout_s : float
+        As for :class:`PalantirSdkChatModel`: connection drops, timeouts,
+        rate limits and 503s are retried with backoff up to
+        ``retry_total_s`` of waiting; anything else is raised at once.
+
+    A 403 ``UseModelPermissionDenied`` is raised as
+    :class:`FoundryModelNotImported`, which says how to import the model.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    model_api_name: str
+    max_tokens: int = 32000
+    temperature: Optional[float] = None
+    rate_limit_retries: Optional[int] = 4
+    prompt_cache: bool = True
+    retry_total_s: float = 300.0
+    read_timeout_s: Optional[float] = 900.0
+    # OpenAI-schema tool dicts captured by bind_tools; replayed each call.
+    openai_tools: Optional[list] = Field(default=None, exclude=True)
+
+    _sdk_model: Any = PrivateAttr(default=None)
+
+    @property
+    def _llm_type(self) -> str:
+        return "palantir-models-claude"
+
+    @property
+    def model(self) -> str:
+        """The API name, for run records that label a model by ``.model``."""
+        return self.model_api_name
+
+    @classmethod
+    def from_handle(cls, model_api_name: str, handle: Any, **kwargs: Any):
+        """Wrap a Claude model object already in hand (e.g. a transform's
+        model input)."""
+        made = cls(model_api_name=model_api_name, **kwargs)
+        made._sdk_model = handle
+        return made
+
+    def _handle(self):
+        if self._sdk_model is None:
+            model_class, _ = _claude_sdk()
+            self._sdk_model = model_class.get(self.model_api_name)
+        return self._sdk_model
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any):
+        """Bind tools (standard LangChain pattern) — returns a copy carrying
+        the OpenAI tool schemas; ``_generate`` sends them as ``ClaudeTool``s.
+        ``tool_choice`` is never sent: the service default is ``auto``, and
+        these models refuse ``any`` or a named tool on Foundry."""
+        openai_tools = [convert_to_openai_tool(t) for t in tools]
+        return self.model_copy(update={"openai_tools": openai_tools})
+
+    def _request(self, v3, system: str, claude_messages: list, max_tokens,
+                 temperature, stop, tools, cache: bool):
+        """``(request, cache mark sent?)``."""
+        kwargs: dict = {"messages": claude_messages, "max_tokens": max_tokens}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if stop:
+            kwargs["stop_sequences"] = list(stop)
+        if tools:
+            kwargs["tools"] = _openai_tools_to_claude(tools, v3)
+        blocks = _cached_system(system, v3) if (system and cache) else None
+        if blocks is not None:
+            try:
+                return v3.ClaudeChatCompletionRequest(
+                    system_blocks=blocks, **kwargs), True
+            except TypeError:           # this SDK's request has no blocks
+                pass
+        if system:
+            kwargs["system"] = system
+        return v3.ClaudeChatCompletionRequest(**kwargs), False
+
+    def _complete(self, request):
+        try:
+            handle = self._handle()
+            _raise_read_timeout(handle, self.read_timeout_s)
+
+            def once():
+                if self.rate_limit_retries is None:
+                    return handle.create_chat_completion(request)
+                try:
+                    return handle.create_chat_completion(
+                        request,
+                        max_rate_limit_retries=self.rate_limit_retries)
+                except TypeError as exc:
+                    if "max_rate_limit_retries" not in str(exc):
+                        raise
+                    return handle.create_chat_completion(request)
+
+            return call_with_retries(once, total_s=self.retry_total_s)
+        except Exception as exc:  # noqa: BLE001 - one kind said plainly
+            if model_not_imported(exc):
+                raise FoundryModelNotImported(
+                    not_imported_message(self.model_api_name)) from exc
+            raise
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: Optional[list[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        _, v3 = _claude_sdk()
+        max_tokens = kwargs.get("max_tokens") or self.max_tokens
+        temperature = kwargs.get("temperature", self.temperature)
+        tools = kwargs.get("tools") or self.openai_tools
+        system, claude_messages = _lc_messages_to_claude(messages, v3)
+        cache = (self.prompt_cache and prompt_cache_on()
+                 and self.model_api_name not in _CACHE_REFUSED)
+        request, marked = self._request(v3, system, claude_messages,
+                                        max_tokens, temperature, stop, tools,
+                                        cache)
+        try:
+            response = self._complete(request)
+        except FoundryModelNotImported:
+            raise
+        except Exception as exc:  # noqa: BLE001 - classified below
+            if (not marked or transient_kind(exc) is not None
+                    or not _refused_cache(exc)):
+                raise
+            # Perhaps the system block or its cache mark: ask once more with
+            # the plain system text, and only if that works stop marking.
+            plain, _ = self._request(v3, system, claude_messages, max_tokens,
+                                     temperature, stop, tools, False)
+            response = self._complete(plain)
+            marked = False
+            log.warning("Foundry Claude (%s) refused the system prompt's "
+                        "cache mark (%s); sending the plain system text from "
+                        "now on", self.model_api_name, str(exc)[:200])
+            _CACHE_REFUSED.add(self.model_api_name)
+
+        ai_message = _claude_response_to_ai_message(response)
+        stop_reason = _claude_value(getattr(response, "stop_reason", None))
+        finish = _CLAUDE_FINISH.get(stop_reason) or (
+            "tool_calls" if ai_message.tool_calls else "stop")
+        generation_info = {
+            "finish_reason": finish,
+            "stop_reason": stop_reason or None,
+            "model_name": getattr(response, "model", None)
+            or self.model_api_name,
+            "system_cache_mark": "sent" if marked else "not sent"}
+        usage = _claude_usage(getattr(response, "usage", None))
+        if usage is not None:
+            generation_info["usage"] = {
+                "prompt_tokens": usage["input_tokens"],
+                "completion_tokens": usage["output_tokens"],
+                "total_tokens": usage["total_tokens"]}
+            ai_message.usage_metadata = usage
+        return ChatResult(generations=[
+            ChatGeneration(message=ai_message,
+                           generation_info=generation_info)])
+
+
 # Resolve the postponed annotations here, so the class also works when this
 # file is loaded by path or exec'd (Foundry glue) rather than imported.
 PalantirSdkChatModel.model_rebuild()
+PalantirClaudeChatModel.model_rebuild()
 
-__all__ = ["PalantirSdkChatModel", "sdk_available", "responses_available",
-           "call_with_retries", "transient_kind", "ROUTES",
-           "REASONING_SUMMARY_ENV", "reasoning_summary_level"]
+__all__ = ["PalantirSdkChatModel", "PalantirClaudeChatModel",
+           "FoundryModelNotImported", "sdk_available", "claude_sdk_available",
+           "responses_available", "call_with_retries", "transient_kind",
+           "model_not_imported", "ROUTES", "REASONING_SUMMARY_ENV",
+           "reasoning_summary_level"]

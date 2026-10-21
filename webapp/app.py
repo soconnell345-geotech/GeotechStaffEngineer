@@ -683,7 +683,9 @@ with st.sidebar:
             key=f"custom_family_{ss.thread_id}",
             help="Auto: an id naming Anthropic, Claude, Opus, Sonnet, Haiku or "
                  "Fable goes to the "
-                 "Anthropic-messages proxy; anything else to the OpenAI proxy "
+                 "Anthropic-messages proxy (a Claude API name to the "
+                 "palantir_models SDK when GEOTECH_FOUNDRY_CLAUDE_SDK is on); "
+                 "anything else to the OpenAI proxy "
                  "(an 'ri.…' RID) or the palantir_models SDK (an API name). "
                  "Choose Anthropic for a Claude RID that does not say so.")
         if st.button("Use this model", key=f"use_custom_{ss.thread_id}") \
