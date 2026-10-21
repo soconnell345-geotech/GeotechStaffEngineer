@@ -317,7 +317,7 @@ Key conventions:
       and planlens (0ff9056, planlens c79d1f3); a GSTools defect behind an all-NaN Exponential
       field worked around, a kriging plan map (6cbd94c) and choices (68bbc67); MSE bar mat and strip Tal as GEC-11
       prints them, E4 reproduced, spacing per level (1729383), geosynthetic rupture at FOS 1.5 (31bd1bf); E1 through the module, Fy refused (0004620);
-      calc packages' `render_tables` for bespoke reports (b676889); report ingest's units (a78c275); release notes for each in HANDOFF;
+      calc packages' `render_tables` for bespoke reports (b676889); report ingest's units (a78c275); the record's gaps (7d8ae9b); release notes for each in HANDOFF;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
