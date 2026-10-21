@@ -667,10 +667,11 @@ class TestSignalProcessingIntegration:
         assert r.pgv_processed_m_per_s > 0
 
 
-class TestNigamJenningsVsNewmarkBeta:
+class TestEqsigVsOpenseesSpectrum:
     @requires_eqsig
     def test_comparison(self):
-        """Nigam-Jennings and Newmark-beta should give similar spectra."""
+        """eqsig and opensees_utils.compute_response_spectrum (both
+        Nigam-Jennings since GM-272; Newmark before) give similar spectra."""
         from seismic_signals_agent import analyze_response_spectrum
         from opensees_agent.opensees_utils import compute_response_spectrum
         from opensees_agent.ground_motions import get_motion
@@ -682,13 +683,16 @@ class TestNigamJenningsVsNewmarkBeta:
         r = analyze_response_spectrum(motion="synthetic_pulse",
                                       periods=periods, damping=0.05)
 
-        # Newmark-beta
-        Sa_nb = compute_response_spectrum(accel_g, dt, periods, damping=0.05)
+        # opensees_utils (Nigam-Jennings, peak read between samples)
+        _, Sa_nb = compute_response_spectrum(accel_g, dt, periods,
+                                             damping=0.05)
 
-        # Should be within ~10% for most periods
+        # Within 0.2 % at every period (measured 2026-10-21: 0.06 % at most,
+        # eqsig a little lower: it reads the peak only at the samples).
+        # Until GM-272 this divided by the (periods, Sa) tuple and checked
+        # the median within 15 %.
         ratio = r.Sa_g / Sa_nb
-        assert np.median(ratio) > 0.85
-        assert np.median(ratio) < 1.15
+        np.testing.assert_allclose(ratio, 1.0, atol=0.002)
 
 
 # ===================================================================

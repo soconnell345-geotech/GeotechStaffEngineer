@@ -32,7 +32,7 @@ What to expect, and why:
   does set as the module sets them (bulk moduli, the fluid's bulk
   modulus, the dense layer's contraction and dilation constants, level
   ground, the Rayleigh band): spectral accelerations from 0.1 to 1.5 s
-  within 8.6 % (measured -8.6 % at 0.5 s to +4.4 % at 0.1 s; -6.2 to
+  within 8.7 % (measured -8.7 % at 0.5 s to +4.4 % at 0.1 s; -6.2 to
   +4.5 %, also worst at 0.5 s, with the fixed pressure stabilization
   1e-5 before GM-260; pinned at 10 %, the test's own allowance, because
   the elements differ: the module's 4-node SSPquadUP needs a pressure
@@ -44,7 +44,7 @@ What to expect, and why:
 * Against the port as written the dense layer is the difference: the
   module gives every sand the Dr = 40 % contraction constants, so its
   dense layer liquefies (r_u 0.98 at 16 m against 0.56); Sa from 0.1 to
-  1.5 s -25 to +14 %.
+  1.5 s -27 to +15 %.
 """
 
 import numpy as np
@@ -61,21 +61,24 @@ TEST_TIME_LIMIT_S = 300.0
 
 # The port's numbers on the stored record (first 20 s of Gilroy No. 1).
 # sa_g / amplification at wiki.PERIODS_S (0.1, 0.2, 0.3, 0.4, 0.5, 0.64,
-# 1.0, 1.5 s); ru: peak r_u at 3, 7 and 16 m below the surface.
+# 1.0, 1.5 s); ru: peak r_u at 3, 7 and 16 m below the surface. The
+# spectra re-computed 2026-10-21 from the same runs (PGA, its time and
+# r_u reproduced) by Nigam-Jennings (GM-272); Newmark at the record's step
+# had Sa up to 0.6 % off and amplification up to 1.8 % (0.1 s).
 EFFECTIVE_REFERENCE = {
     "as_written": {
         "pga_g": 0.3564, "pga_time_s": 4.330,
-        "sa_g": [0.8322, 0.5615, 0.6799, 0.7902, 0.7529, 0.6178, 0.3248,
+        "sa_g": [0.8291, 0.5640, 0.6774, 0.7913, 0.7534, 0.6184, 0.3248,
                  0.3111],
         "ru": [0.43, 0.97, 0.56]},
     # level, module inputs, Rayleigh at the module's site frequency
     # (1.7746 Hz) and five times it at the example's ratio there (0.40 %)
     "module_inputs": {
         "pga_g": 0.5451, "pga_time_s": 3.840,
-        "sa_g": [0.9167, 0.5062, 0.6567, 0.7326, 0.6054, 0.5786, 0.3226,
-                 0.3030],
-        "amplification": [0.8588, 0.5200, 0.4654, 0.3692, 0.5051, 1.4088,
-                          1.0397, 1.3668],
+        "sa_g": [0.9169, 0.5093, 0.6540, 0.7339, 0.6054, 0.5792, 0.3227,
+                 0.3031],
+        "amplification": [0.8745, 0.5219, 0.4629, 0.3695, 0.5046, 1.4081,
+                          1.0395, 1.3665],
         "ru": [0.38, 0.91, 0.97]},
 }
 
@@ -125,7 +128,8 @@ class TestAgainstTheOpenSeesPyEffectiveExample:
     @requires_opensees
     def test_module_matches_the_port_it_can_express(self):
         """Sa from 0.1 to 1.5 s within 10 % of the port with the module's
-        inputs (measured -8.6 % at 0.5 s to +4.4 %; -6.2 to +4.5 % with
+        inputs (measured -8.7 % at 0.5 s to +4.4 %, -8.6 to +4.4 % by the
+        Newmark spectrum before GM-272; -6.2 to +4.5 % with
         the fixed alpha 1e-5 before GM-260: the elements differ, see the
         module docstring), and peak r_u at 3, 7 and 16 m within 0.1
         (measured 0.36 / 0.90 / 0.98 against 0.38 / 0.91 / 0.97). Until

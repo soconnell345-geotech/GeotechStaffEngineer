@@ -1822,32 +1822,68 @@ def _spiky_record(dt=0.01, duration=10.0, spike_g=0.3, spike_at=5.12):
     return t, a
 
 
-class TestShortPeriodSpectrum:
-    """A period shorter than ten record steps is integrated in substeps of
-    a twentieth of the period on the record interpolated between its
-    samples (GM-264); longer periods keep the record's step."""
+def _lsim_response(a, dt, T, damping=0.05, read_every=None):
+    """Displacement and velocity of the oscillator under the record taken
+    as linear between its samples, by scipy's lsim (the matrix exponential
+    of the continuous system, first-order hold), read every ``read_every``
+    (default the record's own step): independent of the module's code."""
+    from scipy.signal import lsim
+    w = 2.0 * np.pi / T
+    n = 1 if read_every is None else int(round(dt / read_every))
+    t = np.arange(len(a)) * dt
+    tf = np.arange((len(a) - 1) * n + 1) * (dt / n)
+    _, y, x = lsim(([[0.0, 1.0], [-w * w, -2.0 * damping * w]], [[0.0], [1.0]],
+                    [[1.0, 0.0]], [[0.0]]), -np.interp(tf, t, a) * 9.81, tf)
+    return y, x[:, 1]
 
-    def test_short_period_converges_to_a_fine_step(self):
-        from opensees_agent.opensees_utils import _newmark_peak_sa
-        dt = 0.01
-        t, a = _spiky_record(dt)
-        _, (sa,) = compute_response_spectrum(a, dt, [0.01])
-        # the same oscillator on the record interpolated to dt / 200
-        tf = np.arange(0.0, t[-1] + 1e-12, dt / 200)
-        ref = _newmark_peak_sa(-np.interp(tf, t, a) * 9.81, dt / 200,
-                               0.01, 0.05, 9.81)
-        old = _newmark_peak_sa(-a * 9.81, dt, 0.01, 0.05, 9.81)
-        assert sa == pytest.approx(ref, rel=0.01)
-        assert abs(old / ref - 1.0) > 0.05  # one step a period: off
 
-    def test_periods_of_ten_steps_and_longer_keep_the_record_step(self):
-        from opensees_agent.opensees_utils import _newmark_peak_sa
-        dt = 0.01
+class TestNigamJenningsSpectrum:
+    """Every period by Nigam and Jennings (1969), the record taken as
+    linear between its samples, in substeps of a twentieth of the period
+    below 20 record steps, the peak between points read off the cubic
+    through u and v (GM-272). Until GM-272 Newmark's average acceleration
+    at the record's step from ten steps a period up, within 11 % of lsim on
+    the site response records (DESIGN.md, GM-272)."""
+
+    def test_closed_form_step_matches_the_matrix_exponential(self):
+        """u and v at the samples against lsim on the same record, from a
+        stiff oscillator (2 steps a period) to a soft one (2,000)."""
+        from opensees_agent.opensees_utils import _nigam_jennings
+        dt = 0.005
         _, a = _spiky_record(dt)
-        periods = [0.1, 0.2, 1.0]
+        for T in (0.01, 0.1, 1.0, 10.0):
+            u, v = _nigam_jennings(-a * 9.81, dt, 2.0 * np.pi / T, 0.05)
+            y, yv = _lsim_response(a, dt, T)
+            assert np.max(np.abs(u - y)) < 1e-9 * np.max(np.abs(y)), T
+            assert np.max(np.abs(v - yv)) < 1e-9 * np.max(np.abs(yv)), T
+
+    def test_spectrum_matches_lsim_read_between_samples(self):
+        """Sa against lsim read every dt / 50 (and at least 200 times a
+        period), 0.01 to 3 s on the spiky record: within 0.01 % (measured
+        0.004 %). The Newmark it replaced was 1.2 % low at 0.1 s (ten
+        steps, the record's step) and 1.7 % low at 0.05 s (in substeps)."""
+        dt = 0.01
+        _, a = _spiky_record(dt, duration=2.0, spike_at=1.12)
+        periods = [0.01, 0.03, 0.05, 0.08, 0.1, 0.125, 0.2, 0.5, 1.0, 3.0]
         _, sa = compute_response_spectrum(a, dt, periods)
         for T, s in zip(periods, sa):
-            assert s == _newmark_peak_sa(-a * 9.81, dt, T, 0.05, 9.81)
+            y, _ = _lsim_response(a, dt, T, read_every=min(dt / 50, T / 200))
+            ref = (2.0 * np.pi / T) ** 2 * np.max(np.abs(y)) / 9.81
+            assert s == pytest.approx(ref, rel=1e-4), T
+
+    def test_the_peak_is_read_between_points(self):
+        """A cosine sampled 20 times a period with its crest midway between
+        two samples: the samples reach cos(pi / 20) = 0.988, the cubic
+        through u and v the crest, to within 3e-5 (the cubic's error
+        bound, (2 pi / 20)^4 / 384 = 2.5e-5 of the amplitude)."""
+        from opensees_agent.opensees_utils import _peak_between_points
+        T, h = 1.0, 0.05
+        t = np.arange(0.0, 2.0, h)
+        w = 2.0 * np.pi / T
+        u = np.cos(w * (t - 0.525))
+        assert np.max(np.abs(u)) == pytest.approx(np.cos(np.pi / 20), abs=1e-9)
+        assert _peak_between_points(u, -w * np.sin(w * (t - 0.525)),
+                                    h) == pytest.approx(1.0, abs=3e-5)
 
     def test_a_stiff_oscillator_reads_the_peak(self):
         """Sa at 0.01 s of a smooth 2 Hz record is its peak, to within
@@ -1858,6 +1894,10 @@ class TestShortPeriodSpectrum:
         a = 0.2 * np.sin(2.0 * np.pi * 2.0 * t)
         _, (sa,) = compute_response_spectrum(a, dt, [0.01])
         assert sa == pytest.approx(0.2, rel=0.01)
+
+    def test_damping_must_be_below_critical(self):
+        with pytest.raises(ValueError, match="below 1"):
+            compute_response_spectrum(np.ones(10), 0.01, [0.5], damping=1.0)
 
 
 class TestLowpass:
@@ -2008,8 +2048,9 @@ class TestPGAOptions:
         synthetic pulse at 0.30 g. From 10 to 40 elements (2 m to 0.5 m)
         the raw PGA rises 0.223 -> 0.406 g, a spike at 1.93 s, while the
         record low-passed at 10 Hz holds at 0.222 -> 0.226 g and Sa at
-        0.2 s at 0.493 -> 0.463 g. Sa at 0.01 s follows the spike (0.225
-        -> 0.411 g). At 10 elements 26 % of the peak is above 10 Hz, at
+        0.2 s at 0.480 -> 0.467 g (0.493 -> 0.463 by the Newmark spectrum
+        before GM-272). Sa at 0.01 s follows the spike (0.224 -> 0.408
+        g). At 10 elements 26 % of the peak is above 10 Hz, at
         40, 66 %, against none at the input's peak: motion above 10 Hz
         sets the peak only on the finer mesh."""
         from opensees_agent.site_response import analyze_site_response
