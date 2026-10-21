@@ -8,12 +8,12 @@ Covers the four ergonomics tasks:
 4. RW-5 earth_pressure_coefficient thin method on retaining_walls.
 
 Plus the new module-param exposures: lateral_pile stickup, wave_equation
-damping_model, seismic pga, axial cohesive_phi/uplift params, Priebe n0,
-sheet_pile embedment_increase, MSE custom reinforcement type.
+damping_model, seismic pga, axial cohesive_phi/uplift params, the Priebe
+curve's settlement ratio, sheet_pile embedment_increase, MSE custom
+reinforcement type.
 """
 
 import importlib
-import math
 
 import pytest
 
@@ -623,18 +623,18 @@ class TestAxialUpliftParams:
 
 
 class TestPriebeImprovementFactor:
-    def test_published_form(self):
+    def test_the_printed_curve(self):
+        """GM-276: GEC-13 Fig. 5-21 curve (4) as printed, n' 1.96 at A/A_c
+        5 (p. 5-36), no formula."""
         from funhouse_agent.adapters.ground_improvement import METHOD_REGISTRY as R
         r = R["priebe_improvement_factor"]({"as_ratio": 0.2})
-        Kac = math.tan(math.radians(45.0 - 42.5 / 2.0)) ** 2
-        expected = 1.0 + 0.2 * ((5.0 - 0.2) / (4.0 * Kac * (1.0 - 0.2)) - 1.0)
-        assert r["n0"] == pytest.approx(expected, abs=0.01)
+        assert r["settlement_ratio"] == pytest.approx(1.96, abs=0.03)
 
     def test_area_replacement_ratio_alias(self):
         from funhouse_agent.adapters.ground_improvement import METHOD_REGISTRY as R
         a = R["priebe_improvement_factor"]({"as_ratio": 0.25})
         b = R["priebe_improvement_factor"]({"area_replacement_ratio": 0.25})
-        assert a["n0"] == b["n0"]
+        assert a["settlement_ratio"] == b["settlement_ratio"]
 
     def test_out_of_range_raises(self):
         from funhouse_agent.adapters.ground_improvement import METHOD_REGISTRY as R

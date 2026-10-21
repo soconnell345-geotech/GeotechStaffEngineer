@@ -71,7 +71,7 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-018 | ground_improvement `area_replacement_ratio` (RAP) | as_tri = 0.2744 | Ra = Ac/(π/4·de²) = 0.27 | <0.5% | **PASS** (primitive) | The triangular tributary √3/2·s² numerically equals the de=1.05·s unit cell π/4·(1.05s)² (both 21.65 ft²), so the module's geometric `as` matches the source's de-based Ra to 4 figures. |
 | V-018 | RAP improved settlement (upper-zone stiffness modulus qg/kg) | hand: qg=6324 psf, suz=0.68 in (module `as`); module SRF path gives ~9.4 in | qg=6383 psf, suz≈0.7 in | suz <3% (hand) | N/A (scope) | The GEC-13 two-layer upper-zone method (qg=q·ns/(Ra·ns−Ra+1), suz=qg/kg, kg=pier stiffness modulus pci) is NOT in the module. `analyze_aggregate_piers`/`improved_settlement` use the equal-strain SRF=1/(1+as(n−1)) model (no kg) → SRF=0.43, improved ≈9.4 in — a fundamentally different method. Published 0.68 in reproduced by hand on the module `as`; module not tuned. |
 | V-019 | ground_improvement / settlement unimproved consolidation | S = 27.2 in (settlement module + closed form) | S = 27 in | <1% | **PASS** | `consolidation_settlement_layer` (Cc=0.2, eo=0.6, H=50 ft, po=1440 psf, dq=1875 psf) reproduces S=27.16 in (0.690 m) exactly. Tight anchor. |
-| V-019 | ground_improvement `priebe_basic_improvement_factor` (stone column) | n0=3.06 (as=Ac/A=0.277, φ_col=42.5); n0=2.81 (module geom as=0.251, φ_col=42.5) | chart ratio 2.7 (Fig 5-27) | +13% / +4% | CONVENTION | Module exposes the genuine Priebe (1995) n0. Published 2.7 is a CHART read; the factor depends on the area-ratio convention AND φ_col. With the source's as=Ac/A=0.277 + default φ_col=42.5 → 3.06 (outside ±0.3); with the module's geometric triangular as=0.251 + φ_col=42.5 → 2.81 (WITHIN 2.7±0.3); the chart 2.7 ≈ φ_col 39° at as=0.277. Improved S=27/n0 = 8.8–9.6 in brackets the published 10 in. Formula correct, not tuned. |
+| V-019 | ground_improvement `priebe_improvement_factor` (stone column; GEC-13 Fig. 5-21 curve (4) as printed) | n' = 2.55 at A/A_sc = (s/d)² = 3.61 (as = 0.277) → S = 27/2.55 = 10.6 in | 2.7 → 10 in (Fig 5-27, p. 5-49) | −5.6 % (−0.15) / +0.6 in | **PASS** (chart read, ±0.3) | Since GM-276 the module reads GEC-13's printed Priebe curve only (the Priebe formula and its 42.5° default, printed nowhere in GEC-13, removed; owner OWN-70). The curve reads 2.55 at 3.61 on both printed copies; Fig. 5-27's arrows are drawn at A/A_sc 3.53, where the curve reads 2.63, and labelled 3.6 and 2.7. The module's geometric triangular as = 0.251 (A/A_c 3.98) gives 2.31: the example takes (s/d)². |
 | V-020 | ground_improvement wick drains (Barron-Hansbo radial-only, ideal) | t90 = 299 d (s=8 ft), 503 d (s=10 ft) | ~300 d / ~500 d ("on the order of") | <1% | **PASS** | RADIAL-ONLY ideal Barron (F(n)=ln(n)−0.75, no smear/well resistance) via `influence_diameter`(de=1.05s) + `drain_function_F` + `time_for_radial_consolidation` reproduces both published t90 to <1% (well inside ±20%). de(8 ft)=2.560 m, de(10 ft)=3.200 m, dw=0.0635 m (2.5 in), n=40.3/50.4. |
 | V-020 | wick drains combined vertical+radial (convention check) | U_total ≈ 93.1% at s=8 ft, t=300 d (Ur≈90%, Uv≈31%) | (radial-only target 90%) | — | CONVENTION | The packaged combined model U_total=1−(1−Uv)(1−Ur) over-predicts U at the published times — the 20-ft clay over rock (single drainage, Hdr=20 ft) adds ~31% vertical on its own, so the combined t90 would be SHORTER. Documents that the source used radial-only; the module supports both. Not a bug. |
 | V-021 | bearing_capacity Vesic N-factors (φ=35) | Nq=33.30, Nγ=48.03 | Nq=33.3, Nγ=48.0 | <0.1% | **PASS** | `bearing_capacity_Nq`/`bearing_capacity_Ngamma(method="vesic")` reproduce the GEC-6 Table 5-1 AASHTO/Vesic factors to 4 figures. (Meyerhof Nγ=37.15, Hansen Nγ=33.92 differ markedly — the Vesic path is the right one.) The direct N-factor match the inventory flagged. |
@@ -448,23 +448,24 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   √3/2·s² ≈ π/4·(1.05s)²). **Possible add:** a RAP `upper_zone_settlement(q, Ra, ns, kg)`
   helper (the GEC-13 / Lawton-Fox-Wissmann two-layer method) if RAP stiffness-modulus
   design is in scope. Not a bug — a method/coverage gap.
-- **V-019 — Priebe improvement factor is in the module; the spread is convention,
-  not a bug (CONVENTION).** The module exposes the genuine Priebe (1995) basic
-  improvement factor `priebe_basic_improvement_factor(as, phi_col, nu_s)`. The
-  published 2.7 is a **chart read** (Figure 5-27, after Wallays et al. 1983), and the
-  factor is sensitive to two conventions the source leaves implicit:
-  - **Area-ratio convention.** The source uses A/Ac = (s/d)² = 3.6 → as = Ac/A = 0.277
-    (a square-grid / unit-cell ratio). The module's geometric `area_replacement_ratio`
-    for a *triangular* pattern uses √3/2·s² and gives as = 0.251. Feeding the module's
-    own as → Priebe n0 = 2.81 (within 2.7±0.3); feeding the source's as = 0.277 →
-    n0 = 3.06 (outside).
-  - **Column friction angle.** The module default φ_col = 42.5° (Priebe's compacted-
-    stone chart value). At as = 0.277 the published 2.7 corresponds to φ_col ≈ 39°.
-  Either way the improved S = 27/n0 = 8.8–9.6 in brackets the published 10 in. The
-  formula reproduces the chart family; the ±13% is the area-ratio + φ_col + chart-read
-  latitude the inventory flagged. **Module NOT tuned to the one chart value.** (Note:
-  `priebe_basic_improvement_factor` takes as = Ac/A — feed it the source's 1/(s/d)²
-  directly to match the source's convention, rather than the geometric triangular as.)
+- **V-019 — the settlement ratio off GEC-13's printed Priebe curve (PASS on the
+  chart read).** Since GM-276 (owner, OWN-70, 2026-10-21: "just the printed curve.
+  discard your formula. don't trust formulas from your memory!") the module's only
+  Priebe basis is the curve GEC-13 prints, Fig. 5-21 curve (4), φ = 37.5° (p. 5-36),
+  read off the page (`settlement_ratio.PRIEBE_CURVE_4`, ±0.03 in n′). The Priebe
+  (1995) formula and its 42.5° default, printed nowhere in GEC-13, were removed; the
+  tool refuses `phi_column` and `nu_soil`. Earlier rows of this file (the formula
+  at 42.5°: n0 = 3.06, +13 %) no longer apply.
+  - **The example's own area ratio.** A/A_sc = (s/d)² = (5.7/3.0)² = 3.61 (p. 5-48),
+    as = 0.277: the curve reads **2.55** on both printed copies (Fig. 5-21 p. 5-36,
+    Fig. 5-27 p. 5-49), so S = 27/2.55 = **10.6 in**.
+  - **What GEC-13 prints.** "The settlement ratio is 2.7 … 10 inches" (p. 5-49).
+    Fig. 5-27's arrows are drawn at A/A_sc 3.53, where the curve reads 2.63, and
+    labelled 3.6 and 2.7: the printed read is 0.15 (6 %) above the curve at 3.61,
+    within the inventory's 2.7 ± 0.3.
+  - **Area-ratio convention.** The module's geometric `area_replacement_ratio` for a
+    triangular pattern (√3/2·s²) gives as = 0.251 (A/A_c 3.98) and n′ = 2.31; the
+    example takes (s/d)², so feed as = 1/(s/d)² to follow it.
 - **V-020 — the PVD radial-consolidation primitive is a clean PASS (radial-only,
   ideal Barron).** With ch only (no vertical, no smear, no well resistance) the
   module's Barron-Hansbo radial solution — `influence_diameter`(de = 1.05·s),
@@ -481,7 +482,8 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 - **No module bugs found or fixed in this batch.** All three are either clean PASSes
   (unimproved consolidation; area-ratio primitive; radial-only Barron t90) or
   documented method/convention gaps (RAP stiffness-modulus method absent; Priebe
-  area-ratio + φ_col + chart latitude; PVD radial-only vs combined). `ground_improvement/`
+  area-ratio + φ_col + chart latitude, since GM-276 the printed curve only; PVD
+  radial-only vs combined). `ground_improvement/`
   suite was run unchanged (**49 passed**); `settlement` used read-only.
 
 ### Batch V-021 / V-022 (GEC-6 Ex B-1 spread-footing) — owner notes

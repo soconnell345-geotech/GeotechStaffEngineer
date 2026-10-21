@@ -323,7 +323,7 @@ REFERENCE_INFO = {
               "Driven-pile foundations &mdash; the Nordlund / Tomlinson worked examples the axial "
               "pile module is validated against."),
     "gec13": ("FHWA GEC-13", "FHWA ground-modification manual",
-              "Ground modification &mdash; aggregate piers, stone columns (Priebe), prefabricated "
+              "Ground modification &mdash; aggregate piers, stone columns (the printed Priebe curve), prefabricated "
               "vertical drains, surcharge preloading."),
     "gec14": ("FHWA GEC-14", "FHWA-NHI ground-improvement",
               "Additional ground-improvement methods."),
@@ -609,17 +609,20 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "settlement reduction, capacity increase, and time to consolidate.",
         "methods": [
             "Aggregate piers / stone columns: area-replacement ratio, equal-strain settlement-reduction "
-            "factor, composite modulus, and the **Priebe (1995)** basic improvement factor (incl. n<sub>0</sub>).",
+            "factor, composite modulus, and the settlement ratio n&prime; off GEC-13 Fig. 5-21 (weighted "
+            "modulus, Balaam, and the **Priebe curve as GEC-13 prints it**, &phi; = 37.5&deg;; no Priebe "
+            "formula).",
             "**Barron&ndash;Hansbo** radial consolidation for PVDs (with smear and well resistance) and "
             "combined vertical+radial time-rate; drain-spacing design.",
             "Surcharge preloading and vibro-compaction feasibility.",
-            "References: FHWA GEC-13 (ground-modification manual); Priebe (1995); Barron (1948) / Hansbo "
+            "References: FHWA GEC-13 (ground-modification manual); Barron (1948) / Hansbo "
             "(1981); validated V-018/V-019/V-020.",
         ],
         "limits": [
             "Aggregate-pier settlement uses the equal-strain settlement-reduction model, not the GEC-13 "
-            "stiffness-modulus (k<sub>g</sub>) two-layer method; the Priebe factor depends on the "
-            "area-ratio and column-friction conventions supplied (V-018/V-019).",
+            "stiffness-modulus (k<sub>g</sub>) two-layer method (V-018); the Priebe curve is GEC-13's, "
+            "drawn for &phi; = 37.5&deg; only and read at A/A<sub>c</sub> 1.6 to 8, and depends on the "
+            "area-ratio convention supplied (V-019).",
         ],
     },
 
@@ -1081,7 +1084,7 @@ VALIDATION_ROWS = [
     ("V-016", "soe", "Two-tier anchored wall &mdash; apparent envelope, anchor loads", "GEC-4 Ex 1", "PASS / CONVENTION"),
     ("V-017", "lateral_pile", "Laterally loaded micropile (LPILE benchmark)", "FHWA Micropile Ex 2", "PASS / CONVENTION"),
     ("V-018", "ground_improvement", "Rammed aggregate pier settlement + baseline consolidation", "GEC-13 Ex 1", "PASS / N/A"),
-    ("V-019", "ground_improvement", "Stone-column settlement (Priebe factor)", "GEC-13 Ex 2", "PASS / CONVENTION"),
+    ("V-019", "ground_improvement", "Stone-column settlement (Priebe curve)", "GEC-13 Ex 2", "PASS"),
     ("V-020", "ground_improvement", "PVD time to 90% consolidation (Barron&ndash;Hansbo)", "GEC-13 Ch 2", "PASS"),
     ("V-021", "bearing_capacity", "Spread-footing ultimate bearing (Vesic factors, GW)", "GEC-6 Ex B-1", "PASS / CONVENTION"),
     ("V-022", "settlement", "Hough granular settlement table", "GEC-6 Ex B-1", "PASS"),
@@ -1708,8 +1711,8 @@ def _ch9_limitations(ctx):
         "arbitrary interpolated pore-pressure grid; its tension crack is entry-side and keeps the cracked "
         "wedge as driving soil (a conservative convention).",
         "<code>ground_improvement</code> uses an equal-strain settlement-reduction model for aggregate "
-        "piers, not the GEC-13 stiffness-modulus two-layer method; the Priebe factor depends on the "
-        "area-ratio and column-friction conventions you feed it.",
+        "piers, not the GEC-13 stiffness-modulus two-layer method; the Priebe curve is GEC-13's "
+        "printed curve (&phi; = 37.5&deg;) and depends on the area-ratio convention you feed it.",
         "The high-level <code>bearing_capacity</code> call applies Vesic depth factors and an "
         "effective-unit-weight groundwater model &mdash; defensible, but different from an AASHTO "
         "C<sub>w</sub> groundwater correction; know which convention your check needs.",
