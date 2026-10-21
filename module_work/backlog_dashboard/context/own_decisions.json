@@ -1459,11 +1459,15 @@
           {
             "label": "Two copies",
             "effect": "Every fix to the page, tools or connections made twice."
+          },
+          {
+            "label": "A smaller shared package; each app keeps its own chat page",
+            "effect": "Your idea. The tools around planlens, the vision calls and the model connections in one public package (GSE stays on PyPI, Document Review off it); the chat page copied into each app, so the two pages can differ, and a fix to the page itself is made per app."
           }
         ]
       }
     ],
-    "recommendation": "Its own public package on PyPI: the only option that keeps GSE on PyPI and Document Review off it with one copy of the code.",
+    "recommendation": "Its own public package on PyPI, or the smaller shared package with a chat page per app if you expect the two pages to differ. Both keep GSE on PyPI and Document Review off it with one copy of the tools; two full copies, or the code inside Document Review, do not.",
     "if_no_answer": "The steps that need no decision go ahead; the shared package is not built.",
     "message_to_send": null,
     "steps": [],
