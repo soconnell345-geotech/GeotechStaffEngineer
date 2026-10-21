@@ -61,6 +61,8 @@ from subsurface_characterization.plots_plan import axis_titles  # noqa: E402
     ("", ("x", "y")),
     ("EPSG:4326", ("Longitude (deg)", "Latitude (deg)")),
     ("urn:ogc:def:crs:EPSG::4326", ("Longitude (deg)", "Latitude (deg)")),
+    ("urn:diggs:def:crs:DIGGS:0.1:4326_5702",
+     ("Longitude (deg)", "Latitude (deg)")),
     ("EPSG:2263", ("Easting (EPSG:2263)", "Northing (EPSG:2263)")),
     ("WGS 84 / UTM zone 33N", ("Easting (WGS 84 / UTM zone 33N)",
                                "Northing (WGS 84 / UTM zone 33N)")),

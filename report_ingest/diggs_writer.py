@@ -353,6 +353,14 @@ _GEOGRAPHIC_WGS84 = re.compile(
     re.IGNORECASE)
 
 
+#: The compound name for a geographic WGS 84 position WITH a height, as
+#: DIGGS' own example writes it (pydiggs 2.5.a ``Example_2-DIGGS.XML`` line
+#: 173: ``srsDimension="3"``, ``srsName`` this, ``x y z`` = longitude,
+#: latitude, height). It is the only compound name any file in hand shows, so
+#: no other combination is built.
+_CRS_GEOGRAPHIC_3D = "urn:diggs:def:crs:DIGGS:0.1:4326_5702"
+
+
 def _srs_name(coordinate_system: str) -> str:
     """The srsName for ``coordinate_system`` as printed: CRS84 when it is
     plain geographic WGS 84 (see :data:`_CRS84`), else the text itself."""
@@ -850,16 +858,35 @@ class _Writer:
                         f"longitude then latitude (CRS84)")
         if said:
             self.text_element("gml:description", " ".join(said), 5)
-        srs = (f' srsName={quoteattr(_srs_name(inv.coordinate_system))}'
-               if inv.coordinate_system.strip() else "")
-        point = (f"{_coord_or_unknown(x)} {_coord_or_unknown(y)} "
-                 f"{_coord_or_unknown(z)}")
-        self.out(f'<gml:pos srsDimension="3"{srs}>{point}</gml:pos>', 5)
+        srs_name = _srs_name(inv.coordinate_system)
+        if srs_name and z is not None and srs_name == _CRS84:
+            # A height needs a three-dimensional name: the sample's compound.
+            srs_name = _CRS_GEOGRAPHIC_3D
+            datum = self.project.elevation_datum.strip()
+            self.notes.assumed.append(
+                f"{inv.investigation_id}: the position has a height, so its "
+                f"srsName is DIGGS' compound geographic + vertical name "
+                f"({_CRS_GEOGRAPHIC_3D}), the only one the bundled example "
+                f"shows; the vertical datum "
+                + (f"as printed is {datum!r}" if datum else "was not given")
+                + " and the name implies the example's")
+        # Under any other name nothing in hand shows a compound form, so the
+        # point is two-dimensional there and the height travels in the centre
+        # line's positions (x y top, x y bottom).
+        three_d = z is not None and (not srs_name
+                                     or srs_name == _CRS_GEOGRAPHIC_3D)
+        srs = f' srsName={quoteattr(srs_name)}' if srs_name else ""
+        coords = [x, y, z] if three_d else [x, y]
+        point = " ".join(_coord_or_unknown(v) for v in coords)
+        dim = 3 if three_d else 2
+        self.out(f'<gml:pos srsDimension="{dim}"{srs}>{point}</gml:pos>', 5)
         self.out("</PointLocation>", 4)
         self.out("</referencePoint>", 3)
         self.out("<centerLine>", 3)
         self.out(f'<LinearExtent gml:id={quoteattr(gml_id + "_cl")}>', 4)
-        self.out(f'<gml:posList srsDimension="3">{point} '
+        self.out(f'<gml:posList srsDimension="3">'
+                 f'{_coord_or_unknown(x)} {_coord_or_unknown(y)} '
+                 f'{_coord_or_unknown(z)} '
                  f'{_coord_or_unknown(x)} {_coord_or_unknown(y)} '
                  f'{_coord_or_unknown(bottom)}</gml:posList>', 5)
         self.out("</LinearExtent>", 4)
