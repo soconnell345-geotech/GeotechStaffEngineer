@@ -1068,34 +1068,31 @@ def review_page_budget() -> Optional[int]:
     return max_model_calls()
 
 
-#: The model-call budget declared on the report-ingest sub-agent's spec.
-#: DECLARATIVE, and said so here because the code cannot say it: deepagents
-#: uses a CompiledSubAgent's runnable as provided and never reads a spec's
-#: middleware for one, and this sub-agent has no model of its own to budget
-#: anyway. What bounds the ingest is Python -- ``report_ingest.graph.Budgets``,
-#: applied per reader. The entry is here so that every sub-agent in this build
-#: carries the same two middlewares and a reader comparing them can see that
-#: none was forgotten.
-DEFAULT_REPORT_INGEST_MAX_MODEL_CALLS = 4
+#: The model calls one report-ingest delegation may spend, every pass, reader
+#: and bound report included, enforced inside its graph
+#: (``report_ingest.subagent.CallCeiling``): deepagents uses a
+#: CompiledSubAgent's runnable as provided and never reads a spec's
+#: middleware for one (BACKLOG RI-02). Above the 60-897 calls a whole report
+#: took on Foundry; ``report_ingest.graph.Budgets`` still caps each reader.
+DEFAULT_REPORT_INGEST_MAX_MODEL_CALLS = 1000
 
-#: The library sub-agent's ceilings. Unlike the ingest's, the tool-call one is
-#: REAL: the graph counts queries in Python and refuses the next one, because
-#: middleware on a CompiledSubAgent's spec reaches no model. The model-call
-#: entry beside it is the same declaration every other sub-agent carries.
+#: The library sub-agent's ceilings, both enforced in its graph for the same
+#: reason: queries per answer, and model calls, the last made without tools.
 DEFAULT_REPORT_LIBRARY_MAX_TOOL_CALLS = 8
 DEFAULT_REPORT_LIBRARY_MAX_MODEL_CALLS = 10
 
 
-def _report_ingest_engine_factory(engine):
+def _report_ingest_engine_factory(engine, model=None):
     """A factory that digs the app's live Prompter out of ``engine``.
 
     Called once per ingest run so each run gets its own cost meter. Returns
     None when this deployment has no Prompter to read a report with, and the
     sub-agent then says so rather than reading it on something else.
+    ``model`` names a tier (the page voter's cheap one), as the tool asks.
     """
     def factory():
         from report_ingest.engine import engine_for
-        return engine_for(engine)
+        return engine_for(engine, model=model)
     return factory
 
 
@@ -1483,7 +1480,8 @@ def build_deep_agent(
         ingest_tools = make_report_ingest_tool(
             engine=engine, attachments=attachments,
             out_dir=report_ingest_out_dir, budgets=report_ingest_budgets,
-            db_path=report_ingest_db, max_result_chars=max_result_chars)
+            db_path=report_ingest_db, max_result_chars=max_result_chars,
+            max_model_calls=report_ingest_max_model_calls)
         if ingest_tools:
             tools = list(tools) + list(ingest_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_INGEST_NUDGE
@@ -1605,11 +1603,18 @@ def build_deep_agent(
         # compact structured_response as the tool result. Attached only when
         # the tool was built, so the primary is never told to delegate to a
         # sub-agent that cannot run here.
+        from funhouse_agent.deep.tools import VISION_TIER
+        from funhouse_agent.deep.tools import report_ingest_out_dir as _out
         from report_ingest.subagent import build_report_ingest_subagent
         subagents.append(
             build_report_ingest_subagent(
                 _report_ingest_engine_factory(engine),
-                out_dir_factory=(None if report_ingest_out_dir is None
+                # The page voter on the cheap tier, as the tool runs it.
+                vision_engine_factory=_report_ingest_engine_factory(
+                    engine, model=VISION_TIER),
+                # The conversation's own folder, resolved when the report is
+                # read (the folder is bound per turn), as the tool does.
+                out_dir_factory=(_out if report_ingest_out_dir is None
                                  else (lambda _source: report_ingest_out_dir)),
                 budgets=report_ingest_budgets,
                 db_path=report_ingest_db,
@@ -1674,6 +1679,14 @@ def build_deep_agent(
                    "calc": _calc_scope,
                    "general-purpose": allowed_agents}
     for spec in subagents:
+        if "runnable" in spec:
+            # A compiled helper (report ingest, the report library) is run
+            # by deepagents AS PROVIDED: middleware on its spec reaches
+            # nothing (BACKLOG RI-02). Its ceilings are enforced inside its
+            # own graph, and its answer comes back as the primary's `task`
+            # result, which the primary's own DeliveredToolResults,
+            # ToolErrorGuard and LargeResultKeyMap already wrap.
+            continue
         # DeliveredToolResults first: it logs what the guards below made of
         # each result, as the model receives it (live smoke wave 1, G11).
         # ToolErrorGuard next: a tool that raises is a tool error, not the
@@ -1694,28 +1707,24 @@ def build_deep_agent(
                     LargeResultKeyMap(),
                     ScratchFilesystemGuard(_save_tool(
                         spec["tools"] if "tools" in spec else tools))]
-        if "runnable" not in spec and not any(
-                isinstance(m, HideTools) and UNRUNNABLE_TOOLS <= m.hidden
-                for m in spec.get("middleware") or []):
+        if not any(isinstance(m, HideTools) and UNRUNNABLE_TOOLS <= m.hidden
+                   for m in spec.get("middleware") or []):
             # deepagents' shell and delete cannot run on this backend
             # (GM-176); a helper that already hides them keeps its own.
             extra_mw.append(HideTools(UNRUNNABLE_TOOLS))
-        if "runnable" not in spec:
-            # What the helper reads and writes, recorded as it happens, so
-            # a helper that stops can hand it back as a file (TA-21).
-            extra_mw.insert(0, HelperRecorder())
-        retry = auth_retry() if "runnable" not in spec else None
+        # What the helper reads and writes, recorded as it happens, so
+        # a helper that stops can hand it back as a file (TA-21).
+        extra_mw.insert(0, HelperRecorder())
+        retry = auth_retry()
         if retry is not None:
             extra_mw.insert(0, retry)
-        if "runnable" not in spec:
-            # A busy model is waited for on a ladder, not the end of the
-            # helper (TA-20; field session 2026-10-14).
-            extra_mw.insert(0, AgentBusyRetry())
+        # A busy model is waited for on a ladder, not the end of the
+        # helper (TA-20; field session 2026-10-14).
+        extra_mw.insert(0, AgentBusyRetry())
         scope = _call_scope.get(spec.get("name"))
-        if scope and "runnable" not in spec:
+        if scope:
             extra_mw.append(UnknownToolHint(scope))
-        if "runnable" not in spec:
-            extra_mw.append(OutputLimitGuard())
+        extra_mw.append(OutputLimitGuard())
         spec["middleware"] = list(spec.get("middleware") or []) + extra_mw
     if (_GENERAL_PURPOSE_SPEC is not None
             and not any(s.get("name") == "general-purpose" for s in subagents)):

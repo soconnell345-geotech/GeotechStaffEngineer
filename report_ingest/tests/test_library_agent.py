@@ -18,10 +18,12 @@ from langchain_core.language_models.fake_chat_models import (
     FakeMessagesListChatModel,
 )
 from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import Field
 
 from report_ingest.library import Library
 from report_ingest.library_agent import (
-    LIBRARY_SYSTEM_PROMPT, LIBRARY_TOOL_SPECS, MAX_TOOL_CALLS, TOOL_NAMES,
+    LAST_CALL_NUDGE, LIBRARY_SYSTEM_PROMPT, LIBRARY_TOOL_SPECS,
+    MAX_TOOL_CALLS, TOOL_NAMES,
     LibraryAnswer, answer_question, build_answer,
     build_report_library_graph, build_report_library_subagent,
     library_available, run_query,
@@ -69,6 +71,21 @@ def library(root):
 def _call(name, arguments=None, call_id="c1"):
     return AIMessage(content="", tool_calls=[
         {"name": name, "args": dict(arguments or {}), "id": call_id}])
+
+
+class _Recording(ToolCallingFake):
+    """Records each call as ``(tools were bound, messages)``."""
+
+    seen: list = Field(default_factory=list)
+    tools_bound: bool = False
+
+    def bind_tools(self, tools, **kwargs):          # noqa: D102 - a fake
+        # A shallow copy: the record list is the same object.
+        return self.model_copy(update={"tools_bound": True})
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.seen.append((self.tools_bound, list(messages)))
+        return super()._generate(messages, stop, run_manager, **kwargs)
 
 
 class TestTheToolSpecs:
@@ -380,15 +397,31 @@ class TestTheSubAgentSpec:
         assert "runnable" in spec
         assert hasattr(spec["runnable"], "invoke")
 
-    def test_a_model_call_budget_is_declared_when_asked_for(self, root):
-        from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-
-        model = ToolCallingFake(responses=[AIMessage(content="ok")])
+    def test_the_model_call_budget_holds_in_the_graph(self, root):
+        """BACKLOG RI-02: the budget was a middleware on the spec, which
+        deepagents never runs for a compiled helper, and the model kept
+        querying to the turn cap."""
+        model = _Recording(responses=[_call("library_stats", {}, "loop")])
         spec = build_report_library_subagent(model, library_root=root,
-                                             max_model_calls=6)
+                                             max_model_calls=3)
+        state = spec["runnable"].invoke(
+            {"messages": [HumanMessage(content="go")]})
 
-        assert [type(m) for m in spec["middleware"]] == [
-            ModelCallBudgetMiddleware]
+        assert "middleware" not in spec
+        assert state["turns"] == 3
+        # Every call but the last could query; the last was told to answer
+        # and offered no tools.
+        assert [tools for tools, _ in model.seen] == [True, True, False]
+        assert model.seen[-1][1][-1].content == LAST_CALL_NUDGE
+        assert all(m[-1].content != LAST_CALL_NUDGE
+                   for _, m in model.seen[:-1])
+
+    def test_middleware_on_the_spec_is_refused_not_ignored(self, root):
+        model = ToolCallingFake(responses=[AIMessage(content="ok")])
+
+        with pytest.raises(ValueError, match="runs no middleware"):
+            build_report_library_subagent(model, library_root=root,
+                                          middleware=[object()])
 
     def test_the_runnable_answers_with_a_structured_response(self, root):
         model = ToolCallingFake(responses=[

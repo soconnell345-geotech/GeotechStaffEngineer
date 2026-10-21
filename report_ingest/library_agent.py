@@ -22,9 +22,12 @@ answer to come from.
 
 THE CEILINGS ARE PYTHON, not middleware. deepagents uses a CompiledSubAgent's
 runnable AS PROVIDED and never reads a spec's middleware for one -- the same
-note as :mod:`report_ingest.subagent` -- so the limits that actually hold are
-in this module: :data:`MAX_TOOL_CALLS` queries per answer, and every query's
-own rows and characters capped before the result reaches the model.
+note as :mod:`report_ingest.subagent` (BACKLOG RI-02) -- so the limits that
+actually hold are in this module: :data:`MAX_TOOL_CALLS` queries per answer,
+every query's own rows and characters capped before the result reaches the
+model, and a model-call budget (``max_model_calls``) whose last call is made
+without tools, so it answers from what the queries returned, as the other
+helpers' budget middleware does.
 
 THE MODEL IS THE APP'S. Unlike the ingest, which runs readers on its own
 engine one bounded call at a time, this sub-agent is a model with tools and
@@ -74,6 +77,11 @@ MAX_RESULT_CHARS = 4000
 #: at most one batch of queries, so this bounds the run even if the model
 #: asks for one query at a time.
 MAX_TURNS = MAX_TOOL_CALLS + 2
+#: Sent with the last model call a budget allows, which carries no tools.
+LAST_CALL_NUDGE = (
+    "That is the last call this answer may make: no more queries. Answer "
+    "now from the query results above, cite as before, and say what the "
+    "library was not asked or did not return.")
 
 LIBRARY_SYSTEM_PROMPT = """\
 You answer questions about a LIBRARY of geotechnical reports that have
@@ -887,7 +895,8 @@ def build_report_library_graph(model: Any, *, library_root: Any = None,
                                max_tool_calls: int = MAX_TOOL_CALLS,
                                max_rows: int = MAX_ROWS_PER_CALL,
                                max_result_chars: int = MAX_RESULT_CHARS,
-                               extra_system_prompt: Optional[str] = None
+                               extra_system_prompt: Optional[str] = None,
+                               max_model_calls: Optional[int] = None
                                ) -> Any:
     """A model-with-tools graph that answers ONLY from the library.
 
@@ -903,11 +912,16 @@ def build_report_library_graph(model: Any, *, library_root: Any = None,
 
     The ceilings are enforced HERE, in Python: ``max_tool_calls`` queries per
     answer, ``max_rows`` rows and ``max_result_chars`` characters per query
-    result.
+    result, and ``max_model_calls`` model calls (never more than
+    :data:`MAX_TURNS`), the last of them made without tools so that it
+    answers.
     """
     from langgraph.graph import END, StateGraph
     from langgraph.graph.message import add_messages
     from typing_extensions import Annotated, TypedDict
+
+    turn_cap = (min(MAX_TURNS, int(max_model_calls)) if max_model_calls
+                else MAX_TURNS)
 
     # The functional TypedDict spelling for the same reason as the ingest's:
     # this module carries ``from __future__ import annotations``, so a class
@@ -954,9 +968,15 @@ def build_report_library_graph(model: Any, *, library_root: Any = None,
                       f"queried here.")
             return {"messages": seed + [AIMessage(content=answer.error)],
                     "structured_response": answer}
-        reply = bound.invoke([SystemMessage(content=prompt)] + history)
-        return {"messages": seed + [reply],
-                "turns": int(state.get("turns") or 0) + 1}
+        turn = int(state.get("turns") or 0) + 1
+        if turn >= turn_cap and turn > 1:
+            # The budget's last call: no tools, and told to answer, so the
+            # run ends with an answer rather than a query nobody will run.
+            reply = model.invoke([SystemMessage(content=prompt)] + history
+                                 + [HumanMessage(content=LAST_CALL_NUDGE)])
+        else:
+            reply = bound.invoke([SystemMessage(content=prompt)] + history)
+        return {"messages": seed + [reply], "turns": turn}
 
     def query(state: State) -> Dict[str, Any]:
         from langchain_core.messages import ToolMessage
@@ -1012,7 +1032,7 @@ def build_report_library_graph(model: Any, *, library_root: Any = None,
         messages = list(state.get("messages") or [])
         if state.get("structured_response") is not None:
             return "finish"
-        if int(state.get("turns") or 0) >= MAX_TURNS:
+        if int(state.get("turns") or 0) >= turn_cap:
             return "finish"
         if messages and _tool_calls(messages[-1]):
             return "query"
@@ -1042,27 +1062,26 @@ def build_report_library_subagent(model: Any, *, library_root: Any = None,
                                   ) -> Dict[str, Any]:
     """The deepagents ``CompiledSubAgent`` spec for the library.
 
-    The ``middleware`` entry is a DECLARATION, exactly as it is on the
-    ingest's spec: deepagents uses a compiled sub-agent's runnable as
-    provided and reads no middleware for one. The ceilings that hold are
-    :data:`MAX_TOOL_CALLS` and the per-result caps, applied in the graph.
+    The spec carries no middleware: deepagents uses a compiled runnable as
+    provided and would drop it (BACKLOG RI-02), so ``max_model_calls`` is
+    enforced in the graph with the other ceilings, and a non-empty
+    ``middleware`` is refused rather than accepted and ignored.
     """
-    spec: Dict[str, Any] = {
+    if middleware:
+        raise ValueError(
+            "a compiled sub-agent runs no middleware (deepagents uses its "
+            "runnable as provided); the library's ceilings are "
+            "max_model_calls and max_tool_calls")
+    return {
         "name": SUBAGENT_NAME,
         "description": SUBAGENT_DESCRIPTION,
         "runnable": build_report_library_graph(
             model, library_root=library_root, library=library,
             db_path=db_path, max_tool_calls=max_tool_calls,
             max_rows=max_rows, max_result_chars=max_result_chars,
-            extra_system_prompt=extra_system_prompt),
+            extra_system_prompt=extra_system_prompt,
+            max_model_calls=max_model_calls),
     }
-    carried = list(middleware or [])
-    if max_model_calls:
-        from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-        carried.append(ModelCallBudgetMiddleware(max_model_calls))
-    if carried:
-        spec["middleware"] = carried
-    return spec
 
 
 def answer_question(question: str, *, model: Any, library_root: Any = None,

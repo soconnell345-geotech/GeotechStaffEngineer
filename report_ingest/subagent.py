@@ -20,16 +20,30 @@ WHAT COMES BACK. Counts, the paths, the first lines of the summary, the number
 of QA entries and the workflow. Never the record: it runs to megabytes on a
 real report, and the primary's next turn would re-send all of it.
 
-THE MIDDLEWARE ON THE SPEC, SAID PLAINLY. deepagents uses a compiled
-sub-agent's runnable AS PROVIDED -- for a spec with a ``runnable`` it reads
-the name, the description and the runnable and nothing else, so the
-``middleware`` list this builder puts on the spec reaches no model and
-enforces nothing by itself. It is there because every other sub-agent in this
-app carries the same two entries and a reader comparing the specs should not
-have to wonder which ones were forgotten. What actually holds in this graph is
-Python: the model-call ceilings are :class:`~report_ingest.graph.Budgets`,
-applied per reader by the ingest itself, and there is no filesystem tool on
-any model in here for a guard to intercept.
+THE CEILINGS ARE IN THE GRAPH, NOT ON THE SPEC (BACKLOG RI-02). deepagents
+uses a compiled sub-agent's runnable AS PROVIDED: for a spec with a
+``runnable`` it reads the name, the description and the runnable and nothing
+else, so middleware put on the spec reaches nothing. Until RI-02 the spec
+carried a model-call budget and a filesystem guard all the same, and neither
+ran. Now the spec carries no middleware, and what the other helpers get from
+theirs is enforced here:
+
+* the model-call budget is :class:`CallCeiling`: every model call of one
+  delegation (triage, the page voters, the label review, every reader, every
+  report bound inside this one) counts against one ceiling, over the reading
+  engine and the vision engine alike. A call past it is refused before it is
+  made; the pass or item it would have served is a ``skipped`` QA entry, the
+  record is written with what was read, and the answer says so. Delegating
+  the same report again resumes: what was read is kept in its folder.
+  :class:`~report_ingest.graph.Budgets` still caps each reader;
+* the filesystem guard's point, that a helper's files are real files in the
+  conversation's folder, is the ``out_dir_factory`` the app passes: the
+  record and its exports are written there, never into the working
+  directory or only a temp folder. No model in here has a filesystem tool to
+  guard;
+* the answer comes back as the primary's ``task`` result, which the
+  primary's own tool middleware (the activity log, the tool-error guard, the
+  large-result key map) already wraps.
 """
 
 from __future__ import annotations
@@ -44,6 +58,7 @@ from pydantic import BaseModel, Field
 __all__ = [
     "build_report_ingest_subagent", "build_report_ingest_graph",
     "run_ingest", "diggs_verdict", "IngestSummary", "parse_request",
+    "CallCeiling", "CallCeilingReached", "DEFAULT_MAX_MODEL_CALLS",
     "SUBAGENT_NAME",
     "SUBAGENT_DESCRIPTION", "SUMMARY_LINES",
 ]
@@ -68,6 +83,74 @@ SUBAGENT_DESCRIPTION = (
 SUMMARY_LINES = 12
 #: And how many characters, whichever is hit first.
 SUMMARY_CHARS = 1200
+
+#: The model calls one delegation may spend, every pass and every bound
+#: report included. A ceiling against a runaway, not a budget for a normal
+#: run: the 13 whole reports of Foundry stage b took 60 to 897 calls each,
+#: bound reports included (``module_work/harness_theory/report_ingest.md``
+#: section 7), and :class:`~report_ingest.graph.Budgets` caps each reader.
+DEFAULT_MAX_MODEL_CALLS = 1000
+
+
+class CallCeilingReached(RuntimeError):
+    """A model call refused because the delegation's ceiling was reached."""
+
+
+class CallCeiling:
+    """One delegation's model calls, counted across every engine it uses.
+
+    :meth:`wrap` returns an engine whose calls count here; the reading
+    engine and the vision engine wrapped by one ceiling share it. A call
+    past ``limit`` is refused with :class:`CallCeilingReached` before
+    anything is sent, which the ingest records as a skipped pass or item.
+    """
+
+    def __init__(self, limit: int) -> None:
+        if int(limit) < 1:
+            raise ValueError("a model-call ceiling must be at least 1; pass "
+                             "None for none")
+        self.limit = int(limit)
+        self.used = 0
+        self.refused = 0
+
+    @property
+    def reached(self) -> bool:
+        return self.refused > 0
+
+    def wrap(self, engine: Any) -> Any:
+        return None if engine is None else _CountedEngine(engine, self)
+
+    def take(self) -> None:
+        """Count one call, or refuse it."""
+        if self.used >= self.limit:
+            self.refused += 1
+            raise CallCeilingReached(
+                f"the ceiling of {self.limit} model calls for one ingest "
+                f"was reached")
+        self.used += 1
+
+
+class _CountedEngine:
+    """An ingest engine whose calls count against a :class:`CallCeiling`;
+    everything else is the engine it wraps."""
+
+    def __init__(self, inner: Any, ceiling: CallCeiling) -> None:
+        self._inner = inner
+        self._ceiling = ceiling
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") or name in ("_inner", "_ceiling"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+    def complete(self, messages: Any, *, system: Any = None,
+                 tools: Any = None, images: Any = None,
+                 output_format: Any = None, max_tokens: Any = None) -> Any:
+        self._ceiling.take()
+        return self._inner.complete(messages, system=system, tools=tools,
+                                    images=images,
+                                    output_format=output_format,
+                                    max_tokens=max_tokens)
 
 
 class IngestSummary(BaseModel):
@@ -104,6 +187,15 @@ class IngestSummary(BaseModel):
         default=0,
         description="how many of the standing questions this report answered")
     model_calls: int = Field(default=0)
+    model_call_ceiling: Optional[int] = Field(
+        default=None,
+        description="the most model calls this delegation could spend; null "
+                    "when no ceiling was set")
+    ceiling_reached: bool = Field(
+        default=False,
+        description="whether that ceiling stopped the run: what it stopped is "
+                    "a skipped QA entry in the record, and asking for the "
+                    "same report again resumes from what was read")
     diggs_ok: Optional[bool] = Field(
         default=None,
         description="whether the DIGGS file passed both of its gates: "
@@ -180,7 +272,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
                vision_engine: Any = None, vision_mode: str = "sheet",
                trust_table: Any = None,
                templates: Any = None,
-               ingest_bound: bool = True) -> IngestSummary:
+               ingest_bound: bool = True,
+               max_model_calls: Optional[int] = None) -> IngestSummary:
     """Read one report and return the compact answer, never the record.
 
     The label parameters are the graph's own and are documented on
@@ -189,9 +282,16 @@ def run_ingest(source: str, questions: Sequence[str], *,
     ``ingest_bound`` reads a report bound inside this one as its own record
     and is on by default; the summary then names each one and where it went,
     so the primary agent knows there is a second record to ask about.
+
+    ``max_model_calls`` is the run's :class:`CallCeiling` over both engines
+    (``None``: none).
     """
     from report_ingest.graph import ingest_report, output_paths
 
+    ceiling = CallCeiling(max_model_calls) if max_model_calls else None
+    if ceiling is not None:
+        engine = ceiling.wrap(engine)
+        vision_engine = ceiling.wrap(vision_engine)
     record = ingest_report(source, engine, out_dir=out_dir, budgets=budgets,
                            report_id=report_id, questions=list(questions),
                            db_path=db_path, di_result=di_result,
@@ -218,6 +318,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
         answered=len(record.general.answered()
                      + record.natural_hazards.answered()),
         model_calls=record.document.model_calls,
+        model_call_ceiling=ceiling.limit if ceiling is not None else None,
+        ceiling_reached=bool(ceiling is not None and ceiling.reached),
         label_split_pages=record.document.label_split_pages,
         label_disagreements=sum(1 for entry in record.qa
                                 if entry.kind == "label_disagreement"),
@@ -307,7 +409,9 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                               vision_mode: str = "sheet",
                               trust_table: Any = None,
                               templates: Any = None,
-                              ingest_bound: bool = True) -> Any:
+                              ingest_bound: bool = True,
+                              max_model_calls: Optional[int] =
+                              DEFAULT_MAX_MODEL_CALLS) -> Any:
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
@@ -316,10 +420,15 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
     Prompter. It is a factory rather than an engine so that each run gets its
     own cost meter and nothing is held across turns.
 
-    ``out_dir_factory`` decides where a report's outputs go, given its source;
-    the default is a folder named after the file beside the working directory.
-    ``resolve_source`` turns whatever the primary said into a readable path --
-    the app passes its attachment resolver.
+    ``out_dir_factory`` decides where a report's outputs go, given the file
+    as it was named (a path or an attachment key); the default is a folder
+    named after the file under ``report_ingest_out`` in the working
+    directory, and the app passes the conversation's own folder.
+    ``resolve_source`` turns whatever the primary said into a readable path
+    or the document's bytes -- the app passes its attachment resolver.
+
+    ``max_model_calls`` is each delegation's :class:`CallCeiling`, enforced
+    here (``None``: none).
     """
     from langgraph.graph import END, StateGraph
     from langgraph.graph.message import add_messages
@@ -354,6 +463,9 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
             return {"messages": [AIMessage(content=answer.error)],
                     "structured_response": answer}
 
+        # The folder is named after the file as it was asked for: an
+        # attachment key resolves to the document's bytes, not a name.
+        named = source
         if resolve_source is not None:
             try:
                 source = resolve_source(source)
@@ -372,11 +484,12 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
             return {"messages": [AIMessage(content=answer.error)],
                     "structured_response": answer}
 
-        out_dir = (out_dir_factory(source) if out_dir_factory
-                   else _default_out_dir(source))
+        out_dir = (out_dir_factory(named) if out_dir_factory
+                   else _default_out_dir(named))
         try:
             answer = run_ingest(source, questions, engine=engine,
                                 out_dir=out_dir, budgets=budgets,
+                                report_id=_stem(named),
                                 db_path=db_path,
                                 label_policy=label_policy,
                                 review_mode=review_mode,
@@ -386,7 +499,8 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                                 vision_mode=vision_mode,
                                 trust_table=trust_table,
                                 templates=templates,
-                                ingest_bound=ingest_bound)
+                                ingest_bound=ingest_bound,
+                                max_model_calls=max_model_calls)
         except Exception as exc:                 # one report, not the session
             answer = IngestSummary(
                 error=f"the ingest failed: {type(exc).__name__}: {exc}")
@@ -396,7 +510,12 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
             f"QA entr(ies). Written to {answer.paths.get('record', out_dir)}."
             + (f" {len(answer.bound_documents)} report(s) bound inside this "
                f"one were read into records of their own."
-               if answer.bound_documents else ""))
+               if answer.bound_documents else "")
+            + (f" The ceiling of {answer.model_call_ceiling} model calls for "
+               f"one ingest was reached, so some passes or items were not "
+               f"read (each is a skipped QA entry); asking for the same "
+               f"report again resumes from what was read."
+               if answer.ceiling_reached else ""))
         return {"messages": [AIMessage(content=text)],
                 "structured_response": answer}
 
@@ -422,9 +541,13 @@ def _last_text(messages: Sequence[Any]) -> str:
     return ""
 
 
+def _stem(source: str) -> str:
+    """The file's name without its folder or extension."""
+    return os.path.splitext(os.path.basename(str(source)))[0] or "report"
+
+
 def _default_out_dir(source: str) -> str:
-    stem = os.path.splitext(os.path.basename(str(source)))[0] or "report"
-    return os.path.join("report_ingest_out", stem)
+    return os.path.join("report_ingest_out", _stem(source))
 
 
 def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
@@ -434,7 +557,8 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                  db_path: Any = None,
                                  resolve_source: Optional[
                                      Callable[[str], str]] = None,
-                                 max_model_calls: Optional[int] = None,
+                                 max_model_calls: Optional[int] =
+                                 DEFAULT_MAX_MODEL_CALLS,
                                  middleware: Optional[Sequence[Any]] = None,
                                  label_policy: str = "structural",
                                  review_mode: str = "disagreements",
@@ -447,12 +571,17 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                  ) -> Dict[str, Any]:
     """The deepagents ``CompiledSubAgent`` spec for the ingest.
 
-    See this module's docstring for what the ``middleware`` entry does and
-    does not do: deepagents uses the runnable as provided, so the list is a
-    declaration rather than an enforcement, and the real ceilings are
-    :class:`~report_ingest.graph.Budgets`.
+    The spec carries no middleware: deepagents uses a compiled runnable as
+    provided and would drop it (BACKLOG RI-02). ``max_model_calls`` is
+    enforced inside the graph instead (:class:`CallCeiling`; ``None`` for
+    none), and a non-empty ``middleware`` is refused rather than accepted
+    and ignored.
     """
-    spec: Dict[str, Any] = {
+    if middleware:
+        raise ValueError(
+            "a compiled sub-agent runs no middleware (deepagents uses its "
+            "runnable as provided); the ingest's ceiling is max_model_calls")
+    return {
         "name": SUBAGENT_NAME,
         "description": SUBAGENT_DESCRIPTION,
         "runnable": build_report_ingest_graph(
@@ -462,12 +591,6 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
             review_mode=review_mode,
             vision_engine_factory=vision_engine_factory,
             vision_mode=vision_mode, trust_table=trust_table,
-            templates=templates, ingest_bound=ingest_bound),
+            templates=templates, ingest_bound=ingest_bound,
+            max_model_calls=max_model_calls),
     }
-    carried = list(middleware or [])
-    if max_model_calls:
-        from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-        carried.append(ModelCallBudgetMiddleware(max_model_calls))
-    if carried:
-        spec["middleware"] = carried
-    return spec

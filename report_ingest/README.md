@@ -1040,15 +1040,28 @@ live Prompter out of whatever the host built the agent with; when there is
 none, the tool says so rather than reading a report on a model nobody asked
 for.
 
-**About the middleware on the spec.** deepagents uses a compiled sub-agent's
-runnable AS PROVIDED — for a spec carrying a `runnable` it reads the name, the
-description and the runnable and nothing else — so the `ScratchFilesystemGuard`
-and `ModelCallBudgetMiddleware` on this spec reach no model and enforce nothing
-by themselves. They are there because every other sub-agent in this build
-carries the same two and a reader comparing the specs should not have to wonder
-which was forgotten. What actually bounds this graph is Python: `Budgets`,
-applied per reader, and a graph with no filesystem tool on any model for a
-guard to intercept.
+**The ceilings are in the graph, not on the spec (BACKLOG RI-02).** deepagents
+uses a compiled sub-agent's runnable AS PROVIDED — for a spec carrying a
+`runnable` it reads the name, the description and the runnable and nothing
+else. Until RI-02 the spec carried a `ModelCallBudgetMiddleware` and a
+`ScratchFilesystemGuard` all the same, and neither ran. Now the spec carries no
+middleware (a builder given some refuses it), and:
+
+- **the model-call budget** is `subagent.CallCeiling`: every call of one
+  delegation (triage, the page voters, the review, every reader, every bound
+  report) counts against one ceiling over the reading and vision engines,
+  `build_deep_agent(report_ingest_max_model_calls=1000)` by default, above the
+  60–897 calls a whole report took on Foundry. A call past it is refused before
+  it is sent; what it would have served is a `skipped` QA entry, the record is
+  written with what was read, the answer carries `ceiling_reached`, and
+  delegating the same report again resumes from the items already saved.
+  `Budgets` still caps each reader;
+- **the guard's point**, real files in the conversation's folder: the app
+  passes an `out_dir_factory` that writes to `report_ingest/<file name>` in the
+  folder bound to the turn, the same place the tool writes, named after the
+  file as it was asked for (an attachment key resolves to bytes, not a name);
+- the answer comes back as the primary's `task` result, which the primary's
+  own tool middleware already logs, guards and key-maps.
 
 ## The report library (`library.py`, `library_agent.py`)
 
@@ -1141,8 +1154,11 @@ answer, and end with a `Gap:` line per thing left unsettled.
 **The ceilings are Python**, for the same reason as the ingest's: deepagents
 uses a CompiledSubAgent's runnable as provided and reads no middleware for one.
 So the graph counts queries itself — `MAX_TOOL_CALLS = 8` per answer, refused
-with a message telling the model to answer from what it has — and every result
-is capped at 25 rows and 4,000 characters before it reaches the model.
+with a message telling the model to answer from what it has — every result
+is capped at 25 rows and 4,000 characters before it reaches the model, and
+`max_model_calls` (10 in the app) caps the model calls, the last of them made
+without tools and told to answer (RI-02; it used to be a middleware on the
+spec, which nothing ran).
 
 **The structured response**: `answer`, `citations[]`, `reports_consulted[]`,
 `gaps[]`, `queries`, `error`. The citations are CHECKED rather than copied: a
