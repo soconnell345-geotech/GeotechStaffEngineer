@@ -167,6 +167,25 @@ def test_list_reinforcement_says_what_each_needs():
     assert "allowable" in out["Tallowable"]
 
 
+@pytest.mark.parametrize("name, value", [
+    ("reinforcement_Tallowable", 138.4), ("reinforcement_type", "strip"),
+    ("reinforcement_Fy", 448.0), ("reinforcement_thickness", 0.01),
+    ("reinforcement_transverse_spacing", 0.3)])
+def test_a_built_in_refuses_the_custom_inputs_it_would_not_use(name, value):
+    """GM-262 review: a built-in carries its own Tal, type and bar
+    geometry, so a custom input beside its name was taken and not used: a
+    4W15 mat's Tal 138.4 given with welded_wire_grid_w11 ran the 4W11
+    mat's 96.44."""
+    err = _mse(reinforcement_name="welded_wire_grid_w11", Sh=1.524,
+               **{name: value}).get("error", "")
+    assert "does not take" in err and name in err, err
+    assert "custom reinforcement" in err
+    r = _mse(reinforcement_name="my mat", reinforcement_type="bar_mat",
+             reinforcement_Tallowable=138.4, reinforcement_width=0.4572,
+             Sh=1.524)
+    assert "error" not in r, r.get("error")
+
+
 @pytest.mark.parametrize("name", ["reinforcement_horizontal_spacing",
                                   "coverage_ratio", "F_star_tested",
                                   "alpha_tested"])

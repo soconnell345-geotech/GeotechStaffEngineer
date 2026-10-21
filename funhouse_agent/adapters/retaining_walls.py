@@ -90,6 +90,12 @@ def _with_coverage(reinforcement, params):
         coverage_ratio=params.get("coverage_ratio"))
 
 
+#: The custom reinforcement's own inputs, which a built-in does not take.
+_CUSTOM_ONLY = ("reinforcement_Tallowable", "reinforcement_type",
+                "reinforcement_Fy", "reinforcement_thickness",
+                "reinforcement_transverse_spacing")
+
+
 def _build_reinforcement(params):
     if params.get("coverage_ratio") is not None \
             and params.get("reinforcement_width") is not None:
@@ -101,6 +107,17 @@ def _build_reinforcement(params):
             "3-1, p. 3-12), not both: the width is used only for Rc")
     name = params.get("reinforcement_name", "").lower()
     if name in _REINFORCEMENT_DB:
+        # GM-262 review: a built-in carries its own Tal, type and bar
+        # geometry, so these were taken and not used
+        unused = [k for k in _CUSTOM_ONLY if params.get(k) is not None]
+        if unused:
+            raise ValueError(
+                f"mse_wall does not take {', '.join(unused)} with the "
+                f"built-in reinforcement_name '{name}': the built-in "
+                "carries its own Tal, type and bar geometry (see "
+                "list_reinforcement). Leave them out, or give a custom "
+                "reinforcement: reinforcement_Tallowable with "
+                "reinforcement_type and no built-in name")
         r = _with_coverage(_REINFORCEMENT_DB[name], params)
     else:
         r = _custom_reinforcement(params)
@@ -964,7 +981,7 @@ METHOD_INFO = {
             "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m): the height of the reinforced soil mass, incl. embedment (GEC-11)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
-            "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable. A steel strip or grid also needs its horizontal spacing (reinforcement_horizontal_spacing) or coverage_ratio."},
+            "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable. A steel strip or grid also needs its horizontal spacing (reinforcement_horizontal_spacing) or coverage_ratio. A built-in carries its own Tal, type and bar geometry, and refuses reinforcement_Tallowable, reinforcement_type, reinforcement_Fy, reinforcement_thickness and reinforcement_transverse_spacing."},
             "reinforcement_horizontal_spacing": {"type": "float or list", "required": False, "description": "Centre-to-centre horizontal spacing Sh (m) of the strips, grids or sheets at one level (GEC-11 Vol I p. 3-12): one number for the wall, or a list with one per reinforcement level from the top down, as GEC-11 Vol II Example E3 changes it with depth (Table E3-7.3, p. E3-19: 2 strips a 5 ft panel at Levels 1 to 8, 3 at Levels 9 to 12); a list must have as many values as the wall has levels. With the reinforcement's width b it gives the coverage ratio Rc = b/Sh (Eq. 3-1), which scales the pullout resistance (Eq. 4-35, p. 4-49) and the tensile resistance (Tal x Rc, p. 4-47) to a metre of wall. Required for a steel strip or grid unless coverage_ratio is given instead; a call with neither is refused, since GEC-11 prints no spacing to assume (Vol II Example E3 uses 50 mm strips at 0.76 and 0.51 m, 2 or 3 per 1.5 m panel). A geosynthetic with neither is a continuous layer, Rc = 1 (p. 3-13). Aliases: Sh, horizontal_spacing."},
             "coverage_ratio": {"type": "float or list", "required": False, "description": "Coverage ratio Rc = b/Sh (GEC-11 Vol I Eq. 3-1, p. 3-12), more than 0 and at most 1, given directly instead of reinforcement_horizontal_spacing with reinforcement_width (not both): one number for the wall, or a list with one per reinforcement level from the top down. Alias: Rc."},
             "F_star_tested": {"type": "float or list", "required": False, "description": "Pullout resistance factor F* from pullout tests on the product in the wall's backfill (GEC-11 Vol I Table 3-6 note (i), p. 3-17; Appendix B): one number at every level, or [[depth_m, F*], ...] with depths below the top of the wall, linear between and the end value beyond. Replaces the empirical F* (Eqs. 3-4 to 3-8); note (i) accepts the empirical values only for Table 3-1 granular fill with Cu >= 4 ('For fill outside these limits, tests must be run'). The result's choices give FOS_pullout at the empirical F* beside it."},
