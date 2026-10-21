@@ -58,8 +58,8 @@ def test_log_spiral_default_is_ufc_by_geometry_and_listed():
 
 def test_left_out_wall_friction_is_listed_at_the_value_it_took():
     """GM-232: delta_deg left out is listed in defaults_used at the wall
-    friction the source took (0.66 phi' for UFC), not the declared 0.0 the
-    Coulomb theory takes; the 1948 chart refuses it (GM-253)."""
+    friction the source took (0.66 phi' for UFC), not the 0 the Coulomb
+    theory takes; the 1948 chart refuses it (GM-253)."""
     assert _ck()["defaults_used"]["delta_deg"] == pytest.approx(19.8)
     fig = _ck(log_spiral_source="dm7_2_fig_4_13")
     assert fig["defaults_used"]["delta_deg"] == pytest.approx(19.8)
@@ -68,9 +68,35 @@ def test_left_out_wall_friction_is_listed_at_the_value_it_took():
     assert d["how"] == "default" and "0.66, for which" in d["basis"]
     assert "needs the wall friction given (delta_deg)" in _ck(
         log_spiral_source="caquot_kerisel_1948")["error"]
-    # Coulomb keeps its declared 0.0
+    # Coulomb takes none: 0 (GM-257)
     co = _k(phi_deg=30.0, theory="coulomb", state="passive")
     assert co["defaults_used"]["delta_deg"] == 0.0
+
+
+def test_a_left_out_wall_friction_is_declared_by_theory():
+    """GM-257: delta_deg declares no one default (0.0 was the Coulomb
+    value and misdescribed caquot_kerisel); its case says what each theory
+    takes left out, and each run lists the value it took."""
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    spec = METHOD_INFO["earth_pressure_coefficient"]["parameters"][
+        "delta_deg"]
+    assert "default" not in spec
+    case = D.absent_case(spec)
+    for words in ("Coulomb delta = 0 (no wall friction)",
+                  "caquot_kerisel delta = 0.66 phi'", "p. 191",
+                  "'caquot_kerisel_1948' and 'dm7_2_eq_4_12' refuse",
+                  "Caltrans T&S p. 4-29", "Table 4-1 (p. 184)"):
+        assert words in case, words
+    assert "Not given, it depends on the theory" in spec["description"]
+    active = _k(phi_deg=30.0, theory="coulomb")
+    assert active["K"] == pytest.approx(1 / 3, abs=1e-4)
+    assert active["defaults_used"]["delta_deg"] == 0.0
+    assert _ck()["defaults_used"]["delta_deg"] == pytest.approx(19.8)
+    # Rankine and K0 take none, and list none
+    for params in ({}, {"state": "passive"}, {"state": "at_rest"}):
+        r = _k(phi_deg=30.0, **params)
+        assert r["delta_deg"] == 0.0
+        assert "delta_deg" not in r.get("defaults_used", {})
 
 
 @pytest.mark.parametrize("source", ["caquot_kerisel_1948", "dm7_2_eq_4_12"])

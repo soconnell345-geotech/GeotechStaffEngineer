@@ -1303,6 +1303,20 @@ friction choice gives the Kp at delta = 0 beside the delta used:
   passive results "unreliable" for wall friction "greater than phi'/3",
   and the failure surface "almost linear" when delta is small).
 
+**What a left-out wall friction means, by theory (GM-257, 2026-10-21).**
+The tool declared `delta_deg` with one default, 0.0, which is Coulomb's
+and misdescribed 'caquot_kerisel' (0.66 phi' with the UFC sources, refused
+with the 1948 chart and Eq. 4-12 by name). It now declares no default and
+a case by theory (`declare_when_absent`): Coulomb takes delta = 0, no wall
+friction; caquot_kerisel takes 0.66 phi' with the UFC sources, and the
+other two refuse the call. The description says the same, and `delta_deg`
+applies to both theories (`applies_when`). Each run lists the value it
+took in `defaults_used`: 0 for Coulomb, 0.66 phi' (19.8 at phi' 30) for
+the UFC sources; Rankine and K0 take none and list none. No number
+changes. Tests: `funhouse_agent/tests/test_earth_pressure_sources.py`,
+the probes `retaining_walls|earth_pressure_coefficient#coulomb` and
+`#coulomb_passive`.
+
 ## The foundation cohesion in sliding (GM-212, 2026-10-20)
 
 Before, the sliding check added ca = 2/3 c_foundation on B to the friction

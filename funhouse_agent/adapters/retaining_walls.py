@@ -848,7 +848,11 @@ def _run_earth_pressure_coefficient(params):
         else:
             K, symbol = _ep.rankine_Kp(phi), "Kp"
     else:  # coulomb
-        delta = p.get("delta_deg", 0.0)
+        delta = p.get("delta_deg")
+        if delta is None:
+            # GM-257: none, given in defaults_used as the 0 it took
+            delta = 0.0
+            how_given(None, None, name="delta_deg", took=0.0)
         alpha = p.get("alpha_deg", 90.0)
         if state == "active":
             K, symbol = _ep.coulomb_Ka(phi, delta, alpha, beta), "Ka"
@@ -1172,14 +1176,14 @@ METHOD_INFO = {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
             "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel", "log_spiral"], "description": "Earth pressure theory. 'caquot_kerisel' or 'log_spiral' (the same) = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses K0 = (1 - sin(phi)) sqrt(OCR) (EN 1997-1 Eq. 9.1; OCR 1 is Jaky's 1 - sin(phi)), and behind ground rising from the wall (beta_deg > 0) EN 1997-1 Eq. 9.2, K0 (1 + sin beta)."},
             "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
-            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for); 'caquot_kerisel_1948' and 'dm7_2_eq_4_12' need it given and refuse a call without it (Caltrans T&S p. 4-29: 'Given delta, beta, and phi'). With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil; FHWA NHI-06-089 p. 10-17 suggests at most 1/2 phi' for passive); the result's choices give the delta used and the Kp at delta = 0."},
+            "delta_deg": {"type": "float", "required": False, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. Not given, it depends on the theory: Coulomb takes delta = 0, no wall friction; caquot_kerisel takes delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for), and 'caquot_kerisel_1948' and 'dm7_2_eq_4_12' need it given and refuse a call without it (Caltrans T&S p. 4-29: 'Given delta, beta, and phi'); defaults_used gives the value taken. With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil; FHWA NHI-06-089 p. 10-17 suggests at most 1/2 phi' for passive); the result's choices give the delta used and the Kp at delta = 0."},
             "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (by default UFC 3-220-20 Fig. 4-13: a vertical face, beta/phi' -0.6 to +1 at delta/phi' 0.66; the Caquot-Kerisel 1948 chart, Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg, any wall friction; Eq. 4-12 and Fig. 4-12 are for level ground) and at_rest (EN 1997-1:2004 Eq. 9.2, p. 104: K0;beta = K0 (1 + sin beta), the horizontal component of the at-rest pressure, for ground sloping upwards from the wall at 0 < beta <= phi'; ground falling away is refused). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
             "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical; below 90 when the soil overhangs the face, as UFC 3-220-20 Fig. 4-7 draws a gravity wall's back, where its theta = 90 - alpha_deg is positive). Coulomb only; the others take a vertical back and refuse another value (the log-spiral Kp takes a battered face as theta_deg = 90 - alpha_deg). Alias: alpha."},
             "theta_deg": {"type": "float", "required": False, "default": 0.0, "description": "With theory 'caquot_kerisel' (passive): the wall face's angle from vertical (degrees), UFC 3-220-20's theta (Figs. 4-7, 4-12): positive when the face slopes down into the soil it bears on, so the soil overhangs it (Kp falls; Fig. 4-12 draws the toe of the face farther into the soil than its top), negative the other way (Kp rises); theta_deg = 90 - Coulomb's alpha_deg. A non-zero value reads UFC 3-220-20 Fig. 4-12 (p. 192): level ground only, theta -30 to +40 deg, delta/phi' 0.66 only, Kp up to 15. Alias: theta."},
             "OCR": {"type": "float", "required": False, "default": 1.0, "description": "Overconsolidation ratio for the at-rest K0 only (state 'at_rest'): EN 1997-1:2004 Sec. 9.5.2(3), Eq. 9.1 (p. 104), K0 = (1 - sin phi') x sqrt(OCR), then Eq. 9.2 behind sloping ground. 1 = normally consolidated (the default; the result's choices say whether it was given or taken as 1). At least 1. The standard says 'The formula should not be used for very high values of OCR' and prints no limit, so the choices quote that for OCR above 1 and leave the call to you. Aliases: ocr, overconsolidation_ratio. Refused with active or passive, which take none."},
             "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for (pp. 191-193): Eq. 4-12 (p. 191) for a vertical face and level ground, at any wall friction; Fig. 4-12 (p. 192) for a battered face (theta_deg) with level ground and Fig. 4-13 (p. 193) for a vertical face with sloping ground (beta_deg), both drawn for delta/phi' = 0.66 only. UFC prints nothing for a battered face with sloping ground, nor for those two charts at another wall friction: the default refuses those and names what covers them. 'caquot_kerisel_1948': the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; a vertical wall, level or sloping ground, any wall friction, given as delta_deg. 'dm7_2_eq_4_12', 'dm7_2_fig_4_12', 'dm7_2_fig_4_13': each UFC source on its own. They differ: at phi 30, delta/phi 0.66 on level ground the 1948 chart gives 5.4, Figs. 4-12 and 4-13 5.3, Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The result's choices give the route taken and each other source's Kp."},
         },
-        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground at OCR 1, 'en_1997_1_eq_9_1' on level ground at OCR above 1, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources; the 1948 chart and Eq. 4-12 by name refuse it).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, and the wall friction used, given or left out, with the Kp at delta = 0 beside it; or for at_rest the K0 equation (EN 1997-1 Eq. 9.1, with whether OCR was given or taken as 1, and Eq. 9.2 behind sloping ground) with its arithmetic, page and the sign of beta. Tell the user."},
+        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground at OCR 1, 'en_1997_1_eq_9_1' on level ground at OCR above 1, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used. Left out: 0 for Coulomb (Rankine and K0 take none, 0); 0.66 phi' for caquot_kerisel with the UFC sources, while the 1948 chart and Eq. 4-12 by name refuse it.", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, and the wall friction used, given or left out, with the Kp at delta = 0 beside it; or for at_rest the K0 equation (EN 1997-1 Eq. 9.1, with whether OCR was given or taken as 1, and Eq. 9.2 behind sloping ground) with its arithmetic, page and the sign of beta. Tell the user."},
     },
     "mse_wall": {
         "category": "MSE Wall",
@@ -1319,7 +1323,9 @@ _ADHESION = [r for r in SLIDING_COHESION if r != "drained"]
 declare_applies_when(METHOD_INFO, {
     "earth_pressure_coefficient": {
         "theory": {"state": _ACTIVE_PASSIVE},
-        "delta_deg": {"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
+        # GM-257: Coulomb's, and the log-spiral Kp's (GM-232)
+        "delta_deg": [{"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
+                      {"theory": _LOG_SPIRAL_THEORY, "state": ["passive"]}],
         "alpha_deg": {"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
         # since GM-183 the log-spiral Kp and the at-rest K0 take a slope
         "beta_deg": [{"theory": ["rankine"], "state": ["active"]},
@@ -1427,6 +1433,21 @@ declare_when_absent(METHOD_INFO, {
             "delta/phi' = 0.66 (UFC 3-220-20 p. 191, 'a common "
             "assumption'); refused with 'caquot_kerisel_1948' or "
             "'dm7_2_eq_4_12', which need it given"),
+    },
+    "earth_pressure_coefficient": {
+        # GM-257: what a left-out wall friction means depends on the
+        # theory; each run gives the value it took in defaults_used
+        "delta_deg": (
+            "by theory: Coulomb delta = 0 (no wall friction); "
+            "caquot_kerisel delta = 0.66 phi'",
+            "Coulomb's Ka and Kp take the wall friction given, and none "
+            "left out; the log-spiral Kp's UFC 3-220-20 sources take "
+            "delta/phi' = 0.66 (p. 191: 'a common assumption', the one "
+            "value Figs. 4-12 and 4-13 are drawn for), while "
+            "'caquot_kerisel_1948' and 'dm7_2_eq_4_12' refuse a call "
+            "without it (Caltrans T&S p. 4-29: 'Given delta, beta, and "
+            "phi'). The wall friction is the engineer's call: UFC 3-220-20 "
+            "Table 4-1 (p. 184) by wall material and soil"),
     },
     "mse_wall": {
         "reinforcement_length": _REINFORCEMENT_LENGTH,
