@@ -314,7 +314,8 @@ Key conventions:
       result (7bc7540); specialists build calc packages, figures and PDFs (98be115); MSE strip and grid
       walls take the coverage ratio Rc = b/Sh, geosynthetics GEC-11's alpha, Examples E1 and E3
       reproduced (7b4c0f4); did-you-mean hints that never matched (5f4e58a); `import pymupdf` in the app
-      and planlens (0ff9056, planlens c79d1f3); release notes for each in HANDOFF;
+      and planlens (0ff9056, planlens c79d1f3); a GSTools defect behind an all-NaN Exponential
+      field worked around, and a kriging plan map (6cbd94c); release notes for each in HANDOFF;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
