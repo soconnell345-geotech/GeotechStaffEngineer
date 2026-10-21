@@ -325,7 +325,7 @@ class TestSlopeReportPackage:
         for t in res.get("tables", []):
             os.remove(t["output_path"])
 
-    def test_pdf_output_fitz_verified(self, tmp_path):
+    def test_pdf_output_pymupdf_verified(self, tmp_path):
         pytest.importorskip("pymupdf")
         import pymupdf
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
