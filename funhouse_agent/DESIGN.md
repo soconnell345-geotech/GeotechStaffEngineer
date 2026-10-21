@@ -728,6 +728,25 @@ the eyes). What changed on master after 5.33.0, in short:
   6 calls without the listing ones, the same five records keep 66 of the
   71 sections their answers cited, for about $0.14-0.23 a consult. Off,
   the helper's prompt and budget are as before.
+- **Specialists draw and report** (GM-40; 2026-10-20; no switch): the
+  web app's Agent picker builds a specialist (seismic, foundations, earth
+  retention, slope / FEM reviewers; pavement and structural designers)
+  through `funhouse_agent/reviewers.py`, scoped by `allowed_agents` to its
+  own `*_MODULES` and `*_REFERENCES` sets. The four reviewers' scopes left
+  out `calc_package` and `profile_figure`, while the working style every
+  specialist's prompt carries told it to draw and report with them, and
+  `webapp.core.build_reviewer_agent` spliced in only the feedback tool.
+  Now `dispatch.DELIVERABLE_MODULES` (those two) is in every specialist's
+  scope, one shared paragraph after each preamble says so and that they do
+  not widen its domain (`review_checklists.SPECIALIST_DELIVERABLES`), the
+  SharePoint and email tools are spliced in as for the full agent
+  (`core._add_file_tools`), and the calc helper follows the same "Route
+  calculations through a calc agent" setting
+  (`core.specialist_build_kwargs`). The figure helper, `plot_data`,
+  `save_file` and the other file tools were already theirs. A specialist
+  keeps `reference_mode="off"` and its own prompt, so the chat's
+  references and analysis-depth settings still do not apply to it. Why
+  `profile_figure` is now in specialist scopes: `profile_figure/DESIGN.md`.
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`. Three are ON by default by the owner's

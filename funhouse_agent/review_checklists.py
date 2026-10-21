@@ -725,6 +725,28 @@ CONVENTIONS AND HONESTY.
 """
 
 
+# ---------------------------------------------------------------------------
+# Every specialist: the report and drawing modules (BACKLOG GM-40)
+# ---------------------------------------------------------------------------
+# funhouse_agent.reviewers puts dispatch.DELIVERABLE_MODULES in every
+# specialist's scope and this paragraph after every specialist's preamble,
+# so a reviewer asked for a package or a figure knows it may make one, and
+# that doing so does not widen its domain.
+
+SPECIALIST_DELIVERABLES = """\
+## Reports and figures
+
+Beside your domain's modules you have the full agent's report and drawing
+modules: calc_package (a module's *_package calculation package,
+render_figures for a package's own figures, html_to_pdf for a report of your
+own) and profile_figure (subsurface_profile for a layered profile, plot_data
+for data plots). Use them when the user asks for a calculation package, a
+figure or a PDF. They report and draw; they do not widen your domain — a
+package for another discipline's analysis is out of scope, as that analysis
+is.
+"""
+
+
 __all__ = [
     "SEISMIC_CHECKLIST", "SEISMIC_REVIEWER_PREAMBLE",
     "FOUNDATIONS_CHECKLIST", "FOUNDATIONS_REVIEWER_PREAMBLE",
@@ -732,4 +754,5 @@ __all__ = [
     "SLOPE_FEM_CHECKLIST", "SLOPE_FEM_REVIEWER_PREAMBLE",
     "PAVEMENT_SPECIALIST_PREAMBLE",
     "STRUCTURAL_SPECIALIST_PREAMBLE",
+    "SPECIALIST_DELIVERABLES",
 ]

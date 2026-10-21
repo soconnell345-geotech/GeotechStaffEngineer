@@ -763,6 +763,39 @@ def _add_feedback_tool(kw: dict, temp_dir: str) -> None:
             p for p in (kw.get(prompt_key), _fb_prompt) if p)
 
 
+def _add_file_tools(kw: dict, temp_dir: str) -> None:
+    """Splice the SharePoint file tools and the email tool, with their
+    instructions, into ``build_deep_agent`` kwargs: the full agent's and
+    every specialist's (BACKLOG GM-40; until then a specialist had neither).
+
+    SharePoint (browse/search/download/upload) is injected ONLY when the
+    deployment is configured for SharePoint, and ``email_file`` ONLY when
+    the Funhouse email SDK is importable, so everyone else carries zero
+    extra tool surface. Best-effort: a tools-layer problem must never block
+    building the agent.
+    """
+    try:
+        from webapp import sharepoint_tools
+        # thread id = the conversation dir name (temp_dir is <conv>/files), so
+        # an upload with no destination lands in this conversation's folder;
+        # the conversation dir itself keeps the downloads ledger.
+        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
+        _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured(
+            thread_id=os.path.basename(_conv_dir), record_dir=_conv_dir)
+    except Exception:
+        _sp_tools, _sp_prompt = [], ""
+    try:
+        from webapp import email_tools
+        _em_tools, _em_prompt = email_tools.tools_if_available()
+    except Exception:
+        _em_tools, _em_prompt = [], ""
+    for tools, prompt in ((_sp_tools, _sp_prompt), (_em_tools, _em_prompt)):
+        if tools:
+            kw["extra_tools"] = list(kw.get("extra_tools") or []) + tools
+            kw["extra_system_prompt"] = "\n\n".join(
+                p for p in (kw.get("extra_system_prompt"), prompt) if p)
+
+
 def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
                 checkpointer=None, **build_kwargs):
     """Build the compiled deep agent wired to the SHARED attachments dict and a
@@ -781,35 +814,7 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     kw = dict(build_kwargs)
     if checkpointer is not None:
         kw["checkpointer"] = checkpointer
-    # SharePoint file tools (browse/search/download/upload) — injected ONLY
-    # when the deployment is configured for SharePoint, so everyone else
-    # carries zero extra tool surface. Best-effort: a tools-layer problem
-    # must never block building the agent.
-    try:
-        from webapp import sharepoint_tools
-        # thread id = the conversation dir name (temp_dir is <conv>/files), so
-        # an upload with no destination lands in this conversation's folder;
-        # the conversation dir itself keeps the downloads ledger.
-        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
-        _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured(
-            thread_id=os.path.basename(_conv_dir), record_dir=_conv_dir)
-    except Exception:
-        _sp_tools, _sp_prompt = [], ""
-    if _sp_tools:
-        kw["extra_tools"] = list(kw.get("extra_tools") or []) + _sp_tools
-        kw["extra_system_prompt"] = "\n\n".join(
-            p for p in (kw.get("extra_system_prompt"), _sp_prompt) if p)
-    # Email tool (email a produced file to a colleague) — injected ONLY when
-    # the Funhouse email SDK is importable. Same best-effort rule as above.
-    try:
-        from webapp import email_tools
-        _em_tools, _em_prompt = email_tools.tools_if_available()
-    except Exception:
-        _em_tools, _em_prompt = [], ""
-    if _em_tools:
-        kw["extra_tools"] = list(kw.get("extra_tools") or []) + _em_tools
-        kw["extra_system_prompt"] = "\n\n".join(
-            p for p in (kw.get("extra_system_prompt"), _em_prompt) if p)
+    _add_file_tools(kw, temp_dir)
     _add_feedback_tool(kw, temp_dir)
     _register_reference_fetcher()
     # The coverage ledger (GEOTECH_COVERAGE, off by default) lives in the
@@ -850,7 +855,13 @@ def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
     An unknown ``kind`` (including ``"full"``) falls back to the full agent build.
     A reviewer manages its own scope + review-mode prompt + ``reference_mode``, so
     the behavior reference/analysis-depth build-kwargs are deliberately NOT applied
-    to it; the recursion cap still applies at stream time.
+    to it (``specialist_build_kwargs`` passes the calc helper alone); the
+    recursion cap still applies at stream time.
+
+    It gets the full agent's deliverables (BACKLOG GM-40): the report and
+    drawing modules are in every specialist's scope
+    (``funhouse_agent.reviewers``), and the SharePoint and email tools and
+    the feedback tool are spliced in here as ``build_agent`` does.
     """
     name = _REVIEWER_BUILDERS.get(kind)
     if name is None:
@@ -858,6 +869,7 @@ def build_reviewer_agent(kind, model, attachments: dict, temp_dir: str,
     from funhouse_agent import reviewers as _reviewers
     builder = getattr(_reviewers, name)
     kw = dict(build_kwargs)
+    _add_file_tools(kw, temp_dir)
     # Specialists never pass through build_agent, so they had no feedback
     # tool at all before 2026-09-15.
     _add_feedback_tool(kw, temp_dir)
@@ -2410,6 +2422,19 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
     if b.get("route_calc", True):          # A2: delegate heavy calc to `calc`
         kw["enable_calc_subagent"] = True
     return kw
+
+
+def specialist_build_kwargs(behavior: Optional[dict]) -> dict:
+    """The behavior settings a specialist from the Agent picker takes (via
+    ``build_reviewer_agent``): the calc helper alone, under the same
+    "Route calculations through a calc agent" setting as the full agent,
+    which is where the full agent's calculation packages are built (BACKLOG
+    GM-40). A specialist keeps its own references (its domain's are in its
+    scope) and its own prompt, so the reference and analysis-depth settings
+    do not apply to it."""
+    b = behavior_from_meta({"behavior": behavior}) if behavior is not None \
+        else default_behavior()
+    return {"enable_calc_subagent": True} if b.get("route_calc", True) else {}
 
 
 # ---------------------------------------------------------------------------
