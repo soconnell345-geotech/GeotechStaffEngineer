@@ -614,8 +614,11 @@ def test_v010_e4_mats_per_level():
     GEC-11 Vol I p. 4-77, against the unfactored Tmax), so FOS_rupture is
     set against Ng phi_s Tn / Tmax, the LRFD ratio Table E4-7.4 implies.
     They match to 2 % at Levels 2 to 10, and Level 10 gives 1.018 against
-    4 x 4.84 / 19.05 = 1.016. Level 1 is 13 % over: E4's top level carries
-    3.12 ft of wall (Svt), the module's 2.5 ft."""
+    4 x 4.84 / 19.05 = 1.016. Level 1 is 13 % over, from the top level's
+    tributary depth: E4 gives it the wall from the top to midway to Level
+    2, Svt = 3.12 ft (Table E4-7.1, p. E4-11), with sigma_H averaged over
+    it (p. E4-13); the module gives every level Sv = 2.5 ft and sigma_H at
+    the level (3.12 / 2.5 x 0.910 = 1.136; BACKLOG GM-273)."""
     res = _e4_by_level(_e4_mats())
     rows = res.internal_results
     assert [r["reinforcement"] for r in rows] == [m.name for m in _e4_mats()]

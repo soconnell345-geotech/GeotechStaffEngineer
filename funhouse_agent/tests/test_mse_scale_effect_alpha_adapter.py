@@ -37,10 +37,27 @@ def test_alpha_by_type_or_test(params, alpha, lowest):
 
 
 def test_defaults_used_says_the_alpha_it_took():
-    r = _mse(reinforcement_name="geogrid_gec11_e1_gg1")
-    assert r["defaults_used"]["alpha_tested"] == (
-        "alpha 0.8, GEC-11 Vol I Table 3-6's default value for extensible "
-        "grids (geogrids), p. 3-17")
+    """GM-266 review: alpha_tested is an alpha FROM TESTS, so defaults_used
+    gives the case a left-out one stands for (Table 3-6's alpha by type,
+    with its basis), never the table's value as if tested; the value each
+    level took is its ``alpha``, and the alpha choice names it and the
+    table's row."""
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    case = METHOD_INFO["mse_wall"]["parameters"]["alpha_tested"][
+        "when_absent"]
+    for name, alpha, row in (
+            ("geogrid_gec11_e1_gg1", 0.8, "extensible grids (geogrids)"),
+            ("welded_wire_grid_w11", 1.0, "inextensible grids")):
+        extra = ({"reinforcement_horizontal_spacing": 1.524}
+                 if name.startswith("welded") else {})
+        r = _mse(reinforcement_name=name, **extra)
+        assert r["defaults_used"]["alpha_tested"] == (
+            f"{case['case']}: {case['basis']}")
+        assert {lv["alpha"] for lv in r["internal_results"]} == {alpha}
+        (c,) = [c for c in r["choices"] if "alpha_tested" in c["what"]]
+        assert c["chosen"].startswith(f"alpha {alpha:g}, GEC-11 Vol I "
+                                      "Table 3-6's default value for " + row)
+        assert c["how"] == "default"
     given = _mse(reinforcement_name="geogrid_gec11_e1_gg1", alpha_tested=0.9)
     assert "alpha_tested" not in given["defaults_used"]
 

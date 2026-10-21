@@ -211,15 +211,19 @@ def coverage_ratios(reinforcement: Reinforcement,
             for i in range(n)]
 
 
-#: GEC-11 Vol I, read on the rendered page (GM-266).
+#: GEC-11 Vol I, read on the rendered page (GM-266). The refusal is this
+#: tool's choice, not a rule GEC-11 states: GEC-11 draws the surface (and
+#: Kr/Ka, F*) for one kind or the other and is silent on a wall with both.
 ONE_KIND_PER_WALL = (
-    "a reinforcement given per level is inextensible (steel) at every "
-    "level or extensible (geosynthetic) at every level: GEC-11 Vol I p. "
-    "4-33 takes the critical failure surface as 'approximately bilinear in "
-    "the case of inextensible reinforcements' and 'approximately linear in "
-    "the case of extensible reinforcements' (Fig. 4-9, p. 4-34), one "
-    "surface through the toe of the wall, and prints none for a wall with "
-    "both; got {got}")
+    "this tool takes a reinforcement per level only when every level is "
+    "inextensible (steel) or every level extensible (geosynthetic), since "
+    "the internal checks need one critical failure surface: GEC-11 Vol I "
+    "p. 4-33 takes it as 'approximately bilinear in the case of "
+    "inextensible reinforcements' and 'approximately linear in the case of "
+    "extensible reinforcements' (Fig. 4-9, p. 4-34), through the toe of "
+    "the wall in both cases, and gives no surface for a wall that mixes "
+    "them; got {got}. Run the wall with one kind, or check a mixed wall "
+    "outside this tool")
 
 
 def level_reinforcements(reinforcement, depths: Sequence[float]
@@ -798,7 +802,8 @@ def _level_alphas(reinforcement, rs, alpha_tested) -> List[float]:
         try:
             out.append(pullout_alpha(r, alpha_tested))
         except ValueError as e:
-            raise ValueError(f"level {i} from the top ({r.name}): {e}")                 from None
+            raise ValueError(
+                f"level {i} from the top ({r.name}): {e}") from None
     return out
 
 
@@ -1449,9 +1454,13 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
                     + against(check_internal_stability(
                         *args, Cu_backfill=Cu_backfill,
                         F_star_tested=F_star_tested, alpha_tested=1.0)))
+        # GM-266 review: no ``took``. alpha_tested is an alpha FROM TESTS,
+        # so the table's value given back under that name would claim a
+        # test; defaults_used gives the declared case (Table 3-6's alpha by
+        # type, with its basis), each level its alpha, and this entry both
         out.append(choice(
             alpha_what, took,
-            how_given(None, None, name="alpha_tested", took=took),
+            how_given(None, None, name="alpha_tested"),
             ALPHA_TABLE_BASIS + note, [alt]))
     any_strip = any(uses_strip_F_star(r) for r in rs)
     if F_star_tested is not None:

@@ -1050,11 +1050,13 @@ and `coverage_ratio` apply level by level, one number or a list (GM-261).
 - a list whose length is not the number of levels, naming the levels'
   depths, `wall_height` and `reinforcement_spacing` (the module puts the
   levels at Sv (i + 1/2));
-- steel at some levels and geosynthetic at others: GEC-11 Vol I p. 4-33
-  takes the failure surface as "approximately bilinear in the case of
-  inextensible reinforcements" and "approximately linear in the case of
-  extensible reinforcements" (Fig. 4-9, p. 4-34), one surface through the
-  toe, and prints none for a wall with both (`mse.ONE_KIND_PER_WALL`);
+- steel at some levels and geosynthetic at others, the tool's choice
+  rather than a rule GEC-11 states: GEC-11 Vol I p. 4-33 takes the
+  failure surface as "approximately bilinear in the case of inextensible
+  reinforcements" and "approximately linear in the case of extensible
+  reinforcements" (Fig. 4-9, p. 4-34), through the toe "in both cases",
+  and says nothing of a wall with both, so the internal checks would have
+  no surface (`mse.ONE_KIND_PER_WALL`);
 - an entry with its own spacing or ratio (that is the list input), an
   unknown key (did-you-mean), a built-in with custom values, a custom
   entry with no Tallowable or no type; each message names the entry and
@@ -1101,8 +1103,14 @@ ratio the table implies:
 | 8 | 4W15+W11x1.5' | 1.215 | 1.208 |
 | 10 | 4W15+W11x1.5' | 1.018 | 1.016 |
 
-Levels 2 to 10 within 2 %. Level 1 is 13 % over: E4's top level carries
-3.12 ft of wall (Svt), the module's 2.5 ft. With the 4W11 mat at every
+Levels 2 to 10 within 2 %. Level 1 is 13 % over, from the top level's
+tributary depth alone: E4 gives Level 1 the wall from the top down to
+midway to Level 2, Svt = 3.12 ft (Table E4-7.1, p. E4-11), and averages
+sigma_H over it (p. E4-13); the module gives every level Sv = 2.5 ft and
+sigma_H at the level's depth. 3.12 / 2.5 = 1.248 times E4's average over
+0 to 3.12 ft against the module's at 1.87 ft, 0.910, is 1.136, against
+1.127 from the printed 6.25 k and 3.38 k (GM-273 takes the level depths
+as an input). With the 4W11 mat at every
 level the check fails from Level 5 down, 0.709 at Level 10 against E4's
 4 x 3.38 / 19.05 = 0.71 (`test_v010_e4_level10_needs_its_w15_mat`).
 
@@ -1113,7 +1121,25 @@ level, as an input would close it.
 
 Tests: `tests/test_mse_per_level_reinforcement.py`,
 `funhouse_agent/tests/test_mse_per_level_reinforcement_adapter.py`,
-V-010, the probe `retaining_walls|mse_wall#per_level`.
+V-010, the probes `retaining_walls|mse_wall#per_level` and `#geogrid`.
+
+**Review (2026-10-21).** E4's mats checked on the pages: W11 and W15
+D75 0.318 and 0.381 in. (p. E4-14), Fy 65 ksi, Tn 5.17 and 7.42 k a wire,
+W11 transverse wires at t = 0.374 in. and St 6, 12 and 18 in. (p.
+E4-15), Table E4-7.3's mat by level (p. E4-16), Sl = 0.5 ft (p. E4-17).
+One defect, older than GM-266 (GM-256): with `alpha_tested` left out on a
+grid or a geosynthetic, `defaults_used` gave the alpha choice's sentence
+("alpha 0.8, GEC-11 Vol I Table 3-6's default value for ...") in place of
+the input's value; the GM-158 guard gives a run's `defaults_used` back as
+inputs, so it handed that sentence back as `alpha_tested` and the call
+failed, which is why the per-level probe had been given alpha_tested 1.0.
+`alpha_tested` is an alpha from pullout tests, so the table's value given
+back under that name would claim a test: `defaults_used` now gives the
+declared case, "Table 3-6's alpha for the reinforcement type" with its
+basis (as a strip wall already did), each level gives the value it took
+(`alpha`), and the alpha choice names the value and Table 3-6's row. The
+per-level probe runs without alpha_tested, and a geogrid probe covers the
+0.8 row. No number changed.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height

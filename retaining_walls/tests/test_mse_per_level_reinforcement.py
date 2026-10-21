@@ -125,11 +125,12 @@ def test_what_else_is_refused_per_level():
 def test_geosynthetic_grades_per_level_as_e1():
     """Example E1 takes GG-I at Layers 1 to 4 and GG-II below (Table
     E1-7.4, p. E1-16): each level's rupture check takes its own grade."""
-    rs = [GEOGRID_GEC11_E1_GG2] * 2 + [GEOGRID_GEC11_E1_GG1] * 2
+    # the weaker grade at the top, as E1 (review: the order was reversed)
+    rs = [GEOGRID_GEC11_E1_GG1] * 2 + [GEOGRID_GEC11_E1_GG2] * 2
     levels = check_internal_stability(_wall(), 19.0, 34.0, rs)
     assert [lv["Tallowable_kN_per_m"] for lv in levels] == pytest.approx(
-        [GEOGRID_GEC11_E1_GG2.Tallowable] * 2
-        + [GEOGRID_GEC11_E1_GG1.Tallowable] * 2, abs=0.01)
+        [GEOGRID_GEC11_E1_GG1.Tallowable] * 2
+        + [GEOGRID_GEC11_E1_GG2.Tallowable] * 2, abs=0.01)
     assert {lv["FOS_rupture_required"] for lv in levels} == {1.5}
 
 
