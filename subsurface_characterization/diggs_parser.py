@@ -14,6 +14,7 @@ parse_diggs : Parse DIGGS XML file or string → SiteModel
 """
 
 from __future__ import annotations
+import re
 
 import xml.etree.ElementTree as ET
 from typing import Optional, Dict, List
@@ -300,6 +301,14 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
         if node is not None and (node.get("srsName") or "").strip():
             srs = node.get("srsName").strip()
             break
+
+    # EPSG:4326 given as a URN or URL (GML 3.2) is latitude FIRST; the app
+    # holds x = longitude, y = latitude. CRS84 and DIGGS' own
+    # ``...DIGGS:0.1:4326_5702`` are longitude first and are read as written.
+    if (x is not None and y is not None
+            and re.search(r"(?:urn:ogc:def:crs:EPSG:|opengis\.net/def/crs/EPSG/)"
+                          r"[\d.]*[:/]+4326\s*$", srs, re.I)):
+        x, y = y, x
 
     # A total depth the file does not give is None, never 0.0.
     total_depth = None
