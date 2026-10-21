@@ -581,6 +581,13 @@ gives every custom reinforcement a 0.05 m width, and its choice says the
 width was not used. The refusals now open with what is missing ("A
 steel strip needs its coverage ratio Rc = b/Sh ...").
 
+A Cu given beside a tested F* is in no check: the tested F* replaces the
+empirical one. It is not refused, as it still bears on what the result
+reports: a strip's empirical F* given beside the tested one (Eqs. 3-4, 3-5)
+and note (i)'s Cu >= 4 check on the empirical F* (p. 3-17). The F* choice
+says so, for a strip and for a grid or geosynthetic, whose empirical F*
+takes no Cu.
+
 **Left for the owner** (BACKLOG):
 - the built-in W11 grid's Tallowable 32.0: its source is not recorded. It
   equals Fy times the area of one uncorroded W11 wire (450 MPa x 70.9 mm2 =

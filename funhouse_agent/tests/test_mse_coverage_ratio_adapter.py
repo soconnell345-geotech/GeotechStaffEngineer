@@ -129,6 +129,24 @@ def test_tested_F_star_and_alpha_through_the_tool():
     assert not any("(Cu_backfill)" in w for w in whats)
 
 
+@pytest.mark.parametrize("extra, words", [
+    ({"reinforcement_name": "ribbed_steel_strip_75x4", "Sh": 0.75},
+     "which is what takes Cu"),
+    ({"reinforcement_name": "geogrid_ux1600"},
+     "this reinforcement's empirical F* takes no Cu")])
+def test_a_Cu_beside_a_tested_F_star_is_said_to_be_in_no_check(extra, words):
+    """GM-256 review: a strip or a geogrid given Cu and a tested F*."""
+    r = _mse(F_star_tested=1.0, Cu=5.0, **extra)
+    assert "error" not in r, r.get("error")
+    (c,) = [c for c in r["choices"] if "(F_star_tested)" in c["what"]]
+    assert "Cu_backfill 5 is not used in the checks" in c["chosen"]
+    assert words in c["chosen"]
+    assert not [c for c in r["choices"] if "(Cu_backfill)" in c["what"]]
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    assert "With F_star_tested it is in no check" in METHOD_INFO[
+        "mse_wall"]["parameters"]["Cu_backfill"]["description"]
+
+
 def test_list_reinforcement_says_what_each_needs():
     out = D.call_agent("retaining_walls", "list_reinforcement", {})
     strip = out["reinforcement_types"]["ribbed_steel_strip_75x4"]

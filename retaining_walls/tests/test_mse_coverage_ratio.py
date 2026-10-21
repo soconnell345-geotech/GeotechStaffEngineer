@@ -176,6 +176,37 @@ def test_a_tested_F_star_replaces_the_empirical_one():
             in alt)
 
 
+def test_a_Cu_beside_a_tested_F_star_is_said_to_be_in_no_check():
+    """GM-256 review: with a tested F* the Cu is in no check. The F*
+    choice says so and what it bears on: a strip's empirical F* given
+    beside the tested one, and GEC-11 Table 3-6 note (i)'s check on the
+    empirical F* (p. 3-17); a geogrid's empirical F* takes no Cu."""
+    r = analyze_mse_wall(_strip_wall(), 20.0, 34.0, _strip(),
+                         F_star_tested=1.1, Cu_backfill=7.0)
+    assert r.internal_results == analyze_mse_wall(
+        _strip_wall(), 20.0, 34.0, _strip(), F_star_tested=1.1).internal_results
+    assert not [c for c in r.choices if "(Cu_backfill)" in c["what"]]
+    (c,) = [c for c in r.choices if "(F_star_tested)" in c["what"]]
+    assert c["chosen"].startswith(
+        "F* 1.1 at every level, from pullout tests. Cu_backfill 7 is not "
+        "used in the checks: the tested F* replaces the empirical F* of "
+        "Eqs. 3-4 and 3-5, which is what takes Cu.")
+    assert "at least 4, within the fill" in c["chosen"]
+    assert c["alternatives"][0].startswith(
+        "the empirical F*, Eqs. 3-4 and 3-5 at Cu 7 (F* 2.00 at the top)")
+    geom = MSEWallGeometry(wall_height=6.0, reinforcement_length=5.0,
+                           reinforcement_spacing=0.6)
+    g = analyze_mse_wall(geom, 19.0, 34.0, GEOGRID_UX1600,
+                         F_star_tested=0.6, Cu_backfill=2.5)
+    assert not [c for c in g.choices if "(Cu_backfill)" in c["what"]]
+    (c,) = [c for c in g.choices if "(F_star_tested)" in c["what"]]
+    for words in ("Cu_backfill 2.5 is not used in the checks",
+                  "this reinforcement's empirical F* takes no Cu",
+                  "It serves only as GEC-11 Table 3-6 note (i)'s check",
+                  "below 4, outside the fill", "tests must be run"):
+        assert words in c["chosen"], words
+
+
 def test_a_tested_F_star_by_depth_is_linear_between():
     pts = [[1.0, 1.5], [5.0, 0.7]]
     assert F_star_from_tests(pts, 0.2) == 1.5

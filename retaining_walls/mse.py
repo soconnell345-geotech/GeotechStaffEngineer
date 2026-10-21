@@ -965,7 +965,9 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
     (i), which accepts every empirical F* only for Cu >= 4. A tested F*
     (``F_star_tested``) replaces all of that with one entry, and a tested
     alpha adds one (GM-256), each with the FOS_pullout at the printed
-    empirical value."""
+    empirical value; a Cu given beside a tested F* is in no check, and the
+    entry says so and what it bears on: the empirical F* beside it (a
+    strip's) and note (i)'s check on that F*."""
     from geotech_common.choices import choice, how_given
     args = (geom, gamma_backfill, phi_backfill, reinforcement)
     if internal is None:
@@ -1031,9 +1033,26 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
             empirical = "20 t/St at the top to 10 t/St at 20 ft (Eqs. 3-6, 3-7)"
         else:
             empirical = "(2/3) tan phi_backfill (Eq. 3-8)"
+        chosen = _tested_text(F_star_tested) + ", from pullout tests"
+        if Cu_backfill is not None:
+            # GM-256 review: a Cu given beside a tested F* is in no check;
+            # say what it does bear on
+            if uses_strip_F_star(reinforcement):
+                role = ("the tested F* replaces the empirical F* of Eqs. "
+                        "3-4 and 3-5, which is what takes Cu. It sets only "
+                        "that empirical F*, given beside this, and is GEC-11 "
+                        "Table 3-6 note (i)'s check on it")
+            else:
+                role = ("the tested F* replaces the empirical F*, and this "
+                        "reinforcement's empirical F* takes no Cu. It serves "
+                        "only as GEC-11 Table 3-6 note (i)'s check on that "
+                        "empirical F*, given beside this")
+            chosen += (f". Cu_backfill {Cu_backfill:g} is not used in the "
+                       f"checks: {role}: "
+                       + (_NOTE_I_WITHIN if Cu_backfill >= CU_UNKNOWN
+                          else _NOTE_I_OUTSIDE))
         out.append(choice(
-            "Pullout resistance factor F* (F_star_tested)",
-            _tested_text(F_star_tested) + ", from pullout tests",
+            "Pullout resistance factor F* (F_star_tested)", chosen,
             how_given(F_star_tested, None, name="F_star_tested"),
             F_STAR_TESTED_BASIS,
             ["the empirical F*, " + empirical + against(
