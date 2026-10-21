@@ -614,6 +614,16 @@ element took 1e-5. A layer may give its own `stabilization_alpha`
 the wiki (freeField3D.tcl) uses 1.5e-6 with 0.5 m elements, about ten
 times the formula for its layers (1.4e-7 to 1.8e-7).
 
+Units (checked in review against both pages and SSPquadUP.cpp). den c^2
+with c = sqrt((K + 4/3 G) / den) is the constrained modulus K + 4/3 G
+whichever density is meant, so no density is missing from the code's
+form; in the module's units (Mg/m3 x (m/s)^2 = kPa) alpha comes out in
+m^2/kPa. That is the unit the element needs: getMass puts -4 alpha J0 t
+(dN dN^T), alpha times the Laplacian of the pressure rate, beside the
+storage term n / Kf (1/kPa) times the pressure rate. "Element size" is
+read as the element's height, the direction the pore pressure varies in
+a 1D column (the column is 1 m wide); the choice is stated in `choices`.
+
 The term spreads a pressure change over about sqrt(alpha / storage), and
 with storage n/Kf + 1/M of at least 1/M this alpha keeps that under half
 an element. For 5 m sand elements (the default mesh of a 20 m layer) the
@@ -649,8 +659,12 @@ water 0 m, 4 elements: amplification 0.492 -> 0.494; the same, water 2 m,
 20 elements: 0.613 -> 0.614, ru the same to 0.01; 15 m clay: 0.944 ->
 0.944. Loose sand (Vs 200) in 5 to 80 elements: surface PGA 0.150 to
 0.152 g either way. The effective-stress example: Sa -8.6 to +4.4 % of the
-port (was -6.2 to +4.5 %; the test allows 10 %), ru at 3 / 7 / 16 m
-0.364 / 0.899 / 0.984 (was 0.982). The wiki's total-stress pins pass.
+port (was -6.2 to +4.5 %; the worst at 0.5 s both times, where the
+other periods moved 2.1 points or less; the test allows 10 % because the
+module's 4-node element needs a stabilization the example's 9-node
+9_4_QuadUP does not, and the example states no tolerance), ru at 3 / 7 /
+16 m 0.364 / 0.899 / 0.984 (was 0.982). The wiki's total-stress pins
+pass.
 
 **Dense sand: the peak is a spike that the mesh sets.** 20 m dense sand
 (Vs 300, density 2.0, phi 38), water 0 m, 0.30 g, surface PGA (g):
@@ -660,9 +674,36 @@ port (was -6.2 to +4.5 %; the test allows 10 %), ru at 3 / 7 / 16 m
 | alpha 1e-5 | 0.191 | 0.208 | 0.226 | 0.237 | 0.244 |
 | formula | 0.194 | 0.223 | 0.295 | 0.406 | 0.453 |
 
+The review re-ran it (WSL, openseespy 3.8.0) with the 5 % spectrum and the
+PGA of the surface record low-passed at 10 Hz (fourth-order Butterworth,
+run both ways; a measure for this check only, not an output):
+
+| Elements | 10 | 20 | 40 | 80 |
+|---|---|---|---|---|
+| PGA 10 Hz low-passed, formula | 0.221 | 0.224 | 0.226 | 0.226 |
+| the same, alpha 1e-5 | 0.216 | 0.220 | 0.221 | 0.221 |
+| Sa 0.1 s, formula | 0.466 | 0.523 | 0.528 | 0.535 |
+| Sa 0.1 s, alpha 1e-5 | 0.436 | 0.477 | 0.488 | 0.478 |
+| Sa 0.2 s, formula | 0.493 | 0.469 | 0.463 | 0.461 |
+| Sa 0.2 s, alpha 1e-5 | 0.511 | 0.493 | 0.489 | 0.486 |
+| Sa 1.0 s, formula | 0.147 | 0.146 | 0.147 | 0.146 |
+| Sa 1.0 s, alpha 1e-5 | 0.149 | 0.148 | 0.148 | 0.148 |
+
+So the spike lives above 10 Hz. From 10 to 80 elements the formula's
+peak doubles, while its low-passed PGA moves 2 %, Sa at 0.2 s 7 %
+(0.469 / 0.463 / 0.461 from 20 elements on) and Sa at 1.0 s under 1 %;
+the two alphas agree within 5 % on all three. Sa at 0.1 s carries part
+of the spike (+15 %). The answer is to read the spectrum, not to pick an
+alpha that smooths the peak: `to_dict` gives the 5 % surface and input
+spectra at 0.1 to 3 s (`periods_s`, `Sa_surface_g`, `Sa_input_g`), and
+the `pga_surface_g` description says the peak can be such a spike.
+
 Drained (k 1 m/s) the same column gives 0.409 g in 10 elements and 0.417
-in 40, either alpha. Halving and quartering the time step at 40 elements
-gives 0.392 and 0.393 g, so it is not the time step. With the formula the
+in 40, either alpha. It is not a reference for the column above: drained,
+ru stays under 0.03 and Sa at 0.5 s is 3.2 g, against ru above 1 and
+0.80 g undrained, so its PGA lying near the formula's fine-mesh peak says
+nothing about which alpha is right. Halving and quartering the time
+step at 40 elements gives 0.392 and 0.393 g, so it is not the time step. With the formula the
 peak is one dilation spike (at 1.93 s, half its height for 0.02 s), which
 grows sharper as the elements get smaller; the fixed 1e-5 smoothed the
 pore pressure over about 2.4 m (sqrt(1e-5 / 1.8e-6 per kPa)) whatever the

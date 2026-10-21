@@ -21,24 +21,28 @@ _MATERIAL_KEYS = {
     "clay": ("su",),
 }
 # Words the near-miss matcher cannot place; only the keys the layer's own
-# material reads are offered. Suggestions only, never renamed.
+# material reads are offered. Suggestions only, never renamed. Keys are
+# the checker's normalised form: lower case, letters and digits only.
 _LAYER_KEY_HINTS = {
-    "rho": ("density",), "mass_density": ("density",),
+    "rho": ("density",), "massdensity": ("density",),
     "cohesion": ("su",), "c": ("su",),
     "frictionangle": ("phi",), "phaseangle": ("PTAng",),
     "phasetransformationangle": ("PTAng",), "e": ("e_init",),
-    "pi": ("plas_index",), "plasticity_index": ("plas_index",),
+    "pi": ("plas_index",), "plasticityindex": ("plas_index",),
     "cu": ("su", "uniformity_coeff"), "d50": ("diam_mean",),
-    "poisson": ("nu",), "poissons_ratio": ("nu",),
-    "n_elements": ("n_elem",), "model": ("curve",),
-    "soil_model": ("curve",),
+    "poisson": ("nu",), "poissonsratio": ("nu",),
+    "nelements": ("n_elem",), "model": ("curve",),
+    "soilmodel": ("curve",),
     "e0": ("e_init",), "voidratio": ("e_init",), "type": ("material_type",),
     "soiltype": ("material_type",), "h": ("thickness",),
     # 'k' is hydraulic conductivity, or a sand layer's K0 written short
     "k": ("permeability", "K0"), "perm": ("permeability",),
     "hydraulicconductivity": ("permeability",),
     "conductivity": ("permeability",), "ksat": ("permeability",),
+    # the u-p element's pressure stabilization (GM-260)
     "alpha": ("stabilization_alpha",),
+    "stabilization": ("stabilization_alpha",),
+    "pressurestabilization": ("stabilization_alpha",),
 }
 
 
@@ -210,9 +214,12 @@ METHOD_INFO = {
             "n_layers": "Number of layers.",
             "site_period_s": "Site period 4H/Vs (s).",
             "motion_name": "Input motion name (notes any PGA scaling).",
-            "pga_surface_g": "Peak ground acceleration at surface (g).",
+            "pga_surface_g": "Peak ground acceleration at surface (g). In a sand that dilates it can be a spike a few hundredths of a second long whose height depends on the element size; Sa_surface_g at 0.2 s and longer depends on it much less.",
             "pga_input_g": "Peak input acceleration (g).",
             "amplification_factor": "PGA surface / PGA input.",
+            "periods_s": "Periods (s) of Sa_surface_g and Sa_input_g: 0.1, 0.2, 0.3, 0.5, 0.75, 1, 2 and 3 s.",
+            "Sa_surface_g": "Surface spectral acceleration (g, 5 % damping), one per period in periods_s.",
+            "Sa_input_g": "Input (rock outcrop) spectral acceleration (g, 5 % damping), one per period in periods_s.",
             "max_shear_strain_pct": "Peak shear strain in the profile (%).",
             "max_ru": "Peak excess pore pressure ratio in the profile: excess pore pressure over the initial vertical effective stress (not capped at 1).",
             "solver_steps": "Dynamic steps by algorithm, the steps that needed a fallback algorithm and those taken in substeps (substeps can move a peak).",

@@ -220,6 +220,24 @@ class TestSiteResponseResult:
         assert d["n_layers"] == 3
         json.dumps(d)  # serializable
 
+    def test_to_dict_gives_the_spectra_at_set_periods(self):
+        """GM-260: the 5 % spectra at 0.1 to 3 s reach the agent, read off
+        the computed spectrum (here Sa = T on a grid through each period),
+        because in a sand that dilates the PGA is a spike the element size
+        sets."""
+        from opensees_agent.results import REPORTED_PERIODS_S
+        r = self._make_result()
+        r.periods = np.array(sorted(set(np.logspace(-2, 1, 50))
+                                    | set(REPORTED_PERIODS_S)))
+        r.Sa_surface_g = r.periods.copy()
+        r.Sa_input_g = 0.5 * r.periods
+        d = r.to_dict()
+        assert d["periods_s"] == [0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 2.0, 3.0]
+        assert d["Sa_surface_g"] == pytest.approx(d["periods_s"])
+        assert d["Sa_input_g"] == pytest.approx(
+            [0.5 * t for t in d["periods_s"]])
+        assert "periods_s" not in SiteResponseResult().to_dict()
+
 
 class TestSiteResponseResultPlots:
     """Plot smoke tests for SiteResponseResult."""
@@ -1747,10 +1765,11 @@ class TestPorePressureRatio:
     @requires_opensees
     def test_clay_between_liquefied_sands_keeps_its_own_ru(self):
         """GM-260. 10 m of clay in 1 m elements between sands that
-        liquefy, water 2 m, 0.30 g. The clay generates no excess pore
-        pressure of its own (its total vertical stress holds), so what
-        reaches its inside is flow from the sands: by hand, 1D diffusion
-        at k 1e-7 m/s (cv = k_e / (n/Kf + 1/M) = 0.016 m2/s) penetrates
+        liquefy, water 2 m, 0.30 g. The clay generates little excess pore
+        pressure of its own (its total vertical stress holds; ru 0.026
+        inside it at k 1e-7 and at 1e-12 m/s alike), so what else reaches
+        its inside is flow from the sands: by hand, 1D diffusion at k
+        1e-7 m/s (cv = k_e / (n/Kf + 1/M) = 0.016 m2/s) penetrates
         2 sqrt(cv t) = 1.1 m in the 20 s motion, erfc(2 / 1.1) = 1 % of
         the sands' excess at 2 m in; the stabilization spreads at most
         half an element (0.5 m). So ru stays under 0.05 from 2 m inside

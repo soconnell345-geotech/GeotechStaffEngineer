@@ -1485,7 +1485,9 @@ def _material_choices(plans, i, label, linear_elastic=False):
          "pressure at its centre (the mean of its corners)"
          + ("" if not sand else
             ". In a sand that dilates, the surface's peak acceleration is "
-            "a short spike that rises as the elements get smaller")),
+            "a short spike that rises as the elements get smaller; the "
+            "surface spectrum at 0.2 s and longer (Sa_surface_g) moves "
+            "much less")),
         ("layers[i]['stabilization_alpha']",)))
     return out
 

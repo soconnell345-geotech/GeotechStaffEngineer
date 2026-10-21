@@ -32,11 +32,15 @@ What to expect, and why:
   does set as the module sets them (bulk moduli, the fluid's bulk
   modulus, the dense layer's contraction and dilation constants, level
   ground, the Rayleigh band): spectral accelerations from 0.1 to 1.5 s
-  within 6.2 % (measured -6.2 to +4.5 %; pinned at 10 %: the elements
-  differ, 4-node SSPquadUP against 9-node 9_4_QuadUP), and peak r_u at
-  3, 7 and 16 m 0.36 / 0.89 / 0.98 against 0.38 / 0.91 / 0.97 (pinned
-  within 0.1). PGA is not compared: in liquefying sand it is a dilation
-  spike (0.29 g against 0.55 g) that depends on the element.
+  within 8.6 % (measured -8.6 % at 0.5 s to +4.4 % at 0.1 s; -6.2 to
+  +4.5 %, also worst at 0.5 s, with the fixed pressure stabilization
+  1e-5 before GM-260; pinned at 10 %, the test's own allowance, because
+  the elements differ: the module's 4-node SSPquadUP needs a pressure
+  stabilization, the example's 9-node 9_4_QuadUP needs none, and the
+  example gives no tolerance of its own), and peak r_u at 3, 7 and 16 m
+  0.36 / 0.90 / 0.98 against 0.38 / 0.91 / 0.97 (pinned within 0.1).
+  PGA is not compared: in liquefying sand it is a dilation spike
+  (0.30 g against 0.55 g) that depends on the element.
 * Against the port as written the dense layer is the difference: the
   module gives every sand the Dr = 40 % contraction constants, so its
   dense layer liquefies (r_u 0.98 at 16 m against 0.56); Sa from 0.1 to
@@ -121,9 +125,11 @@ class TestAgainstTheOpenSeesPyEffectiveExample:
     @requires_opensees
     def test_module_matches_the_port_it_can_express(self):
         """Sa from 0.1 to 1.5 s within 10 % of the port with the module's
-        inputs (measured -8.6 to +4.4 %; -6.2 to +4.5 % with the fixed
-        alpha 1e-5 before GM-260), and peak r_u at 3, 7 and 16 m within
-        0.1 (measured 0.36 / 0.90 / 0.98 against 0.38 / 0.91 / 0.97). Until GM-85 the gravity stage raised."""
+        inputs (measured -8.6 % at 0.5 s to +4.4 %; -6.2 to +4.5 % with
+        the fixed alpha 1e-5 before GM-260: the elements differ, see the
+        module docstring), and peak r_u at 3, 7 and 16 m within 0.1
+        (measured 0.36 / 0.90 / 0.98 against 0.38 / 0.91 / 0.97). Until
+        GM-85 the gravity stage raised."""
         from opensees_agent.site_response import analyze_site_response
         accel, dt = wiki.load_record()
         inputs, _ = eff.closest_api_inputs()
