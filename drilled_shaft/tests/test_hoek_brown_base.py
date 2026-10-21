@@ -281,3 +281,30 @@ def test_capacity_vs_depth_takes_gsi_where_a_trial_base_is():
     assert len(curve) == 5
     with pytest.raises(ValueError, match="no trial base from 3 to 7 m"):
         a.capacity_vs_depth(depth_min=3.0, depth_max=7.0, n_points=5)
+
+
+@pytest.mark.parametrize("soil_type,props", [
+    ("cohesive", {"cu": 75.0}),
+    ("cohesionless", {"phi": 34.0, "N60": 30.0}),
+])
+@pytest.mark.parametrize("flag", [True, False])
+def test_rock_base_conditions_met_with_the_base_in_soil_is_refused(
+        soil_type, props, flag):
+    """GM-259: the flag bears on a base in rock (GEC-10 2018 p. 10-22);
+    with the base in soil it is refused, not dropped."""
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(20.0, soil_type, 18.5, **props)])
+    with pytest.raises(ValueError) as e:
+        _run(soil, rock_base_conditions_met=flag)
+    msg = str(e.value)
+    assert "does not take rock_base_conditions_met" in msg
+    assert "p. 10-22" in msg and f"is in {soil_type} soil" in msg
+
+
+@pytest.mark.parametrize("flag", [True, False])
+def test_rock_base_conditions_met_with_the_base_in_rock_still_works(flag):
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(8.0, "cohesive", 18.5, cu=75.0),
+        ShaftSoilLayer(10.0, "rock", 23.0, qu=20000.0, RQD=40.0, GSI=45.0,
+                       m_i=10.0)])
+    assert _run(soil, rock_base_conditions_met=flag).Q_tip > 0
