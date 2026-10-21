@@ -302,6 +302,19 @@ Key conventions:
       Document Review and GeotechStaffEngineer into two apps, GSE to run in
       Foundry (BACKLOG INF-25, INF-26), its test wheels delivered with Claude
       RIDs routed by model family; passive log-spiral coefficients from UFC 3-220-20 by wall geometry (release note); drilled shafts in sand follow GEC-10 (2018) Eq. 10-13 by default (release note); at-rest K0 behind sloping ground is EN 1997-1 Eq. 9.2 always (release note); on Foundry the app needs no workspace glue and the references helper runs on Sonnet 5.5, the rest on Opus 5.5 (INF-36/37/41); the geotech-report questions moved to report_ingest and off the Document Review page (RI-34); both pages' agents are pinned by `webapp/tests/test_page_fingerprints.py` (a deliberate prompt or tool change re-records with `python -m webapp.tests.page_builds record`, in its own commit; INF-30);
+      the night of 2026-10-20/21 (owner away until the Foundry build c test): downdrag takes beta
+      in a clay that asks for it and, when alpha is not given, UFC Sec. 6-5.4.2's alpha by su (App. B-5.4
+      reproduced; 5560059, 6a6f11f); a helper that stops leaves its unsaved records as files (6750935);
+      the library's GEC-10 ch. 10 from the 2018 print, GEC-11 Table 3-6 and DM7.2 Eq. 6-9 as printed
+      (refs a6a08d1, 2e8ad84); a left-out wall friction refused under the 1948 chart and Eq. 4-12, MSE
+      ribbed strips at F* = 1.2 + log Cu at the top (d155bf4); drilled shafts get the Hoek-Brown base for
+      fractured rock and su averaged over 2B (c95a0e1, 3e3475a); OpenSees site response reports ru, puts a
+      node at the water table, takes permeability in its own units (8c32aed) and stabilizes pore pressure
+      per element by the SSPquadUP formula, so a clay keeps its own ru, with the surface spectrum in the
+      result (7bc7540); specialists build calc packages, figures and PDFs (98be115); MSE strip and grid
+      walls take the coverage ratio Rc = b/Sh, geosynthetics GEC-11's alpha, Examples E1 and E3
+      reproduced (7b4c0f4); did-you-mean hints that never matched (5f4e58a); `import pymupdf` in the app
+      and planlens (0ff9056, planlens c79d1f3); release notes for each in HANDOFF;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
