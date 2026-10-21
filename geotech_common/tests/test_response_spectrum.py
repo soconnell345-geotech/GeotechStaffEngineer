@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 
 from geotech_common.response_spectrum import (
-    POINTS_PER_PERIOD, pseudo_spectral_accel, substeps,
+    G, POINTS_PER_PERIOD, oscillator_response, peak_between_points,
+    pseudo_spectral_accel, substeps,
 )
 
 
@@ -43,3 +44,22 @@ def test_substeps_lie_on_the_straight_lines():
     np.testing.assert_allclose(substeps(p, 4), [0.0, 0.25, 0.5, 0.75, 1.0,
                                                 0.5, 0.0, -0.5, -1.0])
     assert POINTS_PER_PERIOD == 20
+
+
+def test_the_response_history_is_the_spectrum_s():
+    """The history the rotated spectra use (GM-275) gives the spectrum's
+    Sa, value for value, with sub-steps (0.05 s, five record steps) and
+    without (1 s)."""
+    a = _record()
+    for period in (0.05, 1.0):
+        u, v, h = oscillator_response(a, 0.01, period)
+        assert h == pytest.approx(0.01 / (4 if period == 0.05 else 1))
+        assert len(u) == (len(a) - 1) * round(0.01 / h) + 1
+        w = 2.0 * np.pi / period
+        assert (w ** 2 * peak_between_points(u, v, h) / G
+                == pseudo_spectral_accel(a, 0.01, [period])[0])
+
+
+def test_the_response_history_needs_a_period():
+    with pytest.raises(ValueError, match="above 0"):
+        oscillator_response(_record(), 0.01, 0.0)

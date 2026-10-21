@@ -336,10 +336,12 @@ class RotDSpectrumResult:
         {percentile: Sa array (g)} for EVERY percentile requested
         (rotd0/50/100 above are the three usual ones).
     engine : str
-        "pyrotd", or "numpy" when pyrotd could not be imported and the
-        ``rotd_native`` implementation of the same procedure was used.
+        "nigam_jennings": each component's oscillator response in the time
+        domain, the two rotated through the angles (GM-275; until then
+        "pyrotd", or "numpy" for a copy of pyrotd's frequency-domain
+        procedure).
     engine_note : str
-        Why the numpy engine was used (the real pyrotd import error).
+        The method, in words.
     """
     motion_a_name: str = ""
     motion_b_name: str = ""
@@ -354,7 +356,7 @@ class RotDSpectrumResult:
     rotd50: np.ndarray = field(default_factory=lambda: np.array([]))
     rotd100: np.ndarray = field(default_factory=lambda: np.array([]))
     spectra: Dict[float, np.ndarray] = field(default_factory=dict)
-    engine: str = "pyrotd"
+    engine: str = "nigam_jennings"
     engine_note: str = ""
 
     def summary(self) -> str:
@@ -367,6 +369,11 @@ class RotDSpectrumResult:
             f"  Component B:          {self.motion_b_name}",
             f"  Record length:        {self.n_points} pts, dt={self.dt_s:.4f} s",
             f"  Damping:              {self.damping:.1%}",
+            "  Method:               each component by Nigam and Jennings "
+            "(1969),",
+            "                        rotated 0-179 deg, the peak at each "
+            "angle read",
+            "                        between samples (Boore 2010)",
             "",
             f"  PGA (comp A):         {self.pga_a_g:.4f} g",
             f"  PGA (comp B):         {self.pga_b_g:.4f} g",

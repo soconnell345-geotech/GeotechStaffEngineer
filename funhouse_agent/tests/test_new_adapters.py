@@ -258,20 +258,20 @@ class TestSeismicSignalsCalls:
             })
             assert "error" in result
 
-    def test_rotd_spectrum_without_pyrotd_uses_numpy(self):
-        """No pyrotd gate in the adapter: the module falls back to its numpy
-        RotD (live smoke G10), so a missing pyrotd is not an error."""
-        missing = "pyrotd is not installed"
-        with patch("seismic_signals_agent.rotd_spectrum.pyrotd_import_error",
-                   return_value=missing):
+    def test_rotd_spectrum_needs_no_pyrotd(self):
+        """No pyrotd gate in the adapter, and the module does not use
+        pyrotd since GM-275 (time-domain responses), so a missing
+        pyrotd is not an error."""
+        with patch("seismic_signals_agent.signal_utils.import_pyrotd",
+                   side_effect=ImportError("pyrotd is not installed")):
             from funhouse_agent.dispatch import call_agent
             result = call_agent("seismic_signals", "rotd_spectrum", {
                 "motion_a": "synthetic_pulse", "motion_b": "synthetic_pulse",
                 "periods": [0.2, 1.0],
             })
         assert "error" not in result, result
-        assert result["engine"] == "numpy"
-        assert "not installed" in result["engine_note"]
+        assert result["engine"] == "nigam_jennings"
+        assert "Nigam and Jennings" in result["engine_note"]
 
     def test_signal_processing_not_installed(self):
         with patch("seismic_signals_agent.has_eqsig", return_value=False):

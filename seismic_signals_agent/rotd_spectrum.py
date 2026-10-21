@@ -1,17 +1,18 @@
 """
-Rotated spectral acceleration (RotD50/RotD100) using pyrotd, or the numpy
-implementation of the same procedure when pyrotd cannot be imported.
+Rotated spectral acceleration (RotD0/RotD50/RotD100) from two orthogonal
+horizontal components of ground motion, per Boore (2010): each component's
+oscillator response in the time domain by Nigam and Jennings (1969), the
+two rotated through the angles (``rotd_time_domain``, GM-275).
 
-Computes orientation-independent spectral acceleration from two orthogonal
-horizontal components of ground motion, per Boore (2010).
+Until GM-275 it used pyrotd, or a numpy copy of pyrotd's frequency-domain
+procedure where pyrotd could not be imported; DESIGN.md says why that went.
 """
 
 import numpy as np
 
-from seismic_signals_agent.signal_utils import (
-    import_pyrotd, pyrotd_import_error,
+from seismic_signals_agent.rotd_time_domain import (
+    METHOD_NOTE, rotated_spectral_accels,
 )
-from seismic_signals_agent.rotd_native import rotated_spectral_accels
 from seismic_signals_agent.results import RotDSpectrumResult
 
 
@@ -51,7 +52,9 @@ def analyze_rotd_spectrum(
     damping=0.05,
     percentiles=None,
 ) -> RotDSpectrumResult:
-    """Compute rotated spectral acceleration (RotD) using pyrotd.
+    """Compute rotated spectral acceleration (RotD), each component's
+    oscillator response by Nigam and Jennings (1969), rotated through
+    0-179 deg (Boore 2010).
 
     Two orthogonal horizontal components are required. Each can be specified
     as a built-in motion name or a custom acceleration array. Both components
@@ -123,38 +126,9 @@ def analyze_rotd_spectrum(
     sort_idx = np.argsort(periods)
     periods = periods[sort_idx]
 
-    # Convert periods to frequencies for pyrotd
-    osc_freqs = 1.0 / periods
-
-    # pyrotd when it imports; otherwise the numpy implementation of the
-    # same procedure (pyrotd 0.6 cannot import without pkg_resources —
-    # live smoke G10).
-    import_error = pyrotd_import_error()
-    spectra = {}
-    if import_error is None:
-        pyrotd = import_pyrotd()
-        result = pyrotd.calc_rotated_spec_accels(
-            dt_val, accel_a_g, accel_b_g,
-            osc_freqs, osc_damping=damping,
-            percentiles=percentiles,
-        )
-        # pyrotd returns a flat recarray (osc_freq, percentile, spec_accel,
-        # angle), one record per (osc_freq, percentile), in the order of
-        # osc_freqs (= period ascending here).
-        for pctl in percentiles:
-            mask = result.percentile == pctl
-            spectra[float(pctl)] = np.asarray(result[mask].spec_accel,
-                                              dtype=float)
-        engine = "pyrotd"
-        engine_note = ""
-    else:
-        spectra = rotated_spectral_accels(
-            dt_val, accel_a_g, accel_b_g, periods, damping=damping,
-            percentiles=percentiles)
-        engine = "numpy"
-        engine_note = (f"{import_error}; computed with the numpy "
-                       f"implementation of the same procedure "
-                       f"(seismic_signals_agent.rotd_native).")
+    spectra = rotated_spectral_accels(
+        dt_val, accel_a_g, accel_b_g, periods, damping=damping,
+        percentiles=percentiles)
 
     rotd0 = spectra.get(0.0, np.array([]))
     rotd50 = spectra.get(50.0, np.array([]))
@@ -174,6 +148,6 @@ def analyze_rotd_spectrum(
         rotd50=rotd50,
         rotd100=rotd100,
         spectra=spectra,
-        engine=engine,
-        engine_note=engine_note,
+        engine="nigam_jennings",
+        engine_note=METHOD_NOTE,
     )

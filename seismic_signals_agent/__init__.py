@@ -7,7 +7,8 @@ Current analyses:
   - Response spectrum (Nigam-Jennings with sub-steps,
     geotech_common.response_spectrum; PGV and PGD via eqsig)
   - Intensity measures (Arias intensity, CAV, significant duration)
-  - Rotated spectral acceleration (RotD50/RotD100 via pyrotd)
+  - Rotated spectral acceleration (RotD0/RotD50/RotD100, Boore 2010,
+    from time-domain Nigam-Jennings responses; pyrotd until GM-275)
   - Signal processing (filtering + baseline correction via eqsig)
 
 References:

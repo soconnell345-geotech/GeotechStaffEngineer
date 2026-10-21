@@ -34,9 +34,10 @@ def pyrotd_import_error():
     pyrotd 0.6.x reads its own version through ``pkg_resources``, which
     setuptools 81+ no longer ships, so on a fresh environment the package
     is present yet ``import pyrotd`` raises ``ModuleNotFoundError: No module
-    named 'pkg_resources'`` (live smoke G10, 2026-10-08). The rotated
-    spectrum does not depend on it: ``analyze_rotd_spectrum`` falls back to
-    the numpy implementation in ``rotd_native``.
+    named 'pkg_resources'`` (live smoke G10, 2026-10-08). No analysis
+    here uses pyrotd since GM-275 (``analyze_rotd_spectrum`` computes the
+    responses in the time domain); this and ``has_pyrotd`` stay for callers
+    that check it.
     """
     import importlib.util
     try:

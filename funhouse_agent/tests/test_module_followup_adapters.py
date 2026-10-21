@@ -182,9 +182,8 @@ class TestSeismicSignalsReturns:
         assert r["percentiles"] == ["0", "50", "84", "100"]
         for p in r["percentiles"]:
             assert len(r["spectra"][p]) == 3
-        assert r["engine"] in ("pyrotd", "numpy")
-        _assert_documented("seismic_signals", "rotd_spectrum", r,
-                           conditional=("engine_note",))
+        assert r["engine"] == "nigam_jennings"   # GM-275
+        _assert_documented("seismic_signals", "rotd_spectrum", r)
 
     @pytest.mark.skipif(not _has_eqsig(), reason="eqsig not installed")
     def test_intensity_measures_doc_keys(self):
