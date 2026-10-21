@@ -344,7 +344,8 @@ NOT_REACHED = {
         "gives the full two-point estimate's mean and COV exactly",
     **{(k, "phi_foundation"): _PHI_FDN for k in (
         "retaining_walls|mse_lrfd_external_stability",
-        "retaining_walls|mse_wall", "retaining_walls|mse_wall#surcharge")},
+        "retaining_walls|mse_wall", "retaining_walls|mse_wall#surcharge",
+        "retaining_walls|mse_wall#per_level")},
     ("calc_package|retaining_wall_package#surcharge",
      "surcharge_in_bearing"):
         "the probe gives no q_allowable, so the bearing check it enters "

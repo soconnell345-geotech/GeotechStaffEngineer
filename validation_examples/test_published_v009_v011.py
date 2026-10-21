@@ -549,6 +549,113 @@ def test_v010_tension_level4_through_the_built_in_mat():
     assert 32.0 * coverage_ratio(mat) / T == pytest.approx(0.347, abs=0.001)
 
 
+# ── V-010 : E4's mats per level, GM-266 ─────────────────────────────────────
+
+#: Table E4-7.4 (p. E4-18), the rest of each row: Level: (F*, Le ft,
+#: phi_p Pr k/ft, Bar Mat as printed).
+E4_TABLE_7_4_MATS = {
+    1: (1.188, 10.31, 5.16, "4W11+W11x0.5'"),
+    2: (1.110, 10.31, 11.25, "3W11+W11x0.5'"),
+    3: (1.033, 10.31, 16.47, "4W11+W11x0.5'"),
+    4: (0.955, 10.31, 20.75, "4W11+W11x0.5'"),
+    5: (0.438, 10.31, 12.06, "4W15+W11x1'"),
+    6: (0.399, 11.24, 14.50, "4W15+W11x1'"),
+    7: (0.360, 12.74, 17.41, "4W15+W11x1'"),
+    8: (0.214, 14.24, 13.27, "4W15+W11x1.5'"),
+    9: (0.208, 15.74, 16.12, "4W15+W11x1.5'"),
+    10: (0.208, 17.24, 19.66, "4W15+W11x1.5'")}
+
+
+class _E4Levels(MSEWallGeometry):
+    """E4's wall with its levels at the printed Z (Table E4-7.4, p. E4-18):
+    1.87 ft, then 2.5 ft apart to 24.37 ft. The module's levels sit at
+    Sv (i + 1/2), which for Sv 2.5 ft puts the first at 1.25 ft."""
+
+    @property
+    def reinforcement_depths(self):
+        return [E4_TABLE_7_4[k][0] * FT for k in sorted(E4_TABLE_7_4)]
+
+    @property
+    def n_reinforcement_levels(self):
+        return len(E4_TABLE_7_4)
+
+
+def _e4_by_level(reinforcement):
+    geom = _E4Levels(wall_height=H, reinforcement_length=L,
+                     reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
+    return analyze_mse_wall(geom, GAMMA, PHI_R, reinforcement)
+
+
+def _e4_mats():
+    import dataclasses
+    from retaining_walls.reinforcement import (
+        WELDED_WIRE_GRID_W11, BAR_MAT_E4_3W11, BAR_MAT_E4_4W15_ST1,
+        BAR_MAT_E4_4W15_ST1_5)
+    mats = {"4W11+W11x0.5'": WELDED_WIRE_GRID_W11,
+            "3W11+W11x0.5'": BAR_MAT_E4_3W11,
+            "4W15+W11x1'": BAR_MAT_E4_4W15_ST1,
+            "4W15+W11x1.5'": BAR_MAT_E4_4W15_ST1_5}
+    return [dataclasses.replace(mats[E4_TABLE_7_4_MATS[k][3]],
+                                horizontal_spacing=5.0 * FT)
+            for k in sorted(E4_TABLE_7_4_MATS)]
+
+
+def test_v010_e4_mats_per_level():
+    """PASS (GM-266): E4 with its mats as Table E4-7.4 prints them (p.
+    E4-18), one a level: 4W11 + W11x0.5' at Levels 1, 3 and 4, 3W11 +
+    W11x0.5' at Level 2, 4W15 + W11x1' at Levels 5 to 7 and 4W15 +
+    W11x1.5' at Levels 8 to 10, the longitudinal wires at Sl = 0.5 ft (p.
+    E4-17), W15 0.381 in. and W11 0.318 in. after 75 years (p. E4-14), Fy
+    65 ksi and the W11 transverse wire t = 0.374 in. (p. E4-15), each mat
+    across a 5 ft panel. Each level takes its own mat's t/St in F*: Levels
+    5 to 10 print F* 0.438 to 0.208, the 1 ft and 1.5 ft transverse
+    spacings. F*, Le and phi_p Pr = 0.90 Pr (per ft of mat width) match the
+    table to 0.3 %. The tension check is the ASD one (Tal = 0.48 Fy Ac,
+    GEC-11 Vol I p. 4-77, against the unfactored Tmax), so FOS_rupture is
+    set against Ng phi_s Tn / Tmax, the LRFD ratio Table E4-7.4 implies.
+    They match to 2 % at Levels 2 to 10, and Level 10 gives 1.018 against
+    4 x 4.84 / 19.05 = 1.016. Level 1 is 13 % over: E4's top level carries
+    3.12 ft of wall (Svt), the module's 2.5 ft."""
+    res = _e4_by_level(_e4_mats())
+    rows = res.internal_results
+    assert [r["reinforcement"] for r in rows] == [m.name for m in _e4_mats()]
+    assert "W15" in rows[9]["reinforcement"] and "x1.5'" in rows[9][
+        "reinforcement"]
+    for level, r in zip(sorted(E4_TABLE_7_4_MATS), rows):
+        F, Le_ft, phiPr, _ = E4_TABLE_7_4_MATS[level]
+        _, Tmax, phiTn, _, Ng, _ = E4_TABLE_7_4[level]
+        assert r["F_star"] == pytest.approx(F, abs=0.001), level
+        assert r["Le_m"] / FT == pytest.approx(Le_ft, abs=0.03), level
+        assert 0.90 * r["Pr_kN_per_m"] / r["Rc"] / KFT == pytest.approx(
+            phiPr, rel=0.003), level
+        if level > 1:
+            assert r["FOS_rupture"] == pytest.approx(
+                Ng * phiTn / Tmax, rel=0.02), level
+    assert rows[9]["FOS_rupture"] == pytest.approx(1.018, abs=0.001)
+    assert 4 * 4.84 / 19.05 == pytest.approx(1.016, abs=0.001)
+    assert rows[0]["FOS_rupture"] / (4 * 3.38 / 6.25) == pytest.approx(
+        1.127, abs=0.002)
+
+
+def test_v010_e4_level10_needs_its_w15_mat():
+    """PASS (GM-266): at Level 10 (Z = 24.37 ft) E4's 4W15 + W11x1.5' mat
+    carries the tension, FOS_rupture 1.018, and the 4W11 mat of Levels 1
+    to 4 would not: 0.709, its four W11 wires (4 x 3.38 = 13.5 k a panel)
+    against the 19.05 k factored Tmax (Table E4-7.4, p. E4-18): 0.71. With
+    one reinforcement for the wall (welded_wire_grid_w11) the rupture
+    check fails from Level 5 down, where E4 changes to W15."""
+    import dataclasses
+    from retaining_walls.reinforcement import WELDED_WIRE_GRID_W11
+    one = _e4_by_level(dataclasses.replace(WELDED_WIRE_GRID_W11,
+                                           horizontal_spacing=5.0 * FT))
+    rows = one.internal_results
+    assert rows[9]["FOS_rupture"] == pytest.approx(0.709, abs=0.001)
+    assert 4 * 3.38 / 19.05 == pytest.approx(0.71, abs=0.001)
+    assert [r["FOS_rupture"] >= 1.0 for r in rows] == [True] * 4 + [False] * 6
+    per_level = _e4_by_level(_e4_mats()).internal_results
+    assert all(r["FOS_rupture"] >= 1.0 for r in per_level)
+
+
 # ── V-011 : Mononobe-Okabe KAE + seismic sliding CDR (Example E7) ────────────
 #   REGRESSION ANCHOR for the M-O delta-handling / battered-wall fix.
 

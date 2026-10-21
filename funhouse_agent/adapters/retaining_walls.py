@@ -4,8 +4,9 @@ import dataclasses
 import math
 
 from funhouse_agent.adapters import (
-    apply_aliases, declare_aliases, declare_applies_when, declare_when_absent,
-    reject_unknown_params, require_params, without_unused,
+    apply_aliases, check_nested_keys, declare_aliases, declare_applies_when,
+    declare_when_absent, reject_unknown_params, require_params,
+    without_unused,
 )
 from geotech_common.log_spiral import TABLE_4_2_NOTE as _TABLE_4_2_NOTE
 from retaining_walls import earth_pressure as _ep
@@ -19,6 +20,7 @@ from retaining_walls.mse import (
 )
 from retaining_walls.reinforcement import (
     Reinforcement, RIBBED_STEEL_STRIP_50x4, WELDED_WIRE_GRID_W11,
+    BAR_MAT_E4_3W11, BAR_MAT_E4_4W15_ST1, BAR_MAT_E4_4W15_ST1_5,
     GEOGRID_GEC11_E1_GG1, GEOGRID_GEC11_E1_GG2, GEOGRID_GEC11_E1_GG3,
 )
 
@@ -47,6 +49,10 @@ _MSE_WALL_ALIASES = {**_MSE_ALIASES, "Cu": "Cu_backfill",
 _REINFORCEMENT_DB = {
     "ribbed_steel_strip_50x4": RIBBED_STEEL_STRIP_50x4,
     "welded_wire_grid_w11": WELDED_WIRE_GRID_W11,
+    # GM-266: Example E4's other mats, Table E4-7.4 (p. E4-18)
+    "bar_mat_e4_3w11_w11x0_5": BAR_MAT_E4_3W11,
+    "bar_mat_e4_4w15_w11x1": BAR_MAT_E4_4W15_ST1,
+    "bar_mat_e4_4w15_w11x1_5": BAR_MAT_E4_4W15_ST1_5,
     "geogrid_gec11_e1_gg1": GEOGRID_GEC11_E1_GG1,
     "geogrid_gec11_e1_gg2": GEOGRID_GEC11_E1_GG2,
     "geogrid_gec11_e1_gg3": GEOGRID_GEC11_E1_GG3,
@@ -66,7 +72,7 @@ _GEOGRID_INSTEAD = (
 #: What list_reinforcement says the built-ins are (GM-271 review).
 _BUILT_INS_ARE_EXAMPLES = (
     "Each built-in is the reinforcement a GEC-11 Vol II worked example "
-    "prints (E3's strip, E4's bar mat, E1's geogrids), with that example's "
+    "prints (E3's strip, E4's bar mats, E1's geogrids), with that example's "
     "Tal, design life and backfill; they are not products. Where the wall's "
     "reinforcement is specified, give it as a custom reinforcement: "
     "reinforcement_type with reinforcement_Tallowable (and "
@@ -144,7 +150,144 @@ _CUSTOM_ONLY = ("reinforcement_Tallowable", "reinforcement_type",
                 "reinforcement_transverse_spacing")
 
 
+#: What an entry of reinforcement_per_level takes (GM-266): a built-in's
+#: name, or a custom reinforcement's own inputs without their
+#: "reinforcement_" prefix (given with it, the prefix is dropped).
+_LEVEL_KEYS = ("name", "type", "Tallowable", "width", "thickness",
+               "transverse_spacing")
+_LEVEL_CUSTOM_ONLY = ("type", "Tallowable", "thickness", "transverse_spacing")
+_PER_LEVEL_TAKES = (
+    "reinforcement_per_level: one entry a level from the top down, each a "
+    "built-in name (see list_reinforcement) or a custom reinforcement "
+    "{Tallowable, type, width, thickness, transverse_spacing, name}")
+
+
+def _per_level_values(params, name, n):
+    """reinforcement_horizontal_spacing or coverage_ratio as one value a
+    level: the one value at every level, or the list's (GM-261), which
+    must have one a level."""
+    value = params.get(name)
+    if not isinstance(value, (list, tuple)):
+        return [value] * n
+    if len(value) != n:
+        raise ValueError(
+            f"mse_wall: {name} gives {len(value)} values, one per level "
+            f"from the top, and the wall has {n} levels, one entry of "
+            "reinforcement_per_level each: give one value a level, or one "
+            "number for the wall")
+    return list(value)
+
+
+def _per_level_reinforcement(params, geom):
+    """The reinforcement at each level from reinforcement_per_level
+    (GM-266), each with its level's Sh or Rc: a list of Reinforcement, one
+    a level from the top down."""
+    entries = params["reinforcement_per_level"]
+    if not isinstance(entries, (list, tuple)) or not entries:
+        raise ValueError(f"mse_wall: {_PER_LEVEL_TAKES}; got {entries!r}")
+    single = [k for k in ("reinforcement_name", "reinforcement_width")
+              + _CUSTOM_ONLY if params.get(k) is not None]
+    if single:
+        raise ValueError(
+            f"mse_wall does not take {', '.join(single)} with "
+            "reinforcement_per_level, which gives each level its own "
+            "reinforcement: put each level's name, Tal, type and width in its "
+            "entry (" + _PER_LEVEL_TAKES + ")")
+    n = geom.n_reinforcement_levels
+    if len(entries) != n:
+        depths = ", ".join(f"{z:.2f}" for z in geom.reinforcement_depths)
+        raise ValueError(
+            f"mse_wall: reinforcement_per_level gives {len(entries)} "
+            f"reinforcements, one per reinforcement level from the top down, "
+            f"and this wall has {n} levels, at depths {depths} m (wall_height "
+            f"{geom.wall_height:g} m over reinforcement_spacing "
+            f"{geom.reinforcement_spacing:g} m sets them)")
+    Shs = _per_level_values(params, "reinforcement_horizontal_spacing", n)
+    Rcs = _per_level_values(params, "coverage_ratio", n)
+    return [_level_reinforcement(i, entry, Sh, Rc)
+            for i, (entry, Sh, Rc) in enumerate(zip(entries, Shs, Rcs))]
+
+
+def _level_reinforcement(i, entry, Sh, Rc):
+    """One entry of reinforcement_per_level, at level i + 1 from the top."""
+    label = f"reinforcement_per_level[{i}] (level {i + 1} from the top)"
+    if isinstance(entry, str):
+        entry = {"name": entry}
+    if not isinstance(entry, dict):
+        raise ValueError(f"mse_wall: {label} must be a built-in name or a "
+                         f"dict; got {entry!r}. {_PER_LEVEL_TAKES}")
+    entry = {(k[len("reinforcement_"):] if isinstance(k, str)
+              and k.startswith("reinforcement_") else k): v
+             for k, v in entry.items()}
+    for k in ("horizontal_spacing", "coverage_ratio"):
+        if k in entry:
+            raise ValueError(
+                f"mse_wall: {label} gives {k}; a spacing or coverage ratio "
+                f"per level is reinforcement_horizontal_spacing or "
+                f"coverage_ratio as a list, one value a level from the top")
+    check_nested_keys(entry, _LEVEL_KEYS, method="mse_wall", label=label)
+    if entry.get("width") is not None and Rc is not None:
+        raise ValueError(
+            f"mse_wall: {label} gives a width with coverage_ratio at its "
+            "level: give coverage_ratio, or the width with "
+            "reinforcement_horizontal_spacing (Rc = b/Sh, GEC-11 Vol I Eq. "
+            "3-1, p. 3-12), not both: the width is used only for Rc")
+    name = entry.get("name")
+    key = name.lower() if isinstance(name, str) else None
+    if key in _RETIRED_REINFORCEMENT:
+        raise ValueError(f"mse_wall: {label}: '{key}' is no longer offered: "
+                         + _RETIRED_REINFORCEMENT[key])
+    level = {"reinforcement_width": entry.get("width"),
+             "reinforcement_horizontal_spacing": Sh, "coverage_ratio": Rc}
+    if key in _REINFORCEMENT_DB:
+        unused = [k for k in _LEVEL_CUSTOM_ONLY if entry.get(k) is not None]
+        if unused:
+            raise ValueError(
+                f"mse_wall: {label} gives {', '.join(unused)} with the "
+                f"built-in '{key}', which carries its own Tal, type and bar "
+                "geometry (see list_reinforcement): leave them out, or give "
+                "a custom entry with Tallowable and type and no built-in name")
+        try:
+            r = _with_coverage(_REINFORCEMENT_DB[key], level)
+        except ValueError as e:
+            raise ValueError(f"mse_wall: {label}: "
+                             + str(e).removeprefix("mse_wall: ")) from None
+    else:
+        if entry.get("Tallowable") is None:
+            raise ValueError(
+                f"mse_wall: {label}: "
+                + (f"'{name}' is not a built-in ({sorted(_REINFORCEMENT_DB)}; "
+                   "see list_reinforcement). " if name else "")
+                + "Give a built-in name, or a custom reinforcement with its "
+                "Tallowable (kN/m of its own width) and type")
+        if entry.get("type") is None:
+            raise ValueError(
+                f"mse_wall: {label}: a custom reinforcement needs its type: "
+                "'metallic_strip', 'metallic_grid' (bar mat, welded grid), "
+                "'geogrid' or 'geotextile', which sets the pullout curves and "
+                "alpha (GEC-11 Vol I Table 3-6, p. 3-17); or 'geosynthetic' "
+                "with alpha_tested")
+        r_type = _REINFORCEMENT_TYPE_ALIASES.get(entry["type"], entry["type"])
+        r = Reinforcement(
+            name=name or f"Custom {r_type}",
+            type=r_type, Tallowable=entry["Tallowable"],
+            width=entry.get("width"),
+            thickness=entry.get("thickness") or 0.0,
+            transverse_spacing=entry.get("transverse_spacing") or 0.0,
+            horizontal_spacing=Sh, coverage_ratio=Rc)
+    if not r.is_metallic and entry.get("width") is not None and Sh is None:
+        raise ValueError(f"mse_wall: {label}: "
+                         + GEOSYNTHETIC_WIDTH_NEEDS_SH.format(
+                             b=entry["width"]))
+    return r
+
+
 def _build_reinforcement(params):
+    if isinstance(params.get("reinforcement_name"), (list, tuple)):
+        raise ValueError(
+            "mse_wall: reinforcement_name takes one built-in name for every "
+            "level; for a reinforcement per level give "
+            + _PER_LEVEL_TAKES)
     if params.get("coverage_ratio") is not None \
             and params.get("reinforcement_width") is not None:
         # GM-256 review: the width serves only Rc = b/Sh, so with Rc given
@@ -384,7 +527,7 @@ def run_mse_wall(params, *, method="mse_wall"):
          "phi_foundation", "c_foundation", "q_allowable",
          "phi_retained", "gamma_retained", "traffic_vertical_resists",
          "live_load_resists", "surcharge_in_bearing", "Cu_backfill",
-         "F_star_tested", "alpha_tested"),
+         "F_star_tested", "alpha_tested", "reinforcement_per_level"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -396,7 +539,12 @@ def run_mse_wall(params, *, method="mse_wall"):
         backfill_slope=params.get("backfill_slope", 0.0),
         broken_backslope_height=params.get("broken_backslope_height"),
     )
-    reinforcement = _build_reinforcement(params)
+    if params.get("reinforcement_per_level") is not None:
+        # GM-266: a reinforcement a level, as GEC-11 Vol II Example E4
+        # changes its mats with depth (Table E4-7.4, p. E4-18)
+        reinforcement = _per_level_reinforcement(params, geom)
+    else:
+        reinforcement = _build_reinforcement(params)
     used = {
         "geom": geom, "reinforcement": reinforcement,
         "gamma_backfill": params["gamma_backfill"],
@@ -435,7 +583,10 @@ def run_mse_wall(params, *, method="mse_wall"):
 def _run_mse_wall(params):
     result, used = run_mse_wall(params)
     output = result.to_dict()
-    output["reinforcement_name"] = used["reinforcement"].name
+    r = used["reinforcement"]
+    # GM-266: each level's, from the top, when given per level
+    output["reinforcement_name"] = (r.name if isinstance(r, Reinforcement)
+                                    else [ri.name for ri in r])
     return output
 
 
@@ -1037,7 +1188,8 @@ METHOD_INFO = {
             "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m): the height of the reinforced soil mass, incl. embedment (GEC-11)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
-            "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name, or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable. The built-ins are reinforcements GEC-11 Vol II's worked examples print, with their Tal as printed: 'ribbed_steel_strip_50x4' (Example E3's 50 x 4 mm ribbed strip), 'welded_wire_grid_w11' (Example E4's 4W11 bar mat), 'geogrid_gec11_e1_gg1', 'geogrid_gec11_e1_gg2' and 'geogrid_gec11_e1_gg3' (Example E1's geogrids GG-I to GG-III); list_reinforcement gives each one's Tal and its basis. They are the worked examples' reinforcements, not products: where the wall's reinforcement is specified, give it as a custom reinforcement with its own Tal (for a geosynthetic, Tult / RF for the wall's backfill and design life). A steel strip or grid also needs its horizontal spacing (reinforcement_horizontal_spacing) or coverage_ratio. A built-in carries its own Tal, type and bar geometry, and refuses reinforcement_Tallowable, reinforcement_type, reinforcement_thickness and reinforcement_transverse_spacing."},
+            "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name for every level, or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable; for a different reinforcement at different levels give reinforcement_per_level instead. The built-ins are reinforcements GEC-11 Vol II's worked examples print, with their Tal as printed: 'ribbed_steel_strip_50x4' (Example E3's 50 x 4 mm ribbed strip), 'welded_wire_grid_w11' (Example E4's 4W11 bar mat, W11 transverse wires at 0.5 ft), 'bar_mat_e4_3w11_w11x0_5', 'bar_mat_e4_4w15_w11x1' and 'bar_mat_e4_4w15_w11x1_5' (E4's other mats, Table E4-7.4, p. E4-18), 'geogrid_gec11_e1_gg1', 'geogrid_gec11_e1_gg2' and 'geogrid_gec11_e1_gg3' (Example E1's geogrids GG-I to GG-III); list_reinforcement gives each one's Tal and its basis. They are the worked examples' reinforcements, not products: where the wall's reinforcement is specified, give it as a custom reinforcement with its own Tal (for a geosynthetic, Tult / RF for the wall's backfill and design life). A steel strip or grid also needs its horizontal spacing (reinforcement_horizontal_spacing) or coverage_ratio. A built-in carries its own Tal, type and bar geometry, and refuses reinforcement_Tallowable, reinforcement_type, reinforcement_thickness and reinforcement_transverse_spacing."},
+            "reinforcement_per_level": {"type": "list", "required": False, "description": "A reinforcement for each level, from the top down, instead of reinforcement_name and the custom reinforcement_* inputs, as GEC-11 Vol II Example E4 takes 4W11 mats at Levels 1, 3 and 4, a 3W11 mat at Level 2 and 4W15 mats from Level 5 down (Table E4-7.4, p. E4-18). One entry a level, as many as the wall has levels (wall_height / reinforcement_spacing of them, at reinforcement_spacing x (i + 1/2) from the top); a list of another length is refused. Each entry is a built-in name (see reinforcement_name and list_reinforcement) or a custom reinforcement {Tallowable, type, width, thickness, transverse_spacing, name}, the keys as the reinforcement_* inputs without the prefix. reinforcement_horizontal_spacing and coverage_ratio apply level by level, one number for the wall or a list with one per level. Pullout and rupture take each level's own Tal, width, Rc, F* and alpha, and each level of the result names its reinforcement. Every level is steel or every level geosynthetic: GEC-11 Vol I Fig. 4-9 draws one failure surface for inextensible and another for extensible reinforcement, none for a wall with both."},
             "reinforcement_horizontal_spacing": {"type": "float or list", "required": False, "description": "Centre-to-centre horizontal spacing Sh (m) of the strips, grids or sheets at one level (GEC-11 Vol I p. 3-12): one number for the wall, or a list with one per reinforcement level from the top down, as GEC-11 Vol II Example E3 changes it with depth (Table E3-7.3, p. E3-19: 2 strips a 5 ft panel at Levels 1 to 8, 3 at Levels 9 to 12); a list must have as many values as the wall has levels. With the reinforcement's width b it gives the coverage ratio Rc = b/Sh (Eq. 3-1), which scales the pullout resistance (Eq. 4-35, p. 4-49) and the tensile resistance (Tal x Rc, p. 4-47) to a metre of wall. Required for a steel strip or grid unless coverage_ratio is given instead; a call with neither is refused, since GEC-11 prints no spacing to assume (Vol II Example E3 uses 50 mm strips at 0.76 and 0.51 m, 2 or 3 per 1.5 m panel). A geosynthetic with neither is a continuous layer, Rc = 1 (p. 3-13). Aliases: Sh, horizontal_spacing."},
             "coverage_ratio": {"type": "float or list", "required": False, "description": "Coverage ratio Rc = b/Sh (GEC-11 Vol I Eq. 3-1, p. 3-12), more than 0 and at most 1, given directly instead of reinforcement_horizontal_spacing with reinforcement_width (not both): one number for the wall, or a list with one per reinforcement level from the top down. Alias: Rc."},
             "F_star_tested": {"type": "float or list", "required": False, "description": "Pullout resistance factor F* from pullout tests on the product in the wall's backfill (GEC-11 Vol I Table 3-6 note (i), p. 3-17; Appendix B): one number at every level, or [[depth_m, F*], ...] with depths below the top of the wall, linear between and the end value beyond. Replaces the empirical F* (Eqs. 3-4 to 3-8); note (i) accepts the empirical values only for Table 3-1 granular fill with Cu >= 4 ('For fill outside these limits, tests must be run'). The result's choices give FOS_pullout at the empirical F* beside it."},
@@ -1047,7 +1199,7 @@ METHOD_INFO = {
             "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Long-term allowable tensile strength Tal (kN/m) of a custom reinforcement, per metre of the reinforcement's own width: a strength per strip or per mat is that divided by its width b. The rupture check compares Tal x Rc, per metre of wall (p. 4-47), with the unfactored Tmax. For steel it requires a factor of safety of 1.0, so Tal is an allowable, a fraction of GEC-11 Vol I Eq. 3-11a (p. 3-22), Fy Ac / b with Ac the area after corrosion: 0.55 Fy for strips and 0.48 Fy for bar mats (p. 4-77); a bar mat's Ac is the number of longitudinal bars times one bar's corroded area (Fig. 3-5, p. 3-24). For a geosynthetic it requires 1.5 (1.35 / phi 0.90, Table 4-7), so Tal is the long-term strength Tult / RF (Eq. 3-12, p. 3-28), not divided by a factor of safety. Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
-            "reinforcement_width": {"type": "float", "required": False, "description": "Gross width b (m) of the strip, grid or sheet; for a grid, centre to centre of the outside longitudinal bars (GEC-11 Vol I p. 3-12, Fig. 3-3). Required with reinforcement_horizontal_spacing for Rc = b/Sh, except for a built-in that carries its own (ribbed_steel_strip_50x4: 0.05 m; welded_wire_grid_w11: 0.457 m, 4 wires at 0.152 m)."},
+            "reinforcement_width": {"type": "float", "required": False, "description": "Gross width b (m) of the strip, grid or sheet; for a grid, centre to centre of the outside longitudinal bars (GEC-11 Vol I p. 3-12, Fig. 3-3). Required with reinforcement_horizontal_spacing for Rc = b/Sh, except for a built-in that carries its own (ribbed_steel_strip_50x4: 0.05 m; welded_wire_grid_w11 and E4's 4W15 mats: 0.457 m, 4 wires at 0.152 m; bar_mat_e4_3w11_w11x0_5: 0.305 m, 3 wires)."},
             "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load (traffic) surcharge (kPa), e.g. heq*gamma. Externally its thrust drives every check; over the reinforced zone it is not a resisting force in sliding or overturning and it loads the base for bearing (GEC-11 Fig. 4-2; live_load_resists, surcharge_in_bearing). Internally it is in Tmax and not in the pullout resistance, which GEC-11 takes 'neglecting traffic loads' (p. 4-49). With a sloping backfill it is taken only with broken_backslope_height, as traffic on the level ground behind the crest; refused on a slope that continues."},
@@ -1062,7 +1214,7 @@ METHOD_INFO = {
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing; the coverage ratio Rc (given, b/Sh, or 1 for a continuous geosynthetic) and the tensile resistance Tal x Rc per metre of wall; a built-in reinforcement's Tal and where it comes from (the built-in grid: the rigid facing it assumes, with the flexible-facing value beside it); for a geosynthetic, the factor of safety 1.5 its rupture check requires (each level's FOS_rupture_required: 1.0 for steel, 1.5 for a geosynthetic); where FOS_rupture is below it, the levels, and that this tool takes one reinforcement at every level; a tested F* or alpha with FOS_pullout at the empirical value; and for ribbed steel strips the pullout factor F* at the top of the wall (Cu_backfill, given or the Cu = 4 GEC-11 p. 3-20 says to assume when unknown; for another reinforcement a given Cu checked against GEC-11 Table 3-6 note (i)); each with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing; the coverage ratio Rc (given, b/Sh, or 1 for a continuous geosynthetic) and the tensile resistance Tal x Rc per metre of wall; a built-in reinforcement's Tal and where it comes from (the built-in grid: the rigid facing it assumes, with the flexible-facing value beside it); for a geosynthetic, the factor of safety 1.5 its rupture check requires (each level's FOS_rupture_required: 1.0 for steel, 1.5 for a geosynthetic); where FOS_rupture is below it, the levels, and a stronger reinforcement at those levels (reinforcement_per_level) or a closer spacing; with reinforcement_per_level each level's Tal by runs of the same reinforcement; a tested F* or alpha with FOS_pullout at the empirical value; and for ribbed steel strips the pullout factor F* at the top of the wall (Cu_backfill, given or the Cu = 4 GEC-11 p. 3-20 says to assume when unknown; for another reinforcement a given Cu checked against GEC-11 Table 3-6 note (i)); each with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "reinforcement_name": "The reinforcement's name; with reinforcement_per_level, a list of each level's from the top.", "internal_results": "Each level from the top: depth_m, Tmax, the pullout resistance Pr and the tensile resistance Tal x Rc per metre of wall, F*, alpha, Rc, FOS_pullout and FOS_rupture with FOS_rupture_required; with reinforcement_per_level also its reinforcement.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
@@ -1097,7 +1249,7 @@ METHOD_INFO = {
     },
     "list_reinforcement": {
         "category": "MSE Wall",
-        "brief": "List the built-in reinforcements (GEC-11 Vol II worked examples' strip, bar mat and geogrids) with their Tal and its basis.",
+        "brief": "List the built-in reinforcements (GEC-11 Vol II worked examples' strip, bar mats and geogrids) with their Tal and its basis.",
         "parameters": {},
         "returns": {"reinforcement_types": "The built-ins by name: GEC-11 Vol II worked examples' reinforcements, each with its Tal as printed, its basis (Tallowable_basis) and what mse_wall needs with it; not products.", "built_ins": "What the built-ins are, and how to give the reinforcement specified for the wall.", "Tallowable": "What Tal is and how the rupture check takes it."},
     },

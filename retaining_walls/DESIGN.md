@@ -676,7 +676,7 @@ Tal x Rc is 28.93 kN/m of wall (9.60 before); FOS_pullout is unchanged
 (1.680 to 6.860). Below about 10 ft the 4W11 mat does not carry E4's
 loads, as in E4, which changes to 4W15 mats from Level 5; the module takes
 one reinforcement for the wall, so such a wall is a custom reinforcement
-for its lower levels.
+for its lower levels. (Since GM-266, below, a reinforcement per level.)
 
 **E4 reproduced** (`validation_examples/test_published_v009_v011.py`,
 V-010): Tn and Tr a wire for W11 and W15 within 0.2 % of p. E4-15; Nt at
@@ -696,7 +696,7 @@ built-in mat's Tal x Rc over the unfactored Tmax is 1.044, against E4's 4 x
   design strength or an allowable: the check takes it at FOS 1.0 - now
   taken as Tult / RF and checked at 1.5 (review below);
 - a reinforcement per level (E4's 3W11 at Level 2 and 4W15 below Level 4)
-  is not taken; GM-261 takes the spacing per level.
+  is not taken; GM-261 takes the spacing per level. Done: GM-266 below.
 
 ## The spacing per reinforcement level (GM-261, 2026-10-20)
 
@@ -745,7 +745,7 @@ E3-7.3, each level equal to the run at its own spacing. Module tests:
 
 **Not covered:** a reinforcement per level (another Tal, another width, or
 E4's W15 mats below Level 4) is not taken; only the spacing or the ratio
-varies.
+varies. Done: GM-266 below.
 
 ## Review of GM-262 and GM-261 (2026-10-20)
 
@@ -887,7 +887,8 @@ results are unchanged. Tests: `tests/test_mse_rupture_factor_of_safety.py`.
 
 **Left for the owner and the lead** (BACKLOG):
 - a reinforcement per level (another Tal and width at the deeper levels,
-  as E4's 4W15 mats, or E1's GG-II geogrids below Layer 4);
+  as E4's 4W15 mats, or E1's GG-II geogrids below Layer 4). Done: GM-266
+  below;
 - the built-in strip's 75 mm width, where GEC-11's strip is 50 mm.
   Done: GM-267 below;
 - the built-in geogrids' Tal (21.9, 29.2 kN/m) and their names, one
@@ -1024,6 +1025,96 @@ Tests: `tests/test_mse_coverage_ratio.py`,
 `funhouse_agent/tests/test_mse_builtin_reinforcement_adapter.py`, V-056
 and V-057.
 
+## A reinforcement per level (GM-266, 2026-10-21)
+
+GEC-11 Vol II Example E4 changes its bar mats with depth (Table E4-7.4,
+p. E4-18): 4W11 + W11x0.5' at Levels 1, 3 and 4, 3W11 + W11x0.5' at
+Level 2, 4W15 + W11x1' at Levels 5 to 7 and 4W15 + W11x1.5' at Levels 8
+to 10. Example E1 takes GG-I at Layers 1 to 4 and GG-II below (Table
+E1-7.4, p. E1-16). Before GM-266 the module took one reinforcement for
+the wall.
+
+**The input.** `analyze_mse_wall` and `check_internal_stability` take
+one `Reinforcement` for every level, as before, or a list of them, one a
+level from the top down (`mse.level_reinforcements`). The tool's
+`reinforcement_per_level` gives one entry a level: a built-in name, or a
+custom reinforcement `{Tallowable, type, width, thickness,
+transverse_spacing, name}` (the keys of the `reinforcement_*` inputs
+without the prefix, which is also taken). `reinforcement_horizontal_spacing`
+and `coverage_ratio` apply level by level, one number or a list (GM-261).
+`reinforcement_name`, `reinforcement_width` and the custom
+`reinforcement_*` inputs are refused beside it, and a list given as
+`reinforcement_name` points to it.
+
+**Refused, with what to give instead:**
+- a list whose length is not the number of levels, naming the levels'
+  depths, `wall_height` and `reinforcement_spacing` (the module puts the
+  levels at Sv (i + 1/2));
+- steel at some levels and geosynthetic at others: GEC-11 Vol I p. 4-33
+  takes the failure surface as "approximately bilinear in the case of
+  inextensible reinforcements" and "approximately linear in the case of
+  extensible reinforcements" (Fig. 4-9, p. 4-34), one surface through the
+  toe, and prints none for a wall with both (`mse.ONE_KIND_PER_WALL`);
+- an entry with its own spacing or ratio (that is the list input), an
+  unknown key (did-you-mean), a built-in with custom values, a custom
+  entry with no Tallowable or no type; each message names the entry and
+  its level.
+
+**Each level takes its own** Tal, width, Rc, Kr/Ka curve (strip 1.7 to
+1.2, grid 2.5 to 1.2), F* (strip 1.2 + log Cu to tan phi; grid 20 t/St
+to 10 t/St, its own t/St) and alpha (Table 3-6 by its type). A level run
+in a list is the same as the wall run with that level's reinforcement.
+Each level of `internal_results` names its reinforcement, the summary's
+level lines carry the name, and `reinforcement_name` in the tool result
+is the list of names. The choices give Tal, Rc, alpha and the empirical
+F* by runs of levels ("Tal per level, from the top: ... at levels 1, 3
+...; ... at level 2"); the Tal choice is "module" when every level is a
+built-in. The calc package keys each level to a letter (A, B, ...) in
+the inputs and the per-level table, with the names and Tal in the notes,
+and draws each reinforcement with its own line style.
+
+**E4's other mats are built-ins** (`reinforcement.py`), as E4 prints
+them: `bar_mat_e4_3w11_w11x0_5` (3 W11 longitudinal wires, b = 1 ft,
+Tal 108.5 kN/m of mat width), `bar_mat_e4_4w15_w11x1` and
+`bar_mat_e4_4w15_w11x1_5` (4 W15 wires, b = 1.5 ft, Tal 138.4 kN/m; W11
+transverse wires at 1 ft and 1.5 ft, so t/St = 0.374 / 12 and 0.374 /
+18). Wires at Sl = 0.5 ft (p. E4-17), D75 0.318 in. (W11) and 0.381 in.
+(W15) after 75 years (p. E4-14), Fy 65 ksi and t = 0.374 in. (p. E4-15),
+Tal = 0.48 Fy Ac N / b (Eq. 3-11a, p. 3-22; p. 4-77), the rigid facing's
+phi 0.65 as for the 4W11 mat.
+
+**E4 reproduced, mats per level** (`validation_examples/
+test_published_v009_v011.py`, `test_v010_e4_mats_per_level`), at E4's
+level depths (a test geometry puts the levels at the printed Z; the
+module's own levels sit at Sv (i + 1/2)). F*, Le and phi_p Pr match Table
+E4-7.4 to 0.3 % at all ten levels (F* 0.438 to 0.208 at Levels 5 to 10,
+the W15 mats' 1 ft and 1.5 ft transverse spacings). FOS_rupture (Tal x Rc
+over the unfactored Tmax, ASD) against Ng phi_s Tn / Tmax (LRFD), the
+ratio the table implies:
+
+| Level | Mat (Table E4-7.4) | FOS_rupture | Ng phi_s Tn / Tmax |
+|---|---|---|---|
+| 1 | 4W11+W11x0.5' | 2.438 | 2.163 |
+| 2 | 3W11+W11x0.5' | 1.192 | 1.213 |
+| 4 | 4W11+W11x0.5' | 1.044 | 1.059 |
+| 5 | 4W15+W11x1' | 1.344 | 1.358 |
+| 8 | 4W15+W11x1.5' | 1.215 | 1.208 |
+| 10 | 4W15+W11x1.5' | 1.018 | 1.016 |
+
+Levels 2 to 10 within 2 %. Level 1 is 13 % over: E4's top level carries
+3.12 ft of wall (Svt), the module's 2.5 ft. With the 4W11 mat at every
+level the check fails from Level 5 down, 0.709 at Level 10 against E4's
+4 x 3.38 / 19.05 = 0.71 (`test_v010_e4_level10_needs_its_w15_mat`).
+
+**Not covered** (for the owner): the module takes one Sv, so a wall's
+level depths are Sv (i + 1/2); E4's (1.87 ft, then 2.5 ft apart) and E1's
+are reproduced only through a test geometry. Level depths, or Sv per
+level, as an input would close it.
+
+Tests: `tests/test_mse_per_level_reinforcement.py`,
+`funhouse_agent/tests/test_mse_per_level_reinforcement_adapter.py`,
+V-010, the probe `retaining_walls|mse_wall#per_level`.
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):
@@ -1082,10 +1173,11 @@ and V-057.
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
   strip default unchanged; GM-246 changed its top value (above).
-  - **Source basis (built-in reinforcements).** Since GM-262, GM-267 and
-    GM-271 each built-in is a GEC-11 Vol II worked example's reinforcement
-    as printed, with its pages in its basis: E3's 50 x 4 mm strip, E4's 4W11
-    mat, E1's geogrids GG-I to GG-III (sections above). They are not a
+  - **Source basis (built-in reinforcements).** Since GM-262, GM-267,
+    GM-271 and GM-266 each built-in is a GEC-11 Vol II worked example's
+    reinforcement as printed, with its pages in its basis: E3's 50 x 4 mm
+    strip, E4's four bar mats, E1's geogrids GG-I to GG-III (sections
+    above). They are not a
     manufacturer's catalog; for a real design the user supplies the actual
     product's certified properties as a custom reinforcement. The Kr/F* CURVES
     themselves are digitized from GEC-11 Figs 4-11/E4-5 (see `mse.py`), anchored

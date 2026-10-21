@@ -326,7 +326,9 @@ W11_MAT_BASIS = (
     "down, where four W11 wires carry 0.95 of the factored Tmax (Table "
     "E4-7.4, p. E4-18); a 4W15 mat, W15 0.381 in. after 75 years (p. "
     "E4-14), is Tal = 0.48 Fy 4 pi (0.381 in.)^2 / 4 / 1.5 ft = 138.4 kN/m "
-    "of mat width, with W11 transverse wires at 1 ft or 1.5 ft. Another "
+    "of mat width, with W11 transverse wires at 1 ft (Levels 5 to 7) or 1.5 "
+    "ft (Levels 8 to 10). E4's other mats are built-ins too, and a "
+    "reinforcement given per level takes each at its own levels. Another "
     "mat, design life or backfill is a custom reinforcement "
     "(reinforcement_Tallowable)")
 
@@ -344,6 +346,60 @@ WELDED_WIRE_GRID_W11 = Reinforcement(
     transverse_spacing=0.5 * _FT,   # St = 6 in. -> t/St = 0.0623 (p. E4-15)
     basis=W11_MAT_BASIS,
 )
+
+# Example E4's other mats, read on the pages (GM-266). Table E4-7.4 (p.
+# E4-18): "3W11+W11x0.5'" at Level 2, "4W15+W11x1'" at Levels 5 to 7 and
+# "4W15+W11x1.5'" at Levels 8 to 10. A W15 wire is D = 0.437 in., 0.381 in.
+# after 75 years (p. E4-14), 0.1142 in.^2, Tn = 65 ksi x 0.1142 in.^2 =
+# 7.42 k a wire (p. E4-15). The transverse wires are W11 at St = 6, 12 or
+# 18 in. (p. E4-15: "Assume a W11 transverse wire which has a nominal
+# diameter of 0.374 in."), t/St 0.0623, 0.0312 and 0.0208; the longitudinal
+# wires at Sl = 0.5 ft (p. E4-17), so b = (wires - 1) x 0.5 ft.
+_W15_D75 = 0.381 * _IN
+
+_E4_MAT_BASIS = (
+    "GEC-11 Vol II Example E4's bar mat at {levels}, '{mat}' (Table E4-7.4, "
+    "p. E4-18): {n} {wire} longitudinal wires at 0.5 ft (0.152 m; Sl, p. "
+    "E4-17), b = {b_ft:g} ft ({b:.3f} m) between the outside wires, W11 "
+    "transverse wires (t = 0.374 in.) at {St_ft:g} ft, t/St = {tSt:.3g} (p. "
+    "E4-15); Tal = 0.48 Fy Ac / b (GEC-11 Vol I Eq. 3-11a, p. 3-22; '0.48Fy "
+    "for bar mats', p. 4-77, the allowable for a check at a factor of "
+    "safety of 1.0 on the unfactored Tmax), Ac = {n} pi ({D75} in.)^2 / 4, "
+    "the {wire} wire after E4's 75 years of corrosion (p. E4-14), Fy = 65 "
+    "ksi (p. E4-15): {Tal:.4g} kN/m of mat width. The 0.48 Fy is for a grid "
+    "connected to a rigid facing, as E4's precast panels: phi 0.65 (p. "
+    "3-23; Table 4-7, p. 4-48) against Tmax times 1.35, 0.65 / 1.35 = 0.48. "
+    "Another mat, design life or backfill is a custom reinforcement "
+    "(reinforcement_Tallowable)")
+
+
+def _e4_mat(wires: int, wire: str, D75_in: float, St_ft: float,
+            mat: str, levels: str) -> Reinforcement:
+    """One of Example E4's bar mats as Table E4-7.4 prints it (GM-266)."""
+    b = round((wires - 1) * 0.5 * _FT, 4)
+    Tal = steel_grid_Tal(wires, D75_in * _IN, _FY_GRADE_65, b,
+                         BAR_MAT_ALLOWABLE_FY)
+    return Reinforcement(
+        name=f"Bar mat {mat} (GEC-11 Vol II Example E4)",
+        type="metallic_grid",
+        Tallowable=Tal,                 # kN/m of mat width, times Rc
+        width=b,
+        Fy=_FY_GRADE_65,
+        thickness=_W11_D,               # transverse W11, t = 0.374 in.
+        transverse_spacing=St_ft * _FT,
+        basis=_E4_MAT_BASIS.format(
+            levels=levels, mat=mat, n=wires, wire=wire,
+            b_ft=(wires - 1) * 0.5, b=b, St_ft=St_ft,
+            tSt=0.374 / (12.0 * St_ft), D75=D75_in, Tal=Tal),
+    )
+
+
+BAR_MAT_E4_3W11 = _e4_mat(3, "W11", 0.318, 0.5, "3W11 + W11x0.5'",
+                          "Level 2")                    # Tal 108.5 kN/m
+BAR_MAT_E4_4W15_ST1 = _e4_mat(4, "W15", 0.381, 1.0, "4W15 + W11x1'",
+                              "Levels 5 to 7")          # Tal 138.4 kN/m
+BAR_MAT_E4_4W15_ST1_5 = _e4_mat(4, "W15", 0.381, 1.5, "4W15 + W11x1.5'",
+                                "Levels 8 to 10")       # Tal 138.4 kN/m
 
 # GEC-11 Vol II (FHWA-NHI-10-025) Example E1's geogrids, read on the pages
 # (GM-271). Table E1-7.3 (p. E1-15), "Geogrid Nominal and Factored
