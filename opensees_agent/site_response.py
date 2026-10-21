@@ -91,6 +91,28 @@ _G_ACCEL = 9.81
 # clay: the same response at 1e-7 and 1e-8 m/s).
 DEFAULT_PERMEABILITY = {"sand": 1.0e-4, "clay": 1.0e-7}
 
+# The surface PGA beside its raw value (GM-264). The raw peak stays
+# pga_surface_g; in a sand that dilates it can be a spike above 10 Hz whose
+# height follows the element size (20 m of dense sand at 0.30 g: 0.22 g in
+# 2 m elements, 0.45 g in 0.25 m ones), while the record low-passed at
+# 10 Hz stays at 0.22-0.23 g. The filter and its corner are the tool's
+# choice: no reference in the library prints one for reporting PGA from a
+# site response analysis (ASCE 7-22 Sec. 21.1.3, p. 227, takes the result
+# as ratios of the 5 % damped surface and input spectra).
+DEFAULT_PGA_LOWPASS_HZ = 10.0
+
+# The raw PGA is reported as set by a spike when, at its instant, the
+# motion above the low-pass corner (the record less the low-passed record)
+# carries more than this share of it.
+SPIKE_SHARE = 0.5
+
+# The short period (s) whose 5 % spectral acceleration is reported beside
+# the PGA: for a site-specific spectrum, ASCE 7-22 Tables 19.3-1 and
+# 19.3-2, note c (pp. 220, 223), replace the SDS/2.5 headers (the design
+# spectrum's value at zero period) by "the MCER response spectral
+# acceleration at 0.01 s natural period".
+SHORT_PERIOD_S = 0.01
+
 
 def element_permeability(k_m_per_s):
     """The u-p element's permeability input for a hydraulic conductivity
@@ -356,6 +378,7 @@ def analyze_site_response(
     linear_elastic=False,
     time_limit_s=DEFAULT_TIME_LIMIT_S,
     rayleigh_freqs_hz=None,
+    pga_lowpass_hz=DEFAULT_PGA_LOWPASS_HZ,
 ):
     """Run 1D effective-stress site response analysis.
 
@@ -452,6 +475,12 @@ def analyze_site_response(
         The two frequencies (Hz) at which the Rayleigh damping equals
         ``damping``. Default None: the site frequency Vs/(4H) and five
         times it.
+    pga_lowpass_hz : float
+        Corner (Hz) of the low-pass behind ``pga_surface_lowpass_g`` and
+        ``pga_input_lowpass_g`` (fourth-order Butterworth, run forward and
+        backward), and of the spike test on the raw PGA. The raw PGA
+        (``pga_surface_g``) is not filtered. Default 10, the tool's
+        choice (no reference in the library prints one).
 
     Returns
     -------
@@ -477,6 +506,12 @@ def analyze_site_response(
         raise ValueError(
             f"time_limit_s must be a positive number of seconds or None, "
             f"got {time_limit_s!r}")
+    if isinstance(pga_lowpass_hz, bool) or not (
+            isinstance(pga_lowpass_hz, (int, float))
+            and math.isfinite(pga_lowpass_hz) and pga_lowpass_hz > 0):
+        raise ValueError(
+            f"pga_lowpass_hz must be a positive frequency in Hz, got "
+            f"{pga_lowpass_hz!r}")
 
     from opensees_agent.ground_motions import (
         validate_motion_input, motion_label)
@@ -509,9 +544,99 @@ def analyze_site_response(
         result = _run_job(job)
     else:
         result = _run_job_in_child(job, float(time_limit_s))
-    result.choices = choices
+    set_pga_options(result, np.asarray(accel_g, dtype=float) * scale_factor,
+                    dt_motion, float(pga_lowpass_hz))
+    result.choices = choices + _pga_choices(result, dt_motion,
+                                            pga_lowpass_hz)
     result.layer_curves = [p["report"] for p in plans]
     return result
+
+
+# ===========================================================================
+# The surface PGA beside its raw value (GM-264)
+# ===========================================================================
+
+def set_pga_options(result, input_accel_g, dt, corner_hz):
+    """Put the surface PGA's alternatives on ``result`` (GM-264): the
+    surface and input records low-passed at ``corner_hz`` (fourth-order
+    Butterworth, forward and backward), the 5 % spectral acceleration at
+    0.01 s, and the spike test on the raw peak: the share of the peak, at
+    its instant, carried by motion above the corner (the record less the
+    low-passed record); over ``SPIKE_SHARE`` it is set by a spike. The raw
+    peak (``pga_surface_g``) is left as computed."""
+    from opensees_agent.opensees_utils import (
+        compute_response_spectrum, lowpass)
+    a = np.asarray(result.surface_accel_g, dtype=float)
+    a_in = np.asarray(input_accel_g, dtype=float)
+    result.pga_lowpass_hz = float(corner_hz)
+    if len(a) == 0:
+        return result
+    k = int(np.argmax(np.abs(a)))
+    low = lowpass(a, dt, corner_hz)
+    result.pga_time_s = k * float(dt)
+    result.pga_surface_lowpass_g = float(np.max(np.abs(low)))
+    if len(a_in):
+        result.pga_input_lowpass_g = float(np.max(np.abs(
+            lowpass(a_in, dt, corner_hz))))
+    share = (a[k] - low[k]) / a[k] if a[k] != 0.0 else 0.0
+    result.pga_share_above_lowpass = float(share)
+    result.pga_set_by_spike = bool(share > SPIKE_SHARE)
+    _, sa = compute_response_spectrum(a, dt, [SHORT_PERIOD_S])
+    result.Sa_surface_0_01s_g = float(sa[0])
+    return result
+
+
+def _pga_choices(result, dt, corner_hz):
+    """The surface PGA reported and its alternatives, and the low-pass
+    behind them (GM-264)."""
+    from geotech_common.choices import MODULE, choice, how_given
+    if result.pga_surface_lowpass_g is None:
+        return []
+    fc = float(corner_hz)
+    nyquist = 0.5 / float(dt)
+    share = result.pga_share_above_lowpass
+    test = (f"at its instant ({result.pga_time_s:.2f} s) "
+            f"{share * 100:.0f} % of it is motion above {fc:g} Hz")
+    basis = "the record as computed, with no filter; " + (
+        test + ", so it is set by a spike (over half)"
+        if result.pga_set_by_spike else
+        test + " (a spike would be over half)")
+    alternatives = [
+        f"5 % spectral acceleration at 0.01 s: "
+        f"{result.Sa_surface_0_01s_g:.3f} g (Sa_surface_0_01s_g), which "
+        f"ASCE 7-22 puts in place of SDS/2.5 for a site-specific spectrum "
+        f"(Tables 19.3-1 and 19.3-2, note c); a 0.01 s oscillator moves "
+        f"with the ground at a spike's frequencies, so it carries a spike "
+        f"as the peak does"]
+    if fc < nyquist:
+        alternatives.insert(0, (
+            f"the record low-passed at {fc:g} Hz: "
+            f"{result.pga_surface_lowpass_g:.3f} g (pga_surface_lowpass_g; "
+            f"the input low-passed the same way "
+            f"{result.pga_input_lowpass_g:.3f} g)"))
+    raw = choice(
+        "surface peak ground acceleration (pga_surface_g)",
+        f"{result.pga_surface_g:.3f} g, the largest value of the computed "
+        f"surface record", MODULE, basis, alternatives)
+    if fc >= nyquist:
+        chosen = (f"none: the record's step ({float(dt):g} s) carries "
+                  f"nothing above {nyquist:g} Hz, below the {fc:g} Hz asked")
+    else:
+        chosen = (f"fourth-order Butterworth, run forward and backward (no "
+                  f"phase shift), corner {fc:g} Hz")
+    filt = choice(
+        "low-pass filter (pga_surface_lowpass_g)", chosen,
+        how_given(corner_hz, DEFAULT_PGA_LOWPASS_HZ, name="pga_lowpass_hz"),
+        "the tool's choice: no reference in the library prints a filter or "
+        "a corner for reporting PGA from a site response analysis (ASCE "
+        "7-22 Sec. 21.1.3 takes the result as ratios of the surface and "
+        "input spectra). A corner below a spike's frequencies keeps the "
+        "low-passed peak from following the element size; it also removes "
+        "real motion above the corner, from the input as from the surface, "
+        "and the filter's ringing can raise a peak by up to about a tenth "
+        "where the record turns sharply",
+        ("pga_lowpass_hz (Hz)",))
+    return [raw, filt]
 
 
 # ===========================================================================
@@ -1486,8 +1611,9 @@ def _material_choices(plans, i, label, linear_elastic=False):
          + ("" if not sand else
             ". In a sand that dilates, the surface's peak acceleration is "
             "a short spike that rises as the elements get smaller; the "
-            "surface spectrum at 0.2 s and longer (Sa_surface_g) moves "
-            "much less")),
+            "record low-passed at pga_lowpass_hz (pga_surface_lowpass_g) "
+            "and the surface spectrum at 0.2 s and longer (Sa_surface_g) "
+            "move much less")),
         ("layers[i]['stabilization_alpha']",)))
     return out
 
