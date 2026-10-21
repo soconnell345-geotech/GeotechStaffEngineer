@@ -13,7 +13,7 @@ from calc_package import calculation_html, generate_calc_package
 from calc_package.renderer import TABLES_SCOPE, tables_css
 from calc_package.template import (
     CALC_PACKAGE_CSS, CALC_PACKAGE_TEMPLATE, CALC_SECTIONS_CSS,
-    CALC_SECTIONS_TEMPLATE)
+    CALC_SECTIONS_TEMPLATE, CALC_TABLES_HEADING_CSS)
 
 
 def _footing():
@@ -33,6 +33,9 @@ def test_the_package_template_holds_the_sections_part():
 
 
 def test_every_rule_is_scoped_and_sets_no_fill():
+    # the scoper reads plain rules only: an @media or @page block in the
+    # sections' CSS would lose its condition (renderer._CSS_RULE)
+    assert "@" not in CALC_SECTIONS_CSS + CALC_TABLES_HEADING_CSS
     css = tables_css()
     rules = re.findall(r"([^{}]+)\{([^{}]*)\}", css)
     assert len(rules) > 20

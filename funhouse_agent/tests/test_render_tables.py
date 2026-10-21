@@ -152,13 +152,14 @@ def test_given_and_assumed_inputs_print_apart(tmp_path):
 # A report built with it
 # ---------------------------------------------------------------------------
 
-def test_report_prints_every_step_result_reference_and_cell(tmp_path):
+def test_report_prints_every_step_result_reference_and_cell(tmp_path,
+                                                           monkeypatch):
     """Two analyses in one report: every step's title, equation, values
     put in, result and reference, and every table cell, is in the PDF;
     the calculation's styles go into the report's head once."""
-    pytest.importorskip("fitz")
-    import fitz
+    pymupdf = pytest.importorskip("pymupdf")
 
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
     files, tags = [], []
     for package in ("bearing_capacity_package", "retaining_wall_package"):
         res = CP._render_tables({
@@ -166,7 +167,7 @@ def test_report_prints_every_step_result_reference_and_cell(tmp_path):
             "output_path": str(tmp_path / f"{package}.html")})
         assert res["status"] == "success", res.get("error")
         assert res["output_path"] in res["html_include_tag"]
-        files.append(res["output_path"])
+        files.append(os.path.realpath(res["output_path"]))
         tags.append(res["html_include_tag"])
     report = ("<html><head><style>h1{color:#234;}</style></head><body>"
               "<h1>Wall and footing report</h1><p>Our narrative.</p>"
@@ -185,7 +186,7 @@ def test_report_prints_every_step_result_reference_and_cell(tmp_path):
     assert pdf["status"] == "success", pdf.get("error")
     assert pdf["included"] == files
     assert "fills_not_drawn" not in pdf      # the calculation sets no fill
-    doc = fitz.open(pdf["output_path"])
+    doc = pymupdf.open(pdf["output_path"])
     printed = _printed(" ".join(page.get_text() for page in doc))
     doc.close()
     for path in files:
@@ -206,13 +207,19 @@ def test_report_prints_every_step_result_reference_and_cell(tmp_path):
         printed.index(_text("End of report."))
 
 
-def test_an_include_that_cannot_be_filled_stops_the_pdf(tmp_path):
-    pytest.importorskip("fitz")
+def test_an_include_that_cannot_be_filled_stops_the_pdf(tmp_path,
+                                                        monkeypatch):
+    pytest.importorskip("pymupdf")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
     out = str(tmp_path / "r.pdf")
+    (tmp_path / "page.html").write_text("<body><p>a page</p></body>",
+                                        encoding="utf-8")
     for bad, why in (
             ('<div data-include="nowhere.html"></div>', "no such file"),
             ('<div data-include=""></div>', "names no file"),
             ('<div data-include="calc.html"><p>x</p></div>', "holds content"),
+            ('<div data-include="page.html"></div>',
+             "not a calculation render_tables wrote"),
     ):
         (tmp_path / "calc.html").write_text("<body><p>calc</p></body>",
                                             encoding="utf-8")
@@ -232,19 +239,67 @@ def test_an_include_that_cannot_be_filled_stops_the_pdf(tmp_path):
     assert any("not an HTML file" in p for p in res["include_problems"])
 
 
-def test_a_relative_include_resolves_beside_html_path(tmp_path):
-    pytest.importorskip("fitz")
-    (tmp_path / "calc.html").write_text(
-        "<html><head><style>.calc-tables p{color:#123;}</style></head>"
-        '<body><div class="calc-tables"><p>Step one.</p></div></body></html>',
-        encoding="utf-8")
-    (tmp_path / "report.html").write_text(
+_CALC_FILE = ("<html><head><style>.calc-tables p{color:#123;}</style></head>"
+              '<body><div class="calc-tables"><p>Step one.</p></div>'
+              "</body></html>")
+
+
+def test_a_relative_include_resolves_beside_html_path(tmp_path, monkeypatch):
+    pytest.importorskip("pymupdf")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    sub = tmp_path / "reports"
+    sub.mkdir()
+    (sub / "calc.html").write_text(_CALC_FILE, encoding="utf-8")
+    (sub / "report.html").write_text(
         "<html><body><h1>R</h1><div data-include='calc.html'/></body></html>",
         encoding="utf-8")
-    res = CP._generate_html_to_pdf({"html_path": str(tmp_path / "report.html"),
+    res = CP._generate_html_to_pdf({"html_path": str(sub / "report.html"),
                                     "output_path": str(tmp_path / "r.pdf")})
     assert res["status"] == "success", res.get("error")
-    assert res["included"] == [str(tmp_path / "calc.html")]
+    assert res["included"] == [os.path.realpath(sub / "calc.html")]
+
+
+def test_an_include_outside_the_working_folder_is_refused(tmp_path,
+                                                          monkeypatch):
+    """Nothing outside the conversation's working folder is read into a
+    PDF: not by an absolute path, a ``..`` or a link."""
+    folder, elsewhere = tmp_path / "conv", tmp_path / "elsewhere"
+    folder.mkdir()
+    elsewhere.mkdir()
+    (elsewhere / "calc.html").write_text(_CALC_FILE, encoding="utf-8")
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(folder))
+    tags = [f'<div data-include="{elsewhere / "calc.html"}"></div>',
+            '<div data-include="../elsewhere/calc.html"></div>',
+            f'<div data-include="{(elsewhere / "calc.html").as_uri()}">'
+            '</div>']
+    try:
+        os.symlink(elsewhere / "calc.html", folder / "link.html")
+        tags.append('<div data-include="link.html"></div>')
+    except (OSError, NotImplementedError):
+        pass                           # no symlinks here (Windows, unprivileged)
+    for tag in tags:
+        _, included, problems = CP._include_files(f"<body>{tag}</body>")
+        assert included == [], tag
+        assert len(problems) == 1 and "outside the working folder" in \
+            problems[0], (tag, problems)
+    # the same file inside the folder is taken
+    (folder / "calc.html").write_text(_CALC_FILE, encoding="utf-8")
+    _, included, problems = CP._include_files(
+        '<body><div data-include="calc.html"></div></body>')
+    assert problems == [] and included == [
+        os.path.realpath(folder / "calc.html")]
+
+
+def test_the_same_file_twice_prints_twice_with_one_style_sheet(tmp_path,
+                                                               monkeypatch):
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    (tmp_path / "calc.html").write_text(_CALC_FILE, encoding="utf-8")
+    tag = '<div data-include="calc.html"></div>'
+    html, included, problems = CP._include_files(
+        f"<html><head></head><body>{tag}<p>between</p>{tag}</body></html>")
+    assert problems == [] and len(included) == 2
+    assert html.count("Step one.") == 2
+    assert html.count(".calc-tables p{color:#123;}") == 1
 
 
 # ---------------------------------------------------------------------------

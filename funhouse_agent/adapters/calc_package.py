@@ -2408,7 +2408,16 @@ def _include_files(html: str, base_dir: str = None):
     file's ``<style>`` blocks put in the page's head (once each), so a
     ``render_tables`` calculation prints in a report as the package prints
     it. Returns ``(html, included paths, problems)``; a file that cannot be
-    read is a problem, never a silent gap."""
+    read is a problem, never a silent gap.
+
+    Only a file ``render_tables`` wrote (its ``.calc-tables`` wrapper) in
+    the working folder is taken: the path is followed through any link
+    and ``..`` first, so nothing outside the folder is read into a PDF,
+    and no other page's styles land in the report's head."""
+    from calc_package.renderer import TABLES_SCOPE
+    from funhouse_agent._fileio import _inside
+    folder = os.path.realpath(default_output_dir() or os.getcwd())
+    marker = f'<div class="{TABLES_SCOPE}">'
     included, problems, styles, out, cursor = [], [], [], [], 0
     for m in _INCLUDE_RE.finditer(html):
         tag = m.group(0)
@@ -2423,6 +2432,12 @@ def _include_files(html: str, base_dir: str = None):
         path = _resolve_image_path(src, base_dir)
         if not os.path.isfile(path):
             path = find_in_working_folder(src) or path
+        path = os.path.realpath(path)
+        if not _inside(path, folder):
+            problems.append(f"{snippet} — outside the working folder: run "
+                            "render_tables with no output_path and paste "
+                            "its html_include_tag")
+            continue
         if not os.path.isfile(path):
             problems.append(f'{snippet} — no such file on the REAL '
                             f'filesystem ("{path}")')
@@ -2432,6 +2447,11 @@ def _include_files(html: str, base_dir: str = None):
             continue
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             text = fh.read()
+        if marker not in text:
+            problems.append(f"{snippet} — not a calculation render_tables "
+                            "wrote: data-include takes only that file; put "
+                            "HTML of your own in the report itself")
+            continue
         body = _BODY_RE.search(text)
         inner = body.group(1) if body else text
         styles += _STYLE_BLOCK_RE.findall(text[:body.start()] if body

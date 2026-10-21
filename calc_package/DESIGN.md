@@ -103,8 +103,11 @@ GM-219, and would otherwise report every one as `fills_not_drawn`).
 The result's `html_include_tag` is `<div data-include="<file>"></div>`.
 `html_to_pdf` replaces each such element with the file's body and puts the
 file's `<style>` blocks in the report's head, once each; an element it
-cannot fill (no file, not HTML, content inside it) stops the PDF with
-`include_problems`, as a figure it cannot embed does. The citation check
+cannot fill (no file, not HTML, not a file `render_tables` wrote, content
+inside it, or a path outside the working folder once links and `..` are
+followed) stops the PDF with `include_problems`, as a figure it cannot
+embed does. So nothing outside the conversation's folder is read into a
+PDF, and no other page's styles land in the report's head. The citation check
 on `html_to_pdf` (EV-21) reads the agent's own HTML only, never the
 included calculation, which is the module's.
 
