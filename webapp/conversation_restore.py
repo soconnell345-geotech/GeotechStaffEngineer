@@ -414,6 +414,16 @@ def _restore(data, root, replace, zip_name, page, owner, owner_name, busy,
             if stage is not None:
                 shutil.rmtree(stage, ignore_errors=True)
     n = len(result.files)
+    # The record says the conversation came back from a zip (BACKLOG EV-19:
+    # a restore was invisible in it).
+    try:
+        from webapp import activity_log
+        activity_log.note_restored(dest, source="zip", files=n,
+                                   skipped=len(result.skipped),
+                                   partial=result.partial,
+                                   replaced=result.replaced)
+    except Exception:  # noqa: BLE001 - a record, never the restore
+        pass
     result.message = (
         f"Restored '{result.title or tid}': {n} {'file' if n == 1 else 'files'}"
         + (", replacing the copy that was here" if result.replaced else "")

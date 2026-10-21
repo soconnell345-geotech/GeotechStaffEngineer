@@ -133,6 +133,32 @@ def _turn_no_of(ctx: dict) -> int:
         return 0
 
 
+def _record_turn_files(activity, thread_id: str, turn_paths, dir_new,
+                       rewritten) -> None:
+    """The turn's files on its activity log (``turn_files``): each card's
+    file with its size, a hash of its content, and whether the turn wrote
+    it new, rewrote it, or only listed it (a file a tool reported that the
+    folder's before-and-after did not show changing) (BACKLOG EV-19).
+    Never raises."""
+    try:
+        from webapp.activity_log import file_facts
+        conv = core.conversation_dir(thread_id)
+        new = {os.path.abspath(p) for p in dir_new}
+        again = {os.path.abspath(p) for p in rewritten or ()}
+        files = []
+        for p in turn_paths:
+            facts = file_facts(p, conv)
+            if facts is None:
+                continue
+            ap = os.path.abspath(p)
+            facts["how"] = ("rewritten" if ap in again
+                            else "new" if ap in new else "listed")
+            files.append(facts)
+        activity.turn_files(files)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
 def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                   recursion_limit, ctx: dict) -> None:
     """The entire turn pipeline, Streamlit-free. Never raises."""
@@ -315,8 +341,10 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                    if os.path.abspath(p) not in fetched]
         # A file the turn wrote AGAIN (a memo rewritten under its own name)
         # gets this turn's card too (live smoke wave 1, A13).
-        for p in core.rewritten_files(ctx["temp_dir"], ctx.get("before_mtimes"),
-                                      ctx["staged_inputs"]):
+        rewritten = core.rewritten_files(ctx["temp_dir"],
+                                         ctx.get("before_mtimes"),
+                                         ctx["staged_inputs"])
+        for p in rewritten:
             if os.path.abspath(p) not in fetched and p not in dir_new:
                 dir_new.append(p)
         if ctx.get("before_wd") is not None:
@@ -350,6 +378,9 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         # Tool scratch and caches (files/.scratch, digest/) never make cards.
         turn_paths = [p for p in core.collect_turn_artifacts(save_new, dir_new)
                       if not core.is_cache_path(p, ctx["temp_dir"])]
+        if activity is not None:
+            _record_turn_files(activity, thread_id, turn_paths, dir_new,
+                               rewritten)
 
         assistant_entry = {"role": "assistant", "text": final,
                            "artifacts": turn_paths}

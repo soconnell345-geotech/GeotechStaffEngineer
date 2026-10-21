@@ -37,7 +37,11 @@ def main() -> None:
     mentioned in any message (enclave-IT requirement).
     """
     os.environ.setdefault("GEOTECH_DEPLOYMENT", "foundry")
-    runpy.run_path(app_path(), run_name="__main__")
+    # a crash of the page is kept in the open conversation's record
+    # (BACKLOG EV-19); raised on unchanged
+    from webapp import page_errors
+    with page_errors.recording():
+        runpy.run_path(app_path(), run_name="__main__")
 
 
 if __name__ == "__main__":

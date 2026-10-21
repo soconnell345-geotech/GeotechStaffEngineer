@@ -405,6 +405,15 @@ def _init_session() -> None:
 _init_session()
 ss = st.session_state
 
+# A rerun that raises is kept in the open conversation's activity log
+# (webapp.page_errors; BACKLOG EV-19). Recording only.
+try:
+    from webapp import page_errors as _page_errors
+    _page_errors.install()
+    _page_errors.bind(core.conversation_dir(ss.thread_id, _THREAD_ROOT))
+except Exception:                                      # noqa: BLE001
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Header + disclaimer (prominent, at the very top)
