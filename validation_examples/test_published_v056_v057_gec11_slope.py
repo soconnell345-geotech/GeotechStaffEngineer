@@ -12,7 +12,9 @@ Source: FHWA GEC-11 Vol 2 (FHWA-NHI-10-025), Appendix E, read from the PDF
     (2H:1V, 9 ft high, crest at the end of the reinforcement) and traffic
     on the level ground behind the crest, geogrid. PDF pp. 243-262: Kab
     p. 246 (E1-4); loads p. 247 (E1-5); sliding p. 249 (E1-7); eccentricity
-    pp. 250-251 (E1-8/9); bearing pp. 252-253 (E1-10/11); S_eq p. 255 (E1-13).
+    pp. 250-251 (E1-8/9); bearing pp. 252-253 (E1-10/11); S_eq p. 255 (E1-13);
+    TMAX Table E1-7.2 p. 256 (E1-14); Tal and Tr Table E1-7.3 p. 257
+    (E1-15); rupture CDRs Table E1-7.4 p. 258 (E1-16) (GM-268).
 Method: GEC-11 Vol 1 (FHWA-NHI-10-024) §4.4.4, §4.4.6, §4.4.7 — see
 retaining_walls/DESIGN.md "Sloping backfill (GM-112)".
 
@@ -32,9 +34,10 @@ import pytest
 
 from retaining_walls.geometry import MSEWallGeometry
 from retaining_walls.mse import (
-    analyze_mse_wall, check_external_stability,
-    check_external_stability_lrfd, check_internal_stability,
-    pullout_resistance,
+    Kr_Ka_ratio, Tmax_at_level, analyze_mse_wall, backslope_geometry,
+    check_external_stability, check_external_stability_lrfd,
+    check_internal_stability, pullout_resistance, rankine_Ka,
+    rupture_FOS_required,
 )
 from retaining_walls.reinforcement import Reinforcement, GEOGRID_UX1600
 
@@ -455,3 +458,100 @@ def test_v057_pullout_cdr_by_layer(z, Le, Tmax, Zp, cdr):
     Pr = pullout_resistance(Zp * FT, GAMMA, Le * FT, level["F_star"],
                             alpha_pullout=level["alpha"])
     assert 0.90 * Pr / (Tmax * KFT / 1000) == pytest.approx(cdr, rel=0.012)
+
+
+# ── V-057: E1's geogrid rupture CDRs (GM-268) ──────────────────────────────
+
+#: GEC-11 Vol II Table E1-7.3 (p. E1-15): Tal = Tult / (RFCR x RFD x RFID),
+#: Eq. 3-12, and Tr = phi Tal with phi 0.90 (Eq. 4-33): grade, Tult, RFID,
+#: Tal and Tr (lb/ft).
+E1_TABLE_7_3 = {"GG-I": (3000, 1.3, 1085, 976),
+                "GG-II": (6000, 1.3, 2169, 1952),
+                "GG-III": (9000, 1.2, 3525, 3173)}
+
+#: GEC-11 Vol II Table E1-7.4 (p. E1-16), per layer: Z (ft), Sv (ft), TMAX
+#: (lb/ft, factored, Table E1-7.2 p. E1-14), grade and CDR = Tr / TMAX.
+#: Layer 1's TMAX is at ZAve 0.835 ft, the middle of its contributory
+#: height (p. E1-14).
+E1_TABLE_7_4 = [
+    (0.835, 1.67, 346, "GG-I", 2.82), (2.67, 2.0, 590, "GG-I", 1.65),
+    (4.67, 2.0, 781, "GG-I", 1.25), (6.67, 2.0, 972, "GG-I", 1.00),
+    (8.67, 2.0, 1163, "GG-II", 1.68), (10.67, 2.0, 1354, "GG-II", 1.44),
+    (12.67, 2.0, 1545, "GG-II", 1.26), (14.67, 2.0, 1736, "GG-II", 1.12),
+    (16.67, 2.0, 1927, "GG-II", 1.01), (18.67, 1.33, 1366, "GG-II", 1.43),
+    (19.33, 1.0, 1091, "GG-II", 1.79)]
+
+
+def _e1_geogrid(grade):
+    Tult, RFID, _, _ = E1_TABLE_7_3[grade]
+    Tal = Tult / (1.85 * 1.15 * RFID) * KFT / 1000          # kN/m
+    return Reinforcement(f"E1 {grade}", "geogrid", Tallowable=Tal)
+
+
+@pytest.mark.parametrize("grade", sorted(E1_TABLE_7_3))
+def test_v057_geogrid_tal_and_tr(grade):
+    """GM-268: E1 Step 7.6 (p. E1-15) takes Tal from Eq. 3-12 and 'The
+    resistance factor for geosynthetic reinforcement is 0.90', Tr = phi
+    Tal. The module requires Tal Rc / Tmax >= 1.5 of a geosynthetic
+    against the unfactored Tmax, the same check as Tr Rc >= 1.35 Tmax:
+    Tr = 1.35 Tal / 1.5."""
+    _, _, Tal, Tr = E1_TABLE_7_3[grade]
+    r = _e1_geogrid(grade)
+    assert r.Tallowable * 1000 / KFT == pytest.approx(Tal, abs=0.5)
+    assert 1.35 / rupture_FOS_required(r) * r.Tallowable * 1000 / KFT == \
+        pytest.approx(Tr, abs=0.5)
+
+
+@pytest.mark.parametrize("z, Sv, Tmax, grade, cdr", E1_TABLE_7_4)
+def test_v057_rupture_cdr_by_layer(z, Sv, Tmax, grade, cdr):
+    """GM-268: Table E1-7.4 (p. E1-16) gives each layer's rupture CDR,
+    Tr / TMAX, TMAX factored by gamma_EV-MAX 1.35 (p. E1-14). The module's
+    FOS_rupture, Tal Rc over its unfactored Tmax (Rc = 1), divided by the
+    1.5 it requires of a geosynthetic, at E1's own Z and Sv under the
+    slope's S_eq, reproduces every CDR within 0.6 % (its Tmax is 0.13 to
+    0.22 % under E1's, which rounds the slope to 26.6 degrees, and E1
+    prints the CDR to two places) but layer 10's. There the module's Tmax
+    at Z 18.67 ft, Sv 1.33 ft is 1,407 lb/ft factored against the printed
+    1,366 (3.0 % over; layer 11 below it agrees within 0.2 %), so its
+    ratio 1.39 is 2.9 % under the printed 1.43, on the safe side."""
+    geom = MSEWallGeometry(wall_height=20 * FT, reinforcement_length=18 * FT,
+                           backfill_slope=BETA,
+                           broken_backslope_height=9 * FT,
+                           surcharge=0.25 * KSF)
+    S_eq = backslope_geometry(geom)["S_eq"]
+    T = Tmax_at_level(z * FT, GAMMA, rankine_Ka(34.0),
+                      Kr_Ka_ratio(z * FT, "geosynthetic"), Sv * FT,
+                      GAMMA * S_eq)
+    assert 1.35 * T * 1000 / KFT == pytest.approx(
+        Tmax, rel=0.031 if z == 18.67 else 0.0025)
+    r = _e1_geogrid(grade)
+    ratio = r.Tallowable / T / rupture_FOS_required(r)
+    assert ratio == pytest.approx(cdr, rel=0.03 if z == 18.67 else 0.0065)
+
+
+def test_v057_rupture_in_one_run():
+    """GM-268: the whole wall through ``analyze_mse_wall`` with E1's GG-I
+    at every level and Sv 2 ft (the module takes one spacing and one
+    reinforcement; E1's layout varies both): every level requires 1.5 of
+    FOS_rupture = Tal / Tmax; the levels at 1, 3 and 5 ft pass and those
+    from 7 ft down fail (1.46 at 7 ft), GG-I being at its limit at E1's
+    layer 4 (CDR 1.00 at Z 6.67 ft), and the Tal choice says so."""
+    geom = MSEWallGeometry(wall_height=20 * FT, reinforcement_length=18 * FT,
+                           reinforcement_spacing=2 * FT, backfill_slope=BETA,
+                           broken_backslope_height=9 * FT,
+                           surcharge=0.25 * KSF)
+    gg1 = _e1_geogrid("GG-I")
+    r = analyze_mse_wall(geom, GAMMA, 34.0, gg1, phi_foundation=30.0,
+                         phi_retained=30.0)
+    for lv in r.internal_results:
+        assert lv["FOS_rupture_required"] == 1.5
+        assert lv["FOS_rupture"] == pytest.approx(
+            gg1.Tallowable / lv["Tmax_kN_per_m"], rel=1e-3)
+        assert (lv["FOS_rupture"] >= 1.5) == (lv["depth_m"] / FT < 6.0)
+    (c,) = [c for c in r.choices if c["what"].startswith(
+        "Long-term tensile strength Tal")]
+    assert "FOS_rupture is below 1.5 at 7 levels, z = 2.13 to 5.79 m" in \
+        c["chosen"]
+    for words in ("Table 4-7, p. 4-48", "p. 4-40", "Table E1-7.3, p. E1-15",
+                  "1.35 / 0.90 = 1.5"):
+        assert words in c["basis"], words
