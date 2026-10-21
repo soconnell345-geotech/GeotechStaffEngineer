@@ -346,6 +346,21 @@ class TestChoices:
         assert c["chosen"].startswith("0.67 sigma'v")
         assert "layers[0] (clay) reference pressure" not in _choices([CLAY60])
 
+    def test_pressure_stabilization_is_reported(self):
+        """GM-260: each layer's alpha, from its elements' heights and its
+        moduli, with the formula's source."""
+        ch = _choices([dict(SAND33, thickness=10.0)])
+        c = ch["layers[0] (sand) pressure stabilization"]
+        assert c["how"] == "module" and c["chosen"] == "5.87e-06"  # 2.5 m
+        assert "h^2 / (4 (K + 4/3 G))" in c["basis"]
+        assert "SSPquadUP" in c["basis"] and "spike" in c["basis"]
+        assert "spike" not in _choices([CLAY60])[
+            "layers[0] (clay) pressure stabilization"]["basis"]
+        c = _choices([dict(SAND33, stabilization_alpha=1.5e-6)])[
+            "layers[0] (sand) pressure stabilization"]
+        assert c["how"] == "given" and c["chosen"] == "1.5e-06"
+        assert "as given; the default is h^2" in c["basis"]
+
     def test_layer_inputs_a_call_did_not_get_from_the_user_are_assumed(self):
         """GM-180: a nested value reads 'assumed' when the call says its
         layers are not the user's; a module never writes 'given' itself."""

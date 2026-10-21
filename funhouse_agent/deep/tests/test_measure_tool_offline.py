@@ -20,7 +20,7 @@ import struct
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import document_tools, scale_labels, vision_view  # noqa: E402
 from funhouse_agent.deep.tools import make_vision_tools  # noqa: E402
@@ -277,7 +277,7 @@ def test_a_whole_sheet_view_lists_instead_of_choosing(_capture_sheets,
     eng = _engine(_capture_sheets, scan_log)
     tools = _tools(eng, scan_log.pdf)
     rd = scan_log.readings[1]
-    page = fitz.open(stream=scan_log.pdf, filetype="pdf")[0]
+    page = pymupdf.open(stream=scan_log.pdf, filetype="pdf")[0]
     view = [0.0, 0.0, page.rect.width, page.rect.height]
     box = [rd.box_pt[0] / view[2] * 999, rd.box_pt[1] / view[3] * 999,
            rd.box_pt[2] / view[2] * 999, rd.box_pt[3] / view[3] * 999]

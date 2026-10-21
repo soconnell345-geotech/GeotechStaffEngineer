@@ -17,7 +17,7 @@ import time
 import pytest
 
 pytest.importorskip("planlens.document")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent.review_digest import (  # noqa: E402
     FORMAT_VERSION, DigestError, build, clear_cache, default_root,
@@ -64,8 +64,8 @@ def _sheet(doc, label, notes, label_word="STD. NO."):
     """A landscape sheet with a title block (label word, number under it)
     and typed notes."""
     p = doc.new_page(width=792, height=612)
-    p.draw_rect(fitz.Rect(20, 20, 772, 592))
-    p.draw_rect(fitz.Rect(640, 520, 772, 592))
+    p.draw_rect(pymupdf.Rect(20, 20, 772, 592))
+    p.draw_rect(pymupdf.Rect(640, 520, 772, 592))
     p.insert_text((660, 540), label_word, fontsize=7)
     p.insert_text((660, 560), label, fontsize=12)
     y = 80
@@ -76,7 +76,7 @@ def _sheet(doc, label, notes, label_word="STD. NO."):
 
 
 def typed_set_pdf():
-    doc = fitz.open()
+    doc = pymupdf.open()
     _sheet(doc, "10.17A", ["1'-6\" STANDARD CURB AND GUTTER",
                            "SEE DETAIL 3/S-501 FOR THE JOINT."])
     _sheet(doc, "11.01", [
@@ -97,7 +97,7 @@ def typed_set_pdf():
 
 
 def one_sheet_pdf(text="GRADING PLAN"):
-    doc = fitz.open()
+    doc = pymupdf.open()
     p = doc.new_page(width=792, height=612)
     p.insert_text((60, 80), text, fontsize=10)
     data = doc.tobytes()

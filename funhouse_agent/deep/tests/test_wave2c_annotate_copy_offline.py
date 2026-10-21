@@ -20,7 +20,7 @@ import json
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import document_tools  # noqa: E402
 from funhouse_agent.deep.tools import make_vision_tools  # noqa: E402
@@ -64,7 +64,7 @@ def _annotate(tools, **kwargs):
 
 def _ours_in(folder, name):
     """This app's marks and labels in a written copy: (comments, labels)."""
-    doc = fitz.open(str(folder / name))
+    doc = pymupdf.open(str(folder / name))
     try:
         comments, labels = [], []
         for page in doc:
@@ -201,7 +201,7 @@ def test_the_result_says_the_documents_markups_are_in_the_copy(gt, folder):
     assert "READ the skipped rows" in note          # planlens' rest is kept
     # counted off the file: a label is part of its mark, and the two hidden
     # AutoCAD SHX text squares are the drawing's text, not markups
-    doc = fitz.open(str(folder / "set_marked.pdf"))
+    doc = pymupdf.open(str(folder / "set_marked.pdf"))
     try:
         authors = [(a.info or {}).get("title") for p in doc
                    for a in p.annots() or []

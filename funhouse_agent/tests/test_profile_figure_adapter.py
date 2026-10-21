@@ -208,7 +208,7 @@ class TestPlotData:
     def test_html_to_pdf_embeds_the_saved_plot(self, tmp_path):
         """The whole point: a plot_data PNG goes straight into a bespoke
         report via html_img_tag and html_to_pdf does not refuse it."""
-        pytest.importorskip("fitz")
+        pytest.importorskip("pymupdf")
         from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
         from funhouse_agent.adapters.calc_package import _generate_html_to_pdf
         res = _run_plot_data({"series": SERIES,

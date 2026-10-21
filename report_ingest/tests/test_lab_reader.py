@@ -29,7 +29,7 @@ from report_ingest.model import (
 )
 from report_ingest.tests.fake_engine import FakeEngine, ScriptExhausted
 
-fitz = pytest.importorskip("fitz", reason="the fixtures are drawn with PyMuPDF")
+pymupdf = pytest.importorskip("pymupdf", reason="the fixtures are drawn with PyMuPDF")
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ class TestWhatTheModelIsShown:
 
     def test_a_page_with_no_text_says_so(self, tmp_path):
         """A blank page is a page to look at, and the brief says so."""
-        doc_ = fitz.open()
+        doc_ = pymupdf.open()
         doc_.new_page(width=612, height=792)
         blank = doc_.tobytes()
         doc_.close()

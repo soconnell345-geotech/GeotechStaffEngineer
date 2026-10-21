@@ -430,10 +430,10 @@ def test_the_printed_numbers_a_page_map_row_carries():
 
 
 def test_a_real_pdfs_printed_numbers_are_read(tmp_path):
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     pytest.importorskip("planlens")
     conv = _conv(tmp_path)
-    pdf = fitz.open()
+    pdf = pymupdf.open()
     for n in (11, 12, 13):
         page = pdf.new_page(width=612, height=792)
         page.insert_text((72, 120), f"Body text of the report, sheet {n}.",

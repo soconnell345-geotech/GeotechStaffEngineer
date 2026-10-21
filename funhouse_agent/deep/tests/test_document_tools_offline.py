@@ -12,7 +12,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import document_tools  # noqa: E402
 from funhouse_agent.deep.tools import make_vision_tools  # noqa: E402
@@ -146,7 +146,7 @@ def test_look_lines_name_the_apps_vision_tools(gt):
 
 
 def test_an_image_upload_is_reviewable(gt):
-    src = fitz.open("pdf", gt.pdf)
+    src = pymupdf.open("pdf", gt.pdf)
     png = src[gt.scanned_page].get_pixmap(dpi=40).tobytes("png")
     src.close()
     tools = make_vision_tools(engine=None, attachments={"scan.png": png})

@@ -291,36 +291,36 @@ class TestTheTablesBaseline:
 
 def _sheet(tmp_path):
     """A page carrying the grading truth's tabulated values and no more."""
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     from planlens.document import open_document
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     rows = [("SIEVE", "PERCENT FINER"), ("3 in", "100"), ("No. 4", "87"),
             ("No. 200", "43")]
     y = 100.0
     for row in rows:
-        page.insert_text(fitz.Point(63, y + 11), row[0], fontsize=9)
-        page.insert_text(fitz.Point(163, y + 11), row[1], fontsize=9)
+        page.insert_text(pymupdf.Point(63, y + 11), row[0], fontsize=9)
+        page.insert_text(pymupdf.Point(163, y + 11), row[1], fontsize=9)
         y += 16
     for x in (60, 160, 260):
-        page.draw_line(fitz.Point(x, 100), fitz.Point(x, y), width=0.6)
+        page.draw_line(pymupdf.Point(x, 100), pymupdf.Point(x, y), width=0.6)
     for r in range(len(rows) + 1):
-        page.draw_line(fitz.Point(60, 100 + r * 16),
-                       fitz.Point(260, 100 + r * 16), width=0.6)
-    page.insert_text(fitz.Point(300, 120), "LL 31   PL 19   PI 12",
+        page.draw_line(pymupdf.Point(60, 100 + r * 16),
+                       pymupdf.Point(260, 100 + r * 16), width=0.6)
+    page.insert_text(pymupdf.Point(300, 120), "LL 31   PL 19   PI 12",
                      fontsize=9)
     rows2 = [("PROPERTY", "VALUE"), ("Gravel", "13"), ("Sand", "44"),
              ("Fines", "43")]
     y2 = 200.0
     for row in rows2:
-        page.insert_text(fitz.Point(303, y2 + 11), row[0], fontsize=9)
-        page.insert_text(fitz.Point(403, y2 + 11), row[1], fontsize=9)
+        page.insert_text(pymupdf.Point(303, y2 + 11), row[0], fontsize=9)
+        page.insert_text(pymupdf.Point(403, y2 + 11), row[1], fontsize=9)
         y2 += 16
     for x in (300, 400, 480):
-        page.draw_line(fitz.Point(x, 200), fitz.Point(x, y2), width=0.6)
+        page.draw_line(pymupdf.Point(x, 200), pymupdf.Point(x, y2), width=0.6)
     for r in range(len(rows2) + 1):
-        page.draw_line(fitz.Point(300, 200 + r * 16),
-                       fitz.Point(480, 200 + r * 16), width=0.6)
+        page.draw_line(pymupdf.Point(300, 200 + r * 16),
+                       pymupdf.Point(480, 200 + r * 16), width=0.6)
     pdf = doc.tobytes()
     doc.close()
     path = tmp_path / "sheet.pdf"

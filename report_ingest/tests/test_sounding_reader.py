@@ -28,7 +28,7 @@ from report_ingest.sounding_reader import (
 )
 from report_ingest.tests.fake_engine import FakeEngine, ScriptExhausted
 
-fitz = pytest.importorskip("fitz", reason="the fixtures are drawn with PyMuPDF")
+pymupdf = pytest.importorskip("pymupdf", reason="the fixtures are drawn with PyMuPDF")
 
 
 def _open(pdf: bytes, tmp_path, name: str):
@@ -236,10 +236,10 @@ class TestThePlottedFloor:
         assert "Cone resistance" in text
 
     def test_a_sheet_with_no_axis_warns(self, tmp_path):
-        import fitz
-        doc = fitz.open()
+        import pymupdf
+        doc = pymupdf.open()
         page = doc.new_page(width=612, height=792)
-        page.insert_text(fitz.Point(60, 60), "A PAGE WITH NOTHING ON IT")
+        page.insert_text(pymupdf.Point(60, 60), "A PAGE WITH NOTHING ON IT")
         opened = _open(doc.tobytes(), tmp_path, "blank")
         try:
             floor = sounding_floor(opened, [0], "cpt", "RXX")

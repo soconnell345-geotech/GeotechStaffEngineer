@@ -85,8 +85,8 @@ def pdf_page_count(path: Optional[str]) -> int:
             head = fh.read(1024)
         if b"%PDF" not in head:
             return 0
-        import fitz
-        doc = fitz.open(os.fspath(path), filetype="pdf")
+        import pymupdf
+        doc = pymupdf.open(os.fspath(path), filetype="pdf")
         try:
             return int(doc.page_count)
         finally:

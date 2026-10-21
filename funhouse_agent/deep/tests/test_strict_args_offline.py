@@ -36,8 +36,8 @@ class _Looks:
 
 
 def _pdf(n=15):
-    fitz = pytest.importorskip("fitz")
-    doc = fitz.open()
+    pymupdf = pytest.importorskip("pymupdf")
+    doc = pymupdf.open()
     for i in range(n):
         doc.new_page(width=200, height=200).insert_text((20, 40),
                                                         f"page {i}")

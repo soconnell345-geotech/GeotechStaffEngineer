@@ -1,4 +1,4 @@
-import fitz, sys, os
+import pymupdf, sys, os
 
 docs = r"C:/Users/socon/OneDrive/dev/GeotechStaffEngineer/.claude/worktrees/v5.1-todos/geotech-references/docs"
 # usage: dump_pages.py "<pdf substring>" start end [outfile]
@@ -7,7 +7,7 @@ out = sys.argv[4] if len(sys.argv) > 4 else None
 import glob
 matches = [p for p in glob.glob(docs + "/*.pdf") if sub.lower() in os.path.basename(p).lower()]
 assert len(matches) == 1, matches
-doc = fitz.open(matches[0])
+doc = pymupdf.open(matches[0])
 buf = []
 for i in range(start - 1, min(end, doc.page_count)):
     buf.append(f"\n========== PAGE {i+1} ==========\n")

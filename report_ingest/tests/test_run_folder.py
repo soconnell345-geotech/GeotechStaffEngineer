@@ -22,9 +22,9 @@ pytest.importorskip("planlens.document.roles")
 
 def _variant(text: str) -> bytes:
     """The synthetic report with one more line on its cover: a DIFFERENT file."""
-    import fitz
+    import pymupdf
 
-    doc = fitz.open(stream=build_narrative_report().pdf, filetype="pdf")
+    doc = pymupdf.open(stream=build_narrative_report().pdf, filetype="pdf")
     doc[0].insert_text((90, 700), text, fontsize=10)
     pdf = doc.tobytes()
     doc.close()

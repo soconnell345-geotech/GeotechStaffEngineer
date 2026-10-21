@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("fitz")
+pytest.importorskip("pymupdf")
 tf = pytest.importorskip("planlens.testing.tag_fixtures")
 pytest.importorskip("planlens.document.findlike")
 

@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 PIL = pytest.importorskip("PIL.Image")
 
 from funhouse_agent import document_tools, markup_check  # noqa: E402
@@ -39,9 +39,9 @@ TAG = (640.0, 515.0, 662.0, 535.0)
 
 def _sheet() -> bytes:
     """A tabloid sheet with one small inked tag and a lot of blank paper."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=1224, height=792)
-    page.draw_rect(fitz.Rect(*TAG), color=(0, 0, 0), width=1.2)
+    page.draw_rect(pymupdf.Rect(*TAG), color=(0, 0, 0), width=1.2)
     page.insert_text((TAG[0] + 3, TAG[3] - 6), "GCE", fontsize=8)
     page.insert_text((80, 80), "SHEET NOTES: penetrations shall be core "
                      "drilled.", fontsize=9)
@@ -341,7 +341,7 @@ REQUEST = "DRAFT: Please confirm the 6.25% maximum applies over the full run."
 
 
 def _notes_sheet() -> bytes:
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=1224, height=792)
     page.insert_text((60, 210), "3. CROSS SLOPE SHALL NOT EXCEED 2% MAX.",
                      fontsize=7)
@@ -520,7 +520,7 @@ CALC_LINES = {
 
 
 def _calc_sheet() -> bytes:
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     for (x, y), text in CALC_LINES.values():
         page.insert_text((x, y), text, fontsize=9)
@@ -717,9 +717,9 @@ STRIP = (30.0, 100.0, 130.0, 700.0)
 
 
 def _strip_sheet() -> bytes:
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
-    page.draw_rect(fitz.Rect(*STRIP), color=(0, 0, 0), width=1.2)
+    page.draw_rect(pymupdf.Rect(*STRIP), color=(0, 0, 0), width=1.2)
     page.insert_text((40, 130), "COUNTY STANDARDS", fontsize=8)
     page.insert_text((40, 150), "STD. NO. 21.01", fontsize=8)
     page.insert_text((200, 300), "GENERAL NOTES: SEE SPECIFICATIONS.",
@@ -925,9 +925,9 @@ def test_what_counts_as_blank_paper(inside, blank):
 def _linework_sheet() -> bytes:
     """A sheet whose 'lettering' is drawn as lines (no text layer), like
     F04's Std. No. 21.01: a tall title strip down the left edge."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
-    page.draw_rect(fitz.Rect(30, 100, 80, 760), color=(0, 0, 0), width=1.0)
+    page.draw_rect(pymupdf.Rect(30, 100, 80, 760), color=(0, 0, 0), width=1.0)
     for i in range(12):                 # strokes standing in for letters
         y = 600 + 12 * i
         page.draw_line((45, y), (45, y + 8), color=(0, 0, 0), width=1.0)
@@ -1028,7 +1028,7 @@ def test_how_a_look_says_the_direction(said, word):
 def _labels_sheet() -> bytes:
     """Lettering where a bad label would land, blank paper elsewhere, and a
     border line a good label may cross."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=612, height=792)
     for i in range(4):
         page.insert_text((300, 200 + 9 * i), "BIORETENTION CROSS-SECTION",
@@ -1099,7 +1099,7 @@ class _RedCentre:
 def _rotated_pdf(rot) -> bytes:
     """Shown 792 x 612 at /Rotate ``rot``, lettering reading across."""
     from planlens.document.frame import from_display_point
-    doc = fitz.open()
+    doc = pymupdf.open()
     w, h = (792, 612) if rot in (0, 180) else (612, 792)
     page = doc.new_page(width=w, height=h)
     page.set_rotation(rot)
@@ -1181,8 +1181,8 @@ def _ring_with_leader_check(tmp_path, monkeypatch, ring, target):
     asked for, in the crop's pixels: the tag's lettering alone when the
     question leaves the leader out, tag AND leader when it does not (what
     Sol's look did with "tag with leader", brief 5 r2)."""
-    doc = fitz.open(stream=_sheet(), filetype="pdf")
-    doc[0].draw_line(fitz.Point(*LEADER[:2]), fitz.Point(*LEADER[2:]),
+    doc = pymupdf.open(stream=_sheet(), filetype="pdf")
+    doc[0].draw_line(pymupdf.Point(*LEADER[:2]), pymupdf.Point(*LEADER[2:]),
                      color=(0, 0, 0), width=0.8)
     pdf = doc.tobytes()
     doc.close()

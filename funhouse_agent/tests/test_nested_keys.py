@@ -419,6 +419,19 @@ class TestSiteResponse:
                                   "material_type": "clay", "su": 50,
                                   "hydraulic_conductivity": 1e-8}]},
                      r"hydraulic_conductivity -> permeability")
+            # GM-260: the u-p element's alpha; and a hint written with
+            # underscores ('poissons_ratio') is found as the checker
+            # normalises it (it was never offered before)
+            for key, hint in (("alpha", "stabilization_alpha"),
+                              ("pressure_stabilization",
+                               "stabilization_alpha"),
+                              ("poissons_ratio", "nu")):
+                _refused("opensees_adapter", "site_response_1d",
+                         {"layers": [{"thickness": 5, "Vs": 200,
+                                      "density": 1.9,
+                                      "material_type": "sand", "phi": 33,
+                                      key: 0.3}]},
+                         rf"\['{key}'\]", rf"{key} -> {hint}")
             fake = MagicMock()
             fake.return_value.to_dict.return_value = {"pga_surface_g": 0.3}
             with patch("opensees_agent.analyze_site_response", fake):
@@ -426,7 +439,8 @@ class TestSiteResponse:
                     {"layers": [{"thickness": 5, "Vs": 200, "density": 1.9,
                                  "material_type": "sand", "phi": 33,
                                  "K0": 0.5, "e_init": 0.7,
-                                 "permeability": 1e-5}],
+                                 "permeability": 1e-5,
+                                 "stabilization_alpha": 1e-6}],
                      "motion": "synthetic_pulse"})
         assert r == {"pga_surface_g": 0.3}
 

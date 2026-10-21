@@ -32,12 +32,12 @@ def test_file_uri_windows_drive_and_percent_encoding(tmp_path):
 
 
 def test_html_to_pdf_embeds_a_file_uri_image(tmp_path):
-    pytest.importorskip("fitz")
+    pytest.importorskip("pymupdf")
     from funhouse_agent.dispatch import call_agent
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     page = doc.new_page(width=60, height=40)
-    page.draw_rect(fitz.Rect(5, 5, 55, 35), color=(0, 0, 1), fill=(0, 0, 1))
+    page.draw_rect(pymupdf.Rect(5, 5, 55, 35), color=(0, 0, 1), fill=(0, 0, 1))
     png = tmp_path / "fig.png"
     page.get_pixmap(dpi=72).save(str(png))
     out = call_agent("calc_package", "html_to_pdf", {
@@ -50,10 +50,10 @@ def test_html_to_pdf_embeds_a_file_uri_image(tmp_path):
 # -- N9 ---------------------------------------------------------------------
 
 def test_bare_name_resolves_in_the_working_folder(tmp_path, monkeypatch):
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
     name = "315000-001-00 Excavation Support Dwg & Calcs.pdf"
-    doc = fitz.open()
+    doc = pymupdf.open()
     doc.new_page().insert_text((72, 72), "PRESSURE DIAGRAM FOR SAND")
     doc.save(str(tmp_path / name))
     from funhouse_agent.vision_tools import dispatch_extended_tool

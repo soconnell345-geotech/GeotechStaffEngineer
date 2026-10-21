@@ -10,7 +10,7 @@ import os
 import pytest
 
 docx = pytest.importorskip("docx")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 pytest.importorskip("markdown_it")
 
 from calc_package.docx_renderer import markdown_to_docx  # noqa: E402
@@ -65,7 +65,7 @@ See the [design guide](https://example.invalid/guide) for the method.
 
 def _png(path):
     """A real 16x16 PNG, so the renderer has an image it can actually embed."""
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 16, 16), False)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 16, 16), False)
     pix.set_rect(pix.irect, (200, 120, 40))
     path.write_bytes(pix.tobytes("png"))
     return str(path)

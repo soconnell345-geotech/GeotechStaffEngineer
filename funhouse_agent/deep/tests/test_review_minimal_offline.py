@@ -11,7 +11,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
@@ -106,7 +106,7 @@ def test_page_count_says_how_many_pages_and_nothing_else(gt):
     agent = _agent(_model([]), gt)
     out = json.loads(_tools_of(agent)["page_count"].invoke(
         {"source": "review_set.pdf"}))
-    with fitz.open(stream=gt.pdf, filetype="pdf") as doc:
+    with pymupdf.open(stream=gt.pdf, filetype="pdf") as doc:
         assert out["pages"] == doc.page_count
     assert set(out) <= {"source", "pages", "page_size_pt", "page_sizes_pt"}
 

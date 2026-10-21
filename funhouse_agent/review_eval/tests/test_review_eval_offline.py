@@ -11,7 +11,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.tools")
-fitz = pytest.importorskip("fitz")
+pymupdf = pytest.importorskip("pymupdf")
 
 from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.review_eval import checks as C  # noqa: E402
@@ -153,7 +153,7 @@ def test_file_checks_read_the_produced_files(tmp_path):
     memo = tmp_path / "memo.docx"
     d.save(memo)
     pdf = tmp_path / "sheet_marked.pdf"
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page()
     annot = page.add_text_annot((72, 72), "Confirm 8.33% applies over the ramp")
     annot.set_info(title="Review suite (AI draft)")
@@ -184,13 +184,13 @@ def test_a_broken_check_fails_rather_than_raising():
 
 def test_fixtures_and_sets_resolve():
     name, data = D.resolve("fixture_submittal")
-    assert name == "submittal.pdf" and fitz.open(stream=data,
+    assert name == "submittal.pdf" and pymupdf.open(stream=data,
                                                  filetype="pdf").page_count == 11
     try:
         name, data = D.resolve("meck_set")
     except D.MissingDocument:
         pytest.skip("public documents not in this checkout")
-    assert fitz.open(stream=data, filetype="pdf").page_count == 10
+    assert pymupdf.open(stream=data, filetype="pdf").page_count == 10
 
 
 def test_a_missing_document_is_reported_not_raised_by_the_runner(tmp_path):
@@ -701,7 +701,7 @@ def _comment_sheet(tmp_path, markups, name="commented.pdf"):
     """A sheet with two notes that both state a maximum, and the given
     comments written on a copy (displayed-frame points)."""
     from planlens.document.markup_writer import write_markups
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=792, height=612)
     page.insert_text((60, 228), "SLOPE SHALL NOT EXCEED 6.25% MAX.",
                      fontsize=7)
@@ -861,8 +861,8 @@ def test_the_long_tag_set_puts_fpg_where_the_task_says():
     task = next(t for t in OPEN_TASKS if t.id == "set-long-rare-tag")
     assert pages == task.checks[0]["expected"] == [4, 12, 20]
     name, data = resolve("fixture_tags_long")
-    import fitz                      # bytes differ by PyMuPDF's file id
-    with fitz.open(stream=data, filetype="pdf") as doc:
+    import pymupdf                      # bytes differ by PyMuPDF's file id
+    with pymupdf.open(stream=data, filetype="pdf") as doc:
         assert name == "long_tag_set.pdf" and doc.page_count == 24
 
 

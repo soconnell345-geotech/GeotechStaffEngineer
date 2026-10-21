@@ -44,16 +44,16 @@ class CalcPageGT:
 
 
 def _page(doc=None):
-    import fitz
-    doc = doc if doc is not None else fitz.open()
+    import pymupdf
+    doc = doc if doc is not None else pymupdf.open()
     page = doc.new_page(width=LETTER[0], height=LETTER[1])
     return doc, page
 
 
 def _text(page, x: float, y: float, text: str, size: float = 9.0,
           bold: bool = False) -> None:
-    import fitz
-    page.insert_text(fitz.Point(x, y), text, fontsize=size,
+    import pymupdf
+    page.insert_text(pymupdf.Point(x, y), text, fontsize=size,
                      fontname="hebo" if bold else "helv")
 
 
@@ -71,7 +71,7 @@ def _pair(page, y: float, label: str, value: str, x_label: float = 60.0,
 def _grid(page, x0: float, y0: float, widths, rows,
           header: bool = True) -> Tuple[float, float, float, float]:
     """A ruled table. Returns its box."""
-    import fitz
+    import pymupdf
     height = 16.0
     xs = [x0]
     for width in widths:
@@ -83,10 +83,10 @@ def _grid(page, x0: float, y0: float, widths, rows,
                   bold=(header and r == 0))
         y += height
     for x in xs:
-        page.draw_line(fitz.Point(x, y0), fitz.Point(x, y), width=0.6)
+        page.draw_line(pymupdf.Point(x, y0), pymupdf.Point(x, y), width=0.6)
     for r in range(len(rows) + 1):
-        page.draw_line(fitz.Point(xs[0], y0 + r * height),
-                       fitz.Point(xs[-1], y0 + r * height), width=0.6)
+        page.draw_line(pymupdf.Point(xs[0], y0 + r * height),
+                       pymupdf.Point(xs[-1], y0 + r * height), width=0.6)
     return (xs[0], y0, xs[-1], y)
 
 
@@ -185,16 +185,16 @@ def build_program_printout() -> CalcPageGT:
 
 def build_plotted_result() -> CalcPageGT:
     """A slope section whose factor of safety is printed ON the drawing."""
-    import fitz
+    import pymupdf
     doc, page = _page()
     _text(page, 200, 46, "SLOPE STABILITY - SECTION A-A", 12, bold=True)
     box = (80.0, 90.0, 520.0, 430.0)
-    page.draw_rect(fitz.Rect(*box), width=0.8)
-    page.draw_line(fitz.Point(90, 400), fitz.Point(260, 400), width=1.0)
-    page.draw_line(fitz.Point(260, 400), fitz.Point(400, 250), width=1.0)
-    page.draw_line(fitz.Point(400, 250), fitz.Point(510, 250), width=1.0)
-    page.draw_circle(fitz.Point(340, 160), 3.0, width=0.8)
-    page.draw_rect(fitz.Rect(320, 130, 372, 150), width=0.7)
+    page.draw_rect(pymupdf.Rect(*box), width=0.8)
+    page.draw_line(pymupdf.Point(90, 400), pymupdf.Point(260, 400), width=1.0)
+    page.draw_line(pymupdf.Point(260, 400), pymupdf.Point(400, 250), width=1.0)
+    page.draw_line(pymupdf.Point(400, 250), pymupdf.Point(510, 250), width=1.0)
+    page.draw_circle(pymupdf.Point(340, 160), 3.0, width=0.8)
+    page.draw_rect(pymupdf.Rect(320, 130, 372, 150), width=0.7)
     _text(page, 326, 145, "1.478", 9)
     for i, value in enumerate(("0", "10", "20", "30", "40")):
         _text(page, 90 + i * 105, 445, value, 7.0)
@@ -223,8 +223,8 @@ def build_long_printout(n_pages: int = 16) -> CalcPageGT:
     window cut off the back of it would miss the summary -- which is the
     reason the window always keeps the first page and the last.
     """
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     for n in range(n_pages):
         _doc, page = _page(doc)
         _text(page, 60, 46, "PILEWORKS 2024  Version 11.2.3", 11, bold=True)
@@ -255,8 +255,8 @@ def build_long_printout(n_pages: int = 16) -> CalcPageGT:
 
 def build_two_page_printout() -> CalcPageGT:
     """One printout over two pages: the banner first, the answer last."""
-    import fitz
-    doc = fitz.open()
+    import pymupdf
+    doc = pymupdf.open()
     _doc, first = _page(doc)
     _text(first, 60, 46, "PILEWORKS 2024  Version 11.2.3", 11, bold=True)
     _text(first, 60, 70, "Pile diameter                    =     0.610 m", 9)

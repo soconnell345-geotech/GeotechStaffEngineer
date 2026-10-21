@@ -28,7 +28,7 @@ import os
 import pytest
 
 pytest.importorskip("planlens.document.roles")
-pytest.importorskip("fitz")
+pytest.importorskip("pymupdf")
 
 from langchain_core.language_models.chat_models import BaseChatModel  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
