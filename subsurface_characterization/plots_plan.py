@@ -26,7 +26,7 @@ from subsurface_characterization.results import PlotResult
 _GRID = re.compile(r"UTM|zone|State\s*Plane", re.IGNORECASE)
 _GEOGRAPHIC = re.compile(
     r"EPSG\D{0,3}(?:4326|4269|4258)\b|CRS\s*84|WGS\s*-?\s*84|NAD\s*-?\s*83"
-    r"|latitude|longitude|geographic", re.IGNORECASE)
+    r"|DIGGS:[\d.]+:4326_\d+|latitude|longitude|geographic", re.IGNORECASE)
 _EPSG = re.compile(r"EPSG\D{0,3}\d{4,6}", re.IGNORECASE)
 
 

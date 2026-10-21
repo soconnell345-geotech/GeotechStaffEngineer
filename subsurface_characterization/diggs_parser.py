@@ -289,6 +289,18 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
             x = y = elev = None
             warnings.append(f"Could not parse coordinates for {name}: {pos_text}")
 
+    # A two-dimensional point (the writer's form under a name that has no
+    # compound with a height) carries the ground elevation as the first
+    # position of the centre line.
+    if elev is None and len(pos_text.split() if pos_text else []) == 2:
+        line = _text(element, ".//diggs:centerLine//gml:posList", ns_map)
+        try:
+            parts = line.split()
+            if len(parts) >= 3:
+                elev = optional_float(parts[2])
+        except ValueError:
+            pass
+
     # The coordinate system the position is given in (the point's srsName):
     # a plot labels its axes from it (GM-76: a local drawing grid was drawn
     # as "Easting / Northing").

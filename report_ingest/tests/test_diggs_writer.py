@@ -899,7 +899,8 @@ class TestGeographicAxisOrder:
         assert diggs_schema_gate(xml)[0] is True
         pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
         assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
-        assert pos.text == "-77 38.9 NaN"           # longitude, then latitude
+        assert pos.text == "-77 38.9"               # longitude, then latitude
+        assert pos.get("srsDimension") == "2"
         back = _read_back(xml)["B-1"]
         assert (back.x, back.y) == (-77.0, 38.9)
         assert diggs_roundtrip_gate(xml, [hole])[0]
@@ -919,6 +920,93 @@ class TestGeographicAxisOrder:
         assert (back.x, back.y) == (-77.0, 38.9)
 
 
+SAMPLE_3D = "urn:diggs:def:crs:DIGGS:0.1:4326_5702"
+
+
+def _validation_checks(xml):
+    from subsurface_characterization.formats import (
+        validate_diggs_dictionary, validate_diggs_schema)
+    schema = validate_diggs_schema(content=xml, schema_version="2.6")
+    assert schema.is_valid, schema.errors[:3]
+    pydiggs = pytest.importorskip("pydiggs")
+    del pydiggs
+    dictionary = validate_diggs_dictionary(content=xml)
+    assert dictionary.is_valid, dictionary.errors[:3]
+
+
+class TestPointsWithAndWithoutAHeight:
+    """pydiggs 2.5.a Example_2-DIGGS.XML names a point with a height
+    ``urn:diggs:def:crs:DIGGS:0.1:4326_5702`` (``srsDimension="3"``,
+    longitude, latitude, height); that is READ, never written, because it
+    names a vertical datum the record may not have given. Under any name the
+    writer's point is two-dimensional and the height is in the centre line
+    (RI-30)."""
+
+    @pytest.mark.parametrize("cs", ["EPSG:4326", "CRS84", "WGS 84"])
+    def test_geographic_with_a_height_is_2d_crs84_and_never_claims_a_datum(
+            self, cs):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system=cs,
+                     elevation=_m(150.5))
+        project = Project(elevation_datum="NAVD 88")
+        xml = write_diggs([hole], project=project)
+        _validation_checks(xml)
+        assert "5702" not in xml
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.get("srsName") == "urn:ogc:def:crs:OGC:1.3:CRS84"
+        assert (pos.get("srsDimension"), pos.text) == ("2", "-77 38.9")
+        desc = _root(xml).find(
+            ".//diggs:referencePoint//gml:description", NS).text
+        assert "NAVD 88" in desc
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (-77.0, 38.9, 150.5)
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_geographic_without_a_height_is_two_dimensional_crs84(self):
+        hole = _hole(x=-77.0, y=38.9, coordinate_system="CRS84")
+        xml = write_diggs([hole])
+        _validation_checks(xml)
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert (pos.get("srsName"), pos.get("srsDimension"), pos.text) == (
+            "urn:ogc:def:crs:OGC:1.3:CRS84", "2", "-77 38.9")
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (-77.0, 38.9, None)
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_projected_with_a_height_keeps_it_through_the_centre_line(self):
+        hole = _hole(x=500123.25, y=4100456.5, coordinate_system="EPSG:32611",
+                     elevation=_m(150.5))
+        xml = write_diggs([hole])
+        _validation_checks(xml)
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert (pos.get("srsName"), pos.get("srsDimension"), pos.text) == (
+            "EPSG:32611", "2", "500123.25 4100456.5")
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (500123.25, 4100456.5,
+                                                      150.5)
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_projected_without_a_height(self):
+        hole = _hole(x=500123.25, y=4100456.5, coordinate_system="EPSG:32611")
+        xml = write_diggs([hole])
+        _validation_checks(xml)
+        back = _read_back(xml)["B-1"]
+        assert back.elevation_m is None
+
+    def test_the_samples_own_form_reads_longitude_first_with_its_height(self):
+        import os
+        pydiggs = pytest.importorskip("pydiggs")
+        path = os.path.join(os.path.dirname(pydiggs.__file__), "schemas",
+                            "diggs-schema-2.5.a", "Example_2-DIGGS.XML")
+        from subsurface_characterization import parse_diggs
+        with open(path, encoding="utf-8") as fh:
+            site = parse_diggs(content=fh.read()).site
+        first = site.investigations[0]
+        assert first.x == pytest.approx(-82.3010112289978)
+        assert first.y == pytest.approx(38.8003450145256)
+        assert first.elevation_m == pytest.approx(658.4078)
+        assert SAMPLE_3D in first.coordinate_system
+
+
 class TestAnUnknownPosition:
     """33 of 40 explorations at elevation 0, one at the grid's origin: the
     writer filled 0 and the reader defaulted to 0. DIGGS requires the
@@ -932,7 +1020,7 @@ class TestAnUnknownPosition:
         assert ok, errors[:3]
         point = _root(xml).find(".//diggs:referencePoint/diggs:PointLocation",
                                 NS)
-        assert point.find("gml:pos", NS).text == "NaN NaN NaN"
+        assert point.find("gml:pos", NS).text == "NaN NaN"
         assert "not given" in point.find("gml:description", NS).text
         assert "NaN NaN NaN NaN NaN NaN" in xml        # the centre line too
         assert notes[0].position_unknown == ["B-1"]
@@ -950,7 +1038,8 @@ class TestAnUnknownPosition:
         notes = []
         xml = write_diggs([hole], notes=notes)
         assert diggs_schema_gate(xml)[0] is True
-        assert "500123.25 4100456.5 NaN" in xml
+        pos = _root(xml).find(".//diggs:referencePoint//gml:pos", NS)
+        assert pos.text == "500123.25 4100456.5"
         assert notes[0].assumed[0].startswith("B-1: no elevation given")
         back = _read_back(xml)["B-1"]
         assert (back.x, back.y, back.elevation_m) == (500123.25, 4100456.5,

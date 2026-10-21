@@ -848,18 +848,30 @@ class _Writer:
             said.append(f"coordinate system as printed: "
                         f"{inv.coordinate_system.strip()}; positions are "
                         f"longitude then latitude (CRS84)")
+        datum = self.project.elevation_datum.strip()
+        if datum and z is not None:
+            said.append(f"elevation datum as printed: {datum}; the elevation "
+                        f"is in the centre line")
         if said:
             self.text_element("gml:description", " ".join(said), 5)
-        srs = (f' srsName={quoteattr(_srs_name(inv.coordinate_system))}'
-               if inv.coordinate_system.strip() else "")
-        point = (f"{_coord_or_unknown(x)} {_coord_or_unknown(y)} "
-                 f"{_coord_or_unknown(z)}")
-        self.out(f'<gml:pos srsDimension="3"{srs}>{point}</gml:pos>', 5)
+        srs_name = _srs_name(inv.coordinate_system)
+        # No file in hand shows how to name a vertical datum the record may
+        # not have given, so a point under a name is two-dimensional and the
+        # height travels in the centre line (x y top, x y bottom). The
+        # sample's compound name is read back, never written.
+        three_d = z is not None and not srs_name
+        srs = f' srsName={quoteattr(srs_name)}' if srs_name else ""
+        coords = [x, y, z] if three_d else [x, y]
+        point = " ".join(_coord_or_unknown(v) for v in coords)
+        dim = 3 if three_d else 2
+        self.out(f'<gml:pos srsDimension="{dim}"{srs}>{point}</gml:pos>', 5)
         self.out("</PointLocation>", 4)
         self.out("</referencePoint>", 3)
         self.out("<centerLine>", 3)
         self.out(f'<LinearExtent gml:id={quoteattr(gml_id + "_cl")}>', 4)
-        self.out(f'<gml:posList srsDimension="3">{point} '
+        self.out(f'<gml:posList srsDimension="3">'
+                 f'{_coord_or_unknown(x)} {_coord_or_unknown(y)} '
+                 f'{_coord_or_unknown(z)} '
                  f'{_coord_or_unknown(x)} {_coord_or_unknown(y)} '
                  f'{_coord_or_unknown(bottom)}</gml:posList>', 5)
         self.out("</LinearExtent>", 4)
