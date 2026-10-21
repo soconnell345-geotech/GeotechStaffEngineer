@@ -21,6 +21,7 @@ response run here goes through the child process with a time limit, so a
 stuck solver step fails the test instead of hanging the run.
 """
 
+import importlib.util
 import json
 import math
 
@@ -1898,6 +1899,88 @@ class TestNigamJenningsSpectrum:
     def test_damping_must_be_below_critical(self):
         with pytest.raises(ValueError, match="below 1"):
             compute_response_spectrum(np.ones(10), 0.01, [0.5], damping=1.0)
+
+
+requires_eqsig = pytest.mark.skipif(
+    importlib.util.find_spec("eqsig") is None,
+    reason="eqsig not installed (seismic_signals' optional spectrum)")
+
+#: The 27 periods of the GM-272 lsim check: 20 from 0.01 to 4 s and seven
+#: round ones
+CROSS_CHECK_PERIODS_S = np.unique(np.concatenate(
+    [np.geomspace(0.01, 4.0, 20), [0.02, 0.03, 0.05, 0.08, 0.1, 0.2, 1.0]]))
+
+
+class TestAgainstSeismicSignalsSpectrum:
+    """compute_response_spectrum against seismic_signals' spectrum (eqsig,
+    Nigam and Jennings too), on the Gilroy input stored for the wiki
+    example (0.005 s) and the dense sand surface record (0.01 s, run by
+    OpenSees). Skipped without eqsig; the dense sand case also needs
+    openseespy (WSL, CI)."""
+
+    def _assert_the_same_step(self, a, dt):
+        """Fed the same force on the same points, eqsig's step gives the
+        same displacement and velocity at every point, within 1e-7 of the
+        peak (measured 1.4e-8: eqsig takes 2 pi as 6.2831853)."""
+        from eqsig.sdof import nigam_and_jennings_response
+        from opensees_agent.opensees_utils import (
+            _POINTS_PER_PERIOD, _nigam_jennings, _substeps)
+        groups = {}
+        for T in CROSS_CHECK_PERIODS_S:
+            n = max(1, math.ceil(_POINTS_PER_PERIOD * dt / T - 1e-9))
+            groups.setdefault(n, []).append(T)
+        for n, periods in groups.items():
+            p = _substeps(-np.asarray(a) * 9.81, n)
+            eu, ev, _ = nigam_and_jennings_response(p, dt / n, periods, 0.05)
+            for T, e_u, e_v in zip(periods, eu, ev):
+                u, v = _nigam_jennings(p, dt / n, 2.0 * np.pi / T, 0.05)
+                assert np.max(np.abs(u - e_u)) < 1e-7 * np.max(np.abs(u)), T
+                assert np.max(np.abs(v - e_v)) < 1e-7 * np.max(np.abs(v)), T
+
+    def _assert_the_same_spectrum(self, a, dt, worst_below):
+        """Sa within 0.1 % at ten record steps a period and longer
+        (measured 0.04 % at most). Shorter, eqsig is lower, by up to
+        ``worst_below``: it integrates the whole record at the larger of
+        the shortest period / 20 and a quarter of the record's step, reads
+        the peak only at its points, and gives the PGA where a period is
+        under six of them; here the module agrees with scipy's lsim within
+        0.004 % (GM-272), so the shortfall is eqsig's (GM-274)."""
+        from seismic_signals_agent import analyze_response_spectrum
+        P = CROSS_CHECK_PERIODS_S
+        e = analyze_response_spectrum(accel_history=a, dt=dt, periods=P).Sa_g
+        _, sa = compute_response_spectrum(a, dt, P)
+        long_ = P >= 10 * dt * (1.0 - 1e-9)
+        np.testing.assert_allclose(e[long_], sa[long_], rtol=1e-3)
+        assert np.all(e[~long_] <= sa[~long_] * (1.0 + 1e-6))
+        assert np.all(e[~long_] >= sa[~long_] * (1.0 - worst_below))
+
+    @requires_eqsig
+    def test_gilroy_input(self):
+        """The stored Gilroy record: below ten steps eqsig is up to 0.32 %
+        low (0.026 s), checked within 1 %."""
+        from opensees_agent.tests import opensees_wiki_free_field as wiki
+        a, dt = wiki.load_record()
+        self._assert_the_same_step(a, dt)
+        self._assert_the_same_spectrum(a, dt, worst_below=0.01)
+
+    @requires_eqsig
+    @requires_opensees
+    def test_dense_sand_surface(self):
+        """GM-264's dense sand column in 80 elements (raw PGA 0.453 g):
+        below ten steps eqsig is up to 2.5 % low (0.014 s, where it gives
+        the PGA), checked within 3 %."""
+        from opensees_agent.site_response import analyze_site_response
+        layer = {"thickness": 20.0, "Vs": 300.0, "density": 2.0,
+                 "material_type": "sand", "phi": 38.0}
+        r = analyze_site_response(
+            [layer], motion="synthetic_pulse", target_pga_g=0.30,
+            gwt_depth=0.0, n_elem_per_layer=80,
+            time_limit_s=TEST_TIME_LIMIT_S)
+        dt = float(r.time[1] - r.time[0])
+        assert dt == pytest.approx(0.01)
+        self._assert_the_same_step(r.surface_accel_g, dt)
+        self._assert_the_same_spectrum(r.surface_accel_g, dt,
+                                       worst_below=0.03)
 
 
 class TestLowpass:

@@ -92,6 +92,13 @@ def compute_response_spectrum(accel_g, dt, periods=None, damping=0.05):
     through the displacement and velocity at both ends of each step.
     numpy and scipy; does not require openseespy.
 
+    It matches seismic_signals' spectrum (eqsig, an optional package):
+    the same step, so the same displacement and velocity at the points (to
+    1e-8), and Sa within 0.1 % at periods of ten record steps and longer.
+    Shorter, eqsig reads Sa up to a few per cent low: it integrates no
+    finer than a quarter of the record's step, reads the peak only at its
+    points, and gives the PGA below six of them (GM-274).
+
     Parameters
     ----------
     accel_g : array_like
