@@ -622,7 +622,7 @@ def summary_markdown(record: ReportRecord) -> str:
             answer = row.get("answer") or "_the narrative does not say_"
             page = row.get("page")
             out.append(f"| {_md(row.get('question', ''))} | {_md(answer)} | "
-                       f"{'p' + str(page) if page is not None else ''} |")
+                       f"{'p' + str(page + 1) if page is not None else ''} |")
 
     out += ["", "## What was extracted", ""]
     counts = record.counts()

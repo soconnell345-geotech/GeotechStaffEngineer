@@ -223,6 +223,23 @@ class TestFind:
         assert found["hits"] == []
 
 
+    def test_a_written_page_mark_is_read_back_as_the_records_page(
+            self, library):
+        # report.page.md prints "p5" (a viewer's page) for what the record
+        # holds on page 4 (0-based): both routes must name the same page
+        found = library.find("sulfate 2,100 ppm", k=8, report_id="L05",
+                             section="page")
+        assert found["hits"]
+        assert all(hit["pages"] == [4] for hit in found["hits"]
+                   if "sulfate" in hit["snippet"])
+
+        answer = library.where_is("sulfate 2,100 ppm", k=8)
+        places = {(row["report"], row["page"])
+                  for row in answer["locations"]}
+        assert ("L05", 4) in places
+        assert ("L05", 5) not in places
+
+
 class TestWhereIs:
 
     def test_it_answers_with_places(self, library):

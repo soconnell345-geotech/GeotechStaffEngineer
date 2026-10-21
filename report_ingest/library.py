@@ -167,6 +167,17 @@ than then so if but not no yes can could would should may might must will
 
 _WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _PAGE_CITE = re.compile(r"\bp(\d+)\b")
+
+
+def _marked_pages(text: str) -> List[int]:
+    """The ``p12`` marks in written text as the record's 0-based pages.
+
+    The writers print the page a PDF viewer opens (from 1); the library keeps
+    the record's 0-based pages, so this is the one place a mark is converted.
+    """
+    return [int(n) - 1 for n in _PAGE_CITE.findall(text) if int(n) >= 1]
+
+
 _FRONT_ID = re.compile(r'^id:\s*"?([0-9a-f]{6,64})"?\s*$', re.MULTILINE)
 
 
@@ -1267,11 +1278,11 @@ def _markdown_chunks(path: str,
                 if not line.startswith("|") or set(line) <= set("|- "):
                     continue
                 out.append((section, heading or "table",
-                            [int(n) for n in _PAGE_CITE.findall(line)],
+                            _marked_pages(line),
                             line.strip("| ").replace("|", " ")))
             continue
         out.append((section, heading or section,
-                    [int(n) for n in _PAGE_CITE.findall(block)], block))
+                    _marked_pages(block), block))
     return out
 
 
