@@ -215,14 +215,18 @@ NOT_REACHED = {
     **{(k, n): "the probe's soil is clay over rock: the beta method is "
        "for sand" for k in ("drilled_shaft|drilled_shaft_capacity#rock",
                             "drilled_shaft|drilled_shaft_capacity"
-                            "#fractured_rock")
+                            "#fractured_rock",
+                            "drilled_shaft|drilled_shaft_capacity"
+                            "#hoek_brown")
        for n in ("beta_method", "K_over_Ko")},
     **{(k, "casing_depth"): _CASING for k in (
         "drilled_shaft|drilled_shaft_capacity#rock",
-        "drilled_shaft|drilled_shaft_capacity#fractured_rock")},
+        "drilled_shaft|drilled_shaft_capacity#fractured_rock",
+        "drilled_shaft|drilled_shaft_capacity#hoek_brown")},
     # GM-244: at RQD 70 or more the 'rqd' base also takes 2.5 qu; the
     # #fractured_rock probe (RQD 40, the conditions of Eq. 10-23 stated
-    # met) reaches it
+    # met) reaches it, and the #hoek_brown probe (RQD 40 with GSI and m_i,
+    # the Hoek-Brown base, GM-251)
     ("drilled_shaft|drilled_shaft_capacity#rock", "rock_base_method"):
         "the probe's rock has RQD 100 (the default), where the 'rqd' base "
         "also takes q_b = 2.5 qu",
