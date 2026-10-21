@@ -226,6 +226,21 @@ STRUCTURAL_REFERENCES = frozenset({
     "ufc_concrete_practice",   # UFC 3-250-04 — concrete materials/construction practice
 })
 
+#: The report and drawing modules EVERY specialist gets beside its own scope
+#: (funhouse_agent.reviewers), so one chosen in the Agent picker hands over
+#: the full agent's deliverables (BACKLOG GM-40): a calc package, its
+#: figures, a bespoke PDF, a subsurface profile. The shared prompt's working
+#: style tells every agent, specialists included, to draw and report with
+#: these two. Neither belongs to a discipline: profile_figure draws what it
+#: is handed and computes nothing; calc_package's *_package methods re-run
+#: their own module, as the pavement and structural specialists have always
+#: allowed (both list calc_package in their own sets as well). Each
+#: specialist's prompt keeps it to its domain.
+DELIVERABLE_MODULES = frozenset({
+    "calc_package",     # *_package reports, render_figures, html_to_pdf
+    "profile_figure",   # subsurface_profile schematic, plot_data
+})
+
 
 def _scoped_names(allowed_agents):
     """Return the visible agent names given an optional whitelist."""

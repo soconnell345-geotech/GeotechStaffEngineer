@@ -9,7 +9,8 @@ browse and search folders:
     sharepoint_upload_file(local_path, ..) working folder -> SharePoint
     sharepoint_search_files(query, path)   filename search
 
-They are injected into the deep agent by ``webapp.core.build_agent`` via
+They are injected into the deep agent (the full agent's and every
+specialist's: ``webapp.core._add_file_tools``) via
 ``build_deep_agent(extra_tools=...)`` ONLY when SharePoint is configured
 (``sharepoint_store.configured()``), so unconfigured deployments carry zero
 extra tool surface. The client/auth comes from :mod:`webapp.sharepoint_store`
@@ -1518,8 +1519,8 @@ def make_search_tool(record_dir: Optional[str] = None,
 sharepoint_search_files = make_search_tool()
 
 
-#: Prompt block injected alongside the tools (build_agent), so the agent knows
-#: the capability exists and the path convention.
+#: Prompt block injected alongside the tools (core._add_file_tools), so the
+#: agent knows the capability exists and the path convention.
 SHAREPOINT_PROMPT = (
     "SHAREPOINT: This deployment is connected to the team SharePoint. You "
     "have sharepoint_list_files / sharepoint_search_files (browse + find), "

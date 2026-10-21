@@ -154,6 +154,27 @@ def test_agent_picker_builds_reviewer_and_persists(monkeypatch, tmp_path):
         core.load_meta(tid))["agent_type"] == "seismic"        # durable → resumes
 
 
+def test_picked_specialist_gets_the_calc_helper(monkeypatch, tmp_path):
+    """GM-40: a specialist is built with the calc helper, as the full agent
+    is, and the sidebar's "Route calculations through a calc agent" box
+    turns it off for the specialist too."""
+    at = _mk_at(monkeypatch, tmp_path, _stream_ok)
+    built = []
+    monkeypatch.setattr(core, "build_reviewer_agent",
+                        lambda kind, *_a, **kw: built.append((kind, kw))
+                        or f"reviewer:{kind}")
+    at.run()
+    tid = at.session_state["thread_id"]
+    next(w for w in at.selectbox if w.key == f"agent_{tid}") \
+        .set_value("foundations").run()
+    assert not at.exception
+    assert built[-1] == ("foundations", {"enable_calc_subagent": True})
+    next(w for w in at.checkbox if w.key == f"routecalc_{tid}") \
+        .uncheck().run()
+    assert not at.exception
+    assert built[-1] == ("foundations", {})
+
+
 def test_conversation_row_icons_use_the_icon_slot(monkeypatch, tmp_path):
     """Rename/delete glyphs must live in the button's ``icon``, never its label.
 

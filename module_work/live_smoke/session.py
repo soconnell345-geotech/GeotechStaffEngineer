@@ -327,9 +327,13 @@ class Session:
                         ss.engine.model, ss.attachments, ss.temp_dir,
                         ss.artifacts, **_kw)
                 else:
+                    # app.py: a specialist takes the calc helper under the
+                    # same Behavior setting (GM-40).
+                    _kw = core.specialist_build_kwargs(ss.behavior)
+                    _kw.update(_helper_kw)
                     ss.agent = core.build_reviewer_agent(
                         _kind, ss.engine.model, ss.attachments, ss.temp_dir,
-                        ss.artifacts, **_helper_kw)
+                        ss.artifacts, **_kw)
             except Exception as exc:  # surfaced like the app does
                 ss.agent_error = f"{type(exc).__name__}: {exc}"
 

@@ -18,6 +18,13 @@ a single shared playbook; the other is the Claude Code agent
 Scope sets live in ``funhouse_agent/dispatch.py``
 (``<DOMAIN>_MODULES`` / ``<DOMAIN>_REFERENCES``); the checklist/preamble lives in
 ``funhouse_agent/review_checklists.py`` (``<DOMAIN>_REVIEWER_PREAMBLE``).
+
+Every specialist, reviewers and the pavement and structural designers alike,
+also gets the full agent's report and drawing modules
+(``dispatch.DELIVERABLE_MODULES``: calc_package, profile_figure) and one
+shared paragraph saying so (``review_checklists.SPECIALIST_DELIVERABLES``),
+so one chosen in the web app's Agent picker can hand over a calculation
+package, its figures or a PDF (BACKLOG GM-40).
 """
 
 from funhouse_agent.agent import GeotechAgent
@@ -28,6 +35,7 @@ from funhouse_agent.dispatch import (
     SLOPE_FEM_MODULES, SLOPE_FEM_REFERENCES,
     PAVEMENT_MODULES, PAVEMENT_REFERENCES,
     STRUCTURAL_MODULES, STRUCTURAL_REFERENCES,
+    DELIVERABLE_MODULES,
 )
 from funhouse_agent.review_checklists import (
     SEISMIC_REVIEWER_PREAMBLE,
@@ -36,13 +44,16 @@ from funhouse_agent.review_checklists import (
     SLOPE_FEM_REVIEWER_PREAMBLE,
     PAVEMENT_SPECIALIST_PREAMBLE,
     STRUCTURAL_SPECIALIST_PREAMBLE,
+    SPECIALIST_DELIVERABLES,
 )
 
 #: The seismic reviewer's full direct-call scope: the seismic analysis modules
 #: it may RE-RUN to verify a number, plus the seismic reference modules it cites
-#: from. (reference_db / figure_db inside SEISMIC_REFERENCES still search the
-#: whole library, so seismic content in any reference stays reachable.)
-SEISMIC_REVIEWER_SCOPE = frozenset(SEISMIC_MODULES | SEISMIC_REFERENCES)
+#: from, plus the report and drawing modules every specialist gets. (reference_db
+#: / figure_db inside SEISMIC_REFERENCES still search the whole library, so
+#: seismic content in any reference stays reachable.)
+SEISMIC_REVIEWER_SCOPE = frozenset(
+    SEISMIC_MODULES | SEISMIC_REFERENCES | DELIVERABLE_MODULES)
 
 
 def make_seismic_reviewer(genai_engine, *, extra_modules=None, **kwargs):
@@ -73,18 +84,10 @@ def make_seismic_reviewer(genai_engine, *, extra_modules=None, **kwargs):
     (which reaches ALL 21 references via a full-library sub-agent) would only
     dilute the seismic scoping. The reviewer looks references up directly.
     """
-    allowed = set(SEISMIC_REVIEWER_SCOPE)
-    if extra_modules:
-        allowed |= set(extra_modules)
     # References are directly in scope → no consult sub-agent (it would reach the
     # whole reference library and undo the seismic scoping).
-    kwargs.setdefault("reference_mode", "off")
-    return GeotechAgent(
-        genai_engine=genai_engine,
-        allowed_agents=frozenset(allowed),
-        system_prompt_extra=SEISMIC_REVIEWER_PREAMBLE,
-        **kwargs,
-    )
+    return _make_reviewer(SEISMIC_REVIEWER_SCOPE, SEISMIC_REVIEWER_PREAMBLE,
+                          genai_engine, extra_modules=extra_modules, **kwargs)
 
 
 def make_seismic_reviewer_deep(model, *, extra_modules=None, **kwargs):
@@ -112,22 +115,10 @@ def make_seismic_reviewer_deep(model, *, extra_modules=None, **kwargs):
         (e.g. the web app's feedback instructions) is appended after the
         review-mode preamble.
     """
-    from funhouse_agent.deep.agent import build_deep_agent
-
-    allowed = set(SEISMIC_REVIEWER_SCOPE)
-    if extra_modules:
-        allowed |= set(extra_modules)
     # reference_mode="off" → do not attach the whole-library references/reviewer
     # sub-agents; the seismic references are already in the primary's scope.
-    kwargs.setdefault("reference_mode", "off")
-    extra = kwargs.pop("extra_system_prompt", None)
-    return build_deep_agent(
-        model=model,
-        allowed_agents=frozenset(allowed),
-        extra_system_prompt="\n\n".join(
-            p for p in (SEISMIC_REVIEWER_PREAMBLE, extra) if p),
-        **kwargs,
-    )
+    return _make_reviewer_deep(SEISMIC_REVIEWER_SCOPE, SEISMIC_REVIEWER_PREAMBLE,
+                               model, extra_modules=extra_modules, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -137,19 +128,28 @@ def make_seismic_reviewer_deep(model, *, extra_modules=None, **kwargs):
 # sub-agent + a Claude Code agent def, both pulling one shared checklist.
 
 #: Foundations reviewer scope: shallow + deep foundation and ground-improvement
-#: analysis modules, plus the foundation reference modules it cites from.
-FOUNDATIONS_REVIEWER_SCOPE = frozenset(FOUNDATIONS_MODULES | FOUNDATIONS_REFERENCES)
+#: analysis modules, plus the foundation reference modules it cites from, plus
+#: the report and drawing modules (as every scope below).
+FOUNDATIONS_REVIEWER_SCOPE = frozenset(
+    FOUNDATIONS_MODULES | FOUNDATIONS_REFERENCES | DELIVERABLE_MODULES)
 
 #: Earth-retention reviewer scope: wall / excavation-support / M-O modules + refs.
 EARTH_RETENTION_REVIEWER_SCOPE = frozenset(
-    EARTH_RETENTION_MODULES | EARTH_RETENTION_REFERENCES)
+    EARTH_RETENTION_MODULES | EARTH_RETENTION_REFERENCES | DELIVERABLE_MODULES)
 
 #: Slope / FEM reviewer scope: slope-stability / FEM / reliability / ingest + refs.
-SLOPE_FEM_REVIEWER_SCOPE = frozenset(SLOPE_FEM_MODULES | SLOPE_FEM_REFERENCES)
+SLOPE_FEM_REVIEWER_SCOPE = frozenset(
+    SLOPE_FEM_MODULES | SLOPE_FEM_REFERENCES | DELIVERABLE_MODULES)
+
+
+def _specialist_prompt(preamble):
+    """The preamble, then the paragraph every specialist carries on its
+    report and drawing modules."""
+    return "\n\n".join(p for p in (preamble, SPECIALIST_DELIVERABLES) if p)
 
 
 def _make_reviewer(scope, preamble, genai_engine, extra_modules=None, **kwargs):
-    """Build a scoped Funhouse review sub-agent (shared F8 body).
+    """Build a scoped Funhouse specialist (the shared body of every builder).
 
     ``reference_mode="off"`` is deliberate: the domain references are already in
     the reviewer's direct scope, so the whole-library ``consult_references`` tool
@@ -162,13 +162,15 @@ def _make_reviewer(scope, preamble, genai_engine, extra_modules=None, **kwargs):
     return GeotechAgent(
         genai_engine=genai_engine,
         allowed_agents=frozenset(allowed),
-        system_prompt_extra=preamble,
+        system_prompt_extra=_specialist_prompt(preamble),
         **kwargs,
     )
 
 
 def _make_reviewer_deep(scope, preamble, model, extra_modules=None, **kwargs):
-    """Build a scoped **deepagents** review agent (shared F8 body).
+    """Build a scoped **deepagents** specialist (the shared body of every
+    ``*_deep`` builder). A caller's ``extra_system_prompt`` (the web app's
+    file, email and feedback instructions) follows the preamble.
 
     Requires the optional ``[deep]`` extra; the import is deferred so importing
     ``funhouse_agent`` never pulls in deepagents.
@@ -183,7 +185,8 @@ def _make_reviewer_deep(scope, preamble, model, extra_modules=None, **kwargs):
     return build_deep_agent(
         model=model,
         allowed_agents=frozenset(allowed),
-        extra_system_prompt="\n\n".join(p for p in (preamble, extra) if p),
+        extra_system_prompt="\n\n".join(
+            p for p in (_specialist_prompt(preamble), extra) if p),
         **kwargs,
     )
 
@@ -256,8 +259,10 @@ def make_slope_fem_reviewer_deep(model, *, extra_modules=None, **kwargs):
 # ---------------------------------------------------------------------------
 
 #: Pavement specialist scope: the AASHTO 1993 design module + report generator
-#: it drives, plus the pavement/roadbed reference modules it cites from.
-PAVEMENT_SPECIALIST_SCOPE = frozenset(PAVEMENT_MODULES | PAVEMENT_REFERENCES)
+#: it drives, plus the pavement/roadbed reference modules it cites from, plus
+#: the report and drawing modules every specialist gets.
+PAVEMENT_SPECIALIST_SCOPE = frozenset(
+    PAVEMENT_MODULES | PAVEMENT_REFERENCES | DELIVERABLE_MODULES)
 
 
 def make_pavement_specialist(genai_engine, *, extra_modules=None, **kwargs):
@@ -292,8 +297,10 @@ def make_pavement_specialist_deep(model, *, extra_modules=None, **kwargs):
 
 #: Structural specialist scope: the section/RC/frame analysis engines +
 #: probabilistic wrap + report generator, plus the structural reference
-#: modules onboarded so far.
-STRUCTURAL_SPECIALIST_SCOPE = frozenset(STRUCTURAL_MODULES | STRUCTURAL_REFERENCES)
+#: modules onboarded so far, plus the report and drawing modules every
+#: specialist gets.
+STRUCTURAL_SPECIALIST_SCOPE = frozenset(
+    STRUCTURAL_MODULES | STRUCTURAL_REFERENCES | DELIVERABLE_MODULES)
 
 
 def make_structural_specialist(genai_engine, *, extra_modules=None, **kwargs):
