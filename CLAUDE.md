@@ -317,7 +317,7 @@ Key conventions:
       and planlens (0ff9056, planlens c79d1f3); a GSTools defect behind an all-NaN Exponential
       field worked around, a kriging plan map (6cbd94c) and choices (68bbc67); MSE bar mat and strip Tal as GEC-11
       prints them, E4 reproduced, spacing per level (1729383), geosynthetic rupture at FOS 1.5 (31bd1bf); E1 through the module, Fy refused (0004620);
-      calc packages' `render_tables` for bespoke reports (b676889); report ingest's units (a78c275); the record's gaps (7d8ae9b); the library's page marks (53dc254); release notes for each in HANDOFF;
+      calc packages' `render_tables` for bespoke reports (b676889); report ingest's units (a78c275); the record's gaps (7d8ae9b); the library's page marks (53dc254); dependency skips named in every test run (INF-13); DIGGS positions as CRS84 (RI-30); release notes for each in HANDOFF;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done" and `BACKLOG_DONE.md`.
     Open next: Foundry brief 6, which measures all of this, is drafted
@@ -2042,6 +2042,8 @@ the strict one. And since 5.23.0 the log and lab readers VOTE: the grid / the ta
 Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 5,833 tests), foundry_test_harness (122 tests), calc_package (177 tests), profile_figure (82 tests: the subsurface schematic and `plot_data`, a rendering module like calc_package), funhouse_agent (3,167 tests).
 
 Test counts above: `pytest <folder> --collect-only -q` on the Windows `.venv`, 2026-10-15 (master 7df09c1; geotech_common, gstools_agent, fem2d, profile_figure and funhouse_agent recounted at 0bb5f1b), skips included.
+
+On the Windows laptop Smart App Control blocks openseespy's DLL, so `opensees_agent`'s 34 openseespy tests skip there; since INF-13 (2026-10-21) every pytest run ends with a yellow "SKIPPED, a dependency missing" line naming such skips. Run those tests in WSL (`~/fresh312`, the repos on `PYTHONPATH`, `GIT_OPTIONAL_LOCKS=0`); CI installs openseespy and runs them.
 
 ## Foundry Test Harness
 
