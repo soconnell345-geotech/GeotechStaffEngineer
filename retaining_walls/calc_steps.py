@@ -1240,14 +1240,32 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     ))
 
     if geom.level_depths is None:
+        # GM-277: each level over its contributory height, the bottom
+        # level's down to the base (GEC-11 Vol I p. 4-47, Fig. 4-14)
+        substitution = ("\u03c3_v = \u03b3\u00b7z + q; each level's "
+                        "contributory height S_v with the level at its "
+                        "middle, the top level's from the top of the wall")
+        a, b = geom.contributory_heights[-1]
+        if geom.n_reinforcement_levels == 1:
+            substitution = (
+                f"\u03c3_v = \u03b3\u00b7z + q; one level, its contributory "
+                f"height the whole wall, S_vt = {b:.2f} m, with \u03c3_v "
+                f"and Kr/Ka at its middle, z = {b / 2:.2f} m")
+        elif geom.whole_spacings:
+            substitution += " and the bottom level's to its base"
+        else:
+            substitution += (
+                f"; the bottom level's from {a:.2f} m down to the base, "
+                f"S_vt = {b - a:.2f} m, with \u03c3_v and Kr/Ka at its "
+                f"middle, z = {(a + b) / 2:.2f} m")
         int_items.append(CalcStep(
             title="Maximum Reinforcement Tension",
             equation="T_max = (Kr/Ka) \u00d7 K_a \u00d7 \u03c3_v \u00d7 S_v",
-            substitution="\u03c3_v = \u03b3\u00b7z + q",
+            substitution=substitution,
             result_name="T_max",
             result_value="(per level)",
             result_unit="kN/m",
-            reference="GEC-11, Eq. 4-10",
+            reference="GEC-11 Vol I Eq. 4-32a, pp. 4-46, 4-47 (Fig. 4-14)",
         ))
     else:
         # GM-273: each level over its contributory height S_vt

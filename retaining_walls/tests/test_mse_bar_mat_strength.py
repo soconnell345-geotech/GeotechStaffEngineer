@@ -90,9 +90,16 @@ def test_E4s_layout_before_and_after():
     """At Sh 5 ft (Rc 0.30), Tal x Rc = 4 x 11.02 kN / 1.524 m = 28.93 kN/m
     of wall (9.60 before): FOS_rupture 2.854 at the top level, 1.081 at
     8.76 ft beside E4's Level 4 (9.37 ft, where E4's four wires carry 4 x
-    3.36 / 12.75 = 1.05 times its factored Tmax, p. E4-17), and 0.726 at
+    3.36 / 12.75 = 1.05 times its factored Tmax, p. E4-17), and 0.571 at
     the bottom, where E4 uses 4W15 mats (p. E4-18); before
-    0.947, 0.359 and 0.241. Pullout is unchanged."""
+    0.947, 0.359 and 0.189. Pullout is unchanged.
+
+    GM-277: the bottom level, at 23.75 ft, takes its contributory height
+    from 22.5 ft down to the base at 25.64 ft, 3.14 ft (GEC-11 Vol I p.
+    4-47, Fig. 4-14), with sigma_H at its middle, 24.07 ft: Tmax 50.66
+    kN/m. At Sv it was 39.84 kN/m (0.726, before 0.241), under the 41.2
+    kN/m E4 prints for its own Level 10 over 2.52 ft (19.05 / 1.35 k a 5
+    ft panel, Table E4-7.4, p. E4-18), the bottom 0.64 ft in no level."""
     levels = check_internal_stability(_e4_wall(), 125 * PCF, 34.0, _e4_mat())
     ru = [lv["FOS_rupture"] for lv in levels]
     assert {lv["Rc"] for lv in levels} == {0.3}
@@ -100,11 +107,13 @@ def test_E4s_layout_before_and_after():
     assert ru[0] == pytest.approx(2.854, abs=1e-3)
     assert levels[3]["depth_m"] / FT == pytest.approx(8.76, abs=0.01)
     assert ru[3] == pytest.approx(1.081, abs=1e-3)
-    assert ru[-1] == pytest.approx(0.726, abs=1e-3)
+    assert ru[-1] == pytest.approx(0.571, abs=1e-3)
+    assert levels[-1]["Tmax_kN_per_m"] == pytest.approx(50.66, abs=0.01)
+    assert levels[-1]["Tmax_kN_per_m"] > 19.05 / 1.35 * KIP / (5 * FT)
     old = dataclasses.replace(_e4_mat(), Tallowable=32.0)
     before = check_internal_stability(_e4_wall(), 125 * PCF, 34.0, old)
     assert [lv["FOS_rupture"] for lv in before][::3] == pytest.approx(
-        [0.947, 0.359, 0.283, 0.241], abs=1e-3)
+        [0.947, 0.359, 0.283, 0.189], abs=1e-3)
     for a, b in zip(levels, before):
         assert a["FOS_pullout"] == b["FOS_pullout"]
 
@@ -145,19 +154,23 @@ def test_the_choice_says_where_the_mats_Tal_comes_from():
 def test_the_mats_flexible_facing_reading_is_offered():
     """GEC-11 Vol I p. 3-23 and Table 4-7 note C (p. 4-48): a grid on a
     flexible facing, or continuous with it, takes the strips' 0.75, so the
-    strips' 0.55 Fy (p. 4-77): Tal 96.44 x 0.55 / 0.48 = 110.5 kN/m."""
+    strips' 0.55 Fy (p. 4-77): Tal 96.44 x 0.55 / 0.48 = 110.5 kN/m. The
+    lowest, 0.571 x 1.146 = 0.654 at the bottom level (0.832 before its
+    contributory height ran to the base, GM-277)."""
     tal = _tal_choice(analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0,
                                        _e4_mat()))
     (facing,) = [a for a in tal["alternatives"] if "flexible facing" in a]
     for words in ("Table 4-7 note C", "p. 3-23", "0.55 Fy",
                   "Tal 110.5 kN/m of mat width", "x 1.146",
-                  "lowest 0.832"):
+                  "lowest 0.654"):
         assert words in facing, words
 
 
 def test_a_rupture_below_one_offers_a_stronger_mat_at_those_levels():
     """At E4's layout the 4W11 mat's FOS_rupture is below 1.0 from 3.43 m
-    (11.25 ft) down, 0.726 at the bottom: E4 itself changes to 4W15 mats
+    (11.25 ft) down, 0.571 at the bottom (0.726 before GM-277 ran the
+    bottom level's contributory height to the base, 3.14 ft): E4 itself
+    changes to 4W15 mats
     from Level 5 (11.87 ft), where four W11 wires carry 0.95 of the
     factored Tmax (Table E4-7.4). At E4's Level 10 (24.37 ft) the module's
     4W11 mat gives 0.709 against E4's 4 x 3.38 / 19.05 = 0.710 for four
@@ -165,7 +178,7 @@ def test_a_rupture_below_one_offers_a_stronger_mat_at_those_levels():
     tal = _tal_choice(analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0,
                                        _e4_mat()))
     assert ("FOS_rupture is below 1.0 at 6 levels, z = 3.43 to 7.24 m "
-            "(lowest 0.726)") in tal["chosen"]
+            "(lowest 0.571)") in tal["chosen"]
     (one,) = [a for a in tal["alternatives"]
               if "reinforcement_per_level" in a]
     assert "reinforcement_horizontal_spacing per level" in one

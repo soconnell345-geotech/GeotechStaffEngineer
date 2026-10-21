@@ -124,8 +124,13 @@ class MSEWallGeometry:
     reinforcement_spacing : float, optional
         Vertical spacing between reinforcement levels Sv (m).
         Default 0.60. Without ``level_depths`` the levels sit at Sv (i +
-        1/2) below the top, int(H / Sv) of them, and each takes Sv as its
-        spacing in Tmax. Not used with ``level_depths``.
+        1/2) below the top, H / Sv of them rounded down (on a wall a whole
+        number of spacings high, one a spacing, whatever the floating-point
+        rounding of H / Sv; GM-277), each over its contributory height:
+        Sv, the bottom level's from the midpoint above it down to the base
+        (:attr:`contributory_heights`). A spacing that puts the first level
+        at or below the base (Sv / 2 >= H) is refused. Not used with
+        ``level_depths``.
     level_depths : sequence of float, optional
         Depths z of the reinforcement levels below the top of the wall (m),
         from the top down, as GEC-11 Vol II's examples print Z (Example E4,
@@ -162,6 +167,15 @@ class MSEWallGeometry:
         if self.level_depths is not None:
             self.level_depths = _checked_depths(self.level_depths,
                                                 self.wall_height)
+        elif self.reinforcement_spacing / 2.0 >= self.wall_height:
+            # GM-277: the first level at Sv / 2 would be outside the wall
+            raise ValueError(
+                f"reinforcement_spacing {self.reinforcement_spacing:g} m "
+                f"puts the first level at Sv / 2 = "
+                f"{self.reinforcement_spacing / 2.0:g} m, at or below the "
+                f"base of the wall (wall_height {self.wall_height:g} m): "
+                "give a spacing under twice the wall height, or the "
+                "levels' depths (level_depths)")
         if not 0 <= self.backfill_slope < 90:
             raise ValueError(
                 f"backfill_slope must be from 0 to below 90 degrees, rising "
@@ -182,10 +196,15 @@ class MSEWallGeometry:
 
     @property
     def n_reinforcement_levels(self) -> int:
-        """Number of reinforcement levels."""
+        """Number of reinforcement levels: one a depth of ``level_depths``,
+        else H / Sv rounded down, at least one. A wall a whole number of
+        spacings high counts every spacing: 4.8 m at Sv 0.8 m is six levels,
+        though 4.8 / 0.8 is 5.999... in floating point (GM-277)."""
         if self.level_depths is not None:
             return len(self.level_depths)
-        return max(1, int(self.wall_height / self.reinforcement_spacing))
+        n = math.floor(self.wall_height / self.reinforcement_spacing
+                       + WHOLE_SPACING_TOLERANCE)
+        return max(1, n)
 
     @property
     def reinforcement_depths(self) -> List[float]:
@@ -202,21 +221,42 @@ class MSEWallGeometry:
     @property
     def contributory_heights(self) -> List[Tuple[float, float]]:
         """Each level's contributory height (z-, z+), depths below the top
-        of the wall (m), for ``level_depths`` given (GM-273). GEC-11 Vol I
-        p. 4-46: "The contributory height is defined as the midpoint between
-        vertically adjacent reinforcement elevations, except for the top
-        and bottom layers reinforcement"; p. 4-47: for those, Sv "is the
-        distance from top or bottom of wall, respectively, to the midpoint
-        between the first and second layer" (Fig. 4-14). Vol II Example E4
-        tabulates it as Svt = Z+ - Z- (Table E4-7.1, p. E4-11). Raises
-        without ``level_depths``: the module's own levels each take Sv."""
+        of the wall (m). GEC-11 Vol I p. 4-46: "The contributory height is
+        defined as the midpoint between vertically adjacent reinforcement
+        elevations, except for the top and bottom layers reinforcement";
+        p. 4-47: for those, Sv "is the distance from top or bottom of wall,
+        respectively, to the midpoint between the first and second layer"
+        (Fig. 4-14). Vol II Example E4 tabulates it as Svt = Z+ - Z- (Table
+        E4-7.1, p. E4-11). With ``level_depths`` (GM-273) from the depths
+        given; without them, the levels at Sv (i + 1/2), from i Sv to (i +
+        1) Sv, the top level's from the top of the wall and the bottom
+        level's from (n - 1) Sv down to the base, Sv plus the part of the
+        wall below the last whole spacing when H is not a whole number of
+        spacings (GM-277)."""
         if self.level_depths is None:
-            raise ValueError(
-                "contributory_heights is for level_depths given; the levels "
-                "at reinforcement_spacing (i + 1/2) each take Sv")
+            Sv, n = self.reinforcement_spacing, self.n_reinforcement_levels
+            tops = [i * Sv for i in range(n)]
+            return list(zip(tops, tops[1:] + [self.wall_height]))
         z = list(self.level_depths)
         mids = [(a + b) / 2.0 for a, b in zip(z, z[1:])]
         return list(zip([0.0] + mids, mids + [self.wall_height]))
+
+    @property
+    def whole_spacings(self) -> bool:
+        """Without ``level_depths``: whether the wall is a whole number of
+        spacings high, so the bottom level's contributory height is Sv
+        like every other's (GM-277); False with ``level_depths``."""
+        if self.level_depths is not None:
+            return False
+        Sv = self.reinforcement_spacing
+        rest = self.wall_height - self.n_reinforcement_levels * Sv
+        return abs(rest) <= WHOLE_SPACING_TOLERANCE * Sv
+
+
+#: A remainder of the wall height under this fraction of a spacing is
+#: floating-point rounding, not a strip of wall (GM-277): H / Sv for 4.8 m
+#: at 0.8 m is 5.999999999999999.
+WHOLE_SPACING_TOLERANCE = 1e-9
 
 
 def _checked_depths(depths, H: float) -> Tuple[float, ...]:
