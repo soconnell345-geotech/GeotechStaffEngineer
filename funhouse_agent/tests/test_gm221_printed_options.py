@@ -91,8 +91,8 @@ def test_the_shaft_package_prints_the_socket_base_and_c(tmp_path,
 
 def test_the_priebe_tool_reads_the_printed_curve():
     """GEC-13 Example 2 (pp. 5-48, 5-49): A/A_sc = (5.7 / 3.0)^2 = 3.61,
-    where the printed curve (4) reads 2.55 (the example's text rounds its
-    read to 2.7)."""
+    where the printed curve (4) reads 2.55. The example's text prints 2.7,
+    the value on its arrows, which are drawn at A/A_sc 3.53 (Fig. 5-27)."""
     r = _call("ground_improvement", "priebe_improvement_factor",
               {"as_ratio": 0.277})
     assert r["settlement_ratio"] == pytest.approx(2.55, abs=0.03)
@@ -104,7 +104,7 @@ def test_the_priebe_tool_reads_the_printed_curve():
     assert "defaults_used" not in r
     # GM-276: the value first, then GEC-13's own words on it, with the page,
     # and the design value left to the engineer; in the note and the choice.
-    assert r["note"].startswith("Settlement ratio 2.55 at A/A_c = 3.61")
+    assert r["note"].startswith('Settlement ratio "n" = 2.55 at A/A_c = 3.61')
     upper = ("p. 5-37: 'For preliminary estimates, the Priebe curve may be "
              "used to evaluate the upper bound effectiveness and cost at "
              "various spacings.'")

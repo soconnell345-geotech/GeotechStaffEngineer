@@ -80,8 +80,10 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
   `phi_column_deg` 37.5. Off A/A_c 1.6 to 8.0 it is refused, not extended.
   GM-276 checked the table on both printed copies: on p. 5-36 it sits on the
   line within 0.015 (95 % of reads) from A/A_c 2.25 to 8 and within 0.04
-  above that, where the curve is steep; Fig. 5-27 (p. 5-49) agrees. From
-  A/A_c about 4.0 the printed (4) runs on one line with (5a). Example 2: at
+  below A/A_c 2.25, where the curve is steep; Fig. 5-27 (p. 5-49) agrees.
+  From A/A_c about 4.0 the printed (4) runs on one line with (5a). The
+  printed curve runs on past 8.0, to about 8.5 to 8.7 where the lines end;
+  the table stops at 8.0 and the tool refuses past it, saying so. Example 2: at
   A/A_sc = (5.7/3.0)^2 = 3.61 the curve reads 2.55 on both copies, so 27 in
   becomes 10.6 in; GEC-13 prints 2.7 and 10 in, its arrows (Fig. 5-27)
   drawn at A/A_sc 3.53, n' 2.63 on the curve, and labelled 3.6 and 2.7.

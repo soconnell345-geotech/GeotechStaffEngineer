@@ -164,7 +164,7 @@ _PRIEBE_ALIASES = {"area_replacement_ratio": "as_ratio", "as": "as_ratio",
 # between it and the curve, are refused with what the tool uses now.
 _ON_THE_CURVE = (
     "the tool reads GEC-13 Fig. 5-21 curve (4), the Priebe curve as GEC-13 "
-    "prints it (p. 5-36), drawn for a column friction angle of 37.5 deg and "
+    "prints it (p. 5-36), printed for 'PRIEBE phi = 37.5 deg' only and "
     "with no Poisson's ratio; it takes the area ratio as_ratio alone. GEC-13 "
     "prints no Priebe formula and the tool has none")
 _PRIEBE_REFUSED = {name: _ON_THE_CURVE for name in (
@@ -191,9 +191,9 @@ def _run_priebe_improvement_factor(p):
             "area_ratio_A_Ac": round(1.0 / p["as_ratio"], 3),
             "phi_column_deg": 37.5,
             "choices": priebe_choices(p["as_ratio"], n_ratio),
-            "note": (f"Settlement ratio {n_ratio:.2f} at A/A_c = "
+            "note": (f'Settlement ratio "n" = {n_ratio:.2f} at A/A_c = '
                      f"{1.0 / p['as_ratio']:.2f}, off GEC-13 Fig. 5-21 curve "
-                     "(4), Priebe phi = 37.5 deg (p. 5-36): the settlement "
+                     "(4), 'PRIEBE phi = 37.5 deg' (p. 5-36): the settlement "
                      "without stone columns over the settlement with them. "
                      "GEC-13 prints this curve and no formula for it. "
                      + PRIEBE_NOTE)}
@@ -235,9 +235,9 @@ METHOD_INFO = {
         "category": "Aggregate Piers",
         "brief": "Stone columns: the settlement ratio off the Priebe curve GEC-13 prints, Fig. 5-21 curve (4), phi = 37.5 deg (p. 5-36), which GEC-13 calls the upper bound, for preliminary estimates (p. 5-37).",
         "parameters": {
-            "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1. The curve is read at A/A_c = 1/as from 1.6 to 8.0 (as 0.125 to 0.625); off that range it is refused, not extended. GEC-13 Example 2 takes A/A_sc = (s/d)^2 (p. 5-48). Alias: area_replacement_ratio."},
+            "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1. The tool reads the curve at A/A_c = 1/as from 1.6 to 8.0 (as 0.125 to 0.625); outside that it is refused, not extended (the printed curve runs on to about A/A_c 8.5 to 8.7; past 8.0, read the figure). GEC-13 Example 2 takes A/A_sc = (s/d)^2 (p. 5-48). Alias: area_replacement_ratio."},
         },
-        "returns": {"settlement_ratio": "The settlement ratio off GEC-13 Fig. 5-21 curve (4): the settlement without stone columns over the settlement with them (p. 5-36), so the settlement with columns is the settlement without them divided by it.", "phi_column_deg": "37.5, the column friction angle the printed curve is drawn for.", "note": "The value, where it comes from, and GEC-13's own words on it (p. 5-37: the upper bound, for preliminary estimates; p. 5-27: engineering judgment). Give the user the value with this note: the settlement ratio for design is the engineer's to judge."},
+        "returns": {"settlement_ratio": "The settlement ratio off GEC-13 Fig. 5-21 curve (4): the settlement without stone columns over the settlement with them (p. 5-36), so the settlement with columns is the settlement without them divided by it.", "phi_column_deg": "37.5, from the curve's legend as printed: 'PRIEBE phi = 37.5 deg' (p. 5-36).", "note": "The value, where it comes from, and GEC-13's own words on it (p. 5-37: the upper bound, for preliminary estimates; p. 5-27: engineering judgment). Give the user the value with this note: the settlement ratio for design is the engineer's to judge."},
     },
     "wick_drains": {
         "category": "Wick Drains",
