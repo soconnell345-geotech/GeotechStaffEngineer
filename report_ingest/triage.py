@@ -30,6 +30,7 @@ instead of being forced down the standard path.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -37,13 +38,13 @@ from pydantic import BaseModel, Field
 
 from report_ingest.bound import BOUND_KINDS
 from report_ingest.engine import Engine, text_block, user
-from report_ingest.model import DOCUMENT_TYPE_VALUES
+from report_ingest.model import DOCUMENT_TYPE_VALUES, WORKFLOW_VALUES
 
 __all__ = [
     "DOCUMENT_TYPES", "WORKFLOWS", "TOC_AGREEMENTS", "BOUND_KINDS",
     "DocumentFacts", "BoundDocument", "TriageFindings", "DocumentProfile",
     "document_facts", "front_matter_text", "outline_text", "triage",
-    "TRIAGE_SYSTEM",
+    "settle_workflow", "TRIAGE_SYSTEM",
 ]
 
 #: The owner's enumeration, kept verbatim so past query outputs stay
@@ -53,11 +54,40 @@ __all__ = [
 #: answers with has to be the one the record stores.
 DOCUMENT_TYPES: Tuple[str, ...] = DOCUMENT_TYPE_VALUES
 
-#: Which readers run, and whether a person is needed first.
-WORKFLOWS: Tuple[str, ...] = (
-    "standard", "appendix_only", "partial", "multi_document", "scanned",
-    "needs_person",
-)
+#: Which readers run, and whether a person is needed first. It lives in
+#: :mod:`report_ingest.model` beside the record field that stores it, for the
+#: same reason as the document types.
+WORKFLOWS: Tuple[str, ...] = WORKFLOW_VALUES
+
+#: Spellings of a workflow a model writes that mean one on the list.
+_WORKFLOW_SPELLINGS: Dict[str, str] = {
+    "needs_a_person": "needs_person", "person": "needs_person",
+    "appendix": "appendix_only", "multi": "multi_document",
+    "multiple_documents": "multi_document", "multidocument": "multi_document",
+}
+
+
+def settle_workflow(answer: Any) -> Tuple[str, str]:
+    """``(workflow, note)``: triage's answer, on :data:`WORKFLOWS`.
+
+    The graph branches on the workflow by exact string, so an answer off the
+    list -- ``Appendix Only``, ``needs a person`` -- used to run the standard
+    path with nothing said (RI-20). The answer is folded (case, spaces,
+    hyphens) onto the list, and ``note`` is empty. One that still does not
+    fit runs the STANDARD path -- the graph's own default when no triage
+    runs -- and ``note`` says what triage answered, for the record's QA. It
+    is not turned into ``needs_person``: that stops the reading, and a whole
+    report unread over a misspelling costs more than one read on the default
+    path with a person told.
+    """
+    text = str(answer or "").strip()
+    folded = re.sub(r"[\s\-]+", "_", text.lower()).strip("_")
+    folded = _WORKFLOW_SPELLINGS.get(folded, folded)
+    if folded in WORKFLOWS:
+        return folded, ""
+    return "standard", (
+        f"triage answered the workflow {text!r}, which is not one of "
+        f"{', '.join(WORKFLOWS)}; the standard workflow ran instead")
 
 #: How well the contents list matches what was found on the pages.
 TOC_AGREEMENTS: Tuple[str, ...] = ("matched", "partial", "none", "no_toc")
@@ -284,8 +314,12 @@ class TriageFindings(BaseModel):
     anomalies: List[str] = Field(
         description="anything a reader should be warned about, one short "
                     "phrase each; empty list when there is nothing")
+    # An enum in the schema, so an engine that enforces it (strict mode) can
+    # only answer off the list; Python still settles the answer
+    # (:func:`settle_workflow`) for an engine that does not.
     workflow: str = Field(
-        description="one of: " + ", ".join(WORKFLOWS))
+        description="one of: " + ", ".join(WORKFLOWS),
+        json_schema_extra={"enum": list(WORKFLOWS)})
     rationale: str = Field(
         description="why this workflow, in 80 words or fewer")
 
@@ -316,11 +350,15 @@ class DocumentProfile:
     facts: Optional[DocumentFacts] = None
     model: str = ""
     cost: Dict[str, Any] = field(default_factory=dict)
+    #: What :func:`settle_workflow` said when triage's own answer was not on
+    #: the list; empty when it was.
+    workflow_note: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         out = {
             "document_type": self.document_type,
             "workflow": self.workflow,
+            "workflow_note": self.workflow_note,
             "bound_together": [dict(b) for b in self.bound_together],
             "has_narrative": self.has_narrative,
             "has_logs": self.has_logs,
@@ -469,9 +507,11 @@ def triage(doc, roles=None, outline=None, *, engine: Engine,
         raise RuntimeError(
             f"triage returned no structured answer (stop_reason "
             f"{reply.stop_reason!r})")
+    workflow, workflow_note = settle_workflow(found.workflow)
     return DocumentProfile(
         document_type=found.document_type,
-        workflow=found.workflow,
+        workflow=workflow,
+        workflow_note=workflow_note,
         bound_together=[b.model_dump() for b in found.bound_together],
         has_narrative=found.has_narrative,
         has_logs=found.has_logs,

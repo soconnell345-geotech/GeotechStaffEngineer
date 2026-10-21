@@ -150,6 +150,54 @@ def test_a_refusal_written_as_the_hint_says_is_accepted(tmp_path):
     assert res["file_exists"] and res["read_back"]["equal"], res["read_back"]
 
 
+def test_a_schema_check_that_could_not_run_is_neither_valid_nor_invalid(
+        tmp_path, monkeypatch):
+    """RI-20: with no validator on the host the schema check does not run.
+    The answer says so -- unchecked, valid unknown -- and never "valid"."""
+    from subsurface_characterization.formats import diggs_validation
+    monkeypatch.setattr(diggs_validation, "has_schema_check",
+                        lambda *_a, **_k: False)
+    res = _call({"investigations": [BORING], "lab_tests": LAB,
+                 "project": {"name": "Synthetic site", "number": "000"},
+                 "output_path": str(tmp_path / "site.diggs.xml")})
+    assert "error" not in res, res
+    check = res["schema_check"]
+    assert check["checked"] is False and check["valid"] is None
+    assert any("not installed" in e for e in check["errors"])
+    assert "did not run" in res["verdict"]
+    assert not res["verdict"].startswith("valid DIGGS")
+    assert "do not call it valid" in res["verdict"]
+
+
+def test_a_water_analysis_in_mg_per_litre_is_written_without_a_note(
+        tmp_path):
+    """RI-20: mg/L had no conversion, so every water analysis came back with
+    an "unconverted" cross-check though DIGGS takes it as printed. A note
+    fires only where a conversion was needed and failed."""
+    chem = {"kind": "chemical", "investigation_id": "B-1",
+            "sample_id": "S-2", "depth_top": _m(3.0),
+            "result": {"kind": "chemical", "pH": {"value": 7.6, "unit": ""},
+                       "sulfate": {"value": 250.0, "unit": "mg/L"},
+                       "chloride": {"value": 80.0, "unit": "mg/l"},
+                       "sulfides": {"value": 3.0, "unit": "meq/L"}}}
+    out = tmp_path / "site.diggs.xml"
+    res = _call({"investigations": [BORING], "lab_tests": LAB + [chem],
+                 "project": {"name": "Synthetic site", "number": "000"},
+                 "output_path": str(out)})
+    assert "error" not in res, res
+    if res["schema_check"]["checked"]:
+        assert res["schema_check"]["valid"], res["schema_check"]
+    assert res["read_back"]["equal"], res["read_back"]
+    unconverted = [e for e in res["cross_checks"].get("entries", [])
+                   if e.get("kind") == "unconverted"]
+    said = json.dumps(unconverted)
+    assert "mg/L" not in said and "mg/l" not in said
+    # what needed a conversion and had none is still named
+    assert "meq/L" in said
+    xml = out.read_text(encoding="utf-8")
+    assert ">mg/L<" in xml
+
+
 def test_hand_typed_xml_is_not_diggs():
     """What the agent wrote in the field session, in shape: invented
     elements under the DIGGS namespace. The schema says so."""
@@ -159,9 +207,9 @@ def test_hand_typed_xml_is_not_diggs():
            '<investigations><investigation id="B-1"/></investigations>'
            '</DIGGS>')
     ok, errors = diggs_schema_gate(xml)
-    if any("not installed" in e for e in errors):
-        pytest.skip("pydiggs not installed")
-    assert not ok
+    if ok is None:
+        pytest.skip("no DIGGS schema check on this host")
+    assert ok is False
 
 
 def test_unknown_parameter_is_refused():

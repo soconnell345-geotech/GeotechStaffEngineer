@@ -38,21 +38,24 @@ stubs fill in.
 
 from __future__ import annotations
 
+import re
 from typing import (
-    Annotated, Any, Dict, List, Literal, Optional, Tuple, Union,
+    Annotated, Any, Dict, List, Literal, Optional, Tuple, Union, get_args,
 )
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
-    "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI",
+    "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI", "UNITLESS_KINDS",
+    "UNITLESS_FIELDS", "unit_printed",
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
     "Layer", "Sample",
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
     "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
-    "DocumentFacts", "LabelVote", "PageLabel", "ParentReport", "BoundReport",
+    "DocumentFacts", "Workflow", "WORKFLOW_VALUES",
+    "LabelVote", "PageLabel", "ParentReport", "BoundReport",
     "ReportRecord", "to_si", "si_numbers",
     "record_json_schema",
     # the narrative (WP4): the owner's two schemas and their typed twins
@@ -124,18 +127,60 @@ SI_UNITS: Dict[str, str] = {
     "volume": "m3",
     "mass": "kg",
     "velocity": "m/s",
+    # what a water analysis, a calculation printout and a sounding add
+    # (RI-20). A concentration in water is milligrams per LITRE and is a
+    # different kind from milligrams per kilogram of soil: one becomes the
+    # other only through a density nobody printed, so nothing converts
+    # between them.
+    "concentration": "mg/L",
+    "conductivity": "S/m",
+    "force": "kN",
+    "line_load": "kN/m",
+    "moment": "kN.m",
+    "flexural_rigidity": "kN.m2",
+    "area": "m2",
+    "time": "s",
+    "penetration_per_blow": "mm/blow",
 }
 
-#: Standard gravity, for the three unit-of-mass-per-volume spellings a log
-#: uses where it means a unit WEIGHT. g/cm3, Mg/m3 and t/m3 are densities;
-#: multiplying by g is the geotechnical convention and the only way a density
-#: and a pcf column can be compared, so it is done here and said out loud.
+#: Standard gravity, for the unit-of-mass-per-volume spellings a log or a
+#: sheet uses where it means a unit WEIGHT. g/cm3, Mg/m3, t/m3 and kg/m3 are
+#: densities; multiplying by g is the geotechnical convention and the only way
+#: a density and a pcf column can be compared, so it is done here and said
+#: out loud.
 G = 9.80665
 
+#: One pound-force and one kip, in kilonewtons; and one foot and one inch in
+#: metres. Every US customary force, moment and line-load factor below is
+#: built from these four, so none is a separately typed decimal.
+_LBF_KN = 0.0044482216152605
+_KIP_KN = 4.4482216152605
+_FT_M = 0.3048
+_IN_M = 0.0254
+
 #: ``printed unit -> (kind, factor to the kind's SI unit)``. Deliberately
-#: small: every unit in it appears on a log or a lab sheet in the corpus. A
-#: unit that is not here is NOT converted -- :meth:`Quantity.to_si` returns
-#: None rather than inventing a factor, and the caller records that.
+#: small: every unit in it appears on a log, a lab sheet or a calculation
+#: printout in the corpus. A unit that is not here is NOT converted --
+#: :meth:`Quantity.to_si` returns None rather than inventing a factor, and the
+#: caller records that.
+#:
+#: THE EMPTY UNIT IS NOT HERE (RI-20). Until then ``""`` stood in this table
+#: as the dimensionless unit, so a depth or a pressure a reader took off the
+#: page without its unit converted as a bare number: a sample at "4" went into
+#: the DIGGS file at 4 m whether the log was in feet or not. A blank unit now
+#: means what it says -- the page did not print one -- and converts to
+#: nothing. A quantity that has no unit by its own KIND (a pH, a ratio) is
+#: recognised by the caller saying so (:func:`to_si`'s ``kind``), never by
+#: the blank.
+#:
+#: What is left out on purpose, because a factor would be a guess: ``N`` (a
+#: newton, or the blow count every log heads a column with), ``min`` and ``h``
+#: (minutes and hours, or a minimum and a height), ``s`` and ``d`` (seconds
+#: and days, or a plural and a diameter), ``tons`` (short or metric), ``ft-lb``
+#: (a moment or a hammer's energy), degrees Fahrenheit (an offset, which this
+#: table of factors cannot hold), ``meq/L`` (needs the ion's weight), and any
+#: garbled spelling (``Kg/m13``, ``KG/CM*``) -- each stays as printed and is
+#: named.
 UNIT_TO_SI: Dict[str, Tuple[str, float]] = {
     # length
     "m": ("length", 1.0),
@@ -150,14 +195,22 @@ UNIT_TO_SI: Dict[str, Tuple[str, float]] = {
     "psi": ("stress", 6.894757293168361),
     "tsf": ("stress", 95.76051796067168),
     "ksf": ("stress", 47.88025898033584),
+    "ksi": ("stress", 6894.757293168361),
+    "dan/cm2": ("stress", 100.0),
     "kg/cm2": ("stress", 98.0665),
     "bar": ("stress", 100.0),
-    # unit weight, and the densities a log means as one
+    # unit weight, and the densities a log means as one. A pressure that
+    # grows with depth (an equivalent fluid pressure, kPa/m or psf/ft) and a
+    # modulus of subgrade reaction (pci) are a force per volume too, and land
+    # in the same unit.
     "kn/m3": ("unit_weight", 1.0),
     "pcf": ("unit_weight", 0.1570874606),
+    "kcf": ("unit_weight", 157.0874606),
+    "pci": ("unit_weight", _LBF_KN / _IN_M ** 3),
     "g/cm3": ("unit_weight", G),
     "mg/m3": ("unit_weight", G),
     "t/m3": ("unit_weight", G),
+    "kg/m3": ("unit_weight", G / 1000.0),
     # blow rate
     "blows/0.3m": ("blow_rate", 1.0),
     "blows/30cm": ("blow_rate", 1.0),
@@ -176,18 +229,61 @@ UNIT_TO_SI: Dict[str, Tuple[str, float]] = {
     "ppm": ("mass_fraction", 1.0),
     "degc": ("temperature", 1.0),
     "m3": ("volume", 1.0),
+    "ft3": ("volume", _FT_M ** 3),
+    "yd3": ("volume", (3 * _FT_M) ** 3),
     "cm3": ("volume", 1e-6),
+    "litre": ("volume", 1e-3),
     "ml": ("volume", 1e-6),
     "kg": ("mass", 1.0),
     "g": ("mass", 0.001),
     "lb": ("mass", 0.45359237),
     "m/s": ("velocity", 1.0),
     "cm/s": ("velocity", 0.01),
-    # dimensionless and already-SI
+    "ft/s": ("velocity", _FT_M),
+    # a water analysis: a concentration in water, and the conductivity a
+    # corrosivity suite prints beside its resistivity
+    "mg/l": ("concentration", 1.0),
+    "g/l": ("concentration", 1000.0),
+    "ug/l": ("concentration", 0.001),
+    "s/m": ("conductivity", 1.0),
+    "ds/m": ("conductivity", 0.1),
+    "ms/cm": ("conductivity", 0.1),
+    "us/cm": ("conductivity", 1e-4),
+    # what a calculation printout adds: forces, line loads, moments, a
+    # pile's flexural rigidity, areas and times
+    "kn": ("force", 1.0),
+    "kips": ("force", _KIP_KN),
+    "lbf": ("force", _LBF_KN),
+    "kn/m": ("line_load", 1.0),
+    "klf": ("line_load", _KIP_KN / _FT_M),
+    "plf": ("line_load", _LBF_KN / _FT_M),
+    "kn.m": ("moment", 1.0),
+    "kip-ft": ("moment", _KIP_KN * _FT_M),
+    "kip-in": ("moment", _KIP_KN * _IN_M),
+    "kn.m2": ("flexural_rigidity", 1.0),
+    "kip-in2": ("flexural_rigidity", _KIP_KN * _IN_M ** 2),
+    "lb-in2": ("flexural_rigidity", _LBF_KN * _IN_M ** 2),
+    "m2": ("area", 1.0),
+    "cm2": ("area", 1e-4),
+    "mm2": ("area", 1e-6),
+    "ft2": ("area", _FT_M ** 2),
+    "in2": ("area", _IN_M ** 2),
+    "sec": ("time", 1.0),
+    "hr": ("time", 3600.0),
+    "day": ("time", 86400.0),
+    "yr": ("time", 365.25 * 86400.0),
+    # a dynamic cone's penetration index
+    "mm/blow": ("penetration_per_blow", 1.0),
+    "cm/blow": ("penetration_per_blow", 10.0),
+    "in/blow": ("penetration_per_blow", 25.4),
+    # dimensionless and already-SI. A printed unit that cancels (m/m, ft/ft:
+    # a strain, a gradient) is a ratio; an EMPTY unit is not (see above).
     "deg": ("angle", 1.0),
+    "rad": ("angle", 57.29577951308232),
     "%": ("percent", 1.0),
     "pct": ("percent", 1.0),
-    "": ("ratio", 1.0),
+    "m/m": ("ratio", 1.0),
+    "dimensionless": ("ratio", 1.0),
 }
 
 #: Spellings that mean a unit already in the table. Applied after case
@@ -224,37 +320,151 @@ _UNIT_ALIASES: Dict[str, str] = {
     "gram": "g", "grams": "g", "gm": "g",
     "kilogram": "kg", "kilograms": "kg",
     "lbs": "lb", "pound": "lb", "pounds": "lb",
+    # RI-20: the spellings the corpus's records carry that had no entry.
+    # Stresses and unit weights written as a force over an area or a volume.
+    "kips/ft2": "ksf", "kip/ft2": "ksf", "k/ft2": "ksf",
+    "ton/ft2": "tsf", "lb/ft2": "psf", "lbs/ft2": "psf",
+    "lb/sqft": "psf", "lbs/sqft": "psf", "kips/sqft": "ksf",
+    "lb/in2": "psi", "lbs/in2": "psi", "kips/in2": "ksi", "kip/in2": "ksi",
+    "n/mm2": "mpa", "mn/m2": "mpa", "bars": "bar",
+    "kips/ft3": "kcf", "kip/ft3": "kcf", "k/ft3": "kcf",
+    "lb/in3": "pci", "kpa/m": "kn/m3", "psf/ft": "pcf", "ksf/ft": "kcf",
+    "kgs/m3": "kg/m3", "kg./m3": "kg/m3",
+    # a density in kilograms per litre IS grams per cubic centimetre
+    "kg/l": "g/cm3", "kg/dm3": "g/cm3",
+    # forces, line loads, moments and flexural rigidity
+    "kip": "kips", "kilonewton": "kn", "kilonewtons": "kn",
+    "kips/ft": "klf", "kip/ft": "klf", "k/ft": "klf",
+    "lb/ft": "plf", "lbs/ft": "plf", "n/mm": "kn/m",
+    "kn-m": "kn.m", "kn·m": "kn.m", "kn*m": "kn.m", "knm": "kn.m",
+    "m-kn": "kn.m", "m.kn": "kn.m",
+    "ft-kip": "kip-ft", "ft-kips": "kip-ft", "kips-ft": "kip-ft",
+    "k-ft": "kip-ft", "ft-k": "kip-ft",
+    "in-kip": "kip-in", "in-kips": "kip-in", "kips-in": "kip-in",
+    "k-in": "kip-in",
+    "kn-m2": "kn.m2", "kn·m2": "kn.m2", "kn*m2": "kn.m2", "knm2": "kn.m2",
+    "kips-in2": "kip-in2", "k-in2": "kip-in2", "lbs-in2": "lb-in2",
+    # areas a printout writes in words (see _SQUARE_CUBE for "sq. m")
+    "sqm": "m2", "sqft": "ft2", "sqin": "in2", "cuft": "ft3",
+    # angles and times
+    "radian": "rad", "radians": "rad",
+    "second": "sec", "seconds": "sec", "secs": "sec",
+    "hour": "hr", "hours": "hr", "hrs": "hr",
+    "days": "day", "year": "yr", "years": "yr", "yrs": "yr",
+    # what cancels to a ratio
+    "ft/ft": "m/m", "in/in": "m/m", "mm/mm": "m/m", "cm/cm": "m/m",
+    "unitless": "dimensionless",
+    # a water analysis
+    "mg/dm3": "mg/l", "mg/litre": "mg/l", "mg/liter": "mg/l",
+    "µg/l": "ug/l", "μg/l": "ug/l",
+    "µs/cm": "us/cm", "μs/cm": "us/cm", "umhos/cm": "us/cm",
+    "umho/cm": "us/cm", "µmhos/cm": "us/cm", "μmhos/cm": "us/cm",
+    "mmhos/cm": "ms/cm", "mmho/cm": "ms/cm",
+    "mg/kg-dry": "mg/kg", "mg/kgdry": "mg/kg", "mg/kg(dry)": "mg/kg",
+    "ohms*cm": "ohm-cm", "ohm*cm": "ohm-cm", "ohms-cm": "ohm-cm",
+    "ohms.cm": "ohm-cm", "ohmscm": "ohm-cm",
+    "ω·cm": "ohm-cm", "ω.cm": "ohm-cm", "ωcm": "ohm-cm",
+    "ωm": "ohm.m", "ω·m": "ohm.m", "ω.m": "ohm.m", "ω-m": "ohm.m",
+    "kω-cm": "kohm-cm", "kω·cm": "kohm-cm", "kω.cm": "kohm-cm",
+    "kωcm": "kohm-cm",
+    "ppm(mg/kg)": "mg/kg", "ph units": "dimensionless",
+    "liter": "litre", "litres": "litre", "liters": "litre",
+    "psi/in": "pci", "psi/inch": "pci",
+    # a dynamic cone's index
+    "mm/blows": "mm/blow", "mmperblow": "mm/blow", "cm/blows": "cm/blow",
+    "in/blows": "in/blow",
 }
+
+#: The square and the cube a printout spells out in words -- ``SQ. M``,
+#: ``CU.FT``, ``sq inch``, ``KN /CU.M`` -- folded to the ``m2`` / ``ft3``
+#: spelling the table is keyed by. A separator is required between the word
+#: and the length, because ``cum`` alone is as often "cumulative" as it is a
+#: cubic metre.
+_SQUARE_CUBE = re.compile(
+    r"(?<![a-z])(sq|cu)(?:\.\s*|\s+)(mm|cm|m|ft|inch|in|yd)(?![a-z])\.?")
+
+
+def _spellings(unit: str) -> List[str]:
+    """The forms of one printed unit worth looking up, most literal first.
+
+    Case folded; superscripts and carets dropped (``m²``, ``m^2``); the
+    square and cube words folded; spaces squeezed out (``KG/M 3``); and one
+    trailing full stop let go (``M.``, ``DEG.``, ``mv.``), which is how an
+    older program prints every unit it heads a column with.
+    """
+    text = str(unit or "").strip().lower()
+    text = text.replace("²", "2").replace("³", "3").replace("^", "")
+    text = _SQUARE_CUBE.sub(
+        lambda m: (("in" if m.group(2) == "inch" else m.group(2))
+                   + ("2" if m.group(1) == "sq" else "3")), text)
+    out: List[str] = []
+    for candidate in (text, text.replace(" ", "")):
+        for form in (candidate, candidate[:-1]
+                     if len(candidate) > 1 and candidate.endswith(".")
+                     else None):
+            if form is not None and form not in out:
+                out.append(form)
+    return out
 
 
 def _canonical_unit(unit: str) -> Optional[str]:
     """A printed unit folded to a key of :data:`UNIT_TO_SI`, or None.
 
-    None means NOT RECOGNISED, which is different from the empty string: an
-    empty unit is the dimensionless one and converts to itself, while
-    "furlongs" has no factor here and must not be converted to anything.
+    None means NOT RECOGNISED: "furlongs" has no factor here and must not be
+    converted to anything. An empty unit is not recognised either (RI-20):
+    nothing was printed, so there is nothing to recognise.
     """
-    text = str(unit or "").strip().lower()
-    text = text.replace("²", "2").replace("³", "3")
-    for candidate in (text, _UNIT_ALIASES.get(text),
-                      text.replace(" ", ""),
-                      _UNIT_ALIASES.get(text.replace(" ", ""))):
-        if candidate is not None and candidate in UNIT_TO_SI:
-            return candidate
+    for candidate in _spellings(unit):
+        for key in (candidate, _UNIT_ALIASES.get(candidate)):
+            if key is not None and key in UNIT_TO_SI:
+                return key
     return None
 
 
-def to_si(value: float, unit: str) -> Optional[Tuple[float, str]]:
+def unit_printed(unit: Any) -> bool:
+    """Did the page print a unit at all? An empty or blank one is not."""
+    return bool(str(unit or "").strip())
+
+
+#: The kinds of quantity that have NO unit: a ratio (a pH, a void ratio, a
+#: factor) and a percentage. A caller that knows its quantity is one of
+#: these passes the kind to :func:`to_si`, and a blank unit is then complete.
+UNITLESS_KINDS: Tuple[str, ...] = ("ratio", "percent")
+
+#: The record's fields that may hold a :class:`Quantity` whose kind has no
+#: unit, and that kind. A sheet prints a pH with no unit because it has none,
+#: so a blank there is complete; a blank on any other field -- a depth, a
+#: pressure, a density -- is a unit the page did not print. A liquid limit,
+#: a plasticity index, an N value and a blow count need no entry: the record
+#: holds them as plain numbers, typed by their own fields.
+UNITLESS_FIELDS: Dict[str, str] = {
+    "pH": "ratio",
+    "wc": "percent", "pl": "percent", "organic_percent": "percent",
+}
+
+
+def to_si(value: float, unit: str, *,
+          kind: Optional[str] = None) -> Optional[Tuple[float, str]]:
     """``(value in SI, the SI unit)``, or None for a unit not in the table.
 
     None is an answer, not a failure: a writer that needs SI records that it
     could not convert rather than shipping a number in the wrong unit.
+
+    ``kind`` is what the CALLER knows the quantity to be, and it decides only
+    a BLANK unit. A kind in :data:`UNITLESS_KINDS` -- ``"ratio"`` for a pH,
+    ``"percent"`` for a water content -- has no unit to print, so the number
+    is the value. Any other blank is a unit the page did not print, and the
+    answer is None: a depth of "4" is not 4 m.
     """
+    if not unit_printed(unit):
+        if kind in UNITLESS_KINDS:
+            return float(value), SI_UNITS[kind]
+        return None
     key = _canonical_unit(unit)
     if key is None:
         return None
-    kind, factor = UNIT_TO_SI[key]
-    return float(value) * factor, SI_UNITS[kind]
+    unit_kind, factor = UNIT_TO_SI[key]
+    return float(value) * factor, SI_UNITS[unit_kind]
 
 
 # ---------------------------------------------------------------------------
@@ -347,17 +557,20 @@ class Quantity(BaseModel):
     value: float = Field(description="the number as printed")
     unit: str = Field(
         description="the unit as printed: ft, m, in, mm, psf, tsf, ksf, kPa, "
-                    "kg/cm2, pcf, kN/m3, g/cm3, Mg/m3, blows/ft, blows/30cm")
+                    "kg/cm2, pcf, kN/m3, g/cm3, Mg/m3, blows/ft, blows/30cm; "
+                    "empty when the page printed none, which leaves the "
+                    "unit unknown and the value unconverted")
     prov: Optional[Provenance] = Field(
         default=None, description="where this number was read")
 
-    def to_si(self) -> Optional["Quantity"]:
+    def to_si(self, kind: Optional[str] = None) -> Optional["Quantity"]:
         """The same value in SI, or None when the unit is not in the table.
 
-        The provenance is carried through unchanged: converting does not
-        change where the number came from.
+        A blank unit converts only when ``kind`` says the quantity has none
+        (see :func:`to_si`). The provenance is carried through unchanged:
+        converting does not change where the number came from.
         """
-        got = to_si(self.value, self.unit)
+        got = to_si(self.value, self.unit, kind=kind)
         if got is None:
             return None
         value, unit = got
@@ -365,7 +578,7 @@ class Quantity(BaseModel):
 
     @property
     def si_value(self) -> Optional[float]:
-        """The number in SI, or None for an unconvertible unit."""
+        """The number in SI, or None for an unconvertible or unprinted unit."""
         converted = self.to_si()
         return None if converted is None else converted.value
 
@@ -398,6 +611,17 @@ class Project(BaseModel):
         default_factory=list, description="pages these came from")
 
 
+#: Which readers run, as triage chooses it and the graph acts on it
+#: (:mod:`report_ingest.triage`, :mod:`report_ingest.graph`). Empty on a
+#: record no triage ran for. It is a closed list because the graph BRANCHES
+#: on it: a misspelt answer used to fall through to the standard path in
+#: silence (RI-20), so triage now settles the answer onto this list and the
+#: record refuses anything else.
+Workflow = Literal["", "standard", "appendix_only", "partial",
+                   "multi_document", "scanned", "needs_person"]
+WORKFLOW_VALUES: Tuple[str, ...] = tuple(v for v in get_args(Workflow) if v)
+
+
 class DocumentFacts(BaseModel):
     """What the FILE is: filled deterministically, never by a model."""
 
@@ -419,10 +643,11 @@ class DocumentFacts(BaseModel):
         description="pages read through Azure Document Intelligence")
     ocr_pages: int = Field(default=0, ge=0)
     planlens_version: str = Field(default="")
-    workflow: str = Field(
+    workflow: Workflow = Field(
         default="",
         description="the workflow triage chose: standard, appendix_only, "
-                    "partial, multi_document, scanned, needs_a_person")
+                    "partial, multi_document, scanned, needs_person; empty "
+                    "when no triage ran")
     model_calls: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -2228,7 +2453,10 @@ QAKind = Literal[
     "unreadable", "unconverted", "count_mismatch", "out_of_range", "note",
     # a sheet's plotted curve, read by code, against its own table
     # (report_ingest.visual_scales; only with that setting on)
-    "plot_vs_table"]
+    "plot_vs_table",
+    # a check that could not run here (the DIGGS schema with no validator):
+    # neither a pass nor a failure, and the entry says why (RI-20)
+    "not_run"]
 
 
 class QAEntry(BaseModel):
@@ -2424,7 +2652,9 @@ class ReportRecord(BaseModel):
 
 
 def si_numbers(value: Any, path: str = "",
-               skip: Tuple[str, ...] = ()) -> List[Tuple[str, float, str]]:
+               skip: Tuple[str, ...] = (), *,
+               unitless_as_printed: bool = False,
+               _kind: Optional[str] = None) -> List[Tuple[str, float, str]]:
     """``(field, value in SI, the SI unit)`` for every number a model holds.
 
     Walks any part of the record -- a whole test, one result, one row -- and
@@ -2432,7 +2662,15 @@ def si_numbers(value: Any, path: str = "",
     a plain number is dimensionless and is taken as it stands; a string, a
     boolean and a None are not numbers and do not appear. A quantity whose
     printed unit the table cannot convert does not appear either, because
-    there is no SI value for it to have.
+    there is no SI value for it to have -- and nor does one printed with NO
+    unit, unless its field is one whose kind has none
+    (:data:`UNITLESS_FIELDS`, a pH).
+
+    ``unitless_as_printed`` is for a SCORER's pool, never for a gate: a
+    quantity printed with no unit then gives its number as printed, with an
+    empty unit, the way a plain number does. The number was recovered off
+    the page even though its unit was not, and a scorer that matches printed
+    numbers should see it.
 
     It exists so that a check on a record can ask "did these numbers survive"
     without a second copy of whatever mapping a writer or a scorer uses. That
@@ -2443,16 +2681,20 @@ def si_numbers(value: Any, path: str = "",
     if value is None or isinstance(value, (str, bool)):
         return out
     if isinstance(value, Quantity):
-        converted = value.to_si()
+        converted = value.to_si(kind=_kind)
         if converted is not None:
             out.append((path, converted.value, converted.unit))
+        elif unitless_as_printed and not unit_printed(value.unit):
+            out.append((path, float(value.value), ""))
         return out
     if isinstance(value, (int, float)):
         out.append((path, float(value), ""))
         return out
     if isinstance(value, (list, tuple)):
         for i, item in enumerate(value):
-            out.extend(si_numbers(item, f"{path}[{i}]"))
+            out.extend(si_numbers(item, f"{path}[{i}]",
+                                  unitless_as_printed=unitless_as_printed,
+                                  _kind=_kind))
         return out
     fields = getattr(type(value), "model_fields", None)
     if fields:
@@ -2460,7 +2702,9 @@ def si_numbers(value: Any, path: str = "",
             if name in skip:
                 continue
             here = f"{path}.{name}" if path else name
-            out.extend(si_numbers(getattr(value, name, None), here))
+            out.extend(si_numbers(getattr(value, name, None), here,
+                                  unitless_as_printed=unitless_as_printed,
+                                  _kind=UNITLESS_FIELDS.get(name)))
     return out
 
 

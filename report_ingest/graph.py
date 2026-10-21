@@ -461,7 +461,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         assign, build_items, document_outline, facts_from_document,
     )
     from report_ingest.reconciler import reconcile
-    from report_ingest.triage import document_facts, triage as run_triage
+    from report_ingest.triage import (
+        document_facts, settle_workflow, triage as run_triage)
 
     facts = facts_from_document(doc)
     roles = assign(facts)
@@ -487,10 +488,15 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
 
     # -- 0b. triage ---------------------------------------------------------
     profile = None
+    workflow_note = ""
     if budgets.triage:
         cached = _cached(os.path.join(out, "triage.json"), resume)
         if cached is not None:
-            record.document.workflow = cached.get("workflow", "standard")
+            # A triage.json written before RI-20 holds the answer as the
+            # model gave it; it is settled the same way a fresh one is.
+            record.document.workflow, workflow_note = settle_workflow(
+                cached.get("workflow", "standard"))
+            workflow_note = cached.get("workflow_note") or workflow_note
             profile = _Profile(cached)
         else:
             # Triage is one call over a ledger: a cheaper tier is usually
@@ -503,7 +509,11 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             spend.add(profile.cost)
             _save(os.path.join(out, "triage.json"), profile.to_dict())
             record.document.workflow = profile.workflow
+            workflow_note = profile.workflow_note
     workflow = record.document.workflow
+    if workflow_note:
+        qa.append(QAEntry(kind="note", where="workflow",
+                          detail=workflow_note))
 
     if profile is not None:
         for note in getattr(profile, "anomalies", ()) or ():

@@ -492,3 +492,69 @@ class TestTheCalculationsSection:
 
         assert "SLOPEWORKS" not in xml
         assert "Myerhof" not in xml
+
+
+class TestASchemaCheckThatCouldNotRun:
+    """RI-20: with no DIGGS validator on the host the schema check does not
+    run. That is "not run", with its reason -- neither a failure (as it was
+    recorded until RI-20) nor a pass."""
+
+    @pytest.fixture()
+    def no_validator(self, monkeypatch):
+        from subsurface_characterization.formats import diggs_validation
+        monkeypatch.setattr(diggs_validation, "has_schema_check",
+                            lambda *_a, **_k: False)
+
+    def test_the_gate_answers_none_with_its_reason(self, no_validator):
+        from report_ingest.diggs_writer import diggs_schema_gate, write_diggs
+        ok, errors = diggs_schema_gate(write_diggs(build_record()))
+        assert ok is None
+        assert len(errors) == 1 and "not installed" in errors[0]
+
+    def test_the_record_says_not_run_and_why(self, record, tmp_path,
+                                             no_validator):
+        written = write_outputs(record, tmp_path)
+        assert written.diggs and written.schema_ok is None
+        assert written.schema_verdict == "not run"
+        assert written.to_dict()["diggs"]["schema"] == "not run"
+        (entry,) = [e for e in record.qa if e.where == "diggs.schema"]
+        assert entry.kind == "not_run"
+        assert "did not run" in entry.detail and "not installed" in \
+            entry.detail
+        # not a failure: no entry a reviewer is sent to as one
+        from report_ingest.library import REVIEW_KINDS
+        assert entry.kind not in REVIEW_KINDS
+        # the summary page shows it as it is
+        text = open(written.summary, encoding="utf-8").read()
+        assert "not_run" in text and "did NOT pass" not in text
+
+    def test_not_run_is_not_a_pass_either(self, record, tmp_path,
+                                          no_validator):
+        from report_ingest.cluster_scoring import _diggs_verdicts
+        from report_ingest.subagent import diggs_verdict
+        written = write_outputs(record, tmp_path)
+        assert _diggs_verdicts(record, written.paths)["schema"] == "not run"
+        # the read-back gate passed, but the schema did not run: no verdict
+        assert diggs_verdict(record.qa) is None
+
+    def test_the_verdicts_ran_passed_failed(self, record, tmp_path):
+        from report_ingest.model import QAEntry
+        from report_ingest.subagent import diggs_verdict
+        write_outputs(record, tmp_path)
+        assert diggs_verdict(record.qa) is True
+        assert diggs_verdict([]) is None
+        failed = [QAEntry(kind="not_run", where="diggs.schema", detail="x"),
+                  QAEntry(kind="conflict", where="diggs.roundtrip",
+                          detail="y")]
+        assert diggs_verdict(failed) is False
+
+    def test_a_record_written_before_ri20_reads_as_not_run(self):
+        """Such a record filed the no-validator case as out_of_range."""
+        from report_ingest.cluster_scoring import _diggs_verdicts
+        from report_ingest.model import QAEntry
+        old = ReportRecord(qa=[QAEntry(
+            kind="out_of_range", where="diggs.schema",
+            detail="the DIGGS file did NOT pass the 2.6 schema",
+            values=["the DIGGS 2.6 schema check is not installed here, so "
+                    "nothing checked this file against the DIGGS schema"])])
+        assert _diggs_verdicts(old, {"diggs": "x"})["schema"] == "not run"

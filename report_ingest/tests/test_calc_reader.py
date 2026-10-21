@@ -148,15 +148,23 @@ class TestTheFloor:
         assert all(any(ch.isalpha() for ch in v.name) for v in floor.values)
 
     def test_a_unit_the_record_cannot_convert_is_still_a_unit(self, printout):
-        """kN-m has no conversion in the record's table. Dropping it would
-        leave a bending moment in the floor as a bare number."""
+        """A unit with no conversion in the record's table is still a unit.
+        Dropping it would leave a bending moment in the floor as a bare
+        number. kN-m was such a unit until RI-20 gave moments a kind; it is
+        kept as printed and now converts too."""
+        from report_ingest.calc_reader import _unit_token
         doc, _gt = printout
         floor = floor_from_pages(doc, [0], "SYN")
 
         moment = next(v for v in floor.values
                       if v.name == "Maximum bending moment")
         assert moment.unit == "kN-m"
-        assert Quantity(value=moment.value, unit=moment.unit).to_si() is None
+        si = Quantity(value=moment.value, unit=moment.unit).to_si()
+        assert si is not None and si.unit == "kN.m"
+        # what still has no conversion is kept as a unit all the same
+        for unit in ("tons/ft", "ft-lb", "meq/L"):
+            assert Quantity(value=1.0, unit=unit).to_si() is None
+            assert _unit_token(unit) == unit
 
     def test_a_banner_naming_a_known_program_is_read_and_one_that_does_not_is_not(
             self):
@@ -414,17 +422,18 @@ class TestTheGates:
     def test_a_unit_with_no_conversion_is_unsettled_and_the_value_is_kept(
             self, spreadsheet):
         doc, _gt = spreadsheet
+        # "tons" is short or metric; nothing in the table guesses which
         engine = FakeEngine([{"final": _reading(inputs=[
-            _value("Subgrade reaction", 150.0, "pci")])}])
+            _value("Wall load", 3.0, "tons/ft")])}])
 
         result = read_calculation(doc, [0], engine, report_id="SYN")
 
         row = next(r for r in result.calculation.inputs
-                   if r.name == "Subgrade reaction")
-        assert row.value.value == 150.0 and row.value.unit == "pci"
+                   if r.name == "Wall load")
+        assert row.value.value == 3.0 and row.value.unit == "tons/ft"
         assert row.value.to_si() is None
         (flag,) = [u for u in result.unresolved
-                   if u["what"] == "input Subgrade reaction"]
+                   if u["what"] == "input Wall load"]
         assert "not one the record can convert" in flag["why"]
 
     def test_a_value_with_no_label_is_refused(self, spreadsheet):

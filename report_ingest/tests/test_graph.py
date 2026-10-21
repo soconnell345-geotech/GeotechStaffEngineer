@@ -397,6 +397,33 @@ class TestTheWorkflows:
         assert "nothing was read" in entry.detail
         assert record.document.workflow == "needs_person"
 
+    def test_a_workflow_spelt_another_way_is_still_acted_on(self, pdf,
+                                                            tmp_path):
+        # RI-20: the graph branches on the exact string, so "Needs a person"
+        # used to run every reader with nothing said.
+        engine = FakeEngine([triage_turn("Needs a person")])
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN")
+
+        assert engine.n_calls == 1
+        assert record.document.workflow == "needs_person"
+
+    def test_a_workflow_off_the_list_runs_standard_and_says_so(self, pdf,
+                                                               tmp_path):
+        script = full_script()
+        script[0] = triage_turn("unsure")
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        assert record.document.workflow == "standard"
+        (entry,) = [e for e in record.qa if e.where == "workflow"]
+        assert entry.kind == "note" and "'unsure'" in entry.detail
+        # and a resumed run reads the same answer back off triage.json
+        again = ingest_report(pdf, FakeEngine([]), out_dir=tmp_path,
+                              report_id="SYN")
+        assert again.document.workflow == "standard"
+        assert [e.detail for e in again.qa if e.where == "workflow"] ==             [entry.detail]
+
     def test_appendix_only_skips_the_narrative_reader(self, pdf, tmp_path):
         script = ([triage_turn("appendix_only")] + vision_turns()
                   + [identity_turn()]
