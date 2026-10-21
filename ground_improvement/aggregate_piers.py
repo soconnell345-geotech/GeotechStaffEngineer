@@ -130,8 +130,8 @@ PRIEBE_BASIS = (
     "GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21 (p. 5-36), curve (4) "
     "'PRIEBE phi = 37.5 deg', read off the printed figure at A/A_c 1.6 to "
     "8.0. GEC-13 prints this curve and no formula for it, so the tool takes "
-    "the area ratio alone: the column friction angle is the curve's 37.5 "
-    "deg. GEC-13 reads the same curve in Example 2 (Sec. 4.3.2, Fig. 5-27, "
+    "the area ratio alone: the curve is printed for 'PRIEBE phi = 37.5 deg' "
+    "only. GEC-13 reads the same curve in Example 2 (Sec. 4.3.2, Fig. 5-27, "
     "p. 5-49)")
 
 #: GEC-13's own words on the Priebe curve and on judgment (GM-276, the
@@ -166,8 +166,8 @@ def priebe_choices(as_ratio: float, n_ratio: float) -> list:
     return [choice(
         "settlement ratio",
         f"{n_ratio:.2f} at A/A_c = {1.0 / as_ratio:.2f}, off GEC-13 Fig. "
-        f"5-21 curve (4), Priebe phi = 37.5 deg: GEC-13's upper bound, for "
-        f"preliminary estimates (p. 5-37)", MODULE,
+        f"5-21 curve (4), 'PRIEBE phi = 37.5 deg': GEC-13's upper bound, "
+        f"for preliminary estimates (p. 5-37)", MODULE,
         PRIEBE_BASIS + ". " + PRIEBE_NOTE,
         ["GEC-13 Fig. 5-21's Balaam curves (5), by E_c/E_s (aggregate_piers "
          "settlement_method 'balaam_rigid' or 'balaam_flexible'); p. 5-37: "

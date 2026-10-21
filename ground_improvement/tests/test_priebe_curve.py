@@ -35,11 +35,24 @@ def _curve(area_ratio):
     return priebe_curve_settlement_ratio(1.0 / area_ratio)
 
 
-@pytest.mark.parametrize("area_ratio, n_read", [
-    (1.6, 6.01), (2.0, 4.82), (2.5, 3.80), (3.0, 3.11), (3.5, 2.63),
-    (4.0, 2.30), (5.0, 1.96), (6.0, 1.79), (8.0, 1.49)])
-def test_the_curve_as_read_off_the_figure(area_ratio, n_read):
-    assert _curve(area_ratio) == pytest.approx(n_read, abs=TOL)
+#: Curve (4) read off the printed page between the table's nodes (GM-276
+#: review): GEC-13 Fig. 5-21, p. 5-36, each read the line's centre in the
+#: pixel column at that A/A_c, calibrated on the printed grid lines; Fig.
+#: 5-27 (p. 5-49) gives the same reads within 0.02.
+PAGE_READS_P5_36 = {
+    1.90: 5.10, 1.95: 4.95, 2.06: 4.67, 2.15: 4.48, 2.40: 3.98, 2.60: 3.64,
+    2.90: 3.22, 3.15: 2.94, 3.40: 2.71, 3.61: 2.54, 3.90: 2.34, 4.15: 2.21,
+    4.40: 2.10, 4.75: 2.01, 5.25: 1.91, 5.75: 1.83, 6.25: 1.75, 6.75: 1.68,
+    7.25: 1.61, 7.75: 1.54,
+}
+
+
+@pytest.mark.parametrize("area_ratio", sorted(PAGE_READS_P5_36))
+def test_the_curve_as_read_off_the_figure(area_ratio):
+    """Between its nodes the table follows the printed line within 0.02."""
+    assert area_ratio not in PRIEBE_CURVE_4
+    assert _curve(area_ratio) == pytest.approx(
+        PAGE_READS_P5_36[area_ratio], abs=0.02)
 
 
 def test_example_2_reads_the_curve_where_its_arrows_are_drawn():

@@ -91,8 +91,8 @@ def test_the_shaft_package_prints_the_socket_base_and_c(tmp_path,
 
 def test_the_priebe_tool_reads_the_printed_curve():
     """GEC-13 Example 2 (pp. 5-48, 5-49): A/A_sc = (5.7 / 3.0)^2 = 3.61,
-    where the printed curve (4) reads 2.55 (the example's text rounds its
-    read to 2.7)."""
+    where the printed curve (4) reads 2.55. The example's text prints 2.7,
+    the value on its arrows, which are drawn at A/A_sc 3.53 (Fig. 5-27)."""
     r = _call("ground_improvement", "priebe_improvement_factor",
               {"as_ratio": 0.277})
     assert r["settlement_ratio"] == pytest.approx(2.55, abs=0.03)
@@ -126,6 +126,17 @@ def test_the_formula_and_its_inputs_are_refused(name, value):
     assert f"does not take ['{name}']" in err
     assert "Fig. 5-21 curve (4)" in err and "37.5 deg" in err
     assert "Did you mean" not in err
+
+
+def test_several_refused_inputs_get_one_message():
+    """The old formula's inputs given together: one sentence names them
+    all, not the same sentence once per name."""
+    err = _call("ground_improvement", "priebe_improvement_factor",
+                {"as_ratio": 0.277, "phi_column": 42.5, "nu_soil": 0.3,
+                 "method": "formula"})["error"]
+    assert "does not take ['method', 'nu_soil', 'phi_column']" in err
+    assert "method, nu_soil, phi_column: the tool reads" in err
+    assert err.count("Fig. 5-21 curve (4)") == 1
 
 
 def test_the_pier_package_cites_the_stress_reduction_method(tmp_path,
