@@ -33,7 +33,8 @@ _LAYER_KEY_HINTS = {
     "soil_model": ("curve",),
     "e0": ("e_init",), "voidratio": ("e_init",), "type": ("material_type",),
     "soiltype": ("material_type",), "h": ("thickness",),
-    "k": ("permeability",), "perm": ("permeability",),
+    # 'k' is hydraulic conductivity, or a sand layer's K0 written short
+    "k": ("permeability", "K0"), "perm": ("permeability",),
     "hydraulicconductivity": ("permeability",),
     "conductivity": ("permeability",), "ksat": ("permeability",),
 }

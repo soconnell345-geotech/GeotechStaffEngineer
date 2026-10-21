@@ -389,9 +389,10 @@ def analyze_site_response(
     gwt_depth : float
         Groundwater table depth from surface (m). Default 0.0 (at surface).
         The mesh has a node at this depth: a layer it falls inside is
-        meshed in two parts, its elements shared in proportion (the
-        result's ``choices`` gives the split). Pore pressure is held at
-        zero at every node at or above it.
+        meshed in two parts, each in elements no taller than the layer's
+        own, one element more than asked (the result's ``choices`` gives
+        the split). Pore pressure is held at zero at every node at or
+        above it.
     bedrock_Vs : float
         Bedrock shear wave velocity (m/s). Default 760.
     bedrock_density : float
@@ -1088,10 +1089,14 @@ def _element_heights(top, thickness, n_elem, gwt_depth):
 
     ``n_elem`` equal elements, unless the water table falls inside the
     layer between two of their nodes: then the parts above and below it
-    are meshed apart, so a node sits at ``gwt_depth``, with the elements
-    shared in proportion to the parts' thicknesses (at least one each; a
-    layer of one element gets two). Returns ``(heights, split)``, split
-    ``(n_above, n_below)`` when the layer was split, else None.
+    are meshed apart, so a node sits at ``gwt_depth``, each part in
+    elements no taller than the layer's own (thickness / n_elem), which
+    is one element more than asked. Sharing the asked count between the
+    parts instead made the elements below a water table near the layer's
+    top up to twice as tall (a 10 m layer of two elements, water 0.5 m
+    in: 0.5 m and 9.5 m), so the column passed lower frequencies than
+    asked. Returns ``(heights, split)``, split ``(n_above, n_below)``
+    when the layer was split, else None.
     """
     h = thickness / n_elem
     above = gwt_depth - top
@@ -1101,9 +1106,8 @@ def _element_heights(top, thickness, n_elem, gwt_depth):
     k = above / h
     if abs(k - round(k)) * h <= _NODE_TOL_M:
         return [h] * n_elem, None
-    n_above = int(math.floor(n_elem * above / thickness + 0.5))
-    n_above = min(max(1, n_above), max(1, n_elem - 1))
-    n_below = max(1, n_elem - n_above)
+    n_above = int(math.ceil(k))
+    n_below = int(math.ceil(below / h))
     return ([above / n_above] * n_above + [below / n_below] * n_below,
             (n_above, n_below))
 
@@ -1290,11 +1294,10 @@ def _site_response_choices(plans, damping, rayleigh_freqs_hz,
             (n_a, n_b), hs = plan["wt_split"], plan["heights"]
             count_basis += (
                 f"; the water table at {plan['gwt_depth']:g} m is inside this "
-                f"layer, so it is meshed in two parts with a node there: "
+                f"layer, so it is meshed in two parts with a node there, "
+                f"each in elements no taller than the layer's own: "
                 f"{n_a} element(s) of {hs[0]:.3g} m above, {n_b} of "
-                f"{hs[-1]:.3g} m below")
-            if plan["n_elem"] != plan["n_elem_asked"]:
-                count_basis += f" ({plan['n_elem_asked']} asked)"
+                f"{hs[-1]:.3g} m below ({plan['n_elem_asked']} asked)")
         out.append(choice(
             f"{label} element count", plan["n_elem"],
             _layer_how(plans, i, "n_elem") if _layer_has(plans, i, "n_elem")

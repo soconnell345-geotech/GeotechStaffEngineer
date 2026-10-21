@@ -85,8 +85,8 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
   calculation on a sand/clay/sand profile.
 - Water table: nodes at or above gwt_depth have pp fixed at 0, and the
   mesh has a node at gwt_depth (GM-79): a layer it falls inside is meshed
-  in two parts, the layer's element count shared in proportion to their
-  thicknesses (at least one each; a one-element layer gets two), and
+  in two parts, each in elements no taller than the layer's own
+  (thickness / n_elem), which is one element more than asked, and
   `choices` gives the split. Until GM-79 the water table sat at the
   deepest node at or above gwt_depth, up to an element too shallow.
 - Analysis phases: (1) gravity elastic 10 steps of 500 s, (2) elastoplastic
@@ -490,11 +490,18 @@ OpenSees ru is the excess over sigma'v0 by definition.
 above gwt_depth. 20 m of sand in 5 m elements with water 3 m down ran
 with water at the surface: sigma'v0 at the element centres 22 / 66 / 110
 / 155 kPa against the hand 28 / 81 / 131 / 181. With the node: the hand
-values to 0.1 %, amplification 0.496 -> 0.632, ru in the top element
+values to 0.1 %, amplification 0.496 -> 0.636, ru in the top element
 (dry) 1.0 -> 0. Sand / clay / sand, 2 elements a layer, water 2 m:
-amplification 0.504 -> 0.672. Thin elements (water 0.01 m below the
-surface, 0.05 m above the base, 0.02 m either side of a layer boundary)
-run with Newton at every step.
+amplification 0.504 -> 0.683 (both at the old k = 9.81e-4 m/s). Thin
+elements (water 0.01 m below the surface, 0.05 m above the base, 0.02 m
+either side of a layer boundary) run with Newton at every step.
+
+The split layer's parts are each meshed in elements no taller than the
+layer's own, one element more than asked: 20 m in 4 elements with water
+at 3 m is 3 m above and 4 x 4.25 m below. Sharing the asked count between
+the parts (the first version) made the elements below a water table near
+a layer's top up to twice as tall (10 m in 2 elements, water 0.5 m in:
+0.5 m and 9.5 m), so the column passed lower frequencies than asked.
 
 **Permeability units.** The u-p elements' flow term is q = -k_e (grad p -
 rho_f b) (SSPquadUP.cpp: `fDens*dN*k*body`), so with p in kPa the element
@@ -517,14 +524,49 @@ At the new default (sand 1e-4 m/s, ten times slower drainage), 0.30 g:
 |---|---|---|
 | 20 m loose sand, water 0 m | 0.499; 1.02 / 0.99 / 1.01 / 0.98 | 0.492; 1.01 / 0.99 / 1.01 / 1.00 |
 | 20 m loose sand, 20 elements, water 2 m | 0.666; ru 0.16 at 2.5 m, 0.97 at 19.5 m | 0.613; 0.20, 1.00 |
-| Sand / clay / sand, water 2 m (with the node) | 0.672; top sand 0 / 0.09 | 0.713; 0 / 0.62 |
-| Dense sand (phi 38, contrac1 0.013, dilat1 0.3), 0.10 g | 1.72; 0.32 at 1 m, 0.19 at 19 m | 2.51; 1.01, 0.55 |
-| 15 m clay | 0.982 | 0.982 (1e-7 and 1e-8 are both undrained here) |
+| Sand / clay / sand, water 2 m (with the node) | 0.683; top sand 0 / 0.08 / 0.15 | 0.697; 0 / 0.51 / 0.97 |
+| Dense sand (Vs 300, density 2.0, phi 38, contrac1 0.013, dilat1 0.3, 10 elements, water 0 m), 0.10 g | 1.72; 0.31 at 1 m, 0.19 at 19 m | 1.93; 0.91, 0.57 |
+| 15 m clay | 0.982 | 0.982 (the same at 1e-7 and 1e-8; see the stabilization below) |
 
 The dense column moves most: it drained during the pulse at k = 9.8e-4
-and does not at 1e-4. On 20 m of loose sand, water at the surface, k
+and does not at 1e-4. (A first measurement of 2.51 here was not
+reproduced on the review's run of this column; the "before" numbers
+were.) Its amplification across k, with the same column run with no pore
+water (water below the base) and linear elastic for comparison:
+
+| k (m/s) | 1e-6 | 1e-5 | 1e-4 | 2e-4 | 5e-4 | 9.81e-4 | 1e-2 | 1 | no water | linear |
+|---|---|---|---|---|---|---|---|---|---|---|
+| amplification | 1.82 | 1.92 | 1.93 | 2.80 | 1.78 | 1.72 | 1.62 | 1.63 | 1.56 | 1.54 |
+| ru at 1 m | 0.83 | 0.87 | 0.91 | 0.83 | 0.38 | 0.31 | 0.10 | 0.00 | 0 | 0 |
+
+Drained (k 1e-2 and up) the column amplifies as it does with no pore
+water; undrained and partly drained it amplifies more, its peak a short
+spike: at 1e-4 the peak (10.06 s) comes as the pore pressure 2 m down
+falls 3 kPa in 0.06 s (the sand dilating as it shears, so stiffening),
+and the surface acceleration then drops from 0.19 g to 0.01 g in three
+steps; drained, the peak is rounded.
+Between the two the peak swings (2.80 at 2e-4, at 15 s): in dense sand
+under partial drainage the surface PGA is set by those spikes, so k is
+worth bracketing. On 20 m of loose sand, water at the surface, k
 1e-3 / 1e-2 / 1e-1 m/s gives peak ru 1.02 / 0.84 / 0.25 and
 amplification 0.50 / 0.63 / 1.03.
+
+**Clay pore pressure comes through the stabilization term.** Sand / clay
+/ sand as above with the clay in 10 elements, water 2 m, 0.30 g: ru in
+the clay falls from 0.91 next to the liquefied sand to 0.53 at its middle,
+and is the same at clay k of 1e-6, 1e-7, 1e-9 and 1e-12 m/s. It is not
+flow. SSPquadUP's pressure stabilization adds alpha times the Laplacian
+of the pressure rate to the mass balance (SSPquadUP.cpp, getMass: `Kp =
+-4 alpha J0 t dN dNp`), which spreads a pressure change over a length of
+about sqrt(alpha / storage): with the fixed alpha 1e-5 and the clay's
+storage n/Kf + 1/M (6.4e-7 per kPa), about 4 m. The total vertical stress
+in the clay stays within 1 kPa while its effective stress halves. The
+element's documentation gives alpha = 0.25 h^2 / (rho c^2) (2.7e-6 for a
+5 m clay element of these properties if c is the P wave speed), and with
+alpha 1e-7 everywhere the elastic gravity stage of this column does not
+converge, so it is not changed here (BACKLOG). Until then the clay's ru
+next to a liquefied sand is the sand's pore pressure spread into it, not
+the clay's own.
 
 The OpenSees manual's typical ranges (quadUP element): sand 1e-3 to
 1e-1 cm/s, silty sand 1e-5 to 1e-3, silt 1e-7 to 1e-5, clay below 1e-7.
@@ -557,8 +599,9 @@ default, basis, alternatives):
 Left: ground slope (no cited source for the module's 1D column yet);
 the strength-corrected curve option with a peak shear strain input (no
 cited source); the SSPquadUP alpha, fixed at 1e-5 where the element's
-documentation gives 0.25 h^2 / (rho c^2) (possible over-stabilization on
-small elements; not measured).
+documentation gives 0.25 h^2 / (rho c^2): it spreads pore pressure about
+4 m into clay (measured above), and a smaller one fails gravity on the
+same column.
 
 ## Ground Motions
 

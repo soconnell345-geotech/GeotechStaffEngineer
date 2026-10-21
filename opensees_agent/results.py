@@ -292,7 +292,11 @@ class SiteResponseResult:
         if len(self.max_strain_pct) > 0:
             lines.append(f"  Max shear strain:     {np.max(self.max_strain_pct):.3f} %")
         if len(self.max_pore_pressure_ratio) > 0:
-            lines.append(f"  Max ru:               {np.max(self.max_pore_pressure_ratio):.3f}")
+            ru = float(np.max(self.max_pore_pressure_ratio))
+            # ru is not capped (GM-79): above 1 is stated, not hidden
+            lines.append(f"  Max ru:               {ru:.3f}" + (
+                " (above 1: the pore pressure above the initial total "
+                "vertical stress)" if ru > 1.0 else ""))
         if self.solver_steps:
             st = self.solver_steps
             lines.append(
