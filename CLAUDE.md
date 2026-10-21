@@ -1453,7 +1453,7 @@ ledger: module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/
 FINDINGS.md):** calc sub-agent gained working-folder READ access (the
 "sources unavailable" trust fix); **profile_figure = the 33rd module**
 (subsurface schematic renderer — layers/GWT/pile overlay → PNG;
-general-pool, deliberately NOT in specialist scopes, see its
+general-pool, then deliberately NOT in specialist scopes (in them since GM-40, 2026-10-21), see its
 DESIGN.md; a rendering module like calc_package, not in the analysis
 inventory table); calc packages now DEFAULT to a profile figure;
 html_to_pdf auto-embeds local images and refuses un-embeddable ones
