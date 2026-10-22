@@ -29,6 +29,7 @@ rather than prints are the model's to add, and the model adds them.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.floor import (
@@ -38,6 +39,10 @@ from report_ingest.floor import (
 from report_ingest.model import (
     DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
     Quantity, SPT, Sample, WaterLevel, _canonical_unit,
+)
+from report_ingest.printed_depths import (
+    PrintedDepth, PrintedDepths, PrintedRow, chained, on_line,
+    printed_depths,
 )
 
 __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
@@ -345,7 +350,9 @@ def _drawn_box(group: _Group, boxes: Sequence[Any]) -> Any:
 
 def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
-                 template_note: str = "", drawn: Any = None
+                 template_note: str = "", drawn: Any = None,
+                 printed_row: Optional[PrintedRow] = None,
+                 printed_bottom: Optional[float] = None
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
     top = min(float(c.depth) for c in group.cells)
     bottom: Optional[float] = None
@@ -510,12 +517,27 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if label and not sample_id:
             sample_id = label
             drawn_note += "; sample id from the drawn box"
+    printed_note = ""
+    if printed_row is not None:
+        # A page with no ruler (RI-18): these cells stand on the line of a
+        # printed depth, and that depth is the sample's. An interval the
+        # sample prints in its own cell, read above, stands; the base the
+        # line prints (``printed_bottom``) fills one it did not print. The
+        # grid gives every cell on such a page its no-ruler confidence,
+        # which the printed depth replaces.
+        if bottom is None:
+            bottom = printed_bottom
+        if not sample_id and printed_row.label:
+            sample_id = printed_row.label
+        confidence = printed_row.first.confidence
+        printed_note = "; " + printed_row.note()
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
         note=("seeded from the grid rows"
               + (f" ({template_note})" if template_note else "") + ": "
-              + "; ".join(t for t in texts if t)[:160] + drawn_note))
+              + "; ".join(t for t in texts if t)[:160] + drawn_note
+              + printed_note))
     sample = Sample(
         sample_id=sample_id, top=_q(top, unit), bottom=_q(bottom, unit),
         kind=kind,  # type: ignore[arg-type]
@@ -545,6 +567,165 @@ def _pct(value: Optional[float]) -> Optional[float]:
     if value is None:
         return None
     return max(0.0, min(100.0, float(value)))
+
+
+# ---------------------------------------------------------------------------
+# a page with no ruler: the depths it prints (RI-18)
+# ---------------------------------------------------------------------------
+#
+# Where ``log_grid`` fitted no ruler, no cell has a depth and nothing above
+# seeds anything. The page may still PRINT its depths: in a depth column, as a
+# sample's interval, at the head of a description
+# (:mod:`report_ingest.printed_depths`). A cell standing on the same line as
+# one of those is given that depth, and only that depth; a cell standing on
+# no printed depth's line is left without one.
+#
+# A line that prints a depth is read by what stands beside it:
+# - sample or test values: a SAMPLE line, and its depth is the sample's;
+# - a description: the description above it stops there. The words on the
+#   line may run on from above or start a new stratum, and their position
+#   cannot say which, so the stratum above keeps only the words it surely
+#   has. A layer opens on the line only where it prints an INTERVAL and no
+#   sample stands on it (beside a sample, the interval may be the
+#   sample's), or where the interval heads the description itself. One
+#   depth beside a description does not say which end of a stratum it is.
+
+class _AtPrintedDepth:
+    """A grid cell on a page with no ruler, given the depth printed on its
+    line. Everything else is the cell's own."""
+
+    __slots__ = ("_cell", "depth")
+
+    def __init__(self, cell: Any, depth: float) -> None:
+        self._cell = cell
+        self.depth = depth
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cell, name)
+
+
+@dataclass
+class _PrintedLine:
+    """One line of a page with no ruler that prints a depth, and the
+    sample or test values and the description lines standing on it."""
+
+    row: PrintedRow
+    values: List[Any]
+    words: List[Any]
+
+
+def _printed_lines(grid: Any, printed: PrintedDepths, page: int,
+                   by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
+                   unit: Optional[str] = None, placing: bool = True
+                   ) -> List[_PrintedLine]:
+    values = [c for c in grid.rows if c.page == page
+              and set(_names(grid, c, by_column)) & _SAMPLE_FAMILY
+              and (c.numbers or str(c.text or "").strip())]
+    words = sorted((c for c in grid.rows if c.page == page
+                    and "description" in _names(grid, c, by_column)
+                    and getattr(c, "column", "") != "depth"
+                    and str(c.text or "").strip()),
+                   key=lambda c: (c.bbox[1], c.bbox[0]))
+    return [_PrintedLine(row,
+                         [c for c in values if on_line(c.bbox, row.first)],
+                         [c for c in words if on_line(c.bbox, row.first)])
+            for row in printed.rows(page, unit, placing)]
+
+
+def _printed_rows(grid: Any, printed: PrintedDepths, unit: str,
+                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                  ) -> List[Tuple[PrintedRow, List[Any], Optional[float]]]:
+    """Each sample line's values, given the line's depth, and the base the
+    line prints for the sample (or None).
+
+    A line places its values when a depth column or a sample's own interval
+    prints its depth; a range at the head of a description opens a stratum
+    and says nothing of a sample beside it.
+    """
+    out: List[Tuple[PrintedRow, List[Any], Optional[float]]] = []
+    for page in printed.pages:
+        taken: set = set()
+        for line in _printed_lines(grid, printed, page, by_column, unit):
+            if not line.row.places_values:
+                continue
+            cells = [c for c in line.values if id(c) not in taken]
+            if not cells:
+                continue
+            taken.update(id(c) for c in cells)
+            out.append((line.row,
+                        [_AtPrintedDepth(c, line.row.top) for c in cells],
+                        line.row.sample_bottom(bool(line.words))))
+    return out
+
+
+def _printed_layers(grid: Any, printed: PrintedDepths, unit: str,
+                    confidence_floor: float,
+                    by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                    ) -> List[Layer]:
+    """The strata whose two depths a page with no ruler prints.
+
+    A stratum's words run from its line down to the next line that prints a
+    depth beside a description (see the rules above). Only intervals that
+    CHAIN, each top at another's base or base at another's top, open
+    layers: an interval standing alone may be a thickness or a lens ("2 to 4
+    ft thick sand lenses"), not a stratum, and a seam printed between two
+    strata does not break their chain. A stratum printed with one depth, or whose
+    words share a line with a sample, is left to the reader, whose top and
+    base are accepted where the page prints them.
+    """
+    out: List[Layer] = []
+    for page in printed.pages:
+        desc = sorted((c for c in grid.rows if c.page == page
+                       and "description" in _names(grid, c, by_column)
+                       and getattr(c, "column", "") != "depth"),
+                      key=lambda c: (c.bbox[1], c.bbox[0]))
+        if not desc:
+            continue
+        rests = {tuple(r.bbox): r.rest for r in printed.on_page(page)
+                 if r.source == "description"}
+        # Every line printing a depth beside a description cuts the words
+        # above it, whether or not its depth can place anything.
+        cuts: List[Tuple[Optional[PrintedDepth], int]] = []
+        for line in _printed_lines(grid, printed, page, by_column,
+                                   placing=False):
+            if not line.words:
+                continue
+            at = desc.index(line.words[0])
+            if cuts and at <= cuts[-1][1]:
+                continue
+            reading = line.row.stratum()
+            opens = (reading is not None and reading.bottom is not None
+                     and reading.seeds and printed.unit_on(reading) == unit
+                     and (reading.source == "description" or not line.values))
+            cuts.append((reading if opens else None, at))
+        intervals = [k for k, (reading, _at) in enumerate(cuts)
+                     if reading is not None]
+        links = chained([cuts[k][0] for k in intervals])
+        for k, link in zip(intervals, links):
+            if not link:
+                cuts[k] = (None, cuts[k][1])
+        for k, (reading, start) in enumerate(cuts):
+            if reading is None:
+                continue
+            stop = cuts[k + 1][1] if k + 1 < len(cuts) else len(desc)
+            words = [rests.get(tuple(c.bbox), str(c.text or ""))
+                     for c in desc[start:stop]]
+            description = " ".join(" ".join(w.split()) for w in words
+                                   if w.strip())
+            if not description:
+                continue
+            symbol = _USCS.search(description)
+            out.append(Layer(
+                top=_q(reading.top, unit), bottom=_q(reading.bottom, unit),
+                description=description,
+                uscs=symbol.group(1) if symbol else "",
+                prov=Provenance(
+                    page=page, bbox=tuple(desc[start].bbox), method="grid",
+                    confidence=max(confidence_floor, reading.confidence),
+                    note=(f"layer bound by its printed depths "
+                          f"('{reading.text}', {reading.how}); no depth "
+                          f"ruler on page {page}"))))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -842,7 +1023,8 @@ def _pit_method(lines: Sequence[Any]) -> str:
 def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                    confidence_floor: float = 0.3,
                    template: Any = None,
-                   lines: Sequence[Any] = ()) -> Investigation:
+                   lines: Sequence[Any] = (),
+                   printed: Optional[PrintedDepths] = None) -> Investigation:
     """The grid's own reading of one log as an :class:`Investigation`.
 
     Every value carries a ``grid`` provenance at the grid's own confidence
@@ -866,9 +1048,30 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     borehole vocabulary has no term for: a test pit's plan dimensions and
     how the pit was dug. Left empty, nothing changes and no pit gets
     dimensions -- which is what every caller before this got.
+
+    ``printed`` is :func:`report_ingest.printed_depths.printed_depths` over
+    these pages, when the caller has already run it; left ``None`` it is run
+    here. On a page whose ruler could not be fitted it is the only source of
+    a depth: a sample or test printed on the same line as a printed depth is
+    seeded at that depth, and a stratum whose interval is printed is seeded
+    as a layer, each saying in its note how the depth was read. On a log
+    whose every page has a ruler it finds nothing and changes nothing.
     """
     pages = [int(p) for p in pages]
     unit = (grid.unit or "").strip()
+    if printed is None:
+        printed = printed_depths(grid, pages)
+    # On a log with no ruler anywhere, a header depth is the number its
+    # unit is bound to (RI-18), never the first number on the line, which
+    # may be a date, a time or a year; and the unit is the one printed with
+    # the depths or over the depth column. None on every other log, whose
+    # header reads as it always did.
+    header_depths: Optional[Dict[str, float]] = None
+    if printed and not unit and not grid.rulers:
+        unit = printed.unit
+        header_depths = {r.column_id: r.top for r in printed.readings
+                         if r.source == "header"
+                         and printed.unit_on(r) == unit}
     fields = dict(grid.fields or {})
     used: set = set()
 
@@ -912,7 +1115,11 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                              prov=fprov("ground_surface_elevation"))
     total = None
     raw = text("total_depth")
-    if raw and _first_number(raw) is not None \
+    if header_depths is not None:
+        if header_depths.get("total_depth") is not None and unit:
+            total = Quantity(value=header_depths["total_depth"], unit=unit,
+                             prov=fprov("total_depth"))
+    elif raw and _first_number(raw) is not None \
             and _first_number(raw) >= 0.0 and unit:
         total = Quantity(value=_first_number(raw), unit=unit,
                          prov=fprov("total_depth"))
@@ -967,7 +1174,8 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     raw = text("groundwater")
     if raw:
         lowered = raw.lower()
-        number = _first_number(raw)
+        number = (_first_number(raw) if header_depths is None
+                  else header_depths.get("groundwater"))
         if re.search(r"not encountered|none|dry|no water|n/e|n\.e\.",
                      lowered) and number is None:
             water.append(WaterLevel(depth=None, when="not_encountered",
@@ -1017,6 +1225,13 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                             confidence=max(confidence_floor,
                                            min(1.0, float(ly.confidence))),
                             note=note)))
+    if printed and unit:
+        for layer in _printed_layers(grid, printed, unit, confidence_floor,
+                                     by_column):
+            key = (round(float(layer.top.value), 2), fold(layer.description))
+            if key not in seen_layers:
+                seen_layers.add(key)
+                layers.append(layer)
 
     samples: List[Sample] = []
     spt: List[SPT] = []
@@ -1044,6 +1259,25 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                 boxes.remove(drawn)
             sample, drive = _seed_sample(group, grid, unit, confidence_floor,
                                          by_column, template_note, drawn)
+            if sample is not None:
+                samples.append(sample)
+            if drive is not None:
+                spt.append(drive)
+    if printed and unit:
+        span = _span_in_unit(unit, grid)
+        ruled = [float(s.top.value) for s in samples if s.top is not None]
+        for row, cells, base in _printed_rows(grid, printed, unit,
+                                              by_column):
+            if any(abs(row.top - top) <= span for top in ruled):
+                # A sheet with no ruler restating a sample a ruled sheet has
+                # already placed: the same sample read twice (see _Group).
+                continue
+            group = _Group(cells[0])
+            for cell in cells[1:]:
+                group.add(cell)
+            sample, drive = _seed_sample(group, grid, unit, confidence_floor,
+                                         by_column, template_note,
+                                         printed_row=row, printed_bottom=base)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:

@@ -337,20 +337,37 @@ class TestWhatItRefuses:
             == [21.0]
         assert 21.0 in [ly.top.value for ly in result.investigation.layers]
 
-    def test_a_log_with_no_scale_yields_no_depths_at_all(self, no_ruler):
+    def test_a_log_with_no_scale_keeps_only_the_depths_it_prints(
+            self, no_ruler):
+        # No ruler, and no depth printed in a column, a sample or a
+        # description: the only depths on this page are the two its header
+        # prints, "25 ft" and "Groundwater encountered at 10 ft" (RI-18).
+        # Those stand; every row depth the reader returns is refused.
         doc, _gt = no_ruler
         reading = _good_imperial_reading(units_known=False, depth_unit="")
         engine = FakeEngine([{"final": reading}])
         result = read_log(doc, [0], engine)
         inv = result.investigation
         assert inv.layers == [] and inv.samples == [] and inv.spt == []
-        assert inv.units_known is False
+        assert inv.depth_unit == "ft"                 # printed with the depths
+        assert inv.total_depth is not None and inv.total_depth.value == 25.0
+        assert 10.0 in [w.depth.value for w in inv.water if w.depth]
         # ... and the header fields survive: the page still says whose log it is
         assert inv.investigation_id == "B-12"
         assert inv.drilling.hammer_type == "Automatic SPT Hammer"
-        assert all(u["refused_by"] == "python" for u in result.unresolved)
-        assert any("no depth scale was found" in u["why"]
-                   for u in result.unresolved)
+        scale = [u for u in result.unresolved if u.get("flag") == "no_ruler"]
+        assert len(scale) == 1 and "could be fitted" in scale[0]["why"]
+        refused = [u for u in result.unresolved
+                   if u.get("refused_by") == "python"]
+        assert sorted(u["value"] for u in refused) == [0.0, 2.0, 2.0, 4.0,
+                                                       7.0, 7.0, 10.0, 16.0]
+        # The rows' depths are printed nowhere; the water depth is printed,
+        # in ft, but this reading gave no unit, so it does not stand on it.
+        water = [u for u in refused if u["value"] == 10.0]
+        assert "the reader gave no unit" in water[0]["why"]
+        assert all("nothing printed on it reads" in u["why"]
+                   for u in refused if u["value"] != 10.0)
+        assert len(result.unresolved) == len(scale) + len(refused)
 
     def test_provenance_naming_a_page_outside_this_log_loses_its_box(
             self, imperial):
