@@ -48,7 +48,7 @@ from report_ingest.printed_depths import (
 __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
            "GROUP_SPAN_M", "pit_dimensions", "bucket_width", "header_pairs",
            "PIT_METHOD_KEYS", "n_from_drives", "header_increment",
-           "N_RULE_SOURCE"]
+           "N_RULE_SOURCE", "N_HALT_RULE"]
 
 #: How far apart two placed cells may be and still belong to one sample: a
 #: driven sample is 0.46 m (18 in) long and its blow record, its N and its
@@ -311,10 +311,67 @@ def _text(cell: Any) -> str:
     return " ".join(str(getattr(cell, "text", "") or "").split())
 
 
+#: What a log prints in a sample-id column that is never a sample's id: no
+#: recovery, weight of hammer or of rods, not applicable.
+_NOT_IDS = frozenset({"nr", "nrec", "norec", "woh", "wor", "rec", "na",
+                      "nd", "lost"})
+#: A sample id with a letter prefix: ``S-4``, ``SS-3``, ``U-2-1``, ``ST 2``.
+_PREFIXED_ID = re.compile(
+    r"^[A-Za-z]{1,4}[-\s#.]?\d{1,4}[A-Za-z]?(?:[-/.]\d{1,4}[A-Za-z]?)?$")
+#: A sample id that is a number: ``12``, ``4A``.
+_NUMBER_ID = re.compile(r"^\d{1,4}[A-Za-z]?$")
+#: A header that says its column numbers the samples.
+_NUMBER_HEADER = re.compile(
+    r"\bNO\b\.?|\bNUMBER\b|\bNUM\b|#|\bN[\u00ba\u00b0]", re.I)
+
+
 def _id_like(text: str) -> bool:
+    """Could this be a sample's name at all? Not ``NR`` or ``WOH``."""
     token = text.strip()
-    return bool(token) and (bool(_ID_LIKE.match(token))
-                            or (token.isalpha() and len(token) <= 3))
+    if not token or fold(token) in _NOT_IDS:
+        return False
+    return bool(_ID_LIKE.match(token)) or (token.isalpha()
+                                           and len(token) <= 3)
+
+
+def _id_shape(text: str) -> str:
+    """``prefixed`` for ``S-4``, ``number`` for ``12``, else empty."""
+    token = text.strip()
+    if not token or fold(token) in _NOT_IDS or token.lower() in _TYPE_CODES:
+        return ""
+    if _PREFIXED_ID.match(token):
+        return "prefixed"
+    if _NUMBER_ID.match(token):
+        return "number"
+    return ""
+
+
+def _id_styles(grid: Any, cells: Sequence[Any],
+               by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+               ) -> Dict[str, str]:
+    """How each sample-id column names its samples, from the column itself.
+
+    A column that prints any id with a letter prefix (``S-3``) names its
+    samples that way, and a bare number in it is a drive or a value printed
+    under the id, not a second id. A column of bare numbers names samples by
+    number only when its header says so (``SAMPLE NO.``); in a column headed
+    ``DATA`` a stack of ``4``, ``6``, ``7`` is a blow record.
+    """
+    shapes: Dict[str, set] = {}
+    for cell in cells:
+        if "sample_id" in _names(grid, cell, by_column):
+            shapes.setdefault(cell.column_id, set()).add(
+                _id_shape(_text(cell)))
+    styles: Dict[str, str] = {}
+    for column_id, found in shapes.items():
+        if "prefixed" in found:
+            styles[column_id] = "prefixed"
+        elif "number" in found:
+            column = grid.column(column_id)
+            header = str(getattr(column, "header", "") or "")
+            styles[column_id] = ("number" if _NUMBER_HEADER.search(header)
+                                 else "")
+    return styles
 
 
 def _is_words(text: str) -> bool:
@@ -419,18 +476,22 @@ def _marks_a_sample(text: str, names: Sequence[str]) -> bool:
         return labelled[0] in ("recovery", "rqd")
     if "sample_id" in here and (_INTERVAL.match(text) or _id_like(text)):
         return True
+    if fold(text) in _NOT_IDS:
+        return False
     return not (here & set(_INDEX_NAMES)) and bool(_NUMBER.search(text))
 
 
-def _sample_key(text: str, names: Sequence[str]) -> Optional[Tuple[str, str]]:
+def _sample_key(text: str, names: Sequence[str], style: str = ""
+                ) -> Optional[Tuple[str, str]]:
     """What makes this cell ONE sample's and no other's: its id, or its
     whole blow record. Two cells with different keys of one kind on one
-    sheet are two samples, however close they are printed."""
+    sheet are two samples, however close they are printed. An id counts
+    only in the shape its column names samples in (``style``, from
+    :func:`_id_styles`): a bare ``4`` under ``S-3`` is not a second id."""
     pair = _ID_AND_TYPE.match(text)
     if pair is not None and pair.group(2).lower() in _TYPE_CODES:
         return "id", fold(pair.group(1))
-    if "sample_id" in names and _id_like(text) \
-            and text.lower() not in _TYPE_CODES:
+    if "sample_id" in names and style and _id_shape(text) == style:
         return "id", fold(text)
     if set(names) & {"blows", "n_value", "sample_id"} and _blow_tokens(text):
         return "drives", fold(text)
@@ -619,6 +680,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     blow_cell = None
     stacked: List[Tuple[Tuple[float, float, float], int]] = []
     stacked_cells: List[Any] = []
+    #: What a drive column printed that is not a count: an N computed with
+    #: it left out would be wrong.
+    unread: List[str] = []
     #: Numbers printed in a column that holds several quantities, which
     #: their position cannot tell apart: ``(the number as printed, header)``.
     unassigned: List[Tuple[str, str]] = []
@@ -696,6 +760,17 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             refusal = any(isinstance(t, str) for t in tokens)
             blow_cell = cell
             continue
+        drive_column = ("blows" in names
+                        and not set(names) & set(_INDEX_NAMES))
+        # A drive printed as words -- WOH, WOR: the sampler sank under the
+        # weight of the hammer or of the rods -- keeps its place among the
+        # drives AS PRINTED, never as a number (RI-04).
+        if drive_column and fold(text) in ("woh", "wor"):
+            stacked.append(((float(cell.depth), float(cell.bbox[1]),
+                             float(cell.bbox[0])), text))
+            stacked_cells.append(cell)
+            unread.append(text)
+            continue
         # From here on a cell is read as a NUMBER of its column, so it must
         # be one: a cell with words in it ("S-1, SS" under a DATA column the
         # vocabulary called recovery, "Run = 3.5 ft" under RQD) is not that
@@ -703,6 +778,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         # in the note.
         if not _numeric(text) and not (
                 "sample_id" in names and _id_like(text)):
+            if drive_column and text and not (
+                    "sample_id" in names and _id_shape(text)):
+                unread.append(text)
             continue
         header = _header(grid, cell)
         index_names = [name for name in _INDEX_NAMES if name in names]
@@ -737,6 +815,12 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             continue
         if "sample_id" in names and text and not cell.numbers:
             if not sample_id and _id_like(text):
+                sample_id = text
+            continue
+        if "sample_id" in names and _id_shape(text) == "prefixed":
+            # "S-3" under a DATA column the vocabulary also called blows
+            # and recovery: the sample's name, not a recovery of 3 %.
+            if not sample_id:
                 sample_id = text
             continue
         if "sample_id" in names and text and len(cell.numbers) == 1 \
@@ -854,7 +938,14 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
     # N, where the log prints a standard SPT's three drives and no N.
     n_basis = ""
-    if n is None and not n_printed and not refusal and blows:
+    if unread and kind == "spt" and n is None and not n_printed:
+        # A drive the floor could not count -- WOH, or a word it cannot
+        # read -- leaves the record's N to the reader (RI-04).
+        remarks.append("a drive printed as '" + "', '".join(unread)
+                       + "' is not a count; no N computed from the drives")
+        if notes is not None:
+            notes.add(page, "drives", f"'{'; '.join(unread)}' at {at}")
+    elif n is None and not n_printed and not refusal and blows:
         drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
                                    else None)
         printed_inc = (header_increment(_header(grid, drive_cell))
@@ -867,7 +958,12 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             increment_from=(f"the column header "
                             f"'{_header(grid, drive_cell)[:40]}'"
                             if printed_inc is not None else ""))
-        if computed is not None:
+        if computed is not None and computed[0] is None:
+            # A drive past the printed halt: the record is a refusal as
+            # printed, with no N.
+            refusal = True
+            remarks.append(computed[1])
+        elif computed is not None:
             n, n_basis = computed
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
@@ -931,6 +1027,11 @@ def _metres(length: float, unit: str) -> Optional[float]:
 #: is considered as a 'seating' penetration, while the number of blows to
 #: advance the second and third increments are summed to give the N-value".
 N_RULE_SOURCE = "FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51 (ASTM D 1586)"
+#: The halt printed on the same page: past it a drive record is a refusal,
+#: not an N.
+N_HALT_RULE = ("'The SPT can be halted ... if the number of blows exceeds 50 "
+               "in any given 6 in (150 mm) increment'")
+SPT_HALT_BLOWS = 50
 #: The standard increment, and how far a printed or measured one may sit from
 #: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
 SPT_INCREMENT_M = 0.1524
@@ -962,9 +1063,12 @@ def header_increment(header: str) -> Optional[float]:
 def n_from_drives(blows: Sequence[Any], *, sampler: str,
                   increment_m: Optional[float] = None,
                   interval_m: Optional[float] = None,
-                  increment_from: str = "") -> Optional[Tuple[int, str]]:
+                  increment_from: str = ""
+                  ) -> Optional[Tuple[Optional[int], str]]:
     """``(N, how it was had)`` from a standard SPT's three printed drives, or
-    None when the rule does not apply.
+    None when the rule does not apply, or ``(None, why)`` when a drive
+    passes the printed halt (:data:`N_HALT_RULE`): that record is a refusal
+    as printed and has no N.
 
     The rule is printed in :data:`N_RULE_SOURCE`: N is the second drive plus
     the third. It applies only to an SPT sampler the log names (``sampler``
@@ -997,6 +1101,10 @@ def n_from_drives(blows: Sequence[Any], *, sampler: str,
         how = f"the sample's interval ({interval_m:.3g} m over three drives)"
     else:
         return None
+    halted = [c for c in counts if c > SPT_HALT_BLOWS]
+    if halted:
+        return None, (f"refusal: a drive of {halted[0]} blows; {N_HALT_RULE}"
+                      f" ({N_RULE_SOURCE}); no N computed")
     n = counts[1] + counts[2]
     return n, (f"not printed; the 2nd + 3rd of three 6 in (150 mm) drives, "
                f"{counts[1]} + {counts[2]} = {n}, by the rule printed in "
@@ -1029,14 +1137,6 @@ def _doubts(values: Dict[str, Any], units: Dict[str, str]) -> List[str]:
                                         - float(pi)) > 1.0:
         out.append(f"LL - PL = {float(ll) - float(pl):g} but PI printed "
                    f"{pi:g}")
-    dry = values.get("dry_unit_weight")
-    span = {"pcf": (40.0, 170.0), "kn/m3": (6.0, 27.0),
-            "kn/m³": (6.0, 27.0)}.get(
-        units.get("dry_unit_weight", "").strip().lower())
-    if dry is not None and span and not span[0] <= float(dry) <= span[1]:
-        out.append(f"dry unit weight {dry:g} "
-                   f"{units.get('dry_unit_weight')} is outside "
-                   f"{span[0]:g}-{span[1]:g}")
     return out
 
 
@@ -1062,6 +1162,9 @@ class _FloorNotes:
         "order": ("samples whose depth contradicts their neighbours' "
                   "(their numbers run out of order down the hole), kept at "
                   "a lower confidence"),
+        "drives": ("SPT drive records with an entry that is not a count "
+                   "(WOH, WOR, or a word the floor cannot read); no N is "
+                   "computed from them"),
         "empty": ("rows in the sample columns with nothing a sample has "
                   "(no id, sampler, drives, N or value, no drawn box); not "
                   "seeded as samples"),
@@ -1544,19 +1647,20 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
                    notes: _FloorNotes) -> List[_Group]:
     """The sample columns' cells gathered into one group per sample.
 
-    Cells within ``span`` of a group's first row are that sample's, the
-    nearest group taking a cell two could take; a second id or a second
-    blow record on the same sheet opens a second sample however close it is
-    printed. A group with no cell that marks a sample (no id, sampler,
-    drives, N or recovery) holds only values -- a moisture content printed a
-    line above its sample, a labelled result under TESTS -- and on a sheet
-    that has samples it is BOUND to the one the page's geometry points at
-    (RI-04): the nearest, when it is within two spans, clearly nearer than
-    the next (half as far again) and on the side of its sample the rest of
-    its column's values are. A value that fails any of those stays where it
+    First the samples: the cells that mark one (its id, sampler, drives, N,
+    recovery) within ``span`` of a sample's first such row are that
+    sample's; a second id or a second blow record on the same sheet opens a
+    second sample however close it is printed. Then the values -- a moisture
+    content, a labelled result under TESTS -- each go to the sample the
+    page's geometry points at (RI-04): the one whose lines are nearest, on
+    any sheet, when it is clearly nearer than the next (the next half as far
+    again) and, for a value printed off the sample's lines, within two spans
+    and on the side of its sample the rest of its column's values are. A
+    tie never goes to either. A value that fails any of those stays where it
     is printed, as its own row at the floor's lowest confidence, and the QA
     section lists it; a labelled result from outside the sample columns is
-    not a sample on its own and is only listed.
+    not a sample on its own and is only listed. A log with no sample marked
+    anywhere has only its values, read as they always were.
     """
     family: List[Any] = []
     results: List[Any] = []
@@ -1581,19 +1685,23 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
     from_results = {id(c) for c in labelled}
     cells.extend(labelled)
     cells.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
+    styles = _id_styles(grid, cells, by_column)
     keys: Dict[int, Tuple[str, str]] = {}
     marks: set = set()
     for cell in cells:
         names = _names(grid, cell, by_column)
-        key = _sample_key(_text(cell), names)
+        key = _sample_key(_text(cell), names, styles.get(cell.column_id, ""))
         if key is not None:
             keys[id(cell)] = key
         if id(cell) not in from_results and _marks_a_sample(_text(cell),
                                                             names):
             marks.add(id(cell))
+
     groups: List[_Group] = []
     for cell in cells:
-        # Any group at this depth takes the cell, whichever sheet it is
+        if id(cell) not in marks:
+            continue
+        # Any sample at this depth takes the cell, whichever sheet it is
         # on: the rows are sorted by page first, so a second sheet's
         # restatement of a depth would otherwise open a second sample.
         fits = [g for g in groups if g.takes(cell, span, keys)]
@@ -1602,91 +1710,76 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
                                         - float(g.first))).add(cell)
         else:
             groups.append(_Group(cell))
-    # A value cell taken before the sample nearer to it was opened (the
-    # rows come in depth order) goes to that nearer sample now: nearer to
-    # the lines the sample's own cells are printed on. Only a VALUE moves:
-    # a sample's own cells -- its id, its drives one to a line -- stay with
-    # the sample they opened.
-    def reach(group: _Group, cell: Any) -> float:
-        own = [c for c in group.cells if c is not cell]
-        lines = [float(c.depth) for c in own if id(c) in marks] or [
-            float(c.depth) for c in own]
-        if not lines:
-            return float("inf")
+
+    def gap(group: _Group, at: float) -> Tuple[float, int]:
+        """How far ``at`` is from the lines the sample is printed on, and
+        on which side: -1 above them, 1 below, 0 among them."""
+        lines = [float(c.depth) for c in group.cells]
+        if at < min(lines):
+            return min(lines) - at, -1
+        if at > max(lines):
+            return at - max(lines), 1
+        return 0.0, 0
+
+    values = [c for c in cells if id(c) not in marks]
+    left: List[Any] = []
+    off_lines: List[Tuple[Any, _Group, int]] = []
+    for cell in values:
+        if not groups:
+            left.append(cell)
+            continue
         at = float(cell.depth)
-        return max(0.0, min(lines) - at, at - max(lines))
-
-    for group in groups:
-        for cell in list(group.cells[1:]):
-            if id(cell) in keys or id(cell) in marks:
-                continue
-            best = min((g for g in groups if g is not group
-                        and g.takes(cell, span, keys)),
-                       key=lambda g: reach(g, cell), default=None)
-            if best is not None and reach(best, cell) < reach(group, cell):
-                group.cells.remove(cell)
-                best.add(cell)
-
-    def marked(group: _Group) -> List[float]:
-        return [float(c.depth) for c in group.cells if id(c) in marks]
-
-    anchored = [g for g in groups if marked(g)]
-    proposals: List[Tuple[_Group, _Group, int]] = []
-    left: List[_Group] = []
-    for group in groups:
-        if marked(group):
-            continue
-        sheets = {c.page for c in group.cells}
-        near = [a for a in anchored if sheets & {c.page for c in a.cells}]
-        if not near:
-            # A sheet with no sample marked on it: its values are the only
-            # samples it has, read as they always were.
-            continue
-        at = sum(float(c.depth) for c in group.cells) / len(group.cells)
-        found: List[Tuple[float, int, _Group]] = []
-        for other in near:
-            lo, hi = min(marked(other)), max(marked(other))
-            if at < lo:
-                found.append((lo - at, -1, other))
-            elif at > hi:
-                found.append((at - hi, 1, other))
-            else:
-                found.append((0.0, 0, other))
-        found.sort(key=lambda row: row[0])
-        gap, side, home = found[0]
-        if gap > 2.0 * span or (len(found) > 1 and found[1][0]
-                                <= 1.5 * gap + 1e-9):
-            left.append(group)
+        found = sorted(((*gap(g, at), k) for k, g in enumerate(groups)),
+                       key=lambda row: row[0])
+        nearest, side, home = found[0][0], found[0][1], groups[found[0][2]]
+        clear = len(found) == 1 or found[1][0] > 1.5 * nearest + 1e-9
+        if not clear or nearest > 2.0 * span:
+            left.append(cell)
+        elif nearest <= span:
+            home.add(cell)                       # on the sample's own rows
         else:
-            proposals.append((group, home, side))
+            off_lines.append((cell, home, side))
     # The side of its sample a column prints its values on, by majority.
     sides: Dict[Tuple[int, str], Dict[int, int]] = {}
-    for group, _home, side in proposals:
-        for where in {(c.page, c.column_id) for c in group.cells}:
-            tally = sides.setdefault(where, {})
-            tally[side] = tally.get(side, 0) + 1
-    bound: set = set()
-    for group, home, side in proposals:
-        against = side != 0 and any(
-            sides[w].get(-side, 0) > sides[w].get(side, 0)
-            for w in {(c.page, c.column_id) for c in group.cells})
-        if against:
-            left.append(group)
+    for cell, _home, side in off_lines:
+        tally = sides.setdefault((cell.page, cell.column_id), {})
+        tally[side] = tally.get(side, 0) + 1
+    for cell, home, side in off_lines:
+        tally = sides[(cell.page, cell.column_id)]
+        if tally.get(-side, 0) > tally.get(side, 0):
+            left.append(cell)
+        elif not any(c is cell for c in home.bound):
+            home.bound.append(cell)
+
+    # What is left stays where it is printed. On a log with samples it is
+    # doubted and listed; on a log with none it is all the samples there
+    # are, read as before.
+    loose: List[_Group] = []
+    for cell in sorted(left, key=lambda c: (c.page, float(c.depth),
+                                             c.bbox[0])):
+        fits = [g for g in loose if g.takes(cell, span)]
+        if fits:
+            min(fits, key=lambda g: abs(float(cell.depth)
+                                        - float(g.first))).add(cell)
+        else:
+            loose.append(_Group(cell))
+    kept: List[_Group] = list(groups)
+    for group in loose:
+        results_only = all(id(c) in from_results for c in group.cells)
+        if not groups and not results_only:
+            kept.append(group)
             continue
-        for cell in group.cells:
-            if not any(c is cell for c in home.bound):
-                home.bound.append(cell)
-        bound.add(id(group))
-    dropped: set = set()
-    for group in left:
+        if not any(re.search(r"\d", _text(c)) for c in group.cells):
+            continue                  # a tick box, a dash: no value at all
         what = "; ".join(_text(c) for c in group.cells)[:60]
         notes.add(group.page, "unbound",
                   f"'{what}' at {float(group.first):g}")
-        if all(id(c) in from_results for c in group.cells):
-            dropped.add(id(group))
-        else:
-            group.unbound = True
-    return [g for g in groups if id(g) not in bound and id(g) not in dropped]
+        if results_only:
+            continue
+        group.unbound = True
+        kept.append(group)
+    kept.sort(key=lambda g: (g.page, float(g.first)))
+    return kept
 
 
 def _check_order(samples: List[Sample], spt: List[SPT], unit: str,
@@ -2397,7 +2490,7 @@ class _Merger:
         if m.n is None or (f is not None and f.n is not None):
             return
         derived = self.derived_n(merged)
-        if derived is None or derived[0] == m.n:
+        if derived is None or derived[0] is None or derived[0] == m.n:
             return
         n, basis = derived
         page = (m.prov.page if m.prov is not None

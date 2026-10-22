@@ -42,7 +42,7 @@ class _Grid:
         self.rows = list(cells)
         self.columns = list(columns)
         self.unit = unit
-        self.rulers = {0: SimpleNamespace(step=1.0)}
+        self.rulers = {p: SimpleNamespace(step=1.0) for p in (0, 1)}
         self.fields, self.field_boxes = {}, {}
         self.layers, self.samples, self.elevation_rulers = [], [], {}
         self.warnings = []
@@ -75,9 +75,10 @@ TESTS = _column("tests", "TESTS", "tests")
 REMARKS = _column("remarks", "REMARKS", "remarks")
 
 
-def _seed(cells, columns, unit="m"):
+def _seed(cells, columns, unit="m", pages=(0,)):
     qa = []
-    inv = seed_from_grid(_Grid(cells, columns, unit), [0], "SYNTH", qa=qa)
+    inv = seed_from_grid(_Grid(cells, columns, unit), list(pages), "SYNTH",
+                         qa=qa)
     return inv, qa
 
 
@@ -466,6 +467,112 @@ class TestNFromDrives:
         assert "Blow count 2" in xml and "N-Value" not in xml
         ok, diffs = diggs_roundtrip_gate(xml, [inv], project=Project(name="R"))
         assert ok, diffs
+
+
+# ---------------------------------------------------------------------------
+# the review of 06a5c2c: each case it found, kept found
+# ---------------------------------------------------------------------------
+
+DATA = _column("rec", "DATA", "sample_id", "blows", "recovery")
+NUMBERED = _column("id", "SAMPLE NO.", "sample_id")
+
+
+class TestTheReviewsCases:
+    def test_a_data_column_stacking_an_id_and_its_drives_is_one_sample(self):
+        cells = [_cell("rec", "S-3", 3.0), _cell("rec", "4", 3.15),
+                 _cell("rec", "6", 3.3), _cell("rec", "7", 3.45)]
+        inv, qa = _seed(cells, [DATA])
+        assert [s.sample_id for s in inv.samples] == ["S-3"]
+        assert [r.blows for r in inv.spt] == [[4, 6, 7]]
+        # The id is the sample's name, not a recovery of 3 %.
+        assert inv.samples[0].recovery_percent is None
+        assert qa == []
+
+    @pytest.mark.parametrize("word", ["NR", "WOH", "WOR", "REC", "N/A"])
+    def test_a_word_under_sample_no_is_never_an_id(self, word):
+        cells = [_cell("id", "S-3", 3.0), _cell("id", word, 3.15)]
+        inv, _ = _seed(cells, [NUMBERED])
+        assert [s.sample_id for s in inv.samples] == ["S-3"]
+
+    def test_a_bare_number_under_a_prefixed_id_is_not_a_second_id(self):
+        cells = [_cell("id", "S-3", 3.0), _cell("id", "4", 3.2)]
+        inv, _ = _seed(cells, [NUMBERED])
+        assert [s.sample_id for s in inv.samples] == ["S-3"]
+
+    def test_numbers_are_ids_where_the_header_numbers_the_samples(self):
+        cells = [_cell("id", "1", 1.5), _cell("id", "2", 1.8)]
+        inv, _ = _seed(cells, [NUMBERED])
+        assert [s.sample_id for s in inv.samples] == ["1", "2"]
+
+    def test_a_value_midway_inside_the_span_is_not_bound(self):
+        cells = [_cell("id", "S-1", 1.5), _cell("id", "S-2", 2.1),
+                 _cell("mc", "18.0", 1.8)]
+        inv, qa = _seed(cells, [ID, MC])
+        assert _at(inv, 1.5).water_content is None
+        assert _at(inv, 2.1).water_content is None
+        assert _at(inv, 1.8).prov.confidence == pytest.approx(0.3)
+        assert _flags(qa) == ["floor_unbound"]
+
+    def test_a_sample_on_the_sheet_before_still_competes(self):
+        cells = [_cell("id", "S-1", 9.0, page=0),
+                 _cell("id", "S-2", 10.6, page=1),
+                 _cell("mc", "18.0", 9.9, page=1)]
+        inv, qa = _seed(cells, [ID, MC], pages=(0, 1))
+        assert _at(inv, 9.0).water_content is None
+        assert _at(inv, 10.6).water_content is None
+        assert _at(inv, 9.9).water_content == 18.0
+        assert _flags(qa) == ["floor_unbound"]
+
+    def test_a_drive_printed_as_woh_stays_and_stops_the_n(self):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", "WOH", 1.5), _cell("blows", "1", 1.62),
+                 _cell("blows", "2", 1.74), _cell("blows", "3", 1.86)]
+        inv, qa = _seed(cells, [ID, TYPE, BLOWS])
+        record = inv.spt[0]
+        assert record.blows == ["WOH", 1, 2, 3]
+        assert record.n is None and record.n_basis == ""
+        assert "WOH" in inv.samples[0].note
+        assert _flags(qa) == ["floor_drives"]
+
+    def test_a_drive_past_the_printed_halt_is_a_refusal_with_no_n(self):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", "10-25-60", 1.5)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        record = inv.spt[0]
+        assert record.blows == [10, 25, 60]
+        assert record.n is None and record.refusal
+        assert "exceeds 50" in inv.samples[0].note
+        assert "p. 3-51" in inv.samples[0].note
+
+    def test_fifty_in_a_drive_is_not_past_the_halt(self):
+        n, _ = n_from_drives([10, 25, 50], sampler="spt", increment_m=0.1524)
+        assert n == 75
+
+    def test_a_low_dry_unit_weight_is_not_doubted(self):
+        dry = _column("mc", "DRY DENSITY (pcf)", "dry_unit_weight")
+        cells = [_cell("id", "S-1", 1.5), _cell("mc", "30", 1.5)]
+        inv, qa = _seed(cells, [ID, dry])
+        sample = _at(inv, 1.5)
+        assert sample.dry_unit_weight.value == 30.0
+        assert sample.note == "" and qa == []
+
+    @pytest.mark.parametrize("drives, n", [
+        ("50/4\"", None), ('12-50/3"', None), ("4-6", None),
+        ("4-6-7-9", None), ("4-6-7", 13),
+    ])
+    def test_the_cases_the_review_confirmed(self, drives, n):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", drives, 1.5)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        assert inv.spt[0].n == n
+
+    @pytest.mark.parametrize("code", ["R", "MC", "CA"])
+    def test_ring_and_california_samplers_get_no_n(self, code):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", code, 1.5),
+                 _cell("blows", "4-6-7", 1.5)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        assert inv.samples[0].kind == "ring"
+        assert inv.spt[0].n is None
 
 
 # ---------------------------------------------------------------------------
