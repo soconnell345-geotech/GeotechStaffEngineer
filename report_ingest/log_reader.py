@@ -55,16 +55,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from report_ingest.engine import Engine, image_block, text_block, user
 from report_ingest.floor import MergeLog
 from report_ingest.log_floor import (
-    merge_investigations, seed_from_grid, serialise_seed,
+    _SAMPLE_FAMILY, merge_investigations, seed_from_grid, serialise_seed,
 )
 from report_ingest.model import (
     DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
     Quantity, Sample, SPT, WaterLevel,
 )
+from report_ingest.printed_depths import PrintedDepths, printed_depths
 
 __all__ = [
     "read_log", "LogReadResult", "LogReading", "LOG_READER_SYSTEM",
-    "MAX_MODEL_CALLS", "PAGE_DPI", "DEPTH_SLACK", "ZOOM_DPI", "MAX_ZOOMS",
+    "LOG_READER_SYSTEM_PRINTED", "MAX_MODEL_CALLS", "PAGE_DPI",
+    "DEPTH_SLACK", "ZOOM_DPI", "MAX_ZOOMS",
 ]
 
 #: The ceiling in the brief: one main call plus follow-ups for continuation
@@ -98,6 +100,9 @@ MAX_ROWS_PER_PAGE = 260
 #: How much of one cell's text is sent. A description cell can run to a
 #: paragraph; the layers come back from the grid's own layer list as well.
 MAX_CELL_CHARS = 200
+#: Printed depths listed in the brief for pages with no ruler. A log's
+#: whole depth column is a few dozen; past this the pages are not one log.
+MAX_PRINTED_LINES = 120
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +403,11 @@ class LogReadResult:
     #: labels read, and how many layer tops were measured from its pixels.
     #: Empty when the setting is off.
     visual_scales: Dict[str, Any] = field(default_factory=dict)
+    #: The pages of this log whose depth ruler could not be fitted, why, and
+    #: every depth read off what they print instead
+    #: (:mod:`report_ingest.printed_depths`). Empty when every page has a
+    #: ruler, which is the normal state.
+    printed_depths: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -423,6 +433,8 @@ class LogReadResult:
                          if self.template is not None else None),
             **({"visual_scales": dict(self.visual_scales)}
                if self.visual_scales else {}),
+            **({"printed_depths": dict(self.printed_depths)}
+               if self.printed_depths else {}),
         }
 
 
@@ -564,6 +576,34 @@ reading a timing the page does not support -- 'other' and 'unknown' are
 answers. Anything you cannot settle goes in unsettled with the reason.
 """
 
+#: The rule above for a log with no scale, and what it becomes when the
+#: pages PRINT their depths as numbers (RI-18). Only such a log is read under
+#: :data:`LOG_READER_SYSTEM_PRINTED`; every other log reads under
+#: :data:`LOG_READER_SYSTEM` exactly as before.
+_NO_SCALE_RULE = (
+    "If the form\n"
+    "reader found no scale at all, the page carries no depths: report the "
+    "header\n"
+    "fields and the descriptions, report NO depths, and say so in unsettled "
+    "--\n"
+    "UNLESS")
+_PRINTED_DEPTHS_RULE = (
+    "If the form\n"
+    "reader found no scale at all, a depth is on the page only where the "
+    "page PRINTS\n"
+    "it as a number -- in a depth column, as a sample's own interval, at the "
+    "head\n"
+    "of a description, in a header field; the brief lists the ones the form "
+    "reader\n"
+    "found. Report a value at one of those depths, exactly as printed, never "
+    "a\n"
+    "depth worked out from where a row sits or between two printed depths; "
+    "report\n"
+    "the descriptions; and list what has no printed depth under unsettled --\n"
+    "UNLESS")
+LOG_READER_SYSTEM_PRINTED = LOG_READER_SYSTEM.replace(
+    _NO_SCALE_RULE, _PRINTED_DEPTHS_RULE, 1)
+
 _CONTINUE_INSTRUCTION = (
     "You have pages of this log left to read: {pages}. Here are their rows "
     "and their pictures. Return the WHOLE log again -- everything you "
@@ -592,19 +632,29 @@ def _clip(text: str, n: int = MAX_CELL_CHARS) -> str:
     return text if len(text) <= n else text[:n - 1] + "…"
 
 
-def serialise_rows(grid: Any, pages: Sequence[int]) -> str:
+def serialise_rows(grid: Any, pages: Sequence[int],
+                   printed: Optional[PrintedDepths] = None) -> str:
     """The grid's cells as compact lines, one per cell, grouped by page.
 
     ``col | depth | conf | x0,y0,x1,y1 | text``. The box is in the line
     because the model has to copy it back as provenance; a reader that had to
     invent boxes would invent them.
+
+    ``printed`` are the depths a page with no ruler prints
+    (:mod:`report_ingest.printed_depths`); a page that prints some says so
+    instead of saying it carries none.
     """
     out: List[str] = []
     for page in pages:
         ruler = grid.rulers.get(page)
         cells = [c for c in grid.rows if c.page == page]
         out.append(f"--- page {page}: {len(cells)} placed cell(s) ---")
-        if ruler is None:
+        if ruler is None and printed is not None and printed.on_page(page):
+            out.append("  NO DEPTH SCALE ON THIS PAGE. The rows carry no "
+                       "depth; the depths this page PRINTS are listed under "
+                       "THE DEPTHS THESE PAGES PRINT, and there are no "
+                       "others.")
+        elif ruler is None:
             out.append("  NO DEPTH SCALE ON THIS PAGE. Nothing here carries "
                        "a depth.")
         else:
@@ -643,10 +693,37 @@ def serialise_rows(grid: Any, pages: Sequence[int]) -> str:
     return "\n".join(out)
 
 
+def _printed_lines(printed: PrintedDepths) -> List[str]:
+    """The depths the pages with no ruler print, one line each, as the
+    brief shows them."""
+    pages = ", ".join(str(p) for p in printed.pages)
+    out = [
+        f"THE DEPTHS THESE PAGES PRINT (no depth ruler could be fitted on "
+        f"page(s) {pages}, so these numbers, read off the page as printed, "
+        f"are the only depths on them; a value printed on the same line as "
+        f"one of them is at that depth, a value on no such line has none)",
+        "  unit: " + (f"{printed.unit} ({printed.unit_from})" if printed.unit
+                      else "NOT PRINTED"),
+        "  page | how it was read | depth | x0,y0,x1,y1 | text",
+    ]
+    shown = printed.readings[:MAX_PRINTED_LINES]
+    for r in shown:
+        depth = f"{r.top:g}" + ("" if r.bottom is None
+                                else f" to {r.bottom:g}")
+        x0, y0, x1, y1 = r.bbox
+        out.append(f"  {r.page} | {r.how} | {depth} | "
+                   f"{x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f} | {_clip(r.text)}")
+    if len(printed.readings) > len(shown):
+        out.append(f"  [{len(printed.readings) - len(shown)} further printed "
+                   f"depth(s) not listed]")
+    return out
+
+
 def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str,
            seed: Optional[Investigation] = None,
-           no_ruler: bool = False) -> str:
+           no_ruler: bool = False,
+           printed: Optional[PrintedDepths] = None) -> str:
     layers = [
         {"top": ly.top, "bottom": ly.bottom,
          "description": _clip(ly.description, 300),
@@ -698,14 +775,21 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
             "depths and the water are written on the sketch or beside the "
             "face, and those printed numbers are the log. Say so in the "
             "note on every value, and set from_image true.",
-            "If it is a BORING, report only what the rows and the header "
-            "state and leave the depths out: a depth you estimate off a "
-            "picture of a hole with no scale is not a reading.",
+            ("If it is a BORING, its depths are the ones it PRINTS, listed "
+             "below: give a value the depth printed on its own line, exactly "
+             "as printed, and leave out every depth that is not printed. A "
+             "depth worked out from where a row sits on a page with no "
+             "scale is not a reading." if printed else
+             "If it is a BORING, report only what the rows and the header "
+             "state and leave the depths out: a depth you estimate off a "
+             "picture of a hole with no scale is not a reading."),
             "",
         ]
+    if printed:
+        parts += _printed_lines(printed) + [""]
     parts += [
         "THE ROWS",
-        serialise_rows(grid, pages),
+        serialise_rows(grid, pages, printed),
     ]
     return "\n".join(parts)
 
@@ -758,9 +842,15 @@ class _Builder:
 
     def __init__(self, reading: LogReading, window: Optional[Tuple[float, float]],
                  pages: Sequence[int], report_id: str,
-                 no_ruler: bool = False) -> None:
+                 no_ruler: bool = False,
+                 printed: Optional[PrintedDepths] = None) -> None:
         self.reading = reading
         self.window = window
+        #: The depths the pages with no ruler PRINT (RI-18). On such a page a
+        #: depth the window cannot vouch for is accepted when it is one of
+        #: these, and refused when it is not. Empty on a log whose every page
+        #: has a ruler, and then the gate is what it always was.
+        self.printed = printed if printed is not None else PrintedDepths()
         self.pages = list(pages)
         self.report_id = report_id
         self.unresolved: List[Dict[str, Any]] = []
@@ -803,15 +893,25 @@ class _Builder:
                        "it against a ruler"})
             return Quantity(value=value, unit=self.unit)
         if self.window is None:
+            accepted = self._printed(value, what, page)
+            if accepted is not None:
+                return accepted
             self.unresolved.append({
                 "what": what, "page": page, "value": value,
-                "why": "no depth scale was found on any page of this log, so "
-                       "the page carries no depths; the reader returned one "
-                       "anyway and it was refused",
+                "why": ("no depth scale was found on any page of this log, "
+                        "so the page carries no depths; the reader returned "
+                        "one anyway and it was refused" if not self.printed
+                        else f"no depth ruler could be fitted on page {page} "
+                        f"and nothing printed on it reads {value:g}, so the "
+                        f"depth stands on nothing on the page; refused rather "
+                        f"than accepted"),
                 "refused_by": "python"})
             return None
         lo, hi = self.window
         if not (lo <= value <= hi):
+            accepted = self._printed(value, what, page)
+            if accepted is not None:
+                return accepted
             self.unresolved.append({
                 "what": what, "page": page, "value": value,
                 "why": f"depth {value:g} is outside what the scale on this "
@@ -819,6 +919,20 @@ class _Builder:
                        f"accepted",
                 "refused_by": "python"})
             return None
+        return Quantity(value=value, unit=self.unit)
+
+    def _printed(self, value: float, what: str,
+                 page: Optional[int]) -> Optional[Quantity]:
+        """``value`` as a depth when a page with no ruler prints it, listed
+        as a change saying how it was read; None otherwise."""
+        hit = self.printed.supporting(value, page)
+        if hit is None:
+            return None
+        self.changes.append({
+            "what": what, "page": page,
+            "why": f"no depth ruler on page {page}; {value:g} is the depth "
+                   f"the page prints {hit.how} ('{hit.text}'), and nothing "
+                   f"checked it against a ruler"})
         return Quantity(value=value, unit=self.unit)
 
     def _prov(self, prov: Optional[ReadProv], what: str) -> Optional[Provenance]:
@@ -1212,21 +1326,30 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # shown to the model as the record it starts from. The pages' text lines
     # go with it, because a PIT states its plan size in words the grid's
     # borehole header vocabulary has no term for.
-    header_lines: List[Any] = []
+    page_lines: Dict[int, List[Any]] = {}
     for page in pages:
         try:
-            header_lines.extend(doc.page(page).lines)
+            page_lines[page] = list(doc.page(page).lines)
         except Exception:                        # a page that will not read
             continue                             # simply contributes nothing
+    header_lines = [ln for page in pages for ln in page_lines.get(page, ())]
+    # A page whose depth ruler could not be fitted still PRINTS its depths,
+    # often: in a depth column, as a sample's interval, at the head of a
+    # description (RI-18). They are read once, here, and are the only depths
+    # such a page has -- for the floor, the brief and the gate alike. On a
+    # log whose every page has a ruler this finds nothing.
+    printed = printed_depths(grid, pages, lines=page_lines)
     floor = seed_from_grid(grid, pages, report_id, template=template,
-                           lines=header_lines)
+                           lines=header_lines, printed=printed)
     no_ruler = not bool(getattr(grid, "rulers", None))
+    system = (LOG_READER_SYSTEM_PRINTED if no_ruler and printed
+              else LOG_READER_SYSTEM)
     brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor,
-                   no_ruler=no_ruler)
+                   no_ruler=no_ruler, printed=printed)
     messages: List[Dict[str, Any]] = [
         user(text_block(brief),
              *[image_block(png) for png in images_for(pages)])]
-    reply = engine.complete(messages, system=LOG_READER_SYSTEM,
+    reply = engine.complete(messages, system=system,
                             output_format=LogReading)
     charge(reply)
     reading = reply.parsed
@@ -1248,9 +1371,9 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         messages.append(user(
             text_block(_CONTINUE_INSTRUCTION.format(
                 pages=", ".join(str(p) for p in left))),
-            text_block(serialise_rows(grid, left)),
+            text_block(serialise_rows(grid, left, printed)),
             *[image_block(png) for png in images_for(left)]))
-        reply = engine.complete(messages, system=LOG_READER_SYSTEM,
+        reply = engine.complete(messages, system=system,
                                 output_format=LogReading)
         charge(reply)
         model_calls += 1
@@ -1278,7 +1401,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                 n=len(reading.unsettled), items=items,
                 are="are" if zooms else "is the page again, and")),
             *[image_block(png) for _page, _box, png in zooms]))
-        reply = engine.complete(messages, system=LOG_READER_SYSTEM,
+        reply = engine.complete(messages, system=system,
                                 output_format=LogReading)
         charge(reply)
         model_calls += 1
@@ -1287,7 +1410,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
             reading = reply.parsed
 
     builder = _Builder(reading, _depth_window(doc, grid, pages), pages,
-                       report_id, no_ruler=no_ruler)
+                       report_id, no_ruler=no_ruler, printed=printed)
     model_investigation = builder.build()
     # THE MERGE: the model's answer folded onto the floor. Nothing the grid
     # placed is lost; every contradiction is on the record.
@@ -1309,7 +1432,9 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     return LogReadResult(
         investigation=merged,
         changes=builder.changes,
-        unresolved=builder.unresolved,
+        # First, one row per page with no ruler: that it was not fitted, why,
+        # what was read from print instead and what still has no depth.
+        unresolved=printed.qa_rows(grid, _SAMPLE_FAMILY) + builder.unresolved,
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),
@@ -1323,4 +1448,5 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         reconciled=merge_log.reconciled,
         follow_up=follow_up,
         template=template,
-        visual_scales=scales_info)
+        visual_scales=scales_info,
+        printed_depths=printed.to_dict() if printed.pages else {})
