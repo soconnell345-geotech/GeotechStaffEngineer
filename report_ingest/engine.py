@@ -3,8 +3,10 @@
 Two passes sit between planlens' rule-based page labels and any reader:
 :mod:`report_ingest.triage` and :mod:`report_ingest.label_review`. Both are
 written against the small :class:`Engine` protocol below rather than against
-an SDK, so the same code runs on the Claude API here and on the cluster's
-Prompter later. The protocol is one method::
+an SDK, so the same code runs on the Claude API here, on the cluster's
+Prompter, and on whatever chat model the app itself was built with --
+Foundry's own model classes among them (:class:`ChatModelEngine`, BACKLOG
+RI-03). The protocol is one method::
 
     complete(messages, system=..., tools=..., images=..., output_format=...)
 
@@ -48,7 +50,8 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
-    "engine_for",
+    "engine_for", "ChatModelEngine", "ANSWER_TOOL", "CUT_REASONS",
+    "DEFAULT_MAX_TOKENS",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
     "price_for", "strict_schema",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
@@ -134,7 +137,33 @@ def price_for(model: str) -> Optional[Tuple[float, float]]:
     return price
 
 
-DEFAULT_MAX_TOKENS = 16000
+#: The output cap a call gets when it names none, on the engines that keep a
+#: cap of their own (:class:`ClaudeEngine`, :class:`PrompterEngine`;
+#: :class:`ChatModelEngine` takes its model's own). BACKLOG RI-19: it was
+#: 16,000, and on a reasoning model the cap holds the reasoning as well as
+#: the answer, so one long report's label findings stopped there
+#: (``stop_reason 'length'``) and the report failed with them
+#: (``module_work/harness_theory/report_ingest.md`` section 8.2, P1). 32,000
+#: is the cap every engine the app builds sends
+#: (``webapp.engine_config.DEFAULT_MAX_TOKENS``), chosen there within each
+#: production model's documented output limit (GPT-5.1, 5.4 and Sol: 128K;
+#: GPT-4.1: 32,768; Claude Opus 4.x and later: 32,000 or more). A cap costs
+#: nothing until it is used. What happens when a reply still reaches it:
+#: :attr:`Reply.cut_off`, and the README's "At the output cap".
+DEFAULT_MAX_TOKENS = 32000
+
+#: Finish reasons that mean a reply stopped at its output cap, as OpenAI
+#: (``length``), Anthropic (``max_tokens``) and a Responses status
+#: (``incomplete``, ``max_output_tokens``) say it.
+CUT_REASONS = frozenset({"length", "max_tokens", "max_output_tokens",
+                         "incomplete"})
+
+
+def _reason(value: Any) -> str:
+    """A finish reason as lower-case text, an SDK enum's included
+    (``FinishReason.LENGTH`` is ``length``)."""
+    return str(getattr(value, "value", value) or "").rsplit(".", 1)[-1] \
+        .strip().lower()
 
 
 # -- neutral message blocks -------------------------------------------------
@@ -288,6 +317,12 @@ class Reply:
     @property
     def wants_tools(self) -> bool:
         return bool(self.tool_calls)
+
+    @property
+    def cut_off(self) -> bool:
+        """Whether the reply stopped at its output cap: its end is missing,
+        and a structured answer cut there does not parse (BACKLOG RI-19)."""
+        return _reason(self.stop_reason) in CUT_REASONS
 
 
 class CostMeter:
@@ -1116,6 +1151,505 @@ class PrompterEngine:
         )
 
 
+# -- the app's own chat model -----------------------------------------------
+
+#: The tool a structured answer comes back through on
+#: :class:`ChatModelEngine`. A pass's own tool may not take this name.
+ANSWER_TOOL = "answer"
+
+#: What the model is told when a structured answer is asked for.
+_ANSWER_NOTE = (
+    "Give your answer by calling the `answer` tool, with the whole answer "
+    "as its arguments, not by writing it out as text.")
+_ANSWER_NOTE_WITH_TOOLS = (
+    "Use the other tools to look further when you need to. Give your answer "
+    "by calling the `answer` tool, with the whole answer as its arguments, "
+    "not by writing it out as text.")
+
+#: The result sent back for a tool call nothing answered: the answer tool's
+#: own call (the call WAS the answer), or a call the pass left out. Every
+#: provider refuses a tool call with no result after it.
+_ANSWER_RECEIVED = "Answer received."
+_NOT_ANSWERED = "(this call was not run)"
+
+#: The fields a LangChain chat model keeps its per-reply output cap in.
+_CAP_FIELDS = ("max_tokens", "max_output_tokens", "max_completion_tokens")
+
+
+class ChatModelEngine:
+    """:class:`Engine` over any LangChain chat model: the app's own (RI-03).
+
+    The app builds its agent on a LangChain chat model -- on Foundry,
+    ``webapp.palantir_sdk_engine``'s classes over ``palantir_models``, GPT
+    or Claude; elsewhere ``ChatOpenAI``, ``ChatAnthropic`` or the Prompter
+    bridge -- and this engine reads a report on that same model, so the
+    ingest runs wherever the page does. Nothing here imports a provider:
+    the model object does the talking, and its own retries and limits
+    apply.
+
+    HOW A CALL GOES OUT:
+
+    * the pass's tools are bound with ``bind_tools``, as OpenAI function
+      specs;
+    * **a structured answer comes back as a call to the** ``answer`` **tool**,
+      whose arguments are the answer: Foundry's model classes take no
+      ``response_format``. They take no ``tool_choice`` either (the Claude
+      class refuses a named one), so the call cannot be forced on the wire:
+      the answer tool is offered beside the pass's own tools (alone when
+      there are none), its schema is :func:`strict_schema`'s, and the system
+      prompt says to call it. An answer written out as JSON text is parsed
+      too. A reply with neither comes back with ``parsed`` None, as on
+      every engine, and the pass's own re-ask or QA entry follows;
+    * a picture goes in as an ``image_url`` block with a data URI, the way
+      the app's vision tools send one (``detail`` only when the block asks);
+      a tool's picture rides in a user message straight after the tool
+      results, as on :class:`PrompterEngine`, because a tool message holds
+      text on every route;
+    * the assistant turn comes back with the provider's own message carried
+      as an ``opaque`` block, so a Claude thinking block or a call id goes
+      back exactly as it arrived; the answer call, which no pass answers,
+      gets a short result of its own on the next request, and a call whose
+      arguments did not parse is dropped from the turn that goes back.
+
+    ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
+    :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
+    :attr:`meter` all see the same number. Usage is read off the reply's
+    ``usage_metadata``, the cached input apart from the rest.
+
+    THE OUTPUT CAP (BACKLOG RI-19) is the model's own: no cap is sent unless
+    a call names one, so every call kind gets what the host built the model
+    with -- 32,000 tokens by default on the app
+    (``webapp.engine_config.DEFAULT_MAX_TOKENS``, ``GEOTECH_WEBAPP_MAX_TOKENS``
+    to change), within the model's own documented limit. A call that names a
+    cap gets it on a copy of the model, never above the model's own. A reply
+    that stops at the cap says so (:attr:`Reply.cut_off`) and is logged.
+    """
+
+    def __init__(self, chat_model: Any, *,
+                 meter: Optional[CostMeter] = None,
+                 max_tokens: Optional[int] = None,
+                 name: Optional[str] = None) -> None:
+        self.chat_model = chat_model
+        self.name = str(name or _chat_model_name(chat_model)
+                        or type(chat_model).__name__)
+        self.model = self.name
+        self.meter = meter if meter is not None else CostMeter()
+        #: The model's own per-reply cap, as the host built it; None when it
+        #: carries none (the provider's default then applies).
+        self.output_cap: Optional[int] = _own_cap(chat_model)
+        #: A cap for every call that names none; None: the model's own.
+        self.max_tokens: Optional[int] = int(max_tokens) if max_tokens else None
+        #: The model that answered the last call, as the reply names it.
+        self.served_by: Optional[str] = None
+        self._capped: Dict[int, Any] = {}
+
+    # -- the cap -----------------------------------------------------------
+    def _cap_for(self, asked: Optional[int]) -> Optional[int]:
+        """The cap to send, or None for the model's own."""
+        wanted = asked or self.max_tokens
+        if not wanted:
+            return None
+        wanted = int(wanted)
+        if self.output_cap and wanted >= self.output_cap:
+            return None
+        return wanted
+
+    def _model_for(self, cap: Optional[int]) -> Any:
+        """The model with its cap held to ``cap``: a copy made once per cap
+        that shares the original's client; the model itself for None or for
+        a model that keeps no cap a copy can change."""
+        if cap is None:
+            return self.chat_model
+        if cap in self._capped:
+            return self._capped[cap]
+        made = self.chat_model
+        fields = getattr(type(self.chat_model), "model_fields", None)
+        copy = getattr(self.chat_model, "model_copy", None)
+        if isinstance(fields, dict) and callable(copy):
+            for key in _CAP_FIELDS:
+                if key in fields:
+                    try:
+                        made = copy(update={key: cap})
+                    except Exception:               # noqa: BLE001
+                        made = self.chat_model
+                    break
+        self._capped[cap] = made
+        return made
+
+    # -- translation -------------------------------------------------------
+    @staticmethod
+    def _user_content(blocks: Sequence[Any]) -> Any:
+        """Neutral blocks as LangChain user content."""
+        import base64
+
+        out: List[Dict[str, Any]] = []
+        for block in blocks:
+            if isinstance(block, str):
+                out.append({"type": "text", "text": block})
+                continue
+            kind = block.get("type")
+            if kind == "text":
+                out.append({"type": "text", "text": block["text"]})
+            elif kind == "image":
+                media = image_media_type(block["png"])
+                b64 = base64.b64encode(block["png"]).decode("ascii")
+                url: Dict[str, Any] = {"url": f"data:{media};base64,{b64}"}
+                if block.get("detail"):
+                    url["detail"] = str(block["detail"])
+                out.append({"type": "image_url", "image_url": url})
+            elif kind == "opaque":
+                continue                # another engine's block: not ours
+            else:
+                raise ValueError(
+                    f"{kind!r} cannot go in a user message here; tool calls "
+                    f"and tool results are messages of their own")
+        if len(out) == 1 and out[0]["type"] == "text":
+            return out[0]["text"]
+        return out
+
+    @classmethod
+    def _to_langchain(cls, messages: Sequence[Dict[str, Any]],
+                      system: Optional[str]) -> List[Any]:
+        from langchain_core.messages import (AIMessage, HumanMessage,
+                                             SystemMessage, ToolMessage)
+
+        out: List[Any] = []
+        if system:
+            out.append(SystemMessage(content=system))
+        for message in messages:
+            role, content = message["role"], message["content"]
+            if role == "system":
+                out.append(SystemMessage(content=content if isinstance(
+                    content, str) else cls._user_content(content)))
+                continue
+            if role == "assistant":
+                if isinstance(content, str):
+                    out.append(AIMessage(content=content))
+                    continue
+                kept = next((b["data"] for b in content
+                             if isinstance(b, dict)
+                             and b.get("type") == "opaque"
+                             and isinstance(b.get("data"), AIMessage)), None)
+                if kept is not None:
+                    out.append(kept)
+                    continue
+                text = "".join(b["text"] for b in content
+                               if isinstance(b, dict)
+                               and b.get("type") == "text")
+                calls = [{"name": b["name"], "args": dict(b.get("input") or {}),
+                          "id": b["id"], "type": "tool_call"}
+                         for b in content if isinstance(b, dict)
+                         and b.get("type") == "tool_use"]
+                out.append(AIMessage(content=text, tool_calls=calls))
+                continue
+            if isinstance(content, str):
+                out.append(HumanMessage(content=content))
+                continue
+            blocks = list(content)
+            results = [b for b in blocks if isinstance(b, dict)
+                       and b.get("type") == "tool_result"]
+            plain = [b for b in blocks if not (isinstance(b, dict)
+                                               and b.get("type") == "tool_result")]
+            pictures: List[Dict[str, Any]] = []
+            for result in results:
+                body = result["content"]
+                if isinstance(body, str):
+                    text = body
+                else:
+                    words = [b["text"] for b in body
+                             if isinstance(b, dict) and b.get("type") == "text"]
+                    images = [b for b in body
+                              if isinstance(b, dict) and b.get("type") == "image"]
+                    text = " ".join(words)
+                    if images:
+                        text = ((text + " ") if text else "") + (
+                            "[the picture follows in the next message]")
+                        pictures.append(text_block(
+                            f"Picture for tool call {result['tool_use_id']}"
+                            + (f": {' '.join(words)}" if words else "")))
+                        pictures.extend(images)
+                out.append(ToolMessage(
+                    content=text or "(no content)",
+                    tool_call_id=result["tool_use_id"],
+                    status="error" if result.get("is_error") else "success"))
+            trailing = plain + pictures
+            if trailing:
+                body = cls._user_content(trailing)
+                if body:
+                    out.append(HumanMessage(content=body))
+        return _answer_every_call(out)
+
+    # -- the protocol ------------------------------------------------------
+    def complete(self, messages: Sequence[Dict[str, Any]], *,
+                 system: Optional[str] = None,
+                 tools: Optional[Sequence[Dict[str, Any]]] = None,
+                 images: Optional[Sequence[bytes]] = None,
+                 output_format: Any = None,
+                 max_tokens: Optional[int] = None) -> Reply:
+        msgs = [dict(m) for m in messages]
+        if images:
+            if not msgs or msgs[-1]["role"] != "user":
+                msgs.append(user())
+            content = msgs[-1]["content"]
+            if isinstance(content, str):
+                content = [text_block(content)]
+            msgs[-1] = {"role": "user",
+                        "content": list(content)
+                        + [image_block(p) for p in images]}
+
+        offered = [_function_spec(t) for t in (tools or [])]
+        if output_format is not None:
+            if any(t["function"]["name"] == ANSWER_TOOL for t in offered):
+                raise ValueError(
+                    f"a pass tool may not be named {ANSWER_TOOL!r}: that is "
+                    f"how this engine returns a structured answer")
+            offered.append(_answer_spec(output_format))
+            note = _ANSWER_NOTE_WITH_TOOLS if tools else _ANSWER_NOTE
+            system = f"{system}\n\n{note}" if system else note
+
+        model = self._model_for(self._cap_for(max_tokens))
+        runnable = model.bind_tools(offered) if offered else model
+        request = self._to_langchain(msgs, system)
+        started = time.time()
+        message = runnable.invoke(request)
+        seconds = time.time() - started
+        return self._reply(message, output_format, seconds)
+
+    def _reply(self, message: Any, output_format: Any,
+               seconds: float) -> Reply:
+        meta = getattr(message, "response_metadata", None) or {}
+        self.served_by = str(meta.get("model_name") or meta.get("model")
+                             or "") or self.name
+        usage = _usage_of(message)
+        self.meter.add(self.name, usage, seconds, served_by=self.served_by)
+
+        # A call whose arguments did not parse (a reply cut mid-call) is kept
+        # by ChatOpenAI as text on ``invalid_tool_calls``, and sent back as a
+        # call if left there. It is read for an answer once, then dropped
+        # from the turn that goes back: nothing can run it.
+        spoiled = [c.get("args") for c in
+                   (getattr(message, "invalid_tool_calls", None) or [])
+                   if c.get("name") == ANSWER_TOOL]
+        if getattr(message, "invalid_tool_calls", None):
+            message = message.model_copy(update={"invalid_tool_calls": []})
+        message = _with_call_ids(message)
+        text = _text_of(getattr(message, "content", ""))
+        calls = list(getattr(message, "tool_calls", None) or [])
+        answers = [c for c in calls if output_format is not None
+                   and c.get("name") == ANSWER_TOOL]
+        wanted = [c for c in calls if c not in answers]
+        parsed = None
+        if output_format is not None:
+            for args in [c.get("args") for c in answers] + spoiled:
+                parsed = _validated(output_format, args)
+                if parsed is not None:
+                    break
+            if parsed is None and text:
+                parsed = _validated(output_format, _json_in(text))
+
+        incomplete = meta.get("incomplete_details")
+        stop = _reason(meta.get("finish_reason") or meta.get("stop_reason")
+                       or (incomplete.get("reason")
+                           if isinstance(incomplete, dict) else "")
+                       or meta.get("status"))
+        blocks: List[Dict[str, Any]] = []
+        if text:
+            blocks.append(text_block(text))
+        blocks.extend(tool_use_block(c["id"], c.get("name", ""),
+                                     dict(c.get("args") or {}))
+                      for c in calls)
+        blocks.append(opaque_block(message))
+        reply = Reply(
+            text=text,
+            tool_calls=[ToolCall(c["id"], c.get("name", ""),
+                                 dict(c.get("args") or {})) for c in wanted],
+            parsed=parsed,
+            stop_reason=stop,
+            usage=usage,
+            model=self.served_by,
+            seconds=seconds,
+            content=blocks,
+        )
+        if reply.cut_off:
+            logging.getLogger(__name__).warning(
+                "%s: a reply stopped at its output cap (%s tokens out); a "
+                "structured answer cut there does not parse",
+                self.name, usage.output_tokens)
+        return reply
+
+
+def _chat_model_name(model: Any) -> str:
+    """What a chat model calls itself: its model name, id or API name."""
+    for key in ("model_name", "model", "model_api_name", "model_id",
+                "deployment_name"):
+        try:
+            value = getattr(model, key, None)
+        except Exception:                                # noqa: BLE001
+            continue
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _own_cap(model: Any) -> Optional[int]:
+    """The per-reply output cap a chat model was built with, or None."""
+    for key in _CAP_FIELDS:
+        try:
+            value = getattr(model, key, None)
+        except Exception:                                # noqa: BLE001
+            continue
+        if isinstance(value, int) and not isinstance(value, bool) \
+                and value > 0:
+            return value
+    return None
+
+
+def _function_spec(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """A pass's tool (``name``, ``description``, ``input_schema``) as an
+    OpenAI function spec, which every LangChain ``bind_tools`` takes."""
+    return {"type": "function", "function": {
+        "name": tool["name"], "description": tool.get("description", ""),
+        "parameters": tool.get("input_schema")
+        or {"type": "object", "properties": {}}}}
+
+
+def _answer_spec(output_format: Any) -> Dict[str, Any]:
+    """The answer tool for one structured answer: the answer's own schema,
+    in the shape strict mode takes, as the tool's parameters."""
+    what = getattr(output_format, "__name__", "answer")
+    return {"type": "function", "function": {
+        "name": ANSWER_TOOL,
+        "description": (f"Your answer, as a {what}. Call this once, with the "
+                        f"whole answer as the arguments."),
+        "parameters": strict_schema(output_format)}}
+
+
+def _answer_every_call(messages: List[Any]) -> List[Any]:
+    """``messages`` with a result after every tool call that had none -- the
+    answer tool's own call above all, which a pass never answers -- each
+    straight after the results that are there, before anything else."""
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    out: List[Any] = []
+    i = 0
+    while i < len(messages):
+        message = messages[i]
+        out.append(message)
+        i += 1
+        if not isinstance(message, AIMessage):
+            continue
+        wanted = [(c.get("id"), c.get("name"))
+                  for c in (message.tool_calls or []) if c.get("id")]
+        if not wanted:
+            continue
+        answered = set()
+        while i < len(messages) and isinstance(messages[i], ToolMessage):
+            answered.add(messages[i].tool_call_id)
+            out.append(messages[i])
+            i += 1
+        for call_id, name in wanted:
+            if call_id not in answered:
+                out.append(ToolMessage(
+                    content=(_ANSWER_RECEIVED if name == ANSWER_TOOL
+                             else _NOT_ANSWERED),
+                    tool_call_id=call_id))
+    return out
+
+
+def _with_call_ids(message: Any) -> Any:
+    """The reply with an id on every tool call: a result has to name the
+    call it answers, and not every route returns one."""
+    calls = list(getattr(message, "tool_calls", None) or [])
+    if not calls or all(c.get("id") for c in calls):
+        return message
+    import uuid
+    fixed = [dict(c, id=c.get("id") or f"call_{uuid.uuid4().hex[:12]}")
+             for c in calls]
+    return message.model_copy(update={"tool_calls": fixed})
+
+
+def _text_of(content: Any) -> str:
+    """A reply's words: a string, or the text blocks of a list (thinking
+    and tool blocks are not words)."""
+    if isinstance(content, str):
+        return content
+    out: List[str] = []
+    for block in content or []:
+        if isinstance(block, str):
+            out.append(block)
+        elif isinstance(block, dict) and block.get("type") == "text":
+            out.append(str(block.get("text") or ""))
+    return "".join(out)
+
+
+def _usage_of(message: Any) -> Usage:
+    """A reply's tokens. LangChain counts cache reads and writes INTO the
+    input; here they are apart, as :class:`Usage` keeps them."""
+    um = getattr(message, "usage_metadata", None) or {}
+    if not um:
+        meta = getattr(message, "response_metadata", None) or {}
+        raw = meta.get("token_usage") or meta.get("usage") or {}
+        um = {"input_tokens": raw.get("prompt_tokens")
+              or raw.get("input_tokens") or 0,
+              "output_tokens": raw.get("completion_tokens")
+              or raw.get("output_tokens") or 0}
+    details = um.get("input_token_details") or {}
+    read = int(details.get("cache_read") or 0)
+    made = int(details.get("cache_creation") or 0)
+    total = int(um.get("input_tokens") or 0)
+    return Usage(input_tokens=max(0, total - read - made),
+                 output_tokens=int(um.get("output_tokens") or 0),
+                 cache_read_tokens=read, cache_write_tokens=made)
+
+
+def _json_in(text: str) -> Any:
+    """The JSON object a reply wrote out as text, fenced or bare, or None."""
+    body = str(text or "").strip()
+    if body.startswith("```"):
+        body = body.split("\n", 1)[1] if "\n" in body else ""
+        body = body.rsplit("```", 1)[0]
+    try:
+        return json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    start, end = body.find("{"), body.rfind("}")
+    if 0 <= start < end:
+        try:
+            return json.loads(body[start:end + 1])
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
+def _without_nulls(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _without_nulls(v) for k, v in value.items()
+                if v is not None}
+    if isinstance(value, list):
+        return [_without_nulls(v) for v in value]
+    return value
+
+
+def _validated(output_format: Any, args: Any) -> Any:
+    """``args`` as an ``output_format``, or None. Strict mode's schema makes
+    every field required, so a model may send null for a field that has a
+    default; the answer is tried again with the nulls left out, letting
+    the defaults stand."""
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    if not isinstance(args, dict):
+        return None
+    for candidate in (args, _without_nulls(args)):
+        try:
+            return output_format.model_validate(candidate)
+        except Exception:                                # noqa: BLE001
+            continue
+    return None
+
+
 # ---------------------------------------------------------------------------
 # finding the engine the app is already holding
 # ---------------------------------------------------------------------------
@@ -1125,24 +1659,31 @@ def engine_for(obj: Any, model: Optional[str] = None,
     """The ingest engine for whatever the host handed the agent, or None.
 
     The app builds its agents around its own engines -- ``NativeToolEngine``
-    and ``PrompterBridgeEngine`` on the cluster, a LangChain chat model
-    locally -- and every one of them is holding the live Prompter this
-    package's :class:`PrompterEngine` needs. This digs it out:
+    and ``PrompterBridgeEngine`` on the cluster, a LangChain chat model on
+    every page, which the page wraps for its vision tools
+    (``LangChainVisionEngine``). This finds the one to read a report on:
 
     * something that already satisfies the :class:`Engine` protocol comes
       back unchanged;
     * an app engine wrapping a Prompter (``prompter`` or ``_prompter``)
       becomes a :class:`PrompterEngine` over that Prompter;
     * a live Prompter itself becomes one directly;
+    * a LangChain chat model -- itself, or the one inside the wrapper the
+      page puts round it (``model`` / ``_model``) -- becomes a
+      :class:`ChatModelEngine` over it (BACKLOG RI-03; on Foundry, the
+      page's own ``palantir_models`` model), unless it holds a Prompter,
+      which keeps the Prompter's engine as above. A chat model is the one
+      model the page holds: asked for a different one (``model``, a
+      Funhouse tier for the page voter), there is none, and the caller
+      falls back to the one engine it has;
     * anything else comes back **None**, which is an answer. A caller that
       cannot get an engine says so rather than falling back to a model nobody
-      asked for: the app runs on Funhouse's OpenAI tiers, and quietly reading
-      a 400-page report on something else would be a bill and a number that
-      belong to nobody.
+      asked for: quietly reading a 400-page report on something else would
+      be a bill and a number that belong to nobody.
     """
     if obj is None:
         return None
-    if isinstance(obj, (ClaudeEngine, PrompterEngine)):
+    if isinstance(obj, (ClaudeEngine, PrompterEngine, ChatModelEngine)):
         return obj
     complete = getattr(obj, "complete", None)
     if callable(complete):
@@ -1160,6 +1701,39 @@ def engine_for(obj: Any, model: Optional[str] = None,
                                   meter=meter)
     if _looks_like_prompter(obj):
         return PrompterEngine(obj, model or PROMPTER_MODELS[1], meter=meter)
+    chat = _chat_model_in(obj)
+    if chat is not None:
+        for name in ("prompter", "_prompter"):
+            inner = getattr(chat, name, None)
+            if inner is not None and _looks_like_prompter(inner):
+                return PrompterEngine(inner, model or PROMPTER_MODELS[1],
+                                      meter=meter)
+        if model and model != _chat_model_name(chat):
+            return None
+        return ChatModelEngine(chat, meter=meter)
+    return None
+
+
+def _is_chat_model(obj: Any) -> bool:
+    """A LangChain chat model, by what it offers: it can be invoked and can
+    have tools bound."""
+    return (not isinstance(obj, str)
+            and callable(getattr(obj, "invoke", None))
+            and callable(getattr(obj, "bind_tools", None)))
+
+
+def _chat_model_in(obj: Any) -> Any:
+    """``obj`` if it is a chat model, else the chat model the wrapper holds
+    (``LangChainVisionEngine.model``), else None."""
+    if _is_chat_model(obj):
+        return obj
+    for name in ("model", "_model"):
+        try:
+            inner = getattr(obj, name, None)
+        except Exception:                                # noqa: BLE001
+            continue
+        if inner is not None and _is_chat_model(inner):
+            return inner
     return None
 
 

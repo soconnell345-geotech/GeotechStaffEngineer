@@ -52,8 +52,9 @@ def report_pdf():
 
 @pytest.fixture
 def engine(monkeypatch):
-    """The ingest's engine: the page's own model is no ingest engine here
-    (BACKLOG RI-03), so the one the app would dig out is the scripted one."""
+    """The ingest's engine: the scripted one the ingest's own tests use, in
+    place of the page's own model (which ``test_report_ingest_chat_model``
+    reads a report on, BACKLOG RI-03)."""
     from report_ingest import engine as engine_mod
 
     fake = FakeEngine(full_script())

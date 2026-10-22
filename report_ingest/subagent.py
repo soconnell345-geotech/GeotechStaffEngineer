@@ -477,10 +477,12 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
-    engine -- on the cluster a
-    :class:`~report_ingest.engine.PrompterEngine` over the app's live
-    Prompter. It is a factory rather than an engine so that each run gets its
-    own cost meter and nothing is held across turns.
+    engine -- on a page a :class:`~report_ingest.engine.ChatModelEngine`
+    over the page's own chat model (Foundry's, BACKLOG RI-03), on the
+    cluster a :class:`~report_ingest.engine.PrompterEngine` over the app's
+    live Prompter -- or None, and the answer then says there is none. It is
+    a factory rather than an engine so that each run gets its own cost meter
+    and nothing is held across turns.
 
     ``out_dir_factory`` decides where a report's outputs go, given the file
     as it was named (a path or an attachment key); the default is a folder

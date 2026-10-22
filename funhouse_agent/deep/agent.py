@@ -1083,12 +1083,15 @@ DEFAULT_REPORT_LIBRARY_MAX_MODEL_CALLS = 10
 
 
 def _report_ingest_engine_factory(engine, model=None):
-    """A factory that digs the app's live Prompter out of ``engine``.
+    """A factory for the ingest's engine on whatever ``engine`` holds: the
+    page's own chat model (``report_ingest.engine.ChatModelEngine``, how it
+    runs on Foundry; BACKLOG RI-03) or a live Prompter.
 
     Called once per ingest run so each run gets its own cost meter. Returns
-    None when this deployment has no Prompter to read a report with, and the
-    sub-agent then says so rather than reading it on something else.
-    ``model`` names a tier (the page voter's cheap one), as the tool asks.
+    None when there is nothing to read a report with, and the sub-agent then
+    says so rather than reading it on something else. ``model`` names a tier
+    (the page voter's cheap one), as the tool asks; a chat model is not one,
+    and the voter then runs on the ingest's own engine.
     """
     def factory():
         from report_ingest.engine import engine_for

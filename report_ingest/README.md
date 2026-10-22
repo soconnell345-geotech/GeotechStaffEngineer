@@ -1023,6 +1023,63 @@ one document sharing one library row — which it says out loud, so a folder of
 than files, because a report bound inside a report is a row of its own; the
 index counts them in a `Bound in` column.
 
+## The engines (`engine.py`)
+
+Every pass is written against one method, `complete(messages, system=,
+tools=, images=, output_format=, max_tokens=)`, over neutral message blocks.
+Three engines implement it: `ClaudeEngine` (the Claude API, for development),
+`PrompterEngine` (Funhouse's Prompter, and the shim the Foundry stage runs of
+October 2026 used) and, since BACKLOG RI-03, `ChatModelEngine`: any LangChain
+chat model, which is how a report is read on the app's own page. On Foundry
+the page's model is a `palantir_models` class
+(`webapp/palantir_sdk_engine.py`, GPT or Claude).
+
+**How `ChatModelEngine` calls the model.** A pass's tools are bound with
+`bind_tools`. A structured answer comes back as a call to an `answer` tool
+whose arguments are the answer, because Foundry's model classes take no
+`response_format`; they take no `tool_choice` either, so the call cannot be
+forced on the wire. The answer tool is offered beside the pass's own tools
+(alone when there are none), its schema is `strict_schema`'s, the system
+prompt says to call it, and an answer written out as JSON text is parsed as
+well. A reply with neither comes back with `parsed` None, as on every engine,
+and the pass's own re-ask or QA entry follows. Pictures go in as `image_url`
+blocks with data URIs, as the app's vision tools send them; a tool's picture
+follows its result in a user message, as on `PrompterEngine`. The provider's
+own reply is carried back into the conversation unchanged, so a Claude
+thinking block or a call id returns as it arrived, and the answer call gets a
+short result of its own when a pass asks again.
+
+**One call, one request.** No engine retries inside `complete`, so the
+ingest's `CallCeiling`, the pass's own count and the engine's `CostMeter`
+all see the same number; tokens come off the reply's `usage_metadata`, the
+cached input apart. Foundry bills by enrollment, so a run there reports
+tokens and no dollars.
+
+### At the output cap (BACKLOG RI-19)
+
+The reader calls used to stop at 16,000 output tokens, which on a reasoning
+model holds the reasoning as well as the answer; one long report's label
+findings ran out there and the report failed with them. Now:
+
+- **`ChatModelEngine` sends no cap of its own.** Every call kind gets the
+  model's own, the one the host built it with: 32,000 tokens on the app
+  (`webapp.engine_config.DEFAULT_MAX_TOKENS`, `GEOTECH_WEBAPP_MAX_TOKENS` to
+  change), chosen there within each production model's documented output
+  limit. A call that names a cap gets it, never above the model's own.
+- **`PrompterEngine` and `ClaudeEngine` default to the same 32,000**
+  (`engine.DEFAULT_MAX_TOKENS`). No call kind is known to be short enough to
+  justify less, and a cap costs nothing until it is used.
+- **A reply that still reaches the cap says so**: `Reply.cut_off` is true
+  (`length`, `max_tokens` or an incomplete Responses status), and
+  `ChatModelEngine` logs it. A structured answer cut there does not parse,
+  so `parsed` is None, and what follows is the pass's: the label review asks
+  again for its findings briefly, then 40 pages at a time, and keeps the
+  vote's labels if that fails too; the lab, calculation and sounding readers
+  ask once more for the answer; a reader's item still without one is a
+  `skipped` QA entry for that item and the report goes on. Triage, one short
+  answer over the whole report, is the one call whose failure still stops
+  the report. Nothing here special-cases a report.
+
 ## The sub-agent, and how it is gated (`subagent.py`)
 
 The primary agent must never try to read a 400-page report. Its document tools
@@ -1040,8 +1097,9 @@ On the GeotechStaffEngineer page the pair follows `GEOTECH_REPORT_INGEST`
 explicit `True` or `False` wins); it is never on the Document Review page
 (RI-34, RI-35). A report's outputs go to `report_ingest/<file name>` in the
 conversation's own folder (the folder bound to the turn), from the tool and
-the sub-agent alike. Where the app's own engine holds no Prompter (Foundry's
-chat models) the ingest has no engine and says so (BACKLOG RI-03).
+the sub-agent alike. The ingest runs on the page's own chat model, on
+Foundry its `palantir_models` class (`ChatModelEngine`, BACKLOG RI-03; see
+"The engines" below); where there is no model to run on, it says so.
 
 That adds the `report_ingest(source, questions="")` primary tool and a
 `CompiledSubAgent` — a one-node LangGraph that runs `ingest_report` and returns
@@ -1055,10 +1113,14 @@ the cluster installs from PyPI and has resolved older than the pin before. On
 an older planlens the tool is never advertised and the prompt line that tells
 the primary to delegate is never added.
 
-**The engine is the app's own.** `report_ingest.engine.engine_for` digs the
-live Prompter out of whatever the host built the agent with; when there is
-none, the tool says so rather than reading a report on a model nobody asked
-for.
+**The engine is the app's own.** `report_ingest.engine.engine_for` finds it
+in whatever the host built the agent with: the page's chat model inside the
+`LangChainVisionEngine` wrapper the page puts round it becomes a
+`ChatModelEngine`, and a live Prompter (an app engine holding one, or a chat
+model that does) a `PrompterEngine`. The page voter asks for Funhouse's cheap
+tier; a chat model is not one, so on a page the voter runs on the same model
+as the readers. When there is no model at all the tool says so rather than
+reading a report on a model nobody asked for.
 
 **The ceilings are in the graph, not on the spec (BACKLOG RI-02).** deepagents
 uses a compiled sub-agent's runnable AS PROVIDED — for a spec carrying a

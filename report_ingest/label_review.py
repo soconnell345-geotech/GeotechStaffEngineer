@@ -128,8 +128,11 @@ MAX_PAGE_CHARS = 14000
 #: The output budget the findings are asked for AGAIN with when the first
 #: answer came back with no structured findings -- on the Foundry run of
 #: 2026-10-04 a long report's review ran out of output room (stop_reason
-#: ``length``) and the whole report failed with it. Twice the engines'
-#: default, and inside every output ceiling the tiers in use publish.
+#: ``length``) and the whole report failed with it. Twice the engines' old
+#: default of 16,000 and the engines' own default since RI-19
+#: (``engine.DEFAULT_MAX_TOKENS``), so the second ask differs from the first
+#: in asking for the findings briefly; never above a chat model's own cap
+#: (``engine.ChatModelEngine``).
 FINDINGS_RETRY_MAX_TOKENS = 32000
 #: When even that is not enough, the findings are asked for this many pages
 #: at a time, over the same conversation -- no tool is spent again, only the
