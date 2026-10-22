@@ -20,9 +20,6 @@ from funhouse_agent.deep.agent import build_deep_agent  # noqa: E402
 from funhouse_agent.deep.prompt import (  # noqa: E402
     REPORT_INGEST_NUDGE, REPORT_LIBRARY_NUDGE,
 )
-from funhouse_agent.deep.scratch_guard import (  # noqa: E402
-    ScratchFilesystemGuard,
-)
 from funhouse_agent.deep.tools import make_report_library_tool  # noqa: E402
 from report_ingest.tests.library_fixtures import build_library  # noqa: E402
 from report_ingest.tests.test_library_agent import (  # noqa: E402
@@ -136,19 +133,36 @@ class TestTheSubAgentSpec:
         assert "runnable" in specs["report_library"]
         assert "cites the report id" in specs["report_library"]["description"]
 
-    def test_the_spec_carries_the_guard_and_the_budget(self, model,
-                                                       library_root,
-                                                       monkeypatch):
-        from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-
+    def test_the_spec_carries_no_middleware_deepagents_would_drop(
+            self, model, library_root, monkeypatch):
+        """deepagents runs a compiled helper as provided (BACKLOG RI-02):
+        the budget and the guard the spec used to carry ran nowhere."""
         captured = _capture(monkeypatch)
         build_deep_agent(model, enable_report_library=True,
                          library_root=library_root)
-        kinds = [type(m) for m in _specs(captured)["report_library"]
-                 ["middleware"]]
 
-        assert ScratchFilesystemGuard in kinds
-        assert ModelCallBudgetMiddleware in kinds
+        assert "middleware" not in _specs(captured)["report_library"]
+
+    def test_the_build_s_budget_stops_the_model(self, library_root,
+                                               monkeypatch):
+        """The build's model-call budget for the library holds in its graph
+        (it was a middleware on the spec, which nothing ran)."""
+        from langchain_core.messages import HumanMessage
+
+        from funhouse_agent.deep import agent as agent_mod
+
+        monkeypatch.setattr(agent_mod,
+                            "DEFAULT_REPORT_LIBRARY_MAX_MODEL_CALLS", 3)
+        looping = ToolCallingFake(responses=[AIMessage(
+            content="", tool_calls=[{"name": "library_stats", "args": {},
+                                     "id": "loop"}])])
+        captured = _capture(monkeypatch)
+        build_deep_agent(looping, enable_report_library=True,
+                         library_root=library_root)
+        state = _specs(captured)["report_library"]["runnable"].invoke(
+            {"messages": [HumanMessage(content="what is in the library?")]})
+
+        assert state["turns"] == 3
 
     def test_it_is_absent_by_default(self, model, monkeypatch):
         captured = _capture(monkeypatch)

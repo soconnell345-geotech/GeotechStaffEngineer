@@ -86,6 +86,20 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     record report ingest wrote, and the judgement items returned for the
     agent to report against. Never on the Document Review page (BACKLOG
     RI-34: every geotechnical report question lives in report_ingest).
+    With ``GEOTECH_REPORT_INGEST`` on too, its code checks also run on every
+    record the ingest writes (BACKLOG RI-35).
+``GEOTECH_REPORT_INGEST``
+    ``1`` offers report ingest on the GeotechStaffEngineer page: the
+    ``report_ingest`` tool and the sub-agent of the same name, which read a
+    whole geotechnical report into its record (``report.record.json``), its
+    summary, its library page and its DIGGS file, written to
+    ``report_ingest/<file name>`` in the conversation's own folder; with
+    ``GEOTECH_REVIEW_CHECKLIST`` on, the checklist's code checks run on that
+    record and are written beside it (``report.checklist.json``). The
+    ingest runs on an engine dug out of the app's own (a Funhouse Prompter);
+    where there is none it says so rather than reading the report on
+    something else (BACKLOG RI-03). Never on the Document Review page
+    (BACKLOG RI-34, RI-35).
 ``GEOTECH_VISION_TURN_RETRY``
     ``1`` makes a look whose image goes as the page shows it (no turn asked
     for, none read off the text layer) end with one tagged line when most of
@@ -199,6 +213,7 @@ GEOMETRY_ENV = "GEOTECH_REVIEW_GEOMETRY"
 DIGEST_ENV = "GEOTECH_REVIEW_DIGEST"
 COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
+REPORT_INGEST_ENV = "GEOTECH_REPORT_INGEST"
 VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
@@ -213,7 +228,7 @@ ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
             VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
-            CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV)
+            CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV, REPORT_INGEST_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -313,6 +328,12 @@ def checklist() -> bool:
     """Whether ``report_checklist`` is offered (the GeotechStaffEngineer
     page only)."""
     return _on(CHECKLIST_ENV)
+
+
+def report_ingest() -> bool:
+    """Whether the GeotechStaffEngineer page offers report ingest (the tool
+    and the sub-agent; never the Document Review page)."""
+    return _on(REPORT_INGEST_ENV)
 
 
 def kept_readings_on_review_page() -> bool:
@@ -504,13 +525,13 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
            "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
-           "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV",
+           "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV", "REPORT_INGEST_ENV",
            "DEFAULT_ON_ENVS", "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
-           "coverage", "checklist", "vision_turn_retry",
+           "coverage", "checklist", "report_ingest", "vision_turn_retry",
            "kept_readings_on_review_page", "figure_helper", "plot_code",
            "step_cap_answer", "judgment_calls",
            "cited_pages", "cited_documents",

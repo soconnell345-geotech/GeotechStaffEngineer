@@ -24,9 +24,6 @@ from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 from funhouse_agent import document_tools  # noqa: E402
 from funhouse_agent.deep.agent import build_deep_agent  # noqa: E402
 from funhouse_agent.deep.prompt import REPORT_INGEST_NUDGE  # noqa: E402
-from funhouse_agent.deep.scratch_guard import (  # noqa: E402
-    ScratchFilesystemGuard,
-)
 from funhouse_agent.deep.tools import make_report_ingest_tool  # noqa: E402
 from report_ingest.tests.fake_engine import FakeEngine  # noqa: E402
 from report_ingest.tests.narrative_fixtures import (  # noqa: E402
@@ -133,17 +130,94 @@ class TestTheSubAgentSpec:
         assert "whole geotechnical report" in \
             specs["report_ingest"]["description"].lower()
 
-    def test_the_spec_carries_the_guard_and_the_budget(self, model,
-                                                       monkeypatch):
-        from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-
+    def test_the_spec_carries_no_middleware_deepagents_would_drop(
+            self, model, monkeypatch):
+        """deepagents runs a compiled helper as provided (BACKLOG RI-02):
+        the budget and the guard the spec used to carry ran nowhere."""
         captured = _capture(monkeypatch)
         build_deep_agent(model, enable_report_ingest=True)
-        spec = _specs(captured)["report_ingest"]
-        kinds = [type(m) for m in spec["middleware"]]
 
-        assert ScratchFilesystemGuard in kinds
-        assert ModelCallBudgetMiddleware in kinds
+        assert "middleware" not in _specs(captured)["report_ingest"]
+
+    def test_the_build_s_budget_stops_the_engine(self, model, pdf, tmp_path,
+                                                monkeypatch):
+        """BACKLOG RI-02: the model-call budget given to the build was put on
+        the spec, where nothing counted, and the ingest made every call."""
+        engine = FakeEngine(full_script())
+        captured = _capture(monkeypatch)
+        build_deep_agent(model, engine=engine, enable_report_ingest=True,
+                         report_ingest_out_dir=str(tmp_path),
+                         report_ingest_max_model_calls=6)
+        runnable = _specs(captured)["report_ingest"]["runnable"]
+        state = runnable.invoke(
+            {"messages": [HumanMessage(content=f"Ingest {pdf} please.")]})
+        answer = state["structured_response"]
+
+        # triage, the four vision sheets and the bound report's identity;
+        # every reader after that is refused before anything is sent
+        assert engine.n_calls == 6
+        assert answer.ceiling_reached is True
+        assert answer.model_call_ceiling == 6
+        with open(answer.paths["record"], encoding="utf-8") as handle:
+            record = json.load(handle)
+        skipped = [e for e in record["qa"] if e["kind"] == "skipped"
+                   and "ceiling of 6 model calls" in e["detail"]]
+        assert skipped
+        assert "ceiling of 6 model calls" in state["messages"][-1].content
+
+    def test_asking_again_resumes_from_what_was_read(self, model, pdf,
+                                                     tmp_path, monkeypatch):
+        from report_ingest.tests.test_graph import (
+            bound_reader_turns, reader_turns,
+        )
+
+        captured = _capture(monkeypatch)
+        first = FakeEngine(full_script())
+        build_deep_agent(model, engine=first, enable_report_ingest=True,
+                         report_ingest_out_dir=str(tmp_path),
+                         report_ingest_max_model_calls=6)
+        _specs(captured)["report_ingest"]["runnable"].invoke(
+            {"messages": [HumanMessage(content=f"Ingest {pdf}.")]})
+
+        # The second delegation pays only for what the first did not read.
+        second = FakeEngine(reader_turns() + bound_reader_turns())
+        build_deep_agent(model, engine=second, enable_report_ingest=True,
+                         report_ingest_out_dir=str(tmp_path))
+        state = _specs(captured)["report_ingest"]["runnable"].invoke(
+            {"messages": [HumanMessage(content=f"Ingest {pdf}.")]})
+        answer = state["structured_response"]
+
+        assert second.n_calls == len(second.turns)
+        assert answer.ceiling_reached is False
+        assert answer.investigations == 2 and answer.lab_tests == 2
+
+    def test_the_outputs_go_to_the_conversation_s_folder(self, model,
+                                                        tmp_path,
+                                                        monkeypatch):
+        """With no folder given the sub-agent wrote to ``report_ingest_out``
+        in whatever the working directory was, not the conversation's
+        folder the tool writes to; and an uploaded report (an attachment
+        key, resolved to its bytes) named its folder after the bytes."""
+        from funhouse_agent._fileio import working_dir_bound
+
+        folder = tmp_path / "conversation" / "files"
+        folder.mkdir(parents=True)
+        elsewhere = tmp_path / "cwd"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        captured = _capture(monkeypatch)
+        build_deep_agent(model, engine=FakeEngine(full_script()),
+                         enable_report_ingest=True,
+                         attachments={"SYN.pdf": build_narrative_report().pdf})
+        with working_dir_bound(str(folder)):
+            state = _specs(captured)["report_ingest"]["runnable"].invoke(
+                {"messages": [HumanMessage(content="Ingest SYN.pdf.")]})
+        answer = state["structured_response"]
+
+        assert answer.error == ""
+        assert answer.paths["record"] == str(
+            folder / "report_ingest" / "SYN" / "report.record.json")
+        assert not any(elsewhere.iterdir())
 
     def test_it_is_absent_by_default(self, model, monkeypatch):
         captured = _capture(monkeypatch)
@@ -275,6 +349,19 @@ class TestARunThroughTheTool:
         answer = json.loads(tool.invoke({"source": str(pdf)}))
 
         assert "no ingest engine is configured" in answer["error"]
+
+    def test_the_build_s_ceiling_holds_on_the_tool_too(self, model, pdf,
+                                                       tmp_path):
+        engine = FakeEngine(full_script())
+        agent = build_deep_agent(model, engine=engine,
+                                 enable_report_ingest=True,
+                                 report_ingest_out_dir=str(tmp_path),
+                                 report_ingest_max_model_calls=6)
+        tool = agent.nodes["tools"].bound.tools_by_name["report_ingest"]
+        answer = json.loads(tool.invoke({"source": str(pdf)}))
+
+        assert engine.n_calls == 6
+        assert answer["ceiling_reached"] is True
 
 
 def test_the_wiring_modules_import_neither_anthropic_nor_langgraph():

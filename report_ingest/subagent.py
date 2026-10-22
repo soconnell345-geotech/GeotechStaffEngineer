@@ -20,20 +20,35 @@ WHAT COMES BACK. Counts, the paths, the first lines of the summary, the number
 of QA entries and the workflow. Never the record: it runs to megabytes on a
 real report, and the primary's next turn would re-send all of it.
 
-THE MIDDLEWARE ON THE SPEC, SAID PLAINLY. deepagents uses a compiled
-sub-agent's runnable AS PROVIDED -- for a spec with a ``runnable`` it reads
-the name, the description and the runnable and nothing else, so the
-``middleware`` list this builder puts on the spec reaches no model and
-enforces nothing by itself. It is there because every other sub-agent in this
-app carries the same two entries and a reader comparing the specs should not
-have to wonder which ones were forgotten. What actually holds in this graph is
-Python: the model-call ceilings are :class:`~report_ingest.graph.Budgets`,
-applied per reader by the ingest itself, and there is no filesystem tool on
-any model in here for a guard to intercept.
+THE CEILINGS ARE IN THE GRAPH, NOT ON THE SPEC (BACKLOG RI-02). deepagents
+uses a compiled sub-agent's runnable AS PROVIDED: for a spec with a
+``runnable`` it reads the name, the description and the runnable and nothing
+else, so middleware put on the spec reaches nothing. Until RI-02 the spec
+carried a model-call budget and a filesystem guard all the same, and neither
+ran. Now the spec carries no middleware, and what the other helpers get from
+theirs is enforced here:
+
+* the model-call budget is :class:`CallCeiling`: every model call of one
+  delegation (triage, the page voters, the label review, every reader, every
+  report bound inside this one) counts against one ceiling, over the reading
+  engine and the vision engine alike. A call past it is refused before it is
+  made; the pass or item it would have served is a ``skipped`` QA entry, the
+  record is written with what was read, and the answer says so. Delegating
+  the same report again resumes: what was read is kept in its folder.
+  :class:`~report_ingest.graph.Budgets` still caps each reader;
+* the filesystem guard's point, that a helper's files are real files in the
+  conversation's folder, is the ``out_dir_factory`` the app passes: the
+  record and its exports are written there, never into the working
+  directory or only a temp folder. No model in here has a filesystem tool to
+  guard;
+* the answer comes back as the primary's ``task`` result, which the
+  primary's own tool middleware (the activity log, the tool-error guard, the
+  large-result key map) already wraps.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -44,6 +59,8 @@ from pydantic import BaseModel, Field
 __all__ = [
     "build_report_ingest_subagent", "build_report_ingest_graph",
     "run_ingest", "diggs_verdict", "IngestSummary", "parse_request",
+    "CallCeiling", "CallCeilingReached", "DEFAULT_MAX_MODEL_CALLS",
+    "run_checklist_on", "CHECKLIST_NAME",
     "SUBAGENT_NAME",
     "SUBAGENT_DESCRIPTION", "SUMMARY_LINES",
 ]
@@ -68,6 +85,81 @@ SUBAGENT_DESCRIPTION = (
 SUMMARY_LINES = 12
 #: And how many characters, whichever is hit first.
 SUMMARY_CHARS = 1200
+
+#: The model calls one delegation may spend, every pass and every bound
+#: report included. A ceiling against a runaway, not a budget for a normal
+#: run: the 13 whole reports of Foundry stage b took 60 to 897 calls each,
+#: bound reports included (``module_work/harness_theory/report_ingest.md``
+#: section 7), and :class:`~report_ingest.graph.Budgets` caps each reader.
+DEFAULT_MAX_MODEL_CALLS = 1000
+
+#: The checklist's result, written beside the record it was run on.
+CHECKLIST_NAME = "report.checklist.json"
+#: How many failed checks the answer names, and how long each line may be;
+#: the file beside the record has them all.
+CHECKLIST_LINES = 6
+CHECKLIST_CHARS = 240
+
+
+class CallCeilingReached(RuntimeError):
+    """A model call refused because the delegation's ceiling was reached."""
+
+
+class CallCeiling:
+    """One delegation's model calls, counted across every engine it uses.
+
+    :meth:`wrap` returns an engine whose calls count here; the reading
+    engine and the vision engine wrapped by one ceiling share it. A call
+    past ``limit`` is refused with :class:`CallCeilingReached` before
+    anything is sent, which the ingest records as a skipped pass or item.
+    """
+
+    def __init__(self, limit: int) -> None:
+        if int(limit) < 1:
+            raise ValueError("a model-call ceiling must be at least 1; pass "
+                             "None for none")
+        self.limit = int(limit)
+        self.used = 0
+        self.refused = 0
+
+    @property
+    def reached(self) -> bool:
+        return self.refused > 0
+
+    def wrap(self, engine: Any) -> Any:
+        return None if engine is None else _CountedEngine(engine, self)
+
+    def take(self) -> None:
+        """Count one call, or refuse it."""
+        if self.used >= self.limit:
+            self.refused += 1
+            raise CallCeilingReached(
+                f"the ceiling of {self.limit} model calls for one ingest "
+                f"was reached")
+        self.used += 1
+
+
+class _CountedEngine:
+    """An ingest engine whose calls count against a :class:`CallCeiling`;
+    everything else is the engine it wraps."""
+
+    def __init__(self, inner: Any, ceiling: CallCeiling) -> None:
+        self._inner = inner
+        self._ceiling = ceiling
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") or name in ("_inner", "_ceiling"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+    def complete(self, messages: Any, *, system: Any = None,
+                 tools: Any = None, images: Any = None,
+                 output_format: Any = None, max_tokens: Any = None) -> Any:
+        self._ceiling.take()
+        return self._inner.complete(messages, system=system, tools=tools,
+                                    images=images,
+                                    output_format=output_format,
+                                    max_tokens=max_tokens)
 
 
 class IngestSummary(BaseModel):
@@ -104,6 +196,15 @@ class IngestSummary(BaseModel):
         default=0,
         description="how many of the standing questions this report answered")
     model_calls: int = Field(default=0)
+    model_call_ceiling: Optional[int] = Field(
+        default=None,
+        description="the most model calls this delegation could spend; null "
+                    "when no ceiling was set")
+    ceiling_reached: bool = Field(
+        default=False,
+        description="whether that ceiling stopped the run: what it stopped is "
+                    "a skipped QA entry in the record, and asking for the "
+                    "same report again resumes from what was read")
     diggs_ok: Optional[bool] = Field(
         default=None,
         description="whether the DIGGS file passed both of its gates: "
@@ -132,6 +233,15 @@ class IngestSummary(BaseModel):
     answers: List[Dict[str, str]] = Field(
         default_factory=list,
         description="the caller's own questions and what the narrative said")
+    checklist: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="the report review checklist's code checks, run on this "
+                    "record when the checklist is on: the checklist's status "
+                    "(a DRAFT), how many checks passed, failed, were unsure "
+                    "or could not run, the failed ones, and how many items "
+                    "need your judgement (report_checklist on the record "
+                    "lists them); every row is in paths.checklist. Null when "
+                    "the checklist is off")
     error: str = Field(default="")
 
 
@@ -151,6 +261,38 @@ def _head(path: str, lines: int = SUMMARY_LINES) -> str:
         if len(kept) >= lines or sum(len(k) for k in kept) > SUMMARY_CHARS:
             break
     return "\n".join(kept)[:SUMMARY_CHARS]
+
+
+def run_checklist_on(record: Any, out_dir: Any) -> Dict[str, Any]:
+    """The report review checklist's code checks on a record just written.
+
+    Runs :func:`report_ingest.checklist.run_checklist` (no model call),
+    writes its whole result to :data:`CHECKLIST_NAME` beside the record, and
+    returns what the answer carries: the checklist's status, the code
+    checks counted by result, the failed ones (at most
+    :data:`CHECKLIST_LINES`), how many items are left to judge, and the
+    file's ``path``. A checklist that cannot run says so in ``error``; the
+    ingest it follows has still written its record.
+    """
+    from report_ingest.checklist import run_checklist
+
+    try:
+        result = run_checklist(record)
+        path = os.path.join(str(out_dir), CHECKLIST_NAME)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(result, handle, indent=2, ensure_ascii=False)
+    except Exception as exc:  # noqa: BLE001 - the record stands without it
+        return {"error": f"the checklist did not run: "
+                         f"{type(exc).__name__}: {exc}"}
+    rows = result.get("code_checks") or []
+    counts = {status: sum(1 for row in rows if row.get("status") == status)
+              for status in ("pass", "fail", "unsure", "not_run")}
+    failed = [f"{row.get('id')}: {row.get('detail', '')}"[:CHECKLIST_CHARS]
+              for row in rows if row.get("status") == "fail"]
+    return {"status": result.get("status"), "counts": counts,
+            "failed": failed[:CHECKLIST_LINES],
+            "to_judge": len(result.get("for_you_to_judge") or []),
+            "path": path}
 
 
 def diggs_verdict(qa: Sequence[Any]) -> Optional[bool]:
@@ -180,7 +322,9 @@ def run_ingest(source: str, questions: Sequence[str], *,
                vision_engine: Any = None, vision_mode: str = "sheet",
                trust_table: Any = None,
                templates: Any = None,
-               ingest_bound: bool = True) -> IngestSummary:
+               ingest_bound: bool = True,
+               max_model_calls: Optional[int] = None,
+               checklist: bool = False) -> IngestSummary:
     """Read one report and return the compact answer, never the record.
 
     The label parameters are the graph's own and are documented on
@@ -189,9 +333,20 @@ def run_ingest(source: str, questions: Sequence[str], *,
     ``ingest_bound`` reads a report bound inside this one as its own record
     and is on by default; the summary then names each one and where it went,
     so the primary agent knows there is a second record to ask about.
+
+    ``max_model_calls`` is the run's :class:`CallCeiling` over both engines
+    (``None``: none).
+
+    ``checklist`` runs the report review checklist's code checks on the
+    record just written (:func:`run_checklist_on`; no model call) and puts
+    the counts and the failures in the answer (BACKLOG RI-35).
     """
     from report_ingest.graph import ingest_report, output_paths
 
+    ceiling = CallCeiling(max_model_calls) if max_model_calls else None
+    if ceiling is not None:
+        engine = ceiling.wrap(engine)
+        vision_engine = ceiling.wrap(vision_engine)
     record = ingest_report(source, engine, out_dir=out_dir, budgets=budgets,
                            report_id=report_id, questions=list(questions),
                            db_path=db_path, di_result=di_result,
@@ -204,6 +359,11 @@ def run_ingest(source: str, questions: Sequence[str], *,
     paths = output_paths(out_dir)
     counts = record.counts()
     diggs_ok = diggs_verdict(record.qa)
+    checked = None
+    if checklist:
+        checked = run_checklist_on(record, out_dir)
+        if checked.get("path"):
+            paths = dict(paths, checklist=checked.pop("path"))
     from report_ingest.writers import title_of
     return IngestSummary(
         report=title_of(record),
@@ -218,6 +378,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
         answered=len(record.general.answered()
                      + record.natural_hazards.answered()),
         model_calls=record.document.model_calls,
+        model_call_ceiling=ceiling.limit if ceiling is not None else None,
+        ceiling_reached=bool(ceiling is not None and ceiling.reached),
         label_split_pages=record.document.label_split_pages,
         label_disagreements=sum(1 for entry in record.qa
                                 if entry.kind == "label_disagreement"),
@@ -239,6 +401,7 @@ def run_ingest(source: str, questions: Sequence[str], *,
                        if row.record_path else ""}
             for row in record.bound_documents],
         summary=_head(paths.get("summary", "")),
+        checklist=checked,
         answers=[{"question": str(row.get("question", "")),
                   "answer": str(row.get("answer", ""))}
                  for row in record.narrative.extra_answers])
@@ -307,7 +470,10 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                               vision_mode: str = "sheet",
                               trust_table: Any = None,
                               templates: Any = None,
-                              ingest_bound: bool = True) -> Any:
+                              ingest_bound: bool = True,
+                              max_model_calls: Optional[int] =
+                              DEFAULT_MAX_MODEL_CALLS,
+                              checklist: bool = False) -> Any:
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
@@ -316,10 +482,16 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
     Prompter. It is a factory rather than an engine so that each run gets its
     own cost meter and nothing is held across turns.
 
-    ``out_dir_factory`` decides where a report's outputs go, given its source;
-    the default is a folder named after the file beside the working directory.
-    ``resolve_source`` turns whatever the primary said into a readable path --
-    the app passes its attachment resolver.
+    ``out_dir_factory`` decides where a report's outputs go, given the file
+    as it was named (a path or an attachment key); the default is a folder
+    named after the file under ``report_ingest_out`` in the working
+    directory, and the app passes the conversation's own folder.
+    ``resolve_source`` turns whatever the primary said into a readable path
+    or the document's bytes -- the app passes its attachment resolver.
+
+    ``max_model_calls`` is each delegation's :class:`CallCeiling`, enforced
+    here (``None``: none). ``checklist`` runs the report review checklist's
+    code checks on each record written (:func:`run_checklist_on`).
     """
     from langgraph.graph import END, StateGraph
     from langgraph.graph.message import add_messages
@@ -354,6 +526,9 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
             return {"messages": [AIMessage(content=answer.error)],
                     "structured_response": answer}
 
+        # The folder is named after the file as it was asked for: an
+        # attachment key resolves to the document's bytes, not a name.
+        named = source
         if resolve_source is not None:
             try:
                 source = resolve_source(source)
@@ -372,11 +547,12 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
             return {"messages": [AIMessage(content=answer.error)],
                     "structured_response": answer}
 
-        out_dir = (out_dir_factory(source) if out_dir_factory
-                   else _default_out_dir(source))
+        out_dir = (out_dir_factory(named) if out_dir_factory
+                   else _default_out_dir(named))
         try:
             answer = run_ingest(source, questions, engine=engine,
                                 out_dir=out_dir, budgets=budgets,
+                                report_id=_stem(named),
                                 db_path=db_path,
                                 label_policy=label_policy,
                                 review_mode=review_mode,
@@ -386,7 +562,9 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                                 vision_mode=vision_mode,
                                 trust_table=trust_table,
                                 templates=templates,
-                                ingest_bound=ingest_bound)
+                                ingest_bound=ingest_bound,
+                                max_model_calls=max_model_calls,
+                                checklist=checklist)
         except Exception as exc:                 # one report, not the session
             answer = IngestSummary(
                 error=f"the ingest failed: {type(exc).__name__}: {exc}")
@@ -396,7 +574,13 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
             f"QA entr(ies). Written to {answer.paths.get('record', out_dir)}."
             + (f" {len(answer.bound_documents)} report(s) bound inside this "
                f"one were read into records of their own."
-               if answer.bound_documents else ""))
+               if answer.bound_documents else "")
+            + (f" The ceiling of {answer.model_call_ceiling} model calls for "
+               f"one ingest was reached, so some passes or items were not "
+               f"read (each is a skipped QA entry); asking for the same "
+               f"report again resumes from what was read."
+               if answer.ceiling_reached else "")
+            + _checklist_text(answer))
         return {"messages": [AIMessage(content=text)],
                 "structured_response": answer}
 
@@ -422,9 +606,35 @@ def _last_text(messages: Sequence[Any]) -> str:
     return ""
 
 
+def _checklist_text(answer: IngestSummary) -> str:
+    """The checklist's lines in the sub-agent's answer (empty when off)."""
+    checked = answer.checklist
+    if not checked:
+        return ""
+    if checked.get("error"):
+        return f" The review checklist: {checked['error']}."
+    counts = checked.get("counts") or {}
+    text = (f" The review checklist ({checked.get('status') or 'DRAFT'}), "
+            f"its code checks on this record: {counts.get('pass', 0)} "
+            f"passed, {counts.get('fail', 0)} failed, "
+            f"{counts.get('unsure', 0)} unsure, {counts.get('not_run', 0)} "
+            f"could not run; every row is in "
+            f"{answer.paths.get('checklist', CHECKLIST_NAME)}.")
+    if checked.get("failed"):
+        text += " Failed: " + "; ".join(checked["failed"]) + "."
+    if checked.get("to_judge"):
+        text += (f" {checked['to_judge']} item(s) need judgement: "
+                 f"report_checklist on this record lists them.")
+    return text
+
+
+def _stem(source: str) -> str:
+    """The file's name without its folder or extension."""
+    return os.path.splitext(os.path.basename(str(source)))[0] or "report"
+
+
 def _default_out_dir(source: str) -> str:
-    stem = os.path.splitext(os.path.basename(str(source)))[0] or "report"
-    return os.path.join("report_ingest_out", stem)
+    return os.path.join("report_ingest_out", _stem(source))
 
 
 def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
@@ -434,7 +644,8 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                  db_path: Any = None,
                                  resolve_source: Optional[
                                      Callable[[str], str]] = None,
-                                 max_model_calls: Optional[int] = None,
+                                 max_model_calls: Optional[int] =
+                                 DEFAULT_MAX_MODEL_CALLS,
                                  middleware: Optional[Sequence[Any]] = None,
                                  label_policy: str = "structural",
                                  review_mode: str = "disagreements",
@@ -443,16 +654,22 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
                                  vision_mode: str = "sheet",
                                  trust_table: Any = None,
                                  templates: Any = None,
-                                 ingest_bound: bool = True
+                                 ingest_bound: bool = True,
+                                 checklist: bool = False
                                  ) -> Dict[str, Any]:
     """The deepagents ``CompiledSubAgent`` spec for the ingest.
 
-    See this module's docstring for what the ``middleware`` entry does and
-    does not do: deepagents uses the runnable as provided, so the list is a
-    declaration rather than an enforcement, and the real ceilings are
-    :class:`~report_ingest.graph.Budgets`.
+    The spec carries no middleware: deepagents uses a compiled runnable as
+    provided and would drop it (BACKLOG RI-02). ``max_model_calls`` is
+    enforced inside the graph instead (:class:`CallCeiling`; ``None`` for
+    none), and a non-empty ``middleware`` is refused rather than accepted
+    and ignored.
     """
-    spec: Dict[str, Any] = {
+    if middleware:
+        raise ValueError(
+            "a compiled sub-agent runs no middleware (deepagents uses its "
+            "runnable as provided); the ingest's ceiling is max_model_calls")
+    return {
         "name": SUBAGENT_NAME,
         "description": SUBAGENT_DESCRIPTION,
         "runnable": build_report_ingest_graph(
@@ -462,12 +679,6 @@ def build_report_ingest_subagent(engine_factory: Callable[[], Any], *,
             review_mode=review_mode,
             vision_engine_factory=vision_engine_factory,
             vision_mode=vision_mode, trust_table=trust_table,
-            templates=templates, ingest_bound=ingest_bound),
+            templates=templates, ingest_bound=ingest_bound,
+            max_model_calls=max_model_calls, checklist=checklist),
     }
-    carried = list(middleware or [])
-    if max_model_calls:
-        from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-        carried.append(ModelCallBudgetMiddleware(max_model_calls))
-    if carried:
-        spec["middleware"] = carried
-    return spec

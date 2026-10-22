@@ -705,6 +705,8 @@ def make_report_ingest_tool(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     label_policy: str = "structural",
     review_mode: str = "disagreements",
+    max_model_calls: Optional[int] = None,
+    checklist: bool = False,
 ) -> list:
     """The ``report_ingest`` primary tool, or an empty list.
 
@@ -725,6 +727,12 @@ def make_report_ingest_tool(
     straight through to :func:`report_ingest.graph.ingest_report`. The
     defaults are its own: three cheap voters on every page, and the
     expensive label review shown only the pages they split on.
+
+    ``max_model_calls`` is one run's ceiling on model calls, the same one
+    the sub-agent holds (:class:`report_ingest.subagent.CallCeiling`;
+    ``None``: no ceiling beyond the readers' own budgets). ``checklist``
+    runs the report review checklist's code checks on the record written
+    and returns them in the answer (BACKLOG RI-35).
     """
     if not _document_tools.report_ingest_supported():
         return []
@@ -754,7 +762,7 @@ def make_report_ingest_tool(
                 "hint": "the ingest runs on the app's own model; tell the "
                         "user it is unavailable here rather than reading the "
                         "report another way"})
-        folder = out_dir or _report_ingest_out_dir(source)
+        folder = out_dir or report_ingest_out_dir(source)
         asked = [line.strip() for line in str(questions or "").splitlines()
                  if line.strip()]
         try:
@@ -765,7 +773,9 @@ def make_report_ingest_tool(
                                 review_mode=review_mode,
                                 vision_engine=vision_engine,
                                 report_id=os.path.splitext(
-                                    os.path.basename(str(source)))[0])
+                                    os.path.basename(str(source)))[0],
+                                max_model_calls=max_model_calls,
+                                checklist=checklist)
         except Exception as exc:  # noqa: BLE001 - one report, not the turn
             return json.dumps({"error": f"the ingest failed: "
                                         f"{type(exc).__name__}: {exc}"})
@@ -777,8 +787,10 @@ def make_report_ingest_tool(
         description=REPORT_INGEST_DESCRIPTION))]
 
 
-def _report_ingest_out_dir(source: str) -> str:
-    """Where a report's outputs go: the conversation's own folder."""
+def report_ingest_out_dir(source: str) -> str:
+    """Where a report's outputs go: ``report_ingest/<file name>`` in the
+    conversation's own folder (the working folder bound to the turn), for the
+    tool and the sub-agent alike."""
     from funhouse_agent._fileio import default_output_dir
 
     stem = os.path.splitext(os.path.basename(str(source)))[0] or "report"
