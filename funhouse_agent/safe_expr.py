@@ -10,6 +10,7 @@ imports these names from here.
 """
 
 import ast
+import sys
 import math
 
 _MATH_FUNCS = {
@@ -39,6 +40,23 @@ _MAX_POW_BITS = 1024
 #: The longest expression accepted. With every power bounded, only a chain of
 #: multiplications can still grow an integer, and this keeps that chain short.
 _MAX_EXPR_CHARS = 10_000
+_TOO_DEEP = ("{what} is too long or too deeply nested to read; split it "
+             "into shorter steps.")
+
+
+def _compile_deep(tree, filename, what):
+    """``compile(tree, filename, "eval")`` for a long chain of terms. Python
+    3.11 walks the tree recursively and gives up near 1,000 nested terms
+    (3.12+ does not), so the limit is raised while compiling; if the tree is
+    still too deep the user gets the normal refusal, never a RecursionError."""
+    old = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(old, 8000))
+    try:
+        return compile(tree, filename, "eval")
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP.format(what=what)) from None
+    finally:
+        sys.setrecursionlimit(old)
 
 
 def _bounded_pow(base, exp):
@@ -111,6 +129,8 @@ def _compile_g(expr: str, var_names, extra_funcs=None):
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"g_expression is not a valid expression: {exc}")
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP.format(what="g_expression")) from None
     # Identifiers are checked on the PARSED names, not by a regex over the
     # text: a regex reads the exponent of 1e-3 as an identifier 'e' and
     # refused scientific notation.
@@ -148,7 +168,7 @@ def _compile_g(expr: str, var_names, extra_funcs=None):
                 "g_expression constants must be numbers, got "
                 f"{type(node.value).__name__}.")
     pow_name = _bound_powers(tree, var_names)
-    code = compile(tree, "<g_expression>", "eval")
+    code = _compile_deep(tree, "<g_expression>", "g_expression")
     ns = {"__builtins__": {}}
     ns.update(funcs)
     ns[pow_name] = _bounded_pow

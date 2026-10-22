@@ -228,17 +228,28 @@ def to_dxf_bytes(
     bytes
         DXF file content.
     """
-    doc, _ = _build_dxf_document(
-        surface_points=surface_points,
-        boundary_profiles=boundary_profiles,
-        gwt_points=gwt_points,
-        nail_lines=nail_lines,
-        text_annotations=text_annotations,
-        units=units,
-        dxf_version=dxf_version,
-    )
+    # ezdxf stamps the creation/write time and fresh GUIDs into every
+    # document; the in-memory bytes use its fixed-metadata option so the same
+    # geometry gives the same bytes on every call (the size moved with the
+    # digits of the time). The file-writing ``export_to_dxf`` keeps the real
+    # times.
+    import ezdxf
     stream = io.StringIO()
-    doc.write(stream)
+    previous = ezdxf.options.write_fixed_meta_data_for_testing
+    ezdxf.options.write_fixed_meta_data_for_testing = True
+    try:
+        doc, _ = _build_dxf_document(
+            surface_points=surface_points,
+            boundary_profiles=boundary_profiles,
+            gwt_points=gwt_points,
+            nail_lines=nail_lines,
+            text_annotations=text_annotations,
+            units=units,
+            dxf_version=dxf_version,
+        )
+        doc.write(stream)
+    finally:
+        ezdxf.options.write_fixed_meta_data_for_testing = previous
     return stream.getvalue().encode("utf-8")
 
 

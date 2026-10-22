@@ -29,6 +29,7 @@ import ast
 import json
 import math
 import statistics
+import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain_core.tools import StructuredTool
@@ -64,7 +65,11 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
     a float, in ``values`` (``__k0``, ``__k1``...): integers become floats
     (a huge power overflows at once), and a literal such as ``1e-3`` cannot
     trip the evaluator's identifier check on its ``e``."""
-    tree = ast.parse(str(expression), mode="eval")
+    from funhouse_agent.safe_expr import _TOO_DEEP
+    try:
+        tree = ast.parse(str(expression), mode="eval")
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP.format(what="g_expression")) from None
 
     class _ToName(ast.NodeTransformer):
         def visit_Constant(self, node):          # noqa: N802 - ast API
@@ -76,7 +81,16 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
                                          node)
             return node
 
-    return ast.unparse(_ToName().visit(tree))
+    # Python 3.11 walks and unparses a long chain of terms recursively and
+    # gives up near 1,000 of them: raise the limit while doing so.
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(old_limit, 8000))
+    try:
+        return ast.unparse(_ToName().visit(tree))
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP.format(what="g_expression")) from None
+    finally:
+        sys.setrecursionlimit(old_limit)
 
 
 #: The longest list a variable may hold.
