@@ -29,14 +29,18 @@ them, in order of trust, and nothing else:
    as well.
 3. ``description``: an interval at the head of a line of the description,
    ``0.0 - 1.2 m: FILL ...``. Prose, where a pair of numbers can also be a
-   size, a thickness or an amount, so one followed by such a word is not
-   read.
+   size, a thickness, a count or an amount (``3-4 feet of fill``, ``2-3
+   cobbles``, ``10-12 N``), so one followed by such a word is not read; and
+   one is read only where it prints a depth unit of its own or CHAINS with
+   the page's other intervals there (its top another's base, or its base
+   another's top), as a stratum's interval does.
 4. ``header``: the depth the header's groundwater or total-depth field
    prints, ``Groundwater encountered at 10 ft``: the number the unit is
    bound to, never the first number on the line, which may be a date, a
    time or a year. It places no row.
 5. ``page_text``: an interval at the head of a line, on a page where the
-   grid placed nothing at all.
+   grid placed nothing at all; prose, read by the same rules as a
+   description's.
 
 WHAT IT NEVER DOES. It never reads a depth off a row's POSITION -- with no
 ruler, a y is not a depth -- and it never interpolates between two printed
@@ -65,7 +69,8 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 __all__ = ["PrintedDepth", "PrintedRow", "PrintedDepths", "printed_depths",
-           "on_line", "fold_unit", "TRUST", "SAME_DEPTH", "SERVES"]
+           "on_line", "chained", "fold_unit", "TRUST", "SAME_DEPTH",
+           "SERVES"]
 
 #: How far each source is trusted, as the confidence its readings carry.
 #: The number itself is exact as printed; what is uncertain is which row it
@@ -93,6 +98,11 @@ ROW_SOURCES = ("depth_column", "sample_column")
 #: The sources that stand on a line of the log's columns. The header and a
 #: page's loose text stand on none.
 LINE_SOURCES = ("depth_column", "sample_column", "description")
+
+#: The sources that are prose, where an interval may be a thickness, a count
+#: or an amount: one stands as a depth only with a unit of its own, or where
+#: it chains with the page's other intervals from the same source.
+PROSE_SOURCES = ("description", "page_text")
 
 #: The header fields that state a depth, as ``log_grid`` names them.
 HEADER_DEPTHS = ("groundwater", "total_depth")
@@ -124,7 +134,8 @@ _SAMPLE_RANGE = re.compile(
 _SAMPLE_AT = re.compile(rf"^(?P<label>.*?)@\s*({_NUM})\s*({_UNIT})?\s*$",
                         re.I)
 _LEAD_RANGE = re.compile(
-    rf"^\s*\(?\s*{_RANGE}\s*\)?\s*[:;,.]?\s*(?P<rest>[A-Za-z(].*)?$", re.I)
+    rf"^\s*\(?\s*{_RANGE}\s*\)?\s*(?P<sep>[:;,.])?\s*"
+    rf"(?P<rest>[A-Za-z(].*)?$", re.I)
 #: A number bound to a depth unit: ``12.5 ft``. Not the tail of a date, a
 #: time or a range (``3/4/2019``, ``8:30``, ``10-12``), which is no depth.
 _BOUND = re.compile(rf"(?<![\d/:.\-])({_NUM})\s*({_UNIT})", re.I)
@@ -138,14 +149,24 @@ _ELEVATION_AFTER = re.compile(
 #: A four-figure whole number from 1900 to 2099 printed with no unit.
 _YEAR = re.compile(r"(?<![\d.])(?:19|20)\d\d(?![\d.])")
 #: A pair of numbers followed by one of these is a size, a thickness, an
-#: amount, a pressure or an elevation ("2-3 inch gravel", "2 to 4 ft thick
-#: lenses", "1-2 percent organics"), not a stratum.
+#: amount, a blow count, a pressure or an elevation ("2-3 inch gravel", "2
+#: to 4 ft thick lenses", "3-4 feet of fill", "1-2 percent organics", "10-12
+#: N"), not a stratum. A ``%`` after the pair is not read either: the line
+#: must go on with a word.
 _NOT_A_DEPTH_WORD = frozenset({
-    "in", "inch", "inches", "mm", "cm", "mesh", "percent", "pct", "blows",
-    "bpf", "psi", "psf", "tsf", "ksf", "kpa", "mpa", "pcf", "times",
-    "thick", "thickness", "wide", "width", "long", "length", "diameter",
-    "dia", "el", "elev", "elevation", "msl", "amsl", "asl", "ngvd", "navd",
-    "datum",
+    "in", "inch", "inches", "mm", "cm", "mesh", "percent", "pct", "blow",
+    "blows", "bpf", "n", "of", "psi", "psf", "tsf", "ksf", "kpa", "mpa",
+    "pcf", "times", "thick", "thickness", "wide", "width", "long", "length",
+    "diameter", "dia", "el", "elev", "elevation", "msl", "amsl", "asl",
+    "ngvd", "navd", "datum",
+})
+#: Things a log counts. A pair of numbers run straight into one of these is
+#: a count ("2-3 cobbles") or a size ("2-3 ft boulders"). The same word can
+#: also name a stratum, so after a colon or a comma (``0.0 - 1.5 m:
+#: COBBLES and BOULDERS``) it is read as the stratum's words.
+_COUNTED = frozenset({
+    "cobbles", "boulders", "pebbles", "stones", "pieces", "fragments",
+    "nodules", "lenses", "seams", "layers",
 })
 
 
@@ -182,6 +203,9 @@ class PrintedDepth:
     #: Whether this depth places the values on its line (see the module
     #: notes); when False it only checks a depth the reader returns.
     seeds: bool = True
+    #: For an interval read from prose: whether it chains with the page's
+    #: other intervals from the same source (see :func:`chained`).
+    chains: bool = False
 
     @property
     def confidence(self) -> float:
@@ -328,6 +352,15 @@ class PrintedDepths:
         shown = [r for r in self.on_page(int(page)) if r.shows(value)] \
             if page is not None else []
         if not shown:
+            left = next((d for d in self.dropped if d.get("page") == page
+                         and any(v is not None
+                                 and abs(float(value) - v) <= SAME_DEPTH
+                                 for v in (d.get("top"), d.get("bottom")))),
+                        None)
+            if left is not None:
+                return (f"{lead}; it prints {value:g} only in "
+                        f"'{left['text']}', which was not read as a depth "
+                        f"({left['why']}); refused rather than accepted")
             return (f"{lead} and nothing printed on it reads {value:g}, so "
                     f"the depth stands on nothing on the page; refused "
                     f"rather than accepted")
@@ -521,6 +554,8 @@ def _lead_cell(text: str) -> Optional[Tuple[float, float, str, str]]:
     if first in _NOT_A_DEPTH_WORD or \
             first.rstrip("0123456789") in _NOT_A_DEPTH_WORD:
         return None
+    if first in _COUNTED and not match.group("sep"):
+        return None
     found = _range(match)
     if found is None:
         return None
@@ -543,6 +578,20 @@ def _header_depth(raw: str) -> Optional[Tuple[float, str]]:
 # ---------------------------------------------------------------------------
 # the pass
 # ---------------------------------------------------------------------------
+
+def chained(intervals: Sequence[PrintedDepth]) -> List[bool]:
+    """Which of these intervals chain: each one whose top is another's
+    base, or whose base is another's top. A stratum's interval ends where
+    the next one's begins; an interval that meets no other may as well be a
+    seam, a lens, a thickness or an amount. A seam printed between two
+    strata does not break their chain."""
+    def meets(a: PrintedDepth, b: PrintedDepth) -> bool:
+        return a.bottom is not None and b.bottom is not None and (
+            abs(b.bottom - a.top) <= SAME_DEPTH
+            or abs(a.bottom - b.top) <= SAME_DEPTH)
+    return [any(meets(a, b) for j, b in enumerate(intervals) if j != i)
+            for i, a in enumerate(intervals)]
+
 
 def _rises(readings: List[PrintedDepth]) -> bool:
     """Do these readings' tops rise (or hold) all the way down the page?
@@ -652,6 +701,31 @@ def printed_depths(grid: Any, pages: Sequence[int],
                                  text=text, seeds=False,
                                  bbox=tuple(float(v) for v in ln.bbox)))
 
+    # An interval read from prose stands as a depth only where it prints a
+    # unit of its own or chains with the page's other intervals from the
+    # same source; an interval standing alone with no unit is as likely a
+    # count or a thickness, so it is set aside before anything else.
+    for page in unruled:
+        for source in PROSE_SOURCES:
+            keys = [k for k in found if k[0] == page and k[1] == source]
+            every = [r for k in keys for r in found[k]]
+            links = {id(r): link for r, link in zip(every, chained(every))}
+            for key in keys:
+                kept_here: List[PrintedDepth] = []
+                for r in found[key]:
+                    if links[id(r)]:
+                        kept_here.append(replace(r, chains=True))
+                    elif r.unit:
+                        kept_here.append(r)
+                    else:
+                        result.dropped.append({
+                            "page": page, "text": r.text, "source": source,
+                            "top": r.top, "bottom": r.bottom,
+                            "why": "an interval in prose with no unit of its "
+                                   "own that chains with no other, which may "
+                                   "be a count or a thickness"})
+                found[key] = kept_here
+
     # The units each page prints: bound to its depths, or over its depth
     # column. A number printed with no unit takes its page's, if one.
     for page in unruled:
@@ -671,12 +745,14 @@ def printed_depths(grid: Any, pages: Sequence[int],
             if _is_year(r):
                 result.dropped.append({
                     "page": page, "text": r.text, "source": source,
+                    "top": r.top, "bottom": r.bottom,
                     "why": "reads as a year, not a depth"})
             elif log_unit and r.unit and r.unit != log_unit:
                 # The log's ruled sheets read in one unit and this number is
                 # printed in another; nothing here converts, so it is left.
                 result.dropped.append({
                     "page": page, "text": r.text, "source": source,
+                    "top": r.top, "bottom": r.bottom,
                     "why": f"printed in {r.unit} where the log's ruled "
                            f"sheets read {log_unit}"})
             else:

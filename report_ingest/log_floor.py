@@ -41,7 +41,7 @@ from report_ingest.model import (
     Quantity, SPT, Sample, WaterLevel, _canonical_unit,
 )
 from report_ingest.printed_depths import (
-    SAME_DEPTH, PrintedDepth, PrintedDepths, PrintedRow, on_line,
+    PrintedDepth, PrintedDepths, PrintedRow, chained, on_line,
     printed_depths,
 )
 
@@ -666,9 +666,10 @@ def _printed_layers(grid: Any, printed: PrintedDepths, unit: str,
 
     A stratum's words run from its line down to the next line that prints a
     depth beside a description (see the rules above). Only intervals that
-    CHAIN down the page, each top at the base above it, open layers: an
-    interval standing alone may be a thickness or a lens ("2 to 4 ft thick
-    sand lenses"), not a stratum. A stratum printed with one depth, or whose
+    CHAIN, each top at another's base or base at another's top, open
+    layers: an interval standing alone may be a thickness or a lens ("2 to 4
+    ft thick sand lenses"), not a stratum, and a seam printed between two
+    strata does not break their chain. A stratum printed with one depth, or whose
     words share a line with a sample, is left to the reader, whose top and
     base are accepted where the page prints them.
     """
@@ -699,17 +700,9 @@ def _printed_layers(grid: Any, printed: PrintedDepths, unit: str,
             cuts.append((reading if opens else None, at))
         intervals = [k for k, (reading, _at) in enumerate(cuts)
                      if reading is not None]
-        for i, k in enumerate(intervals):
-            here = cuts[k][0]
-            above = cuts[intervals[i - 1]][0] if i > 0 else None
-            below = (cuts[intervals[i + 1]][0]
-                     if i + 1 < len(intervals) else None)
-            chained = (
-                (above is not None
-                 and abs(above.bottom - here.top) <= SAME_DEPTH)
-                or (below is not None
-                    and abs(here.bottom - below.top) <= SAME_DEPTH))
-            if not chained:
+        links = chained([cuts[k][0] for k in intervals])
+        for k, link in zip(intervals, links):
+            if not link:
                 cuts[k] = (None, cuts[k][1])
         for k, (reading, start) in enumerate(cuts):
             if reading is None:

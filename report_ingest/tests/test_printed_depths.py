@@ -152,6 +152,7 @@ class _Grid:
         self.rulers = {}
         self.unit = unit
         self.warnings = ["page 0: no depth ruler was found"]
+        self.layers, self.samples, self.elevation_rulers = [], [], {}
 
     def column(self, column_id):
         return next((c for c in self.columns if c.id == column_id), None)
@@ -296,6 +297,18 @@ class TestWhatACellIsReadAs:
         ("1-2 percent organics", None),      # an amount
         ("95.0-90.0 ft msl: SAND", None),    # an elevation
         ("SAND with 10-20% gravel", None),   # not at the head of the line
+        ("10-12 N", None),                   # a blow count
+        ("2-3 cobbles", None),               # a count
+        ("3-4 feet of fill over clay", None),    # a thickness
+        ("10-12 blows", None),
+        ("10-12 bpf", None),
+        ("10-12% fines", None),
+        ("2-3 in. gravel", None),
+        ("2-3 inches of topsoil", None),
+        ("2-3 ft boulders", None),           # a size
+        # After a colon the same word is the stratum's own.
+        ("0.0 - 1.5 m: COBBLES and BOULDERS",
+         (0.0, 1.5, "m", "COBBLES and BOULDERS")),
     ])
     def test_a_description_line(self, text, want):
         assert _lead_cell(text) == want
@@ -416,6 +429,81 @@ class TestUnitsAndKinds:
         assert found.supporting(2.5, 0, "ft", "sample") is sample
         assert found.supporting(2.5, 0, "ft", "layer") is None
         assert found.supporting(2.5, 0, "ft", "water") is None
+
+
+class TestAnIntervalInProse:
+    """An interval at the head of a description backs a stratum's depth
+    only where it prints a unit of its own or chains with the page's other
+    intervals; never where it is a thickness, a count or a blow count."""
+
+    @staticmethod
+    def _description(*lines, page_unit=None):
+        columns = [_column("desc", "description")]
+        if page_unit:
+            columns.append(_column("dep", "depth", unit=page_unit))
+        cells = [SimpleNamespace(page=0, column_id="desc", column="desc",
+                                 text=t, bbox=(10.0, 100.0 + 12.0 * k,
+                                               200.0, 109.0 + 12.0 * k),
+                                 depth=None, numbers=[], confidence=0.3)
+                 for k, t in enumerate(lines)]
+        return _Grid(cells, columns)
+
+    @pytest.mark.parametrize("line, values", [
+        ("10-12 N", (10.0, 12.0)),
+        ("2-3 cobbles", (2.0, 3.0)),
+        ("3-4 feet of fill over clay", (3.0, 4.0)),
+    ])
+    def test_a_thickness_or_a_count_backs_no_stratum(self, line, values):
+        grid = self._description("0.5 - 1.0 m: TOPSOIL", line,
+                                 page_unit="m")
+        found = printed_depths(grid, [0])
+        assert [r.text for r in found.readings] == ["0.5 - 1.0 m: TOPSOIL"]
+        for value in values:
+            for unit in ("m", "ft"):
+                assert found.supporting(value, 0, unit, "layer") is None
+
+    def test_an_interval_with_no_unit_that_chains_with_none_backs_nothing(
+            self):
+        found = printed_depths(self._description("1.2 - 4.5 SILTY CLAY",
+                                                 page_unit="m"), [0])
+        assert found.readings == []
+        assert found.supporting(1.2, 0, "m", "layer") is None
+        why = found.why_not(1.2, 0, "m", "layer")
+        assert "'1.2 - 4.5 SILTY CLAY'" in why and "chains with no" in why
+
+    def test_intervals_that_chain_back_strata_and_a_seam_with_a_unit_too(
+            self):
+        grid = self._description(
+            "0.0 - 1.2 FILL, brown", "1.2 - 4.5 SILTY CLAY",
+            "4.5 - 7.0 SAND, dense", "5.0 - 5.5 m: clay seam",
+            "7.0 - 9.0 GRAVEL", "2-3 cobbles")
+        found = printed_depths(grid, [0])
+        assert found.dropped == []
+        for value in (0.0, 1.2, 4.5, 7.0, 9.0):
+            assert found.supporting(value, 0, "m", "layer") is not None
+            assert found.supporting(value, 0, "ft", "layer") is None
+        # The seam chains with nothing, but prints its own unit.
+        seam = found.supporting(5.0, 0, "m", "layer")
+        assert seam is not None and seam.unit == "m" and not seam.chains
+        # The floor opens the chained strata; the seam between the sand and
+        # the gravel does not break their chain, and opens no layer itself.
+        seed = seed_from_grid(grid, [0], "RX", printed=found)
+        assert seed.depth_unit == "m"
+        assert [(ly.top.value, ly.bottom.value) for ly in seed.layers] == [
+            (0.0, 1.2), (1.2, 4.5), (4.5, 7.0), (7.0, 9.0)]
+        assert seed.layers[3].description == "GRAVEL 2-3 cobbles"
+
+    def test_loose_page_text_is_read_by_the_same_rule(self):
+        grid = _Grid()
+        lines = {0: [SimpleNamespace(text=t, bbox=(10.0, y, 200.0, y + 9.0))
+                     for t, y in (("1.2 - 4.5 SILTY CLAY", 100.0),
+                                  ("10-12 N", 112.0))]}
+        assert printed_depths(grid, [0], lines=lines).readings == []
+        lines[0].append(SimpleNamespace(text="4.5 - 7.0 SAND",
+                                        bbox=(10.0, 124.0, 200.0, 133.0)))
+        found = printed_depths(grid, [0], lines=lines)
+        assert [(r.top, r.bottom) for r in found.readings] == [
+            (1.2, 4.5), (4.5, 7.0)]
 
 
 # ---------------------------------------------------------------------------
