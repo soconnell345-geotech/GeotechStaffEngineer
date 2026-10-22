@@ -41,7 +41,8 @@ from report_ingest.model import (
     Quantity, SPT, Sample, WaterLevel, _canonical_unit,
 )
 from report_ingest.printed_depths import (
-    PrintedDepth, PrintedDepths, PrintedRow, on_line, printed_depths,
+    SAME_DEPTH, PrintedDepth, PrintedDepths, PrintedRow, on_line,
+    printed_depths,
 )
 
 __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
@@ -614,7 +615,8 @@ class _PrintedLine:
 
 
 def _printed_lines(grid: Any, printed: PrintedDepths, page: int,
-                   by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                   by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
+                   unit: Optional[str] = None, placing: bool = True
                    ) -> List[_PrintedLine]:
     values = [c for c in grid.rows if c.page == page
               and set(_names(grid, c, by_column)) & _SAMPLE_FAMILY
@@ -627,10 +629,10 @@ def _printed_lines(grid: Any, printed: PrintedDepths, page: int,
     return [_PrintedLine(row,
                          [c for c in values if on_line(c.bbox, row.first)],
                          [c for c in words if on_line(c.bbox, row.first)])
-            for row in printed.rows(page)]
+            for row in printed.rows(page, unit, placing)]
 
 
-def _printed_rows(grid: Any, printed: PrintedDepths,
+def _printed_rows(grid: Any, printed: PrintedDepths, unit: str,
                   by_column: Optional[Dict[str, Tuple[str, ...]]] = None
                   ) -> List[Tuple[PrintedRow, List[Any], Optional[float]]]:
     """Each sample line's values, given the line's depth, and the base the
@@ -643,7 +645,7 @@ def _printed_rows(grid: Any, printed: PrintedDepths,
     out: List[Tuple[PrintedRow, List[Any], Optional[float]]] = []
     for page in printed.pages:
         taken: set = set()
-        for line in _printed_lines(grid, printed, page, by_column):
+        for line in _printed_lines(grid, printed, page, by_column, unit):
             if not line.row.places_values:
                 continue
             cells = [c for c in line.values if id(c) not in taken]
@@ -663,9 +665,12 @@ def _printed_layers(grid: Any, printed: PrintedDepths, unit: str,
     """The strata whose two depths a page with no ruler prints.
 
     A stratum's words run from its line down to the next line that prints a
-    depth beside a description (see the rules above). A stratum printed
-    with one depth, or whose words share a line with a sample, is left to
-    the reader, whose top and base are accepted where the page prints them.
+    depth beside a description (see the rules above). Only intervals that
+    CHAIN down the page, each top at the base above it, open layers: an
+    interval standing alone may be a thickness or a lens ("2 to 4 ft thick
+    sand lenses"), not a stratum. A stratum printed with one depth, or whose
+    words share a line with a sample, is left to the reader, whose top and
+    base are accepted where the page prints them.
     """
     out: List[Layer] = []
     for page in printed.pages:
@@ -677,8 +682,11 @@ def _printed_layers(grid: Any, printed: PrintedDepths, unit: str,
             continue
         rests = {tuple(r.bbox): r.rest for r in printed.on_page(page)
                  if r.source == "description"}
+        # Every line printing a depth beside a description cuts the words
+        # above it, whether or not its depth can place anything.
         cuts: List[Tuple[Optional[PrintedDepth], int]] = []
-        for line in _printed_lines(grid, printed, page, by_column):
+        for line in _printed_lines(grid, printed, page, by_column,
+                                   placing=False):
             if not line.words:
                 continue
             at = desc.index(line.words[0])
@@ -686,8 +694,23 @@ def _printed_layers(grid: Any, printed: PrintedDepths, unit: str,
                 continue
             reading = line.row.stratum()
             opens = (reading is not None and reading.bottom is not None
+                     and reading.seeds and printed.unit_on(reading) == unit
                      and (reading.source == "description" or not line.values))
             cuts.append((reading if opens else None, at))
+        intervals = [k for k, (reading, _at) in enumerate(cuts)
+                     if reading is not None]
+        for i, k in enumerate(intervals):
+            here = cuts[k][0]
+            above = cuts[intervals[i - 1]][0] if i > 0 else None
+            below = (cuts[intervals[i + 1]][0]
+                     if i + 1 < len(intervals) else None)
+            chained = (
+                (above is not None
+                 and abs(above.bottom - here.top) <= SAME_DEPTH)
+                or (below is not None
+                    and abs(here.bottom - below.top) <= SAME_DEPTH))
+            if not chained:
+                cuts[k] = (None, cuts[k][1])
         for k, (reading, start) in enumerate(cuts):
             if reading is None:
                 continue
@@ -1045,10 +1068,17 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     unit = (grid.unit or "").strip()
     if printed is None:
         printed = printed_depths(grid, pages)
+    # On a log with no ruler anywhere, a header depth is the number its
+    # unit is bound to (RI-18), never the first number on the line, which
+    # may be a date, a time or a year; and the unit is the one printed with
+    # the depths or over the depth column. None on every other log, whose
+    # header reads as it always did.
+    header_depths: Optional[Dict[str, float]] = None
     if printed and not unit and not grid.rulers:
-        # A log with no ruler anywhere states its depth unit, if at all,
-        # beside its printed depths or over its depth column.
         unit = printed.unit
+        header_depths = {r.column_id: r.top for r in printed.readings
+                         if r.source == "header"
+                         and printed.unit_on(r) == unit}
     fields = dict(grid.fields or {})
     used: set = set()
 
@@ -1092,7 +1122,11 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                              prov=fprov("ground_surface_elevation"))
     total = None
     raw = text("total_depth")
-    if raw and _first_number(raw) is not None \
+    if header_depths is not None:
+        if header_depths.get("total_depth") is not None and unit:
+            total = Quantity(value=header_depths["total_depth"], unit=unit,
+                             prov=fprov("total_depth"))
+    elif raw and _first_number(raw) is not None \
             and _first_number(raw) >= 0.0 and unit:
         total = Quantity(value=_first_number(raw), unit=unit,
                          prov=fprov("total_depth"))
@@ -1147,7 +1181,8 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     raw = text("groundwater")
     if raw:
         lowered = raw.lower()
-        number = _first_number(raw)
+        number = (_first_number(raw) if header_depths is None
+                  else header_depths.get("groundwater"))
         if re.search(r"not encountered|none|dry|no water|n/e|n\.e\.",
                      lowered) and number is None:
             water.append(WaterLevel(depth=None, when="not_encountered",
@@ -1197,7 +1232,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                             confidence=max(confidence_floor,
                                            min(1.0, float(ly.confidence))),
                             note=note)))
-    if printed:
+    if printed and unit:
         for layer in _printed_layers(grid, printed, unit, confidence_floor,
                                      by_column):
             key = (round(float(layer.top.value), 2), fold(layer.description))
@@ -1235,10 +1270,11 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                 samples.append(sample)
             if drive is not None:
                 spt.append(drive)
-    if printed:
+    if printed and unit:
         span = _span_in_unit(unit, grid)
         ruled = [float(s.top.value) for s in samples if s.top is not None]
-        for row, cells, base in _printed_rows(grid, printed, by_column):
+        for row, cells, base in _printed_rows(grid, printed, unit,
+                                              by_column):
             if any(abs(row.top - top) <= span for top in ruled):
                 # A sheet with no ruler restating a sample a ruled sheet has
                 # already placed: the same sample read twice (see _Group).

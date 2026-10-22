@@ -11,7 +11,7 @@ for reasons that say nothing about whether the log states its depths:
 - the depth column prints intervals (``1.50 - 3.00``) or numbers with a unit
   beside them, which are not the lone numbers a ruler is made of;
 - the form's scale was never printed, and the depths are written against the
-  samples instead (``S-1  2.5-4.0``);
+  samples instead (``S-1  2.5-4.0 ft``);
 - the page draws no ruled columns and its header names none, so nothing on
   it is placed at all.
 
@@ -22,28 +22,37 @@ them, in order of trust, and nothing else:
    DEPTH, or a lone number set into the description's margin (which
    ``log_grid`` already names a depth cell). The form's own statement of the
    depth of the row it stands on.
-2. ``sample_column``: an interval printed in a sample column after the
-   sample's label, ``S-1  2.5-4.0``, or a depth after ``@``. The sample's own
-   stated interval; but a sample column also carries labels that can look
-   like an interval, so a pair of whole numbers with no label and no unit is
-   not read.
+2. ``sample_column``: an interval printed after a sample's label,
+   ``S-1  2.5-4.0 ft``, or a depth after ``@``. A sample column also prints
+   blow records that look like an interval (``S-1 6-8``), so the depth is
+   read only where a unit is printed with it or the column is headed DEPTH
+   as well.
 3. ``description``: an interval at the head of a line of the description,
    ``0.0 - 1.2 m: FILL ...``. Prose, where a pair of numbers can also be a
-   size or an amount, so one followed by a unit of size or a percentage is
-   not read.
+   size, a thickness or an amount, so one followed by such a word is not
+   read.
 4. ``header``: the depth the header's groundwater or total-depth field
-   prints, ``Groundwater encountered at 10 ft``, read only when the number
-   carries its own unit. It places no row.
+   prints, ``Groundwater encountered at 10 ft``: the number the unit is
+   bound to, never the first number on the line, which may be a date, a
+   time or a year. It places no row.
 5. ``page_text``: an interval at the head of a line, on a page where the
-   grid placed nothing at all. No column says what it is, so it is only ever
-   support for a depth the reader returns, never seeded on its own.
+   grid placed nothing at all.
 
 WHAT IT NEVER DOES. It never reads a depth off a row's POSITION -- with no
 ruler, a y is not a depth -- and it never interpolates between two printed
 depths. A value is given a depth only when a printed depth stands on its own
-line (:func:`on_line`), and a value with no printed depth beside it keeps no
-depth. Depth grows down a log, so a printed number that breaks the downward
-order of its column is not read as a depth: it is listed in ``dropped``.
+line (:func:`on_line`). A number labelled an elevation (EL, Elev., datum,
+NGVD, NAVD, msl) and a bare year are never read as depths.
+
+PLACING AND CHECKING. A depth places the values printed on its line only
+when its column can be trusted to be a run of depths: a depth or sample
+column whose numbers rise all the way down the page. A column with any
+number out of order (depths interleaved with elevations or blow counts), a
+lone number in the margin, and loose page text are kept to CHECK a depth the
+reader returns, and place nothing. A depth the reader returns is backed only
+by a printed number of the same kind (a sample's depth by the depth or
+sample column, a stratum's by the depth column or a description, a water
+level by the header's groundwater field) and in the same unit.
 
 Nothing here runs on a page whose ruler was fitted, so a log whose every page
 has a ruler reads exactly as it did before this module existed.
@@ -52,11 +61,11 @@ has a ruler reads exactly as it did before this module existed.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 __all__ = ["PrintedDepth", "PrintedRow", "PrintedDepths", "printed_depths",
-           "on_line", "TRUST", "SAME_DEPTH"]
+           "on_line", "fold_unit", "TRUST", "SAME_DEPTH", "SERVES"]
 
 #: How far each source is trusted, as the confidence its readings carry.
 #: The number itself is exact as printed; what is uncertain is which row it
@@ -88,6 +97,15 @@ LINE_SOURCES = ("depth_column", "sample_column", "description")
 #: The header fields that state a depth, as ``log_grid`` names them.
 HEADER_DEPTHS = ("groundwater", "total_depth")
 
+#: What each kind of depth the reader returns may stand on. A total depth is
+#: a header value the gate does not check, so the total-depth field backs
+#: nothing here; it is read for the floor.
+SERVES: Dict[str, Tuple[str, ...]] = {
+    "layer": ("depth_column", "description", "page_text"),
+    "sample": ("depth_column", "sample_column", "page_text"),
+    "water": ("header:groundwater",),
+}
+
 #: A number the reader returns is the printed one when it is within this of
 #: it: the model copies a printed number, it does not measure one.
 SAME_DEPTH = 0.005
@@ -96,7 +114,7 @@ _NUM = r"\d+(?:\.\d+)?"
 #: The depth units a log prints beside a depth. Inches and millimetres are
 #: the length of a drive or the size of a particle, never a depth, and are
 #: deliberately not here.
-_UNIT = r"(?:(?:feet|foot|ft|metres|meters|m)\b\.?|'|′)"
+_UNIT = r"(?:(?:feet|foot|ft|metres|meters|metre|meter|m)\b\.?|'|′)"
 _DASH = r"(?:-|–|—|\bto\b)"
 _RANGE = rf"({_NUM})\s*({_UNIT})?\s*{_DASH}\s*({_NUM})\s*({_UNIT})?"
 _WHOLE_ONE = re.compile(rf"^\s*({_NUM})\s*({_UNIT})?\s*$", re.I)
@@ -105,23 +123,43 @@ _SAMPLE_RANGE = re.compile(
     rf"^(?P<label>.*?)(?:^|(?<=[\s(@:,]))\(?\s*{_RANGE}\s*\)?\s*$", re.I)
 _SAMPLE_AT = re.compile(rf"^(?P<label>.*?)@\s*({_NUM})\s*({_UNIT})?\s*$",
                         re.I)
-_WITH_UNIT = re.compile(rf"({_NUM})\s*({_UNIT})", re.I)
 _LEAD_RANGE = re.compile(
     rf"^\s*\(?\s*{_RANGE}\s*\)?\s*[:;,.]?\s*(?P<rest>[A-Za-z(].*)?$", re.I)
-#: A pair of numbers followed by one of these is a size, an amount or a
-#: pressure ("2-3 inch gravel", "1-2 percent organics"), not a stratum.
+#: A number bound to a depth unit: ``12.5 ft``. Not the tail of a date, a
+#: time or a range (``3/4/2019``, ``8:30``, ``10-12``), which is no depth.
+_BOUND = re.compile(rf"(?<![\d/:.\-])({_NUM})\s*({_UNIT})", re.I)
+#: An elevation label just before a number, or a datum just after its
+#: unit (``98.5 ft msl``, ``98.5 ft NAVD88``). An ``(EL. ...)`` after a
+#: depth labels the number that follows it, not the depth.
+_ELEVATION_BEFORE = re.compile(
+    r"\b(?:el|elev|elevation|datum)\b\.?\s*[:=]?\s*$", re.I)
+_ELEVATION_AFTER = re.compile(
+    r"^\s*\(?\s*(?:msl|amsl|asl|datum|ngvd\s*\d*|navd\s*\d*)\b", re.I)
+#: A four-figure whole number from 1900 to 2099 printed with no unit.
+_YEAR = re.compile(r"(?<![\d.])(?:19|20)\d\d(?![\d.])")
+#: A pair of numbers followed by one of these is a size, a thickness, an
+#: amount, a pressure or an elevation ("2-3 inch gravel", "2 to 4 ft thick
+#: lenses", "1-2 percent organics"), not a stratum.
 _NOT_A_DEPTH_WORD = frozenset({
     "in", "inch", "inches", "mm", "cm", "mesh", "percent", "pct", "blows",
     "bpf", "psi", "psf", "tsf", "ksf", "kpa", "mpa", "pcf", "times",
+    "thick", "thickness", "wide", "width", "long", "length", "diameter",
+    "dia", "el", "elev", "elevation", "msl", "amsl", "asl", "ngvd", "navd",
+    "datum",
 })
 
 
-def _unit(token: Optional[str]) -> str:
-    """A printed depth unit folded to ``ft`` or ``m``; ``""`` for none."""
+def fold_unit(token: Optional[str]) -> str:
+    """A depth unit folded to ``ft`` or ``m``; ``""`` for none, and any
+    other word lower-cased, so it matches neither."""
     word = (token or "").strip().lower().rstrip(".")
     if not word:
         return ""
-    return "ft" if word in ("'", "′", "ft", "feet", "foot") else "m"
+    if word in ("'", "′", "ft", "feet", "foot"):
+        return "ft"
+    if word in ("m", "metre", "metres", "meter", "meters"):
+        return "m"
+    return word
 
 
 @dataclass(frozen=True)
@@ -135,11 +173,15 @@ class PrintedDepth:
     text: str
     bbox: Tuple[float, float, float, float]
     column_id: str = ""
+    #: The unit printed with this number, folded; ``""`` when none is.
     unit: str = ""
     #: What the cell prints before the depth (a sample's label) or after it
     #: (the words of a description), as printed.
     label: str = ""
     rest: str = ""
+    #: Whether this depth places the values on its line (see the module
+    #: notes); when False it only checks a depth the reader returns.
+    seeds: bool = True
 
     @property
     def confidence(self) -> float:
@@ -154,11 +196,19 @@ class PrintedDepth:
         return any(v is not None and abs(float(value) - v) <= SAME_DEPTH
                    for v in (self.top, self.bottom))
 
+    def serves(self, kind: str) -> bool:
+        """Can this reading back a depth of ``kind`` (``layer``,
+        ``sample``, ``water``)?"""
+        key = (f"header:{self.column_id}" if self.source == "header"
+               else self.source)
+        return key in SERVES.get(kind, ())
+
     def to_dict(self) -> Dict[str, Any]:
         return {"page": self.page, "top": self.top, "bottom": self.bottom,
                 "source": self.source, "text": self.text,
                 "bbox": [round(v, 1) for v in self.bbox],
-                "unit": self.unit or None, "confidence": self.confidence}
+                "unit": self.unit or None, "confidence": self.confidence,
+                "places_rows": self.seeds}
 
 
 @dataclass
@@ -180,10 +230,20 @@ class PrintedRow:
     def top(self) -> float:
         return self.first.top
 
+    @property
+    def label(self) -> str:
+        return next((r.label for r in self.readings if r.label), "")
+
+    @property
+    def places_values(self) -> bool:
+        """Does this line place the samples and tests printed on it? Only a
+        depth column or a sample's own interval does."""
+        return self.first.source in ROW_SOURCES
+
     def sample_bottom(self, beside_words: bool) -> Optional[float]:
         """The base of a sample on this line, where the page prints it.
 
-        The sample's own interval (``S-2  1.5-3.0``) gives it. So does an
+        The sample's own interval (``S-2  1.5-3.0 ft``) gives it. So does an
         interval in the depth column -- but not on a line where a
         description stands too, since there the interval may as well be
         the stratum's; the base is then left unknown.
@@ -204,16 +264,6 @@ class PrintedRow:
                     None) or next((r for r in self.readings
                                    if r.source == "depth_column"), None)
 
-    @property
-    def label(self) -> str:
-        return next((r.label for r in self.readings if r.label), "")
-
-    @property
-    def places_values(self) -> bool:
-        """Does this line place the samples and tests printed on it? Only a
-        depth column or a sample's own interval does."""
-        return self.first.source in ROW_SOURCES
-
     def note(self) -> str:
         return (f"no depth ruler on page {self.page}; the depth is the one "
                 f"printed {self.first.how} on this line ('{self.first.text}')")
@@ -231,7 +281,10 @@ class PrintedDepths:
     dropped: List[Dict[str, Any]] = field(default_factory=list)
     #: Page -> why its ruler was not fitted, in the grid's own words.
     reasons: Dict[int, str] = field(default_factory=dict)
-    #: The depth unit printed with the depths or over the depth column.
+    #: Page -> the depth units it prints: with its depths, or over its depth
+    #: column.
+    page_units: Dict[int, List[str]] = field(default_factory=dict)
+    #: The one depth unit these pages print, or ``""``.
     unit: str = ""
     unit_from: str = ""
 
@@ -241,21 +294,68 @@ class PrintedDepths:
     def on_page(self, page: int) -> List[PrintedDepth]:
         return [r for r in self.readings if r.page == page]
 
-    def supporting(self, value: float, page: Optional[int]
-                   ) -> Optional[PrintedDepth]:
-        """The most trusted reading on ``page`` that prints ``value``."""
+    def unit_on(self, reading: PrintedDepth) -> Optional[str]:
+        """The unit of ``reading``: the one printed with it, else the one
+        its page prints; ``""`` when the page prints none, and None when the
+        page prints two and none is bound to this number."""
+        if reading.unit:
+            return reading.unit
+        units = self.page_units.get(reading.page, [])
+        if not units:
+            return ""
+        return units[0] if len(units) == 1 else None
+
+    def _fits(self, reading: PrintedDepth, unit: str) -> bool:
+        printed = self.unit_on(reading)
+        if printed is None:
+            return False
+        return printed == "" or printed == fold_unit(unit)
+
+    def supporting(self, value: float, page: Optional[int], unit: str,
+                   kind: str) -> Optional[PrintedDepth]:
+        """The most trusted reading on ``page`` that prints ``value`` in
+        ``unit`` and can back a depth of ``kind``."""
         if page is None or int(page) not in self.pages:
             return None
-        hits = [r for r in self.on_page(int(page)) if r.shows(value)]
+        hits = [r for r in self.on_page(int(page)) if r.shows(value)
+                and r.serves(kind) and self._fits(r, unit)]
         return max(hits, key=lambda r: r.confidence) if hits else None
 
-    def rows(self, page: int) -> List[PrintedRow]:
-        """The page's printed depths gathered by the line of the log they
-        stand on, in page order. The header and a page's loose text stand on
-        no line of it."""
+    def why_not(self, value: float, page: Optional[int], unit: str,
+                kind: str) -> str:
+        """Why no printed number backs ``value``, for the refusal."""
+        lead = f"no depth ruler could be fitted on page {page}"
+        shown = [r for r in self.on_page(int(page)) if r.shows(value)] \
+            if page is not None else []
+        if not shown:
+            return (f"{lead} and nothing printed on it reads {value:g}, so "
+                    f"the depth stands on nothing on the page; refused "
+                    f"rather than accepted")
+        r = shown[0]
+        if not any(s.serves(kind) for s in shown):
+            return (f"{lead}; it prints {value:g} only {r.how} "
+                    f"('{r.text}'), which is not a {kind}'s depth; refused "
+                    f"rather than accepted")
+        r = next(s for s in shown if s.serves(kind))
+        printed = self.unit_on(r)
+        return (f"{lead}; it prints {value:g} "
+                + (f"in {printed}" if printed else "with no unit it can be "
+                   "read in, as the page prints two")
+                + f" ('{r.text}'), and the reader gave "
+                f"{fold_unit(unit) or 'no unit'}; refused rather than "
+                f"accepted")
+
+    def rows(self, page: int, unit: Optional[str] = None,
+             placing: bool = True) -> List[PrintedRow]:
+        """The page's depths gathered by the line of the log they stand on,
+        in page order: only the PLACING ones unless ``placing`` is False,
+        and with ``unit`` only those in that unit. The header and a page's
+        loose text stand on no line of it."""
         rows: List[PrintedRow] = []
         here = sorted((r for r in self.on_page(page)
-                       if r.source in LINE_SOURCES),
+                       if r.source in LINE_SOURCES
+                       and (r.seeds or not placing)
+                       and (unit is None or self.unit_on(r) == unit)),
                       key=lambda r: (r.bbox[1], -r.confidence))
         for reading in here:
             home = next((row for row in rows
@@ -269,52 +369,67 @@ class PrintedDepths:
 
     def qa_rows(self, grid: Any, value_columns: Sequence[str]
                 ) -> List[Dict[str, Any]]:
-        """One QA row per page with no ruler: that the ruler was not fitted,
-        why, what was read from print instead, and what still has no depth.
+        """One QA row per page with no ruler, for the engineer: that the
+        ruler was not fitted and why, which depths were read from print
+        instead and need checking against the log, and what has none.
 
         ``value_columns`` are the column names whose cells are values of a
         sample or a test (the floor's sample family); they are what is
-        counted as placed or not.
+        counted as placed or not. The row is flagged ``no_ruler``; it is a
+        gap in the reading, not a refusal.
         """
         out: List[Dict[str, Any]] = []
         for page in self.pages:
-            why = (f"the depth ruler on page {page} could not be fitted "
-                   f"({self.reasons.get(page) or 'no reason was given'})")
+            why = (f"No depth ruler could be fitted on page {page} "
+                   f"({self.reasons.get(page) or 'no reason was given'}).")
             here = self.on_page(page)
             if here:
                 counts: Dict[str, int] = {}
                 for r in here:
                     counts[r.how] = counts.get(r.how, 0) + 1
-                lines = [r for r in here if r.source in ROW_SOURCES]
+                why += (f" Check these {len(here)} depth(s) against the "
+                        f"printed log: they were read from what the page "
+                        f"prints ("
+                        + ", ".join(f"{n} {how}" for how, n in counts.items())
+                        + ") and no scale checked them.")
+                lines = [r for row in self.rows(page) for r in row.readings
+                         if r.source in ROW_SOURCES]
                 values = [c for c in getattr(grid, "rows", ())
                           if c.page == page and _names(grid, c)
                           & set(value_columns)]
-                placed = [c for c in values
-                          if any(on_line(c.bbox, r) for r in lines)]
-                why += (f"; {len(here)} depth(s) were read from what the page "
-                        f"prints instead ("
-                        + ", ".join(f"{n} {how}" for how, n in counts.items())
-                        + "), each marked with how it was read; "
-                        f"{len(values) - len(placed)} of the {len(values)} "
-                        f"sample and test value(s) on the page stand on no "
-                        f"printed depth and have none")
+                if values:
+                    placed = [c for c in values
+                              if any(on_line(c.bbox, r) for r in lines)]
+                    why += (f" {len(values) - len(placed)} of the "
+                            f"{len(values)} sample and test value(s) on the "
+                            f"page stand on no printed depth and were left "
+                            f"without one.")
+                checking = [r for r in here if not r.seeds]
+                if checking:
+                    why += (f" {len(checking)} of the depths, from a column "
+                            f"whose numbers do not rise down the page, the "
+                            f"margin or loose text, only check the reader's "
+                            f"depths and place nothing.")
             else:
-                why += ("; the page prints no depth in a depth column, as a "
+                why += (" The page prints no depth in a depth column, as a "
                         "sample's interval, at the head of a description or "
-                        "in its header either, so no value on it has a depth")
+                        "in its header either, so nothing on it has a depth;"
+                        " check the printed log for depths written another "
+                        "way.")
             left = [d for d in self.dropped if d.get("page") == page]
             if left:
-                why += (f"; {len(left)} printed number(s) were not read as "
-                        f"depths: " + "; ".join(
-                            f"'{d['text']}' {d['why']}" for d in left[:3])
-                        + ("" if len(left) <= 3 else "; ..."))
+                why += (f" Not read as depths: " + "; ".join(
+                    f"'{d['text']}' ({d['why']})" for d in left[:3])
+                    + ("" if len(left) <= 3 else "; ...") + ".")
             out.append({"what": f"depth scale, page {page}", "page": page,
-                        "why": why, "refused_by": "no_ruler"})
+                        "why": why, "flag": "no_ruler"})
         return out
 
     def to_dict(self) -> Dict[str, Any]:
         return {"pages": list(self.pages), "unit": self.unit or None,
                 "unit_from": self.unit_from or None,
+                "page_units": {str(k): list(v)
+                               for k, v in self.page_units.items()},
                 "readings": [r.to_dict() for r in self.readings],
                 "dropped": [dict(d) for d in self.dropped],
                 "reasons": {str(k): v for k, v in self.reasons.items()}}
@@ -347,7 +462,7 @@ def _range(match: "re.Match[str]", base: int = 1
     top, bottom = float(match.group(base)), float(match.group(base + 2))
     if not top < bottom:
         return None                       # an interval goes down the hole
-    unit = _unit(match.group(base + 1)) or _unit(match.group(base + 3))
+    unit = fold_unit(match.group(base + 1)) or fold_unit(match.group(base + 3))
     return top, bottom, unit
 
 
@@ -355,32 +470,43 @@ def _depth_cell(text: str) -> Optional[Tuple[float, Optional[float], str]]:
     """A depth column's cell: one number or one interval, nothing else."""
     one = _WHOLE_ONE.match(text)
     if one:
-        return float(one.group(1)), None, _unit(one.group(2))
+        return float(one.group(1)), None, fold_unit(one.group(2))
     whole = _WHOLE_RANGE.match(text)
     if whole:
         return _range(whole)
     return None
 
 
-def _sample_cell(text: str
+def _sample_cell(text: str, in_depth_column: bool = False
                  ) -> Optional[Tuple[float, Optional[float], str, str]]:
-    """A sample column's cell: a label, then its interval or ``@ depth``."""
+    """A sample column's cell: a label, then its interval or ``@ depth``.
+
+    A sample column prints blow records that look like intervals
+    (``S-1 6-8``), so the depth is read only when a unit is printed with
+    it, or when the column is headed DEPTH as well.
+    """
     at = _SAMPLE_AT.match(text)
     if at:
         label = at.group("label").strip(" ,:(")
-        return float(at.group(2)), None, _unit(at.group(3)), label
+        unit = fold_unit(at.group(3))
+        if not (unit or in_depth_column):
+            return None
+        return float(at.group(2)), None, unit, label
     match = _SAMPLE_RANGE.match(text)
     if not match:
+        return None
+    label = match.group("label").strip(" ,:(@")
+    if _ELEVATION_BEFORE.search(label):
         return None
     found = _range(match, base=2)
     if found is None:
         return None
     top, bottom, unit = found
-    label = match.group("label").strip(" ,:(@")
-    whole = "." not in match.group(2) and "." not in match.group(4)
-    if whole and not unit and not re.search(r"[A-Za-z]", label):
-        # "5-7" alone in a sample column: as likely a label as a depth.
+    if not (unit or in_depth_column):
         return None
+    if not unit and not re.search(r"[A-Za-z]", label) \
+            and "." not in match.group(2) and "." not in match.group(4):
+        return None          # "5-7" alone: as likely a label as a depth
     return top, bottom, unit, label
 
 
@@ -392,7 +518,8 @@ def _lead_cell(text: str) -> Optional[Tuple[float, float, str, str]]:
     rest = (match.group("rest") or "").strip()
     first = (re.split(r"[\s,.;:()]+", rest.lower(), maxsplit=1)[0]
              if rest else "")
-    if first in _NOT_A_DEPTH_WORD:
+    if first in _NOT_A_DEPTH_WORD or \
+            first.rstrip("0123456789") in _NOT_A_DEPTH_WORD:
         return None
     found = _range(match)
     if found is None:
@@ -401,32 +528,35 @@ def _lead_cell(text: str) -> Optional[Tuple[float, float, str, str]]:
     return top, bottom, unit, rest
 
 
+def _header_depth(raw: str) -> Optional[Tuple[float, str]]:
+    """The depth a header field prints: the first number BOUND to a depth
+    unit that is not labelled an elevation. ``After 24 hrs 12.5 ft`` reads
+    12.5; ``3/4/2019 at 8 ft`` reads 8; ``EL. 98.5 ft`` reads nothing."""
+    for match in _BOUND.finditer(raw):
+        if _ELEVATION_BEFORE.search(raw[:match.start()]) \
+                or _ELEVATION_AFTER.match(raw[match.end():]):
+            continue
+        return float(match.group(1)), fold_unit(match.group(2))
+    return None
+
+
 # ---------------------------------------------------------------------------
 # the pass
 # ---------------------------------------------------------------------------
 
-def _downward(readings: List[PrintedDepth]) -> Tuple[List[PrintedDepth],
-                                                     List[PrintedDepth]]:
-    """The longest run of readings whose tops do not rise down the page, and
-    the rest. Depth grows down a log; a number that breaks that order is a
-    count, a label or an elevation that happens to stand in the column."""
+def _rises(readings: List[PrintedDepth]) -> bool:
+    """Do these readings' tops rise (or hold) all the way down the page?
+    Depth grows down a log; a column where any number goes back up is
+    interleaved with something else -- elevations, blow counts -- and its
+    numbers cannot be told apart by order alone."""
     ordered = sorted(readings, key=lambda r: (r.bbox[1], r.bbox[0]))
-    n = len(ordered)
-    if n < 2:
-        return ordered, []
-    best, prev = [1] * n, [-1] * n
-    for i in range(n):
-        for j in range(i):
-            if ordered[j].top <= ordered[i].top and best[j] + 1 > best[i]:
-                best[i], prev[i] = best[j] + 1, j
-    end = max(range(n), key=lambda i: best[i])
-    keep: List[int] = []
-    while end >= 0:
-        keep.append(end)
-        end = prev[end]
-    kept = set(keep)
-    return ([ordered[i] for i in sorted(kept)],
-            [ordered[i] for i in range(n) if i not in kept])
+    return all(a.top <= b.top for a, b in zip(ordered, ordered[1:]))
+
+
+def _is_year(reading: PrintedDepth) -> bool:
+    return not reading.unit and bool(_YEAR.search(reading.text)) and any(
+        v is not None and float(v).is_integer() and 1900 <= v <= 2099
+        for v in (reading.top, reading.bottom))
 
 
 def _reason(grid: Any, page: int) -> str:
@@ -448,8 +578,8 @@ def printed_depths(grid: Any, pages: Sequence[int],
     """Every depth printed on the pages of this log that have no ruler.
 
     ``lines`` maps a page to its text lines; it is read only on a page where
-    the grid placed nothing, and only for ``page_text`` support. Nothing is
-    read on a page that has a ruler.
+    the grid placed nothing, and only for ``page_text``. Nothing is read on
+    a page that has a ruler.
     """
     rulers = getattr(grid, "rulers", None) or {}
     unruled = [int(p) for p in pages if int(p) not in rulers]
@@ -472,17 +602,19 @@ def printed_depths(grid: Any, pages: Sequence[int],
                       column_id=str(cell.column_id))
         # A column headed DEPTH, unless it is headed ELEVATION too (its
         # numbers could be either); or a lone number the grid found set
-        # into the description's margin, which it names a depth cell.
-        is_depth = ("depth" in names and "elevation" not in names) or (
-            getattr(cell, "column", "") == "depth" and "depth" not in names)
-        if is_depth:
+        # into the description's margin, which it names a depth cell but
+        # which may as well be an elevation, so it only checks.
+        in_depth = "depth" in names and "elevation" not in names
+        margin = getattr(cell, "column", "") == "depth" and "depth" not in names
+        if in_depth or margin:
             got = _depth_cell(text)
             if got is not None:
                 add(PrintedDepth(top=got[0], bottom=got[1], unit=got[2],
-                                 source="depth_column", **common))
+                                 source="depth_column", seeds=not margin,
+                                 **common))
                 continue
         if names & {"sample_id", "sample_type"}:
-            got = _sample_cell(text)
+            got = _sample_cell(text, in_depth_column=in_depth)
             if got is not None:
                 add(PrintedDepth(top=got[0], bottom=got[1], unit=got[2],
                                  label=got[3], source="sample_column",
@@ -497,14 +629,14 @@ def printed_depths(grid: Any, pages: Sequence[int],
     for key in HEADER_DEPTHS:
         raw = " ".join(str((getattr(grid, "fields", None) or {}).get(key)
                            or "").split())
-        hit = _WITH_UNIT.search(raw)
-        if not hit:
-            continue                 # a number with no unit is not read here
+        got = _header_depth(raw)
+        if got is None:
+            continue
         page, box = boxes.get(key, (unruled[0], (0.0, 0.0, 0.0, 0.0)))
         if int(page) not in unruled:
             continue
-        add(PrintedDepth(page=int(page), top=float(hit.group(1)), bottom=None,
-                         unit=_unit(hit.group(2)), source="header", text=raw,
+        add(PrintedDepth(page=int(page), top=got[0], bottom=None,
+                         unit=got[1], source="header", text=raw,
                          bbox=tuple(float(v) for v in box), column_id=key,
                          label=key.replace("_", " ")))
     placed = {int(c.page) for c in getattr(grid, "rows", ()) or ()}
@@ -517,18 +649,30 @@ def printed_depths(grid: Any, pages: Sequence[int],
             if got is not None:
                 add(PrintedDepth(page=page, top=got[0], bottom=got[1],
                                  unit=got[2], rest=got[3], source="page_text",
-                                 text=text,
+                                 text=text, seeds=False,
                                  bbox=tuple(float(v) for v in ln.bbox)))
-    log_unit = str(getattr(grid, "unit", None) or "").strip()
+
+    # The units each page prints: bound to its depths, or over its depth
+    # column. A number printed with no unit takes its page's, if one.
+    for page in unruled:
+        units = {r.unit for (p, _s, _c), rs in found.items() if p == page
+                 for r in rs if r.unit}
+        units |= {fold_unit(str(c.unit))
+                  for c in getattr(grid, "columns", ()) or ()
+                  if c.page == page and "depth" in (c.names or ())
+                  and "elevation" not in (c.names or ()) and c.unit}
+        units.discard("")
+        result.page_units[page] = sorted(units)
+
+    log_unit = fold_unit(str(getattr(grid, "unit", None) or ""))
     for (page, source, _column), readings in sorted(found.items()):
-        kept, dropped = _downward(readings)
-        for r in dropped:
-            result.dropped.append({
-                "page": page, "text": r.text, "source": source,
-                "why": "breaks the downward order of its column, so it is "
-                       "not read as a depth"})
-        for r in kept:
-            if log_unit and r.unit and r.unit != log_unit:
+        kept: List[PrintedDepth] = []
+        for r in readings:
+            if _is_year(r):
+                result.dropped.append({
+                    "page": page, "text": r.text, "source": source,
+                    "why": "reads as a year, not a depth"})
+            elif log_unit and r.unit and r.unit != log_unit:
                 # The log's ruled sheets read in one unit and this number is
                 # printed in another; nothing here converts, so it is left.
                 result.dropped.append({
@@ -536,22 +680,23 @@ def printed_depths(grid: Any, pages: Sequence[int],
                     "why": f"printed in {r.unit} where the log's ruled "
                            f"sheets read {log_unit}"})
             else:
-                result.readings.append(r)
+                kept.append(r)
+        if source in LINE_SOURCES and not _rises(kept):
+            # Out of order somewhere: every number in the column only
+            # checks, since order cannot say which of them are depths.
+            kept = [replace(r, seeds=False) for r in kept]
+        result.readings.extend(kept)
     result.readings.sort(key=lambda r: (r.page, r.bbox[1], -r.confidence))
     for page in unruled:
         result.reasons[page] = _reason(grid, page)
-    # The unit: the one printed beside the depths or over the depth column.
-    # Where the page prints two, it is left unknown rather than chosen.
-    units = {r.unit for r in result.readings if r.unit}
-    heads = {_unit(str(c.unit)) for c in getattr(grid, "columns", ()) or ()
-             if c.page in unruled and "depth" in (c.names or ()) and c.unit}
-    heads.discard("")
-    if len(units | heads) == 1:
-        result.unit = (units | heads).pop()
-        result.unit_from = ("printed beside the depths" if units
+
+    every = sorted({u for units in result.page_units.values() for u in units})
+    bound = {r.unit for r in result.readings if r.unit}
+    if len(every) == 1:
+        result.unit = every[0]
+        result.unit_from = ("printed beside the depths" if bound
                             else "the depth column's heading")
-    elif len(units | heads) > 1:
-        result.unit_from = ("the page prints both "
-                            + " and ".join(sorted(units | heads))
+    elif len(every) > 1:
+        result.unit_from = ("the pages print both " + " and ".join(every)
                             + ", so the unit is left unknown")
     return result

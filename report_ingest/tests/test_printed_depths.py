@@ -4,24 +4,28 @@ A page with no fitted ruler used to lose every depth: the floor seeded
 nothing and the reader's gate refused every depth the model returned. These
 tests pin what is recovered now -- the depths the page PRINTS, each marked
 with how it was read -- and what is still refused: any depth nothing on the
-page prints. They also pin that a log whose ruler fits reads as before.
+page prints, in the reader's unit, for that kind of value. They also pin
+that a log whose ruler fits reads as before.
 
-The pages are synthetic (``report_ingest.tests.no_ruler_fixtures`` and
-``planlens.testing.loggrid_fixtures``); nothing is copied from a real log.
+The pages are synthetic (``report_ingest.tests.no_ruler_fixtures``,
+``planlens.testing.loggrid_fixtures`` and the small stand-in grids below);
+nothing is copied from a real log.
 """
 
 from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 
 from report_ingest.log_floor import seed_from_grid
 from report_ingest.log_reader import (
     LOG_READER_SYSTEM, LOG_READER_SYSTEM_PRINTED, LogReading, ReadLayer,
-    ReadProv, ReadSPT, ReadSample, read_log,
+    ReadProv, ReadSPT, ReadSample, ReadWater, read_log,
 )
 from report_ingest.printed_depths import (
-    TRUST, _depth_cell, _downward, _lead_cell, _sample_cell, PrintedDepth,
-    PrintedRow, printed_depths,
+    TRUST, PrintedDepth, PrintedDepths, PrintedRow, _depth_cell,
+    _header_depth, _lead_cell, _sample_cell, printed_depths,
 )
 from report_ingest.tests import no_ruler_fixtures as F
 from report_ingest.tests.fake_engine import FakeEngine
@@ -70,6 +74,15 @@ def nothing(tmp_path):
 
 
 @pytest.fixture
+def no_ruler(tmp_path):
+    from planlens.testing.loggrid_fixtures import build_log_without_ruler
+    gt = build_log_without_ruler()
+    doc = _open(gt.pdf, tmp_path)
+    yield doc, gt
+    doc.close()
+
+
+@pytest.fixture
 def imperial(tmp_path):
     from planlens.testing.loggrid_fixtures import build_imperial_log
     gt = build_imperial_log()
@@ -99,18 +112,75 @@ def two_sheets(tmp_path):
     doc.close()
 
 
+def _with_header(tmp_path, *lines):
+    """The sample-depths log with these header lines printed on it."""
+    gt = F.build_sample_depths_log(header=lines)
+    return _open(gt.pdf, tmp_path, name="header.pdf"), gt
+
+
 def _prov(page=0, bbox=(100.0, 200.0, 180.0, 212.0)):
     return ReadProv(page=page, bbox=bbox)
 
 
-def _reading(unit, *, layers=(), samples=(), spt=()) -> LogReading:
+def _reading(unit, *, layers=(), samples=(), spt=(), water=()
+             ) -> LogReading:
     return LogReading(investigation_id="BH-3", kind="boring",
                       depth_unit=unit, units_known=True, layers=list(layers),
-                      samples=list(samples), spt=list(spt), pages_read=[0])
+                      samples=list(samples), spt=list(spt),
+                      water=list(water), pages_read=[0])
 
 
 def _brief(engine) -> str:
     return engine.calls[0]["messages"][0]["content"][0]["text"]
+
+
+def _flagged(result):
+    return [u for u in result.unresolved if u.get("flag") == "no_ruler"]
+
+
+def _refused(result):
+    return [u for u in result.unresolved if u.get("refused_by") == "python"]
+
+
+# A stand-in for log_grid's result: one page, no ruler, the cells given.
+class _Grid:
+    def __init__(self, cells=(), columns=(), fields=None, unit=None):
+        self.rows = list(cells)
+        self.columns = list(columns)
+        self.fields = dict(fields or {})
+        self.field_boxes = {}
+        self.rulers = {}
+        self.unit = unit
+        self.warnings = ["page 0: no depth ruler was found"]
+
+    def column(self, column_id):
+        return next((c for c in self.columns if c.id == column_id), None)
+
+
+def _column(column_id, *names, unit=None):
+    return SimpleNamespace(id=column_id, page=0, names=tuple(names),
+                           unit=unit)
+
+
+def _cell(column_id, text, y, column=None):
+    return SimpleNamespace(page=0, column_id=column_id,
+                           column=column or column_id, text=text,
+                           bbox=(10.0, y, 40.0, y + 9.0), depth=None,
+                           numbers=[], confidence=0.3)
+
+
+def _depth_column_grid(*texts, margin=False):
+    """A page whose depth column (or, with ``margin``, the description's
+    margin) prints these numbers, one per line, top to bottom."""
+    if margin:
+        columns = [_column("desc", "description")]
+        cells = [_cell("desc", t, 100.0 + 30.0 * k, column="depth")
+                 for k, t in enumerate(texts)]
+    else:
+        columns = [_column("dep", "depth")]
+        cells = [_cell("dep", t, 100.0 + 30.0 * k)
+                 for k, t in enumerate(texts)]
+    return _Grid(cells, columns)
 
 
 # ---------------------------------------------------------------------------
@@ -143,19 +213,21 @@ class TestWhatIsRead:
         doc, gt = tabular
         found = printed_depths(_grid(doc, [0]), [0])
         assert found.pages == [0]
-        assert {r.source for r in found.readings} == {"depth_column"}
+        assert {r.source for r in found.readings} == {"depth_column",
+                                                      "description"}
         printed = {v for r in found.readings for v in (r.top, r.bottom)
                    if v is not None}
         assert printed == set(gt.printed)
-        assert found.unit == "m" and "heading" in found.unit_from
+        assert found.unit == "m"
+        assert all(r.seeds for r in found.readings)
 
     def test_a_samples_own_interval_is_read_with_its_label(
             self, sample_depths):
         doc, gt = sample_depths
         found = printed_depths(_grid(doc, [0]), [0])
-        assert [(r.source, r.label, r.top, r.bottom)
+        assert [(r.source, r.label, r.top, r.bottom, r.unit)
                 for r in found.readings] == [
-            ("sample_column", label, top, bottom)
+            ("sample_column", label, top, bottom, "ft")
             for label, top, bottom, _blows, _n in gt.samples]
         assert found.unit == "ft"
 
@@ -189,40 +261,161 @@ class TestWhatACellIsReadAs:
         ("3.0 - 1.5", None),                 # an interval goes down the hole
         ("SPT", None),
         ("12 blows", None),
+        ("EL. 98.5", None),
     ])
     def test_a_depth_column_cell(self, text, want):
         assert _depth_cell(text) == want
 
     @pytest.mark.parametrize("text, want", [
-        ("S-1  2.5-4.0", (2.5, 4.0, "", "S-1")),
-        ("SS-3 (10-11.5)", (10.0, 11.5, "", "SS-3")),
+        ("S-1  2.5-4.0 ft", (2.5, 4.0, "ft", "S-1")),
+        ("SS-3 (10'-11.5')", (10.0, 11.5, "ft", "SS-3")),
         ("U-2 @ 6.0 m", (6.0, None, "m", "U-2")),
-        ("5-7", None),            # two whole numbers alone: a label as likely
+        # A blow record looks like an interval: no unit, no depth column,
+        # no depth.
+        ("S-1 6-8", None),
+        ("S-1  2.5-4.0", None),
+        ("S-3 @ 10.0", None),
+        ("S-1 EL 98.5-97.0 ft", None),       # an elevation, not a depth
+        ("5-7", None),
         ("S-1", None),
         ("2-3-4", None),
     ])
     def test_a_sample_column_cell(self, text, want):
         assert _sample_cell(text) == want
 
+    def test_a_sample_interval_with_no_unit_is_read_in_a_depth_column(self):
+        # "SAMPLE NO. & DEPTH": the column itself says the numbers are depths.
+        assert _sample_cell("S-1  2.5-4.0", in_depth_column=True) == \
+            (2.5, 4.0, "", "S-1")
+
     @pytest.mark.parametrize("text, want", [
         ("0.0 - 1.2 m: FILL, brown", (0.0, 1.2, "m", "FILL, brown")),
         ("1.2-4.5 SILTY CLAY", (1.2, 4.5, "", "SILTY CLAY")),
         ("2-3 inch gravel", None),           # a size, not a stratum
+        ("2 to 4 ft thick sand lenses", None),   # a thickness
         ("1-2 percent organics", None),      # an amount
+        ("95.0-90.0 ft msl: SAND", None),    # an elevation
         ("SAND with 10-20% gravel", None),   # not at the head of the line
     ])
     def test_a_description_line(self, text, want):
         assert _lead_cell(text) == want
 
-    def test_a_number_that_breaks_the_downward_order_is_not_a_depth(self):
-        def at(y, top):
-            return PrintedDepth(page=0, top=top, bottom=None,
-                                source="depth_column", text=f"{top:g}",
-                                bbox=(0.0, y, 10.0, y + 8.0))
-        kept, dropped = _downward([at(100, 1.0), at(140, 2.5), at(180, 105.3),
-                                   at(220, 4.0), at(260, 6.0)])
-        assert [r.top for r in kept] == [1.0, 2.5, 4.0, 6.0]
-        assert [r.top for r in dropped] == [105.3]
+    @pytest.mark.parametrize("raw, want", [
+        ("Groundwater encountered at 10 ft", (10.0, "ft")),
+        ("After 24 hrs 12.5 ft", (12.5, "ft")),
+        ("3/4/2019 at 8 ft", (8.0, "ft")),
+        ("Drilled 2019, 25 ft", (25.0, "ft")),
+        ("Groundwater at 10 ft (EL. 94.5 ft)", (10.0, "ft")),
+        ("EL. 98.5 ft", None),
+        ("EL 1520 ft", None),
+        ("Elev. 98.5 ft", None),
+        ("98.5 ft NAVD88", None),
+        ("1520 ft msl", None),
+        ("at 8:30 am", None),
+        ("Not encountered", None),
+    ])
+    def test_a_header_depth_is_the_number_its_unit_is_bound_to(self, raw,
+                                                              want):
+        assert _header_depth(raw) == want
+
+
+class TestWhatOnlyChecks:
+    """A column whose numbers do not rise all the way down, and the
+    description's margin, only check the reader's depths."""
+
+    @pytest.mark.parametrize("texts", [
+        ("4.5", "95.5", "10.0", "90.0"),     # depths interleaved with elevations
+        ("5", "12", "10", "15", "20"),       # a blow count among the depths
+    ])
+    def test_a_column_out_of_order_places_nothing(self, texts):
+        found = printed_depths(_depth_column_grid(*texts), [0])
+        assert len(found.readings) == len(texts)
+        assert not any(r.seeds for r in found.readings)
+        assert found.rows(0) == []
+        # ... but each number still backs a depth the reader returns.
+        assert found.supporting(10.0, 0, "ft", "sample") is not None
+
+    @pytest.mark.parametrize("texts", [
+        ("4.5", "95.5", "10.0", "90.0"),
+        ("4.5", "95.5"),                     # one pair rises, and still
+    ])
+    def test_the_margin_places_nothing(self, texts):
+        found = printed_depths(_depth_column_grid(*texts, margin=True), [0])
+        assert found.readings and not any(r.seeds for r in found.readings)
+        assert found.rows(0) == []
+
+    def test_a_year_is_not_a_depth(self):
+        found = printed_depths(_depth_column_grid("5", "10", "15", "2019"),
+                               [0])
+        assert [r.top for r in found.readings] == [5.0, 10.0, 15.0]
+        assert all(r.seeds for r in found.readings)
+        assert [d["text"] for d in found.dropped] == ["2019"]
+        assert "year" in found.dropped[0]["why"]
+
+    def test_a_column_that_rises_places_its_rows(self):
+        found = printed_depths(_depth_column_grid("5", "10", "15"), [0])
+        assert all(r.seeds for r in found.readings)
+        assert [row.top for row in found.rows(0)] == [5.0, 10.0, 15.0]
+
+    def test_an_elevation_in_the_header_is_not_a_depth(self):
+        grid = _Grid(fields={"groundwater": "EL. 98.5 ft",
+                             "total_depth": "EL 1520 ft"})
+        found = printed_depths(grid, [0])
+        assert found.readings == []
+
+
+class TestUnitsAndKinds:
+    def _page(self, *readings, units=()):
+        found = PrintedDepths(pages=[0], readings=list(readings))
+        found.page_units[0] = sorted(units)
+        return found
+
+    @staticmethod
+    def _at(top, bottom=None, unit="", source="depth_column", text="",
+            column_id="dep"):
+        return PrintedDepth(page=0, top=top, bottom=bottom, source=source,
+                            text=text or f"{top:g}", unit=unit,
+                            column_id=column_id,
+                            bbox=(0.0, 100.0, 10.0, 108.0))
+
+    def test_a_depth_printed_in_metres_does_not_back_one_in_feet(self):
+        found = self._page(self._at(1.5, 3.0, "m", text="1.5 - 3.0 m"),
+                           units=["m"])
+        assert found.supporting(1.5, 0, "m", "sample") is not None
+        assert found.supporting(1.5, 0, "ft", "sample") is None
+
+    def test_where_the_page_prints_both_units_the_bound_one_rules(self):
+        metric = self._at(1.5, 3.0, "m", text="1.5 - 3.0 m")
+        feet = self._at(5.0, None, "ft", text="5.0 ft")
+        bare = self._at(2.0)
+        found = self._page(metric, feet, bare, units=["ft", "m"])
+        assert found.supporting(1.5, 0, "m", "sample") is metric
+        assert found.supporting(1.5, 0, "ft", "sample") is None
+        assert found.supporting(5.0, 0, "ft", "sample") is feet
+        # A number with no unit of its own on a page printing two: unclear.
+        assert found.supporting(2.0, 0, "m", "sample") is None
+        assert found.supporting(2.0, 0, "ft", "sample") is None
+
+    def test_where_the_page_prints_no_unit_any_unit_is_taken(self):
+        found = self._page(self._at(2.0))
+        assert found.supporting(2.0, 0, "ft", "sample") is not None
+
+    def test_a_depth_backs_only_its_own_kind_of_value(self):
+        water = self._at(10.0, unit="ft", source="header",
+                         text="Groundwater encountered at 10 ft",
+                         column_id="groundwater")
+        total = self._at(25.0, unit="ft", source="header", text="25 ft",
+                         column_id="total_depth")
+        sample = self._at(2.5, 4.0, "ft", source="sample_column",
+                          text="S-1 2.5-4.0 ft")
+        found = self._page(water, total, sample, units=["ft"])
+        assert found.supporting(10.0, 0, "ft", "water") is water
+        assert found.supporting(10.0, 0, "ft", "sample") is None
+        assert found.supporting(10.0, 0, "ft", "layer") is None
+        assert found.supporting(25.0, 0, "ft", "layer") is None
+        assert found.supporting(2.5, 0, "ft", "sample") is sample
+        assert found.supporting(2.5, 0, "ft", "layer") is None
+        assert found.supporting(2.5, 0, "ft", "water") is None
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +450,14 @@ class TestTheFloor:
             assert "printed in the depth column" in sample.prov.note
             assert sample.prov.confidence == TRUST["depth_column"]
 
+    def test_an_interval_that_does_not_chain_opens_no_layer(self, tabular):
+        # "5.0 - 5.5 m: clay seam" heads a line of the sand's description,
+        # but 5.0 is no stratum's base: it is a seam, and opens no layer.
+        doc, _gt = tabular
+        seed = seed_from_grid(_grid(doc, [0]), [0], "RX")
+        assert 5.0 not in [ly.top.value for ly in seed.layers]
+        assert seed.layers[2].description == "SAND (SP), dense, brown, wet,"
+
     def test_a_value_on_no_printed_depths_line_gets_no_depth(self, tabular):
         # S-2's moisture content is printed a line below its row, where no
         # depth stands: it is not moved onto the nearest printed depth.
@@ -272,7 +473,7 @@ class TestTheFloor:
             return PrintedDepth(page=0, top=top, bottom=bottom, source=source,
                                 text=text, bbox=(0.0, 100.0, 10.0, 108.0))
         depth = at("depth_column", 1.5, 3.0, "1.50 - 3.00")
-        own = at("sample_column", 1.5, 1.95, "S-2 1.5-1.95")
+        own = at("sample_column", 1.5, 1.95, "S-2 1.5-1.95 m")
         assert PrintedRow([depth]).sample_bottom(beside_words=False) == 3.0
         # Beside a description, the depth column's interval may be the
         # stratum's: the sample's base is then not known.
@@ -314,12 +515,50 @@ class TestTheFloor:
                 in gt.samples]
 
 
+class TestTheHeader:
+    """On a log with no ruler, a header depth is the number its unit is
+    bound to: never a date, a time, a year or an elevation."""
+
+    def test_a_time_before_the_depth_is_not_the_depth(self, tmp_path):
+        doc, _gt = _with_header(tmp_path,
+                                "Groundwater:  After 24 hrs 12.5 ft",
+                                "Total Depth:  Drilled 2019, 25 ft")
+        seed = seed_from_grid(_grid(doc, [0]), [0], "RX")
+        doc.close()
+        assert [w.depth.value for w in seed.water if w.depth] == [12.5]
+        assert seed.total_depth is not None
+        assert seed.total_depth.value == 25.0
+
+    def test_a_date_before_the_depth_is_not_the_depth(self, tmp_path):
+        doc, _gt = _with_header(tmp_path, "Groundwater:  3/4/2019 at 8 ft")
+        seed = seed_from_grid(_grid(doc, [0]), [0], "RX")
+        doc.close()
+        assert [w.depth.value for w in seed.water if w.depth] == [8.0]
+
+    def test_an_elevation_is_not_a_depth(self, tmp_path):
+        doc, _gt = _with_header(tmp_path, "Groundwater:  EL. 98.5 ft",
+                                "Total Depth:  EL 1520 ft")
+        grid = _grid(doc, [0])
+        seed = seed_from_grid(grid, [0], "RX")
+        assert [w.depth for w in seed.water if w.depth] == []
+        assert seed.total_depth is None
+        found = printed_depths(grid, [0])
+        assert not [r for r in found.readings if r.source == "header"]
+        reading = _reading("ft", water=[ReadWater(depth=98.5, prov=_prov())])
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, [0], engine)
+        doc.close()
+        assert [u["value"] for u in _refused(result)] == [98.5]
+        assert "98.5 ft" not in _brief(engine).split("THE ROWS")[0].split(
+            "THE DEPTHS THESE PAGES PRINT")[-1]
+
+
 # ---------------------------------------------------------------------------
 # the reader: what it is told, what it keeps, what it refuses
 # ---------------------------------------------------------------------------
 
 class TestTheReader:
-    def _tabular_reading(self, extra_layers=()):
+    def _tabular_reading(self, unit="m", extra_layers=()):
         layers = [
             ReadLayer(top=0.0, bottom=1.2, description="FILL", prov=_prov()),
             ReadLayer(top=1.2, bottom=4.5, description="SILTY CLAY (CL)",
@@ -333,7 +572,7 @@ class TestTheReader:
                    for k, top in enumerate((0.5, 1.5, 3.0, 6.0))]
         spt = [ReadSPT(depth_top=0.5, blows=["2", "3", "4"], n=12,
                        sample_id="S-1", prov=_prov())]
-        return _reading("m", layers=layers, samples=samples, spt=spt)
+        return _reading(unit, layers=layers, samples=samples, spt=spt)
 
     def test_the_reader_is_told_the_depths_the_page_prints(self, tabular):
         doc, _gt = tabular
@@ -342,7 +581,7 @@ class TestTheReader:
         brief = _brief(engine)
         assert engine.calls[0]["system"] == LOG_READER_SYSTEM_PRINTED
         assert "THE DEPTHS THESE PAGES PRINT" in brief
-        assert "in the depth column | 0 to 1.2" in brief
+        assert "in the depth column | 0 to 1.2 m |" in brief
         assert "its depths are the ones it PRINTS" in brief
         assert "NO DEPTH SCALE ON THIS PAGE" in brief
 
@@ -365,34 +604,64 @@ class TestTheReader:
         assert len(result.changes) == 3 * 2 + 4 + 1   # layers, samples, spt
         assert all("the page prints in the depth column" in c["why"]
                    for c in result.changes)
-        assert not [u for u in result.unresolved
-                    if u["refused_by"] == "python"]
+        assert _refused(result) == []
+
+    def test_a_depth_in_the_wrong_unit_is_refused(self, tabular):
+        # The page prints its depths in metres; a reading in feet is not
+        # backed by them, however the numbers match.
+        doc, _gt = tabular
+        engine = FakeEngine([{"final": self._tabular_reading(unit="ft")}])
+        result = read_log(doc, [0], engine)
+        assert result.model_investigation.layers == []
+        assert result.model_investigation.samples == []
+        refused = _refused(result)
+        assert refused and all("in m" in u["why"] and "gave ft" in u["why"]
+                               for u in refused)
+        assert result.changes == []
 
     def test_a_depth_nothing_on_the_page_prints_is_refused(self, tabular):
         doc, _gt = tabular
         stray = ReadLayer(top=2.0, bottom=3.0, description="a lens of sand",
                           prov=_prov())
-        engine = FakeEngine([{"final": self._tabular_reading([stray])}])
+        engine = FakeEngine([{"final": self._tabular_reading(
+            extra_layers=[stray])}])
         result = read_log(doc, [0], engine)
-        refused = [u for u in result.unresolved if u["refused_by"] == "python"]
+        refused = _refused(result)
         assert [u["value"] for u in refused] == [2.0]
         assert "nothing printed on it reads 2" in refused[0]["why"]
         assert 2.0 not in [ly.top.value
                            for ly in result.investigation.layers]
 
-    def test_the_qa_says_the_ruler_was_not_fitted_and_what_was_read(
-            self, tabular):
+    def test_a_water_depth_does_not_back_a_sample(self, no_ruler):
+        # The header prints "Groundwater encountered at 10 ft": that backs a
+        # water level at 10 ft, and nothing else at 10 ft.
+        doc, _gt = no_ruler
+        reading = _reading(
+            "ft", samples=[ReadSample(sample_id="1", top=10.0,
+                                      prov=_prov())],
+            water=[ReadWater(depth=10.0, prov=_prov())])
+        result = read_log(doc, [0], FakeEngine([{"final": reading}]))
+        model = result.model_investigation
+        assert model.samples == []
+        assert [w.depth.value for w in model.water] == [10.0]
+        refused = _refused(result)
+        assert [u["value"] for u in refused] == [10.0]
+        assert "not a sample's depth" in refused[0]["why"]
+
+    def test_the_qa_tells_the_engineer_what_to_check(self, tabular):
         doc, _gt = tabular
         engine = FakeEngine([{"final": self._tabular_reading()}])
         result = read_log(doc, [0], engine)
-        scale = [u for u in result.unresolved if u["refused_by"] == "no_ruler"]
+        scale = _flagged(result)
         assert len(scale) == 1 and scale[0]["page"] == 0
+        # A gap in the reading, not a refusal.
+        assert "refused_by" not in scale[0]
         why = scale[0]["why"]
-        assert "could not be fitted" in why
-        assert "8 depth(s) were read from what the page prints" in why
+        assert why.startswith("No depth ruler could be fitted on page 0")
+        assert "Check these 9 depth(s) against the printed log" in why
         assert "1 of the 16 sample and test value(s)" in why
         record = result.to_dict()["printed_depths"]
-        assert record["pages"] == [0] and len(record["readings"]) == 8
+        assert record["pages"] == [0] and len(record["readings"]) == 9
 
     def test_a_samples_own_interval_is_kept_top_and_base(self, sample_depths):
         doc, gt = sample_depths
@@ -421,12 +690,12 @@ class TestTheReader:
         assert "THE DEPTHS THESE PAGES PRINT" not in _brief(engine)
         inv = result.investigation
         assert inv.samples == [] and inv.layers == []
-        refused = [u for u in result.unresolved if u["refused_by"] == "python"]
+        refused = _refused(result)
         assert refused and all("no depth scale was found" in u["why"]
                                for u in refused)
-        scale = [u for u in result.unresolved if u["refused_by"] == "no_ruler"]
+        scale = _flagged(result)
         assert len(scale) == 1
-        assert "could not be fitted" in scale[0]["why"]
+        assert "No depth ruler could be fitted" in scale[0]["why"]
         assert "prints no depth" in scale[0]["why"]
         assert result.changes == []
 
@@ -447,11 +716,10 @@ class TestTheReader:
         assert "THE DEPTHS THESE PAGES PRINT" in _brief(engine)
         kept = result.model_investigation.samples
         assert [(s.top.value, s.bottom.value) for s in kept] == [(60.0, 61.5)]
-        refused = [u for u in result.unresolved if u["refused_by"] == "python"]
+        refused = _refused(result)
         assert [u["value"] for u in refused] == [65.0]
         assert "outside what the scale on this log reads" in refused[0]["why"]
-        scale = [u for u in result.unresolved if u["refused_by"] == "no_ruler"]
-        assert [u["page"] for u in scale] == [1]
+        assert [u["page"] for u in _flagged(result)] == [1]
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +739,7 @@ class TestALogThatFitsIsUnchanged:
         assert "THE DEPTHS THESE PAGES PRINT" not in brief
         assert "NO DEPTH SCALE" not in brief
         assert "printed_depths" not in result.to_dict()
-        assert all(u["refused_by"] != "no_ruler" for u in result.unresolved)
+        assert _flagged(result) == []
         assert not any("no depth ruler on page" in c["why"]
                        for c in result.changes)
         assert not any("no depth ruler on page" in s.prov.note
@@ -480,7 +748,6 @@ class TestALogThatFitsIsUnchanged:
     @pytest.mark.parametrize("which", ["imperial", "metric"])
     def test_the_floor_is_the_same_with_the_printed_pass_forced_empty(
             self, which, request):
-        from report_ingest.printed_depths import PrintedDepths
         doc, _gt = request.getfixturevalue(which)
         grid = _grid(doc, [0])
         found = seed_from_grid(grid, [0], "RX")

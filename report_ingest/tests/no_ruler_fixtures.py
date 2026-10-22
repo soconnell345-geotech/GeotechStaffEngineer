@@ -10,7 +10,8 @@ a real log prints them:
   through the depth column, so ``log_grid`` fits no ruler.
 - :func:`build_sample_depths_log` -- a form whose depth scale was never
   printed (the column is there, empty) and whose sample column prints each
-  sample's own interval, ``S-1  2.5-4.0``. The descriptions print no depth.
+  sample's own interval, ``S-1  2.5-4.0 ft``. The descriptions print no
+  depth; extra header lines can be printed (groundwater, total depth).
 
 Nothing here is copied from a real log; the wording is the trade's and the
 numbers are made up. The answers are stated beside each builder.
@@ -87,7 +88,8 @@ _TAB_ROWS = (
                      "mottled orange-brown"), "", "", "", ""),
     ("1.50", (), "S-2", "3-5-6", "8", "BELOW:14"),
     ("3.00", (), "S-3", "4-6-9", "30", "31"),
-    ("4.50 - 7.00", ("SAND (SP), dense, brown, wet",), "", "", "", ""),
+    ("4.50 - 7.00", ("SAND (SP), dense, brown, wet,",
+                     "5.0 - 5.5 m: clay seam"), "", "", "", ""),
     ("6.00", (), "S-4", "10-14-16", "9", "18"),
     ("7.00", ("End of borehole",), "", "", "", ""),
 )
@@ -99,7 +101,9 @@ def build_tabular_log() -> NoRulerGT:
     Strata 0.00-1.20 (FILL), 1.20-4.50 (SILTY CLAY), 4.50-7.00 (SAND); a
     final row printing the single depth 7.00 beside "End of borehole".
     Samples S-1 to S-4 at 0.50, 1.50, 3.00 and 6.00, each printed with its
-    blows and N on its own line.
+    blows and N on its own line. The sand's description prints a seam,
+    "5.0 - 5.5 m: clay seam": an interval that does not chain with the
+    strata, so it is no stratum of its own.
     """
     import pymupdf
     doc = pymupdf.open()
@@ -129,7 +133,7 @@ def build_tabular_log() -> NoRulerGT:
                  ("S-2", 1.5, None, "3-5-6", 8),
                  ("S-3", 3.0, None, "4-6-9", 30),
                  ("S-4", 6.0, None, "10-14-16", 9)],
-        printed=(0.0, 1.2, 0.5, 4.5, 1.5, 3.0, 7.0, 6.0))
+        printed=(0.0, 1.2, 0.5, 4.5, 1.5, 3.0, 7.0, 6.0, 5.0, 5.5))
 
 
 #: The sample-depths log, in feet: the form has a depth column, but its scale
@@ -141,13 +145,15 @@ _SMP_PER_FT = 20.0
 
 
 def build_sample_depths_log(first: float = 2.5, hole: str = "B-7",
-                            depths: bool = True) -> NoRulerGT:
+                            depths: bool = True,
+                            header: Sequence[str] = ()) -> NoRulerGT:
     """A log whose only printed depths are its samples' own intervals.
 
-    Four split-spoon samples, S-1 to S-4, each printed ``S-n  top-bottom``
-    with its blows and N on the same line, at ``first``, ``first + 2.5``,
-    ``first + 7.5`` and ``first + 12.5`` ft. Two strata described with no
-    depth printed anywhere.
+    Four split-spoon samples, S-1 to S-4, each printed ``S-n  top-bottom
+    ft`` with its blows and N on the same line, at ``first``, ``first +
+    2.5``, ``first + 7.5`` and ``first + 12.5`` ft. Two strata described with
+    no depth printed anywhere. ``header`` lines (``Groundwater:  ...``) are
+    printed at the top right, as written.
 
     With ``depths`` False the samples print their labels alone, and the log
     prints no depth at all: not in a column, not in the header, not in the
@@ -158,6 +164,8 @@ def build_sample_depths_log(first: float = 2.5, hole: str = "B-7",
     doc = pymupdf.open()
     page = doc.new_page(width=LETTER[0], height=LETTER[1])
     _fields(page, hole, "ft")
+    for k, line in enumerate(header):
+        page.insert_text((300, 40 + 12 * k), line, fontsize=7)
     _form(page, _SMP_EDGES, _SMP_HEADERS)
 
     def y_of(depth: float) -> float:
@@ -175,7 +183,7 @@ def build_sample_depths_log(first: float = 2.5, hole: str = "B-7",
         label = f"S-{k + 1}"
         y = y_of(top)
         page.insert_text((_SMP_EDGES[2] + 4, y),
-                         f"{label}  {top:.1f}-{top + 1.5:.1f}" if depths
+                         f"{label}  {top:.1f}-{top + 1.5:.1f} ft" if depths
                          else label, fontsize=7)
         page.insert_text((_SMP_EDGES[3] + 4, y), blow, fontsize=7)
         page.insert_text((_SMP_EDGES[4] + 4, y), str(n_value), fontsize=7)

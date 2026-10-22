@@ -355,12 +355,18 @@ class TestWhatItRefuses:
         # ... and the header fields survive: the page still says whose log it is
         assert inv.investigation_id == "B-12"
         assert inv.drilling.hammer_type == "Automatic SPT Hammer"
-        scale = [u for u in result.unresolved if u["refused_by"] == "no_ruler"]
-        assert len(scale) == 1 and "could not be fitted" in scale[0]["why"]
-        refused = [u for u in result.unresolved if u["refused_by"] == "python"]
+        scale = [u for u in result.unresolved if u.get("flag") == "no_ruler"]
+        assert len(scale) == 1 and "could be fitted" in scale[0]["why"]
+        refused = [u for u in result.unresolved
+                   if u.get("refused_by") == "python"]
         assert sorted(u["value"] for u in refused) == [0.0, 2.0, 2.0, 4.0,
-                                                       7.0, 7.0, 16.0]
-        assert all("nothing printed on it reads" in u["why"] for u in refused)
+                                                       7.0, 7.0, 10.0, 16.0]
+        # The rows' depths are printed nowhere; the water depth is printed,
+        # in ft, but this reading gave no unit, so it does not stand on it.
+        water = [u for u in refused if u["value"] == 10.0]
+        assert "the reader gave no unit" in water[0]["why"]
+        assert all("nothing printed on it reads" in u["why"]
+                   for u in refused if u["value"] != 10.0)
         assert len(result.unresolved) == len(scale) + len(refused)
 
     def test_provenance_naming_a_page_outside_this_log_loses_its_box(

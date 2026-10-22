@@ -701,17 +701,24 @@ def _printed_lines(printed: PrintedDepths) -> List[str]:
         f"THE DEPTHS THESE PAGES PRINT (no depth ruler could be fitted on "
         f"page(s) {pages}, so these numbers, read off the page as printed, "
         f"are the only depths on them; a value printed on the same line as "
-        f"one of them is at that depth, a value on no such line has none)",
+        f"one of them is at that depth, a value on no such line has none. "
+        f"A depth marked CHECK ONLY stands in a column whose numbers do not "
+        f"rise down the page, in the margin or in loose text: it may back a "
+        f"depth you read, but places nothing)",
         "  unit: " + (f"{printed.unit} ({printed.unit_from})" if printed.unit
-                      else "NOT PRINTED"),
-        "  page | how it was read | depth | x0,y0,x1,y1 | text",
+                      else (printed.unit_from or "NOT PRINTED")),
+        "  page | how it was read | depth and unit | x0,y0,x1,y1 | text",
     ]
     shown = printed.readings[:MAX_PRINTED_LINES]
     for r in shown:
         depth = f"{r.top:g}" + ("" if r.bottom is None
                                 else f" to {r.bottom:g}")
+        unit = printed.unit_on(r)
+        unit = (unit if unit else "no unit printed" if unit == ""
+                else "unit unclear, the page prints two")
         x0, y0, x1, y1 = r.bbox
-        out.append(f"  {r.page} | {r.how} | {depth} | "
+        out.append(f"  {r.page} | {r.how}"
+                   f"{'' if r.seeds else ', CHECK ONLY'} | {depth} {unit} | "
                    f"{x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f} | {_clip(r.text)}")
     if len(printed.readings) > len(shown):
         out.append(f"  [{len(printed.readings) - len(shown)} further printed "
@@ -871,8 +878,14 @@ class _Builder:
 
     # -- the gate ----------------------------------------------------------
     def _depth(self, value: Optional[float], what: str,
-               page: Optional[int] = None) -> Optional[Quantity]:
-        """A depth as a Quantity, or None with the refusal recorded."""
+               page: Optional[int] = None,
+               kind: str = "") -> Optional[Quantity]:
+        """A depth as a Quantity, or None with the refusal recorded.
+
+        ``kind`` (``layer``, ``sample``, ``water``) says what the depth is
+        of: on a page with no ruler a printed number backs it only when it
+        was printed for that kind of value (see printed_depths.SERVES).
+        """
         if value is None:
             return None
         value = float(value)
@@ -893,7 +906,7 @@ class _Builder:
                        "it against a ruler"})
             return Quantity(value=value, unit=self.unit)
         if self.window is None:
-            accepted = self._printed(value, what, page)
+            accepted = self._printed(value, what, page, kind)
             if accepted is not None:
                 return accepted
             self.unresolved.append({
@@ -901,15 +914,13 @@ class _Builder:
                 "why": ("no depth scale was found on any page of this log, "
                         "so the page carries no depths; the reader returned "
                         "one anyway and it was refused" if not self.printed
-                        else f"no depth ruler could be fitted on page {page} "
-                        f"and nothing printed on it reads {value:g}, so the "
-                        f"depth stands on nothing on the page; refused rather "
-                        f"than accepted"),
+                        else self.printed.why_not(value, page, self.unit,
+                                                  kind)),
                 "refused_by": "python"})
             return None
         lo, hi = self.window
         if not (lo <= value <= hi):
-            accepted = self._printed(value, what, page)
+            accepted = self._printed(value, what, page, kind)
             if accepted is not None:
                 return accepted
             self.unresolved.append({
@@ -921,11 +932,12 @@ class _Builder:
             return None
         return Quantity(value=value, unit=self.unit)
 
-    def _printed(self, value: float, what: str,
-                 page: Optional[int]) -> Optional[Quantity]:
-        """``value`` as a depth when a page with no ruler prints it, listed
-        as a change saying how it was read; None otherwise."""
-        hit = self.printed.supporting(value, page)
+    def _printed(self, value: float, what: str, page: Optional[int],
+                 kind: str) -> Optional[Quantity]:
+        """``value`` as a depth when a page with no ruler prints it, for
+        this kind of value and in the reader's unit, listed as a change
+        saying how it was read; None otherwise."""
+        hit = self.printed.supporting(value, page, self.unit, kind)
         if hit is None:
             return None
         self.changes.append({
@@ -974,10 +986,11 @@ class _Builder:
         out: List[Layer] = []
         for n, ly in enumerate(self.reading.layers):
             what = f"layer {n + 1} ({_clip(ly.description, 40)})"
-            top = self._depth(ly.top, what + " top", ly.prov.page)
+            top = self._depth(ly.top, what + " top", ly.prov.page, "layer")
             if top is None:
                 continue
-            bottom = self._depth(ly.bottom, what + " base", ly.prov.page)
+            bottom = self._depth(ly.bottom, what + " base", ly.prov.page,
+                                 "layer")
             out.append(Layer(
                 top=top, bottom=bottom,
                 description=ly.description, uscs=ly.uscs.strip(),
@@ -989,7 +1002,7 @@ class _Builder:
         out: List[Sample] = []
         for n, s in enumerate(self.reading.samples):
             what = f"sample {s.sample_id or n + 1}"
-            top = self._depth(s.top, what + " top", s.prov.page)
+            top = self._depth(s.top, what + " top", s.prov.page, "sample")
             if top is None:
                 continue
             kind = s.kind if s.kind in {
@@ -997,7 +1010,8 @@ class _Builder:
                 "other"} else "other"
             out.append(Sample(
                 sample_id=s.sample_id, top=top,
-                bottom=self._depth(s.bottom, what + " base", s.prov.page),
+                bottom=self._depth(s.bottom, what + " base", s.prov.page,
+                                   "sample"),
                 kind=kind,
                 recovery_percent=_pct(s.recovery_percent),
                 rqd_percent=_pct(s.rqd_percent),
@@ -1018,7 +1032,7 @@ class _Builder:
         out: List[SPT] = []
         for n, rec in enumerate(self.reading.spt):
             what = f"driven record {n + 1} at {rec.depth_top:g}"
-            top = self._depth(rec.depth_top, what, rec.prov.page)
+            top = self._depth(rec.depth_top, what, rec.prov.page, "sample")
             if top is None:
                 continue
             blows: List[Any] = []
@@ -1038,7 +1052,7 @@ class _Builder:
             out.append(SPT(
                 depth_top=top,
                 depth_bottom=self._depth(rec.depth_bottom, what + " base",
-                                         rec.prov.page),
+                                         rec.prov.page, "sample"),
                 blows=blows, n=rec.n, refusal=bool(rec.refusal),
                 n_printed=re.sub(r"\s+", "", rec.n_printed or ""),
                 increments=lengths,
@@ -1054,7 +1068,7 @@ class _Builder:
             when = w.when if w.when in {
                 "while_drilling", "at_completion", "after_hours",
                 "not_encountered", "unknown"} else "unknown"
-            depth = self._depth(w.depth, what, w.prov.page)
+            depth = self._depth(w.depth, what, w.prov.page, "water")
             if w.depth is not None and depth is None:
                 # The depth was refused; the observation itself is still a
                 # fact about the hole and is kept without one.
@@ -1062,9 +1076,9 @@ class _Builder:
             out.append(WaterLevel(
                 depth=depth, when=when, hours=w.hours, date=w.date,
                 casing_depth=self._depth(w.casing_depth, what + " casing",
-                                         w.prov.page),
+                                         w.prov.page, "casing"),
                 caved_depth=self._depth(w.caved_depth, what + " caved",
-                                        w.prov.page),
+                                        w.prov.page, "caved"),
                 note=w.note, prov=self._prov(w.prov, what)))
         return out
 
