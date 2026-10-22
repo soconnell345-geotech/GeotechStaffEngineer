@@ -47,7 +47,8 @@ from report_ingest.printed_depths import (
 
 __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
            "GROUP_SPAN_M", "pit_dimensions", "bucket_width", "header_pairs",
-           "PIT_METHOD_KEYS"]
+           "PIT_METHOD_KEYS", "n_from_drives", "header_increment",
+           "N_RULE_SOURCE"]
 
 #: How far apart two placed cells may be and still belong to one sample: a
 #: driven sample is 0.46 m (18 in) long and its blow record, its N and its
@@ -235,6 +236,13 @@ def _labelled_value(text: str) -> Optional[Tuple[str, float, str,
     if value is None:
         return None
     unit = (value.group(2) or "").strip()
+    if name in _PERCENT_LIKE and unit not in ("", "%"):
+        # "W = 2.5 m" in a remark is a level, not a water content.
+        return None
+    if name == "qu" and re.search(r"\bPP\b|pocket|penetrom", rest, re.I):
+        # "qu = 75 kPa (PP)": the pocket penetrometer's reading, which the
+        # instrument prints as an unconfined strength.
+        name = "pocket_pen"
     percent = None
     for hit in _LABEL_PERCENT.finditer(rest):
         if hit.start() > value.end(1):
@@ -254,6 +262,223 @@ def _limits_order(header: str) -> List[str]:
         if match:
             found.append((match.start(), name))
     return [name for _pos, name in sorted(found)]
+
+
+# ---------------------------------------------------------------------------
+# what a cell IS, before it is read (RI-04)
+# ---------------------------------------------------------------------------
+#
+# The grid places text by geometry and is sometimes wrong about the column: a
+# description runs into the sample-id column, a sample's id sits in a DATA
+# column the header vocabulary called blows and recovery, a label and its
+# value are printed on two lines. The floor reads a cell for what its TEXT
+# says it is, and the column only decides between readings the text allows.
+
+#: The columns whose cells say a sample is THERE: its id, its sampler, its
+#: drives, its recovery. An index column only says what was measured on it.
+_SAMPLING = frozenset({"sample_id", "sample_type", "blows", "n_value",
+                       "recovery", "rqd"})
+#: Columns that are not sample columns but print results with their own
+#: label -- ``MC = 21%`` under TESTS, ``qu = 95 kPa`` under REMARKS. Only
+#: a labelled result is read off them.
+_RESULT_COLUMNS = frozenset({"tests", "remarks"})
+#: A sample's own name: ``S-4``, ``SS-3``, ``4A``, ``U-2-1``, ``ST 2``, ``12``.
+_ID_LIKE = re.compile(
+    r"^[A-Za-z]{0,4}[-\s#.]?\d{1,4}[A-Za-z]?(?:[-/.]\d{1,4}[A-Za-z]?)?$")
+#: Words a sample column prints about its sample -- the sampler, the drive,
+#: the recovery -- so a cell carrying one is the sample's, not prose that
+#: strayed into a sample column.
+_SAMPLER_WORDS = frozenset({
+    "recovery", "refusal", "hammer", "weight", "rods", "rod", "lost",
+    "spoon", "split", "shelby", "tube", "ring", "core", "coring", "bulk",
+    "grab", "california", "sampler", "sample", "barrel", "push", "pushed",
+    "piston", "pitcher", "denison", "osterberg", "spt", "auger", "bag",
+    "jar", "block", "cuttings", "drive", "driven", "standard", "thin",
+    "walled", "modified", "liner", "undisturbed", "disturbed"})
+#: Quantities that are percentages or plain numbers, never a length or a
+#: stress: a labelled ``W = 2.5 m`` in a remark is not a water content.
+_PERCENT_LIKE = frozenset({"water_content", "liquid_limit", "plastic_limit",
+                           "plasticity_index", "fines"})
+#: How a header prints two quantities in one column, ``A (B)``: the number
+#: printed bare is A's, the number in parentheses B's.
+_PAREN_WORDS: Tuple[Tuple[str, str], ...] = (
+    ("rqd", r"\bRQD\b"), ("recovery", r"\bREC"),
+    ("n_value", r"\bN\b|\bN[- ]?VALUE"), ("blows", r"\bBLOW"))
+_TRAILING_UNIT = re.compile(r"\s*(?:%|\"|'|[A-Za-z][A-Za-z/.²³\d]{0,7})\s*$")
+
+
+def _text(cell: Any) -> str:
+    return " ".join(str(getattr(cell, "text", "") or "").split())
+
+
+def _id_like(text: str) -> bool:
+    token = text.strip()
+    return bool(token) and (bool(_ID_LIKE.match(token))
+                            or (token.isalpha() and len(token) <= 3))
+
+
+def _is_words(text: str) -> bool:
+    """Is this cell words -- a description, a remark, a rule of dashes --
+    rather than anything a sample column holds?
+
+    A sample column holds an id, a sampler code, drives, an N, a recovery,
+    a labelled result or a number. A cell of two or more words, or one long
+    word, that is none of those is text the grid placed in the wrong column
+    (``see attached log``, ``grey silty SAND, moist``, ``Bottom of hole at
+    6.2 m``); a cell with no letter or digit at all is a drawn rule.
+    """
+    t = " ".join(text.split())
+    if not t:
+        return False
+    if not any(ch.isalnum() for ch in t):
+        return True
+    if (_id_like(t) or t.lower() in _TYPE_CODES or _ID_AND_TYPE.match(t)
+            or _blow_tokens(t) or _labelled_value(t) is not None
+            or _N_VALUE.search(t) or _N_PRINTED.search(t)
+            or _INTERVAL.match(t)):
+        return False
+    words = re.findall(r"[A-Za-z]{3,}", t)
+    if any(w.lower() in _SAMPLER_WORDS for w in words):
+        return False
+    return len(words) >= 2 or any(len(w) >= 5 for w in words)
+
+
+#: A number and the unit printed after it, as a numeric cell holds them.
+_NUMBER_AND_UNIT = re.compile(
+    r"-?\d+(?:[.,]\d+)?\s*(?:%|\"|''|'|cm|mm|inch(?:es)?|in|ft|feet|m|pcf|psf"
+    r"|ksf|tsf|psi|kpa|mpa|kn/m[3³]|lbs?/ft[3³]|g/cm[3³]"
+    r"|kg/cm[2²]|tons?/ft[2²]?)?(?![A-Za-z])", re.I)
+
+
+def _numeric(text: str) -> bool:
+    """Is the cell numbers, each with at most its unit -- ``17``, ``31,4``,
+    ``(8)``, ``45 cm``, ``42-21-21``, ``29cm, 64%``? A cell with words in it
+    (``S-1, SS``, ``Run = 3.5 ft``, ``% Passing #200``) is something else,
+    and its number is not that column's value."""
+    t = text.strip()
+    if not any(ch.isdigit() for ch in t):
+        return False
+    rest = _NUMBER_AND_UNIT.sub(" ", t)
+    return bool(re.fullmatch(r"[\s.,()\-–/<>~+]*", rest))
+
+
+def _numbers_of(cell: Any) -> List[float]:
+    """The cell's numbers, with a decimal comma read as one: ``31,4`` is
+    31.4, where a comma before three digits stays a thousands mark."""
+    t = _TRAILING_UNIT.sub("", _text(cell))
+    match = re.fullmatch(r"\s*\(?\s*(-?\d+),(\d{1,2})\s*\)?\s*", t)
+    if match:
+        return [float(f"{match.group(1)}.{match.group(2)}")]
+    return [float(n) for n in (getattr(cell, "numbers", None) or [])]
+
+
+def _wrapped(text: str) -> bool:
+    t = text.strip()
+    return t.startswith("(") and t.endswith(")")
+
+
+def _paren_names(header: str, names: Sequence[str]
+                 ) -> Optional[Tuple[str, str]]:
+    """``(bare, in parentheses)`` for a column whose header prints two of its
+    quantities as ``A (B)``: ``REC % (RQD %)`` -> ``(recovery, rqd)``,
+    ``BLOWS PER 6 IN (N)`` -> ``(blows, n_value)``. None otherwise, which
+    leaves the column read as before."""
+    match = re.search(r"^(.*?)\(([^)]*)\)", str(header or ""))
+    if match is None:
+        return None
+
+    def which(part: str) -> Optional[str]:
+        found = [name for name, pattern in _PAREN_WORDS
+                 if name in names and re.search(pattern, part, re.I)]
+        return found[0] if len(found) == 1 else None
+
+    bare, wrapped = which(match.group(1)), which(match.group(2))
+    if bare and wrapped and bare != wrapped:
+        return bare, wrapped
+    return None
+
+
+def _marks_a_sample(text: str, names: Sequence[str]) -> bool:
+    """Does this cell say a sample is here (its id, sampler, drives, N,
+    recovery), as against a value measured on one?"""
+    here = set(names)
+    if not here & _SAMPLING:
+        return False
+    code = text.lower()
+    if code in _TYPE_CODES and ("sample_type" in here or (
+            len(code) >= 2 and here & {"sample_id", "blows"})):
+        return True
+    if _ID_AND_TYPE.match(text):
+        return True
+    if here & {"blows", "n_value", "sample_id"} and (
+            _blow_tokens(text) or _N_VALUE.search(text)
+            or _N_PRINTED.search(text)):
+        return True
+    labelled = _labelled_value(text)
+    if labelled is not None:
+        return labelled[0] in ("recovery", "rqd")
+    if "sample_id" in here and (_INTERVAL.match(text) or _id_like(text)):
+        return True
+    return not (here & set(_INDEX_NAMES)) and bool(_NUMBER.search(text))
+
+
+def _sample_key(text: str, names: Sequence[str]) -> Optional[Tuple[str, str]]:
+    """What makes this cell ONE sample's and no other's: its id, or its
+    whole blow record. Two cells with different keys of one kind on one
+    sheet are two samples, however close they are printed."""
+    pair = _ID_AND_TYPE.match(text)
+    if pair is not None and pair.group(2).lower() in _TYPE_CODES:
+        return "id", fold(pair.group(1))
+    if "sample_id" in names and _id_like(text) \
+            and text.lower() not in _TYPE_CODES:
+        return "id", fold(text)
+    if set(names) & {"blows", "n_value", "sample_id"} and _blow_tokens(text):
+        return "drives", fold(text)
+    return None
+
+
+class _Joined:
+    """A label and its value printed on two lines of one column -- ``%
+    Passing #200`` above ``= 41.5`` -- read as the one cell they are. The
+    label's line places it."""
+
+    __slots__ = ("_cell", "text", "bbox", "numbers")
+
+    def __init__(self, label: Any, value: Any) -> None:
+        self._cell = label
+        self.text = f"{_text(label)} {_text(value)}"
+        a, b = label.bbox, value.bbox
+        self.bbox = (min(a[0], b[0]), min(a[1], b[1]),
+                     max(a[2], b[2]), max(a[3], b[3]))
+        self.numbers = list(getattr(value, "numbers", None) or [])
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cell, name)
+
+
+def _join_labels(cells: Sequence[Any]) -> List[Any]:
+    """Each label printed without its value, joined to the ``= value`` line
+    under it in the same column; every other cell as it was."""
+    out: List[Any] = []
+    used: set = set()
+    ordered = sorted(cells, key=lambda c: (c.page, c.column_id, c.bbox[1]))
+    for k, cell in enumerate(ordered):
+        if id(cell) in used:
+            continue
+        text = _text(cell)
+        nxt = ordered[k + 1] if k + 1 < len(ordered) else None
+        key = "".join(ch for ch in text.lower() if ch.isalnum())
+        if (nxt is not None and key in _LABEL_NAMES and "=" not in text
+                and ":" not in text and nxt.page == cell.page
+                and nxt.column_id == cell.column_id
+                and re.match(r"^\s*[=:]", _text(nxt))
+                and 0.0 <= float(nxt.bbox[1]) - float(cell.bbox[1])
+                <= 2.5 * max(1.0, float(cell.bbox[3]) - float(cell.bbox[1]))):
+            out.append(_Joined(cell, nxt))
+            used.add(id(nxt))
+            continue
+        out.append(cell)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -316,9 +541,27 @@ class _Group:
         self.cells: List[Any] = [cell]
         self.page = cell.page
         self.first = cell.depth
+        #: Values printed off the sample's own lines and bound to it by the
+        #: page's geometry (RI-04): read with the sample, but they neither
+        #: set its depth nor have to sit inside its drawn box.
+        self.bound: List[Any] = []
+        #: Values printed off every sample's lines on a sheet that has
+        #: samples, which the geometry could not bind to one (RI-04).
+        self.unbound = False
 
-    def takes(self, cell: Any, span: float) -> bool:
-        return abs(float(cell.depth) - float(self.first)) <= span
+    def takes(self, cell: Any, span: float,
+              keys: Optional[Dict[int, Tuple[str, str]]] = None) -> bool:
+        if abs(float(cell.depth) - float(self.first)) > span:
+            return False
+        mine = keys.get(id(cell)) if keys else None
+        if mine is None:
+            return True
+        # A second id, or a second blow record, on the same sheet is a
+        # second sample however close it is printed (RI-04).
+        return not any(c.page == cell.page and keys.get(id(c)) is not None
+                       and keys[id(c)][0] == mine[0]
+                       and keys[id(c)][1] != mine[1]
+                       for c in self.cells)
 
     def add(self, cell: Any) -> None:
         if not any(c.page == cell.page and c.column_id == cell.column_id
@@ -352,9 +595,16 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
                  template_note: str = "", drawn: Any = None,
                  printed_row: Optional[PrintedRow] = None,
-                 printed_bottom: Optional[float] = None
+                 printed_bottom: Optional[float] = None,
+                 notes: Optional["_FloorNotes"] = None
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
-    top = min(float(c.depth) for c in group.cells)
+    # The sample's depth is where its own cells -- id, sampler, drives,
+    # recovery -- stand; a value printed a line above them is the sample's
+    # but does not move it (RI-04). A group with none of those is placed by
+    # all of its cells, as before.
+    marked = [c for c in group.cells
+              if _marks_a_sample(_text(c), _names(grid, c, by_column))]
+    top = min(float(c.depth) for c in (marked or group.cells))
     bottom: Optional[float] = None
     sample_id = ""
     kind = "other"
@@ -368,9 +618,13 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     confidence = min(float(c.confidence) for c in group.cells)
     blow_cell = None
     stacked: List[Tuple[Tuple[float, float, float], int]] = []
-    for cell in group.cells:
+    stacked_cells: List[Any] = []
+    #: Numbers printed in a column that holds several quantities, which
+    #: their position cannot tell apart: ``(the number as printed, header)``.
+    unassigned: List[Tuple[str, str]] = []
+    for cell in group.cells + group.bound:
         names = _names(grid, cell, by_column)
-        text = " ".join(str(cell.text or "").split())
+        text = _text(cell)
         texts.append(text)
         code = text.lower()
         # A sampler code: SS, ST, MC ... in any sample column; a single
@@ -383,19 +637,28 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             if kind == "other":
                 kind = _TYPE_CODES[code]
             continue
-        # A sample named and typed in one cell: "S-1, SPT". Only where the
-        # column carries sample identifiers, so a comma in a description
-        # cannot become a sampler code.
-        pair = _ID_AND_TYPE.match(text) if "sample_id" in names else None
+        # A sample named and typed in one cell: "S-1, SPT". Only in a column
+        # that carries sampling data -- a form's DATA column stacks the id,
+        # the drives and the recovery -- so a comma in a description cannot
+        # become a sampler code.
+        pair = (_ID_AND_TYPE.match(text)
+                if set(names) & (_SAMPLING - {"n_value"}) else None)
         if pair is not None and pair.group(2).lower() in _TYPE_CODES:
             if not sample_id:
                 sample_id = pair.group(1)
             if kind == "other":
                 kind = _TYPE_CODES[pair.group(2).lower()]
             continue
-        # A result that names itself: "MC = 10.1%", "REC=29cm, 56%".
+        # A label printed without its value ("% Passing #200" with no "= n"
+        # under it) is a label: its digits are not the column's number.
+        if "".join(ch for ch in code if ch.isalnum()) in _LABEL_NAMES \
+                and not _numeric(text):
+            continue
+        # A result that names itself: "MC = 21%", "REC=29cm, 56%", and
+        # under TESTS or REMARKS, "qu = 95 kPa".
         labelled = (_labelled_value(text)
-                    if set(names) & _LABELLED_FAMILY else None)
+                    if set(names) & (_LABELLED_FAMILY | _RESULT_COLUMNS)
+                    else None)
         if labelled is not None:
             what, number, cell_unit, percent = labelled
             if what == "recovery":
@@ -433,14 +696,30 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             refusal = any(isinstance(t, str) for t in tokens)
             blow_cell = cell
             continue
+        # From here on a cell is read as a NUMBER of its column, so it must
+        # be one: a cell with words in it ("S-1, SS" under a DATA column the
+        # vocabulary called recovery, "Run = 3.5 ft" under RQD) is not that
+        # column's value, whatever digits it holds (RI-04). Its text stays
+        # in the note.
+        if not _numeric(text) and not (
+                "sample_id" in names and _id_like(text)):
+            continue
+        header = _header(grid, cell)
+        index_names = [name for name in _INDEX_NAMES if name in names]
+        paren = (_paren_names(header, names)
+                 if len(set(names) & _SAMPLING) >= 2 else None)
         # A blow record printed one increment to a line, each in its own
         # cell, which is what the two commonest gINT forms in the corpus do.
         # Gathered here and assembled after the loop, in the order the form
         # printed them; a LONE number is left where it is, because one
-        # number in a blows column is as likely to be an N value.
-        if "blows" in names and re.fullmatch(r"\d{1,3}", text):
+        # number in a blows column is as likely to be an N value. Not in a
+        # column that also holds index values: there a lone number may be
+        # any of them.
+        if ("blows" in names and not index_names
+                and re.fullmatch(r"\d{1,3}", text)):
             stacked.append(((float(cell.depth), float(cell.bbox[1]),
                              float(cell.bbox[0])), int(text)))
+            stacked_cells.append(cell)
             continue
         interval = _INTERVAL.match(text)
         if interval and "sample_id" in names:
@@ -451,8 +730,13 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                 and len(cell.numbers) == 1 and re.fullmatch(r"\d+", text)):
             n = int(cell.numbers[0])
             continue
+        if (paren == ("blows", "n_value") and _wrapped(text)
+                and re.fullmatch(r"\(\s*\d+\s*\)", text)):
+            # "BLOWS PER 6 IN (N)": the number in parentheses is the N.
+            n = int(re.sub(r"\D", "", text))
+            continue
         if "sample_id" in names and text and not cell.numbers:
-            if not sample_id:
+            if not sample_id and _id_like(text):
                 sample_id = text
             continue
         if "sample_id" in names and text and len(cell.numbers) == 1 \
@@ -461,13 +745,20 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             if not sample_id:
                 sample_id = text
             continue
-        if "rqd" in names and cell.numbers:
-            values["rqd_percent"] = float(cell.numbers[0])
+        numbers = _numbers_of(cell)
+        if not numbers:
             continue
-        if "recovery" in names and cell.numbers:
-            header = _header(grid, cell)
+        if paren in (("recovery", "rqd"), ("rqd", "recovery")):
+            # "REC % (RQD %)": the bare number is the recovery, the one
+            # in parentheses the RQD -- or the other way round.
+            name = paren[1] if _wrapped(text) else paren[0]
+            names = (name,)
+        if "rqd" in names:
+            values["rqd_percent"] = numbers[0]
+            continue
+        if "recovery" in names:
             col_unit = _unit_of_column(grid, cell)
-            number = float(cell.numbers[0])
+            number = numbers[0]
             if "%" in text or col_unit == "%" or "%" in header \
                     or re.search(r"\bpercent\b|\bpct\b", header, re.I) \
                     or (not col_unit and number <= 100.0):
@@ -476,30 +767,38 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                 values["recovery"] = number
                 units["recovery"] = col_unit
             continue
+        if not index_names:
+            continue
         limits = [name for name in ("liquid_limit", "plastic_limit",
                                     "plasticity_index") if name in names]
-        if limits and cell.numbers:
-            order = _limits_order(_header(grid, cell)) or (
-                ["liquid_limit", "plastic_limit", "plasticity_index"]
-                if len(cell.numbers) == 3 else limits)
-            for name, number in zip(order, cell.numbers):
-                values.setdefault(name, float(number))
+        order = _limits_order(header) or (
+            ["liquid_limit", "plastic_limit", "plasticity_index"]
+            if len(numbers) == 3 else limits)
+        if limits and len(numbers) >= 2:
+            # "42-21-21" under LL-PL-PI: the header says which is which.
+            for name, number in zip(order, numbers):
+                values.setdefault(name, number)
             continue
-        for name in ("water_content", "dry_unit_weight", "fines", "qu",
-                     "pocket_pen"):
-            if name in names and cell.numbers:
-                key = "fines_percent" if name == "fines" else name
-                values.setdefault(key, float(cell.numbers[0]))
-                if name in ("dry_unit_weight", "qu", "pocket_pen"):
-                    units[key] = _unit_of_column(
-                        grid, cell, "pcf" if name == "dry_unit_weight"
-                        and "pcf" in _header(grid, cell).lower() else "")
-                break
+        if len(index_names) > 1:
+            # One number under a heading of several quantities -- a plot
+            # column with a scale for each -- is any of them, and its
+            # position does not say which (RI-04). It is the sample's, so it
+            # is kept with the sample, in its note, not guessed into a slot.
+            unassigned.append((text, header))
+            continue
+        name = index_names[0]
+        key = "fines_percent" if name == "fines" else name
+        values.setdefault(key, numbers[0])
+        if name in ("dry_unit_weight", "qu", "pocket_pen"):
+            units[key] = _unit_of_column(
+                grid, cell, "pcf" if name == "dry_unit_weight"
+                and "pcf" in header.lower() else "")
     if not blows and len(stacked) >= 2:
         stacked.sort(key=lambda row: row[0])
         blows = [number for _key, number in stacked]
-    if kind == "other" and blows:
-        kind = "spt"
+    # The sampler is the one the log prints. Drives alone do not say SPT: a
+    # ring or California sampler is driven too, and the model reads the
+    # symbol (RI-04; the floor no longer calls every driven sample an SPT).
     anchor = blow_cell or group.cells[0]
     page = int(anchor.page)
     drawn_note = ""
@@ -531,6 +830,45 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             sample_id = printed_row.label
         confidence = printed_row.first.confidence
         printed_note = "; " + printed_row.note()
+    at = f"{top:g} {unit}".strip()
+    # THE CHECKS (RI-04): a value the grid may have put in the wrong row or
+    # column keeps a lower confidence and a note, and goes to QA. Nothing
+    # is dropped; a percentage the record cannot hold stays in the note.
+    remarks: List[str] = []
+    if unassigned:
+        remarks.append("printed with it but not assigned to a quantity: "
+                       + ", ".join(f"{t} (column '{h[:60]}')"
+                                   for t, h in unassigned))
+        if notes is not None:
+            for t, h in unassigned:
+                notes.add(page, "unassigned", f"{t} at {at}", header=h)
+    if group.unbound:
+        confidence = min(confidence, confidence_floor)
+        remarks.append("values printed off every sample's lines and not "
+                       "bound to one sample; placed where printed")
+    doubts = _doubts(values, units)
+    if doubts:
+        confidence = min(confidence, confidence_floor)
+        remarks.append("doubtful: " + "; ".join(doubts))
+        if notes is not None:
+            notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
+    # N, where the log prints a standard SPT's three drives and no N.
+    n_basis = ""
+    if n is None and not n_printed and not refusal and blows:
+        drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
+                                   else None)
+        printed_inc = (header_increment(_header(grid, drive_cell))
+                       if drive_cell is not None else None)
+        interval = (None if bottom is None
+                    else _metres(float(bottom) - float(top), unit))
+        computed = n_from_drives(
+            blows, sampler=kind, increment_m=printed_inc,
+            interval_m=interval,
+            increment_from=(f"the column header "
+                            f"'{_header(grid, drive_cell)[:40]}'"
+                            if printed_inc is not None else ""))
+        if computed is not None:
+            n, n_basis = computed
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
@@ -539,6 +877,7 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
               + "; ".join(t for t in texts if t)[:160] + drawn_note
               + printed_note))
     sample = Sample(
+        note="; ".join(remarks),
         sample_id=sample_id, top=_q(top, unit), bottom=_q(bottom, unit),
         kind=kind,  # type: ignore[arg-type]
         recovery=_q(values.get("recovery"), units.get("recovery", "")),
@@ -557,9 +896,18 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     spt = None
     if blows or n is not None or n_printed:
         spt = SPT(depth_top=_q(top, unit), depth_bottom=_q(bottom, unit),
-                  blows=blows, n=n, n_printed=n_printed, refusal=refusal,
-                  sample_id=sample_id,
+                  blows=blows, n=n, n_basis=n_basis, n_printed=n_printed,
+                  refusal=refusal, sample_id=sample_id,
                   prov=prov.model_copy(deep=True))
+    if (notes is not None and not marked and spt is None and not sample_id
+            and kind == "other" and drawn is None and printed_row is None
+            and not any(v is not None for v in values.values())
+            and not unassigned):
+        # Nothing a sample has -- no id, sampler, drives, N or value, no
+        # drawn box: a stray mark in a sample column, not a sample (RI-04).
+        notes.add(page, "empty", f"'{'; '.join(t for t in texts if t)[:40]}'"
+                                 f" at {at}")
+        return None, None
     return sample, spt
 
 
@@ -567,6 +915,177 @@ def _pct(value: Optional[float]) -> Optional[float]:
     if value is None:
         return None
     return max(0.0, min(100.0, float(value)))
+
+
+def _metres(length: float, unit: str) -> Optional[float]:
+    if unit == "m":
+        return length
+    if unit == "ft":
+        return length / FT_PER_M
+    return None
+
+
+#: Where the rule the floor computes an N by is printed. FHWA NHI-06-088
+#: Vol. I, Sec. 3.7, p. 3-51 (procedure: ASTM D 1586): the sampler is driven
+#: "three successive 6 in (150 mm) increments"; "the first recorded increment
+#: is considered as a 'seating' penetration, while the number of blows to
+#: advance the second and third increments are summed to give the N-value".
+N_RULE_SOURCE = "FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51 (ASTM D 1586)"
+#: The standard increment, and how far a printed or measured one may sit from
+#: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
+SPT_INCREMENT_M = 0.1524
+_INCREMENT_TOL_M = 0.006
+#: A sample's drawn or printed interval over its three drives may be off the
+#: standard by this much a drive (a box is drawn to a line's width).
+_INTERVAL_TOL_M = 0.012
+#: "BLOWS/6 IN", "Blows per 6\"", "blows/15 cm", "blows/150 mm", "por 15 cm".
+_INCREMENT = re.compile(
+    r"(?:/|\bper\b|\bpor\b|\bpour\b)\s*(\d+(?:[.,]\d+)?)?\s*"
+    r"(\"|''|inch(?:es)?\b|in\b\.?|cm\b|mm\b|m\b|ft\b|foot\b|feet\b)", re.I)
+
+
+def header_increment(header: str) -> Optional[float]:
+    """The drive increment a blows column's header prints, in metres, or
+    None when it prints none. ``BLOWS/FT`` is a foot: the N's own unit, not
+    a drive's, and never the standard increment."""
+    match = _INCREMENT.search(str(header or ""))
+    if match is None:
+        return None
+    number = float((match.group(1) or "1").replace(",", "."))
+    unit = match.group(2).lower().rstrip(".")
+    factor = {"\"": 0.0254, "''": 0.0254, "in": 0.0254, "inch": 0.0254,
+              "inches": 0.0254, "cm": 0.01, "mm": 0.001, "m": 1.0,
+              "ft": 0.3048, "foot": 0.3048, "feet": 0.3048}.get(unit)
+    return None if factor is None else number * factor
+
+
+def n_from_drives(blows: Sequence[Any], *, sampler: str,
+                  increment_m: Optional[float] = None,
+                  interval_m: Optional[float] = None,
+                  increment_from: str = "") -> Optional[Tuple[int, str]]:
+    """``(N, how it was had)`` from a standard SPT's three printed drives, or
+    None when the rule does not apply.
+
+    The rule is printed in :data:`N_RULE_SOURCE`: N is the second drive plus
+    the third. It applies only to an SPT sampler the log names (``sampler``
+    is ``"spt"``), to exactly three whole-number drives (a refusal, a
+    weight-of-hammer entry or a fourth drive is not this case), and to drives
+    of 6 in or 150 mm: the increment a header prints (``increment_m``) must
+    be that, and with none printed the sample's interval (``interval_m``)
+    must be three of them.
+    """
+    if sampler != "spt":
+        return None
+    counts: List[int] = []
+    for entry in blows:
+        if isinstance(entry, bool):
+            return None
+        if isinstance(entry, int):
+            counts.append(entry)
+        elif isinstance(entry, str) and entry.strip().isdigit():
+            counts.append(int(entry.strip()))
+        else:
+            return None
+    if len(counts) != 3:
+        return None
+    if increment_m is not None:
+        if abs(increment_m - SPT_INCREMENT_M) > _INCREMENT_TOL_M:
+            return None
+        how = increment_from or "the printed increment"
+    elif interval_m is not None and abs(
+            interval_m / 3.0 - SPT_INCREMENT_M) <= _INTERVAL_TOL_M:
+        how = f"the sample's interval ({interval_m:.3g} m over three drives)"
+    else:
+        return None
+    n = counts[1] + counts[2]
+    return n, (f"not printed; the 2nd + 3rd of three 6 in (150 mm) drives, "
+               f"{counts[1]} + {counts[2]} = {n}, by the rule printed in "
+               f"{N_RULE_SOURCE}; 6 in drives from {how}")
+
+
+def _doubts(values: Dict[str, Any], units: Dict[str, str]) -> List[str]:
+    """What in one sample's values contradicts its own column or the other
+    values (RI-04). A percentage outside 0-100 cannot stand in the record's
+    slot; it is taken out of ``values`` and the note says what was printed.
+    Everything else stays where it is, doubted."""
+    out: List[str] = []
+    for key in ("recovery_percent", "rqd_percent", "fines_percent"):
+        value = values.get(key)
+        if value is not None and not 0.0 <= float(value) <= 100.0:
+            out.append(f"{key.replace('_', ' ')} printed {value:g}, outside "
+                       f"0-100")
+            values.pop(key)
+    for key in ("water_content", "liquid_limit", "plastic_limit",
+                "plasticity_index", "dry_unit_weight", "qu", "pocket_pen",
+                "recovery"):
+        value = values.get(key)
+        if value is not None and float(value) < 0.0:
+            out.append(f"{key.replace('_', ' ')} {value:g} is negative")
+    ll, pl = values.get("liquid_limit"), values.get("plastic_limit")
+    pi = values.get("plasticity_index")
+    if ll is not None and pl is not None and float(pl) > float(ll):
+        out.append(f"plastic limit {pl:g} above liquid limit {ll:g}")
+    if None not in (ll, pl, pi) and abs(float(ll) - float(pl)
+                                        - float(pi)) > 1.0:
+        out.append(f"LL - PL = {float(ll) - float(pl):g} but PI printed "
+                   f"{pi:g}")
+    dry = values.get("dry_unit_weight")
+    span = {"pcf": (40.0, 170.0), "kn/m3": (6.0, 27.0),
+            "kn/m³": (6.0, 27.0)}.get(
+        units.get("dry_unit_weight", "").strip().lower())
+    if dry is not None and span and not span[0] <= float(dry) <= span[1]:
+        out.append(f"dry unit weight {dry:g} "
+                   f"{units.get('dry_unit_weight')} is outside "
+                   f"{span[0]:g}-{span[1]:g}")
+    return out
+
+
+class _FloorNotes:
+    """What the floor could not settle, for the QA section (RI-04).
+
+    One row per page and reason, naming every depth, so a log with twenty
+    such values is one entry to check rather than twenty.
+    """
+
+    WHY: Dict[str, str] = {
+        "unassigned": ("numbers printed in a column that holds several "
+                       "quantities ({header}); which one each is cannot be "
+                       "told from its position, so each is kept in its "
+                       "sample's note and left to the reader"),
+        "unbound": ("values printed off every sample's lines that the "
+                    "page's geometry does not bind to one sample (none "
+                    "near enough, two about equally near, or on the other "
+                    "side of their sample from the rest of their column); "
+                    "each stays where it is printed"),
+        "doubtful": ("values that contradict their column or the sample's "
+                     "other values, kept at a lower confidence"),
+        "order": ("samples whose depth contradicts their neighbours' "
+                  "(their numbers run out of order down the hole), kept at "
+                  "a lower confidence"),
+        "empty": ("rows in the sample columns with nothing a sample has "
+                  "(no id, sampler, drives, N or value, no drawn box); not "
+                  "seeded as samples"),
+    }
+
+    def __init__(self) -> None:
+        self.items: Dict[Tuple[int, str, str], List[str]] = {}
+
+    def add(self, page: int, reason: str, item: str,
+            header: str = "") -> None:
+        self.items.setdefault((int(page), reason, header[:60]),
+                              []).append(item)
+
+    def qa_rows(self) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for (page, reason, header), items in sorted(self.items.items()):
+            why = self.WHY[reason].format(
+                header=f"headed '{header}'" if header else "")
+            out.append({"what": f"log floor, page {page}", "page": page,
+                        "why": f"The grid's reading of page {page} has "
+                               f"{len(items)} {why}.",
+                        "value": "; ".join(items)[:400],
+                        "flag": f"floor_{reason}"})
+        return out
 
 
 # ---------------------------------------------------------------------------
@@ -1020,19 +1539,208 @@ def _pit_method(lines: Sequence[Any]) -> str:
     return ""
 
 
+def _sample_groups(grid: Any, pages: Sequence[int], span: float,
+                   by_column: Dict[str, Tuple[str, ...]],
+                   notes: _FloorNotes) -> List[_Group]:
+    """The sample columns' cells gathered into one group per sample.
+
+    Cells within ``span`` of a group's first row are that sample's, the
+    nearest group taking a cell two could take; a second id or a second
+    blow record on the same sheet opens a second sample however close it is
+    printed. A group with no cell that marks a sample (no id, sampler,
+    drives, N or recovery) holds only values -- a moisture content printed a
+    line above its sample, a labelled result under TESTS -- and on a sheet
+    that has samples it is BOUND to the one the page's geometry points at
+    (RI-04): the nearest, when it is within two spans, clearly nearer than
+    the next (half as far again) and on the side of its sample the rest of
+    its column's values are. A value that fails any of those stays where it
+    is printed, as its own row at the floor's lowest confidence, and the QA
+    section lists it; a labelled result from outside the sample columns is
+    not a sample on its own and is only listed.
+    """
+    family: List[Any] = []
+    results: List[Any] = []
+    for cell in grid.rows:
+        if cell.depth is None or cell.page not in pages:
+            continue
+        if not (getattr(cell, "numbers", None) or _text(cell)):
+            continue
+        here = set(_names(grid, cell, by_column))
+        if here & _SAMPLE_FAMILY:
+            family.append(cell)
+        elif here & _RESULT_COLUMNS:
+            results.append(cell)
+    # Words the grid placed in a sample column -- a description run long, a
+    # remark, an end-of-boring line, a drawn rule -- are not sample data:
+    # they neither open a sample nor name one. They are the layer's or the
+    # remark's, read there, so nothing is lost by leaving them out here.
+    cells: List[Any] = [c for c in _join_labels(family)
+                        if not _is_words(_text(c))]
+    labelled = [c for c in _join_labels(results)
+                if _labelled_value(_text(c)) is not None]
+    from_results = {id(c) for c in labelled}
+    cells.extend(labelled)
+    cells.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
+    keys: Dict[int, Tuple[str, str]] = {}
+    marks: set = set()
+    for cell in cells:
+        names = _names(grid, cell, by_column)
+        key = _sample_key(_text(cell), names)
+        if key is not None:
+            keys[id(cell)] = key
+        if id(cell) not in from_results and _marks_a_sample(_text(cell),
+                                                            names):
+            marks.add(id(cell))
+    groups: List[_Group] = []
+    for cell in cells:
+        # Any group at this depth takes the cell, whichever sheet it is
+        # on: the rows are sorted by page first, so a second sheet's
+        # restatement of a depth would otherwise open a second sample.
+        fits = [g for g in groups if g.takes(cell, span, keys)]
+        if fits:
+            min(fits, key=lambda g: abs(float(cell.depth)
+                                        - float(g.first))).add(cell)
+        else:
+            groups.append(_Group(cell))
+    # A value cell taken before the sample nearer to it was opened (the
+    # rows come in depth order) goes to that nearer sample now: nearer to
+    # the lines the sample's own cells are printed on. Only a VALUE moves:
+    # a sample's own cells -- its id, its drives one to a line -- stay with
+    # the sample they opened.
+    def reach(group: _Group, cell: Any) -> float:
+        own = [c for c in group.cells if c is not cell]
+        lines = [float(c.depth) for c in own if id(c) in marks] or [
+            float(c.depth) for c in own]
+        if not lines:
+            return float("inf")
+        at = float(cell.depth)
+        return max(0.0, min(lines) - at, at - max(lines))
+
+    for group in groups:
+        for cell in list(group.cells[1:]):
+            if id(cell) in keys or id(cell) in marks:
+                continue
+            best = min((g for g in groups if g is not group
+                        and g.takes(cell, span, keys)),
+                       key=lambda g: reach(g, cell), default=None)
+            if best is not None and reach(best, cell) < reach(group, cell):
+                group.cells.remove(cell)
+                best.add(cell)
+
+    def marked(group: _Group) -> List[float]:
+        return [float(c.depth) for c in group.cells if id(c) in marks]
+
+    anchored = [g for g in groups if marked(g)]
+    proposals: List[Tuple[_Group, _Group, int]] = []
+    left: List[_Group] = []
+    for group in groups:
+        if marked(group):
+            continue
+        sheets = {c.page for c in group.cells}
+        near = [a for a in anchored if sheets & {c.page for c in a.cells}]
+        if not near:
+            # A sheet with no sample marked on it: its values are the only
+            # samples it has, read as they always were.
+            continue
+        at = sum(float(c.depth) for c in group.cells) / len(group.cells)
+        found: List[Tuple[float, int, _Group]] = []
+        for other in near:
+            lo, hi = min(marked(other)), max(marked(other))
+            if at < lo:
+                found.append((lo - at, -1, other))
+            elif at > hi:
+                found.append((at - hi, 1, other))
+            else:
+                found.append((0.0, 0, other))
+        found.sort(key=lambda row: row[0])
+        gap, side, home = found[0]
+        if gap > 2.0 * span or (len(found) > 1 and found[1][0]
+                                <= 1.5 * gap + 1e-9):
+            left.append(group)
+        else:
+            proposals.append((group, home, side))
+    # The side of its sample a column prints its values on, by majority.
+    sides: Dict[Tuple[int, str], Dict[int, int]] = {}
+    for group, _home, side in proposals:
+        for where in {(c.page, c.column_id) for c in group.cells}:
+            tally = sides.setdefault(where, {})
+            tally[side] = tally.get(side, 0) + 1
+    bound: set = set()
+    for group, home, side in proposals:
+        against = side != 0 and any(
+            sides[w].get(-side, 0) > sides[w].get(side, 0)
+            for w in {(c.page, c.column_id) for c in group.cells})
+        if against:
+            left.append(group)
+            continue
+        for cell in group.cells:
+            if not any(c is cell for c in home.bound):
+                home.bound.append(cell)
+        bound.add(id(group))
+    dropped: set = set()
+    for group in left:
+        what = "; ".join(_text(c) for c in group.cells)[:60]
+        notes.add(group.page, "unbound",
+                  f"'{what}' at {float(group.first):g}")
+        if all(id(c) in from_results for c in group.cells):
+            dropped.add(id(group))
+        else:
+            group.unbound = True
+    return [g for g in groups if id(g) not in bound and id(g) not in dropped]
+
+
+def _check_order(samples: List[Sample], spt: List[SPT], unit: str,
+                 confidence_floor: float, notes: _FloorNotes) -> None:
+    """A sample whose number runs out of order down the hole -- S-7 between
+    S-2 and S-4 -- sits at a depth its neighbours contradict: the grid put
+    it on the wrong row, or the log misprinted it. It stays, doubted."""
+    numbered: Dict[str, List[Tuple[float, float, Sample]]] = {}
+    for sample in samples:
+        match = re.fullmatch(r"([A-Za-z]*)[-\s#.]?(\d{1,4})[A-Za-z]?",
+                             sample.sample_id.strip())
+        if match is None or sample.top is None:
+            continue
+        numbered.setdefault(match.group(1).upper(), []).append(
+            (float(sample.top.value), float(match.group(2)), sample))
+    for rows in numbered.values():
+        rows.sort(key=lambda row: row[0])
+        for k in range(1, len(rows) - 1):
+            before, here, after = rows[k - 1][1], rows[k][1], rows[k + 1][1]
+            if before < after and not before <= here <= after:
+                sample = rows[k][2]
+                why = (f"sample {sample.sample_id} at {rows[k][0]:g} {unit} "
+                       f"lies between {rows[k - 1][2].sample_id} and "
+                       f"{rows[k + 1][2].sample_id}").replace("  ", " ")
+                if sample.prov is not None:
+                    sample.prov.confidence = min(sample.prov.confidence,
+                                                 confidence_floor)
+                sample.note = "; ".join(
+                    t for t in (sample.note, "doubtful: " + why) if t)
+                for drive in spt:
+                    if drive.sample_id == sample.sample_id and drive.prov:
+                        drive.prov.confidence = min(drive.prov.confidence,
+                                                    confidence_floor)
+                notes.add(sample.prov.page if sample.prov else 0, "order",
+                          why)
+
+
 def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                    confidence_floor: float = 0.3,
                    template: Any = None,
                    lines: Sequence[Any] = (),
-                   printed: Optional[PrintedDepths] = None) -> Investigation:
+                   printed: Optional[PrintedDepths] = None,
+                   qa: Optional[List[Dict[str, Any]]] = None
+                   ) -> Investigation:
     """The grid's own reading of one log as an :class:`Investigation`.
 
     Every value carries a ``grid`` provenance at the grid's own confidence
     for that cell. Nothing here is inferred: a sampler is ``other`` unless
-    the type column prints a code, an N is recorded only where the log
-    prints ``N=``, a USCS symbol only where the description prints one in
-    the standard letters, and a water level only where the header's
-    groundwater field prints a depth.
+    the log prints its code (drives alone do not make an SPT), an N is
+    recorded where the log prints one -- or, for an SPT the log names with
+    its three 6 in (150 mm) drives printed, computed by the rule
+    :data:`N_RULE_SOURCE` prints and said so in ``n_basis`` -- a USCS symbol
+    only where the description prints one in the standard letters, and a
+    water level only where the header's groundwater field prints a depth.
 
     ``template`` is a
     :class:`~report_ingest.log_templates.TemplateMatch` when the page was
@@ -1056,6 +1764,12 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     seeded at that depth, and a stratum whose interval is printed is seeded
     as a layer, each saying in its note how the depth was read. On a log
     whose every page has a ruler it finds nothing and changes nothing.
+
+    ``qa``, when given, receives one unresolved row per page and reason for
+    what the floor read but could not settle (RI-04): values bound to no
+    sample, numbers in a column of several quantities, values that
+    contradict their column or their neighbours.
+    The rows have the shape the log reader's ``unresolved`` list carries.
     """
     pages = [int(p) for p in pages]
     unit = (grid.unit or "").strip()
@@ -1235,30 +1949,18 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
 
     samples: List[Sample] = []
     spt: List[SPT] = []
+    notes = _FloorNotes()
     if unit or grid.rulers:
         span = _span_in_unit(unit, grid)
-        anchors = [c for c in grid.rows
-                   if c.depth is not None and c.page in pages
-                   and set(_names(grid, c, by_column)) & _SAMPLE_FAMILY
-                   and (c.numbers or str(c.text or "").strip())]
-        anchors.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
-        groups: List[_Group] = []
-        for cell in anchors:
-            # Any group at this depth takes the cell, whichever sheet it is
-            # on: the rows are sorted by page first, so a second sheet's
-            # restatement of a depth would otherwise open a second sample.
-            home = next((g for g in groups if g.takes(cell, span)), None)
-            if home is not None:
-                home.add(cell)
-            else:
-                groups.append(_Group(cell))
+        groups = _sample_groups(grid, pages, span, by_column, notes)
         boxes = list(getattr(grid, "samples", None) or [])
         for group in groups:
             drawn = _drawn_box(group, boxes)
             if drawn is not None:
                 boxes.remove(drawn)
             sample, drive = _seed_sample(group, grid, unit, confidence_floor,
-                                         by_column, template_note, drawn)
+                                         by_column, template_note, drawn,
+                                         notes=notes)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:
@@ -1277,11 +1979,15 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                 group.add(cell)
             sample, drive = _seed_sample(group, grid, unit, confidence_floor,
                                          by_column, template_note,
-                                         printed_row=row, printed_bottom=base)
+                                         printed_row=row, printed_bottom=base,
+                                         notes=notes)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:
                 spt.append(drive)
+    _check_order(samples, spt, unit, confidence_floor, notes)
+    if qa is not None:
+        qa.extend(notes.qa_rows())
 
     extra = {k: str(v) for k, v in fields.items()
              if k not in used and str(v or "").strip()}
@@ -1361,12 +2067,15 @@ def serialise_seed(inv: Investigation) -> str:
         out.append(f"sample at {show(s.top)}"
                    + (f" to {show(s.bottom)}" if s.bottom else "")
                    + f" ({_where(s.prov)}): " + ", ".join(parts)
+                   + (f"; {s.note}" if s.note else "")
                    + (f"  [confidence {s.prov.confidence:.2f}]" if s.prov
                       else ""))
     for r in inv.spt:
         out.append(f"driven record at {show(r.depth_top)} "
                    f"({_where(r.prov)}): blows {show(r.blows) or '?'}"
-                   + (f", N {r.n}" if r.n is not None else ", N not printed")
+                   + (f", N {r.n} ({r.n_basis})" if r.n_basis
+                      else f", N {r.n}" if r.n is not None
+                      else ", N not printed")
                    + (", refusal" if r.refusal else ""))
     for w in inv.water:
         out.append(f"water: {show(w.depth) or 'none'} ({w.when}) "
@@ -1612,6 +2321,121 @@ class _Merger:
         merged.prov = prov
         return merged
 
+    @staticmethod
+    def _with_floor_note(f: Sample, merged: Sample) -> Sample:
+        """The floor's own note on a sample -- a doubt, a number it could
+        not assign -- stays on the merged sample beside the model's."""
+        if f.note and f.note not in (merged.note or ""):
+            merged.note = "; ".join(t for t in (f.note, merged.note) if t)
+        return merged
+
+    # -- N, against the drives (RI-04) -----------------------------------
+    def sampler_at(self, record: SPT) -> str:
+        """The sampler of the merged sample this drive record belongs to:
+        the one with its id, else the one at its depth."""
+        merged = getattr(self, "merged_samples", None) or []
+        if record.sample_id:
+            for sample in merged:
+                if sample.sample_id and fold(sample.sample_id) == fold(
+                        record.sample_id):
+                    return sample.kind
+        for sample in merged:
+            if same_depth(sample.top, record.depth_top):
+                return sample.kind
+        return "other"
+
+    def derived_n(self, record: SPT) -> Optional[Tuple[int, str]]:
+        """N computed from the record's printed drives by the printed rule
+        (:func:`n_from_drives`), or None where the rule does not apply."""
+        increment: Optional[float] = None
+        how = ""
+        if record.increments:
+            lengths = [q.si_value for q in record.increments]
+            if len(lengths) != len(record.blows) or any(
+                    v is None or abs(v - SPT_INCREMENT_M) > _INCREMENT_TOL_M
+                    for v in lengths):
+                return None
+            increment, how = SPT_INCREMENT_M, "the record's drive lengths"
+        elif record.increment is not None:
+            increment = record.increment.si_value
+            if increment is None:
+                return None
+            how = "the record's printed increment"
+        interval = None
+        if record.depth_bottom is not None:
+            top = record.depth_top.si_value
+            bottom = record.depth_bottom.si_value
+            if top is not None and bottom is not None:
+                interval = bottom - top
+        return n_from_drives(record.blows, sampler=self.sampler_at(record),
+                             increment_m=increment, interval_m=interval,
+                             increment_from=how)
+
+    def check_n(self, merged: SPT, f: Optional[SPT], m: SPT, where: str,
+                what: str) -> None:
+        """How the merged N was had, and a model's N checked against the
+        drives (RI-04).
+
+        An N the floor computed keeps its basis while it is the N that
+        stands; where the model's printed N replaced it, the computed one is
+        the alternative and says how it was had. An N only the model gives
+        is set against the second plus the third drive where the printed
+        rule applies, and a difference is a disagreement under the floor's
+        one rule: the model's N stands only with a box and a note, the
+        other is kept beside it, and the QA section lists both.
+        """
+        if f is not None and f.n_basis:
+            if merged.n == f.n:
+                merged.n_basis = f.n_basis
+                return
+            merged.n_basis = ""
+            for alt in (merged.prov.alternatives if merged.prov else []):
+                if alt.field == "n" and alt.value == show(f.n):
+                    alt.method = "derived"  # type: ignore[assignment]
+                    alt.note = f"the floor's N, {f.n_basis}"
+            return
+        if m.n is None or (f is not None and f.n is not None):
+            return
+        derived = self.derived_n(merged)
+        if derived is None or derived[0] == m.n:
+            return
+        n, basis = derived
+        page = (m.prov.page if m.prov is not None
+                else f.prov.page if f is not None and f.prov is not None
+                else None)
+        computed_confidence = _conf(f.prov if f is not None else m.prov, 0.5)
+        s = settle("n", n, m.n, False, floor_method="derived",
+                   floor_confidence=computed_confidence,
+                   model_method=(m.prov.method if m.prov is not None
+                                 and m.prov.method in
+                                 ("model", "model_from_picture", "vision")
+                                 else "model"),
+                   model_confidence=_conf(m.prov, 0.9),
+                   evidence=has_evidence(
+                       m.prov, f.prov.bbox if f is not None and f.prov
+                       else None),
+                   model_note=m.prov.note if m.prov is not None else "")
+        merged.n = s.value
+        merged.n_basis = basis if s.verdict == "floor_wins" else ""
+        if s.alternative is not None and merged.prov is not None:
+            if s.verdict == "model_wins":
+                s.alternative.note = f"N {basis}"
+            merged.prov.alternatives.append(s.alternative)
+        self.log.disagree(
+            where, f"{what}: n", n, m.n,
+            kept="model" if s.verdict == "model_wins" else "floor",
+            why=("the model's N differs from the second plus the third of "
+                 "the printed drives; "
+                 + ("it named a box and a note, so it stands and the "
+                    "drives' N is kept beside it"
+                    if s.verdict == "model_wins" else
+                    "it named no box or note, so the drives' N stands and "
+                    "the model's is kept beside it")),
+            page=page, floor_method="derived",
+            floor_confidence=computed_confidence,
+            model_confidence=_conf(m.prov, 0.9),
+            model_method=m.prov.method if m.prov is not None else "model")
+
     def keep_whole(self, where: str, what: str, f: Any) -> Any:
         kept = f.model_copy(deep=True)
         self.log.keep(where, what, f.prov.page if f.prov else None)
@@ -1632,7 +2456,7 @@ class _Merger:
         out: List[Sample] = []
         for f, m in pairs:
             what = f"sample at {show(f.top)}"
-            out.append(self.merge_pair(
+            out.append(self._with_floor_note(f, self.merge_pair(
                 f"{base}[{show(f.top)}]", what, f, m,
                 specs=[("sample_id", "exact_text"), ("kind", "kind"),
                        ("bottom", "depth"), ("recovery", "quantity"),
@@ -1646,7 +2470,7 @@ class _Merger:
                        ("fines_percent", "number"), ("qu", "quantity"),
                        ("pocket_pen", "quantity"), ("uscs", "exact_text"),
                        ("top", "depth")],
-                model_only=["note"]))
+                model_only=["note"])))
         for f in floor_only:
             out.append(self.keep_whole(f"{base}[{show(f.top)}]",
                                        f"sample at {show(f.top)}", f))
@@ -1665,22 +2489,27 @@ class _Merger:
         out: List[SPT] = []
         for f, m in pairs:
             what = f"driven record at {show(f.depth_top)}"
-            out.append(self.merge_pair(
-                f"{base}[{show(f.depth_top)}]", what, f, m,
+            where = f"{base}[{show(f.depth_top)}]"
+            merged = self.merge_pair(
+                where, what, f, m,
                 specs=[("depth_bottom", "depth"), ("blows", "blows"),
                        ("n", "exact"), ("n_printed", "exact_text"),
                        ("increments", "drives"), ("refusal", "flag"),
                        ("sample_id", "exact_text"),
                        ("depth_top", "depth")],
-                model_only=["hammer", "increment"]))
+                model_only=["hammer", "increment"])
+            self.check_n(merged, f, m, where, what)
+            out.append(merged)
         for f in floor_only:
             out.append(self.keep_whole(f"{base}[{show(f.depth_top)}]",
                                        f"driven record at "
                                        f"{show(f.depth_top)}", f))
         for m in model_only:
-            out.append(self.add_whole(f"{base}[{show(m.depth_top)}]",
-                                      f"driven record at "
-                                      f"{show(m.depth_top)}", m))
+            what = f"driven record at {show(m.depth_top)}"
+            where = f"{base}[{show(m.depth_top)}]"
+            added = self.add_whole(where, what, m)
+            self.check_n(added, None, m, where, what)
+            out.append(added)
         out.sort(key=lambda r: (depth_m(r.depth_top)
                                 if depth_m(r.depth_top) is not None else 1e9))
         return out
@@ -1850,6 +2679,7 @@ class _Merger:
         self.header(merged)
         merged.layers = self.layers()
         merged.samples = self.samples()
+        self.merged_samples = merged.samples
         merged.spt = self.spt()
         merged.water = self.water()
         merged.pit = self.pit()

@@ -1353,8 +1353,11 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # such a page has -- for the floor, the brief and the gate alike. On a
     # log whose every page has a ruler this finds nothing.
     printed = printed_depths(grid, pages, lines=page_lines)
+    # What the floor read but could not settle (RI-04): values bound to no
+    # sample, numbers it could not assign, values it doubts.
+    floor_qa: List[Dict[str, Any]] = []
     floor = seed_from_grid(grid, pages, report_id, template=template,
-                           lines=header_lines, printed=printed)
+                           lines=header_lines, printed=printed, qa=floor_qa)
     no_ruler = not bool(getattr(grid, "rulers", None))
     system = (LOG_READER_SYSTEM_PRINTED if no_ruler and printed
               else LOG_READER_SYSTEM)
@@ -1448,7 +1451,8 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         changes=builder.changes,
         # First, one row per page with no ruler: that it was not fitted, why,
         # what was read from print instead and what still has no depth.
-        unresolved=printed.qa_rows(grid, _SAMPLE_FAMILY) + builder.unresolved,
+        unresolved=(printed.qa_rows(grid, _SAMPLE_FAMILY) + floor_qa
+                    + builder.unresolved),
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),

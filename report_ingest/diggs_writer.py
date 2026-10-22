@@ -1686,9 +1686,11 @@ class _Writer:
         # The N value goes in the result when the log PRINTS one. When it
         # prints only the drives, the result carries the drives themselves
         # rather than an N this writer invented -- and the round-trip gate
-        # then checks the drives, which is what the page actually says.
+        # then checks the drives, which is what the page actually says. An N
+        # the floor computed from the drives (``n_basis``) is not printed, so
+        # the drives go in for it too.
         values: List[Tuple[str, str, Any]]
-        if record.n is not None:
+        if record.n is not None and not record.n_basis:
             values = [("N-Value", "n_value", float(record.n))]
         elif drives:
             values = [(f"Blow count {i + 1}", "blow_count", float(count))
@@ -3402,7 +3404,7 @@ def _compare_measurements(name: str, want: Investigation, got: Any,
         top = _si_value(record.depth_top)
         if top is None:
             continue
-        if record.n is not None:
+        if record.n is not None and not record.n_basis:
             if not _nearest(by_parameter.get("N_spt", []), top,
                             float(record.n), dt, TOLERANCE["n_value"]):
                 diffs.append(f"{name}: N={record.n} at {top:.3f} m did not "
