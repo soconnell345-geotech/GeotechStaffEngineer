@@ -87,6 +87,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.bound import APPENDED_LABEL
 from report_ingest.calc_reader import split_calc_items
+from report_ingest.engine import CallCeilingReached
 from report_ingest.label_vote import (
     DEFAULT_POLICY, POLICIES, PageChoice, Voter, combine, load_trust_table,
     neighbourhood, split_pages,
@@ -201,14 +202,22 @@ def output_paths(out_dir: Any) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 class _Spend:
-    """What the run has cost so far, across every pass."""
+    """What the run has cost so far, across every pass.
 
-    def __init__(self) -> None:
+    Each step hands in its own cost when it finishes. One that does not
+    finish -- the model-call ceiling refused a call it made, or it failed --
+    never does, so :meth:`settle` reads what it spent off the run's
+    :class:`_Tally` instead: every call made is counted (BACKLOG RI-02's
+    review).
+    """
+
+    def __init__(self, tally: Optional["_Tally"] = None) -> None:
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
         self.dollars = 0.0
         self.seconds = 0.0
+        self.tally = tally
 
     def add(self, cost: Optional[Dict[str, Any]]) -> None:
         if not cost:
@@ -218,6 +227,119 @@ class _Spend:
         self.output_tokens += int(cost.get("output_tokens") or 0)
         self.dollars += float(cost.get("dollars") or 0.0)
         self.seconds += float(cost.get("seconds") or 0.0)
+
+    def mark(self) -> Tuple[int, Optional[Dict[str, Any]]]:
+        """Where a step starts, for :meth:`settle` and :meth:`cut_short`."""
+        return (self.calls,
+                self.tally.mark() if self.tally is not None else None)
+
+    def settle(self, mark: Tuple[int, Optional[Dict[str, Any]]]) -> None:
+        """Count what a step that did not finish spent before it stopped.
+
+        Nothing when the step handed its own cost in after all, so no call
+        is counted twice.
+        """
+        before, tallied = mark
+        if tallied is None or self.tally is None or self.calls != before:
+            return
+        self.add(self.tally.since(tallied))
+
+    def cut_short(self, mark: Tuple[int, Optional[Dict[str, Any]]]) -> bool:
+        """Did the ceiling refuse a call since ``mark``? A voter inside a
+        reader may take the refusal as its own failure and the reader then
+        finish; what it read is used, but the step is not finished."""
+        tallied = mark[1]
+        return bool(tallied is not None and self.tally is not None
+                    and self.tally.refused > tallied["refused"])
+
+
+class _Tally:
+    """Every call this run's engines made, counted as each one returns.
+
+    The steps' own counts stay what the record reports; this is what a step
+    cut short spent (:meth:`_Spend.settle`) and whether the ceiling refused
+    a call inside it (:meth:`_Spend.cut_short`). A call that went out and
+    failed is a call, as the ceiling counts it; a refused one never went out.
+    """
+
+    FIELDS = ("calls", "input_tokens", "output_tokens", "dollars", "seconds")
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.dollars = 0.0
+        self.seconds = 0.0
+        self.refused = 0
+
+    def wrap(self, engine: Any) -> Any:
+        return None if engine is None else _TalliedEngine(engine, self)
+
+    def charge(self, reply: Any) -> None:
+        self.calls += 1
+        usage = getattr(reply, "usage", None)
+        if usage is not None:
+            self.input_tokens += int(usage.input_tokens or 0)
+            self.output_tokens += int(usage.output_tokens or 0)
+            self.dollars += float(usage.dollars(getattr(reply, "model", "")
+                                                or ""))
+        self.seconds += float(getattr(reply, "seconds", 0.0) or 0.0)
+
+    def mark(self) -> Dict[str, Any]:
+        out = {name: getattr(self, name) for name in self.FIELDS}
+        out["refused"] = self.refused
+        return out
+
+    def since(self, mark: Dict[str, Any]) -> Dict[str, Any]:
+        return {name: getattr(self, name) - mark[name]
+                for name in self.FIELDS}
+
+
+class _TalliedEngine:
+    """An engine whose calls count on a :class:`_Tally`; everything else is
+    the engine it wraps."""
+
+    def __init__(self, inner: Any, tally: _Tally) -> None:
+        self._inner = inner
+        self._tally = tally
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") or name in ("_inner", "_tally"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+    def complete(self, messages: Any, **kwargs: Any) -> Any:
+        try:
+            reply = self._inner.complete(messages, **kwargs)
+        except CallCeilingReached:
+            self._tally.refused += 1
+            raise
+        except Exception:
+            self._tally.calls += 1
+            raise
+        self._tally.charge(reply)
+        return reply
+
+
+def _keep(path: str, blob: Dict[str, Any], spend: _Spend,
+          mark: Tuple[int, Optional[Dict[str, Any]]], qa: List[QAEntry],
+          where: str, pages: Sequence[int] = ()) -> bool:
+    """Save a step's fresh result so a resumed run does not pay for it again
+    -- unless the ceiling cut the step short. Then what it read is used in
+    THIS record and not saved, with a ``partial`` entry saying so: asking
+    for the report again reads the step again. True when saved.
+    """
+    if spend.cut_short(mark):
+        qa.append(QAEntry(
+            kind="partial", where=where,
+            detail="the run's ceiling of model calls refused a call this "
+                   "step made, so what it read is in this record but was "
+                   "not saved as finished; asking for the report again "
+                   "reads it again",
+            pages=list(pages)[:200]))
+        return False
+    _save(path, blob)
+    return True
 
 
 def _is_document(source: Any) -> bool:
@@ -392,7 +514,11 @@ def ingest_report(source: Any, engine: Any, *,
     out = str(out_dir)
     os.makedirs(os.path.join(out, "items"), exist_ok=True)
     started = time.time()
-    spend = _Spend()
+    tally = _Tally()
+    engine = tally.wrap(engine)
+    labelling.vision_engine = tally.wrap(labelling.vision_engine)
+    labelling.triage_engine = tally.wrap(labelling.triage_engine)
+    spend = _Spend(tally)
     qa: List[QAEntry] = []
     unresolved: List[Dict[str, Any]] = []
     children: List[Tuple[ReportRecord, str]] = []
@@ -671,12 +797,14 @@ def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
     blob = _cached(path, resume)
     if blob is None:
         from report_ingest.vision_labels import classify_pages_by_vision
+        mark = spend.mark()
         try:
             seen = classify_pages_by_vision(
                 doc, labelling.vision_engine or engine,
                 mode=labelling.vision_mode, detail=labelling.vision_detail,
                 budget=budgets.vision_model_calls)
         except Exception as exc:              # one voter, not the report
+            spend.settle(mark)
             qa.append(QAEntry(
                 kind="note", where="labels.vision",
                 detail=f"the vision voter did not run "
@@ -685,7 +813,7 @@ def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
                        f"disagreement"))
             return {}
         blob = seen.to_dict()
-        _save(path, blob)
+        _keep(path, blob, spend, mark, qa, "labels.vision")
         spend.add(blob.get("cost"))
         labelling.vision_paid = True
     labelling.vision_cost = dict(blob.get("cost") or {})
@@ -764,6 +892,7 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         budget = budgets.review_tool_calls
         if budget is None and mode == "disagreements":
             budget = budget_for_split(len(split))
+        mark = spend.mark()
         try:
             review = review_labels(doc, roles, outline, profile,
                                    budget=budget, engine=engine,
@@ -781,6 +910,7 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                 spend.add(cost)
                 labelling.review_paid = True
                 labelling.review_cost = cost
+            spend.settle(mark)
             qa.append(QAEntry(
                 kind="partial", where="labels.review",
                 detail=(f"the label review did not finish "
@@ -793,7 +923,8 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             spend.add(review.cost)
             labelling.review_paid = True
             blob = review.to_dict()
-            _save(os.path.join(out, "review.json"), blob)
+            _keep(os.path.join(out, "review.json"), blob, spend, mark, qa,
+                  "labels.review", asked or ())
     if blob is not None:
         targeted = bool(blob.get("asked_pages"))
         labelling.review_cost = dict(blob.get("cost") or {})
@@ -955,10 +1086,16 @@ def _identify_bound(doc: Any, engine: Any, out: str, resume: bool,
         path = os.path.join(out, BOUND_DIR, row.bound_id, "identity.json")
         blob = _cached(path, resume)
         if blob is None:
+            mark = spend.mark()
             result = identify_bound(doc, row.pages, engine,
                                     title_hint=row.title)
             blob = result.to_dict()
-            _save(path, blob)
+            # A call that never answered is no answer to keep: the next run
+            # asks again (a refusal by the ceiling, or any failure).
+            if not result.failed:
+                _keep(path, blob, spend, mark, qa,
+                      f"bound.{row.bound_id}.identity",
+                      [row.first_page, row.last_page])
             spend.add(blob.get("cost"))
         identity = dict(blob.get("identity") or {})
         warning = str(blob.get("warning") or "")
@@ -1007,12 +1144,14 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
             said_by=list(row.said_by),
             folder=f"{BOUND_DIR}/{row.bound_id}",
             record_path=f"{BOUND_DIR}/{row.bound_id}/{OUTPUT_NAMES[0]}")
+        mark = spend.mark()
         try:
             child = _one_bound(doc, engine, budgets, folder, resume,
                                report_id, facts, vision, templates,
                                labelling, row, identity, record, spend,
                                no_text, di_pages)
         except Exception as exc:              # one child, not the report
+            spend.settle(mark)
             entry.read = False
             entry.report_id = _bound_report_id(report_id, row.bound_id)
             qa.append(QAEntry(
@@ -1186,7 +1325,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
             pages=[choice.page]))
 
     unresolved: List[Dict[str, Any]] = []
-    inner_spend = _Spend()
+    inner_spend = _Spend(spend.tally)
     started = time.time()
     # A report bound inside a report bound inside a report is where this
     # stops: the child's own ``appended_report`` pages are listed in its QA
@@ -1362,13 +1501,15 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
 
         path = os.path.join(out, "items", f"{item.id}.json")
         cached = _cached(path, resume)
+        mark = spend.mark()
+        where = f"items.{item.kind}.{item.id}"
         try:
             if reader == "narrative":
                 blob = cached or _read_narrative(
                     doc, pages, engine, budgets, outline, report_id, body,
                     questions, bound_told, window)
                 if cached is None:
-                    _save(path, blob)
+                    _keep(path, blob, spend, mark, qa, where, pages)
                 spend.add(blob.get("cost"))
                 record.general = GeneralFacts.model_validate(blob["general"])
                 record.natural_hazards = NaturalHazardFacts.model_validate(
@@ -1380,7 +1521,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 blob = cached or _read_log(doc, pages, engine, budgets,
                                            item, report_id)
                 if cached is None:
-                    _save(path, blob)
+                    _keep(path, blob, spend, mark, qa, where, pages)
                 spend.add(blob.get("cost"))
                 record.investigations.append(
                     Investigation.model_validate(blob["investigation"]))
@@ -1398,7 +1539,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 blob = cached or _read_sounding(doc, pages, engine, budgets,
                                                 item, report_id, reader)
                 if cached is None:
-                    _save(path, blob)
+                    _keep(path, blob, spend, mark, qa, where, pages)
                 spend.add(blob.get("cost"))
                 if blob.get("investigation"):
                     record.investigations.append(
@@ -1412,7 +1553,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 blob = cached or _read_calc(doc, pages, engine, budgets,
                                             item, report_id)
                 if cached is None:
-                    _save(path, blob)
+                    _keep(path, blob, spend, mark, qa, where, pages)
                 spend.add(blob.get("cost"))
                 if blob.get("calculation"):
                     record.calculations.append(
@@ -1423,7 +1564,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 blob = cached or _read_lab(doc, pages, engine, budgets,
                                            item, report_id)
                 if cached is None:
-                    _save(path, blob)
+                    _keep(path, blob, spend, mark, qa, where, pages)
                 spend.add(blob.get("cost"))
                 for test in blob.get("tests") or []:
                     record.lab_tests.append(LabTest.model_validate(test))
@@ -1433,6 +1574,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     from report_ingest.visual_scales import plot_check_qa
                     qa.extend(plot_check_qa(blob["plot_check"], pages))
         except Exception as exc:                 # one item must not stop the run
+            spend.settle(mark)
             qa.append(QAEntry(
                 kind="skipped", where=f"items.{item.kind}",
                 detail=f"{item.id} could not be read: "

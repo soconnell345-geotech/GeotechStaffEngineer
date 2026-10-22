@@ -944,9 +944,12 @@ imports LangChain when it is built.
 is written (`subagent.run_checklist_on`, no model call): the whole result goes
 to `report.checklist.json` beside the record (`paths.checklist`), and the
 answer's `checklist` field carries the checklist's status, the checks counted
-by result, up to six failed ones and how many items are left to judge, which
-`report_checklist(record)` then lists. A checklist that cannot run says so in
-the field; the record stands. Why on the page and not only in the pipeline:
+by result, up to six failed ones (in the checklist's own wording) and how
+many items are left to judge, which `report_checklist(record)` then lists. A
+report bound inside the one read is a record of its own and gets its own
+checklist, written beside its record; its row in `bound_documents` names the
+file and how many of its checks failed. A checklist that cannot run says so
+in the field; the record stands. Why on the page and not only in the pipeline:
 the code checks need only the record, and the other half of the checklist,
 the judgement items, needs an agent with the report in front of it.
 
@@ -1136,8 +1139,23 @@ middleware (a builder given some refuses it), and:
   60–897 calls a whole report took on Foundry. A call past it is refused before
   it is sent; what it would have served is a `skipped` QA entry, the record is
   written with what was read, the answer carries `ceiling_reached`, and
-  delegating the same report again resumes from the items already saved.
+  delegating the same report again resumes from the steps already saved.
   `Budgets` still caps each reader;
+- **what was cut short is counted, and not kept as finished** (the review of
+  RI-02). Every call made is in the record's `model_calls`, tokens and
+  dollars, the calls of a step the ceiling stopped half way included (read
+  off a tally of every reply, `graph._Tally`); the answer also gives
+  `ceiling_used`, the calls sent as the ceiling counted them, beside
+  `model_call_ceiling`. A step during which the ceiling refused a call is not
+  saved for a resumed run, even when it finished (a log's layer votes or a
+  plot check take a refused call as their own failure and the reader goes
+  on): what it read is in this record, a `partial` QA entry says so, and
+  asking again reads it again. The same holds for the vision voter (its
+  refusal is a note) and the label review (a `partial` entry): neither is
+  saved, so asking again runs them again. A bound report's identity call
+  that never answered is not saved either. **A reader the ceiling stopped
+  starts over when asked again, and its calls are paid again**: its
+  conversation with the model is not kept, only finished results are;
 - **the guard's point**, real files in the conversation's folder: the app
   passes an `out_dir_factory` that writes to `report_ingest/<file name>` in the
   folder bound to the turn, the same place the tool writes, named after the
@@ -1438,7 +1456,8 @@ with a `bound.short_run` note.
 the date, the document type and how it is bound in, all of it printed on those
 pages or empty. It is cached in the child's folder, so a resumed run does not
 pay it twice, and a call that fails leaves the identity empty with a QA entry
-rather than losing the child. The vision voter and the log-template recogniser
+rather than losing the child; a call that failed (or the ceiling refused) is
+not cached, so a resumed run asks again. The vision voter and the log-template recogniser
 are NOT re-run: they already answered about these pages, and a page's picture
 does not change when you stop calling it an appendix. The rules ARE re-run,
 over the child's pages rebased to zero — which is what makes its cover a cover

@@ -442,6 +442,9 @@ class BoundIdentityResult:
     model: str = ""
     cost: Dict[str, Any] = field(default_factory=dict)
     warning: str = ""
+    #: the call never answered (it failed, or the run's ceiling refused it):
+    #: nothing to keep, and the next run asks again
+    failed: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {"identity": self.identity.model_dump(),
@@ -456,7 +459,8 @@ def identify_bound(doc: Any, pages: Sequence[int], engine: Any,
     Never raises. A call that returns nothing structured, or an engine that
     fails outright, leaves the identity empty with a warning on the result:
     a child record whose title is the hint triage printed is worth more than
-    no child record at all.
+    no child record at all. An engine that failed also sets ``failed``, and
+    the graph does not keep that result, so a resumed run asks again.
     """
     from report_ingest.engine import text_block, user
 
@@ -472,7 +476,7 @@ def identify_bound(doc: Any, pages: Sequence[int], engine: Any,
     except Exception as exc:                     # one child, not the report
         return BoundIdentityResult(
             warning=f"the bound document's identity call failed "
-                    f"({type(exc).__name__}: {exc})")
+                    f"({type(exc).__name__}: {exc})", failed=True)
     found = reply.parsed
     if found is None:
         return BoundIdentityResult(

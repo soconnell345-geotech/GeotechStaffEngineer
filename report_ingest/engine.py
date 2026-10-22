@@ -51,7 +51,7 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
     "engine_for", "ChatModelEngine", "ANSWER_TOOL", "CUT_REASONS",
-    "DEFAULT_MAX_TOKENS",
+    "DEFAULT_MAX_TOKENS", "CallCeilingReached",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
     "price_for", "strict_schema",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
@@ -260,6 +260,16 @@ def user(*content: Any) -> Dict[str, Any]:
 
 def assistant(*content: Any) -> Dict[str, Any]:
     return {"role": "assistant", "content": list(content)}
+
+
+class CallCeilingReached(RuntimeError):
+    """A model call refused, before anything was sent, because the run's
+    ceiling of model calls was reached (``subagent.CallCeiling``).
+
+    Here rather than beside the ceiling so that the graph, which only sees
+    engines, can tell a step the ceiling cut short from one that failed: a
+    step cut short is not saved as finished, and asking again reads it again.
+    """
 
 
 # -- what a call returns ----------------------------------------------------
