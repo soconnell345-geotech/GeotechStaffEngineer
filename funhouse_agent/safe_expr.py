@@ -39,6 +39,35 @@ _MAX_POW_BITS = 1024
 #: The longest expression accepted. With every power bounded, only a chain of
 #: multiplications can still grow an integer, and this keeps that chain short.
 _MAX_EXPR_CHARS = 10_000
+_TOO_DEEP = ("{what} is too long or too deeply nested to read; split it "
+             "into shorter steps.")
+
+
+_MAX_NESTING = 200
+
+
+def _check_nesting(tree, what):
+    """Refuse a tree nested deeper than ``_MAX_NESTING`` levels (a long chain
+    of terms such as ``x+x+x+...`` nests one level per term). Measured with
+    an explicit stack: Python's own tree walks recurse, and give up (or on
+    3.11 overflow the C stack) well before a long expression is a problem."""
+    stack = [(tree, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > _MAX_NESTING:
+            raise ValueError(_TOO_DEEP.format(what=what))
+        stack.extend((c, depth + 1) for c in ast.iter_child_nodes(node))
+
+
+def _compile_deep(tree, filename, what):
+    """``compile(tree, filename, "eval")`` after the nesting check; a
+    RecursionError or MemoryError that still gets through is the same
+    refusal, never a crash."""
+    _check_nesting(tree, what)
+    try:
+        return compile(tree, filename, "eval")
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP.format(what=what)) from None
 
 
 def _bounded_pow(base, exp):
@@ -111,6 +140,8 @@ def _compile_g(expr: str, var_names, extra_funcs=None):
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"g_expression is not a valid expression: {exc}")
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP.format(what="g_expression")) from None
     # Identifiers are checked on the PARSED names, not by a regex over the
     # text: a regex reads the exponent of 1e-3 as an identifier 'e' and
     # refused scientific notation.
@@ -148,7 +179,7 @@ def _compile_g(expr: str, var_names, extra_funcs=None):
                 "g_expression constants must be numbers, got "
                 f"{type(node.value).__name__}.")
     pow_name = _bound_powers(tree, var_names)
-    code = compile(tree, "<g_expression>", "eval")
+    code = _compile_deep(tree, "<g_expression>", "g_expression")
     ns = {"__builtins__": {}}
     ns.update(funcs)
     ns[pow_name] = _bounded_pow
