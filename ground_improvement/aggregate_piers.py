@@ -9,12 +9,13 @@ All units SI: kPa, meters.
 
 The settlement over the columns is by the stress ratio n (the default) or,
 with the column modulus, by GEC-13 Fig. 5-21's weighted-modulus and Balaam
-curves (``settlement_ratio``, GM-220).
+curves (``settlement_ratio``, GM-220). The Priebe curve GEC-13 prints, Fig.
+5-21 curve (4), is read by ``settlement_ratio.priebe_curve_settlement_ratio``
+(GM-221); since GM-276 it is the only Priebe basis, with no formula.
 
 References:
     Barksdale & Bachus (1983) — Design and Construction of Stone Columns
     FHWA GEC-13: Ground Modification Methods Reference Manual
-    Priebe (1995) — Design of vibro replacement
 """
 
 import math
@@ -123,116 +124,59 @@ def composite_modulus(as_ratio: float, E_soil: float,
     return E_soil * (1.0 + as_ratio * (n - 1.0))
 
 
-def priebe_basic_improvement_factor(as_ratio: float,
-                                    phi_column: float = 42.5,
-                                    nu_soil: float = 1.0 / 3.0) -> float:
-    """Priebe (1995) basic improvement factor n0 for vibro replacement.
+#: What the Priebe tool reads (GM-221, GM-276), for a result's choices and
+#: notes: GEC-13's printed curve, its only basis.
+PRIEBE_BASIS = (
+    "GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21 (p. 5-36), curve (4) "
+    "'PRIEBE phi = 37.5 deg', read off the printed figure at A/A_c 1.6 to "
+    "8.0. GEC-13 prints this curve and no formula for it, so the tool takes "
+    "the area ratio alone: the curve is printed for 'PRIEBE phi = 37.5 deg' "
+    "only. GEC-13 reads the same curve in Example 2 (Sec. 4.3.2, Fig. 5-27, "
+    "p. 5-49)")
 
-    The genuine Priebe factor — a function of the area replacement ratio,
-    the column friction angle, and the soil Poisson ratio:
+#: GEC-13's own words on the Priebe curve and on judgment (GM-276, the
+#: owner's OWN-70 note: "print hard number, leave to engineer to decide with
+#: note"), as (page, sentence), each copied from the printed page. GEC-13
+#: prints no other bound for it.
+PRIEBE_GEC13_WORDS = (
+    ("5-37", "For preliminary estimates, the Priebe curve may be used to "
+             "evaluate the upper bound effectiveness and cost at various "
+             "spacings."),
+    ("5-37", "It should be further noted that the Equilibrium Method "
+             "outlined in FHWA (1983) Design and Construction of Stone "
+             "Columns is roughly equivalent to the Balaam relationships "
+             "shown in Figure 5-21 and represents an average or lower bound "
+             "estimate suitable for preliminary analyses."),
+    ("5-27", "Theoretical results, of course, should always be supplemented "
+             "by past experience and sound engineering judgment."),
+)
 
-        n0 = 1 + as * [ (1/2 + f(nu, as)) / (K_ac * f(nu, as)) - 1 ]
-
-        f(nu, as) = (1 - nu) * (1 - as) / (1 - 2*nu + as)
-        K_ac      = tan^2(45 - phi_c / 2)
-
-    For the common nu_s = 1/3 this reduces to the published design-chart
-    form  n0 = 1 + as * [ (5 - as) / (4 * K_ac * (1 - as)) - 1 ].
-
-    Parameters
-    ----------
-    as_ratio : float
-        Area replacement ratio as = Ac / A (0 < as < 1).
-    phi_column : float, optional
-        Friction angle of the column material (degrees). Default 42.5,
-        the module's; GEC-13 prints no friction angle for this formula
-        (its Priebe curve, Fig. 5-21 curve (4), is drawn for 37.5).
-    nu_soil : float, optional
-        Poisson's ratio of the surrounding soil. Default 1/3.
-
-    Returns
-    -------
-    float
-        Basic improvement factor n0 (>= 1).
-
-    References
-    ----------
-    Priebe, H.J. (1995), "The Design of Vibro Replacement," Ground
-    Engineering, December 1995; FHWA GEC-13.
-    """
-    if not 0.0 < as_ratio < 1.0:
-        raise ValueError(
-            f"Area replacement ratio must be in (0, 1), got {as_ratio}")
-    if not 0.0 < phi_column <= 50.0:
-        raise ValueError(
-            f"Column friction angle must be in (0, 50] degrees, got {phi_column}")
-    if not 0.0 <= nu_soil < 0.5:
-        raise ValueError(
-            f"Soil Poisson ratio must be in [0, 0.5), got {nu_soil}")
-
-    Kac = math.tan(math.radians(45.0 - phi_column / 2.0)) ** 2
-    f = (1.0 - nu_soil) * (1.0 - as_ratio) / (1.0 - 2.0 * nu_soil + as_ratio)
-    return 1.0 + as_ratio * ((0.5 + f) / (Kac * f) - 1.0)
+PRIEBE_NOTE = (
+    "GEC-13 calls the Priebe curve the upper bound, for preliminary "
+    "estimates; the settlement ratio for design is the engineer's to judge "
+    "from there. In GEC-13's words: "
+    + " ".join(f"p. {page}: '{words}'" for page, words in PRIEBE_GEC13_WORDS))
 
 
-#: How ``priebe_improvement_factor`` works n0 out (GM-221): Priebe's
-#: formula (the default) or the Priebe curve GEC-13 prints.
-PRIEBE_METHODS = ("formula", "fig_5_21")
-
-#: What each is, for a result's choices and notes.
-PRIEBE_BASIS = {
-    "formula": (
-        "Priebe's basic improvement factor n0 (Priebe 1995, 'The Design of "
-        "Vibro Replacement'), worked out from the column friction angle and "
-        "the soil's Poisson's ratio: n0 = 1 + a_s [(1/2 + f) / (K_ac f) - "
-        "1], f = (1 - nu)(1 - a_s) / (1 - 2 nu + a_s), K_ac = tan^2(45 - "
-        "phi_c / 2). The basic factor only: no correction for the "
-        "compressibility of the column material or for overburden (depth). "
-        "GEC-13 prints no formula; it prints the Priebe curve, Fig. 5-21 "
-        "curve (4), phi = 37.5 deg (p. 5-36)"),
-    "fig_5_21": (
-        "GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21, p. 5-36, curve (4) "
-        "'PRIEBE phi = 37.5 deg', read off the printed figure (A/A_c 1.6 to "
-        "8.0, about +/- 0.03 in n'; from A/A_c about 4.0 on it is drawn on "
-        "one line with Balaam's curve (5a)). GEC-13 reads it in Example 2 "
-        "(Sec. 4.3.2, Fig. 5-27, p. 5-49), and p. 5-37: 'For preliminary "
-        "estimates, the Priebe curve may be used to evaluate the upper "
-        "bound effectiveness'"),
-}
-
-
-def priebe_choices(method: str, as_ratio: float, n0: float,
-                   phi_column: float = 42.5,
-                   nu_soil: float = 1.0 / 3.0) -> list:
-    """What ``priebe_improvement_factor`` chose (GM-221): the formula, with
-    its column friction angle, or GEC-13's printed curve (4)."""
-    from geotech_common.choices import choice, how_given
-    how = how_given(method, "formula", name="method")
-    at = f"n0 = {n0:.2f} at A/A_c = {1.0 / as_ratio:.2f}"
-    if method == "fig_5_21":
-        return [choice(
-            "Priebe improvement factor", f"GEC-13 Fig. 5-21 curve (4), "
-            f"phi = 37.5 deg: {at}", how, PRIEBE_BASIS["fig_5_21"],
-            ["method 'formula': Priebe's basic n0 from phi_column and "
-             "nu_soil"])]
-    at_37 = priebe_basic_improvement_factor(as_ratio, 37.5, nu_soil)
-    return [
-        choice("Priebe improvement factor",
-               f"Priebe's basic n0, nu = {nu_soil:.3g}: {at}", how,
-               PRIEBE_BASIS["formula"],
-               ["method 'fig_5_21': GEC-13's printed Priebe curve (4), "
-                "phi = 37.5 deg (p. 5-36; Example 2, p. 5-49)"]),
-        choice("column friction angle phi_c", f"{phi_column:g} deg",
-               how_given(phi_column, 42.5, name="phi_column"),
-               "42.5 deg is the module's default; GEC-13 prints no column "
-               "friction angle for Priebe's formula. Its printed Priebe "
-               "curve, Fig. 5-21 curve (4), is drawn for phi = 37.5 deg "
-               "(p. 5-36), and p. 5-37: 'the Priebe curve may be used to "
-               "evaluate the upper bound effectiveness'. n0 rises with "
-               "phi_c",
-               [f"phi_column 37.5: the angle of GEC-13's printed curve, "
-                f"n0 = {at_37:.2f} here"]),
-    ]
+def priebe_choices(as_ratio: float, n_ratio: float) -> list:
+    """What ``priebe_improvement_factor`` stands on (GM-221, GM-276):
+    GEC-13's printed Priebe curve, the tool's one basis, with GEC-13's note
+    on it and the other Fig. 5-21 curves the module reads as alternatives."""
+    from geotech_common.choices import MODULE, choice
+    return [choice(
+        'settlement ratio "n"',
+        f"{n_ratio:.2f} at A/A_c = {1.0 / as_ratio:.2f}, off GEC-13 Fig. "
+        f"5-21 curve (4), 'PRIEBE phi = 37.5 deg': GEC-13's upper bound, "
+        f"for preliminary estimates (p. 5-37)", MODULE,
+        PRIEBE_BASIS + ". " + PRIEBE_NOTE,
+        ["GEC-13 Fig. 5-21's Balaam curves (5), by E_c/E_s (aggregate_piers "
+         "settlement_method 'balaam_rigid' or 'balaam_flexible'); p. 5-37: "
+         "the Equilibrium Method of FHWA (1983), 'roughly equivalent to the "
+         "Balaam relationships shown in Figure 5-21', 'represents an "
+         "average or lower bound estimate suitable for preliminary analyses'",
+         "GEC-13 Fig. 5-21's 'weighted modulus' method curves (2), by "
+         "E_c/E_s (aggregate_piers settlement_method 'weighted_modulus'); "
+         "GEC-13 states no bound for them"])]
 
 
 def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,
@@ -245,11 +189,9 @@ def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,
         This applies the same equal-strain stress-concentration factor
         ``1 + as*(n - 1)`` used for the composite modulus / settlement
         reduction — a simple first-order estimate of the bearing
-        improvement, NOT Priebe's basic improvement factor n0 (which is
-        a distinct function of as, the column friction angle, and the
-        soil Poisson ratio). For the genuine Priebe factor use
-        :func:`priebe_basic_improvement_factor` and apply
-        ``q_improved = n0 * q_unreinforced``.
+        improvement. It is not the Priebe curve GEC-13 prints (Fig. 5-21
+        curve (4), p. 5-36), which is a settlement ratio, not a bearing
+        factor.
 
     Parameters
     ----------
@@ -435,10 +377,10 @@ _BALAAM = ("settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or "
            "preliminary analyses'")
 _STRESS_RATIO = ("settlement_method 'stress_ratio' (the default): SRF = "
                  "1 / [1 + a_s (n - 1)] from the given n")
-_PRIEBE = ("Priebe's improvement factor n0 (priebe_improvement_factor; "
-           "method 'fig_5_21' reads GEC-13's printed Priebe curve, Fig. "
-           "5-21 curve (4)); GEC-13 p. 5-37: the Priebe curve 'may be used "
-           "to evaluate the upper bound effectiveness'")
+_PRIEBE = ("the settlement ratio off GEC-13's printed Priebe curve, Fig. "
+           "5-21 curve (4), phi = 37.5 deg (priebe_improvement_factor); "
+           "GEC-13 p. 5-37: the Priebe curve 'may be used to evaluate the "
+           "upper bound effectiveness'")
 _NAMES = {"weighted_modulus": "weighted modulus",
           "balaam_rigid": "Balaam, rigid",
           "balaam_flexible": "Balaam, flexible"}
@@ -505,8 +447,8 @@ def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
                "5 to 10 under embankments (p. 5-45). It sets " + sets,
                ["n from the moduli, n = E_c / E_s (equal-strain modular "
                 "ratio; settlement_method 'weighted_modulus')",
-                "Priebe's improvement factor n0 "
-                "(priebe_improvement_factor)"]),
+                "the settlement ratio off GEC-13's printed Priebe curve, "
+                "Fig. 5-21 curve (4) (priebe_improvement_factor)"]),
     ] if not by_moduli or q_unreinforced > 0 else []
     return [
         _settlement_method_choice(settlement_method, as_ratio,

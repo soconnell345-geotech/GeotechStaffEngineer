@@ -5,10 +5,11 @@ Example 10-4 takes it (p. 10-28), and the rock side resistance's C is an
 input, ``rock_side_C`` (GEC-10 Eq. 10-21; default 1.0 since GM-244, 0.65
 before, Eq. 10-22 with alpha_E = 1.0). Example 10-4's statement that the
 rock below the tip is competent is ``rock_base_conditions_met``. Aggregate
-piers: ``priebe_improvement_factor`` method
-'fig_5_21' reads GEC-13's printed Priebe curve, Fig. 5-21 curve (4); the
-default is still Priebe's formula. The aggregate pier calc package cites
-GEC-13's stress reduction method, not "Priebe (1995)", for its settlement.
+piers: ``priebe_improvement_factor`` reads GEC-13's printed Priebe curve,
+Fig. 5-21 curve (4), and since GM-276 nothing else: the formula, its 42.5
+deg default and its inputs are gone (owner, OWN-70). The aggregate pier
+calc package cites GEC-13's stress reduction method, not "Priebe (1995)",
+for its settlement.
 """
 
 import json
@@ -94,38 +95,53 @@ def test_the_shaft_package_prints_the_socket_base_and_c(tmp_path,
 
 
 def test_the_priebe_tool_reads_the_printed_curve():
-    r = _call("ground_improvement", "priebe_improvement_factor",
-              {"as_ratio": 0.277, "method": "fig_5_21"})
-    assert r["n0"] == pytest.approx(2.55, abs=0.03)
-    assert r["method"] == "fig_5_21" and "curve (4)" in r["note"]
-    (c,) = r["choices"]
-    assert c["how"] == "given" and "p. 5-36" in c["basis"]
-    assert "defaults_used" not in r
-    err = _call("ground_improvement", "priebe_improvement_factor",
-                {"as_ratio": 0.277, "method": "fig_5_21",
-                 "phi_column": 40.0})["error"]
-    assert "does not take phi_column" in err and "37.5" in err
-
-
-def test_the_priebe_default_is_still_the_formula_and_says_so():
+    """GEC-13 Example 2 (pp. 5-48, 5-49): A/A_sc = (5.7 / 3.0)^2 = 3.61,
+    where the printed curve (4) reads 2.55. The example's text prints 2.7,
+    the value on its arrows, which are drawn at A/A_sc 3.53 (Fig. 5-27)."""
     r = _call("ground_improvement", "priebe_improvement_factor",
               {"as_ratio": 0.277})
-    assert r["n0"] == pytest.approx(3.06, abs=0.005)
-    assert r["method"] == "formula"
-    assert r["defaults_used"] == {"method": "formula", "phi_column": 42.5,
-                                  "nu_soil": pytest.approx(1 / 3)}
-    assert "no correction for the compressibility" in r["note"]
-    assert "GEC-13 prints no formula" in r["note"]
-    what = {c["what"]: c["how"] for c in r["choices"]}
-    assert what == {"Priebe improvement factor": "default",
-                    "column friction angle phi_c": "default"}
-    # the default angle's basis is said plainly, with the printed curve's
-    # angle and what the formula gives at it
-    (phi,) = [c for c in r["choices"] if c["what"].startswith("column")]
-    assert "GEC-13 prints no column friction angle" in phi["basis"]
-    assert phi["alternatives"] == [
-        "phi_column 37.5: the angle of GEC-13's printed curve, n0 = 2.58 "
-        "here"]
+    assert r["settlement_ratio"] == pytest.approx(2.55, abs=0.03)
+    assert r["phi_column_deg"] == 37.5 and "curve (4)" in r["note"]
+    assert "n0" not in r and "method" not in r
+    (c,) = r["choices"]
+    assert c["how"] == "module" and "p. 5-36" in c["basis"]
+    assert "GEC-13 prints this curve and no formula" in c["basis"]
+    assert "defaults_used" not in r
+    # GM-276: the value first, then GEC-13's own words on it, with the page,
+    # and the design value left to the engineer; in the note and the choice.
+    assert r["note"].startswith('Settlement ratio "n" = 2.55 at A/A_c = 3.61')
+    upper = ("p. 5-37: 'For preliminary estimates, the Priebe curve may be "
+             "used to evaluate the upper bound effectiveness and cost at "
+             "various spacings.'")
+    for text in (r["note"], c["basis"]):
+        assert upper in text and "the engineer's to judge" in text
+    assert "upper bound" in c["chosen"]
+    assert any("average or lower bound estimate" in a
+               for a in c["alternatives"])
+
+
+@pytest.mark.parametrize("name, value", [
+    ("phi_column", 42.5), ("phi_c", 40.0), ("nu_soil", 0.3),
+    ("method", "formula"), ("method", "fig_5_21")])
+def test_the_formula_and_its_inputs_are_refused(name, value):
+    """GM-276: the formula, its 42.5 deg default and its inputs are gone;
+    each is refused with what the tool uses now."""
+    err = _call("ground_improvement", "priebe_improvement_factor",
+                {"as_ratio": 0.277, name: value})["error"]
+    assert f"does not take ['{name}']" in err
+    assert "Fig. 5-21 curve (4)" in err and "37.5 deg" in err
+    assert "Did you mean" not in err
+
+
+def test_several_refused_inputs_get_one_message():
+    """The old formula's inputs given together: one sentence names them
+    all, not the same sentence once per name."""
+    err = _call("ground_improvement", "priebe_improvement_factor",
+                {"as_ratio": 0.277, "phi_column": 42.5, "nu_soil": 0.3,
+                 "method": "formula"})["error"]
+    assert "does not take ['method', 'nu_soil', 'phi_column']" in err
+    assert "method, nu_soil, phi_column: the tool reads" in err
+    assert err.count("Fig. 5-21 curve (4)") == 1
 
 
 def test_the_pier_package_cites_the_stress_reduction_method(tmp_path,

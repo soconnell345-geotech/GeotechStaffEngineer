@@ -107,12 +107,24 @@ def test_an_overlong_expression_is_refused():
         _compile_limit_state(long_expr, ["x"])
     assert "too long" in evaluate(long_expr, {"x": 1})["error"]
     # a long but ordinary expression is fine
-    assert math.isclose(evaluate("+".join(["x"] * 200), {"x": 1})["value"],
-                        200.0)
-    # the power rewrite is iterative: a 3,000-term chain compiles as before
-    chain = "+".join(["x**2"] * 1500)
-    assert _compile_g(chain, ["x"])({"x": 2}) == 6000
-    assert _compile_limit_state(chain, ["x"])(x=2) == 6000
+    assert math.isclose(evaluate("+".join(["x"] * 150), {"x": 1})["value"],
+                        150.0)
+    # the power rewrite is iterative: a 150-term chain of powers compiles
+    chain = "+".join(["x**2"] * 150)
+    assert _compile_g(chain, ["x"])({"x": 2}) == 600
+    assert _compile_limit_state(chain, ["x"])(x=2) == 600
+    # a chain nests one level per term: about 200 levels are read, more refused
+    # cleanly (Python 3.11 gives up near 1,000 and can overflow its C stack)
+    ok = "+".join(["x"] * 150)
+    assert evaluate(ok, {"x": 1})["value"] == 150.0
+    deep = "+".join(["x"] * 250)
+    for call in (lambda: _compile_g(deep, ["x"]),
+                 lambda: _compile_limit_state(deep, ["x"])):
+        with pytest.raises(ValueError, match="too long or too deeply"):
+            call()
+    refused = evaluate(deep, {"x": 1})["error"]
+    assert "too deeply nested" in refused and "sum()" in refused
+    assert math.isclose(evaluate("+".join(["x"] * 50), {"x": 1})["value"], 50.0)
     # and powers inside calls, conditionals and other powers are all bounded
     # (each result is 2**1200 or more: over the bound, yet quick to compute
     # if a regression ever let it through, so this cannot hang the suite)

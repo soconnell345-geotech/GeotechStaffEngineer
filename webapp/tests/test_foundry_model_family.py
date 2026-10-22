@@ -39,7 +39,8 @@ _CLEAR = ("ANTHROPIC_API_KEY", "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MODEL",
           "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "FOUNDRY_PROXY_URL",
           "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
           "FOUNDRY_CLI_CERT_PEM_PATH", "MAESTRO_FOUNDRY_PROXY_URL",
-          "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_HELPER_MODELS")
+          "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_HELPER_MODELS",
+          "GEOTECH_FOUNDRY_CLAUDE_SDK")
 
 
 @pytest.fixture
@@ -145,7 +146,8 @@ class TestRouting:
     @pytest.mark.parametrize("mid", ["Claude_Opus_5_5",
                                      "anthropic:Opus55Name"])
     def test_claude_api_name_goes_to_proxy_not_sdk(self, foundry, mid):
-        """The palantir_models SDK engine speaks to GPT models only."""
+        """With GEOTECH_FOUNDRY_CLAUDE_SDK off (the default), a Claude API
+        name goes to the proxy, not the palantir_models engine (INF-27)."""
         res = engine_config.resolve_engine(model_id=mid)
         assert res.source == "foundry", res.message
         assert type(res.model).__name__ == "FoundryChatAnthropic"

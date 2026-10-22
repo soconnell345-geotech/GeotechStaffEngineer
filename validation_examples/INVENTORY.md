@@ -276,8 +276,8 @@ are SI — implementers must convert (1 ft = 0.3048 m, 1 kip = 4.448 kN, 1 ksf =
 - Published answer:
   - Unimproved: S = 0.2/1.6*50*log(3315/1440) = 2.26 ft = 27 in.
   - Priebe settlement-improvement ratio (from chart, Wallays et al. 1983 presentation) = 2.7 → improved settlement = 27/2.7 = 10 in.
-  - Suggested tolerance: ratio 2.7 +/- 0.3 (chart read; Priebe n0 with phi_col ≈ 42.5 deg and the source's area-ratio convention).
-- Confidence in extraction: high for the numbers; medium for method match (chart-based ratio; our Priebe formula may use Ac/A and phi_col input — verify convention before asserting failure)
+  - Suggested tolerance: ratio 2.7 +/- 0.3 (chart read off the Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg, at the source's area-ratio convention).
+- Confidence in extraction: high for the numbers; high for method match since GM-276 (2026-10-21): the module reads the printed curve itself, 2.55 at A/A_sc 3.61; the example's arrows are drawn at 3.53 (2.63 on the curve) and labelled 3.6 and 2.7
 - Notes: pins the unimproved consolidation calc tightly; treat the 2.7 ratio as a soft target.
 
 ## V-020 GEC-13 Ch. 2 PVD design example — time to 90% consolidation vs drain spacing

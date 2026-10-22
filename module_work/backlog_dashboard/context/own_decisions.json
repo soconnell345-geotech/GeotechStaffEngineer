@@ -345,25 +345,21 @@
  "OWN-11": {
   "kind": "decision",
   "ask_who": null,
-  "question": "Should report ingest be offered on the geotech page as an opt-in switch, after one measured run?",
-  "why": "Report ingest turns a geotechnical report into a cited record and a DIGGS file that the geotech page could analyse. It is built but no user can reach it. It is also expensive, and it cannot yet run on Tiny Apps.",
-  "background": "From the 2026-10-06 geotech-page session: measure ingest on one Funhouse run of a similar report, then offer an off-by-default sidebar switch; the engine and output folder are not plumbed today. Three defects come first: summary and library citations print 0-based pages (RI-01); the sub-agent's limits are declared but not enforced (RI-02); the ingest engine needs the Funhouse SDK prompter, so it cannot run on Tiny Apps (RI-03). Cost on Foundry (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average; up to roughly $14 a report at GPT-5.4 rates (my estimate; some calls used a cheaper model). Report ingest is parked at 5.25.0.",
+  "question": "Should report ingest be offered on the geotech page on Foundry as an opt-in switch, after one measured Foundry run?",
+  "why": "Report ingest turns a geotechnical report into a cited record and a DIGGS file that the geotech page can analyse. It is built but no user can reach it. It runs only on Foundry now (your answer of 2026-10-21), so the Funhouse $50 limit no longer applies, but a report can still take many model calls.",
+  "background": "Your answer of 2026-10-21: keep parked for now; report ingest only on Foundry; cost-conscious; more Foundry testing first. Being built now (off by default): the sub-agent's limits enforced (RI-02) and a record built on demand with the report checklist run on it (RI-35); RI-03 is now the ingest engine on Foundry's models. Cost on Foundry so far (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average.",
   "options": [
    {
-    "label": "Yes: fix RI-01 to RI-03, measure, switch",
-    "effect": "Ingest reaches the geotech page on both hosts, off by default; one Funhouse run's tokens are needed to measure it."
-   },
-   {
-    "label": "Funhouse only, skip RI-03",
-    "effect": "Quicker; testers on Tiny Apps never see it."
+    "label": "Yes: after one measured Foundry run, an opt-in switch",
+    "effect": "Ingest reaches the geotech page on Foundry, off by default, once RI-01 to RI-03 are done and one run is measured."
    },
    {
     "label": "Keep parked",
-    "effect": "No work now; revisit when report ingest is unparked."
+    "effect": "No switch yet; the work toward it continues off by default, and Foundry testing comes first."
    }
   ],
-  "recommendation": "Keep parked until the tester deploy settles: a tool costing up to about $14 a report needs a cost cap before it sits beside $50-a-month tester keys. When picked up, option 1.",
-  "if_no_answer": "Report ingest stays unreachable from either page.",
+  "recommendation": "Keep parked until RI-01 to RI-03 are done and one Foundry run is measured, then the switch, off by default.",
+  "if_no_answer": "Report ingest stays unreachable from the geotech page; the work toward it continues off by default.",
   "message_to_send": null,
   "unblocks": [
    "RI-01",
@@ -371,9 +367,9 @@
    "RI-03"
   ],
   "sources": [
-   "git 414525a HANDOFF.md (old item 8a(i))",
-   "BACKLOG.md (§6, RI-01 to RI-03)",
-   "module_work/harness_theory/report_ingest.md (§7, stage b numbers)"
+   "BACKLOG.md (§2, RI-01 to RI-03, RI-35)",
+   "module_work/harness_theory/report_ingest.md (§7, stage b numbers)",
+   "owner, desk 2026-10-21"
   ]
  },
  "OWN-12": {
@@ -1346,43 +1342,26 @@
   "OWN-72": {
     "kind": "decision",
     "ask_who": null,
-    "question": "The shared core package's name, and how Tiny Apps gets Document Review",
-    "why": "You said on the desk (2026-10-21): Document Review's code can live as plain source in the GHE repository, nothing of it a package. So only the shared core (OWN-74) needs a name. The core is public on PyPI like planlens, so Tiny Apps installs it from Nexus the way it installs planlens today: no new route for it. Document Review as a source folder in the GHE repo needs CfA's yes (question 6a below); testers keep today's two-page package until then.",
-    "background": "Python's convention is a lower-case install name with hyphens and an import name with underscores. The core holds the document, vision and markup tools and the model connections (and the figure helper, OWN-77), not either app's page. You decided on 2026-10-20 that the geotech page leaves Tiny Apps and runs on Foundry. The plan is module_work/APP_SPLIT_PLAN.md.",
+    "question": "The core is shared with GSE: keep the name docreview-core?",
+    "why": "Your note asked whether the core goes in GHE because it isn't shared with GSE. It is shared: GSE on Foundry uses the same model connections, vision calls and figure helper, which is why the core is its own public package (like planlens) and not part of Document Review. Document Review itself, which only Tiny Apps runs, goes in the GHE repo as source, as you chose. So the only thing to check is the core's name, since GSE will install it too.",
+    "background": "Your answers of 2026-10-21: the name docreview-core; Document Review from its source folder in the GHE wrapper repo. The route stands. The name is only a label (Python install name with hyphens, import name with underscores); it can say Document Review even though GSE uses it. CfA's yes to the source folder is still needed: the questions below are yours to send when you're ready.",
     "parts": [
       {
         "label": "The core's name",
         "options": [
           {
-            "label": "docreview-core",
-            "effect": "Imported as docreview_core."
+            "label": "Keep docreview-core",
+            "effect": "Imported as docreview_core; GSE installs it under that name too."
           },
           {
             "label": "Other (see notes)",
-            "effect": "Write the name you want in the notes."
-          }
-        ]
-      },
-      {
-        "label": "How Tiny Apps gets Document Review",
-        "options": [
-          {
-            "label": "Its source folder in the GHE wrapper repo",
-            "effect": "Your comment. It runs from the repo; the core and planlens come from Nexus. Needs CfA's yes (6a)."
-          },
-          {
-            "label": "One wheel of ours in the GHE wrapper repo",
-            "effect": "The same code as a file installed by path, if CfA would rather install a file than run a folder (6b)."
-          },
-          {
-            "label": "A hosted repository on CfA's Nexus",
-            "effect": "Keeps everything through Nexus, if one exists for teams (6c)."
+            "effect": "Write a name that doesn't say Document Review in the notes."
           }
         ]
       }
     ],
-    "recommendation": "docreview-core for the core; send CfA the questions below and plan on the source folder in the GHE repo, as you said.",
-    "if_no_answer": "The plan keeps the working names and the route open; the steps that need neither go ahead.",
+    "recommendation": "Either is fine; keep docreview-core unless you'd rather the name not point at Document Review.",
+    "if_no_answer": "The plan keeps docreview-core; nothing needs the name before the core is built (after the release point).",
     "message_to_send": "Questions on installing our Document Review app (replaces our earlier question 6):\n6a. May our app's source folder live in the GHE wrapper repo and run from there, with every installed package coming from Nexus (our shared package is public on PyPI, like planlens)?\n6b. If you would rather install a file than run a folder, may the repo carry one small pure-Python wheel of ours, installed by path from packages.txt?\n6c. Does your Nexus have a hosted repository where a team publishes its own package?\n6d. Are the fleet pins our tree must accept still streamlit 1.62.0, pandas 3.0.2, PyJWT 2.13.0, msal 1.37.0, azure-identity 1.21.0 and azure-keyvault-secrets 4.9.0?",
     "steps": [],
     "unblocks": [

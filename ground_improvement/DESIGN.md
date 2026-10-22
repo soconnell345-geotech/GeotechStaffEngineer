@@ -7,12 +7,12 @@ wick drains, surcharge preloading, and vibro-compaction.
 ## References
 - FHWA GEC-13 (Ground Modification Methods)
 - Barron (1948), Hansbo (1981) — radial consolidation theory
-- Priebe (1995) — stone column improvement factors (GEC-13 prints the
-  Priebe curve, Fig. 5-21 curve (4), not the formula)
+- Priebe's curve as GEC-13 prints it (Fig. 5-21 curve (4), p. 5-36): the
+  module's only Priebe basis since GM-276; no Priebe formula
 
 ## Files
 - `aggregate_piers.py` — area replacement, SRF, composite modulus, bearing improvement
-- `settlement_ratio.py` — the settlement ratio n' by E_c/E_s off GEC-13 Fig. 5-21 (weighted modulus, Balaam)
+- `settlement_ratio.py` — the settlement ratio n' off GEC-13 Fig. 5-21: by E_c/E_s (weighted modulus, Balaam) and the Priebe curve (4)
 - `wick_drains.py` — Barron/Hansbo radial consolidation, drain spacing design (bisection)
 - `surcharge.py` — preloading with/without drains (imports settlement.time_rate)
 - `vibro.py` — vibro-compaction feasibility (fines content go/no-go)
@@ -34,10 +34,8 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
 - feasibility.py takes plain floats, NOT SoilProfile objects
 - Vibro: FC<10% feasible, 10-20% marginal, >20% not feasible
 - `improved_bearing_capacity` is a FIRST-ORDER estimate using the
-  equal-strain stress-concentration factor 1 + as·(n−1) — not Priebe's n₀
-  (GI-2). The genuine Priebe (1995) basic improvement factor
-  n₀(as, φ_col, ν_s) is available as
-  `aggregate_piers.priebe_basic_improvement_factor`
+  equal-strain stress-concentration factor 1 + as·(n−1) (GI-2). It is not
+  the Priebe curve, which GEC-13 prints as a settlement ratio (Fig. 5-21).
 - `equivalent_drain_diameter = 2(w+t)/π` (Hansbo; GI-1 fixed in 5.0)
 - Aggregate piers state their choices (GM-142, 2026-10-18): n (default
   5.0; GEC-13: "between 2.0 and 5.0" for stone columns, Sec. 4.1.2.4; for
@@ -68,18 +66,36 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
   only the improved bearing (a choice only with q_unreinforced). GEC-13
   has no worked example by these curves (Example 2, p. 5-49, reads the
   Priebe curve).
-- Priebe (GM-221, 2026-10-20): `priebe_improvement_factor` method
-  'formula' (the default, unchanged) is Priebe's basic n0 from phi_column
-  (default 42.5) and nu_soil, no correction for column compressibility or
-  overburden; GEC-13 Vol. I prints no Priebe formula. Method 'fig_5_21'
-  reads GEC-13's printed Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg
+- Priebe (GM-221, GM-276): `priebe_improvement_factor` reads GEC-13's
+  printed Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg
   (`settlement_ratio.PRIEBE_CURVE_4`, A/A_c 1.6 to 8.0, traced and drawn
-  back as the Balaam curves, +/- 0.03), and refuses phi_column and
-  nu_soil. The formula at 37.5 deg is within 1.5 % of the printed curve at
-  A/A_c 2.25 to 3.5, 2 to 7 % above it from 3.75 to 8 and 6 to 31 % above
-  it below 2.25. From A/A_c about 4.0 the printed (4) runs on one line with
-  (5a). Example 2's arrows (Fig. 5-27) are drawn at A/A_sc 3.53, n' 2.63
-  on the curve, labelled 3.6 and 2.7; at 3.61 the curve gives 2.55.
+  back as the Balaam curves, +/- 0.03), and nothing else. GM-221 added the
+  curve beside Priebe's basic n0 formula (default phi_column 42.5, printed
+  nowhere in GEC-13, 20 % above the curve at Example 2); the owner's answer
+  to OWN-70 (2026-10-21): "just the printed curve. discard your formula.
+  don't trust formulas from your memory!" GM-276 removed the formula,
+  `priebe_basic_improvement_factor` and the `method` choice; the tool
+  refuses `phi_column`, `nu_soil` (and their other names) and `method`, each
+  with what it uses now, and returns `settlement_ratio` (was `n0`) with
+  `phi_column_deg` 37.5. Off A/A_c 1.6 to 8.0 it is refused, not extended.
+  GM-276 checked the table on both printed copies: on p. 5-36 it sits on the
+  line within 0.015 (95 % of reads) from A/A_c 2.25 to 8 and within 0.04
+  below A/A_c 2.25, where the curve is steep; Fig. 5-27 (p. 5-49) agrees.
+  From A/A_c about 4.0 the printed (4) runs on one line with (5a). The
+  printed curve runs on past 8.0, to about 8.5 to 8.7 where the lines end;
+  the table stops at 8.0 and the tool refuses past it, saying so. Example 2: at
+  A/A_sc = (5.7/3.0)^2 = 3.61 the curve reads 2.55 on both copies, so 27 in
+  becomes 10.6 in; GEC-13 prints 2.7 and 10 in, its arrows (Fig. 5-27)
+  drawn at A/A_sc 3.53, n' 2.63 on the curve, and labelled 3.6 and 2.7.
+  The owner's note on OWN-70, "print hard number, leave to engineer to decide
+  with note": the result leads with the curve value, and its note and choice
+  quote GEC-13 as printed (`PRIEBE_GEC13_WORDS`): p. 5-37, the Priebe curve
+  "may be used to evaluate the upper bound effectiveness and cost at various
+  spacings" for preliminary estimates, and the Equilibrium Method, roughly the
+  Balaam curves, "an average or lower bound estimate"; p. 5-27, theoretical
+  results "supplemented by past experience and sound engineering judgment".
+  The design value is the engineer's. A test checks each quoted sentence on
+  its page of the PDF when the PDF is present.
   The settlement and composite-modulus steps cited "Priebe (1995)": they
   are GEC-13's stress reduction method (Sec. 4.1.2.6, p. 5-36) with the
   soil stress by Eq. 5-4 (p. 5-32), on the unit cell under equal strain

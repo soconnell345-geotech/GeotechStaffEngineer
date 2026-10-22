@@ -129,6 +129,9 @@ _MAX_POW_BITS = 1024
 #: The longest expression accepted (with powers bounded, only a long chain of
 #: multiplications could still grow an integer).
 _MAX_EXPR_CHARS = 10_000
+_MAX_NESTING = 200
+_TOO_DEEP = ("Limit state expression is too long or too deeply nested to "
+             "read; split it into shorter steps")
 
 
 def _bounded_pow(base, exp):
@@ -140,6 +143,19 @@ def _bounded_pow(base, exp):
                 "a power whose result is larger than about 1e308 was "
                 "refused before it was computed")
     return base ** exp
+
+
+def _check_nesting(tree):
+    """Refuse a tree nested deeper than ``_MAX_NESTING`` levels (one per term
+    of a long chain), measured with an explicit stack: Python's own tree
+    walks recurse and give up, or overflow the C stack, long before."""
+    import ast
+    stack = [(tree, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > _MAX_NESTING:
+            raise ValueError(_TOO_DEEP)
+        stack.extend((c, depth + 1) for c in ast.iter_child_nodes(node))
 
 
 def _compile_limit_state(expr_str: str, var_names: list) -> callable:
@@ -191,6 +207,8 @@ def _compile_limit_state(expr_str: str, var_names: list) -> callable:
     except SyntaxError as exc:
         raise ValueError(
             f"Limit state expression is not valid: {exc}") from None
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP) from None
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id not in allowed:
@@ -248,7 +266,11 @@ def _compile_limit_state(expr_str: str, var_names: list) -> callable:
                 for i, item in enumerate(value):
                     if _is_pow(item):
                         value[i] = _call(item)
-    code = compile(tree, "<limit_state>", "eval")
+    _check_nesting(tree)
+    try:
+        code = compile(tree, "<limit_state>", "eval")
+    except (RecursionError, MemoryError):
+        raise ValueError(_TOO_DEEP) from None
     namespace = {"__builtins__": {}}
     namespace.update(funcs)
     namespace[pow_name] = _bounded_pow

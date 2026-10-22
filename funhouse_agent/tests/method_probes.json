@@ -87,7 +87,6 @@
 "ground_improvement|design_drain_spacing": {"params": {"Hdr": 5, "ch": 2, "cv": 1, "target_U": 90, "target_time": 0.5}},
 "ground_improvement|feasibility": {"params": {"soil_type": "soft_clay"}},
 "ground_improvement|priebe_improvement_factor": {"params": {"as_ratio": 0.2}},
-"ground_improvement|priebe_improvement_factor#curve": {"params": {"as_ratio": 0.277, "method": "fig_5_21"}},
 "ground_improvement|surcharge_preloading": {"params": {"Hdr": 4.0, "S_ultimate": 0.3, "cv": 3.0, "surcharge_kPa": 50}},
 "ground_improvement|vibro_compaction": {"params": {"fines_content": 8, "initial_N_spt": 12}},
 "ground_improvement|wick_drains": {"params": {"Hdr": 5.0, "ch": 3.0, "cv": 1.0, "spacing": 1.5, "time": 1.0}},

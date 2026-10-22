@@ -156,56 +156,47 @@ def _run_feasibility(p):
 
 
 _PRIEBE_ALIASES = {"area_replacement_ratio": "as_ratio", "as": "as_ratio",
-                   "ar": "as_ratio", "phi_c": "phi_column",
-                   "friction_angle_column": "phi_column", "nu": "nu_soil"}
+                   "ar": "as_ratio"}
 
 
-# GM-221: GEC-13's printed Priebe curve is drawn for one phi and takes
-# no Poisson's ratio, so the formula's inputs change nothing on it.
+# GM-276 (owner, OWN-70): GEC-13 prints the Priebe curve, not a formula,
+# so the tool reads the curve only. The formula's inputs, and the choice
+# between it and the curve, are refused with what the tool uses now.
 _ON_THE_CURVE = (
-    "method 'fig_5_21' reads GEC-13 Fig. 5-21 curve (4), drawn for "
-    "phi = 37.5 deg only and with no Poisson's ratio (p. 5-36): it takes "
-    "the area ratio alone. Give method 'formula' (the default) for Priebe's "
-    "basic n0 from phi_column and nu_soil")
+    "the tool reads GEC-13 Fig. 5-21 curve (4), the Priebe curve as GEC-13 "
+    "prints it (p. 5-36), printed for 'PRIEBE phi = 37.5 deg' only and "
+    "with no Poisson's ratio; it takes the area ratio as_ratio alone. GEC-13 "
+    "prints no Priebe formula and the tool has none")
+_PRIEBE_REFUSED = {name: _ON_THE_CURVE for name in (
+    "phi_column", "phi_c", "friction_angle_column", "nu_soil", "nu",
+    "method")}
 
 
 def _run_priebe_improvement_factor(p):
     from ground_improvement.aggregate_piers import (
-        PRIEBE_BASIS, PRIEBE_METHODS, priebe_basic_improvement_factor,
-        priebe_choices)
+        PRIEBE_NOTE, priebe_choices)
     from ground_improvement.settlement_ratio import (
         priebe_curve_settlement_ratio)
-    p = dict(apply_aliases(p, _PRIEBE_ALIASES))
-    valid = _valid_kwargs(priebe_basic_improvement_factor) | {"method"}
-    reject_unknown_params(p, valid, method="priebe_improvement_factor")
-    require_params(p, ["as_ratio"], method="priebe_improvement_factor", valid=valid)
-    method = p.pop("method", "formula")
-    if method not in PRIEBE_METHODS:
+    hits = sorted(set(p) & set(_PRIEBE_REFUSED))
+    if hits:
         raise ValueError(
-            f"priebe_improvement_factor: method must be one of "
-            f"{list(PRIEBE_METHODS)}, got {method!r}")
-    if method == "fig_5_21":
-        given = sorted(set(p) & {"phi_column", "nu_soil"})
-        if given:
-            raise ValueError(
-                f"priebe_improvement_factor does not take "
-                f"{', '.join(given)} with {_ON_THE_CURVE}")
-        n0 = priebe_curve_settlement_ratio(p["as_ratio"])
-        out = {"n0": round(n0, 3), "as_ratio": p["as_ratio"],
-               "area_ratio_A_Ac": round(1.0 / p["as_ratio"], 3),
-               "method": method, "phi_column_deg": 37.5,
-               "choices": priebe_choices(method, p["as_ratio"], n0)}
-    else:
-        n0 = priebe_basic_improvement_factor(**p)
-        phi, nu = p.get("phi_column", 42.5), p.get("nu_soil", 1.0 / 3.0)
-        out = {"n0": round(n0, 3), "as_ratio": p["as_ratio"],
-               "area_ratio_A_Ac": round(1.0 / p["as_ratio"], 3),
-               "method": method, "phi_column_deg": phi, "nu_soil": nu,
-               "choices": priebe_choices(method, p["as_ratio"], n0, phi,
-                                         nu)}
-    out["note"] = ("n0 = settlement without columns / settlement with them. "
-                   + PRIEBE_BASIS[method] + ".")
-    return out
+            f"priebe_improvement_factor does not take {hits}: "
+            f"{', '.join(hits)}: {_ON_THE_CURVE}.")
+    p = dict(apply_aliases(p, _PRIEBE_ALIASES))
+    reject_unknown_params(p, {"as_ratio"}, method="priebe_improvement_factor")
+    require_params(p, ["as_ratio"], method="priebe_improvement_factor",
+                   valid={"as_ratio"})
+    n_ratio = priebe_curve_settlement_ratio(p["as_ratio"])
+    return {"settlement_ratio": round(n_ratio, 3), "as_ratio": p["as_ratio"],
+            "area_ratio_A_Ac": round(1.0 / p["as_ratio"], 3),
+            "phi_column_deg": 37.5,
+            "choices": priebe_choices(p["as_ratio"], n_ratio),
+            "note": (f'Settlement ratio "n" = {n_ratio:.2f} at A/A_c = '
+                     f"{1.0 / p['as_ratio']:.2f}, off GEC-13 Fig. 5-21 curve "
+                     "(4), 'PRIEBE phi = 37.5 deg' (p. 5-36): the settlement "
+                     "without stone columns over the settlement with them. "
+                     "GEC-13 prints this curve and no formula for it. "
+                     + PRIEBE_NOTE)}
 
 
 METHOD_REGISTRY = {
@@ -242,14 +233,11 @@ METHOD_INFO = {
     },
     "priebe_improvement_factor": {
         "category": "Aggregate Piers",
-        "brief": "Priebe's basic improvement factor n0 for vibro replacement / stone columns: Priebe's (1995) formula, or the Priebe curve GEC-13 prints (Fig. 5-21 curve 4).",
+        "brief": "Stone columns: the settlement ratio off the Priebe curve GEC-13 prints, Fig. 5-21 curve (4), phi = 37.5 deg (p. 5-36), which GEC-13 calls the upper bound, for preliminary estimates (p. 5-37).",
         "parameters": {
-            "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1 (0.1-0.35 typical). Alias: area_replacement_ratio."},
-            "method": {"type": "str", "required": False, "default": "formula", "allowed_values": ["formula", "fig_5_21"], "description": "'formula' (default): Priebe's (1995) basic n0 worked out from phi_column and nu_soil, with no correction for column compressibility or overburden; GEC-13 prints no formula. 'fig_5_21': the Priebe curve as GEC-13 prints it, Fig. 5-21 curve (4), phi = 37.5 deg (p. 5-36), read off the figure at A/A_c = 1/as from 1.6 to 8.0 (about +/- 0.03); GEC-13 Example 2 reads it (Fig. 5-27, p. 5-49), and p. 5-37: 'the Priebe curve may be used to evaluate the upper bound effectiveness'. The formula at phi 37.5 is within 1.5 % of the curve at A/A_c 2.25 to 3.5, 2 to 7 % above it from 3.75 to 8, and 6 to 31 % above it below 2. Takes no phi_column or nu_soil."},
-            "phi_column": {"type": "float", "required": False, "default": 42.5, "description": "Friction angle of the column material (degrees), method 'formula'. GEC-13's printed curve is for 37.5."},
-            "nu_soil": {"type": "float", "required": False, "default": 1.0 / 3.0, "description": "Poisson's ratio of the surrounding soil (default 1/3), method 'formula'."},
+            "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1. The tool reads the curve at A/A_c = 1/as from 1.6 to 8.0 (as 0.125 to 0.625); outside that it is refused, not extended (the printed curve runs on to about A/A_c 8.5 to 8.7; past 8.0, read the figure). GEC-13 Example 2 takes A/A_sc = (s/d)^2 (p. 5-48). Alias: area_replacement_ratio."},
         },
-        "returns": {"n0": "Basic improvement factor (settlement reduction ratio, >= 1).", "method": "'formula' or 'fig_5_21': how n0 was worked out.", "note": "What n0 is and where it comes from. Tell the user which was used."},
+        "returns": {"settlement_ratio": "The settlement ratio off GEC-13 Fig. 5-21 curve (4): the settlement without stone columns over the settlement with them (p. 5-36), so the settlement with columns is the settlement without them divided by it.", "phi_column_deg": "37.5, from the curve's legend as printed: 'PRIEBE phi = 37.5 deg' (p. 5-36).", "note": "The value, where it comes from, and GEC-13's own words on it (p. 5-37: the upper bound, for preliminary estimates; p. 5-27: engineering judgment). Give the user the value with this note: the settlement ratio for design is the engineer's to judge."},
     },
     "wick_drains": {
         "category": "Wick Drains",
@@ -355,9 +343,6 @@ declare_applies_when(METHOD_INFO, {
     "surcharge_preloading": {
         name: {"drain_spacing": "set"}
         for name in ("pattern", "dw", "smear_ratio", "kh_ks_ratio")},
-    # the formula's inputs; GEC-13's printed curve takes neither (GM-221)
-    "priebe_improvement_factor": {
-        name: {"method": ["formula"]} for name in ("phi_column", "nu_soil")},
     "aggregate_piers": {
         "E_column": {"settlement_method": list(_BY_MODULI)},
         # with a Fig. 5-21 method n sets only the improved bearing
@@ -380,3 +365,6 @@ for _name in ("cv_m2_per_year", "Hdr_m"):
 # modulus is refused by run_aggregate_piers with the stress-ratio method
 # only: GEC-13 Fig. 5-21's methods take it (GM-220).
 METHOD_INFO["feasibility"]["refused_parameters"] = {"gwt_depth_m": _NO_GWT}
+# GM-276: the Priebe formula's inputs, and the method that chose it.
+METHOD_INFO["priebe_improvement_factor"]["refused_parameters"] = dict(
+    _PRIEBE_REFUSED)

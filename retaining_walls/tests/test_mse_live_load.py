@@ -173,12 +173,13 @@ class TestResult:
         r = analyze_mse_wall(_geom(q=0.0), G, PHI, GEOGRID_GEC11_E1_GG1)
         # only the coverage ratio, Rc 1 for a continuous layer, the
         # geogrid's Tal with the factor of safety 1.5 its rupture check
-        # requires (GM-262 review), and GEC-11 Table 3-6's alpha 0.8 for a
-        # geogrid (GM-256)
+        # requires (GM-262 review), GEC-11 Table 3-6's alpha 0.8 for a
+        # geogrid (GM-256), and each equally spaced level's contributory
+        # height (GM-277)
         assert [c["what"].split()[0] for c in r.choices] == [
-            "Coverage", "Long-term", "Scale"]
+            "Coverage", "Long-term", "Scale", "Tmax"]
         assert [c["how"] for c in r.choices] == ["default", "module",
-                                                 "default"]
+                                                 "default", "default"]
 
 
 class TestCalcSteps:

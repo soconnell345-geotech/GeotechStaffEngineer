@@ -136,7 +136,8 @@ Or leave the env line out and type the RID in the sidebar with Model family
 **Anthropic (Claude)**, then **Use this model**. Claude goes through the
 Anthropic-messages proxy (§3c says which address) with `FOUNDRY_TOKEN` as
 the bearer; a Claude model **API name** typed instead of a RID goes there
-too, because the `palantir_models` engine below is GPT-only. The RIDs must
+too, unless `GEOTECH_FOUNDRY_CLAUDE_SDK` is on (§3b, "Claude through the
+SDK"). The RIDs must
 be imported in the workspace's Models panel, or the proxy answers 403
 `UseModelPermissionDenied`. The OpenAI-shaped door does not serve Claude
 RIDs (404 `LanguageModelNotAvailable`), so a Claude RID must be family
@@ -181,10 +182,10 @@ offline against a stand-in proxy that refuses those fields
 
 On a Foundry deployment, a model id that is **not** an `ri....` RID is treated
 as a **Palantir model API name** (e.g. `GPT_5_1`) and served through the
-in-platform `palantir_models` SDK instead of the LLM proxy. This engine speaks
-to **GPT models only** (`OpenAiGptChat…` classes); a Claude API name (family
-Anthropic, stated or read off the name) goes to the Anthropic proxy of §3a
-instead. The workspace
+in-platform `palantir_models` SDK instead of the LLM proxy. For GPT models
+it uses the `OpenAiGptChat…` classes; a Claude API name (family Anthropic,
+stated or read off the name) goes to the Anthropic proxy of §3a, unless
+`GEOTECH_FOUNDRY_CLAUDE_SDK` is on (below). The workspace
 authenticates the SDK itself — **no token, host, or proxy enrollment is
 involved**, which makes this the route of choice when the proxy returns
 401/403 (`LlmProxyNotEnabled` and friends). Discovered live 2026-07-21: the
@@ -229,6 +230,46 @@ r = m.create_chat_completion(v3.GptChatCompletionRequest(
     [base.ChatMessage(base.ChatMessageRole.USER, "Say OK")], max_tokens=20))
 print(r.choices[0].message.content)
 ```
+
+**Claude through the SDK** (BACKLOG INF-27; **off by default**, the proxy of
+§3a stays Claude's route until it has been tested on Foundry). Turn it on in
+the app file and name the Claude models by their **API names**, not RIDs:
+
+```python
+import os
+os.environ["GEOTECH_FOUNDRY_CLAUDE_SDK"] = "1"
+os.environ["GEOTECH_FOUNDRY_MODELS"] = (
+    "Opus 5.5=AnthropicClaude_5_5_Opus,Sonnet 5.5=AnthropicClaude_5_5_Sonnet")
+from webapp.foundry_entry import main
+main()
+```
+
+Each call then goes through `AnthropicClaudeLanguageModel.get(<API name>)`
+and `create_chat_completion(ClaudeChatCompletionRequest, max_rate_limit_retries=4)`
+(wrapper: `PalantirClaudeChatModel` in `webapp/palantir_sdk_engine.py`): no
+token, no proxy address. Text and tool calls come back as the agent expects,
+tool results go back as `tool_result` blocks, page images go as base64 PNG or
+JPEG. No request asks for thinking; if a reply carries thinking blocks anyway,
+they go back with the rest of that tool loop, as Anthropic's API requires.
+Two blocks are marked for caching, as the proxy route's caching middleware
+marks them: the system prompt (one block, which caches the tools with it) and
+the last message's last block (the conversation so far). Where this SDK's
+classes take no cache field, that block goes unmarked; the tools and system
+prompt are then cached alone, or nothing is. `GEOTECH_FOUNDRY_PROMPT_CACHE=0`
+sends no marks. A 400 whose body names a cache field (`cache_control`,
+`system_blocks`) is asked once more with no marks, and if that works no marks
+are sent for that model until the app restarts; any other error, a 5xx
+included, is not resent for this;
+`tool_choice` is never sent; connection drops, timeouts, rate limits and 503s
+are retried as on the GPT leg. The labels keep the main agent on Opus 5.5 and
+the references helper on Sonnet 5.5 (§3a). A model RID still uses the proxy,
+and the engine message in the sidebar says so. Connection diagnostics show
+`GEOTECH_FOUNDRY_CLAUDE_SDK=1` on the environment line, and the engine
+resolution line reads `source=foundry_sdk` and "palantir_models SDK for
+Claude". If a model is not imported in the workspace's **Models** panel,
+Foundry answers 403 `UseModelPermissionDenied` and the app says, in plain
+words, to import it there, restart the workspace and publish again. Turn the switch off (or
+delete the line) to go back to the proxy.
 
 ### 3c. Which proxy address the app uses
 
@@ -410,10 +451,11 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
   imported in the workspace's Models panel (403 `UseModelPermissionDenied`
   otherwise); what base URL should containers use. An admin's answer goes
   into `GEOTECH_FOUNDRY_HOST` in the app file (explicit
-  `http://`/`https://` schemes are honoured). `palantir_models` has a Claude
-  class too (`AnthropicClaudeLanguageModel`, by model API name; worked for
-  both 5.5 models on 2026-10-20), so the SDK engine can gain a Claude leg if
-  the proxy is ever closed.
+  `http://`/`https://` schemes are honoured). Claude can also go through
+  `palantir_models` (`AnthropicClaudeLanguageModel`, by model API name;
+  worked for both 5.5 models on 2026-10-20), which needs no proxy at all:
+  `GEOTECH_FOUNDRY_CLAUDE_SDK=1` with API names (§3b, "Claude through the
+  SDK").
 - **The upload line in Connection diagnostics** on Foundry reads `PUT -> 403;
   POST -> 405`: expected, because the probe has no browser session.
   Uploading from the browser worked in the published app (2026-10-20).

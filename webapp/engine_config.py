@@ -419,6 +419,57 @@ def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
         f"Using the in-platform palantir_models SDK ({model_id}).")
 
 
+#: Claude on Foundry through the in-platform ``palantir_models`` engine
+#: instead of the LLM proxy (BACKLOG INF-27): ``1`` sends a Claude model
+#: named by its API name (``AnthropicClaude_5_5_Opus``,
+#: ``AnthropicClaude_5_5_Sonnet``) through
+#: :class:`webapp.palantir_sdk_engine.PalantirClaudeChatModel`. OFF by
+#: default: the proxy stays Claude's route until the owner has tested this
+#: one. A model RID always uses the proxy. Read at call time.
+FOUNDRY_CLAUDE_SDK_ENV = "GEOTECH_FOUNDRY_CLAUDE_SDK"
+
+
+def foundry_claude_sdk_on() -> bool:
+    """Whether :data:`FOUNDRY_CLAUDE_SDK_ENV` is on."""
+    return str(os.environ.get(FOUNDRY_CLAUDE_SDK_ENV, "")).strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _resolve_palantir_claude(model_id: str) -> "EngineResolution":
+    """Build the in-platform ``palantir_models`` Claude engine for a model
+    API name (BACKLOG INF-27). Never raises."""
+    try:
+        from webapp.palantir_sdk_engine import PalantirClaudeChatModel, \
+            claude_sdk_available
+    except Exception as exc:
+        return EngineResolution(
+            None, "error", model_id,
+            f"Could not load the palantir_models Claude engine: "
+            f"{type(exc).__name__}: {exc}")
+    if not claude_sdk_available():
+        return EngineResolution(
+            None, "error", model_id,
+            f"{FOUNDRY_CLAUDE_SDK_ENV} is on, so the Claude model "
+            f"'{model_id}' goes to the in-platform palantir_models engine, "
+            "but this workspace's 'palantir-models' has no "
+            "AnthropicClaudeLanguageModel (or is not installed). Add or "
+            "update 'palantir-models' and 'language-model-service-api' in "
+            f"the workspace Libraries panel, or turn {FOUNDRY_CLAUDE_SDK_ENV} "
+            "off to use the LLM proxy.")
+    try:
+        model = PalantirClaudeChatModel(model_api_name=model_id,
+                                        max_tokens=_default_max_tokens())
+    except Exception as exc:
+        return EngineResolution(
+            None, "error", model_id,
+            f"Could not construct the palantir_models Claude engine: "
+            f"{type(exc).__name__}: {exc}")
+    return EngineResolution(
+        model, "foundry_sdk", model_id,
+        f"Using the in-platform palantir_models SDK for Claude ({model_id}; "
+        f"{FOUNDRY_CLAUDE_SDK_ENV} on).")
+
+
 #: Prompt-cache marks on the Foundry Anthropic proxy: on by default, as marks
 #: on content blocks only; ``0`` / ``off`` sends none (see
 #: :func:`foundry_chat_anthropic_class`).
@@ -829,15 +880,25 @@ def resolve_engine(model_id: Optional[str] = None,
     # 2) Foundry model RID -> the stack's LLM proxy (routes by provider).
     _mid = model_id or os.environ.get(MODEL_ENV)
     if is_foundry_model_id(_mid):
-        return _resolve_foundry(_mid)
+        res = _resolve_foundry(_mid)
+        if (res.ok and foundry_claude_sdk_on() and is_foundry_deployment()
+                and model_family(_mid) == "anthropic"):
+            res.message += (
+                f" {FOUNDRY_CLAUDE_SDK_ENV} is on, but a model RID always "
+                "uses the proxy: name the model by its API name (e.g. "
+                "AnthropicClaude_5_5_Opus) for the in-platform engine.")
+        return res
 
     # 2b) Foundry deployment, non-RID model id -> the in-platform
     #     palantir_models SDK (model API name, e.g. "GPT_5_1"). No host, token,
     #     or proxy involved — the workspace authenticates the SDK itself.
-    #     That engine speaks to GPT models only, so a Claude model named by
-    #     its API name goes to the Anthropic-messages proxy instead.
+    #     A Claude model named by its API name goes to the Anthropic-messages
+    #     proxy, or to the SDK's Claude leg when GEOTECH_FOUNDRY_CLAUDE_SDK is
+    #     on (INF-27; OFF by default).
     if is_foundry_deployment() and _mid:
         if model_family(_mid) == "anthropic":
+            if foundry_claude_sdk_on():
+                return _resolve_palantir_claude(split_model_family(_mid)[1])
             return _resolve_foundry(_mid)
         return _resolve_palantir_sdk(split_model_family(_mid)[1])
 

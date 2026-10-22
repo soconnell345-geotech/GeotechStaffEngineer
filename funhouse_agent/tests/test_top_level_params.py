@@ -426,6 +426,9 @@ class TestReferenceCatchAll:
     ("soe", "braced_excavation",
      {"excavation_depth": 3, "layers": [], "excavation_width": 10},
      "excavation_width", "does not use the excavation width"),
+    ("ground_improvement", "priebe_improvement_factor",
+     {"as_ratio": 0.277, "phi_column": 42.5}, "phi_column",
+     "GEC-13 Fig. 5-21 curve (4)"),
 ])
 def test_refused_with_its_reason(agent, method, params, refused, reason):
     err = _error(agent, method, params)

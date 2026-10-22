@@ -675,12 +675,14 @@
  },
  {
   "id": "WE-GI-2",
-  "title": "Stone-column settlement improvement (Priebe factor) — FHWA GEC-13 Ch. 5, Example Problem 2",
+  "title": "Stone-column settlement improvement (Priebe curve) — FHWA GEC-13 Ch. 5, Example Problem 2",
   "domain": "ground_improvement",
   "keywords": [
    "stone columns",
    "vibro replacement",
    "Priebe",
+   "Priebe curve",
+   "settlement ratio",
    "improvement factor",
    "settlement reduction",
    "area replacement ratio",
@@ -689,51 +691,32 @@
    "embankment",
    "ground improvement"
   ],
-  "source": "FHWA GEC-13, 'Ground Modification Methods Reference Manual', Vol 1 (FHWA-NHI-16-027), Chapter 5, Section 4.3.2, Example Problem 2 with Figure 5-27 (settlement-improvement ratio chart, after Wallays et al. 1983).",
+  "source": "FHWA GEC-13, 'Ground Modification Methods Reference Manual', Vol 1 (FHWA-NHI-16-027), Chapter 5, Section 4.3.2, Example Problem 2 (pp. 5-47 to 5-49) with Figure 5-27 (the Priebe curve of Figure 5-21, after Wallays et al. 1983).",
   "problem": "A 15-ft embankment (q = 125 pcf * 15 ft = 1,875 psf) loads 50 ft of soft clay (gamma_sat = 120 pcf, WT at surface, Cc = 0.2, eo = 0.6, po at mid-depth = 1,440 psf) over dense sand. Unimproved consolidation settlement is 27 in. Stone columns of d = 3.0 ft at s = 5.7 ft spacing give an area ratio A/Ac = (s/d)^2 = 3.6, i.e. as = Ac/A = 0.277. Estimate the settlement-improvement ratio and the improved settlement (published chart read: ratio = 2.7, improved S = 27/2.7 = 10 in).",
   "dispatch_calls": [
    {
     "module": "ground_improvement",
     "method": "priebe_improvement_factor",
     "params": {
-     "as_ratio": 0.277,
-     "phi_column": 42.5
-    }
-   },
-   {
-    "module": "ground_improvement",
-    "method": "priebe_improvement_factor",
-    "params": {
-     "as_ratio": 0.277,
-     "phi_column": 39.0
-    }
-   },
-   {
-    "module": "ground_improvement",
-    "method": "priebe_improvement_factor",
-    "params": {
-     "as_ratio": 0.277,
-     "method": "fig_5_21"
+     "as_ratio": 0.277
     }
    }
   ],
   "published_result": "Settlement-improvement ratio = 2.7 (chart read from Figure 5-27); improved settlement = 27 in / 2.7 = 10 in (unimproved S = 27 in reproduced exactly by the consolidation closed form Cc/(1+eo)*H*log10((po+dq)/po)).",
   "computed_result": {
-   "n0_phi42p5_default": 3.06,
-   "n0_phi39": 2.711,
-   "n0_fig_5_21_curve_4": 2.548,
-   "improved_settlement_range_in": "27/3.06 = 8.8 in (module default phi_column = 42.5) to 27/2.71 = 10.0 in (phi_column = 39, matching the chart)",
-   "note": "The published 2.7 is a chart read; the Priebe (1995) formula result depends on the area-ratio convention and phi_column. At the source's as = 0.277: n0 = 3.06 with the default phi_column = 42.5 (+13%), and n0 = 2.71 at phi_column = 39 (matches the chart). Both bracket the published improved settlement of 10 in from below — within chart-read latitude. GEC-13 prints no Priebe formula: it prints the curve, Fig. 5-21 curve (4), phi = 37.5 deg, which method 'fig_5_21' reads: n0 = 2.55 at A/Ac = 3.61 (27/2.55 = 10.6 in). Fig. 5-27's arrows are drawn at A/Ac 3.53 and 2.63 on that curve and labelled 3.6 and 2.7 (GM-221)."
+   "settlement_ratio_fig_5_21_curve_4": 2.548,
+   "improved_settlement_in": "27 / 2.55 = 10.6 in",
+   "note": "The tool reads GEC-13's printed Priebe curve, Fig. 5-21 curve (4), 'PRIEBE phi = 37.5 deg' (p. 5-36), its only basis: GEC-13 prints the curve and no Priebe formula. At the example's A/A_sc = (5.7 / 3.0)^2 = 3.61 (as = 0.277) the curve reads 2.55 on both printed copies (Fig. 5-21, p. 5-36, and Fig. 5-27, p. 5-49), so 27 in becomes 10.6 in. GEC-13 prints 2.7 and 10 in (p. 5-49): Fig. 5-27's arrows are drawn at A/A_sc 3.53 and a settlement ratio of 2.63, on the curve, and labelled 3.6 and 2.7, so the printed read is 0.15 above the curve at 3.61 and its settlement 0.6 in below the tool's."
   },
-  "report_notes": "The report should state the area-ratio convention up front (as = Ac/A = 1/(s/d)^2 here vs the geometric triangular-tributary value — they differ by ~10%) and the assumed column friction angle, since n0 is sensitive to both; presenting n0 for two or three phi_column values honestly reflects the chart-read latitude of the source. Pair the improvement factor with the unimproved consolidation settlement calculation (settlement module) so the improved settlement S/n0 is traceable end-to-end. Note this is the Priebe BASIC factor n0 (no depth or compressibility corrections).",
-  "provenance": "validation_examples/test_published_v018_v020.py::test_v019_priebe_improvement_factor_convention, test_v019_unimproved_consolidation_pass",
+  "report_notes": "The report should state the area-ratio convention up front: GEC-13's example takes A/A_sc = (s/d)^2 (p. 5-48), while the tributary area of a triangular or square pattern gives a different A/A_c for the same s and d. Give the settlement ratio off GEC-13's printed Priebe curve as the number, with GEC-13's words beside it, p. 5-37: 'For preliminary estimates, the Priebe curve may be used to evaluate the upper bound effectiveness and cost at various spacings.' The settlement ratio for design is the engineer's to judge; GEC-13 p. 5-37 puts the Equilibrium Method, roughly its Balaam curves (aggregate_piers settlement_method 'balaam_rigid' or 'balaam_flexible'), at 'an average or lower bound estimate suitable for preliminary analyses'. Pair the settlement ratio with the unimproved consolidation settlement (settlement module) so the improved settlement S / n is traceable end to end.",
+  "provenance": "validation_examples/test_published_v018_v020.py::test_v019_priebe_curve_reads_example_2, test_v019_unimproved_consolidation_pass",
   "source_doc": "GEC 13 Vol 1.pdf",
   "source_pdf_pages": [
-   325,
-   326,
-   327
+   373,
+   374,
+   375
   ],
-  "source_pages_estimated": true
+  "source_pages_estimated": false
  },
  {
   "id": "WE-SLOPE-1",
