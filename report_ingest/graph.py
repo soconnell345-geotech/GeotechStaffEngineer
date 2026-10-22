@@ -234,15 +234,23 @@ class _Spend:
                 self.tally.mark() if self.tally is not None else None)
 
     def settle(self, mark: Tuple[int, Optional[Dict[str, Any]]]) -> None:
-        """Count what a step that did not finish spent before it stopped.
+        """Count what a step spent that it did not hand in itself.
 
-        Nothing when the step handed its own cost in after all, so no call
-        is counted twice.
+        A step that did not finish handed nothing in: all it spent is
+        counted. One that did is topped up with the calls it left out --
+        sent and failed, which have no reply to count -- so no call is
+        counted twice and none is missed.
         """
         before, tallied = mark
-        if tallied is None or self.tally is None or self.calls != before:
+        if tallied is None or self.tally is None:
             return
-        self.add(self.tally.since(tallied))
+        spent = self.tally.since(tallied)
+        if self.calls == before:
+            self.add(spent)
+            return
+        missed = int(spent["calls"]) - (self.calls - before)
+        if missed > 0:
+            self.calls += missed
 
     def cut_short(self, mark: Tuple[int, Optional[Dict[str, Any]]]) -> bool:
         """Did the ceiling refuse a call since ``mark``? A voter inside a
@@ -629,10 +637,12 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             # enough, and the scoring stage names one. Until 5.32 the graph
             # had no way to take it, so ``triage_model`` on the ingest stage
             # was silently the main model (Foundry run, 2026-10-01).
+            mark = spend.mark()
             profile = run_triage(doc, roles, outline,
                                  engine=labelling.triage_engine or engine,
                                  facts=counted)
             spend.add(profile.cost)
+            spend.settle(mark)
             _save(os.path.join(out, "triage.json"), profile.to_dict())
             record.document.workflow = profile.workflow
             workflow_note = profile.workflow_note
@@ -815,6 +825,7 @@ def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
         blob = seen.to_dict()
         _keep(path, blob, spend, mark, qa, "labels.vision")
         spend.add(blob.get("cost"))
+        spend.settle(mark)
         labelling.vision_paid = True
     labelling.vision_cost = dict(blob.get("cost") or {})
     labels = {int(k): str(v) for k, v in (blob.get("labels") or {}).items()}
@@ -921,6 +932,7 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             review = None
         if review is not None:
             spend.add(review.cost)
+            spend.settle(mark)
             labelling.review_paid = True
             blob = review.to_dict()
             _keep(os.path.join(out, "review.json"), blob, spend, mark, qa,
@@ -1097,6 +1109,8 @@ def _identify_bound(doc: Any, engine: Any, out: str, resume: bool,
                       f"bound.{row.bound_id}.identity",
                       [row.first_page, row.last_page])
             spend.add(blob.get("cost"))
+            # A call sent that failed has no cost of its own to hand in.
+            spend.settle(mark)
         identity = dict(blob.get("identity") or {})
         warning = str(blob.get("warning") or "")
         if warning:
@@ -1574,12 +1588,13 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     from report_ingest.visual_scales import plot_check_qa
                     qa.extend(plot_check_qa(blob["plot_check"], pages))
         except Exception as exc:                 # one item must not stop the run
-            spend.settle(mark)
             qa.append(QAEntry(
                 kind="skipped", where=f"items.{item.kind}",
                 detail=f"{item.id} could not be read: "
                        f"{type(exc).__name__}: {exc}",
                 pages=pages))
+        finally:
+            spend.settle(mark)
 
 
 def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],

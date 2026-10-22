@@ -539,6 +539,36 @@ class TestEngineForFindsThePageModel:
         engine = engine_for(_Bridge(prompter=_Prompter()))
         assert isinstance(engine, PrompterEngine)
 
+    def test_on_the_page_s_own_tier_not_a_fixed_one(self):
+        # PrompterChatModel reads the tier selected on the Prompter at every
+        # call unless it was built with one of its own.
+        class _Prompter:
+            client = None
+            chat_model = "funhouse-gpt-high"
+
+            def chat(self, **kw):
+                return None
+
+        class _Bridge(ScriptedChatModel):
+            prompter: object = None
+            model: Optional[str] = None
+
+        selected = engine_for(_Bridge(prompter=_Prompter()))
+        built = engine_for(_Bridge(prompter=_Prompter(),
+                                   model="funhouse-gpt-low"))
+        asked = engine_for(_Bridge(prompter=_Prompter()),
+                           model="funhouse-gpt-medium")
+
+        assert selected.model == "funhouse-gpt-high"
+        assert built.model == "funhouse-gpt-low"
+        assert asked.model == "funhouse-gpt-medium"
+        # Inside the wrapper the page puts round its model, the same.
+        vision = pytest.importorskip("funhouse_agent.deep.vision_engine")
+        paged = engine_for(vision.LangChainVisionEngine(
+            _Bridge(prompter=_Prompter())))
+        assert isinstance(paged, PrompterEngine)
+        assert paged.model == "funhouse-gpt-high"
+
     def test_no_chat_model_is_still_no_engine(self):
         class _Wrapper:
             model = "a-model-name"
@@ -562,3 +592,157 @@ def test_the_fixture_refuses_what_a_provider_refuses():
     with pytest.raises(AssertionError, match="answers no call"):
         check_conversation([HumanMessage(content="go"),
                             ToolMessage(content="r", tool_call_id="z")])
+
+
+# ---------------------------------------------------------------------------
+# what is taken as an answer (the review of RI-03)
+# ---------------------------------------------------------------------------
+
+def _results(request):
+    """A request's tool results by the call they answer."""
+    return {m.tool_call_id: m for m in request["messages"]
+            if isinstance(m, ToolMessage)}
+
+
+class TestACutOrEmptyAnswerIsNoAnswer:
+    """Foundry's classes hand back ``{}`` for a call cut mid-arguments, and
+    the readings' own schemas accept ``{}``: taken, a narrative cut at the
+    cap would be an empty reading, saved as finished."""
+
+    def test_the_real_schemas_do_accept_empty_arguments(self):
+        # Why the schema below is a real one, not a stricter stand-in.
+        from report_ingest.bound import BoundIdentity
+        from report_ingest.narrative_reader import NarrativeReading
+
+        assert NarrativeReading.model_validate({}) is not None
+        assert BoundIdentity.model_validate({}) is not None
+
+    @pytest.mark.parametrize("finish", ["length", "tool_calls"])
+    def test_empty_arguments_are_no_answer_and_the_model_is_told(self,
+                                                                finish):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        engine, model = _engine(answer_call({}, call_id="a1",
+                                            finish_reason=finish),
+                                _said("again"))
+        messages = [user(text_block("read the narrative"))]
+        reply = engine.complete(messages, output_format=NarrativeReading)
+
+        assert reply.parsed is None
+        assert any("not taken" in note for note in reply.notes)
+        messages += [{"role": "assistant", "content": reply.content},
+                     user(text_block("answer again"))]
+        engine.complete(messages, output_format=NarrativeReading)
+        told = _results(model.requests[1])["a1"]
+        assert told.content.startswith("Not taken:")
+        assert told.status == "error"
+
+    def test_a_cut_reply_is_no_answer_even_if_its_arguments_validate(self):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        whole_looking = NarrativeReading().model_dump(mode="json")
+        engine, _ = _engine(answer_call(whole_looking,
+                                        finish_reason="length"))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=NarrativeReading)
+        assert reply.cut_off and reply.parsed is None
+        assert any("output limit" in note for note in reply.notes)
+
+    def test_empty_json_text_is_no_answer_either(self):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        engine, _ = _engine(_said("{}"))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=NarrativeReading)
+        assert reply.parsed is None
+
+
+class TestAnAnswerBesideALook:
+
+    def _both(self):
+        return AIMessage(content="", tool_calls=[
+            {"name": "zoom_plot", "args": {"page": 1}, "id": "z",
+             "type": "tool_call"},
+            {"name": ANSWER_TOOL, "args": ANSWER, "id": "a",
+             "type": "tool_call"}])
+
+    def test_when_the_pass_ran_the_look_the_answer_is_said_not_taken(self):
+        engine, model = _engine(self._both(), _said("ok"))
+        messages = [user(text_block("go"))]
+        first = engine.complete(messages, tools=[ZOOM], output_format=Reading)
+        messages += [{"role": "assistant", "content": first.content},
+                     {"role": "user",
+                      "content": [tool_result_block("z", "the box")]}]
+        engine.complete(messages, tools=[ZOOM], output_format=Reading)
+
+        told = _results(model.requests[1])
+        assert told["z"].content == "the box"
+        assert told["a"].content.startswith(
+            "Not taken: you asked to look first")
+
+    def test_when_the_pass_took_the_answer_it_is_said_received(self):
+        engine, model = _engine(self._both(), _said("ok"))
+        messages = [user(text_block("go"))]
+        first = engine.complete(messages, tools=[ZOOM], output_format=Reading)
+        assert first.parsed is not None
+        messages += [{"role": "assistant", "content": first.content},
+                     user(text_block("settle what you were unsure of"))]
+        engine.complete(messages, tools=[ZOOM], output_format=Reading)
+
+        told = _results(model.requests[1])
+        assert told["a"].content == "Answer received."
+        assert told["z"].content == "(this call was not run)"
+
+    def test_an_answer_that_failed_validation_is_told_why(self):
+        bad = answer_call({"title": "B-1",
+                           "layers": [{"top_m": "deep", "soil": "clay"}]},
+                          call_id="a1")
+        engine, model = _engine(bad, _said("ok"))
+        messages = [user(text_block("go"))]
+        reply = engine.complete(messages, output_format=Reading)
+        assert reply.parsed is None
+        messages += [{"role": "assistant", "content": reply.content},
+                     user(text_block("again"))]
+        engine.complete(messages, output_format=Reading)
+
+        told = _results(model.requests[1])["a1"]
+        assert "does not match the schema" in told.content
+        assert "layers.0.top_m" in told.content
+
+
+class TestAStrayKey:
+    """Foundry sends tools without strict mode, and the readers' schemas
+    forbid extra fields: one stray key would lose the whole reading."""
+
+    def _calc_args(self):
+        from report_ingest.tests.test_calc_reader import _reading, _value
+
+        return _reading(results=[_value("Total settlement", 1.2, "in")]
+                        ).model_dump(mode="json")
+
+    def test_unknown_keys_are_dropped_named_and_the_rest_kept(self):
+        from report_ingest.calc_reader import CalcReading
+
+        args = self._calc_args()
+        args["confidence"] = "high"
+        args["results"][0]["colour"] = "red"
+        engine, _ = _engine(answer_call(args))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=CalcReading)
+
+        assert isinstance(reply.parsed, CalcReading)
+        assert reply.parsed.results[0].name == "Total settlement"
+        (note,) = reply.notes
+        assert "confidence" in note and "results.0.colour" in note
+
+    def test_a_wrong_value_still_fails_with_the_stray_key_gone(self):
+        from report_ingest.calc_reader import CalcReading
+
+        args = self._calc_args()
+        args["confidence"] = "high"
+        args["results"][0]["value"] = "a lot"
+        engine, _ = _engine(answer_call(args))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=CalcReading)
+        assert reply.parsed is None
+        assert any("results.0.value" in note for note in reply.notes)

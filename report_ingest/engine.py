@@ -323,6 +323,10 @@ class Reply:
     #: The assistant turn in neutral blocks, to append straight back into a
     #: message list. Carries thinking blocks as ``opaque``.
     content: List[Dict[str, Any]] = field(default_factory=list)
+    #: What the engine did with a structured answer that a reviewer of the
+    #: run may want to know: unknown keys it dropped, an answer it did not
+    #: take and why. Empty on the ordinary call.
+    notes: List[str] = field(default_factory=list)
 
     @property
     def wants_tools(self) -> bool:
@@ -1178,9 +1182,19 @@ _ANSWER_NOTE_WITH_TOOLS = (
 
 #: The result sent back for a tool call nothing answered: the answer tool's
 #: own call (the call WAS the answer), or a call the pass left out. Every
-#: provider refuses a tool call with no result after it.
+#: provider refuses a tool call with no result after it. The answer call's
+#: result says what became of the answer: taken; not taken because the pass
+#: ran the look asked for in the same turn; or not taken, and why.
 _ANSWER_RECEIVED = "Answer received."
+_ANSWER_AFTER_LOOK = (
+    "Not taken: you asked to look first, and the look was run. Call "
+    "`answer` again with the whole answer once you have what you looked for.")
+_ANSWER_NOT_TAKEN = (
+    "Not taken: {why}. Call `answer` again with the whole answer.")
 _NOT_ANSWERED = "(this call was not run)"
+#: Why an answer cut at the output cap is not taken.
+_CUT_ANSWER = ("the reply stopped at its output limit, so the answer in it "
+               "is incomplete; keep the answer shorter")
 
 #: The fields a LangChain chat model keeps its per-reply output cap in.
 _CAP_FIELDS = ("max_tokens", "max_output_tokens", "max_completion_tokens")
@@ -1218,8 +1232,18 @@ class ChatModelEngine:
     * the assistant turn comes back with the provider's own message carried
       as an ``opaque`` block, so a Claude thinking block or a call id goes
       back exactly as it arrived; the answer call, which no pass answers,
-      gets a short result of its own on the next request, and a call whose
-      arguments did not parse is dropped from the turn that goes back.
+      gets a result of its own on the next request saying what became of
+      the answer, and a call whose arguments did not parse is dropped from
+      the turn that goes back.
+
+    WHAT IS TAKEN AS AN ANSWER. A reply cut at its output cap gives no
+    answer, whatever its arguments say, and neither do empty arguments:
+    Foundry's classes hand back ``{}`` for a call cut mid-arguments, and many
+    reading schemas accept ``{}``, so it would pass as an empty reading. Both
+    come back with ``parsed`` None and the pass's own re-ask or QA entry
+    follows. Foundry sends tools without strict mode, so a model may add a
+    key the schema forbids: unknown keys are dropped, named in
+    :attr:`Reply.notes`, and the answer is validated again.
 
     ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
@@ -1324,6 +1348,7 @@ class ChatModelEngine:
                                              SystemMessage, ToolMessage)
 
         out: List[Any] = []
+        verdicts: Dict[str, str] = {}
         if system:
             out.append(SystemMessage(content=system))
         for message in messages:
@@ -1336,12 +1361,13 @@ class ChatModelEngine:
                 if isinstance(content, str):
                     out.append(AIMessage(content=content))
                     continue
-                kept = next((b["data"] for b in content
+                held = next((b for b in content
                              if isinstance(b, dict)
                              and b.get("type") == "opaque"
                              and isinstance(b.get("data"), AIMessage)), None)
-                if kept is not None:
-                    out.append(kept)
+                if held is not None:
+                    out.append(held["data"])
+                    verdicts.update(held.get("answers") or {})
                     continue
                 text = "".join(b["text"] for b in content
                                if isinstance(b, dict)
@@ -1387,7 +1413,7 @@ class ChatModelEngine:
                 body = cls._user_content(trailing)
                 if body:
                     out.append(HumanMessage(content=body))
-        return _answer_every_call(out)
+        return _answer_every_call(out, verdicts)
 
     # -- the protocol ------------------------------------------------------
     def complete(self, messages: Sequence[Dict[str, Any]], *,
@@ -1448,27 +1474,57 @@ class ChatModelEngine:
         answers = [c for c in calls if output_format is not None
                    and c.get("name") == ANSWER_TOOL]
         wanted = [c for c in calls if c not in answers]
-        parsed = None
-        if output_format is not None:
-            for args in [c.get("args") for c in answers] + spoiled:
-                parsed = _validated(output_format, args)
-                if parsed is not None:
-                    break
-            if parsed is None and text:
-                parsed = _validated(output_format, _json_in(text))
 
         incomplete = meta.get("incomplete_details")
         stop = _reason(meta.get("finish_reason") or meta.get("stop_reason")
                        or (incomplete.get("reason")
                            if isinstance(incomplete, dict) else "")
                        or meta.get("status"))
+        cut = stop in CUT_REASONS
+
+        parsed = None
+        notes: List[str] = []
+        #: answer call id -> "" (a whole answer) or why it was not taken
+        verdicts: Dict[str, str] = {}
+        if output_format is not None:
+            offered = ([(c["id"], c.get("args")) for c in answers]
+                       + [(None, args) for args in spoiled])
+            for call_id, args in offered:
+                if cut:
+                    answer, dropped, why = None, [], _CUT_ANSWER
+                else:
+                    answer, dropped, why = _validate(output_format, args)
+                if dropped:
+                    notes.append("unknown keys dropped from the answer: "
+                                 + ", ".join(dropped))
+                if answer is None:
+                    notes.append(f"an answer was not taken: {why}")
+                elif parsed is None:
+                    parsed = answer
+                if call_id:
+                    verdicts[call_id] = "" if answer is not None else why
+            if parsed is None and text and not cut:
+                answer, dropped, _why = _validate(output_format,
+                                                  _json_in(text))
+                if answer is not None:
+                    parsed = answer
+                    if dropped:
+                        notes.append("unknown keys dropped from the answer: "
+                                     + ", ".join(dropped))
+        if notes:
+            logging.getLogger(__name__).warning("%s: %s", self.name,
+                                                "; ".join(notes))
+
         blocks: List[Dict[str, Any]] = []
         if text:
             blocks.append(text_block(text))
         blocks.extend(tool_use_block(c["id"], c.get("name", ""),
                                      dict(c.get("args") or {}))
                       for c in calls)
-        blocks.append(opaque_block(message))
+        held = opaque_block(message)
+        if verdicts:
+            held["answers"] = verdicts
+        blocks.append(held)
         reply = Reply(
             text=text,
             tool_calls=[ToolCall(c["id"], c.get("name", ""),
@@ -1479,6 +1535,7 @@ class ChatModelEngine:
             model=self.served_by,
             seconds=seconds,
             content=blocks,
+            notes=notes,
         )
         if reply.cut_off:
             logging.getLogger(__name__).warning(
@@ -1534,11 +1591,21 @@ def _answer_spec(output_format: Any) -> Dict[str, Any]:
         "parameters": strict_schema(output_format)}}
 
 
-def _answer_every_call(messages: List[Any]) -> List[Any]:
+def _answer_every_call(messages: List[Any],
+                       verdicts: Optional[Dict[str, str]] = None
+                       ) -> List[Any]:
     """``messages`` with a result after every tool call that had none -- the
     answer tool's own call above all, which a pass never answers -- each
-    straight after the results that are there, before anything else."""
+    straight after the results that are there, before anything else.
+
+    The answer call's result says what became of it: ``verdicts`` (call id
+    -> why it was not taken, from :meth:`ChatModelEngine._reply`) names an
+    answer that was not whole; an answer given in the same turn as a look
+    the pass then ran was not taken; otherwise it was.
+    """
     from langchain_core.messages import AIMessage, ToolMessage
+
+    verdicts = verdicts or {}
 
     out: List[Any] = []
     i = 0
@@ -1557,12 +1624,23 @@ def _answer_every_call(messages: List[Any]) -> List[Any]:
             answered.add(messages[i].tool_call_id)
             out.append(messages[i])
             i += 1
+        looked = any(call_id in answered for call_id, name in wanted
+                     if name != ANSWER_TOOL)
         for call_id, name in wanted:
-            if call_id not in answered:
-                out.append(ToolMessage(
-                    content=(_ANSWER_RECEIVED if name == ANSWER_TOOL
-                             else _NOT_ANSWERED),
-                    tool_call_id=call_id))
+            if call_id in answered:
+                continue
+            status = "success"
+            if name != ANSWER_TOOL:
+                content = _NOT_ANSWERED
+            elif verdicts.get(call_id):
+                content = _ANSWER_NOT_TAKEN.format(why=verdicts[call_id])
+                status = "error"
+            elif looked:
+                content = _ANSWER_AFTER_LOOK
+            else:
+                content = _ANSWER_RECEIVED
+            out.append(ToolMessage(content=content, tool_call_id=call_id,
+                                   status=status))
     return out
 
 
@@ -1640,24 +1718,91 @@ def _without_nulls(value: Any) -> Any:
     return value
 
 
-def _validated(output_format: Any, args: Any) -> Any:
-    """``args`` as an ``output_format``, or None. Strict mode's schema makes
-    every field required, so a model may send null for a field that has a
-    default; the answer is tried again with the nulls left out, letting
-    the defaults stand."""
+def _validate(output_format: Any, args: Any
+              ) -> Tuple[Any, List[str], str]:
+    """``args`` as an ``output_format``: ``(answer, keys dropped, why not)``,
+    the answer None when there is none.
+
+    * Empty arguments are no answer. Foundry's classes hand back ``{}`` for
+      a call cut mid-arguments, and many reading schemas accept ``{}``.
+    * Strict mode's schema makes every field required, so a model may send
+      null for a field that has a default: tried again with the nulls left
+      out, letting the defaults stand.
+    * Foundry sends tools without strict mode, so a model may add a key the
+      schema forbids: the unknown keys are dropped and named, and the
+      answer validated again. Any other error stands.
+    """
     if isinstance(args, str):
         try:
             args = json.loads(args)
         except (json.JSONDecodeError, ValueError):
-            return None
+            return None, [], "its arguments are not JSON"
     if not isinstance(args, dict):
-        return None
+        return None, [], "it is not a JSON object"
+    if not args:
+        return None, [], "it arrived empty"
+    why = ""
     for candidate in (args, _without_nulls(args)):
-        try:
-            return output_format.model_validate(candidate)
-        except Exception:                                # noqa: BLE001
+        dropped: List[str] = []
+        for _ in range(4):
+            try:
+                return output_format.model_validate(candidate), dropped, ""
+            except Exception as exc:                     # noqa: BLE001
+                errors = _errors_of(exc)
+                why = ("it does not match the schema ("
+                       + _error_text(exc, errors) + ")")
+                extra = [tuple(e.get("loc") or ()) for e in errors
+                         if e.get("type") == "extra_forbidden"]
+                if not extra:
+                    break
+                candidate, removed = _drop_keys(candidate, extra)
+                if not removed:
+                    break
+                dropped.extend(removed)
+    return None, [], why
+
+
+def _errors_of(exc: Exception) -> List[Dict[str, Any]]:
+    """A pydantic validation error's list of errors; empty for anything
+    else."""
+    try:
+        return list(exc.errors())                        # type: ignore[attr-defined]
+    except Exception:                                    # noqa: BLE001
+        return []
+
+
+def _error_text(exc: Exception, errors: Sequence[Dict[str, Any]]) -> str:
+    """The first few validation errors as ``where: what``."""
+    if not errors:
+        return f"{type(exc).__name__}: {exc}"[:300]
+    parts = [f"{'.'.join(str(p) for p in e.get('loc') or ()) or 'answer'}: "
+             f"{e.get('msg', '')}" for e in errors[:3]]
+    more = len(errors) - 3
+    return "; ".join(parts) + (f"; and {more} more" if more > 0 else "")
+
+
+def _drop_keys(value: Dict[str, Any], locations: Sequence[Tuple[Any, ...]]
+               ) -> Tuple[Dict[str, Any], List[str]]:
+    """A copy of ``value`` without the key at each location, and the dotted
+    paths of the keys that were there to drop."""
+    import copy
+
+    out = copy.deepcopy(value)
+    removed: List[str] = []
+    for loc in locations:
+        if not loc:
             continue
-    return None
+        node: Any = out
+        for step in loc[:-1]:
+            try:
+                node = node[step]
+            except (KeyError, IndexError, TypeError):
+                node = None
+                break
+        if isinstance(node, dict) and loc[-1] in node:
+            del node[loc[-1]]
+            removed.append(".".join(str(p) for p in loc))
+    return out, removed
 
 
 # ---------------------------------------------------------------------------
@@ -1682,7 +1827,8 @@ def engine_for(obj: Any, model: Optional[str] = None,
       page puts round it (``model`` / ``_model``) -- becomes a
       :class:`ChatModelEngine` over it (BACKLOG RI-03; on Foundry, the
       page's own ``palantir_models`` model), unless it holds a Prompter,
-      which keeps the Prompter's engine as above. A chat model is the one
+      which keeps the Prompter's engine on the page's own tier (the chat
+      model's, else the one selected on the Prompter). A chat model is the one
       model the page holds: asked for a different one (``model``, a
       Funhouse tier for the page voter), there is none, and the caller
       falls back to the one engine it has;
@@ -1707,7 +1853,9 @@ def engine_for(obj: Any, model: Optional[str] = None,
     for name in ("prompter", "_prompter"):
         inner = getattr(obj, name, None)
         if inner is not None and _looks_like_prompter(inner):
-            return PrompterEngine(inner, model or PROMPTER_MODELS[1],
+            # A chat model holding one is the page's: its own tier.
+            tier = _page_tier(obj, inner) if _is_chat_model(obj) else ""
+            return PrompterEngine(inner, model or tier or PROMPTER_MODELS[1],
                                   meter=meter)
     if _looks_like_prompter(obj):
         return PrompterEngine(obj, model or PROMPTER_MODELS[1], meter=meter)
@@ -1716,12 +1864,24 @@ def engine_for(obj: Any, model: Optional[str] = None,
         for name in ("prompter", "_prompter"):
             inner = getattr(chat, name, None)
             if inner is not None and _looks_like_prompter(inner):
-                return PrompterEngine(inner, model or PROMPTER_MODELS[1],
-                                      meter=meter)
+                return PrompterEngine(
+                    inner, model or _page_tier(chat, inner)
+                    or PROMPTER_MODELS[1], meter=meter)
         if model and model != _chat_model_name(chat):
             return None
         return ChatModelEngine(chat, meter=meter)
     return None
+
+
+def _page_tier(chat: Any, prompter: Any) -> str:
+    """The tier the page's own model calls: the one it was built with, else
+    the one selected on the Prompter (``PrompterChatModel`` reads
+    ``prompter.chat_model`` at every call), else none."""
+    for value in (getattr(chat, "model", None),
+                  getattr(prompter, "chat_model", None)):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def _is_chat_model(obj: Any) -> bool:

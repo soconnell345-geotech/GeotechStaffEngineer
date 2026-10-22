@@ -1050,7 +1050,22 @@ blocks with data URIs, as the app's vision tools send them; a tool's picture
 follows its result in a user message, as on `PrompterEngine`. The provider's
 own reply is carried back into the conversation unchanged, so a Claude
 thinking block or a call id returns as it arrived, and the answer call gets a
-short result of its own when a pass asks again.
+result of its own when a pass asks again, saying what became of the answer:
+received; not taken because the look asked for in the same turn was run
+first; or not taken, and why (cut at the cap, empty, or the schema's own
+errors).
+
+**What is taken as an answer.** A reply cut at its output cap gives no
+answer whatever its arguments say, and neither do empty arguments: Foundry's
+classes hand back `{}` for a call cut mid-arguments, and many reading schemas
+(the narrative's, a bound report's identity, the scale labels') accept `{}`,
+so it would pass as an empty reading and be saved as finished. Both come back
+with `parsed` None, and the pass's re-ask or QA entry follows. Foundry sends
+tools without strict mode, and most reader schemas forbid keys they do not
+name, so one stray key would lose a whole reading: unknown keys are dropped,
+named in `Reply.notes` and the log, and the answer is validated again; any
+other error stands. The lab, calculation and sounding readers take a whole
+answer even when the same turn also asks to look.
 
 **One call, one request.** No engine retries inside `complete`, so the
 ingest's `CallCeiling`, the pass's own count and the engine's `CostMeter`
@@ -1074,8 +1089,9 @@ findings ran out there and the report failed with them. Now:
   justify less, and a cap costs nothing until it is used.
 - **A reply that still reaches the cap says so**: `Reply.cut_off` is true
   (`length`, `max_tokens` or an incomplete Responses status), and
-  `ChatModelEngine` logs it. A structured answer cut there does not parse,
-  so `parsed` is None, and what follows is the pass's: the label review asks
+  `ChatModelEngine` logs it. A structured answer cut there is not taken,
+  whatever its arguments say, so `parsed` is None, and what follows is the
+  pass's: the label review asks
   again for its findings briefly, then 40 pages at a time, and keeps the
   vote's labels if that fails too; the lab, calculation and sounding readers
   ask once more for the answer; a reader's item still without one is a
@@ -1120,9 +1136,12 @@ the primary to delegate is never added.
 in whatever the host built the agent with: the page's chat model inside the
 `LangChainVisionEngine` wrapper the page puts round it becomes a
 `ChatModelEngine`, and a live Prompter (an app engine holding one, or a chat
-model that does) a `PrompterEngine`. The page voter asks for Funhouse's cheap
-tier; a chat model is not one, so on a page the voter runs on the same model
-as the readers. When there is no model at all the tool says so rather than
+model that does) a `PrompterEngine`. On the Funhouse page the readers run on
+the page's own tier, the one its chat model was built with or else the one
+selected on the Prompter; an app engine holding a Prompter keeps
+`funhouse-gpt-medium` unless a tier is asked for. The page voter asks for
+Funhouse's cheap tier; a chat model with no Prompter is not one, so on a
+Foundry page the voter runs on the same model as the readers. When there is no model at all the tool says so rather than
 reading a report on a model nobody asked for.
 
 **The ceilings are in the graph, not on the spec (BACKLOG RI-02).** deepagents
@@ -1144,7 +1163,8 @@ middleware (a builder given some refuses it), and:
 - **what was cut short is counted, and not kept as finished** (the review of
   RI-02). Every call made is in the record's `model_calls`, tokens and
   dollars, the calls of a step the ceiling stopped half way included (read
-  off a tally of every reply, `graph._Tally`); the answer also gives
+  off a tally of every reply, `graph._Tally`), and so is a call that was
+  sent and failed, which has no reply to count; the answer also gives
   `ceiling_used`, the calls sent as the ceiling counted them, beside
   `model_call_ceiling`. A step during which the ceiling refused a call is not
   saved for a resumed run, even when it finished (a log's layer votes or a

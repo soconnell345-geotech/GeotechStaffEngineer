@@ -202,6 +202,16 @@ class TestWhatTheModelIsShown:
 # ---------------------------------------------------------------------------
 
 class TestWhatComesBack:
+    def test_an_answer_given_beside_a_look_is_taken(self, atterberg):
+        # The app's chat model can answer and ask to look in one turn; the
+        # answer is whole, so the look is not paid for (the review of RI-03).
+        doc, _gt = atterberg
+        engine = FakeEngine([{"tools": [("zoom_plot", {"page": 0})],
+                              "final": _atterberg_reading()}])
+        result = read_lab_sheet(doc, [0], engine)
+        assert engine.n_calls == 1
+        assert result.tests[0].result.ll == 48.0
+
     def test_a_sheet_becomes_a_typed_record(self, atterberg):
         doc, gt = atterberg
         engine = FakeEngine([{"final": _atterberg_reading()}])

@@ -188,6 +188,23 @@ class TestAskingAgainAfterTheCeiling:
         assert (tmp_path / "vision.json").is_file()
         assert (tmp_path / "bound" / "bound1" / "identity.json").is_file()
 
+    def test_a_call_sent_that_failed_is_counted_too(self, pdf, tmp_path):
+        # The bound report's identity call goes out and fails: no reply, no
+        # cost of its own, but a call the ceiling counted (the review of
+        # RI-03). The record's count is the ceiling's.
+        from report_ingest.subagent import run_ingest
+        from report_ingest.tests.test_graph import full_script
+
+        script = full_script()
+        script[5] = {"raise": RuntimeError("the gateway failed")}
+        engine = FakeEngine(script)
+        answer = run_ingest(str(pdf), [], engine=engine, out_dir=str(tmp_path),
+                            report_id="SYN", max_model_calls=1000)
+
+        assert engine.n_calls == len(script)
+        assert answer.model_calls == answer.ceiling_used == len(script)
+        assert not (tmp_path / "bound" / "bound1" / "identity.json").exists()
+
     def test_a_label_review_the_ceiling_stopped_is_asked_again(self, pdf,
                                                               tmp_path):
         from report_ingest.graph import ingest_report
