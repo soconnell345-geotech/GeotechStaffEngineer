@@ -65,7 +65,7 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
     a float, in ``values`` (``__k0``, ``__k1``...): integers become floats
     (a huge power overflows at once), and a literal such as ``1e-3`` cannot
     trip the evaluator's identifier check on its ``e``."""
-    from funhouse_agent.safe_expr import _TOO_DEEP
+    from funhouse_agent.safe_expr import _TOO_DEEP, _check_nesting
     try:
         tree = ast.parse(str(expression), mode="eval")
     except (RecursionError, MemoryError):
@@ -81,10 +81,11 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
                                          node)
             return node
 
-    # Python 3.11 walks and unparses a long chain of terms recursively and
-    # gives up near 1,000 of them: raise the limit while doing so.
+    _check_nesting(tree, "g_expression")
+    # ast.unparse recurses in pure Python, several frames per level: a tree
+    # up to the nesting cap needs a little more than the default limit.
     old_limit = sys.getrecursionlimit()
-    sys.setrecursionlimit(max(old_limit, 8000))
+    sys.setrecursionlimit(max(old_limit, 3000))
     try:
         return ast.unparse(_ToName().visit(tree))
     except (RecursionError, MemoryError):
@@ -192,6 +193,8 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
     except ValueError as exc:
         import re
         msg = str(exc).replace("g_expression", "expression")
+        if "too deeply nested" in msg:
+            msg += " Add long lists with sum()."
         msg = re.sub(r"'__k\d+',?\s*", "", msg).replace(", ]", "]")
         return {"error": msg, "expression": expr}
     except SyntaxError as exc:

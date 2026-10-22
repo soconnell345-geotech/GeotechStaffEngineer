@@ -10,7 +10,6 @@ imports these names from here.
 """
 
 import ast
-import sys
 import math
 
 _MATH_FUNCS = {
@@ -44,19 +43,31 @@ _TOO_DEEP = ("{what} is too long or too deeply nested to read; split it "
              "into shorter steps.")
 
 
+_MAX_NESTING = 200
+
+
+def _check_nesting(tree, what):
+    """Refuse a tree nested deeper than ``_MAX_NESTING`` levels (a long chain
+    of terms such as ``x+x+x+...`` nests one level per term). Measured with
+    an explicit stack: Python's own tree walks recurse, and give up (or on
+    3.11 overflow the C stack) well before a long expression is a problem."""
+    stack = [(tree, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > _MAX_NESTING:
+            raise ValueError(_TOO_DEEP.format(what=what))
+        stack.extend((c, depth + 1) for c in ast.iter_child_nodes(node))
+
+
 def _compile_deep(tree, filename, what):
-    """``compile(tree, filename, "eval")`` for a long chain of terms. Python
-    3.11 walks the tree recursively and gives up near 1,000 nested terms
-    (3.12+ does not), so the limit is raised while compiling; if the tree is
-    still too deep the user gets the normal refusal, never a RecursionError."""
-    old = sys.getrecursionlimit()
-    sys.setrecursionlimit(max(old, 8000))
+    """``compile(tree, filename, "eval")`` after the nesting check; a
+    RecursionError or MemoryError that still gets through is the same
+    refusal, never a crash."""
+    _check_nesting(tree, what)
     try:
         return compile(tree, filename, "eval")
     except (RecursionError, MemoryError):
         raise ValueError(_TOO_DEEP.format(what=what)) from None
-    finally:
-        sys.setrecursionlimit(old)
 
 
 def _bounded_pow(base, exp):
