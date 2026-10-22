@@ -872,10 +872,13 @@ class SPT(BaseModel):
 
     ``blows`` is the record AS PRINTED, one entry per increment, and an entry
     is a string when the log printed one -- ``"50/5\\""`` is a refusal, not
-    the number fifty. ``n`` is recorded only when the log PRINTS it; the
-    record does no arithmetic, because half the templates print the drives
-    and half print the N, and a reader that adds the second and third drives
-    on a four-drive rock core would invent a number.
+    the number fifty. ``n`` is the N the log PRINTS. The one exception is the
+    floor's (RI-04): where a log prints a standard SPT's three 6 in (150 mm)
+    drives and no N, the N is the second drive plus the third, as FHWA
+    NHI-06-088 Vol. I Sec. 3.7 (p. 3-51) prints the rule, and ``n_basis``
+    says so. Nothing else is computed: a four-drive record, a refusal, a
+    ring or California sampler, or drives of any other length keep ``n``
+    None, because adding two of their drives would invent a number.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -890,7 +893,15 @@ class SPT(BaseModel):
     n: Optional[int] = Field(
         default=None, ge=0,
         description="the N value the log PRINTS; None when it prints only "
-                    "the drives")
+                    "the drives (unless n_basis says it was computed)")
+    #: How ``n`` was had when the log does not print it: the rule, the drives
+    #: it was computed from and where the rule is printed. Empty when ``n``
+    #: is the N as printed (or None). A DIGGS file carries the drives for
+    #: such a record, not this N.
+    n_basis: str = Field(
+        default="",
+        description="empty when n is printed; otherwise how n was computed "
+                    "from the printed drives and the printed rule it follows")
     #: The N column as printed when what it prints is not a whole number --
     #: ``>50``, ``50+``, ``R``, ``Refusal``, ``50/5"``. ``n`` is then None and
     #: ``refusal`` True: the text is the log's own statement of a refusal,
