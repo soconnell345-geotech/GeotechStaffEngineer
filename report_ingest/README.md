@@ -944,9 +944,12 @@ imports LangChain when it is built.
 is written (`subagent.run_checklist_on`, no model call): the whole result goes
 to `report.checklist.json` beside the record (`paths.checklist`), and the
 answer's `checklist` field carries the checklist's status, the checks counted
-by result, up to six failed ones and how many items are left to judge, which
-`report_checklist(record)` then lists. A checklist that cannot run says so in
-the field; the record stands. Why on the page and not only in the pipeline:
+by result, up to six failed ones (in the checklist's own wording) and how
+many items are left to judge, which `report_checklist(record)` then lists. A
+report bound inside the one read is a record of its own and gets its own
+checklist, written beside its record; its row in `bound_documents` names the
+file and how many of its checks failed. A checklist that cannot run says so
+in the field; the record stands. Why on the page and not only in the pipeline:
 the code checks need only the record, and the other half of the checklist,
 the judgement items, needs an agent with the report in front of it.
 
@@ -1023,6 +1026,79 @@ one document sharing one library row — which it says out loud, so a folder of
 than files, because a report bound inside a report is a row of its own; the
 index counts them in a `Bound in` column.
 
+## The engines (`engine.py`)
+
+Every pass is written against one method, `complete(messages, system=,
+tools=, images=, output_format=, max_tokens=)`, over neutral message blocks.
+Three engines implement it: `ClaudeEngine` (the Claude API, for development),
+`PrompterEngine` (Funhouse's Prompter, and the shim the Foundry stage runs of
+October 2026 used) and, since BACKLOG RI-03, `ChatModelEngine`: any LangChain
+chat model, which is how a report is read on the app's own page. On Foundry
+the page's model is a `palantir_models` class
+(`webapp/palantir_sdk_engine.py`, GPT or Claude).
+
+**How `ChatModelEngine` calls the model.** A pass's tools are bound with
+`bind_tools`. A structured answer comes back as a call to an `answer` tool
+whose arguments are the answer, because Foundry's model classes take no
+`response_format`; they take no `tool_choice` either, so the call cannot be
+forced on the wire. The answer tool is offered beside the pass's own tools
+(alone when there are none), its schema is `strict_schema`'s, the system
+prompt says to call it, and an answer written out as JSON text is parsed as
+well. A reply with neither comes back with `parsed` None, as on every engine,
+and the pass's own re-ask or QA entry follows. Pictures go in as `image_url`
+blocks with data URIs, as the app's vision tools send them; a tool's picture
+follows its result in a user message, as on `PrompterEngine`. The provider's
+own reply is carried back into the conversation unchanged, so a Claude
+thinking block or a call id returns as it arrived, and the answer call gets a
+result of its own when a pass asks again, saying what became of the answer:
+received; not taken because the look asked for in the same turn was run
+first; or not taken, and why (cut at the cap, empty, or the schema's own
+errors).
+
+**What is taken as an answer.** A reply cut at its output cap gives no
+answer whatever its arguments say, and neither do empty arguments: Foundry's
+classes hand back `{}` for a call cut mid-arguments, and many reading schemas
+(the narrative's, a bound report's identity, the scale labels') accept `{}`,
+so it would pass as an empty reading and be saved as finished. Both come back
+with `parsed` None, and the pass's re-ask or QA entry follows. Foundry sends
+tools without strict mode, and most reader schemas forbid keys they do not
+name, so one stray key would lose a whole reading: unknown keys are dropped,
+named in `Reply.notes` and the log, and the answer is validated again; any
+other error stands. The lab, calculation and sounding readers take a whole
+answer even when the same turn also asks to look.
+
+**One call, one request.** No engine retries inside `complete`, so the
+ingest's `CallCeiling`, the pass's own count and the engine's `CostMeter`
+all see the same number; tokens come off the reply's `usage_metadata`, the
+cached input apart. Foundry bills by enrollment, so a run there reports
+tokens and no dollars.
+
+### At the output cap (BACKLOG RI-19)
+
+The reader calls used to stop at 16,000 output tokens, which on a reasoning
+model holds the reasoning as well as the answer; one long report's label
+findings ran out there and the report failed with them. Now:
+
+- **`ChatModelEngine` sends no cap of its own.** Every call kind gets the
+  model's own, the one the host built it with: 32,000 tokens on the app
+  (`webapp.engine_config.DEFAULT_MAX_TOKENS`, `GEOTECH_WEBAPP_MAX_TOKENS` to
+  change), chosen there within each production model's documented output
+  limit. A call that names a cap gets it, never above the model's own.
+- **`PrompterEngine` and `ClaudeEngine` default to the same 32,000**
+  (`engine.DEFAULT_MAX_TOKENS`). No call kind is known to be short enough to
+  justify less, and a cap costs nothing until it is used.
+- **A reply that still reaches the cap says so**: `Reply.cut_off` is true
+  (`length`, `max_tokens` or an incomplete Responses status), and
+  `ChatModelEngine` logs it. A structured answer cut there is not taken,
+  whatever its arguments say, so `parsed` is None, and what follows is the
+  pass's: the label review asks
+  again for its findings briefly, then 40 pages at a time, and keeps the
+  vote's labels if that fails too; the lab, calculation and sounding readers
+  ask once more for the answer; a reader's item still without one is a
+  `skipped` QA entry for that item and the report goes on. Triage, one short
+  answer over the whole report, is the one call whose failure still stops
+  the report. Nothing here special-cases a report.
+
 ## The sub-agent, and how it is gated (`subagent.py`)
 
 The primary agent must never try to read a 400-page report. Its document tools
@@ -1040,8 +1116,9 @@ On the GeotechStaffEngineer page the pair follows `GEOTECH_REPORT_INGEST`
 explicit `True` or `False` wins); it is never on the Document Review page
 (RI-34, RI-35). A report's outputs go to `report_ingest/<file name>` in the
 conversation's own folder (the folder bound to the turn), from the tool and
-the sub-agent alike. Where the app's own engine holds no Prompter (Foundry's
-chat models) the ingest has no engine and says so (BACKLOG RI-03).
+the sub-agent alike. The ingest runs on the page's own chat model, on
+Foundry its `palantir_models` class (`ChatModelEngine`, BACKLOG RI-03; see
+"The engines" below); where there is no model to run on, it says so.
 
 That adds the `report_ingest(source, questions="")` primary tool and a
 `CompiledSubAgent` — a one-node LangGraph that runs `ingest_report` and returns
@@ -1055,10 +1132,17 @@ the cluster installs from PyPI and has resolved older than the pin before. On
 an older planlens the tool is never advertised and the prompt line that tells
 the primary to delegate is never added.
 
-**The engine is the app's own.** `report_ingest.engine.engine_for` digs the
-live Prompter out of whatever the host built the agent with; when there is
-none, the tool says so rather than reading a report on a model nobody asked
-for.
+**The engine is the app's own.** `report_ingest.engine.engine_for` finds it
+in whatever the host built the agent with: the page's chat model inside the
+`LangChainVisionEngine` wrapper the page puts round it becomes a
+`ChatModelEngine`, and a live Prompter (an app engine holding one, or a chat
+model that does) a `PrompterEngine`. On the Funhouse page the readers run on
+the page's own tier, the one its chat model was built with or else the one
+selected on the Prompter; an app engine holding a Prompter keeps
+`funhouse-gpt-medium` unless a tier is asked for. The page voter asks for
+Funhouse's cheap tier; a chat model with no Prompter is not one, so on a
+Foundry page the voter runs on the same model as the readers. When there is no model at all the tool says so rather than
+reading a report on a model nobody asked for.
 
 **The ceilings are in the graph, not on the spec (BACKLOG RI-02).** deepagents
 uses a compiled sub-agent's runnable AS PROVIDED — for a spec carrying a
@@ -1074,8 +1158,24 @@ middleware (a builder given some refuses it), and:
   60–897 calls a whole report took on Foundry. A call past it is refused before
   it is sent; what it would have served is a `skipped` QA entry, the record is
   written with what was read, the answer carries `ceiling_reached`, and
-  delegating the same report again resumes from the items already saved.
+  delegating the same report again resumes from the steps already saved.
   `Budgets` still caps each reader;
+- **what was cut short is counted, and not kept as finished** (the review of
+  RI-02). Every call made is in the record's `model_calls`, tokens and
+  dollars, the calls of a step the ceiling stopped half way included (read
+  off a tally of every reply, `graph._Tally`), and so is a call that was
+  sent and failed, which has no reply to count; the answer also gives
+  `ceiling_used`, the calls sent as the ceiling counted them, beside
+  `model_call_ceiling`. A step during which the ceiling refused a call is not
+  saved for a resumed run, even when it finished (a log's layer votes or a
+  plot check take a refused call as their own failure and the reader goes
+  on): what it read is in this record, a `partial` QA entry says so, and
+  asking again reads it again. The same holds for the vision voter (its
+  refusal is a note) and the label review (a `partial` entry): neither is
+  saved, so asking again runs them again. A bound report's identity call
+  that never answered is not saved either. **A reader the ceiling stopped
+  starts over when asked again, and its calls are paid again**: its
+  conversation with the model is not kept, only finished results are;
 - **the guard's point**, real files in the conversation's folder: the app
   passes an `out_dir_factory` that writes to `report_ingest/<file name>` in the
   folder bound to the turn, the same place the tool writes, named after the
@@ -1376,7 +1476,8 @@ with a `bound.short_run` note.
 the date, the document type and how it is bound in, all of it printed on those
 pages or empty. It is cached in the child's folder, so a resumed run does not
 pay it twice, and a call that fails leaves the identity empty with a QA entry
-rather than losing the child. The vision voter and the log-template recogniser
+rather than losing the child; a call that failed (or the ceiling refused) is
+not cached, so a resumed run asks again. The vision voter and the log-template recogniser
 are NOT re-run: they already answered about these pages, and a page's picture
 does not change when you stop calling it an appendix. The rules ARE re-run,
 over the child's pages rebased to zero — which is what makes its cover a cover

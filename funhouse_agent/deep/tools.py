@@ -717,11 +717,12 @@ def make_report_ingest_tool(
     rather than trusted from a version number — the same rule the document
     tools follow.
 
-    ``engine`` is whatever the host built the agent with; the live Prompter
-    inside it becomes the ingest's engine through
-    :func:`report_ingest.engine.engine_for`. With no engine to be found the
-    tool is still built and says so when called, which is a better answer
-    than a missing tool the model then invents a workaround for.
+    ``engine`` is whatever the host built the agent with; the page's chat
+    model inside it (on Foundry, BACKLOG RI-03), or a live Prompter, becomes
+    the ingest's engine through :func:`report_ingest.engine.engine_for`.
+    With no engine to be found the tool is still built and says so when
+    called, which is a better answer than a missing tool the model then
+    invents a workaround for.
 
     ``label_policy`` and ``review_mode`` are the ingest's page vote, passed
     straight through to :func:`report_ingest.graph.ingest_report`. The
@@ -753,8 +754,9 @@ def make_report_ingest_tool(
         ingest_engine = engine_for(engine)
         # The page-label vote's second voter looks at EVERY page, so it runs
         # on the cheapest tier the deployment has rather than on the tier
-        # the readers use; on a host whose engine is not a Prompter this is
-        # None and the graph falls back to the one engine it has.
+        # the readers use; on a host whose engine is not a Prompter (the
+        # page's chat model) this is None and the graph falls back to the
+        # one engine it has.
         vision_engine = engine_for(engine, model=VISION_TIER)
         if ingest_engine is None:
             return json.dumps({

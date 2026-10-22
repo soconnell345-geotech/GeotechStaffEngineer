@@ -32,6 +32,10 @@ class FakeEngine:
         the model asks for those tool calls;
     ``{"final": <object>}``
         the model answers, and the object becomes ``reply.parsed``;
+    ``{"tools": [...], "final": <object>}``
+        both at once: an answer and a look in one turn, as
+        ``ChatModelEngine`` returns a turn that calls the answer tool beside
+        another;
     ``{"text": "..."}``
         the model answers in prose with nothing parsed;
     ``{"raise": exc}``
@@ -105,6 +109,7 @@ class FakeEngine:
             return Reply(
                 text=turn.get("text", ""),
                 tool_calls=calls,
+                parsed=turn.get("final"),
                 stop_reason="tool_use",
                 usage=self.usage,
                 model=self.model,

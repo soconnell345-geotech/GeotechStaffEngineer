@@ -283,6 +283,16 @@ class TestTheReader:
         # Nothing was dropped: the floor's series is the record's.
         assert result.investigation.cpt.n_points == len(gt.series)
 
+    def test_an_answer_given_beside_a_look_is_taken(self, tabulated):
+        # The app's chat model can answer and ask to look in one turn; the
+        # answer is whole, so the look is not paid for (the review of RI-03).
+        doc, gt = tabulated
+        engine = FakeEngine([{"tools": [("zoom_plot", {"page": 0})],
+                              "final": _reading(points=[])}])
+        result = read_sounding(doc, [0], engine, kind="cpt", report_id="RXX")
+        assert engine.n_calls == 1 and result.model_calls == 1
+        assert result.investigation.cpt.n_points == len(gt.series)
+
     def test_the_brief_says_which_shape_the_sheet_is(self, tabulated):
         doc, _gt = tabulated
         engine = FakeEngine([{"final": _reading(points=[])}])

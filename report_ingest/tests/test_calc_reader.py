@@ -502,6 +502,18 @@ class TestTheLoop:
         assert engine.n_calls == 1 and result.model_calls == 1
         assert result.calculation.pages == [0]
 
+    def test_an_answer_given_beside_a_look_is_taken(self, spreadsheet):
+        # The app's chat model can answer and ask to look in one turn; the
+        # answer is whole, so the look is not paid for (the review of RI-03).
+        doc, _gt = spreadsheet
+        engine = FakeEngine([{"tools": [("zoom_plot", {"page": 0})],
+                              "final": _reading()}])
+
+        result = read_calculation(doc, [0], engine, report_id="SYN")
+
+        assert engine.n_calls == 1 and result.tool_calls == 0
+        assert result.calculation.pages == [0]
+
     def test_the_tool_is_offered_and_withdrawn_on_the_last_call(
             self, plotted):
         doc, gt = plotted

@@ -140,7 +140,7 @@ __all__ = ["triage", "review_labels", "classify_pages_by_vision",
            "run_folder", "build_report_ingest_subagent",
            "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
            "ReportRecord", "Investigation", "LabTest", "score_on_cluster",
-           "PrompterEngine", "ClaudeEngine", "CostMeter"]
+           "PrompterEngine", "ClaudeEngine", "ChatModelEngine", "CostMeter"]
 
 
 def __getattr__(name: str) -> Any:
@@ -321,6 +321,13 @@ def ClaudeEngine(*args: Any, **kwargs: Any):  # noqa: N802 - a class in effect
     """
     from report_ingest.engine import ClaudeEngine as _ClaudeEngine
     return _ClaudeEngine(*args, **kwargs)
+
+
+def ChatModelEngine(*args: Any, **kwargs: Any):  # noqa: N802 - a class
+    """:class:`report_ingest.engine.ChatModelEngine`, imported on first use:
+    the ingest on any LangChain chat model, the page's own (BACKLOG RI-03)."""
+    from report_ingest.engine import ChatModelEngine as _ChatModelEngine
+    return _ChatModelEngine(*args, **kwargs)
 
 
 def CostMeter(*args: Any, **kwargs: Any):     # noqa: N802 - a class in effect

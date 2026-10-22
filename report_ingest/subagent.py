@@ -56,6 +56,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
+# Defined beside the engines, which the graph sees; the ceiling raises it.
+from report_ingest.engine import CallCeilingReached
+
 __all__ = [
     "build_report_ingest_subagent", "build_report_ingest_graph",
     "run_ingest", "diggs_verdict", "IngestSummary", "parse_request",
@@ -99,10 +102,6 @@ CHECKLIST_NAME = "report.checklist.json"
 #: the file beside the record has them all.
 CHECKLIST_LINES = 6
 CHECKLIST_CHARS = 240
-
-
-class CallCeilingReached(RuntimeError):
-    """A model call refused because the delegation's ceiling was reached."""
 
 
 class CallCeiling:
@@ -195,16 +194,26 @@ class IngestSummary(BaseModel):
     answered: int = Field(
         default=0,
         description="how many of the standing questions this report answered")
-    model_calls: int = Field(default=0)
+    model_calls: int = Field(
+        default=0,
+        description="the model calls the record cost: this run's, a step "
+                    "cut short included, and those of results saved by an "
+                    "earlier run of the same report and reused")
     model_call_ceiling: Optional[int] = Field(
         default=None,
         description="the most model calls this delegation could spend; null "
                     "when no ceiling was set")
+    ceiling_used: Optional[int] = Field(
+        default=None,
+        description="the model calls this delegation sent, as its ceiling "
+                    "counted them: what model_call_ceiling is measured "
+                    "against; null when no ceiling was set")
     ceiling_reached: bool = Field(
         default=False,
         description="whether that ceiling stopped the run: what it stopped is "
-                    "a skipped QA entry in the record, and asking for the "
-                    "same report again resumes from what was read")
+                    "a skipped or partial QA entry in the record, and asking "
+                    "for the same report again reads those again and reuses "
+                    "what was finished")
     diggs_ok: Optional[bool] = Field(
         default=None,
         description="whether the DIGGS file passed both of its gates: "
@@ -226,8 +235,10 @@ class IngestSummary(BaseModel):
         default_factory=list,
         description="reports bound INSIDE this one, each read into its own "
                     "record: its title, the pages of this file it occupied, "
-                    "what it holds and where its record was written. "
-                    "Nothing of theirs is in the counts above")
+                    "what it holds and where its record was written, and "
+                    "with the checklist on its own checklist file and how "
+                    "many of its checks failed. Nothing of theirs is in the "
+                    "counts above")
     summary: str = Field(
         default="", description="the first lines of the summary page")
     answers: List[Dict[str, str]] = Field(
@@ -287,12 +298,26 @@ def run_checklist_on(record: Any, out_dir: Any) -> Dict[str, Any]:
     rows = result.get("code_checks") or []
     counts = {status: sum(1 for row in rows if row.get("status") == status)
               for status in ("pass", "fail", "unsure", "not_run")}
-    failed = [f"{row.get('id')}: {row.get('detail', '')}"[:CHECKLIST_CHARS]
+    # The checklist's own wording, as checklist.failed_lines() prints it.
+    failed = [f"{row.get('text') or row.get('id')} -> "
+              f"{row.get('detail', '')}"[:CHECKLIST_CHARS]
               for row in rows if row.get("status") == "fail"]
     return {"status": result.get("status"), "counts": counts,
             "failed": failed[:CHECKLIST_LINES],
             "to_judge": len(result.get("for_you_to_judge") or []),
             "path": path}
+
+
+def _bound_checklist(checked: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    """A bound report's checklist, as its row in the answer carries it: the
+    file, and how many checks failed (or why it did not run)."""
+    if not checked:
+        return {}
+    if checked.get("error"):
+        return {"checklist": str(checked["error"])}
+    return {"checklist": str(checked.get("path") or ""),
+            "checklist_failed": str((checked.get("counts") or {})
+                                    .get("fail", 0))}
 
 
 def diggs_verdict(qa: Sequence[Any]) -> Optional[bool]:
@@ -339,7 +364,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
 
     ``checklist`` runs the report review checklist's code checks on the
     record just written (:func:`run_checklist_on`; no model call) and puts
-    the counts and the failures in the answer (BACKLOG RI-35).
+    the counts and the failures in the answer (BACKLOG RI-35); each report
+    bound inside this one gets its own, beside its own record.
     """
     from report_ingest.graph import ingest_report, output_paths
 
@@ -360,10 +386,19 @@ def run_ingest(source: str, questions: Sequence[str], *,
     counts = record.counts()
     diggs_ok = diggs_verdict(record.qa)
     checked = None
+    bound_checked: Dict[str, Dict[str, Any]] = {}
     if checklist:
         checked = run_checklist_on(record, out_dir)
         if checked.get("path"):
             paths = dict(paths, checklist=checked.pop("path"))
+        # A report bound inside this one is a record of its own, and gets
+        # its own checklist beside it.
+        for row in record.bound_documents:
+            if row.read and row.record_path:
+                child = os.path.normpath(os.path.join(str(out_dir),
+                                                      row.record_path))
+                bound_checked[row.bound_id] = run_checklist_on(
+                    child, os.path.dirname(child))
     from report_ingest.writers import title_of
     return IngestSummary(
         report=title_of(record),
@@ -379,6 +414,7 @@ def run_ingest(source: str, questions: Sequence[str], *,
                      + record.natural_hazards.answered()),
         model_calls=record.document.model_calls,
         model_call_ceiling=ceiling.limit if ceiling is not None else None,
+        ceiling_used=ceiling.used if ceiling is not None else None,
         ceiling_reached=bool(ceiling is not None and ceiling.reached),
         label_split_pages=record.document.label_split_pages,
         label_disagreements=sum(1 for entry in record.qa
@@ -398,7 +434,8 @@ def run_ingest(source: str, questions: Sequence[str], *,
                       f"{row.counts.get('lab_tests', 0)} laboratory test(s)"
                       if row.read else "not read; see the QA section",
              "record": os.path.join(str(out_dir), row.record_path)
-                       if row.record_path else ""}
+                       if row.record_path else "",
+             **_bound_checklist(bound_checked.get(row.bound_id))}
             for row in record.bound_documents],
         summary=_head(paths.get("summary", "")),
         checklist=checked,
@@ -477,10 +514,12 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
     """A one-node LangGraph that runs the ingest and answers with a summary.
 
     ``engine_factory`` is called once per run and must return an ingest
-    engine -- on the cluster a
-    :class:`~report_ingest.engine.PrompterEngine` over the app's live
-    Prompter. It is a factory rather than an engine so that each run gets its
-    own cost meter and nothing is held across turns.
+    engine -- on a page a :class:`~report_ingest.engine.ChatModelEngine`
+    over the page's own chat model (Foundry's, BACKLOG RI-03), on the
+    cluster a :class:`~report_ingest.engine.PrompterEngine` over the app's
+    live Prompter -- or None, and the answer then says there is none. It is
+    a factory rather than an engine so that each run gets its own cost meter
+    and nothing is held across turns.
 
     ``out_dir_factory`` decides where a report's outputs go, given the file
     as it was named (a path or an attachment key); the default is a folder
@@ -577,8 +616,9 @@ def build_report_ingest_graph(engine_factory: Callable[[], Any], *,
                if answer.bound_documents else "")
             + (f" The ceiling of {answer.model_call_ceiling} model calls for "
                f"one ingest was reached, so some passes or items were not "
-               f"read (each is a skipped QA entry); asking for the same "
-               f"report again resumes from what was read."
+               f"read or were cut short (each is a skipped or partial QA "
+               f"entry); asking for the same report again reads those again "
+               f"and reuses what was finished."
                if answer.ceiling_reached else "")
             + _checklist_text(answer))
         return {"messages": [AIMessage(content=text)],
@@ -625,6 +665,9 @@ def _checklist_text(answer: IngestSummary) -> str:
     if checked.get("to_judge"):
         text += (f" {checked['to_judge']} item(s) need judgement: "
                  f"report_checklist on this record lists them.")
+    if any(row.get("checklist") for row in answer.bound_documents):
+        text += (" Each report bound inside this one has its own checklist "
+                 "beside its own record (bound_documents).")
     return text
 
 

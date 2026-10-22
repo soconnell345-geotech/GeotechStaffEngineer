@@ -1949,7 +1949,9 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
         model_calls += 1
         charge(reply)
         final = reply
-        if reply.tool_calls and not last:
+        # A whole answer is taken even when the same turn also asks to
+        # look: the look would cost a call to be told what it already said.
+        if reply.tool_calls and not last and reply.parsed is None:
             messages.append({"role": "assistant", "content": reply.content})
             results: List[Dict[str, Any]] = []
             for call in reply.tool_calls:
