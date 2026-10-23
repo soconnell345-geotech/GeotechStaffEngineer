@@ -372,6 +372,27 @@ class TestTheCalculationLink:
         assert record.calculations[0].linked_investigation_id == "B-1"
         assert record.calculations[0].subject == "Settlement beneath B-1"
 
+    def test_a_zero_padded_subject_links_to_the_hole(self):
+        record = reconcile(build_record(
+            investigations=[boring("B-01"), pit()],
+            calculations=[_calc("settlement", subject="Settlement at B-1")]))
+
+        assert record.calculations[0].linked_investigation_id == "B-01"
+
+    def test_a_subject_is_not_linked_where_two_logs_share_the_key(self):
+        # "B-07" and "B-7" logged as two holes are two holes: the zero fold
+        # does not choose between them (an exact spelling still does).
+        both = [boring("B-07"), boring("B-7"), pit()]
+        loose = reconcile(build_record(
+            investigations=both,
+            calculations=[_calc("settlement", subject="Settlement at B-007")]))
+        exact = reconcile(build_record(
+            investigations=[boring("B-07"), boring("B-7"), pit()],
+            calculations=[_calc("settlement", subject="Settlement at B-7")]))
+
+        assert loose.calculations[0].linked_investigation_id == ""
+        assert exact.calculations[0].linked_investigation_id == "B-7"
+
     def test_a_subject_naming_no_hole_links_to_nothing(self):
         record = reconcile(build_record(calculations=[
             _calc("settlement", subject="the north wing mat")]))
@@ -1263,3 +1284,15 @@ class TestContinuationSheets:
         (entry,) = [e for e in _folded(first(), later).qa
                     if e.where == "B-4.sheets"]
         assert "start above" not in entry.detail and entry.rank == "changed"
+
+
+class TestTheSummaryRowToSheetMatch:
+    """A sheet is checked against a summary row of the same hole, B-1 or B-01."""
+
+    def test_a_zero_padded_sheet_is_the_rows_hole(self):
+        from report_ingest.reconciler import _sheets_for
+        row = summary_table().result.rows[0]            # B-1, S-1, 2 ft
+        padded = atterberg(investigation="B-01")
+        other = atterberg(investigation="B-10")
+
+        assert _sheets_for(row, [padded, other]) == [padded]

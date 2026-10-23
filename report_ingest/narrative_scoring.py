@@ -393,7 +393,7 @@ def _list_overlap(field_name: str, hand: Any, got: Any,
     TWO KINDS OF LIST, judged differently, because they are two kinds of
     thing. ``boringDictionary`` and ``testPitDictionary`` are IDENTIFIERS and
     are compared exactly, folded the way the reconciler folds a hole's name,
-    so that B-1, "B 1" and b1 are one hole and B-1 and B-12 are two. The rest
+    so that B-1, "B 1", b1 and B-01 are one hole and B-1 and B-12 are two. The rest
     are PROSE -- the hand-written ``bearingCapacity`` runs to fifteen words an
     item and ``recommendedFoundations`` to nineteen -- and are compared item by
     item with the same rule strings get, paired one to one so a single truth
@@ -417,9 +417,9 @@ def _list_overlap(field_name: str, hand: Any, got: Any,
     if not left and not right:
         return 1.0, 0, 0, 0, 0
     if field_name in _IDENTIFIER_LISTS:
-        from report_ingest.reconciler import fold_id
-        wanted = {fold_id(item) for item in left}
-        given = {fold_id(item) for item in right}
+        from report_ingest.reconciler import hole_key
+        wanted = {hole_key(item) for item in left}
+        given = {hole_key(item) for item in right}
         hits = len(wanted & given)
         union = len(wanted | given)
         return ((hits / union if union else 1.0), hits, len(given),

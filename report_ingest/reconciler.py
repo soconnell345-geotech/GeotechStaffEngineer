@@ -902,15 +902,20 @@ def _link_calculations(record: ReportRecord, qa: List[QAEntry]) -> None:
     ordinary case -- most calculations are for a structure.
     """
     by_id: Dict[str, Investigation] = {}
+    by_key: Dict[str, List[Investigation]] = {}
     for inv in record.investigations:
         key = fold_id(inv.investigation_id)
         if key:
             by_id.setdefault(key, inv)
+            by_key.setdefault(hole_key(inv.investigation_id), []).append(inv)
     if not by_id:
         return
+    # The zero fold names a hole only when one logged spelling has its key.
+    unique = {key: invs[0] for key, invs in by_key.items()
+              if len({fold_id(i.investigation_id) for i in invs}) == 1}
     for calc in record.calculations:
         for token in _SUBJECT_ID.findall(calc.subject or ""):
-            inv = by_id.get(fold_id(token))
+            inv = by_id.get(fold_id(token)) or unique.get(hole_key(token))
             if inv is not None:
                 calc.linked_investigation_id = inv.investigation_id
                 break
@@ -1125,10 +1130,10 @@ def _cross_check_summary_table(record: ReportRecord,
 def _sheets_for(row: Any, sheets: Sequence[LabTest]) -> List[LabTest]:
     """The sheets that report on the same specimen as this row."""
     out: List[LabTest] = []
-    printed = fold_id(row.investigation_id)
+    printed = hole_key(row.investigation_id)
     depth = depth_m(row.depth_top)
     for sheet in sheets:
-        if printed and fold_id(sheet.investigation_id) != printed:
+        if printed and hole_key(sheet.investigation_id) != printed:
             continue
         if depth is not None:
             got = depth_m(sheet.depth_top)

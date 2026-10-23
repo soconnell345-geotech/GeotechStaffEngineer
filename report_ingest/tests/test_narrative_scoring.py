@@ -95,6 +95,12 @@ class TestComparingOneAnswer:
                               ["B-9", "B-8"])
         assert LIST_HIT_JACCARD <= 0.67
 
+    def test_a_hole_list_ignores_leading_zeros_but_not_tens(self):
+        assert same_value("boringDictionary", ["B-1", "B-2"],
+                          ["B-01", "B-02"])
+        assert not same_value("boringDictionary", ["B-1", "B-2"],
+                              ["B-10", "B-20"])
+
     def test_null_against_anything_is_a_miss_and_null_against_null_is_not(
             self):
         assert same_value("boringCount", None, None)
