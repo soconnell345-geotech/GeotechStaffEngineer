@@ -853,6 +853,112 @@ class TestTheCalcStage:
         assert scored["n_calcs"] == 0
         assert "R99 is not in the reports folder" in             scored["failures"]["settlement__R99_p41"]
 
+    @staticmethod
+    def _picture_run(tmp_path, monkeypatch, turns):
+        """``_run_calc`` on the two-page printout, reading for real on a
+        fake engine in the Prompter's place; returns ``(run, add_truth,
+        out)``."""
+        pytest.importorskip("pymupdf")
+        import report_ingest.engine as engine_module
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.cluster_scoring import _run_calc
+        from report_ingest.tests.calc_fixtures import build_two_page_printout
+        from report_ingest.tests.fake_engine import FakeEngine
+        from report_ingest.tests.test_calc_reader import _open
+
+        def fake_engine(prompter, model, meter=None, **kwargs):
+            engine = FakeEngine(turns(), name=model)
+            engine.served_by = "fake-deployment"
+            return engine
+
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        monkeypatch.setattr(engine_module, "PrompterEngine", fake_engine)
+        pdf = build_two_page_printout().pdf
+        truth_dir = tmp_path / "calc"
+        truth_dir.mkdir()
+        out = tmp_path / "out"
+        (out / "calc").mkdir(parents=True)
+
+        class _Corpus:
+            def present_ids(self):
+                return ["R90"]
+
+            def open_report(self, *a, **k):
+                return _open(pdf, tmp_path)
+
+        def add_truth(calc_id):
+            (truth_dir / f"{calc_id}.json").write_text(json.dumps({
+                "id": calc_id, "report": "R90", "kind": "lateral_pile",
+                "pages": [0, 1]}), encoding="utf-8")
+
+        def run():
+            return _run_calc(_Corpus(), object(), "m", out, truth_dir,
+                             budget=2, redo=False, max_calcs=None,
+                             open_reports=None)
+
+        return run, add_truth, out
+
+    def test_the_picture_arm_is_recorded_on_off_and_mixed(self, tmp_path,
+                                                          monkeypatch):
+        """RI-67: the run files and RESULTS say which arm of
+        GEOTECH_INGEST_CALC_PAGE_IMAGES each run read in, as the lab stage
+        does its switch, and a resumed run that mixed the two says so."""
+        from report_ingest.calc_reader import use_page_images
+        from report_ingest.cluster_scoring import _render_calc
+        from report_ingest.tests.test_calc_reader import _reading
+
+        run, add_truth, out = self._picture_run(
+            tmp_path, monkeypatch,
+            lambda: [{"final": _reading(kind="lateral_pile")}])
+        add_truth("lateral_pile__R90_p0")
+        with use_page_images():
+            on = run()
+        saved = json.loads((out / "calc" / "lateral_pile__R90_p0.json")
+                           .read_text(encoding="utf-8"))
+        assert saved["page_images"] is True
+        assert saved["model"] == "m" and "engine" not in saved  # as before
+        assert on["page_images"] == [True]
+        assert on["per_calc"][0]["page_images"] is True
+        assert ("Every page as a picture (RI-17, "
+                "GEOTECH_INGEST_CALC_PAGE_IMAGES): on.") in \
+            "\n".join(_render_calc(on))
+
+        add_truth("lateral_pile__R90_p7")    # read with the switch off
+        mixed = run()
+        assert json.loads((out / "calc" / "lateral_pile__R90_p7.json")
+                          .read_text(encoding="utf-8"))["page_images"] \
+            is False
+        assert mixed["page_images"] == [False, True]
+        text = "\n".join(_render_calc(mixed))
+        assert "GEOTECH_INGEST_CALC_PAGE_IMAGES): off and on -- MIXED" in text
+
+    def test_a_failed_reading_is_put_in_the_arm_it_was_asked_for(
+            self, tmp_path, monkeypatch):
+        from report_ingest.calc_reader import use_page_images
+
+        run, add_truth, out = self._picture_run(tmp_path, monkeypatch,
+                                                lambda: [])
+        add_truth("lateral_pile__R90_p0")
+        with use_page_images():
+            scored = run()
+        saved = json.loads((out / "calc" / "lateral_pile__R90_p0.json")
+                           .read_text(encoding="utf-8"))
+        assert saved["after"]["error"]          # the reading did fail
+        assert saved["page_images"] is True
+        assert scored["page_images"] == [True]
+
+    def test_a_run_file_from_before_the_switch_was_recorded_says_so(self):
+        """Not 'off': RI-17's arms ran before RI-67 recorded them."""
+        from report_ingest.cluster_scoring import _render_calc, _score_calc
+
+        scored = _score_calc(
+            {"settlement__R18_p41": _calc_row(
+                "settlement__R18_p41", "R18", "settlement", "open")},
+            {}, "m", ())
+        assert scored["page_images"] == [None]
+        text = "\n".join(_render_calc(scored))
+        assert "GEOTECH_INGEST_CALC_PAGE_IMAGES): not recorded;" in text
+
 
 # ---------------------------------------------------------------------------
 # the narrative stage (WP4)
@@ -2793,3 +2899,320 @@ def test_a_reused_run_without_saved_changes_keeps_only_final_labels(tmp_path):
     cs._reuse_label_run(folder, runs, "R02")
     saved = json.loads((folder / "review.json").read_text(encoding="utf-8"))
     assert "changes" not in saved
+
+
+# ---------------------------------------------------------------------------
+# a chat model in the Prompter's place (BACKLOG RI-67)
+# ---------------------------------------------------------------------------
+
+from report_ingest.engine import (  # noqa: E402
+    PrompterEngine as _RealPrompterEngine,
+)
+
+
+@pytest.fixture()
+def chat_cluster(ingest_cluster, monkeypatch):
+    """``ingest_cluster`` for a run on a chat model: the Prompter's engine is
+    a class again (``engine_for`` checks against it), and one that fails the
+    item it is built for, because a chat-model run must not build one."""
+    import report_ingest.engine as engine_module
+
+    class _NoPrompter(_RealPrompterEngine):
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("a chat-model run built a Prompter engine")
+
+    monkeypatch.setattr(engine_module, "PrompterEngine", _NoPrompter)
+    return ingest_cluster
+
+
+class _Said:
+    """A pass's answer as the stage saves it: only ``to_dict`` is read."""
+
+    def __init__(self, blob):
+        self._blob = blob
+
+    def to_dict(self):
+        return dict(self._blob)
+
+
+def _stub_label_passes(monkeypatch, handed):
+    """Triage and the label review as stubs that keep the engine they were
+    handed and call nothing: which engine that is is what is under test."""
+    import report_ingest.label_review as label_review
+    import report_ingest.triage as triage_module
+
+    blob = _run_blob("R36", 22, {3: "plan"}, {3: "plan"})
+
+    def triage(doc, roles, outline, engine=None, facts=None):
+        handed.append(("triage", engine))
+        return _Said(blob["profile"])
+
+    def review_labels(doc, roles, outline, profile, engine=None):
+        handed.append(("review", engine))
+        return _Said(blob["review"])
+
+    monkeypatch.setattr(triage_module, "triage", triage)
+    monkeypatch.setattr(label_review, "review_labels", review_labels)
+
+
+#: The keys a labels run file has always had, in order: a Prompter run
+#: writes exactly these and nothing more.
+LABEL_RUN_KEYS = ["id", "run_date", "n_pages", "engine", "triage_model",
+                  "review_model", "served_by", "rules_labels",
+                  "rules_confidence", "profile", "review", "cost", "seconds"]
+
+
+class TestAChatModelInThePromptersPlace:
+    """A LangChain chat model -- on Foundry, Claude through the workspace's
+    own model classes -- reads in the Prompter's place, for the readers and
+    the vision pass alike; with none passed nothing changes."""
+
+    @pytest.fixture(autouse=True)
+    def _langchain(self):
+        pytest.importorskip("langchain_core")
+
+    @staticmethod
+    def _chat(name, turns=()):
+        from report_ingest.tests.chat_fixtures import (
+            ScriptedChatModel, from_turns,
+        )
+        return ScriptedChatModel(replies=from_turns(list(turns)),
+                                 model_name=name)
+
+    # -- the Prompter run is the run it always was ---------------------------
+
+    def test_a_prompter_label_run_writes_what_it_always_wrote(
+            self, ingest_cluster, monkeypatch):
+        reports_dir, out, scripts = ingest_cluster
+        handed: list = []
+        _stub_label_passes(monkeypatch, handed)
+
+        results = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=object(),
+            sets=("oos_open",), stages=("labels",))
+
+        blob = json.loads((out / "runs" / "R36.json").read_text(
+            encoding="utf-8"))
+        assert list(blob) == LABEL_RUN_KEYS
+        assert blob["engine"] == "prompter"
+        assert blob["review_model"] == blob["triage_model"] == \
+            "funhouse-gpt-high"
+        assert [engine for _, engine in handed] == scripts["engines"]
+        assert results["engine"] == "prompter"
+        assert "chat_model" not in results
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "triage and label review through Prompter" in text
+        assert "Engine:" not in text
+
+    def test_a_prompter_ingest_records_no_engine_fields(self,
+                                                        ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+
+        results = _ingest_run(ingest_cluster)
+
+        (row,) = results["ingest"]["per_report"]
+        assert row["model"] == "funhouse-gpt-high"
+        for key in ("engine", "chat_model", "vision", "triage"):
+            assert key not in row, key
+        assert [e.name for e in scripts["engines"]] == [
+            "funhouse-gpt-high", "funhouse-gpt-low"]
+        assert "engine" not in results["ingest"]
+        assert "vision_model" not in results["ingest"]
+
+    # -- a chat model reads ---------------------------------------------------
+
+    def test_the_label_passes_read_on_the_chat_model(self, chat_cluster,
+                                                     monkeypatch):
+        from report_ingest.engine import ChatModelEngine
+        reports_dir, out, scripts = chat_cluster
+        handed: list = []
+        _stub_label_passes(monkeypatch, handed)
+        reader = self._chat("made-up-reader")
+
+        results = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=None,
+            chat_model=reader, sets=("oos_open",), stages=("labels",))
+
+        assert scripts["engines"] == []          # no Prompter engine at all
+        assert [what for what, _ in handed] == ["triage", "review"]
+        for _, engine in handed:
+            assert isinstance(engine, ChatModelEngine)
+            assert engine.chat_model is reader
+        blob = json.loads((out / "runs" / "R36.json").read_text(
+            encoding="utf-8"))
+        assert blob["engine"] == "chat_model"
+        assert blob["review_model"] == blob["triage_model"] == \
+            "made-up-reader"
+        assert blob["chat_model"] == "ScriptedChatModel"
+        assert results["engine"] == "chat_model"
+        assert results["review_model"] == "made-up-reader"
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "triage and label review through a chat model" in text
+        assert "Review model `made-up-reader`" in text
+        assert "Engine: `chat_model` over `ScriptedChatModel`" in text
+
+    def test_the_vision_stage_looks_through_the_vision_chat_model(
+            self, chat_cluster, monkeypatch):
+        import report_ingest.vision_labels as vision_labels
+        from report_ingest.engine import ChatModelEngine
+        reports_dir, out, scripts = chat_cluster
+        handed: list = []
+
+        class _Seen:
+            labels: dict = {}
+            unresolved: list = []
+            model_calls = 0
+            cost: dict = {}
+
+            def to_dict(self):
+                return {"labels": {}, "unresolved": [], "qa": [], "cost": {}}
+
+        def classify(doc, engine, **kwargs):
+            handed.append(engine)
+            return _Seen()
+
+        monkeypatch.setattr(vision_labels, "classify_pages_by_vision",
+                            classify)
+        reader, looker = (self._chat("made-up-reader"),
+                          self._chat("made-up-looker"))
+
+        results = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=None,
+            chat_model=reader, vision_chat_model=looker,
+            sets=("oos_open",), stages=("vision_labels",))
+
+        (engine,) = handed
+        assert isinstance(engine, ChatModelEngine)
+        assert engine.chat_model is looker
+        blob = json.loads((out / "vision" / "R36.json").read_text(
+            encoding="utf-8"))
+        assert (blob["model"], blob["engine"], blob["chat_model"]) == (
+            "made-up-looker", "chat_model", "ScriptedChatModel")
+        seen = results["vision_labels"]
+        assert (seen["model"], seen["engine"]) == ("made-up-looker",
+                                                   "chat_model")
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Vision model `made-up-looker`" in text
+        assert "Engine: `chat_model` over `ScriptedChatModel`" in text
+
+    def test_a_whole_ingest_reads_and_votes_on_two_chat_models(
+            self, chat_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = chat_cluster
+        reader = self._chat("made-up-reader", tg.main_script())
+        looker = self._chat("made-up-looker", tg.vision_turns())
+
+        results = _ingest_run(chat_cluster, prompter=None,
+                              chat_model=reader, vision_chat_model=looker)
+
+        ingest = results["ingest"]
+        assert ingest["failures"] == {}
+        assert scripts["engines"] == []
+        assert len(reader.requests) == len(tg.main_script())
+        assert len(looker.requests) == len(tg.vision_turns())
+        assert not reader.replies and not looker.replies
+        (row,) = ingest["per_report"]
+        assert row["diggs"]["written"] == "yes"
+        assert (row["model"], row["engine"], row["chat_model"]) == (
+            "made-up-reader", "chat_model", "ScriptedChatModel")
+        assert row["vision"] == {"model": "made-up-looker",
+                                 "engine": "chat_model",
+                                 "chat_model": "ScriptedChatModel"}
+        assert "triage" not in row          # the triage is the reader's tier
+        assert ingest["engine"] == "chat_model"
+        assert ingest["vision_model"] == "made-up-looker"
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Model `made-up-reader`" in text
+        assert ("The vision voter: `chat_model` over `ScriptedChatModel`, "
+                "model `made-up-looker`") in text
+
+    def test_a_callable_is_asked_once_for_each_model_name(self,
+                                                          chat_cluster):
+        from report_ingest.tests import test_graph as tg
+        models = {
+            "made-up-reader": self._chat("made-up-reader", tg.main_script()),
+            "made-up-looker": self._chat("made-up-looker",
+                                         tg.vision_turns())}
+        asked: list = []
+
+        def factory(name):
+            asked.append(name)
+            return models[name]
+
+        results = _ingest_run(chat_cluster, prompter=None,
+                              chat_model=factory, model="made-up-reader",
+                              vision_model="made-up-looker")
+
+        assert sorted(asked) == ["made-up-looker", "made-up-reader"]
+        (row,) = results["ingest"]["per_report"]
+        assert row["model"] == "made-up-reader"
+        assert row["vision"]["model"] == "made-up-looker"
+        assert not any(m.replies for m in models.values())
+
+    # -- what is refused, and when ------------------------------------------
+
+    @pytest.mark.parametrize("bad", [object(), lambda name: None])
+    def test_what_is_no_chat_model_is_refused_before_anything_runs(
+            self, chat_cluster, bad):
+        reports_dir, out, scripts = chat_cluster
+        with pytest.raises(ValueError, match="must be a LangChain chat model"):
+            _ingest_run(chat_cluster, prompter=None, chat_model=bad)
+        assert not (out / "ingest").exists()
+        assert scripts["engines"] == []
+
+    def test_a_stage_left_on_the_prompter_still_needs_it(self):
+        looker = self._chat("made-up-looker")
+        with pytest.raises(ValueError, match="pass the live fh_prompter"):
+            cs.score_on_cluster(reports_dir="anywhere", prompter=None,
+                                vision_chat_model=looker,
+                                stages=("ingest",))
+
+
+# ---------------------------------------------------------------------------
+# the readers' switches in the ingest's run.json (BACKLOG RI-67)
+# ---------------------------------------------------------------------------
+
+class TestTheIngestRecordsTheReadersSwitches:
+
+    @pytest.fixture(autouse=True)
+    def _no_switch_in_the_environment(self, monkeypatch):
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.lab_reader import LINK_FROM_LABEL_ENV
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        monkeypatch.delenv(LINK_FROM_LABEL_ENV, raising=False)
+
+    def test_both_are_off_by_default_and_said_so(self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+
+        (row,) = _ingest_run(ingest_cluster)["ingest"]["per_report"]
+
+        assert row["calc_page_images"] is False
+        assert row["lab_link_from_label"] is False
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert ("Every calculation page as a picture (RI-17, "
+                "GEOTECH_INGEST_CALC_PAGE_IMAGES): off.") in text
+        assert ("Specimen-label paragraph (RI-07, "
+                "GEOTECH_INGEST_LAB_LINK_FROM_LABEL): off.") in text
+
+    def test_the_calc_switch_on_is_recorded_on(self, ingest_cluster):
+        from report_ingest.calc_reader import use_page_images
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+
+        with use_page_images():
+            (row,) = _ingest_run(ingest_cluster)["ingest"]["per_report"]
+
+        assert row["calc_page_images"] is True
+        assert row["lab_link_from_label"] is False
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "GEOTECH_INGEST_CALC_PAGE_IMAGES): on." in text
+
+    def test_a_run_json_from_before_says_not_recorded(self):
+        text = "\n".join(cs._render_ingest(cs._score_ingest(
+            {"R90": {"id": "R90", "cost": {}}}, {}, "m")))
+        assert "GEOTECH_INGEST_CALC_PAGE_IMAGES): not recorded;" in text

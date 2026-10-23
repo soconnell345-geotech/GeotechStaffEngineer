@@ -455,7 +455,8 @@ the window is shown as text, and the first page and every **scanned** page
 (no text line, an optical reader's text, or text planlens flags unreliable)
 as a picture; `GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`)
 sends every page of it as a picture too, OFF by default because no run has
-measured it. The first page goes as the PNG it renders to; every picture
+measured it; the reading says which arm it ran in (`page_images` on the
+result, BACKLOG RI-67). The first page goes as the PNG it renders to; every picture
 added after it (the scanned pages, and with the switch on every page) goes as
 a JPEG of the same pixel size (`encode_for_vision`), because a scan is a
 photograph PNG stores badly and the gateway refuses a request that grows too
@@ -2343,6 +2344,21 @@ count and the four merge counts (split / kept / added / reconciled).
 `calc/<calc id>.json` holds the per-run detail and makes the stage restartable
 — a calculation that already has one is skipped.
 
+**Which pictures a run was shown is recorded** (BACKLOG RI-67). Each
+`calc/<calc id>.json` carries `page_images`: whether every page of the window
+went as a picture (`GEOTECH_INGEST_CALC_PAGE_IMAGES`, RI-17), as the reader
+itself reported it, or for a reading that failed the arm it was asked to run
+in. `RESULTS.md` says `Every page as a picture (RI-17,
+GEOTECH_INGEST_CALC_PAGE_IMAGES): off` (or `on`), the way the lab stage states
+its specimen-label switch, and flags `MIXED` when a resumed `out_dir` holds
+runs read in both arms. A run file written before this was recorded reads
+`not recorded`, not `off`: the switch existed before it was written down, so
+only that `out_dir`'s name says which arm it ran in. The ingest's `run.json`
+records the switch as the stage ran it (`calc_page_images`), with the lab
+reader's specimen-label switch beside it (`lab_link_from_label`), and its
+`RESULTS.md` block prints both; a calc item file carries `"page_images": true`
+only when the switch was on, as a lab item file does `link_from_label`.
+
 Locally, `module_work/report_ingest_harness/measure_wp5_calc.py` does the same
 scoring against the development engine, and `--floor-only` prints the before
 column with no engine, no key and no network at all.
@@ -2869,8 +2885,9 @@ Notes that matter:
   anything runs, rather than failing one report at a time deep in the set.
 - **No credential is read.** Authentication is whatever `fh_prompter` was built
   with. Nothing here touches an environment variable or a secret scope. Every
-  stage that calls a model needs `prompter=`; `vote` alone calls none and runs
-  without it (BACKLOG RI-08).
+  stage that calls a model needs `prompter=`, or a chat model in its place
+  (`chat_model=`, below); `vote` alone calls none and runs without either
+  (BACKLOG RI-08).
 - **What the visual-scales voters did is printed** (BACKLOG RI-05, G3). With
   `GEOTECH_INGEST_VISUAL_SCALES` on or off, each logs, lab and soundings run
   file records the setting and how many of its pages are scans and how many
@@ -2891,6 +2908,86 @@ Notes that matter:
   and no dollars, so read a total as a FLOOR and check Funhouse's own budget
   endpoint for the same window. A run where nothing was priced still reports
   tokens alone, exactly as it did before.
+
+### Reading on a chat model instead of the Prompter (`chat_model=`, BACKLOG RI-67)
+
+Every stage reads on the Funhouse Prompter unless it is handed a chat model.
+`chat_model=` takes a LangChain chat model, or a callable that returns one
+for a model name, and each engine is then built the way the app's pages build
+theirs: `report_ingest.engine.engine_for` makes a `ChatModelEngine` of the
+model. `chat_model` serves the readers, the triage and the label review;
+`vision_chat_model=` serves the vision pass — the `vision_labels` stage and
+the vote's vision voter inside the ingest — and defaults to `chat_model`. A
+callable is asked with `model`, `triage_model` or `vision_model` and the model
+it gives is kept for the whole run; a single chat model is used whatever those
+say. A stage reading on a chat model needs no `prompter=`; a stage left on the
+Prompter still does.
+
+**Nothing changes without one, and there is no switch.** With neither passed,
+every stage builds the `PrompterEngine` it always built and writes the run
+files and tables it always wrote; the new behaviour exists only for a caller
+who passes a chat model.
+
+**A chat-model run says so everywhere.** Each run file then records `engine`
+(`chat_model`, or `prompter` for a stage left on the Prompter), `model` as the
+model names itself rather than as it was asked for, and `chat_model`, the
+model's class. A labels run file keeps its `review_model` and `triage_model`
+and adds `chat_model`; an ingest `run.json` adds `vision` (and `triage`, where
+that was asked of another model) holding the same three fields for that
+engine. `results.json` carries them per stage, and each `RESULTS.md` block
+says `through a chat model` in its heading where it said `through Prompter`,
+with an `Engine:` line (`The vision voter:` for the ingest's vision engine).
+Something that gives no chat model is refused before any report is opened.
+
+On Foundry, Claude through the workspace's own model classes — the class the
+Foundry page uses when `GEOTECH_FOUNDRY_CLAUDE_SDK` is on (`report_ingest`
+imports none of it):
+
+```python
+from webapp.palantir_sdk_engine import PalantirClaudeChatModel
+
+claude = PalantirClaudeChatModel(model_api_name="AnthropicClaude_5_5_Opus",
+                                 max_tokens=32000)
+
+results = score_on_cluster(
+    reports_dir       = "<the reports folder>",
+    manifest          = "<the run folder>/MANIFEST.md",
+    labels_xlsx       = "<the run folder>/trial_pages_working_r2.xlsx",
+    oos_labels        = "<the run folder>/oos_labels.json",
+    out_dir           = "/tmp/report_ingest_claude_labels",
+    chat_model        = claude,      # the triage, the label review, the readers
+    vision_chat_model = claude,      # the vision pass (the default anyway)
+    stages            = ("labels", "vision_labels"),
+    vision_mode       = "sheet",
+    max_reports       = 2,           # drop this line after the first run
+)
+```
+
+Or a callable over the app's own resolver, so `model` and `vision_model` name
+the models by their Foundry API names, as the page's model picker does:
+
+```python
+import os
+os.environ["GEOTECH_FOUNDRY_CLAUDE_SDK"] = "1"   # a Claude name takes the palantir_models class
+from webapp.engine_config import resolve_engine
+
+def foundry_model(name):
+    found = resolve_engine(name)
+    if found.model is None:
+        raise RuntimeError(found.message)
+    return found.model
+
+results = score_on_cluster(
+    reports_dir  = "<the reports folder>",
+    manifest     = "<the run folder>/MANIFEST.md",
+    out_dir      = "/tmp/report_ingest_claude_ingest",
+    chat_model   = foundry_model,
+    model        = "AnthropicClaude_5_5_Opus",
+    vision_model = "AnthropicClaude_5_5_Opus",
+    stages       = ("ingest",),
+    max_reports  = 2,
+)
+```
 
 ## What the Prompter engine can and cannot do
 

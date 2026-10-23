@@ -1233,6 +1233,9 @@ class CalcReadResult:
     kept: List[Dict[str, Any]] = field(default_factory=list)
     added: List[Dict[str, Any]] = field(default_factory=list)
     reconciled: int = 0
+    #: True when every page of a window travelled as a picture
+    #: (:data:`PAGE_IMAGES_ENV`), so a run file says which arm it is.
+    page_images: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -1257,6 +1260,7 @@ class CalcReadResult:
             "kept": [dict(k) for k in self.kept],
             "added": [dict(a) for a in self.added],
             "reconciled": self.reconciled,
+            **({"page_images": True} if self.page_images else {}),
         }
 
 
@@ -2470,4 +2474,5 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
         disagreements=merge_log.disagreements,
         kept=merge_log.kept,
         added=merge_log.added,
-        reconciled=merge_log.reconciled)
+        reconciled=merge_log.reconciled,
+        page_images=every_page)
