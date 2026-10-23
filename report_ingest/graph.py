@@ -128,9 +128,9 @@ REVIEW_MODES: Tuple[str, ...] = ("disagreements", "all", "none")
 #: the one before it does, and more.
 #:
 #: ``off``
-#:     the narrative's answers only, as every run before RI-14.
+#:     the default: the narrative's answers only, as every run before RI-14.
 #: ``zeros``
-#:     the default: a count the narrative left unanswered is 0 where logs of
+#:     a count the narrative left unanswered is 0 where logs of
 #:     other kinds were read and none of this one -- the house convention that
 #:     none means 0 (``narrative_glossary`` convention 1, DRAFT), with the
 #:     appendix as the evidence. The miss run 7 measured most (cptCount null
@@ -144,12 +144,15 @@ REVIEW_MODES: Tuple[str, ...] = ("disagreements", "all", "none")
 #:     not the same as no cones pushed. This is the reader's lever 4 as
 #:     5.24.0 wrote it.
 #:
-#: Why ``zeros`` and not more: RI-14's offline measure set the log ITEMS
-#: planlens' rules find (a stand-in for the logs read) against the eight hand
-#: narrative truths. The zeros were right 6 of 6; a non-zero count or list
-#: off the logs 5 of 17 -- an appendix holds earlier investigations' logs a
-#: bound range did not catch, and a hole can be read as two items -- and
-#: overruling a narrative that was right was wrong 12 times in 13.
+#: Why ``off`` by default: new behaviour stays off until it is measured on
+#: real reads (the owner's standing rule), and none of these has been.
+#: ``zeros`` rests on a convention still marked DRAFT. RI-14's offline
+#: measure only set the log ITEMS planlens' rules find (a stand-in for the
+#: logs read) against the eight hand narrative truths: the zeros were right
+#: 6 of 6; a non-zero count or list off the logs 5 of 17 -- an appendix holds
+#: earlier investigations' logs a bound range did not catch, and a hole can
+#: be read as two items -- and overruling a narrative that was right was
+#: wrong 12 times in 13. ``zeros`` is the first to measure on real reads.
 #:
 #: Whichever runs, the reconciler has already compared the narrative's own
 #: answer with what was read and recorded every difference as a
@@ -487,7 +490,7 @@ def ingest_report(source: Any, engine: Any, *,
                   templates: Any = None,
                   ingest_bound: bool = True,
                   triage_engine: Any = None,
-                  counts_from_logs: str = "zeros",
+                  counts_from_logs: str = "off",
                   narrative_skips_bound: bool = False) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
@@ -544,7 +547,7 @@ def ingest_report(source: Any, engine: Any, *,
         the page labels did not -- is that document's and is read into its
         record only, never into this one as well.
     counts_from_logs
-        ``off``, ``zeros`` (the default), ``fill`` or ``settle``: how much
+        ``off`` (the default), ``zeros``, ``fill`` or ``settle``: how much
         of the five exploration answers the logs read decide. See
         :data:`COUNT_MODES`.
     narrative_skips_bound
@@ -640,7 +643,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
          qa: List[QAEntry], unresolved: List[Dict[str, Any]],
          di_result: Any, labelling: "_Labelling",
          children: List[Tuple[ReportRecord, str]],
-         ingest_bound: bool = True, counts_from_logs: str = "zeros",
+         ingest_bound: bool = True, counts_from_logs: str = "off",
          narrative_skips_bound: bool = False) -> ReportRecord:
     """The loop itself, with the document open.
 
@@ -1263,7 +1266,7 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
                 children: List[Tuple[ReportRecord, str]], spend: _Spend,
                 qa: List[QAEntry], no_text: Sequence[int],
                 di_pages: Sequence[int],
-                counts_from_logs: str = "zeros") -> None:
+                counts_from_logs: str = "off") -> None:
     """Each bound document round this same loop, into its own record."""
     by_id = {row["bound_id"]: row for row in told}
     for row in ranges:
@@ -1329,7 +1332,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                row: Any, identity: Dict[str, Any], parent: ReportRecord,
                spend: _Spend, no_text: Sequence[int],
                di_pages: Sequence[int],
-               counts_from_logs: str = "zeros") -> ReportRecord:
+               counts_from_logs: str = "off") -> ReportRecord:
     """One bound document as its own record, on the parent's page numbers.
 
     THE RULES ARE RE-RUN, THE OTHER VOTERS ARE NOT. planlens labels every

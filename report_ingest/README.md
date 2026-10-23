@@ -842,7 +842,7 @@ nothing at all, which is convention 1 above. The rule itself is
 `settled_explorations(stated, found, overrule=True)`. The graph never passed
 `investigations=` (the narrative is read before the logs, and a resumed run
 takes it off disk); since RI-14 it runs the same rule after the reconciler,
-under `counts_from_logs` (`zeros` by default; `settle` is this lever whole).
+under `counts_from_logs` (`off` by default; `settle` is this lever whole).
 
 **5. A quote gate.** Every citation names a page and repeats that page's own
 words, and both halves are checkable. An answer none of whose quotes can be
@@ -1031,18 +1031,19 @@ Once everything is read and reconciled, the five exploration answers
 (`boringCount`, `testPitCount`, `cptCount`, `boringDictionary`,
 `testPitDictionary`) are set against the logs this record read, by the
 narrative reader's own rule (`settled_explorations`, lever 4 below). The modes
-are a ladder, each doing what the one before does and more: `off` leaves the
-narrative's answers alone; `zeros` (the default) makes a count the narrative
-left unanswered 0 where logs of other kinds were read and none of this one —
-convention 1, none means 0, with the appendix as the evidence; `fill` takes
-every answer the narrative left open off the logs (the identifiers and the
-count of holes); `settle` also overrules a stated answer the logs contradict,
-unless the logs' answer is zero (lever 4 as 5.24.0 wrote it). The default
-stops at the zeros on RI-14's offline measure: setting the log items planlens'
-rules find against the eight hand narrative truths, the zeros were right 6 of
-6, a non-zero count or list off the logs 5 of 17 (an appendix carries earlier
-investigations' logs that no bound range caught, and one hole can be two
-items), and overruling a narrative that was right was wrong 12 times in 13.
+are a ladder, each doing what the one before does and more: `off` (the
+default) leaves the narrative's answers alone; `zeros` makes a count the
+narrative left unanswered 0 where logs of other kinds were read and none of
+this one — convention 1, none means 0 (still DRAFT), with the appendix as the
+evidence; `fill` takes every answer the narrative left open off the logs (the
+identifiers and the count of holes); `settle` also overrules a stated answer
+the logs contradict, unless the logs' answer is zero (lever 4 as 5.24.0 wrote
+it). All of it is OFF until measured on real reads. RI-14's offline measure
+only set the log items planlens' rules find against the eight hand narrative
+truths: the zeros were right 6 of 6, a non-zero count or list off the logs 5
+of 17 (an appendix carries earlier investigations' logs that no bound range
+caught, and one hole can be two items), and overruling a narrative that was
+right was wrong 12 times in 13 — so `zeros` is the first to measure.
 It runs AFTER the reconciler, so every `count_mismatch` still compares what the
 narrative SAID with what was read, and `narrative.stated_counts` keeps the
 stated numbers. A `general.explorations` note lists each field it changed,

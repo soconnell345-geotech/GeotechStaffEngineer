@@ -1170,10 +1170,11 @@ class TestTheExplorationAnswersAndTheLogs:
     """The narrative says four borings and three pits and names none; the
     logs read are B-1 and TP-1 and no cone."""
 
-    def test_by_default_an_unanswered_count_with_no_logs_is_zero(
+    def test_zeros_makes_an_unanswered_count_with_no_logs_zero(
             self, pdf, tmp_path):
         record = ingest_report(pdf, FakeEngine(full_script()),
-                               out_dir=tmp_path, report_id="SYN")
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="zeros")
 
         general = record.general
         assert (general.boringCount, general.testPitCount) == (4, 3)
@@ -1217,10 +1218,13 @@ class TestTheExplorationAnswersAndTheLogs:
         (note,) = [e for e in record.qa if e.where == "general.explorations"]
         assert "boringCount: 4 -> 1" in note.values
 
-    def test_off_leaves_the_narratives_answers_alone(self, pdf, tmp_path):
+    @pytest.mark.parametrize("mode", [{}, {"counts_from_logs": "off"}],
+                             ids=["default", "off"])
+    def test_off_the_default_leaves_the_narratives_answers_alone(
+            self, pdf, tmp_path, mode):
+        # Off until it is measured on real reads (the owner's rule).
         record = ingest_report(pdf, FakeEngine(full_script()),
-                               out_dir=tmp_path, report_id="SYN",
-                               counts_from_logs="off")
+                               out_dir=tmp_path, report_id="SYN", **mode)
 
         assert record.general.cptCount is None
         assert record.general.boringDictionary is None
