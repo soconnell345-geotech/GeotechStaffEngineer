@@ -436,7 +436,10 @@ def _create_pystra_variable(var_dict: dict):
         b = var_dict.get("b")
         if a is None or b is None:
             raise ValueError(f"Uniform distribution '{name}' requires 'a' and 'b'")
-        return pystra.Uniform(name, a, b)
+        if _is_v2():
+            return pystra.Uniform(name, lower=a, upper=b)
+        # 1.x reads (mean, stdv) unless input_type is given, then (a, b)
+        return pystra.Uniform(name, a, b, input_type=1)
 
     elif dist == "constant":
         value = var_dict.get("value")
