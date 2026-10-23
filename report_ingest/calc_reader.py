@@ -2228,13 +2228,37 @@ class _Builder:
             unsettled=[dict(u) for u in self.unresolved])
 
 
-def _fold_readings(first: CalcReading, second: CalcReading) -> CalcReading:
-    """Two windows of one printout as one reading.
+def _read_twice(left: ReadValue, right: ReadValue) -> bool:
+    """Are two of the model's rows one printed value read twice?
 
-    The later window wins on the scalar fields only where the first left
+    The merge's own notion of a slot (:func:`_same_place`): the label, at
+    one place -- the same page, and boxes on one printed line where both
+    name one. A label alone is not a slot: a sheet prints "Maximum bending
+    moment" once for each load case.
+    """
+    if not _same_name(left.name, right.name):
+        return False
+    if int(left.prov.page) != int(right.prov.page):
+        return False
+    a, b = _box(left.prov.bbox), _box(right.prov.bbox)
+    return a is None or b is None or _meet(a, b)
+
+
+def _fold_readings(first: CalcReading, second: CalcReading,
+                   fresh: bool = False) -> CalcReading:
+    """Two answers about one printout as one reading.
+
+    The later answer wins on the scalar fields only where the first left
     them empty -- the banner and the project block are on the first page --
-    and the value lists are the union, keyed by the printed label, with the
-    later reading's value kept where both carry a label.
+    and the value lists are the union: a later row replaces an earlier one
+    only where both read one printed value (:func:`_read_twice`; the closest
+    label where two could), and is added otherwise.
+
+    ``fresh``: the second call saw only the rest of the pages, not the first
+    answer (the conversation is replaced to keep the request small), so it
+    could not carry the first's unsettled list forward: the two lists are
+    kept together. After the unsettled follow-up, which sees the first
+    answer, the second list is what is still unsettled.
     """
     out = first.model_copy(deep=True)
     out.kind = second.kind or first.kind
@@ -2246,17 +2270,28 @@ def _fold_readings(first: CalcReading, second: CalcReading) -> CalcReading:
     out.continues = bool(second.continues)
     for name in ("inputs", "results"):
         merged: List[ReadValue] = list(getattr(out, name))
+        earlier = len(merged)
+        replaced: set = set()
         for row in getattr(second, name):
-            twin = next((r for r in merged if _same_name(r.name, row.name)),
-                        None)
-            if twin is None:
+            twins = [n for n in range(earlier) if n not in replaced
+                     and _read_twice(merged[n], row)]
+            if not twins:
                 merged.append(row)
-            else:
-                merged[merged.index(twin)] = row
+                continue
+            n = max(twins, key=lambda k: (fold(merged[k].name) == fold(
+                row.name), _ratio(fold(merged[k].name), fold(row.name))))
+            merged[n] = row
+            replaced.add(n)
         setattr(out, name, merged)
     out.pages_read = sorted(set(list(first.pages_read)
                                 + list(second.pages_read)))
-    out.unsettled = list(second.unsettled)
+    if fresh:
+        kept: Dict[Tuple[str, Optional[int]], Unsettled] = {}
+        for item in list(first.unsettled) + list(second.unsettled):
+            kept.setdefault((fold(item.what), item.page), item)
+        out.unsettled = list(kept.values())
+    else:
+        out.unsettled = list(second.unsettled)
     return out
 
 
@@ -2344,6 +2379,9 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     reading: Optional[CalcReading] = None
     final: Any = None
     followed_up = False
+    # The continuation replaces the conversation: its answer has not seen the
+    # first one, and is folded in as a reading of other pages.
+    fresh = False
 
     while model_calls < budget:
         last = model_calls == budget - 1
@@ -2367,7 +2405,8 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
             continue
         if reply.parsed is not None:
             reading = (reply.parsed if reading is None
-                       else _fold_readings(reading, reply.parsed))
+                       else _fold_readings(reading, reply.parsed,
+                                           fresh=fresh))
             if last or followed_up:
                 break
             # The one follow-up this reader spends: the rest of a printout it
@@ -2378,7 +2417,7 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
             # picture, would otherwise reach the model only on its say-so.
             rest = page_window(pages, next_start)
             if rest:
-                followed_up = True
+                followed_up = fresh = True
                 messages = [user(
                     text_block(_CONTINUE_INSTRUCTION), text_block(
                         "\n".join(serialise_page(doc, p) for p in rest)),

@@ -723,6 +723,102 @@ class TestTheLoop:
         second = engine.calls[1]["messages"][0]["content"][1]["text"]
         assert "--- page 11:" in second and "--- page 14:" in second
 
+    def test_the_second_window_adds_to_the_first_and_drops_nothing(
+            self, tmp_path):
+        """RI-17 review: every printout over one window now takes the second
+        call, and its answer must not replace the first one's. A label read
+        on another page is another value, and the first call's unsettled
+        list, which the second call never saw, is kept."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(
+                kind="lateral_pile",
+                results=[_value("Head load", 10.0, "kN", page=0)],
+                unsettled=[Unsettled(what="a value I could not read", page=3,
+                                     why="smudged")])},
+            {"final": _reading(
+                kind="lateral_pile",
+                results=[_value("Head load", 20.0, "kN", page=14)])},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        assert result.model_calls == 2
+        heads = sorted(r.value.value for r in result.calculation.results
+                       if r.name == "Head load")
+        assert heads == [10.0, 20.0]
+        assert any(u.get("refused_by") == "reader"
+                   and u.get("what") == "a value I could not read"
+                   for u in result.unresolved)
+
+    def test_two_answers_fold_by_label_and_place(self):
+        """A later row replaces an earlier one only where both read one
+        printed value: the label, on the same page, on one printed line."""
+        from report_ingest.calc_reader import _fold_readings
+        line = (72.0, 300.0, 400.0, 312.0)
+        below = (72.0, 330.0, 400.0, 342.0)
+        first = _reading(results=[
+            _value("Maximum bending moment, Load Case 3", 41.0, "kN-m",
+                   page=2),
+            _value("Footing Width B, Footing F-1", 2.0, "m", page=1),
+            _value("Head load", 10.0, "kN", page=11, bbox=line),
+            _value("Shear, Load Case 3", 5.0, "kN", page=11),
+            _value("Shear, Load Case 7", 6.0, "kN", page=11),
+            _value("Axial load", 100.0, "kN", page=11, bbox=line),
+        ])
+        second = _reading(results=[
+            _value("Maximum bending moment, Load Case 7", 57.0, "kN-m",
+                   page=13),
+            _value("Footing Width B, Footing F-9", 3.0, "m", page=12),
+            _value("Head load", 12.0, "kN", page=11, bbox=line),
+            _value("Shear, Load Case 7", 6.5, "kN", page=11),
+            _value("Axial load", 120.0, "kN", page=11, bbox=below),
+        ])
+
+        out = _fold_readings(first, second, fresh=True)
+
+        got = sorted((r.name, r.prov.page, r.value) for r in out.results)
+        assert got == sorted([
+            ("Maximum bending moment, Load Case 3", 2, 41.0),
+            ("Maximum bending moment, Load Case 7", 13, 57.0),
+            ("Footing Width B, Footing F-1", 1, 2.0),
+            ("Footing Width B, Footing F-9", 12, 3.0),
+            # The same line read in both windows: the later reading.
+            ("Head load", 11, 12.0),
+            # The closest label is the one replaced.
+            ("Shear, Load Case 3", 11, 5.0),
+            ("Shear, Load Case 7", 11, 6.5),
+            # One label on two lines of one page is two values.
+            ("Axial load", 11, 100.0),
+            ("Axial load", 11, 120.0),
+        ])
+
+    def test_the_unsettled_lists_are_kept_together_only_after_the_rest(self):
+        """After the rest of the pages, the second call never saw the first
+        answer, so both lists stand (one entry per thing and page). After the
+        unsettled follow-up, which did see it, the second list is what is
+        still unsettled."""
+        from report_ingest.calc_reader import _fold_readings
+        first = _reading(unsettled=[
+            Unsettled(what="the modulus column", page=3, why="cut off"),
+            Unsettled(what="a smudged load", page=5, why="smudged")])
+        second = _reading(unsettled=[
+            Unsettled(what="The modulus column", page=3, why="cut off"),
+            Unsettled(what="the last plot's axis", page=14, why="no scale")])
+
+        after_rest = _fold_readings(first, second, fresh=True)
+        assert [(u.what, u.page) for u in after_rest.unsettled] == [
+            ("the modulus column", 3), ("a smudged load", 5),
+            ("the last plot's axis", 14)]
+
+        after_follow_up = _fold_readings(first, second)
+        assert [(u.what, u.page) for u in after_follow_up.unsettled] == [
+            ("The modulus column", 3), ("the last plot's axis", 14)]
+
     def test_the_budget_is_never_exceeded(self, spreadsheet):
         doc, gt = spreadsheet
         engine = FakeEngine([
