@@ -127,6 +127,19 @@ _N_VALUE = re.compile(r"\bN\s*[=:]\s*(\d+)\b")
 #: "50+", "R", "Refusal". Kept as printed in ``SPT.n_printed`` (RI-30).
 _N_PRINTED = re.compile(
     r"\bN\s*[=:]\s*(>\s*\d+|\d+\s*\+|REF(?:USAL)?|R)(?![\w])", re.I)
+#: The same printed bare, where the N goes -- in an N column, or on the
+#: line a stack's header names the N (RI-48): "50+", ">50", "R", "REF".
+_N_MARK = re.compile(r">\s*\d+|\d+\s*\+|REF(?:USAL)?\.?|R", re.I)
+#: A header naming an N corrected for the hammer's energy or for
+#: overburden: N60, "the energy-corrected SPT N-value adjusted to 60%
+#: efficiency" (FHWA NHI-06-088 Vol. I, Sec. 3.7.1, p. 3-55, Eq. 3-2), and
+#: (N1)60, N60 "normalized for overburden" (Sec. 3.7.2, p. 3-56, Eq. 3-3).
+#: Neither is the N measured in the field, which SPT.n holds (RI-48).
+_CORRECTED_N = re.compile(
+    r"\(?\bN\s?1?\)?\s?,?\s?60\b|N₆₀|N₁₆₀", re.I)
+#: A header that prints the N in parentheses after the blows: "BLOW COUNT
+#: (N)", "BLOWS PER 6 IN (N)".
+_WRAPPED_N = re.compile(r"\(\s*N(?:[- ]?VALUE)?\s*\)", re.I)
 _INTERVAL = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$")
 _PAREN = re.compile(r"\(([^)]{1,14})\)")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -332,7 +345,9 @@ def _text(cell: Any) -> str:
 #: What a log prints in a sample-id column that is never a sample's id: no
 #: recovery, weight of hammer or of rods, not applicable.
 _NOT_IDS = frozenset({"nr", "nrec", "norec", "woh", "wor", "rec", "na",
-                      "nd", "lost"})
+                      "nd", "lost",
+                      # a refusal printed where the N goes (RI-48)
+                      "r", "ref", "refusal"})
 #: A sample id with a letter prefix: ``S-4``, ``SS-3``, ``U-2-1``, ``ST 2``.
 _PREFIXED_ID = re.compile(
     r"^[A-Za-z]{1,4}[-\s#.]?\d{1,4}[A-Za-z]?(?:[-/.]\d{1,4}[A-Za-z]?)?$")
@@ -481,16 +496,21 @@ def _runs(lines: Sequence[Any], pitch: Optional[float]) -> List[List[Any]]:
 
 
 #: What a header over such a column prints, found by its words: the sample
-#: number, the blows, the N, the recovery (REC, RECOV, RECOVERY or
-#: RECOVERED as a word, never RECORD).
+#: number, the blows, the N, a corrected N (:data:`_CORRECTED_N`), the
+#: recovery (REC, RECOV, RECOVERY or RECOVERED as a word, never RECORD). The
+#: N is the letter as a word, not "No."/"N°", not a corrected N ("N60",
+#: "(N1)60") and not an abbreviation ("N.R." for no recovery, "N/A"): layout
+#: judgment (RI-48).
 _LAYOUT_PARTS: Tuple[Tuple[str, Any], ...] = (
     ("number", _NUMBER_HEADER),
     ("blows", re.compile(r"\bBLOW", re.I)),
-    ("n", re.compile(r"\bN(?:60)?\b(?![º°])|\bN[- ]?VALUE", re.I)),
+    ("n", re.compile(r"\bN\b(?![º°]|\s?1?\)?\s?,?\s?60\b|\.\s?[A-Za-z]"
+                     r"|/[A-Za-z])|\bN[- ]?VALUE", re.I)),
+    ("n60", _CORRECTED_N),
     ("rec", re.compile(r"\bREC(?:OV(?:ERY|ERED)?)?\b", re.I)),
 )
 #: The column name each part of the layout places.
-_LAYOUT_NAMES = {"n": "n_value", "rec": "recovery"}
+_LAYOUT_NAMES = {"n": "n_value", "n60": "n_value", "rec": "recovery"}
 
 
 def _stack_layout(header: str) -> Optional[List[str]]:
@@ -518,6 +538,8 @@ class _Stack:
     recovery: Any = None
     #: The line the header's N names, read as the printed N.
     printed_n: Any = None
+    #: The line the header's corrected N (N60) names: never the N (RI-48).
+    n60: Any = None
     #: Lines after the drives that cannot be told apart: fewer than the
     #: header names. Kept in the note, not read as any of them.
     unassigned: List[Any] = field(default_factory=list)
@@ -578,8 +600,12 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
     stack = _Stack(list(lines))
     if len(tail) == len(after):
         for part, cell in zip(after, tail):
+            if _N_MARK.fullmatch(_text(cell)) and part not in ("n", "n60"):
+                return None           # a printed refusal only where an N is
             if part == "rec":
                 stack.recovery = cell
+            elif part == "n60":
+                stack.n60 = cell
             else:
                 stack.printed_n = cell
     else:
@@ -617,7 +643,12 @@ def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
     for cell in cells:
         names = set(_names(grid, cell, by_column))
         both = {"sample_id", "blows"} <= names
-        if _text(cell).lower() in _TYPE_CODES:
+        # A lone "R" in this column is the refusal it prints, not a ring
+        # sampler: a single letter is a sampler only under a TYPE header,
+        # as everywhere in the floor (RI-48).
+        if _text(cell).lower() in _TYPE_CODES and not (
+                both and "sample_type" not in names
+                and _N_MARK.fullmatch(_text(cell))):
             if "sample_type" in names and not both:
                 anchors.setdefault(cell.page, []).append(cell)
             continue                  # the sampler: neither number nor drive
@@ -931,8 +962,12 @@ class _Group:
         #: that cannot be told apart (kept in the note).
         self.printed_n: set = set()
         self.unassigned: set = set()
+        #: The stack's line a header's corrected N (N60) names (RI-48).
+        self.n60: set = set()
         #: Why no N is computed from this sample's drives (RI-44), or empty.
         self.doubt = ""
+        #: Set when the group holds lines of a stack that did not read.
+        self.unread_stack = False
 
     def takes(self, cell: Any, span: float,
               keys: Optional[Dict[int, Tuple[str, str]]] = None) -> bool:
@@ -1010,6 +1045,8 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     #: Numbers printed in a column that holds several quantities, which
     #: their position cannot tell apart: ``(the number as printed, header)``.
     unassigned: List[Tuple[str, str]] = []
+    #: A corrected N (N60) the log prints: never the N (RI-48).
+    corrected: List[Tuple[str, str]] = []
     for cell in group.cells + group.bound:
         names = _names(grid, cell, by_column)
         text = _text(cell)
@@ -1022,9 +1059,19 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             continue
         if id(cell) in group.recovery:
             names = ("recovery",)     # the stack's line after its drives
-        if id(cell) in group.printed_n and re.fullmatch(r"\d{1,3}", text):
-            n = int(text)             # the line the header's N names
+        if id(cell) in group.n60:
+            corrected.append((text, _header(grid, cell)))
             continue
+        if id(cell) in group.printed_n:
+            # The line the header's N names: the N, bare or in parentheses
+            # ("(13)" under "BLOW COUNT (N)"), or a refusal printed there.
+            whole = re.fullmatch(r"(\d{1,3})|\(\s*(\d{1,3})\s*\)", text)
+            if whole:
+                n = int(whole.group(1) or whole.group(2))
+                continue
+            if _N_MARK.fullmatch(text):
+                n_printed, refusal = re.sub(r"\s+", "", text), True
+                continue
         if id(cell) in group.printed_n or id(cell) in group.unassigned:
             unassigned.append((text, _header(grid, cell)))
             continue
@@ -1091,6 +1138,28 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             n_printed = re.sub(r"\s+", "", printed.group(1))
             refusal = True
             continue
+        if (("n_value" in names or "blows" in names)
+                and set(names) <= {"n_value", "blows"}
+                and (_N_MARK.fullmatch(text)
+                     or re.fullmatch(r"\d{1,3}", text))):
+            n_header = _header(grid, cell)
+            if ("n_value" in names and _CORRECTED_N.search(n_header)
+                    and not _drive_header(n_header)):
+                # A column the header names N60 or (N1)60 and no drive
+                # increment: its numbers are corrected Ns, never the N, and
+                # a BLOWS there is the N's unit ("SPT N60 (blows/ft)")
+                # (RI-48; layout judgment).
+                corrected.append((text, n_header))
+                continue
+            if _N_MARK.fullmatch(text) and (
+                    text[0].isalpha() or "blows" not in names):
+                # A refusal printed bare where the N or the blows go (RI-48):
+                # "50+" and ">50" in an N column, "R" or "REF" in either --
+                # a single letter is a sampler only under a TYPE header.
+                # Kept as printed; whether it is a refusal is settled
+                # against the drives below.
+                n_printed, refusal = re.sub(r"\s+", "", text), True
+                continue
         tokens = _blow_tokens(text) if ("blows" in names or "n_value" in names
                                         or "sample_id" in names) else []
         if tokens:
@@ -1148,11 +1217,24 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                 and len(cell.numbers) == 1 and re.fullmatch(r"\d+", text)):
             n = int(cell.numbers[0])
             continue
-        if (paren == ("blows", "n_value") and _wrapped(text)
-                and re.fullmatch(r"\(\s*\d+\s*\)", text)):
-            # "BLOWS PER 6 IN (N)": the number in parentheses is the N.
-            n = int(re.sub(r"\D", "", text))
-            continue
+        if ((paren == ("blows", "n_value")
+             or ("blows" in names and _WRAPPED_N.search(header)))
+                and _wrapped(text)):
+            # "BLOWS PER 6 IN (N)", "BLOW COUNT (N)": what is printed in
+            # parentheses is the N -- a number, or a refusal printed there
+            # ("(50+)", "(R)"). Not in a stack of sample numbers and blows
+            # that did not read: which sample it is the N of is not known
+            # there, so it is kept in the note (RI-48).
+            inner = text.strip()[1:-1].strip()
+            if group.unread_stack and "sample_id" in names:
+                unassigned.append((text, header))
+                continue
+            if re.fullmatch(r"\d+", inner):
+                n = int(inner)
+                continue
+            if _N_MARK.fullmatch(inner):
+                n_printed, refusal = re.sub(r"\s+", "", inner), True
+                continue
         if "sample_id" in names and text and not cell.numbers:
             if not sample_id and _id_like(text):
                 sample_id = text
@@ -1309,7 +1391,7 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         remarks.append("doubtful: " + "; ".join(doubts))
         if notes is not None:
             notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
-    def drives_n() -> Optional[Tuple[Optional[int], str]]:
+    def drives_n() -> Optional[Tuple[int, str]]:
         """:func:`n_from_drives` on this sample's drives."""
         drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
                                    else None)
@@ -1324,6 +1406,18 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                             f"'{_header(grid, drive_cell)[:40]}'"
                             if printed_inc is not None else ""))
 
+    if corrected:
+        # An N60 or (N1)60 is the N corrected for the hammer's energy or for
+        # overburden (FHWA NHI-06-088 Vol. I, Sec. 3.7.1, p. 3-55, Eq. 3-2;
+        # Sec. 3.7.2, p. 3-56, Eq. 3-3), not the N measured in the field
+        # that SPT.n holds, and the record has no place of its own for it
+        # (RI-48): kept in the note, listed.
+        remarks.append("printed as a corrected N, not the field N: "
+                       + "; ".join(f"{t} (column '{h[:40]}')"
+                                   for t, h in corrected))
+        if notes is not None:
+            notes.add(page, "n60", "; ".join(t for t, _h in corrected)
+                      + f" at {at}")
     # N, where the log prints a standard SPT's three drives and no N.
     n_basis = ""
     drives_alt: Optional[Alternative] = None
@@ -1345,13 +1439,43 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         remarks.append(group.doubt + "; no N computed from the drives")
     elif n is None and not n_printed and not refusal and blows:
         computed = drives_n()
-        if computed is not None and computed[0] is None:
-            # A drive past the printed halt: the record is a refusal as
-            # printed, with no N.
-            refusal = True
-            remarks.append(computed[1])
-        elif computed is not None:
+        if computed is not None:
             n, n_basis = computed
+    elif n_printed and blows and not group.doubt:
+        # A refusal printed where the N goes ("R", "50+", ">50") beside the
+        # drives (RI-48): it stands as printed, and is a refusal where the
+        # drives agree -- wherever they are not three whole 6 in drives of a
+        # named SPT. Those are a complete record whose N is the 2nd + 3rd
+        # (p. 3-51): there it is no refusal, and a bound they do not meet
+        # ("50+" over 6 + 7) is a disagreement listed with the drives' N
+        # beside it.
+        computed = drives_n()
+        if computed is None:
+            refusal = True
+        else:
+            refusal = False
+            bound = re.fullmatch(r"(>)?\s*(\d+)\s*(\+)?", n_printed)
+            met = bound is not None and (
+                computed[0] > int(bound.group(2)) if bound.group(1)
+                else computed[0] >= int(bound.group(2)))
+            if met:
+                remarks.append(f"the N printed as '{n_printed}' agrees with "
+                               f"the 2nd + 3rd of the printed drives, "
+                               f"{computed[0]} ({N_RULE_SOURCE})")
+            else:
+                remarks.append(f"the N printed as '{n_printed}' differs from "
+                               f"the 2nd + 3rd of the printed drives, "
+                               f"{computed[0]}; the printed N stands, the "
+                               f"drives' N is kept beside it")
+                if notes is not None:
+                    notes.add(page, "n_drives",
+                              f"printed {n_printed}, drives {computed[0]} "
+                              f"at {at}")
+                drives_alt = Alternative(
+                    field="n", value=show(computed[0]), method="derived",
+                    confidence=max(confidence_floor, min(1.0, confidence)),
+                    note="the drives' N: " + computed[1].replace(
+                        "not printed; ", "", 1))
     elif n is not None and n < SPT_HALT_BLOWS and _halted(blows):
         # A printed N under 50 on drives that end in a halt: the record has
         # no N (p. 3-51), so the number is something else -- the next
@@ -1480,6 +1604,13 @@ _HAMMER_BEFORE = re.compile(r"(?:\blbs?\.?|\bkg|#|\bpounds?)\s*$", re.I)
 _DROP_AFTER = re.compile(r"\s*\.?\s*(?:drop|fall)\b", re.I)
 
 
+def _drive_header(header: str) -> bool:
+    """Does a header print the 6 in (150 mm) drive increment, so that its
+    bare numbers are drives rather than one N per sample?"""
+    inc = header_increment(header)
+    return inc is not None and abs(inc - SPT_INCREMENT_M) <= _INCREMENT_TOL_M
+
+
 def header_increment(header: str) -> Optional[float]:
     """The drive increment a blows column's header prints, in metres, or
     None when it prints none.
@@ -1534,17 +1665,19 @@ def _short_of_increment(length: float, unit: Optional[str]) -> bool:
 def _halted(blows: Sequence[Any]) -> bool:
     """Do these printed drives END in a halt, so that the record has no N?
 
-    The halts are the ones :data:`N_HALT_RULE` prints: 100 blows in all, more
-    than 50 in one increment, or the sampler failing to advance. A record
-    ends in one when its last drive is printed as blows over a distance
-    short of the increment ('50/3"'; '10/0"', which failed to advance under
-    50), when its last drive has more than 50 blows, or when it stops before
-    its third increment at blows over a distance or at 100 blows. Three
-    whole increments are a complete record with its N, however hard the
-    seating drive was ([52, 4, 28]). Blows over a whole increment ('4/6"',
-    '6/6"', '7/6"': a record written per increment) are a drive like any
-    count (RI-44).
+    N is the 2nd + 3rd of three 6 in (150 mm) increments, and the halts
+    :data:`N_HALT_RULE` prints are ones the test CAN make (p. 3-51): a
+    record that drove all three whole increments is complete and has its N,
+    however hard any of them was ([52, 4, 28], [4, 28, 52]). A record ends
+    in a halt only where it stops short: its last drive is printed as blows
+    over a distance short of the increment ('50/3"'; '10/0"', which failed
+    to advance under 50), or it stops before its third increment at blows
+    over a distance, at a drive over 50 blows or at 100 blows in all. Blows
+    over a whole increment ('4/6"', '6/6"', '7/6"': a record written per
+    increment) are a drive like any count (RI-44, RI-45).
     """
+    if not blows:
+        return False
     counts: List[int] = []
     for entry in blows:
         if isinstance(entry, bool):
@@ -1555,19 +1688,12 @@ def _halted(blows: Sequence[Any]) -> bool:
         match = _BLOWS_OVER.fullmatch(str(entry).strip())
         if match:
             counts.append(int(match.group(1)))
-    if not blows:
-        return False
     last = blows[-1]
     over = (None if isinstance(last, (int, bool))
             else _BLOWS_OVER.fullmatch(str(last).strip()))
-    if isinstance(last, int) and not isinstance(last, bool):
-        last_count: Optional[int] = last
-    else:
-        last_count = int(over.group(1)) if over else None
-    if last_count is not None and last_count > SPT_HALT_BLOWS:
-        return True
-    if len(blows) < SPT_DRIVES and (over is not None
-                                    or sum(counts) >= SPT_HALT_TOTAL):
+    if len(blows) < SPT_DRIVES and (
+            over is not None or sum(counts) >= SPT_HALT_TOTAL
+            or any(c > SPT_HALT_BLOWS for c in counts)):
         return True
     if over is None:
         return False
@@ -1582,11 +1708,9 @@ def n_from_drives(blows: Sequence[Any], *, sampler: str,
                   increment_m: Optional[float] = None,
                   interval_m: Optional[float] = None,
                   increment_from: str = ""
-                  ) -> Optional[Tuple[Optional[int], str]]:
+                  ) -> Optional[Tuple[int, str]]:
     """``(N, how it was had)`` from a standard SPT's three printed drives, or
-    None when the rule does not apply, or ``(None, why)`` when a drive
-    passes the printed halt (:data:`N_HALT_RULE`): that record is a refusal
-    as printed and has no N.
+    None when the rule does not apply.
 
     The rule is printed in :data:`N_RULE_SOURCE`: N is the second drive plus
     the third. It applies only to an SPT sampler the log names (``sampler``
@@ -1594,7 +1718,9 @@ def n_from_drives(blows: Sequence[Any], *, sampler: str,
     weight-of-hammer entry or a fourth drive is not this case), and to drives
     of 6 in or 150 mm: the increment a header prints (``increment_m``) must
     be that, and with none printed the sample's interval (``interval_m``)
-    must be three of them.
+    must be three of them. A drive over 50 blows does not stop it: the halts
+    the same page prints (:data:`N_HALT_RULE`) are ones the test CAN make,
+    and three whole drives show it did not (RI-45).
     """
     if sampler != "spt":
         return None
@@ -1619,10 +1745,6 @@ def n_from_drives(blows: Sequence[Any], *, sampler: str,
         how = f"the sample's interval ({interval_m:.3g} m over three drives)"
     else:
         return None
-    halted = [c for c in counts if c > SPT_HALT_BLOWS]
-    if halted:
-        return None, (f"refusal: a drive of {halted[0]} blows; {N_HALT_RULE}"
-                      f" ({N_RULE_SOURCE}); no N computed")
     n = counts[1] + counts[2]
     return n, (f"not printed; the 2nd + 3rd of three 6 in (150 mm) drives, "
                f"{counts[1]} + {counts[2]} = {n}, by the rule printed in "
@@ -1698,15 +1820,22 @@ class _FloorNotes:
                        "after the blows; the lines are kept as drives and "
                        "no N is computed from them"),
         "refusal_n": ("numbers under 50 printed as the N of drives that "
-                      "end in a halt (100 blows, more than 50 in an "
-                      "increment, or short of the increment); such a "
-                      "record has no N (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
-                      "p. 3-51), so each is kept in its sample's note, not "
-                      "as the N"),
+                      "end in a halt (stopped before the third increment "
+                      "at 100 blows, more than 50 in an increment or blows "
+                      "over a distance, or a last drive short of its "
+                      "increment); such a record has no N (FHWA NHI-06-088 "
+                      "Vol. I, Sec. 3.7, p. 3-51), so each is kept in its "
+                      "sample's note, not as the N"),
         "n_drives": ("printed Ns that differ from the 2nd + 3rd of the "
                      "printed drives (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
                      "p. 3-51); the printed N stands and the drives' N is "
                      "kept beside it"),
+        "n60": ("numbers printed as a corrected N (N60, the N adjusted to "
+                "60 % hammer efficiency, FHWA NHI-06-088 Vol. I, Sec. "
+                "3.7.1, p. 3-55, Eq. 3-2; or (N1)60, Sec. 3.7.2, p. 3-56, "
+                "Eq. 3-3), not the N measured in the field; the record has "
+                "no place for them, so each is kept in its sample's note, "
+                "not as the N"),
     }
 
     def __init__(self) -> None:
@@ -2240,6 +2369,7 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
         group.printed_n = {id(c) for c in (stack.printed_n,)
                            if c is not None}
         group.unassigned = {id(c) for c in stack.unassigned}
+        group.n60 = {id(c) for c in (stack.n60,) if c is not None}
         if stack.doubt:
             group.doubt = ("the last count may be the N or the recovery the "
                            "header prints after the blows")
@@ -2352,6 +2482,7 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
             # are drives is not known.
             group.doubt = ("printed in a stack that does not read as a "
                            "sample number and its drives")
+            group.unread_stack = True
     kept.sort(key=lambda g: (g.page, float(g.first)))
     return kept
 
@@ -3082,7 +3213,7 @@ class _Merger:
         if m.n is None or (f is not None and f.n is not None):
             return
         derived = self.derived_n(merged)
-        if derived is None or derived[0] is None or derived[0] == m.n:
+        if derived is None or derived[0] == m.n:
             return
         n, basis = derived
         page = (m.prov.page if m.prov is not None
@@ -3121,6 +3252,35 @@ class _Merger:
             model_confidence=_conf(m.prov, 0.9),
             model_method=m.prov.method if m.prov is not None else "model")
 
+    def check_refusal(self, merged: SPT, f: Optional[SPT], m: SPT,
+                      where: str, what: str) -> None:
+        """A refusal the model alone claims for a record of three whole 6 in
+        drives of a named SPT (RI-45). The test drove all three increments,
+        so it did not halt and the record has its N, the 2nd + 3rd
+        (p. 3-51); the flag is cleared and the claim listed. A refusal
+        printed where the N goes (``n_printed``) is left as it stands."""
+        if not merged.refusal or merged.n_printed or not m.refusal:
+            return
+        if f is not None and f.refusal:
+            return
+        derived = self.derived_n(merged)
+        if derived is None:
+            return
+        merged.refusal = False
+        self.log.disagree(
+            where, f"{what}: refusal", False, True, kept="floor",
+            why=("the model calls a record of three whole 6 in drives a "
+                 "refusal; the test drove all three increments, so it did "
+                 f"not halt and its N is the 2nd + 3rd, {derived[0]} "
+                 f"({N_RULE_SOURCE}); not kept as a refusal"),
+            page=(m.prov.page if m.prov is not None
+                  else f.prov.page if f is not None and f.prov is not None
+                  else None),
+            floor_method="derived",
+            floor_confidence=_conf(f.prov if f is not None else m.prov, 0.5),
+            model_confidence=_conf(m.prov, 0.9),
+            model_method=m.prov.method if m.prov is not None else "model")
+
     def halt_n(self, merged: SPT, f: Optional[SPT], m: SPT, where: str,
                what: str) -> None:
         """Take an N under 50 out of the slot of a record whose drives end
@@ -3154,10 +3314,11 @@ class _Merger:
             where, f"{what}: n",
             "none" if from_model else n, n if from_model else "none",
             kept="floor" if from_model else "model",
-            why=(f"an N of {n} on drives that end in a halt (100 blows, "
-                 f"more than 50 in an increment, or short of the "
-                 f"increment); such a record has no N ({N_RULE_SOURCE}), "
-                 f"so the N is kept beside the slot, not in it"),
+            why=(f"an N of {n} on drives that end in a halt (stopped "
+                 f"before the third increment, or a last drive short of "
+                 f"its increment); such a record has no N "
+                 f"({N_RULE_SOURCE}), so the N is kept beside the slot, "
+                 f"not in it"),
             page=page, floor_method="derived" if from_model else method,
             floor_confidence=_conf(f.prov if f else None, 0.5),
             model_confidence=_conf(m.prov, 0.9),
@@ -3226,6 +3387,7 @@ class _Merger:
                        ("depth_top", "depth")],
                 model_only=["hammer", "increment"])
             self.check_n(merged, f, m, where, what)
+            self.check_refusal(merged, f, m, where, what)
             out.append(merged)
         for f in floor_only:
             out.append(self.keep_whole(f"{base}[{show(f.depth_top)}]",
@@ -3236,6 +3398,7 @@ class _Merger:
             where = f"{base}[{show(m.depth_top)}]"
             added = self.add_whole(where, what, m)
             self.check_n(added, None, m, where, what)
+            self.check_refusal(added, None, m, where, what)
             out.append(added)
         out.sort(key=lambda r: (depth_m(r.depth_top)
                                 if depth_m(r.depth_top) is not None else 1e9))
