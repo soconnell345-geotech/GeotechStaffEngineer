@@ -1855,12 +1855,78 @@ class TestRI48:
         assert (third.blows, third.n) == ([5, 8, 9], 17)
         assert "floor_stack" not in _flags(qa)
 
-    def test_a_refusal_in_place_of_the_first_drive(self):
-        inv, _ = _stacked([(1.0, ["1", "R"]),
+    @pytest.mark.parametrize("mark", ["REF", "50+"])
+    def test_a_refusal_in_place_of_the_first_drive(self, mark):
+        inv, _ = _stacked([(1.0, ["1", mark]),
                            (2.0, ["2", "5", "8", "9", "17"])], 0.15, N_STACK)
         assert [s.sample_id for s in inv.samples] == ["1", "2"]
-        assert inv.spt[0].n_printed == "R" and inv.spt[0].refusal
+        assert inv.spt[0].n_printed == mark and inv.spt[0].refusal
         assert inv.spt[1].n == 17
+
+    # The round-3 recheck's probe 9: an "R" just below the number is the
+    # ring sampler's code, as the floor read it before RI-48.
+    @pytest.mark.parametrize("code", ["R", "(R)"])
+    @pytest.mark.parametrize("typed", [True, False])
+    def test_a_sampler_code_under_the_number_is_not_a_refusal(self, code,
+                                                              typed):
+        inv, qa = _stacked([(1.0, ["1", "4", "6", "7", "12"]),
+                            (2.5, ["2", code, "12-18-25"]),
+                            (4.0, ["3", "5", "8", "9", "14"])], 0.15,
+                           typed=typed)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [s.recovery_percent for s in inv.samples] == [12.0, None,
+                                                             14.0]
+        assert [r.blows for r in inv.spt] == [[4, 6, 7], [12, 18, 25],
+                                              [5, 8, 9]]
+        assert all(r.n_printed == "" and not r.refusal for r in inv.spt)
+        if typed:
+            assert [r.n for r in inv.spt] == [13, 43, 17]
+        assert _flags(qa) == []
+
+    @pytest.mark.parametrize("code", ["R", "(R)"])
+    @pytest.mark.parametrize("drives", [["12-18-25"], ["12", "18", "25"]])
+    def test_a_sampler_code_under_the_number_with_no_recovery_line(
+            self, code, drives):
+        inv, qa = _stacked([(1.0, ["1", "4", "6", "7"]),
+                            (2.5, ["2", code] + drives),
+                            (4.0, ["3", "5", "8", "9"])], 0.15, NO_REC6)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [(r.blows, r.n, r.refusal) for r in inv.spt] == [
+            ([4, 6, 7], 13, False), ([12, 18, 25], 43, False),
+            ([5, 8, 9], 17, False)]
+        assert _flags(qa) == []
+
+    # Found by the round-3 fuzz: a sampler code or a box a line low, on
+    # the "R" line, started a sample there and the column fell back.
+    def test_a_sampler_code_on_the_r_line_starts_no_sample(self):
+        inv, qa = _stacked([(1.0, ["1", "R", "4-6-7"]),
+                            (2.5, ["2", "R", "5-8-9"])], 0.15, NO_REC6,
+                           at_line=1)
+        assert _ids(inv) == ["1", "2"]
+        assert [(r.blows, r.n) for r in inv.spt] == [([4, 6, 7], 13),
+                                                     ([5, 8, 9], 17)]
+        assert "floor_stack" not in _flags(qa)
+
+    def test_a_box_whose_first_line_is_the_r_starts_no_sample(self):
+        boxes = [SimpleNamespace(top=t, bottom=t + 0.4572, page=0,
+                                 pages=(0,), plus_minus=None, label="")
+                 for t in (1.1, 2.6)]
+        inv, qa = _stacked([(1.0, ["1", "R", "4", "6", "7"]),
+                            (2.5, ["2", "R", "5", "8", "9"])], 0.15,
+                           NO_REC6, boxes=boxes)
+        assert _ids(inv) == ["1", "2"]
+        assert [(r.blows, r.n) for r in inv.spt] == [([4, 6, 7], 13),
+                                                     ([5, 8, 9], 17)]
+        assert "floor_stack" not in _flags(qa)
+
+    def test_blows_after_a_refusal_are_never_its_recovery(self):
+        inv, qa = _stacked([(1.0, ["1", "4", "6", "7", "11"]),
+                            (2.5, ["2", "REF", "12-18-25"]),
+                            (4.0, ["3", "5", "8", "9", "14"])], 0.15)
+        assert "floor_stack" in _flags(qa)
+        assert 12.0 not in [s.recovery_percent for s in inv.samples]
+        assert not any(r.n_printed == "REF" and r.blows == []
+                       for r in inv.spt)
 
 
 class TestTheFloorsNAfterTheModelsDrives:
@@ -1908,6 +1974,67 @@ class TestTheFloorsNAfterTheModelsDrives:
         assert record.blows == [4, 6, 7]
         assert record.n == 13 and "4-6-7" not in record.n_basis
         assert "6 + 7 = 13" in record.n_basis
+
+    # The round-3 recheck's probe 10: the record's own drive lengths.
+    @staticmethod
+    def _merge_lengths(floor_drives, model_blows, lengths, unit="in",
+                       evidence=True, refusal=False):
+        floor, _ = _beside(floor_drives, "", top=1.5)
+        floor.investigation_id = "B-1"
+        model = _model(None, blows=model_blows, evidence=evidence,
+                       increment=None)
+        model.spt[0].increments = [Quantity(value=v, unit=unit)
+                                   for v in lengths]
+        model.spt[0].refusal = refusal
+        return merge_investigations(floor, model)
+
+    @pytest.mark.parametrize("evidence", [True, False])
+    @pytest.mark.parametrize("floor_drives, model_blows, theirs", [
+        ("18-32-50", [18, 32, 50], 82),
+        ("4-6-7", [4, 6, 7], 13),
+        ("18-32-45", [18, 32, 50], 77),
+    ])
+    def test_no_n_where_the_records_lengths_are_not_three_whole_drives(
+            self, floor_drives, model_blows, theirs, evidence):
+        merged, log = self._merge_lengths(floor_drives, model_blows,
+                                          (6, 6, 3), evidence=evidence)
+        record = merged.spt[0]
+        assert record.n is None and record.n_basis == ""
+        assert [(a.value, a.method) for a in record.prov.alternatives
+                if a.field == "n"] == [(str(theirs), "derived")]
+        rows = [r for r in log.disagreements if r["what"].endswith(": n")]
+        assert len(rows) == 1
+        assert (rows[0]["floor"], rows[0]["model"]) == (str(theirs), "none")
+        assert "6 in, 6 in, 3 in" in rows[0]["why"]
+
+    def test_lengths_in_metres_that_are_not_whole_drives(self):
+        merged, log = self._merge_lengths(
+            "18-32-55", [18, 32, 50], (0.1524, 0.1524, 0.0762), unit="m")
+        record = merged.spt[0]
+        assert record.blows == [18, 32, 50] and record.n is None
+        assert [(a.value, a.method) for a in record.prov.alternatives
+                if a.field == "n"] == [("87", "derived")]
+
+    @pytest.mark.parametrize("floor_drives, model_blows, n", [
+        ("4-6-7", [4, 6, 7], 13), ("18-32-55", [18, 32, 50], 82)])
+    def test_whole_drive_lengths_give_the_n_of_the_drives_that_stand(
+            self, floor_drives, model_blows, n):
+        merged, log = self._merge_lengths(floor_drives, model_blows,
+                                          (6, 6, 6))
+        record = merged.spt[0]
+        assert record.n == n and "drive lengths" in record.n_basis
+        assert not [r for r in log.disagreements
+                    if r["what"].endswith(": n")]
+
+    def test_the_records_lengths_keep_a_models_refusal(self):
+        # 50 blows over the last 3 in: the floor's increment would clear
+        # the model's refusal; the record's own lengths do not.
+        merged, log = self._merge_lengths("18-32-50", [18, 32, 50],
+                                          (6, 6, 3), refusal=True)
+        record = merged.spt[0]
+        assert record.refusal and record.n is None
+        assert not [r for r in log.disagreements
+                    if r["what"].endswith(": refusal")]
 
     def test_a_models_n_with_its_drives_stands_and_the_floors_is_beside(
             self):

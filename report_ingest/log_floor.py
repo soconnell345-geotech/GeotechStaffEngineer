@@ -555,6 +555,9 @@ class _Stack:
     #: header prints after the blows: the drives are kept as printed and no
     #: N is computed from them.
     doubt: bool = False
+    #: A sampler code ("R") printed after the number, ahead of the drives:
+    #: neither a drive nor a refusal, and not read.
+    sampler: Any = None
 
 
 def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
@@ -570,8 +573,13 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
     the header's N and recovery. A refusal printed in place of a drive
     ("12" / "30" / "R") ends them too, and is the record's printed N, in
     place of the N line the header names; so is one printed after the
-    drives where the header names no N line (layout judgment, RI-48). A
-    number with no drive under it does not
+    drives where the header names no N line (layout judgment, RI-48). An
+    "R" printed after the number and ahead of every drive is the sampler's
+    code (a ring sampler), as the floor read it before RI-48, and is
+    skipped; a "REF" or "50+" there is a refusal. Where a refusal ends the
+    drives, a line after it that reads as blows is not its N or recovery:
+    the stack does not read (layout judgment). A number with no drive under
+    it does not
     read: it may be a sample started a line early. With ``complete``, a
     stack whose drives do not end so does not read either: with no sampler
     code or drawn box to say where a sample starts, a short stack may be the
@@ -583,12 +591,17 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
     entries, done, last = 0, False, ""
     tail: List[Any] = []
     mark: Any = None
+    sampler: Any = None
     for above, cell in zip(lines, lines[1:]):
         if _same_line(above, cell):
             return None               # two items on one line: not a stack
         text = _text(cell)
         if _N_VALUE.search(text) or _N_PRINTED.search(text):
             continue                  # a printed N, read as one
+        if (entries == 0 and sampler is None and mark is None
+                and _sampler_letter(text)):
+            sampler = cell            # "R" ahead of the drives: the sampler
+            continue
         if done and mark is None and "n" not in after \
                 and _marks_refusal(text):
             mark = cell               # its refusal, where no N line is named
@@ -615,10 +628,12 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
         done = done or entries == SPT_DRIVES
     if mark is not None:
         rest = [part for part in after if part != "n"]
-        if len(tail) > len(rest):
+        if len(tail) > len(rest) or any(_blow_tokens(_text(cell))
+                                        for cell in tail):
             return None
         stack = _Stack(list(lines))
         stack.printed_n = mark
+        stack.sampler = sampler
         if len(tail) == len(rest):
             for part, cell in zip(rest, tail):
                 if _marks_refusal(_text(cell)):
@@ -633,6 +648,7 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
     if entries == 0 or (complete and not done) or len(tail) > len(after):
         return None
     stack = _Stack(list(lines))
+    stack.sampler = sampler
     if tail and len(tail) < len(after) and after[0] == "n" \
             and _marks_refusal(_text(tail[0])):
         # Fewer lines than the header names, the first a refusal printed
@@ -663,10 +679,19 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
 def _marks_refusal(text: str) -> bool:
     """Is this line a refusal printed where an N goes ("R", "50+",
     "(REF)")?"""
+    return bool(_N_MARK.fullmatch(_unwrap(text)))
+
+
+def _sampler_letter(text: str) -> bool:
+    """Is this line an "R" alone ("R", "(R)"): a ring sampler's code ahead
+    of the drives, a refusal after one (:func:`_read_stack`)?"""
+    return _marks_refusal(text) and len(_unwrap(text)) == 1
+
+
+def _unwrap(text: str) -> str:
+    """The text inside the parentheses it is printed in, if any."""
     t = text.strip()
-    if _wrapped(t):
-        t = t[1:-1].strip()
-    return bool(_N_MARK.fullmatch(t))
+    return t[1:-1].strip() if _wrapped(t) else t
 
 
 def _number_of(cell: Any) -> int:
@@ -696,9 +721,9 @@ def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
     for cell in cells:
         names = set(_names(grid, cell, by_column))
         both = {"sample_id", "blows"} <= names
-        # A lone "R" in this column is the refusal it prints, not a ring
-        # sampler: a single letter is a sampler only under a TYPE header,
-        # as everywhere in the floor (RI-48).
+        # A lone "R" in this column is read by its place in the stack
+        # (:func:`_read_stack`): ahead of the drives the sampler's code,
+        # after one the refusal it prints (RI-48).
         if _text(cell).lower() in _TYPE_CODES and not (
                 both and "sample_type" not in names
                 and _N_MARK.fullmatch(_text(cell))):
@@ -726,10 +751,13 @@ def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
         if after is None or unplaced:
             unread.extend(_runs(lines, pitch))
             continue
+        # No stack starts at an "R" alone: a sampler code printed on its
+        # line, or a box whose first line it is, is a line low, and does
+        # not start a sample there (layout judgment).
         starts: Dict[int, Any] = {}
         for anchor in anchors.get(page, ()):
             on = [k for k, c in enumerate(lines) if _same_line(c, anchor)]
-            if on:
+            if on and not _sampler_letter(_text(lines[on[0]])):
                 starts.setdefault(on[0], anchor)
         for box in boxes:
             pages = (set(getattr(box, "pages", ()) or ())
@@ -740,7 +768,7 @@ def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
             inside = [k for k, c in enumerate(lines)
                       if float(box.top) - tol <= float(c.depth)
                       <= float(box.bottom) + tol]
-            if inside:
+            if inside and not _sampler_letter(_text(lines[inside[0]])):
                 starts.setdefault(inside[0], None)
         if starts:
             order = sorted(starts)
@@ -1017,6 +1045,8 @@ class _Group:
         self.unassigned: set = set()
         #: The stack's line a header's corrected N (N60) names (RI-48).
         self.n60: set = set()
+        #: The stack's sampler code printed ahead of its drives ("R").
+        self.sampler: set = set()
         #: Why no N is computed from this sample's drives (RI-44), or empty.
         self.doubt = ""
         #: Set when the group holds lines of a stack that did not read.
@@ -1113,6 +1143,8 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             if not sample_id:
                 sample_id = text
             continue
+        if id(cell) in group.sampler:
+            continue                  # the stack's sampler code, not read
         if id(cell) in group.recovery:
             names = ("recovery",)     # the stack's line after its drives
         if id(cell) in group.n60:
@@ -2462,6 +2494,7 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
                            if c is not None}
         group.unassigned = {id(c) for c in stack.unassigned}
         group.n60 = {id(c) for c in (stack.n60,) if c is not None}
+        group.sampler = {id(c) for c in (stack.sampler,) if c is not None}
         if stack.doubt:
             group.doubt = ("the last count may be the N or the recovery the "
                            "header prints after the blows")
@@ -3293,7 +3326,7 @@ class _Merger:
             self.halt_n(merged, f, m, where, what)
             return
         if f is not None and f.n_basis:
-            if list(merged.blows) != list(f.blows):
+            if list(merged.blows) != list(f.blows) or merged.increments:
                 self.recompute_n(merged, f, m, where, what)
                 return
             if merged.n == f.n:
@@ -3353,11 +3386,12 @@ class _Merger:
         drive lengths, increment or interval (:meth:`derived_n`), else the
         floor's N from the same drives. The floor read the 6 in increment
         off the column's header, which the record does not carry, and a
-        model's record seldom gives any of the three (RI-45). With
-        ``beside``, also the drives' N the floor kept beside a printed N
-        that differs from it."""
+        model's record seldom gives any of the three (RI-45). Where the
+        record gives its drive lengths, they alone decide. With ``beside``,
+        also the drives' N the floor kept beside a printed N that differs
+        from it."""
         derived = self.derived_n(merged)
-        if derived is not None:
+        if derived is not None or merged.increments:
             return derived
         if f is None or list(f.blows) != list(merged.blows):
             return None
@@ -3373,16 +3407,21 @@ class _Merger:
 
     def recompute_n(self, merged: SPT, f: SPT, m: SPT, where: str,
                     what: str) -> None:
-        """The floor computed its N from its own drives, and the model's
-        drives replaced them (RI-45). The floor's N is the 2nd + 3rd of
-        drives that no longer stand, so it does not stay in the slot: where
-        the drives that stand are three whole counts, their own 2nd + 3rd
-        is the N, by the 6 in increment the floor read; otherwise there is
-        no N, and the floor's is kept beside the slot and listed. An N the
-        model gave stands as the slot merge left it."""
+        """The floor computed its N from its own drives by the 6 in
+        increment it read off the header, and the record that stands says
+        otherwise: the model's drives replaced the floor's, or the record
+        gives its own drive lengths (RI-45). The floor's N does not stay in
+        the slot as it was had: the N is the 2nd + 3rd of the drives that
+        stand, by the record's drive lengths where it gives them
+        (:meth:`derived_n`), else by the increment the floor read, where
+        they are three whole 6 in drives; otherwise there is no N, and the
+        floor's is kept beside the slot and listed. An N the model gave
+        stands as the slot merge left it."""
         drives = "-".join(str(b) for b in f.blows)
+        replaced = list(merged.blows) != list(f.blows)
         note = (f"the floor's N, of its drives {drives}, which the model's "
-                f"drives replaced: {f.n_basis}")
+                f"drives replaced: {f.n_basis}" if replaced
+                else f"the floor's N, {f.n_basis}")
         if merged.n != f.n:
             merged.n_basis = ""
             for alt in (merged.prov.alternatives if merged.prov else []):
@@ -3390,11 +3429,14 @@ class _Merger:
                     alt.method = "derived"  # type: ignore[assignment]
                     alt.note = note
             return
-        how = re.search(r"6 in drives from (.+)$", f.n_basis)
-        new = n_from_drives(
-            merged.blows, sampler=self.sampler_at(merged),
-            increment_m=SPT_INCREMENT_M,
-            increment_from=how.group(1) if how else "the floor's reading")
+        if merged.increments:
+            new = self.derived_n(merged)
+        else:
+            how = re.search(r"6 in drives from (.+)$", f.n_basis)
+            new = n_from_drives(
+                merged.blows, sampler=self.sampler_at(merged),
+                increment_m=SPT_INCREMENT_M,
+                increment_from=how.group(1) if how else "the floor's reading")
         if new is not None:
             merged.n, merged.n_basis = new
             return
@@ -3405,13 +3447,19 @@ class _Merger:
             merged.prov.alternatives.append(Alternative(
                 field="n", value=show(f.n), method="derived",
                 confidence=_conf(f.prov, 0.5), note=note))
+        lengths = ", ".join(f"{q.value:g} {q.unit}"
+                            for q in merged.increments)
         self.log.disagree(
             where, f"{what}: n", f.n, "none", kept="model",
             why=(f"the floor's N {f.n} is the 2nd + 3rd of its drives "
-                 f"{drives}; the model's drives replaced them and are not "
-                 f"three whole 6 in drives, so the record has no N from "
-                 f"them ({N_RULE_SOURCE}); the floor's N is kept beside "
-                 f"the slot"),
+                 f"{drives} at the 6 in increment it read"
+                 + ("; the model's drives replaced them" if replaced else "")
+                 + (f"; the record gives its drive lengths ({lengths})"
+                    if lengths else "")
+                 + f"; the drives that stand are not three whole 6 in "
+                 f"drives, so the record has no N from them "
+                 f"({N_RULE_SOURCE}); the floor's N is kept beside the "
+                 f"slot"),
             page=(m.prov.page if m.prov is not None
                   else f.prov.page if f.prov is not None else None),
             floor_method="derived", floor_confidence=_conf(f.prov, 0.5),
