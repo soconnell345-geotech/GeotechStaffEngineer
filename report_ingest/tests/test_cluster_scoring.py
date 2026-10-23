@@ -3290,6 +3290,27 @@ class TestMeasurementPlumbingRI69:
         assert asked == ["made-up-model"]
         assert first.chat_model is second.chat_model
 
+    def test_two_different_factories_with_one_name_are_each_asked_once(
+            self, langchain):
+        from report_ingest.engine import CostMeter
+        from report_ingest.tests.chat_fixtures import ScriptedChatModel
+        asked: list = []
+
+        def make(tag):
+            def factory(name):
+                asked.append(tag)
+                return ScriptedChatModel(replies=[], model_name=name)
+            return factory
+
+        main, looker = make("main"), make("vision")
+        engines = cs._Engines(None, main, looker)
+        a = engines.build("made-up-model", CostMeter())
+        b = engines.build("made-up-model", CostMeter(), vision=True)
+        engines.build("made-up-model", CostMeter())
+        engines.build("made-up-model", CostMeter(), vision=True)
+        assert asked == ["main", "vision"]
+        assert a.chat_model is not b.chat_model
+
     # -- (3) a chat run's notes -----------------------------------------------
 
     def test_a_chat_run_names_no_funhouse_in_its_cost_and_served_by_notes(

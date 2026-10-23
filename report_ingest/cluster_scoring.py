@@ -360,8 +360,9 @@ class _Engines:
     triage and the label review; ``vision_chat_model`` the vision pass (the
     ``vision_labels`` stage and the vote's vision voter inside the ingest),
     and it defaults to ``chat_model``. A callable is asked once per model
-    name and its model kept for the whole run (the name alone is the key, so
-    ``model`` and ``vision_model`` naming the same model ask it once).
+    name and its model kept for the whole run (the key is the source and the
+    name, so a defaulted ``vision_chat_model`` -- the same object -- asks
+    once, and two different sources each get asked).
 
     A run on a chat model says so in every run file and table: ``engine``
     (``chat_model``, or ``prompter`` for a stage left on the Prompter),
@@ -377,7 +378,7 @@ class _Engines:
             False: chat_model,
             True: (vision_chat_model if vision_chat_model is not None
                    else chat_model)}
-        self._chats: Dict[str, Any] = {}
+        self._chats: Dict[Tuple[int, str], Any] = {}
 
     @classmethod
     def of(cls, prompter: Any) -> "_Engines":
@@ -397,9 +398,9 @@ class _Engines:
         """The chat model for this model name, made once per run."""
         from report_ingest.engine import _chat_model_in
 
-        key = name
+        source = self.sources[vision]
+        key = (id(source), name)
         if key not in self._chats:
-            source = self.sources[vision]
             chat = _chat_model_in(source)
             if chat is None and callable(source):
                 chat = _chat_model_in(source(name))
@@ -5536,9 +5537,10 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
 
 def _header(results: Dict[str, Any]) -> List[str]:
     """The heading a run writes when the labels stage did not run."""
-    return ["# Report ingest on the cluster", "",
+    head = ["# Report ingest on the cluster", "",
             f"Run {results['date']}. Stage(s): "
-            f"{', '.join(results.get('stages') or ())}."]         + _di_lines(results)
+            f"{', '.join(results.get('stages') or ())}."]
+    return head + _di_lines(results)
 
 
 def _di_lines(results: Dict[str, Any]) -> List[str]:
