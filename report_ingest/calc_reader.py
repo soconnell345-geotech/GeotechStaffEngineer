@@ -1436,10 +1436,14 @@ _FINAL_INSTRUCTION = (
     "not settle."
 )
 
+#: The continuation replaces the conversation (RI-17): the model does not see
+#: its first answer, which :func:`_fold_readings` keeps for it.
 _CONTINUE_INSTRUCTION = (
-    "Here are the rest of this printout's pages. Report ONLY what they add: "
-    "return the whole calculation again with the values from these pages "
-    "folded into it, keeping everything you already reported."
+    "Here are the pages of this printout you were not shown before, with its "
+    "first page again for context. Give the calculation as data with the "
+    "values printed on the pages shown here. What you read from the earlier "
+    "pages is kept for you: do not repeat it, and report nothing from a page "
+    "that is not shown here."
 )
 
 _UNSETTLED_INSTRUCTION = (

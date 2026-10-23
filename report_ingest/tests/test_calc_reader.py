@@ -723,6 +723,30 @@ class TestTheLoop:
         second = engine.calls[1]["messages"][0]["content"][1]["text"]
         assert "--- page 11:" in second and "--- page 14:" in second
 
+    def test_the_continuation_asks_only_for_the_pages_it_shows(
+            self, tmp_path):
+        """RI-17 review: the continuation replaces the conversation, so the
+        model cannot see its first answer. It is asked for the values on the
+        pages it is shown, and told the earlier readings are kept for it --
+        never to repeat what it reported, which would invite values from
+        pages it is not shown."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")},
+                             {"final": _reading(kind="lateral_pile")}])
+        try:
+            read_calculation(doc, list(range(16)), engine, report_id="SYN")
+        finally:
+            doc.close()
+
+        asked = engine.calls[1]["messages"][0]["content"][0]["text"].lower()
+        assert len(engine.calls[1]["messages"]) == 1
+        assert "pages shown here" in asked
+        assert "kept for you" in asked and "do not repeat" in asked
+        for wording in ("already reported", "keeping everything",
+                        "whole calculation again"):
+            assert wording not in asked
+
     def test_the_second_window_adds_to_the_first_and_drops_nothing(
             self, tmp_path):
         """RI-17 review: every printout over one window now takes the second
