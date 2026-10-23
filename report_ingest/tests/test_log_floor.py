@@ -1408,19 +1408,19 @@ N_COLUMN = _column("n", "N", "n_value")
 
 
 def _beside(blows_text, n_text, n_column=N_COLUMN, pitch=0.15,
-            blows_column=BLOWS, n_line=0, extra=()):
-    """S-1, SS and its drives on one line of a sheet printed at ``pitch``,
-    and ``n_text`` in ``n_column`` ``n_line`` lines below; ``extra`` is
-    more ``(column, text, line)`` to print."""
+            blows_column=BLOWS, n_line=0, extra=(), top=1.0):
+    """S-1, SS and its drives on one line, at ``top``, of a sheet printed
+    at ``pitch``, and ``n_text`` in ``n_column`` ``n_line`` lines below;
+    ``extra`` is more ``(column, text, line)`` to print."""
     cell = _sheet(pitch)
-    cells = [cell("id", "S-1", 1.0), cell("type", "SS", 1.0)]
+    cells = [cell("id", "S-1", top), cell("type", "SS", top)]
     if blows_text:
-        cells.append(cell("blows", blows_text, 1.0))
+        cells.append(cell("blows", blows_text, top))
     if n_text:
         cells.append(cell(n_column.id, n_text,
-                          round(1.0 + n_line * pitch, 4)))
+                          round(top + n_line * pitch, 4)))
     for column_id, text, line in extra:
-        cells.append(cell(column_id, text, round(1.0 + line * pitch, 4)))
+        cells.append(cell(column_id, text, round(top + line * pitch, 4)))
     columns = [ID, TYPE, blows_column]
     if n_column.id != blows_column.id:
         columns.append(n_column)
@@ -1469,7 +1469,8 @@ class TestRI45:
         assert n == 85 and "55 + 30 = 85" in basis
 
     def _floor(self, drives="4-55-30", n_text=""):
-        inv, _ = _beside(drives, n_text)
+        # At 1.5 m, where _model's record is, so that the two pair.
+        inv, _ = _beside(drives, n_text, top=1.5)
         inv.investigation_id = "B-1"
         return inv
 
@@ -1487,32 +1488,52 @@ class TestRI45:
         assert merged.spt[0].n == 85
 
     def test_a_models_n_against_the_floors_computed_one(self):
-        merged, log = merge_investigations(self._floor(),
-                                           _model(13, blows=(4, 55, 30)))
+        # As the log reader gives it: no drive lengths, increment or
+        # interval, so only the floor knows the drives are 6 in.
+        merged, log = merge_investigations(
+            self._floor(), _model(13, blows=(4, 55, 30), increment=None))
+        assert len(merged.spt) == 1
         rows = self._rows(log, "n")
         assert len(rows) == 1
         assert {rows[0]["floor"], rows[0]["model"]} == {"85", "13"}
 
     def test_a_models_n_beside_the_same_printed_n_keeps_the_drives_n(self):
-        merged, _ = merge_investigations(self._floor(n_text="13"),
-                                         _model(13, blows=(4, 55, 30)))
+        merged, _ = merge_investigations(
+            self._floor(n_text="13"),
+            _model(13, blows=(4, 55, 30), increment=None))
         record = merged.spt[0]
         assert record.n == 13
         assert [(a.value, a.method) for a in record.prov.alternatives
                 if a.field == "n"] == [("85", "derived")]
 
+    @pytest.mark.parametrize("drives, n_text, theirs", [
+        ("18-32-50", "", 82), ("4-55-30", "", 85), ("4-55-30", "13", 85)])
     def test_a_refusal_only_the_model_claims_on_three_drives_is_cleared(
-            self):
-        model = _model(None, blows=(4, 55, 30))
+            self, drives, n_text, theirs):
+        # The model's record as the log reader gives it: no drive lengths,
+        # increment or interval. The floor read the 6 in drives off the
+        # header, and its N for them settles it.
+        model = _model(None, blows=[int(d) for d in drives.split("-")],
+                       increment=None)
         model.spt[0].refusal = True
-        merged, log = merge_investigations(self._floor(), model)
-        assert not merged.spt[0].refusal
+        merged, log = merge_investigations(self._floor(drives, n_text),
+                                           model)
+        assert len(merged.spt) == 1 and not merged.spt[0].refusal
         rows = self._rows(log, "refusal")
         assert len(rows) == 1 and rows[0]["kept"] == "floor"
         assert "p. 3-51" in rows[0]["why"]
+        assert f"2nd + 3rd, {theirs}" in rows[0]["why"]
+
+    def test_a_models_refusal_beside_a_printed_one_stands(self):
+        model = _model(None, blows=(18, 32, 50), increment=None)
+        model.spt[0].refusal = True
+        merged, log = merge_investigations(self._floor("18-32-50", "R"),
+                                           model)
+        assert merged.spt[0].refusal and merged.spt[0].n_printed == "R"
+        assert self._rows(log, "refusal") == []
 
     def test_a_models_refusal_on_a_halt_stands(self):
-        model = _model(None, blows=(25, '50/3"'))
+        model = _model(None, blows=(25, '50/3"'), increment=None)
         model.spt[0].refusal = True
         merged, log = merge_investigations(self._floor('25-50/3"'), model)
         assert merged.spt[0].refusal
@@ -1584,27 +1605,31 @@ class TestRI48:
             sample.recovery is not None and sample.recovery.value == 12.0)
         assert inv.spt[0].n == 13
 
-    @pytest.mark.parametrize("mark, drives, refusal, flagged", [
-        ("50+", "", True, False),               # no drives to say otherwise
-        ("50+", '25-50/3"', True, False),       # drives end in a halt
-        ("50+", "20-25-30", False, False),      # complete, N 55 meets it
-        ("50+", "4-6-7", False, True),          # complete, N 13: listed
-        (">50", "20-25-25", False, True),       # N 50 is not over 50
-        ("R", '25-50/3"', True, False),
-        ("R", "4-6-7", False, True),
-        ("REF", '30-50/2"', True, False),
-        ("R", "25-60", True, False),            # stopped short over 50
-        ("R", "4-6", True, False),              # stopped short: as printed
+    @pytest.mark.parametrize("mark, drives, theirs", [
+        ("50+", "", None),                      # no drives
+        ("50+", '25-50/3"', None),              # drives end in a halt
+        ("50+", "20-25-30", None),              # N 55 meets the bound
+        ("50+", "18-32-50", None),              # a halted 50 printed bare
+        ("50+", "4-6-7", 13),                   # N 13 does not: listed
+        (">50", "20-25-25", 50),                # N 50 is not over 50
+        ("R", '25-50/3"', None),
+        ("R", "4-6-7", 13),                     # a word: listed
+        ("R", "18-32-50", 82),
+        ("REF", '30-50/2"', None),
+        ("R", "25-60", None),                   # stopped short over 50
+        ("R", "4-6", None),
     ])
     def test_a_refusal_printed_bare_in_an_n_column_is_kept(
-            self, mark, drives, refusal, flagged):
+            self, mark, drives, theirs):
+        # The record is a refusal: the log says so. The drives' N stands
+        # beside it, listed, where three whole drives disagree with it.
         inv, qa = _beside(drives, mark)
         record = inv.spt[0]
         assert record.n is None and record.n_printed == mark
-        assert record.refusal is refusal
-        assert ("floor_n_drives" in _flags(qa)) is flagged
-        if flagged:
-            assert [a.field for a in record.prov.alternatives] == ["n"]
+        assert record.refusal
+        assert ("floor_n_drives" in _flags(qa)) is (theirs is not None)
+        assert [(a.field, a.value) for a in record.prov.alternatives] == (
+            [("n", str(theirs))] if theirs is not None else [])
 
     def test_a_bare_r_in_a_blows_column_is_the_refusal_printed(self):
         inv, _ = _beside('25-50/3"', "", extra=[("blows", "R", 1)])
@@ -1613,24 +1638,32 @@ class TestRI48:
         assert inv.samples[0].kind == "spt"
 
     def test_a_50_plus_in_a_blows_column_is_not_read_as_the_n(self):
-        # "50+" in a blows column may be a drive: left to the blows reading.
-        inv, _ = _beside("", "", extra=[("blows", "50+", 0)])
+        # "50+" in a blows column may be a drive: not the N, kept in the
+        # note and listed.
+        inv, qa = _beside("", "", extra=[("blows", "50+", 0)])
         assert all(r.n_printed != "50+" for r in inv.spt)
+        assert "50+" in inv.samples[0].note
+        assert "floor_unplaced_n" in _flags(qa)
 
-    @pytest.mark.parametrize("drives, n_printed, refusal, flagged", [
-        (["25", '50/3"'], "R", True, False),
-        (["4", "6", "7"], "R", False, True),
-        (["20", "25", "30"], "50+", False, False),
+    def test_a_refusal_in_parentheses_in_an_n_column(self):
+        inv, qa = _beside('25-50/3"', "(R)")
+        record = inv.spt[0]
+        assert record.n_printed == "R" and record.refusal
+
+    @pytest.mark.parametrize("drives, n_printed, flagged", [
+        (["25", '50/3"'], "R", False),
+        (["4", "6", "7"], "R", True),
+        (["20", "25", "30"], "50+", False),
     ])
     def test_a_refusal_line_in_a_stack_is_its_printed_n(
-            self, drives, n_printed, refusal, flagged):
+            self, drives, n_printed, flagged):
         inv, qa = _stacked([(1.0, ["1"] + drives + [n_printed]),
                             (2.0, ["2", "5", "8", "9", "17"])], 0.15,
                            N_STACK)
         first = inv.spt[0]
         assert inv.samples[0].sample_id == "1"
         assert first.n is None and first.n_printed == n_printed
-        assert first.refusal is refusal
+        assert first.refusal
         assert ("floor_n_drives" in _flags(qa)) is flagged
         assert inv.spt[1].n == 17 and inv.samples[1].sample_id == "2"
 
@@ -1687,6 +1720,7 @@ class TestRI48:
         assert "floor_stack" in _flags(qa)
         assert all(r.n is None for r in inv.spt)
         assert any("(13)" in s.note for s in inv.samples)
+        assert "floor_unplaced_n" in _flags(qa)
 
     def test_a_refusal_on_the_n60_line_is_kept_with_the_n60(self):
         column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N / N60",
@@ -1697,3 +1731,89 @@ class TestRI48:
         assert record.n is None and record.n_printed == "R"
         assert record.refusal
         assert "floor_n60" in _flags(qa)
+
+    # The review's probes (RI-48, round 1): "N=" forms printed a line under
+    # the drives in the blows column, or in an N column beside them.
+    @pytest.mark.parametrize("drives, mark, printed, theirs", [
+        ("18-32-50", "N=R", "R", 82),
+        ("18-32-50", "N=REF", "REF", 82),
+        ("18-32-50", "N=50+", "50+", None),     # 82 meets the bound
+        ("10-12-14", "N=>50", ">50", 26),
+        ('18-32-50/4"', "N=R", "R", None),      # not three whole drives
+    ])
+    def test_a_printed_refusal_beside_three_whole_drives_is_a_refusal(
+            self, drives, mark, printed, theirs):
+        inv, qa = _beside(drives, "", extra=[("blows", mark, 1)])
+        record = inv.spt[0]
+        assert record.n is None and record.n_printed == printed
+        assert record.refusal
+        assert ("floor_n_drives" in _flags(qa)) is (theirs is not None)
+        assert [a.value for a in record.prov.alternatives] == (
+            [str(theirs)] if theirs is not None else [])
+
+    @pytest.mark.parametrize("in_n_column", [False, True])
+    @pytest.mark.parametrize("drives, mark, printed", [
+        ('25-50/3"', "N=50+", "50+"),
+        ('25-50/3"', 'N=50/3"', '50/3"'),
+        ('25-50/3"', "N = 100+", "100+"),
+        ('50/3"', "N=50+", "50+"),
+    ])
+    def test_a_bound_after_n_equals_is_never_an_exact_n(
+            self, in_n_column, drives, mark, printed):
+        if in_n_column:
+            inv, qa = _beside(drives, mark)
+        else:
+            inv, qa = _beside(drives, "", extra=[("blows", mark, 1)])
+        record = inv.spt[0]
+        assert record.n is None and record.n_printed == printed
+        assert record.refusal and _flags(qa) == []
+
+    def test_an_n60_in_parentheses_is_never_the_n(self):
+        column = _column("blows", "BLOWS PER 6 IN (N60)", "blows",
+                         "n_value")
+        inv, qa = _beside("4-6-7", "(17)", column, blows_column=column,
+                          n_line=1)
+        record = inv.spt[0]
+        assert record.n == 13 and "2nd + 3rd" in record.n_basis
+        assert "(17)" in inv.samples[0].note
+        assert "floor_n60" in _flags(qa)
+
+    # Found by the RI-48 fuzz (fuzz_r4): refusals printed on a stack's lines.
+    def test_a_refusal_in_parentheses_on_a_stacks_n_line(self):
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN (N)",
+                         "sample_id", "blows", "n_value")
+        inv, qa = _stacked([(1.0, ["8", "44", "53", "30", "(REF)"])], 0.15,
+                           column)
+        record = inv.spt[0]
+        assert record.n is None and record.n_printed == "REF"
+        assert record.refusal
+        assert [a.value for a in record.prov.alternatives] == ["83"]
+        assert "floor_n_drives" in _flags(qa)
+
+    def test_a_refusal_where_the_n_goes_with_the_recovery_missing(self):
+        # "N / REC" after the blows and one line printed: a refusal there is
+        # the N (a recovery is never so printed), so the count above it is
+        # the third drive, not a doubt.
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N / REC",
+                         "sample_id", "blows", "n_value", "recovery")
+        inv, qa = _stacked([(1.0, ["4", "43", "18", "32", "50+"]),
+                            (2.0, ["5", "6", "8", "9", "17", "12"])], 0.15,
+                           column)
+        first, second = inv.spt
+        assert first.blows == [43, 18, 32]
+        assert first.n is None and first.n_printed == "50+"
+        assert first.refusal and first.prov.alternatives == []
+        assert inv.samples[0].recovery_percent is None
+        assert "floor_stack_tail" not in _flags(qa)
+        assert second.n == 17 and inv.samples[1].sample_id == "5"
+
+    def test_a_refusal_in_a_stack_that_does_not_read_is_not_a_recovery(self):
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N / REC",
+                         "sample_id", "blows", "n_value", "recovery")
+        inv, qa = _stacked([(1.0, ["1", "4", "6", "7", "9", "50+"])], 0.15,
+                           column)
+        assert "floor_stack" in _flags(qa)
+        assert all(s.recovery_percent is None for s in inv.samples)
+        assert all(r.n is None and r.n_printed == "" for r in inv.spt)
+        assert any("50+" in s.note for s in inv.samples)
+        assert "floor_unplaced_n" in _flags(qa)
