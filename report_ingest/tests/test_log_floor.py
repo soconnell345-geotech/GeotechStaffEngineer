@@ -671,7 +671,7 @@ class TestTheStackedColumn:
         assert [r.blows for r in inv.spt] == [[4, 6, 7], [5, 8, 9],
                                               [10, 12, 15]]
         assert [r.n for r in inv.spt] == [None, None, None]
-        assert _flags(qa) == ["floor_stack_rec"]
+        assert _flags(qa) == ["floor_stack_tail"]
         assert "recovery" in inv.samples[0].note
 
     @pytest.mark.parametrize("pitch", [0.12, 0.15, 0.25, 0.35])
@@ -768,6 +768,103 @@ class TestTheStackedColumn:
         assert inv.spt[0].blows == [25, '50/3"'] and inv.spt[0].refusal
         assert inv.spt[0].n is None
         assert inv.samples[0].recovery_percent == 9
+
+    @pytest.mark.parametrize("header, layout", [
+        ("SAMPLE NO. / BLOWS/6 IN / REC", ["rec"]),
+        ("SAMPLE NO. / BLOWS/6 IN", []),
+        ("SAMPLE NO. / BLOWS/6 IN / N / REC", ["n", "rec"]),
+        ("SAMPLE NO. / BLOW RECORD (6 IN)", []),        # RECORD is not REC
+        ("SAMPLE NO. / REC / BLOWS/6 IN", None),        # REC before BLOWS
+        ("BLOWS / SAMPLE NO.", None),
+    ])
+    def test_the_header_says_what_follows_the_drives(self, header, layout):
+        from report_ingest.log_floor import _stack_layout
+
+        assert _stack_layout(header) == layout
+
+    @pytest.mark.parametrize("typed", [True, False])
+    def test_a_recovery_named_before_the_blows_is_read_as_before(self,
+                                                                  typed):
+        # Number, recovery, drives: whether a recovery is printed cannot be
+        # told from the first drive (truth N 13 and 17, REC 12 and 14).
+        column = _column("blows", "SAMPLE NO. / REC / BLOWS/6 IN",
+                         "sample_id", "blows", "recovery")
+        rows = [(1.0, ["1", "12", "4", "6", "7"]),
+                (2.5, ["2", "14", "5", "8", "9"])]
+        inv, qa = _stacked(rows, 0.15, column, typed=typed)
+        assert not set(_ids(inv)) & {"4", "5", "7", "9", "12", "14"}
+        assert all(r.n is None for r in inv.spt)
+        assert all(s.recovery_percent is None for s in inv.samples)
+        assert "floor_stack" in _flags(qa)
+
+    def test_an_n_line_where_the_header_names_n_and_rec(self):
+        # One line after the drives where the header names two: kept in the
+        # note, never the recovery, and no N (the 7 may be the N).
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N / REC",
+                         "sample_id", "blows", "n_value", "recovery")
+        rows = [(1.0, ["1", "4", "6", "7", "13"]),
+                (2.5, ["2", "5", "8", "9", "17"])]
+        inv, qa = _stacked(rows, 0.15, column)
+        assert _ids(inv) == ["1", "2"]
+        assert all(s.recovery_percent is None for s in inv.samples)
+        assert all(r.n is None for r in inv.spt)
+        assert "13" in inv.samples[0].note
+        assert {"floor_stack_tail", "floor_unassigned"} <= set(_flags(qa))
+
+    def test_the_n_line_the_header_names_is_the_printed_n(self):
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N",
+                         "sample_id", "blows", "n_value")
+        rows = [(1.0, ["1", "4", "6", "7", "13"]),
+                (2.5, ["2", "5", "8", "9", "17"])]
+        inv, qa = _stacked(rows, 0.15, column)
+        assert _ids(inv) == ["1", "2"]
+        assert [r.blows for r in inv.spt] == [[4, 6, 7], [5, 8, 9]]
+        assert [(r.n, r.n_basis) for r in inv.spt] == [(13, ""), (17, "")]
+        assert qa == []
+
+    def test_a_blow_record_header_has_no_recovery(self):
+        column = _column("blows", "SAMPLE NO. / BLOW RECORD (6 IN)",
+                         "sample_id", "blows")
+        inv, qa = _stacked(_rows(pitch=0.15, rec=False, spacing=1.5), 0.15,
+                           column)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [d for _s, d, _r in _THREE]
+        assert "floor_stack_tail" not in _flags(qa)
+
+    @pytest.mark.parametrize("typed", [True, False])
+    def test_a_number_over_a_refusal_in_a_column_read_as_before(self, typed):
+        # Back to back with sample 2 uncoded: the column reads as before,
+        # and the number "2" over '50/3"' is never taken as its drive.
+        rows = [(1.0, ["1", "4", "6", "7"]), (1.6, ["2", '50/3"']),
+                (1.9, ["3", "5", "8", "9"])]
+        cell = _sheet(0.15)
+        cells = [cell("blows", t, round(top + j * 0.15, 4))
+                 for top, lines in rows for j, t in enumerate(lines)]
+        if typed:
+            cells += [cell("type", "SS", 1.0), cell("type", "SS", 1.9)]
+        inv, qa = _seed(cells, [NO_REC6, TYPE] if typed else [NO_REC6])
+        refused = [r for r in inv.spt if r.refusal]
+        assert [r.blows for r in refused] == [['50/3"']]
+        assert "floor_stack" in _flags(qa)
+
+    def test_a_box_and_a_sampler_code_a_line_apart_start_nothing(self):
+        # The box starts sample 2 at "2"; its SS is printed a line lower, on
+        # its first drive, which is 3. Neither "2" alone nor "3" is read.
+        boxes = [SimpleNamespace(top=t, bottom=t + 0.4572, page=0,
+                                 pages=(0,), plus_minus=None, label="")
+                 for t in (1.0, 2.0)]
+        cell = _sheet(0.15)
+        rows = [(1.0, ["1", "4", "6", "7"]), (2.0, ["2", "3", "8", "9"])]
+        cells = [cell("blows", t, round(top + j * 0.15, 4))
+                 for top, lines in rows for j, t in enumerate(lines)]
+        cells += [cell("type", "SS", 1.0), cell("type", "SS", 2.15)]
+        grid = _Grid(cells, [NO_REC6, TYPE])
+        grid.samples = boxes
+        qa = []
+        inv = seed_from_grid(grid, [0], "SYNTH", qa=qa)
+        assert "3" not in _ids(inv)
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack" in _flags(qa)
 
     def test_a_prefixed_id_in_that_column_reads_as_before(self):
         cells = [_cell("blows", "S-3", 3.0), _cell("blows", "4", 3.05),
@@ -874,18 +971,36 @@ class TestRI44:
         assert inv.spt[0].blows == blows
         assert inv.spt[0].n is None
 
-    @pytest.mark.parametrize("cells, columns", [
-        ([_cell("id", "S-1", 3.0), _cell("blows", "25", 3.0),
-          _cell("blows", '50/3"', 3.1)], [ID, BLOWS]),
-        ([_cell("rec", "S-3", 3.0), _cell("rec", "25", 3.05),
-          _cell("rec", '50/3"', 3.1)], [DATA]),
-    ])
-    def test_a_count_printed_above_a_refusal_is_its_drive(self, cells,
-                                                          columns):
-        inv, _ = _seed(cells + [_cell("type", "SS", 3.0)], columns + [TYPE])
+    def test_a_count_printed_above_a_refusal_is_its_drive(self):
+        cells = [_cell("id", "S-1", 3.0), _cell("type", "SS", 3.0),
+                 _cell("blows", "25", 3.0), _cell("blows", '50/3"', 3.1)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
         record = inv.spt[0]
         assert record.blows == [25, '50/3"']
         assert record.refusal and record.n is None
+
+    def test_never_a_count_in_a_sample_number_column_a_stack_did_not_read(
+            self):
+        # In a DATA column a bare number may be anything the column holds;
+        # read as before.
+        cells = [_cell("rec", "S-3", 3.0), _cell("rec", "25", 3.05),
+                 _cell("rec", '50/3"', 3.1), _cell("type", "SS", 3.0)]
+        inv, _ = _seed(cells, [DATA, TYPE])
+        assert inv.spt[0].blows == ['50/3"']
+
+    @pytest.mark.parametrize("pitch", [0.2, 0.25])
+    def test_never_the_sample_befores_drive_above_the_id_line(self, pitch):
+        # S-1's third drive, printed a line above S-2, is past S-1's span
+        # and falls in S-2's rows; it is S-1's, never S-2's.
+        cell = _sheet(pitch)
+        cells = [cell("id", "S-1", 3.0), cell("type", "SS", 3.0),
+                 cell("blows", "4", 3.0), cell("blows", "6", 3.0 + pitch),
+                 cell("blows", "7", 3.0 + 2 * pitch),
+                 cell("id", "S-2", 3.0 + 3 * pitch),
+                 cell("type", "SS", 3.0 + 3 * pitch),
+                 cell("blows", '50/3"', 3.0 + 3 * pitch)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        assert inv.spt[-1].blows == ['50/3"']
 
     def test_a_count_printed_below_a_refusal_stays_out(self):
         cells = [_cell("id", "S-1", 3.0), _cell("type", "SS", 3.0),
