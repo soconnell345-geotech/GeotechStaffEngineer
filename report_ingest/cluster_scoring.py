@@ -28,6 +28,12 @@ NO CREDENTIAL IS READ OR STORED. Authentication is whatever the passed-in
 ``fh_prompter`` was built with. Nothing here touches an environment
 variable, a key file or a secret scope.
 
+OR A CHAT MODEL READS INSTEAD (BACKLOG RI-67). ``chat_model=`` -- a
+LangChain chat model, or a callable returning one for a model name --
+puts the app's own engine in the Prompter's place: on Foundry, Claude
+through the workspace's ``palantir_models`` classes, built and
+authenticated by the caller. See :func:`score_on_cluster`.
+
 WHERE THE OUTPUT GOES. ``out_dir`` is the working folder and local disk is
 the sensible place for it: a run writes one small file per report per stage.
 No path is refused -- a workspace ``out_dir`` is allowed and gets a printed
@@ -77,7 +83,7 @@ import time
 import traceback
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.corpus import Corpus
 from report_ingest.mirror import DEFAULT_FOLDER, Mirror
@@ -329,15 +335,162 @@ def _truth_for(rid: str, corpus: Corpus, oos: Dict[str, Dict[int, dict]],
     return {}, {}, "none"
 
 
+# ---------------------------------------------------------------------------
+# the engine each call goes through (BACKLOG RI-67)
+# ---------------------------------------------------------------------------
+
+#: What a run file calls each engine class.
+_ENGINE_KINDS = {"PrompterEngine": "prompter",
+                 "ChatModelEngine": "chat_model",
+                 "ClaudeEngine": "claude"}
+
+
+class _Engines:
+    """Builds the engine every stage reads with (BACKLOG RI-67).
+
+    With no chat model this is what every stage always did: a
+    :class:`~report_ingest.engine.PrompterEngine` on the live Prompter and
+    the tier asked for, and the run files say exactly what they said before.
+
+    Given a chat model -- a LangChain chat model, the page's wrapper round
+    one, or a callable that returns one for a model name -- each engine is
+    built through :func:`report_ingest.engine.engine_for`, which makes a
+    :class:`~report_ingest.engine.ChatModelEngine` of it: the engine the
+    app's pages read a report on. ``chat_model`` serves the readers, the
+    triage and the label review; ``vision_chat_model`` the vision pass (the
+    ``vision_labels`` stage and the vote's vision voter inside the ingest),
+    and it defaults to ``chat_model``. A callable is asked once per model
+    name and its model kept for the whole run.
+
+    A run on a chat model says so in every run file and table: ``engine``
+    (``chat_model``, or ``prompter`` for a stage left on the Prompter),
+    ``model`` (the name the model gives itself) and ``chat_model`` (its
+    class), so a number read through Foundry's classes is never taken for a
+    Prompter number.
+    """
+
+    def __init__(self, prompter: Any = None, chat_model: Any = None,
+                 vision_chat_model: Any = None) -> None:
+        self.prompter = prompter
+        self.sources: Dict[bool, Any] = {
+            False: chat_model,
+            True: (vision_chat_model if vision_chat_model is not None
+                   else chat_model)}
+        self._chats: Dict[Tuple[bool, str], Any] = {}
+
+    @classmethod
+    def of(cls, prompter: Any) -> "_Engines":
+        """The run's engines, or a live Prompter's alone (every caller that
+        passes a Prompter straight in, as before RI-67)."""
+        return prompter if isinstance(prompter, cls) else cls(prompter)
+
+    @property
+    def plain(self) -> bool:
+        """No chat model anywhere: the Prompter run this always was."""
+        return all(source is None for source in self.sources.values())
+
+    def on_prompter(self, vision: bool = False) -> bool:
+        return self.sources[vision] is None
+
+    def _chat(self, name: str, vision: bool) -> Any:
+        """The chat model for this model name, made once per run."""
+        from report_ingest.engine import _chat_model_in
+
+        key = (vision, name)
+        if key not in self._chats:
+            source = self.sources[vision]
+            chat = _chat_model_in(source)
+            if chat is None and callable(source):
+                chat = _chat_model_in(source(name))
+            if chat is None:
+                which = "vision_chat_model" if vision else "chat_model"
+                raise ValueError(
+                    f"{which} must be a LangChain chat model, or a callable "
+                    f"that returns one for a model name; for {name!r} it "
+                    f"gave {type(source).__name__}")
+            self._chats[key] = chat
+        return self._chats[key]
+
+    def build(self, name: str, meter: Any, *, vision: bool = False) -> Any:
+        """The engine for one item, on its own meter."""
+        from report_ingest.engine import PrompterEngine, engine_for
+
+        if self.sources[vision] is None:
+            return PrompterEngine(self.prompter, name, meter=meter)
+        return engine_for(self._chat(name, vision), meter=meter)
+
+    def record(self, name: str, engine: Any) -> Dict[str, Any]:
+        """What a run file says about the engine that read it: the tier
+        alone on a Prompter run, as always; the engine, the model's own name
+        and the chat model's class once a chat model is in the run."""
+        if self.plain:
+            return {"model": name}
+        out: Dict[str, Any] = {
+            "model": str(getattr(engine, "model", "") or name),
+            "engine": _ENGINE_KINDS.get(type(engine).__name__,
+                                        type(engine).__name__)}
+        chat = getattr(engine, "chat_model", None)
+        if chat is not None:
+            out["chat_model"] = type(chat).__name__
+        return out
+
+    def describe(self, name: str, vision: bool = False) -> Dict[str, Any]:
+        """:meth:`record` for the engine this run builds for ``name``,
+        without a model call. A factory is asked for its model here, so a
+        bad one fails before anything is spent."""
+        from report_ingest.engine import CostMeter
+
+        if self.plain:
+            return {"model": name}
+        if self.sources[vision] is None:
+            return {"model": name, "engine": "prompter"}
+        return self.record(name, self.build(name, CostMeter(), vision=vision))
+
+    def stage(self, name: str, vision: bool = False
+              ) -> Tuple[str, Dict[str, Any]]:
+        """``(model, the other engine fields)`` for a stage's results: the
+        tier and nothing more on a Prompter run."""
+        fields = dict(self.describe(name, vision=vision))
+        return str(fields.pop("model")), fields
+
+
+def _through(results: Dict[str, Any]) -> str:
+    """How a stage's calls went out, for its heading."""
+    if results.get("engine") in (None, "prompter"):
+        return "Prompter"
+    return "a chat model"
+
+
+def _engine_lines(results: Dict[str, Any], prefix: str = "",
+                  label: str = "Engine") -> List[str]:
+    """The line saying which engine a stage ran on; none on the Prompter,
+    which is every run before RI-67 and what the headings already say.
+    ``prefix`` reads a second engine's fields (``vision_``), whose model
+    the stage's own model line does not name."""
+    engine = results.get(f"{prefix}engine")
+    if engine in (None, "prompter"):
+        return []
+    chat = results.get(f"{prefix}chat_model")
+    model = results.get(f"{prefix}model") if prefix else None
+    return [f"{label}: `{engine}`" + (f" over `{chat}`" if chat else "")
+            + (f", model `{model}`" if model else "")
+            + " -- the caller's own chat model (BACKLOG RI-67), not the "
+              "Funhouse Prompter; the model is named as it names itself."]
+
+
 def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
              triage_model: str, out_dir: Path) -> dict:
-    """Rules, triage and review on one report. Writes its own run file."""
+    """Rules, triage and review on one report. Writes its own run file.
+
+    ``prompter`` is the live Prompter, or the run's :class:`_Engines`.
+    """
     from planlens.document.roles import document_outline, page_roles
 
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
     from report_ingest.label_review import review_labels
     from report_ingest.triage import document_facts, triage
 
+    engines = _Engines.of(prompter)
     started = time.time()
     meter = CostMeter()
     doc = corpus.open_report(rid, di="auto", warn=False)
@@ -345,10 +498,10 @@ def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
         roles = page_roles(doc)
         outline = document_outline(doc)
         facts = document_facts(doc, roles)
-        triage_engine = PrompterEngine(prompter, triage_model, meter=meter)
+        triage_engine = engines.build(triage_model, meter)
         profile = triage(doc, roles, outline, engine=triage_engine,
                          facts=facts)
-        review_engine = PrompterEngine(prompter, model, meter=meter)
+        review_engine = engines.build(model, meter)
         review = review_labels(doc, roles, outline, profile,
                                engine=review_engine)
         rules = {r.page: r.role for r in roles}
@@ -362,13 +515,16 @@ def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
     finally:
         doc.close()
 
+    review_fields = engines.record(model, review_engine)
     blob = {
         "id": rid,
         "run_date": date.today().isoformat(),
         "n_pages": n_pages,
-        "engine": "prompter",
-        "triage_model": triage_model,
-        "review_model": model,
+        "engine": review_fields.get("engine", "prompter"),
+        "triage_model": engines.record(triage_model, triage_engine)["model"],
+        "review_model": review_fields["model"],
+        **({"chat_model": review_fields["chat_model"]}
+           if "chat_model" in review_fields else {}),
         "served_by": served_by,
         "rules_labels": {str(k): v for k, v in sorted(rules.items())},
         "rules_confidence": {str(k): v
@@ -433,7 +589,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      ingest_bound: bool = True,
                      ingest_counts_from_logs: str = "off",
                      ingest_narrative_skips_bound: bool = False,
-                     trust_table: Any = None
+                     trust_table: Any = None,
+                     chat_model: Any = None,
+                     vision_chat_model: Any = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -461,7 +619,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         The live ``fh_prompter``. Required by every stage that calls a
         model, which is every stage but ``vote``: the vote combines label
         runs already on disk and makes no call, so it runs without one
-        (BACKLOG RI-08).
+        (BACKLOG RI-08). A stage that reads on ``chat_model`` needs none
+        either (BACKLOG RI-67).
     model, triage_model
         Funhouse tiers. ``triage_model`` defaults to ``model``; triage is one
         call over a ledger and a cheaper tier is usually enough, the review
@@ -650,6 +809,49 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         ``run.json`` records them, and a report already done under other
         settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
         to compare two settings.
+    chat_model, vision_chat_model
+        A LangChain chat model to read with INSTEAD OF the Prompter (BACKLOG
+        RI-67), or a callable that returns one for a model name. Each
+        engine is then built through
+        :func:`report_ingest.engine.engine_for` -- a
+        :class:`~report_ingest.engine.ChatModelEngine` over the model, as
+        the app's pages build theirs. ``chat_model`` serves the readers, the
+        triage and the label review; ``vision_chat_model`` the vision pass
+        (the ``vision_labels`` stage and the vote's vision voter in the
+        ingest), and it defaults to ``chat_model``. A callable is asked
+        with ``model``, ``triage_model`` or ``vision_model`` and its model is
+        kept for the run; a single chat model is used whatever those say.
+        Neither is needed and nothing changes without them: every stage
+        then runs on the Prompter exactly as before, and its run files and
+        tables are what they were. With one, ``prompter`` is needed only by
+        a stage left on it. Every run file and table of a chat-model run
+        names its ``engine``, the ``model`` as the model names itself and
+        the ``chat_model`` class. On Foundry, Claude through the
+        workspace's own model classes::
+
+            from webapp.palantir_sdk_engine import PalantirClaudeChatModel
+
+            claude = PalantirClaudeChatModel(
+                model_api_name="AnthropicClaude_5_5_Opus", max_tokens=32000)
+            score_on_cluster(..., chat_model=claude,
+                             stages=("labels", "vision_labels"))
+
+        or a callable over the app's own resolver, so ``model`` and
+        ``vision_model`` pick the model by its Foundry API name (with
+        ``GEOTECH_FOUNDRY_CLAUDE_SDK=1`` a Claude name takes the
+        ``palantir_models`` class, as on the page)::
+
+            from webapp.engine_config import resolve_engine
+
+            def foundry_model(name):
+                found = resolve_engine(name)
+                if found.model is None:
+                    raise RuntimeError(found.message)
+                return found.model
+
+            score_on_cluster(..., chat_model=foundry_model,
+                             model="AnthropicClaude_5_5_Opus",
+                             vision_model="AnthropicClaude_5_5_Opus")
     """
     reports_dir = reports_dir if reports_dir is not None else corpus_dir
     if reports_dir is None:
@@ -662,10 +864,36 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     if not stages:
         raise ValueError(f"pass at least one stage: {list(STAGE_NAMES)}")
     calling = [s for s in stages if s not in NO_MODEL_STAGES]
-    if prompter is None and calling:
+    engines = _Engines(prompter, chat_model, vision_chat_model)
+    # A stage left on the Prompter needs it; one on a chat model does not.
+    on_prompter = [s for s in calling
+                   if (s != "vision_labels" and engines.on_prompter())
+                   or (s in ("vision_labels", "ingest")
+                       and engines.on_prompter(vision=True))]
+    if prompter is None and on_prompter:
         raise ValueError(
-            f"pass the live fh_prompter: stage(s) {calling} call the model, "
-            f"and this module reads no credential of its own")
+            f"pass the live fh_prompter: stage(s) {on_prompter} call the "
+            f"model, and this module reads no credential of its own"
+            + ("" if engines.plain else
+               " (or pass a chat model for them as well)"))
+    engine_notes: List[str] = []
+    if not engines.plain:
+        # A chat model, or a factory, that cannot give one fails here,
+        # before anything is opened or spent.
+        asked_for = []
+        if any(s != "vision_labels" for s in calling):
+            asked_for.append(("readers", model, False))
+            if triage_model and ("labels" in stages or "ingest" in stages):
+                asked_for.append(("triage", triage_model, False))
+        if any(s in ("vision_labels", "ingest") for s in calling):
+            asked_for.append(("vision", vision_model, True))
+        for what, name, vision in asked_for:
+            said = engines.describe(name, vision=vision)
+            engine_notes.append(
+                f"  {what}: engine {said.get('engine')}"
+                + (f" over {said['chat_model']}" if said.get("chat_model")
+                   else "")
+                + f", model {said['model']} (BACKLOG RI-67)")
     (logs_truth, lab_truth, narrative_truth, calc_truth,
      sounding_truth) = _truth_dirs(
         truth_dir, lab_truth_dir, narrative_truth_dir, calc_truth_dir,
@@ -780,6 +1008,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     print(f"report ingest on the cluster: stage(s) {', '.join(stages)}; "
           f"model {model}, triage {triage_model}; out_dir {out}")
+    for note in engine_notes:
+        print(note)
+    # Every stage takes this in the Prompter's place: the Prompter itself
+    # on a Prompter run, as before, else the run's engines.
+    source = prompter if engines.plain else engines
     if "labels" in stages:
         print(f"  labels: {len(label_ids)} report(s)")
     if absent:
@@ -799,7 +1032,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                   f"${max_total_dollars:.2f} ceiling")
             break
         try:
-            blob = _run_one(rid, corpus, prompter, model, triage_model, out)
+            blob = _run_one(rid, corpus, source, model, triage_model, out)
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")
@@ -823,11 +1056,18 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     results = _score(done, corpus, oos, mapped, sets, model, triage_model,
                      failures, absent)
+    if "labels" in stages and not engines.plain:
+        review_model, fields = engines.stage(model)
+        results["engine"] = fields.get("engine", "prompter")
+        results["review_model"] = review_model
+        results["triage_model"] = engines.stage(triage_model)[0]
+        if fields.get("chat_model"):
+            results["chat_model"] = fields["chat_model"]
     results["stages"] = list(stages)
     lines = _render(results) if "labels" in stages else _header(results)
 
     if "logs" in stages:
-        logs = _run_logs(corpus, prompter, model, out, logs_truth,
+        logs = _run_logs(corpus, source, model, out, logs_truth,
                          budget=log_budget, redo=redo,
                          max_logs=max_reports, open_reports=open_reports,
                          sync=sync, templates_path=templates_path)
@@ -835,14 +1075,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         lines += _render_logs(logs)
 
     if "lab" in stages:
-        lab = _run_lab(corpus, prompter, model, out, lab_truth,
+        lab = _run_lab(corpus, source, model, out, lab_truth,
                        budget=lab_budget, redo=redo, max_sheets=max_reports,
                        open_reports=open_lab_reports, sync=sync)
         results["lab"] = lab
         lines += _render_lab(lab)
 
     if "calc" in stages:
-        calc = _run_calc(corpus, prompter, model, out, calc_truth,
+        calc = _run_calc(corpus, source, model, out, calc_truth,
                          budget=calc_budget, redo=redo,
                          max_calcs=max_reports,
                          open_reports=open_calc_reports, sync=sync)
@@ -851,7 +1091,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     if "soundings" in stages:
         soundings = _run_soundings(
-            corpus, prompter, model, out, sounding_truth,
+            corpus, source, model, out, sounding_truth,
             budget=sounding_budget, redo=redo, max_sheets=max_reports,
             open_reports=open_sounding_reports, sync=sync)
         results["soundings"] = soundings
@@ -859,7 +1099,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     if "narrative" in stages:
         narrative = _run_narrative(
-            corpus, prompter, model, out, narrative_truth,
+            corpus, source, model, out, narrative_truth,
             budget=narrative_budget, redo=redo, max_reports=max_reports,
             open_reports=open_narrative_reports, sync=sync,
             front_pages=narrative_front_pages)
@@ -867,16 +1107,18 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         lines += _render_narrative(narrative)
 
     if "vision_labels" in stages:
-        vision = _run_vision(corpus, prompter, vision_model, out, wanted,
+        vision = _run_vision(corpus, source, vision_model, out, wanted,
                              mode=vision_mode, dpi=vision_dpi,
                              outline_context=vision_outline_context,
                              detail=vision_detail, window=vision_window,
                              images_per_call=vision_images_per_call,
                              fallback=vision_fallback, redo=redo,
                              sync=sync)
+        seen_model, seen_fields = engines.stage(vision_model, vision=True)
         scored_vision = _score_vision(vision["runs"], corpus, oos, mapped,
-                                      sets, out, vision_model,
+                                      sets, out, seen_model,
                                       vision["failures"], vision["settings"])
+        scored_vision.update(seen_fields)
         results["vision_labels"] = scored_vision
         lines += _render_vision(scored_vision)
 
@@ -888,7 +1130,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         lines += _render_vote(vote)
 
     if "ingest" in stages:
-        ingest = _run_ingest(corpus, prompter, model, out, wanted,
+        ingest = _run_ingest(corpus, source, model, out, wanted,
                              triage_model=triage_model,
                              truth=(logs_truth, lab_truth,
                                     narrative_truth, calc_truth,
@@ -1099,8 +1341,11 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
     force for the whole stage, so a log printed on a form the file describes
     is recognised and its columns are named by the form. With no such file
     nothing changes.
+
+    ``prompter`` is the live Prompter, or the run's :class:`_Engines`; so
+    for every stage below.
     """
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
     from report_ingest.log_scoring import METRICS, score_one_log
     from report_ingest.log_templates import (
         load_templates, templates_beside, use_templates,
@@ -1128,6 +1373,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
     print(f"  logs: {len(truths)} hand-truthed log(s); open set "
           f"{', '.join(openset)}")
 
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
@@ -1157,7 +1403,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f"{failures[log_id]}")
             continue
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
+        engine = engines.build(model, meter)
         started = time.time()
         doc = None
         try:
@@ -1184,7 +1430,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
             "report": report,
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
-            "model": model,
+            **engines.record(model, engine),
             "served_by": engine.served_by,
             "pages": [int(p) for p in truth.get("pages") or []],
             "before": before.to_dict(),
@@ -1207,7 +1453,9 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
 
-    return _score_logs(done, failures, model, openset)
+    stage_model, fields = engines.stage(model)
+    return {**_score_logs(done, failures, stage_model, openset),
+            **fields}
 
 
 # ---------------------------------------------------------------------------
@@ -1224,7 +1472,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
     Restartable the same way the other stages are: each sheet writes
     ``lab/<sheet id>.json`` as it finishes and a later call skips it.
     """
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
     from report_ingest.lab_reader import link_from_label_enabled
     from report_ingest.lab_scoring import pages_of, report_of, score_one_sheet
 
@@ -1246,6 +1494,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
     print(f"  lab: {len(truths)} hand-truthed sheet(s); open set "
           f"{', '.join(openset)}")
 
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
@@ -1275,7 +1524,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f"{failures[sheet_id]}")
             continue
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
+        engine = engines.build(model, meter)
         started = time.time()
         doc = None
         try:
@@ -1302,7 +1551,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "kind": str(truth.get("kind") or ""),
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
-            "model": model,
+            **engines.record(model, engine),
             "served_by": engine.served_by,
             "pages": pages_of(truth),
             "before": before.to_dict(),
@@ -1330,7 +1579,9 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
-    return _score_lab(done, failures, model, openset)
+    stage_model, fields = engines.stage(model)
+    return {**_score_lab(done, failures, stage_model, openset),
+            **fields}
 
 
 def _lab_totals(rows: Sequence[dict], stage: str
@@ -1432,7 +1683,8 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
     )
 
     out: List[str] = [
-        "", "# WP3 on the cluster: the lab reader through Prompter", "",
+        "", f"# WP3 on the cluster: the lab reader through "
+            f"{_through(lab)}", "",
         f"Run {lab['date']}. Model `{lab['model']}`, "
         f"{lab['n_sheets']} hand-truthed sheet(s).",
         "",
@@ -1457,6 +1709,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
         "read counts values only (index, series, curve), so its OVERALL "
         "carries no kind or link.",
     ]
+    out += _engine_lines(lab)
     if lab.get("served_by"):
         out.append(f"Served by: {', '.join(lab['served_by'])}.")
     arms = lab.get("link_from_label")
@@ -1576,6 +1829,32 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
 #: that does not exist.
 DEFAULT_OPEN_CALC: Tuple[str, ...] = ()
 
+#: How an on/off switch's arm reads in a table. ``None`` is a run file
+#: written before the switch was recorded (BACKLOG RI-67).
+_ARM_NAMES = {False: "off", True: "on", None: "not recorded"}
+
+
+def _arms(values: Iterable[Any]) -> List[Optional[bool]]:
+    """The arms of an on/off switch a set of run files ran in, off
+    first; ``None`` for a file that does not say."""
+    seen = {None if value is None else bool(value) for value in values}
+    return [arm for arm in (False, True, None) if arm in seen]
+
+
+def _arm_line(what: str, arms: Sequence[Optional[bool]],
+              things: str) -> str:
+    """One line saying which arm(s) of a switch a stage's files ran in,
+    and flagging a mix, as the lab stage does its own switch."""
+    line = f"{what}: " + " and ".join(_ARM_NAMES[arm] for arm in arms)
+    if len(arms) > 1:
+        line += (f" -- MIXED: these {things} were not all read in one "
+                 f"recorded arm")
+    if None in arms:
+        line += ("; `not recorded` is a run file written before the "
+                 "switch was recorded (RI-67), whose arm only its "
+                 "out_dir's name can say")
+    return line + "."
+
 
 def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
               truth_dir: Path, *, budget: int, redo: bool,
@@ -1587,10 +1866,11 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
     Restartable the same way the other stages are: each calculation writes
     ``calc/<calc id>.json`` as it finishes and a later call skips it.
     """
+    from report_ingest.calc_reader import page_images_enabled
     from report_ingest.calc_scoring import (
         pages_of, report_of, score_one_calc,
     )
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
 
     if not truth_dir.is_dir():
         raise FileNotFoundError(
@@ -1610,6 +1890,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
     print(f"  calc: {len(truths)} hand-truthed run(s); open set "
           f"{', '.join(openset) or '(none named)'}")
 
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
@@ -1637,7 +1918,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f"{failures[calc_id]}")
             continue
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
+        engine = engines.build(model, meter)
         started = time.time()
         doc = None
         try:
@@ -1664,7 +1945,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
             "kind": str(truth.get("kind") or ""),
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
-            "model": model,
+            **engines.record(model, engine),
             "served_by": engine.served_by,
             "pages": pages,
             "n_pages": len(pages),
@@ -1672,6 +1953,13 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
             "after": after.to_dict(),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
+            # Which arm of the every-page-pictures switch this run read
+            # in (RI-17's GEOTECH_INGEST_CALC_PAGE_IMAGES, off by
+            # default), as the reader reported it; a run whose reading
+            # failed is put in the arm it was asked to run in (RI-67).
+            "page_images": (after.page_images
+                            if after.page_images is not None
+                            else page_images_enabled()),
         }
         run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
@@ -1684,7 +1972,9 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
-    return _score_calc(done, failures, model, openset)
+    stage_model, fields = engines.stage(model)
+    return {**_score_calc(done, failures, stage_model, openset),
+            **fields}
 
 
 def _calc_totals(rows: Sequence[dict], stage: str
@@ -1738,6 +2028,8 @@ def _score_calc(done: Dict[str, dict], failures: Dict[str, str], model: str,
         "n_calcs": len(rows),
         "n_pages": sum(int(r.get("n_pages") or 0) for r in rows),
         "failures": dict(failures),
+        # The every-page-pictures arm(s) these runs read in (RI-67).
+        "page_images": _arms(r.get("page_images") for r in rows),
         "sets": sets,
         "kinds": by_kind,
         "per_calc": [{
@@ -1755,6 +2047,7 @@ def _score_calc(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "kept": r["after"].get("kept", 0),
             "added": r["after"].get("added", 0),
             "reconciled": r["after"].get("reconciled", 0),
+            "page_images": r.get("page_images"),
             "error": r["after"].get("error"),
             "input_tokens": r["cost"].get("input_tokens", 0),
             "output_tokens": r["cost"].get("output_tokens", 0),
@@ -1789,8 +2082,13 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
         f"printed digit, compared in SI wherever both units convert; a "
         f"program name matches at {PROGRAM_RATIO:g}.",
     ]
+    out += _engine_lines(calc)
     if calc.get("served_by"):
         out.append(f"Served by: {', '.join(calc['served_by'])}.")
+    if calc.get("page_images"):
+        out.append(_arm_line("Every page as a picture (RI-17, "
+                             "GEOTECH_INGEST_CALC_PAGE_IMAGES)",
+                             calc["page_images"], "runs"))
     if calc.get("failures"):
         out += ["", "**Runs that failed and are NOT in any number below:**"]
         out += [f"- {calc_id}: {why}"
@@ -1912,7 +2210,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
     Restartable the same way the other stages are: each sheet writes
     ``soundings/<id>.json`` as it finishes and a later call skips it.
     """
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
     from report_ingest.sounding_scoring import (
         kind_of, pages_of, report_of, score_one_sounding,
     )
@@ -1935,6 +2233,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
     print(f"  soundings: {len(truths)} hand-truthed sheet(s); open set "
           f"{', '.join(openset) or '(none named)'}")
 
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
@@ -1960,7 +2259,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f"{failures[sheet_id]}")
             continue
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
+        engine = engines.build(model, meter)
         started = time.time()
         doc = None
         try:
@@ -1989,7 +2288,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
             "kind": kind,
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
-            "model": model,
+            **engines.record(model, engine),
             "served_by": engine.served_by,
             "pages": pages,
             "n_pages": len(pages),
@@ -2014,7 +2313,9 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
-    return _score_soundings(done, failures, model, openset)
+    stage_model, fields = engines.stage(model)
+    return {**_score_soundings(done, failures, stage_model, openset),
+            **fields}
 
 
 def _sounding_totals(rows: Sequence[dict], stage: str
@@ -2132,6 +2433,7 @@ def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
         f"resistance, sleeve friction, the printed index), {U2_TOL:.0%} "
         f"(pore pressure), or EXACTLY (a blow count, which is a count).",
     ]
+    out += _engine_lines(soundings)
     if soundings.get("served_by"):
         out.append(f"Served by: {', '.join(soundings['served_by'])}.")
     if soundings.get("failures"):
@@ -2266,7 +2568,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
     Restartable the same way the other stages are: each report writes
     ``narrative/<ID>.json`` as it finishes and a later call skips it.
     """
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
     from report_ingest.narrative_scoring import score_one_report
 
     if not truth_dir.is_dir():
@@ -2288,6 +2590,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
     print(f"  narrative: {len(truths)} hand-answered report(s); open set "
           f"{', '.join(openset)}")
 
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, (rid, truth) in enumerate(truths, 1):
@@ -2311,7 +2614,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
             print(f"  [{n}/{len(truths)}] {rid}: skipped -- {failures[rid]}")
             continue
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
+        engine = engines.build(model, meter)
         started = time.time()
         doc = None
         try:
@@ -2334,7 +2637,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
             "id": rid,
             "run_date": date.today().isoformat(),
             "set": "open" if rid in openset else "blind",
-            "model": model,
+            **engines.record(model, engine),
             "served_by": engine.served_by,
             "score": score.to_dict(),
             "cost": meter.to_dict(),
@@ -2351,7 +2654,9 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
-    return _score_narrative(done, failures, model, openset)
+    stage_model, fields = engines.stage(model)
+    return {**_score_narrative(done, failures, stage_model, openset),
+            **fields}
 
 
 def _open_set_or(truth_dir: Path,
@@ -2472,7 +2777,8 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
     )
 
     out: List[str] = [
-        "", "# WP4 on the cluster: the narrative reader through Prompter", "",
+        "", f"# WP4 on the cluster: the narrative reader through "
+            f"{_through(narrative)}", "",
         f"Run {narrative['date']}. Model `{narrative['model']}`, "
         f"{narrative['n_reports']} hand-answered report(s).",
         "",
@@ -2486,6 +2792,7 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
         "presence and word limit only, because whether a summary is a good "
         "summary is a person's call.",
     ]
+    out += _engine_lines(narrative)
     if narrative.get("served_by"):
         out.append(f"Served by: {', '.join(narrative['served_by'])}.")
     if narrative.get("failures"):
@@ -2674,7 +2981,8 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
     )
 
     out: List[str] = [
-        "", "# WP2b on the cluster: the log reader through Prompter", "",
+        "", f"# WP2b on the cluster: the log reader through "
+            f"{_through(logs)}", "",
         f"Run {logs['date']}. Model `{logs['model']}`, "
         f"{logs['n_logs']} hand-truthed log(s).",
         "",
@@ -2690,6 +2998,7 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
         f"(water {WATER_TOL_M} m); depths compared in metres whatever the "
         f"log prints. N values exact.",
     ]
+    out += _engine_lines(logs)
     if logs.get("served_by"):
         out.append(f"Served by: {', '.join(logs['served_by'])}.")
     if logs.get("failures"):
@@ -2789,7 +3098,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
     """
     from planlens.document.roles import document_outline, page_roles
 
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.engine import CostMeter
     from report_ingest.vision_labels import (
         DEFAULT_DPI, DETAIL_LEVELS, DOCUMENT_WINDOW, MAX_IMAGES_PER_CALL,
         MODES,
@@ -2831,6 +3140,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"{'on' if outline_context else 'off'}{extra}")
 
     present = set(corpus.present_ids())
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, rid in enumerate(report_ids, 1):
@@ -2845,7 +3155,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f"{failures[rid]}")
             continue
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
+        engine = engines.build(model, meter, vision=True)
         started = time.time()
         doc = None
         try:
@@ -2877,7 +3187,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             "id": rid,
             "run_date": date.today().isoformat(),
             "n_pages": n_pages,
-            "model": model,
+            **engines.record(model, engine),
             "served_by": engine.served_by,
             "mode": mode,
             "dpi": dpi,
@@ -3106,6 +3416,7 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
         "`split` is how many times a document window was halved because it "
         "did.",
     ]
+    out += _engine_lines(vision)
     if vision.get("served_by"):
         out.append(f"Served by: {', '.join(vision['served_by'])}.")
     if vision.get("failures"):
@@ -4134,8 +4445,10 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     whose investigation count falls is one whose appendix was somebody
     else's investigation all along.
     """
-    from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.calc_reader import page_images_enabled
+    from report_ingest.engine import CostMeter
     from report_ingest.graph import Budgets, ingest_report, output_paths
+    from report_ingest.lab_reader import link_from_label_enabled
     from report_ingest.log_templates import load_templates
 
     runs_dir = Path(review_dir) if review_dir is not None else out / "runs"
@@ -4147,6 +4460,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"review_mode {review_mode}; a saved label run in {runs_dir} is "
           f"reused where one exists")
     present = set(corpus.present_ids())
+    engines = _Engines.of(prompter)
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     spent = 0.0
@@ -4174,9 +4488,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         folder.mkdir(parents=True, exist_ok=True)
         triage_reused, review_reused = _reuse_label_run(folder, runs_dir, rid)
         meter = CostMeter()
-        engine = PrompterEngine(prompter, model, meter=meter)
-        vision_engine = PrompterEngine(prompter, vision_model, meter=meter)
-        triage_engine = (PrompterEngine(prompter, triage_model, meter=meter)
+        engine = engines.build(model, meter)
+        vision_engine = engines.build(vision_model, meter, vision=True)
+        triage_engine = (engines.build(triage_model, meter)
                          if triage_model and triage_model != model else None)
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
                           lab=lab_budget)
@@ -4236,10 +4550,20 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                     + len(record.natural_hazards.answered()))
         from report_ingest.model import GENERAL_FIELDS, NATURAL_HAZARD_FIELDS
         asked = len(GENERAL_FIELDS) + len(NATURAL_HAZARD_FIELDS)
+        # The engine the readers ran on, as every stage records it; on a
+        # chat-model run the vote's vision voter's and the triage's too
+        # (BACKLOG RI-67). A Prompter run says its tier, as it always did.
+        engine_fields = engines.record(model, engine)
+        if not engines.plain:
+            engine_fields["vision"] = engines.record(vision_model,
+                                                     vision_engine)
+            if triage_engine is not None:
+                engine_fields["triage"] = engines.record(triage_model,
+                                                         triage_engine)
         blob = {
             "id": rid,
             "run_date": date.today().isoformat(),
-            "model": model,
+            **engine_fields,
             "served_by": engine.served_by,
             "n_pages": n_pages,
             "workflow": record.document.workflow,
@@ -4266,6 +4590,12 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             # (BACKLOG RI-21), and what the visual-scales voters did in its
             # item files (RI-05).
             "visual_scales_on": visual_scales_enabled(),
+            # The two readers' switches as this stage ran them (RI-67):
+            # every calculation page as a picture (RI-17) and the
+            # specimen-label paragraph (RI-07). Each calc and lab item
+            # file under items/ says the arm its own reader ran in.
+            "calc_page_images": page_images_enabled(),
+            "lab_link_from_label": link_from_label_enabled(),
             **_ingest_steps(folder),
         }
         run_file.write_text(_dumps(blob), encoding="utf-8")
@@ -4284,7 +4614,11 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
-    return _score_ingest(done, failures, model)
+    stage_model, fields = engines.stage(model)
+    if not engines.plain:
+        seen = engines.describe(vision_model, vision=True)
+        fields.update({f"vision_{k}": v for k, v in seen.items()})
+    return {**_score_ingest(done, failures, stage_model), **fields}
 
 
 def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
@@ -4520,8 +4854,20 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
         "model) splitting on a value, both kept; `partial` is what a reader "
         "could not settle; `out_of_range` is what Python refused.",
     ]
+    out += _engine_lines(ingest)
+    out += _engine_lines(ingest, "vision_", "The vision voter")
     if ingest.get("served_by"):
         out.append(f"Served by: {', '.join(ingest['served_by'])}.")
+    rows = ingest.get("per_report") or []
+    if rows:
+        out.append(_arm_line(
+            "Every calculation page as a picture (RI-17, "
+            "GEOTECH_INGEST_CALC_PAGE_IMAGES)",
+            _arms(r.get("calc_page_images") for r in rows), "reports"))
+        out.append(_arm_line(
+            "Specimen-label paragraph (RI-07, "
+            "GEOTECH_INGEST_LAB_LINK_FROM_LABEL)",
+            _arms(r.get("lab_link_from_label") for r in rows), "reports"))
     if ingest.get("failures"):
         out += ["", "**Reports that failed and are NOT in any number below:**"]
         out += [f"- {rid}: {why}" for rid, why in ingest["failures"].items()]
@@ -5154,11 +5500,13 @@ def _header(results: Dict[str, Any]) -> List[str]:
 def _render(results: Dict[str, Any]) -> List[str]:
     """RESULTS.md: IDs, labels, counts and rates. Nothing that names anyone."""
     out: List[str] = [
-        "# WP1b on the cluster: triage and label review through Prompter",
+        f"# WP1b on the cluster: triage and label review through "
+        f"{_through(results)}",
         "",
         f"Run {results['date']}. Review model `{results['review_model']}`, "
         f"triage `{results['triage_model']}`.",
     ]
+    out += _engine_lines(results)
     if results.get("served_by"):
         out.append(f"Served by: {', '.join(results['served_by'])}. A Funhouse "
                    f"tier is an alias and the deployment behind it changes, "

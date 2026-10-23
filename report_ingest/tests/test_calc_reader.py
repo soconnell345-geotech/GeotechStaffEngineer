@@ -1243,6 +1243,28 @@ class TestThePictures:
                 engine.calls[0]["image_blocks"]] == ["image/png",
                                                      "image/jpeg"]
 
+    def test_the_result_says_which_arm_it_ran_in(self, two_pages,
+                                                 monkeypatch):
+        """RI-67: the reading says which arm it ran in, so a run file
+        does too, not only the name of the folder it was written to."""
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV, use_page_images
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+
+        off = read_calculation(
+            two_pages, [0, 1],
+            FakeEngine([{"final": _reading(kind="lateral_pile")}]),
+            report_id="SYN")
+        with use_page_images():
+            on = read_calculation(
+                two_pages, [0, 1],
+                FakeEngine([{"final": _reading(kind="lateral_pile")}]),
+                report_id="SYN")
+
+        assert off.page_images is False
+        assert "page_images" not in off.to_dict()   # an item file as before
+        assert on.page_images is True
+        assert on.to_dict()["page_images"] is True
+
     def test_the_switch_reads_the_environment(self, monkeypatch):
         from report_ingest.calc_reader import (
             PAGE_IMAGES_ENV, page_images_enabled, use_page_images,

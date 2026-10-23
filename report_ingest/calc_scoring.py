@@ -345,6 +345,9 @@ class CalcScore:
     record: Optional[Dict[str, Any]] = None
     model_record: Optional[Dict[str, Any]] = None
     floor_record: Optional[Dict[str, Any]] = None
+    #: Whether every page of a window went as a picture (RI-17's switch),
+    #: as the reader itself reported it; None when no reading came back.
+    page_images: Optional[bool] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -519,6 +522,7 @@ def score_one_calc(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.kept = len(result.kept)
     after.added = len(result.added)
     after.reconciled = int(result.reconciled)
+    after.page_images = bool(getattr(result, "page_images", False))
     return before, after
 
 
