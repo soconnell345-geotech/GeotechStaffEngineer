@@ -14,6 +14,8 @@ from pystra_agent.pystra_utils import (
     _apply_numpy2_patches,
     _compile_limit_state,
     _build_stochastic_model,
+    run_form,
+    run_monte_carlo,
 )
 
 
@@ -83,23 +85,14 @@ def analyze_form(
     lsf_func = _compile_limit_state(limit_state, var_names)
     lsf = pystra.LimitState(lsf_func)
 
-    # Configure analysis options
-    options = pystra.AnalysisOptions()
-    options.setPrintOutput(False)
-
     # Run FORM
-    form = pystra.Form(sm, lsf, options)
     try:
-        form.run()
+        run = run_form(sm, lsf)
     except Exception as e:
         raise ValueError(f"FORM analysis failed: {str(e)}")
 
-    # Extract results
-    beta = float(form.getBeta())
-
-    # Extract Pf (returns ndarray, need scalar)
-    pf_array = form.getFailure()
-    pf = float(pf_array.flat[0])
+    beta = run.beta
+    pf = run.pf
 
     # Identify random (non-constant) variable names — pystra excludes constants
     # from alpha and design point arrays
@@ -110,22 +103,17 @@ def analyze_form(
 
     # Extract sensitivity factors
     try:
-        alpha_raw = form.getAlpha()
-        if isinstance(alpha_raw, dict):
-            alpha = {k: float(v) for k, v in alpha_raw.items()}
-        else:
-            alpha = {
-                name: float(np.asarray(alpha_raw[i]).flat[0])
-                for i, name in enumerate(random_names)
-            }
+        alpha = {
+            name: float(np.asarray(run.alpha[i]).flat[0])
+            for i, name in enumerate(random_names)
+        }
     except Exception:
         alpha = {}
 
     # Extract design point in physical space
     try:
-        x_array = form.getDesignPoint(uspace=False)
         design_point_x = {
-            name: float(np.asarray(x_array[i]).flat[0])
+            name: float(np.asarray(run.x[i]).flat[0])
             for i, name in enumerate(random_names)
         }
         # Add constants at their fixed values
@@ -137,19 +125,14 @@ def analyze_form(
 
     # Extract design point in standard normal space
     try:
-        u_array = form.getDesignPoint(uspace=True)
         design_point_u = {
-            name: float(np.asarray(u_array[i]).flat[0])
+            name: float(np.asarray(run.u[i]).flat[0])
             for i, name in enumerate(random_names)
         }
     except Exception:
         design_point_u = {}
 
-    # Extract iteration info
-    try:
-        n_iterations = int(form.i)
-    except Exception:
-        n_iterations = 0
+    n_iterations = run.iterations
 
     # Function calls not directly available in pystra, estimate conservatively
     n_function_calls = n_iterations * len(var_names) if n_iterations > 0 else 0
@@ -228,78 +211,52 @@ def analyze_sorm(
     lsf_func = _compile_limit_state(limit_state, var_names)
     lsf = pystra.LimitState(lsf_func)
 
-    # Configure analysis options
-    options = pystra.AnalysisOptions()
-    options.setPrintOutput(False)
-
-    # Run FORM first (required for SORM)
-    form = pystra.Form(sm, lsf, options)
+    # Run FORM, then SORM on its design point
     try:
-        form.run()
-    except Exception as e:
-        raise ValueError(f"FORM analysis failed: {str(e)}")
-
-    # Run SORM using FORM result
-    sorm = pystra.Sorm(sm, lsf, options, form)
-    try:
-        sorm.run()
+        run = run_form(sm, lsf, with_sorm=True)
     except Exception as e:
         raise ValueError(f"SORM analysis failed: {str(e)}")
 
-    # Extract FORM results
-    beta_form = float(form.getBeta())
-    pf_form_array = form.getFailure()
-    pf_form = float(pf_form_array.flat[0])
+    beta_form = run.beta
+    pf_form = run.pf
+
+    # pystra leaves constants out of alpha and the design point arrays
+    random_names = [
+        v.get("name") for v in variables
+        if v.get("dist", "").lower() != "constant"
+    ]
 
     # Extract sensitivity factors from FORM
     try:
-        alpha_raw = form.getAlpha()
-        if isinstance(alpha_raw, dict):
-            alpha = {k: float(v) for k, v in alpha_raw.items()}
-        else:
-            alpha = {name: float(alpha_raw[i]) for i, name in enumerate(var_names)}
+        alpha = {name: float(run.alpha[i]) for i, name in enumerate(random_names)}
     except Exception:
         alpha = {}
 
     # Extract design point
     try:
-        x_array = form.getX()
-        design_point_x = {name: float(x_array[i]) for i, name in enumerate(var_names)}
+        design_point_x = {
+            name: float(run.x[i]) for i, name in enumerate(random_names)}
     except Exception:
         design_point_x = {}
 
     try:
-        u_array = form.getU()
-        design_point_u = {name: float(u_array[i]) for i, name in enumerate(var_names)}
+        design_point_u = {
+            name: float(run.u[i]) for i, name in enumerate(random_names)}
     except Exception:
         design_point_u = {}
 
-    # Extract SORM results (Breitung approximation)
-    try:
-        beta_breitung = float(sorm.betag_breitung)
-    except Exception:
-        beta_breitung = beta_form  # Fallback to FORM
-
-    try:
-        pf_breitung = float(sorm.pf2_breitung)
-    except Exception:
-        pf_breitung = pf_form  # Fallback to FORM
+    # SORM results (Breitung approximation); FORM's if SORM gave none
+    beta_breitung = (
+        run.beta_breitung if run.beta_breitung is not None else beta_form)
+    pf_breitung = run.pf_breitung if run.pf_breitung is not None else pf_form
 
     # Extract principal curvatures
     try:
-        kappa_raw = sorm.kappa
-        if hasattr(kappa_raw, '__iter__'):
-            kappa = [float(k) for k in kappa_raw]
-        else:
-            kappa = [float(kappa_raw)]
+        kappa = [float(k) for k in np.ravel(run.kappa)]
     except Exception:
         kappa = []
 
-    # Extract iteration info
-    try:
-        n_iterations = int(form.i)
-    except Exception:
-        n_iterations = 0
+    n_iterations = run.iterations
 
     n_function_calls = n_iterations * len(var_names) if n_iterations > 0 else 0
 
@@ -388,24 +345,14 @@ def analyze_monte_carlo(
     lsf_func = _compile_limit_state(limit_state, var_names)
     lsf = pystra.LimitState(lsf_func)
 
-    # Configure analysis options
-    options = pystra.AnalysisOptions()
-    options.setPrintOutput(False)
-    options.setSamples(n_samples)
-
     # Run Monte Carlo
-    mc = pystra.CrudeMonteCarlo(options, lsf, sm)
     try:
-        mc.run()
+        run = run_monte_carlo(sm, lsf, n_samples)
     except Exception as e:
         raise ValueError(f"Monte Carlo analysis failed: {str(e)}")
 
-    # Extract results
-    beta = float(mc.getBeta())
-
-    # Extract Pf (returns ndarray, need scalar)
-    pf_array = mc.getFailure()
-    pf = float(pf_array.flat[0])
+    beta = run.beta
+    pf = run.pf
 
     # Compute number of failures
     n_failures = int(round(pf * n_samples))

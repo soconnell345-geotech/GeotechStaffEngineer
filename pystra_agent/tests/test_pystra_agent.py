@@ -610,3 +610,30 @@ class TestAdvancedProblems:
         assert result.converged
         assert result.n_variables == 3
         assert len(result.alpha) == 3
+
+
+@pytest.mark.skipif(not HAS_PYSTRA, reason="pystra not installed")
+class TestUniformAndConstantMapping:
+    def test_uniform_a_b_are_bounds(self):
+        from pystra_agent.pystra_utils import _create_pystra_variable
+        v = _create_pystra_variable(
+            {"name": "u", "dist": "uniform", "a": 2.0, "b": 6.0})
+        std = v.std if hasattr(v, "std") else v.stdv
+        assert v.mean == pytest.approx(4.0)
+        assert std == pytest.approx(4.0 / 12 ** 0.5)
+
+    def test_constant_does_not_shift_design_point_or_alpha(self):
+        variables = [
+            {"name": "c", "dist": "constant", "value": 2.0},
+            {"name": "R", "dist": "normal", "mean": 20.0, "stdv": 1.0},
+            {"name": "S", "dist": "normal", "mean": 5.0, "stdv": 1.0},
+        ]
+        expr = "R - c * S"
+        for result in (analyze_form(variables, expr),
+                       analyze_sorm(variables, expr)):
+            assert set(result.alpha) == {"R", "S"}
+            assert result.alpha["R"] == pytest.approx(-1 / 5 ** 0.5, abs=1e-3)
+            assert result.alpha["S"] == pytest.approx(2 / 5 ** 0.5, abs=1e-3)
+            # g = R - 2S = 0 at R = 18, S = 9 (beta = 10 / sqrt(5))
+            assert result.design_point_x["R"] == pytest.approx(18.0, abs=1e-2)
+            assert result.design_point_x["S"] == pytest.approx(9.0, abs=1e-2)
