@@ -2448,7 +2448,7 @@ class TestFailedRequestsInTheCost:
         def failed(blob):
             blob["cost"].update({
                 "failed": 3, "retried": 2, "reasoning_tokens": 1200,
-                "waited_seconds": 45.0,
+                "reasoning_reported": 1, "waited_seconds": 45.0,
                 "failed_by_kind": {"rate_limit": 2, "timeout": 1},
                 "per_call": [{"call": 1, "attempt": 1}]})
 
@@ -2615,9 +2615,11 @@ class TestCallsByStep:
                     {"cost": {"calls": 1}})
         self._write(folder / "bound" / "bound1" / "items" / "d.json",
                     {"investigation": {"kind": "boring"}, "cost": {"calls": 2},
+                     "printed_depths": [],
                      "visual_scales": {"label_calls": 1, "pixel_layers": 2}})
         self._write(folder / "bound" / "bound1" / "items" / "e.json",
                     {"investigation": {"kind": "cpt"}, "cost": {"calls": 1},
+                     "tabulated": False, "floor_points": 0,
                      "code_trace": {"status": "no_plot", "label_calls": 0}})
         self._write(folder / "bound" / "bound1" / "items" / "f.json",
                     {"tests": [], "cost": {"calls": 1},
@@ -2636,13 +2638,20 @@ class TestCallsByStep:
         assert visual["trace_checks"]["no_plot"] == 1
         assert visual["plot_checks"]["unavailable"] == 1
 
-        row = {"id": "R36", "visual_scales_on": True, **got}
+        # The report's cost counts two calls no file holds (a reading that
+        # failed keeps no file): they show as unattributed, on its row.
+        row = {"id": "R36", "visual_scales_on": True,
+               "cost": {"calls": 16}, **got}
         text = "\n".join(cs._step_lines([row]))
         assert "## Calls by step" in text
-        report_line = next(line for line in text.splitlines()
+        lines = text.splitlines()
+        report_line = next(line for line in lines
                            if line.startswith("R36     report"))
         assert report_line.split()[2:] == ["1", "4", "-", "-", "-", "-",
-                                           "-", "3/2", "1/1", "9"]
+                                           "-", "3/2", "1/1", "9", "+2"]
+        bound_line = next(line for line in lines
+                          if line.startswith("R36     bound1"))
+        assert bound_line.split()[-1] == "5", "no unattributed cell"
 
     def test_the_ingest_stage_writes_them_into_its_run_file(
             self, ingest_cluster):
@@ -2668,3 +2677,90 @@ def test_page_sources_count_the_scans_and_never_fail_a_run():
         "pages": 1, "raster": 1, "di_text": 0}
     assert cs._page_sources(object(), [3, 4]) == {
         "pages": 2, "raster": 0, "di_text": 0}
+
+
+# -- the RI-21 review's fixes ------------------------------------------------
+
+class TestReasoningNotReported:
+
+    def test_no_reply_that_reported_reasoning_says_not_reported(self):
+        total = cs._cost_totals()
+        cs._add_cost(total, {"calls": 3, "failed": 0, "retried": 0,
+                             "reasoning_tokens": 0, "reasoning_reported": 0})
+        assert cs._failure_line(total).endswith("reasoning: not reported")
+
+    def test_some_replies_reporting_says_how_many(self):
+        total = cs._cost_totals()
+        cs._add_cost(total, {"calls": 3, "failed": 0, "retried": 0,
+                             "reasoning_tokens": 900,
+                             "reasoning_reported": 2})
+        assert cs._failure_line(total).endswith(
+            "reasoning: 900 of the output tokens, in the 2 of 3 calls that "
+            "reported it")
+
+
+class TestTheRunFileWriting:
+
+    def test_the_rows_are_one_per_line_and_read_back_whole(self):
+        blob = {"id": "R36", "cost": {
+            "calls": 2, "per_call_defaults": {"model": "m"},
+            "per_call": [{"call": 1, "outcome": "reply"},
+                         {"call": 2, "outcome": "error",
+                          "error": "RuntimeError: a \"quoted\" word"}]},
+            "seconds": 1.0}
+        text = cs._dumps(blob)
+        assert json.loads(text) == blob
+        lines = text.splitlines()
+        assert '      {"call":1,"outcome":"reply"},' in lines
+        assert any(line.startswith('      {"call":2,') for line in lines)
+
+    def test_a_run_file_with_no_rows_is_written_as_before(self):
+        blob = {"id": "R36", "cost": {"calls": 0}}
+        assert cs._dumps(blob) == json.dumps(blob, indent=2)
+
+
+class TestCallsByStepNeverFailsARun:
+
+    def test_odd_files_are_passed_over_and_counted(self, tmp_path):
+        folder = tmp_path / "R36"
+        items = folder / "items"
+        items.mkdir(parents=True)
+        (items / "a.json").write_text("[1, 2]", encoding="utf-8")
+        (items / "b.json").write_text("{not json", encoding="utf-8")
+        (items / "c.json").write_text(json.dumps({
+            "investigation": {}, "cost": {"calls": "two"},
+            "visual_scales": {"label_calls": "x",
+                              "layer_votes": ["agree", None]},
+            "plot_check": ["checked"]}), encoding="utf-8")
+        (folder / "triage.json").write_text(json.dumps({"cost": "free"}),
+                                            encoding="utf-8")
+        got = cs._ingest_steps(folder)
+        assert got["calls_by_step"]["report"] == {"log": 0, "log items": 1}
+        assert got["step_files_unreadable"] == 2
+        assert got["visual_scales"]["label_calls"] == 0
+
+    def test_a_count_that_raises_still_returns(self, tmp_path, monkeypatch):
+        folder = tmp_path / "R36"
+        (folder / "items").mkdir(parents=True)
+        (folder / "items" / "a.json").write_text(
+            json.dumps({"tests": [], "cost": {"calls": 1}}),
+            encoding="utf-8")
+
+        def broken(blob):
+            raise KeyError("an item shape nobody expected")
+
+        monkeypatch.setattr(cs, "_item_step", broken)
+        got = cs._ingest_steps(folder)
+        assert got["step_files_unreadable"] == 1
+        assert got["calls_by_step"] == {"report": {}}
+
+    def test_a_log_read_of_a_cone_sounding_is_still_the_log_reader(self):
+        """A log-reader item is a log-reader item, whatever the kind of
+        investigation it read; the sounding reader's result says whether
+        the sheet was tabulated, and the log reader's never does."""
+        assert cs._item_step({"investigation": {"kind": "cpt"},
+                              "printed_depths": []}) == "log"
+        assert cs._item_step({"investigation": {"kind": "boring"},
+                              "tabulated": True}) == "sounding"
+        assert cs._item_step({"investigation": {"kind": "dcp"},
+                              "floor_points": 3}) == "sounding"

@@ -379,7 +379,7 @@ def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
         "seconds": round(time.time() - started, 1),
     }
     (out_dir / "runs" / f"{rid}.json").write_text(
-        json.dumps(blob, indent=2), encoding="utf-8")
+        _dumps(blob), encoding="utf-8")
     (out_dir / "triage" / f"{rid}.json").write_text(
         json.dumps(profile.to_dict(), indent=2), encoding="utf-8")
     return blob
@@ -1195,7 +1195,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
             "visual_scales_on": visual_scales_enabled(),
             "page_sources": sources,
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[log_id] = blob
         gain = (after.total.found - before.total.found)
@@ -1319,7 +1319,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "visual_scales_on": visual_scales_enabled(),
             "page_sources": sources,
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[sheet_id] = blob
         gain = after.total.found - before.total.found
@@ -1673,7 +1673,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[calc_id] = blob
         gain = after.total.found - before.total.found
@@ -2002,7 +2002,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
             "visual_scales_on": visual_scales_enabled(),
             "page_sources": sources,
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[sheet_id] = blob
         gain = after.total.found - before.total.found
@@ -2340,7 +2340,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[rid] = blob
         recall = score.recall
@@ -2891,7 +2891,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[rid] = blob
         windows = seen.cost.get("windows") or 0
@@ -4205,9 +4205,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             print(f"  [{n}/{len(report_ids)}] {rid}: FAILED -- "
                   f"{failures[rid]}")
             traceback.print_exc()
-            run_file.write_text(json.dumps({
+            run_file.write_text(_dumps({
                 "id": rid, "run_date": date.today().isoformat(),
-                "error": failures[rid], "cost": meter.to_dict()}, indent=2),
+                "error": failures[rid], "cost": meter.to_dict()}),
                 encoding="utf-8")
             _sync(sync)
             continue
@@ -4263,7 +4263,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "visual_scales_on": visual_scales_enabled(),
             **_ingest_steps(folder),
         }
-        run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
+        run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[rid] = blob
         spent += blob["cost"].get("dollars", 0.0)
@@ -4736,11 +4736,28 @@ def _price_note(cost: Dict[str, Any]) -> str:
 
 
 #: What a stage's cost total adds up over its run files. ``failed``,
-#: ``retried`` and ``reasoning_tokens`` came with BACKLOG RI-21: a run file
-#: written before then has none of them and adds nothing to them.
+#: ``retried``, ``reasoning_tokens`` and ``reasoning_reported`` (the replies
+#: that said how much of their output was reasoning) came with BACKLOG
+#: RI-21: a run file written before then has none of them and adds nothing.
 _COST_SUMS: Tuple[str, ...] = ("calls", "failed", "retried", "input_tokens",
                                "output_tokens", "cache_read_tokens",
-                               "reasoning_tokens")
+                               "reasoning_tokens", "reasoning_reported")
+
+
+def _dumps(blob: Dict[str, Any]) -> str:
+    """A run file as JSON, indented like the others, with the cost record's
+    rows one per line: an 897-call report's rows run to thousands of lines
+    indented, and nobody reads them one field at a time (BACKLOG RI-21)."""
+    cost = blob.get("cost")
+    rows = cost.get("per_call") if isinstance(cost, dict) else None
+    if not rows:
+        return json.dumps(blob, indent=2)
+    marker = "per_call rows written below"
+    text = json.dumps({**blob, "cost": {**cost, "per_call": marker}},
+                      indent=2)
+    lines = ",\n".join("      " + json.dumps(row, separators=(",", ":"))
+                       for row in rows)
+    return text.replace(json.dumps(marker), "[\n" + lines + "\n    ]", 1)
 
 
 def _cost_totals() -> Dict[str, Any]:
@@ -4754,9 +4771,9 @@ def _cost_totals() -> Dict[str, Any]:
 def _add_cost(total: Dict[str, Any], cost: Optional[Dict[str, Any]]) -> None:
     """One run file's cost block, added into a stage's total. ``seconds`` is
     left to the caller, which adds the run file's own wall clock."""
-    cost = cost or {}
+    cost = cost if isinstance(cost, dict) else {}
     for key in _COST_SUMS:
-        total[key] = total.get(key, 0) + int(cost.get(key) or 0)
+        total[key] = total.get(key, 0) + _n(cost.get(key))
     total["dollars"] = (total.get("dollars", 0.0)
                         + float(cost.get("dollars") or 0.0))
     total["waited_seconds"] = round(total.get("waited_seconds", 0.0)
@@ -4767,8 +4784,18 @@ def _add_cost(total: Dict[str, Any], cost: Optional[Dict[str, Any]]) -> None:
         total["files_counting_failures"] = (
             total.get("files_counting_failures", 0) + 1)
     kinds = total.setdefault("failed_by_kind", {})
-    for kind, n in (cost.get("failed_by_kind") or {}).items():
-        kinds[kind] = kinds.get(kind, 0) + int(n or 0)
+    by_kind = cost.get("failed_by_kind")
+    for kind, n in (by_kind.items() if isinstance(by_kind, dict) else ()):
+        kinds[kind] = kinds.get(kind, 0) + _n(n)
+
+
+def _n(value: Any) -> int:
+    """A count read off a run file, 0 where it is not one: a count is never
+    the reason a run's RESULTS.md is not written."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 #: How each kind of failed request reads in RESULTS.md
@@ -4800,8 +4827,16 @@ def _failure_line(cost: Dict[str, Any]) -> str:
     waited = float(cost.get("waited_seconds") or 0.0)
     if waited:
         line += f", {waited:.0f} s waiting on rate limits"
-    line += (f"; reasoning: {int(cost.get('reasoning_tokens') or 0):,} of "
-             f"the output tokens")
+    calls = int(cost.get("calls") or 0)
+    reported = int(cost.get("reasoning_reported") or 0)
+    if not reported:
+        # Not a reported 0: Claude, for one, gives no split.
+        line += "; reasoning: not reported"
+    else:
+        line += (f"; reasoning: {int(cost.get('reasoning_tokens') or 0):,} "
+                 f"of the output tokens"
+                 + (f", in the {reported} of {calls} calls that reported it"
+                    if reported < calls else ""))
     if files and counted < files:
         line += (f" (counted in {counted} of {files} run files; the rest "
                  f"were written before failed requests were counted)")
@@ -4853,39 +4888,46 @@ def _add_checks(total: Dict[str, Any], info: Any = None, plot: Any = None,
                 trace: Any = None) -> None:
     """One reading's visual-scales results, added into ``total``: ``info``
     from :func:`report_ingest.visual_scales.log_grid_for` (with the layer
-    votes), ``plot`` from ``plot_check``, ``trace`` from ``trace_check``."""
+    votes), ``plot`` from ``plot_check``, ``trace`` from ``trace_check``.
+    What is not in the shape those write is passed over."""
+    def listed(value: Any) -> List[Any]:
+        return value if isinstance(value, list) else []
+
     if isinstance(info, dict):
-        total["label_calls"] += int(info.get("label_calls") or 0)
-        total["pixel_layers"] += int(info.get("pixel_layers") or 0)
-        for vote in info.get("layer_votes") or []:
-            said = str(vote.get("agreement") or "")
+        total["label_calls"] += _n(info.get("label_calls"))
+        total["pixel_layers"] += _n(info.get("pixel_layers"))
+        for vote in listed(info.get("layer_votes")):
+            said = str(vote.get("agreement") or "") \
+                if isinstance(vote, dict) else ""
             if said in total["layer_votes"]:
                 total["layer_votes"][said] += 1
     if isinstance(plot, dict):
-        total["label_calls"] += int(plot.get("label_calls") or 0)
+        total["label_calls"] += _n(plot.get("label_calls"))
         status = str(plot.get("status") or "")
         if status in total["plot_checks"]:
             total["plot_checks"][status] += 1
         if status == "checked":
             points = total["plot_points"]
-            points["table"] += int(plot.get("table_points") or 0)
-            points["agree"] += int(plot.get("agree") or 0)
-            points["disagree"] += len(plot.get("disagree") or [])
-            points["no_marker_at_size"] += int(
-                plot.get("no_marker_at_size") or 0)
+            points["table"] += _n(plot.get("table_points"))
+            points["agree"] += _n(plot.get("agree"))
+            points["disagree"] += len(listed(plot.get("disagree")))
+            points["no_marker_at_size"] += _n(plot.get("no_marker_at_size"))
     if isinstance(trace, dict):
-        total["label_calls"] += int(trace.get("label_calls") or 0)
+        total["label_calls"] += _n(trace.get("label_calls"))
         status = str(trace.get("status") or "")
         if status in total["trace_checks"]:
             total["trace_checks"][status] += 1
-        for row in (trace.get("channels") or {}).values():
+        channels = trace.get("channels")
+        for row in (channels.values() if isinstance(channels, dict) else ()):
+            if not isinstance(row, dict):
+                continue
             if row.get("status") == "no_panel":
                 total["trace_channels_no_panel"] += 1
                 continue
             points = total["trace_points"]
             for key in ("compared", "agree", "several", "no_trace"):
-                points[key] += int(row.get(key) or 0)
-            points["disagree"] += len(row.get("disagree") or [])
+                points[key] += _n(row.get(key))
+            points["disagree"] += len(listed(row.get("disagree")))
 
 
 def _add_visual(total: Dict[str, Any], blob: Dict[str, Any]) -> None:
@@ -4895,9 +4937,10 @@ def _add_visual(total: Dict[str, Any], blob: Dict[str, Any]) -> None:
         total["files_not_recorded"] += 1
     elif blob["visual_scales_on"]:
         total["files_on"] += 1
+    sources = blob.get("page_sources")
     for key in ("pages", "raster", "di_text"):
-        total[key] += int((blob.get("page_sources") or {}).get(key) or 0)
-    after = blob.get("after") or {}
+        total[key] += _n(sources.get(key)) if isinstance(sources, dict) else 0
+    after = blob.get("after") if isinstance(blob.get("after"), dict) else {}
     _add_checks(total, after.get("visual_scales"), after.get("plot_check"),
                 after.get("code_trace"))
 
@@ -4918,9 +4961,9 @@ def _merge_visual(total: Dict[str, Any], row: Dict[str, Any]) -> None:
         if isinstance(value, dict):
             cell = total.setdefault(key, {})
             for sub, n in value.items():
-                cell[sub] = cell.get(sub, 0) + int(n or 0)
+                cell[sub] = cell.get(sub, 0) + _n(n)
         else:
-            total[key] = total.get(key, 0) + int(value or 0)
+            total[key] = total.get(key, 0) + _n(value)
 
 
 def _visual_lines(counts: Dict[str, Any], what: str = "run files"
@@ -4974,16 +5017,18 @@ def _visual_lines(counts: Dict[str, Any], what: str = "run files"
 
 def _item_step(blob: Dict[str, Any]) -> str:
     """Which reader wrote an item file, by what it holds (an item file does
-    not name its reader)."""
+    not name its reader). The sounding reader's result says whether the
+    sheet was tabulated and how many points the floor placed; the log
+    reader's never does, whatever kind of investigation it read."""
     if "general" in blob:
         return "narrative"
     if "calculation" in blob:
         return "calc"
     if "tests" in blob:
         return "lab"
-    inv = blob.get("investigation") or {}
-    return ("log" if inv.get("kind") in ("boring", "test_pit", None)
-            else "sounding")
+    if "tabulated" in blob or "floor_points" in blob:
+        return "sounding"
+    return "log"
 
 
 def _ingest_steps(folder: Path) -> Dict[str, Any]:
@@ -4993,42 +5038,55 @@ def _ingest_steps(folder: Path) -> Dict[str, Any]:
 
     A step file kept from an earlier attempt counts the calls it took
     then, so on a resumed run these can add up to more than the run
-    file's own ``cost``, which counts this attempt only.
+    file's own ``cost``, which counts this attempt only. Never fails a
+    run: it is called after the run's model calls are paid for, and an
+    item file it cannot read is counted as unreadable and passed over.
     """
     def load(path: Path) -> Dict[str, Any]:
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            blob = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}
+        return blob if isinstance(blob, dict) else {}
 
     def calls(blob: Dict[str, Any]) -> int:
-        cost = blob.get("cost") if isinstance(blob, dict) else None
-        return int((cost or {}).get("calls") or 0)
+        cost = blob.get("cost")
+        return _n(cost.get("calls")) if isinstance(cost, dict) else 0
 
     steps: Dict[str, Dict[str, int]] = {}
     visual = _visual_counts()
-    places = [("report", folder)]
-    if (folder / "bound").is_dir():
-        places += [(p.name, p)
-                   for p in sorted((folder / "bound").iterdir())
-                   if p.is_dir()]
-    for name, where in places:
-        row: Dict[str, int] = {}
-        for step in ("triage", "vision", "review", "identity"):
-            n = calls(load(where / f"{step}.json"))
-            if n:
-                row[step] = n
-        for path in sorted((where / "items").glob("*.json")):
-            blob = load(path)
-            if not blob:
-                continue
-            step = _item_step(blob)
-            row[step] = row.get(step, 0) + calls(blob)
-            row[f"{step} items"] = row.get(f"{step} items", 0) + 1
-            _add_checks(visual, blob.get("visual_scales"),
-                        blob.get("plot_check"), blob.get("code_trace"))
-        steps[name] = row
-    return {"calls_by_step": steps, "visual_scales": visual}
+    unreadable = 0
+    try:
+        places = [("report", folder)]
+        if (folder / "bound").is_dir():
+            places += [(p.name, p)
+                       for p in sorted((folder / "bound").iterdir())
+                       if p.is_dir()]
+        for name, where in places:
+            row: Dict[str, int] = steps.setdefault(name, {})
+            for step in ("triage", "vision", "review", "identity"):
+                n = calls(load(where / f"{step}.json"))
+                if n:
+                    row[step] = n
+            for path in sorted((where / "items").glob("*.json")):
+                blob = load(path)
+                if not blob:
+                    unreadable += 1
+                    continue
+                try:
+                    step = _item_step(blob)
+                    row[step] = row.get(step, 0) + calls(blob)
+                    row[f"{step} items"] = row.get(f"{step} items", 0) + 1
+                    _add_checks(visual, blob.get("visual_scales"),
+                                blob.get("plot_check"), blob.get("code_trace"))
+                except Exception:           # noqa: BLE001 - a count only
+                    unreadable += 1
+    except Exception:                       # noqa: BLE001 - a count only
+        unreadable += 1
+    out: Dict[str, Any] = {"calls_by_step": steps, "visual_scales": visual}
+    if unreadable:
+        out["step_files_unreadable"] = unreadable
+    return out
 
 
 #: The steps of an ingest run, in the order they run: the page labels
@@ -5040,29 +5098,43 @@ _STEPS: Tuple[str, ...] = ("triage", "vision", "review", "identity", "log",
 
 def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
     """The ``## Calls by step`` table: the model calls of each report and of
-    each report bound inside it, step by step (BACKLOG RI-21). Nothing for
-    run files written before this was recorded."""
-    table = [(r.get("id", ""), name, steps) for r in rows
-             for name, steps in (r.get("calls_by_step") or {}).items()]
+    each report bound inside it, step by step, and on the report's row what
+    its cost counts that no step or item file does (BACKLOG RI-21). Nothing
+    for run files written before this was recorded."""
+    table = []
+    for r in rows:
+        documents = r.get("calls_by_step")
+        if not isinstance(documents, dict) or not documents:
+            continue
+        totals = {name: sum(_n(v) for k, v in steps.items()
+                            if not k.endswith(" items"))
+                  for name, steps in documents.items()}
+        cost = r.get("cost") if isinstance(r.get("cost"), dict) else {}
+        left = _n(cost.get("calls")) - sum(totals.values())
+        for i, (name, steps) in enumerate(documents.items()):
+            table.append((r.get("id", ""), name, steps, totals[name],
+                          f"{left:+d}" if i == 0 else ""))
     if not table:
         return []
     out = ["## Calls by step", "",
            "Model calls each step took, read off the step and item files of "
            "the report and of each report bound inside it (`bound1`, ...). "
-           "A reader's cell is calls/items. A step file kept from an "
-           "earlier attempt counts the calls it took then, so a resumed "
-           "report can add up to more than its cost below.", "", "```",
+           "A reader's cell is calls/items. `unattributed`, on the report's "
+           "row, is the report's calls in the cost below less every "
+           "document's total here: above zero, calls no file holds (a "
+           "reading that failed, or was cut short by the ceiling, keeps no "
+           "file); below zero, step files kept from an earlier attempt, "
+           "whose calls this attempt did not make.", "", "```",
            f"{'report':<8}{'document':<10}"
-           + "".join(f"{step:>10}" for step in _STEPS) + f"{'total':>8}"]
-    for rid, name, steps in table:
+           + "".join(f"{step:>10}" for step in _STEPS)
+           + f"{'total':>8}{'unattributed':>14}"]
+    for rid, name, steps, total, left in table:
         cells = ""
         for step in _STEPS:
-            n, items = int(steps.get(step) or 0), steps.get(f"{step} items")
+            n, items = _n(steps.get(step)), _n(steps.get(f"{step} items"))
             cell = f"{n}/{items}" if items else (str(n) if n else "-")
             cells += f"{cell:>10}"
-        total = sum(int(v or 0) for k, v in steps.items()
-                    if not k.endswith(" items"))
-        out.append(f"{rid:<8}{name:<10}{cells}{total:>8}")
+        out.append(f"{rid:<8}{name:<10}{cells}{total:>8}{left:>14}")
     out += ["```", ""]
     return out
 

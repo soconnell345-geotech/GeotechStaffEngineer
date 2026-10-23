@@ -1222,11 +1222,13 @@ answer even when the same turn also asks to look.
 ingest's `CallCeiling`, the pass's own count and the engine's `CostMeter`
 all see the same number; tokens come off the reply's `usage_metadata`, the
 cached input apart, and the reasoning tokens among the output off its
-`output_token_details` (BACKLOG RI-21). A request that raises is recorded as
-a failed request before it is raised, and a cap the model would not take on
-a copy is recorded as an adaptation; retries inside the chat model's own
-client are not seen. Foundry bills by enrollment, so a run there reports
-tokens and no dollars.
+`output_token_details` or the provider's own count, or none where neither
+says (BACKLOG RI-21; Claude reports no split, so a Claude model on Foundry
+probably says nothing either). A request that raises is recorded as a failed
+request before it is raised, and a cap the model would not take on a copy is
+recorded as an adaptation; retries inside the chat model's own client are
+not seen. Foundry bills by enrollment, so a run there reports tokens and no
+dollars.
 
 ### At the output cap (BACKLOG RI-19)
 
@@ -2028,15 +2030,21 @@ what stopped the first run on 5.20.0 and is fixed in 5.20.1.
 **Every request is in the cost record** (BACKLOG RI-21), the refused and the
 rate-limited ones too. Each run file's `cost` keeps `calls` (replies, as
 before) and adds `failed` (requests that came back with an error: rate
-limited, a parameter refused, too large, timed out, nothing back, other, in
-`failed_by_kind`), `retried` (how many of those the engine sent again),
-`waited_seconds` (rate-limit waits), `reasoning_tokens` (part of the output
-tokens, not added to them), `adaptations`, and `per_call`: one row per request
-with its call and attempt number, what came back, its tokens, the wait, and
-what the engine changed from then on. Requests sent = `calls + failed`. Every
-`## Cost` block in `RESULTS.md` prints a line for them; a run file written
-before this says `not recorded`. `results.json` keeps the totals and leaves
-the rows in each run file.
+limited, a parameter refused, too large for the gateway or the model's
+context, timed out, nothing back, other, in `failed_by_kind`), `retried` (how
+many of those the engine sent again), `waited_seconds` (rate-limit waits),
+`reasoning_tokens` (part of the output tokens, not added to them) with
+`reasoning_reported` (how many replies said; Claude never does, and a reply
+that did not say is not counted as 0), `adaptations`, and `per_call`: one row
+per request with its call number, what came back, its tokens, the wait, and
+what the engine changed from then on. The rows are written one per line; the
+model and deployment that answered most calls are named once, in
+`per_call_defaults`, and a row names its own only where they differ, and its
+attempt only past the first. An 897-call report's rows come to about 150 KB.
+Requests sent = `calls + failed`. Every `## Cost` block in `RESULTS.md` prints
+a line for them, with `reasoning: not reported` where no reply said; a run
+file written before this says `not recorded`. `results.json` keeps the
+totals and leaves the rows in each run file.
 
 Bring home **`RESULTS.md` only**, from whichever `out_dir` the cell used. It
 carries IDs, labels, counts and rates. The per-report runs and the triage
@@ -2736,8 +2744,15 @@ without `redo`, so compare two settings in two `out_dir`s.
 of each report bound inside it (`bound1`, ...) step by step: triage, the
 vision pass, the review, a bound report's identity call, and each reader as
 calls/items. They are read off the step and item files, which `run.json`
-keeps under `calls_by_step`; a step file kept from an earlier attempt counts
-the calls it took then, so a resumed report can add up to more than its cost.
+keeps under `calls_by_step`; which reader wrote an item is told by the
+item's shape, so a pit or cone sheet the log reader read counts as `log`.
+The report's row adds `unattributed`: its calls in the cost less every
+document's total. Above zero, those are calls no file holds — a reading
+that failed, or was cut short by the call ceiling, keeps no file (saved run
+1 has R12, R13 and R15 four calls short each). Below zero, step files kept
+from an earlier attempt count calls this attempt did not make (R21). Counting
+never stops a run: a file that will not read is passed over and counted in
+`step_files_unreadable`.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
@@ -2846,10 +2861,14 @@ turned roughly 1.4 M resent tokens into cache reads at a tenth the price.
 clock and dollars at the list prices in `MODEL_PRICES` (checked 2026-09-16).
 Prices are pinned in the source rather than fetched: a scorecard has to be able
 to say what a run cost months later. Since BACKLOG RI-21 it also records the
-reasoning tokens among the output, every request that came back with an error
-(`failed`, by kind, and how many were `retried`), the waits, what the engine
-changed (`adaptations`), and one row per request (`per_call`). It sees only
-what reaches the engine: the Claude SDK's own retries are inside its client.
+reasoning tokens among the output and how many replies reported them, every
+request that came back with an error (`failed`, by kind, and how many were
+`retried`), the waits, what the engine changed (`adaptations`), and one row
+per request (`per_call`). It sees only what reaches the engine: the Claude
+SDK's own retries are inside its client. Recording never stands in for the
+call: an error whose text or body will not read is recorded with what can be
+read, anything else that goes wrong while recording is logged and dropped,
+and the provider's error is raised as it would be with no meter.
 
 ## Running the scorecard
 
