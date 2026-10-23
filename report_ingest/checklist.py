@@ -168,9 +168,20 @@ class CheckContext:
         return out
 
     def labelled(self, labels: Sequence[str]) -> List[int]:
-        """Pages the record labels as one of ``labels``."""
+        """Pages the record labels as one of ``labels``.
+
+        Not the pages of a report bound inside this one that was read as its
+        own record: they are read there and checked there, and this record
+        holds nothing off them (BACKLOG RI-14).
+        """
+        from report_ingest.bound import parse_range
+
+        n_pages = int(getattr(self.record.document, "n_pages", 0) or 0)
+        theirs = {page for row in (self.record.bound_documents or [])
+                  if row.read
+                  for page in parse_range(row.pages, n_pages or 10 ** 6)}
         return sorted(pl.page for pl in self.record.page_labels
-                      if pl.label in set(labels))
+                      if pl.label in set(labels) and pl.page not in theirs)
 
     def sheets(self) -> List[Any]:
         return [t for t in self.record.lab_tests if t.kind != "summary_table"]

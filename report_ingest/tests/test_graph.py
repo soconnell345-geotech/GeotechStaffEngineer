@@ -1124,17 +1124,181 @@ class TestABoundRangeTheLabelsDidNotDraw:
                  Item(id="item_2", kind="boring_log", pages=[14, 15]),
                  Item(id="item_3", kind="appended_report", pages=[15, 16]),
                  Item(id="item_4", kind="narrative", pages=[16])]
-        kept = _outside_bound(items, {12, 13, 14, 15, 16}, qa)
+        kept, handed = _outside_bound(items, {12, 13, 14, 15, 16}, qa)
 
         assert [(i.id, i.pages) for i in kept] == [
             ("item_1", [11]), ("item_3", [15, 16]), ("item_4", [16])]
         assert kept[0].evidence["first_page"] == 11
+        assert [(i.id, pages) for i, pages in handed] == [
+            ("item_1", [12, 13]), ("item_2", [14, 15])]
         assert qa[0].values == ["item_1 lab_test 12-13",
                                 "item_2 boring_log 14-15"]
+        assert "handed to that report's own pass" in qa[0].detail
         # The narrative goes too when the switch says so.
-        assert [i.id for i in _outside_bound(items, {16}, [],
-                                             narrative_too=True)] == \
-            ["item_1", "item_2", "item_3"]
+        kept, _ = _outside_bound(items, {16}, [], narrative_too=True)
+        assert [i.id for i in kept] == ["item_1", "item_2", "item_3"]
+
+    def test_a_handed_page_the_child_did_not_read_is_skipped_here(
+            self, pdf, tmp_path, monkeypatch):
+        import report_ingest.graph as graph
+
+        real = graph._read_lab
+
+        def read_lab(doc, pages, *args, **kwargs):
+            if 13 in pages:
+                raise RuntimeError("the sheet would not read")
+            return real(doc, pages, *args, **kwargs)
+
+        monkeypatch.setattr(graph, "_read_lab", read_lab)
+        script = self._script()
+        del script[-2]                       # no call for the sheet at 13
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        (entry,) = [e for e in record.qa if e.kind == "skipped"
+                    and e.where == "pages.lab_test"]
+        assert entry.pages == [13] and entry.values == ["item_8"]
+        assert "bound1" in entry.detail and "handed" in entry.detail
+        assert [t.kind for t in self._child(tmp_path).lab_tests] == \
+            ["atterberg"]
+
+    def test_a_child_that_could_not_be_read_leaves_its_pages_skipped(
+            self, pdf, tmp_path, monkeypatch):
+        import report_ingest.graph as graph
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("the bound pass broke")
+
+        monkeypatch.setattr(graph, "_one_bound", broken)
+        script = self._script()[:-3]          # no child readers run
+        record = ingest_report(pdf, FakeEngine(script), out_dir=tmp_path,
+                               report_id="SYN")
+
+        assert record.lab_tests == []
+        rows = [e for e in record.qa if e.kind == "skipped"
+                and e.where == "pages.lab_test"]
+        assert [(e.values, e.pages) for e in rows] == [
+            (["item_7"], [12]), (["item_8"], [13])]
+        (run,) = [e for e in record.qa
+                  if e.where == "items.appended_report"]
+        assert run.kind == "skipped" and "bound1" in run.detail
+
+
+class _ByFormat(FakeEngine):
+    """Answers each call off a queue kept per structured answer, so a test
+    of WHO reads a page need not know the order the passes run in.
+
+    A queue is a list, taken in order, or a callable of how many calls of
+    that answer came before.
+    """
+
+    def __init__(self, answers):
+        super().__init__([])
+        self.answers = {name: (source if callable(source) else list(source))
+                        for name, source in answers.items()}
+        self.formats = []
+
+    def complete(self, messages, *, output_format=None, **kwargs):
+        name = getattr(output_format, "__name__", str(output_format))
+        before = self.formats.count(name)
+        self.formats.append(name)
+        source = self.answers[name]
+        self.turns.append(source(before) if callable(source)
+                          else source.pop(0))
+        return super().complete(messages, output_format=output_format,
+                                **kwargs)
+
+
+def _answers(triage, vision=None, review=()):
+    """Every pass answered; the readers the same way whatever they read."""
+    first, findings = review_turns(review)
+    return {
+        "TriageFindings": [triage],
+        "VisionSheetAnswer": vision_turns(vision),
+        "None": lambda n: first,
+        "ReviewFindings": [findings],
+        "BoundIdentity": lambda n: identity_turn(),
+        "NarrativeReading": lambda n: (narrative_turn() if n == 0
+                                       else bound_narrative_turn()),
+        "LogReading": lambda n: log_turn("B-1"),
+        "LabSheetReading": lambda n: lab_turn("atterberg", 12),
+        "CalcReading": lambda n: calc_turn(),
+    }
+
+
+def _pages_read_by(monkeypatch, name):
+    """The pages each call of one reader is given, in order."""
+    import report_ingest.graph as graph
+
+    seen = []
+    real = getattr(graph, name)
+
+    def wrapped(doc, pages, *args, **kwargs):
+        seen.append(sorted(int(p) for p in pages))
+        return real(doc, pages, *args, **kwargs)
+
+    monkeypatch.setattr(graph, name, wrapped)
+    return seen
+
+
+def _bound_record(record, tmp_path, pages):
+    (row,) = [b for b in record.bound_documents if b.pages == pages]
+    return ReportRecord.model_validate_json(
+        (tmp_path / row.record_path).read_text(encoding="utf-8"))
+
+
+class TestTheBoundPassKeepsTheFilesReaderLabels:
+    """The file's own pass hands a bound document the logs and sheets on its
+    pages; that document's pass re-runs the rules over its window and has no
+    label review, so it keeps the label the file settled on for every page a
+    reader reads (BACKLOG RI-14 review)."""
+
+    def test_a_page_the_review_moved_is_read_once_by_the_child(
+            self, pdf, tmp_path, monkeypatch):
+        # The voters split on page 10 (the rules say photos), the review
+        # makes it a laboratory sheet, and triage says 7-13 is another
+        # report: the bound pass, left to itself, calls it a figure.
+        change = LabelChange(page=10, from_label="figure",
+                             to_label="lab_test", reason="a results sheet",
+                             evidence="render_page")
+        engine = _ByFormat(_answers(
+            triage_turn("multi_document", bound_together=[
+                {"kind": "data_report", "pages": "7-13", "title": "x"}]),
+            vision={10: "figure"}, review=[change]))
+        lab = _pages_read_by(monkeypatch, "_read_lab")
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN")
+
+        assert sum(pages.count(10) for pages in lab) == 1
+        assert not [t for t in record.lab_tests if 10 in t.pages]
+        child = _bound_record(record, tmp_path, "7-13")
+        assert [t for t in child.lab_tests if 10 in t.pages]
+        (label,) = [pl for pl in child.page_labels if pl.page == 10]
+        assert (label.label, label.settled_by) == ("lab_test", "parent")
+        (note,) = [e for e in child.qa if e.where == "bound.labels"]
+        assert note.pages == [10] and note.values[0].endswith("-> lab_test")
+        assert not [e for e in record.qa if e.kind == "skipped"
+                    and e.where.startswith("pages.")]
+
+    def test_an_item_across_the_edge_is_read_on_each_side_once(
+            self, pdf, tmp_path, monkeypatch):
+        # Triage puts the edge between the two sheets of the boring log at
+        # 7-8: page 7 stays this report's and page 8 is handed over.
+        engine = _ByFormat(_answers(triage_turn(
+            "multi_document", bound_together=[
+                {"kind": "data_report", "pages": "8-17", "title": "x"}])))
+        logs = _pages_read_by(monkeypatch, "_read_log")
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", review_mode="none")
+
+        assert [7] in logs and [8] in logs
+        assert sum(pages.count(7) + pages.count(8) for pages in logs) == 2
+        assert [i.pages for i in record.investigations] == [[7]]
+        # Its reading is filed apart from one of the whole item, so a folder
+        # written before the edge was drawn is not taken for this one.
+        assert sorted(p.name for p in (tmp_path / "items").glob("*-own.json"))
+        assert not [e for e in record.qa if e.kind == "skipped"
+                    and e.where.startswith("pages.")]
 
 
 class TestTheNarrativeAndTheBoundPages:
@@ -1164,6 +1328,21 @@ class TestTheNarrativeAndTheBoundPages:
         assert not set(record.narrative.pages) & {15, 16, 17, 18}
         # The child is read as before, on its own pages.
         assert "=== page 16 ===" in _brief_text(child)
+
+    def test_a_reading_with_it_on_is_not_taken_for_one_with_it_off(
+            self, pdf, tmp_path):
+        ingest_report(pdf, FakeEngine(full_script()), out_dir=tmp_path,
+                      report_id="SYN")
+        engine = FakeEngine([narrative_turn()])
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", narrative_skips_bound=True)
+
+        # Only the parent's narrative is read again: everything else is the
+        # same reading as before and comes off disk.
+        assert engine.n_calls == 1
+        assert (tmp_path / "items" / "item_2.json").is_file()
+        assert (tmp_path / "items" / "item_2-skips-bound.json").is_file()
+        assert not set(record.narrative.pages) & {15, 16, 17, 18}
 
 
 class TestTheExplorationAnswersAndTheLogs:
@@ -1248,6 +1427,80 @@ class TestTheExplorationAnswersAndTheLogs:
         with pytest.raises(ValueError, match="counts_from_logs"):
             ingest_report(pdf, FakeEngine([]), out_dir=tmp_path,
                           counts_from_logs="always")
+
+
+def _silent_narrative():
+    """The narrative, saying nothing of borings or pits."""
+    turn = narrative_turn()["final"]
+    return {"final": turn.model_copy(update={"boringCount": None,
+                                             "testPitCount": None})}
+
+
+class TestOnlyTheLogsReadVouchForAnAnswer:
+    """A log that exists and was not read -- it failed, or the item ceiling
+    cut it -- is a pit or a boring the logs read do not account for, so no 0
+    and no answer off the logs for that kind (BACKLOG RI-14 review)."""
+
+    def _script(self):
+        return ([triage_turn()] + vision_turns()
+                + [identity_turn(), _silent_narrative(), log_turn("B-1"),
+                   lab_turn("atterberg", 12), lab_turn("gradation", 13),
+                   calc_turn()]
+                + bound_reader_turns())
+
+    @pytest.fixture
+    def pit_fails(self, monkeypatch):
+        import report_ingest.graph as graph
+
+        real = graph._read_log
+
+        def read_log(doc, pages, *args, **kwargs):
+            if 9 in pages:
+                raise RuntimeError("the pit log would not read")
+            return real(doc, pages, *args, **kwargs)
+
+        monkeypatch.setattr(graph, "_read_log", read_log)
+
+    def test_zeros_does_not_zero_a_kind_whose_log_failed(
+            self, pdf, tmp_path, pit_fails):
+        record = ingest_report(pdf, FakeEngine(self._script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="zeros")
+
+        assert record.general.testPitCount is None
+        assert record.general.cptCount == 0          # no cone item at all
+        (note,) = [e for e in record.qa if e.where == "general.explorations"]
+        assert note.values == [
+            "cptCount: not stated -> 0",
+            "testPitCount: held (the file has 1 test_pit_log item(s), "
+            "1 not read)"]
+
+    def test_fill_takes_nothing_for_a_kind_with_an_unread_log(
+            self, pdf, tmp_path, pit_fails):
+        record = ingest_report(pdf, FakeEngine(self._script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="fill")
+
+        general = record.general
+        assert (general.boringCount, general.boringDictionary) == \
+            (1, ["B-1"])
+        assert general.testPitCount is None
+        assert general.testPitDictionary is None
+
+    def test_zeros_does_not_zero_a_kind_the_ceiling_cut(self, pdf, tmp_path):
+        # Four items: the front matter to the boring log; the pit log is
+        # the fifth.
+        engine = _ByFormat({**_answers(triage_turn()),
+                            "NarrativeReading": lambda n: (
+                                _silent_narrative() if n == 0
+                                else bound_narrative_turn())})
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", counts_from_logs="zeros",
+                               budgets=Budgets(max_items=4))
+
+        assert [i.investigation_id for i in record.investigations] == ["B-1"]
+        assert record.general.testPitCount is None
+        assert record.general.cptCount == 0
 
 
 # ---------------------------------------------------------------------------

@@ -1049,7 +1049,12 @@ narrative SAID with what was read, and `narrative.stated_counts` keeps the
 stated numbers. A `general.explorations` note lists each field it changed,
 from what to what. Nothing runs on a record whose narrative was not read. The
 count is of HOLES: `explorations_found` lists a name once however many items it
-was read in, matching names as the reconciler does.
+was read in, matching names as the reconciler does. And only the logs READ
+vouch for an answer: a 0 goes in only where the record has no work item of
+that kind at all (a pit log that failed to read, a cone item that gave nothing
+or one the item ceiling cut are pits and cones that exist), and any other
+answer only where every item of its kind was read; a field held back is in the
+note as `held`, with why.
 
 **The workflow triage chose decides what runs.** `appendix_only` skips the
 narrative reader — a reader pointed at an appendix would answer the owner's
@@ -1565,13 +1570,34 @@ default because it changes what the reader is shown, and it is unmeasured.
 **A page is read on one side of the boundary only** (BACKLOG RI-14). The
 parent's work items are built off its page labels, and a range triage drew
 where the labels did not say `appended_report` still holds pages labelled as
-logs, sheets, printouts or soundings. Until RI-14 those were read twice: into
-the parent AND into the child. Now an item a reader would read loses the pages
-that are a bound document's (an item left with none is not the parent's at
-all), a `bound.items` note lists what was taken out, and the parent's
-reconciler checks the parent's own pages only, so it does not call the child's
-pages unread. The narrative's items stay as they are unless
+logs, sheets, printouts or soundings. Until RI-14 those were read by the parent
+and, wherever the child's own labelling agreed, by the child as well. Now an
+item a reader would read loses the pages that are a bound document's (an item
+left with none is not the parent's at all) and they are HANDED to the child:
+a `bound.items` note lists them, and the parent's reconciler checks the
+parent's own pages only. The narrative's items stay as they are unless
 `narrative_skips_bound` is on.
+
+**The child keeps the file's reader labels.** The child re-runs the rules over
+its window and gets no label review, and left to itself it can call a handed
+page something no reader reads — rules rebased onto a short window called the
+twelve laboratory pages of R15's bound range prose, and a page the parent's
+review had moved to a sheet went back to a figure. So a page whose final parent
+label (after the vote and the review) is a log, a sheet, a printout or a
+sounding keeps it in the child (`settled_by: parent` on its page label, and a
+`bound.labels` note listing each one whose own vote said otherwise); the
+re-run decides only the pages the parent called `appended_report` or something
+no reader reads. Pipeline judgment: the parent's label had more evidence.
+Only AFTER the children have run does the parent say what happened: a handed
+page that no child read with the same reader (the child failed, its item
+failed, its item ceiling cut it) is `skipped` at `pages.<label>`, the shape the
+reconciler gives a labelled page nothing read, and a run of `appended_report`
+pages is a `note` (read into its own record) only when its child was read. The
+checklist's pages-read check leaves out the pages of a bound document that was
+read: they are checked in its own record. An item cut at the edge is cached as
+`items/<id>-own.json`, and the parent's narrative read with
+`narrative_skips_bound` as `items/<key>-skips-bound.json`, so a resumed run
+never takes one reading for the other.
 
 **Exports.** The child gets its own `report.record.json`, `report.summary.md`,
 `report.page.md` and `report.diggs.xml` under `out_dir/bound/<id>/`, and a row
@@ -2580,6 +2606,13 @@ record's two schemas, with the SAME scorers the reader stages use. That last
 table is the whole-pipeline score. A truth that names its pages meets whatever
 was read off them, the parent's record or a bound document's (a page is read
 on one side of the boundary only, RI-14); the hand answers meet the parent's.
+Each score row says which record it met (`records`), and `RESULTS.md` lists
+the truths met in a bound document's record — a truth in a range the labels
+drew used to meet nothing, so its score can rise with no reader reading better.
+`ingest_counts_from_logs` and `ingest_narrative_skips_bound` pass the graph's
+two RI-14 switches through (both off), and each report's `run.json` records
+them under `switches`; a report already done is not redone under new settings
+without `redo`, so compare two settings in two `out_dir`s.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the

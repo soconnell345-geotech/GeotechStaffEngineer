@@ -744,7 +744,9 @@ class PageLabel(BaseModel):
                     "confidence or rules")
     settled_by: str = Field(
         default="vote",
-        description="vote, or review where the label review moved the page")
+        description="vote, or review where the label review moved the page, "
+                    "or parent where a bound document keeps the label the "
+                    "whole file's pass gave a page a reader reads")
     voters: List[LabelVote] = Field(default_factory=list)
 
 

@@ -2308,6 +2308,7 @@ class TestTheIngestStage:
         (log_score,) = row["scores"]["logs"]
         assert log_score["id"] == "R36_p7"
         assert log_score["overall"]["found"] >= 3
+        assert log_score["records"] == ["parent"]
         assert row["scores"]["narrative"]["recall"]["total"] > 0
         assert row["scores"]["lab"] == []
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
@@ -2336,6 +2337,38 @@ class TestTheIngestStage:
         assert row["investigations_by_kind"] == {"boring": 1, "test_pit": 1}
         (log_score,) = row["scores"]["logs"]
         assert log_score["overall"]["found"] >= 3
+        # And the row says where it met it, so a rise is not read as a
+        # reader reading better.
+        assert log_score["records"] == ["bound1"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "R36 R36_p18 (bound1)" in text
+
+    def test_the_ri14_switches_reach_the_graph_and_the_run_file(
+            self, ingest_cluster):
+        from report_ingest.model import ReportRecord
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster,
+                              ingest_counts_from_logs="zeros",
+                              ingest_narrative_skips_bound=True)
+        (row,) = results["ingest"]["per_report"]
+        assert row["switches"] == {"ingest_bound": True,
+                                   "counts_from_logs": "zeros",
+                                   "narrative_skips_bound": True}
+        folder = out / "ingest" / "R36"
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text(encoding="utf-8"))
+        assert record.general.cptCount == 0
+        assert (folder / "items" / "item_2-skips-bound.json").is_file()
+
+    def test_by_default_the_ri14_switches_are_off(self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        (row,) = _ingest_run(ingest_cluster)["ingest"]["per_report"]
+        assert row["switches"]["counts_from_logs"] == "off"
+        assert row["switches"]["narrative_skips_bound"] is False
 
     def test_a_report_the_folder_does_not_have_is_named_and_skipped(
             self, ingest_cluster, monkeypatch):
