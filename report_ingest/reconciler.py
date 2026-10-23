@@ -1048,10 +1048,11 @@ def _check_dictionaries(record: ReportRecord, qa: List[QAEntry]) -> None:
         ids: List[str] = []
         for kind in kinds:
             ids.extend(found.get(kind, ()))
-        folded = {fold_id(x) for x in ids}
-        named = {fold_id(x) for x in stated}
-        missing = [x for x in stated if fold_id(x) not in folded]
-        extra = [x for x in ids if fold_id(x) not in named]
+        # hole_key, not fold_id: a narrative's "B-1" is a log's "B-01".
+        folded = {hole_key(x) for x in ids}
+        named = {hole_key(x) for x in stated}
+        missing = [x for x in stated if hole_key(x) not in folded]
+        extra = [x for x in ids if hole_key(x) not in named]
         if missing:
             qa.append(QAEntry(
                 kind="count_mismatch", where=f"general.{field}",
