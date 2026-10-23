@@ -2308,12 +2308,67 @@ class TestTheIngestStage:
         (log_score,) = row["scores"]["logs"]
         assert log_score["id"] == "R36_p7"
         assert log_score["overall"]["found"] >= 3
+        assert log_score["records"] == ["parent"]
         assert row["scores"]["narrative"]["recall"]["total"] > 0
         assert row["scores"]["lab"] == []
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert "## Scored against the hand truth" in text
         totals = results["ingest"]["totals"]["scores"]
         assert totals["logs"]["n"] == 1 and totals["narrative"]["n"] == 1
+
+    def test_a_truth_on_a_bound_reports_pages_meets_that_reports_record(
+            self, ingest_cluster, tmp_path):
+        # BACKLOG RI-14: a page is read on one side of the boundary only, so
+        # the log on page 18 (inside the report bound in at 15-18) is in the
+        # bound record, not the parent's -- and is scored there.
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        truth = tmp_path / "truth"
+        (truth / "logs").mkdir(parents=True)
+        (truth / "logs" / "R36_p18.json").write_text(json.dumps({
+            "id": "R36_p18", "pages": [18], "depth_unit": "m",
+            "fields": {"boring_id": "BH-1"},
+            "layers": [{"top": 0.0, "uscs": "CL"}],
+            "samples": [{"top": 1.5, "blows": [3, 5, 7]}],
+            "water": []}), encoding="utf-8")
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster, truth_dir=truth)
+        (row,) = results["ingest"]["per_report"]
+        assert row["investigations_by_kind"] == {"boring": 1, "test_pit": 1}
+        (log_score,) = row["scores"]["logs"]
+        assert log_score["overall"]["found"] >= 3
+        # And the row says where it met it, so a rise is not read as a
+        # reader reading better.
+        assert log_score["records"] == ["bound1"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "R36 R36_p18 (bound1)" in text
+
+    def test_the_ri14_switches_reach_the_graph_and_the_run_file(
+            self, ingest_cluster):
+        from report_ingest.model import ReportRecord
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster,
+                              ingest_counts_from_logs="zeros",
+                              ingest_narrative_skips_bound=True)
+        (row,) = results["ingest"]["per_report"]
+        assert row["switches"] == {"ingest_bound": True,
+                                   "counts_from_logs": "zeros",
+                                   "narrative_skips_bound": True}
+        folder = out / "ingest" / "R36"
+        record = ReportRecord.model_validate_json(
+            (folder / "report.record.json").read_text(encoding="utf-8"))
+        assert record.general.cptCount == 0
+        assert (folder / "items" / "item_2-skips-bound.json").is_file()
+
+    def test_by_default_the_ri14_switches_are_off(self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        (row,) = _ingest_run(ingest_cluster)["ingest"]["per_report"]
+        assert row["switches"]["counts_from_logs"] == "off"
+        assert row["switches"]["narrative_skips_bound"] is False
 
     def test_a_report_the_folder_does_not_have_is_named_and_skipped(
             self, ingest_cluster, monkeypatch):

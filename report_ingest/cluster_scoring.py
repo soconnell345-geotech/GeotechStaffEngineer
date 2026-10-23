@@ -77,7 +77,7 @@ import time
 import traceback
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.corpus import Corpus
 from report_ingest.mirror import DEFAULT_FOLDER, Mirror
@@ -426,6 +426,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      review_mode: str = "disagreements",
                      ingest_vision_mode: str = "sheet",
                      ingest_bound: bool = True,
+                     ingest_counts_from_logs: str = "off",
+                     ingest_narrative_skips_bound: bool = False,
                      trust_table: Any = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
@@ -633,6 +635,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         7 has 19 of 38 corpus reports carrying one, and their borings belong
         to the earlier investigation. ``False`` lists the pages and does not
         read them, which is what every run before this did.
+    ingest_counts_from_logs, ingest_narrative_skips_bound
+        ``graph.ingest_report``'s ``counts_from_logs`` and
+        ``narrative_skips_bound`` (BACKLOG RI-14), both off by default as
+        there: this stage is where they are measured. Each report's
+        ``run.json`` records them, and a report already done under other
+        settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
+        to compare two settings.
     """
     if prompter is None:
         raise ValueError(
@@ -887,6 +896,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              trust_table=trust_table,
                              templates_path=templates_path,
                              ingest_bound=ingest_bound,
+                             counts_from_logs=ingest_counts_from_logs,
+                             narrative_skips_bound=(
+                                 ingest_narrative_skips_bound),
                              oos=oos, mapped=mapped, sync=sync)
         results["ingest"] = ingest
         lines += _render_ingest(ingest)
@@ -3810,8 +3822,31 @@ def _truth_files_for(rid: str, truth: Sequence[Optional[Path]]
     return out
 
 
+def _bound_records(record: Any, folder: Path) -> List[Any]:
+    """The records of the reports bound inside this one, off disk.
+
+    The graph writes each beside its parent (``bound/<id>/``) before the
+    parent, and their page numbers are the parent FILE's, so a hand truth on
+    a bound document's pages can be scored against the record that read
+    them. A child that was not read, or will not load, is left out.
+    """
+    from report_ingest.model import ReportRecord
+
+    out: List[Any] = []
+    for row in getattr(record, "bound_documents", ()) or ():
+        if not row.read or not row.record_path:
+            continue
+        try:
+            out.append(ReportRecord.model_validate_json(
+                (folder / row.record_path).read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
 def _score_ingest_record(record: Any, rid: str,
-                         truth: Sequence[Optional[Path]]) -> Dict[str, Any]:
+                         truth: Sequence[Optional[Path]],
+                         bound: Sequence[Any] = ()) -> Dict[str, Any]:
     """The ingest's record against every hand truth this report has.
 
     The SAME scorers the reader stages use, on the record the whole
@@ -3820,6 +3855,16 @@ def _score_ingest_record(record: Any, rid: str,
     a lab truth against the tests read off its page and a calculation truth
     against the calculation read off its run -- not against the whole
     record, or a sample at the right depth in a different hole would count.
+
+    ``bound`` are the records of the reports bound inside this one
+    (:func:`_bound_records`). A truth that names its pages is scored against
+    whatever was read off those pages, the parent's or a bound document's:
+    a page is read on one side of the boundary only (BACKLOG RI-14), so a
+    truth on a bound document's pages has nothing in the parent to meet. A
+    truth that names no page is scored against the parent alone. Each row
+    says which record it met (``records``: ``parent`` and/or the bound
+    ids), because a truth on a range the page labels drew used to meet
+    nothing, and its score can now rise with no reader reading better.
     """
     from report_ingest.calc_scoring import pages_of as calc_pages_of
     from report_ingest.calc_scoring import score_record as score_calc
@@ -3831,62 +3876,76 @@ def _score_ingest_record(record: Any, rid: str,
     from report_ingest.sounding_scoring import pages_of as sounding_pages_of
     from report_ingest.sounding_scoring import score_record as score_sounding
 
+    holders = [("parent", record)] + [
+        (getattr(child.parent, "bound_id", "") or "bound", child)
+        for child in bound]
+
+    def pool(name: str, pages: Set[int]) -> List[Tuple[str, Any]]:
+        """(the record's name, the entry) for each entry off ``pages``."""
+        return [(who, x) for who, holder in (holders if pages
+                                             else holders[:1])
+                for x in getattr(holder, name)
+                if not pages or set(x.pages) & pages]
+
+    def met(rows: Sequence[Tuple[str, Any]]) -> List[str]:
+        return sorted({who for who, _x in rows})
+
     files = _truth_files_for(rid, truth)
     out: Dict[str, Any] = {"logs": [], "lab": [], "narrative": None,
                            "calc": [], "soundings": []}
     for name, blob in files["logs"]:
         pages = {int(p) for p in blob.get("pages") or []}
-        invs = [i for i in record.investigations
-                if not pages or set(i.pages) & pages]
-        score = score_log(blob, invs)
+        invs = pool("investigations", pages)
+        score = score_log(blob, [x for _who, x in invs])
         out["logs"].append({"id": name, "overall": score.total.to_dict(),
                             "scores": {k: v.to_dict()
-                                       for k, v in score.scores.items()}})
+                                       for k, v in score.scores.items()},
+                            "records": met(invs)})
     for name, blob in files["lab"]:
         pages = set(pages_of(blob))
-        tests = [t for t in record.lab_tests
-                 if not pages or set(t.pages) & pages]
-        score = score_lab(blob, tests)
+        tests = pool("lab_tests", pages)
+        score = score_lab(blob, [x for _who, x in tests])
         out["lab"].append({"id": name, "kind": blob.get("kind") or "",
                            "overall": score.total.to_dict(),
                            "scores": {k: v.to_dict()
-                                      for k, v in score.scores.items()}})
+                                      for k, v in score.scores.items()},
+                           "records": met(tests)})
     for name, blob in files["calc"]:
         pages = set(calc_pages_of(blob))
-        mine = [c for c in record.calculations
-                if not pages or set(c.pages) & pages]
+        mine = pool("calculations", pages)
         if not mine:
             out["calc"].append({"id": name, "kind": blob.get("kind") or "",
                                 "overall": {"found": 0, "total": 0,
                                             "rate": None},
-                                "scores": {}, "read": False})
+                                "scores": {}, "read": False, "records": []})
             continue
         # A run the graph split into more than one item is scored against
         # the one that covers the most of it: the truth file describes ONE
         # calculation and scoring it against a fragment would report the
         # fragment's misses as the reader's.
-        best = max(mine, key=lambda c: len(pages & set(c.pages)))
+        who, best = max(mine, key=lambda row: len(pages & set(row[1].pages)))
         score = score_calc(blob, best)
         out["calc"].append({"id": name, "kind": blob.get("kind") or "",
                             "overall": score.total.to_dict(),
                             "scores": {k: v.to_dict()
                                        for k, v in score.scores.items()},
-                            "read": True})
+                            "read": True, "records": [who]})
     for name, blob in files["soundings"]:
         pages = set(sounding_pages_of(blob))
-        invs = [i for i in record.investigations
-                if not pages or set(i.pages) & pages]
-        score = score_sounding(blob, invs)
+        invs = pool("investigations", pages)
+        score = score_sounding(blob, [x for _who, x in invs])
         out["soundings"].append({
             "id": name, "kind": sounding_kind(blob),
             "overall": score.total.to_dict(),
-            "scores": {k: v.to_dict() for k, v in score.scores.items()}})
+            "scores": {k: v.to_dict() for k, v in score.scores.items()},
+            "records": met(invs)})
     for name, blob in files["narrative"]:
         score = score_narrative(blob, record.general, record.natural_hazards,
                                 report=rid)
         out["narrative"] = {"recall": score.recall.to_dict(),
                             "precision": score.precision.to_dict(),
-                            "agreement": score.agreement.to_dict()}
+                            "agreement": score.agreement.to_dict(),
+                            "records": ["parent"]}
     return out
 
 
@@ -4012,6 +4071,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 trust_table: Any = None,
                 templates_path: Any = None,
                 ingest_bound: bool = True,
+                counts_from_logs: str = "off",
+                narrative_skips_bound: bool = False,
                 oos: Optional[Dict[str, Dict[int, dict]]] = None,
                 mapped: Sequence[str] = (),
                 sync: Optional[Any] = None) -> Dict[str, Any]:
@@ -4101,6 +4162,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                    trust_table=trust_table,
                                    templates=templates,
                                    ingest_bound=ingest_bound,
+                                   counts_from_logs=counts_from_logs,
+                                   narrative_skips_bound=(
+                                       narrative_skips_bound),
                                    triage_engine=triage_engine)
             n_pages = doc.n_pages
         except KeyboardInterrupt:
@@ -4150,6 +4214,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "labels": _ingest_labels(folder, record, rid, corpus,
                                      oos or {}, mapped),
             "bound": _ingest_bound_rows(record),
+            "switches": {"ingest_bound": ingest_bound,
+                         "counts_from_logs": counts_from_logs,
+                         "narrative_skips_bound": narrative_skips_bound},
             "counts": record.counts(),
             "investigations_by_kind": by_kind,
             "lab_by_kind": lab_by_kind,
@@ -4157,7 +4224,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "qa_by_kind": qa_by_kind,
             "diggs": _diggs_verdicts(record, outputs),
             "outputs": {k: str(v) for k, v in outputs.items()},
-            "scores": _score_ingest_record(record, rid, truth),
+            "scores": _score_ingest_record(
+                record, rid, truth, _bound_records(record, folder)),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
         }
@@ -4560,6 +4628,18 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
                 f"{_rate({'found': scores['narrative']['recall_found'], 'total': scores['narrative']['recall_total']}):>18}"
                 f"{_rate({'found': scores['narrative']['precision_found'], 'total': scores['narrative']['precision_total']}):>12}",
                 "```"]
+        # A truth on a bound document's pages meets that document's record
+        # (BACKLOG RI-14): said, so a rise there is not read as a reader's.
+        elsewhere = [
+            f"{r['id']} {e['id']} ({', '.join(e['records'])})"
+            for r in scored_rows
+            for kind in ("logs", "lab", "calc", "soundings")
+            for e in (r.get("scores") or {}).get(kind) or []
+            if set(e.get("records") or ()) - {"parent"}]
+        if elsewhere:
+            out += ["", "Truths met in the record of a report bound inside "
+                        "the one scored (a page is read on one side of the "
+                        "boundary only): " + "; ".join(elsewhere) + "."]
     else:
         out += ["", "No hand truth for these reports under `truth_dir`, so "
                     "the records are not scored; the counts above are what "

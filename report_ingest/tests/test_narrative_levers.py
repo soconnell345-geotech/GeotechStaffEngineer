@@ -30,6 +30,7 @@ from report_ingest.narrative_reader import (
     DEFAULT_CONFIDENCE, MIN_TEXT_CHARS, NarrativeReading, ReadCitation,
     RETRIEVAL_PHRASES, UNVERIFIED_CONFIDENCE, explorations_found,
     picture_pages, read_narrative, reading_pages, retrieval_passages,
+    settled_explorations,
 )
 from report_ingest.tests.fake_engine import FakeEngine
 from report_ingest.tests.narrative_fixtures import (
@@ -283,6 +284,20 @@ class TestTheDeterministicExplorationAnswers:
         assert got["boringDictionary"] == ["B-1", "B-2"]
         assert got["testPitDictionary"] == ["TP-1"]
 
+    def test_a_hole_read_twice_is_one_hole(self):
+        # A continuation sheet that became its own work item reads as the
+        # same boring again; a log with no printed name is a hole of its own.
+        got = explorations_found([
+            _Inv("boring", "B-1"), _Inv("boring", "B-2"),
+            _Inv("boring", "B 2"), _Inv("boring", ""),
+            _Inv("test_pit", "TP-1"), _Inv("test_pit", "tp1"),
+        ])
+
+        assert got["boringCount"] == 3
+        assert got["boringDictionary"] == ["B-1", "B-2"]
+        assert got["testPitCount"] == 1
+        assert got["testPitDictionary"] == ["TP-1"]
+
     def test_no_logs_at_all_yields_nothing_and_the_prose_stands(self, doc):
         assert explorations_found([]) == {}
 
@@ -337,6 +352,54 @@ class TestTheDeterministicExplorationAnswers:
                       investigations=[_Inv("boring", "B-1")])
 
         assert result.general.testPitCount == 0
+
+
+class TestTheRuleTheGraphShares:
+    """``settled_explorations`` is lever 4's rule on its own, so the graph
+    can run it after the logs are read (BACKLOG RI-14)."""
+
+    FOUND = explorations_found([_Inv("boring", "B-1"),
+                                _Inv("boring", "B-2"),
+                                _Inv("test_pit", "TP-1")])
+
+    def test_a_gap_is_filled_and_a_stated_answer_is_overruled(self):
+        got = settled_explorations(
+            {"boringCount": 4, "testPitCount": None, "cptCount": None,
+             "boringDictionary": None, "testPitDictionary": ["TP-1"]},
+            self.FOUND)
+
+        assert got == {"boringCount": 2, "testPitCount": 1, "cptCount": 0,
+                       "boringDictionary": ["B-1", "B-2"]}
+
+    def test_without_overrule_only_the_gaps_are_filled(self):
+        got = settled_explorations(
+            {"boringCount": 4, "testPitCount": None, "cptCount": None,
+             "boringDictionary": ["B-1"], "testPitDictionary": None},
+            self.FOUND, overrule=False)
+
+        assert got == {"testPitCount": 1, "cptCount": 0,
+                       "testPitDictionary": ["TP-1"]}
+
+    def test_a_zero_never_overrules_a_stated_number(self):
+        got = settled_explorations({"cptCount": 3}, self.FOUND)
+
+        assert "cptCount" not in got
+
+    def test_no_logs_at_all_changes_nothing(self):
+        assert settled_explorations({"boringCount": None},
+                                    explorations_found([])) == {}
+
+    def test_the_reader_and_the_rule_agree(self, doc):
+        invs = [_Inv("boring", f"B-{n}") for n in range(1, 4)]
+        engine = FakeEngine([{"final": a_reading(boringCount=5,
+                                                 testPitCount=None)}])
+        result = read(doc, engine, front_pages=0, roles=[],
+                      investigations=invs)
+        alone = settled_explorations({"boringCount": 5, "testPitCount": None},
+                                     explorations_found(invs))
+
+        assert result.general.boringCount == alone["boringCount"] == 3
+        assert result.general.testPitCount == alone["testPitCount"] == 0
 
 
 # ---------------------------------------------------------------------------

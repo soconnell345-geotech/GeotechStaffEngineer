@@ -157,6 +157,26 @@ def test_a_clean_record_passes_what_it_can():
     assert "logs 3 of 3" in by["completeness.pages_read"]["detail"]
 
 
+@pytest.mark.parametrize("read", [True, False])
+def test_a_bound_documents_sheets_are_checked_in_its_own_record(read):
+    # BACKLOG RI-14: pages 12-13 lie in a report bound inside this one and
+    # were read into ITS record, so this one holds nothing off them -- and
+    # is not failed for it. A bound document that was not read is.
+    from report_ingest.model import BoundReport
+
+    rec = _record(lab_tests=[])
+    for inv in rec.investigations:
+        if inv.investigation_id == "B-1":
+            inv.pages = [7, 8]
+    rec.bound_documents = [BoundReport(bound_id="bound1", pages="12-18",
+                                       first_page=12, last_page=18,
+                                       read=read)]
+    row = _by_id(CL.run_checklist(rec))["completeness.pages_read"]
+
+    assert row["status"] == ("pass" if read else "fail"), row
+    assert ("laboratory sheets" in row["detail"]) is (not read)
+
+
 def test_the_planted_faults_are_found():
     gen = general_facts()
     gen.boringCount = 2                      # the logs show one boring

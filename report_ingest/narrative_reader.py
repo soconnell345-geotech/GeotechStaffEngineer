@@ -77,6 +77,7 @@ __all__ = [
     "RETRIEVAL_PHRASES", "DEFAULT_CONFIDENCE", "UNVERIFIED_CONFIDENCE",
     "reading_pages", "explorations_found", "retrieval_passages",
     "picture_pages", "check_quotes", "DETERMINISTIC_FIELDS",
+    "settled_explorations",
 ]
 
 #: The ceiling in the brief: eight model calls for one narrative. A narrative
@@ -1013,7 +1014,17 @@ def explorations_found(investigations: Sequence[Any]) -> Dict[str, Any]:
     produced for every log work item in the report -- and it comes back as
     the owner's own field names. A report with no logs read yields nothing
     and the narrative's own answers stand.
+
+    A COUNT OF HOLES, NOT OF LOGS READ. One hole read twice -- a
+    continuation sheet that became a work item of its own, which the corpus
+    has (BACKLOG RI-14's measure) -- is one boring, and its name is listed
+    once. Names are matched the way the reconciler matches them (``B-1``,
+    ``B 1`` and ``b1`` are one hole), the first spelling is kept, and a log
+    that printed no name is one hole of its own, since there is nothing to
+    tell it from another.
     """
+    from report_ingest.reconciler import fold_id
+
     by_kind: Dict[str, List[str]] = {}
     for inv in investigations or ():
         kind = str(getattr(inv, "kind", "") or "")
@@ -1021,13 +1032,58 @@ def explorations_found(investigations: Sequence[Any]) -> Dict[str, Any]:
         by_kind.setdefault(kind, []).append(name)
     if not by_kind:
         return {}
+
+    def holes(names: Sequence[str]) -> Tuple[List[str], int]:
+        """(the distinct names, in order, and how many logs had none)."""
+        seen: Dict[str, str] = {}
+        for name in names:
+            if name and fold_id(name) not in seen:
+                seen[fold_id(name)] = name
+        return list(seen.values()), sum(1 for name in names if not name)
+
     out: Dict[str, Any] = {}
     for name, kinds in _EXPLORATION_KINDS.items():
-        out[name] = sum(len(by_kind.get(kind, ())) for kind in kinds)
+        named, unnamed = holes([x for kind in kinds
+                                for x in by_kind.get(kind, ())])
+        out[name] = len(named) + unnamed
     for name, kinds in _EXPLORATION_IDS.items():
-        ids = [x for kind in kinds for x in by_kind.get(kind, ()) if x]
+        ids, _ = holes([x for kind in kinds for x in by_kind.get(kind, ())])
         if ids:
             out[name] = ids
+    return out
+
+
+def settled_explorations(stated: Dict[str, Any], found: Dict[str, Any], *,
+                         overrule: bool = True) -> Dict[str, Any]:
+    """The exploration answers the logs change, and what each becomes.
+
+    ``stated`` is the narrative's own answers by field name and ``found`` is
+    :func:`explorations_found`. Only the fields whose stored value changes
+    come back. The rule, in one place for the reader and the graph:
+
+    * where the narrative said nothing, the logs' answer is stored -- a zero
+      included, which is the house convention that none means 0;
+    * where it said something different, the logs' answer is stored when
+      ``overrule`` is on -- unless the logs' answer is a ZERO or empty: no
+      cone logs read is not the same as no cones pushed, and the stated
+      number stands.
+
+    Nothing is recorded here; the caller says what changed and keeps the
+    narrative's own answer.
+    """
+    out: Dict[str, Any] = {}
+    for name in DETERMINISTIC_FIELDS:
+        if not found or name not in found:
+            continue
+        ours = found[name]
+        theirs = stated.get(name)
+        if theirs in (None, []):
+            if ours != theirs:
+                out[name] = ours
+            continue
+        if theirs == ours or not overrule or ours in (0, [], None):
+            continue
+        out[name] = ours
     return out
 
 
@@ -1534,9 +1590,7 @@ class _Builder:
                        "The logs are stored and the narrative's answer is "
                        "kept here"),
                     theirs)
-                if empty:
-                    continue
-            values[name] = ours
+        values.update(settled_explorations(values, found or {}))
 
         # The two counts Python counted for itself. The counted number is
         # what is stored when there was anything to count; the model's answer

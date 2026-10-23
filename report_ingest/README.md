@@ -246,7 +246,11 @@ name.
 
 `read_lab_sheet(doc, item_pages, engine, budget=4, hint_kind=None)` turns one
 laboratory sheet into typed `LabTest` records — several, when the sheet reports
-several specimens or two different tests on one.
+several specimens or two different tests on one. The graph passes no
+`hint_kind` (BACKLOG RI-14 looked): no page labeller names a test kind — the
+rules, the vision voter and the review all say `lab_test` and no more — and
+the floor's "kind from the title", read off the sheet's own title lines, is in
+every brief already.
 
 A boring log is a form with a depth ruler, and `log_grid` can say *where* every
 number sits before any model sees it. A lab sheet is not that: every laboratory
@@ -834,7 +838,11 @@ labeller found rather than from the prose; the narrative's own answer stays in
 `stated_counts` and any difference is an `unresolved` row the reconciler raises
 again. A ZERO does not overrule a stated number — no cone logs were read is not
 the same as no cones were pushed — but it is stored where the narrative said
-nothing at all, which is convention 1 above.
+nothing at all, which is convention 1 above. The rule itself is
+`settled_explorations(stated, found, overrule=True)`. The graph never passed
+`investigations=` (the narrative is read before the logs, and a resumed run
+takes it off disk); since RI-14 it runs the same rule after the reconciler,
+under `counts_from_logs` (`off` by default; `settle` is this lever whole).
 
 **5. A quote gate.** Every citation names a page and repeats that page's own
 words, and both halves are checkable. An answer none of whose quotes can be
@@ -1005,6 +1013,48 @@ ceiling per pass, and a 150-page report is about a hundred calls), testable
 offline (every reader takes an engine), restartable (each item writes
 `items/<id>.json` as it finishes and a second run picks up where the first
 stopped), and it cannot forget an appendix.
+
+**The narrative is read once** (BACKLOG RI-14). planlens starts a new work item
+wherever a run of narrative pages is broken by a figure, a table page or a tab,
+so one report's prose is often several items. Until RI-14 each was read on its
+own over nearly the same pages and each answer replaced the one before: the
+record kept the LAST item's answer, paid for every one and carried every
+read's unsettled lines again. Now the readable narrative items are one read
+over all their pages, cached as `items/<first>-<last>.json` when there is more
+than one (`items/<id>.json` when there is one, as before), with an
+`items.narrative` note naming them. A narrative too long for one call is cut
+into parts by the reader and merged by its own rule: the first answer kept,
+lists unioned, every disagreement between two parts recorded.
+
+**The exploration answers and the logs** (`counts_from_logs`, BACKLOG RI-14).
+Once everything is read and reconciled, the five exploration answers
+(`boringCount`, `testPitCount`, `cptCount`, `boringDictionary`,
+`testPitDictionary`) are set against the logs this record read, by the
+narrative reader's own rule (`settled_explorations`, lever 4 below). The modes
+are a ladder, each doing what the one before does and more: `off` (the
+default) leaves the narrative's answers alone; `zeros` makes a count the
+narrative left unanswered 0 where logs of other kinds were read and none of
+this one — convention 1, none means 0 (still DRAFT), with the appendix as the
+evidence; `fill` takes every answer the narrative left open off the logs (the
+identifiers and the count of holes); `settle` also overrules a stated answer
+the logs contradict, unless the logs' answer is zero (lever 4 as 5.24.0 wrote
+it). All of it is OFF until measured on real reads. RI-14's offline measure
+only set the log items planlens' rules find against the eight hand narrative
+truths: the zeros were right 6 of 6, a non-zero count or list off the logs 5
+of 17 (an appendix carries earlier investigations' logs that no bound range
+caught, and one hole can be two items), and overruling a narrative that was
+right was wrong 12 times in 13 — so `zeros` is the first to measure.
+It runs AFTER the reconciler, so every `count_mismatch` still compares what the
+narrative SAID with what was read, and `narrative.stated_counts` keeps the
+stated numbers. A `general.explorations` note lists each field it changed,
+from what to what. Nothing runs on a record whose narrative was not read. The
+count is of HOLES: `explorations_found` lists a name once however many items it
+was read in, matching names as the reconciler does. And only the logs READ
+vouch for an answer: a 0 goes in only where the record has no work item of
+that kind at all (a pit log that failed to read, a cone item that gave nothing
+or one the item ceiling cut are pits and cones that exist), and any other
+answer only where every item of its kind was read; a field held back is in the
+note as `held`, with why.
 
 **The workflow triage chose decides what runs.** `appendix_only` skips the
 narrative reader — a reader pointed at an appendix would answer the owner's
@@ -1505,12 +1555,49 @@ into that same file, and the child's own extent is recorded once, on `parent`.
 document's title, firm and date, and told what to do with them: do not count
 their borings as this report's, do not put their identifiers in this report's
 `boringDictionary`, and each of them IS a previous investigation and counts
-towards `previousInvestigationCount`. The counts and dictionaries themselves
-still come from the parent's OWN logs (the deterministic path). The child's
+towards `previousInvestigationCount`. The counts and dictionaries the logs
+settle (`counts_from_logs`, see the graph) are settled against the parent's
+OWN logs. The child's
 narrative reader gets the mirror of that: a `window` that keeps every page it
 is shown and every passage it is searched inside the bound document, so it
 never answers off the cover, the letter or the recommendations of the report it
-is bound inside.
+is bound inside. The parent's reader can be given the same treatment with
+`narrative_skips_bound=True`: a window of every page that is NOT a bound
+document's, so it is not shown them as narrative, as the front of the report or
+as a searched passage, and the captions it counts are its own. It is OFF by
+default because it changes what the reader is shown, and it is unmeasured.
+
+**A page is read on one side of the boundary only** (BACKLOG RI-14). The
+parent's work items are built off its page labels, and a range triage drew
+where the labels did not say `appended_report` still holds pages labelled as
+logs, sheets, printouts or soundings. Until RI-14 those were read by the parent
+and, wherever the child's own labelling agreed, by the child as well. Now an
+item a reader would read loses the pages that are a bound document's (an item
+left with none is not the parent's at all) and they are HANDED to the child:
+a `bound.items` note lists them, and the parent's reconciler checks the
+parent's own pages only. The narrative's items stay as they are unless
+`narrative_skips_bound` is on.
+
+**The child keeps the file's reader labels.** The child re-runs the rules over
+its window and gets no label review, and left to itself it can call a handed
+page something no reader reads — rules rebased onto a short window called the
+twelve laboratory pages of R15's bound range prose, and a page the parent's
+review had moved to a sheet went back to a figure. So a page whose final parent
+label (after the vote and the review) is a log, a sheet, a printout or a
+sounding keeps it in the child (`settled_by: parent` on its page label, and a
+`bound.labels` note listing each one whose own vote said otherwise); the
+re-run decides only the pages the parent called `appended_report` or something
+no reader reads. Pipeline judgment: the parent's label had more evidence.
+Only AFTER the children have run does the parent say what happened: a handed
+page that no child read with the same reader (the child failed, its item
+failed, its item ceiling cut it) is `skipped` at `pages.<label>`, the shape the
+reconciler gives a labelled page nothing read, and a run of `appended_report`
+pages is a `note` (read into its own record) only when its child was read. The
+checklist's pages-read check leaves out the pages of a bound document that was
+read: they are checked in its own record. An item cut at the edge is cached as
+`items/<id>-own.json`, and the parent's narrative read with
+`narrative_skips_bound` as `items/<key>-skips-bound.json`, so a resumed run
+never takes one reading for the other.
 
 **Exports.** The child gets its own `report.record.json`, `report.summary.md`,
 `report.page.md` and `report.diggs.xml` under `out_dir/bound/<id>/`, and a row
@@ -2516,7 +2603,16 @@ the record's values), calls, tokens, dollars, seconds — then the totals, then
 that report: each log truth against the investigations read off its pages, each
 sheet truth against the tests read off its page, the hand answers against the
 record's two schemas, with the SAME scorers the reader stages use. That last
-table is the whole-pipeline score.
+table is the whole-pipeline score. A truth that names its pages meets whatever
+was read off them, the parent's record or a bound document's (a page is read
+on one side of the boundary only, RI-14); the hand answers meet the parent's.
+Each score row says which record it met (`records`), and `RESULTS.md` lists
+the truths met in a bound document's record — a truth in a range the labels
+drew used to meet nothing, so its score can rise with no reader reading better.
+`ingest_counts_from_logs` and `ingest_narrative_skips_bound` pass the graph's
+two RI-14 switches through (both off), and each report's `run.json` records
+them under `switches`; a report already done is not redone under new settings
+without `redo`, so compare two settings in two `out_dir`s.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
