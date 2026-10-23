@@ -1034,7 +1034,8 @@ class TestTheRank:
         (tmp_path / "review.json").write_text(json.dumps({
             "asked_pages": [10],
             "changes": [{"page": 3, "from": "narrative", "to": "figure",
-                         "reason": "a full-page drawing"}]}))
+                         "reason": "a full-page drawing",
+                         "evidence": "read_page"}]}))
         choices = [PageChoice(page=3, label="narrative", confidence=0.9,
                               agreed=True, policy="structural"),
                    PageChoice(page=10, label="figure", confidence=0.5,
