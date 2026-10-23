@@ -102,7 +102,7 @@ __all__ = [
     "serialise_floor", "merge_calculation", "page_window", "printed_numbers",
     "NAME_RATIO", "SUMMARY_WORDS",
     "split_calc_runs", "split_calc_items", "HEADER_BAND_FRAC",
-    "TITLE_WORDS", "MAX_RUN_PAGES", "PAGE_IMAGES_ENV", "page_images_enabled",
+    "TITLE_WORDS", "PAGE_IMAGES_ENV", "page_images_enabled",
     "use_page_images",
 ]
 
@@ -1549,16 +1549,33 @@ def _pictured(doc: Any, pages: Sequence[int], every_page: bool,
 
 
 def _pictures(doc: Any, pages: Sequence[int], dpi: float,
-              captioned: bool = False) -> List[Dict[str, Any]]:
+              captioned: bool = False,
+              first_as_rendered: bool = False) -> List[Dict[str, Any]]:
     """The pages as picture blocks; a page that will not draw is read from
     its text alone. ``captioned`` puts the page number in front of each
-    picture, for a call that carries more than one."""
+    picture, for a call that carries more than one.
+
+    With ``first_as_rendered`` the first page travels as the PNG it renders
+    to, as it always has, so a call that adds no picture is the request it
+    was before RI-17. Every other picture travels as a JPEG of the same
+    pixel size (:func:`report_ingest.vision_labels.encode_for_vision`):
+    those are the scanned pages, photographs PNG stores badly, and a call
+    carrying a dozen of them -- sent twice when the reader's unsettled list
+    takes the second call -- reaches the request size the gateway has
+    refused before.
+    """
+    from report_ingest.vision_labels import encode_for_vision
     out: List[Dict[str, Any]] = []
-    for page in pages:
+    for n, page in enumerate(pages):
         try:
             png, _info = doc.render(page, dpi=dpi)
         except Exception:                        # a page that will not draw
             continue
+        if not (first_as_rendered and n == 0):
+            try:
+                png = encode_for_vision(png)
+            except Exception:                    # sent as rendered instead
+                pass
         if captioned:
             out.append(text_block(f"The picture of page {page}:"))
         out.append(image_block(png))
@@ -1641,10 +1658,6 @@ _COLUMNS_RE = re.compile(r"\S\s{3,}\S")
 #: A label closed by a unit in brackets, "Deflection (meters)", is an axis or
 #: a column heading, not a title.
 _UNIT_LABEL_RE = re.compile(r"\(([^()]{1,12})\)\s*$")
-#: The most pages one item may hold: what the reader's two calls can show,
-#: a window of :data:`MAX_CALC_PAGES` each with the first and the last page in
-#: both (:func:`page_window`). A longer run is cut into balanced parts.
-MAX_RUN_PAGES = 2 * MAX_CALC_PAGES - 2
 #: Words that make a title name a calculation: the kind vocabulary's own
 #: words (the names in :data:`CALC_KIND_DEFINITIONS`, their definitions and
 #: the aliases the builder accepts, :data:`_KIND_ALIASES`), less the ones
@@ -1816,11 +1829,12 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
     split: a cover, a project block or a sheet number is an absence of
     evidence, and splitting on it would cut a printout into single pages.
 
-    A run longer than :data:`MAX_RUN_PAGES` -- more than the reader's two
-    calls can show -- is then cut into the fewest balanced parts that fit,
-    so a long printout is never left with a one-page orphan. A run up to that
-    length stays whole: :func:`read_calculation` windows it, and the floor
-    reads every page of it either way.
+    A run longer than :data:`MAX_CALC_PAGES` -- more than the reader's
+    first call shows -- is then cut into the fewest balanced parts that fit,
+    so a long printout is never left with a one-page orphan and every page of
+    every part is in the first call. A longer item would be windowed, and the
+    pages of its second window are shown only if the reader asks to go on:
+    a scanned page there, which has only its picture, could go unseen.
     """
     pages = [int(p) for p in pages]
     if len(pages) <= 1:
@@ -1849,7 +1863,7 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
         if head.program is not None:
             program_before = head.program
         banner_run = banner_run or head.banner
-    return [part for run in runs for part in _balanced(run, MAX_RUN_PAGES)]
+    return [part for run in runs for part in _balanced(run, MAX_CALC_PAGES)]
 
 
 def _balanced(run: List[int], cap: int) -> List[List[int]]:
@@ -2297,7 +2311,10 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     shown = _pictured(doc, window, every_page, first=True)
     shown_later = _pictured(doc, page_window(pages, next_start), every_page,
                             first=False)
-    system = _system(every_page, scans=len(shown) > 1 or bool(shown_later))
+    # The second window repeats the first page, which the first call already
+    # showed as a picture; only a page after it is a picture the prompt adds.
+    system = _system(every_page, scans=len(shown) > 1 or any(
+        p != pages[0] for p in shown_later))
 
     brief = _brief(doc, window, pages, ledger, item_title, report_id, budget,
                    floor)
@@ -2305,7 +2322,8 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [user(
         text_block(brief), *_pictures(doc, shown, dpi,
-                                      captioned=len(shown) > 1))]
+                                      captioned=len(shown) > 1,
+                                      first_as_rendered=True))]
 
     model_calls = 0
     tool_calls = 0

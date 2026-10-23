@@ -399,7 +399,11 @@ the window is shown as text, and the first page and every **scanned** page
 (no text line, an optical reader's text, or text planlens flags unreliable)
 as a picture; `GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`)
 sends every page of it as a picture too, OFF by default because no run has
-measured it.
+measured it. The first page goes as the PNG it renders to; every picture
+added after it goes as a JPEG of the same pixel size (`encode_for_vision`),
+because a scan is a photograph PNG stores badly and the gateway refuses a
+request that grows too large — on Foundry run 1 the largest call's pictures
+are 1.8 MB in base64 this way, against 4.6 MB as PNG.
 
 **One printout is one item.** `split_calc_items` cuts a planlens item where a
 page's title names a *different* calculation, where the program changes, or
@@ -413,10 +417,11 @@ whole word of the kind vocabulary (`TITLE_WORDS`: "Micropiles" does,
 legend, cover or project block never cuts; before RI-17 those cut seven of
 the ten hand-truthed runs into pieces (one into seven single pages), and a
 first fix still cut pile printouts on their table headings. A run longer than
-the reader's two calls can show (`MAX_RUN_PAGES`, 22 pages) is cut into
-balanced parts. Over Foundry run 1's 114 calculation items (796 pages) that
-is 148 items instead of 611, 31 of them one page instead of 485, at most two
-calls each (at most 296 calls; the old items spent 1,134). Its one tool is
+one call's window (`MAX_CALC_PAGES`) is cut into balanced parts — 13 pages
+into 7 and 6, not 12 and an orphan — so every page of an item is in its
+first call. Over Foundry run 1's 114 calculation items (796 pages) that is
+160 items instead of 611, 31 of them one page instead of 485, at most two
+calls each (at most 320 calls; the old items spent 1,134). Its one tool is
 **`zoom_plot`**, for a result printed *on* a drawing: a slope section with its
 factor of safety written beside the critical surface, which is what a
 stability program prints and what no text pattern will ever find.

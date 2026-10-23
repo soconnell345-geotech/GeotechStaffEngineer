@@ -842,25 +842,25 @@ class TestSplittingACalculationRun:
         from report_ingest.calc_reader import split_calc_runs
         assert split_calc_runs(two_banners, [0, 1]) == [[0, 1]]
 
-    def test_a_run_is_capped_at_what_two_calls_can_show(self, two_banners):
-        """RI-17: the cap is the reader's two windows, not one, and a run
-        over it is cut into balanced parts -- not 12 pages and an orphan."""
+    def test_a_run_is_capped_at_one_window_in_balanced_parts(
+            self, two_banners):
+        """RI-17: a run over the reader's window is cut into balanced parts
+        -- not 12 pages and an orphan -- and every part fits one window."""
         from report_ingest.calc_reader import (
-            MAX_CALC_PAGES, MAX_RUN_PAGES, page_window, split_calc_runs,
+            MAX_CALC_PAGES, page_window, split_calc_runs,
         )
         # Pages the document does not have read as nothing, which does not
         # split; the cap still bites.
-        whole = list(range(2, 2 + MAX_RUN_PAGES))
+        whole = list(range(2, 2 + MAX_CALC_PAGES))
         assert split_calc_runs(two_banners, whole) == [whole]
-        seen = set(page_window(whole)) | set(
-            page_window(whole, MAX_CALC_PAGES - 2))
-        assert seen == set(whole)                    # two calls show it all
-        over = list(range(2, 2 + MAX_RUN_PAGES + 1))
+        assert page_window(whole) == whole           # one call shows it all
+        over = list(range(2, 2 + MAX_CALC_PAGES + 1))
         assert [len(r) for r in split_calc_runs(two_banners, over)] == [
-            MAX_CALC_PAGES, MAX_CALC_PAGES - 1]
-        long = list(range(2, 2 + 2 * MAX_RUN_PAGES + 1))
+            (MAX_CALC_PAGES + 2) // 2, (MAX_CALC_PAGES + 1) // 2]
+        long = list(range(2, 2 + 2 * MAX_CALC_PAGES + 1))
         sizes = [len(r) for r in split_calc_runs(two_banners, long)]
         assert len(sizes) == 3 and max(sizes) - min(sizes) <= 1
+        assert max(sizes) <= MAX_CALC_PAGES
 
     def test_the_items_keep_their_title_and_say_they_were_split(
             self, two_banners):
@@ -1086,6 +1086,7 @@ class TestThePictures:
         only view of it; before RI-17 it was its own one-page item and went
         as that item's picture."""
         from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.engine import image_media_type
         from report_ingest.tests.calc_fixtures import build_scanned_middle_page
         monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
         doc = _open(build_scanned_middle_page(), tmp_path)
@@ -1097,6 +1098,9 @@ class TestThePictures:
 
         call = engine.calls[0]
         assert call["n_images"] == 2                 # page 0 and page 1
+        first, scanned = (b["png"] for b in call["image_blocks"])
+        assert image_media_type(first) == "image/png"    # as it was
+        assert image_media_type(scanned) == "image/jpeg"  # added: JPEG
         texts = [b.get("text", "") for b in call["messages"][0]["content"]
                  if b.get("type") == "text"]
         assert "The picture of page 0:" in texts
@@ -1128,6 +1132,45 @@ class TestThePictures:
                  engine.calls[1]["messages"][0]["content"]
                  if b.get("type") == "text"]
         assert "The picture of page 14:" in texts
+
+    @pytest.mark.parametrize("n_pages, scanned, adds", [
+        (16, {0}, False),       # the second window repeats page 0
+        (16, set(), False),
+        (8, {0}, False),
+        (16, {15}, True),       # the last page, in the first window
+        (16, {12}, True),       # a page only the second window shows
+    ])
+    def test_the_prompt_says_scanned_pictures_only_when_it_adds_them(
+            self, tmp_path, monkeypatch, n_pages, scanned, adds):
+        import report_ingest.calc_reader as calc_reader
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        monkeypatch.setattr(calc_reader, "_scanned",
+                            lambda _doc, page: page in scanned)
+        doc = _open(build_long_printout(n_pages).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=True)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            read_calculation(doc, list(range(n_pages)), engine,
+                             report_id="SYN")
+        finally:
+            doc.close()
+
+        assert (engine.calls[0]["system"] != CALC_READER_SYSTEM) is adds
+
+    def test_the_default_picture_is_the_page_as_rendered(self, two_pages,
+                                                         monkeypatch):
+        from report_ingest.calc_reader import PAGE_DPI, PAGE_IMAGES_ENV
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")}])
+
+        read_calculation(two_pages, [0, 1], engine, report_id="SYN")
+
+        (block,) = engine.calls[0]["image_blocks"]
+        assert block["png"] == two_pages.render(0, dpi=PAGE_DPI)[0]
 
     def test_what_counts_as_a_scanned_page(self):
         from planlens.document.model import SOURCE_AZURE_DI, SOURCE_OCR
