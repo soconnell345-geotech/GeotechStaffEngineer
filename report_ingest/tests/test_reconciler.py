@@ -514,6 +514,40 @@ class TestTheCounts:
                     if "no log in this report carries" in e.detail]
         assert entry.values == ["B-2"]
 
+    def test_a_zero_padded_name_is_the_same_hole(self):
+        general = general_facts()
+        general.boringDictionary = ["B-1"]
+        record = reconcile(build_record(
+            general=general, investigations=[boring("B-01"), pit()]))
+
+        assert not [e for e in kinds_of(record, "count_mismatch")
+                    if "no log in this report carries" in e.detail
+                    or "does not name" in e.detail]
+
+    def test_two_different_names_are_still_apart(self):
+        general = general_facts()
+        general.boringDictionary = ["B-1", "B-10"]
+        record = reconcile(build_record(
+            general=general, investigations=[boring("B-01"), pit()]))
+
+        (entry,) = [e for e in kinds_of(record, "count_mismatch")
+                    if "no log in this report carries" in e.detail]
+        assert entry.values == ["B-10"]
+
+    def test_the_names_are_reported_as_printed(self):
+        general = general_facts()
+        general.boringDictionary = ["B-2", "B-1"]
+        record = reconcile(build_record(
+            general=general, investigations=[boring("B-01"), boring("B-003"),
+                                             pit()]))
+
+        (missing,) = [e for e in kinds_of(record, "count_mismatch")
+                      if "no log in this report carries" in e.detail]
+        (extra,) = [e for e in kinds_of(record, "count_mismatch")
+                    if "does not name" in e.detail]
+        assert missing.values == ["B-2"]
+        assert extra.values == ["B-003"]
+
     def test_a_log_the_narrative_does_not_name_is_recorded(self):
         record = reconcile(build_record(
             investigations=[boring(), boring("B-4"), pit()]))
