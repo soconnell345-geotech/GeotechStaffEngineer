@@ -47,9 +47,9 @@ HOW EACH KIND OF FIELD IS JUDGED.
              (folded), because B-1 and B-12 are two holes however alike they
              look. The others hold prose -- the hand's ``bearingCapacity``
              runs to fifteen words an item -- and are compared item by item by
-             the string rule, paired one to one. The items' own precision and
-             recall are accumulated across every list field, and the field
-             counts as right at :data:`LIST_HIT_JACCARD`.
+             the string rule, paired one to one. The items' own precision
+             and recall are accumulated across every list field, and the
+             field counts as right at :data:`LIST_HIT_JACCARD`.
 ``verdict``  the four questions answered "yes"/"no"/"mixed"/"unclear" and then
              a reason are scored on the VERDICT alone. Two readers who both
              find the geophysical survey will not word the reason the same
@@ -69,7 +69,12 @@ what a machine consumer would get; the lenient view (:data:`LENIENT_FIELDS`,
 reading both answers would say. Neither is "the" score and a scorecard prints
 them side by side, because the gap between them is itself the finding: a wide
 gap means the reader found the thing and worded it differently, a narrow one
-means it did not find it.
+means it did not find it. In the lenient view only, a list answer item left
+over after the pairing that is a PIECE of a truth item (:func:`is_piece`) is
+neither a hit nor an extra: the hand writes "deep foundations: driven piles or
+drilled piers" as one item, a reader lists the two pile types as two, and a
+reviewer would call that the same answer. The strict view pairs one to one and
+counts every leftover against the answer.
 
 And every miss carries a KIND (:func:`miss_kind`): ``convention`` when the
 field is one a house rule in :mod:`report_ingest.narrative_glossary` governs,
@@ -101,6 +106,7 @@ __all__ = [
     "Score", "FieldResult", "NarrativeScore", "kind_of", "same_value",
     "score_narrative", "score_one_report", "narrative_pages_of",
     "alternates_for", "skipped_fields", "miss_kind", "dominant_miss",
+    "is_piece", "rescore_saved",
 ]
 
 #: A string answer matches when rapidfuzz's partial ratio reaches this.
@@ -323,9 +329,66 @@ def _strings_match(field_name: str, hand: Any, got: Any,
     return bool(_numbers_with_units(hand) & _numbers_with_units(got))
 
 
+#: A word for the piece test: a run of letters, or a number kept WHOLE --
+#: "3,700" is one word, 3700, and "6.5" is one word -- so "700 psf" is never
+#: part of "3,700 psf" and "5 m" never part of "6.5 m wide".
+_RE_PIECE_WORD = re.compile(r"\d[\d,]*(?:\.\d+)?|[a-z]+")
+
+
+def _piece_words(value: Any) -> List[str]:
+    return [word.replace(",", "") if word[0].isdigit() else word
+            for word in _RE_PIECE_WORD.findall(str(value or "").lower())]
+
+
+def is_piece(part: Any, whole: Any) -> bool:
+    """Is this answer item a PIECE of that truth item?
+
+    A piece is an unbroken run of the item's own WORDS, in the item's order:
+    "driven piles" in "deep foundations: driven piles or drilled piers".
+    Words, not characters, because characters are fooled: "sand" sits inside
+    "sandstone" and "fill" inside "backfill". Numbers are words kept whole,
+    and the run is unbroken, because a set of loose words is fooled too:
+    "2,700 psf" and "3 feet" are each made of words of "3,700 psf for
+    footings at least 2 feet wide" once "3,700" falls apart into "3" and
+    "700", and neither is part of it. An item longer than the truth item
+    ("spread footings on fill" beside "spread footings") is never a piece of
+    it: that is a second answer, not a finer split.
+
+    What a string test cannot see is meaning: a pile type the report rules
+    out is still a piece of the sentence that rules it out. That is why
+    pieces count in the LENIENT view only (:func:`_list_overlap`), never in
+    the strict one.
+    """
+    small, big = _piece_words(part), _piece_words(whole)
+    if not small or len(small) > len(big):
+        return False
+    size = len(small)
+    return any(big[start:start + size] == small
+               for start in range(len(big) - size + 1))
+
+
+#: Where one option ends and the next begins inside a truth item: a
+#: semicolon, a colon, a comma that is not inside a number, "or", "and".
+_RE_OPTION_BREAK = re.compile(r"[;:]|,(?!\d)|\b(?:or|and)\b", re.IGNORECASE)
+
+
+def _options(item: Any) -> int:
+    """How many options a truth item lists, at least one.
+
+    "deep foundations: driven piles or drilled piers" lists three -- the
+    head and two pile types -- and so takes at most three pieces; the same
+    item cut into its seven single words has more pieces than options, and
+    the words past the third count against the answer.
+    """
+    parts = [part for part in _RE_OPTION_BREAK.split(str(item or ""))
+             if part and part.strip()]
+    return max(1, len(parts))
+
+
 def _list_overlap(field_name: str, hand: Any, got: Any,
-                  lenient: bool = False) -> Tuple[float, int, int, int]:
-    """``(jaccard, hits, in the answer, in the truth)``.
+                  lenient: bool = False
+                  ) -> Tuple[float, int, int, int, int]:
+    """``(jaccard, hits, in the answer, in the truth, pieces)``.
 
     TWO KINDS OF LIST, judged differently, because they are two kinds of
     thing. ``boringDictionary`` and ``testPitDictionary`` are IDENTIFIERS and
@@ -335,20 +398,35 @@ def _list_overlap(field_name: str, hand: Any, got: Any,
     item and ``recommendedFoundations`` to nineteen -- and are compared item by
     item with the same rule strings get, paired one to one so a single truth
     item cannot be matched twice and flatter the precision.
+
+    THE PIECES (BACKLOG RI-13), LENIENT VIEW ONLY. The hand writes a
+    recommendation with its options inside one item; a reader that lists the
+    options one per item has read the same thing at a finer grain, and
+    one-to-one pairing counts every option after the first as an extra item.
+    Under ``lenient``, an answer item left over after the pairing that
+    :func:`is_piece` of a truth item that WAS paired is neutral: not a hit,
+    not an extra, out of the overlap -- and a truth item takes no more
+    pieces than the options it lists itself (:func:`_options`). ``pieces``
+    is how many there were. The strict view has none, so the strict score,
+    the strict overlap and the pooled item counts (which are strict) are
+    what one-to-one pairing gives. An identifier list has none in either
+    view.
     """
     left = [item for item in (hand or []) if str(item).strip()]
     right = [item for item in (got or []) if str(item).strip()]
     if not left and not right:
-        return 1.0, 0, 0, 0
+        return 1.0, 0, 0, 0, 0
     if field_name in _IDENTIFIER_LISTS:
         from report_ingest.reconciler import fold_id
         wanted = {fold_id(item) for item in left}
         given = {fold_id(item) for item in right}
         hits = len(wanted & given)
         union = len(wanted | given)
-        return (hits / union if union else 1.0), hits, len(given), len(wanted)
+        return ((hits / union if union else 1.0), hits, len(given),
+                len(wanted), 0)
 
     taken: List[int] = []
+    paired: List[Any] = []
     hits = 0
     for item in left:
         for index, candidate in enumerate(right):
@@ -356,10 +434,23 @@ def _list_overlap(field_name: str, hand: Any, got: Any,
                 continue
             if _strings_match(field_name, item, candidate, lenient):
                 taken.append(index)
+                paired.append(item)
                 hits += 1
                 break
-    union = len(left) + len(right) - hits
-    return (hits / union if union else 1.0), hits, len(right), len(left)
+    pieces = 0
+    if lenient:
+        room = [_options(item) for item in paired]
+        for index, candidate in enumerate(right):
+            if index in taken:
+                continue
+            for slot, item in enumerate(paired):
+                if room[slot] and is_piece(candidate, item):
+                    room[slot] -= 1
+                    pieces += 1
+                    break
+    union = len(left) + len(right) - hits - pieces
+    return (hits / union if union else 1.0), hits, len(right), len(left), \
+        pieces
 
 
 def _matches(field_name: str, hand: Any, got: Any,
@@ -473,10 +564,16 @@ class FieldResult:
     miss: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        # ``got`` is cut to 120 characters for a person reading the file;
+        # ``answer`` is the reader's answer WHOLE, a list kept as a list, so
+        # a saved run can be re-scored when the scorer changes
+        # (:func:`rescore_saved`). Before 2026-10-23 only the cut ``got`` was
+        # kept, and a long answer in those files cannot be re-scored.
         out = {"field": self.field, "kind": self.kind,
                "verdict": self.verdict, "ok": self.ok,
                "lenient_ok": self.lenient_ok, "miss": self.miss,
-               "hand": _short(self.hand), "got": _short(self.got)}
+               "hand": _short(self.hand), "got": _short(self.got),
+               "answer": _whole(self.got)}
         if self.jaccard is not None:
             out["jaccard"] = round(self.jaccard, 3)
         return out
@@ -488,6 +585,15 @@ def _short(value: Any, n: int = 120) -> Any:
     text = " ".join(str(value).split()) if not isinstance(value, list) \
         else "; ".join(" ".join(str(v).split()) for v in value)
     return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def _whole(value: Any) -> Any:
+    """An answer as JSON keeps it: a list of strings, a number or a string."""
+    if value is None or isinstance(value, (int, float, bool, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return str(value)
 
 
 @dataclass
@@ -638,7 +744,7 @@ def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
                 # holes is not the same failure as one that names two. Scored
                 # against whichever accepted answer the prediction matched
                 # best, so an alternate list answer counts its items too.
-                jaccard, hits, given, wanted = _best_overlap(
+                jaccard, hits, given, wanted, _ = _best_overlap(
                     name, hand, got, alternates)
                 out.list_items.found += hits
                 out.list_items.total += given
@@ -663,7 +769,8 @@ def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
 
 
 def _best_overlap(field_name: str, hand: Any, got: Any,
-                  alternates: Sequence[Any]) -> Tuple[float, int, int, int]:
+                  alternates: Sequence[Any]
+                  ) -> Tuple[float, int, int, int, int]:
     """The overlap against whichever accepted list answer fits best."""
     best = _list_overlap(field_name, hand, got)
     for alternate in alternates:
@@ -692,11 +799,52 @@ def _score_summary(out: NarrativeScore, name: str, hand: Any,
         out.summaries_within_limit.add(
             within, f"{name}: {len(text.split())} words, limit {limit}")
     out.fields.append(FieldResult(
-        field=name, kind="summary", hand=_short(hand), got=_short(got),
+        field=name, kind="summary", hand=_short(hand), got=got,
         ok=within if present else (hand is None),
         verdict=("right" if within else
                  ("too_long" if present else
                   ("both_silent" if hand is None else "missed")))))
+
+
+def rescore_saved(truth: Dict[str, Any], saved: Dict[str, Any]
+                  ) -> Optional[NarrativeScore]:
+    """Re-score a saved ``narrative/<ID>.json`` against ``truth`` with the
+    CURRENT rules -- no model call, no PDF.
+
+    ``saved`` is the run file or its ``score`` blob. The answers come from
+    each field row's ``answer``, which holds the reader's answer whole; the
+    saved pages, calls, cost and unresolved count are carried over, and
+    ``.to_dict()`` gives the run file's own shape. A run file that saved an
+    ERROR (no narrative found, a reader that failed) comes back as a score
+    carrying that error, since there is nothing to re-score. ``None`` for a
+    run file written before the whole answers were kept (2026-10-23): its
+    ``got`` is cut at 120 characters with a list's items joined, and
+    re-scoring that would score the cut rather than the reading.
+    """
+    from types import SimpleNamespace
+
+    score = saved.get("score") if isinstance(saved.get("score"), dict) \
+        else saved
+    report = str(score.get("report") or saved.get("id") or "")
+    carried = {"pages": list(score.get("pages") or []),
+               "unresolved": int(score.get("unresolved") or 0),
+               "model_calls": int(score.get("model_calls") or 0),
+               "cost": dict(score.get("cost") or {})}
+    if score.get("error"):
+        return NarrativeScore(report=report, error=str(score["error"]),
+                              **carried)
+    rows = score.get("fields") or []
+    if not rows or any("answer" not in row for row in rows):
+        return None
+    answers = {row.get("field"): row.get("answer") for row in rows}
+    general = SimpleNamespace(**{name: answers.get(name)
+                                 for name in GENERAL_FIELDS})
+    hazards = SimpleNamespace(**{name: answers.get(name)
+                                 for name in NATURAL_HAZARD_FIELDS})
+    out = score_narrative(truth, general, hazards, report=report)
+    for name, value in carried.items():
+        setattr(out, name, value)
+    return out
 
 
 def _verdict(hand: Any, got: Any, ok: bool) -> str:

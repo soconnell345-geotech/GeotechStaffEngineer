@@ -9,6 +9,13 @@ Run from the repo root::
     ... --front-pages 50     # how much of the FRONT of the report goes in
     ... --detail             # every miss on the OPEN reports
     ... --append             # write the scorecard into MEASUREMENTS.md
+    ... --rescore DIR        # re-score saved run files, no model call
+
+``--rescore DIR`` reads the ``<ID>.json`` run files a cluster narrative stage
+left in ``DIR`` (or in ``DIR/narrative``) and scores their saved answers again
+with the CURRENT scorer -- for when the scorer changes and the run does not
+need repeating. A run file written before 2026-10-23 keeps its answers cut at
+120 characters and is named as not re-scorable rather than scored on the cut.
 
 WHAT IT MEASURES. For each report with a hand answer
 (``raw/truth/narrative/<ID>.json``) it opens the report, finds the narrative
@@ -52,7 +59,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from module_work.report_ingest_harness import corpus as C
 from report_ingest.narrative_scoring import (
     FUZZY_RATIO, KINDS, LENIENT_RATIO, LIST_HIT_JACCARD, NarrativeScore,
-    Score, dominant_miss, score_one_report,
+    Score, dominant_miss, rescore_saved, score_one_report,
 )
 
 LEDGER = C.RAW_DIR.parent / "MEASUREMENTS.md"
@@ -114,6 +121,32 @@ def run_one(truth: Dict[str, Any], engine: Any, budget: int, di: str,
     finally:
         if doc is not None:
             doc.close()
+
+
+def rescore_dir(truths: Sequence[Dict[str, Any]], run_dir: Path
+                ) -> List[NarrativeScore]:
+    """The saved run files in ``run_dir``, scored again; no model call.
+
+    A report with no run file is left out; one whose run file predates the
+    whole answers (see :func:`report_ingest.narrative_scoring.rescore_saved`)
+    comes back as an error naming why, so the table says so.
+    """
+    folder = run_dir / "narrative" if (run_dir / "narrative").is_dir() \
+        else run_dir
+    out: List[NarrativeScore] = []
+    for truth in truths:
+        rid = str(truth.get("id") or "")
+        path = folder / f"{rid}.json"
+        if not path.is_file():
+            continue
+        blob = json.loads(path.read_text(encoding="utf-8"))
+        score = rescore_saved(truth, blob)
+        if score is None:
+            score = NarrativeScore(
+                report=rid, error="written before whole answers were kept; "
+                                  "not re-scorable")
+        out.append(score)
+    return out
 
 
 def _rate(score: Optional[Score]) -> str:
@@ -265,7 +298,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--append", action="store_true",
                     help="append the scorecard to MEASUREMENTS.md")
     ap.add_argument("--note", default="", help="what changed this round")
+    ap.add_argument("--rescore", default="",
+                    help="a folder of saved narrative run files to score "
+                         "again with the current scorer; no model call")
     args = ap.parse_args(argv)
+    if args.rescore and args.append:
+        ap.error("--append records a run of the reader; a re-score is not one")
 
     only = tuple(x.strip() for x in args.only.split(",") if x.strip()) or None
     openset = open_reports(DEFAULT_OPEN)
@@ -273,6 +311,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not truths:
         print("no hand answers matched")
         return 1
+
+    if args.rescore:
+        scores = rescore_dir(truths, Path(args.rescore))
+        if not scores:
+            print(f"no run files for these reports in {args.rescore}")
+            return 1
+        print(report(scores, openset, fields=args.fields,
+                     detail=args.detail, lenient=args.lenient))
+        return 0
 
     from report_ingest.engine import ClaudeEngine
     engine = ClaudeEngine(args.model)
@@ -304,7 +351,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                    f"{LIST_HIT_JACCARD}; the four summaries on presence "
                    f"and word limit only. The lenient view loosens the four "
                    f"free-text fields to a partial ratio of {LENIENT_RATIO} "
-                   f"or a shared number-and-unit. Front pages "
+                   f"or a shared number-and-unit, and leaves out of a "
+                   f"list's overlap an answer item that is a piece of a "
+                   f"paired truth item (an unbroken run of its words, "
+                   f"numbers whole, no more pieces than the options the "
+                   f"item lists). Front pages "
                    f"{args.front_pages}. Open set = "
                    f"{', '.join(openset)}.\n\n```\n{text}\n```\n")
         with LEDGER.open("a", encoding="utf-8") as fh:

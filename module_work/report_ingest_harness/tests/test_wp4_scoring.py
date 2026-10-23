@@ -115,3 +115,48 @@ def test_a_report_that_failed_is_named_and_left_out_of_the_totals():
 
     assert "R19" in text and "ERROR" in text
     assert "1 model call(s) over 1 report(s)" in text
+
+
+def test_a_rescore_scores_saved_run_files_with_no_model(tmp_path,
+                                                        monkeypatch, capsys):
+    import json
+
+    truth_dir = tmp_path / "truth"
+    runs = tmp_path / "stage" / "narrative"
+    truth_dir.mkdir()
+    runs.mkdir(parents=True)
+    monkeypatch.setattr(m, "TRUTH_DIR", truth_dir)
+    truth = hand(general={"boringCount": 4})
+    for rid in ("R07", "R08", "R09"):
+        (truth_dir / f"{rid}.json").write_text(json.dumps(truth),
+                                               encoding="utf-8")
+    blob = {"id": "R07", "score": scored(
+        "R07", truth, GeneralFacts(boringCount=4)).to_dict()}
+    (runs / "R07.json").write_text(json.dumps(blob), encoding="utf-8")
+    old = json.loads(json.dumps(blob))                # cut answers only
+    for row in old["score"]["fields"]:
+        del row["answer"]
+    (runs / "R08.json").write_text(json.dumps(old), encoding="utf-8")
+    failed = {"id": "R09", "score": {"report": "R09", "fields": [],
+                                     "error": "no narrative work item"}}
+    (runs / "R09.json").write_text(json.dumps(failed), encoding="utf-8")
+
+    def no_engine(*args, **kwargs):
+        raise AssertionError("a re-score makes no model call")
+
+    monkeypatch.setattr("report_ingest.engine.ClaudeEngine", no_engine)
+
+    assert m.main(["--rescore", str(tmp_path / "stage")]) == 0
+    text = capsys.readouterr().out
+    assert "100% 1/1" in text                         # R07, scored again
+    assert "R08" in text and "not re-scorable" in text
+    # A run that failed keeps its own reason, not the "cut" one.
+    (r09,) = [line for line in text.splitlines() if line.startswith("R09")]
+    assert "no narrative work item" in r09 and "re-scorable" not in r09
+
+
+def test_a_rescore_is_not_appended_to_the_ledger(tmp_path, monkeypatch):
+    monkeypatch.setattr(m, "TRUTH_DIR", tmp_path)
+
+    with pytest.raises(SystemExit):
+        m.main(["--rescore", str(tmp_path), "--append"])

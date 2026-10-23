@@ -48,7 +48,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _truths():
-    return m.load_truth()
+    # Called while the tests are COLLECTED, before the skip above applies:
+    # without the guard a checkout with no hand answers (a worktree, CI)
+    # fails collection instead of skipping.
+    return m.load_truth() if m.truth_files() else []
 
 
 def _ids():

@@ -961,6 +961,24 @@ reader found the thing and worded it differently or did not find it. The
 per-question table gains a **why** column naming the dominant kind of miss, and
 `convention` there means a house rule rather than a reading failure.
 
+Since RI-13 the lenient view also leaves a **piece** out of a list's overlap:
+an answer item left over after the one-to-one pairing that is an unbroken run
+of the words of a truth item that was paired, in the item's order. The hand
+writes "deep foundations: driven piles or drilled piers" as one item; a reader
+that lists the two pile types one per item read the same thing, and the strict
+view counts each as an extra. Words, not characters: "sand" is no piece of
+"sandstone", nor "fill" of "backfill". Numbers are words kept whole ("3,700"
+is 3700, "6.5" one word), and the run is unbroken, so "700 psf", "2,700 psf"
+and "3 feet" are no pieces of "3,700 psf for footings at least 2 feet wide",
+nor "5 kPa" of "6.5 m wide, 185 kPa". A truth item takes no more pieces than
+the options it lists, counted at its semicolons, colons, commas outside a
+number, "or" and "and": the item above lists three (the head and two pile
+types), while the same item cut into its seven single words is more pieces
+than options, and the words past the third count against the answer. The strict
+view is unchanged, because words cannot see meaning: a pile type the report
+rules out is still a piece of the sentence that rules it out, and the lenient
+view credits it.
+
 The levers are **unmeasured until the next cluster run**: the numbers above are
 the 5.23.0 baseline, and the development engine is a checkpoint rather than a
 result. `measure_wp4_narrative.py` gains `--front-pages` and `--lenient`.
@@ -2379,7 +2397,8 @@ their normalised forms); **lists** by set overlap, with the items' own precision
 and recall pooled across every list field and the field counting as right at a
 Jaccard of 0.6 — and two kinds of list, since `boringDictionary` and
 `testPitDictionary` hold identifiers and are matched exactly (B-1 and B-12 are
-two holes) while the prose lists are matched item by item by the string rule;
+two holes) while the prose lists are matched item by item by the string rule,
+one to one;
 **the four verdict questions on their verdict alone**, because two readers who
 both find the geophysical survey will not word the reason the same way; and
 **the four prose summaries on presence and word limit ONLY**
@@ -2392,7 +2411,13 @@ agreement and earns no recall.
 recall broken out per kind, a **per-question** table (which questions are hard
 is what a prompt change is aimed at), a per-report line and the cost.
 `narrative/<ID>.json` holds the per-report detail and makes the stage
-restartable.
+restartable. Each field row keeps `got` cut at 120 characters for a person
+reading it and, since 2026-10-23, `answer`: the reader's answer whole, a list
+kept as a list. `narrative_scoring.rescore_saved(truth, run_file)` scores those
+answers again with the current rules, with no model call, and
+`measure_wp4_narrative.py --rescore <stage folder>` does it for a whole run. A
+run file written before then has only the cut `got` and is named as not
+re-scorable rather than scored on the cut.
 
 Locally, `module_work/report_ingest_harness/measure_wp4_narrative.py` does the
 same scoring against the development engine (`--fields` for the per-question
