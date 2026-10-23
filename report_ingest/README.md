@@ -402,12 +402,12 @@ the window is shown as text, and the first page and every **scanned** page
 (no text line, an optical reader's text, or text planlens flags unreliable)
 as a picture; `GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`)
 sends every page of it as a picture too, OFF by default because no run has
-measured it. The first page goes as the PNG it renders to; every scanned
-page added after it goes as a JPEG of the same pixel size
-(`encode_for_vision`), because a scan is a photograph PNG stores badly and
-the gateway refuses a request that grows too large — on Foundry run 1 the
-largest call's pictures are 2.4 MB in base64 this way, against 6.3 MB as
-PNG.
+measured it. The first page goes as the PNG it renders to; every picture
+added after it (the scanned pages, and with the switch on every page) goes as
+a JPEG of the same pixel size (`encode_for_vision`), because a scan is a
+photograph PNG stores badly and the gateway refuses a request that grows too
+large — on Foundry run 1 the largest call's pictures are 2.4 MB in base64
+this way, against 6.3 MB as PNG.
 
 **One printout is one item.** `split_calc_items` cuts a planlens item where a
 page's title names a *different* calculation, where the program changes, or

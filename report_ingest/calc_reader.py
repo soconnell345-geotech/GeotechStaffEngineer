@@ -1559,13 +1559,14 @@ def _pictures(doc: Any, pages: Sequence[int], dpi: float,
 
     With ``first_as_rendered`` the first page travels as the PNG it renders
     to, as it always has, so a call that adds no picture is the request it
-    was before RI-17. Every other SCANNED page (:func:`_scanned`) travels as
-    a JPEG of the same pixel size
-    (:func:`report_ingest.vision_labels.encode_for_vision`): a scan is a
-    photograph PNG stores badly, and a call carrying a dozen of them -- sent
-    twice when the reader's unsettled list takes the second call -- reaches
-    the request size the gateway has refused before. A page with its own
-    text stays a PNG, which suits a vector page better.
+    was before RI-17. Every picture added after it travels as a JPEG of the
+    same pixel size (:func:`report_ingest.vision_labels.encode_for_vision`):
+    by default those are the scanned pages, photographs PNG stores badly,
+    and a call carrying a dozen of them -- sent twice when the reader's
+    unsettled list takes the second call -- reaches the request size the
+    gateway has refused before. With :data:`PAGE_IMAGES_ENV` on, a page with
+    its own text goes the same way: up to a window of pictures in one call
+    is the same risk.
     """
     from report_ingest.vision_labels import encode_for_vision
     out: List[Dict[str, Any]] = []
@@ -1574,7 +1575,7 @@ def _pictures(doc: Any, pages: Sequence[int], dpi: float,
             png, _info = doc.render(page, dpi=dpi)
         except Exception:                        # a page that will not draw
             continue
-        if not (first_as_rendered and n == 0) and _scanned(doc, page):
+        if not (first_as_rendered and n == 0):
             try:
                 png = encode_for_vision(png)
             except Exception:                    # sent as rendered instead

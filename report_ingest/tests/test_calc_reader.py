@@ -1069,11 +1069,12 @@ class TestThePictures:
         system = engine.calls[0]["system"]
         assert "every page you are shown as a picture" in system
         assert "the first page as a picture" not in system
-        # Only a scanned page is re-encoded; a page with its own text stays
-        # the PNG it renders to.
+        # The first page goes as rendered; every picture added after it goes
+        # as a JPEG, with the switch on as for a scanned page.
         from report_ingest.engine import image_media_type
         assert [image_media_type(b["png"]) for b in
-                engine.calls[0]["image_blocks"]] == ["image/png"] * 2
+                engine.calls[0]["image_blocks"]] == ["image/png",
+                                                     "image/jpeg"]
 
     def test_the_switch_reads_the_environment(self, monkeypatch):
         from report_ingest.calc_reader import (
