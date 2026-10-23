@@ -1440,7 +1440,8 @@ _FINAL_INSTRUCTION = (
 #: its first answer, which :func:`_fold_readings` keeps for it.
 _CONTINUE_INSTRUCTION = (
     "Here are the pages of this printout you were not shown before, with its "
-    "first page again for context. Give the calculation as data with the "
+    "first and last pages again for context. Give the calculation as data "
+    "with the "
     "values printed on the pages shown here. What you read from the earlier "
     "pages is kept for you: do not repeat it, and report nothing from a page "
     "that is not shown here."
