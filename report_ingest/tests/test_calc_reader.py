@@ -690,6 +690,28 @@ class TestTheLoop:
         assert any(r.name == "Maximum bending moment"
                    for r in result.calculation.results)
 
+    def test_the_rest_is_sent_though_the_reader_did_not_ask(self, tmp_path):
+        """RI-17: a run the first window did not show whole gets its second
+        call whatever ``continues`` says -- a results page or a scanned page
+        there would otherwise reach the model only on its say-so."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=False)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        assert result.model_calls == 2
+        first = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "The others follow in your second call." in first
+        second = engine.calls[1]["messages"][0]["content"][1]["text"]
+        assert "--- page 11:" in second and "--- page 14:" in second
+
     def test_the_budget_is_never_exceeded(self, spreadsheet):
         doc, gt = spreadsheet
         engine = FakeEngine([
@@ -842,25 +864,26 @@ class TestSplittingACalculationRun:
         from report_ingest.calc_reader import split_calc_runs
         assert split_calc_runs(two_banners, [0, 1]) == [[0, 1]]
 
-    def test_a_run_is_capped_at_one_window_in_balanced_parts(
-            self, two_banners):
-        """RI-17: a run over the reader's window is cut into balanced parts
-        -- not 12 pages and an orphan -- and every part fits one window."""
+    def test_a_run_is_capped_at_what_two_calls_show(self, two_banners):
+        """RI-17: one printout stays one item up to the reader's two windows,
+        and a longer run is cut into balanced parts -- not a full item and an
+        orphan."""
         from report_ingest.calc_reader import (
-            MAX_CALC_PAGES, page_window, split_calc_runs,
+            MAX_CALC_PAGES, MAX_RUN_PAGES, page_window, split_calc_runs,
         )
         # Pages the document does not have read as nothing, which does not
         # split; the cap still bites.
-        whole = list(range(2, 2 + MAX_CALC_PAGES))
+        whole = list(range(2, 2 + MAX_RUN_PAGES))
         assert split_calc_runs(two_banners, whole) == [whole]
-        assert page_window(whole) == whole           # one call shows it all
-        over = list(range(2, 2 + MAX_CALC_PAGES + 1))
+        seen = set(page_window(whole)) | set(
+            page_window(whole, MAX_CALC_PAGES - 2))
+        assert seen == set(whole)                    # two calls show it all
+        over = list(range(2, 2 + MAX_RUN_PAGES + 1))
         assert [len(r) for r in split_calc_runs(two_banners, over)] == [
-            (MAX_CALC_PAGES + 2) // 2, (MAX_CALC_PAGES + 1) // 2]
-        long = list(range(2, 2 + 2 * MAX_CALC_PAGES + 1))
+            (MAX_RUN_PAGES + 2) // 2, (MAX_RUN_PAGES + 1) // 2]
+        long = list(range(2, 2 + 2 * MAX_RUN_PAGES + 1))
         sizes = [len(r) for r in split_calc_runs(two_banners, long)]
         assert len(sizes) == 3 and max(sizes) - min(sizes) <= 1
-        assert max(sizes) <= MAX_CALC_PAGES
 
     def test_the_items_keep_their_title_and_say_they_were_split(
             self, two_banners):
@@ -1046,6 +1069,11 @@ class TestThePictures:
         system = engine.calls[0]["system"]
         assert "every page you are shown as a picture" in system
         assert "the first page as a picture" not in system
+        # Only a scanned page is re-encoded; a page with its own text stays
+        # the PNG it renders to.
+        from report_ingest.engine import image_media_type
+        assert [image_media_type(b["png"]) for b in
+                engine.calls[0]["image_blocks"]] == ["image/png"] * 2
 
     def test_the_switch_reads_the_environment(self, monkeypatch):
         from report_ingest.calc_reader import (

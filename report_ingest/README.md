@@ -393,17 +393,21 @@ and says on the unsettled list that nothing downstream can convert it.
 **The budget** is two model calls and most printouts cost **one**. A run
 longer than `MAX_CALC_PAGES` (12) is shown a window of that many pages with
 the **first and the last always in it** — the first carries the banner and
-the inputs, the last carries the answer — and the second call is spent only
-on the rest of the run or on the reader's own unsettled list. Every page of
+the inputs, the last carries the answer — and the second call goes to the
+rest of the run whenever the first window did not show it all, whether or
+not the reader asked (a results page or a scanned page there would otherwise
+reach it only on its say-so), and otherwise to the reader's own unsettled
+list. Every page of
 the window is shown as text, and the first page and every **scanned** page
 (no text line, an optical reader's text, or text planlens flags unreliable)
 as a picture; `GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`)
 sends every page of it as a picture too, OFF by default because no run has
-measured it. The first page goes as the PNG it renders to; every picture
-added after it goes as a JPEG of the same pixel size (`encode_for_vision`),
-because a scan is a photograph PNG stores badly and the gateway refuses a
-request that grows too large — on Foundry run 1 the largest call's pictures
-are 1.8 MB in base64 this way, against 4.6 MB as PNG.
+measured it. The first page goes as the PNG it renders to; every scanned
+page added after it goes as a JPEG of the same pixel size
+(`encode_for_vision`), because a scan is a photograph PNG stores badly and
+the gateway refuses a request that grows too large — on Foundry run 1 the
+largest call's pictures are 2.4 MB in base64 this way, against 6.3 MB as
+PNG.
 
 **One printout is one item.** `split_calc_items` cuts a planlens item where a
 page's title names a *different* calculation, where the program changes, or
@@ -416,12 +420,14 @@ whole word of the kind vocabulary (`TITLE_WORDS`: "Micropiles" does,
 "Compiled" does not). A changed sub-heading, table heading, plot title,
 legend, cover or project block never cuts; before RI-17 those cut seven of
 the ten hand-truthed runs into pieces (one into seven single pages), and a
-first fix still cut pile printouts on their table headings. A run longer than
-one call's window (`MAX_CALC_PAGES`) is cut into balanced parts — 13 pages
-into 7 and 6, not 12 and an orphan — so every page of an item is in its
-first call. Over Foundry run 1's 114 calculation items (796 pages) that is
-160 items instead of 611, 31 of them one page instead of 485, at most two
-calls each (at most 320 calls; the old items spent 1,134). Its one tool is
+first fix still cut pile printouts on their table headings. A printout
+stays one item, and one record, up to what the reader's two calls show
+(`MAX_RUN_PAGES`, 22 pages); a longer run is cut into balanced parts, never a
+full item and an orphan. Over Foundry run 1's 114 calculation items (796
+pages) that is 148 items instead of 611, 31 of them one page instead of 485,
+at most two calls each (at most 296 calls; the old items spent 1,134; 14 of
+the items are longer than one window and always take their second call).
+Its one tool is
 **`zoom_plot`**, for a result printed *on* a drawing: a slope section with its
 factor of safety written beside the critical surface, which is what a
 stability program prints and what no text pattern will ever find.

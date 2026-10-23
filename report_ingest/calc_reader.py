@@ -68,10 +68,12 @@ a disagreement for the QA section.
 THE BUDGET is :data:`MAX_CALC_CALLS` calls and most printouts cost ONE. A run
 longer than :data:`MAX_CALC_PAGES` is shown a window of that many pages with
 the FIRST and the LAST always in it -- the first carries the banner and the
-inputs, the last carries the answer -- and the second call is spent only on
-the rest of the run or on the model's own unsettled list. Every page of the
-window travels as text, and the first and every scanned page as a picture;
-with :data:`PAGE_IMAGES_ENV` on, every page of it travels as a picture too.
+inputs, the last carries the answer -- and the second call is spent on the
+rest of the run whenever the first window did not show it all (whether or not
+the model asked), and otherwise only on the model's own unsettled list. Every
+page of the window travels as text, and the first and every scanned page as a
+picture; with :data:`PAGE_IMAGES_ENV` on, every page of it travels as a
+picture too.
 """
 
 from __future__ import annotations
@@ -102,7 +104,7 @@ __all__ = [
     "serialise_floor", "merge_calculation", "page_window", "printed_numbers",
     "NAME_RATIO", "SUMMARY_WORDS",
     "split_calc_runs", "split_calc_items", "HEADER_BAND_FRAC",
-    "TITLE_WORDS", "PAGE_IMAGES_ENV", "page_images_enabled",
+    "TITLE_WORDS", "MAX_RUN_PAGES", "PAGE_IMAGES_ENV", "page_images_enabled",
     "use_page_images",
 ]
 
@@ -1557,12 +1559,13 @@ def _pictures(doc: Any, pages: Sequence[int], dpi: float,
 
     With ``first_as_rendered`` the first page travels as the PNG it renders
     to, as it always has, so a call that adds no picture is the request it
-    was before RI-17. Every other picture travels as a JPEG of the same
-    pixel size (:func:`report_ingest.vision_labels.encode_for_vision`):
-    those are the scanned pages, photographs PNG stores badly, and a call
-    carrying a dozen of them -- sent twice when the reader's unsettled list
-    takes the second call -- reaches the request size the gateway has
-    refused before.
+    was before RI-17. Every other SCANNED page (:func:`_scanned`) travels as
+    a JPEG of the same pixel size
+    (:func:`report_ingest.vision_labels.encode_for_vision`): a scan is a
+    photograph PNG stores badly, and a call carrying a dozen of them -- sent
+    twice when the reader's unsettled list takes the second call -- reaches
+    the request size the gateway has refused before. A page with its own
+    text stays a PNG, which suits a vector page better.
     """
     from report_ingest.vision_labels import encode_for_vision
     out: List[Dict[str, Any]] = []
@@ -1571,7 +1574,7 @@ def _pictures(doc: Any, pages: Sequence[int], dpi: float,
             png, _info = doc.render(page, dpi=dpi)
         except Exception:                        # a page that will not draw
             continue
-        if not (first_as_rendered and n == 0):
+        if not (first_as_rendered and n == 0) and _scanned(doc, page):
             try:
                 png = encode_for_vision(png)
             except Exception:                    # sent as rendered instead
@@ -1658,6 +1661,12 @@ _COLUMNS_RE = re.compile(r"\S\s{3,}\S")
 #: A label closed by a unit in brackets, "Deflection (meters)", is an axis or
 #: a column heading, not a title.
 _UNIT_LABEL_RE = re.compile(r"\(([^()]{1,12})\)\s*$")
+#: The most pages one item may hold: what the reader's two calls show, a
+#: window of :data:`MAX_CALC_PAGES` each with the first and the last page in
+#: both (:func:`page_window`). The second call is always made for a run the
+#: first window did not show whole, so every page of an item reaches the
+#: model; a longer run is cut into balanced parts.
+MAX_RUN_PAGES = 2 * MAX_CALC_PAGES - 2
 #: Words that make a title name a calculation: the kind vocabulary's own
 #: words (the names in :data:`CALC_KIND_DEFINITIONS`, their definitions and
 #: the aliases the builder accepts, :data:`_KIND_ALIASES`), less the ones
@@ -1829,12 +1838,11 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
     split: a cover, a project block or a sheet number is an absence of
     evidence, and splitting on it would cut a printout into single pages.
 
-    A run longer than :data:`MAX_CALC_PAGES` -- more than the reader's
-    first call shows -- is then cut into the fewest balanced parts that fit,
-    so a long printout is never left with a one-page orphan and every page of
-    every part is in the first call. A longer item would be windowed, and the
-    pages of its second window are shown only if the reader asks to go on:
-    a scanned page there, which has only its picture, could go unseen.
+    A run longer than :data:`MAX_RUN_PAGES` -- more than the reader's two
+    calls show -- is then cut into the fewest balanced parts that fit, so a
+    long printout is never left with a one-page orphan. A run up to that
+    length stays one item, and one record: :func:`read_calculation` shows it
+    in two windows and always makes the second call for it.
     """
     pages = [int(p) for p in pages]
     if len(pages) <= 1:
@@ -1863,7 +1871,7 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
         if head.program is not None:
             program_before = head.program
         banner_run = banner_run or head.banner
-    return [part for run in runs for part in _balanced(run, MAX_CALC_PAGES)]
+    return [part for run in runs for part in _balanced(run, MAX_RUN_PAGES)]
 
 
 def _balanced(run: List[int], cap: int) -> List[List[int]]:
@@ -1975,8 +1983,7 @@ def _brief(doc: Any, window: Sequence[int], all_pages: Sequence[int],
         parts.append(
             f"You are shown {len(window)} of its {len(all_pages)} pages -- "
             f"{', '.join(str(p) for p in window)} -- its first and its last "
-            f"among them. Set continues true if values you would report are "
-            f"on the pages you cannot see.")
+            f"among them. The others follow in your second call.")
     if item_title:
         parts.append(f"The document titles it: {item_title}")
     parts += [
@@ -2358,9 +2365,12 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
                 break
             # The one follow-up this reader spends: the rest of a printout it
             # could not be shown at once, or its own unsettled list. Anything
-            # else and the budget goes on re-reading pages already read.
+            # else and the budget goes on re-reading pages already read. The
+            # rest is sent whether or not the reader asked for it (RI-17): a
+            # results page or a scanned page there, which has only its
+            # picture, would otherwise reach the model only on its say-so.
             rest = page_window(pages, next_start)
-            if reading.continues and rest:
+            if rest:
                 followed_up = True
                 messages = [user(
                     text_block(_CONTINUE_INSTRUCTION), text_block(
