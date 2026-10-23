@@ -1935,6 +1935,12 @@ The Azure Document Intelligence results are read in **either** form —
 wrote — from whatever folder `di_dir` names. Without them the scanned pages are
 read from their own text layer alone.
 
+Leaving `di_dir` out (`None`) is **not** "no DI text": the run falls back to a
+`di/` folder beside or inside the reports folder, if one is there. To measure a
+run with no Document Intelligence text at all, pass `di_dir=False` (to
+`score_on_cluster` or `Corpus`): nothing is looked for, `results.json` and each
+ingest `run.json` carry `di_withheld: true`, and RESULTS says so.
+
 ### The cells, in order
 
 ```python

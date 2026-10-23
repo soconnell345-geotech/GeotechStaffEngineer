@@ -235,7 +235,10 @@ class Corpus:
     the cluster it is. ``di_dir`` holds the Azure Document Intelligence
     results; it defaults to ``reports_dir/../di`` and then to
     ``reports_dir/di``, so both the repo's layout and a flat cluster folder
-    work without an argument. ``labels_xlsx`` is the hand-label spreadsheet.
+    work without an argument. ``di_dir=None`` therefore does NOT mean "no
+    DI text": to withhold it entirely, pass ``di_dir=False`` -- no folder is
+    looked for, :attr:`di_withheld` is True, and every report opens on its
+    own text layer. ``labels_xlsx`` is the hand-label spreadsheet.
     ``cache_dir`` is where the derived sheet-to-ID map is written; it
     defaults beside the reports and is skipped silently if unwritable, which
     is what a read-only Volume needs.
@@ -248,7 +251,12 @@ class Corpus:
         #: Older name for the same folder, kept so the harness and any
         #: notebook written against it keep working.
         self.corpus_dir = self.reports_dir
-        if di_dir is not None:
+        #: True when ``di_dir=False`` asked for no Document Intelligence text
+        #: at all, with no fallback folder.
+        self.di_withheld = di_dir is False
+        if self.di_withheld:
+            self.di_dir = self.reports_dir / "(no DI: withheld)"
+        elif di_dir is not None:
             self.di_dir = Path(di_dir)
         elif (self.reports_dir.parent / "di").is_dir():
             self.di_dir = self.reports_dir.parent / "di"
@@ -434,7 +442,7 @@ class Corpus:
         if self._di_rows is not None:
             return self._di_rows
         out: Dict[str, Dict[str, Any]] = {}
-        if self.di_manifest.is_file():
+        if not self.di_withheld and self.di_manifest.is_file():
             for line in self.di_manifest.read_text(
                     encoding="utf-8").splitlines():
                 if not line.lstrip().startswith("|"):
@@ -455,7 +463,7 @@ class Corpus:
         if self._di_paths is not None:
             return self._di_paths
         found: Dict[str, Path] = {}
-        if self.di_dir.is_dir():
+        if not self.di_withheld and self.di_dir.is_dir():
             for path in sorted(self.di_dir.rglob("*.json*")):
                 if path.is_file():
                     found.setdefault(path.name.lower(), path)
@@ -494,7 +502,7 @@ class Corpus:
 
     def has_di(self, rid: str) -> bool:
         """Is a usable DI result on disk? False for a truncated export."""
-        if not self.di_file(rid).is_file():
+        if self.di_withheld or not self.di_file(rid).is_file():
             return False
         row = self.di_manifest_rows().get(rid)
         return True if row is None else bool(row["ok"])
@@ -506,7 +514,7 @@ class Corpus:
         truncated result is "read the text layer instead".
         """
         path = self.di_file(rid)
-        if not path.is_file():
+        if self.di_withheld or not path.is_file():
             return None
         try:
             with path.open("rb") as probe:
