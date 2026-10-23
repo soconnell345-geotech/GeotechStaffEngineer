@@ -194,3 +194,70 @@ def test_tool_use_block_copies_its_arguments():
     block = tool_use_block("c1", "read_page", args)
     args["page"] = 99
     assert block["input"] == {"page": 1}
+
+
+# -- every request in the cost record (BACKLOG RI-21) -------------------------
+
+class _Refusing(_Messages):
+    def create(self, **kwargs):
+        raise RuntimeError("Error code: 413 - request too large")
+
+
+def test_a_claude_request_that_fails_is_recorded_then_raised():
+    client = _Client(None)
+    client.messages = _Refusing(None)
+    engine = ClaudeEngine("claude-opus-5", client=client, meter=CostMeter())
+    with pytest.raises(RuntimeError, match="too large"):
+        engine.complete([user(text_block("go"))])
+    meter = engine.meter
+    assert (meter.calls, meter.failed) == (0, 1)
+    assert meter.failed_by_kind == {"too_large": 1}
+    (row,) = meter.to_dict()["per_call"]
+    assert row["outcome"] == "error" and row["error_kind"] == "too_large"
+
+
+def test_a_claude_reply_records_its_stop_reason():
+    engine = _engine(_Response([_Block(type="text", text="hi")],
+                               _Usage(10, 5), stop_reason="max_tokens"))
+    engine.complete([user(text_block("go"))])
+    (row,) = engine.meter.to_dict()["per_call"]
+    assert row["outcome"] == "reply" and row["stop"] == "max_tokens"
+    assert (row["input_tokens"], row["output_tokens"]) == (10, 5)
+
+
+@pytest.mark.parametrize("text, kind", [
+    ("Error code: 429 - too many requests", "rate_limit"),
+    ("Error code: 413 - payload too large", "too_large"),
+    ("Request timed out.", "timeout"),
+    ("Unsupported parameter: 'max_tokens'", "parameter"),
+    ("Prompter returned nothing", "no_reply"),
+    ("Error code: 500 - the server had an error", "other"),
+])
+def test_an_error_is_sorted_by_what_it_says(text, kind):
+    from report_ingest.engine import FAILURE_KINDS, error_kind
+
+    assert error_kind(RuntimeError(text)) == kind
+    assert kind in FAILURE_KINDS
+
+
+def test_a_failed_request_adds_no_reply_and_keeps_the_usage_it_carried():
+    class _WithBody(Exception):
+        body = {"usage": {"input_tokens": 700, "output_tokens": 0}}
+
+    meter = CostMeter()
+    meter.fail("m", _WithBody("cut off"), kind="other", seconds=3.0)
+    meter.add("m", Usage(input_tokens=10, output_tokens=2), 1.0)
+    out = meter.to_dict()
+    assert (out["calls"], out["failed"], out["retried"]) == (1, 1, 0)
+    assert out["input_tokens"] == 710, "what the error said it spent counts"
+    assert out["seconds"] == 4.0
+    assert out["by_model"]["m"]["failed"] == 1
+    assert [r["call"] for r in out["per_call"]] == [1, 2]
+
+
+def test_an_old_reader_of_the_cost_block_still_finds_its_keys():
+    out = CostMeter().to_dict()
+    for key in ("calls", "input_tokens", "output_tokens", "cache_read_tokens",
+                "cache_write_tokens", "seconds", "dollars", "unpriced_calls",
+                "by_model"):
+        assert key in out

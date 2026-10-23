@@ -746,3 +746,85 @@ class TestAStrayKey:
                                 output_format=CalcReading)
         assert reply.parsed is None
         assert any("results.0.value" in note for note in reply.notes)
+
+
+# -- every request in the cost record (BACKLOG RI-21) -------------------------
+
+class TestTheCostRecord:
+
+    def test_a_request_that_fails_is_recorded_then_raised(self):
+        engine, _ = _engine(TimeoutError("the request timed out"))
+        with pytest.raises(TimeoutError):
+            engine.complete([user(text_block("go"))])
+        meter = engine.meter
+        assert (meter.calls, meter.failed, meter.retried) == (0, 1, 0)
+        assert meter.failed_by_kind == {"timeout": 1}
+        (row,) = meter.to_dict()["per_call"]
+        assert (row["call"], row["attempt"], row["outcome"]) == (1, 1,
+                                                                 "error")
+        assert row["error"].startswith("TimeoutError: the request timed out")
+
+    def test_a_failed_request_and_the_next_are_two_calls(self):
+        engine, _ = _engine(RuntimeError("Error code: 429 - slow down"),
+                            _said("ok"))
+        with pytest.raises(RuntimeError):
+            engine.complete([user(text_block("go"))])
+        engine.complete([user(text_block("go"))])
+        rows = engine.meter.to_dict()["per_call"]
+        assert [(r["call"], r["outcome"]) for r in rows] == [
+            (1, "error"), (2, "reply")]
+        assert rows[0]["error_kind"] == "rate_limit"
+        assert rows[1]["stop"] == "stop"
+
+    def test_reasoning_tokens_are_read_from_langchains_details(self):
+        message = AIMessage(
+            content="ok", response_metadata={"finish_reason": "stop"},
+            usage_metadata={"input_tokens": 100, "output_tokens": 80,
+                            "total_tokens": 180,
+                            "output_token_details": {"reasoning": 50}})
+        engine, _ = _engine(message)
+        reply = engine.complete([user(text_block("go"))])
+        assert reply.usage.reasoning_tokens == 50
+        assert engine.meter.reasoning_tokens == 50
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["reasoning_tokens"] == 50
+
+    def test_reasoning_tokens_fall_back_to_the_providers_own_count(self):
+        message = AIMessage(content="ok", response_metadata={
+            "finish_reason": "stop",
+            "token_usage": {"prompt_tokens": 40, "completion_tokens": 30,
+                            "completion_tokens_details": {
+                                "reasoning_tokens": 12}}})
+        engine, _ = _engine(message)
+        reply = engine.complete([user(text_block("go"))])
+        assert reply.usage.reasoning_tokens == 12
+
+    def test_what_was_done_with_the_answer_lands_on_the_calls_row(self):
+        args = dict(ANSWER)
+        args["depth_m"] = "very deep"
+        engine, _ = _engine(answer_call(args))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=Reading)
+        assert reply.parsed is None
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["notes"] == reply.notes
+        assert any("depth_m" in note for note in row["notes"])
+
+    def test_a_cap_that_cannot_be_set_is_recorded_as_an_adaptation(self):
+        class _NoCapCopy(ScriptedChatModel):
+            def model_copy(self, *, update=None, deep=False):
+                if update and "max_tokens" in update:
+                    raise TypeError("this model's fields are frozen")
+                return super().model_copy(update=update, deep=deep)
+
+        model = _NoCapCopy(replies=[_said("ok"), _said("again")])
+        engine = ChatModelEngine(model)
+        engine.complete([user(text_block("go"))], max_tokens=1000)
+        engine.complete([user(text_block("go"))], max_tokens=1000)
+        assert model.requests[0]["max_tokens"] == 32000, "its own cap"
+        (lesson,) = engine.adaptations
+        assert "a cap of 1000 could not be set" in lesson
+        rows = engine.meter.to_dict()["per_call"]
+        assert rows[0]["adapted"] == [lesson]
+        assert "adapted" not in rows[1], "recorded once, when learned"
+        assert engine.meter.adaptations == [lesson]

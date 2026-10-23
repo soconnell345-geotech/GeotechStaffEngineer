@@ -25,7 +25,11 @@ must not read or rewrite -- a thinking block has to be echoed back unchanged
 to the model that produced it, and is therefore carried, not inspected.
 
 COST. Every call is metered into a :class:`CostMeter`: calls, input and
-output tokens, cache reads and writes, wall clock, and dollars. Dollars come
+output tokens, cache reads and writes, reasoning tokens, wall clock, and
+dollars -- and every request that came back with an error instead of a
+reply, with its kind, its attempt number and whether the engine sent it
+again (BACKLOG RI-21), one row per request in :attr:`CostMeter.per_call`.
+Dollars come
 from the model that ANSWERED -- ``response.model``, recorded as
 ``served_by`` -- priced in :data:`MODEL_PRICES` for the Claude API and in
 :data:`PROMPTER_PRICES` for the owner's Funhouse deployments; a capability
@@ -53,7 +57,7 @@ __all__ = [
     "engine_for", "ChatModelEngine", "ANSWER_TOOL", "CUT_REASONS",
     "DEFAULT_MAX_TOKENS", "CallCeilingReached",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
-    "price_for", "strict_schema",
+    "price_for", "strict_schema", "error_kind", "FAILURE_KINDS",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
     "image_media_type", "IMAGE_SIGNATURES",
@@ -291,6 +295,11 @@ class Usage:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    #: The output tokens the model spent reasoning before it answered, as the
+    #: provider reports them: a PART of ``output_tokens``, not in addition,
+    #: and priced with them. 0 where the provider does not say (the Claude
+    #: API counts thinking in the output and reports no split).
+    reasoning_tokens: int = 0
 
     def dollars(self, model: str) -> float:
         """What this call cost at list price, or 0.0 for an unpriced model.
@@ -339,6 +348,65 @@ class Reply:
         return _reason(self.stop_reason) in CUT_REASONS
 
 
+#: How a request that came back with an error is filed (BACKLOG RI-21):
+#: the provider's "too many requests"; a parameter the deployment refused;
+#: a request body the gateway refused as too large; no answer in time;
+#: nothing back at all (Prompter's ``chat()`` hands back None); anything
+#: else.
+FAILURE_KINDS: Tuple[str, ...] = ("rate_limit", "parameter", "too_large",
+                                  "timeout", "no_reply", "other")
+
+
+def error_kind(error: Any) -> str:
+    """Which of :data:`FAILURE_KINDS` an error is, read off its class name
+    and its text the way :meth:`PrompterEngine.is_rate_limit` reads a rate
+    limit."""
+    name = type(error).__name__.lower() if isinstance(error, BaseException) \
+        else ""
+    text = str(error or "").lower()
+    if ("ratelimit" in name or "too many requests" in text
+            or "rate limit" in text or "rate_limit" in text
+            or "error code: 429" in text):
+        return "rate_limit"
+    if ("too large" in text or "error code: 413" in text
+            or "toolarge" in name):
+        return "too_large"
+    if "timeout" in name or "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "unsupported parameter" in text or "unsupported value" in text:
+        return "parameter"
+    if "returned nothing" in text or "no reply" in text:
+        return "no_reply"
+    return "other"
+
+
+def _first_line(error: Any) -> str:
+    """An error's first line, short: what the cost record keeps of it."""
+    text = (f"{type(error).__name__}: {error}"
+            if isinstance(error, BaseException) else str(error or ""))
+    lines = text.strip().splitlines()
+    return (lines[0] if lines else "")[:160]
+
+
+def _usage_in_error(error: Any) -> Optional[Usage]:
+    """The tokens an error response says it spent, when its body carries a
+    ``usage`` (an OpenAI-shaped error body may); None when it does not,
+    which is nearly always."""
+    body = getattr(error, "body", None)
+    if not isinstance(body, dict):
+        return None
+    raw = body.get("usage")
+    if raw is None and isinstance(body.get("error"), dict):
+        raw = body["error"].get("usage")
+    if not isinstance(raw, dict):
+        return None
+    out = Usage(input_tokens=int(raw.get("prompt_tokens")
+                                 or raw.get("input_tokens") or 0),
+                output_tokens=int(raw.get("completion_tokens")
+                                  or raw.get("output_tokens") or 0))
+    return out if (out.input_tokens or out.output_tokens) else None
+
+
 class CostMeter:
     """What a run has spent so far, per model and in total.
 
@@ -349,6 +417,25 @@ class CostMeter:
     flat 0.0 -- tokens, not dollars, exactly as before. :attr:`unpriced_calls`
     counts those, so a report can say how much of a total is really priced
     rather than printing a dollar figure that quietly covers half the run.
+
+    EVERY REQUEST IS RECORDED, not only those that came back with a reply
+    (BACKLOG RI-21). :attr:`calls` counts replies, as it always has;
+    :attr:`failed` counts requests that came back with an error instead --
+    a rate limit, a refused parameter, a body too large, a timeout, nothing
+    at all (:data:`FAILURE_KINDS`) -- and :attr:`retried` how many of those
+    the engine itself sent again. Requests sent = ``calls + failed``.
+    :attr:`per_call` holds one row per request in the order they went out:
+    the call it belongs to and its attempt number, what came back (a reply
+    and its stop reason, or the error's kind and first line), its tokens and
+    the reasoning tokens among them, the wait before a retry, and what the
+    engine changed from then on (``adapted``; all of them, once each, in
+    :attr:`adaptations`). ``seconds`` is wall clock, waits included: a reply
+    carries its whole call's, and so does an error that ended a call; an
+    error that was sent again carries its wait instead.
+
+    What this meter cannot see is a retry INSIDE a provider's own client --
+    the Claude SDK's, or a LangChain chat model's -- or in a host's adapter
+    in front of it: only what reaches the engine is recorded.
     """
 
     def __init__(self) -> None:
@@ -357,37 +444,120 @@ class CostMeter:
         self.output_tokens = 0
         self.cache_read_tokens = 0
         self.cache_write_tokens = 0
+        self.reasoning_tokens = 0
         self.seconds = 0.0
         self.dollars = 0.0
         self.unpriced_calls = 0
         self.by_model: Dict[str, Dict[str, Any]] = {}
+        self.failed = 0
+        self.retried = 0
+        self.failed_by_kind: Dict[str, int] = {}
+        self.waited_seconds = 0.0
+        self.adaptations: List[str] = []
+        self.per_call: List[Dict[str, Any]] = []
+        self._call_no = 0
+
+    def _model_row(self, model: str) -> Dict[str, Any]:
+        return self.by_model.setdefault(
+            model, {"calls": 0, "failed": 0, "input_tokens": 0,
+                    "output_tokens": 0, "cache_read_tokens": 0,
+                    "cache_write_tokens": 0, "reasoning_tokens": 0,
+                    "seconds": 0.0, "dollars": 0.0, "priced_as": []})
+
+    def _tokens(self, row: Dict[str, Any], usage: Usage) -> None:
+        for key in ("input_tokens", "output_tokens", "cache_read_tokens",
+                    "cache_write_tokens", "reasoning_tokens"):
+            value = int(getattr(usage, key, 0) or 0)
+            setattr(self, key, getattr(self, key) + value)
+            row[key] = row.get(key, 0) + value
+
+    def _entry(self, model: str, served_by: Optional[str], attempt: int,
+               usage: Optional[Usage], seconds: float,
+               adapted: Sequence[str]) -> Dict[str, Any]:
+        """One :attr:`per_call` row; attempt 1 starts a new call."""
+        if int(attempt) <= 1 or not self._call_no:
+            self._call_no += 1
+        entry: Dict[str, Any] = {"call": self._call_no,
+                                 "attempt": max(1, int(attempt)),
+                                 "model": model}
+        if served_by and served_by != model:
+            entry["served_by"] = served_by
+        for key in ("input_tokens", "output_tokens", "cache_read_tokens",
+                    "cache_write_tokens", "reasoning_tokens"):
+            value = int(getattr(usage, key, 0) or 0) if usage else 0
+            if value:
+                entry[key] = value
+        if seconds:
+            entry["seconds"] = round(float(seconds), 2)
+        lessons = [str(a) for a in adapted or () if a]
+        if lessons:
+            entry["adapted"] = lessons
+            for lesson in lessons:
+                if lesson not in self.adaptations:
+                    self.adaptations.append(lesson)
+        self.per_call.append(entry)
+        return entry
 
     def add(self, model: str, usage: Usage, seconds: float,
-            served_by: Optional[str] = None) -> None:
+            served_by: Optional[str] = None, *, attempt: int = 1,
+            stop: str = "", adapted: Sequence[str] = ()) -> Dict[str, Any]:
+        """A reply. Returns its :attr:`per_call` row, for a note the engine
+        has only after reading the reply."""
         self.calls += 1
-        self.input_tokens += usage.input_tokens
-        self.output_tokens += usage.output_tokens
-        self.cache_read_tokens += usage.cache_read_tokens
-        self.cache_write_tokens += usage.cache_write_tokens
         self.seconds += float(seconds)
         priced_as = served_by if price_for(served_by or "") else model
         cost = usage.dollars(priced_as)
         self.dollars += cost
         if price_for(priced_as or "") is None:
             self.unpriced_calls += 1
-        row = self.by_model.setdefault(
-            model, {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-                    "cache_read_tokens": 0, "cache_write_tokens": 0,
-                    "seconds": 0.0, "dollars": 0.0, "priced_as": []})
+        row = self._model_row(model)
         row["calls"] += 1
-        row["input_tokens"] += usage.input_tokens
-        row["output_tokens"] += usage.output_tokens
-        row["cache_read_tokens"] += usage.cache_read_tokens
-        row["cache_write_tokens"] += usage.cache_write_tokens
+        self._tokens(row, usage)
         row["seconds"] += float(seconds)
         row["dollars"] += cost
         if priced_as and priced_as not in row["priced_as"]:
             row["priced_as"].append(priced_as)
+        entry = self._entry(model, served_by, attempt, usage, seconds,
+                            adapted)
+        entry["outcome"] = "reply"
+        if stop:
+            entry["stop"] = _reason(stop)
+        return entry
+
+    def fail(self, model: str, error: Any, *, kind: Optional[str] = None,
+             seconds: float = 0.0, attempt: int = 1, retried: bool = False,
+             waited: float = 0.0, adapted: Sequence[str] = (),
+             served_by: Optional[str] = None,
+             usage: Optional[Usage] = None) -> Dict[str, Any]:
+        """A request that came back with an error instead of a reply.
+
+        ``retried``: the engine sent it again (``waited`` seconds first);
+        ``seconds``: the wall clock of a call this error ENDED, waits
+        included -- left 0 on one that was sent again, whose time the call's
+        last row carries. ``usage``: what the error response said it spent,
+        when it said (:func:`_usage_in_error` looks).
+        """
+        kind = kind if kind in FAILURE_KINDS else error_kind(error)
+        usage = usage or _usage_in_error(error)
+        self.failed += 1
+        self.retried += 1 if retried else 0
+        self.failed_by_kind[kind] = self.failed_by_kind.get(kind, 0) + 1
+        self.waited_seconds += float(waited or 0.0)
+        self.seconds += float(seconds or 0.0)
+        row = self._model_row(model)
+        row["failed"] += 1
+        row["seconds"] += float(seconds or 0.0)
+        if usage is not None:
+            self._tokens(row, usage)
+        entry = self._entry(model, served_by, attempt, usage, seconds,
+                            adapted)
+        entry.update({"outcome": "error", "error_kind": kind,
+                      "error": _first_line(error)})
+        if retried:
+            entry["retried"] = True
+        if waited:
+            entry["waited"] = round(float(waited), 1)
+        return entry
 
     @property
     def priced(self) -> bool:
@@ -397,25 +567,35 @@ class CostMeter:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "calls": self.calls,
+            "failed": self.failed,
+            "retried": self.retried,
+            "failed_by_kind": dict(self.failed_by_kind),
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
             "cache_read_tokens": self.cache_read_tokens,
             "cache_write_tokens": self.cache_write_tokens,
             "seconds": round(self.seconds, 1),
+            "waited_seconds": round(self.waited_seconds, 1),
             "dollars": round(self.dollars, 4),
             "unpriced_calls": self.unpriced_calls,
+            "adaptations": list(self.adaptations),
             "by_model": {m: {k: (round(v, 4) if isinstance(v, float)
                                  else list(v) if isinstance(v, list) else v)
                              for k, v in row.items()}
                          for m, row in self.by_model.items()},
+            "per_call": [dict(entry) for entry in self.per_call],
         }
 
     def summary(self) -> str:
         money = (f", ${self.dollars:.3f}" if self.dollars
                  else " (no priced deployment: tokens, not dollars)")
+        failed = (f"; {self.failed} request(s) failed, {self.retried} sent "
+                  f"again" if self.failed else "")
         return (f"{self.calls} calls, {self.input_tokens:,} in "
                 f"(+{self.cache_read_tokens:,} cached), "
-                f"{self.output_tokens:,} out, {self.seconds:.0f} s{money}")
+                f"{self.output_tokens:,} out, {self.seconds:.0f} s{money}"
+                f"{failed}")
 
 
 class Engine(Protocol):
@@ -581,18 +761,25 @@ class ClaudeEngine:
         if tools:
             kwargs["tools"] = list(tools)
         started = time.time()
-        if output_format is not None:
-            # ``parse`` builds the output format itself and takes no
-            # top-level ``cache_control``; the same instruction reaches the
-            # API through the request body.
-            if self.auto_cache:
-                kwargs["extra_body"] = {"cache_control": {"type": "ephemeral"}}
-            response = self._client.messages.parse(output_format=output_format,
-                                                   **kwargs)
-        else:
-            if self.auto_cache:
-                kwargs["cache_control"] = {"type": "ephemeral"}
-            response = self._client.messages.create(**kwargs)
+        try:
+            if output_format is not None:
+                # ``parse`` builds the output format itself and takes no
+                # top-level ``cache_control``; the same instruction reaches
+                # the API through the request body.
+                if self.auto_cache:
+                    kwargs["extra_body"] = {
+                        "cache_control": {"type": "ephemeral"}}
+                response = self._client.messages.parse(
+                    output_format=output_format, **kwargs)
+            else:
+                if self.auto_cache:
+                    kwargs["cache_control"] = {"type": "ephemeral"}
+                response = self._client.messages.create(**kwargs)
+        except Exception as exc:
+            # Recorded, then raised as before: a failed call is a call
+            # (BACKLOG RI-21). The SDK's own retries happen inside it.
+            self.meter.fail(self.model, exc, seconds=time.time() - started)
+            raise
         seconds = time.time() - started
 
         raw = response.usage
@@ -604,7 +791,8 @@ class ClaudeEngine:
             cache_write_tokens=int(
                 getattr(raw, "cache_creation_input_tokens", 0) or 0),
         )
-        self.meter.add(self.model, usage, seconds)
+        self.meter.add(self.model, usage, seconds,
+                       stop=str(getattr(response, "stop_reason", "") or ""))
         blocks = self._from_provider(response.content)
         return Reply(
             text="".join(b["text"] for b in blocks if b["type"] == "text"),
@@ -797,6 +985,12 @@ class PrompterEngine:
     with the same adaptation, and because ``chat()`` always sends a
     temperature of its own, the engine stops offering it for the rest of the
     run once it has failed. :attr:`adaptations` lists what was learned.
+
+    EVERY ATTEMPT IS IN THE COST RECORD (BACKLOG RI-21): each refusal, each
+    rate-limited request and each empty ``chat()`` is a failed request on
+    :attr:`meter`, with its kind, its attempt number within the call, the
+    wait before it was sent again and the lesson it taught; the reply that
+    follows carries the attempt it came on and its reasoning tokens.
     """
 
     #: What a scorecard records when the tier's deployment is unknown.
@@ -825,6 +1019,19 @@ class PrompterEngine:
         self.adaptations: List[str] = []
         #: How a rate-limited call waits; a test replaces it.
         self._sleep = time.sleep
+        #: The attempt the call under way is on, and whether any request of
+        #: it has gone out yet: the cost record's (BACKLOG RI-21).
+        self._attempt = 1
+        self._sent = False
+
+    def _sent_again(self, error: Any, kind: str, *, waited: float = 0.0,
+                    lesson: str = "") -> None:
+        """Record a request that came back with an error and is about to be
+        sent again; the next request is the call's next attempt."""
+        self.meter.fail(self.model, error, kind=kind, attempt=self._attempt,
+                        retried=True, waited=waited,
+                        adapted=[lesson] if lesson else ())
+        self._attempt += 1
 
     @staticmethod
     def adjust_for_param_error(request: Dict[str, Any],
@@ -886,6 +1093,7 @@ class PrompterEngine:
         waits = list(self.RATE_LIMIT_WAITS)
         for _ in range(3 + len(waits)):
             try:
+                self._sent = True
                 return create(**request)
             except Exception as exc:                # noqa: BLE001 - inspected
                 if self.is_rate_limit(exc) and waits:
@@ -895,11 +1103,12 @@ class PrompterEngine:
                     logging.getLogger(__name__).info(
                         "prompter engine rate limited on %s; waiting %.0f s",
                         self.model, wait)
+                    self._sent_again(exc, "rate_limit", waited=wait)
                     self._sleep(wait)
                     continue
                 adjusted = self.adjust_for_param_error(request, str(exc))
                 if adjusted is None:
-                    raise
+                    raise                   # complete() records it
                 if "temperature" in request and "temperature" not in adjusted:
                     self.send_temperature = False
                 if "max_completion_tokens" in adjusted:
@@ -911,7 +1120,9 @@ class PrompterEngine:
                 self.adaptations.append(lesson)
                 logging.getLogger(__name__).info(
                     "prompter engine adapted a request: %s", lesson)
+                self._sent_again(exc, "parameter", lesson=lesson)
                 request = adjusted
+        self._sent = True
         return create(**request)
 
     @property
@@ -1055,58 +1266,79 @@ class PrompterEngine:
         cap = int(max_tokens or self.max_tokens)
         raw = None
         tried_chat = False
-        if self.prefer_chat and simple and hasattr(self._prompter, "chat"):
-            # Keeps the SDK's budget guard and logging on every call that
-            # does not need a tool loop -- triage, above all.
-            last = openai_messages[-1]
-            tried_chat = True
-            raw = self._prompter.chat(
-                user=last["content"], system=system or
-                "You are a helpful assistant.",
-                model=self.model, temperature=0, return_raw=True,
-                **{self.token_key: cap},
-                **({"response_format": response_format}
-                   if response_format else {}))
+        self._attempt, self._sent = 1, False
+        try:
+            if self.prefer_chat and simple and hasattr(self._prompter, "chat"):
+                # Keeps the SDK's budget guard and logging on every call
+                # that does not need a tool loop -- triage, above all.
+                last = openai_messages[-1]
+                tried_chat = self._sent = True
+                raw = self._prompter.chat(
+                    user=last["content"], system=system or
+                    "You are a helpful assistant.",
+                    model=self.model, temperature=0, return_raw=True,
+                    **{self.token_key: cap},
+                    **({"response_format": response_format}
+                       if response_format else {}))
+                if raw is None:
+                    # The SDK logs the provider's refusal and hands back
+                    # None. A parameter the deployment does not take is the
+                    # usual reason, and the raw client can adapt to that, so
+                    # it is tried before giving up; the SDK's stashed reason
+                    # travels either way.
+                    reason = getattr(self._prompter, "_last_chat_error",
+                                     None)
+                    if self.client is None:
+                        raise RuntimeError(
+                            "Prompter returned nothing; the call failed or "
+                            f"was refused (the SDK's reason: {reason!r})")
+                    lesson = (f"{self.model}: chat() returned nothing "
+                              f"({str(reason)[:160]!r}); retried on the raw "
+                              f"client")
+                    self.adaptations.append(lesson)
+                    self._sent_again(reason if reason is not None
+                                     else "chat() returned nothing",
+                                     "no_reply", lesson=lesson)
             if raw is None:
-                # The SDK logs the provider's refusal and hands back None.
-                # A parameter the deployment does not take is the usual
-                # reason, and the raw client can adapt to that, so it is
-                # tried before giving up; the SDK's stashed reason travels
-                # either way.
-                reason = getattr(self._prompter, "_last_chat_error", None)
-                if self.client is None:
+                client = self.client
+                if client is None:
                     raise RuntimeError(
-                        "Prompter returned nothing; the call failed or was "
-                        f"refused (the SDK's reason: {reason!r})")
-                self.adaptations.append(
-                    f"{self.model}: chat() returned nothing "
-                    f"({str(reason)[:160]!r}); retried on the raw client")
-        if raw is None:
-            client = self.client
-            if client is None:
+                        "this Prompter backend exposes no OpenAI client, so "
+                        "it cannot run a tool loop; the label review needs "
+                        "one")
+                kwargs: Dict[str, Any] = {
+                    "model": self.model,
+                    "messages": openai_messages,
+                    self.token_key: cap,
+                }
+                if self.send_temperature:
+                    kwargs["temperature"] = 0
+                if tools:
+                    kwargs["tools"] = [{"type": "function", "function": {
+                        "name": t["name"], "description": t["description"],
+                        "parameters": t["input_schema"]}} for t in tools]
+                    kwargs["tool_choice"] = "auto"
+                if response_format:
+                    kwargs["response_format"] = response_format
+                raw = self._create_adaptive(client, kwargs)
+                if tried_chat:
+                    # chat() failed where the raw client did not, and chat()
+                    # always sends its own temperature, so it is not offered
+                    # again this run.
+                    self.prefer_chat = False
+            if raw is None:
                 raise RuntimeError(
-                    "this Prompter backend exposes no OpenAI client, so it "
-                    "cannot run a tool loop; the label review needs one")
-            kwargs: Dict[str, Any] = {
-                "model": self.model,
-                "messages": openai_messages,
-                self.token_key: cap,
-            }
-            if self.send_temperature:
-                kwargs["temperature"] = 0
-            if tools:
-                kwargs["tools"] = [{"type": "function", "function": {
-                    "name": t["name"], "description": t["description"],
-                    "parameters": t["input_schema"]}} for t in tools]
-                kwargs["tool_choice"] = "auto"
-            if response_format:
-                kwargs["response_format"] = response_format
-            raw = self._create_adaptive(client, kwargs)
-            if tried_chat:
-                # chat() failed where the raw client did not, and chat()
-                # always sends its own temperature, so it is not offered
-                # again this run.
-                self.prefer_chat = False
+                    "Prompter returned nothing; the call failed or was "
+                    "refused (the SDK stashes the reason on the prompter "
+                    "object)")
+        except Exception as exc:
+            # The request that ended the call, recorded before it is raised
+            # as it always was. Nothing is recorded when nothing went out (a
+            # backend with no client for a tool loop).
+            if self._sent:
+                self.meter.fail(self.model, exc, attempt=self._attempt,
+                                seconds=time.time() - started)
+            raise
         seconds = time.time() - started
         return self._reply(raw, output_format, seconds)
 
@@ -1118,17 +1350,22 @@ class PrompterEngine:
         self.served_by = getattr(raw, "model", None) or self.model
         usage_raw = getattr(raw, "usage", None)
         details = getattr(usage_raw, "prompt_tokens_details", None)
+        thought = getattr(usage_raw, "completion_tokens_details", None)
         usage = Usage(
             input_tokens=int(getattr(usage_raw, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage_raw, "completion_tokens", 0) or 0),
             cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
+            reasoning_tokens=int(getattr(thought, "reasoning_tokens", 0)
+                                 or 0),
         )
+        choice = raw.choices[0] if getattr(raw, "choices", None) else None
         # Metered by what ANSWERED, not by the tier that was asked for: the
         # tier is an alias with no price and the deployment behind it has
         # one (:data:`PROMPTER_PRICES`).
-        self.meter.add(self.model, usage, seconds, served_by=self.served_by)
+        self.meter.add(self.model, usage, seconds, served_by=self.served_by,
+                       attempt=self._attempt,
+                       stop=str(getattr(choice, "finish_reason", "") or ""))
 
-        choice = raw.choices[0] if getattr(raw, "choices", None) else None
         message = getattr(choice, "message", None)
         text = (getattr(message, "content", None) or "") if message else ""
         blocks: List[Dict[str, Any]] = []
@@ -1247,8 +1484,10 @@ class ChatModelEngine:
 
     ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
-    :attr:`meter` all see the same number. Usage is read off the reply's
-    ``usage_metadata``, the cached input apart from the rest.
+    :attr:`meter` all see the same number (the meter's replies and failed
+    requests together: a request that raised is recorded as failed before
+    it is raised). Usage is read off the reply's ``usage_metadata``, the
+    cached input apart from the rest and the reasoning tokens counted.
 
     THE OUTPUT CAP (BACKLOG RI-19) is the model's own: no cap is sent unless
     a call names one, so every call kind gets what the host built the model
@@ -1276,6 +1515,10 @@ class ChatModelEngine:
         #: The model that answered the last call, as the reply names it.
         self.served_by: Optional[str] = None
         self._capped: Dict[int, Any] = {}
+        #: What this engine changed on the fly, oldest first: a cap it could
+        #: not set on a copy of the model. Each lesson also rides on the
+        #: cost record of the call it was learned on (BACKLOG RI-21).
+        self.adaptations: List[str] = []
 
     # -- the cap -----------------------------------------------------------
     def _cap_for(self, asked: Optional[int]) -> Optional[int]:
@@ -1304,8 +1547,13 @@ class ChatModelEngine:
                 if key in fields:
                     try:
                         made = copy(update={key: cap})
-                    except Exception:               # noqa: BLE001
+                    except Exception as exc:        # noqa: BLE001
                         made = self.chat_model
+                        self.adaptations.append(
+                            f"{self.name}: a cap of {cap} could not be set "
+                            f"on a copy of the model "
+                            f"({_first_line(exc)}); the model's own cap "
+                            f"applies")
                     break
         self._capped[cap] = made
         return made
@@ -1443,21 +1691,37 @@ class ChatModelEngine:
             note = _ANSWER_NOTE_WITH_TOOLS if tools else _ANSWER_NOTE
             system = f"{system}\n\n{note}" if system else note
 
+        learned = len(self.adaptations)
         model = self._model_for(self._cap_for(max_tokens))
         runnable = model.bind_tools(offered) if offered else model
         request = self._to_langchain(msgs, system)
         started = time.time()
-        message = runnable.invoke(request)
+        try:
+            message = runnable.invoke(request)
+        except Exception as exc:
+            # Recorded, then raised as before: a failed call is a call
+            # (BACKLOG RI-21). The model's own retries happen inside it.
+            self.meter.fail(self.name, exc, seconds=time.time() - started,
+                            adapted=self.adaptations[learned:])
+            raise
         seconds = time.time() - started
-        return self._reply(message, output_format, seconds)
+        return self._reply(message, output_format, seconds,
+                           adapted=self.adaptations[learned:])
 
     def _reply(self, message: Any, output_format: Any,
-               seconds: float) -> Reply:
+               seconds: float, adapted: Sequence[str] = ()) -> Reply:
         meta = getattr(message, "response_metadata", None) or {}
         self.served_by = str(meta.get("model_name") or meta.get("model")
                              or "") or self.name
         usage = _usage_of(message)
-        self.meter.add(self.name, usage, seconds, served_by=self.served_by)
+        incomplete = meta.get("incomplete_details")
+        stop = _reason(meta.get("finish_reason") or meta.get("stop_reason")
+                       or (incomplete.get("reason")
+                           if isinstance(incomplete, dict) else "")
+                       or meta.get("status"))
+        entry = self.meter.add(self.name, usage, seconds,
+                               served_by=self.served_by, stop=stop,
+                               adapted=adapted)
 
         # A call whose arguments did not parse (a reply cut mid-call) is kept
         # by ChatOpenAI as text on ``invalid_tool_calls``, and sent back as a
@@ -1474,12 +1738,6 @@ class ChatModelEngine:
         answers = [c for c in calls if output_format is not None
                    and c.get("name") == ANSWER_TOOL]
         wanted = [c for c in calls if c not in answers]
-
-        incomplete = meta.get("incomplete_details")
-        stop = _reason(meta.get("finish_reason") or meta.get("stop_reason")
-                       or (incomplete.get("reason")
-                           if isinstance(incomplete, dict) else "")
-                       or meta.get("status"))
         cut = stop in CUT_REASONS
 
         parsed = None
@@ -1514,6 +1772,8 @@ class ChatModelEngine:
         if notes:
             logging.getLogger(__name__).warning("%s: %s", self.name,
                                                 "; ".join(notes))
+            # What the engine did with the answer, on the call's cost row.
+            entry["notes"] = list(notes)
 
         blocks: List[Dict[str, Any]] = []
         if text:
@@ -1672,11 +1932,16 @@ def _text_of(content: Any) -> str:
 
 def _usage_of(message: Any) -> Usage:
     """A reply's tokens. LangChain counts cache reads and writes INTO the
-    input; here they are apart, as :class:`Usage` keeps them."""
+    input; here they are apart, as :class:`Usage` keeps them. The reasoning
+    tokens are LangChain's ``output_token_details.reasoning``, else the
+    provider's own count in the response metadata (Chat Completions'
+    ``completion_tokens_details``, Responses' ``output_tokens_details``)."""
+    meta = getattr(message, "response_metadata", None) or {}
+    raw = meta.get("token_usage") or meta.get("usage") or {}
+    if not isinstance(raw, dict):
+        raw = {}
     um = getattr(message, "usage_metadata", None) or {}
     if not um:
-        meta = getattr(message, "response_metadata", None) or {}
-        raw = meta.get("token_usage") or meta.get("usage") or {}
         um = {"input_tokens": raw.get("prompt_tokens")
               or raw.get("input_tokens") or 0,
               "output_tokens": raw.get("completion_tokens")
@@ -1685,9 +1950,18 @@ def _usage_of(message: Any) -> Usage:
     read = int(details.get("cache_read") or 0)
     made = int(details.get("cache_creation") or 0)
     total = int(um.get("input_tokens") or 0)
+    thought = int((um.get("output_token_details") or {}).get("reasoning")
+                  or 0)
+    if not thought:
+        for key in ("completion_tokens_details", "output_tokens_details"):
+            part = raw.get(key)
+            if isinstance(part, dict) and part.get("reasoning_tokens"):
+                thought = int(part["reasoning_tokens"])
+                break
     return Usage(input_tokens=max(0, total - read - made),
                  output_tokens=int(um.get("output_tokens") or 0),
-                 cache_read_tokens=read, cache_write_tokens=made)
+                 cache_read_tokens=read, cache_write_tokens=made,
+                 reasoning_tokens=thought)
 
 
 def _json_in(text: str) -> Any:
