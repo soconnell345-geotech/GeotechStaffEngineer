@@ -567,7 +567,11 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
     The drives are bare counts, ``WOH`` or ``WOR`` one to a line, or one
     printed record (``4-6-7``). They end at the third drive or at a refusal
     (``50/3"``), where the drive halts (p. 3-51); the lines after that are
-    the header's N and recovery. A number with no drive under it does not
+    the header's N and recovery. A refusal printed in place of a drive
+    ("12" / "30" / "R") ends them too, and is the record's printed N, in
+    place of the N line the header names; so is one printed after the
+    drives where the header names no N line (layout judgment, RI-48). A
+    number with no drive under it does not
     read: it may be a sample started a line early. With ``complete``, a
     stack whose drives do not end so does not read either: with no sampler
     code or drawn box to say where a sample starts, a short stack may be the
@@ -578,12 +582,17 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
         return None
     entries, done, last = 0, False, ""
     tail: List[Any] = []
+    mark: Any = None
     for above, cell in zip(lines, lines[1:]):
         if _same_line(above, cell):
             return None               # two items on one line: not a stack
         text = _text(cell)
         if _N_VALUE.search(text) or _N_PRINTED.search(text):
             continue                  # a printed N, read as one
+        if done and mark is None and "n" not in after \
+                and _marks_refusal(text):
+            mark = cell               # its refusal, where no N line is named
+            continue
         if done:
             tail.append(cell)
             continue
@@ -596,11 +605,31 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
             last = "record"
             done = any(isinstance(t, str) and not _word_drive(t)
                        for t in tokens)
+        elif _marks_refusal(text):
+            mark, done = cell, True   # a refusal in place of a drive
+            continue
         else:
             return None
         if entries > SPT_DRIVES:
             return None
         done = done or entries == SPT_DRIVES
+    if mark is not None:
+        rest = [part for part in after if part != "n"]
+        if len(tail) > len(rest):
+            return None
+        stack = _Stack(list(lines))
+        stack.printed_n = mark
+        if len(tail) == len(rest):
+            for part, cell in zip(rest, tail):
+                if _marks_refusal(_text(cell)):
+                    return None
+                if part == "rec":
+                    stack.recovery = cell
+                else:
+                    stack.n60 = cell
+        else:
+            stack.unassigned = tail   # the drives end at the mark: no doubt
+        return stack
     if entries == 0 or (complete and not done) or len(tail) > len(after):
         return None
     stack = _Stack(list(lines))
@@ -1513,6 +1542,12 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                 remarks.append(f"the N printed as '{n_printed}' agrees with "
                                f"the 2nd + 3rd of the printed drives, "
                                f"{computed[0]} ({N_RULE_SOURCE})")
+                drives_alt = Alternative(
+                    field="n", value=show(computed[0]), method="derived",
+                    confidence=max(confidence_floor, min(1.0, confidence)),
+                    note=(f"the drives' N, which agrees with the N printed "
+                          f"as '{n_printed}': " + computed[1].replace(
+                              "not printed; ", "", 1)))
             else:
                 remarks.append(f"the N printed as '{n_printed}' differs from "
                                f"the 2nd + 3rd of the printed drives, "
@@ -3258,6 +3293,9 @@ class _Merger:
             self.halt_n(merged, f, m, where, what)
             return
         if f is not None and f.n_basis:
+            if list(merged.blows) != list(f.blows):
+                self.recompute_n(merged, f, m, where, what)
+                return
             if merged.n == f.n:
                 merged.n_basis = f.n_basis
                 return
@@ -3328,9 +3366,57 @@ class _Merger:
         if not beside:
             return None
         for alt in (f.prov.alternatives if f.prov is not None else []):
-            if alt.field == "n" and alt.method == "derived"                     and str(alt.value).isdigit():
+            if (alt.field == "n" and alt.method == "derived"
+                    and str(alt.value).isdigit()):
                 return int(alt.value), alt.note
         return None
+
+    def recompute_n(self, merged: SPT, f: SPT, m: SPT, where: str,
+                    what: str) -> None:
+        """The floor computed its N from its own drives, and the model's
+        drives replaced them (RI-45). The floor's N is the 2nd + 3rd of
+        drives that no longer stand, so it does not stay in the slot: where
+        the drives that stand are three whole counts, their own 2nd + 3rd
+        is the N, by the 6 in increment the floor read; otherwise there is
+        no N, and the floor's is kept beside the slot and listed. An N the
+        model gave stands as the slot merge left it."""
+        drives = "-".join(str(b) for b in f.blows)
+        note = (f"the floor's N, of its drives {drives}, which the model's "
+                f"drives replaced: {f.n_basis}")
+        if merged.n != f.n:
+            merged.n_basis = ""
+            for alt in (merged.prov.alternatives if merged.prov else []):
+                if alt.field == "n" and alt.value == show(f.n):
+                    alt.method = "derived"  # type: ignore[assignment]
+                    alt.note = note
+            return
+        how = re.search(r"6 in drives from (.+)$", f.n_basis)
+        new = n_from_drives(
+            merged.blows, sampler=self.sampler_at(merged),
+            increment_m=SPT_INCREMENT_M,
+            increment_from=how.group(1) if how else "the floor's reading")
+        if new is not None:
+            merged.n, merged.n_basis = new
+            return
+        merged.n, merged.n_basis = None, ""
+        if merged.prov is not None and not any(
+                a.field == "n" and a.value == show(f.n)
+                for a in merged.prov.alternatives):
+            merged.prov.alternatives.append(Alternative(
+                field="n", value=show(f.n), method="derived",
+                confidence=_conf(f.prov, 0.5), note=note))
+        self.log.disagree(
+            where, f"{what}: n", f.n, "none", kept="model",
+            why=(f"the floor's N {f.n} is the 2nd + 3rd of its drives "
+                 f"{drives}; the model's drives replaced them and are not "
+                 f"three whole 6 in drives, so the record has no N from "
+                 f"them ({N_RULE_SOURCE}); the floor's N is kept beside "
+                 f"the slot"),
+            page=(m.prov.page if m.prov is not None
+                  else f.prov.page if f.prov is not None else None),
+            floor_method="derived", floor_confidence=_conf(f.prov, 0.5),
+            model_confidence=_conf(m.prov, 0.9),
+            model_method=m.prov.method if m.prov is not None else "model")
 
     def check_refusal(self, merged: SPT, f: Optional[SPT], m: SPT,
                       where: str, what: str) -> None:

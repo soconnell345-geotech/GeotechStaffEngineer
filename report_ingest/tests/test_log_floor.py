@@ -1605,31 +1605,35 @@ class TestRI48:
             sample.recovery is not None and sample.recovery.value == 12.0)
         assert inv.spt[0].n == 13
 
-    @pytest.mark.parametrize("mark, drives, theirs", [
-        ("50+", "", None),                      # no drives
-        ("50+", '25-50/3"', None),              # drives end in a halt
-        ("50+", "20-25-30", None),              # N 55 meets the bound
-        ("50+", "18-32-50", None),              # a halted 50 printed bare
-        ("50+", "4-6-7", 13),                   # N 13 does not: listed
-        (">50", "20-25-25", 50),                # N 50 is not over 50
-        ("R", '25-50/3"', None),
-        ("R", "4-6-7", 13),                     # a word: listed
-        ("R", "18-32-50", 82),
-        ("REF", '30-50/2"', None),
-        ("R", "25-60", None),                   # stopped short over 50
-        ("R", "4-6", None),
+    @pytest.mark.parametrize("mark, drives, theirs, listed", [
+        ("50+", "", None, False),               # no drives
+        ("50+", '25-50/3"', None, False),       # drives end in a halt
+        ("50+", "20-25-30", 55, False),         # N 55 meets the bound
+        ("50+", "18-32-50", 82, False),         # a halted 50 printed bare
+        ("50+", "4-6-7", 13, True),             # N 13 does not: listed
+        (">50", "20-25-25", 50, True),          # N 50 is not over 50
+        ("R", '25-50/3"', None, False),
+        ("R", "4-6-7", 13, True),               # a word: listed
+        ("R", "18-32-50", 82, True),
+        ("REF", '30-50/2"', None, False),
+        ("R", "25-60", None, False),            # stopped short over 50
+        ("R", "4-6", None, False),
     ])
     def test_a_refusal_printed_bare_in_an_n_column_is_kept(
-            self, mark, drives, theirs):
-        # The record is a refusal: the log says so. The drives' N stands
-        # beside it, listed, where three whole drives disagree with it.
+            self, mark, drives, theirs, listed):
+        # The record is a refusal: the log says so, and its N slot stays
+        # empty. Three whole drives' N stands beside it -- listed where it
+        # disagrees with what was printed.
         inv, qa = _beside(drives, mark)
         record = inv.spt[0]
         assert record.n is None and record.n_printed == mark
         assert record.refusal
-        assert ("floor_n_drives" in _flags(qa)) is (theirs is not None)
-        assert [(a.field, a.value) for a in record.prov.alternatives] == (
-            [("n", str(theirs))] if theirs is not None else [])
+        assert ("floor_n_drives" in _flags(qa)) is listed
+        alternatives = record.prov.alternatives
+        assert [(a.field, a.value, a.method) for a in alternatives] == (
+            [("n", str(theirs), "derived")] if theirs is not None else [])
+        if theirs is not None and not listed:
+            assert "agrees with the N printed as" in alternatives[0].note
 
     def test_a_bare_r_in_a_blows_column_is_the_refusal_printed(self):
         inv, _ = _beside('25-50/3"', "", extra=[("blows", "R", 1)])
@@ -1667,11 +1671,18 @@ class TestRI48:
         assert ("floor_n_drives" in _flags(qa)) is flagged
         assert inv.spt[1].n == 17 and inv.samples[1].sample_id == "2"
 
-    def test_a_refusal_line_where_the_header_names_no_n_is_not_read(self):
-        # The header names a recovery after the blows: an "R" there is
-        # neither, and the column is read as before RI-44 (no id, no N).
-        inv, qa = _stacked([(1.0, ["1", "25", '50/3"', "R"])], 0.15, BOTH6)
-        assert all(r.n is None and r.n_printed != "R" for r in inv.spt)
+    def test_a_refusal_line_where_the_header_names_no_n(self):
+        # The header names a recovery after the blows, not an N: an "R"
+        # after the drives is the record's refusal, not its recovery
+        # (layout judgment; master skipped it as a ring sampler).
+        inv, qa = _stacked([(1.0, ["1", "25", '50/3"', "R"]),
+                            (2.0, ["2", "5", "8", "9", "14"])], 0.15, BOTH6)
+        first, second = inv.spt
+        assert inv.samples[0].sample_id == "1"
+        assert first.blows == [25, '50/3"'] and first.n is None
+        assert first.n_printed == "R" and first.refusal
+        assert inv.samples[0].recovery_percent is None
+        assert second.n == 17 and inv.samples[1].recovery_percent == 14.0
 
     @pytest.mark.parametrize("pitch", [0.15, 0.19])
     @pytest.mark.parametrize("n_text, n, flagged", [
@@ -1734,20 +1745,20 @@ class TestRI48:
 
     # The review's probes (RI-48, round 1): "N=" forms printed a line under
     # the drives in the blows column, or in an N column beside them.
-    @pytest.mark.parametrize("drives, mark, printed, theirs", [
-        ("18-32-50", "N=R", "R", 82),
-        ("18-32-50", "N=REF", "REF", 82),
-        ("18-32-50", "N=50+", "50+", None),     # 82 meets the bound
-        ("10-12-14", "N=>50", ">50", 26),
-        ('18-32-50/4"', "N=R", "R", None),      # not three whole drives
+    @pytest.mark.parametrize("drives, mark, printed, theirs, listed", [
+        ("18-32-50", "N=R", "R", 82, True),
+        ("18-32-50", "N=REF", "REF", 82, True),
+        ("18-32-50", "N=50+", "50+", 82, False),  # 82 meets the bound
+        ("10-12-14", "N=>50", ">50", 26, True),
+        ('18-32-50/4"', "N=R", "R", None, False),  # not three whole drives
     ])
     def test_a_printed_refusal_beside_three_whole_drives_is_a_refusal(
-            self, drives, mark, printed, theirs):
+            self, drives, mark, printed, theirs, listed):
         inv, qa = _beside(drives, "", extra=[("blows", mark, 1)])
         record = inv.spt[0]
         assert record.n is None and record.n_printed == printed
         assert record.refusal
-        assert ("floor_n_drives" in _flags(qa)) is (theirs is not None)
+        assert ("floor_n_drives" in _flags(qa)) is listed
         assert [a.value for a in record.prov.alternatives] == (
             [str(theirs)] if theirs is not None else [])
 
@@ -1802,7 +1813,8 @@ class TestRI48:
         first, second = inv.spt
         assert first.blows == [43, 18, 32]
         assert first.n is None and first.n_printed == "50+"
-        assert first.refusal and first.prov.alternatives == []
+        assert first.refusal and "floor_n_drives" not in _flags(qa)
+        assert [a.value for a in first.prov.alternatives] == ["50"]
         assert inv.samples[0].recovery_percent is None
         assert "floor_stack_tail" not in _flags(qa)
         assert second.n == 17 and inv.samples[1].sample_id == "5"
@@ -1817,3 +1829,97 @@ class TestRI48:
         assert all(r.n is None and r.n_printed == "" for r in inv.spt)
         assert any("50+" in s.note for s in inv.samples)
         assert "floor_unplaced_n" in _flags(qa)
+
+    # The recheck's probe 8: a refusal printed as a stack's last drive line
+    # ended the drives nowhere, and the whole column fell back.
+    @pytest.mark.parametrize("header, names, tails", [
+        ("SAMPLE NO. / BLOWS/6 IN", ("sample_id", "blows"), ([], [])),
+        ("SAMPLE NO. / BLOWS/6 IN / N", ("sample_id", "blows", "n_value"),
+         (["13"], ["17"])),
+        ("SAMPLE NO. / BLOWS/6 IN / REC",
+         ("sample_id", "blows", "recovery"), (["12"], ["14"])),
+    ])
+    @pytest.mark.parametrize("mark", ["R", "REF", "(R)"])
+    def test_a_refusal_in_place_of_a_drive_ends_the_drives(
+            self, header, names, tails, mark):
+        column = _column("blows", header, *names)
+        inv, qa = _stacked([(1.0, ["1", "4", "6", "7"] + tails[0]),
+                            (2.5, ["2", "12", "30", mark]),
+                            (4.0, ["3", "5", "8", "9"] + tails[1])], 0.15,
+                           column)
+        assert [s.sample_id for s in inv.samples] == ["1", "2", "3"]
+        first, second, third = inv.spt
+        assert (first.blows, first.n) == ([4, 6, 7], 13)
+        assert second.blows == [12, 30] and second.n is None
+        assert second.n_printed == mark.strip("()") and second.refusal
+        assert (third.blows, third.n) == ([5, 8, 9], 17)
+        assert "floor_stack" not in _flags(qa)
+
+    def test_a_refusal_in_place_of_the_first_drive(self):
+        inv, _ = _stacked([(1.0, ["1", "R"]),
+                           (2.0, ["2", "5", "8", "9", "17"])], 0.15, N_STACK)
+        assert [s.sample_id for s in inv.samples] == ["1", "2"]
+        assert inv.spt[0].n_printed == "R" and inv.spt[0].refusal
+        assert inv.spt[1].n == 17
+
+
+class TestTheFloorsNAfterTheModelsDrives:
+    """The recheck's probe 6: the floor computed N from its own drives, and
+    the model's drives, with a box and a note, replaced them (RI-45)."""
+
+    @staticmethod
+    def _merge(floor_drives, model_blows, evidence=True):
+        floor, _ = _beside(floor_drives, "", top=1.5)
+        floor.investigation_id = "B-1"
+        model = _model(None, blows=model_blows, evidence=evidence,
+                       increment=None)
+        model.spt[0].refusal = any(isinstance(b, str) for b in model_blows)
+        return merge_investigations(floor, model)
+
+    @pytest.mark.parametrize("floor_drives, model_blows, theirs", [
+        ("18-32-50", [18, 32, '50/4"'], 82),
+        ("18-32-55", [18, 32, '55/4"'], 87),
+        ("12-20-35", [12, 20, '35/2"'], 55),
+        ("18-32-50", [18, 32], 82),
+    ])
+    def test_no_n_where_the_drives_that_stand_have_none(
+            self, floor_drives, model_blows, theirs):
+        merged, log = self._merge(floor_drives, model_blows)
+        record = merged.spt[0]
+        assert record.blows == model_blows
+        assert record.n is None and record.n_basis == ""
+        assert [(a.value, a.method) for a in record.prov.alternatives
+                if a.field == "n"] == [(str(theirs), "derived")]
+        rows = [r for r in log.disagreements if r["what"].endswith(": n")]
+        assert len(rows) == 1
+        assert (rows[0]["floor"], rows[0]["model"]) == (str(theirs), "none")
+
+    def test_the_n_of_the_drives_that_stand(self):
+        merged, log = self._merge("4-6-7", [4, 6, 8])
+        record = merged.spt[0]
+        assert record.blows == [4, 6, 8]
+        assert record.n == 14 and "6 + 8 = 14" in record.n_basis
+        assert not any(a.field == "n" and a.value == "13"
+                       for a in record.prov.alternatives)
+
+    def test_the_floors_drives_standing_keep_its_n(self):
+        merged, _ = self._merge("4-6-7", [4, 6, 8], evidence=False)
+        record = merged.spt[0]
+        assert record.blows == [4, 6, 7]
+        assert record.n == 13 and "4-6-7" not in record.n_basis
+        assert "6 + 7 = 13" in record.n_basis
+
+    def test_a_models_n_with_its_drives_stands_and_the_floors_is_beside(
+            self):
+        floor, _ = _beside("4-6-7", "", top=1.5)
+        floor.investigation_id = "B-1"
+        merged, _ = merge_investigations(
+            floor, _model(30, blows=[4, 6, 8], evidence=True,
+                          increment=None))
+        record = merged.spt[0]
+        assert (record.blows, record.n, record.n_basis) == ([4, 6, 8], 30,
+                                                              "")
+        alternative = next(a for a in record.prov.alternatives
+                           if a.field == "n")
+        assert (alternative.value, alternative.method) == ("13", "derived")
+        assert "of its drives 4-6-7" in alternative.note
