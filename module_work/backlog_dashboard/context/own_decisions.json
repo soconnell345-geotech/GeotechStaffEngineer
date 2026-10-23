@@ -1962,5 +1962,49 @@
    "BACKLOG.md OWN-87",
    "module_work/APP_SPLIT_PLAN.md D10"
   ]
- }
+ },
+  "OWN-88": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "How should two kinds of lab page count in the report-ingest lab truth?",
+    "why": "The lab truth and the lab reader's instructions disagree on two kinds of page, so the chemical-test score (54 %) is partly a question of convention, not of reading. Your answer sets either the truth or the reader's instructions.",
+    "background": "Found while working on RI-07 (2026-10-23). The rest of the lab gaps were links to the wrong (or no) boring, now fixed. These two are about what kind of sheet a page is.",
+    "parts": [
+      {
+        "label": "A sample-receipt page (the lab's list of samples received, no test results)",
+        "options": [
+          {
+            "label": "Not a lab test sheet",
+            "effect": "The truth drops it as a chemical sheet; the reader keeps calling it 'other'."
+          },
+          {
+            "label": "A lab sheet of the tests it lists",
+            "effect": "The reader's instructions change to read it as that test family, with no values."
+          }
+        ]
+      },
+      {
+        "label": "A summary of one test family (e.g. a sheet titled 'Summary of Corrosion Testing')",
+        "options": [
+          {
+            "label": "That family's sheet (here: chemical)",
+            "effect": "The reader's instructions change so a one-family summary is read as that family."
+          },
+          {
+            "label": "A summary table",
+            "effect": "The truth changes to count it as a summary table, as the reader read it."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Not a lab test sheet for the receipt page; that family's sheet for a one-family summary, since its values are that family's results.",
+    "if_no_answer": "Nothing waits on it; the chemical score keeps counting both pages against the reader.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-88",
+      "BACKLOG.md RI-07 (Done)"
+    ]
+  }
 }
