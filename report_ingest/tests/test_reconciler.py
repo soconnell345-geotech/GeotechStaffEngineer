@@ -832,6 +832,44 @@ class TestALogAgainstItself:
                  "refusal": True}]
         assert _reconciled(_hole(rows)).qa == []
 
+    @pytest.mark.parametrize("lengths, conflicts", [
+        ((6, 6, 2.5), 0),       # its own lengths end in a halt (RI-50)
+        ((6, 6, 6), 0),         # three whole drives that fill it
+        ((6, 6, 9), 1),         # 21 in of drives in an 18 in interval
+    ])
+    def test_a_halt_shown_by_the_records_own_lengths_stops_short(
+            self, lengths, conflicts):
+        inch = 0.0254
+        rows = [{"depth_top": _m(1.5), "depth_bottom": _m(1.5 + 18 * inch),
+                 "blows": [16, 29, 50],
+                 "increments": [Quantity(value=v, unit="in")
+                                for v in lengths]}]
+        record = _reconciled(_hole(rows))
+        assert len(kinds_of(record, "conflict")) == conflicts
+
+    @pytest.mark.parametrize("refusal, conflicts", [
+        (False, 1),     # read as one 6 in drive in an 18 in interval
+        (True, 0),      # the reader's own refusal flag: checked as a halt
+    ])
+    def test_a_lone_count_over_50_is_checked_as_read(self, refusal,
+                                                     conflicts):
+        # One whole number, no distance and no lengths: it may be the N
+        # filed as a drive, and the drive sum is what catches that
+        # (RI-50 review).
+        inch = 0.0254
+        rows = [{"depth_top": _m(1.5), "depth_bottom": _m(1.5 + 18 * inch),
+                 "blows": [73], "refusal": refusal}]
+        record = _reconciled(_hole(rows))
+        assert len(kinds_of(record, "conflict")) == conflicts
+
+    def test_a_record_that_halts_before_its_third_drive_is_no_form(self):
+        # Two drives, the second over 50 and no refusal flag: a halt, not a
+        # record of a form that drives twice (RI-50).
+        rows = [{"depth_top": _m(t), "blows": b}
+                for t, b in ((1.0, [1, 2, 3]), (2.5, [4, 5, 6]),
+                             (4.0, [21, 57]), (5.5, [9, 9, 9]))]
+        assert kinds_of(_reconciled(_hole(rows)), "count_mismatch") == []
+
     def test_the_interval_comes_from_the_linked_sample_when_the_drive_has_none(
             self):
         rows = [{"depth_top": _m(1.0), "blows": [3, 4], "sample_id": "S-1",

@@ -1189,6 +1189,7 @@ def _record_pages(inv: Investigation, *provs: Any) -> List[int]:
 def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
     """Each driven record's drives against its interval and its log's form."""
     from report_ingest.diggs_writer import _drive_sets
+    from report_ingest.log_floor import shows_halt
     for inv in record.investigations:
         name = inv.investigation_id or "an exploration"
         samples = {fold_id(s.sample_id): s for s in inv.samples
@@ -1210,8 +1211,15 @@ def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
             if spt.sample_id:
                 at += f" ({spt.sample_id})"
             pages = _record_pages(inv, spt.prov)
-            refusal = spt.refusal or any(isinstance(b, str) and "/" in b
-                                         for b in spt.blows)
+            # A record that shows plainly that it ends in a halt is checked
+            # as a refusal, whether its drives show the halt or its own drive
+            # lengths do (16-29-50 over 6, 6 and 2.5 in; RI-50): it stops
+            # short of its interval. A lone whole number over 50 is not
+            # (shows_halt): it may be the N filed as a drive, and the drive
+            # sum is what catches that.
+            refusal = (spt.refusal or shows_halt(spt)
+                       or any(isinstance(b, str) and "/" in b
+                              for b in spt.blows))
             whole = len(drives) == len(spt.blows) and bool(drives)
             if whole and not refusal:
                 complete.append((len(drives), spt))

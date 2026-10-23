@@ -216,6 +216,16 @@ class TestRecord:
                       "pages", "source_report"):
             assert field in inv, field
 
+    def test_the_refusal_flag_is_the_logs_own_statement(self):
+        # RI-50: not a definition of our own; the printed one is quoted
+        # (FHWA NHI-06-088 Vol. I, p. 3-51) and not applied.
+        description = SPT.model_fields["refusal"].description
+        assert "the log's own statement" in description
+        assert ("penetration resistances exceeding 100 blows per 2 in "
+                "(50 mm), although ASTM D 1586 has re-defined this limit at "
+                "50 blows per 1 in (25 mm)") in description
+        assert "less than the full increment" not in description
+
     def test_an_unknown_top_level_field_is_refused(self):
         with pytest.raises(ValidationError):
             ReportRecord(investigation=[])

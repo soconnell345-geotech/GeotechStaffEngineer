@@ -2033,13 +2033,17 @@ def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],
         why = str(row.get("why") or "").strip()
         why = (why[0].upper() + why[1:] + ("" if why.endswith(".") else ".")
                if why else "")
+        kept_side = str(row.get("kept") or "floor")
+        # Neither voter's reading: both were ruled out (RI-47).
+        carries = ("neither" if kept_side == "neither"
+                   else f"the {kept_side}'s")
         qa.append(QAEntry(
             kind="disagreement", where=str(row.get("where") or ""),
             detail=(f"{row.get('what', '')}: {row.get('floor_method', 'floor')} "
                     f"read {row.get('floor', '')!s}, "
                     f"{row.get('model_method', 'model')} read "
-                    f"{row.get('model', '')!s}; the record carries the "
-                    f"{row.get('kept', 'floor')}'s. {why}").strip(),
+                    f"{row.get('model', '')!s}; the record carries "
+                    f"{carries}. {why}").strip(),
             values=[f"{row.get('floor_method', 'floor')} {row.get('floor', '')} "
                     f"({float(conf.get('floor', 0.0)):.2f})",
                     f"{row.get('model_method', 'model')} "

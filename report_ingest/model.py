@@ -880,8 +880,9 @@ class SPT(BaseModel):
     """One driven penetration record: the drives, and the N they define.
 
     ``blows`` is the record AS PRINTED, one entry per increment, and an entry
-    is a string when the log printed one -- ``"50/5\\""`` is a refusal, not
-    the number fifty. ``n`` is the N the log PRINTS. The one exception is the
+    is a string when the log printed one -- ``"50/5\\""`` is 50 blows over
+    5 in, a drive stopped short of its increment, not the number fifty.
+    ``n`` is the N the log PRINTS. The one exception is the
     floor's (RI-04): where a log prints a standard SPT's three 6 in (150 mm)
     drives and no N, the N is the second drive plus the third, as FHWA
     NHI-06-088 Vol. I Sec. 3.7 (p. 3-51) prints the rule, and ``n_basis``
@@ -919,10 +920,29 @@ class SPT(BaseModel):
         default="",
         description="the N as printed when it is not a whole number (e.g. "
                     "'>50', 'R', 'Refusal'); n is then None and refusal true")
+    #: The log's own statement (RI-50): a word or mark printed where the N
+    #: goes (``n_printed``), or drives that end in a halt -- a last drive
+    #: short of its increment, printed as blows over a distance ('50/2"') or
+    #: given by the record's own drive lengths, or a stop before the third
+    #: increment. That is the code's working reading of the N rule, not a
+    #: rule the page prints: N is the 2nd + 3rd of three 6 in (150 mm)
+    #: increments (FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51), so a record
+    #: short of three whole 6 in increments has no N computed from its
+    #: drives. The flag does not test the printed definition of refusal,
+    #: which a record of drives cannot: p. 3-51, "SPT refusal is defined by
+    #: penetration resistances exceeding 100 blows per 2 in (50 mm), although
+    #: ASTM D 1586 has re-defined this limit at 50 blows per 1 in (25 mm)";
+    #: Sec. 3.7.3.1, p. 3-58, "refusal blow counts (i.e., > 50 blows per 1 in
+    #: (25 mm))".
     refusal: bool = Field(
         default=False,
-        description="the log records refusal at this depth (50 blows for "
-                    "less than the full increment, or the word itself)")
+        description="the log's own statement of a refusal at this depth: a "
+                    "word or mark printed where the N goes, or drives that "
+                    "end in a halt (stopped short of the third increment); "
+                    "not a test of the printed definition (FHWA NHI-06-088 "
+                    "p. 3-51: 'penetration resistances exceeding 100 blows "
+                    "per 2 in (50 mm), although ASTM D 1586 has re-defined "
+                    "this limit at 50 blows per 1 in (25 mm)')")
     hammer: str = Field(
         default="",
         description="the hammer, when this record names one of its own; "
@@ -2542,8 +2562,10 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     (("out_of_range",), "were given wrong", "open"),
     (("out_of_range",), "did not pass", "open"),
     # Two voters inside one reader: the record carries one reading and
-    # keeps the other beside it.
+    # keeps the other beside it, or neither, both ruled out by a printed
+    # rule and kept beside it (an N under 50 on a halted drive, RI-47).
     (("disagreement",), "the record carries the", "changed"),
+    (("disagreement",), "the record carries neither", "changed"),
     # A lab test the logs hold no hole or sample for: the sheet and the
     # logs disagree, and the link is left unmade.
     (("partial",), "which is not among the explorations read from this "
@@ -2575,7 +2597,8 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
 
 #: The floor-vs-model split as :func:`report_ingest.graph._vote_qa` writes
 #: it: ``<what>: <method> read <floor>, <method> read <model>; the record
-#: carries the <kept>'s.``
+#: carries the <kept>'s.`` A row whose record carries neither reading (both
+#: ruled out, RI-47) does not match: it is a change whatever the two read.
 _VOTE_SPLIT = re.compile(r": \S+ read (?P<floor>.*?), \S+ read (?P<model>.*?);"
                          r" the record carries the \w+'s\.")
 #: A number as printed, with the minus that leads it (a hyphen, or the minus

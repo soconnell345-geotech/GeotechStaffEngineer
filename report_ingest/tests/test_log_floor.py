@@ -16,8 +16,9 @@ import pytest
 
 from report_ingest.floor import MergeLog
 from report_ingest.log_floor import (
-    GROUP_SPAN_M, N_RULE_SOURCE, header_increment, merge_investigations,
-    n_from_drives, seed_from_grid, serialise_seed,
+    GROUP_SPAN_M, N_RULE_SOURCE, ends_in_halt, halts_before_n,
+    header_increment, merge_investigations, n_from_drives, seed_from_grid,
+    serialise_seed, shows_halt,
 )
 from report_ingest.model import (
     SPT, Investigation, Provenance, Quantity, Sample,
@@ -2082,3 +2083,330 @@ class TestTheFloorsNAfterTheModelsDrives:
                            if a.field == "n")
         assert (alternative.value, alternative.method) == ("13", "derived")
         assert "of its drives 4-6-7" in alternative.note
+
+
+# ---------------------------------------------------------------------------
+# RI-50 / RI-47: a halt shown by the record's own drive lengths, and one row
+# that says what each voter read
+# ---------------------------------------------------------------------------
+
+def _inches(*values):
+    return [Quantity(value=v, unit="in") for v in values]
+
+
+class TestHaltsByDriveLengths:
+    """The record's own drive lengths end it in a halt as blows printed
+    over a short distance do (RI-50)."""
+
+    @pytest.mark.parametrize("blows, lengths, halted", [
+        ([16, 29, 50], (0.1524, 0.1524, 0.0635), True),     # 2.5 in last
+        ([9, 12, 31], (0.15, 0.15, 0.08), True),            # metric, short
+        ([16, 29, 50], (0.1524, 0.1524, 0.1524), False),    # three whole
+        ([9, 12, 31], (0.15, 0.15, 0.15), False),           # 150 mm is it
+        ([11, 23], (0.1524, 0.05), True),                   # two, short
+        ([16, 29, 50], (0.1524, 0.0635), False),            # do not line up
+        ([16, 29, 50], (0.1524, 0.1524, None), False),      # will not convert
+    ])
+    def test_a_last_length_short_of_the_increment_is_a_halt(
+            self, blows, lengths, halted):
+        from report_ingest.log_floor import _halted
+
+        assert _halted(blows, list(lengths)) is halted
+
+    def test_the_record_says_it_by_its_lengths(self):
+        from report_ingest.log_floor import ends_in_halt
+
+        record = SPT(depth_top=_q(1.5), blows=[16, 29, 50],
+                     increments=_inches(6, 6, 2.5))
+        assert ends_in_halt(record)
+        record.increments = _inches(6, 6, 6)
+        assert not ends_in_halt(record)
+        record.increments = [Quantity(value=v, unit="")
+                             for v in (6, 6, 2.5)]
+        assert not ends_in_halt(record)        # no unit: says nothing
+
+    @staticmethod
+    def _merge(model_n, evidence, lengths=(6, 6, 2.5), refusal=False,
+               floor_drives="16-29-50", model_blows=(16, 29, 50)):
+        floor, _ = _beside(floor_drives, "", top=1.5)
+        floor.investigation_id = "B-1"
+        model = _model(model_n, blows=list(model_blows), evidence=evidence,
+                       increment=None)
+        model.spt[0].increments = _inches(*lengths)
+        model.spt[0].refusal = refusal
+        return merge_investigations(floor, model)
+
+    @staticmethod
+    def _n_rows(log):
+        return [r for r in log.disagreements if r["what"].endswith(": n")]
+
+    @pytest.mark.parametrize("evidence", [False, True])
+    def test_an_n_under_50_on_a_lengths_halt_is_not_the_n(self, evidence):
+        merged, log = self._merge(21, evidence)
+        record = merged.spt[0]
+        assert record.n is None and record.n_basis == ""
+        assert sorted((a.value, a.method) for a in record.prov.alternatives
+                      if a.field == "n") == [("21", "model"),
+                                             ("79", "derived")]
+        (row,) = self._n_rows(log)
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "79", "21", "neither")
+        assert "6 in, 6 in, 2.5 in" in row["why"]
+        assert record.refusal
+
+    @pytest.mark.parametrize("evidence", [False, True])
+    def test_a_printed_n_of_50_or_more_on_a_lengths_halt_stands(
+            self, evidence):
+        merged, log = self._merge(63, evidence)
+        record = merged.spt[0]
+        assert (record.n, record.n_basis) == (63, "")
+        (alternative,) = [a for a in record.prov.alternatives
+                          if a.field == "n"]
+        assert (alternative.value, alternative.method) == ("79", "derived")
+        assert "not three whole 6 in drives" in alternative.note
+        (row,) = self._n_rows(log)
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "79", "63", "model")
+
+    def test_the_models_n_equal_to_the_floors_computed_one_stands(self):
+        # RI-47 (4): the model printed the number the floor computed; the
+        # lengths rule out the computation, not the model's reading.
+        merged, log = self._merge(79, False)
+        record = merged.spt[0]
+        assert (record.n, record.n_basis) == (79, "")
+        assert self._n_rows(log) == []
+
+    def test_the_same_n_on_whole_lengths_says_how_it_was_had(self):
+        merged, log = self._merge(22, False, lengths=(6, 6, 6),
+                                  floor_drives="7-10-12",
+                                  model_blows=(7, 10, 12))
+        record = merged.spt[0]
+        assert record.n == 22 and "drive lengths" in record.n_basis
+        assert self._n_rows(log) == []
+
+    def test_the_models_n_is_checked_against_the_drives_that_stand(self):
+        # The model printed the floor's computed 22 beside drives of its own
+        # that give 23: a model N against the drives, listed (RI-47 (4)).
+        floor, _ = _beside("7-10-12", "", top=1.5)
+        floor.investigation_id = "B-1"
+        merged, log = merge_investigations(
+            floor, _model(22, blows=[2, 9, 14], evidence=True,
+                          increment=None))
+        record = merged.spt[0]
+        assert (record.blows, record.n, record.n_basis) == ([2, 9, 14], 22,
+                                                              "")
+        assert ("23", "derived") in [(a.value, a.method) for a in
+                                     record.prov.alternatives
+                                     if a.field == "n"]
+        (row,) = self._n_rows(log)
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "23", "22", "model")
+
+    def test_a_lengths_halt_sets_the_refusal_flag(self):
+        merged, _ = self._merge(None, False)
+        assert merged.spt[0].refusal
+        merged, _ = self._merge(None, False, lengths=(6, 6, 6))
+        assert not merged.spt[0].refusal
+
+    @pytest.mark.parametrize("lengths, n, beside", [
+        ((6, 6, 4), None, []),                        # a halt: no N, no 67
+        ((6, 6, 6), 12, [("67", "derived")]),         # whole: as before
+    ])
+    def test_a_printed_floor_n_beside_the_records_lengths(self, lengths, n,
+                                                          beside):
+        # RI-50 (3): the floor's printed 12 with its drives' 67 beside it.
+        floor, qa = _beside("14-26-41", "12", top=1.5)
+        floor.investigation_id = "B-1"
+        assert "floor_n_drives" in _flags(qa)
+        model = _model(None, blows=[14, 26, 41], increment=None)
+        model.spt[0].increments = _inches(*lengths)
+        merged, log = merge_investigations(floor, model)
+        record = merged.spt[0]
+        assert record.n == n
+        alternatives = [(a.value, a.method) for a in
+                        record.prov.alternatives if a.field == "n"]
+        if n is None:
+            assert alternatives == [("12", "grid")]
+            (row,) = self._n_rows(log)
+            assert (row["floor"], row["model"], row["kept"]) == (
+                "12", "none", "model")
+        else:
+            assert alternatives == beside and self._n_rows(log) == []
+
+
+class TestOneRowForAHaltedN:
+    """RI-47 (1): the row says what each voter read, and replaces the
+    vote's own row or "added" entry for the slot."""
+
+    @staticmethod
+    def _floor_n_only(n_text):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("n", n_text, 1.5)]
+        floor, _ = _seed(cells, [ID, TYPE, N_COLUMN])
+        floor.investigation_id = "B-1"
+        return floor
+
+    @staticmethod
+    def _rows(log):
+        return [r for r in log.disagreements if r["what"].endswith(": n")]
+
+    def test_the_other_voters_n_of_50_or_more_stands(self):
+        merged, log = merge_investigations(
+            self._floor_n_only("17"),
+            _model(81, blows=[31, '50/2"'], increment=None))
+        record = merged.spt[0]
+        assert record.n == 81
+        assert [(a.value, a.method) for a in record.prov.alternatives
+                if a.field == "n"] == [("17", "grid")]
+        (row,) = self._rows(log)
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "17", "81", "model")
+        assert "under 50" in row["why"] and "81 stands" in row["why"]
+
+    def test_two_ns_under_50_on_a_halt_are_neither(self):
+        merged, log = merge_investigations(
+            self._floor_n_only("17"),
+            _model(22, blows=[31, '50/2"'], increment=None))
+        record = merged.spt[0]
+        assert record.n is None
+        assert sorted(a.value for a in record.prov.alternatives
+                      if a.field == "n") == ["17", "22"]
+        (row,) = self._rows(log)
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "17", "22", "neither")
+
+    @pytest.mark.parametrize("evidence", [False, True])
+    def test_a_model_only_n_on_a_halt_is_one_row_not_an_added_one(
+            self, evidence):
+        floor, _ = _beside('31-50/2"', "", top=1.5)
+        floor.investigation_id = "B-1"
+        merged, log = merge_investigations(
+            floor, _model(22, blows=[31, '50/2"'], evidence=evidence,
+                          increment=None))
+        assert merged.spt[0].n is None
+        assert not [r for r in log.added if r["what"].endswith(": n")]
+        (row,) = self._rows(log)
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "none", "22", "floor")
+
+    def test_the_qa_line_says_the_record_carries_neither(self):
+        from report_ingest.graph import _vote_qa
+
+        _merged, log = merge_investigations(
+            self._floor_n_only("17"),
+            _model(22, blows=[31, '50/2"'], increment=None))
+        qa = []
+        _vote_qa(qa, log.to_dict(), pages=[0])
+        (entry,) = [e for e in qa if e.detail.startswith(
+            "driven record at 1.5 m: n")]
+        assert "the record carries neither." in entry.detail
+        assert entry.rank == "changed"
+
+
+class TestTwoDriveHaltsAreRefusals:
+    """RI-50 (4): a record that ends in a halt before its third drive
+    carries the refusal flag, set in the merge. The floor's seed, which the
+    reader's brief prints, leaves the flag as it was (RI-50 review)."""
+
+    @pytest.mark.parametrize("drives, refusal", [
+        ("21-57", True),            # a drive over 50 before the third
+        ("48-52", True),            # 100 in all before the third
+        ("8-13", False),            # no halt: two drives, nothing more
+        ("16-38-55", False),        # three whole drives (RI-45)
+    ])
+    def test_the_merges_flag_follows_how_the_drives_end(self, drives,
+                                                        refusal):
+        floor, _ = _beside(drives, "")
+        floor.investigation_id = "B-1"
+        assert floor.spt[0].refusal is False        # the seed, as before
+        merged, _ = merge_investigations(
+            floor, Investigation(investigation_id="B-1", depth_unit="m"))
+        assert merged.spt[0].refusal is refusal
+        assert floor.spt[0].refusal is False        # the seed is not touched
+
+    @pytest.mark.parametrize("drives", ["23-61", "44-56"])
+    def test_the_readers_brief_is_as_before_for_a_whole_number_halt(
+            self, drives):
+        # The seed's line for such a record exactly as master prints it: no
+        # ", refusal" (the flag is set in the merge, after the brief).
+        inv, _ = _beside(drives, "", top=1.5)
+        assert serialise_seed(inv).splitlines()[-1] == (
+            f"driven record at 1.5 m (page 0 box 140,186,170,194): "
+            f"blows {drives}, N not printed")
+
+    def test_a_model_only_record_that_ends_in_a_halt_is_flagged(self):
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        merged, _ = merge_investigations(
+            floor, _model(None, blows=[21, 57], increment=None))
+        assert merged.spt[0].refusal
+
+    @pytest.mark.parametrize("blows, refusal", [
+        (["9/6\"", "17/6\"", "50/2\""], True),   # a distance with its unit
+        (["3/9", "5/11", "7/13"], False),         # bare numbers: not plain
+    ])
+    def test_the_merge_flags_only_a_halt_shown_plainly(self, blows,
+                                                       refusal):
+        # Both end in a halt to the N rule; only the first says so plainly.
+        # A bare '7/13' rests on a layout judgment that may be another
+        # notation, so the flag stays as the model read it (RI-50).
+        from report_ingest.log_floor import ends_in_halt
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        merged, _ = merge_investigations(
+            floor, _model(None, blows=blows, increment=None))
+        assert ends_in_halt(merged.spt[0])
+        assert merged.spt[0].refusal is refusal
+
+
+class TestALoneCountIsNoPlainHalt:
+    """One whole number over 50 for drives, with no distance and no lengths:
+    it may be the N filed as a drive, so the merge leaves the refusal flag
+    as read and the drive check keeps checking it (RI-50 review)."""
+
+    @pytest.mark.parametrize("refusal", [False, True])
+    def test_the_flag_stays_as_read(self, refusal):
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        model = _model(73, blows=[73], increment=None)
+        model.spt[0].refusal = refusal
+        merged, _ = merge_investigations(floor, model)
+        record = merged.spt[0]
+        assert ends_in_halt(record) and not shows_halt(record)
+        assert (record.refusal, record.n) == (refusal, 73)
+
+    def test_with_a_length_of_its_own_it_is_a_drive_that_halts(self):
+        record = SPT(depth_top=_q(1.5), blows=[73], increments=_inches(4))
+        assert shows_halt(record)
+        assert shows_halt(SPT(depth_top=_q(1.5), blows=['73/4"']))
+
+
+class TestAFourthDriveKeepsTheN:
+    """N is the 2nd + 3rd of the first three increments; a fourth drive that
+    ends short (Fig. 3-20, p. 3-52: "Occasional Fourth Increment") does not
+    rule it out, though the record still ends in a halt (RI-50 review)."""
+
+    @staticmethod
+    def _merge(blows, lengths):
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        model = _model(13, blows=blows, increment=None)
+        if lengths:
+            model.spt[0].increments = _inches(*lengths)
+        return merge_investigations(floor, model)
+
+    @pytest.mark.parametrize("blows, lengths", [
+        ([3, 5, 8, 50], (6, 6, 6, 2)),          # by its own lengths
+        ([3, 5, 8, '50/2"'], None),             # by its printed drives
+    ])
+    def test_a_short_fourth_drive_leaves_the_n(self, blows, lengths):
+        merged, log = self._merge(blows, lengths)
+        record = merged.spt[0]
+        assert ends_in_halt(record) and not halts_before_n(record)
+        assert record.n == 13
+        assert not [r for r in log.disagreements if r["what"].endswith(": n")]
+        assert record.refusal
+
+    @pytest.mark.parametrize("blows, lengths", [
+        ([3, 5, 8, 50], (6, 6, 2, 6)),          # the third is short
+        ([3, 5, '50/2"'], None),
+    ])
+    def test_a_short_third_drive_still_rules_it_out(self, blows, lengths):
+        merged, _ = self._merge(blows, lengths)
+        assert halts_before_n(merged.spt[0]) and merged.spt[0].n is None
