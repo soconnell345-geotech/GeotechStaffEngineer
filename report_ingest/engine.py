@@ -49,6 +49,7 @@ import json
 import logging
 import os
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
@@ -297,9 +298,10 @@ class Usage:
     cache_write_tokens: int = 0
     #: The output tokens the model spent reasoning before it answered, as the
     #: provider reports them: a PART of ``output_tokens``, not in addition,
-    #: and priced with them. 0 where the provider does not say (the Claude
-    #: API counts thinking in the output and reports no split).
-    reasoning_tokens: int = 0
+    #: and priced with them. None where the provider does not say (the Claude
+    #: API counts thinking in the output and reports no split), which is not
+    #: the same as a reported 0.
+    reasoning_tokens: Optional[int] = None
 
     def dollars(self, model: str) -> float:
         """What this call cost at list price, or 0.0 for an unpriced model.
@@ -350,26 +352,53 @@ class Reply:
 
 #: How a request that came back with an error is filed (BACKLOG RI-21):
 #: the provider's "too many requests"; a parameter the deployment refused;
-#: a request body the gateway refused as too large; no answer in time;
+#: a request too large for the gateway or the model's context; no answer
+#: in time;
 #: nothing back at all (Prompter's ``chat()`` hands back None); anything
 #: else.
 FAILURE_KINDS: Tuple[str, ...] = ("rate_limit", "parameter", "too_large",
                                   "timeout", "no_reply", "other")
 
 
+def _message_of(error: Any) -> str:
+    """An error's text, or ``""`` when reading it fails: recording an error
+    must never raise in its place."""
+    try:
+        return str(error) if error is not None else ""
+    except Exception:                       # noqa: BLE001 - never raise here
+        return ""
+
+
+def _count(value: Any) -> Optional[int]:
+    """A token count as a provider sent it, or None when it is not one (a
+    missing value, ``"n/a"``, a negative, a bool)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        return int(value) if value >= 0 and value == value else None
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 def error_kind(error: Any) -> str:
     """Which of :data:`FAILURE_KINDS` an error is, read off its class name
     and its text the way :meth:`PrompterEngine.is_rate_limit` reads a rate
-    limit."""
+    limit. A prompt past the model's context is ``too_large`` (Claude says
+    "prompt is too long", OpenAI "maximum context length")."""
     name = type(error).__name__.lower() if isinstance(error, BaseException) \
         else ""
-    text = str(error or "").lower()
+    text = _message_of(error).lower()
     if ("ratelimit" in name or "too many requests" in text
             or "rate limit" in text or "rate_limit" in text
             or "error code: 429" in text):
         return "rate_limit"
     if ("too large" in text or "error code: 413" in text
-            or "toolarge" in name):
+            or "toolarge" in name or "prompt is too long" in text
+            or "maximum context length" in text
+            or "context_length_exceeded" in text):
         return "too_large"
     if "timeout" in name or "timed out" in text or "timeout" in text:
         return "timeout"
@@ -382,8 +411,10 @@ def error_kind(error: Any) -> str:
 
 def _first_line(error: Any) -> str:
     """An error's first line, short: what the cost record keeps of it."""
-    text = (f"{type(error).__name__}: {error}"
-            if isinstance(error, BaseException) else str(error or ""))
+    text = _message_of(error)
+    if isinstance(error, BaseException):
+        text = (f"{type(error).__name__}: "
+                f"{text or '(its message could not be read)'}")
     lines = text.strip().splitlines()
     return (lines[0] if lines else "")[:160]
 
@@ -391,20 +422,27 @@ def _first_line(error: Any) -> str:
 def _usage_in_error(error: Any) -> Optional[Usage]:
     """The tokens an error response says it spent, when its body carries a
     ``usage`` (an OpenAI-shaped error body may); None when it does not,
-    which is nearly always."""
-    body = getattr(error, "body", None)
-    if not isinstance(body, dict):
+    which is nearly always, or when what it carries is not a count."""
+    try:
+        body = getattr(error, "body", None)
+        if not isinstance(body, dict):
+            return None
+        raw = body.get("usage")
+        if raw is None and isinstance(body.get("error"), dict):
+            raw = body["error"].get("usage")
+        if not isinstance(raw, dict):
+            return None
+        spent_in = _count(raw.get("prompt_tokens"))
+        if spent_in is None:
+            spent_in = _count(raw.get("input_tokens"))
+        spent_out = _count(raw.get("completion_tokens"))
+        if spent_out is None:
+            spent_out = _count(raw.get("output_tokens"))
+    except Exception:                       # noqa: BLE001 - never raise here
         return None
-    raw = body.get("usage")
-    if raw is None and isinstance(body.get("error"), dict):
-        raw = body["error"].get("usage")
-    if not isinstance(raw, dict):
+    if not (spent_in or spent_out):
         return None
-    out = Usage(input_tokens=int(raw.get("prompt_tokens")
-                                 or raw.get("input_tokens") or 0),
-                output_tokens=int(raw.get("completion_tokens")
-                                  or raw.get("output_tokens") or 0))
-    return out if (out.input_tokens or out.output_tokens) else None
+    return Usage(input_tokens=spent_in or 0, output_tokens=spent_out or 0)
 
 
 class CostMeter:
@@ -424,14 +462,23 @@ class CostMeter:
     a rate limit, a refused parameter, a body too large, a timeout, nothing
     at all (:data:`FAILURE_KINDS`) -- and :attr:`retried` how many of those
     the engine itself sent again. Requests sent = ``calls + failed``.
-    :attr:`per_call` holds one row per request in the order they went out:
-    the call it belongs to and its attempt number, what came back (a reply
-    and its stop reason, or the error's kind and first line), its tokens and
-    the reasoning tokens among them, the wait before a retry, and what the
-    engine changed from then on (``adapted``; all of them, once each, in
-    :attr:`adaptations`). ``seconds`` is wall clock, waits included: a reply
-    carries its whole call's, and so does an error that ended a call; an
-    error that was sent again carries its wait instead.
+    :attr:`reasoning_tokens` adds up what the replies that SAID reported;
+    :attr:`reasoning_reported` counts those replies, so a total over calls
+    that never said is not read as "no reasoning". :attr:`per_call` holds
+    one row per request in the order they went out: the call it belongs to
+    and its attempt number, what came back (a reply and its stop reason, or
+    the error's kind and first line), its tokens and the reasoning tokens
+    among them, the wait before a retry, and what the engine changed from
+    then on (``adapted``; all of them, once each, in :attr:`adaptations`).
+    ``seconds`` is wall clock, waits included: a reply carries its whole
+    call's, and so does an error that ended a call; an error that was sent
+    again carries its wait instead.
+
+    Recording never stands in the way of the call it records: an error
+    whose text or body will not read is recorded with what can be read, and
+    anything else that goes wrong while recording is logged and dropped, so
+    the engine raises the provider's error, or returns the reply, as it
+    would with no meter at all.
 
     What this meter cannot see is a retry INSIDE a provider's own client --
     the Claude SDK's, or a LangChain chat model's -- or in a host's adapter
@@ -445,6 +492,7 @@ class CostMeter:
         self.cache_read_tokens = 0
         self.cache_write_tokens = 0
         self.reasoning_tokens = 0
+        self.reasoning_reported = 0
         self.seconds = 0.0
         self.dollars = 0.0
         self.unpriced_calls = 0
@@ -480,13 +528,16 @@ class CostMeter:
         entry: Dict[str, Any] = {"call": self._call_no,
                                  "attempt": max(1, int(attempt)),
                                  "model": model}
-        if served_by and served_by != model:
+        if served_by:
             entry["served_by"] = served_by
         for key in ("input_tokens", "output_tokens", "cache_read_tokens",
-                    "cache_write_tokens", "reasoning_tokens"):
+                    "cache_write_tokens"):
             value = int(getattr(usage, key, 0) or 0) if usage else 0
             if value:
                 entry[key] = value
+        thought = getattr(usage, "reasoning_tokens", None) if usage else None
+        if thought is not None:
+            entry["reasoning_tokens"] = int(thought)
         if seconds:
             entry["seconds"] = round(float(seconds), 2)
         lessons = [str(a) for a in adapted or () if a]
@@ -513,16 +564,24 @@ class CostMeter:
         row = self._model_row(model)
         row["calls"] += 1
         self._tokens(row, usage)
+        if getattr(usage, "reasoning_tokens", None) is not None:
+            self.reasoning_reported += 1
         row["seconds"] += float(seconds)
         row["dollars"] += cost
         if priced_as and priced_as not in row["priced_as"]:
             row["priced_as"].append(priced_as)
-        entry = self._entry(model, served_by, attempt, usage, seconds,
-                            adapted)
-        entry["outcome"] = "reply"
-        if stop:
-            entry["stop"] = _reason(stop)
-        return entry
+        try:
+            entry = self._entry(model, served_by or model, attempt, usage,
+                                seconds, adapted)
+            entry["outcome"] = "reply"
+            if stop:
+                entry["stop"] = _reason(stop)
+            return entry
+        except Exception:                   # noqa: BLE001 - see the class
+            logging.getLogger(__name__).warning(
+                "the cost record could not keep a row for a reply from %s",
+                model, exc_info=True)
+            return {}
 
     def fail(self, model: str, error: Any, *, kind: Optional[str] = None,
              seconds: float = 0.0, attempt: int = 1, retried: bool = False,
@@ -535,36 +594,72 @@ class CostMeter:
         ``seconds``: the wall clock of a call this error ENDED, waits
         included -- left 0 on one that was sent again, whose time the call's
         last row carries. ``usage``: what the error response said it spent,
-        when it said (:func:`_usage_in_error` looks).
+        when it said (:func:`_usage_in_error` looks). Never raises: the
+        caller is about to raise the provider's error, and a failure here
+        must not take its place.
         """
-        kind = kind if kind in FAILURE_KINDS else error_kind(error)
-        usage = usage or _usage_in_error(error)
-        self.failed += 1
-        self.retried += 1 if retried else 0
-        self.failed_by_kind[kind] = self.failed_by_kind.get(kind, 0) + 1
-        self.waited_seconds += float(waited or 0.0)
-        self.seconds += float(seconds or 0.0)
-        row = self._model_row(model)
-        row["failed"] += 1
-        row["seconds"] += float(seconds or 0.0)
-        if usage is not None:
-            self._tokens(row, usage)
-        entry = self._entry(model, served_by, attempt, usage, seconds,
-                            adapted)
-        entry.update({"outcome": "error", "error_kind": kind,
-                      "error": _first_line(error)})
-        if retried:
-            entry["retried"] = True
-        if waited:
-            entry["waited"] = round(float(waited), 1)
-        return entry
+        try:
+            kind = kind if kind in FAILURE_KINDS else error_kind(error)
+            usage = usage or _usage_in_error(error)
+            said = _first_line(error)
+            waited = float(waited or 0.0)
+            seconds = float(seconds or 0.0)
+            self.failed += 1
+            self.retried += 1 if retried else 0
+            self.failed_by_kind[kind] = self.failed_by_kind.get(kind, 0) + 1
+            self.waited_seconds += waited
+            self.seconds += seconds
+            row = self._model_row(model)
+            row["failed"] += 1
+            row["seconds"] += seconds
+            if usage is not None:
+                self._tokens(row, usage)
+            entry = self._entry(model, served_by, attempt, usage, seconds,
+                                adapted)
+            entry.update({"outcome": "error", "error_kind": kind,
+                          "error": said})
+            if retried:
+                entry["retried"] = True
+            if waited:
+                entry["waited"] = round(waited, 1)
+            return entry
+        except Exception:                   # noqa: BLE001 - see the docstring
+            logging.getLogger(__name__).warning(
+                "the cost record could not record a failed request to %s",
+                model, exc_info=True)
+            return {}
 
     @property
     def priced(self) -> bool:
         """Whether every call this meter saw had a price."""
         return self.calls > 0 and self.unpriced_calls == 0
 
+    def _rows(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """:attr:`per_call` as a run file keeps it: the model and the
+        deployment that answered most of the replies once, in
+        ``per_call_defaults``; a row names its own only where they differ,
+        and its attempt only past the first. A reply row with no
+        ``served_by`` was served by the default; an error row never names
+        one (nothing served it)."""
+        pairs = Counter((e.get("model"), e.get("served_by"))
+                        for e in self.per_call if e.get("served_by"))
+        if not pairs:
+            pairs = Counter((e.get("model"), None) for e in self.per_call)
+        model, served = pairs.most_common(1)[0][0] if pairs else (None, None)
+        defaults = {key: value for key, value in (("model", model),
+                                                  ("served_by", served))
+                    if value}
+        rows = []
+        for entry in self.per_call:
+            row = {key: value for key, value in entry.items()
+                   if not (key in defaults and value == defaults[key])}
+            if row.get("attempt") == 1:
+                del row["attempt"]
+            rows.append(row)
+        return defaults, rows
+
     def to_dict(self) -> Dict[str, Any]:
+        defaults, rows = self._rows()
         return {
             "calls": self.calls,
             "failed": self.failed,
@@ -573,6 +668,7 @@ class CostMeter:
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "reasoning_tokens": self.reasoning_tokens,
+            "reasoning_reported": self.reasoning_reported,
             "cache_read_tokens": self.cache_read_tokens,
             "cache_write_tokens": self.cache_write_tokens,
             "seconds": round(self.seconds, 1),
@@ -584,7 +680,8 @@ class CostMeter:
                                  else list(v) if isinstance(v, list) else v)
                              for k, v in row.items()}
                          for m, row in self.by_model.items()},
-            "per_call": [dict(entry) for entry in self.per_call],
+            "per_call_defaults": defaults,
+            "per_call": rows,
         }
 
     def summary(self) -> str:
@@ -1267,6 +1364,9 @@ class PrompterEngine:
         raw = None
         tried_chat = False
         self._attempt, self._sent = 1, False
+        #: How the call ended, where this engine knows better than the
+        #: error's text: nothing back is ``no_reply`` with or without a client.
+        ended_kind: Optional[str] = None
         try:
             if self.prefer_chat and simple and hasattr(self._prompter, "chat"):
                 # Keeps the SDK's budget guard and logging on every call
@@ -1289,12 +1389,13 @@ class PrompterEngine:
                     reason = getattr(self._prompter, "_last_chat_error",
                                      None)
                     if self.client is None:
+                        ended_kind = "no_reply"
                         raise RuntimeError(
                             "Prompter returned nothing; the call failed or "
                             f"was refused (the SDK's reason: {reason!r})")
                     lesson = (f"{self.model}: chat() returned nothing "
-                              f"({str(reason)[:160]!r}); retried on the raw "
-                              f"client")
+                              f"({_message_of(reason)[:160]!r}); retried on "
+                              f"the raw client")
                     self.adaptations.append(lesson)
                     self._sent_again(reason if reason is not None
                                      else "chat() returned nothing",
@@ -1327,6 +1428,7 @@ class PrompterEngine:
                     # again this run.
                     self.prefer_chat = False
             if raw is None:
+                ended_kind = "no_reply"
                 raise RuntimeError(
                     "Prompter returned nothing; the call failed or was "
                     "refused (the SDK stashes the reason on the prompter "
@@ -1336,7 +1438,8 @@ class PrompterEngine:
             # as it always was. Nothing is recorded when nothing went out (a
             # backend with no client for a tool loop).
             if self._sent:
-                self.meter.fail(self.model, exc, attempt=self._attempt,
+                self.meter.fail(self.model, exc, kind=ended_kind,
+                                attempt=self._attempt,
                                 seconds=time.time() - started)
             raise
         seconds = time.time() - started
@@ -1355,8 +1458,8 @@ class PrompterEngine:
             input_tokens=int(getattr(usage_raw, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage_raw, "completion_tokens", 0) or 0),
             cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
-            reasoning_tokens=int(getattr(thought, "reasoning_tokens", 0)
-                                 or 0),
+            reasoning_tokens=_count(getattr(thought, "reasoning_tokens",
+                                            None)),
         )
         choice = raw.choices[0] if getattr(raw, "choices", None) else None
         # Metered by what ANSWERED, not by the tier that was asked for: the
@@ -1933,9 +2036,11 @@ def _text_of(content: Any) -> str:
 def _usage_of(message: Any) -> Usage:
     """A reply's tokens. LangChain counts cache reads and writes INTO the
     input; here they are apart, as :class:`Usage` keeps them. The reasoning
-    tokens are LangChain's ``output_token_details.reasoning``, else the
+    tokens are LangChain's ``output_token_details.reasoning`` or the
     provider's own count in the response metadata (Chat Completions'
-    ``completion_tokens_details``, Responses' ``output_tokens_details``)."""
+    ``completion_tokens_details``, Responses' ``output_tokens_details``),
+    the larger where both say, and None where neither does (Claude reports
+    no split)."""
     meta = getattr(message, "response_metadata", None) or {}
     raw = meta.get("token_usage") or meta.get("usage") or {}
     if not isinstance(raw, dict):
@@ -1950,14 +2055,16 @@ def _usage_of(message: Any) -> Usage:
     read = int(details.get("cache_read") or 0)
     made = int(details.get("cache_creation") or 0)
     total = int(um.get("input_tokens") or 0)
-    thought = int((um.get("output_token_details") or {}).get("reasoning")
-                  or 0)
-    if not thought:
-        for key in ("completion_tokens_details", "output_tokens_details"):
-            part = raw.get(key)
-            if isinstance(part, dict) and part.get("reasoning_tokens"):
-                thought = int(part["reasoning_tokens"])
-                break
+    said = []
+    out_details = um.get("output_token_details")
+    if isinstance(out_details, dict):
+        said.append(_count(out_details.get("reasoning")))
+    for key in ("completion_tokens_details", "output_tokens_details"):
+        part = raw.get(key)
+        if isinstance(part, dict):
+            said.append(_count(part.get("reasoning_tokens")))
+    counted = [n for n in said if n is not None]
+    thought = max(counted) if counted else None
     return Usage(input_tokens=max(0, total - read - made),
                  output_tokens=int(um.get("output_tokens") or 0),
                  cache_read_tokens=read, cache_write_tokens=made,

@@ -760,8 +760,8 @@ class TestTheCostRecord:
         assert (meter.calls, meter.failed, meter.retried) == (0, 1, 0)
         assert meter.failed_by_kind == {"timeout": 1}
         (row,) = meter.to_dict()["per_call"]
-        assert (row["call"], row["attempt"], row["outcome"]) == (1, 1,
-                                                                 "error")
+        assert (row["call"], row["outcome"]) == (1, "error")
+        assert "attempt" not in row, "a first attempt is left out"
         assert row["error"].startswith("TimeoutError: the request timed out")
 
     def test_a_failed_request_and_the_next_are_two_calls(self):
@@ -828,3 +828,22 @@ class TestTheCostRecord:
         assert rows[0]["adapted"] == [lesson]
         assert "adapted" not in rows[1], "recorded once, when learned"
         assert engine.meter.adaptations == [lesson]
+
+
+    def test_a_reply_with_no_reasoning_split_says_none(self):
+        engine, _ = _engine(_said("ok"))
+        reply = engine.complete([user(text_block("go"))])
+        assert reply.usage.reasoning_tokens is None
+        assert engine.meter.reasoning_reported == 0
+
+    def test_a_reasoning_count_that_is_not_a_number_is_none(self):
+        # LangChain checks its own usage_metadata; the provider's count in
+        # the response metadata is not checked by anyone but this engine.
+        message = AIMessage(content="ok", response_metadata={
+            "finish_reason": "stop",
+            "token_usage": {"prompt_tokens": 10, "completion_tokens": 5,
+                            "completion_tokens_details": {
+                                "reasoning_tokens": "n/a"}}})
+        engine, _ = _engine(message)
+        reply = engine.complete([user(text_block("go"))])
+        assert reply.text == "ok" and reply.usage.reasoning_tokens is None

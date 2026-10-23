@@ -231,6 +231,9 @@ def test_a_claude_reply_records_its_stop_reason():
     ("Request timed out.", "timeout"),
     ("Unsupported parameter: 'max_tokens'", "parameter"),
     ("Prompter returned nothing", "no_reply"),
+    ("Error code: 400 - prompt is too long: 215000 tokens > 200000 maximum",
+     "too_large"),
+    ("This model's maximum context length is 128000 tokens", "too_large"),
     ("Error code: 500 - the server had an error", "other"),
 ])
 def test_an_error_is_sorted_by_what_it_says(text, kind):
@@ -261,3 +264,134 @@ def test_an_old_reader_of_the_cost_block_still_finds_its_keys():
                 "cache_write_tokens", "seconds", "dollars", "unpriced_calls",
                 "by_model"):
         assert key in out
+
+
+# -- recording never takes the place of the provider's error (RI-21 review) ---
+
+class _Unreadable(RuntimeError):
+    """An error whose text cannot be read: ``str()`` itself raises."""
+
+    def __str__(self):
+        raise ValueError("no text here")
+
+
+class _BadBody(RuntimeError):
+    body = {"usage": {"prompt_tokens": "n/a", "completion_tokens": None}}
+
+
+class _Raising(_Messages):
+    def __init__(self, error):
+        super().__init__(None)
+        self.error = error
+
+    def create(self, **kwargs):
+        raise self.error
+
+
+def _failing_claude(error):
+    client = _Client(None)
+    client.messages = _Raising(error)
+    return ClaudeEngine("claude-opus-5", client=client, meter=CostMeter())
+
+
+@pytest.mark.parametrize("error", [_BadBody("Error code: 400 - bad"),
+                                   _Unreadable()])
+def test_an_error_that_will_not_read_still_comes_out_unchanged(error):
+    engine = _failing_claude(error)
+    with pytest.raises(type(error)) as raised:
+        engine.complete([user(text_block("go"))])
+    assert raised.value is error
+    (row,) = engine.meter.to_dict()["per_call"]
+    assert row["outcome"] == "error"
+    assert engine.meter.failed == 1
+    assert engine.meter.input_tokens == 0, "a count that is not one is none"
+
+
+def test_an_unreadable_error_is_named_by_its_type():
+    meter = CostMeter()
+    meter.fail("m", _Unreadable())
+    (row,) = meter.to_dict()["per_call"]
+    assert row["error"] == "_Unreadable: (its message could not be read)"
+    assert row["error_kind"] == "other"
+
+
+def test_a_failure_while_recording_is_logged_and_the_error_still_raised(
+        monkeypatch, caplog):
+    engine = _failing_claude(RuntimeError("Error code: 500 - the provider"))
+
+    def broken(*args, **kwargs):
+        raise KeyError("the record is broken")
+
+    monkeypatch.setattr(engine.meter, "_entry", broken)
+    with pytest.raises(RuntimeError, match="the provider"):
+        engine.complete([user(text_block("go"))])
+    assert "could not record a failed request" in caplog.text
+
+
+def test_a_failure_while_recording_a_reply_still_returns_the_reply(
+        monkeypatch):
+    engine = _engine(_Response([_Block(type="text", text="hi")],
+                               _Usage(10, 5)))
+
+    def broken(*args, **kwargs):
+        raise KeyError("the record is broken")
+
+    monkeypatch.setattr(engine.meter, "_entry", broken)
+    reply = engine.complete([user(text_block("go"))])
+    assert reply.text == "hi" and engine.meter.calls == 1
+
+
+def test_counts_are_read_tolerantly():
+    from report_ingest.engine import _count
+
+    assert [_count(v) for v in (12, 12.0, "12", " 7 ", "n/a", None, -3,
+                                True, float("nan"), [1])] == \
+        [12, 12, 12, 7, None, None, None, None, None, None]
+
+
+# -- reasoning that was not reported is not a reported 0 (RI-21 review) -------
+
+def test_claude_reports_no_reasoning_split_so_none_is_counted():
+    engine = _engine(_Response([_Block(type="text", text="hi")],
+                               _Usage(10, 5)))
+    reply = engine.complete([user(text_block("go"))])
+    assert reply.usage.reasoning_tokens is None
+    out = engine.meter.to_dict()
+    assert out["reasoning_reported"] == 0 and out["reasoning_tokens"] == 0
+    assert "reasoning_tokens" not in out["per_call"][0]
+
+
+def test_the_meter_counts_the_replies_that_reported_reasoning():
+    meter = CostMeter()
+    meter.add("m", Usage(output_tokens=50, reasoning_tokens=30), 1.0)
+    meter.add("m", Usage(output_tokens=50, reasoning_tokens=0), 1.0)
+    meter.add("m", Usage(output_tokens=50), 1.0)
+    out = meter.to_dict()
+    assert (out["reasoning_tokens"], out["reasoning_reported"]) == (30, 2)
+    assert [r.get("reasoning_tokens") for r in out["per_call"]] == \
+        [30, 0, None]
+
+
+# -- the per-request rows, compact (RI-21 review) -----------------------------
+
+def test_the_model_and_deployment_are_written_once_not_on_every_row():
+    meter = CostMeter()
+    for _ in range(3):
+        meter.add("tier-high", Usage(input_tokens=5), 1.0,
+                  served_by="deploy-a")
+    meter.add("tier-low", Usage(input_tokens=5), 1.0, served_by="deploy-b")
+    meter.fail("tier-high", RuntimeError("Error code: 500"), attempt=1,
+               retried=True)
+    meter.add("tier-high", Usage(input_tokens=5), 1.0, served_by="deploy-a",
+              attempt=2)
+    out = meter.to_dict()
+    assert out["per_call_defaults"] == {"model": "tier-high",
+                                        "served_by": "deploy-a"}
+    rows = out["per_call"]
+    assert all("model" not in r and "served_by" not in r
+               for r in rows[:3])
+    assert (rows[3]["model"], rows[3]["served_by"]) == ("tier-low",
+                                                        "deploy-b")
+    assert "served_by" not in rows[4], "nothing served a failed request"
+    assert "attempt" not in rows[4] and rows[5]["attempt"] == 2
+    assert rows[5]["call"] == rows[4]["call"] == 5
