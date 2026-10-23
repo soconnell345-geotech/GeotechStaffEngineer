@@ -47,6 +47,17 @@ a log or a laboratory sheet is a firm's title block, and the ledger is
 tracked. The same misses WITH headings go to `raw/checks/wp1_misses.txt`,
 which is gitignored.
 
+`measure_label_review <ingest stage folder>` (BACKLOG RI-15) reads what a
+cluster ingest run left in each `<ID>/labels.json` and `review.json` — the
+vote's labels and every change the label review made — and counts, against the
+spreadsheet's hand labels, how many changes fixed a page, broke one or moved a
+wrong label to another wrong one: per report, by the evidence the change named,
+by whose label it took, by the vote's label and by the move, then again under
+the rule that refuses a change naming no look at the page. It runs no model,
+refuses any report in the blind set before reading it, and never reads a
+change's reason. `--raw-dir` points it at the private corpus when it is run
+from a worktree.
+
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
 `module_work/field_feedback/2026-09-16_report-ingest/raw/`, which `.gitignore`
