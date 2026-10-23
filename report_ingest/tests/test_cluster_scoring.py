@@ -683,6 +683,34 @@ class TestTheLabStage:
         assert scored["sets"]["open"]["n_sheets"] == 1
         assert "blind" not in scored["sets"]
 
+    def test_the_specimen_label_arm_is_stated_and_a_mix_is_flagged(self):
+        """RI-07: a run with the specimen-label paragraph on is a different
+        arm, and a resumed run must not quietly mix the two."""
+        from report_ingest.cluster_scoring import _render_lab, _score_lab
+
+        def row(sheet, **over):
+            base = {
+                "sheet_id": sheet, "report": "R06", "kind": "gradation",
+                "set": "open", "served_by": "",
+                "before": {"scores": {}, "overall": {"found": 0, "total": 0}},
+                "after": {"scores": {}, "overall": {"found": 0, "total": 0},
+                          "model_calls": 1, "tool_calls": 0,
+                          "unresolved": 0, "changes": 0, "error": None},
+                "cost": {"calls": 1, "input_tokens": 0, "output_tokens": 0,
+                         "cache_read_tokens": 0, "dollars": 0.0},
+                "seconds": 1.0}
+            base.update(over)
+            return base
+
+        old = _score_lab({"a": row("a")}, {}, "m", ("R06",))
+        assert old["link_from_label"] == [False]   # written before the switch
+        assert "GEOTECH_INGEST_LAB_LINK_FROM_LABEL): off." in \
+            "\n".join(_render_lab(old))
+        mixed = _score_lab({"a": row("a"), "b": row("b", link_from_label=True)},
+                           {}, "m", ("R06",))
+        assert mixed["link_from_label"] == [False, True]
+        assert "MIXED" in "\n".join(_render_lab(mixed))
+
 
 # ---------------------------------------------------------------------------
 # the calc stage (WP5)

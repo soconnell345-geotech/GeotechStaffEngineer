@@ -57,12 +57,36 @@ sheet whose values are tabulated is read and answered in a single call; a
 further call is spent only when the model asks to magnify a plot. On its last
 allowed call the tool is withdrawn, so a reader that keeps zooming runs out
 of looking rather than out of answering.
+
+THE WINDOW (RI-07). planlens opens a laboratory item on a sheet title and
+keeps it open while the next page's title names the same test, so an
+appendix of sixteen grading sheets is ONE item. Before RI-07 every page of an
+item went into one call -- every page's picture and every page's text -- and
+nothing bounded it: Foundry run 1 read items of up to 17 pages that way, and
+a longer run would meet the endpoint's image cap or the output cap, where a
+cut-off answer loses the whole item. An item longer than
+:data:`MAX_LAB_PAGES` is now read in consecutive windows of near-equal size,
+each with its own floor and its own budget, and the tests are put end to
+end. An item that fits is read exactly as before.
+
+THE SPECIMEN-LABEL SWITCH (RI-07, off by default). Many sheets print no
+"Boring" heading and name the specimen by the hole it came from -- a column
+headed Specimen Identification reading the hole beside its depth, a label
+reading hole, sample and depth together. Read against the rule above, the
+model files the hole as the sample and leaves the boring empty, and the test
+cannot be linked to the ground. :func:`use_link_from_label` (or
+``GEOTECH_INGEST_LAB_LINK_FROM_LABEL``) adds one paragraph telling it that a
+label which begins with the hole names the hole. It changes what the model
+is asked, so it stays off until a cluster run measures it.
 """
 
 from __future__ import annotations
 
+import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -84,12 +108,22 @@ from report_ingest.model import (
 __all__ = [
     "read_lab_sheet", "LabReadResult", "LabSheetReading", "ReadTest",
     "LAB_READER_SYSTEM", "LAB_TOOLS", "KIND_DEFINITIONS", "MAX_MODEL_CALLS",
-    "PAGE_DPI", "ZOOM_DPI", "MAX_DEPTH_M", "SERIES_NAMES",
+    "PAGE_DPI", "ZOOM_DPI", "MAX_DEPTH_M", "SERIES_NAMES", "MAX_LAB_PAGES",
+    "lab_windows", "reader_system", "link_from_label_enabled",
+    "use_link_from_label", "LINK_FROM_LABEL_ENV", "LINK_FROM_LABEL",
 ]
 
 #: The ceiling in the brief: four model calls for one sheet, the last of them
 #: the structured answer. A sheet whose values are all tabulated needs one.
+#: A run of sheets read in windows has this ceiling per window.
 MAX_MODEL_CALLS = 4
+#: How many of a run's pages one window carries. Layout judgment, set to the
+#: calculation reader's ``MAX_CALC_PAGES``: Foundry run 1 read lab items of
+#: up to 17 pages whole and answered them, so the cap is there to bound a
+#: longer run (the endpoint takes about 50 pictures in a request, and the
+#: answer for a long run of summary sheets nears the output cap), not to
+#: change how an ordinary item is read.
+MAX_LAB_PAGES = 12
 #: About 110 dpi: a letter page at roughly 1200 px on its long side. Enough
 #: to read a results box and see the shape of a curve.
 PAGE_DPI = 110.0
@@ -585,6 +619,12 @@ class LabReadResult:
     #: tabulated gradation set against the curve it plots, read by code.
     #: ``None`` when the check did not run.
     plot_check: Optional[Dict[str, Any]] = None
+    #: True when the reader was told about holes inside specimen labels
+    #: (:data:`LINK_FROM_LABEL`), so a run file says which arm it is.
+    link_from_label: bool = False
+    #: The windows a run longer than :data:`MAX_LAB_PAGES` was read in;
+    #: empty when it was read whole.
+    windows: List[List[int]] = field(default_factory=list)
 
     @property
     def kinds(self) -> List[str]:
@@ -614,6 +654,9 @@ class LabReadResult:
             "reconciled": self.reconciled,
             **({"plot_check": dict(self.plot_check)}
                if self.plot_check is not None else {}),
+            **({"link_from_label": True} if self.link_from_label else {}),
+            **({"windows": [list(w) for w in self.windows]}
+               if self.windows else {}),
         }
 
 
@@ -788,6 +831,65 @@ box of the line or cell that named it. Where the picture is what told you,
 set from_image true.
 """
 
+#: The switch for :data:`LINK_FROM_LABEL` (off by default).
+LINK_FROM_LABEL_ENV = "GEOTECH_INGEST_LAB_LINK_FROM_LABEL"
+_LINK_FORCED: ContextVar[Optional[bool]] = ContextVar(
+    "ingest_lab_link_from_label", default=None)
+
+#: The paragraph the switch adds, after the link paragraph. Foundry runs 1-3
+#: lost the link on sheets that print the hole only as the specimen's label
+#: (RI-07): the values were read and every one was lost with the link.
+LINK_FROM_LABEL = """\
+A SAMPLE LABEL THAT BEGINS WITH THE HOLE NAMES THE HOLE. Many sheets print no
+heading such as Boring or Test Pit and name the specimen by the exploration
+it came from instead: a column headed Specimen or Sample I.D. that reads
+'B-4' beside '3.0 ft', a label such as 'B-4 3.0-3.5 m' or 'BH-2 S-3
+1.5-1.95 m', a French 'Prelevement : B-4', or the hole's identifier alone at
+the head of the sheet. Where the label begins with the identifier of a
+boring, test pit or sounding, copy that identifier, exactly as printed, into
+investigation_id, put the depth the label prints into depth_top and
+depth_bottom, and keep the whole label in sample_id. A sample number on its
+own -- 'S-3', 'U-1', 'Ech. 4' -- names no hole: leave investigation_id empty
+for it.
+"""
+
+_LINK_PARAGRAPH_END = "something\nelse will deal with it.\n"
+
+
+def link_from_label_enabled() -> bool:
+    """Whether the reader is told about holes inside specimen labels
+    (default: off)."""
+    forced = _LINK_FORCED.get()
+    if forced is not None:
+        return forced
+    return (os.environ.get(LINK_FROM_LABEL_ENV) or "").strip().lower() in (
+        "1", "on", "true", "yes")
+
+
+@contextmanager
+def use_link_from_label(on: bool = True) -> Iterator[None]:
+    """Turn the specimen-label paragraph on (or off) inside the block."""
+    token = _LINK_FORCED.set(bool(on))
+    try:
+        yield
+    finally:
+        _LINK_FORCED.reset(token)
+
+
+def reader_system(link_from_label: Optional[bool] = None) -> str:
+    """The system prompt, with :data:`LINK_FROM_LABEL` after the link
+    paragraph when the switch is on. Off, it is :data:`LAB_READER_SYSTEM`
+    unchanged."""
+    on = link_from_label_enabled() if link_from_label is None \
+        else bool(link_from_label)
+    if not on:
+        return LAB_READER_SYSTEM
+    at = LAB_READER_SYSTEM.index(_LINK_PARAGRAPH_END) \
+        + len(_LINK_PARAGRAPH_END)
+    return (LAB_READER_SYSTEM[:at] + "\n" + LINK_FROM_LABEL
+            + LAB_READER_SYSTEM[at:])
+
+
 _FINAL_INSTRUCTION = (
     "Now give the sheet as data: every test on it, with the boring and depth "
     "printed on the sheet, the values in the units printed, the series you "
@@ -854,9 +956,34 @@ def serialise_page(doc: Any, page: int) -> str:
     return "\n".join(out)
 
 
+def lab_windows(pages: Sequence[int], size: int = MAX_LAB_PAGES
+                ) -> List[List[int]]:
+    """A run of pages cut into consecutive windows of at most ``size``.
+
+    The windows are as near equal as the count allows -- seventeen pages are
+    nine and eight, not twelve and five -- so a test that runs over several
+    pages is no likelier to be cut at one boundary than another, and no
+    window is a short tail. A run that fits is one window, unchanged.
+    """
+    pages = [int(p) for p in pages]
+    size = max(1, int(size))
+    if len(pages) <= size:
+        return [pages] if pages else []
+    count = -(-len(pages) // size)
+    base, extra = divmod(len(pages), count)
+    out: List[List[int]] = []
+    at = 0
+    for n in range(count):
+        take = base + (1 if n < extra else 0)
+        out.append(pages[at:at + take])
+        at += take
+    return out
+
+
 def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str, hint_kind: Optional[str],
-           budget: int, floor: Optional[FloorSheet] = None) -> str:
+           budget: int, floor: Optional[FloorSheet] = None,
+           run_pages: Optional[Sequence[int]] = None) -> str:
     vocabulary = "\n".join(f"  {name}: {text}"
                            for name, text in KIND_DEFINITIONS.items())
     series = "\n".join(f"  {name}: {text}"
@@ -865,6 +992,16 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
         f"ONE LABORATORY SHEET, on page(s) "
         f"{', '.join(str(p) for p in pages)}"
         + (f" of report {report_id}" if report_id else "") + ".",
+    ]
+    if run_pages is not None and len(run_pages) > len(pages):
+        parts.append(
+            f"These pages are one window of a run of laboratory sheets on "
+            f"pages {run_pages[0]}-{run_pages[-1]}, read "
+            f"{MAX_LAB_PAGES} pages or fewer at a time. Report the tests "
+            f"these pages print. A test whose sheet began on an earlier page "
+            f"is reported with the boring and depth these pages print, or "
+            f"with none.")
+    parts += [
         f"You may make {budget} model call(s) in all, the last of them your "
         f"answer.",
     ]
@@ -1454,6 +1591,13 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     ``hint_kind`` is what the page labels think the sheet is. It is passed to
     the model as a hint and never as a fact: the label is a rule reading the
     page's shape, and the sheet's own title outranks it.
+
+    A run longer than :data:`MAX_LAB_PAGES` is read in windows
+    (:func:`lab_windows`), each as its own sheet with its own floor and
+    ``budget``; the tests are put end to end and the result says which
+    windows were read. A window the model gives no answer for is recorded in
+    ``unresolved`` and the others are kept; when no window answers, the
+    error is raised as for a single sheet.
     """
     pages = [int(p) for p in item_pages]
     if not pages:
@@ -1469,6 +1613,104 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         except Exception:                        # a ledger is a nicety
             ledger = []
 
+    windows = lab_windows(pages)
+    if len(windows) == 1:
+        return _read_window(doc, pages, engine, budget=budget,
+                            hint_kind=hint_kind, ledger=ledger,
+                            item_title=item_title, report_id=report_id,
+                            dpi=dpi)
+    parts: List[LabReadResult] = []
+    failed: List[Tuple[List[int], str]] = []
+    for window in windows:
+        mine = [ln for ln in ledger
+                if any(ln.startswith(f"p{p:03d} ") for p in window)]
+        try:
+            parts.append(_read_window(
+                doc, window, engine, budget=budget, hint_kind=hint_kind,
+                ledger=mine, item_title=item_title, report_id=report_id,
+                dpi=dpi, run_pages=pages))
+        except RuntimeError as exc:              # no answer for this window
+            if not parts and len(failed) == len(windows) - 1:
+                raise
+            failed.append((window, str(exc)))
+    return _combine(parts, pages, windows, failed)
+
+
+def _merge_plot_checks(checks: Sequence[Optional[Dict[str, Any]]]
+                       ) -> Optional[Dict[str, Any]]:
+    """The windows' plot checks as the one check the QA section reads."""
+    got = [c for c in checks if c]
+    if len(got) <= 1:
+        return dict(got[0]) if got else None
+    calls = sum(int(c.get("label_calls") or 0) for c in got)
+    checked = [c for c in got if c.get("status") == "checked"]
+    if not checked:
+        return {**got[0], "label_calls": calls}
+    out: Dict[str, Any] = {
+        "status": "checked", "label_calls": calls,
+        "markers": sum(int(c.get("markers") or 0) for c in checked),
+        "table_points": sum(int(c.get("table_points") or 0)
+                            for c in checked),
+        "agree": sum(int(c.get("agree") or 0) for c in checked),
+        "disagree": [row for c in checked for row in c.get("disagree") or []],
+        "no_marker_at_size": sum(int(c.get("no_marker_at_size") or 0)
+                                 for c in checked),
+    }
+    if len(checked) == 1 and checked[0].get("page") is not None:
+        out["page"] = checked[0]["page"]
+    return out
+
+
+def _combine(parts: Sequence[LabReadResult], pages: Sequence[int],
+             windows: Sequence[Sequence[int]],
+             failed: Sequence[Tuple[Sequence[int], str]]) -> LabReadResult:
+    """The windows of one run as one reading, end to end."""
+    cost: Dict[str, Any] = {}
+    for part in parts:
+        for key, value in part.cost.items():
+            cost[key] = cost.get(key, 0) + value
+    if "seconds" in cost:
+        cost["seconds"] = round(cost["seconds"], 2)
+    if "dollars" in cost:
+        cost["dollars"] = round(cost["dollars"], 5)
+    unresolved = [row for part in parts for row in part.unresolved]
+    warnings = [w for part in parts for w in part.warnings]
+    for window, why in failed:
+        unresolved.append({
+            "what": f"pages {window[0]}-{window[-1]}",
+            "why": f"no reading came back for this window: {why}",
+            "refused_by": "reader", "page": int(window[0])})
+        warnings.append(f"pages {window[0]}-{window[-1]}: not read ({why})")
+    return LabReadResult(
+        tests=[t for part in parts for t in part.tests],
+        changes=[c for part in parts for c in part.changes],
+        unresolved=unresolved,
+        cost=cost,
+        model_calls=sum(part.model_calls for part in parts),
+        tool_calls=sum(part.tool_calls for part in parts),
+        model=next((part.model for part in parts if part.model), ""),
+        warnings=warnings,
+        pages=[int(p) for p in pages],
+        floor_tests=[t for part in parts for t in part.floor_tests],
+        model_tests=[t for part in parts for t in part.model_tests],
+        floor_kind=next((part.floor_kind for part in parts
+                         if part.floor_kind), ""),
+        disagreements=[d for part in parts for d in part.disagreements],
+        kept=[k for part in parts for k in part.kept],
+        added=[a for part in parts for a in part.added],
+        reconciled=sum(part.reconciled for part in parts),
+        plot_check=_merge_plot_checks([part.plot_check for part in parts]),
+        link_from_label=any(part.link_from_label for part in parts),
+        windows=[[int(p) for p in w] for w in windows])
+
+
+def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
+                 hint_kind: Optional[str], ledger: Sequence[str],
+                 item_title: str, report_id: str, dpi: float,
+                 run_pages: Optional[Sequence[int]] = None) -> LabReadResult:
+    """One sheet, or one window of a run, read and merged with its floor."""
+    pages = [int(p) for p in pages]
+    system = reader_system()
     spent = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
              "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0}
 
@@ -1500,7 +1742,7 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     floor = floor_from_tables(doc, pages, report_id)
     warnings.extend(floor.warnings)
     brief = _brief(doc, pages, ledger, item_title, report_id, hint_kind,
-                   budget, floor=floor)
+                   budget, floor=floor, run_pages=run_pages)
     tools = _Tools(doc, pages)
     tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
@@ -1517,7 +1759,7 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     # zooming runs out of looking rather than out of answering.
     while model_calls < budget:
         last = model_calls == budget - 1
-        reply = engine.complete(messages, system=LAB_READER_SYSTEM,
+        reply = engine.complete(messages, system=system,
                                 tools=None if last else LAB_TOOLS,
                                 output_format=LabSheetReading)
         model_calls += 1
@@ -1588,4 +1830,5 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         kept=merge_log.kept,
         added=merge_log.added,
         reconciled=merge_log.reconciled,
-        plot_check=plot)
+        plot_check=plot,
+        link_from_label=system != LAB_READER_SYSTEM)

@@ -17,10 +17,12 @@ import pytest
 
 from report_ingest.lab_floor import floor_from_tables, kind_from_title
 from report_ingest.lab_reader import (
-    KIND_DEFINITIONS, LAB_READER_SYSTEM, LAB_TOOLS, LabSheetReading,
-    MAX_MODEL_CALLS, ReadPassing, ReadPoint, ReadProv, ReadQuantity,
-    ReadReported, ReadRow, ReadSeries, ReadSpecimen, ReadTest, SERIES_NAMES,
-    Unsettled, read_lab_sheet, serialise_page,
+    KIND_DEFINITIONS, LAB_READER_SYSTEM, LAB_TOOLS, LINK_FROM_LABEL,
+    LINK_FROM_LABEL_ENV, MAX_LAB_PAGES, LabSheetReading, MAX_MODEL_CALLS,
+    ReadPassing, ReadPoint, ReadProv, ReadQuantity, ReadReported, ReadRow,
+    ReadSeries, ReadSpecimen, ReadTest, SERIES_NAMES, Unsettled, lab_windows,
+    link_from_label_enabled, read_lab_sheet, reader_system, serialise_page,
+    use_link_from_label,
 )
 from report_ingest.lab_scoring import score_record, score_tables
 from report_ingest.model import (
@@ -561,6 +563,174 @@ def test_the_tool_surface_is_the_one_tool_it_should_be():
     assert [t["name"] for t in LAB_TOOLS] == ["zoom_plot"]
     schema = LAB_TOOLS[0]["input_schema"]
     assert schema["required"] == ["page", "bbox"]
+
+
+# ---------------------------------------------------------------------------
+# a long run of sheets is read in windows (RI-07)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def run_of(tmp_path):
+    """A run of ``n`` water-content sheets, one boring a page, as planlens
+    makes one work item of consecutive sheets with the same title."""
+    opened = []
+
+    def build(n: int):
+        pdf = pymupdf.open()
+        for i in range(n):
+            page = pdf.new_page(width=612, height=792)
+            page.insert_text((72, 72), "WATER CONTENT OF SOIL", fontsize=14)
+            page.insert_text((72, 110), f"Boring: B-{i + 1}", fontsize=10)
+            page.insert_text((72, 126), "Depth: 5.0 ft", fontsize=10)
+            page.insert_text((72, 142), f"Water content: {20 + i}.0 %",
+                             fontsize=10)
+        data = pdf.tobytes()
+        pdf.close()
+        path = tmp_path / f"run{n}.pdf"
+        path.write_bytes(data)
+        from planlens.document import open_document
+        doc = open_document(str(path))
+        opened.append(doc)
+        return doc
+
+    yield build
+    for doc in opened:
+        doc.close()
+
+
+def _run_reading(pages) -> LabSheetReading:
+    """A careful reading of the run's sheets on ``pages``."""
+    return LabSheetReading(
+        depth_unit="ft", pages_read=list(pages),
+        tests=[ReadTest(kind="water_content", investigation_id=f"B-{p + 1}",
+                        depth_top=5.0, wc=20.0 + p,
+                        prov=_prov(page=p, bbox=(72.0, 130.0, 300.0, 146.0)))
+               for p in pages])
+
+
+def _brief_of(call) -> str:
+    return call["messages"][0]["content"][0]["text"]
+
+
+class TestTheWindow:
+    def test_the_windows_are_consecutive_and_near_equal(self):
+        assert lab_windows(range(12)) == [list(range(12))]
+        assert [len(w) for w in lab_windows(range(13))] == [7, 6]
+        assert [len(w) for w in lab_windows(range(17))] == [9, 8]
+        assert [len(w) for w in lab_windows(range(24))] == [12, 12]
+        assert [len(w) for w in lab_windows(range(25))] == [9, 8, 8]
+        assert sum(lab_windows(range(40, 57)), []) == list(range(40, 57))
+        assert lab_windows([]) == []
+        assert MAX_LAB_PAGES == 12
+
+    def test_a_run_that_fits_is_read_whole_as_before(self, run_of):
+        doc = run_of(MAX_LAB_PAGES)
+        pages = list(range(MAX_LAB_PAGES))
+        engine = FakeEngine([{"final": _run_reading(pages)}])
+        result = read_lab_sheet(doc, pages, engine)
+        assert engine.n_calls == 1
+        assert engine.calls[0]["n_images"] == MAX_LAB_PAGES
+        assert "one window of a run" not in _brief_of(engine.calls[0])
+        assert result.windows == []
+        assert "windows" not in result.to_dict()
+        assert len(result.tests) == MAX_LAB_PAGES
+
+    def test_a_longer_run_is_read_in_windows_and_put_end_to_end(
+            self, run_of):
+        doc = run_of(14)
+        pages = list(range(14))
+        engine = FakeEngine([{"final": _run_reading(pages[:7])},
+                             {"final": _run_reading(pages[7:])}])
+        result = read_lab_sheet(doc, pages, engine)
+        assert engine.n_calls == 2
+        assert [c["n_images"] for c in engine.calls] == [7, 7]
+        first, second = (_brief_of(c) for c in engine.calls)
+        assert "page(s) 0, 1, 2, 3, 4, 5, 6." in first
+        assert "page(s) 7, 8, 9, 10, 11, 12, 13." in second
+        for brief in (first, second):
+            assert "one window of a run of laboratory sheets on pages 0-13" \
+                in brief
+        assert [t.investigation_id for t in result.tests] == \
+            [f"B-{p + 1}" for p in pages]
+        assert result.pages == pages
+        assert result.model_calls == 2 and result.cost["calls"] == 2
+        assert result.windows == [pages[:7], pages[7:]]
+        assert result.to_dict()["windows"] == [pages[:7], pages[7:]]
+
+    def test_each_window_has_the_whole_budget(self, run_of):
+        """A window is a sheet: the budget is a ceiling for each, so a
+        long run is not starved because its first window needed a nudge."""
+        doc = run_of(14)
+        pages = list(range(14))
+        engine = FakeEngine([{"text": "thinking"},
+                             {"final": _run_reading(pages[:7])},
+                             {"text": "thinking"},
+                             {"final": _run_reading(pages[7:])}])
+        result = read_lab_sheet(doc, pages, engine, budget=2)
+        assert result.model_calls == 4
+        assert len(result.tests) == 14
+
+    def test_a_window_with_no_answer_is_named_and_the_rest_kept(self, run_of):
+        doc = run_of(14)
+        pages = list(range(14))
+        engine = FakeEngine([{"text": "no answer"},
+                             {"final": _run_reading(pages[7:])}])
+        result = read_lab_sheet(doc, pages, engine, budget=1)
+        assert [t.investigation_id for t in result.tests] == \
+            [f"B-{p + 1}" for p in pages[7:]]
+        (gap,) = [u for u in result.unresolved if u["what"] == "pages 0-6"]
+        assert "no reading came back" in gap["why"]
+        assert any("pages 0-6: not read" in w for w in result.warnings)
+
+    def test_a_run_no_window_answers_is_an_error(self, run_of):
+        doc = run_of(14)
+        engine = FakeEngine([{"text": "no answer"}] * 2)
+        with pytest.raises(RuntimeError, match="no structured reading"):
+            read_lab_sheet(doc, list(range(14)), engine, budget=1)
+
+
+# ---------------------------------------------------------------------------
+# the specimen-label paragraph, behind a switch that is off (RI-07)
+# ---------------------------------------------------------------------------
+
+class TestTheSpecimenLabelSwitch:
+    def test_it_is_off_and_the_prompt_unchanged_by_default(
+            self, atterberg, monkeypatch):
+        monkeypatch.delenv(LINK_FROM_LABEL_ENV, raising=False)
+        doc, _gt = atterberg
+        engine = FakeEngine([{"final": _atterberg_reading()}])
+        result = read_lab_sheet(doc, [0], engine)
+        assert not link_from_label_enabled()
+        assert engine.calls[0]["system"] == LAB_READER_SYSTEM
+        assert result.link_from_label is False
+        assert "link_from_label" not in result.to_dict()
+
+    def test_on_it_adds_one_paragraph_after_the_link_rule(
+            self, atterberg, monkeypatch):
+        monkeypatch.setenv(LINK_FROM_LABEL_ENV, "1")
+        doc, _gt = atterberg
+        engine = FakeEngine([{"final": _atterberg_reading()}])
+        result = read_lab_sheet(doc, [0], engine)
+        system = engine.calls[0]["system"]
+        assert system == reader_system(True)
+        assert system.replace("\n" + LINK_FROM_LABEL, "", 1) == \
+            LAB_READER_SYSTEM
+        assert system.index(LINK_FROM_LABEL) > \
+            system.index("else will deal with it.")
+        assert result.link_from_label is True
+        assert result.to_dict()["link_from_label"] is True
+
+    def test_the_block_outranks_the_environment(self, monkeypatch):
+        monkeypatch.setenv(LINK_FROM_LABEL_ENV, "on")
+        assert link_from_label_enabled()
+        with use_link_from_label(False):
+            assert not link_from_label_enabled()
+            assert reader_system() == LAB_READER_SYSTEM
+        assert link_from_label_enabled()
+
+    def test_a_sample_number_alone_is_still_no_hole(self):
+        assert "names no hole" in LINK_FROM_LABEL
+        assert "exactly as printed" in LINK_FROM_LABEL
 
 
 # ---------------------------------------------------------------------------
