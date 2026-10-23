@@ -330,8 +330,8 @@ def reconcile(record: ReportRecord, *,
 
 # -- the lab-to-ground link -------------------------------------------------
 
-def _hole_for(test: LabTest, by_id: Dict[str, Investigation]
-              ) -> Tuple[Optional[Investigation], str]:
+def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
+              samples: Any = ()) -> Tuple[Optional[Investigation], str]:
     """The investigation a lab test names, and where the name was found.
 
     The printed boring first, matched whole (``hole_key``); then a hole the
@@ -340,15 +340,23 @@ def _hole_for(test: LabTest, by_id: Dict[str, Investigation]
     of the sample label (``"BH-03 S-2 1.5-1.95 m"``), which is how many
     sheets name a specimen. The second string says which, for the QA note:
     empty for a whole match.
+
+    A sample number names no hole, so a name the logs ALSO give a sample
+    (``samples``, folded) -- a boring B-1 beside a pit's bulk sample B-1 --
+    is taken from a label only when that hole has a sample at the sheet's
+    depth; otherwise the label could be either, and nothing is linked.
     """
     printed = hole_key(test.investigation_id)
     if printed in by_id:
         return by_id[printed], ""
-    if printed:
-        key = _leading_hole(test.investigation_id, by_id)
-        return (by_id[key], "the boring as printed") if key else (None, "")
-    key = _leading_hole(test.sample_id, by_id)
-    return (by_id[key], "the sample label") if key else (None, "")
+    label, through = ((test.investigation_id, "the boring as printed")
+                      if printed else (test.sample_id, "the sample label"))
+    key = _leading_hole(label, by_id)
+    if not key:
+        return None, ""
+    if key in samples and _sample_at_depth(by_id[key], test)[0] is None:
+        return None, ""
+    return by_id[key], through
 
 
 def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
@@ -357,13 +365,15 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
         key = hole_key(inv.investigation_id)
         if key:
             by_id.setdefault(key, inv)
+    sample_names = {hole_key(s.sample_id) for inv in record.investigations
+                    for s in inv.samples if hole_key(s.sample_id)}
 
     from_labels: List[Tuple[LabTest, str, Investigation]] = []
     for test in record.lab_tests:
         if test.kind == "summary_table":
             _link_summary_rows(test, by_id, qa)
             continue
-        inv, through = _hole_for(test, by_id)
+        inv, through = _hole_for(test, by_id, sample_names)
         if inv is not None and through:
             from_labels.append((test, through, inv))
         printed = fold_id(test.investigation_id)
@@ -430,6 +440,12 @@ def _sample_for(inv: Investigation,
         for sample in inv.samples:
             if fold_id(sample.sample_id) == wanted:
                 return sample, _delta(sample, test)
+    return _sample_at_depth(inv, test)
+
+
+def _sample_at_depth(inv: Investigation, test: LabTest
+                     ) -> Tuple[Optional[Sample], Optional[float]]:
+    """The sample of ``inv`` at the sheet's depth, by depth alone."""
     depth = depth_m(test.depth_top)
     if depth is None:
         return None, None

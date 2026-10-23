@@ -198,6 +198,33 @@ class TestTheHoleInsideALabel:
 
         assert sheet.linked_investigation_id == "2"
 
+    @pytest.mark.parametrize("label", ["B-1", "B-1 40.0 ft"])
+    def test_a_name_the_logs_give_a_sample_is_not_read_as_a_hole(self, label):
+        # Boring B-1 AND the pit's bulk sample B-1: a label reading B-1 is a
+        # sample number as likely as a hole, and B-1 has no sample at the
+        # sheet's 40 ft to say otherwise.
+        sheet = atterberg(investigation="", sample=label, depth_ft=40.0)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == ""
+        assert _label_notes(record) == []
+
+    def test_a_hole_that_is_also_a_sample_name_links_at_its_own_depth(self):
+        # The same name, but B-1's log holds a sample at the sheet's 2.0 ft.
+        sheet = atterberg(investigation="", sample="B-1 2.0 ft")
+        reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == "S-1"
+
+    def test_a_printed_boring_that_is_also_a_sample_name_links_whole(self):
+        sheet = atterberg(investigation="S-2", sample="")
+        reconcile(build_record(
+            investigations=[boring("B-1"), boring("S-2")],
+            lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "S-2"
+
     def test_a_summary_row_with_the_hole_written_another_way_is_not_missing(
             self):
         table = summary_table()

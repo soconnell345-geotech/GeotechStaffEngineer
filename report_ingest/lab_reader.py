@@ -70,14 +70,14 @@ each with its own floor and its own budget, and the tests are put end to
 end. An item that fits is read exactly as before.
 
 THE SPECIMEN-LABEL SWITCH (RI-07, off by default). Many sheets print no
-"Boring" heading and name the specimen by the hole it came from -- a column
-headed Specimen Identification reading the hole beside its depth, a label
-reading hole, sample and depth together. Read against the rule above, the
-model files the hole as the sample and leaves the boring empty, and the test
-cannot be linked to the ground. :func:`use_link_from_label` (or
-``GEOTECH_INGEST_LAB_LINK_FROM_LABEL``) adds one paragraph telling it that a
-label which begins with the hole names the hole. It changes what the model
-is asked, so it stays off until a cluster run measures it.
+boring heading and name the specimen by the hole it came from -- the hole
+alone, or the hole, sample and depth in one label, wherever the form puts
+it. Read against the rule above, the model files the hole as the sample and
+leaves the boring empty, and the test cannot be linked to the ground.
+:func:`use_link_from_label` (or ``GEOTECH_INGEST_LAB_LINK_FROM_LABEL``) adds
+one paragraph telling it that a hole printed inside a specimen or sample
+label names the hole. It changes what the model is asked, so it stays off
+until a cluster run measures it.
 """
 
 from __future__ import annotations
@@ -838,19 +838,19 @@ _LINK_FORCED: ContextVar[Optional[bool]] = ContextVar(
 
 #: The paragraph the switch adds, after the link paragraph. Foundry runs 1-3
 #: lost the link on sheets that print the hole only as the specimen's label
-#: (RI-07): the values were read and every one was lost with the link.
+#: (RI-07): the values were read and every one was lost with the link. It is
+#: written for any layout, naming no form's own heading or wording.
 LINK_FROM_LABEL = """\
-A SAMPLE LABEL THAT BEGINS WITH THE HOLE NAMES THE HOLE. Many sheets print no
-heading such as Boring or Test Pit and name the specimen by the exploration
-it came from instead: a column headed Specimen or Sample I.D. that reads
-'B-4' beside '3.0 ft', a label such as 'B-4 3.0-3.5 m' or 'BH-2 S-3
-1.5-1.95 m', a French 'Prelevement : B-4', or the hole's identifier alone at
-the head of the sheet. Where the label begins with the identifier of a
-boring, test pit or sounding, copy that identifier, exactly as printed, into
-investigation_id, put the depth the label prints into depth_top and
+A HOLE PRINTED INSIDE A SAMPLE LABEL NAMES THE HOLE. A sheet need not print
+the boring under a heading of its own. Many name each specimen by the
+exploration it came from instead -- the identifier alone, or run together
+with a sample number and a depth -- wherever the laboratory's form puts the
+label: a title line, a column, a box, a caption, in any language and any
+order. Where a specimen or sample label carries the identifier of a boring,
+test pit or sounding, copy that identifier, exactly as printed, into
+investigation_id, put any depth the label prints into depth_top and
 depth_bottom, and keep the whole label in sample_id. A sample number on its
-own -- 'S-3', 'U-1', 'Ech. 4' -- names no hole: leave investigation_id empty
-for it.
+own names no hole: leave investigation_id empty for it.
 """
 
 _LINK_PARAGRAPH_END = "something\nelse will deal with it.\n"
