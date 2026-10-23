@@ -516,8 +516,11 @@ set; `parse_diggs26_soundings` reads it back row by row.
 **And the calculation grouping defect is fixed.** The calc reader's own hand
 truth found the item grouping folding four different calculations into one
 fifteen-page item where an appendix runs printouts back to back;
-`split_calc_items` splits a run on a changed running header or title block or
-a page that opens with a program banner, capped at `MAX_CALC_PAGES`.
+`split_calc_items` splits a run where a page's title, set as a title, names a
+different calculation, where the program changes, or where a banner returns;
+a run stays one item up to `MAX_RUN_PAGES` (22, what the reader's two calls
+show) and a longer one is cut into balanced parts (RI-17; see the
+report_ingest README).
 
 ### Where each piece lives
 
