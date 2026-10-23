@@ -144,17 +144,30 @@ def _paren_unit(header: str) -> str:
     return ""
 
 
+#: A drive printed as words: the sampler sank under the weight of the hammer
+#: or of the rods. It is a drive, but not a count.
+_WORD_DRIVE = re.compile(r"\bWO[HR]\b", re.I)
+
+
+def _word_drive(entry: Any) -> bool:
+    """Is this drive ``WOH`` or ``WOR`` as printed?"""
+    return isinstance(entry, str) and fold(entry) in ("woh", "wor")
+
+
 def _blow_tokens(text: str) -> List[Any]:
     """A blow record as the log printed it, or ``[]`` when the text is not
     one. ``5-9-12`` -> ``[5, 9, 12]``; ``12-30-50/5"`` -> ``[12, 30,
-    '50/5"']``; ``5/9/12`` -> ``[5, 9, 12]``; ``2+1+2`` -> ``[2, 1, 2]``.
+    '50/5"']``; ``5/9/12`` -> ``[5, 9, 12]``; ``2+1+2`` -> ``[2, 1, 2]``;
+    ``WOH-2-3`` -> ``['WOH', 2, 3]`` (RI-44: the words stay as printed; a
+    ``WOH`` alone is not a record).
 
     The plus is gINT's own spelling of a driven record and is as common in
     the corpus as the hyphen, so it is read here rather than left on the
     page.
     """
     raw = " ".join(str(text or "").split())
-    if not raw or not re.fullmatch(r'[\d\s+\-–/",.\'inmc]+', raw):
+    if not raw or not re.fullmatch(r'[\d\s+\-–/",.\'inmc]+',
+                                   _WORD_DRIVE.sub("0", raw)):
         return []
     if "+" in raw:
         pieces = re.split(r"\s*\+\s*", raw)
@@ -171,11 +184,14 @@ def _blow_tokens(text: str) -> List[Any]:
             continue
         if re.fullmatch(r"\d+", piece):
             out.append(int(piece))
+        elif _word_drive(piece):
+            out.append(piece)
         elif re.fullmatch(r'\d+\s*/\s*[\d.]+\s*(?:"|\'\'|in|cm|mm)?', piece):
             out.append(piece)
         else:
             return []
-    if len(out) < 2 and not (out and isinstance(out[0], str)):
+    if len(out) < 2 and not (out and isinstance(out[0], str)
+                             and not _word_drive(out[0])):
         return []
     return out
 
@@ -355,7 +371,9 @@ def _id_styles(grid: Any, cells: Sequence[Any],
     samples that way, and a bare number in it is a drive or a value printed
     under the id, not a second id. A column of bare numbers names samples by
     number only when its header says so (``SAMPLE NO.``); in a column headed
-    ``DATA`` a stack of ``4``, ``6``, ``7`` is a blow record.
+    ``DATA`` a stack of ``4``, ``6``, ``7`` is a blow record. Where the header
+    names the blows too, only the first line of each stack is a number
+    (:func:`_stack_heads`).
     """
     shapes: Dict[str, set] = {}
     for cell in cells:
@@ -372,6 +390,48 @@ def _id_styles(grid: Any, cells: Sequence[Any],
             styles[column_id] = ("number" if _NUMBER_HEADER.search(header)
                                  else "")
     return styles
+
+
+def _stack_heads(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
+                 span: float,
+                 by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                 ) -> Tuple[set, set]:
+    """``(heads, drives)``: in a column whose header names both the samples'
+    numbers and their blows (``SAMPLE NO. / BLOWS / REC``), which bare
+    numbers are a sample's number and which are its drives (RI-44).
+
+    The numbers look alike and the header names both, so the place in the
+    stack is the only clue: the first line of a stack is the sample's
+    number, and the bare numbers printed under it, within one sample's span
+    of it, are its drives. A stack that starts with anything else (``WOH``,
+    ``4-6-7``) has no number by position. Only in a column that names its
+    samples by number (:func:`_id_styles`); a column printing ``S-3`` names
+    them by that, and a bare number in it is never an id.
+    """
+    columns: Dict[Tuple[int, str], List[Any]] = {}
+    for cell in cells:
+        if styles.get(cell.column_id) != "number":
+            continue
+        if not {"sample_id", "blows"} <= set(_names(grid, cell, by_column)):
+            continue
+        if _text(cell).lower() in _TYPE_CODES:
+            continue                  # the sampler: neither id nor drive
+        columns.setdefault((cell.page, cell.column_id), []).append(cell)
+    heads: set = set()
+    drives: set = set()
+    for stack in columns.values():
+        stack.sort(key=lambda c: (float(c.depth), float(c.bbox[1])))
+        first: Optional[float] = None
+        for cell in stack:
+            number = _id_shape(_text(cell)) == "number"
+            if first is not None and float(cell.depth) - first <= span:
+                if number:
+                    drives.add(id(cell))
+                continue
+            first = float(cell.depth)
+            if number:
+                heads.add(id(cell))
+    return heads, drives
 
 
 def _is_words(text: str) -> bool:
@@ -609,6 +669,9 @@ class _Group:
         #: Values printed off every sample's lines on a sheet that has
         #: samples, which the geometry could not bind to one (RI-04).
         self.unbound = False
+        #: Cells that are the sample's number by their place in a stack
+        #: (:func:`_stack_heads`, RI-44).
+        self.heads: set = set()
 
     def takes(self, cell: Any, span: float,
               keys: Optional[Dict[int, Tuple[str, str]]] = None) -> bool:
@@ -690,6 +753,12 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         names = _names(grid, cell, by_column)
         text = _text(cell)
         texts.append(text)
+        if id(cell) in group.heads:
+            # The first line of a stack under a header naming both the
+            # sample numbers and the blows: the sample's number (RI-44).
+            if not sample_id:
+                sample_id = text
+            continue
         code = text.lower()
         # A sampler code: SS, ST, MC ... in any sample column; a single
         # letter only where the column is headed as the sample TYPE, since
@@ -757,7 +826,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                                         or "sample_id" in names) else []
         if tokens:
             blows = tokens
-            refusal = any(isinstance(t, str) for t in tokens)
+            refusal = any(isinstance(t, str) and not _word_drive(t)
+                          for t in tokens)
+            unread.extend(t for t in tokens if _word_drive(t))
             blow_cell = cell
             continue
         drive_column = ("blows" in names
@@ -880,6 +951,17 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     if not blows and len(stacked) >= 2:
         stacked.sort(key=lambda row: row[0])
         blows = [number for _key, number in stacked]
+    elif blows and blow_cell is not None:
+        # A WOH or WOR on its own line beside a record printed in one cell
+        # ("WOH" over "2-3"): a drive of that record, in the place it is
+        # printed (RI-44). A lone NUMBER beside the record stays out, as
+        # above: it may be an N.
+        at = (float(blow_cell.depth), float(blow_cell.bbox[1]),
+              float(blow_cell.bbox[0]))
+        words = sorted((row for row in stacked if _word_drive(row[1])),
+                       key=lambda row: row[0])
+        blows = ([w for key, w in words if key < at] + list(blows)
+                 + [w for key, w in words if key >= at])
     # The sampler is the one the log prints. Drives alone do not say SPT: a
     # ring or California sampler is driven too, and the model reads the
     # symbol (RI-04; the floor no longer calls every driven sample an SPT).
@@ -938,9 +1020,13 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
     # N, where the log prints a standard SPT's three drives and no N.
     n_basis = ""
-    if unread and kind == "spt" and n is None and not n_printed:
+    if unread and n is None and not n_printed and (
+            kind == "spt"
+            or (kind == "other" and any(_word_drive(t) for t in blows))):
         # A drive the floor could not count -- WOH, or a word it cannot
-        # read -- leaves the record's N to the reader (RI-04).
+        # read -- leaves the record's N to the reader (RI-04). So does a WOH
+        # kept in a record whose sampler the log does not name: it may be an
+        # SPT's (RI-44).
         remarks.append("a drive printed as '" + "', '".join(unread)
                        + "' is not a count; no N computed from the drives")
         if notes is not None:
@@ -1039,17 +1125,34 @@ _INCREMENT_TOL_M = 0.006
 #: A sample's drawn or printed interval over its three drives may be off the
 #: standard by this much a drive (a box is drawn to a line's width).
 _INTERVAL_TOL_M = 0.012
-#: "BLOWS/6 IN", "Blows per 6\"", "blows/15 cm", "blows/150 mm", "por 15 cm".
+_LENGTH_UNIT = (r"(\"|''|inch(?:es)?\b|in\b\.?|cm\b|mm\b|m\b|ft\b|foot\b"
+                r"|feet\b)")
+#: "BLOWS/6 IN", "Blows per 6\"", "Blows per 6-inch", "blows/15 cm",
+#: "blows/150 mm", "por 15 cm".
 _INCREMENT = re.compile(
-    r"(?:/|\bper\b|\bpor\b|\bpour\b)\s*(\d+(?:[.,]\d+)?)?\s*"
-    r"(\"|''|inch(?:es)?\b|in\b\.?|cm\b|mm\b|m\b|ft\b|foot\b|feet\b)", re.I)
+    r"(?:/|\bper\b|\bpor\b|\bpour\b)\s*(?:(\d+(?:[.,]\d+)?)\s*-?\s*)?"
+    + _LENGTH_UNIT, re.I)
+#: An increment the header names as one: '(6" INCREMENTS)', "6-in. incr.".
+_NAMED_INCREMENT = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*-?\s*" + _LENGTH_UNIT + r"\s*-?\s*incr", re.I)
 
 
 def header_increment(header: str) -> Optional[float]:
     """The drive increment a blows column's header prints, in metres, or
-    None when it prints none. ``BLOWS/FT`` is a foot: the N's own unit, not
-    a drive's, and never the standard increment."""
-    match = _INCREMENT.search(str(header or ""))
+    None when it prints none.
+
+    An increment the header states wins (RI-44): one it names as the
+    increment ('BLOWS / FOOT (6" INCREMENTS)'), else one printed with its
+    length ("Blows per 6 in" after "N-VALUE (blows/ft)"). A bare
+    ``BLOWS/FT`` is a foot: the N's own unit, not a drive's, and never the
+    standard increment, so no N is computed under it.
+    """
+    text = str(header or "")
+    match = _NAMED_INCREMENT.search(text)
+    if match is None:
+        found = list(_INCREMENT.finditer(text))
+        match = next((m for m in found if m.group(1)),
+                     found[0] if found else None)
     if match is None:
         return None
     number = float((match.group(1) or "1").replace(",", "."))
@@ -1162,9 +1265,10 @@ class _FloorNotes:
         "order": ("samples whose depth contradicts their neighbours' "
                   "(their numbers run out of order down the hole), kept at "
                   "a lower confidence"),
-        "drives": ("SPT drive records with an entry that is not a count "
-                   "(WOH, WOR, or a word the floor cannot read); no N is "
-                   "computed from them"),
+        "drives": ("drive records of an SPT, or of a sampler the log does "
+                   "not name, with an entry that is not a count (WOH, WOR, "
+                   "or a word the floor cannot read); no N is computed from "
+                   "them"),
         "empty": ("rows in the sample columns with nothing a sample has "
                   "(no id, sampler, drives, N or value, no drawn box); not "
                   "seeded as samples"),
@@ -1686,12 +1790,13 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
     cells.extend(labelled)
     cells.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
     styles = _id_styles(grid, cells, by_column)
+    heads, under = _stack_heads(grid, cells, styles, span, by_column)
     keys: Dict[int, Tuple[str, str]] = {}
     marks: set = set()
     for cell in cells:
         names = _names(grid, cell, by_column)
         key = _sample_key(_text(cell), names, styles.get(cell.column_id, ""))
-        if key is not None:
+        if key is not None and not (key[0] == "id" and id(cell) in under):
             keys[id(cell)] = key
         if id(cell) not in from_results and _marks_a_sample(_text(cell),
                                                             names):
@@ -1710,6 +1815,8 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
                                         - float(g.first))).add(cell)
         else:
             groups.append(_Group(cell))
+    for group in groups:
+        group.heads = {id(c) for c in group.cells if id(c) in heads}
 
     def gap(group: _Group, at: float) -> Tuple[float, int]:
         """How far ``at`` is from the lines the sample is printed on, and

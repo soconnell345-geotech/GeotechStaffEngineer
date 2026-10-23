@@ -410,6 +410,11 @@ class TestNFromDrives:
         ("BLOWS/6 IN", 0.1524), ('Blows per 6"', 0.1524),
         ("blows/15 cm", 0.15), ("blows/150 mm", 0.15), ("BLOWS/FT", 0.3048),
         ("BLOWS", None), ("N", None),
+        # RI-44: an increment the header states wins over the N's unit.
+        ("Blows per 6-inch", 0.1524),
+        ('BLOWS / FOOT (6" INCREMENTS)', 0.1524),
+        ("SPT N-VALUE (blows/ft) / Blows per 6 in", 0.1524),
+        ("N (blows/ft)", 0.3048), ("SAMPLE NO. / BLOWS / REC", None),
     ])
     def test_the_increment_a_header_prints(self, header, metres):
         got = header_increment(header)
@@ -573,6 +578,136 @@ class TestTheReviewsCases:
         inv, _ = _seed(cells, [ID, TYPE, BLOWS])
         assert inv.samples[0].kind == "ring"
         assert inv.spt[0].n is None
+
+
+# ---------------------------------------------------------------------------
+# RI-44: the RI-04 recheck's regression and the builder's probe cases
+# ---------------------------------------------------------------------------
+
+BOTH = _column("blows", "SAMPLE NO. / BLOWS / REC", "sample_id", "blows",
+               "recovery")
+
+
+class TestRI44:
+    def test_one_column_headed_both_ways_stacks_the_number_then_drives(self):
+        cells = [_cell("blows", "3", 3.0), _cell("blows", "4", 3.05),
+                 _cell("blows", "6", 3.10), _cell("blows", "7", 3.15),
+                 _cell("type", "SS", 3.0)]
+        inv, qa = _seed(cells, [BOTH, TYPE])
+        assert [s.sample_id for s in inv.samples] == ["3"]
+        assert inv.samples[0].kind == "spt"
+        assert [r.blows for r in inv.spt] == [[4, 6, 7]]
+        assert inv.samples[0].recovery_percent is None
+        assert qa == []
+
+    def test_two_stacks_in_that_column_are_two_samples(self):
+        cells = [_cell("blows", "1", 1.5), _cell("blows", "3", 1.55),
+                 _cell("blows", "4", 1.6), _cell("blows", "5", 1.65),
+                 _cell("blows", "2", 3.0), _cell("blows", "4-6-7", 3.05)]
+        inv, _ = _seed(cells, [BOTH])
+        assert [s.sample_id for s in inv.samples] == ["1", "2"]
+        assert [r.blows for r in inv.spt] == [[3, 4, 5], [4, 6, 7]]
+
+    def test_a_prefixed_id_in_that_column_reads_as_before(self):
+        cells = [_cell("blows", "S-3", 3.0), _cell("blows", "4", 3.05),
+                 _cell("blows", "6", 3.10), _cell("blows", "7", 3.15)]
+        inv, _ = _seed(cells, [BOTH])
+        assert [s.sample_id for s in inv.samples] == ["S-3"]
+        assert [r.blows for r in inv.spt] == [[4, 6, 7]]
+
+    def test_a_stack_that_starts_with_woh_has_no_number(self):
+        cells = [_cell("blows", "WOH", 3.0), _cell("blows", "2", 3.05),
+                 _cell("blows", "3", 3.10), _cell("type", "SS", 3.0)]
+        inv, qa = _seed(cells, [BOTH, TYPE])
+        assert [s.sample_id for s in inv.samples] == [""]
+        assert [r.blows for r in inv.spt] == [["WOH", 2, 3]]
+        assert inv.spt[0].n is None
+        assert _flags(qa) == ["floor_drives"]
+
+    def test_bare_number_ids_beside_a_blows_column_are_still_samples(self):
+        cells = []
+        for k, depth in enumerate((1.5, 3.0, 4.5), start=1):
+            cells += [_cell("id", str(k), depth), _cell("type", "SS", depth),
+                      _cell("blows", f"{k + 2}-{k + 3}-{k + 4}", depth)]
+        inv, _ = _seed(cells, [NUMBERED, TYPE, BLOWS])
+        assert [s.sample_id for s in inv.samples] == ["1", "2", "3"]
+        assert [r.n for r in inv.spt] == [9, 11, 13]
+
+    @pytest.mark.parametrize("code", [None, "SS"])
+    def test_a_woh_line_over_a_one_cell_record_stays_in_it(self, code):
+        cells = [_cell("rec", "S-3", 3.0), _cell("rec", "WOH", 3.05),
+                 _cell("rec", "2-3", 3.10)]
+        columns = [DATA]
+        if code:
+            cells.append(_cell("type", code, 3.0))
+            columns.append(TYPE)
+        inv, qa = _seed(cells, columns)
+        record = inv.spt[0]
+        assert record.blows == ["WOH", 2, 3]
+        assert record.n is None and not record.refusal
+        assert "WOH" in inv.samples[0].note
+        assert _flags(qa) == ["floor_drives"]
+
+    def test_a_lone_number_beside_a_one_cell_record_stays_out(self):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", "4-6-7", 1.5), _cell("blows", "13", 1.6)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        assert inv.spt[0].blows == [4, 6, 7]
+        assert inv.spt[0].n == 13
+
+    @pytest.mark.parametrize("text", ["WOH-2-3", "WOH/2/3"])
+    @pytest.mark.parametrize("code", [None, "SS"])
+    def test_woh_in_one_cell_is_a_drive_of_the_record(self, text, code):
+        cells = [_cell("id", "S-1", 3.0), _cell("blows", text, 3.0)]
+        columns = [ID, BLOWS]
+        if code:
+            cells.append(_cell("type", code, 3.0))
+            columns.append(TYPE)
+        inv, qa = _seed(cells, columns)
+        record = inv.spt[0]
+        assert record.blows == ["WOH", 2, 3]
+        assert record.n is None and record.n_basis == ""
+        assert not record.refusal
+        assert _flags(qa) == ["floor_drives"]
+
+    def test_a_woh_record_writes_to_diggs(self):
+        from report_ingest.diggs_writer import (
+            diggs_roundtrip_gate, write_diggs,
+        )
+        from report_ingest.model import Project
+
+        cells = [_cell("id", "S-1", 3.0), _cell("type", "SS", 3.0),
+                 _cell("blows", "WOH-2-3", 3.0)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        inv.investigation_id = "B-1"
+        xml = write_diggs(inv, Project(name="R"))
+        ok, diffs = diggs_roundtrip_gate(xml, [inv], project=Project(name="R"))
+        assert ok, diffs
+
+    def test_a_header_naming_the_6_inch_increment_gives_the_n(self):
+        blows = _column("blows", 'BLOWS / FOOT (6" INCREMENTS)', "blows")
+        cells = [_cell("id", "S-1", 3.0), _cell("type", "SS", 3.0),
+                 _cell("blows", "3-4-5", 3.0)]
+        inv, _ = _seed(cells, [ID, TYPE, blows])
+        assert inv.spt[0].n == 9
+        assert "INCREMENTS" in inv.spt[0].n_basis
+
+    def test_a_sheet_of_values_only_binds_by_the_same_rule(self):
+        # Sheet 1 prints values and no sample. The value at its head is
+        # clearly nearest the sample at the foot of sheet 0 and binds to it;
+        # the one far below binds to nothing and stays where printed,
+        # doubted and listed (left as RI-04 made it).
+        cells = [_cell("id", "S-1", 9.6, page=0),
+                 _cell("blows", "3-4-5", 9.6, page=0),
+                 _cell("mc", "22.0", 9.9, page=1),
+                 _cell("mc", "20.0", 12.0, page=1)]
+        inv, qa = _seed(cells, [ID, BLOWS, MC], pages=(0, 1))
+        assert _at(inv, 9.6).water_content == 22.0
+        loose = _at(inv, 12.0)
+        assert loose.water_content == 20.0
+        assert loose.prov.confidence == pytest.approx(0.3)
+        assert _flags(qa) == ["floor_unbound"]
+        assert "20.0" in qa[0]["value"] and "22.0" not in qa[0]["value"]
 
 
 # ---------------------------------------------------------------------------
