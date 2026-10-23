@@ -164,7 +164,7 @@ def _leading_hole(label: Any, keys: Any) -> Tuple[str, str]:
     ``("", "")`` when none does or the label names more than one.
 
     A sheet that prints no boring heading names the specimen by its hole --
-    ``"BH-7 U3"``, ``"BH1, U2"``, a hole, a sample and a depth run together
+    ``"BH-7 U3"``, ``"BH4, U1"``, a hole, a sample and a depth run together
     -- and a lab test carrying that label as its boring, or as its sample
     with no boring at all, names that hole first. Only holes the report's
     own logs hold are looked for, and only ones with a letter in them: a
