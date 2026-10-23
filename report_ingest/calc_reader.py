@@ -225,6 +225,12 @@ PROGRAM_PATTERNS: Tuple[str, ...] = (
     r"\bwinpas\b", r"\bdarwin\b", r"\bpca\s*spreadsheet\b", r"\bpcapave\b",
     r"\bfb[- ]?pier\b", r"\bfb[- ]?multipier\b", r"\ballpile\b",
     r"\bgint\b", r"\bgeo5\b", r"\bgeostru\b", r"\bslope\s*w\b",
+    # A program whose name is also an ordinary word ("SHAFT", "GROUP") is
+    # named only where its banner qualifies it: "for Windows", or a version
+    # ("SHAFT for Windows, Version 2017.8.12", "GROUP v10"). A drilled shaft
+    # or a pile group in prose is not a banner.
+    r"\b(?:shaft|group)\b(?=\s+for\s+windows\b"
+    r"|\s*,?\s*(?:version|ver\.?|release|v)\s*\d)",
 )
 _PROGRAM_RE = re.compile("|".join(PROGRAM_PATTERNS), re.I)
 #: A version printed beside the banner: ``Version 2018.11.3``, ``v6.2``,

@@ -176,6 +176,17 @@ class TestTheFloor:
         assert _program_in("Settle3 2023") == ("Settle3", "")
         assert _program_in("Spread Footing Settlement Calculation") is None
 
+    def test_a_program_named_by_a_word_needs_its_banner_to_say_so(self):
+        """RI-17: "SHAFT" and "GROUP" are words as well as programs. Their
+        banner is read where it says "for Windows" or gives a version; the
+        word in prose is not a banner."""
+        assert _program_in("SHAFT for Windows, Version 2017.8.12") == (
+            "SHAFT", "2017.8.12")
+        assert _program_in("GROUP for Windows") == ("GROUP", "")
+        assert _program_in("Group v10") == ("Group", "10")
+        assert _program_in("Section 1 is a drilled shaft with casing") is None
+        assert _program_in("the pile group version of the check") is None
+
     def test_the_floor_of_a_spreadsheet_names_no_program(self, spreadsheet):
         """Which is the right answer: a spreadsheet names none, and the
         reader must not be handed an invented one as its starting record."""
