@@ -1098,6 +1098,60 @@ class TestRI44:
         assert inv.spt[0].refusal and inv.spt[0].n == n
         assert ("floor_refusal_n" in _flags(qa)) is flagged
 
+    @pytest.mark.parametrize("blows, halted", [
+        ([25, '50/3"'], True),                  # short of the increment
+        ([3, 4, '10/0"'], True),                # failed to advance, under 50
+        ([12, 18, '35/2"'], True),
+        ([12, 18, "35/2"], True),               # no unit, under 6
+        ([25, '50/6"'], True),                  # ended before the third
+        ([20, 30, 51], True),                   # more than 50 in the last
+        ([50, 50], True),                       # 100 before the third
+        ([40, 30, 30], False),                  # complete at 100: N 60
+        ([52, 4, 28], False),                   # complete: N 32
+        (['4/6"', '6/6"', '7/6"'], False),       # written per increment
+        (["4/6", "6/6", "7/6"], False),
+        ([10, 20, "15/150 mm"], False),
+        (["10/15", "20/15", "30/15 cm"], False),
+        ([4, 6, 7], False),
+        (["WOH", 2, 3], False),
+    ])
+    def test_a_halt_is_one_the_manual_prints(self, blows, halted):
+        from report_ingest.log_floor import N_HALT_RULE, _halted
+
+        assert _halted(blows) is halted
+        assert "a total of 100 blows" in N_HALT_RULE
+        assert "fails to advance during 10 consecutive blows" in N_HALT_RULE
+
+    @pytest.mark.parametrize("drives", ['4/6"-6/6"-7/6"', "4/6-6/6-7/6"])
+    def test_a_record_written_per_increment_keeps_its_printed_n(self,
+                                                                drives):
+        cells = [_cell("id", "S-1", 1.0), _cell("type", "SS", 1.0),
+                 _cell("blows", drives, 1.0), _cell("n", "13", 1.0)]
+        inv, qa = _seed(cells, [ID, TYPE, BLOWS,
+                                _column("n", "N", "n_value")])
+        record = inv.spt[0]
+        assert (record.n, record.refusal) == (13, False)
+        assert "floor_refusal_n" not in _flags(qa)
+
+    def test_a_complete_record_after_a_hard_seating_drive_keeps_its_n(
+            self):
+        cells = [_cell("id", "S-1", 1.0), _cell("type", "SS", 1.0),
+                 _cell("blows", "52-4-28", 1.0), _cell("n", "32", 1.0)]
+        inv, qa = _seed(cells, [ID, TYPE, BLOWS,
+                                _column("n", "N", "n_value")])
+        assert inv.spt[0].n == 32
+        assert "floor_refusal_n" not in _flags(qa)
+
+    def test_a_no_advance_halt_under_50_has_no_n(self):
+        cells = [_cell("id", "S-1", 1.0), _cell("type", "SS", 1.0),
+                 _cell("blows", '3-4-10/0"', 1.0), _cell("n", "14", 1.0)]
+        inv, qa = _seed(cells, [ID, TYPE, BLOWS,
+                                _column("n", "N", "n_value")])
+        record = inv.spt[0]
+        assert (record.n, record.refusal) == (None, True)
+        assert "floor_refusal_n" in _flags(qa)
+        assert "14 printed as the N" in inv.samples[0].note
+
     @pytest.mark.parametrize("text", ["WOH-2-3", "WOH/2/3"])
     @pytest.mark.parametrize("code", [None, "SS"])
     def test_woh_in_one_cell_is_a_drive_of_the_record(self, text, code):
@@ -1230,6 +1284,58 @@ class TestTheModelsN:
         assert record.n == n
         assert [(a.value, a.method) for a in record.prov.alternatives
                 if a.field == "n"] == alternatives
+
+    def test_the_drives_n_of_drives_that_lost_is_not_carried(self):
+        # The model's 4-6-8 with N 14, box and note, wins: the floor's
+        # derived 13 was the N of 4-6-7.
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", "4-6-7", 1.5), _cell("n", "12", 1.5)]
+        floor, _ = _seed(cells, [ID, TYPE, BLOWS,
+                                 _column("n", "N", "n_value")])
+        floor.investigation_id = "B-1"
+        merged, _ = merge_investigations(
+            floor, _model(14, evidence=True, blows=(4, 6, 8)))
+        record = merged.spt[0]
+        assert (record.blows, record.n) == ([4, 6, 8], 14)
+        assert ("13", "derived") not in [
+            (a.value, a.method) for a in record.prov.alternatives]
+
+    @pytest.mark.parametrize("evidence", [False, True])
+    def test_a_model_n_under_50_on_a_halt_stays_beside_the_slot(
+            self, evidence):
+        # The floor dropped the printed 13 on 25-50/3"; the model reads the
+        # same 13. A halted record has no N (p. 3-51).
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", '25-50/3"', 1.5), _cell("n", "13", 1.5)]
+        floor, _ = _seed(cells, [ID, TYPE, BLOWS,
+                                 _column("n", "N", "n_value")])
+        floor.investigation_id = "B-1"
+        merged, log = merge_investigations(
+            floor, _model(13, evidence=evidence, blows=(25, '50/3"')))
+        record = merged.spt[0]
+        assert record.n is None and record.n_basis == ""
+        assert [(a.value, a.method) for a in record.prov.alternatives
+                if a.field == "n"] == [("13", "model")]
+        rows = self._n_rows(log)
+        assert len(rows) == 1 and rows[0]["model"] == "13"
+        assert "halt" in rows[0]["why"]
+
+    def test_a_model_only_record_under_50_on_a_halt_has_no_n(self):
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        merged, log = merge_investigations(
+            floor, _model(13, blows=(3, 4, '10/0"')))
+        record = merged.spt[0]
+        assert record.n is None
+        assert [a.value for a in record.prov.alternatives
+                if a.field == "n"] == ["13"]
+        assert len(self._n_rows(log)) == 1
+
+    def test_a_model_n_of_50_or_more_on_a_halt_stands(self):
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        merged, log = merge_investigations(
+            floor, _model(75, blows=(25, '50/3"')))
+        assert merged.spt[0].n == 75
+        assert self._n_rows(log) == []
 
     def test_a_model_n_that_agrees_with_the_drives_is_not_a_disagreement(
             self):

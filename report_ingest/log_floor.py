@@ -1249,6 +1249,10 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if len(blows) + len(extra) <= SPT_DRIVES:
             blows = ([w for key, w in extra if key < at] + list(blows)
                      + [w for key, w in extra if key >= at])
+    if refusal and not n_printed and not _halted(blows):
+        # Blows over a whole increment ('4/6"-6/6"-7/6"') are drives, not a
+        # halt (RI-44).
+        refusal = False
     # The sampler is the one the log prints. Drives alone do not say SPT: a
     # ring or California sampler is driven too, and the model reads the
     # symbol (RI-04; the floor no longer calls every driven sample an SPT).
@@ -1348,13 +1352,13 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             remarks.append(computed[1])
         elif computed is not None:
             n, n_basis = computed
-    elif n is not None and refusal and n < SPT_HALT_BLOWS:
-        # A printed N under the halt on drives that end in a refusal: the
-        # drive was halted, so the record has no N (p. 3-51), and the number
-        # is something else -- the next sample's number, a recovery (RI-44).
-        # Kept in the note, never as the N.
+    elif n is not None and n < SPT_HALT_BLOWS and _halted(blows):
+        # A printed N under 50 on drives that end in a halt: the record has
+        # no N (p. 3-51), so the number is something else -- the next
+        # sample's number, a recovery (RI-44). Kept in the note, never as
+        # the N.
         remarks.append(f"{n} printed as the N of drives that end in a "
-                       f"refusal, which have none ({N_HALT_RULE}, "
+                       f"halt, which have none (the halts printed in "
                        f"{N_RULE_SOURCE}); not read as the N")
         if notes is not None:
             notes.add(page, "refusal_n", f"{n} at {at}")
@@ -1445,11 +1449,15 @@ def _metres(length: float, unit: str) -> Optional[float]:
 #: is considered as a 'seating' penetration, while the number of blows to
 #: advance the second and third increments are summed to give the N-value".
 N_RULE_SOURCE = "FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51 (ASTM D 1586)"
-#: The halt printed on the same page: past it a drive record is a refusal,
-#: not an N.
-N_HALT_RULE = ("'The SPT can be halted ... if the number of blows exceeds 50 "
-               "in any given 6 in (150 mm) increment'")
+#: The halts printed on the same page, the whole sentence: a record stopped
+#: by one short of its three increments has no N. A halt for failing to
+#: advance can stop under 50 blows ('10/0"') and is still a halt with no N.
+N_HALT_RULE = ("'The SPT can be halted when a total of 100 blows have been "
+               "counted or if the number of blows exceeds 50 in any given "
+               "6 in (150 mm) increment, or if the sampler fails to advance "
+               "during 10 consecutive blows'")
 SPT_HALT_BLOWS = 50
+SPT_HALT_TOTAL = 100
 #: The standard increment, and how far a printed or measured one may sit from
 #: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
 SPT_INCREMENT_M = 0.1524
@@ -1499,6 +1507,75 @@ def header_increment(header: str) -> Optional[float]:
               "inches": 0.0254, "cm": 0.01, "mm": 0.001, "m": 1.0,
               "ft": 0.3048, "foot": 0.3048, "feet": 0.3048}.get(unit)
     return None if factor is None else number * factor
+
+
+#: A drive printed as blows over a distance: '50/3"', '10/0"', '25/150 mm'.
+_BLOWS_OVER = re.compile(r'(\d+)\s*/\s*([\d.]+)\s*("|\'\'|in|cm|mm)?')
+#: The increment written with no unit, in inches, centimetres and
+#: millimetres (6 in, 150 mm).
+_BARE_INCREMENT = (6.0, 15.0, 150.0)
+
+
+def _short_of_increment(length: float, unit: Optional[str]) -> bool:
+    """Is a drive's printed distance short of the 6 in (150 mm) increment?
+
+    With no unit, 6, 15 and 150 are the increment written per increment
+    ('4/6-6/6-7/6'); any other number under 150 is read as short of it,
+    which it is in centimetres and millimetres (layout judgment: a number
+    over 6 is no 6 in drive).
+    """
+    if unit is None:
+        return length < _BARE_INCREMENT[-1] and length not in _BARE_INCREMENT
+    metres = length * {"\"": 0.0254, "''": 0.0254, "in": 0.0254,
+                       "cm": 0.01, "mm": 0.001}[unit]
+    return metres < SPT_INCREMENT_M - _INCREMENT_TOL_M
+
+
+def _halted(blows: Sequence[Any]) -> bool:
+    """Do these printed drives END in a halt, so that the record has no N?
+
+    The halts are the ones :data:`N_HALT_RULE` prints: 100 blows in all, more
+    than 50 in one increment, or the sampler failing to advance. A record
+    ends in one when its last drive is printed as blows over a distance
+    short of the increment ('50/3"'; '10/0"', which failed to advance under
+    50), when its last drive has more than 50 blows, or when it stops before
+    its third increment at blows over a distance or at 100 blows. Three
+    whole increments are a complete record with its N, however hard the
+    seating drive was ([52, 4, 28]). Blows over a whole increment ('4/6"',
+    '6/6"', '7/6"': a record written per increment) are a drive like any
+    count (RI-44).
+    """
+    counts: List[int] = []
+    for entry in blows:
+        if isinstance(entry, bool):
+            continue
+        if isinstance(entry, int):
+            counts.append(entry)
+            continue
+        match = _BLOWS_OVER.fullmatch(str(entry).strip())
+        if match:
+            counts.append(int(match.group(1)))
+    if not blows:
+        return False
+    last = blows[-1]
+    over = (None if isinstance(last, (int, bool))
+            else _BLOWS_OVER.fullmatch(str(last).strip()))
+    if isinstance(last, int) and not isinstance(last, bool):
+        last_count: Optional[int] = last
+    else:
+        last_count = int(over.group(1)) if over else None
+    if last_count is not None and last_count > SPT_HALT_BLOWS:
+        return True
+    if len(blows) < SPT_DRIVES and (over is not None
+                                    or sum(counts) >= SPT_HALT_TOTAL):
+        return True
+    if over is None:
+        return False
+    try:
+        length = float(over.group(2))
+    except ValueError:
+        return True
+    return _short_of_increment(length, over.group(3))
 
 
 def n_from_drives(blows: Sequence[Any], *, sampler: str,
@@ -1621,9 +1698,11 @@ class _FloorNotes:
                        "after the blows; the lines are kept as drives and "
                        "no N is computed from them"),
         "refusal_n": ("numbers under 50 printed as the N of drives that "
-                      "end in a refusal; such a record has no N (FHWA "
-                      "NHI-06-088 Vol. I, Sec. 3.7, p. 3-51), so each is "
-                      "kept in its sample's note, not as the N"),
+                      "end in a halt (100 blows, more than 50 in an "
+                      "increment, or short of the increment); such a "
+                      "record has no N (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
+                      "p. 3-51), so each is kept in its sample's note, not "
+                      "as the N"),
         "n_drives": ("printed Ns that differ from the 2nd + 3rd of the "
                      "printed drives (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
                      "p. 3-51); the printed N stands and the drives' N is "
@@ -2903,11 +2982,15 @@ class _Merger:
                 prov.confidence = max(0.0, min(1.0, confidences[-1]))
             prov.alternatives.extend(alternatives)
             if floor_prov is not None and model_prov is not None:
-                # What the floor kept beside its own reading -- the drives'
-                # N beside a printed one (RI-44) -- stays beside the merged
-                # slot, unless it is now the slot's value.
+                # The floor's drives' N beside a printed one (RI-44) stays
+                # beside the merged N while those drives stand and it is not
+                # the merged N itself; from drives that lost, it is no N of
+                # this record.
                 for alt in floor_prov.alternatives:
-                    if (show(getattr(merged, alt.field, None)) != alt.value
+                    if (alt.field == "n"
+                            and getattr(merged, "blows", None)
+                            == getattr(f, "blows", None)
+                            and show(getattr(merged, "n", None)) != alt.value
                             and alt not in prov.alternatives):
                         prov.alternatives.append(alt.model_copy(deep=True))
                 prov.note = (f"{model_prov.note}; " if model_prov.note
@@ -2978,7 +3061,14 @@ class _Merger:
         rule applies, and a difference is a disagreement under the floor's
         one rule: the model's N stands only with a box and a note, the
         other is kept beside it, and the QA section lists both.
+
+        An N under 50 on drives that end in a halt is never in the slot,
+        whoever read it (RI-44): such a record has no N (p. 3-51).
         """
+        if (merged.n is not None and merged.n < SPT_HALT_BLOWS
+                and _halted(merged.blows)):
+            self.halt_n(merged, f, m, where, what)
+            return
         if f is not None and f.n_basis:
             if merged.n == f.n:
                 merged.n_basis = f.n_basis
@@ -3028,6 +3118,48 @@ class _Merger:
                     "the model's is kept beside it")),
             page=page, floor_method="derived",
             floor_confidence=computed_confidence,
+            model_confidence=_conf(m.prov, 0.9),
+            model_method=m.prov.method if m.prov is not None else "model")
+
+    def halt_n(self, merged: SPT, f: Optional[SPT], m: SPT, where: str,
+               what: str) -> None:
+        """Take an N under 50 out of the slot of a record whose drives end
+        in a halt, keep it beside the slot, and list it (RI-44)."""
+        n = merged.n
+        if m.n == n:
+            method = (m.prov.method if m.prov is not None
+                      and m.prov.method in ("model", "model_from_picture",
+                                            "vision") else "model")
+            confidence, whose = _conf(m.prov, 0.9), "the model's N"
+        elif f is not None and f.n == n and f.n_basis:
+            method, confidence = "derived", _conf(f.prov, 0.5)
+            whose = f"the floor's N, {f.n_basis}"
+        else:
+            method = (f.prov.method if f is not None and f.prov is not None
+                      else "grid")
+            confidence, whose = _conf(f.prov if f else None, 0.5), \
+                "the floor's N"
+        merged.n, merged.n_basis = None, ""
+        if merged.prov is not None:
+            merged.prov.alternatives.append(Alternative(
+                field="n", value=show(n), method=method,  # type: ignore[arg-type]
+                confidence=confidence,
+                note=(f"{whose}; the drives end in a halt, so the record "
+                      f"has no N ({N_RULE_SOURCE})")))
+        page = (m.prov.page if m.prov is not None
+                else f.prov.page if f is not None and f.prov is not None
+                else None)
+        from_model = method != "derived" and m.n == n
+        self.log.disagree(
+            where, f"{what}: n",
+            "none" if from_model else n, n if from_model else "none",
+            kept="floor" if from_model else "model",
+            why=(f"an N of {n} on drives that end in a halt (100 blows, "
+                 f"more than 50 in an increment, or short of the "
+                 f"increment); such a record has no N ({N_RULE_SOURCE}), "
+                 f"so the N is kept beside the slot, not in it"),
+            page=page, floor_method="derived" if from_model else method,
+            floor_confidence=_conf(f.prov if f else None, 0.5),
             model_confidence=_conf(m.prov, 0.9),
             model_method=m.prov.method if m.prov is not None else "model")
 
