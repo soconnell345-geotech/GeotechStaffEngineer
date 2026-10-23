@@ -51,9 +51,11 @@ __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
            "N_RULE_SOURCE", "N_HALT_RULE"]
 
 #: How far apart two placed cells may be and still belong to one sample: a
-#: driven sample is 0.46 m (18 in) long and its blow record, its N and its
-#: index values are printed against it, one to three lines apart.
-GROUP_SPAN_M = 0.46
+#: driven sample is three 6 in (150 mm) drives, 18 in (0.4572 m), long (FHWA
+#: NHI-06-088 Vol. I, Sec. 3.7, p. 3-51), and its blow record, its N and its
+#: index values are printed against it. It measures DEPTH; a stack of
+#: printed lines is read by its lines (:func:`_read_stacks`), not by this.
+GROUP_SPAN_M = 0.4572
 FT_PER_M = 3.280839895
 
 #: The columns whose cells mark a sample. A description, a depth tick, a
@@ -373,7 +375,7 @@ def _id_styles(grid: Any, cells: Sequence[Any],
     number only when its header says so (``SAMPLE NO.``); in a column headed
     ``DATA`` a stack of ``4``, ``6``, ``7`` is a blow record. Where the header
     names the blows too, only the first line of each stack is a number
-    (:func:`_stack_heads`).
+    (:func:`_read_stacks`).
     """
     shapes: Dict[str, set] = {}
     for cell in cells:
@@ -392,46 +394,206 @@ def _id_styles(grid: Any, cells: Sequence[Any],
     return styles
 
 
-def _stack_heads(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
-                 span: float,
-                 by_column: Optional[Dict[str, Tuple[str, ...]]] = None
-                 ) -> Tuple[set, set]:
-    """``(heads, drives)``: in a column whose header names both the samples'
-    numbers and their blows (``SAMPLE NO. / BLOWS / REC``), which bare
-    numbers are a sample's number and which are its drives (RI-44).
+# ---------------------------------------------------------------------------
+# a column headed as both the sample numbers and the blows (RI-44)
+# ---------------------------------------------------------------------------
+#
+# "SAMPLE NO. / BLOWS / REC" over a stack of bare numbers, one to a line:
+# the number, the drives, the recovery. The numbers look alike and the
+# header names them all, so the only clue is each line's place in its stack,
+# and a stack is found by the printed LINES, never by a depth: at the scale a
+# log is printed, a stack of four or five lines may run well past the
+# sample's own 18 in. Where the stacks cannot be found and read with
+# certainty, the column is read as it was before RI-44 (no sample number
+# from it, no N) and the QA section lists it: a missing N is a gap the
+# reader fills, a wrong one is a wrong record.
 
-    The numbers look alike and the header names both, so the place in the
-    stack is the only clue: the first line of a stack is the sample's
-    number, and the bare numbers printed under it, within one sample's span
-    of it, are its drives. A stack that starts with anything else (``WOH``,
-    ``4-6-7``) has no number by position. Only in a column that names its
-    samples by number (:func:`_id_styles`); a column printing ``S-3`` names
-    them by that, and a bare number in it is never an id.
+#: How many drives a standard SPT record holds: three 6 in (150 mm)
+#: increments (FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51).
+SPT_DRIVES = 3
+
+
+def _centre(cell: Any) -> float:
+    return (float(cell.bbox[1]) + float(cell.bbox[3])) / 2.0
+
+
+def _same_line(a: Any, b: Any) -> bool:
+    """Are two cells printed on one line of text?"""
+    height = max(float(a.bbox[3]) - float(a.bbox[1]),
+                 float(b.bbox[3]) - float(b.bbox[1]), 1e-6)
+    return abs(_centre(a) - _centre(b)) <= 0.5 * height
+
+
+def _line_pitch(lines: Sequence[Any]) -> Optional[float]:
+    """The distance from one printed line to the next in a column: the
+    smallest step between two of its lines that are not on one line."""
+    steps = [_centre(b) - _centre(a) for a, b in zip(lines, lines[1:])
+             if not _same_line(a, b)]
+    return min(steps) if steps else None
+
+
+def _runs(lines: Sequence[Any], pitch: Optional[float]) -> List[List[Any]]:
+    """The column's lines cut where a blank line opens: a step of more than
+    a line and a half. Lines printed one under the next stay together."""
+    out: List[List[Any]] = []
+    for cell in lines:
+        if out and (pitch is None
+                    or _centre(cell) - _centre(out[-1][-1]) <= 1.5 * pitch):
+            out[-1].append(cell)
+        else:
+            out.append([cell])
+    return out
+
+
+@dataclass
+class _Stack:
+    """One sample's lines in a column headed as both the sample numbers and
+    the blows, top down: its number, its drives, its recovery."""
+
+    lines: List[Any]
+    recovery: Any = None
+    #: A cell on the number's line that anchored the stack (a sampler code).
+    anchor: Any = None
+    #: Set when the last line may be the recovery rather than a drive: the
+    #: drives are kept as printed and no N is computed from them.
+    rec_doubt: bool = False
+
+
+def _read_stack(lines: Sequence[Any], rec_named: bool, complete: bool
+                ) -> Optional[_Stack]:
+    """A stack read as a sample number, at most :data:`SPT_DRIVES` drives
+    and, where the header names REC, one recovery line after them; None
+    when it does not read so.
+
+    The drives are bare counts, ``WOH`` or ``WOR`` one to a line, or one
+    printed record (``4-6-7``). They end at the third drive or at a refusal
+    (``50/3"``), where the drive halts (p. 3-51); a line after that is the
+    recovery. With ``complete``, a stack whose drives do not end so does not
+    read: with no sampler code or drawn box to say where a sample starts, a
+    short stack may be the tail of another.
+    """
+    head = lines[0]
+    if _id_shape(_text(head)) != "number":
+        return None
+    entries, done, last = 0, False, ""
+    recovery = None
+    for above, cell in zip(lines, lines[1:]):
+        if _same_line(above, cell):
+            return None               # two items on one line: not a stack
+        text = _text(cell)
+        if _N_VALUE.search(text) or _N_PRINTED.search(text):
+            continue                  # a printed N, read as one
+        if recovery is not None:
+            return None
+        if done:
+            if not rec_named:
+                return None
+            recovery = cell
+            continue
+        tokens = _blow_tokens(text)
+        if re.fullmatch(r"\d{1,3}", text) or _word_drive(text):
+            entries += 1
+            last = "count" if text.isdigit() else "word"
+        elif tokens:
+            entries += len(tokens)
+            last = "record"
+            done = any(isinstance(t, str) and not _word_drive(t)
+                       for t in tokens)
+        else:
+            return None
+        if entries > SPT_DRIVES:
+            return None
+        done = done or entries == SPT_DRIVES
+    if complete and not done:
+        return None
+    return _Stack(list(lines), recovery,
+                  rec_doubt=rec_named and recovery is None and last == "count")
+
+
+def _number_of(cell: Any) -> int:
+    return int(re.match(r"\d+", _text(cell)).group(0))
+
+
+def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
+                 by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                 ) -> Tuple[List[_Stack], List[List[Any]]]:
+    """``(stacks read, runs not read)`` for every column whose header names
+    both the samples' numbers and their blows and which numbers its samples
+    (:func:`_id_styles`); a column printing ``S-3`` names its samples by
+    that, and a bare number in it is never an id.
+
+    A sample starts on the line of its sampler code in a TYPE column, or at
+    the first line inside a box ``log_grid`` drew; with neither on the
+    page, at a blank line. A column is read only when EVERY line of it on
+    the page falls in a stack that reads (:func:`_read_stack`) and the
+    numbers its stacks start with run on down the hole, each the one before
+    or the next: a sampler code printed a line below the number, or a stack
+    the blank lines cut wrongly, would otherwise start a sample at a blow
+    count. Any other column is returned as its runs, to be read as before
+    and listed.
     """
     columns: Dict[Tuple[int, str], List[Any]] = {}
+    anchors: Dict[int, List[Any]] = {}
     for cell in cells:
-        if styles.get(cell.column_id) != "number":
-            continue
-        if not {"sample_id", "blows"} <= set(_names(grid, cell, by_column)):
-            continue
+        names = set(_names(grid, cell, by_column))
+        both = {"sample_id", "blows"} <= names
         if _text(cell).lower() in _TYPE_CODES:
-            continue                  # the sampler: neither id nor drive
-        columns.setdefault((cell.page, cell.column_id), []).append(cell)
-    heads: set = set()
-    drives: set = set()
-    for stack in columns.values():
-        stack.sort(key=lambda c: (float(c.depth), float(c.bbox[1])))
-        first: Optional[float] = None
-        for cell in stack:
-            number = _id_shape(_text(cell)) == "number"
-            if first is not None and float(cell.depth) - first <= span:
-                if number:
-                    drives.add(id(cell))
+            if "sample_type" in names and not both:
+                anchors.setdefault(cell.page, []).append(cell)
+            continue                  # the sampler: neither number nor drive
+        if both and styles.get(cell.column_id) == "number":
+            columns.setdefault((cell.page, cell.column_id), []).append(cell)
+    boxes = list(getattr(grid, "samples", None) or [])
+    read: List[_Stack] = []
+    unread: List[List[Any]] = []
+    for (page, column_id), lines in sorted(columns.items()):
+        lines.sort(key=lambda c: (_centre(c), float(c.bbox[0])))
+        header = str(getattr(grid.column(column_id), "header", "") or "")
+        rec_named = bool(re.search(r"\bREC", header, re.I))
+        pitch = _line_pitch(lines)
+        starts: Dict[int, Any] = {}
+        for anchor in anchors.get(page, ()):
+            on = [k for k, c in enumerate(lines) if _same_line(c, anchor)]
+            if on:
+                starts.setdefault(on[0], anchor)
+        for box in boxes:
+            pages = (set(getattr(box, "pages", ()) or ())
+                     | {getattr(box, "page", None)})
+            if page not in pages:
                 continue
-            first = float(cell.depth)
-            if number:
-                heads.add(id(cell))
-    return heads, drives
+            tol = float(getattr(box, "plus_minus", None) or 0.05)
+            inside = [k for k, c in enumerate(lines)
+                      if float(box.top) - tol <= float(c.depth)
+                      <= float(box.bottom) + tol]
+            if inside:
+                starts.setdefault(inside[0], None)
+        if starts:
+            order = sorted(starts)
+            pieces = [lines[k:order[n + 1]] if n + 1 < len(order)
+                      else _runs(lines[k:], pitch)[0]
+                      for n, k in enumerate(order)]
+            stacks = [_read_stack(p, rec_named, complete=False)
+                      for p in pieces]
+            covered = (order[0] == 0
+                       and order[-1] + len(pieces[-1]) == len(lines))
+            for stack, k in zip(stacks, order):
+                if stack is not None:
+                    stack.anchor = starts[k]
+        else:
+            pieces = _runs(lines, pitch)
+            stacks = [_read_stack(p, rec_named, complete=True)
+                      for p in pieces]
+            covered = True
+        numbers = [_number_of(s.lines[0]) for s in stacks if s is not None]
+        if (covered and all(s is not None for s in stacks)
+                and all(b - a in (0, 1) and x.lines[0] is not y.lines[0]
+                        and _text(x.lines[0]) != _text(y.lines[0])
+                        for a, b, x, y in zip(numbers, numbers[1:],
+                                              stacks, stacks[1:]))):
+            read.extend(stacks)                      # type: ignore[arg-type]
+        else:
+            unread.extend(_runs(lines, pitch))
+    return read, unread
 
 
 def _is_words(text: str) -> bool:
@@ -669,9 +831,13 @@ class _Group:
         #: Values printed off every sample's lines on a sheet that has
         #: samples, which the geometry could not bind to one (RI-04).
         self.unbound = False
-        #: Cells that are the sample's number by their place in a stack
-        #: (:func:`_stack_heads`, RI-44).
+        #: From a stack in a column headed as both the sample numbers and
+        #: the blows (:func:`_read_stacks`, RI-44): the cell that is the
+        #: sample's number by its place, and the one that is its recovery.
         self.heads: set = set()
+        self.recovery: set = set()
+        #: Why no N is computed from this sample's drives (RI-44), or empty.
+        self.doubt = ""
 
     def takes(self, cell: Any, span: float,
               keys: Optional[Dict[int, Tuple[str, str]]] = None) -> bool:
@@ -759,6 +925,8 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             if not sample_id:
                 sample_id = text
             continue
+        if id(cell) in group.recovery:
+            names = ("recovery",)     # the stack's line after its drives
         code = text.lower()
         # A sampler code: SS, ST, MC ... in any sample column; a single
         # letter only where the column is headed as the sample TYPE, since
@@ -951,17 +1119,24 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     if not blows and len(stacked) >= 2:
         stacked.sort(key=lambda row: row[0])
         blows = [number for _key, number in stacked]
-    elif blows and blow_cell is not None:
-        # A WOH or WOR on its own line beside a record printed in one cell
-        # ("WOH" over "2-3"): a drive of that record, in the place it is
-        # printed (RI-44). A lone NUMBER beside the record stays out, as
-        # above: it may be an N.
+    elif blows and blow_cell is not None and len(blows) < SPT_DRIVES:
+        # A record printed in one cell with fewer than three drives takes the
+        # drives printed one to a line beside it, in the place they are
+        # printed (RI-44): a WOH or WOR line ("WOH" over "2-3"), and the
+        # counts printed ABOVE a record that ends in a refusal ("25" over
+        # '50/3"'), since the drive is halted at the refusal (p. 3-51). Never
+        # past three drives. A lone number beside a full record, or below a
+        # refusal, stays out, as above: it may be an N.
         at = (float(blow_cell.depth), float(blow_cell.bbox[1]),
               float(blow_cell.bbox[0]))
-        words = sorted((row for row in stacked if _word_drive(row[1])),
-                       key=lambda row: row[0])
-        blows = ([w for key, w in words if key < at] + list(blows)
-                 + [w for key, w in words if key >= at])
+        extra = [row for row in stacked if _word_drive(row[1])]
+        if isinstance(blows[-1], str) and not _word_drive(blows[-1]):
+            extra += [row for row in stacked
+                      if isinstance(row[1], int) and row[0] < at]
+        extra.sort(key=lambda row: row[0])
+        if len(blows) + len(extra) <= SPT_DRIVES:
+            blows = ([w for key, w in extra if key < at] + list(blows)
+                     + [w for key, w in extra if key >= at])
     # The sampler is the one the log prints. Drives alone do not say SPT: a
     # ring or California sampler is driven too, and the model reads the
     # symbol (RI-04; the floor no longer calls every driven sample an SPT).
@@ -1031,6 +1206,11 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                        + "' is not a count; no N computed from the drives")
         if notes is not None:
             notes.add(page, "drives", f"'{'; '.join(unread)}' at {at}")
+    elif group.doubt and blows and n is None and not n_printed:
+        # A stack whose lines cannot all be told apart (RI-44): the drives
+        # stay as printed, the N is left to the reader. Listed in QA by
+        # _sample_groups.
+        remarks.append(group.doubt + "; no N computed from the drives")
     elif n is None and not n_printed and not refusal and blows:
         drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
                                    else None)
@@ -1135,6 +1315,9 @@ _INCREMENT = re.compile(
 #: An increment the header names as one: '(6" INCREMENTS)', "6-in. incr.".
 _NAMED_INCREMENT = re.compile(
     r"(\d+(?:[.,]\d+)?)\s*-?\s*" + _LENGTH_UNIT + r"\s*-?\s*incr", re.I)
+#: A hammer's weight before the slash, or "drop" after the length: the fall.
+_HAMMER_BEFORE = re.compile(r"(?:\blbs?\.?|\bkg|#|\bpounds?)\s*$", re.I)
+_DROP_AFTER = re.compile(r"\s*\.?\s*(?:drop|fall)\b", re.I)
 
 
 def header_increment(header: str) -> Optional[float]:
@@ -1150,7 +1333,10 @@ def header_increment(header: str) -> Optional[float]:
     text = str(header or "")
     match = _NAMED_INCREMENT.search(text)
     if match is None:
-        found = list(_INCREMENT.finditer(text))
+        # "140 lb / 30 in drop" is the hammer's weight and fall, not a drive.
+        found = [m for m in _INCREMENT.finditer(text)
+                 if not _HAMMER_BEFORE.search(text[:m.start()])
+                 and not _DROP_AFTER.match(text[m.end():])]
         match = next((m for m in found if m.group(1)),
                      found[0] if found else None)
     if match is None:
@@ -1272,6 +1458,15 @@ class _FloorNotes:
         "empty": ("rows in the sample columns with nothing a sample has "
                   "(no id, sampler, drives, N or value, no drawn box); not "
                   "seeded as samples"),
+        "stack": ("runs of lines in a column {header} that do not read, "
+                  "line by line, as a sample number, at most three drives "
+                  "(FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51) and a "
+                  "recovery, with each sample's number the one before or "
+                  "the next; read as before, with no sample number taken "
+                  "from them and no N computed"),
+        "stack_rec": ("samples in a column {header} whose last line may be "
+                      "the recovery or a third drive; the lines are kept as "
+                      "drives and no N is computed from them"),
     }
 
     def __init__(self) -> None:
@@ -1790,21 +1985,45 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
     cells.extend(labelled)
     cells.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
     styles = _id_styles(grid, cells, by_column)
-    heads, under = _stack_heads(grid, cells, styles, span, by_column)
+    # A column headed as both the sample numbers and the blows, read stack
+    # by stack (RI-44): each stack that reads is one sample, whatever depth
+    # its lines run over.
+    stacks, unread = _read_stacks(grid, cells, styles, by_column)
+    groups: List[_Group] = []
+    for stack in stacks:
+        group = _Group(stack.lines[0])
+        for cell in stack.lines[1:] + [c for c in (stack.anchor,)
+                                       if c is not None]:
+            group.add(cell)
+        group.heads = {id(stack.lines[0])}
+        group.recovery = {id(c) for c in (stack.recovery,) if c is not None}
+        if stack.rec_doubt:
+            group.doubt = "the last line may be the recovery"
+            notes.add(group.page, "stack_rec",
+                      f"sample {_text(stack.lines[0])} at "
+                      f"{float(group.first):g}",
+                      header=_header(grid, stack.lines[0]))
+        groups.append(group)
+    placed = {id(c) for g in groups for c in g.cells}
+    drives = {id(c) for s in stacks for c in s.lines[1:]}
+    in_unread = {id(c) for run in unread for c in run}
+    for run in unread:
+        notes.add(run[0].page, "stack",
+                  f"'{'; '.join(_text(c) for c in run)[:60]}' at "
+                  f"{float(run[0].depth):g}", header=_header(grid, run[0]))
     keys: Dict[int, Tuple[str, str]] = {}
     marks: set = set()
     for cell in cells:
         names = _names(grid, cell, by_column)
         key = _sample_key(_text(cell), names, styles.get(cell.column_id, ""))
-        if key is not None and not (key[0] == "id" and id(cell) in under):
+        if key is not None and not (key[0] == "id" and id(cell) in drives):
             keys[id(cell)] = key
         if id(cell) not in from_results and _marks_a_sample(_text(cell),
                                                             names):
             marks.add(id(cell))
 
-    groups: List[_Group] = []
     for cell in cells:
-        if id(cell) not in marks:
+        if id(cell) not in marks or id(cell) in placed:
             continue
         # Any sample at this depth takes the cell, whichever sheet it is
         # on: the rows are sorted by page first, so a second sheet's
@@ -1815,8 +2034,6 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
                                         - float(g.first))).add(cell)
         else:
             groups.append(_Group(cell))
-    for group in groups:
-        group.heads = {id(c) for c in group.cells if id(c) in heads}
 
     def gap(group: _Group, at: float) -> Tuple[float, int]:
         """How far ``at`` is from the lines the sample is printed on, and
@@ -1828,7 +2045,7 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
             return at - max(lines), 1
         return 0.0, 0
 
-    values = [c for c in cells if id(c) not in marks]
+    values = [c for c in cells if id(c) not in marks and id(c) not in placed]
     left: List[Any] = []
     off_lines: List[Tuple[Any, _Group, int]] = []
     for cell in values:
@@ -1885,6 +2102,12 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
             continue
         group.unbound = True
         kept.append(group)
+    for group in kept:
+        if any(id(c) in in_unread for c in group.cells + group.bound):
+            # Read as before RI-44, and no N from it: which of its numbers
+            # are drives is not known.
+            group.doubt = ("printed in a stack that does not read as a "
+                           "sample number and its drives")
     kept.sort(key=lambda g: (g.page, float(g.first)))
     return kept
 

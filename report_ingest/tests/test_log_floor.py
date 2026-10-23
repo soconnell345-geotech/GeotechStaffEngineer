@@ -215,7 +215,8 @@ class TestBinding:
         assert [r.blows for r in inv.spt] == [[3, 4, 5], [6, 7, 8]]
 
     def test_the_nearer_of_two_samples_takes_a_cell(self):
-        assert GROUP_SPAN_M == pytest.approx(0.46)
+        # Three 6 in drives, 18 in (FHWA NHI-06-088 Vol. I, p. 3-51).
+        assert GROUP_SPAN_M == pytest.approx(3 * 6 * 0.0254)
         cells = [_cell("id", "S-1", 1.5), _cell("id", "S-2", 1.9),
                  _cell("mc", "22.0", 1.85)]
         inv, _ = _seed(cells, [ID, MC])
@@ -415,6 +416,9 @@ class TestNFromDrives:
         ('BLOWS / FOOT (6" INCREMENTS)', 0.1524),
         ("SPT N-VALUE (blows/ft) / Blows per 6 in", 0.1524),
         ("N (blows/ft)", 0.3048), ("SAMPLE NO. / BLOWS / REC", None),
+        # The hammer's weight and fall are not a drive.
+        ("Blows/ft (140 lb / 30 in drop)", 0.3048),
+        ("140 lb / 30 in. drop  BLOWS/6 IN", 0.1524),
     ])
     def test_the_increment_a_header_prints(self, header, metres):
         got = header_increment(header)
@@ -581,49 +585,252 @@ class TestTheReviewsCases:
 
 
 # ---------------------------------------------------------------------------
-# RI-44: the RI-04 recheck's regression and the builder's probe cases
+# RI-44: a column headed as both the sample numbers and the blows, printed
+# at the scales logs are printed at
 # ---------------------------------------------------------------------------
 
 BOTH = _column("blows", "SAMPLE NO. / BLOWS / REC", "sample_id", "blows",
                "recovery")
+BOTH6 = _column("blows", "SAMPLE NO. / BLOWS/6 IN / REC", "sample_id",
+                "blows", "recovery")
+NO_REC6 = _column("blows", "SAMPLE NO. / BLOWS/6 IN", "sample_id", "blows")
 
 
-class TestRI44:
-    def test_one_column_headed_both_ways_stacks_the_number_then_drives(self):
-        cells = [_cell("blows", "3", 3.0), _cell("blows", "4", 3.05),
-                 _cell("blows", "6", 3.10), _cell("blows", "7", 3.15),
-                 _cell("type", "SS", 3.0)]
-        inv, qa = _seed(cells, [BOTH, TYPE])
-        assert [s.sample_id for s in inv.samples] == ["3"]
-        assert inv.samples[0].kind == "spt"
-        assert [r.blows for r in inv.spt] == [[4, 6, 7]]
-        assert inv.samples[0].recovery_percent is None
+def _sheet(pitch, line_pt=9.0, text_pt=7.0):
+    """A cell maker for a sheet printed at a real scale: one line of text,
+    ``line_pt`` points apart, is ``pitch`` of depth. 0.15 m a line is about
+    1:50 with 9 pt lines; 1 in = 5 ft with 9 pt lines is 0.625 ft a line.
+    (The fixture's ``_cell`` puts lines 0.05 m apart: no log prints so.)"""
+    per_unit = line_pt / pitch
+
+    def cell(column_id, text, depth, page=0):
+        x = _X[column_id]
+        y = 100.0 + per_unit * depth
+        numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)]
+        return SimpleNamespace(page=page, column_id=column_id, text=text,
+                               bbox=(x, y - text_pt / 2, x + 30.0,
+                                     y + text_pt / 2),
+                               depth=depth, depth_top=depth - pitch / 2,
+                               depth_bottom=depth + pitch / 2,
+                               numbers=numbers, confidence=0.9)
+    return cell
+
+
+def _stacked(rows, pitch, column=BOTH6, unit="m", typed=True, at_line=0,
+             boxes=()):
+    """Seed a sheet whose ``column`` prints each sample as a stack of lines,
+    one line every ``pitch``; ``rows`` is ``[(top, [lines])]``. With
+    ``typed`` a TYPE column prints SS on the stack's line ``at_line``."""
+    cell = _sheet(pitch)
+    cells = []
+    for top, lines in rows:
+        cells += [cell("blows", text, round(top + j * pitch, 4))
+                  for j, text in enumerate(lines)]
+        if typed:
+            cells.append(cell("type", "SS", round(top + at_line * pitch, 4)))
+    grid = _Grid(cells, [column, TYPE] if typed else [column], unit)
+    grid.samples = list(boxes)
+    qa = []
+    return seed_from_grid(grid, [0], "SYNTH", qa=qa), qa
+
+
+#: Three samples as the review printed them: number, three drives, recovery.
+_THREE = [("1", [4, 6, 7], "12"), ("2", [5, 8, 9], "14"),
+          ("3", [10, 12, 15], "16")]
+
+
+def _rows(samples=_THREE, pitch=0.15, rec=True, blank=0, start=1.0,
+          spacing=None):
+    rows, top = [], start
+    for sid, drives, recovery in samples:
+        lines = [sid] + [str(d) for d in drives] + ([recovery] if rec else [])
+        rows.append((round(top, 4), lines))
+        top += max(spacing or 0.0, (len(lines) + blank) * pitch)
+    return rows
+
+
+def _ids(inv):
+    return [s.sample_id for s in inv.samples]
+
+
+class TestTheStackedColumn:
+    def test_the_reviews_back_to_back_stacks_read_whole(self):
+        # Truth: S1 [4,6,7] N 13, S2 [5,8,9] N 17, S3 [10,12,15] N 27.
+        inv, qa = _stacked(_rows(pitch=0.15), 0.15)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [[4, 6, 7], [5, 8, 9],
+                                              [10, 12, 15]]
+        assert [r.n for r in inv.spt] == [13, 17, 27]
+        assert [s.recovery_percent for s in inv.samples] == [12, 14, 16]
         assert qa == []
 
-    def test_two_stacks_in_that_column_are_two_samples(self):
-        cells = [_cell("blows", "1", 1.5), _cell("blows", "3", 1.55),
-                 _cell("blows", "4", 1.6), _cell("blows", "5", 1.65),
-                 _cell("blows", "2", 3.0), _cell("blows", "4-6-7", 3.05)]
-        inv, _ = _seed(cells, [BOTH])
-        assert [s.sample_id for s in inv.samples] == ["1", "2"]
-        assert [r.blows for r in inv.spt] == [[3, 4, 5], [4, 6, 7]]
+    def test_four_lines_under_rec_keep_the_drives_but_give_no_n(self):
+        # The fourth line may be a third drive or the recovery.
+        inv, qa = _stacked(_rows(pitch=0.17, rec=False), 0.17)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [[4, 6, 7], [5, 8, 9],
+                                              [10, 12, 15]]
+        assert [r.n for r in inv.spt] == [None, None, None]
+        assert _flags(qa) == ["floor_stack_rec"]
+        assert "recovery" in inv.samples[0].note
+
+    @pytest.mark.parametrize("pitch", [0.12, 0.15, 0.25, 0.35])
+    @pytest.mark.parametrize("rec", [True, False])
+    def test_at_real_line_pitches(self, pitch, rec):
+        column = BOTH6 if rec else NO_REC6
+        rows = _rows(pitch=pitch, rec=rec, spacing=1.5)
+        inv, qa = _stacked(rows, pitch, column)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [d for _s, d, _r in _THREE]
+        assert [r.n for r in inv.spt] == [13, 17, 27]
+        assert qa == []
+
+    @pytest.mark.parametrize("pitch", [0.12, 0.25, 0.35])
+    def test_with_no_sampler_code_a_blank_line_parts_the_stacks(self, pitch):
+        inv, qa = _stacked(_rows(pitch=pitch, blank=1), pitch, typed=False)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [d for _s, d, _r in _THREE]
+        assert qa == []
+
+    @pytest.mark.parametrize("pitch", [0.12, 0.25])
+    def test_with_nothing_to_part_them_the_column_reads_as_before(self,
+                                                                  pitch):
+        inv, qa = _stacked(_rows(pitch=pitch), pitch, typed=False)
+        printed = {"4", "5", "6", "7", "8", "9", "10", "12", "14", "15", "16"}
+        assert not set(_ids(inv)) & printed
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack" in _flags(qa)
+
+    def test_a_sampler_code_a_line_below_the_number_starts_nothing(self):
+        # SS printed on each stack's second line would start every sample
+        # at its first drive; the line above the first one is left over, so
+        # the column is read as before.
+        inv, qa = _stacked(_rows(pitch=0.15), 0.15, at_line=1)
+        assert not set(_ids(inv)) & {"4", "5", "10"}
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack" in _flags(qa)
+
+    def test_a_number_set_apart_from_its_drives_starts_nothing(self):
+        # A blank line under each number: the runs are a number alone and
+        # drives alone, and none of them reads as a sample.
+        cell = _sheet(0.15)
+        cells = []
+        for k, (sid, drives, rec) in enumerate(_THREE):
+            top = 1.0 + 1.5 * k
+            cells.append(cell("blows", sid, top))
+            cells += [cell("blows", str(d), round(top + 0.3 + 0.15 * j, 4))
+                      for j, d in enumerate(drives + [int(rec)])]
+        inv, qa = _seed(cells, [BOTH6])
+        assert not set(_ids(inv)) & {"4", "5", "10"}
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack" in _flags(qa)
+
+    @pytest.mark.parametrize("spacing", [2.5, 5.0])
+    def test_a_ft_log_at_one_inch_to_five_feet(self, spacing):
+        pitch = 5.0 * 9.0 / 72.0              # 9 pt lines: 0.625 ft a line
+        rows = _rows(pitch=pitch, rec=False, start=2.5, spacing=spacing)
+        inv, qa = _stacked(rows, pitch, NO_REC6, unit="ft")
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.n for r in inv.spt] == [13, 17, 27]
+        assert qa == []
+
+    @pytest.mark.parametrize("typed", [True, False])
+    def test_continuous_sampling_every_one_and_a_half_feet(self, typed):
+        pitch = 2.0 * 9.0 / 72.0              # 1 in = 2 ft: 0.25 ft a line
+        rows = _rows(pitch=pitch, rec=False, start=2.0, spacing=1.5)
+        inv, qa = _stacked(rows, pitch, NO_REC6, unit="ft", typed=typed)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [d for _s, d, _r in _THREE]
+        assert [r.n for r in inv.spt] == ([13, 17, 27] if typed
+                                          else [None] * 3)
+        assert qa == []
+
+    def test_a_drawn_box_starts_a_sample(self):
+        boxes = [SimpleNamespace(top=t, bottom=t + 0.4572, page=0,
+                                 pages=(0,), plus_minus=None, label="")
+                 for t in (1.0, 1.48, 1.96)]
+        rows = _rows(pitch=0.12, rec=False, spacing=0.48)
+        inv, qa = _stacked(rows, 0.12, NO_REC6, typed=False, boxes=boxes)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert [r.blows for r in inv.spt] == [d for _s, d, _r in _THREE]
+        assert qa == []
+
+    def test_a_stack_that_starts_with_woh_has_no_number(self):
+        inv, qa = _stacked([(3.0, ["WOH", "2", "3"])], 0.15, BOTH)
+        assert not set(_ids(inv)) & {"2", "3"}
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack" in _flags(qa)
+
+    def test_a_refusal_ends_the_drives_and_the_next_line_is_the_recovery(
+            self):
+        inv, qa = _stacked([(3.0, ["3", "25", '50/3"', "9"])], 0.15)
+        assert _ids(inv) == ["3"]
+        assert inv.spt[0].blows == [25, '50/3"'] and inv.spt[0].refusal
+        assert inv.spt[0].n is None
+        assert inv.samples[0].recovery_percent == 9
 
     def test_a_prefixed_id_in_that_column_reads_as_before(self):
         cells = [_cell("blows", "S-3", 3.0), _cell("blows", "4", 3.05),
                  _cell("blows", "6", 3.10), _cell("blows", "7", 3.15)]
         inv, _ = _seed(cells, [BOTH])
-        assert [s.sample_id for s in inv.samples] == ["S-3"]
+        assert _ids(inv) == ["S-3"]
         assert [r.blows for r in inv.spt] == [[4, 6, 7]]
 
-    def test_a_stack_that_starts_with_woh_has_no_number(self):
-        cells = [_cell("blows", "WOH", 3.0), _cell("blows", "2", 3.05),
-                 _cell("blows", "3", 3.10), _cell("type", "SS", 3.0)]
-        inv, qa = _seed(cells, [BOTH, TYPE])
-        assert [s.sample_id for s in inv.samples] == [""]
-        assert [r.blows for r in inv.spt] == [["WOH", 2, 3]]
-        assert inv.spt[0].n is None
-        assert _flags(qa) == ["floor_drives"]
+    def test_random_layouts_never_make_up_an_n_or_a_number(self):
+        # The review's fuzz at real scales: 0.12-0.35 m a line, samples
+        # 0.75-2.5 m apart, back to back or not, with and without a sampler
+        # code; drives one to a line, as one record, or with a WOH; a
+        # recovery line or not. A sample may go without a number or an N;
+        # it may never get a wrong one.
+        import random
 
+        rng = random.Random(44)
+        read_all = 0
+        for _trial in range(400):
+            unit = rng.choice(["m", "ft"])
+            scale = 1.0 if unit == "m" else 3.2808
+            rec = rng.random() < 0.5
+            column = BOTH6 if rec else NO_REC6
+            pitch = rng.uniform(0.12, 0.35) * scale
+            spacing = rng.uniform(0.75, 2.5) * scale
+            typed = rng.random() < 0.7
+            cell = _sheet(pitch)
+            cells, truth, top = [], {}, 1.0 * scale
+            for k in range(1, rng.randint(2, 6)):
+                drives = [rng.randint(1, 60) for _ in range(3)]
+                style = rng.random()
+                if style < 0.15:
+                    drives[0] = "WOH"
+                    lines = [str(k)] + [str(d) for d in drives]
+                elif style < 0.3:
+                    lines = [str(k), "-".join(str(d) for d in drives)]
+                else:
+                    lines = [str(k)] + [str(d) for d in drives]
+                if rec:
+                    lines.append(str(rng.randint(0, 18)))
+                cells += [cell("blows", text, round(top + j * pitch, 4))
+                          for j, text in enumerate(lines)]
+                if typed:
+                    cells.append(cell("type", "SS", round(top, 4)))
+                truth[round(top, 4)] = (str(k), drives)
+                top += max(spacing, len(lines) * pitch)
+            grid = _Grid(cells, [column, TYPE] if typed else [column], unit)
+            inv = seed_from_grid(grid, [0], "SYNTH", qa=[])
+            for sample in inv.samples:
+                if sample.sample_id:
+                    assert truth.get(round(sample.top.value, 4),
+                                     ("",))[0] == sample.sample_id
+            for record in inv.spt:
+                if record.n is not None:
+                    sid, drives = truth[round(record.depth_top.value, 4)]
+                    assert record.blows == drives
+                    assert record.n == drives[1] + drives[2]
+            read_all += _ids(inv) == [sid for sid, _d in truth.values()]
+        # Not a test that passes by reading nothing.
+        assert read_all >= 200
+
+
+class TestRI44:
     def test_bare_number_ids_beside_a_blows_column_are_still_samples(self):
         cells = []
         for k, depth in enumerate((1.5, 3.0, 4.5), start=1):
@@ -654,6 +861,37 @@ class TestRI44:
         inv, _ = _seed(cells, [ID, TYPE, BLOWS])
         assert inv.spt[0].blows == [4, 6, 7]
         assert inv.spt[0].n == 13
+
+    @pytest.mark.parametrize("lines, blows", [
+        ([("1-2-3", 3.0), ("WOH", 3.3)], [1, 2, 3]),
+        ([("WOH", 2.95), ("WOH-1-2", 3.0)], ["WOH", 1, 2]),
+    ])
+    def test_a_woh_line_never_takes_a_record_past_three_drives(self, lines,
+                                                               blows):
+        cells = [_cell("id", "S-1", 3.0), _cell("type", "SS", 3.0)]
+        cells += [_cell("blows", text, depth) for text, depth in lines]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        assert inv.spt[0].blows == blows
+        assert inv.spt[0].n is None
+
+    @pytest.mark.parametrize("cells, columns", [
+        ([_cell("id", "S-1", 3.0), _cell("blows", "25", 3.0),
+          _cell("blows", '50/3"', 3.1)], [ID, BLOWS]),
+        ([_cell("rec", "S-3", 3.0), _cell("rec", "25", 3.05),
+          _cell("rec", '50/3"', 3.1)], [DATA]),
+    ])
+    def test_a_count_printed_above_a_refusal_is_its_drive(self, cells,
+                                                          columns):
+        inv, _ = _seed(cells + [_cell("type", "SS", 3.0)], columns + [TYPE])
+        record = inv.spt[0]
+        assert record.blows == [25, '50/3"']
+        assert record.refusal and record.n is None
+
+    def test_a_count_printed_below_a_refusal_stays_out(self):
+        cells = [_cell("id", "S-1", 3.0), _cell("type", "SS", 3.0),
+                 _cell("blows", '4-50/3"', 3.0), _cell("blows", "54", 3.1)]
+        inv, _ = _seed(cells, [ID, TYPE, BLOWS])
+        assert inv.spt[0].blows == [4, '50/3"']
 
     @pytest.mark.parametrize("text", ["WOH-2-3", "WOH/2/3"])
     @pytest.mark.parametrize("code", [None, "SS"])
