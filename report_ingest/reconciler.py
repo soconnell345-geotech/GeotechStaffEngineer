@@ -148,8 +148,14 @@ def hole_key(text: Any) -> str:
     return re.sub(r"(?<!\d)0+(?=\d)", "", fold_id(text))
 
 
-def _leading_hole(label: Any, keys: Any) -> str:
-    """The longest of ``keys`` that BEGINS ``label``, or ``""``.
+#: Two numbers with only a separator between them: "1 2.0", "1-2", "1, 2".
+#: Folding would run them into one number, "B-1 2.0 ft" into B-12.
+_JOINED_NUMBERS = re.compile(r"\d[^0-9A-Za-z]+\d")
+
+
+def _leading_hole(label: Any, keys: Any) -> Tuple[str, str]:
+    """The longest of ``keys`` that BEGINS ``label``, and what follows it;
+    ``("", "")`` when none does or the label names more than one.
 
     A sheet that prints no boring heading names the specimen by its hole --
     ``"BH-7 U3"``, ``"BH1, U2"``, a hole, a sample and a depth run together
@@ -159,19 +165,41 @@ def _leading_hole(label: Any, keys: Any) -> str:
     bare ``"2"`` is as likely a sample number as a hole. The hole has to
     end where a word of the label ends -- at a space, a comma, a slash or
     the end -- so ``"B-1"`` is not found at the head of ``"B-12"`` or of
-    ``"B-1A"``, and ``"B-1 2.0 ft"`` is B-1 although its folded form runs
-    the depth onto the hole.
+    ``"B-1A"``; and the search stops at the first number that follows
+    another across a separator, so ``"B-1 2.0 ft"`` and ``"B-1-2"`` are
+    B-1 and never B-12, whose folded spelling they share.
+
+    A label naming a second logged hole of the same series further on --
+    ``"B-1/B-2"``, ``"B-1 to B-4 composite"`` -- names no one hole, and
+    nothing is returned for it.
     """
     text = str(label or "")
-    best = ""
+    best, end = _head_hole(text, keys)
+    if not best:
+        return "", ""
+    series = re.match(r"[A-Z]*", best).group(0)
+    for start in range(end, len(text)):
+        if text[start].isalnum() and not text[start - 1].isalnum():
+            other, _end = _head_hole(text[start:], keys)
+            if other and other != best and \
+                    re.match(r"[A-Z]*", other).group(0) == series:
+                return "", ""
+    return best, text[end:]
+
+
+def _head_hole(text: str, keys: Any) -> Tuple[str, int]:
+    """The longest key at the head of ``text`` and where it ends."""
+    best, best_end = "", 0
     for end in range(1, len(text) + 1):
         if end < len(text) and text[end].isalnum():
             continue                     # not the end of a word
+        if _JOINED_NUMBERS.search(text[:end]):
+            break                        # "B-1 2.0 ft": a depth, not B-12
         key = hole_key(text[:end])
         if key and key in keys and not key.isdigit() and \
                 len(key) > len(best):
-            best = key
-    return best
+            best, best_end = key, end
+    return best, best_end
 
 
 def depth_m(value: Optional[Quantity]) -> Optional[float]:
@@ -330,50 +358,91 @@ def reconcile(record: ReportRecord, *,
 
 # -- the lab-to-ground link -------------------------------------------------
 
+#: The kinds of exploration a bare identifier in a SAMPLE label is taken
+#: for: the ones samples are taken from and named after. A sounding, a
+#: probe or a well called "S-1" is as likely the sample's own number.
+#: Layout judgment (RI-07 review); a hand auger is a boring made by hand.
+_SAMPLED_KINDS = ("boring", "test_pit", "hand_auger")
+
+
 def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
-              samples: Any = ()) -> Tuple[Optional[Investigation], str]:
+              samples: Optional[Dict[str, List[Tuple[Investigation,
+                                                     Sample]]]] = None,
+              by_fold: Optional[Dict[str, Investigation]] = None
+              ) -> Tuple[Optional[Investigation], str]:
     """The investigation a lab test names, and where the name was found.
 
-    The printed boring first, matched whole (``hole_key``); then a hole the
-    report's logs hold at the HEAD of that printed text (``"BH-7 U3"``);
-    then, only where the sheet printed no boring at all, a hole at the head
-    of the sample label (``"BH-03 S-2 1.5-1.95 m"``), which is how many
-    sheets name a specimen. The second string says which, for the QA note:
-    empty for a whole match.
+    The printed boring first, matched whole: exactly as the logs spell it
+    (``fold_id``), then with leading zeros folded (``hole_key``, used only
+    when one logged hole has that key -- "B-07" and "B-7" logged as two
+    holes leave a sheet's "B-007" unlinked). Then a hole the report's logs
+    hold at the HEAD of that printed text (``"BH-7 U3"``); then, only where
+    the sheet printed no boring at all, a hole at the head of the sample
+    label (``"BH-03 S-2 1.5-1.95 m"``), which is how many sheets name a
+    specimen. The second string says which, for the QA note: empty for a
+    whole match.
 
-    A sample number names no hole, so a name the logs ALSO give a sample
-    (``samples``, folded) -- a boring B-1 beside a pit's bulk sample B-1 --
-    is taken from a label only when that hole has a sample at the sheet's
-    depth; otherwise the label could be either, and nothing is linked.
+    A SAMPLE NUMBER NAMES NO HOLE, so a hole is not taken from a label
+    that could equally be a sample's name:
+
+    * a name the logs also give a sample (``samples``) -- a boring B-1
+      beside a pit's bulk sample B-1 -- is refused when another hole holds
+      a sample of that name at the sheet's depth, or when this hole holds
+      none there;
+    * a sample label that is the identifier and nothing more ("S-1") is
+      taken only for a boring, test pit or hand auger, since a sounding or
+      a well of that name may as well be the sample's number -- whether or
+      not the logs read any sample names.
     """
+    folded = fold_id(test.investigation_id)
+    if folded and by_fold and folded in by_fold:
+        return by_fold[folded], ""
     printed = hole_key(test.investigation_id)
     if printed in by_id:
         return by_id[printed], ""
     label, through = ((test.investigation_id, "the boring as printed")
                       if printed else (test.sample_id, "the sample label"))
-    key = _leading_hole(label, by_id)
+    key, rest = _leading_hole(label, by_id)
     if not key:
         return None, ""
-    if key in samples and _sample_at_depth(by_id[key], test)[0] is None:
+    inv = by_id[key]
+    named = (samples or {}).get(key, [])
+    if named:
+        if _sample_at_depth(inv, test)[0] is None:
+            return None, ""
+        if any(other is not inv and _at_depth(sample, test) is not None
+               for other, sample in named):
+            return None, ""
+    if through == "the sample label" and not fold_id(rest) and \
+            inv.kind not in _SAMPLED_KINDS:
         return None, ""
-    return by_id[key], through
+    return inv, through
 
 
 def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
-    by_id: Dict[str, Investigation] = {}
+    by_fold: Dict[str, Investigation] = {}
+    by_key: Dict[str, List[Investigation]] = {}
     for inv in record.investigations:
-        key = hole_key(inv.investigation_id)
-        if key:
-            by_id.setdefault(key, inv)
-    sample_names = {hole_key(s.sample_id) for inv in record.investigations
-                    for s in inv.samples if hole_key(s.sample_id)}
+        if fold_id(inv.investigation_id):
+            by_fold.setdefault(fold_id(inv.investigation_id), inv)
+            by_key.setdefault(hole_key(inv.investigation_id), []).append(inv)
+    # The zero fold names a hole only when one logged spelling has its key:
+    # "B-07" and "B-7" logged as two holes are two holes.
+    by_id = {key: invs[0] for key, invs in by_key.items()
+             if len({fold_id(i.investigation_id) for i in invs}) == 1}
+    sample_names: Dict[str, List[Tuple[Investigation, Sample]]] = {}
+    for inv in record.investigations:
+        for sample in inv.samples:
+            if hole_key(sample.sample_id):
+                sample_names.setdefault(hole_key(sample.sample_id),
+                                        []).append((inv, sample))
 
     from_labels: List[Tuple[LabTest, str, Investigation]] = []
     for test in record.lab_tests:
         if test.kind == "summary_table":
-            _link_summary_rows(test, by_id, qa)
+            _link_summary_rows(test, by_fold, qa)
             continue
-        inv, through = _hole_for(test, by_id, sample_names)
+        inv, through = _hole_for(test, by_id, sample_names, by_fold)
         if inv is not None and through:
             from_labels.append((test, through, inv))
         printed = fold_id(test.investigation_id)
@@ -434,35 +503,56 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
 
 def _sample_for(inv: Investigation,
                 test: LabTest) -> Tuple[Optional[Sample], Optional[float]]:
-    """The sample this sheet's specimen came from, and how far off it was."""
+    """The sample this sheet's specimen came from, and how far off it was.
+
+    The sample label matched whole first, as it always was. Then a word of
+    a longer label that IS one of this hole's sample names ("BH-7 U3" ->
+    U3), taken only when that sample sits at the sheet's depth: the word
+    may be a sample number of another kind, and the depth is what says it
+    is this one (RI-07). Then the sample at the sheet's depth.
+    """
     if test.sample_id:
         wanted = fold_id(test.sample_id)
         for sample in inv.samples:
             if fold_id(sample.sample_id) == wanted:
                 return sample, _delta(sample, test)
+    words = {fold_id(w) for w in re.split(
+        r"[^0-9A-Za-z-]+", f"{test.investigation_id} {test.sample_id}")
+        if fold_id(w)}
+    own = fold_id(inv.investigation_id)
+    for sample in inv.samples:
+        name = fold_id(sample.sample_id)
+        if name and name in words and name != own and not name.isdigit():
+            delta = _at_depth(sample, test)
+            if delta is not None:
+                return sample, delta
     return _sample_at_depth(inv, test)
+
+
+def _at_depth(sample: Sample, test: LabTest) -> Optional[float]:
+    """How far the sheet's depth sits from ``sample``, in metres, when it
+    is within :data:`DEPTH_TOL_M` of it; else None."""
+    depth, top = depth_m(test.depth_top), depth_m(sample.top)
+    if depth is None or top is None:
+        return None
+    bottom = depth_m(sample.bottom)
+    if bottom is not None and top - DEPTH_TOL_M <= depth <= \
+            bottom + DEPTH_TOL_M:
+        delta = 0.0 if top <= depth <= bottom else min(
+            abs(depth - top), abs(depth - bottom))
+    else:
+        delta = abs(depth - top)
+    return delta if delta <= DEPTH_TOL_M else None
 
 
 def _sample_at_depth(inv: Investigation, test: LabTest
                      ) -> Tuple[Optional[Sample], Optional[float]]:
     """The sample of ``inv`` at the sheet's depth, by depth alone."""
-    depth = depth_m(test.depth_top)
-    if depth is None:
-        return None, None
     best: Optional[Sample] = None
     best_delta: Optional[float] = None
     for sample in inv.samples:
-        top = depth_m(sample.top)
-        if top is None:
-            continue
-        bottom = depth_m(sample.bottom)
-        if bottom is not None and top - DEPTH_TOL_M <= depth <= \
-                bottom + DEPTH_TOL_M:
-            delta = 0.0 if top <= depth <= bottom else min(
-                abs(depth - top), abs(depth - bottom))
-        else:
-            delta = abs(depth - top)
-        if delta <= DEPTH_TOL_M and (best_delta is None or delta < best_delta):
+        delta = _at_depth(sample, test)
+        if delta is not None and (best_delta is None or delta < best_delta):
             best, best_delta = sample, delta
     return best, best_delta
 
@@ -476,14 +566,19 @@ def _delta(sample: Sample, test: LabTest) -> Optional[float]:
 
 def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
                        qa: List[QAEntry]) -> None:
-    """A summary table names many holes; report the ones that are not here."""
+    """A summary table names many holes; report the ones that are not here.
+
+    Matched exactly as printed (``fold_id``), not with the lab link's zero
+    fold or label head: a summary row carries no link of its own, so the
+    DIGGS writer still places it by the printed words, and a row the logs
+    spell differently is still a hole "not here" until rows are linked.
+    """
     result = test.result
     rows = list(getattr(result, "rows", ()) or ())
     missing: List[str] = []
     for row in rows:
-        printed = hole_key(row.investigation_id)
+        printed = fold_id(row.investigation_id)
         if printed and printed not in by_id and \
-                not _leading_hole(row.investigation_id, by_id) and \
                 row.investigation_id not in missing:
             missing.append(row.investigation_id)
     if missing:
