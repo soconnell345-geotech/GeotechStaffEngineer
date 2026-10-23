@@ -558,6 +558,9 @@ class _Stack:
     #: A sampler code ("R") printed after the number, ahead of the drives:
     #: neither a drive nor a refusal, and not read.
     sampler: Any = None
+    #: Set when a line where the header prints the N or the recovery reads
+    #: as blows: it is in ``unassigned``, never either.
+    blows_in_tail: bool = False
 
 
 def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
@@ -662,7 +665,14 @@ def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
         for part, cell in zip(after, tail):
             if _marks_refusal(_text(cell)) and part not in ("n", "n60"):
                 return None           # a printed refusal only where an N is
-            if part == "rec":
+            if _blow_tokens(_text(cell)):
+                # A line that reads as blows ('33-18-25', '50/3"') where the
+                # header prints the N or the recovery is neither: not a
+                # recovery of 33 %. Kept in the note and listed (layout
+                # judgment).
+                stack.unassigned.append(cell)
+                stack.blows_in_tail = True
+            elif part == "rec":
                 stack.recovery = cell
             elif part == "n60":
                 stack.n60 = cell
@@ -1935,8 +1945,11 @@ class _FloorNotes:
                   "from them and no N computed"),
         "stack_tail": ("samples in a column {header} whose last count may "
                        "be a drive or the N or recovery the header prints "
-                       "after the blows; the lines are kept as drives and "
-                       "no N is computed from them"),
+                       "after the blows (the lines are kept as drives and "
+                       "no N is computed from them), or with a line that "
+                       "reads as blows where the header prints the N or "
+                       "the recovery (kept in the sample's note, as "
+                       "neither)"),
         "refusal_n": ("numbers under 50 printed as the N of drives that "
                       "end in a halt (stopped before the third increment "
                       "at 100 blows, more than 50 in an increment or blows "
@@ -2498,6 +2511,7 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
         if stack.doubt:
             group.doubt = ("the last count may be the N or the recovery the "
                            "header prints after the blows")
+        if stack.doubt or stack.blows_in_tail:
             notes.add(group.page, "stack_tail",
                       f"sample {_text(stack.lines[0])} at "
                       f"{float(group.first):g}",

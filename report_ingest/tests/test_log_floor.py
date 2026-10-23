@@ -1919,6 +1919,38 @@ class TestRI48:
                                                      ([5, 8, 9], 17)]
         assert "floor_stack" not in _flags(qa)
 
+    # The round-4 review's (c): a line that reads as blows where the
+    # header prints the recovery became a recovery of 33 %, with no row.
+    @pytest.mark.parametrize("line", ["33-18-25", '50/3"', "2+1+2"])
+    @pytest.mark.parametrize("layout", ["rec", "ring", "n_rec", "n"])
+    def test_blows_where_the_recovery_or_n_goes_are_neither(self, line,
+                                                           layout):
+        column, ends = BOTH6, (["12"], ["14"])
+        body = ["4", "6", "7"]
+        if layout == "ring":
+            body = ["R", "4-6-7"]
+        elif layout == "n_rec":
+            column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N / REC",
+                             "sample_id", "blows", "n_value", "recovery")
+            ends, body = (["13", "12"], ["17", "14"]), body + ["13"]
+        elif layout == "n":
+            column, ends = N_STACK, (["13"], ["17"])
+        inv, qa = _stacked([(1.0, ["1", "4", "6", "7"] + ends[0]),
+                            (2.5, ["2"] + body + [line]),
+                            (4.0, ["3", "5", "8", "9"] + ends[1])], 0.15,
+                           column)
+        assert _ids(inv) == ["1", "2", "3"]
+        assert inv.samples[1].recovery_percent is None
+        second = inv.spt[1]
+        assert (second.blows, second.n, second.n_printed) == ([4, 6, 7], 13,
+                                                              "")
+        assert not second.refusal
+        assert line in inv.samples[1].note
+        assert "floor_stack_tail" in _flags(qa)
+        if layout != "n":
+            assert [s.recovery_percent for s in inv.samples] == [12.0, None,
+                                                                 14.0]
+
     def test_blows_after_a_refusal_are_never_its_recovery(self):
         inv, qa = _stacked([(1.0, ["1", "4", "6", "7", "11"]),
                             (2.5, ["2", "REF", "12-18-25"]),
