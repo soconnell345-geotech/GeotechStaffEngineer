@@ -1484,7 +1484,7 @@ reported corruption (CRLF-normalized comparison vs PNG signature
 bytes). Catalog 7,909/8,000.
 
 **PLANLENS SPLIT (2026-09-04, owner-named):** the entire drawing stack
-now lives in the SEPARATE package repo `C:/Users/socon/OneDrive/dev/
+now lives in the SEPARATE package repo `C:/dev/
 planlens` (import as `planlens.ir` / `planlens.pdf` / `planlens.dxf`;
 former drawing_ir/, pdf_import/, dxf_import/units.py — every mention of
 those module paths below is historical). It is the owner's TinyApp
@@ -2063,7 +2063,7 @@ Run: `pytest foundry_test_harness/ -v`
 ## Document review & drawing geometry (planlens)
 
 Everything that reads a PDF, an image or a DXF lives in the separate,
-published package **planlens** (`C:/Users/socon/OneDrive/dev/planlens`,
+published package **planlens** (`C:/dev/planlens`,
 PyPI `planlens`, editable-installed in dev; app pin `planlens>=0.13` since
 5.33.0, and main carries unreleased work past 0.13.0 (see its CHANGELOG;
 BACKLOG PL-22); earlier, `planlens>=0.7` since

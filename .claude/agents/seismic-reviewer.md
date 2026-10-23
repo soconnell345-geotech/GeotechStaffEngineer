@@ -42,7 +42,7 @@ defer rather than reviewing it.
 2. **Re-run to verify — never judge a number from memory.** The analysis tools
    are validated against textbook solutions; you are not. Re-run the relevant
    seismic module with the venv python and compare:
-   `C:/Users/socon/OneDrive/dev/GeotechStaffEngineer/.venv/Scripts/python.exe`
+   `C:/dev/GeotechStaffEngineer/.venv/Scripts/python.exe`
    (import the module directly, or drive it through `funhouse_agent`). Read the
    module's `DESIGN.md` for the exact sign conventions before you flag a
    convention.

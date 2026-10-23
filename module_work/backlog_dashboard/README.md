@@ -38,7 +38,7 @@ Answers are documents in the collection `responses`, with doc id = backlog ID. E
 Read them with the `ArtifactData` tool: `action: "list"`, `collection: "responses"`. Then, for each answer not yet folded in:
 
 1. Act on it in `BACKLOG.md`:
-   - **Answered:** a decision taken. Close the item (move it to "Done since the last sweep") or rewrite it as the work the answer creates, under a new ID.
+   - **Answered:** a decision taken. Close the item (move it to "Done since the last sweep") with `python module_work/backlog_dashboard/close_item.py ID "done text"` from the repo root or rewrite it as the work the answer creates, under a new ID.
    - **Waiting:** asked, no reply yet. Note it on the item.
    - **Deferred:** move the item to a later tier.
    - **Won't do:** close it, with the owner's reason.

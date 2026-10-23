@@ -2623,7 +2623,7 @@ holds, uploads work; **planlens split executed** (owner-named).
 
 1. **planlens finish-out:** owner creates
    github.com/soconnell345-geotech/planlens → push the local repo
-   (C:/Users/socon/OneDrive/dev/planlens, branch main) → `git submodule
+   (C:/dev/planlens, branch main) → `git submodule
    add https://github.com/soconnell345-geotech/planlens.git planlens`
    in the app repo (refs pattern). **5.12.0 CANNOT ship until planlens
    0.1.0 is on PyPI** (app now depends on planlens[raster]>=0.1;
@@ -3063,7 +3063,7 @@ just-added file): unzip and confirm the new files/tokens are present.
 - `validation_examples/INVENTORY.md` + `RESULTS.md` — published problems,
   verdicts, owner notes (coverage-gap backlog lives in the notes).
 - `validation_examples/test_published_v0*.py` — the 136+ offline validation tests.
-- **planlens** (`C:/Users/socon/OneDrive/dev/planlens`, PyPI `planlens`,
+- **planlens** (`C:/dev/planlens`, PyPI `planlens`,
   0.3.0) — the document-review + drawing-geometry package: `planlens/document/`
   (page map, structure, text, tables, markups, thumbnails; DESIGN.md),
   `planlens/tools/` (the LLM tool layer), `planlens/ir/` (the drawing IR;

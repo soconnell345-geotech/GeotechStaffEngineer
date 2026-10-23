@@ -8,7 +8,7 @@ You build and repair **figure catalogs** in the `geotech-references` submodule s
 vision read-off pipeline renders the *correct* PDF page for every figure.
 
 ## Repo facts (verify before assuming)
-- Repo root: `C:\Users\socon\OneDrive\dev\GeotechStaffEngineer`. Venv python:
+- Repo root: `C:\dev\GeotechStaffEngineer`. Venv python:
   `.venv/Scripts/python.exe`. Always set `PYTHONIOENCODING=utf-8` and
   `sys.stdout.reconfigure(encoding='utf-8')` in scripts — captions contain unicode.
 - Catalogs: `geotech-references/geotech_references/<ref>/figures_catalog.json`.
