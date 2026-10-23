@@ -1221,7 +1221,11 @@ answer even when the same turn also asks to look.
 **One call, one request.** No engine retries inside `complete`, so the
 ingest's `CallCeiling`, the pass's own count and the engine's `CostMeter`
 all see the same number; tokens come off the reply's `usage_metadata`, the
-cached input apart. Foundry bills by enrollment, so a run there reports
+cached input apart, and the reasoning tokens among the output off its
+`output_token_details` (BACKLOG RI-21). A request that raises is recorded as
+a failed request before it is raised, and a cap the model would not take on
+a copy is recorded as an adaptation; retries inside the chat model's own
+client are not seen. Foundry bills by enrollment, so a run there reports
 tokens and no dollars.
 
 ### At the output cap (BACKLOG RI-19)
@@ -2021,6 +2025,19 @@ refused parameter, and keeps the lesson for the rest of the run
 such a refusal and returns None; that case is retried on the raw client. This is
 what stopped the first run on 5.20.0 and is fixed in 5.20.1.
 
+**Every request is in the cost record** (BACKLOG RI-21), the refused and the
+rate-limited ones too. Each run file's `cost` keeps `calls` (replies, as
+before) and adds `failed` (requests that came back with an error: rate
+limited, a parameter refused, too large, timed out, nothing back, other, in
+`failed_by_kind`), `retried` (how many of those the engine sent again),
+`waited_seconds` (rate-limit waits), `reasoning_tokens` (part of the output
+tokens, not added to them), `adaptations`, and `per_call`: one row per request
+with its call and attempt number, what came back, its tokens, the wait, and
+what the engine changed from then on. Requests sent = `calls + failed`. Every
+`## Cost` block in `RESULTS.md` prints a line for them; a run file written
+before this says `not recorded`. `results.json` keeps the totals and leaves
+the rows in each run file.
+
 Bring home **`RESULTS.md` only**, from whichever `out_dir` the cell used. It
 carries IDs, labels, counts and rates. The per-report runs and the triage
 profiles stay on the cluster, because a change's reason or a triage rationale
@@ -2561,7 +2578,7 @@ results = score_on_cluster(
     di_dir       = "/Volumes/<your volume>/report_di",
     out_dir      = "/tmp/report_ingest_522",
     sharepoint   = fh_sp_client,
-    prompter     = fh_prompter,             # required, and never called by this stage
+    # no prompter: this stage calls no model, so none is needed (RI-08)
     stages       = ("vote",),
     sets         = ("insample", "oos_open", "oos_blind"),
     vision_dirs  = ["/tmp/report_ingest_521_sheet/vision"],   # default: this run's own vision/
@@ -2715,6 +2732,13 @@ two RI-14 switches through (both off), and each report's `run.json` records
 them under `switches`; a report already done is not redone under new settings
 without `redo`, so compare two settings in two `out_dir`s.
 
+**`## Calls by step`** (BACKLOG RI-21) gives the model calls of each report and
+of each report bound inside it (`bound1`, ...) step by step: triage, the
+vision pass, the review, a bound report's identity call, and each reader as
+calls/items. They are read off the step and item files, which `run.json`
+keeps under `calls_by_step`; a step file kept from an earlier attempt counts
+the calls it took then, so a resumed report can add up to more than its cost.
+
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
 triage profiles stay on the cluster in `runs/` and `triage/` unless you move
@@ -2742,7 +2766,19 @@ Notes that matter:
 - **A report the folder does not have is named and skipped**, once, before
   anything runs, rather than failing one report at a time deep in the set.
 - **No credential is read.** Authentication is whatever `fh_prompter` was built
-  with. Nothing here touches an environment variable or a secret scope.
+  with. Nothing here touches an environment variable or a secret scope. Every
+  stage that calls a model needs `prompter=`; `vote` alone calls none and runs
+  without it (BACKLOG RI-08).
+- **What the visual-scales voters did is printed** (BACKLOG RI-05, G3). With
+  `GEOTECH_INGEST_VISUAL_SCALES` on or off, each logs, lab and soundings run
+  file records the setting and how many of its pages are scans and how many
+  read their text from Azure Document Intelligence, and the scored record
+  keeps what the voters found. Each of those stages, and `ingest` (summed from
+  its item files), then prints `## Visual scales`: the setting, the pages,
+  the label-reading calls, the layer tops measured from a scan's stratum lines
+  and how they voted against the record's, the grading curves checked against
+  their table, and the plotted soundings traced by code. Off, every count is
+  zero by design; run files written before this print no block.
 - **Dollars, at your own rates.** A call is priced by the DEPLOYMENT that
   answered it, never by the tier that was asked for: a tier is an alias and the
   model behind it changes without notice, so a number priced by the tier would
@@ -2809,7 +2845,11 @@ turned roughly 1.4 M resent tokens into cache reads at a tenth the price.
 `CostMeter` records calls, input and output tokens, cache reads and writes, wall
 clock and dollars at the list prices in `MODEL_PRICES` (checked 2026-09-16).
 Prices are pinned in the source rather than fetched: a scorecard has to be able
-to say what a run cost months later.
+to say what a run cost months later. Since BACKLOG RI-21 it also records the
+reasoning tokens among the output, every request that came back with an error
+(`failed`, by kind, and how many were `retried`), the waits, what the engine
+changed (`adaptations`), and one row per request (`per_call`). It sees only
+what reaches the engine: the Claude SDK's own retries are inside its client.
 
 ## Running the scorecard
 

@@ -2420,3 +2420,251 @@ class TestTheIngestStage:
         assert (durable / out.name / "ingest" / "R36" / "run.json").is_file()
         assert (durable / out.name / "ingest" / "R36"
                 / "report.diggs.xml").is_file()
+
+
+# -- failed requests and reasoning in the cost block (BACKLOG RI-21) -----------
+
+def _rewrite(path, change):
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    change(blob)
+    path.write_text(json.dumps(blob), encoding="utf-8")
+
+
+class TestFailedRequestsInTheCost:
+
+    def test_run_files_from_before_say_not_recorded_rather_than_zero(
+            self, logs_cluster):
+        _reports_dir, out, _truth = logs_cluster
+        logs = _logs_run(logs_cluster)["logs"]
+        assert logs["cost"]["files"] == 2
+        assert logs["cost"]["files_counting_failures"] == 0
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "failed requests: not recorded" in text
+
+    def test_failed_and_resent_requests_are_totalled_and_printed(
+            self, logs_cluster):
+        _reports_dir, out, _truth = logs_cluster
+
+        def failed(blob):
+            blob["cost"].update({
+                "failed": 3, "retried": 2, "reasoning_tokens": 1200,
+                "waited_seconds": 45.0,
+                "failed_by_kind": {"rate_limit": 2, "timeout": 1},
+                "per_call": [{"call": 1, "attempt": 1}]})
+
+        for name in ("R36_p38.json", "R31_p278.json"):
+            _rewrite(out / "logs" / name, failed)
+        cost = _logs_run(logs_cluster)["logs"]["cost"]
+        assert (cost["failed"], cost["retried"]) == (6, 4)
+        assert cost["reasoning_tokens"] == 2400
+        assert cost["failed_by_kind"] == {"rate_limit": 4, "timeout": 2}
+        assert cost["calls"] == 2              # replies only, as before
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert ("failed requests, not among the calls above: 6 (4 rate "
+                "limited, 2 timed out), 4 of them sent again by the engine, "
+                "90 s waiting on rate limits; reasoning: 2,400 of the output "
+                "tokens") in text
+
+    def test_a_mix_of_old_and_new_run_files_says_how_many_counted(self):
+        total = cs._cost_totals()
+        cs._add_cost(total, {"calls": 4})
+        cs._add_cost(total, {"calls": 5, "failed": 0, "retried": 0})
+        line = cs._failure_line(total)
+        assert line.startswith("failed requests, not among the calls "
+                               "above: 0, 0 of them sent again")
+        assert "counted in 1 of 2 run files" in line
+
+    def test_the_ingest_results_keep_totals_not_the_row_per_request(self):
+        row = {"id": "R36", "n_pages": 3, "seconds": 1.0,
+               "cost": {"calls": 2, "failed": 1, "retried": 1,
+                        "per_call": [{"call": 1}, {"call": 2}]}}
+        scored = cs._score_ingest({"R36": row}, {}, "m")
+        (kept,) = scored["per_report"]
+        assert "per_call" not in kept["cost"]
+        assert kept["cost"]["failed"] == 1
+        assert "per_call" in row["cost"]       # the run file is untouched
+        assert scored["cost"]["failed"] == 1
+
+
+# -- the vote stage needs no prompter (BACKLOG RI-08) ---------------------------
+
+class TestTheVoteNeedsNoPrompter:
+
+    def test_the_vote_alone_runs_with_none(self, vote_cluster):
+        results = _vote_run(vote_cluster, prompter=None)
+        assert "vote" in results
+
+    def test_a_stage_that_calls_the_model_still_needs_one(self, tmp_path):
+        with pytest.raises(ValueError, match=r"\['labels'\] call the model"):
+            cs.score_on_cluster(reports_dir=tmp_path, prompter=None,
+                                stages=("vote", "labels"))
+
+
+# -- what the visual-scales voters did, in RESULTS.md (BACKLOG RI-05, G3) -----
+
+class TestTheVisualScalesBlock:
+
+    def test_old_run_files_print_no_block(self, logs_cluster):
+        _reports_dir, out, _truth = logs_cluster
+        logs = _logs_run(logs_cluster)["logs"]
+        assert logs["visual_scales"]["files_not_recorded"] == 2
+        assert "## Visual scales" not in (out / "RESULTS.md").read_text(
+            encoding="utf-8")
+
+    def test_the_log_votes_and_page_sources_are_counted(self, logs_cluster):
+        _reports_dir, out, _truth = logs_cluster
+
+        def scanned(blob):
+            blob["visual_scales_on"] = True
+            blob["page_sources"] = {"pages": 1, "raster": 1, "di_text": 1}
+            blob["after"]["visual_scales"] = {
+                "visual_scales": True, "label_calls": 1, "pixel_layers": 3,
+                "layer_votes": [{"agreement": "agree"},
+                                {"agreement": "disagree"},
+                                {"agreement": "no_record_layer"}]}
+
+        def off(blob):
+            blob["visual_scales_on"] = False
+            blob["page_sources"] = {"pages": 1, "raster": 0, "di_text": 0}
+
+        _rewrite(out / "logs" / "R36_p38.json", scanned)
+        _rewrite(out / "logs" / "R31_p278.json", off)
+        counts = _logs_run(logs_cluster)["logs"]["visual_scales"]
+        assert (counts["files"], counts["files_on"]) == (2, 1)
+        assert (counts["pages"], counts["raster"], counts["di_text"]) == \
+            (2, 1, 1)
+        assert counts["label_calls"] == 1 and counts["pixel_layers"] == 3
+        assert counts["layer_votes"] == {"agree": 1, "disagree": 1,
+                                         "no_record_layer": 1}
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        block = text.split("## Visual scales")[1].split("## Cost")[0]
+        assert "on for 1 of 2 run files" in block
+        assert "pages read: 2, of them 1 scans and 1 with their text" in block
+        assert "label-reading calls: 1" in block
+        assert "1 agree, 1 disagree, 1 with no record layer" in block
+
+    def test_plot_and_trace_checks_are_counted(self):
+        counts = cs._visual_counts()
+        cs._add_checks(counts, plot={
+            "status": "checked", "label_calls": 1, "table_points": 9,
+            "agree": 6, "disagree": [{"sieve": "#200"}],
+            "no_marker_at_size": 2})
+        cs._add_checks(counts, plot={"status": "no_plot", "label_calls": 0})
+        cs._add_checks(counts, trace={
+            "status": "checked", "label_calls": 2, "channels": {
+                "qc": {"compared": 5, "agree": 4, "disagree": [{"depth": 3}],
+                       "several": 1, "no_trace": 2},
+                "fs": {"status": "no_panel"}}})
+        assert counts["label_calls"] == 3
+        assert counts["plot_checks"] == {"checked": 1, "no_plot": 1,
+                                         "unavailable": 0}
+        assert counts["plot_points"] == {"table": 9, "agree": 6,
+                                         "disagree": 1,
+                                         "no_marker_at_size": 2}
+        assert counts["trace_points"] == {"compared": 5, "agree": 4,
+                                          "disagree": 1, "several": 1,
+                                          "no_trace": 2}
+        assert counts["trace_channels_no_panel"] == 1
+        counts.update(files=1, files_on=1)
+        text = "\n".join(cs._visual_lines(counts))
+        assert "grading curves checked against the table: 1" in text
+        assert "plotted soundings traced by code: 1" in text
+
+    def test_the_scores_carry_what_the_voters_recorded(self):
+        from report_ingest.lab_scoring import LabScore
+        from report_ingest.log_scoring import LogScore
+        from report_ingest.sounding_scoring import SoundingScore
+
+        plain = LogScore(log_id="R36_p38", report="R36", stage="record")
+        assert "visual_scales" not in plain.to_dict()
+        log = LogScore(log_id="R36_p38", report="R36", stage="record",
+                       visual_scales={"label_calls": 1})
+        assert log.to_dict()["visual_scales"] == {"label_calls": 1}
+        lab = LabScore(sheet_id="gradation__R36_p40", report="R36",
+                       kind="gradation", stage="record",
+                       plot_check={"status": "no_plot"})
+        assert lab.to_dict()["plot_check"] == {"status": "no_plot"}
+        sounding = SoundingScore(sounding_id="cpt__R36_p50", report="R36",
+                                 kind="cpt", stage="record",
+                                 code_trace={"status": "checked"})
+        assert sounding.to_dict()["code_trace"] == {"status": "checked"}
+        assert "visual_scales" not in sounding.to_dict()
+
+
+# -- calls by step, per document (BACKLOG RI-21) -------------------------------
+
+class TestCallsByStep:
+
+    @staticmethod
+    def _write(path, blob):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(blob), encoding="utf-8")
+
+    def test_the_report_and_each_bound_report_are_counted_apart(
+            self, tmp_path):
+        folder = tmp_path / "R36"
+        self._write(folder / "triage.json", {"cost": {"calls": 1}})
+        self._write(folder / "vision.json", {"cost": {"calls": 4}})
+        self._write(folder / "items" / "a.json",
+                    {"calculation": {}, "cost": {"calls": 2}})
+        self._write(folder / "items" / "b.json",
+                    {"calculation": {}, "cost": {"calls": 1}})
+        self._write(folder / "items" / "c.json",
+                    {"general": {}, "cost": {"calls": 1}})
+        self._write(folder / "bound" / "bound1" / "identity.json",
+                    {"cost": {"calls": 1}})
+        self._write(folder / "bound" / "bound1" / "items" / "d.json",
+                    {"investigation": {"kind": "boring"}, "cost": {"calls": 2},
+                     "visual_scales": {"label_calls": 1, "pixel_layers": 2}})
+        self._write(folder / "bound" / "bound1" / "items" / "e.json",
+                    {"investigation": {"kind": "cpt"}, "cost": {"calls": 1},
+                     "code_trace": {"status": "no_plot", "label_calls": 0}})
+        self._write(folder / "bound" / "bound1" / "items" / "f.json",
+                    {"tests": [], "cost": {"calls": 1},
+                     "plot_check": {"status": "unavailable"}})
+
+        got = cs._ingest_steps(folder)
+        steps = got["calls_by_step"]
+        assert steps["report"] == {"triage": 1, "vision": 4, "calc": 3,
+                                   "calc items": 2, "narrative": 1,
+                                   "narrative items": 1}
+        assert steps["bound1"] == {"identity": 1, "log": 2, "log items": 1,
+                                   "sounding": 1, "sounding items": 1,
+                                   "lab": 1, "lab items": 1}
+        visual = got["visual_scales"]
+        assert visual["label_calls"] == 1 and visual["pixel_layers"] == 2
+        assert visual["trace_checks"]["no_plot"] == 1
+        assert visual["plot_checks"]["unavailable"] == 1
+
+        row = {"id": "R36", "visual_scales_on": True, **got}
+        text = "\n".join(cs._step_lines([row]))
+        assert "## Calls by step" in text
+        report_line = next(line for line in text.splitlines()
+                           if line.startswith("R36     report"))
+        assert report_line.split()[2:] == ["1", "4", "-", "-", "-", "-",
+                                           "-", "3/2", "1/1", "9"]
+
+    def test_the_ingest_stage_writes_them_into_its_run_file(
+            self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        _reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster)
+        run = json.loads((out / "ingest" / "R36" / "run.json").read_text(
+            encoding="utf-8"))
+        assert "report" in run["calls_by_step"]
+        assert run["visual_scales_on"] is False
+        assert results["ingest"]["visual_scales"]["files"] == 1
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "## Calls by step" in text
+
+
+def test_page_sources_count_the_scans_and_never_fail_a_run():
+    pytest.importorskip("pymupdf")
+    fixtures = pytest.importorskip("planlens.testing.visual_scale_fixtures")
+    scan = fixtures.build_log(fixtures.LogVariant("ri_scan", skew_deg=0.4,
+                                                  seed=101))
+    assert cs._page_sources(scan.open(), [0]) == {
+        "pages": 1, "raster": 1, "di_text": 0}
+    assert cs._page_sources(object(), [3, 4]) == {
+        "pages": 2, "raster": 0, "di_text": 0}

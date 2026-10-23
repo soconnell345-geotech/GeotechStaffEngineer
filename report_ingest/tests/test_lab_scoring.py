@@ -457,3 +457,23 @@ class TestReadingAndLinkingApart:
             _before, after = score_one_sheet(GRADING_TRUTH, object(), None,
                                              report_id="R99")
         assert after.link_from_label is arm
+
+
+def test_the_plot_check_the_reader_ran_reaches_the_run_file(monkeypatch):
+    """BACKLOG RI-05 (G3): what the visual-scales check of the plotted
+    curve found is in the scored sheet, so RESULTS.md can count it."""
+    from types import SimpleNamespace
+    import report_ingest.lab_reader as reader
+    from report_ingest.lab_scoring import score_one_sheet
+    tests = _grading_record()
+    check = {"status": "checked", "table_points": 6, "agree": 6,
+             "disagree": [], "no_marker_at_size": 0, "label_calls": 1}
+    monkeypatch.setattr(reader, "read_lab_sheet", lambda *a, **k:
+                        SimpleNamespace(
+                            tests=tests, model_tests=tests, floor_tests=tests,
+                            cost={}, model_calls=1, tool_calls=0,
+                            unresolved=[], changes=[], warnings=[],
+                            plot_check=check))
+    _before, after = score_one_sheet(GRADING_TRUTH, object(), None,
+                                     report_id="R99")
+    assert after.to_dict()["plot_check"] == check

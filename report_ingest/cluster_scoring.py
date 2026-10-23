@@ -86,6 +86,7 @@ from report_ingest.scoring import (
     columns_label_table, disputed_drop, gate_failures, label_table,
     verdict_for,
 )
+from report_ingest.visual_scales import enabled as visual_scales_enabled
 from report_ingest.vote import (
     POLICIES, STRUCTURAL_RULES_WIN, PageVote, agreement, build_votes,
     policy_labels, required_review_accuracy, trust_table,
@@ -140,6 +141,10 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "calc",
                                 "soundings", "narrative", "vision_labels",
                                 "vote", "ingest")
+
+#: The stages that make no model call, and so need no prompter: the vote
+#: combines label and vision runs already on disk (BACKLOG RI-08).
+NO_MODEL_STAGES: Tuple[str, ...] = ("vote",)
 
 #: The reports the log rules were allowed to be tuned on, when no ``OPEN.txt``
 #: sits beside the truth files. Everything else is scored as blind.
@@ -453,7 +458,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         Where everything is written. ``/tmp/...`` or a Volume, never
         ``/Workspace``.
     prompter
-        The live ``fh_prompter``. Required: there is no other way in.
+        The live ``fh_prompter``. Required by every stage that calls a
+        model, which is every stage but ``vote``: the vote combines label
+        runs already on disk and makes no call, so it runs without one
+        (BACKLOG RI-08).
     model, triage_model
         Funhouse tiers. ``triage_model`` defaults to ``model``; triage is one
         call over a ledger and a cheaper tier is usually enough, the review
@@ -643,10 +651,6 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
         to compare two settings.
     """
-    if prompter is None:
-        raise ValueError(
-            "pass the live fh_prompter; this module reads no credential of "
-            "its own")
     reports_dir = reports_dir if reports_dir is not None else corpus_dir
     if reports_dir is None:
         raise ValueError("pass reports_dir: the folder holding the PDFs")
@@ -657,6 +661,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             f"unknown stage(s) {unknown}; the stages are {list(STAGE_NAMES)}")
     if not stages:
         raise ValueError(f"pass at least one stage: {list(STAGE_NAMES)}")
+    calling = [s for s in stages if s not in NO_MODEL_STAGES]
+    if prompter is None and calling:
+        raise ValueError(
+            f"pass the live fh_prompter: stage(s) {calling} call the model, "
+            f"and this module reads no credential of its own")
     (logs_truth, lab_truth, narrative_truth, calc_truth,
      sounding_truth) = _truth_dirs(
         truth_dir, lab_truth_dir, narrative_truth_dir, calc_truth_dir,
@@ -946,16 +955,11 @@ def _score(done: Dict[str, dict], corpus: Corpus,
         "absent": list(absent),
         "sets": {},
         "triage": [],
-        "totals": {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-                   "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0},
+        "totals": _cost_totals(),
     }
     for rid in sorted(done):
         blob = done[rid]
-        cost = blob["cost"]
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            out["totals"][key] += cost.get(key, 0)
-        out["totals"]["dollars"] += cost.get("dollars", 0.0)
+        _add_cost(out["totals"], blob["cost"])
         out["totals"]["seconds"] += blob.get("seconds", 0.0)
         profile = blob["profile"]
         out["triage"].append({
@@ -1160,6 +1164,8 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
             doc = corpus.open_report(report, di="auto", warn=False)
             before, after = score_one_log(truth, doc, engine, budget=budget,
                                           report_id=report)
+            sources = _page_sources(doc, [int(p) for p in
+                                          truth.get("pages") or []])
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")
@@ -1185,6 +1191,9 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
             "after": after.to_dict(),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
+            # What the visual-scales voters could act on (BACKLOG RI-05).
+            "visual_scales_on": visual_scales_enabled(),
+            "page_sources": sources,
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         _sync(sync)
@@ -1273,6 +1282,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             doc = corpus.open_report(report, di="auto", warn=False)
             before, after = score_one_sheet(truth, doc, engine,
                                             budget=budget, report_id=report)
+            sources = _page_sources(doc, pages_of(truth))
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")
@@ -1305,6 +1315,9 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "link_from_label": (after.link_from_label
                                 if after.link_from_label is not None
                                 else link_from_label_enabled()),
+            # What the visual-scales voters could act on (BACKLOG RI-05).
+            "visual_scales_on": visual_scales_enabled(),
+            "page_sources": sources,
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         _sync(sync)
@@ -1369,16 +1382,15 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "after": _lab_totals(group, "after"),
             **beside(group),
         }
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
+    visual = _visual_counts()
     for row in rows:
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            cost[key] += row["cost"].get(key, 0)
-        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
+        _add_visual(visual, row)
     return {
         "date": date.today().isoformat(),
+        "visual_scales": visual,
         "model": model,
         "served_by": sorted({r.get("served_by") for r in rows
                              if r.get("served_by")}),
@@ -1532,6 +1544,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
                 "liquid limit below the plastic limit, a grading running "
                 "the wrong way. `look` is every value it took from the "
                 "picture and every curve it digitised.", ""]
+    out += _visual_lines(lab.get("visual_scales") or {})
     cost = lab["cost"]
     n = max(1, lab["n_sheets"])
     out += ["## Cost", "", "```",
@@ -1539,6 +1552,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per sheet: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -1711,13 +1725,9 @@ def _score_calc(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "before": _calc_totals(group, "before"),
             "after": _calc_totals(group, "after"),
         }
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
     for row in rows:
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            cost[key] += row["cost"].get(key, 0)
-        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
     return {
         "date": date.today().isoformat(),
@@ -1870,6 +1880,7 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per calculation: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -1957,6 +1968,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
             before, after = score_one_sounding(truth, doc, engine,
                                                budget=budget,
                                                report_id=report)
+            sources = _page_sources(doc, pages_of(truth))
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")
@@ -1986,6 +1998,9 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
             "after": after.to_dict(),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
+            # What the visual-scales voters could act on (BACKLOG RI-05).
+            "visual_scales_on": visual_scales_enabled(),
+            "page_sources": sources,
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         _sync(sync)
@@ -2052,16 +2067,15 @@ def _score_soundings(done: Dict[str, dict], failures: Dict[str, str],
             "before": _sounding_totals(group, "before"),
             "after": _sounding_totals(group, "after"),
         }
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
+    visual = _visual_counts()
     for row in rows:
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            cost[key] += row["cost"].get(key, 0)
-        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
+        _add_visual(visual, row)
     return {
         "date": date.today().isoformat(),
+        "visual_scales": visual,
         "model": model,
         "served_by": sorted({r.get("served_by") for r in rows
                              if r.get("served_by")}),
@@ -2201,6 +2215,7 @@ def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
                 "axis, a channel value outside its printed range, a "
                 "negative tip resistance. `dis`, `kept`, `add` and `rec` are "
                 "the merge.", ""]
+    out += _visual_lines(soundings.get("visual_scales") or {})
     cost = soundings["cost"]
     n = max(1, soundings["n_sheets"])
     out += ["## Cost", "", "```",
@@ -2208,6 +2223,7 @@ def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per sheet: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -2419,13 +2435,9 @@ def _score_narrative(done: Dict[str, dict], failures: Dict[str, str],
         sets[name] = {"reports": [r["id"] for r in group],
                       "n_reports": len(group),
                       "totals": _narrative_totals(group)}
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
     for row in rows:
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            cost[key] += row["cost"].get(key, 0)
-        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
     return {
         "date": date.today().isoformat(),
@@ -2544,6 +2556,7 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per report: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -2614,16 +2627,15 @@ def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "floor_alone": floor, "n_floor": n_floor,
             "model_alone": alone, "n_model": n_model,
         }
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
+    visual = _visual_counts()
     for row in rows:
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            cost[key] += row["cost"].get(key, 0)
-        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
+        _add_visual(visual, row)
     return {
         "date": date.today().isoformat(),
+        "visual_scales": visual,
         "model": model,
         "served_by": sorted({r.get("served_by") for r in rows
                              if r.get("served_by")}),
@@ -2735,6 +2747,7 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
     out += ["", "`unres` is what the reader could not settle plus what "
                 "Python refused (a depth off the page). `look` is how many "
                 "values it took from the picture rather than the rows.", ""]
+    out += _visual_lines(logs.get("visual_scales") or {})
     cost = logs["cost"]
     n = max(1, logs["n_logs"])
     out += ["## Cost", "", "```",
@@ -2742,6 +2755,7 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per log: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -2920,8 +2934,7 @@ def _score_vision(done: Dict[str, dict], corpus: Corpus,
     a scorer of its own would be a number nobody could set beside the rules.
     """
     rows: Dict[str, Any] = {}
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
     per_report: List[dict] = []
     counted: set = set()
 
@@ -2973,10 +2986,7 @@ def _score_vision(done: Dict[str, dict], corpus: Corpus,
                 hits["vision"] += int(saw == want)
             if rid not in counted:
                 counted.add(rid)
-                for key in ("calls", "input_tokens", "output_tokens",
-                            "cache_read_tokens"):
-                    cost[key] += blob["cost"].get(key, 0)
-                cost["dollars"] += blob["cost"].get("dollars", 0.0)
+                _add_cost(cost, blob["cost"])
                 cost["seconds"] += blob.get("seconds", 0.0)
                 per_report.append({
                     "id": rid, "set": name, "pages": blob.get("n_pages", 0),
@@ -3206,6 +3216,7 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per report: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -4246,6 +4257,11 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 record, rid, truth, _bound_records(record, folder)),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
+            # Calls by step for the report and each report bound inside it
+            # (BACKLOG RI-21), and what the visual-scales voters did in its
+            # item files (RI-05).
+            "visual_scales_on": visual_scales_enabled(),
+            **_ingest_steps(folder),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         _sync(sync)
@@ -4269,8 +4285,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
 def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
                   model: str) -> Dict[str, Any]:
     rows = [done[k] for k in sorted(done)]
-    cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
+    cost = _cost_totals()
     totals: Dict[str, Any] = {
         "pages": 0, "investigations": 0, "samples": 0, "spt": 0,
         "lab_tests": 0, "calculations": 0, "qa": 0,
@@ -4292,12 +4307,11 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
                                  "precision_found": 0, "precision_total": 0,
                                  "n": 0}},
     }
+    visual = _visual_counts()
     for row in rows:
-        for key in ("calls", "input_tokens", "output_tokens",
-                    "cache_read_tokens"):
-            cost[key] += row["cost"].get(key, 0)
-        cost["dollars"] += row["cost"].get("dollars", 0.0)
+        _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
+        _merge_visual(visual, row)
         totals["pages"] += int(row.get("n_pages") or 0)
         counts = row.get("counts") or {}
         for key in ("investigations", "samples", "spt", "lab_tests",
@@ -4389,8 +4403,14 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
                              if r.get("served_by")}),
         "n_reports": len(rows),
         "failures": dict(failures),
-        "per_report": rows,
+        # Each report's run file whole, less its row per request: that list
+        # stays in ingest/<ID>/run.json, and results.json keeps the totals.
+        "per_report": [{**r, "cost": {k: v for k, v in (r.get("cost")
+                                                         or {}).items()
+                                      if k != "per_call"}}
+                       for r in rows],
         "totals": totals,
+        "visual_scales": visual,
         "cost": cost,
     }
 
@@ -4663,6 +4683,10 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
                     "the records are not scored; the counts above are what "
                     "the pipeline produced."]
 
+    extra = (_visual_lines(ingest.get("visual_scales") or {}, "reports")
+             + _step_lines(ingest.get("per_report") or []))
+    if extra:
+        out += [""] + extra[:-1]
     cost = ingest["cost"]
     n = max(1, ingest["n_reports"])
     out += ["", "## Cost", "", "```",
@@ -4670,6 +4694,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
+            _failure_line(cost),
             f"per report: {cost['calls'] / n:.1f} calls, "
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
@@ -4708,6 +4733,338 @@ def _price_note(cost: Dict[str, Any]) -> str:
             "no deployment that answered this run has a rate on file either, "
             "so this reports TOKENS rather than dollars. Read the spend from "
             "Funhouse's own budget endpoint for the same window.")
+
+
+#: What a stage's cost total adds up over its run files. ``failed``,
+#: ``retried`` and ``reasoning_tokens`` came with BACKLOG RI-21: a run file
+#: written before then has none of them and adds nothing to them.
+_COST_SUMS: Tuple[str, ...] = ("calls", "failed", "retried", "input_tokens",
+                               "output_tokens", "cache_read_tokens",
+                               "reasoning_tokens")
+
+
+def _cost_totals() -> Dict[str, Any]:
+    """A stage's cost total before any run file is added."""
+    out: Dict[str, Any] = {key: 0 for key in _COST_SUMS}
+    out.update({"failed_by_kind": {}, "waited_seconds": 0.0, "dollars": 0.0,
+                "seconds": 0.0, "files": 0, "files_counting_failures": 0})
+    return out
+
+
+def _add_cost(total: Dict[str, Any], cost: Optional[Dict[str, Any]]) -> None:
+    """One run file's cost block, added into a stage's total. ``seconds`` is
+    left to the caller, which adds the run file's own wall clock."""
+    cost = cost or {}
+    for key in _COST_SUMS:
+        total[key] = total.get(key, 0) + int(cost.get(key) or 0)
+    total["dollars"] = (total.get("dollars", 0.0)
+                        + float(cost.get("dollars") or 0.0))
+    total["waited_seconds"] = round(total.get("waited_seconds", 0.0)
+                                    + float(cost.get("waited_seconds") or 0.0),
+                                    1)
+    total["files"] = total.get("files", 0) + 1
+    if "failed" in cost:
+        total["files_counting_failures"] = (
+            total.get("files_counting_failures", 0) + 1)
+    kinds = total.setdefault("failed_by_kind", {})
+    for kind, n in (cost.get("failed_by_kind") or {}).items():
+        kinds[kind] = kinds.get(kind, 0) + int(n or 0)
+
+
+#: How each kind of failed request reads in RESULTS.md
+#: (:data:`report_ingest.engine.FAILURE_KINDS`).
+_FAILURE_WORDS: Dict[str, str] = {
+    "rate_limit": "rate limited", "parameter": "a parameter refused",
+    "too_large": "request too large", "timeout": "timed out",
+    "no_reply": "nothing back", "other": "other errors"}
+
+
+def _failure_line(cost: Dict[str, Any]) -> str:
+    """The cost block's line on the requests that came back with an error,
+    how many of them the engine sent again, and the reasoning tokens
+    (BACKLOG RI-21). ``calls`` above counts replies only."""
+    files = int(cost.get("files") or 0)
+    counted = int(cost.get("files_counting_failures") or 0)
+    if files and not counted:
+        return ("failed requests: not recorded (these run files were "
+                "written before failed requests were counted)")
+    failed = int(cost.get("failed") or 0)
+    kinds = ", ".join(
+        f"{n} {_FAILURE_WORDS.get(kind, kind)}"
+        for kind, n in sorted((cost.get("failed_by_kind") or {}).items(),
+                              key=lambda kv: (-kv[1], kv[0])) if n)
+    line = (f"failed requests, not among the calls above: {failed}"
+            + (f" ({kinds})" if kinds else "")
+            + f", {int(cost.get('retried') or 0)} of them sent again by the "
+              f"engine")
+    waited = float(cost.get("waited_seconds") or 0.0)
+    if waited:
+        line += f", {waited:.0f} s waiting on rate limits"
+    line += (f"; reasoning: {int(cost.get('reasoning_tokens') or 0):,} of "
+             f"the output tokens")
+    if files and counted < files:
+        line += (f" (counted in {counted} of {files} run files; the rest "
+                 f"were written before failed requests were counted)")
+    return line
+
+
+# ---------------------------------------------------------------------------
+# what the visual-scales voters did (BACKLOG RI-05, G3)
+# ---------------------------------------------------------------------------
+
+def _page_sources(doc: Any, pages: Sequence[int]) -> Dict[str, int]:
+    """How many of a run's pages are scans (mostly picture, few drawn
+    lines) and how many read their text from Azure Document Intelligence:
+    what the visual-scales voters had to work on. Never fails a run."""
+    out = {"pages": len(pages), "raster": 0, "di_text": 0}
+    try:
+        from planlens.document.model import SOURCE_AZURE_DI
+        from planlens.document.raster import is_raster_page
+    except Exception:                       # noqa: BLE001 - a count only
+        return out
+    for page in pages:
+        try:
+            if is_raster_page(doc._doc[int(page)]):
+                out["raster"] += 1
+            if (doc.summary(int(page)).evidence.get("text_source")
+                    == SOURCE_AZURE_DI):
+                out["di_text"] += 1
+        except Exception:                   # noqa: BLE001 - a count only
+            continue
+    return out
+
+
+def _visual_counts() -> Dict[str, Any]:
+    """A stage's visual-scales counts before any run file is added."""
+    return {"files": 0, "files_on": 0, "files_not_recorded": 0,
+            "pages": 0, "raster": 0, "di_text": 0,
+            "label_calls": 0, "pixel_layers": 0,
+            "layer_votes": {"agree": 0, "disagree": 0, "no_record_layer": 0},
+            "plot_checks": {"checked": 0, "no_plot": 0, "unavailable": 0},
+            "plot_points": {"table": 0, "agree": 0, "disagree": 0,
+                            "no_marker_at_size": 0},
+            "trace_checks": {"checked": 0, "no_plot": 0},
+            "trace_points": {"compared": 0, "agree": 0, "disagree": 0,
+                             "several": 0, "no_trace": 0},
+            "trace_channels_no_panel": 0}
+
+
+def _add_checks(total: Dict[str, Any], info: Any = None, plot: Any = None,
+                trace: Any = None) -> None:
+    """One reading's visual-scales results, added into ``total``: ``info``
+    from :func:`report_ingest.visual_scales.log_grid_for` (with the layer
+    votes), ``plot`` from ``plot_check``, ``trace`` from ``trace_check``."""
+    if isinstance(info, dict):
+        total["label_calls"] += int(info.get("label_calls") or 0)
+        total["pixel_layers"] += int(info.get("pixel_layers") or 0)
+        for vote in info.get("layer_votes") or []:
+            said = str(vote.get("agreement") or "")
+            if said in total["layer_votes"]:
+                total["layer_votes"][said] += 1
+    if isinstance(plot, dict):
+        total["label_calls"] += int(plot.get("label_calls") or 0)
+        status = str(plot.get("status") or "")
+        if status in total["plot_checks"]:
+            total["plot_checks"][status] += 1
+        if status == "checked":
+            points = total["plot_points"]
+            points["table"] += int(plot.get("table_points") or 0)
+            points["agree"] += int(plot.get("agree") or 0)
+            points["disagree"] += len(plot.get("disagree") or [])
+            points["no_marker_at_size"] += int(
+                plot.get("no_marker_at_size") or 0)
+    if isinstance(trace, dict):
+        total["label_calls"] += int(trace.get("label_calls") or 0)
+        status = str(trace.get("status") or "")
+        if status in total["trace_checks"]:
+            total["trace_checks"][status] += 1
+        for row in (trace.get("channels") or {}).values():
+            if row.get("status") == "no_panel":
+                total["trace_channels_no_panel"] += 1
+                continue
+            points = total["trace_points"]
+            for key in ("compared", "agree", "several", "no_trace"):
+                points[key] += int(row.get(key) or 0)
+            points["disagree"] += len(row.get("disagree") or [])
+
+
+def _add_visual(total: Dict[str, Any], blob: Dict[str, Any]) -> None:
+    """One logs, lab or soundings run file, added into a stage's counts."""
+    total["files"] += 1
+    if "visual_scales_on" not in blob:
+        total["files_not_recorded"] += 1
+    elif blob["visual_scales_on"]:
+        total["files_on"] += 1
+    for key in ("pages", "raster", "di_text"):
+        total[key] += int((blob.get("page_sources") or {}).get(key) or 0)
+    after = blob.get("after") or {}
+    _add_checks(total, after.get("visual_scales"), after.get("plot_check"),
+                after.get("code_trace"))
+
+
+def _merge_visual(total: Dict[str, Any], row: Dict[str, Any]) -> None:
+    """One ingest run file, added into the stage's visual-scales counts:
+    the counts :func:`_ingest_steps` summed over its item files."""
+    total["files"] += 1
+    part = row.get("visual_scales")
+    if "visual_scales_on" not in row or not isinstance(part, dict):
+        total["files_not_recorded"] += 1
+        return
+    if row["visual_scales_on"]:
+        total["files_on"] += 1
+    for key, value in part.items():
+        if key.startswith("files"):
+            continue
+        if isinstance(value, dict):
+            cell = total.setdefault(key, {})
+            for sub, n in value.items():
+                cell[sub] = cell.get(sub, 0) + int(n or 0)
+        else:
+            total[key] = total.get(key, 0) + int(value or 0)
+
+
+def _visual_lines(counts: Dict[str, Any], what: str = "run files"
+                  ) -> List[str]:
+    """The ``## Visual scales`` block: whether the setting was on, what the
+    pages were, and what each voter found. Nothing for run files written
+    before any of this was recorded."""
+    files = int(counts.get("files") or 0)
+    if not files or counts.get("files_not_recorded", 0) >= files:
+        return []
+    on = int(counts.get("files_on") or 0)
+    out = ["## Visual scales", "",
+           f"Setting (GEOTECH_INGEST_VISUAL_SCALES) on for {on} of "
+           f"{files} {what}"
+           + (f"; {counts['files_not_recorded']} written before this was "
+              f"recorded" if counts.get("files_not_recorded") else "")
+           + ". With it off, every count below is zero by design.", "", "```"]
+    if counts.get("pages"):
+        out.append(f"pages read: {counts['pages']}, of them "
+                   f"{counts['raster']} scans and {counts['di_text']} with "
+                   f"their text from Azure Document Intelligence")
+    out.append(f"label-reading calls: {counts['label_calls']} (counted in "
+               f"the calls above)")
+    votes = counts["layer_votes"]
+    out.append(f"layer tops measured from a scan's stratum lines: "
+               f"{counts['pixel_layers']}; votes against the record's tops: "
+               f"{votes['agree']} agree, {votes['disagree']} disagree, "
+               f"{votes['no_record_layer']} with no record layer to compare")
+    checks, points = counts["plot_checks"], counts["plot_points"]
+    if any(checks.values()):
+        out.append(f"grading curves checked against the table: "
+                   f"{checks['checked']} (no plot found on "
+                   f"{checks['no_plot']}, unreadable on "
+                   f"{checks['unavailable']}); table points "
+                   f"{points['table']}: {points['agree']} agree, "
+                   f"{points['disagree']} disagree, "
+                   f"{points['no_marker_at_size']} with no marker at their "
+                   f"size")
+    traces, tpoints = counts["trace_checks"], counts["trace_points"]
+    if any(traces.values()):
+        out.append(f"plotted soundings traced by code: {traces['checked']} "
+                   f"(no plot found on {traces['no_plot']}; "
+                   f"{counts['trace_channels_no_panel']} channel(s) with no "
+                   f"panel); points {tpoints['compared']} compared: "
+                   f"{tpoints['agree']} agree, {tpoints['disagree']} "
+                   f"disagree; {tpoints['several']} with several traces "
+                   f"at the depth, {tpoints['no_trace']} with none")
+    out += ["```", ""]
+    return out
+
+
+def _item_step(blob: Dict[str, Any]) -> str:
+    """Which reader wrote an item file, by what it holds (an item file does
+    not name its reader)."""
+    if "general" in blob:
+        return "narrative"
+    if "calculation" in blob:
+        return "calc"
+    if "tests" in blob:
+        return "lab"
+    inv = blob.get("investigation") or {}
+    return ("log" if inv.get("kind") in ("boring", "test_pit", None)
+            else "sounding")
+
+
+def _ingest_steps(folder: Path) -> Dict[str, Any]:
+    """Model calls by step for the report and for each report bound inside
+    it, and what the visual-scales voters did, read off the step and item
+    files under ``folder`` (BACKLOG RI-21, RI-05).
+
+    A step file kept from an earlier attempt counts the calls it took
+    then, so on a resumed run these can add up to more than the run
+    file's own ``cost``, which counts this attempt only.
+    """
+    def load(path: Path) -> Dict[str, Any]:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def calls(blob: Dict[str, Any]) -> int:
+        cost = blob.get("cost") if isinstance(blob, dict) else None
+        return int((cost or {}).get("calls") or 0)
+
+    steps: Dict[str, Dict[str, int]] = {}
+    visual = _visual_counts()
+    places = [("report", folder)]
+    if (folder / "bound").is_dir():
+        places += [(p.name, p)
+                   for p in sorted((folder / "bound").iterdir())
+                   if p.is_dir()]
+    for name, where in places:
+        row: Dict[str, int] = {}
+        for step in ("triage", "vision", "review", "identity"):
+            n = calls(load(where / f"{step}.json"))
+            if n:
+                row[step] = n
+        for path in sorted((where / "items").glob("*.json")):
+            blob = load(path)
+            if not blob:
+                continue
+            step = _item_step(blob)
+            row[step] = row.get(step, 0) + calls(blob)
+            row[f"{step} items"] = row.get(f"{step} items", 0) + 1
+            _add_checks(visual, blob.get("visual_scales"),
+                        blob.get("plot_check"), blob.get("code_trace"))
+        steps[name] = row
+    return {"calls_by_step": steps, "visual_scales": visual}
+
+
+#: The steps of an ingest run, in the order they run: the page labels
+#: (triage, the vision pass, the review), a bound document's identity call,
+#: and the readers.
+_STEPS: Tuple[str, ...] = ("triage", "vision", "review", "identity", "log",
+                           "sounding", "lab", "calc", "narrative")
+
+
+def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
+    """The ``## Calls by step`` table: the model calls of each report and of
+    each report bound inside it, step by step (BACKLOG RI-21). Nothing for
+    run files written before this was recorded."""
+    table = [(r.get("id", ""), name, steps) for r in rows
+             for name, steps in (r.get("calls_by_step") or {}).items()]
+    if not table:
+        return []
+    out = ["## Calls by step", "",
+           "Model calls each step took, read off the step and item files of "
+           "the report and of each report bound inside it (`bound1`, ...). "
+           "A reader's cell is calls/items. A step file kept from an "
+           "earlier attempt counts the calls it took then, so a resumed "
+           "report can add up to more than its cost below.", "", "```",
+           f"{'report':<8}{'document':<10}"
+           + "".join(f"{step:>10}" for step in _STEPS) + f"{'total':>8}"]
+    for rid, name, steps in table:
+        cells = ""
+        for step in _STEPS:
+            n, items = int(steps.get(step) or 0), steps.get(f"{step} items")
+            cell = f"{n}/{items}" if items else (str(n) if n else "-")
+            cells += f"{cell:>10}"
+        total = sum(int(v or 0) for k, v in steps.items()
+                    if not k.endswith(" items"))
+        out.append(f"{rid:<8}{name:<10}{cells}{total:>8}")
+    out += ["```", ""]
+    return out
 
 
 def _header(results: Dict[str, Any]) -> List[str]:
@@ -4823,6 +5180,7 @@ def _render(results: Dict[str, Any]) -> List[str]:
             f"{totals['output_tokens']:,} output, "
             f"{totals['seconds']:.0f} s"
             f"{_money(totals)}",
+            _failure_line(totals),
             "```", "",
             _price_note(totals)]
     return out
