@@ -560,6 +560,21 @@ def _unwritable(inv: Investigation) -> bool:
         (inv.layers, inv.samples, inv.spt, inv.water))
 
 
+def _lab_hole(test: LabTest) -> str:
+    """The hole a laboratory test is written in: the one the reconciler
+    linked it to, else the boring the sheet printed.
+
+    A sheet printing "MW-2" for the log's "MW-02", or naming its specimen
+    "BH-7 U3", is linked to its hole by the reconciler; placing it by the
+    printed words would write it into a second, empty hole synthesised for
+    those words beside the logged one (RI-07). A record nobody reconciled is
+    placed as before. The writer, its synthesised holes and the round-trip
+    gate all ask this one function, so the gate looks where the writer
+    wrote.
+    """
+    return (test.linked_investigation_id or test.investigation_id or "")
+
+
 def _unique(stem: str, issued: set, counts: Dict[str, int]) -> str:
     """``stem``, or ``stem_2``, ``stem_3`` ... -- the first not yet issued."""
     n = counts.get(stem, 0)
@@ -672,7 +687,7 @@ class _Writer:
                 out.extend((row.investigation_id, row.depth_top)
                            for row in test.result.rows)
             else:
-                out.append((test.investigation_id, test.depth_top))
+                out.append((_lab_hole(test), test.depth_top))
         return out
 
     # -- id bookkeeping ----------------------------------------------------
@@ -1865,12 +1880,13 @@ class _Writer:
         where = (f"lab test {n + 1} ({test.kind}"
                  + (f", {test.investigation_id}" if test.investigation_id
                     else "") + ")")
-        placed = self._place(holes, test.investigation_id, test.depth_top,
+        hole = _lab_hole(test)
+        placed = self._place(holes, hole, test.depth_top,
                              test.depth_bottom, where)
         if placed is None:
             return
         gml_id, top, bottom = placed
-        values = _Values(self, where, test.investigation_id.strip(), top)
+        values = _Values(self, where, hole.strip(), top)
         values.quantity("Elevation", "elevation", test.elevation,
                         dictionary=False)
         tables = self._lab_values(test, values)
@@ -3141,7 +3157,7 @@ def _lab_targets(test: LabTest) -> List[Tuple[str, str, Optional[Quantity],
         return [(f"{test.kind} row {i + 1}", row.investigation_id,
                  row.depth_top, row)
                 for i, row in enumerate(result.rows)]
-    return [(test.kind, test.investigation_id, test.depth_top, result)]
+    return [(test.kind, _lab_hole(test), test.depth_top, result)]
 
 
 def _found(pool: Sequence[float], value: float, unit: str) -> bool:

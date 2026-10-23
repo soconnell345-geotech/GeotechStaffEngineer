@@ -273,7 +273,24 @@ because a curve read without its own ticks in view is a guess.
 
 **The link to the ground is what the sheet prints** — the boring identifier and
 the depth, copied. This reader never matches a sample to a log; the reconciler
-does that later and records a conflict when it cannot.
+does that later and records a conflict when it cannot. Many sheets print no
+Boring heading and name the specimen by its hole instead (`BH-03 S-2
+1.5-1.95 m`, `MW-2` for the log's `MW-02`); since RI-07 the reconciler takes a
+hole the logs hold from the head of the printed boring, or of the sample label
+when no boring is printed, and the DIGGS writer places the test in the hole it
+was linked to. On the 13 records of Foundry run 1 (stage b) that links 558 of
+1064 lab tests to a hole where it linked 427, changes none it already linked,
+and writes 1824 lab results to DIGGS against 1767 with 242 holes synthesised
+for printed words against 278.
+
+**The specimen-label paragraph (RI-07), off by default.** The Foundry runs lost
+whole sheets — a compaction 1/10 whose values were read 8/8 — because the model
+left the boring empty when the sheet printed the hole only as the specimen's
+label, and the prompt says to copy a boring only where one is named.
+`GEOTECH_INGEST_LAB_LINK_FROM_LABEL=1` (or `with use_link_from_label():`) adds
+one paragraph after the link rule: a label that begins with a hole's
+identifier names that hole. It changes what the model is asked, so it stays off
+until a Foundry pair of runs measures it; a run file says which arm it ran in.
 
 **A summary table is one test**, with a row per specimen, because the table is a
 thing the report prints and splitting it would lose which values were printed
@@ -293,6 +310,15 @@ for the answer and offers the tool at the same time, so a tabulated sheet is
 read and answered in a single call. On the last allowed call the tool is
 withdrawn, so a reader that keeps zooming runs out of looking rather than out of
 answering.
+
+**The window (RI-07).** planlens makes one work item of consecutive sheets with
+the same title, and Foundry run 1 sent lab items of up to 17 pages whole: every
+page's picture and text in one request, with nothing bounding the request size
+or the answer. An item longer than `MAX_LAB_PAGES` (12, the calculation
+reader's window) is now read in consecutive near-equal windows (17 pages are 9
+and 8), each with its own floor and its own budget, and the tests are put end to
+end; a window that gives no answer is named in `unresolved` and the rest are
+kept. An item of 12 pages or fewer is read exactly as before, brief and all.
 
 **The floor.** The page's detected tables and its title are the first voter.
 Before any call, `lab_floor.floor_from_tables` reads them into typed `LabTest`

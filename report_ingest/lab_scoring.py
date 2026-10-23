@@ -723,9 +723,10 @@ def _hole(text: Any) -> str:
     """A boring / pit identifier folded for MATCHING: "TP-24", "TP 24" and
     "tp24" are one hole, and so are "SB-02" and "SB-2". The lab scorer
     compared them as exact strings, so a test linked to "LB-2" was not the
-    key's "LB2" and every value on it counted as missed."""
-    from report_ingest.reconciler import fold_id
-    return re.sub(r"(?<!\d)0+(?=\d)", "", fold_id(text))
+    key's "LB2" and every value on it counted as missed. The reconciler
+    links a sheet to its hole with the same fold."""
+    from report_ingest.reconciler import hole_key
+    return hole_key(text)
 
 
 def _tests_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
