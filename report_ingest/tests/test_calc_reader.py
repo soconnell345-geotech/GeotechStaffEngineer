@@ -176,6 +176,17 @@ class TestTheFloor:
         assert _program_in("Settle3 2023") == ("Settle3", "")
         assert _program_in("Spread Footing Settlement Calculation") is None
 
+    def test_a_program_named_by_a_word_needs_its_banner_to_say_so(self):
+        """RI-17: "SHAFT" and "GROUP" are words as well as programs. Their
+        banner is read where it says "for Windows" or gives a version; the
+        word in prose is not a banner."""
+        assert _program_in("SHAFT for Windows, Version 2017.8.12") == (
+            "SHAFT", "2017.8.12")
+        assert _program_in("GROUP for Windows") == ("GROUP", "")
+        assert _program_in("Group v10") == ("Group", "10")
+        assert _program_in("Section 1 is a drilled shaft with casing") is None
+        assert _program_in("the pile group version of the check") is None
+
     def test_the_floor_of_a_spreadsheet_names_no_program(self, spreadsheet):
         """Which is the right answer: a spreadsheet names none, and the
         reader must not be handed an invented one as its starting record."""
@@ -312,6 +323,123 @@ class TestTheMerge:
                     if d["what"] == "Footing Width B (ft)"]
         assert split["kept"] == "model"
         assert kept.prov.alternatives[0].value == "8.5 ft"
+
+    # -- RI-17: one slot per printed place --
+
+    def test_a_label_printed_once_per_block_is_three_values_not_one(
+            self, tmp_path):
+        """One page prints Nc three times, once per material. The reader
+        returned two of them with a box and a note each; the third, which
+        only the floor read, is a different printed value and stays in the
+        record as its own row. Keyed by the label alone, it was 'corrected'
+        to the reader's Nc from another block and lost."""
+        from report_ingest.tests.calc_fixtures import (
+            build_repeated_label_sheet,
+        )
+        gt = build_repeated_label_sheet()
+        doc = _open(gt.pdf, tmp_path)
+        try:
+            floor = _floor_of(doc)
+            box = {v.value: v.bbox for v in floor.values if v.name == "Nc"}
+            model = Calculation(kind="shallow_foundation_bearing", results=[
+                NamedQuantity(
+                    name="Nc", value=Quantity(value=v, unit=""),
+                    prov=Provenance(page=0, bbox=box[v], method="model",
+                                    confidence=0.9, note=f"block {block}"))
+                for v, block in ((50.59, "C"), (14.83, "B"))])
+            merged, log = merge_calculation(floor, model)
+        finally:
+            doc.close()
+
+        values = sorted(r.value.value for r in merged.inputs + merged.results
+                        if r.name == "Nc")
+        assert values == [14.83, 30.14, 50.59]
+        assert not [d for d in log.disagreements if d["what"] == "Nc"]
+        (kept,) = [k for k in log.kept if k["what"] == "Nc"]
+        assert kept["value"] == "30.14"
+        assert "somewhere else" in kept["why"]
+
+    def test_a_label_on_every_page_keeps_each_pages_value(self, tmp_path):
+        """A printout of plots prints the same legend label on every page.
+        The reader's row read on the first page says nothing about the
+        second page's value, which is kept."""
+        from report_ingest.tests.calc_fixtures import build_repeated_label_run
+        gt = build_repeated_label_run()
+        doc = _open(gt.pdf, tmp_path)
+        try:
+            floor = _floor_of(doc, range(gt.n_pages))
+            box = {v.page: v.bbox for v in floor.values}
+            model = Calculation(kind="lateral_pile", inputs=[
+                NamedQuantity(
+                    name=name, value=Quantity(value=v, unit="kN"),
+                    prov=Provenance(page=page, bbox=box[page], method="model",
+                                    confidence=0.9, note="the legend"))
+                for name, v, page in (("Head load", 12.5, 0),
+                                      ("Head load, Pile P-3", 95.0, 2))])
+            merged, log = merge_calculation(floor, model)
+        finally:
+            doc.close()
+
+        values = sorted(r.value.value for r in merged.inputs
+                        if r.name.startswith("Head load"))
+        assert values == [12.5, 40.0, 95.0]
+        assert not log.disagreements
+        assert log.reconciled == 2
+
+    @pytest.mark.parametrize("note", ["", "the line in block 2"])
+    def test_the_order_the_patterns_met_the_values_in_decides_nothing(
+            self, note):
+        """Nc is printed 5 in block 1 and 7 in block 2, and the reader read 5
+        with block 2's box. Whichever block the floor read first, the record
+        ends the same; with no note to overrule block 2's 7, both printed
+        values are in it. Settled in the floor's order, block 1's 5 was
+        matched to the reader's row first and lost when block 2's 7 then won
+        that row."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        block_1 = (300.0, 100.0, 360.0, 112.0)
+        block_2 = (300.0, 400.0, 360.0, 412.0)
+
+        def printed(v, box):
+            return FloorValue(name="Nc", value=v, unit="", text="", page=0,
+                              bbox=box, method="text", confidence=0.6)
+
+        records = []
+        for values in ([printed(5.0, block_1), printed(7.0, block_2)],
+                       [printed(7.0, block_2), printed(5.0, block_1)]):
+            floor = CalcFloor(program=None, program_page=0, title="",
+                              values=values, pages=[0])
+            model = Calculation(kind="shallow_foundation_bearing", results=[
+                NamedQuantity(name="Nc", value=Quantity(value=5.0, unit=""),
+                              prov=Provenance(page=0, bbox=block_2,
+                                              method="model", confidence=0.9,
+                                              note=note))])
+            merged, _log = merge_calculation(floor, model)
+            records.append(sorted(r.value.value for r in
+                                  merged.inputs + merged.results
+                                  if r.name == "Nc"))
+        assert records[0] == records[1]
+        if not note:
+            assert records[0] == [5.0, 7.0]
+
+    def test_a_reading_off_the_picture_is_settled_by_the_shared_rule(
+            self, spreadsheet):
+        """A value read off the picture names no box, so nothing is known
+        about its place and the shared rule settles it: a note is what can
+        be said about a picture."""
+        doc, _gt = spreadsheet
+        floor = _floor_of(doc)
+        model = Calculation(kind="settlement", inputs=[NamedQuantity(
+            name="Footing Width B (ft)", value=Quantity(value=12.0, unit="ft"),
+            prov=Provenance(page=0, method="model_from_picture",
+                            confidence=0.8, note="the picture shows 12.0"))])
+
+        merged, log = merge_calculation(floor, model)
+
+        kept = next(r for r in merged.inputs
+                    if r.name == "Footing Width B (ft)")
+        assert kept.value.value == 12.0
+        assert [d["kept"] for d in log.disagreements
+                if d["what"] == "Footing Width B (ft)"] == ["model"]
 
     def test_the_floors_program_fills_a_reader_that_named_none(self, tmp_path):
         from report_ingest.tests.calc_fixtures import build_program_printout
@@ -573,6 +701,148 @@ class TestTheLoop:
         assert any(r.name == "Maximum bending moment"
                    for r in result.calculation.results)
 
+    def test_the_rest_is_sent_though_the_reader_did_not_ask(self, tmp_path):
+        """RI-17: a run the first window did not show whole gets its second
+        call whatever ``continues`` says -- a results page or a scanned page
+        there would otherwise reach the model only on its say-so."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=False)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        assert result.model_calls == 2
+        first = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "The others follow in your second call." in first
+        second = engine.calls[1]["messages"][0]["content"][1]["text"]
+        assert "--- page 11:" in second and "--- page 14:" in second
+
+    def test_the_continuation_asks_only_for_the_pages_it_shows(
+            self, tmp_path):
+        """RI-17 review: the continuation replaces the conversation, so the
+        model cannot see its first answer. It is asked for the values on the
+        pages it is shown, and told the earlier readings are kept for it --
+        never to repeat what it reported, which would invite values from
+        pages it is not shown."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")},
+                             {"final": _reading(kind="lateral_pile")}])
+        try:
+            read_calculation(doc, list(range(16)), engine, report_id="SYN")
+        finally:
+            doc.close()
+
+        asked = engine.calls[1]["messages"][0]["content"][0]["text"].lower()
+        assert len(engine.calls[1]["messages"]) == 1
+        assert "pages shown here" in asked
+        assert "kept for you" in asked and "do not repeat" in asked
+        for wording in ("already reported", "keeping everything",
+                        "whole calculation again"):
+            assert wording not in asked
+
+    def test_the_second_window_adds_to_the_first_and_drops_nothing(
+            self, tmp_path):
+        """RI-17 review: every printout over one window now takes the second
+        call, and its answer must not replace the first one's. A label read
+        on another page is another value, and the first call's unsettled
+        list, which the second call never saw, is kept."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(
+                kind="lateral_pile",
+                results=[_value("Head load", 10.0, "kN", page=0)],
+                unsettled=[Unsettled(what="a value I could not read", page=3,
+                                     why="smudged")])},
+            {"final": _reading(
+                kind="lateral_pile",
+                results=[_value("Head load", 20.0, "kN", page=14)])},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        assert result.model_calls == 2
+        heads = sorted(r.value.value for r in result.calculation.results
+                       if r.name == "Head load")
+        assert heads == [10.0, 20.0]
+        assert any(u.get("refused_by") == "reader"
+                   and u.get("what") == "a value I could not read"
+                   for u in result.unresolved)
+
+    def test_two_answers_fold_by_label_and_place(self):
+        """A later row replaces an earlier one only where both read one
+        printed value: the label, on the same page, on one printed line."""
+        from report_ingest.calc_reader import _fold_readings
+        line = (72.0, 300.0, 400.0, 312.0)
+        below = (72.0, 330.0, 400.0, 342.0)
+        first = _reading(results=[
+            _value("Maximum bending moment, Load Case 3", 41.0, "kN-m",
+                   page=2),
+            _value("Footing Width B, Footing F-1", 2.0, "m", page=1),
+            _value("Head load", 10.0, "kN", page=11, bbox=line),
+            _value("Shear, Load Case 3", 5.0, "kN", page=11),
+            _value("Shear, Load Case 7", 6.0, "kN", page=11),
+            _value("Axial load", 100.0, "kN", page=11, bbox=line),
+        ])
+        second = _reading(results=[
+            _value("Maximum bending moment, Load Case 7", 57.0, "kN-m",
+                   page=13),
+            _value("Footing Width B, Footing F-9", 3.0, "m", page=12),
+            _value("Head load", 12.0, "kN", page=11, bbox=line),
+            _value("Shear, Load Case 7", 6.5, "kN", page=11),
+            _value("Axial load", 120.0, "kN", page=11, bbox=below),
+        ])
+
+        out = _fold_readings(first, second, fresh=True)
+
+        got = sorted((r.name, r.prov.page, r.value) for r in out.results)
+        assert got == sorted([
+            ("Maximum bending moment, Load Case 3", 2, 41.0),
+            ("Maximum bending moment, Load Case 7", 13, 57.0),
+            ("Footing Width B, Footing F-1", 1, 2.0),
+            ("Footing Width B, Footing F-9", 12, 3.0),
+            # The same line read in both windows: the later reading.
+            ("Head load", 11, 12.0),
+            # The closest label is the one replaced.
+            ("Shear, Load Case 3", 11, 5.0),
+            ("Shear, Load Case 7", 11, 6.5),
+            # One label on two lines of one page is two values.
+            ("Axial load", 11, 100.0),
+            ("Axial load", 11, 120.0),
+        ])
+
+    def test_the_unsettled_lists_are_kept_together_only_after_the_rest(self):
+        """After the rest of the pages, the second call never saw the first
+        answer, so both lists stand (one entry per thing and page). After the
+        unsettled follow-up, which did see it, the second list is what is
+        still unsettled."""
+        from report_ingest.calc_reader import _fold_readings
+        first = _reading(unsettled=[
+            Unsettled(what="the modulus column", page=3, why="cut off"),
+            Unsettled(what="a smudged load", page=5, why="smudged")])
+        second = _reading(unsettled=[
+            Unsettled(what="The modulus column", page=3, why="cut off"),
+            Unsettled(what="the last plot's axis", page=14, why="no scale")])
+
+        after_rest = _fold_readings(first, second, fresh=True)
+        assert [(u.what, u.page) for u in after_rest.unsettled] == [
+            ("the modulus column", 3), ("a smudged load", 5),
+            ("the last plot's axis", 14)]
+
+        after_follow_up = _fold_readings(first, second)
+        assert [(u.what, u.page) for u in after_follow_up.unsettled] == [
+            ("The modulus column", 3), ("the last plot's axis", 14)]
+
     def test_the_budget_is_never_exceeded(self, spreadsheet):
         doc, gt = spreadsheet
         engine = FakeEngine([
@@ -725,13 +995,26 @@ class TestSplittingACalculationRun:
         from report_ingest.calc_reader import split_calc_runs
         assert split_calc_runs(two_banners, [0, 1]) == [[0, 1]]
 
-    def test_a_run_is_capped_at_the_readers_own_ceiling(self, two_banners):
-        from report_ingest.calc_reader import MAX_CALC_PAGES, split_calc_runs
+    def test_a_run_is_capped_at_what_two_calls_show(self, two_banners):
+        """RI-17: one printout stays one item up to the reader's two windows,
+        and a longer run is cut into balanced parts -- not a full item and an
+        orphan."""
+        from report_ingest.calc_reader import (
+            MAX_CALC_PAGES, MAX_RUN_PAGES, page_window, split_calc_runs,
+        )
         # Pages the document does not have read as nothing, which does not
         # split; the cap still bites.
-        runs = split_calc_runs(two_banners, list(range(MAX_CALC_PAGES + 4)))
-        assert all(len(run) <= MAX_CALC_PAGES for run in runs)
-        assert len(runs) >= 2
+        whole = list(range(2, 2 + MAX_RUN_PAGES))
+        assert split_calc_runs(two_banners, whole) == [whole]
+        seen = set(page_window(whole)) | set(
+            page_window(whole, MAX_CALC_PAGES - 2))
+        assert seen == set(whole)                    # two calls show it all
+        over = list(range(2, 2 + MAX_RUN_PAGES + 1))
+        assert [len(r) for r in split_calc_runs(two_banners, over)] == [
+            (MAX_RUN_PAGES + 2) // 2, (MAX_RUN_PAGES + 1) // 2]
+        long = list(range(2, 2 + 2 * MAX_RUN_PAGES + 1))
+        sizes = [len(r) for r in split_calc_runs(two_banners, long)]
+        assert len(sizes) == 3 and max(sizes) - min(sizes) <= 1
 
     def test_the_items_keep_their_title_and_say_they_were_split(
             self, two_banners):
@@ -760,3 +1043,324 @@ class TestSplittingACalculationRun:
         second = floor_from_pages(two_banners, runs[1], "RXX")
         assert "lpile" in (first.program or "").lower()
         assert "stabl" in (second.program or "").lower()
+
+    # -- RI-17: what the first fix cut that is one printout ------------------
+
+    @staticmethod
+    def _runs(tmp_path, heads):
+        from report_ingest.calc_reader import split_calc_runs
+        from report_ingest.tests.calc_fixtures import build_titled_pages
+        doc = _open(build_titled_pages(heads), tmp_path)
+        try:
+            return split_calc_runs(doc, list(range(len(heads))))
+        finally:
+            doc.close()
+
+    def test_a_sub_heading_that_changes_page_to_page_does_not_split(
+            self, tmp_path):
+        heads = [(None, ["Footing Settlement Calculation", "Stratum A"]),
+                 (None, ["Footing Settlement Calculation", "Layer Table"]),
+                 (None, ["Footing Settlement Calculation",
+                         "Strain in Each Layer"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2]]
+
+    def test_a_cover_a_project_block_and_a_sheet_number_do_not_split(
+            self, tmp_path):
+        """None of them says what is worked out, so none of them is a title
+        that could name a different calculation."""
+        heads = [(None, ["Riverbend Logistics Park", "Job 24-0117"]),
+                 (None, ["Calculation Output"]),
+                 (None, ["Spread Footing Settlement Calculation"]),
+                 (None, ["Sheet 4 of 5"]),
+                 (None, ["Riverbend Logistics Park", "Job 24-0117"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3, 4]]
+
+    def test_titles_that_name_different_calculations_split(self, tmp_path):
+        heads = [(None, ["Bearing Capacity by the Meyerhof Method"]),
+                 (None, ["Bearing Capacity by the Meyerhof Method"]),
+                 (None, ["Settlement of a Footing on Rock"])]
+        assert self._runs(tmp_path, heads) == [[0, 1], [2]]
+
+    def test_titles_that_differ_by_a_word_are_one_printout(self, tmp_path):
+        heads = [(None, ["Lateral Analysis of Micropile MP-2"]),
+                 (None, ["Lateral Analysis of Pile P-7"])]
+        assert self._runs(tmp_path, heads) == [[0, 1]]
+
+    def test_a_banner_on_every_page_is_one_printout(self, tmp_path):
+        """The first fix split such a printout into pairs of pages."""
+        heads = [("LPILE Version 2019.11.3", ["Lateral Pile Analysis"])] * 3
+        assert self._runs(tmp_path, heads) == [[0, 1, 2]]
+
+    def test_a_banner_back_after_pages_without_one_starts_a_run(
+            self, tmp_path):
+        heads = [("LPILE Version 2019.11.3", ["Lateral Pile Analysis"]),
+                 (None, ["Lateral Pile Analysis"]),
+                 ("LPILE Version 2019.11.3", ["Lateral Pile Analysis"]),
+                 (None, ["Lateral Pile Analysis"])]
+        assert self._runs(tmp_path, heads) == [[0, 1], [2, 3]]
+
+    def test_a_word_a_program_pattern_matches_does_not_split_a_run(
+            self, tmp_path):
+        """'Strata' is an English word as well as a program's name. A page
+        that seems to open with it, in a run that opened with no banner, is
+        not the head of a new printout."""
+        heads = [(None, ["Footing Settlement Calculation"]),
+                 (None, ["Footing Settlement Calculation"]),
+                 ("Strata summary", ["Footing Settlement Calculation"]),
+                 (None, ["Footing Settlement Calculation"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3]]
+
+    def test_the_title_words_come_from_the_kind_vocabulary(self):
+        from report_ingest.calc_reader import TITLE_WORDS, _KIND_ALIASES
+        names: set = set()
+        for key in list(CALC_KIND_DEFINITIONS) + list(_KIND_ALIASES):
+            names |= set(key.split("_"))
+        text = " ".join(CALC_KIND_DEFINITIONS.values()).lower()
+        for word in TITLE_WORDS:
+            assert word in names or word in text, word
+
+    def test_title_words_are_matched_whole(self):
+        from report_ingest.calc_reader import _names_calculation
+        for title in ("Micropiles", "Retaining Walls", "Response Spectra",
+                      "Footings on Clay", "Lateral Pile Analysis"):
+            assert _names_calculation(title), title
+        for title in ("Compiled by the checker", "Collateral notes",
+                      "Uniaxial compression results", "Shafted"):
+            assert not _names_calculation(title), title
+
+    def test_a_word_inside_a_longer_word_does_not_split(self, tmp_path):
+        heads = [(None, ["Footing Settlement Calculation"]),
+                 (None, ["Compiled by the checker"]),
+                 (None, ["Footing Settlement Calculation"]),
+                 (None, ["Collateral notes"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3]]
+
+    def test_a_table_heading_on_a_continuation_page_does_not_split(
+            self, tmp_path):
+        """Column headings, a heading row of cells and a plot's axis title
+        (a quantity with its unit in brackets) are not titles."""
+        heads = [(None, ["Lateral Pile Analysis"]),
+                 (None, ["Depth   Deflection   Moment   Soil Pressure"]),
+                 (None, [("Overburden Pressure", "Depth", "Stress")]),
+                 (None, ["Lateral Pile Deflection (meters)"]),
+                 (None, ["Lateral Pile Analysis"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3, 4]]
+
+    def test_a_line_set_like_the_body_is_not_a_title(self, tmp_path):
+        """A printout's sentence or table caption that opens the top band in
+        the body's type does not say a new calculation starts."""
+        heads = [(None, ["Lateral Pile Analysis"]),
+                 (None, ["Section 1 is a drilled shaft with casing"], False),
+                 (None, ["Summary of Pile-head Responses"], False)]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2]]
+
+    def test_a_title_set_as_a_title_still_splits(self, tmp_path):
+        heads = [(None, ["Lateral Pile Analysis"]),
+                 (None, ["Lateral Pile Analysis"]),
+                 (None, ["Retaining Wall Pressure"])]
+        assert self._runs(tmp_path, heads) == [[0, 1], [2]]
+
+
+# ---------------------------------------------------------------------------
+# RI-17: which pages travel as pictures
+# ---------------------------------------------------------------------------
+
+class TestThePictures:
+    """A run is shown whole as text; the first page is a picture, and with
+    the switch on every page of the window is."""
+
+    @pytest.fixture
+    def two_pages(self, tmp_path):
+        from report_ingest.tests.calc_fixtures import build_two_page_printout
+        doc = _open(build_two_page_printout().pdf, tmp_path)
+        yield doc
+        doc.close()
+
+    def test_only_the_first_page_is_a_picture_by_default(self, two_pages,
+                                                         monkeypatch):
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")}])
+
+        read_calculation(two_pages, [0, 1], engine, report_id="SYN")
+
+        assert engine.calls[0]["n_images"] == 1
+        assert engine.calls[0]["system"] == CALC_READER_SYSTEM
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "--- page 1:" in brief            # the second page as text
+
+    def test_with_the_switch_every_page_is_a_picture(self, two_pages):
+        from report_ingest.calc_reader import use_page_images
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")}])
+
+        with use_page_images():
+            read_calculation(two_pages, [0, 1], engine, report_id="SYN")
+
+        assert engine.calls[0]["n_images"] == 2
+        system = engine.calls[0]["system"]
+        assert "every page you are shown as a picture" in system
+        assert "the first page as a picture" not in system
+        # The first page goes as rendered; every picture added after it goes
+        # as a JPEG, with the switch on as for a scanned page.
+        from report_ingest.engine import image_media_type
+        assert [image_media_type(b["png"]) for b in
+                engine.calls[0]["image_blocks"]] == ["image/png",
+                                                     "image/jpeg"]
+
+    def test_the_switch_reads_the_environment(self, monkeypatch):
+        from report_ingest.calc_reader import (
+            PAGE_IMAGES_ENV, page_images_enabled, use_page_images,
+        )
+        monkeypatch.setenv(PAGE_IMAGES_ENV, "1")
+        assert page_images_enabled()
+        monkeypatch.setenv(PAGE_IMAGES_ENV, "off")
+        assert not page_images_enabled()
+        with use_page_images(True):
+            assert page_images_enabled()
+        assert not page_images_enabled()
+
+    def test_the_second_window_brings_its_own_pictures(self, tmp_path):
+        from report_ingest.calc_reader import use_page_images
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=True)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            with use_page_images():
+                read_calculation(doc, list(range(16)), engine,
+                                 report_id="SYN")
+        finally:
+            doc.close()
+
+        assert engine.calls[0]["n_images"] == MAX_CALC_PAGES
+        assert engine.calls[1]["n_images"] == len(
+            page_window(list(range(16)), MAX_CALC_PAGES - 2))
+
+    # -- a scanned page is a picture whatever the switch says ----------------
+
+    def test_a_scanned_page_after_the_first_travels_as_a_picture(
+            self, tmp_path, monkeypatch):
+        """Switch off. The middle page has no text, so its picture is the
+        only view of it; before RI-17 it was its own one-page item and went
+        as that item's picture."""
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.engine import image_media_type
+        from report_ingest.tests.calc_fixtures import build_scanned_middle_page
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        doc = _open(build_scanned_middle_page(), tmp_path)
+        engine = FakeEngine([{"final": _reading()}])
+        try:
+            read_calculation(doc, [0, 1, 2], engine, report_id="SYN")
+        finally:
+            doc.close()
+
+        call = engine.calls[0]
+        assert call["n_images"] == 2                 # page 0 and page 1
+        first, scanned = (b["png"] for b in call["image_blocks"])
+        assert image_media_type(first) == "image/png"    # as it was
+        assert image_media_type(scanned) == "image/jpeg"  # added: JPEG
+        texts = [b.get("text", "") for b in call["messages"][0]["content"]
+                 if b.get("type") == "text"]
+        assert "The picture of page 0:" in texts
+        assert "The picture of page 1:" in texts
+        assert "The picture of page 2:" not in texts
+        assert "with a picture of every scanned page" in call["system"]
+
+    def test_the_second_window_brings_its_scanned_pictures(
+            self, tmp_path, monkeypatch):
+        import report_ingest.calc_reader as calc_reader
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        monkeypatch.setattr(calc_reader, "_scanned",
+                            lambda _doc, page: page == 14)
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=True)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            read_calculation(doc, list(range(16)), engine, report_id="SYN")
+        finally:
+            doc.close()
+
+        assert engine.calls[0]["n_images"] == 1
+        assert engine.calls[1]["n_images"] == 1
+        texts = [b.get("text", "") for b in
+                 engine.calls[1]["messages"][0]["content"]
+                 if b.get("type") == "text"]
+        assert "The picture of page 14:" in texts
+
+    @pytest.mark.parametrize("n_pages, scanned, adds", [
+        (16, {0}, False),       # the second window repeats page 0
+        (16, set(), False),
+        (8, {0}, False),
+        (16, {15}, True),       # the last page, in the first window
+        (16, {12}, True),       # a page only the second window shows
+    ])
+    def test_the_prompt_says_scanned_pictures_only_when_it_adds_them(
+            self, tmp_path, monkeypatch, n_pages, scanned, adds):
+        import report_ingest.calc_reader as calc_reader
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        monkeypatch.setattr(calc_reader, "_scanned",
+                            lambda _doc, page: page in scanned)
+        doc = _open(build_long_printout(n_pages).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=True)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            read_calculation(doc, list(range(n_pages)), engine,
+                             report_id="SYN")
+        finally:
+            doc.close()
+
+        assert (engine.calls[0]["system"] != CALC_READER_SYSTEM) is adds
+
+    def test_the_default_picture_is_the_page_as_rendered(self, two_pages,
+                                                         monkeypatch):
+        from report_ingest.calc_reader import PAGE_DPI, PAGE_IMAGES_ENV
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")}])
+
+        read_calculation(two_pages, [0, 1], engine, report_id="SYN")
+
+        (block,) = engine.calls[0]["image_blocks"]
+        assert block["png"] == two_pages.render(0, dpi=PAGE_DPI)[0]
+
+    def test_what_counts_as_a_scanned_page(self):
+        from planlens.document.model import SOURCE_AZURE_DI, SOURCE_OCR
+        from report_ingest.calc_reader import OPTICAL_SOURCES, _scanned
+        assert set(OPTICAL_SOURCES) == {SOURCE_OCR, SOURCE_AZURE_DI}
+
+        class _Content:
+            def __init__(self, lines, sources):
+                self.lines, self.text_sources = lines, sources
+
+        class _Summary:
+            def __init__(self, reliable):
+                self.text_reliable = reliable
+
+        class _Doc:
+            def __init__(self, lines=("a line",), sources=("pdf_text",),
+                         reliable=True, broken=False):
+                self.args = (list(lines), list(sources), reliable, broken)
+
+            def page(self, _n):
+                if self.args[3]:
+                    raise ValueError("will not read")
+                return _Content(self.args[0], self.args[1])
+
+            def summary(self, _n):
+                return _Summary(self.args[2])
+
+        assert not _scanned(_Doc(), 0)                    # its own text
+        assert _scanned(_Doc(lines=(), sources=()), 0)    # no text at all
+        assert _scanned(_Doc(sources=(SOURCE_AZURE_DI,)), 0)
+        assert _scanned(_Doc(sources=(SOURCE_OCR,)), 0)
+        assert _scanned(_Doc(reliable=False), 0)          # unmapped fonts
+        assert _scanned(_Doc(broken=True), 0)

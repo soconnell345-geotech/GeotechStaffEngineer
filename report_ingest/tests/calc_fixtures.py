@@ -274,3 +274,108 @@ def build_two_page_printout() -> CalcPageGT:
                 "Applied lateral load": (240.0, "kN")},
         results={"Maximum bending moment": (612.4, "kN-m")},
         n_pages=2)
+
+
+def build_repeated_label_sheet() -> CalcPageGT:
+    """ONE page carrying three blocks of the same worked sheet, one per
+    material, each printing the same labels with its own numbers.
+
+    The shape RI-17 is about: a label printed three times on one page is
+    three values, and a merge that keyed its slots by the label alone let
+    one block's reading replace the other two.
+    """
+    doc, page = _page()
+    _text(page, 150, 46, "Bearing Capacity by the Meyerhof Method", 12,
+          bold=True)
+    blocks = (("Material A", "30", "30.14", "18.40"),
+              ("Material B", "20", "14.83", "6.40"),
+              ("Material C", "36", "50.59", "37.75"))
+    y = 90.0
+    for name, phi, nc, nq in blocks:
+        _text(page, 60, y, name, 10, bold=True)
+        _text(page, 60, y + 16, f"Phi = {phi} degrees", 9)
+        _text(page, 300, y + 16, f"Nc = {nc}", 9)
+        _text(page, 300, y + 30, f"Nq = {nq}", 9)
+        y += 150.0
+    pdf = doc.tobytes()
+    doc.close()
+    return CalcPageGT(
+        pdf=pdf, kind="shallow_foundation_bearing",
+        method="Meyerhof",
+        results={f"Nc, {name}": (float(nc), "")
+                 for name, _phi, nc, _nq in blocks})
+
+
+def build_repeated_label_run() -> CalcPageGT:
+    """Three pages of one printout, each printing the SAME label with its
+    own value -- a head load in each page's legend, for three pile sizes."""
+    import pymupdf
+    doc = pymupdf.open()
+    loads = ("12.5", "40", "95")
+    for n, load in enumerate(loads):
+        _doc, page = _page(doc)
+        _text(page, 60, 46, f"Lateral Analysis of Pile P-{n + 1}", 11,
+              bold=True)
+        _text(page, 60, 300, f"Head load = {load} kN", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return CalcPageGT(
+        pdf=pdf, kind="lateral_pile",
+        inputs={f"Head load, Pile P-{n + 1}": (float(v), "kN")
+                for n, v in enumerate(loads)},
+        n_pages=len(loads))
+
+
+def build_titled_pages(heads) -> bytes:
+    """Pages whose top bands are given: ``(banner or None, [lines])`` each,
+    or ``(banner, [lines], False)`` for a page whose first line is set like
+    its body rather than as a title.
+
+    For the run splitter, which reads only a page's head. The first line is
+    set as a title is (bold, larger than the body); the others as plain
+    sub-headings; a TUPLE is one printed line of cells, set like a table's
+    heading row. Every page carries a body of labelled values below, as a
+    calculation page does, so the page has a body to stand out from.
+    """
+    doc = None
+    for n, head in enumerate(heads):
+        banner, lines = head[0], head[1]
+        styled = head[2] if len(head) > 2 else True
+        doc, page = _page(doc)
+        y = 46.0
+        if banner:
+            _text(page, 60, y, banner, 10, bold=True)
+            y += 20.0
+        for k, line in enumerate(lines):
+            if isinstance(line, tuple):
+                for c, cell in enumerate(line):
+                    _text(page, 60 + 120 * c, y, cell, 9, bold=True)
+            elif k == 0 and styled:
+                _text(page, 60, y, line, 12, bold=True)
+            else:
+                _text(page, 60, y, line, 10 if styled else 9)
+            y += 16.0
+        for row in range(4):
+            _text(page, 60, 400 + 14 * row,
+                  f"Value {n + 1}.{row + 1} = {n + 1}.{row + 5} m", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_scanned_middle_page() -> bytes:
+    """Three pages of one printout; the middle one carries no text at all,
+    only drawn marks, as a scanned page with no optical text does."""
+    import pymupdf
+    doc, page = _page()
+    _text(page, 60, 46, "Footing Settlement Calculation", 11, bold=True)
+    _text(page, 60, 120, "Footing Width B = 2.5 m", 9)
+    _doc, page = _page(doc)
+    page.draw_rect(pymupdf.Rect(60, 60, 540, 700), color=(0, 0, 0))
+    page.draw_line(pymupdf.Point(60, 380), pymupdf.Point(540, 380))
+    _doc, page = _page(doc)
+    _text(page, 60, 46, "Footing Settlement Calculation", 11, bold=True)
+    _text(page, 60, 120, "Total Settlement = 18 mm", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf

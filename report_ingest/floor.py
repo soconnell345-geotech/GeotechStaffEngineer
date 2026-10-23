@@ -162,10 +162,10 @@ class MergeLog:
     reconciled: int = 0
 
     def keep(self, where: str, what: str, page: Optional[int] = None,
-             value: Any = None) -> None:
+             value: Any = None, why: str = "") -> None:
         row: Dict[str, Any] = {
             "where": where, "what": what,
-            "why": "kept from the floor; the reader did not return it"}
+            "why": why or "kept from the floor; the reader did not return it"}
         if page is not None:
             row["page"] = int(page)
         if value is not None:
