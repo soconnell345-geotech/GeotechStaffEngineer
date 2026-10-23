@@ -264,6 +264,11 @@ class LogScore:
     record: Optional[List[Dict[str, Any]]] = None
     model_record: Optional[List[Dict[str, Any]]] = None
     floor_record: Optional[List[Dict[str, Any]]] = None
+    #: What the visual-scales voters did on this log
+    #: (:func:`report_ingest.visual_scales.log_grid_for`): the label-reading
+    #: calls, the layer tops found in a scan's pixels and their votes
+    #: against the record. Empty with the setting off (BACKLOG RI-05).
+    visual_scales: Dict[str, Any] = field(default_factory=dict)
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -279,6 +284,8 @@ class LogScore:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            **({"visual_scales": dict(self.visual_scales)}
+               if self.visual_scales else {}),
             "log_id": self.log_id, "report": self.report, "stage": self.stage,
             "scores": {k: v.to_dict() for k, v in self.scores.items()},
             "overall": self.total.to_dict(),
@@ -775,6 +782,10 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.kept = len(getattr(result, "kept", ()) or ())
     after.added = len(getattr(result, "added", ()) or ())
     after.reconciled = int(getattr(result, "reconciled", 0) or 0)
+    # The grid's own (label calls, pixel layer tops) and the reader's (the
+    # votes), together: a reader handed the grid holds only its votes.
+    after.visual_scales = {**(scales_info or {}),
+                           **(getattr(result, "visual_scales", None) or {})}
     return before, after
 
 

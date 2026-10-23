@@ -852,3 +852,198 @@ def test_a_reply_meters_itself_by_the_deployment_that_served_it():
 def test_the_claude_list_prices_are_untouched():
     assert Usage(input_tokens=10**6).dollars("claude-opus-5") == 5.00
     assert price_for("claude-sonnet-5") == (2.00, 10.00)
+
+
+# -- every request in the cost record (BACKLOG RI-21) -------------------------
+#
+# The meter used to hear only of replies: a rate-limited request, a refused
+# parameter, a chat() that came back empty were in no total. Each is now a
+# row of its own, numbered by the call it belongs to and its attempt.
+
+def _rows(engine):
+    """The rows as the run file keeps them, with the attempt filled in (a
+    row leaves out attempt 1)."""
+    return [{"attempt": 1, **row}
+            for row in engine.meter.to_dict()["per_call"]]
+
+
+def test_a_rate_limited_request_is_recorded_with_its_wait():
+    engine, prompter = _fussy_engine(refuse=())
+    completions = prompter.client.chat.completions
+    real = completions.create
+    state = {"left": 2}
+
+    def flaky(**kw):
+        if state["left"]:
+            state["left"] -= 1
+            raise RateLimitError(_RATE_LIMITED)
+        return real(**kw)
+
+    completions.create = flaky
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    meter = engine.meter
+    assert (meter.calls, meter.failed, meter.retried) == (1, 2, 2)
+    assert meter.failed_by_kind == {"rate_limit": 2}
+    assert meter.waited_seconds == 45.0
+    rows = _rows(engine)
+    assert [(r["call"], r["attempt"], r["outcome"]) for r in rows] == [
+        (1, 1, "error"), (1, 2, "error"), (1, 3, "reply")]
+    assert rows[0]["error_kind"] == "rate_limit"
+    assert rows[0]["retried"] is True and rows[0]["waited"] == 15.0
+    assert rows[1]["waited"] == 30.0
+    assert rows[0]["error"].startswith("RateLimitError: Error code: 429")
+    assert rows[2]["stop"] == "stop"
+    # The lines a person reads stay where they were.
+    assert sum("rate limited" in a for a in engine.adaptations) == 2
+
+
+def test_a_refused_parameter_is_recorded_with_what_was_changed():
+    engine, prompter = _fussy_engine()
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    engine.complete([user(text_block("again"))], tools=_TOOL)
+    meter = engine.meter
+    assert (meter.calls, meter.failed, meter.retried) == (2, 2, 2)
+    assert meter.failed_by_kind == {"parameter": 2}
+    rows = _rows(engine)
+    assert [(r["call"], r["attempt"], r["outcome"]) for r in rows] == [
+        (1, 1, "error"), (1, 2, "error"), (1, 3, "reply"), (2, 1, "reply")]
+    assert "max_tokens" in rows[0]["adapted"][0]
+    assert "temperature" in rows[1]["adapted"][0]
+    assert meter.to_dict()["adaptations"] == engine.adaptations
+    assert "adapted" not in rows[3], "a lesson is recorded when it is learned"
+
+
+def test_a_chat_that_returns_nothing_is_a_failed_request_sent_again():
+    engine, prompter = _fussy_engine(refuse=(), chat_returns=None)
+    prompter._last_chat_error = RuntimeError("quota guard said no")
+    reply = engine.complete([user(text_block("go"))], output_format=_Answer)
+    assert reply.text == "ok"
+    rows = _rows(engine)
+    assert [(r["attempt"], r["outcome"]) for r in rows] == [
+        (1, "error"), (2, "reply")]
+    assert rows[0]["error_kind"] == "no_reply" and rows[0]["retried"]
+    assert "quota guard said no" in rows[0]["error"]
+    assert "chat() returned nothing" in rows[0]["adapted"][0]
+
+
+def test_an_error_that_ends_the_call_is_recorded_and_still_raised():
+    engine, prompter = _fussy_engine(refuse=())
+
+    def boom(**kwargs):
+        raise RuntimeError("Error code: 500 - the server had an error")
+
+    prompter.client.chat.completions.create = boom
+    with pytest.raises(RuntimeError, match="server had an error"):
+        engine.complete([user(text_block("go"))], tools=_TOOL)
+    meter = engine.meter
+    assert (meter.calls, meter.failed, meter.retried) == (0, 1, 0)
+    (row,) = _rows(engine)
+    assert row["outcome"] == "error" and row["error_kind"] == "other"
+    assert "retried" not in row
+    assert meter.by_model[engine.model]["failed"] == 1
+
+
+def test_a_rate_limit_that_never_lifts_counts_every_request():
+    engine, prompter = _fussy_engine(refuse=())
+
+    def always(**kw):
+        raise RateLimitError(_RATE_LIMITED)
+
+    prompter.client.chat.completions.create = always
+    engine._sleep = lambda seconds: None
+    with pytest.raises(RateLimitError):
+        engine.complete([user(text_block("go"))], tools=_TOOL)
+    waits = len(PrompterEngine.RATE_LIMIT_WAITS)
+    meter = engine.meter
+    assert meter.failed == waits + 1, "every wait, then the last refusal"
+    assert meter.retried == waits
+    assert _rows(engine)[-1]["attempt"] == waits + 1
+
+
+def test_nothing_is_recorded_when_nothing_was_sent():
+    engine, _ = _engine(_Response(_Message("ok")), with_client=False)
+    with pytest.raises(RuntimeError, match="no OpenAI client"):
+        engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert engine.meter.failed == 0 and _rows(engine) == []
+
+
+class _Thought:
+    def __init__(self, reasoning):
+        self.reasoning_tokens = reasoning
+
+
+def test_reasoning_tokens_are_read_and_kept_apart_inside_the_output():
+    usage = _Usage(prompt=500, completion=300)
+    usage.completion_tokens_details = _Thought(220)
+    engine, _ = _engine(_Response(_Message("ok"), usage=usage))
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert reply.usage.output_tokens == 300
+    assert reply.usage.reasoning_tokens == 220
+    assert engine.meter.reasoning_tokens == 220
+    (row,) = _rows(engine)
+    assert row["output_tokens"] == 300 and row["reasoning_tokens"] == 220
+    assert engine.meter.to_dict()["reasoning_tokens"] == 220
+
+
+def test_the_meters_summary_says_how_many_requests_failed():
+    engine, _ = _fussy_engine(refuse=("max_tokens",))
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert "1 request(s) failed, 1 sent again" in engine.meter.summary()
+
+
+def test_nothing_back_is_filed_as_no_reply_with_or_without_a_client():
+    """The same event, one kind: chat() returned None. The SDK's stashed
+    reason may itself mention a rate limit; the record says what happened
+    to THIS request."""
+    engine, prompter = _engine(None, with_client=False)
+    prompter._last_chat_error = RuntimeError("Error code: 429 - rate limit")
+    with pytest.raises(RuntimeError, match="returned nothing"):
+        engine.complete([user(text_block("go"))], output_format=_Answer)
+    (row,) = _rows(engine)
+    assert row["error_kind"] == "no_reply"
+    assert engine.meter.failed_by_kind == {"no_reply": 1}
+
+
+def test_a_rate_limit_whose_body_will_not_read_is_still_waited_out():
+    engine, prompter = _fussy_engine(refuse=())
+    completions = prompter.client.chat.completions
+    real = completions.create
+    state = {"left": 1}
+
+    class _Odd(RateLimitError):
+        body = {"error": {"usage": {"prompt_tokens": "n/a"}}}
+
+    def flaky(**kw):
+        if state["left"]:
+            state["left"] -= 1
+            raise _Odd(_RATE_LIMITED)
+        return real(**kw)
+
+    completions.create = flaky
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert reply.text == "ok"
+    assert engine.meter.failed == 1 and engine.meter.retried == 1
+
+
+def test_reasoning_the_provider_did_not_report_is_none_not_zero():
+    engine, _ = _engine(_Response(_Message("ok"), usage=_Usage(50, 10)))
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert reply.usage.reasoning_tokens is None
+    assert engine.meter.reasoning_reported == 0
+
+
+def test_a_reasoning_count_that_is_not_a_number_does_not_lose_the_reply():
+    usage = _Usage(prompt=50, completion=10)
+    usage.completion_tokens_details = _Thought("n/a")
+    engine, _ = _engine(_Response(_Message("ok"), usage=usage))
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert reply.text == "ok" and reply.usage.reasoning_tokens is None
+
+
+def test_a_reported_zero_is_kept_as_zero():
+    usage = _Usage(prompt=50, completion=10)
+    usage.completion_tokens_details = _Thought(0)
+    engine, _ = _engine(_Response(_Message("ok"), usage=usage))
+    reply = engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert reply.usage.reasoning_tokens == 0
+    assert engine.meter.reasoning_reported == 1

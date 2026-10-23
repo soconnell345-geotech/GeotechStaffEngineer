@@ -619,6 +619,10 @@ class LabScore:
     #: (RI-07's switch), as the reader itself reported it; None when no
     #: reading came back.
     link_from_label: Optional[bool] = None
+    #: The visual-scales check of a tabulated gradation against the curve
+    #: the sheet plots (:func:`report_ingest.visual_scales.plot_check`);
+    #: None when it did not run (BACKLOG RI-05).
+    plot_check: Optional[Dict[str, Any]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -649,6 +653,8 @@ class LabScore:
             "added": self.added, "reconciled": self.reconciled,
             "record": self.record, "model_record": self.model_record,
             "floor_record": self.floor_record,
+            **({"plot_check": dict(self.plot_check)}
+               if self.plot_check is not None else {}),
         }
 
 
@@ -989,6 +995,8 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.changes = len(result.changes)
     after.warnings = list(result.warnings)
     after.link_from_label = bool(getattr(result, "link_from_label", False))
+    plot = getattr(result, "plot_check", None)
+    after.plot_check = dict(plot) if plot is not None else None
     # The model's answer alone, before the merge with the tables' floor.
     model_tests = getattr(result, "model_tests", None)
     if model_tests is not None:

@@ -468,3 +468,35 @@ class TestASavedRun:
         from report_ingest.log_scoring import rescore_saved
         assert rescore_saved(_merge_truth(), {"scores": {}}) is None
         assert rescore_saved(_merge_truth(), {}) is None
+
+
+class TestWhatTheVisualScalesVotersDid:
+    """BACKLOG RI-05 (G3): the run file carries the grid's label calls and
+    pixel layer tops and the reader's votes, so RESULTS.md can count them."""
+
+    def test_the_grids_and_the_readers_records_are_kept_together(
+            self, monkeypatch):
+        from types import SimpleNamespace
+
+        import report_ingest.log_reader as reader
+        import report_ingest.log_scoring as scoring
+        import report_ingest.visual_scales as visual
+
+        votes = [{"geometry_top": 5.0, "agreement": "agree"}]
+        monkeypatch.setattr(visual, "log_grid_for", lambda *a, **k: (
+            object(), {"visual_scales": True, "label_calls": 1,
+                       "pixel_layers": 2}))
+        monkeypatch.setattr(scoring, "score_grid", lambda truth, grid:
+                            LogScore(log_id=truth["id"], report="R99",
+                                     stage="grid"))
+        monkeypatch.setattr(reader, "read_log", lambda *a, **k:
+                            SimpleNamespace(
+                                investigation=_perfect(), cost={},
+                                model_calls=1, unresolved=[], changes=[],
+                                warnings=[], visual_scales={
+                                    "layer_votes": votes}))
+        _before, after = scoring.score_one_log(TRUTH, object(), None,
+                                               report_id="R99")
+        assert after.to_dict()["visual_scales"] == {
+            "visual_scales": True, "label_calls": 1, "pixel_layers": 2,
+            "layer_votes": votes}

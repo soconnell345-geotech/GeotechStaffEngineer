@@ -213,6 +213,13 @@ class SoundingScore:
     record: Optional[List[Dict[str, Any]]] = None
     model_record: Optional[List[Dict[str, Any]]] = None
     floor_record: Optional[List[Dict[str, Any]]] = None
+    #: What the visual-scales voters did (BACKLOG RI-05): on a test pit, the
+    #: log reader's ``visual_scales`` (label calls, pixel layer tops, their
+    #: votes); on a plotted sounding, code's reading of each digitised
+    #: point (:func:`report_ingest.visual_scales.trace_check`). Empty or
+    #: None with the setting off.
+    visual_scales: Dict[str, Any] = field(default_factory=dict)
+    code_trace: Optional[Dict[str, Any]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -228,6 +235,10 @@ class SoundingScore:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            **({"visual_scales": dict(self.visual_scales)}
+               if self.visual_scales else {}),
+            **({"code_trace": dict(self.code_trace)}
+               if self.code_trace is not None else {}),
             "sounding_id": self.sounding_id, "report": self.report,
             "kind": self.kind, "stage": self.stage,
             "scores": {k: v.to_dict() for k, v in self.scores.items()},
@@ -534,7 +545,8 @@ def _score_one_pit(truth: Dict[str, Any], doc: Any, engine: Any,
 
     extra, charge = visual_scales.meter()
     try:
-        grid, _info = visual_scales.log_grid_for(doc, pages, engine, charge)
+        grid, grid_info = visual_scales.log_grid_for(doc, pages, engine,
+                                                     charge)
         lines: List[Any] = []
         for page in pages:
             try:
@@ -576,6 +588,8 @@ def _score_one_pit(truth: Dict[str, Any], doc: Any, engine: Any,
     after.kept = len(result.kept)
     after.added = len(result.added)
     after.reconciled = int(result.reconciled)
+    after.visual_scales = {**(grid_info or {}),
+                           **(getattr(result, "visual_scales", None) or {})}
     return before, after
 
 
@@ -625,6 +639,8 @@ def _score_one_sounding(truth: Dict[str, Any], doc: Any, engine: Any,
     after.kept = len(result.kept)
     after.added = len(result.added)
     after.reconciled = int(result.reconciled)
+    trace = getattr(result, "code_trace", None)
+    after.code_trace = dict(trace) if trace is not None else None
     return before, after
 
 
