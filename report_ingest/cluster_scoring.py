@@ -1216,6 +1216,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
     ``lab/<sheet id>.json`` as it finishes and a later call skips it.
     """
     from report_ingest.engine import CostMeter, PrompterEngine
+    from report_ingest.lab_reader import link_from_label_enabled
     from report_ingest.lab_scoring import pages_of, report_of, score_one_sheet
 
     if not truth_dir.is_dir():
@@ -1298,6 +1299,12 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "after": after.to_dict(),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
+            # Which arm of the specimen-label switch this sheet ran in
+            # (RI-07, off by default), as the reader reported it; a sheet
+            # whose reading failed is put in the arm it was asked to run in.
+            "link_from_label": (after.link_from_label
+                                if after.link_from_label is not None
+                                else link_from_label_enabled()),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         _sync(sync)
@@ -1378,6 +1385,10 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
         "open_set": list(openset),
         "n_sheets": len(rows),
         "failures": dict(failures),
+        # The specimen-label switch's arm(s) these sheets ran in; a run file
+        # written before the switch existed ran with it off.
+        "link_from_label": sorted({bool(r.get("link_from_label"))
+                                   for r in rows}),
         "sets": sets,
         "kinds": by_kind,
         "per_sheet": [{
@@ -1436,6 +1447,13 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
     ]
     if lab.get("served_by"):
         out.append(f"Served by: {', '.join(lab['served_by'])}.")
+    arms = lab.get("link_from_label")
+    if arms:
+        out.append("Specimen-label paragraph (RI-07, "
+                   "GEOTECH_INGEST_LAB_LINK_FROM_LABEL): "
+                   + " and ".join("on" if a else "off" for a in arms)
+                   + (" -- MIXED: these sheets did not all run in one arm"
+                      if len(arms) > 1 else "") + ".")
     if lab.get("failures"):
         out += ["", "**Sheets that failed and are NOT in any number below:**"]
         out += [f"- {sheet_id}: {why}"

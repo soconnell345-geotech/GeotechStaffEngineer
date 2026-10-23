@@ -16,7 +16,7 @@ from report_ingest.model import (
     Quantity,
 )
 from report_ingest.reconciler import (
-    DEPTH_TOL_M, depth_m, fold_id, reconcile, si_view,
+    DEPTH_TOL_M, depth_m, fold_id, hole_key, reconcile, si_view,
 )
 from report_ingest.tests.fake_engine import FakeEngine
 from report_ingest.tests.record_fixtures import (
@@ -95,6 +95,255 @@ class TestTheLabToGroundLink:
         (entry,) = [e for e in kinds_of(record, "partial")
                     if "summary table" in e.detail]
         assert entry.values == ["B-7"]
+
+
+def _label_notes(record):
+    return [e for e in kinds_of(record, "note")
+            if "head of a longer label" in e.detail]
+
+
+class TestTheHoleInsideALabel:
+    """RI-07: a sheet names its hole the way the laboratory writes it --
+    without the log's leading zero, or at the head of a specimen label --
+    and the link still finds it. Only holes the logs hold are looked for,
+    and the printed words are never changed."""
+
+    def test_a_leading_zero_on_the_log_is_the_same_hole(self):
+        sheet = atterberg(investigation="B-1")
+        record = reconcile(build_record(
+            investigations=[boring("B-01"), pit()], lab_tests=[sheet]))
+
+        assert sheet.investigation_id == "B-1"       # untouched, as printed
+        assert sheet.linked_investigation_id == "B-01"
+        assert sheet.linked_sample_id == "S-1"
+        assert _label_notes(record) == []            # a whole match
+
+    def test_only_the_zeros_that_start_a_number_are_dropped(self):
+        assert hole_key("MW-02") == hole_key("mw 2") == "MW2"
+        assert hole_key("B-10") == "B10"
+        assert hole_key("B-100A") == "B100A"
+
+    def test_a_hole_at_the_head_of_the_printed_boring_is_linked(self):
+        sheet = atterberg(investigation="B-1 S-1", sample="")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.investigation_id == "B-1 S-1"
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == "S-1"
+        (note,) = _label_notes(record)
+        assert note.values == ["'B-1 S-1' -> B-1"]
+        assert note.pages == [12]
+
+    def test_a_hole_at_the_head_of_the_sample_label_is_linked(self):
+        # The sheet printed no boring; its specimen is "B-1 2.0-3.5 ft".
+        sheet = atterberg(investigation="", sample="B-1 2.0-3.5 ft")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == "S-1"       # by the depth
+        assert not any("names no exploration" in e.detail
+                       for e in kinds_of(record, "partial"))
+        (note,) = _label_notes(record)
+        assert note.values == ["'B-1 2.0-3.5 ft' -> B-1"]
+
+    def test_a_printed_boring_outranks_the_sample_label(self):
+        # The sheet names B-9, which is not here; a label that happens to
+        # begin with B-1 does not overrule what the sheet printed.
+        sheet = atterberg(investigation="B-9", sample="B-1 S-1")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == ""
+        assert any("not among the explorations" in e.detail
+                   for e in kinds_of(record, "partial"))
+
+    @pytest.mark.parametrize("printed", ["B-12", "B-1A", "B-1A S-1"])
+    def test_a_hole_is_not_found_inside_a_longer_name(self, printed):
+        sheet = atterberg(investigation=printed, sample="")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == ""
+        assert _label_notes(record) == []
+
+    @pytest.mark.parametrize("label", ["B-1, 2.0 ft", "B-1/S-1", "B-1 (2.0)",
+                                       "B-1  S-1  2.0-3.5"])
+    def test_the_hole_ends_where_a_word_of_the_label_ends(self, label):
+        sheet = atterberg(investigation="", sample=label)
+        reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+
+    def test_the_longest_hole_at_the_head_wins(self):
+        sheet = atterberg(investigation="B-1A S-1", sample="")
+        reconcile(build_record(
+            investigations=[boring("B-1"), boring("B-1A")],
+            lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1A"
+
+    def test_a_hole_named_by_a_number_alone_is_not_read_from_a_label(self):
+        # A log called "2" and a specimen called "2": as likely a sample
+        # number as a hole, so the label is not taken for the hole.
+        sheet = atterberg(investigation="", sample="2")
+        record = reconcile(build_record(
+            investigations=[boring("2")], lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == ""
+        assert any("names no exploration" in e.detail
+                   for e in kinds_of(record, "partial"))
+
+    def test_a_hole_named_by_a_number_still_links_when_printed_whole(self):
+        sheet = atterberg(investigation="2")
+        reconcile(build_record(investigations=[boring("2")],
+                               lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "2"
+
+    @pytest.mark.parametrize("label", ["B-1", "B-1 40.0 ft"])
+    def test_a_name_the_logs_give_a_sample_is_not_read_as_a_hole(self, label):
+        # Boring B-1 AND the pit's bulk sample B-1: a label reading B-1 is a
+        # sample number as likely as a hole, and B-1 has no sample at the
+        # sheet's 40 ft to say otherwise.
+        sheet = atterberg(investigation="", sample=label, depth_ft=40.0)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == ""
+        assert _label_notes(record) == []
+
+    def test_a_hole_that_is_also_a_sample_name_links_at_its_own_depth(self):
+        # The same name, but B-1's log holds a sample at the sheet's 2.0 ft.
+        sheet = atterberg(investigation="", sample="B-1 2.0 ft")
+        reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == "S-1"
+
+    def test_a_printed_boring_that_is_also_a_sample_name_links_whole(self):
+        sheet = atterberg(investigation="S-2", sample="")
+        reconcile(build_record(
+            investigations=[boring("B-1"), boring("S-2")],
+            lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "S-2"
+
+    def test_a_summary_row_spelt_otherwise_is_still_named_missing(self):
+        # A summary row carries no link, so DIGGS still places it by the
+        # printed words: until rows are linked, "B-01" is a hole not here.
+        table = summary_table()
+        table.result.rows[0].investigation_id = "B-01"
+        record = reconcile(build_record(lab_tests=[table]))
+
+        (entry,) = [e for e in kinds_of(record, "partial")
+                    if "summary table" in e.detail]
+        assert entry.values == ["B-01"]
+
+
+def _sounding(name):
+    hole = boring(name)
+    hole.kind, hole.samples, hole.spt = "cpt", [], []
+    return hole
+
+
+def _no_sample_names(hole):
+    hole.samples, hole.spt = [], []
+    return hole
+
+
+def _linked(investigations, printed="", label="", depth_ft=2.0):
+    sheet = atterberg(investigation=printed, sample=label, depth_ft=depth_ft)
+    reconcile(build_record(investigations=investigations, lab_tests=[sheet]))
+    return sheet
+
+
+class TestTheReviewProbes:
+    """The RI-07 review's inputs that linked a test to the wrong hole: a
+    depth run onto the hole's number, a composite of several holes, and two
+    logged spellings of one number. Each now links the right hole or none."""
+
+    B12 = [f"B-{i}" for i in range(1, 13)]
+
+    @pytest.mark.parametrize("printed,label,holes,want", [
+        ("", "B-1 2.0-3.5 ft", "B", "B-1"),
+        ("B-1 2.0", "", "B", "B-1"),
+        ("", "B-1, 2.0 ft", "B", "B-1"),
+        ("", "B-1 2'", "B", "B-1"),
+        ("", "B-1-2", "B", "B-1"),
+        ("", "B-1 (2.0)", "B", "B-1"),
+        ("", "BH-1 1.5-1.95 m", "BH", "BH-1"),
+    ])
+    def test_a_depth_after_the_hole_is_not_part_of_its_number(
+            self, printed, label, holes, want):
+        names = [f"{holes}-{i}" for i in range(1, 13)]
+        sheet = _linked([boring(n) for n in names], printed, label)
+        assert sheet.linked_investigation_id == want
+
+    @pytest.mark.parametrize("printed,label", [
+        ("", "B-1/B-2"), ("", "B-1 & B-2"), ("B-1, B-2", ""),
+        ("", "B-1 to B-4 composite"),
+    ])
+    def test_a_composite_of_several_holes_names_no_one_hole(
+            self, printed, label):
+        sheet = _linked([boring(f"B-{i}") for i in range(1, 5)],
+                        printed, label)
+        assert sheet.linked_investigation_id == ""
+
+    @pytest.mark.parametrize("printed,logged,want", [
+        ("B-7", ["B-07", "B-7"], "B-7"),
+        ("B-07", ["B-7", "B-07"], "B-07"),
+        ("B-007", ["B-07", "B-7"], ""),
+    ])
+    def test_two_logged_spellings_of_one_number_are_two_holes(
+            self, printed, logged, want):
+        sheet = _linked([boring(n) for n in logged], printed)
+        assert sheet.linked_investigation_id == want
+
+    def test_a_bare_label_is_not_taken_for_a_sounding(self):
+        # Logs that read no sample names give no other guard: "S-1" alone is
+        # as likely the sample's number as the sounding's name.
+        sheet = _linked([_no_sample_names(boring("B-1")), _sounding("S-1")],
+                        label="S-1")
+        assert sheet.linked_investigation_id == ""
+
+    def test_a_label_that_says_more_is_still_not_taken_for_a_sounding(self):
+        sheet = _linked([_no_sample_names(boring("B-1")), _sounding("S-1")],
+                        label="S-1 2.0 ft")
+        assert sheet.linked_investigation_id == ""
+
+    @pytest.mark.parametrize("label", ["MW-2", "MW-2 2.0 ft"])
+    def test_a_sample_label_is_taken_for_a_monitoring_well(self, label):
+        well = boring("MW-2")
+        well.kind = "well"
+        sheet = _linked([well], label=label)
+        assert sheet.linked_investigation_id == "MW-2"
+
+    def test_a_bare_label_is_taken_for_a_boring_of_that_name(self):
+        sheet = _linked([_no_sample_names(boring("B-1")),
+                         _no_sample_names(boring("S-1"))], label="S-1")
+        assert sheet.linked_investigation_id == "S-1"
+
+    def test_a_label_another_hole_holds_as_a_sample_there_is_refused(self):
+        # B-1 is a boring and TP-1's bulk sample; at 2.0 ft both readings
+        # have a sample, so the label names neither for certain.
+        tp = pit("TP-1")
+        tp.samples[0].top = q(2.0, "ft")
+        sheet = _linked([boring("B-1"), tp], label="B-1")
+        assert sheet.linked_investigation_id == ""
+
+    def test_a_sample_named_in_the_label_is_taken_at_its_depth(self):
+        from report_ingest.model import Sample
+        hole = boring("B-1")
+        hole.samples.append(Sample(sample_id="U-1", top=q(2.0, "ft"),
+                                   bottom=q(2.5, "ft"), kind="shelby"))
+        by_depth = _linked([hole], label="B-1 2.0 ft")
+        assert by_depth.linked_sample_id == "S-1"        # the first at 2.0 ft
+        hole = boring("B-1")
+        hole.samples.append(Sample(sample_id="U-1", top=q(2.0, "ft"),
+                                   bottom=q(2.5, "ft"), kind="shelby"))
+        by_name = _linked([hole], label="B-1 U-1")
+        assert by_name.linked_sample_id == "U-1"
+
+    def test_a_sample_named_in_the_label_elsewhere_is_not_taken(self):
+        sheet = _linked([boring("B-1")], label="B-1 S-3")     # S-3 at 14.5 ft
+        assert sheet.linked_sample_id == "S-1"               # the sheet's 2 ft
 
 
 def _calc(kind, subject="", results=(), pages=(20, 21)):

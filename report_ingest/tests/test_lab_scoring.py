@@ -437,3 +437,23 @@ class TestReadingAndLinkingApart:
         assert blob["floor_record"] and blob["model_alone"]
         assert blob["unlinked"]["scores"]["index"]["found"] > 0
         assert blob["scores"]["index"]["found"] == 0
+
+    @pytest.mark.parametrize("arm", [False, True])
+    def test_the_switch_arm_is_the_one_the_reader_reports(
+            self, monkeypatch, arm):
+        """RI-07 review g): the run file says which arm the READER ran in,
+        not what the switch said when the file was written."""
+        from types import SimpleNamespace
+        import report_ingest.lab_reader as reader
+        from report_ingest.lab_scoring import score_one_sheet
+        tests = _grading_record()
+        monkeypatch.setattr(reader, "read_lab_sheet", lambda *a, **k:
+                            SimpleNamespace(
+                                tests=tests, model_tests=tests,
+                                floor_tests=tests, cost={}, model_calls=1,
+                                tool_calls=0, unresolved=[], changes=[],
+                                warnings=[], link_from_label=arm))
+        with reader.use_link_from_label(not arm):
+            _before, after = score_one_sheet(GRADING_TRUTH, object(), None,
+                                             report_id="R99")
+        assert after.link_from_label is arm

@@ -310,6 +310,37 @@ def test_a_hole_only_a_lab_sheet_named_is_recorded_as_one():
     assert not notes[0].synthesised
 
 
+@pytest.mark.parametrize("printed", ["B-1", "B-1 S-1"])
+def test_a_test_the_reconciler_linked_is_written_in_the_hole_it_names(
+        printed):
+    """RI-07: a sheet printing "B-1" for the log's "B-01", or "B-1 S-1" for
+    its specimen, is written in the logged hole the reconciler linked it
+    to -- not in a second, empty hole synthesised for the printed words --
+    and the round-trip gate finds it there."""
+    log = Investigation(investigation_id="B-01", depth_unit="ft")
+    test = _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),
+                investigation_id=printed)
+    test.linked_investigation_id = "B-01"
+    notes = []
+    xml = write_diggs([log, test], Project(name="R"), notes=notes)
+    assert not notes[0].synthesised
+    assert notes[0].lab_tests == 1
+    ok, errors = diggs_schema_gate(xml)
+    assert ok, errors[:2]
+    ok, diffs = diggs_roundtrip_gate(xml, [log, test])
+    assert ok, diffs
+    assert test.investigation_id == printed          # the record untouched
+
+
+def test_a_test_nobody_linked_is_placed_by_its_printed_hole_as_before():
+    log = Investigation(investigation_id="B-01", depth_unit="ft")
+    test = _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),
+                investigation_id="B-1")
+    notes = []
+    write_diggs([log, test], Project(name="R"), notes=notes)
+    assert any(s.startswith("B-1:") for s in notes[0].synthesised)
+
+
 def test_an_unconvertible_unit_is_left_out_and_named():
     test = LabTest(kind="unconfined", investigation_id="B-1",
                    depth_top=q(3.0, "m"),
