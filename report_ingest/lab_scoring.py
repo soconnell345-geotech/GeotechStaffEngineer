@@ -615,6 +615,10 @@ class LabScore:
     record: Optional[List[Dict[str, Any]]] = None
     model_record: Optional[List[Dict[str, Any]]] = None
     floor_record: Optional[List[Dict[str, Any]]] = None
+    #: Whether the reader was told about holes inside specimen labels
+    #: (RI-07's switch), as the reader itself reported it; None when no
+    #: reading came back.
+    link_from_label: Optional[bool] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -984,6 +988,7 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.unresolved = len(result.unresolved)
     after.changes = len(result.changes)
     after.warnings = list(result.warnings)
+    after.link_from_label = bool(getattr(result, "link_from_label", False))
     # The model's answer alone, before the merge with the tables' floor.
     model_tests = getattr(result, "model_tests", None)
     if model_tests is not None:

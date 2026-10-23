@@ -1300,8 +1300,11 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
             # Which arm of the specimen-label switch this sheet ran in
-            # (RI-07, off by default).
-            "link_from_label": link_from_label_enabled(),
+            # (RI-07, off by default), as the reader reported it; a sheet
+            # whose reading failed is put in the arm it was asked to run in.
+            "link_from_label": (after.link_from_label
+                                if after.link_from_label is not None
+                                else link_from_label_enabled()),
         }
         run_file.write_text(json.dumps(blob, indent=2), encoding="utf-8")
         _sync(sync)

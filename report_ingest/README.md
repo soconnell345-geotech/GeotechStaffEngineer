@@ -277,14 +277,23 @@ does that later and records a conflict when it cannot. Many sheets print no
 Boring heading and name the specimen by its hole instead (`BH-03 S-2
 1.5-1.95 m`, `MW-2` for the log's `MW-02`); since RI-07 the reconciler takes a
 hole the logs hold from the head of the printed boring, or of the sample label
-when no boring is printed — never a name that is only digits or that a log
-also gives a sample — and the DIGGS writer places the test in the hole it was
-linked to. On the 13 records of Foundry run 1 (stage b) that links 558 of
+when no boring is printed, and the DIGGS writer places the test in the hole it
+was linked to. The printed boring is matched as the logs spell it first; the
+zero fold is used only when one logged hole has that spelling ("B-07" and "B-7"
+logged are two holes). A label head stops at a number that follows another
+("B-1 2.0 ft" is B-1, never B-12); a label naming two holes of one series
+("B-1/B-2", "B-1 to B-4") names none; a name that is only digits is never taken
+from a label; a name the logs also give a sample is refused when another hole
+holds that sample at the sheet's depth or this hole holds none there; and a
+sample label that is the identifier alone is taken only for a boring, test pit
+or hand auger. On the 13 records of Foundry run 1 (stage b) that links 558 of
 1064 lab tests to a hole where it linked 427, changes none it already linked,
 and writes 1824 lab results to DIGGS against 1767 with 242 holes synthesised
 for printed words against 278. One of the 131 new links falls on a
 hand-truthed sheet, and it is right; the 123 on reports that are not blind
-were checked against their printed labels.
+were checked against their printed labels. Summary-table rows are still
+matched exactly as printed: a row carries no link, so DIGGS still places it by
+its printed words.
 
 **The specimen-label paragraph (RI-07), off by default.** The Foundry runs lost
 whole sheets — a compaction 1/10 whose values were read 8/8 — because the model
@@ -322,10 +331,17 @@ or the answer. An item longer than `MAX_LAB_PAGES` (12, the calculation
 reader's window) is now read in consecutive near-equal windows (17 pages are 9
 and 8), each with its own floor and its own budget, and the tests are put end to
 end; a window that gives no answer is named in `unresolved` and the rest are
-kept. An item of 12 pages or fewer is read exactly as before, brief and all.
-Of stage b's 369 lab items, 4 (15–17 pages) are split, each into two windows:
-two calls where there was one, and at most 9 pictures in a request where there
-were up to 17.
+kept. Each cut moves to the page nearest the even split on which the sheet
+prints a new boring, sample or depth (read as the floor reads them), so a test
+running over several pages stays in one window; where no such page is in
+reach, the cut stays at the even split, the two halves are kept as read (a
+merge of two partial readings would be a guess) and the boundary is a line in
+`unresolved`. An item of 12 pages or fewer is read exactly as before, brief and
+all. Of stage b's 369 lab items, 4 (15–17 pages) are split, each into two
+windows: two calls where there was one, and at most 9 pictures in a request
+where there were up to 17. Two of the four print a new boring at the even
+split; in the other two the floor reads no boring heading, so each carries the
+boundary line.
 
 **The floor.** The page's detected tables and its title are the first voter.
 Before any call, `lab_floor.floor_from_tables` reads them into typed `LabTest`

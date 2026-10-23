@@ -571,22 +571,28 @@ def test_the_tool_surface_is_the_one_tool_it_should_be():
 
 @pytest.fixture
 def run_of(tmp_path):
-    """A run of ``n`` water-content sheets, one boring a page, as planlens
-    makes one work item of consecutive sheets with the same title."""
+    """A run of ``n`` water-content sheets, as planlens makes one work item
+    of consecutive sheets with the same title. Each page names its own
+    boring, or, with ``starts``, only those pages do and the rest are a
+    test's continuation sheets."""
     opened = []
 
-    def build(n: int):
+    def build(n: int, starts=None):
         pdf = pymupdf.open()
         for i in range(n):
             page = pdf.new_page(width=612, height=792)
             page.insert_text((72, 72), "WATER CONTENT OF SOIL", fontsize=14)
-            page.insert_text((72, 110), f"Boring: B-{i + 1}", fontsize=10)
-            page.insert_text((72, 126), "Depth: 5.0 ft", fontsize=10)
+            if starts is None or i in starts:
+                page.insert_text((72, 110), f"Boring: B-{i + 1}",
+                                 fontsize=10)
+                page.insert_text((72, 126), "Depth: 5.0 ft", fontsize=10)
+            else:
+                page.insert_text((72, 110), "(continued)", fontsize=10)
             page.insert_text((72, 142), f"Water content: {20 + i}.0 %",
                              fontsize=10)
         data = pdf.tobytes()
         pdf.close()
-        path = tmp_path / f"run{n}.pdf"
+        path = tmp_path / f"run{n}_{len(opened)}.pdf"
         path.write_bytes(data)
         from planlens.document import open_document
         doc = open_document(str(path))
@@ -622,6 +628,40 @@ class TestTheWindow:
         assert sum(lab_windows(range(40, 57)), []) == list(range(40, 57))
         assert lab_windows([]) == []
         assert MAX_LAB_PAGES == 12
+
+    def test_a_cut_moves_to_the_nearest_page_that_starts_a_specimen(self):
+        # The even cut is before page 7; a specimen starts on 5 and on 10.
+        assert lab_windows(range(14), starts=[0, 5, 10]) == \
+            [list(range(5)), list(range(5, 14))]
+        # ... but never so far that a window outgrows the size.
+        assert [len(w) for w in lab_windows(range(24), starts=[3])] == \
+            [12, 12]
+        # No start in reach: the even split.
+        assert [len(w) for w in lab_windows(range(14), starts=[0])] == [7, 7]
+
+    def test_a_cut_at_a_new_specimen_needs_no_note(self, run_of):
+        doc = run_of(14, starts={0, 5, 10})
+        engine = FakeEngine([{"final": _run_reading([0])},
+                             {"final": _run_reading([5, 10])}])
+        result = read_lab_sheet(doc, list(range(14)), engine)
+        assert [c["n_images"] for c in engine.calls] == [5, 9]
+        assert result.windows == [list(range(5)), list(range(5, 14))]
+        assert not [u for u in result.unresolved
+                    if "separate windows" in u["why"]]
+
+    def test_a_cut_inside_one_specimen_is_said(self, run_of):
+        """No page in reach starts a specimen, so the cut stays at the even
+        split; the two halves are kept as read, and the boundary is a line
+        in ``unresolved`` rather than a guessed merge."""
+        doc = run_of(14, starts={0})
+        engine = FakeEngine([{"final": _run_reading([0])},
+                             {"final": _run_reading([7])}])
+        result = read_lab_sheet(doc, list(range(14)), engine)
+        assert result.windows == [list(range(7)), list(range(7, 14))]
+        (note,) = [u for u in result.unresolved
+                   if "separate windows" in u["why"]]
+        assert note["what"] == "pages 6-7" and note["page"] == 7
+        assert len(result.model_tests) == 2          # both halves kept
 
     def test_a_run_that_fits_is_read_whole_as_before(self, run_of):
         doc = run_of(MAX_LAB_PAGES)

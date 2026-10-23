@@ -67,7 +67,9 @@ a longer run would meet the endpoint's image cap or the output cap, where a
 cut-off answer loses the whole item. An item longer than
 :data:`MAX_LAB_PAGES` is now read in consecutive windows of near-equal size,
 each with its own floor and its own budget, and the tests are put end to
-end. An item that fits is read exactly as before.
+end. A cut moves to the nearest page that prints a new specimen; where none
+is in reach the boundary is said in ``unresolved``. An item that fits is
+read exactly as before.
 
 THE SPECIMEN-LABEL SWITCH (RI-07, off by default). Many sheets print no
 boring heading and name the specimen by the hole it came from -- the hole
@@ -956,27 +958,65 @@ def serialise_page(doc: Any, page: int) -> str:
     return "\n".join(out)
 
 
-def lab_windows(pages: Sequence[int], size: int = MAX_LAB_PAGES
-                ) -> List[List[int]]:
+def lab_windows(pages: Sequence[int], size: int = MAX_LAB_PAGES,
+                starts: Sequence[int] = ()) -> List[List[int]]:
     """A run of pages cut into consecutive windows of at most ``size``.
 
-    The windows are as near equal as the count allows -- seventeen pages are
-    nine and eight, not twelve and five -- so a test that runs over several
-    pages is no likelier to be cut at one boundary than another, and no
-    window is a short tail. A run that fits is one window, unchanged.
+    As few windows as the size allows, as near equal as the count allows --
+    seventeen pages are nine and eight, not twelve and five -- so no window
+    is a short tail. ``starts`` are the pages on which the sheet prints a
+    new boring, sample or depth: each cut moves to the start nearest the
+    even split that keeps every window within ``size``, so a test running
+    over several pages is not cut in two. With no start in reach the cut
+    stays at the even split. A run that fits is one window, unchanged.
     """
     pages = [int(p) for p in pages]
     size = max(1, int(size))
-    if len(pages) <= size:
+    n = len(pages)
+    if n <= size:
         return [pages] if pages else []
-    count = -(-len(pages) // size)
-    base, extra = divmod(len(pages), count)
-    out: List[List[int]] = []
-    at = 0
-    for n in range(count):
-        take = base + (1 if n < extra else 0)
-        out.append(pages[at:at + take])
-        at += take
+    count = -(-n // size)
+    base, extra = divmod(n, count)
+    wanted = {int(p) for p in starts}
+    begins = [i for i, p in enumerate(pages) if i and p in wanted]
+    cuts: List[int] = []
+    prev = 0
+    for c in range(1, count):
+        even = c * base + min(c, extra)
+        lo = max(prev + 1, n - size * (count - c))
+        hi = min(prev + size, n - (count - c))
+        near = [i for i in begins if lo <= i <= hi]
+        cut = (min(near, key=lambda i: (abs(i - even), i)) if near
+               else min(max(even, lo), hi))
+        cuts.append(cut)
+        prev = cut
+    edges = [0] + cuts + [n]
+    return [pages[a:b] for a, b in zip(edges, edges[1:])]
+
+
+def _specimen_starts(doc: Any, pages: Sequence[int]) -> List[int]:
+    """The pages of a run on which the sheet prints a new specimen.
+
+    Read the way the floor reads a sheet's link (``lab_floor``): the boring,
+    sample and depth printed in the page's lines. A page that prints none is
+    a continuation of the one before it; a page that prints the same as the
+    last one that printed any is the same specimen.
+    """
+    from report_ingest.lab_floor import (
+        _lines_of, _link_from_lines, _specimen_key,
+    )
+    out: List[int] = []
+    last = ""
+    for page in pages:
+        try:
+            key = _specimen_key(_link_from_lines(_lines_of(doc, page), page))
+        except Exception:                        # a page that will not read
+            continue
+        if key == "||":
+            continue
+        if last and key != last:
+            out.append(int(page))
+        last = key
     return out
 
 
@@ -1613,12 +1653,13 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         except Exception:                        # a ledger is a nicety
             ledger = []
 
-    windows = lab_windows(pages)
-    if len(windows) == 1:
+    if len(pages) <= MAX_LAB_PAGES:
         return _read_window(doc, pages, engine, budget=budget,
                             hint_kind=hint_kind, ledger=ledger,
                             item_title=item_title, report_id=report_id,
                             dpi=dpi)
+    starts = _specimen_starts(doc, pages)
+    windows = lab_windows(pages, starts=starts)
     parts: List[LabReadResult] = []
     failed: List[Tuple[List[int], str]] = []
     for window in windows:
@@ -1633,7 +1674,20 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
             if not parts and len(failed) == len(windows) - 1:
                 raise
             failed.append((window, str(exc)))
-    return _combine(parts, pages, windows, failed)
+    result = _combine(parts, pages, windows, failed)
+    # A cut where the sheet prints no new specimen may part one test: the
+    # two halves are kept as read -- merging two partial readings would be
+    # a guess about which half holds what -- and the boundary is said.
+    for before, after in zip(windows, windows[1:]):
+        if after[0] not in starts:
+            result.unresolved.append({
+                "what": f"pages {before[-1]}-{after[0]}",
+                "why": "read in separate windows, and page "
+                       f"{after[0]} prints no new boring, sample or depth: "
+                       "a test running over both pages may be recorded "
+                       "in two parts",
+                "refused_by": "reader", "page": int(after[0])})
+    return result
 
 
 def _merge_plot_checks(checks: Sequence[Optional[Dict[str, Any]]]
