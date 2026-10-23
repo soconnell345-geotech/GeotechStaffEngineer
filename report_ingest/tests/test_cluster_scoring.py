@@ -2764,3 +2764,32 @@ class TestCallsByStepNeverFailsARun:
                               "tabulated": True}) == "sounding"
         assert cs._item_step({"investigation": {"kind": "dcp"},
                               "floor_points": 3}) == "sounding"
+
+
+def test_a_reused_label_run_carries_its_changes_and_their_evidence(tmp_path):
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / "R01.json").write_text(json.dumps({"review": {
+        "final_labels": {"3": "figure", "4": "plan"},
+        "changes": [
+            {"page": 3, "from": "other", "to": "figure",
+             "evidence": "render_page"},
+            {"page": 4, "from": "other", "to": "plan", "evidence": "ledger"},
+        ]}}), encoding="utf-8")
+    folder = tmp_path / "out" / "R01"
+    cs._reuse_label_run(folder, runs, "R01")
+    saved = json.loads((folder / "review.json").read_text(encoding="utf-8"))
+    assert [(c["page"], c["evidence"]) for c in saved["changes"]] == [
+        (3, "render_page"), (4, "ledger")]
+    assert saved["final_labels"] == {"3": "figure", "4": "plan"}
+
+
+def test_a_reused_run_without_saved_changes_keeps_only_final_labels(tmp_path):
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / "R02.json").write_text(json.dumps({"review": {
+        "final_labels": {"1": "toc"}}}), encoding="utf-8")
+    folder = tmp_path / "out" / "R02"
+    cs._reuse_label_run(folder, runs, "R02")
+    saved = json.loads((folder / "review.json").read_text(encoding="utf-8"))
+    assert "changes" not in saved

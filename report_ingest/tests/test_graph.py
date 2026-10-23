@@ -815,8 +815,9 @@ class TestASavedReviewIsHeldToTheSameRule:
              "evidence": "render_page"},
             {"page": 5, "from": "other", "to": "toc", "evidence": "outline"},
             {"page": 6, "from": "other", "to": "photos"},
+            {"page": 7, "from": "other", "to": "plan", "evidence": ""},
         ]}
-        assert [r["page"] for r in _review_changes(blob, [])] == [4, 6]
+        assert [r["page"] for r in _review_changes(blob, [])] == [4]
 
     def test_a_reused_label_run_is_not_second_guessed(self):
         from report_ingest.graph import _review_changes

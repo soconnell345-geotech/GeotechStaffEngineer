@@ -1072,10 +1072,11 @@ def _review_changes(blob: Dict[str, Any],
     label stage saved -- so the changes are what those labels say that the
     RULES did not, which is exactly what the review had changed.
 
-    A saved change whose evidence names no look at the page is left out: a
-    review run now refuses it (BACKLOG RI-15), and a resumed run must not
-    apply what a fresh one would refuse. One saved before that refusal
-    existed is the case this catches.
+    A saved change whose evidence is missing, empty or names no look at the
+    page is left out: a review run now refuses it (BACKLOG RI-15), and a
+    resumed run must not apply what a fresh one would refuse. One saved
+    before that refusal existed is the case this catches. Only the
+    ``reused`` mark, which the label-reuse path writes, is exempt.
     """
     from report_ingest.label_review import names_a_look
 
@@ -1087,8 +1088,7 @@ def _review_changes(blob: Dict[str, Any],
             except (KeyError, TypeError, ValueError):
                 continue
             evidence = row.get("evidence")
-            if evidence and evidence != "reused" \
-                    and not names_a_look(evidence):
+            if evidence != "reused" and not names_a_look(evidence or ""):
                 continue
             rows.append(dict(row))
         return rows

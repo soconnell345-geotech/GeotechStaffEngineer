@@ -118,3 +118,19 @@ def test_a_blind_report_is_never_read(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("report_ingest.corpus.Corpus", NoSheets)
     assert m.main([str(tmp_path), "--raw-dir", str(tmp_path)]) == 0
     assert "in the blind set" in capsys.readouterr().err
+
+
+def test_the_rule_column_divides_by_its_own_page_count(tmp_path, monkeypatch):
+    run = _run(tmp_path)
+    real = m.accuracy
+
+    def fewer_under_the_rule(r, applied):
+        out = real(r, applied)
+        if len(list(applied)) < 6:           # the rule's subset
+            out = dict(out, scored=4)
+        return out
+
+    monkeypatch.setattr(m, "accuracy", fewer_under_the_rule)
+    (row,) = [line for line in m.report([run]) if line.startswith("R98 ")]
+    # before and after over 8 pages; the rule's 6 hits over its own 4
+    assert row.split()[8:11] == ["0.500", "0.625", "1.500"]

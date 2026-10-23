@@ -3799,10 +3799,15 @@ def _reuse_label_run(folder: Path, runs_dir: Path, rid: str
     review_file = folder / "review.json"
     if final and not review_file.is_file():
         folder.mkdir(parents=True, exist_ok=True)
-        review_file.write_text(json.dumps({
-            "final_labels": {str(k): v for k, v in final.items()},
-            "reused_from": str(Path(runs_dir) / f"{rid}.json")}, indent=2),
-            encoding="utf-8")
+        saved = {"final_labels": {str(k): v for k, v in final.items()},
+                 "reused_from": str(Path(runs_dir) / f"{rid}.json")}
+        earlier = (blob.get("review") or {}).get("changes")
+        if earlier is not None:
+            # the earlier run's changes with their evidence, so the RI-15
+            # rule applies to them when this review is read back
+            saved["changes"] = [dict(c) for c in earlier
+                                if isinstance(c, dict)]
+        review_file.write_text(json.dumps(saved, indent=2), encoding="utf-8")
         review_reused = True
     return triage_reused, review_reused
 
