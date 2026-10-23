@@ -774,6 +774,8 @@ class TestTheStackedColumn:
         ("SAMPLE NO. / BLOWS/6 IN", []),
         ("SAMPLE NO. / BLOWS/6 IN / N / REC", ["n", "rec"]),
         ("SAMPLE NO. / BLOW RECORD (6 IN)", []),        # RECORD is not REC
+        ("SAMPLE NO. / BLOWS / % RECOVERED", ["rec"]),
+        ("No. / Blows per 6 in. / Recov.", ["rec"]),
         ("SAMPLE NO. / REC / BLOWS/6 IN", None),        # REC before BLOWS
         ("BLOWS / SAMPLE NO.", None),
     ])
@@ -781,6 +783,46 @@ class TestTheStackedColumn:
         from report_ingest.log_floor import _stack_layout
 
         assert _stack_layout(header) == layout
+
+    def test_a_lost_drive_under_a_recovered_header_gives_no_n(self):
+        # The first drive (46) lost: 28, 31 and the recovery 9 are left
+        # under the number. Truth N 59; 31 + 9 = 40 is wrong.
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / % RECOVERED",
+                         "sample_id", "blows", "recovery")
+        inv, qa = _stacked([(1.0, ["2", "28", "31", "9"])], 0.15, column)
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack_tail" in _flags(qa)
+
+    def test_a_quantity_the_header_words_do_not_place_is_read_as_before(
+            self):
+        # The column is named for a recovery the layout cannot place.
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / % RCVY",
+                         "sample_id", "blows", "recovery")
+        inv, qa = _stacked([(1.0, ["2", "28", "31", "9"]),
+                            (2.5, ["3", "4", "6", "7", "12"])], 0.15, column)
+        assert not set(_ids(inv)) & {"28", "31", "9", "4", "6", "7", "12"}
+        assert all(r.n is None for r in inv.spt)
+        assert "floor_stack" in _flags(qa)
+
+    def test_a_number_under_50_after_a_refusal_is_never_its_n(self):
+        # Sample 3's SS printed a line low, on its first drive "3": the
+        # stacks cut there and sample 2's refusal takes the number "3" as
+        # the N the header names. A refusal has no N (p. 3-51).
+        column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N",
+                         "sample_id", "blows", "n_value")
+        cell = _sheet(0.15)
+        rows = [(1.0, ["1", "4", "6", "7", "13"]),
+                (1.75, ["2", "25", '50/3"']),
+                (2.2, ["3", "3", "8", "9", "17"])]
+        cells = [cell("blows", t, round(top + j * 0.15, 4))
+                 for top, lines in rows for j, t in enumerate(lines)]
+        cells += [cell("type", "SS", d) for d in (1.0, 1.75, 2.35)]
+        inv, qa = _seed(cells, [column, TYPE])
+        refused = [r for r in inv.spt if r.refusal]
+        assert [(r.blows, r.n) for r in refused] == [([25, '50/3"'], None)]
+        assert all(r.n in (None, 13, 17) for r in inv.spt)
+        assert "floor_refusal_n" in _flags(qa)
+        assert "3 printed as the N" in _at(inv, 1.75).note
 
     @pytest.mark.parametrize("typed", [True, False])
     def test_a_recovery_named_before_the_blows_is_read_as_before(self,
@@ -1008,6 +1050,54 @@ class TestRI44:
         inv, _ = _seed(cells, [ID, TYPE, BLOWS])
         assert inv.spt[0].blows == [4, '50/3"']
 
+    @staticmethod
+    def _printed_n(n_text, stacked):
+        """S-1's drives 4-6-7 with an N printed: on the stack's own line
+        under a header naming N, or in an N column beside the record."""
+        if stacked:
+            column = _column("blows", "SAMPLE NO. / BLOWS/6 IN / N",
+                             "sample_id", "blows", "n_value")
+            return _stacked([(1.0, ["1", "4", "6", "7", n_text])], 0.15,
+                            column)
+        cells = [_cell("id", "S-1", 1.0), _cell("type", "SS", 1.0),
+                 _cell("blows", "4-6-7", 1.0), _cell("n", n_text, 1.0)]
+        return _seed(cells, [ID, TYPE, BLOWS, _column("n", "N", "n_value")])
+
+    @pytest.mark.parametrize("stacked", [True, False])
+    def test_a_printed_n_the_drives_contradict_stands_with_theirs_beside(
+            self, stacked):
+        inv, qa = self._printed_n("12", stacked)
+        record = inv.spt[0]
+        assert (record.blows, record.n, record.n_basis) == ([4, 6, 7], 12, "")
+        assert [(a.field, a.value, a.method)
+                for a in record.prov.alternatives] == [("n", "13", "derived")]
+        assert "6 + 7 = 13" in record.prov.alternatives[0].note
+        assert "floor_n_drives" in _flags(qa)
+        row = next(r for r in qa if r["flag"] == "floor_n_drives")
+        assert "printed 12, drives 13" in str(row)
+
+    @pytest.mark.parametrize("stacked", [True, False])
+    def test_a_printed_n_the_drives_give_is_noted_as_confirmed(self,
+                                                               stacked):
+        inv, qa = self._printed_n("13", stacked)
+        record = inv.spt[0]
+        assert (record.n, record.n_basis) == (13, "")
+        assert record.prov.alternatives == []
+        assert "is the 2nd + 3rd of the printed drives" in inv.samples[0].note
+        assert "floor_n_drives" not in _flags(qa)
+
+    @pytest.mark.parametrize("n_text, n, flagged", [
+        ("3", None, True), ("49", None, True), ("50", 50, False),
+        ("100", 100, False)])
+    def test_an_n_column_under_50_beside_a_refusal_is_not_its_n(
+            self, n_text, n, flagged):
+        cells = [_cell("id", "S-1", 1.0), _cell("type", "SS", 1.0),
+                 _cell("blows", '25-50/3"', 1.0), _cell("n", n_text, 1.0)]
+        inv, qa = _seed(cells, [ID, TYPE, BLOWS,
+                                _column("n", "N", "n_value")])
+        assert inv.spt[0].refusal and inv.spt[0].n == n
+        assert ("floor_refusal_n" in _flags(qa)) is flagged
+
     @pytest.mark.parametrize("text", ["WOH-2-3", "WOH/2/3"])
     @pytest.mark.parametrize("code", [None, "SS"])
     def test_woh_in_one_cell_is_a_drive_of_the_record(self, text, code):
@@ -1120,6 +1210,26 @@ class TestTheModelsN:
         assert [(a.value, a.method) for a in alternatives] == [
             ("13", "derived")]
         assert self._n_rows(log)[0]["kept"] == "model"
+
+    @pytest.mark.parametrize("model_n, evidence, n, alternatives", [
+        (12, False, 12, [("13", "derived")]),
+        (None, False, 12, [("13", "derived")]),
+        (15, False, 12, [("15", "model"), ("13", "derived")]),
+        (13, True, 13, [("12", "grid")]),       # the drives' N is the slot
+    ])
+    def test_the_drives_n_beside_a_printed_n_survives_the_merge(
+            self, model_n, evidence, n, alternatives):
+        cells = [_cell("id", "S-1", 1.5), _cell("type", "SS", 1.5),
+                 _cell("blows", "4-6-7", 1.5), _cell("n", "12", 1.5)]
+        floor, _ = _seed(cells, [ID, TYPE, BLOWS,
+                                 _column("n", "N", "n_value")])
+        floor.investigation_id = "B-1"
+        merged, _ = merge_investigations(floor,
+                                         _model(model_n, evidence=evidence))
+        record = merged.spt[0]
+        assert record.n == n
+        assert [(a.value, a.method) for a in record.prov.alternatives
+                if a.field == "n"] == alternatives
 
     def test_a_model_n_that_agrees_with_the_drives_is_not_a_disagreement(
             self):

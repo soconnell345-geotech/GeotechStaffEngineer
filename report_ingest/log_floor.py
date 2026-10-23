@@ -37,8 +37,8 @@ from report_ingest.floor import (
     has_evidence, same_depth, same_number, same_text, settle, show,
 )
 from report_ingest.model import (
-    DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
-    Quantity, SPT, Sample, WaterLevel, _canonical_unit,
+    Alternative, DrillingDetails, Investigation, Layer, PitDimensions,
+    Provenance, Quantity, SPT, Sample, WaterLevel, _canonical_unit,
 )
 from report_ingest.printed_depths import (
     PrintedDepth, PrintedDepths, PrintedRow, chained, on_line,
@@ -481,14 +481,16 @@ def _runs(lines: Sequence[Any], pitch: Optional[float]) -> List[List[Any]]:
 
 
 #: What a header over such a column prints, found by its words: the sample
-#: number, the blows, the N, the recovery (REC or RECOVERY as a word, never
-#: RECORD).
+#: number, the blows, the N, the recovery (REC, RECOV, RECOVERY or
+#: RECOVERED as a word, never RECORD).
 _LAYOUT_PARTS: Tuple[Tuple[str, Any], ...] = (
     ("number", _NUMBER_HEADER),
     ("blows", re.compile(r"\bBLOW", re.I)),
     ("n", re.compile(r"\bN(?:60)?\b(?![º°])|\bN[- ]?VALUE", re.I)),
-    ("rec", re.compile(r"\bREC(?:OVERY|OV)?\b", re.I)),
+    ("rec", re.compile(r"\bREC(?:OV(?:ERY|ERED)?)?\b", re.I)),
 )
+#: The column name each part of the layout places.
+_LAYOUT_NAMES = {"n": "n_value", "rec": "recovery"}
 
 
 def _stack_layout(header: str) -> Optional[List[str]]:
@@ -629,7 +631,15 @@ def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
         header = str(getattr(grid.column(column_id), "header", "") or "")
         pitch = _line_pitch(lines)
         after = _stack_layout(header)
-        if after is None:
+        # Every quantity the column is named for must have its place in the
+        # layout: a recovery or an N the header's words do not place may be
+        # any line of the stack (a lost drive would shift it into the
+        # drives), so such a column is read as before.
+        named = set(_names(grid, lines[0], by_column)) & (
+            _SAMPLING | set(_INDEX_NAMES))
+        unplaced = named - {"sample_id", "blows", "sample_type"} - {
+            _LAYOUT_NAMES[part] for part in (after or ())}
+        if after is None or unplaced:
             unread.extend(_runs(lines, pitch))
             continue
         starts: Dict[int, Any] = {}
@@ -1295,8 +1305,24 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         remarks.append("doubtful: " + "; ".join(doubts))
         if notes is not None:
             notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
+    def drives_n() -> Optional[Tuple[Optional[int], str]]:
+        """:func:`n_from_drives` on this sample's drives."""
+        drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
+                                   else None)
+        printed_inc = (header_increment(_header(grid, drive_cell))
+                       if drive_cell is not None else None)
+        interval = (None if bottom is None
+                    else _metres(float(bottom) - float(top), unit))
+        return n_from_drives(
+            blows, sampler=kind, increment_m=printed_inc,
+            interval_m=interval,
+            increment_from=(f"the column header "
+                            f"'{_header(grid, drive_cell)[:40]}'"
+                            if printed_inc is not None else ""))
+
     # N, where the log prints a standard SPT's three drives and no N.
     n_basis = ""
+    drives_alt: Optional[Alternative] = None
     if unread and n is None and not n_printed and (
             kind == "spt"
             or (kind == "other" and any(_word_drive(t) for t in blows))):
@@ -1314,18 +1340,7 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         # _sample_groups.
         remarks.append(group.doubt + "; no N computed from the drives")
     elif n is None and not n_printed and not refusal and blows:
-        drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
-                                   else None)
-        printed_inc = (header_increment(_header(grid, drive_cell))
-                       if drive_cell is not None else None)
-        interval = (None if bottom is None
-                    else _metres(float(bottom) - float(top), unit))
-        computed = n_from_drives(
-            blows, sampler=kind, increment_m=printed_inc,
-            interval_m=interval,
-            increment_from=(f"the column header "
-                            f"'{_header(grid, drive_cell)[:40]}'"
-                            if printed_inc is not None else ""))
+        computed = drives_n()
         if computed is not None and computed[0] is None:
             # A drive past the printed halt: the record is a refusal as
             # printed, with no N.
@@ -1333,6 +1348,39 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             remarks.append(computed[1])
         elif computed is not None:
             n, n_basis = computed
+    elif n is not None and refusal and n < SPT_HALT_BLOWS:
+        # A printed N under the halt on drives that end in a refusal: the
+        # drive was halted, so the record has no N (p. 3-51), and the number
+        # is something else -- the next sample's number, a recovery (RI-44).
+        # Kept in the note, never as the N.
+        remarks.append(f"{n} printed as the N of drives that end in a "
+                       f"refusal, which have none ({N_HALT_RULE}, "
+                       f"{N_RULE_SOURCE}); not read as the N")
+        if notes is not None:
+            notes.add(page, "refusal_n", f"{n} at {at}")
+        n = None
+    elif n is not None and blows and not group.doubt:
+        # A printed N set against the drives where the printed rule applies
+        # (RI-44). The printed N stays in the slot; a different N from the
+        # drives stands beside it and the QA section lists both, as a
+        # model's N is checked at the merge (RI-04).
+        computed = drives_n()
+        if computed is not None and computed[0] == n:
+            remarks.append(f"the printed N {n} is the 2nd + 3rd of the "
+                           f"printed drives ({N_RULE_SOURCE})")
+        elif computed is not None and computed[0] is not None:
+            remarks.append(f"the printed N {n} differs from the 2nd + 3rd "
+                           f"of the printed drives, {computed[0]}; the "
+                           f"printed N stands, the drives' N is kept beside "
+                           f"it")
+            if notes is not None:
+                notes.add(page, "n_drives",
+                          f"printed {n}, drives {computed[0]} at {at}")
+            drives_alt = Alternative(
+                field="n", value=show(computed[0]), method="derived",
+                confidence=max(confidence_floor, min(1.0, confidence)),
+                note="the drives' N: " + computed[1].replace(
+                    "not printed; ", "", 1))
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
@@ -1363,6 +1411,8 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                   blows=blows, n=n, n_basis=n_basis, n_printed=n_printed,
                   refusal=refusal, sample_id=sample_id,
                   prov=prov.model_copy(deep=True))
+        if drives_alt is not None:
+            spt.prov.alternatives.append(drives_alt)
     if (notes is not None and not marked and spt is None and not sample_id
             and kind == "other" and drawn is None and printed_row is None
             and not any(v is not None for v in values.values())
@@ -1570,6 +1620,14 @@ class _FloorNotes:
                        "be a drive or the N or recovery the header prints "
                        "after the blows; the lines are kept as drives and "
                        "no N is computed from them"),
+        "refusal_n": ("numbers under 50 printed as the N of drives that "
+                      "end in a refusal; such a record has no N (FHWA "
+                      "NHI-06-088 Vol. I, Sec. 3.7, p. 3-51), so each is "
+                      "kept in its sample's note, not as the N"),
+        "n_drives": ("printed Ns that differ from the 2nd + 3rd of the "
+                     "printed drives (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
+                     "p. 3-51); the printed N stands and the drives' N is "
+                     "kept beside it"),
     }
 
     def __init__(self) -> None:
@@ -2845,6 +2903,13 @@ class _Merger:
                 prov.confidence = max(0.0, min(1.0, confidences[-1]))
             prov.alternatives.extend(alternatives)
             if floor_prov is not None and model_prov is not None:
+                # What the floor kept beside its own reading -- the drives'
+                # N beside a printed one (RI-44) -- stays beside the merged
+                # slot, unless it is now the slot's value.
+                for alt in floor_prov.alternatives:
+                    if (show(getattr(merged, alt.field, None)) != alt.value
+                            and alt not in prov.alternatives):
+                        prov.alternatives.append(alt.model_copy(deep=True))
                 prov.note = (f"{model_prov.note}; " if model_prov.note
                              else "") + "matched to the grid's row" \
                     + (f" ({floor_prov.note[:60]})" if floor_prov.note else "")
