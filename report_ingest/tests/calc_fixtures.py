@@ -346,3 +346,21 @@ def build_titled_pages(heads) -> bytes:
     pdf = doc.tobytes()
     doc.close()
     return pdf
+
+
+def build_scanned_middle_page() -> bytes:
+    """Three pages of one printout; the middle one carries no text at all,
+    only drawn marks, as a scanned page with no optical text does."""
+    import pymupdf
+    doc, page = _page()
+    _text(page, 60, 46, "Footing Settlement Calculation", 11, bold=True)
+    _text(page, 60, 120, "Footing Width B = 2.5 m", 9)
+    _doc, page = _page(doc)
+    page.draw_rect(pymupdf.Rect(60, 60, 540, 700), color=(0, 0, 0))
+    page.draw_line(pymupdf.Point(60, 380), pymupdf.Point(540, 380))
+    _doc, page = _page(doc)
+    _text(page, 60, 46, "Footing Settlement Calculation", 11, bold=True)
+    _text(page, 60, 120, "Total Settlement = 18 mm", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf

@@ -391,9 +391,11 @@ longer than `MAX_CALC_PAGES` (12) is shown a window of that many pages with
 the **first and the last always in it** — the first carries the banner and
 the inputs, the last carries the answer — and the second call is spent only
 on the rest of the run or on the reader's own unsettled list. Every page of
-the window is shown as text and the first as a picture;
-`GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`) sends every page
-of it as a picture too, OFF by default because no run has measured it.
+the window is shown as text, and the first page and every **scanned** page
+(no text line, an optical reader's text, or text planlens flags unreliable)
+as a picture; `GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`)
+sends every page of it as a picture too, OFF by default because no run has
+measured it.
 
 **One printout is one item.** `split_calc_items` cuts a planlens item where a
 page's title names a *different* calculation (a title is the first short line

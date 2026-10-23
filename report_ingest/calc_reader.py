@@ -70,8 +70,8 @@ longer than :data:`MAX_CALC_PAGES` is shown a window of that many pages with
 the FIRST and the LAST always in it -- the first carries the banner and the
 inputs, the last carries the answer -- and the second call is spent only on
 the rest of the run or on the model's own unsettled list. Every page of the
-window travels as text and the first as a picture; with
-:data:`PAGE_IMAGES_ENV` on, every page of it travels as a picture too.
+window travels as text, and the first and every scanned page as a picture;
+with :data:`PAGE_IMAGES_ENV` on, every page of it travels as a picture too.
 """
 
 from __future__ import annotations
@@ -1488,7 +1488,19 @@ _UNSETTLED_INSTRUCTION = (
 #: the very runs the calc stage measured, and no run has measured it yet.
 #: A window is at most :data:`MAX_CALC_PAGES` pages, so a call carries at
 #: most that many pictures.
+#:
+#: A SCANNED page travels as a picture whatever the switch says (see
+#: :func:`_scanned`). Its text is either missing or an optical reader's, and
+#: the prompt itself says the picture is then worth more. Before RI-17 kept a
+#: run in one item, a scanned run came apart into one-page items and each
+#: page was its item's first page, so each went as a picture. Leaving pages 2+
+#: of a scan without one would have shown the model less than that.
 PAGE_IMAGES_ENV = "GEOTECH_INGEST_CALC_PAGE_IMAGES"
+
+#: The text sources an optical reader writes: planlens'
+#: ``SOURCE_OCR`` and ``SOURCE_AZURE_DI``. Kept as strings here because this
+#: module imports planlens only where it uses it; a test holds them equal.
+OPTICAL_SOURCES = ("ocr", "azure_di")
 
 _PAGE_IMAGES: ContextVar[Optional[bool]] = ContextVar(
     "ingest_calc_page_images", default=None)
@@ -1513,27 +1525,76 @@ def use_page_images(on: bool = True) -> Iterator[None]:
         _PAGE_IMAGES.reset(token)
 
 
-def _system(every_page: bool) -> str:
-    """The system prompt, saying which pages travel as pictures."""
-    if not every_page:
-        return CALC_READER_SYSTEM
-    return CALC_READER_SYSTEM.replace(
-        "and the first page as a picture.",
-        "and every page you are shown as a picture, in page order.").replace(
-        "the picture is then worth\nmore.",
-        "the pictures are then\nworth more.")
+def _system(every_page: bool, scans: bool = False) -> str:
+    """The system prompt, saying which pages travel as pictures.
+
+    The default prompt goes unchanged unless a call carries more than its
+    first page as a picture: either every page (the switch) or the scanned
+    pages after the first (:func:`_scanned`).
+    """
+    if every_page:
+        return CALC_READER_SYSTEM.replace(
+            "and the first page as a picture.",
+            "and every page you are shown as a picture, in page "
+            "order.").replace(
+            "the picture is then worth\nmore.",
+            "the pictures are then\nworth more.")
+    if scans:
+        return CALC_READER_SYSTEM.replace(
+            "and the first page as a picture.",
+            "and the first page as a picture, with a picture of every "
+            "scanned page.")
+    return CALC_READER_SYSTEM
 
 
-def _pictures(doc: Any, pages: Sequence[int], dpi: float) -> List[bytes]:
-    """The pages as pictures; a page that will not draw is read from its
-    text alone."""
-    out: List[bytes] = []
+def _scanned(doc: Any, page: int) -> bool:
+    """Has this page no usable text layer of its own?
+
+    True when the page carries no text line at all, when its lines came
+    from an optical reader (:data:`OPTICAL_SOURCES`), when planlens flags
+    its text as unreliable (a font with no Unicode map, so the string is not
+    what the page says), or when the page will not read. Such a page is read
+    from its picture, or from an optical reader the prompt already trusts
+    less than the picture.
+    """
+    try:
+        content = doc.page(int(page))
+    except Exception:                            # a page that will not read
+        return True
+    if not content.lines:
+        return True
+    if any(str(s) in OPTICAL_SOURCES for s in content.text_sources or ()):
+        return True
+    try:
+        return not bool(getattr(doc.summary(int(page)), "text_reliable",
+                                True))
+    except Exception:                            # no summary to say so
+        return False
+
+
+def _pictured(doc: Any, pages: Sequence[int], every_page: bool,
+              first: bool) -> List[int]:
+    """The pages of one call that travel as pictures, in page order: the
+    window's first page (``first``), every scanned page, and with the switch
+    on every page."""
+    return [p for n, p in enumerate(pages)
+            if every_page or (first and n == 0) or _scanned(doc, p)]
+
+
+def _pictures(doc: Any, pages: Sequence[int], dpi: float,
+              captioned: bool = False) -> List[Dict[str, Any]]:
+    """The pages as picture blocks; a page that will not draw is read from
+    its text alone. ``captioned`` puts the page number in front of each
+    picture, for a call that carries more than one."""
+    out: List[Dict[str, Any]] = []
     for page in pages:
         try:
             png, _info = doc.render(page, dpi=dpi)
         except Exception:                        # a page that will not draw
             continue
-        out.append(png)
+        if captioned:
+            out.append(text_block(f"The picture of page {page}:"))
+        out.append(image_block(png))
     return out
 
 
@@ -2161,22 +2222,25 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     pool = printed_numbers(doc, pages)
 
     window = page_window(pages)
+    next_start = max(0, MAX_CALC_PAGES - 2)
     every_page = page_images_enabled()
-    images = _pictures(doc, window if every_page else window[:1], dpi)
-    system = _system(every_page)
+    shown = _pictured(doc, window, every_page, first=True)
+    shown_later = _pictured(doc, page_window(pages, next_start), every_page,
+                            first=False)
+    system = _system(every_page, scans=len(shown) > 1 or bool(shown_later))
 
     brief = _brief(doc, window, pages, ledger, item_title, report_id, budget,
                    floor)
     tools = _Tools(doc, pages)
     tools.engine, tools.charge = engine, charge
-    messages: List[Dict[str, Any]] = [
-        user(text_block(brief), *[image_block(png) for png in images])]
+    messages: List[Dict[str, Any]] = [user(
+        text_block(brief), *_pictures(doc, shown, dpi,
+                                      captioned=len(shown) > 1))]
 
     model_calls = 0
     tool_calls = 0
     reading: Optional[CalcReading] = None
     final: Any = None
-    next_start = max(0, MAX_CALC_PAGES - 2)
     followed_up = False
 
     while model_calls < budget:
@@ -2213,8 +2277,7 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
                 messages = [user(
                     text_block(_CONTINUE_INSTRUCTION), text_block(
                         "\n".join(serialise_page(doc, p) for p in rest)),
-                    *[image_block(png) for png in (
-                        _pictures(doc, rest, dpi) if every_page else ())])]
+                    *_pictures(doc, shown_later, dpi, captioned=True))]
                 continue
             if reading.unsettled:
                 followed_up = True

@@ -1038,3 +1038,87 @@ class TestThePictures:
         assert engine.calls[0]["n_images"] == MAX_CALC_PAGES
         assert engine.calls[1]["n_images"] == len(
             page_window(list(range(16)), MAX_CALC_PAGES - 2))
+
+    # -- a scanned page is a picture whatever the switch says ----------------
+
+    def test_a_scanned_page_after_the_first_travels_as_a_picture(
+            self, tmp_path, monkeypatch):
+        """Switch off. The middle page has no text, so its picture is the
+        only view of it; before RI-17 it was its own one-page item and went
+        as that item's picture."""
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.tests.calc_fixtures import build_scanned_middle_page
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        doc = _open(build_scanned_middle_page(), tmp_path)
+        engine = FakeEngine([{"final": _reading()}])
+        try:
+            read_calculation(doc, [0, 1, 2], engine, report_id="SYN")
+        finally:
+            doc.close()
+
+        call = engine.calls[0]
+        assert call["n_images"] == 2                 # page 0 and page 1
+        texts = [b.get("text", "") for b in call["messages"][0]["content"]
+                 if b.get("type") == "text"]
+        assert "The picture of page 0:" in texts
+        assert "The picture of page 1:" in texts
+        assert "The picture of page 2:" not in texts
+        assert "with a picture of every scanned page" in call["system"]
+
+    def test_the_second_window_brings_its_scanned_pictures(
+            self, tmp_path, monkeypatch):
+        import report_ingest.calc_reader as calc_reader
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        monkeypatch.setattr(calc_reader, "_scanned",
+                            lambda _doc, page: page == 14)
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=True)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            read_calculation(doc, list(range(16)), engine, report_id="SYN")
+        finally:
+            doc.close()
+
+        assert engine.calls[0]["n_images"] == 1
+        assert engine.calls[1]["n_images"] == 1
+        texts = [b.get("text", "") for b in
+                 engine.calls[1]["messages"][0]["content"]
+                 if b.get("type") == "text"]
+        assert "The picture of page 14:" in texts
+
+    def test_what_counts_as_a_scanned_page(self):
+        from planlens.document.model import SOURCE_AZURE_DI, SOURCE_OCR
+        from report_ingest.calc_reader import OPTICAL_SOURCES, _scanned
+        assert set(OPTICAL_SOURCES) == {SOURCE_OCR, SOURCE_AZURE_DI}
+
+        class _Content:
+            def __init__(self, lines, sources):
+                self.lines, self.text_sources = lines, sources
+
+        class _Summary:
+            def __init__(self, reliable):
+                self.text_reliable = reliable
+
+        class _Doc:
+            def __init__(self, lines=("a line",), sources=("pdf_text",),
+                         reliable=True, broken=False):
+                self.args = (list(lines), list(sources), reliable, broken)
+
+            def page(self, _n):
+                if self.args[3]:
+                    raise ValueError("will not read")
+                return _Content(self.args[0], self.args[1])
+
+            def summary(self, _n):
+                return _Summary(self.args[2])
+
+        assert not _scanned(_Doc(), 0)                    # its own text
+        assert _scanned(_Doc(lines=(), sources=()), 0)    # no text at all
+        assert _scanned(_Doc(sources=(SOURCE_AZURE_DI,)), 0)
+        assert _scanned(_Doc(sources=(SOURCE_OCR,)), 0)
+        assert _scanned(_Doc(reliable=False), 0)          # unmapped fonts
+        assert _scanned(_Doc(broken=True), 0)
