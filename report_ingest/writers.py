@@ -57,7 +57,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from report_ingest.model import (
-    GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, QAEntry, Quantity, ReportRecord,
+    GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, QA_RANKS, QAEntry, Quantity,
+    ReportRecord, qa_by_rank_enabled,
 )
 
 __all__ = [
@@ -625,7 +626,12 @@ def summary_markdown(record: ReportRecord) -> str:
                        f"{'p' + str(page + 1) if page is not None else ''} |")
 
     out += ["", "## What was extracted", ""]
+    by_rank = qa_by_rank_enabled()
     counts = record.counts()
+    if not by_rank:
+        # The counts by rank show with the entries in rank order (RI-08).
+        for rank in QA_RANKS:
+            counts.pop(f"qa_{rank}", None)
     out += ["| What | How many |", "|---|---|"]
     for name, value in counts.items():
         out.append(f"| {name.replace('_', ' ')} | {value} |")
@@ -645,15 +651,27 @@ def summary_markdown(record: ReportRecord) -> str:
     if not record.qa:
         out.append("_Nothing was skipped, partial or in conflict._")
     else:
-        out += ["| Kind | Where | What |", "|---|---|---|"]
-        for entry in record.qa:
+        entries = record.qa
+        if by_rank:
+            # The entries that need a person first (BACKLOG RI-08).
+            ranks = record.qa_by_rank()
+            out += [f"{ranks['open']} left open (two readings or sources "
+                    f"disagree and nothing settled it: look at the pages), "
+                    f"{ranks['changed']} changed (a value the record changed "
+                    f"or dropped by its own rule), {ranks['note']} note(s).",
+                    "", "| Rank | Kind | Where | What |", "|---|---|---|---|"]
+            entries = record.qa_ranked()
+        else:
+            out += ["| Kind | Where | What |", "|---|---|---|"]
+        for entry in entries:
             detail = entry.detail
             if entry.values:
                 detail += " (" + "; ".join(entry.values[:4]) + ")"
             if entry.pages:
                 detail += " [pages " + ", ".join(
                     str(p + 1) for p in entry.pages[:10]) + "]"
-            out.append(f"| {entry.kind} | {_md(entry.where)} | "
+            out.append((f"| {entry.rank} " if by_rank else "")
+                       + f"| {entry.kind} | {_md(entry.where)} | "
                        f"{_md(detail)} |")
 
     document = record.document
@@ -800,12 +818,15 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
     if rows:
         out += ["## Calculations", ""] + rows + [""]
 
+    # In rank order with a Rank column only under the switch (RI-08).
+    by_rank = qa_by_rank_enabled()
     rows = _table(
-        ["Kind", "Where", "What"],
-        [[entry.kind, entry.where,
-          entry.detail + (" (" + "; ".join(entry.values[:3]) + ")"
-                          if entry.values else "")]
-         for entry in record.qa])
+        (["Rank"] if by_rank else []) + ["Kind", "Where", "What"],
+        [([entry.rank] if by_rank else []) + [
+            entry.kind, entry.where,
+            entry.detail + (" (" + "; ".join(entry.values[:3]) + ")"
+                            if entry.values else "")]
+         for entry in (record.qa_ranked() if by_rank else record.qa)])
     if rows:
         out += ["## Quality assurance", ""] + rows + [""]
     return "\n".join(out) + "\n"

@@ -237,9 +237,23 @@ class TestRecord:
         assert record.counts() == {
             "investigations": 1, "layers": 1, "samples": 1, "spt": 1,
             "water_levels": 1, "cpt_points": 0, "dcp_points": 0,
-            "lab_tests": 1, "calculations": 0, "calcs": 0, "qa": 1}
+            "lab_tests": 1, "calculations": 0, "calcs": 0, "qa": 1,
+            "qa_open": 0, "qa_changed": 0, "qa_note": 1}
         assert record.investigation("B-2") is not None
         assert record.investigation("B-9") is None
+
+    def test_the_qa_by_rank_switch_is_off_until_it_is_set(self, monkeypatch):
+        from report_ingest.model import (
+            QA_BY_RANK_ENV, qa_by_rank_enabled, use_qa_by_rank,
+        )
+        monkeypatch.delenv(QA_BY_RANK_ENV, raising=False)
+        assert qa_by_rank_enabled() is False
+        with use_qa_by_rank():
+            assert qa_by_rank_enabled() is True
+        monkeypatch.setenv(QA_BY_RANK_ENV, "1")
+        assert qa_by_rank_enabled() is True
+        with use_qa_by_rank(False):
+            assert qa_by_rank_enabled() is False
 
     def test_the_record_round_trips_through_json(self):
         record = ReportRecord(

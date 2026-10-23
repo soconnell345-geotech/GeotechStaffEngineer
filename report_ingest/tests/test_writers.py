@@ -71,6 +71,19 @@ class TestWhatIsWritten:
         said = verdicts["diggs.notes"].values
         assert said and all("written as NaN" in line for line in said)
 
+    def test_a_file_that_fails_the_schema_is_left_open(self, record,
+                                                       tmp_path, monkeypatch):
+        # BACKLOG RI-08: the values stay as read and the file cannot be
+        # right, so a person has to look.
+        import report_ingest.diggs_writer as diggs_writer
+        monkeypatch.setattr(diggs_writer, "diggs_schema_gate",
+                            lambda xml: (False, ["element 'x' not expected"]))
+        write_outputs(record, tmp_path)
+
+        (entry,) = [e for e in record.qa if e.where == "diggs.schema"]
+        assert "did NOT pass" in entry.detail
+        assert (entry.kind, entry.rank) == ("out_of_range", "open")
+
     def test_writing_twice_leaves_one_verdict_not_two(self, record, tmp_path):
         write_outputs(record, tmp_path)
         write_outputs(record, tmp_path)
@@ -117,6 +130,71 @@ class TestTheSummaryPage:
         assert "## What was extracted" in text
         assert "| investigations | 2 |" in text
         assert "the DIGGS file is valid against the bundled 2.6 schema" in text
+
+    def test_the_entries_that_need_a_person_come_first(self):
+        # BACKLOG RI-08, under its switch: an entry written first that is
+        # only a note goes below a conflict in both tables; the record keeps
+        # its own order.
+        from report_ingest.model import QAEntry, use_qa_by_rank
+        record = reconcile(build_record(lab_tests=[
+            atterberg(ll=38.0), summary_table(ll_for_s1=41.0)]))
+        record.qa.insert(0, QAEntry(kind="note", where="workflow",
+                                    detail="read on the standard workflow"))
+        with use_qa_by_rank():
+            text = summary_markdown(record)
+            page = library_page(record, "abc123")
+
+        by = record.qa_by_rank()
+        assert (f"{by['open']} left open (two readings or sources disagree"
+                in text)
+        assert "| Rank | Kind | Where | What |" in text
+        assert f"| qa open | {by['open']} |" in text
+        for body in (text, page):
+            assert body.index("| open | conflict |") < body.index(
+                "| note | note | workflow |")
+        assert record.qa[0].where == "workflow"
+
+    def test_off_the_default_both_pages_are_written_as_before(
+            self, monkeypatch):
+        # The pages are what the library's search index is built from, so
+        # with the switch off they are master's to the character: the
+        # record's own order, no Rank column, no counts by rank.
+        from report_ingest.model import QA_BY_RANK_ENV, QAEntry
+        monkeypatch.delenv(QA_BY_RANK_ENV, raising=False)
+        record = build_record()
+        record.qa = [
+            QAEntry(kind="note", where="workflow",
+                    detail="read on the standard workflow"),
+            QAEntry(kind="conflict", where="lab_tests.ll at B-1 2 ft",
+                    detail="the summary table and the atterberg sheet give "
+                           "different values for ll; both are recorded",
+                    values=["38", "41"], pages=[11, 13])]
+        text = summary_markdown(record)
+        page = library_page(record, "abc123")
+
+        assert ("## What a reviewer should know\n\n"
+                "| Kind | Where | What |\n|---|---|---|\n"
+                "| note | workflow | read on the standard workflow |\n"
+                "| conflict | lab_tests.ll at B-1 2 ft | the summary table "
+                "and the atterberg sheet give different values for ll; both "
+                "are recorded (38; 41) [pages 12, 14] |\n") in text
+        assert ("## Quality assurance\n\n"
+                "| Kind | Where | What |\n|---|---|---|\n"
+                "| note | workflow | read on the standard workflow |\n"
+                "| conflict | lab_tests.ll at B-1 2 ft | the summary table "
+                "and the atterberg sheet give different values for ll; both "
+                "are recorded (38; 41) |\n") in page
+        extracted = text.split("## What was extracted\n\n")[1].split(
+            "\n\n")[0]
+        assert [line.split(" | ")[0][2:]
+                for line in extracted.splitlines()[2:]] == [
+            "investigations", "layers", "samples", "spt", "water levels",
+            "cpt points", "dcp points", "lab tests", "calculations", "calcs",
+            "qa"]
+        for body in (text, page):
+            assert "Rank" not in body and "left open" not in body
+        # the counts by rank are in the record's counts either way
+        assert record.counts()["qa_open"] == 1
 
     def test_a_record_with_no_qa_says_so(self, tmp_path):
         record = build_record()

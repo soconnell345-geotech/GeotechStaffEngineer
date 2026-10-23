@@ -804,3 +804,427 @@ class TestALogAgainstItself:
         # a header that rounds the total depth is not caught out
         ok = _hole(td=20.0, layers=[(0, 20.04)])
         assert _reconciled(ok).qa == []
+
+
+# -- the rank of each entry (BACKLOG RI-08) ----------------------------------
+
+class TestTheRank:
+    """Each entry says whether it needs a person: ``open``, ``changed`` or
+    ``note``, from what it says rather than which pass wrote it."""
+
+    def test_the_reconciler_s_own_entries_are_ranked_by_what_they_say(self):
+        sheet = atterberg()
+        sheet.depth_top = Quantity(value=3.0, unit="fathoms")
+        nameless = atterberg(investigation="", sample="")
+        record = reconcile(build_record(
+            lab_tests=[atterberg(ll=38.0), summary_table(ll_for_s1=41.0),
+                       orphan_sheet(), sheet, nameless]),
+            reader_unresolved=[
+                {"what": "depth", "refused_by": "python",
+                 "why": "depth 99 is outside what the scale on this log "
+                        "reads (0 to 20); refused rather than accepted"},
+                {"what": "input Wall load", "refused_by": "python",
+                 "why": "the unit 'tons/ft' is not one the record can "
+                        "convert; the value is kept as printed and nothing "
+                        "converts it"},
+                {"what": "page 3", "refused_by": "budget",
+                 "why": "the reader did not get to this page"},
+                {"what": "hammer type", "refused_by": "reader",
+                 "why": "the log names no hammer"}])
+
+        def rank(where_or_detail):
+            (entry,) = [e for e in record.qa
+                        if where_or_detail in e.where
+                        or where_or_detail in e.detail]
+            return entry.rank
+
+        # both values recorded, nothing settled them
+        assert rank("lab_tests.ll at") == "open"
+        # the sheet names a hole the logs do not hold
+        assert rank("'B-9'") == "open"
+        # a value read and thrown out; a page nobody read
+        assert rank("refused rather than accepted") == "changed"
+        assert rank("did not get to this page") == "changed"
+        # kept as printed; a sheet that names no hole; the reader's own note
+        assert rank("tons/ft") == "note"
+        assert rank("fathoms") == "note"
+        assert rank("names no exploration") == "note"
+        assert rank("the log names no hammer") == "note"
+
+    def test_a_log_s_own_checks_leave_the_values_and_are_open(self):
+        rows = [{"depth_top": _m(t), "blows": b}
+                for t, b in ((1.0, [1, 2, 3]), (2.5, [4, 5, 6]),
+                             (4.0, [7, 8]), (5.5, [9, 9, 9]))]
+        hole = _hole(rows, td=5.0, layers=[(0, 6.0)])
+        record = _reconciled(hole)
+
+        assert {e.kind: e.rank for e in record.qa} == {
+            "count_mismatch": "open", "out_of_range": "open"}
+
+    def test_the_two_voters_split_is_a_change_and_a_kept_value_a_note(self):
+        from report_ingest.graph import _vote_qa
+
+        qa = []
+        _vote_qa(qa, {
+            "disagreements": [{
+                "what": "layer at 1.0 m: bottom", "where": "B-1.layers",
+                "floor": "2.0 m", "model": "2.5 m", "kept": "model",
+                "why": "the model named a box and a note"}],
+            "kept": [{"what": "sample at 3.0 m: recovery", "page": 4}]},
+            pages=[4])
+
+        assert [(e.kind, e.rank) for e in qa] == [
+            ("disagreement", "changed"), ("note", "note")]
+
+    def test_the_ones_that_need_a_person_come_first_and_are_counted(self):
+        record = reconcile(build_record(lab_tests=[
+            atterberg(ll=38.0), summary_table(ll_for_s1=41.0),
+            orphan_sheet()]))
+        record.qa.insert(0, QAEntry(kind="note", where="workflow",
+                                    detail="read on the standard workflow"))
+
+        ranked = record.qa_ranked()
+        order = ["open", "changed", "note"]
+        assert [order.index(e.rank) for e in ranked] == sorted(
+            order.index(e.rank) for e in record.qa)
+        assert record.qa[0].where == "workflow"   # the record's own order
+        counts = record.counts()
+        assert counts["qa"] == len(record.qa)
+        assert counts["qa_open"] + counts["qa_changed"] + counts[
+            "qa_note"] == len(record.qa)
+        assert counts["qa_open"] == record.qa_by_rank()["open"] >= 3
+
+    def test_a_record_written_before_ranks_is_ranked_on_loading(self):
+        import json
+        from report_ingest.model import ReportRecord
+
+        old = {"qa": [
+            {"kind": "conflict", "where": "lab_tests.ll at B-1 2 ft",
+             "detail": "the summary table and the atterberg sheet give "
+                       "different values for ll; both are recorded",
+             "values": [], "pages": [12, 14]},
+            {"kind": "out_of_range", "where": "result Moment",
+             "detail": "the unit 'kN-m' is not one the record can convert; "
+                       "the value is kept as printed and nothing converts "
+                       "it", "values": [], "pages": [40]}]}
+        record = ReportRecord.model_validate_json(json.dumps(old))
+
+        assert [e.rank for e in record.qa] == ["open", "note"]
+        again = json.loads(record.model_dump_json())
+        assert [e["rank"] for e in again["qa"]] == ["open", "note"]
+        # a rank given is a rank kept
+        assert QAEntry(kind="note", detail="x", rank="open").rank == "open"
+
+    # -- one test for each rule of model._SAID_RANK, through the code that
+    #    writes the entry
+
+    def test_a_driven_record_whose_bottom_is_not_below_its_top_is_open(self):
+        rows = [{"depth_top": _m(3.0), "depth_bottom": _m(2.55),
+                 "blows": [3, 4, 5], "increment": _m(0.15)}]
+        record = _reconciled(_hole(rows, td=6.0, layers=[(0, 6.0)]))
+
+        (entry,) = [e for e in record.qa if "is not below its top"
+                    in e.detail]
+        assert (entry.kind, entry.rank) == ("out_of_range", "open")
+
+    def test_a_lab_test_with_no_sample_at_its_depth_is_open(self):
+        record = reconcile(build_record(lab_tests=[
+            atterberg(sample="S-9", depth_ft=11.0)]))
+
+        (entry,) = [e for e in record.qa if "no sample of it sits within"
+                    in e.detail]
+        assert (entry.kind, entry.rank) == ("partial", "open")
+
+    def test_a_hole_in_the_summary_table_the_logs_lack_is_open(self):
+        table = summary_table()
+        table.result.rows[1].investigation_id = "B-9"
+        record = reconcile(build_record(lab_tests=[table]))
+
+        (entry,) = [e for e in record.qa
+                    if e.where == "lab_tests.summary_table"]
+        assert "are not among those read from this report" in entry.detail
+        assert (entry.kind, entry.rank) == ("partial", "open")
+
+    def test_a_reader_s_note_that_says_not_among_is_its_own_kind(self):
+        # The lab rules match the reconciler's whole sentence, not the two
+        # words a reader's free text may carry.
+        record = reconcile(build_record(), reader_unresolved=[
+            {"what": "hammer", "why": "the hammer type is not among those "
+                                      "the legend lists"}])
+
+        (entry,) = [e for e in record.qa if e.where == "hammer"]
+        assert (entry.kind, entry.rank) == ("partial", "note")
+
+    def test_pages_with_no_text_read_from_the_picture_are_a_note(self):
+        record = reconcile(build_record(), no_text_pages=[3, 4], di_pages=[])
+
+        (entry,) = [e for e in record.qa if e.kind == "unreadable"]
+        assert "read from the picture" in entry.detail
+        assert entry.rank == "note"
+
+    def test_a_narrative_with_no_page_of_text_unread_is_a_change(self):
+        from types import SimpleNamespace
+
+        from report_ingest.graph import _narrative_items
+        qa = []
+        item = SimpleNamespace(kind="narrative", id="item_1", pages=[1, 2])
+        assert _narrative_items([item], "standard", {1, 2}, qa) == ([], [])
+
+        (entry,) = qa
+        assert (entry.kind, entry.rank) == ("unreadable", "changed")
+
+    def test_the_logs_answer_over_the_narrative_s_is_a_change(self):
+        from types import SimpleNamespace
+
+        from report_ingest.graph import _counts_from_logs
+        record = build_record(general=general_facts().model_copy(
+            update={"boringCount": 4}))
+        record.narrative.pages = [3]
+        items = [SimpleNamespace(kind="boring_log", id="item_5"),
+                 SimpleNamespace(kind="test_pit_log", id="item_6")]
+        qa = []
+        _counts_from_logs(record, qa, "settle", items, items)
+
+        assert record.general.boringCount == 1
+        (entry,) = qa
+        assert "over the narrative's" in entry.detail
+        assert (entry.kind, entry.rank) == ("note", "changed")
+
+    def test_a_label_the_review_moved_on_an_agreed_page_is_a_change(
+            self, tmp_path):
+        import json
+        from types import SimpleNamespace
+
+        from report_ingest.graph import Budgets, _Labelling, _review, _Spend
+        from report_ingest.label_vote import PageChoice
+        (tmp_path / "review.json").write_text(json.dumps({
+            "asked_pages": [10],
+            "changes": [{"page": 3, "from": "narrative", "to": "figure",
+                         "reason": "a full-page drawing"}]}))
+        choices = [PageChoice(page=3, label="narrative", confidence=0.9,
+                              agreed=True, policy="structural"),
+                   PageChoice(page=10, label="figure", confidence=0.5,
+                              agreed=False, policy="structural")]
+        labels = {3: "narrative", 10: "figure"}
+        qa = []
+        _review(SimpleNamespace(n_pages=20), None, Budgets(), str(tmp_path),
+                True, [], None, None, _Labelling(), choices, labels, [10],
+                _Spend(), qa, [])
+
+        assert labels[3] == "figure"
+        (entry,) = [e for e in qa if e.where == "labels.page3"]
+        assert "the review moved it" in entry.detail
+        assert (entry.kind, entry.rank) == ("note", "changed")
+        # the split nobody settled stays open
+        (entry,) = [e for e in qa if e.where == "labels.page10"]
+        assert (entry.kind, entry.rank) == ("label_disagreement", "open")
+
+    @pytest.mark.parametrize("floor, model, rank", [
+        # made-up values, each of a shape the saved runs show
+        ("0.183", "0.183 g", "note"),               # a unit on one side
+        ("12", "12%", "note"),
+        ("37.0 feet", "37 feet", "note"),           # how it is printed
+        ("= 0.730E+01 :unselected:", "7.3", "note"),
+        ("47 K91305", "47K91305", "note"),
+        ("13,750 psf", "13750 psf", "note"),
+        ("TP-01", "TP-1", "note"),
+        ("S-4", "4", "note"),                       # a series prefix
+        ("4", "S4", "note"),
+        ("12", "max 12", "changed"),                # a word apart from it
+        ("approx 12", "12", "changed"),
+        ("12", "El 12", "changed"),
+        ("6 in", "6 ft", "changed"),                # two units
+        ("2.0 m", "2.5 m", "changed"),              # two numbers
+        ("-12.5", "12.5", "changed"),               # a sign
+        ("12.5", "-12.5 kN-m", "changed"),
+        ("\u221212.5", "12.5", "changed"),          # the minus sign
+        ("12.5", "\u221212.5 kN-m", "changed"),
+        ("\u221212.5", "-12.5", "note"),            # one minus, two glyphs
+        ("<0.5", "0.5", "changed"),                 # a qualifier
+        (">100", "100", "changed"),
+        ("12 (refusal)", "12", "changed"),
+        ("4", "4A", "changed"),                     # a letter run on
+        ("4A", "4B", "changed"),
+        ("S-4", "U-4", "changed"),                  # two names
+        ("B-1", "B-1A", "changed"),
+        ("12", "", "changed"),                      # one side read nothing
+        ("4-6-8", "4-6", "changed"),
+    ])
+    def test_a_split_on_how_one_number_is_printed_is_a_note(
+            self, floor, model, rank):
+        from report_ingest.graph import _vote_qa
+        qa = []
+        _vote_qa(qa, {"disagreements": [{
+            "what": "input Unit Weight: value", "where": "calc.inputs",
+            "floor": floor, "model": model, "floor_method": "grid",
+            "model_method": "model", "kept": "model",
+            "why": "the model named a box and a note"}]}, pages=[4])
+
+        (entry,) = qa
+        assert (entry.kind, entry.rank) == ("disagreement", rank)
+
+    def test_a_minus_is_a_sign_only_where_it_leads_a_number(self):
+        from report_ingest.model import _number_parts
+        assert _number_parts("4-5-6")[0] == [4.0, 5.0, 6.0]
+        assert _number_parts("s-4")[0] == [4.0]
+        assert _number_parts("-12.5 kn-m")[0] == [-12.5]
+        assert _number_parts("= \u221212.5")[0] == [-12.5]
+        assert _number_parts("1.5e-03 m")[0] == [0.0015]
+
+
+# -- a continuation sheet read as a log of its own (BACKLOG RI-08) -----------
+
+def _sheet(name, pages, sheet="", samples=(), layers=(), td=None, unit="m",
+           kind="boring"):
+    from report_ingest.model import Investigation, Layer, Sample
+    return Investigation(
+        investigation_id=name, kind=kind, depth_unit=unit, pages=list(pages),
+        sheet=sheet,
+        total_depth=Quantity(value=td, unit=unit) if td is not None else None,
+        layers=[Layer(top=Quantity(value=a, unit=unit),
+                      bottom=Quantity(value=b, unit=unit), description=d)
+                for a, b, d in layers],
+        samples=[Sample(sample_id=sid, top=Quantity(value=a, unit=unit),
+                        bottom=Quantity(value=b, unit=unit), kind=kind)
+                 for sid, a, b, kind in samples])
+
+
+def _folded(*sheets, lab=()):
+    from report_ingest.model import ReportRecord
+    return reconcile(ReportRecord(investigations=list(sheets),
+                                  lab_tests=list(lab)))
+
+
+class TestContinuationSheets:
+
+    def test_a_printed_sheet_two_of_two_is_folded_into_its_first_sheet(self):
+        # Made-up values, of the shape the saved runs show.
+        first = _sheet("BH-6", [70], "1 of 2", td=12.0,
+                       samples=[("S1", 1.0, 1.45, "spt"),
+                                ("C4", 10.5, 12.0, "core")],
+                       layers=[(0.0, 2.6, "CLAY"), (2.6, 12.0, "ROCK")])
+        later = _sheet("BH-6", [71], "2 of 2", td=17.4,
+                       samples=[("C4", 10.5, 12.0, "core"),
+                                ("C5", 12.0, 13.5, "core")],
+                       layers=[(12.0, 17.4, "ROCK, fresher")])
+        sheet = LabTest(kind="unconfined_rock", investigation_id="BH-6",
+                        depth_top=Quantity(value=12.8, unit="m"), pages=[95])
+        record = _folded(first, later, lab=[sheet])
+
+        (hole,) = record.investigations
+        assert hole.pages == [70, 71]
+        assert [s.sample_id for s in hole.samples] == ["S1", "C4", "C5"]
+        assert len(hole.layers) == 3
+        assert hole.total_depth.value == 17.4
+        (entry,) = [e for e in record.qa if e.where == "BH-6.sheets"]
+        assert "sheet 2 of 2" in entry.detail and entry.rank == "changed"
+        assert any("17.4 m kept as the deeper" in v for v in entry.values)
+        assert any("printed again" in v for v in entry.values)
+        # the reason it matters: a test on the second sheet finds its sample
+        assert record.lab_tests[0].linked_sample_id == "C5"
+        assert record.narrative.found_counts["borings"] == 1
+
+    def test_with_no_sheet_numbers_the_depths_must_carry_on(self):
+        first = _sheet("6", [44], samples=[("", d, d + 0.45, "spt")
+                                           for d in (1.0, 9.0, 18.0)])
+        later = _sheet("6", [45], samples=[("", d, d + 0.45, "spt")
+                                           for d in (17.2, 21.0, 24.5)])
+        (hole,) = _folded(first, later).investigations
+        assert hole.pages == [44, 45] and len(hole.samples) == 6
+
+    def test_a_second_log_from_the_ground_surface_is_another_hole(self):
+        first = _sheet("B-1", [10], samples=[("", 1.5, 2.0, "spt"),
+                                             ("", 9.0, 9.5, "spt")])
+        later = _sheet("B-1", [11], samples=[("", 0.5, 1.0, "spt"),
+                                             ("", 20.0, 20.5, "spt")])
+        assert len(_folded(first, later).investigations) == 2
+
+    def test_a_first_sheet_or_a_far_page_or_another_unit_is_not_folded(self):
+        a = dict(samples=[("", 1.0, 1.5, "spt"), ("", 9.0, 9.5, "spt")])
+        b = dict(samples=[("", 10.0, 10.5, "spt"), ("", 14.0, 14.5, "spt")])
+        cases = [
+            (_sheet("B-1", [10], "1 of 2", **a),
+             _sheet("B-1", [11], "1 of 2", **b)),         # a new log
+            (_sheet("B-1", [10], **a), _sheet("B-1", [14], **b)),  # far
+            (_sheet("B-1", [10], **a),
+             _sheet("B-1", [11], unit="ft", **b)),         # another unit
+            (_sheet("", [10], **a), _sheet("", [11], **b)),  # no name
+        ]
+        for first, later in cases:
+            assert len(_folded(first, later).investigations) == 2
+
+    def test_a_sheet_two_printing_only_the_number_is_the_same_hole(self):
+        first = _sheet("BH No. 8", [90], "1 of 2", td=8.6,
+                       samples=[("", 1.0, 1.5, "spt")])
+        later = _sheet("8", [91], "2 of 2", td=13.2)
+        record = _folded(first, later)
+        (hole,) = record.investigations
+        assert hole.investigation_id == "BH No. 8"
+        (entry,) = [e for e in record.qa if e.where.endswith(".sheets")]
+        assert "printed '8'" in entry.detail
+        # another series' number is not the same hole
+        other = _folded(_sheet("B-5", [60], "1 of 2"),
+                        _sheet("TP-5", [61], "2 of 2"))
+        assert len(other.investigations) == 2
+
+    def test_three_sheets_read_as_three_logs_are_one_hole(self):
+        sheets = [_sheet("B-9", [p], f"{k} of 3",
+                         samples=[("", t, t + 0.45, "spt")])
+                  for k, p, t in ((1, 40, 1.0), (2, 41, 12.0),
+                                  (3, 42, 24.0))]
+        record = _folded(*sheets)
+        (hole,) = record.investigations
+        assert hole.pages == [40, 41, 42] and len(hole.samples) == 3
+        (entry,) = [e for e in record.qa if e.where == "B-9.sheets"]
+        assert "read as 3 logs" in entry.detail
+
+    def test_a_restated_row_that_prints_something_else_is_kept_twice(self):
+        first = _sheet("B-1", [10], "1 of 2",
+                       samples=[("S-4", 9.5, 11.0, "spt")])
+        later = _sheet("B-1", [11], "2 of 2",
+                       samples=[("S-5", 9.5, 11.0, "spt")])
+        (hole,) = _folded(first, later).investigations
+        assert [s.sample_id for s in hole.samples] == ["S-4", "S-5"]
+
+    def test_a_test_pit_then_a_boring_of_one_name_are_two_holes(self):
+        first = _sheet("TP-1", [10], "1 of 2", kind="test_pit",
+                       samples=[("", 0.5, 1.0, "bulk")])
+        later = _sheet("TP-1", [11], "2 of 2",
+                       samples=[("", 3.0, 3.45, "spt")])
+        assert len(_folded(first, later).investigations) == 2
+        # nor with no sheet numbers, where the depths carry on
+        first = _sheet("1", [10], kind="test_pit",
+                       samples=[("", 0.5, 1.0, "bulk"), ("", 2.0, 2.5, "bulk")])
+        later = _sheet("1", [11], samples=[("", 2.4, 2.85, "spt"),
+                                           ("", 6.0, 6.45, "spt")])
+        assert len(_folded(first, later).investigations) == 2
+
+    def test_a_sounding_is_never_folded(self):
+        for kind in ("cpt", "dcp"):
+            first = _sheet("C-1", [20], "1 of 2", kind=kind, layers=[
+                (0.0, 8.0, "")])
+            later = _sheet("C-1", [21], "2 of 2", kind=kind, layers=[
+                (8.0, 16.0, "")])
+            assert len(_folded(first, later).investigations) == 2
+
+    def test_a_sheet_two_whose_depths_start_again_says_so(self):
+        # The printed number joins the sheets; the depths do not carry on,
+        # and the note says it for the person checking the fold.
+        def first():
+            return _sheet("B-4", [30], "1 of 2", samples=[
+                ("", 1.0, 1.45, "spt"), ("", 6.0, 6.45, "spt")])
+        later = _sheet("B-4", [31], "2 of 2",
+                       samples=[("", 0.5, 0.95, "spt"), ("", 4.0, 4.45, "spt")])
+        record = _folded(first(), later)
+        assert len(record.investigations) == 1
+        (entry,) = [e for e in record.qa if e.where == "B-4.sheets"]
+        assert ("it prints sheet 2 of 2, but its depths (0.50-4.45 m) start "
+                "above where the first's (1.00-6.45 m) leave off"
+                in entry.detail)
+        assert entry.rank == "open"      # a person should look at the pages
+        # one that carries on does not say it
+        later = _sheet("B-4", [31], "2 of 2",
+                       samples=[("", 7.5, 7.95, "spt")])
+        (entry,) = [e for e in _folded(first(), later).qa
+                    if e.where == "B-4.sheets"]
+        assert "start above" not in entry.detail and entry.rank == "changed"

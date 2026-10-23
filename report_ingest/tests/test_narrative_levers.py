@@ -432,6 +432,21 @@ class TestTheQuoteGate:
         rows = [u for u in result.unresolved if u["what"] == "siteClass"]
         assert rows and "not on the page it cites" in rows[0]["why"]
 
+    def test_an_answer_kept_without_its_quote_is_left_open(self, doc):
+        # BACKLOG RI-08: the record holds an answer its page may not show.
+        from report_ingest.model import ReportRecord
+        from report_ingest.reconciler import reconcile
+        reading = a_reading(citations=[ReadCitation(
+            field="siteClass", page=4,
+            quote="the site is underlain by glacial till to refusal")])
+        result = read(doc, FakeEngine([{"final": reading}]), front_pages=0,
+                      roles=[])
+        record = reconcile(ReportRecord(), reader_unresolved=result.unresolved)
+
+        (entry,) = [e for e in record.qa if e.where == "siteClass"]
+        assert "kept at confidence" in entry.detail
+        assert (entry.kind, entry.rank) == ("partial", "open")
+
     def test_an_answer_with_no_citation_keeps_its_confidence_and_is_flagged(
             self, doc):
         engine = FakeEngine([{"final": a_reading(citations=[])}])

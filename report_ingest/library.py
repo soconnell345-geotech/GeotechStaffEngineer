@@ -49,7 +49,8 @@ import sqlite3
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from report_ingest.model import (
-    GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, ReportRecord,
+    GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, QA_RANKS, ReportRecord,
+    qa_by_rank_enabled,
 )
 from report_ingest.writers import (
     DB_NAME, PAGE_NAME, RECORD_NAME, SUMMARY_NAME, open_library, parent_key,
@@ -797,6 +798,7 @@ class Library:
             "not_answered": missing if asked else missing[:self.max_rows],
             "counts": record.counts(),
             "qa": {"total": len(record.qa), "by_kind": by_kind,
+                   "by_rank": record.qa_by_rank(),
                    "needs_review": sum(1 for entry in record.qa
                                        if entry.kind in REVIEW_KINDS)},
         }
@@ -970,7 +972,11 @@ class Library:
 
         The six kinds where two things disagree, a count does not add up or
         a page could not be read. A ``note`` says something went right and a
-        ``skipped`` was a decision on purpose; neither is here.
+        ``skipped`` was a decision on purpose; neither is here. Each row
+        carries its rank. With ``GEOTECH_INGEST_QA_BY_RANK`` on, the
+        ``open`` ones -- nothing settled them -- come first, so a list cut
+        at ``max_rows`` keeps them (RI-08); off, the default, the rows are
+        in the records' own order.
         """
         if report_id:
             key = self._resolve(report_id)
@@ -992,9 +998,13 @@ class Library:
                 if entry.kind not in REVIEW_KINDS:
                     continue
                 rows.append({"report": rid, "kind": entry.kind,
+                             "rank": entry.rank,
                              "where": entry.where, "detail": entry.detail,
                              "values": list(entry.values[:5]),
                              "pages": list(entry.pages)})
+        if qa_by_rank_enabled():
+            order = {rank: n for n, rank in enumerate(QA_RANKS)}
+            rows.sort(key=lambda row: order.get(row["rank"], len(order)))
         kept, cut = _clip(rows, self.max_rows)
         return {"entries": kept, "n": len(rows), "truncated": cut,
                 "reports": sorted({row["report"] for row in kept}),

@@ -981,6 +981,7 @@ count is not corrected, the mismatch is recorded.
 
 | Check | What it does |
 |---|---|
+| one hole read from two logs (RI-08, 2026-10-23) | planlens starts a new log item at a page whose title block names no hole it can read, so a continuation sheet can come back as a log of its own with the same name on the next page. It is folded into the log before it when its own sheet number says so ("2 of 2" after "1 of 2"; then a sheet printing only the hole's number, "8" after "BH No. 8", is the same hole), or, with no sheet numbers, when it has the same name and its depths begin in the bottom quarter of the first sheet's range or below it and run deeper. Same kind (not a sounding), same depth unit, the very next page. A sample or driven record printed again at the same depth is kept once, its blanks filled from the copy; one that prints something else is kept twice. Layers are kept as each sheet printed them. The deeper total depth is kept, the other named. One `note` entry per hole, ranked `changed`; where the sheet number joins two sheets whose depths do not carry on (the later starts above where the first leaves off) the note says so and is ranked `open`. A log with no name, or a first sheet with nothing read off it, is not folded, and nor is a test pit followed by a boring of the same name. Stage b: 9 folds (two reports and one bound document), shared DIGGS names 9 to 2. |
 | lab → ground | Finds the investigation the sheet NAMES and the sample at its depth, within 0.15 m and unit-aware, and writes the link into `linked_investigation_id` / `linked_sample_id`. The printed values are never touched. A sheet naming a hole this report does not carry is a QA entry, not a link. |
 | counts | `boringCount` / `testPitCount` / `cptCount` against the investigations read, and `boringDictionary` / `testPitDictionary` against the identifiers found, both ways: named-but-missing and found-but-unnamed. |
 | the summary table | Every value a row and a sheet both carry, compared in SI; only the disagreements are recorded. A value only one side carries is not a conflict, it is a column. |
@@ -988,6 +989,42 @@ count is not corrected, the mismatch is recorded.
 | units | Every quantity whose printed unit has no conversion, named once with its fields: stored as printed and absent from the SI view. |
 | pages | A page whose label says boring log that ended in no work item; a page with no reliable text and no Azure Document Intelligence result. |
 | the readers | Every `unresolved` line they returned, carried through as a QA entry. |
+
+**Every QA entry has a rank** (RI-08, 2026-10-23), so a reviewer facing a
+thousand entries can tell which need a person. `open`: two readings or two
+sources disagree, or the record holds a value the page may not show, and
+nothing settled it (a summary table against a sheet, a log's drives against
+its interval, a narrative count against the logs, an unsettled page label,
+two parts of the narrative answering differently with the first answer kept,
+a lab sheet naming a hole the logs do not hold, a calculation result not
+found on its pages, a DIGGS file that fails the schema). `changed`: the
+record changed or dropped something by its own rule and says what (one
+voter's reading carried over the other's, a value refused, pages left
+unread, a counted number stored over the reading, two logs folded into one
+hole). `note`: how something was read; no value is in question (a value kept
+as printed in a unit with no conversion, the floor and the model reading the
+same number printed differently or with a unit the record knows, or a series
+prefix such as the "S-" of "S-4", on one side only, but never a sign, a
+qualifier such as "<" or a letter run on to an identifier; pages read from the
+picture, a reader's own unsettled remark, a citation problem). The
+rank is read off the entry's kind and its own words (`model.qa_rank`; each
+rule there has a test through the code that writes the entry), so a record
+written before ranks existed is ranked the same way when it loads.
+`record.qa_by_rank()` counts them, `record.counts()` and the library's
+`facts` carry them (`qa_open` / `qa_changed` / `qa_note`), each
+`disagreements` row carries its `rank`, and `record.qa_ranked()` lists the
+open ones first; the record keeps its own order. Showing them by rank is
+behind `GEOTECH_INGEST_QA_BY_RANK` (or `with use_qa_by_rank():`), off: on,
+the summary page and the library page list the QA entries open first with a
+Rank column and the counts on top, and `disagreements` lists the open ones
+first, so a list cut at its row limit keeps them. Off, both pages and that
+list are as they were (checked on the 18 saved stage-b records, bound
+documents included: all 36 pages and 19 lists identical to master's), because
+the pages are what the library's search index is built from and the cut
+decides which entries the report-library sub-agent sees. On the 13 saved
+stage-b records (14,264 entries, about 1,100 a report): 2,033 open (about 156
+a report; 527 are page labels the voters split on and 572 narrative parts
+that answered differently), 3,908 changed, 8,323 notes.
 
 `si_view(record)` is the derived all-SI view, walked off the models themselves
 so it cannot drift from the record. Pass an `engine` and ONE call is spent
@@ -1072,7 +1109,7 @@ carry them:
 |---|---|
 | `report.diggs.xml` | DIGGS 2.6 through the existing writer, with BOTH gates run — the bundled XSD and a round trip through the app's own readers, value by value. Each verdict goes into the record's QA, because a file that failed its gate and a file nothing checked must not look the same: a schema check that could not run here (no validator) is a `not_run` entry with its reason, neither a pass nor a failure (RI-20; until then it was filed as a failure). `diggs_schema_gate` answers `None` for it, the summary's `diggs_ok` is null, and the cluster scorecard says `not run`. |
 | `report.record.json` | The record. Everything else is derived from it. |
-| `report.summary.md` | The two schemas answered, each with its pages; the bearing values and the profile as tables; the caller's own questions; what was extracted; the QA list. |
+| `report.summary.md` | The two schemas answered, each with its pages; the bearing values and the profile as tables; the caller's own questions; what was extracted; the QA list (open entries first, with a Rank column and the count of each rank, under `GEOTECH_INGEST_QA_BY_RANK`, off). |
 | `report.page.md` | The owner's WikiLLM page: front matter (`id`, `report_id`, `title`, `authors`, `year`, `source`, `doc_type`, `tier`, `disciplines`, `topics`, `methods`, `materials`, `standards_referenced`, `confidence`, `status`, `n_pages`, `original_path`), then the summary, the key takeaways, the key parameters, the questions answered, and the record's sections as tables. |
 | `reports.db` | One SQLite row per report, keyed by a stable hash of the source file, so a folder of reports becomes searchable and re-ingesting one updates its row instead of adding a second. |
 
@@ -1392,7 +1429,7 @@ and the PDF pages behind every row:
 | `explorations(report_id, kind)` | the holes, pits and soundings with depths, layers, samples, driven records and water |
 | `lab_summary(report_id, kind)` | how many of each test kind, and each test with its link, depth, standard and values |
 | `calculations(report_id)` | each printout: the program, the method, what it was for, what it concluded |
-| `disagreements(report_id)` | the six QA kinds a PERSON should look at — a `note` and a `skipped` are not among them |
+| `disagreements(report_id)` | the six QA kinds a PERSON should look at — a `note` and a `skipped` are not among them; each row carries its rank; the `open` ones come first under `GEOTECH_INGEST_QA_BY_RANK` (off) |
 | `library_stats()` | what the library holds, by document type, status, confidence, firm, post and kind |
 
 **Search is FTS5 the way the reference layer does it**: a contentless external

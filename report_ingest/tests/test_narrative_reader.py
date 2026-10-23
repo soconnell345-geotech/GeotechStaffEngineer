@@ -506,6 +506,68 @@ class TestALongNarrative:
         assert any("were not read" in w for w in result.warnings)
 
 
+def _rank(result, field, words):
+    """The rank of the record's QA entry for ``field`` that says ``words``,
+    made from the reader's unsettled lines the way an ingest makes it."""
+    from report_ingest.model import ReportRecord
+    from report_ingest.reconciler import reconcile
+    record = reconcile(ReportRecord(), reader_unresolved=result.unresolved)
+    ranks = {e.rank for e in record.qa
+             if e.where == field and words in e.detail}
+    assert len(ranks) == 1, ranks
+    return ranks.pop()
+
+
+class TestTheRankOfWhatIsKept:
+    """BACKLOG RI-08: each line the reader leaves is ranked by what the
+    record did with the answer."""
+
+    def test_two_parts_that_disagree_are_left_open(self, doc):
+        # The first answer is kept by its place in the report, not by any
+        # evidence, so a person has to look.
+        from report_ingest.narrative_reader import SummaryReading
+        engine = FakeEngine([
+            {"final": full_reading(boringCount=4)},
+            {"final": full_reading(boringCount=6, citations=[])},
+            {"final": full_reading(boringCount=6, citations=[])},
+            {"final": SummaryReading()},
+        ])
+        result = read(doc, engine, budget=8, max_chunk_chars=1200)
+
+        assert _rank(result, "boringCount",
+                     "the first answer is kept") == "open"
+
+    def test_the_counted_figures_stored_over_the_reading_are_a_change(
+            self, doc):
+        result = read(doc, FakeEngine([{"final": full_reading()}]))
+
+        assert result.general.figureCount == 1
+        assert _rank(result, "figureCount",
+                     "The counted number is stored") == "changed"
+
+    def test_the_listed_structures_stored_over_the_reading_are_a_change(
+            self, doc):
+        reading = full_reading(structureCount=5,
+                               structureList=["Building A", "Building B"])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert _rank(result, "structureCount",
+                     "The number of items is stored") == "changed"
+
+    def test_the_logs_stored_over_the_narrative_are_a_change(self, doc):
+        from report_ingest.tests.record_fixtures import boring
+        result = read(doc, FakeEngine([{"final": full_reading()}]),
+                      investigations=[boring("B-1"), boring("B-2")])
+
+        assert result.general.boringCount == 2
+        assert _rank(result, "boringCount",
+                     "The logs are stored") == "changed"
+        # no pit log read is not none dug: the narrative's 3 stands
+        assert result.general.testPitCount == 3
+        assert _rank(result, "testPitCount",
+                     "The narrative's answer stands") == "note"
+
+
 class TestFailures:
 
     def test_no_structured_answer_is_an_error_not_an_empty_record(self, doc):

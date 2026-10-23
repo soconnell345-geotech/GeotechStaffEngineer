@@ -528,6 +528,33 @@ class TestDisagreements:
     def test_a_report_with_nothing_flagged_is_an_empty_answer(self, library):
         assert library.disagreements("L05")["entries"] == []
 
+    def test_the_open_ones_come_first_with_their_rank(self, library):
+        # BACKLOG RI-08, under its switch: a list cut at max_rows keeps what
+        # nothing settled.
+        from report_ingest.model import use_qa_by_rank
+        with use_qa_by_rank():
+            entries = library.disagreements()["entries"]
+
+        assert [(e["report"], e["kind"], e["rank"]) for e in entries] == [
+            ("L01", "conflict", "open"), ("L02", "count_mismatch", "open"),
+            ("L02", "disagreement", "open"), ("L04", "out_of_range", "changed"),
+            ("L03", "unreadable", "note")]
+
+    def test_off_the_default_the_rows_are_in_the_records_own_order(
+            self, library, monkeypatch):
+        # Which rows survive the max_rows cut decides what the sub-agent
+        # sees, so with the switch off the list is as before: report by
+        # report, each record's entries in its own order. Each row carries
+        # its rank either way.
+        from report_ingest.model import QA_BY_RANK_ENV
+        monkeypatch.delenv(QA_BY_RANK_ENV, raising=False)
+        entries = library.disagreements()["entries"]
+
+        assert [(e["report"], e["kind"], e["rank"]) for e in entries] == [
+            ("L01", "conflict", "open"), ("L02", "count_mismatch", "open"),
+            ("L02", "disagreement", "open"), ("L03", "unreadable", "note"),
+            ("L04", "out_of_range", "changed")]
+
 
 class TestLibraryStats:
 

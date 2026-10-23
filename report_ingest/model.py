@@ -38,9 +38,14 @@ stubs fill in.
 
 from __future__ import annotations
 
+import math
+import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import (
-    Annotated, Any, Dict, List, Literal, Optional, Tuple, Union, get_args,
+    Annotated, Any, Dict, Iterator, List, Literal, Optional, Tuple, Union,
+    get_args,
 )
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -54,6 +59,8 @@ __all__ = [
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
     "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
+    "QARank", "QA_RANKS", "qa_rank", "QA_BY_RANK_ENV", "qa_by_rank_enabled",
+    "use_qa_by_rank",
     "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
     "DocumentFacts", "Workflow", "WORKFLOW_VALUES",
     "LabelVote", "PageLabel", "ParentReport", "BoundReport",
@@ -2486,6 +2493,203 @@ QAKind = Literal[
     # neither a pass nor a failure, and the entry says why (RI-20)
     "not_run"]
 
+#: How much a QA entry asks of a reviewer, most first (BACKLOG RI-08). A
+#: report carries about a thousand entries, and the kind alone does not say
+#: which of them need a person: an ``out_of_range`` is as often a value
+#: kept as printed in a unit with no conversion as a value thrown out.
+#:
+#: * ``open`` -- a disagreement left open: two readings or two sources give
+#:   different values, or the record holds a value the page may not
+#:   support, and nothing settled it. A person has to look at the pages.
+#: * ``changed`` -- a value changed or dropped: the record carries one
+#:   reading in place of another, refused a value it read, or left pages
+#:   unread, by its own rule. The entry says what, and keeps the other
+#:   reading where there was one.
+#: * ``note`` -- a note only: how something was read, or what a page did
+#:   not print. No value of the record is in question.
+QARank = Literal["open", "changed", "note"]
+QA_RANKS: Tuple[str, ...] = ("open", "changed", "note")
+
+#: The rank an entry of each kind takes when its words say nothing more.
+_KIND_RANK: Dict[str, str] = {
+    "conflict": "open", "disagreement": "open",
+    "label_disagreement": "open", "count_mismatch": "open",
+    "plot_vs_table": "open",
+    "out_of_range": "changed", "skipped": "changed",
+    "partial": "note", "note": "note", "unconverted": "note",
+    "not_run": "note",
+    # pages with no text, read from the picture: nothing in the record is
+    # changed by it
+    "unreadable": "note",
+}
+
+#: What an entry's own words say happened, looked at before its kind; the
+#: first match wins. ``(kinds, words, rank)``: each ``words`` is how the
+#: code that writes such an entry says it, lower case, so the rank follows
+#: what the entry says rather than which pass wrote it.
+_SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
+    # A value kept in the record at a lowered confidence because the page
+    # does not show it: kept, and in question.
+    (("out_of_range", "partial"), "kept at confidence", "open"),
+    # A value kept as the page printed it; only its conversion is missing.
+    (("out_of_range",), "kept as printed", "note"),
+    # A label the reader returned with nothing under it: nothing was lost.
+    (("out_of_range",), "neither a number nor any words", "note"),
+    # The reconciler's checks of a log against itself, and the DIGGS
+    # schema: the values stay as read and the check says they cannot all
+    # be right.
+    (("out_of_range",), "is not below its top", "open"),
+    (("out_of_range",), "were given wrong", "open"),
+    (("out_of_range",), "did not pass", "open"),
+    # Two voters inside one reader: the record carries one reading and
+    # keeps the other beside it.
+    (("disagreement",), "the record carries the", "changed"),
+    # A lab test the logs hold no hole or sample for: the sheet and the
+    # logs disagree, and the link is left unmade.
+    (("partial",), "which is not among the explorations read from this "
+                   "report", "open"),
+    (("partial",), "are not among those read from this report", "open"),
+    (("partial",), "no sample of it sits within", "open"),
+    # Two parts of the narrative answer differently and the first is kept
+    # by its place in the report, not by any evidence: as open as a page
+    # label the voters split on.
+    (("partial",), "the first answer is kept", "open"),
+    # A counted number stored over the reading, the reading kept beside it.
+    (("partial",), "the counted number is stored", "changed"),
+    (("partial",), "the number of items is stored", "changed"),
+    (("partial",), "the logs are stored and the narrative's answer is kept "
+                   "here", "changed"),
+    # The logs' answer taken over the narrative's, and a page label moved
+    # on pages the voters agreed on.
+    (("note",), "over the narrative's", "changed"),
+    (("note",), "the review moved it", "changed"),
+    # Two logs of one hole joined into one exploration; where the printed
+    # sheet number joined them but the depths do not carry on, a person
+    # should look at the pages.
+    (("note",), "start above where the first's", "open"),
+    (("note",), "folded into one exploration", "changed"),
+    # A narrative with no page of text is not read at all.
+    (("unreadable",), "the narrative reader reads text and was not run",
+     "changed"),
+)
+
+#: The floor-vs-model split as :func:`report_ingest.graph._vote_qa` writes
+#: it: ``<what>: <method> read <floor>, <method> read <model>; the record
+#: carries the <kept>'s.``
+_VOTE_SPLIT = re.compile(r": \S+ read (?P<floor>.*?), \S+ read (?P<model>.*?);"
+                         r" the record carries the \w+'s\.")
+#: A number as printed, with the minus that leads it (a hyphen, or the minus
+#: sign or en dash a typeset page uses), but not a dash between two digits
+#: or after a letter: '4-5-6' is three numbers and 'S-4' is a 4.
+_A_NUMBER = re.compile(r"(?:(?<![\w.])[-\u2212\u2013])?"
+                       r"(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?")
+#: What a reading carries that is not the value: the equals sign a program
+#: prints before it and the text layer's tick-box marks.
+_PRINTING = re.compile(r":(?:un)?selected:|=")
+#: A series prefix one reading may carry and the other not, touching the
+#: number: the 'S-' of 'S-4', the 'S' of 'S4'.
+_SERIES = re.compile(r"[a-z]+[-\u2013]?")
+
+
+def _number_parts(text: str) -> Tuple[List[float], str]:
+    """The numbers in a reading, and what else it prints, spacing aside."""
+    numbers = [float(n.replace("\u2212", "-").replace("\u2013", "-"))
+               for n in _A_NUMBER.findall(text)]
+    return numbers, "".join(_PRINTING.sub("", _A_NUMBER.sub("", text)).split())
+
+
+def _a_unit_or_series_only(text: str) -> bool:
+    """Does this reading print nothing beside its numbers but a unit the
+    record knows (or %), after the last number and apart from it, or a
+    series prefix touching the first? Never a qualifier ('<', '>', a remark
+    in brackets, a word apart from the number such as 'max 12') or a letter
+    run on to the number ('4A')."""
+    text = _PRINTING.sub(" ", text)
+    spans = list(_A_NUMBER.finditer(text))
+    if not spans or any(text[a.end():b.start()].strip()
+                        for a, b in zip(spans, spans[1:])):
+        return False
+    before = text[:spans[0].start()]
+    if before.strip() and (before[-1:].isspace()
+                           or not _SERIES.fullmatch(before.strip())):
+        return False
+    after = text[spans[-1].end():]
+    if not after.strip() or after.strip() == "%":
+        return True
+    return after[:1].isspace() and _canonical_unit(after.strip()) is not None
+
+
+def _split_on_printing_only(said: str) -> bool:
+    """A floor-vs-model split where both read the same number(s) and differ
+    only in how it is printed ('37.0 feet' and '37 feet', '= 0.730E+01' and
+    '7.3') or in a unit or series prefix only one side carries ('0.183' and
+    '0.183 g', 'S-4' and '4'). A sign, two units ('6 in' and '6 ft'), a
+    qualifier ('<0.5' and '0.5') or a letter run on to an identifier ('4'
+    and '4A') is a change and is not this."""
+    match = _VOTE_SPLIT.search(said)
+    if match is None:
+        return False
+    floor, model = (re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", match[side])
+                    for side in ("floor", "model"))       # 13,750
+    (a, rest_a), (b, rest_b) = _number_parts(floor), _number_parts(model)
+    if not a or len(a) != len(b) or not all(
+            math.isclose(x, y, rel_tol=1e-9) for x, y in zip(a, b)):
+        return False
+    if rest_a == rest_b:
+        return True
+    if not rest_a:
+        return _a_unit_or_series_only(model)
+    if not rest_b:
+        return _a_unit_or_series_only(floor)
+    return False
+
+
+def qa_rank(kind: str, detail: str = "") -> str:
+    """The :data:`QA_RANKS` rank of an entry of ``kind`` saying ``detail``.
+
+    Read off the entry itself, so a record written before ranks existed
+    is ranked the same way on loading as a new one.
+    """
+    said = " ".join(str(detail or "").split()).lower()
+    if kind == "disagreement" and _split_on_printing_only(said):
+        return "note"
+    for kinds, words, rank in _SAID_RANK:
+        if kind in kinds and words in said:
+            return rank
+    return _KIND_RANK.get(kind, "note")
+
+
+#: The switch that shows the QA entries by rank: the open ones first, a Rank
+#: column and a line of counts in report.summary.md and report.page.md, and
+#: the library's ``disagreements`` list in rank order, so a list cut at its
+#: row limit keeps the open ones. Off by default: the pages are what the
+#: library's search index is built from, and the cut decides which entries
+#: the report-library sub-agent sees, so both stay as they were until the
+#: order is measured. The rank itself, and the counts by rank in
+#: ``counts()`` and the library's ``facts``, are there either way.
+QA_BY_RANK_ENV = "GEOTECH_INGEST_QA_BY_RANK"
+_QA_BY_RANK_FORCED: ContextVar[Optional[bool]] = ContextVar(
+    "ingest_qa_by_rank", default=None)
+
+
+def qa_by_rank_enabled() -> bool:
+    """Whether the QA entries are shown by rank (default: off)."""
+    forced = _QA_BY_RANK_FORCED.get()
+    if forced is not None:
+        return forced
+    return (os.environ.get(QA_BY_RANK_ENV) or "").strip().lower() in (
+        "1", "on", "true", "yes")
+
+
+@contextmanager
+def use_qa_by_rank(on: bool = True) -> Iterator[None]:
+    """Show the QA entries by rank (or not) inside the block."""
+    token = _QA_BY_RANK_FORCED.set(bool(on))
+    try:
+        yield
+    finally:
+        _QA_BY_RANK_FORCED.reset(token)
+
 
 class QAEntry(BaseModel):
     """One thing a reviewer needs to know about this record."""
@@ -2502,6 +2706,19 @@ class QAEntry(BaseModel):
         default_factory=list,
         description="for a conflict, the disagreeing values as printed")
     pages: List[int] = Field(default_factory=list)
+    rank: Optional[QARank] = Field(
+        default=None,
+        description="how much it asks of a reviewer: 'open' (a disagreement "
+                    "nothing settled; look at the pages), 'changed' (a value "
+                    "the record changed or dropped by its own rule) or "
+                    "'note'. Worked out from the kind and the detail when "
+                    "not given, so an older record is ranked on loading")
+
+    @model_validator(mode="after")
+    def _ranked(self) -> "QAEntry":
+        if self.rank is None:
+            self.rank = qa_rank(self.kind, self.detail)
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -2676,7 +2893,22 @@ class ReportRecord(BaseModel):
             "calculations": len(self.calculations),
             "calcs": len(self.calcs),
             "qa": len(self.qa),
+            **{f"qa_{rank}": n for rank, n in self.qa_by_rank().items()},
         }
+
+    def qa_by_rank(self) -> Dict[str, int]:
+        """How many QA entries of each rank, in :data:`QA_RANKS` order."""
+        out = {rank: 0 for rank in QA_RANKS}
+        for entry in self.qa:
+            out[entry.rank or "note"] += 1
+        return out
+
+    def qa_ranked(self) -> List[QAEntry]:
+        """The QA entries with the ones that need a person first: ``open``,
+        then ``changed``, then ``note``, each in the order written."""
+        order = {rank: n for n, rank in enumerate(QA_RANKS)}
+        return sorted(self.qa, key=lambda e: order.get(e.rank or "note",
+                                                       len(order)))
 
 
 def si_numbers(value: Any, path: str = "",

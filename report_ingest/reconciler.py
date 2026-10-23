@@ -25,6 +25,12 @@ that hole, said once in a QA note (RI-07). The printed values are never
 touched -- ``LabTest.investigation_id`` stays the sheet's own words -- and the
 link goes in fields of its own, empty when nothing matched.
 
+**Joins a hole read from two logs.** A continuation sheet that became a work
+item of its own comes back as a second log of the same hole on the next page.
+Where the sheets' own "sheet 2 of 2" says so, or the second log's depths begin
+where the first's leave off, it is folded into the first, said once in a QA
+entry (RI-08).
+
 **Counts what is there.** The narrative's stated counts and named identifiers
 against the investigations the appendix actually yielded.
 
@@ -336,6 +342,7 @@ def reconcile(record: ReportRecord, *,
     """
     qa: List[QAEntry] = []
 
+    _fold_continuations(record, qa)
     _link_lab_tests(record, qa)
     _link_calculations(record, qa)
     _check_calculations(record, qa)
@@ -354,6 +361,266 @@ def reconcile(record: ReportRecord, *,
     record.qa.extend(qa)
     _fill_found_counts(record)
     return record
+
+
+# -- one hole read from two logs --------------------------------------------
+#
+# planlens starts a new log item at a page whose title block it cannot read a
+# hole from, so a continuation sheet that prints no "sheet 2 of 2" where the
+# item builder looks, or prints its hole somewhere else, is read as a log of
+# its own (BACKLOG RI-08; nine in stage b, in two reports and a bound one).
+# Every check below then sees two holes of one name: a lab test at 12 m in
+# B-3 is looked for on the sheet that stops at 11 m, the narrative's count is
+# one short, and the DIGGS file holds two features with one name.
+
+#: Kinds whose log is layers, samples and driven records, which can be joined
+#: sheet to sheet. A sounding is a series and is not folded here.
+_FOLDED_KINDS = ("boring", "test_pit", "hand_auger", "well", "other")
+
+#: A later sheet repeats the bottom of the one before it -- the sample it
+#: broke on, the header row at its top -- so its first depth may sit above
+#: the earlier sheet's last one by up to this share of the earlier sheet's
+#: own depth range. A log that starts again at the ground surface does not.
+CONTINUATION_OVERLAP = 0.25
+
+#: "Sheet 2 of 3", "Page 2 of 3", "2 of 3", "2/3".
+_SHEET_OF = re.compile(r"(\d+)\s*(?:of|/)\s*(\d+)", re.I)
+
+
+def _sheet_number(text: str) -> Optional[Tuple[int, int]]:
+    match = _SHEET_OF.search(str(text or ""))
+    if not match:
+        return None
+    k, n = int(match.group(1)), int(match.group(2))
+    return (k, n) if 1 <= k <= n else None
+
+
+def _depth_range(inv: Investigation) -> Optional[Tuple[float, float]]:
+    """(shallowest, deepest) of what a log's rows print, in metres.
+
+    The samples and driven records first, the layers only where there are
+    none: a layer top read off a description runs further from the ruler
+    than a sample's. Negative depths are left out (a misread is not a
+    depth). The total depth is the header's, not the sheet's, and is not
+    used.
+    """
+    rows = ([s.top for s in inv.samples] + [s.bottom for s in inv.samples]
+            + [s.depth_top for s in inv.spt]
+            + [s.depth_bottom for s in inv.spt])
+    found = [d for d in (depth_m(q) for q in rows) if d is not None and d >= 0]
+    if not found:
+        found = [d for d in (depth_m(q) for ly in inv.layers
+                             for q in (ly.top, ly.bottom))
+                 if d is not None and d >= 0]
+    return (min(found), max(found)) if found else None
+
+
+def _same_hole(first: Investigation, later: Investigation,
+               by_sheet: bool) -> bool:
+    """Do these two logs name one hole?
+
+    The same identifier, leading zeros folded; or, where the printed sheet
+    numbers already say the later sheet continues the first, the later one
+    printing only the hole's number ("8" after "BH No. 8").
+    """
+    a, b = hole_key(first.investigation_id), hole_key(later.investigation_id)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if not by_sheet:
+        return False
+    short, long_ = sorted((a, b), key=len)
+    return short.isdigit() and long_.endswith(short) and \
+        long_[:-len(short)].isalpha()
+
+
+def _continues(first: Investigation, later: Investigation) -> str:
+    """Why ``later`` is a continuation sheet of ``first``, or ``""``."""
+    if later.kind != first.kind or first.kind not in _FOLDED_KINDS:
+        return ""
+    if not first.pages or not later.pages or \
+            min(later.pages) != max(first.pages) + 1:
+        return ""
+    if later.depth_unit != first.depth_unit or \
+            later.units_known != first.units_known:
+        return ""
+    here, there = _depth_range(first), _depth_range(later)
+    carries_on = here is not None and there is not None and \
+        there[0] >= here[1] - CONTINUATION_OVERLAP * (here[1] - here[0])
+    a, b = _sheet_number(first.sheet), _sheet_number(later.sheet)
+    if b is not None:
+        if b[0] == 1 or (a is not None and (b[1] != a[1] or b[0] <= a[0])):
+            return ""           # a first sheet, or one of another set
+        if not _same_hole(first, later, by_sheet=True):
+            return ""
+        why = f"it prints sheet {b[0]} of {b[1]}"
+        if here is not None and there is not None and not carries_on:
+            # The printed number joins them; the depths do not, so a person
+            # should look (a misread ruler, or two holes numbered as one).
+            why += (f", but its depths ({there[0]:.2f}-{there[1]:.2f} m) "
+                    f"start above where the first's "
+                    f"({here[0]:.2f}-{here[1]:.2f} m) leave off")
+        return why
+    if not _same_hole(first, later, by_sheet=False):
+        return ""
+    if carries_on and there[1] > here[1]:
+        return (f"its depths ({there[0]:.2f}-{there[1]:.2f} m) begin where "
+                f"the first's ({here[0]:.2f}-{here[1]:.2f} m) leave off")
+    return ""
+
+
+def _blank(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _unset(row: Any, name: str) -> bool:
+    """Is this field of ``row`` empty, or still its default (a sample kind
+    'other' is a symbol nobody could read)?"""
+    value = getattr(row, name)
+    if _blank(value):
+        return True
+    field = type(row).model_fields[name]
+    return value == field.get_default(call_default_factory=True)
+
+
+def _restated(kept: Any, other: Any, top: str, bottom: str) -> bool:
+    """Is ``other`` the same row as ``kept``, printed again on the next
+    sheet: the same depth, and nothing printed on both that differs?"""
+    a, b = depth_m(getattr(kept, top)), depth_m(getattr(other, top))
+    if a is None or b is None or abs(a - b) > DEPTH_TOL_M:
+        return False
+    if bottom:
+        a, b = depth_m(getattr(kept, bottom)), depth_m(getattr(other, bottom))
+        if a is not None and b is not None and abs(a - b) > DEPTH_TOL_M:
+            return False
+    for name in type(kept).model_fields:
+        if name in (top, bottom, "prov", "note"):   # how, not what
+            continue
+        if not _unset(kept, name) and not _unset(other, name) and \
+                getattr(kept, name) != getattr(other, name):
+            return False
+    return True
+
+
+def _join_rows(kept: List[Any], more: Sequence[Any], top: str,
+               bottom: str) -> int:
+    """``more`` onto ``kept``; a row ``kept`` already holds is not added
+    again, and fills what ``kept``'s copy left blank. Returns how many."""
+    again = 0
+    earlier = list(kept)            # the later sheet's own rows stay apart
+    for row in more:
+        twin = next((k for k in earlier if _restated(k, row, top, bottom)),
+                    None)
+        if twin is None:
+            kept.append(row)
+            continue
+        again += 1
+        for name in type(twin).model_fields:
+            if _unset(twin, name) and not _unset(row, name):
+                setattr(twin, name, getattr(row, name))
+    return again
+
+
+def _fold_into(first: Investigation, later: Investigation) -> Dict[str, Any]:
+    """Join ``later``'s sheet onto ``first``. What it says goes in the QA."""
+    said: Dict[str, Any] = {"restated": 0, "total_depth": None}
+    said["restated"] += _join_rows(first.samples, later.samples,
+                                   "top", "bottom")
+    said["restated"] += _join_rows(first.spt, later.spt,
+                                   "depth_top", "depth_bottom")
+    for layer in later.layers:
+        if not any(_restated(k, layer, "top", "bottom")
+                   and " ".join(k.description.split()) ==
+                   " ".join(layer.description.split())
+                   for k in first.layers):
+            first.layers.append(layer)
+    for water in later.water:
+        if not any(w.when == water.when and depth_m(w.depth) is not None
+                   and depth_m(water.depth) is not None
+                   and abs(depth_m(w.depth) - depth_m(water.depth))
+                   <= DEPTH_TOL_M for w in first.water):
+            first.water.append(water)
+    mine, theirs = depth_m(first.total_depth), depth_m(later.total_depth)
+    if theirs is not None and (mine is None or theirs > mine + DEPTH_TOL_M):
+        if mine is not None:
+            said["total_depth"] = (first.total_depth, later.total_depth)
+        first.total_depth = later.total_depth
+    elif mine is not None and theirs is not None and \
+            abs(mine - theirs) > DEPTH_TOL_M:
+        said["total_depth"] = (later.total_depth, first.total_depth)
+    for name in ("x", "y", "coordinate_system", "elevation", "date_started",
+                 "date_finished", "station", "offset", "source_report",
+                 "pit"):
+        if _blank(getattr(first, name)) and \
+                not _blank(getattr(later, name)):
+            setattr(first, name, getattr(later, name))
+    for name in type(first.drilling).model_fields:
+        if _unset(first.drilling, name) and \
+                not _unset(later.drilling, name):
+            setattr(first.drilling, name, getattr(later.drilling, name))
+    if later.remarks and later.remarks not in first.remarks:
+        first.remarks = "\n".join(x for x in (first.remarks, later.remarks)
+                                  if x)
+    first.fields = {**later.fields, **first.fields}
+    first.pages = sorted(set(first.pages) | set(later.pages))
+    first.prov = list(first.prov) + list(later.prov)
+    return said
+
+
+def _fold_continuations(record: ReportRecord, qa: List[QAEntry]) -> None:
+    """Fold each continuation sheet read as a log of its own into the log
+    before it, page order, one QA entry per hole."""
+    if len(record.investigations) < 2:
+        return
+    ordered = sorted(record.investigations,
+                     key=lambda inv: min(inv.pages) if inv.pages else 10 ** 9)
+    kept: List[Investigation] = []
+    folds: Dict[int, List[Tuple[Investigation, str, Dict[str, Any]]]] = {}
+    for inv in ordered:
+        first = kept[-1] if kept else None
+        why = _continues(first, inv) if first is not None else ""
+        if not why:
+            kept.append(inv)
+            continue
+        pages = list(inv.pages)
+        said = _fold_into(first, inv)
+        said["pages"] = pages
+        folds.setdefault(id(first), []).append((inv, why, said))
+    if not folds:
+        return
+    gone = {id(inv) for rows in folds.values() for inv, _w, _s in rows}
+    record.investigations[:] = [inv for inv in record.investigations
+                                if id(inv) not in gone]
+    for first in record.investigations:
+        rows = folds.get(id(first))
+        if not rows:
+            continue
+        name = first.investigation_id or "an exploration"
+        parts = []
+        values = []
+        for later, why, said in rows:
+            spelt = (f", printed {later.investigation_id!r}"
+                     if later.investigation_id != first.investigation_id
+                     else "")
+            n = len(said["pages"])
+            parts.append(("the next page" if n == 1 else
+                          f"the next {n} pages") + f"{spelt}: {why}")
+            if said["restated"]:
+                values.append(f"{said['restated']} sample or driven record"
+                              f"(s) printed again on the later sheet, kept "
+                              f"once")
+            if said["total_depth"] is not None:
+                old, new = said["total_depth"]
+                values.append(f"total depth {_show(new)} kept as the "
+                              f"deeper; {_show(old)} on the other sheet")
+        qa.append(QAEntry(
+            kind="note", where=f"{name}.sheets",
+            detail=(f"{name} was read as {len(rows) + 1} logs, one per work "
+                    f"item, and folded into one exploration: "
+                    + "; ".join(parts)
+                    + ". Layers are kept as each sheet printed them"),
+            values=values, pages=list(first.pages)))
 
 
 # -- the lab-to-ground link -------------------------------------------------

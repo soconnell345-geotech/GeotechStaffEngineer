@@ -564,6 +564,42 @@ class TestTheGates:
                    if u["what"] == "input Wall load"]
         assert "not one the record can convert" in flag["why"]
 
+    def test_what_is_left_unsettled_is_ranked_by_what_happened(
+            self, spreadsheet):
+        # BACKLOG RI-08: a value kept as printed is a note, a value the
+        # page does not show is left open, a box dropped is a change.
+        from report_ingest.model import ReportRecord
+        from report_ingest.reconciler import reconcile
+        doc, _gt = spreadsheet
+        engine = FakeEngine([{"final": _reading(
+            inputs=[_value("Wall load", 3.0, "tons/ft"),
+                    _value("Footing Depth (ft)", 3.0, "ft", page=41)],
+            results=[_value("Total settlement", 987.654, "in")])}])
+
+        result = read_calculation(doc, [0], engine, report_id="SYN")
+        record = reconcile(ReportRecord(), reader_unresolved=result.unresolved)
+
+        rank = {e.where: e.rank for e in record.qa}
+        assert rank["input Wall load"] == "note"
+        assert rank["result Total settlement"] == "open"
+        assert rank["input Footing Depth (ft)"] == "changed"
+
+    def test_a_label_with_nothing_under_it_is_a_note(self, spreadsheet):
+        # BACKLOG RI-08: the reader returned a label and no value: nothing
+        # was read, so nothing was lost.
+        from report_ingest.model import ReportRecord
+        from report_ingest.reconciler import reconcile
+        doc, _gt = spreadsheet
+        engine = FakeEngine([{"final": _reading(
+            inputs=[_value("Wall load")])}])
+
+        result = read_calculation(doc, [0], engine, report_id="SYN")
+        record = reconcile(ReportRecord(), reader_unresolved=result.unresolved)
+
+        (entry,) = [e for e in record.qa if e.where == "input Wall load"]
+        assert "neither a number nor any words" in entry.detail
+        assert (entry.kind, entry.rank) == ("out_of_range", "note")
+
     def test_a_value_with_no_label_is_refused(self, spreadsheet):
         doc, _gt = spreadsheet
         engine = FakeEngine([{"final": _reading(results=[
