@@ -303,10 +303,17 @@ class TestTheReviewProbes:
                         label="S-1")
         assert sheet.linked_investigation_id == ""
 
-    def test_a_label_that_says_more_than_the_id_is_taken_for_a_sounding(self):
+    def test_a_label_that_says_more_is_still_not_taken_for_a_sounding(self):
         sheet = _linked([_no_sample_names(boring("B-1")), _sounding("S-1")],
                         label="S-1 2.0 ft")
-        assert sheet.linked_investigation_id == "S-1"
+        assert sheet.linked_investigation_id == ""
+
+    @pytest.mark.parametrize("label", ["MW-2", "MW-2 2.0 ft"])
+    def test_a_sample_label_is_taken_for_a_monitoring_well(self, label):
+        well = boring("MW-2")
+        well.kind = "well"
+        sheet = _linked([well], label=label)
+        assert sheet.linked_investigation_id == "MW-2"
 
     def test_a_bare_label_is_taken_for_a_boring_of_that_name(self):
         sheet = _linked([_no_sample_names(boring("B-1")),

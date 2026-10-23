@@ -358,11 +358,12 @@ def reconcile(record: ReportRecord, *,
 
 # -- the lab-to-ground link -------------------------------------------------
 
-#: The kinds of exploration a bare identifier in a SAMPLE label is taken
-#: for: the ones samples are taken from and named after. A sounding, a
-#: probe or a well called "S-1" is as likely the sample's own number.
-#: Layout judgment (RI-07 review); a hand auger is a boring made by hand.
-_SAMPLED_KINDS = ("boring", "test_pit", "hand_auger")
+#: The kinds of exploration a hole is taken for from a SAMPLE label: the
+#: ones samples are taken from and named after. A sounding or a probe
+#: called "S-1" is as likely the sample's own number. Layout judgment
+#: (RI-07 review); a hand auger is a boring made by hand, and a sampled
+#: monitoring well is drilled as a boring.
+_SAMPLED_KINDS = ("boring", "test_pit", "hand_auger", "well")
 
 
 def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
@@ -389,10 +390,10 @@ def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
       beside a pit's bulk sample B-1 -- is refused when another hole holds
       a sample of that name at the sheet's depth, or when this hole holds
       none there;
-    * a sample label that is the identifier and nothing more ("S-1") is
-      taken only for a boring, test pit or hand auger, since a sounding or
-      a well of that name may as well be the sample's number -- whether or
-      not the logs read any sample names.
+    * a hole is taken from a sample label only when it is a boring, test
+      pit, hand auger or well, since a sounding or probe of that name may
+      as well be the sample's number -- whether or not the logs read any
+      sample names, and whatever else the label prints.
     """
     folded = fold_id(test.investigation_id)
     if folded and by_fold and folded in by_fold:
@@ -402,7 +403,7 @@ def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
         return by_id[printed], ""
     label, through = ((test.investigation_id, "the boring as printed")
                       if printed else (test.sample_id, "the sample label"))
-    key, rest = _leading_hole(label, by_id)
+    key, _rest = _leading_hole(label, by_id)
     if not key:
         return None, ""
     inv = by_id[key]
@@ -413,8 +414,7 @@ def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
         if any(other is not inv and _at_depth(sample, test) is not None
                for other, sample in named):
             return None, ""
-    if through == "the sample label" and not fold_id(rest) and \
-            inv.kind not in _SAMPLED_KINDS:
+    if through == "the sample label" and inv.kind not in _SAMPLED_KINDS:
         return None, ""
     return inv, through
 

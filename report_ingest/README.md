@@ -285,8 +285,8 @@ logged are two holes). A label head stops at a number that follows another
 ("B-1/B-2", "B-1 to B-4") names none; a name that is only digits is never taken
 from a label; a name the logs also give a sample is refused when another hole
 holds that sample at the sheet's depth or this hole holds none there; and a
-sample label that is the identifier alone is taken only for a boring, test pit
-or hand auger. On the 13 records of Foundry run 1 (stage b) that links 558 of
+hole is taken from a sample label only for a boring, test pit, hand auger or
+well. On the 13 records of Foundry run 1 (stage b) that links 558 of
 1064 lab tests to a hole where it linked 427, changes none it already linked,
 and writes 1824 lab results to DIGGS against 1767 with 242 holes synthesised
 for printed words against 278. One of the 131 new links falls on a
