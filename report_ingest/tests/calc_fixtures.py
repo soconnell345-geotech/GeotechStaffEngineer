@@ -327,22 +327,37 @@ def build_repeated_label_run() -> CalcPageGT:
 
 
 def build_titled_pages(heads) -> bytes:
-    """Pages whose top bands are given: ``(banner or None, [lines])`` each.
+    """Pages whose top bands are given: ``(banner or None, [lines])`` each,
+    or ``(banner, [lines], False)`` for a page whose first line is set like
+    its body rather than as a title.
 
-    For the run splitter, which reads only a page's head. Every page also
-    carries one labelled value in its body, as a calculation page does.
+    For the run splitter, which reads only a page's head. The first line is
+    set as a title is (bold, larger than the body); the others as plain
+    sub-headings; a TUPLE is one printed line of cells, set like a table's
+    heading row. Every page carries a body of labelled values below, as a
+    calculation page does, so the page has a body to stand out from.
     """
     doc = None
-    for n, (banner, lines) in enumerate(heads):
+    for n, head in enumerate(heads):
+        banner, lines = head[0], head[1]
+        styled = head[2] if len(head) > 2 else True
         doc, page = _page(doc)
         y = 46.0
         if banner:
             _text(page, 60, y, banner, 10, bold=True)
             y += 20.0
-        for line in lines:
-            _text(page, 60, y, line, 10)
+        for k, line in enumerate(lines):
+            if isinstance(line, tuple):
+                for c, cell in enumerate(line):
+                    _text(page, 60 + 120 * c, y, cell, 9, bold=True)
+            elif k == 0 and styled:
+                _text(page, 60, y, line, 12, bold=True)
+            else:
+                _text(page, 60, y, line, 10 if styled else 9)
             y += 16.0
-        _text(page, 60, 400, f"Value {n + 1} = {n + 1}.5 m", 9)
+        for row in range(4):
+            _text(page, 60, 400 + 14 * row,
+                  f"Value {n + 1}.{row + 1} = {n + 1}.{row + 5} m", 9)
     pdf = doc.tobytes()
     doc.close()
     return pdf

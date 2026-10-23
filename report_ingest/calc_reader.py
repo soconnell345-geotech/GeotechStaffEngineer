@@ -102,7 +102,7 @@ __all__ = [
     "serialise_floor", "merge_calculation", "page_window", "printed_numbers",
     "NAME_RATIO", "SUMMARY_WORDS",
     "split_calc_runs", "split_calc_items", "HEADER_BAND_FRAC",
-    "TITLE_WORDS", "PAGE_IMAGES_ENV", "page_images_enabled",
+    "TITLE_WORDS", "MAX_RUN_PAGES", "PAGE_IMAGES_ENV", "page_images_enabled",
     "use_page_images",
 ]
 
@@ -1046,40 +1046,6 @@ def _same_place(value: FloorValue,
     return _meet(floor_box, model_box)
 
 
-def _printed_in(doc: Any, page: int, bbox: Any,
-                row: NamedQuantity) -> Optional[bool]:
-    """Does the page print this value inside the box named for it?
-
-    The text lines that meet the box (:func:`_meet`: on its printed line or
-    inside it) are what the page prints there; a number is matched at the
-    precision it was reported at, as the result gate does, and words are
-    matched folded. ``None`` when the page will not read or carries no text
-    at all -- a scan with no text layer can be checked only against the
-    picture, which this cannot see.
-    """
-    box = _box(bbox)
-    if box is None:
-        return None
-    try:
-        content = doc.page(int(page))
-    except Exception:                            # a page that will not read
-        return None
-    if not content.lines:
-        return None
-    texts = [str(ln.text or "").replace(" ", " ") for ln in content.lines
-             if _box(ln.bbox) is not None and _meet(box, _box(ln.bbox))]
-    if row.value is None:
-        wanted = fold(row.text)
-        return bool(wanted) and wanted in fold(" ".join(texts))
-    pool: List[float] = []
-    for text in texts:
-        for token in _NUMBER_RE.findall(text):
-            number = _number(token)
-            if number is not None:
-                pool.append(number)
-    return _on_the_page(float(row.value.value), pool)
-
-
 def _twin(value: FloorValue, named: NamedQuantity,
           rows: Sequence[NamedQuantity]
           ) -> Tuple[Optional[NamedQuantity], Optional[bool]]:
@@ -1113,8 +1079,8 @@ def _twin(value: FloorValue, named: NamedQuantity,
 
 
 def merge_calculation(floor: CalcFloor, model: Calculation,
-                      log: Optional[MergeLog] = None, *,
-                      doc: Any = None) -> Tuple[Calculation, MergeLog]:
+                      log: Optional[MergeLog] = None
+                      ) -> Tuple[Calculation, MergeLog]:
     """The floor's values folded onto the model's calculation.
 
     THE SAME RULE AS THE OTHER TWO READERS. A value the model added is kept.
@@ -1126,17 +1092,17 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
     an input from a result, and calling a value an input when it might be a
     result is the smaller claim.
 
-    WHAT IS ONE SLOT, AND WHAT IS EVIDENCE (RI-17). A floor value is settled
-    only against a reader's row read at the same printed place
-    (:func:`_same_place`); a row under the same label read somewhere else is
-    a different printed value, and the floor's is kept as its own row beside
-    it. Foundry run 1 lost floor values exactly so: one row per label stood
-    for every printing of that label, and the reader's reading of one block
-    replaced the floor's readings of the other two. At the same place the
-    reader overrules the floor with a box and a note (the shared rule,
-    :func:`report_ingest.floor.has_evidence`) and, when ``doc`` is given,
-    only if the page prints the reader's value inside that box: a box that
-    holds some other number is not evidence for this one.
+    WHAT IS ONE SLOT (RI-17). A floor value is settled only against a
+    reader's row read at the same printed place (:func:`_same_place`); a row
+    under the same label read somewhere else is a different printed value,
+    and the floor's is kept as its own row beside it. Foundry run 1 lost
+    floor values exactly so: one row per label stood for every printing of
+    that label, and the reader's reading of one block replaced the floor's
+    readings of the other two. At the same place the shared rule decides
+    (:func:`report_ingest.floor.has_evidence`). The floor values that have a
+    reading at their own place are settled FIRST, and only then the rest
+    against a reading elsewhere, so the order the patterns found them in
+    cannot decide which printed value ends in the record.
     """
     log = log if log is not None else MergeLog()
     out = model.model_copy(deep=True)
@@ -1163,9 +1129,15 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
             floor_confidence=CONF_PROGRAM, model_confidence=0.9,
             model_method="model")
 
-    for value in floor.values:
+    rows = model_results + model_inputs
+    here = [value for value in floor.values
+            if any(_same_place(value, r.prov) is True for r in rows
+                   if _same_name(value.name, r.name))]
+    elsewhere = [value for value in floor.values
+                 if not any(value is h for h in here)]
+    for value in here + elsewhere:
         named = value.as_named()
-        twin, place = _twin(value, named, model_results + model_inputs)
+        twin, place = _twin(value, named, rows)
         if twin is None:
             out.inputs.append(named)
             log.keep(where, value.name, value.page, named.value or named.text,
@@ -1176,10 +1148,6 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
             continue
         same = _same_value(named, twin)
         prov = twin.prov or Provenance(page=value.page, method="model")
-        evidence = has_evidence(prov, value.bbox)
-        if evidence and not same and place is True and doc is not None \
-                and _printed_in(doc, prov.page, prov.bbox, twin) is False:
-            evidence = False
         s = settle(value.name, named.value or named.text,
                    twin.value or twin.text, same,
                    floor_method="tables" if value.method == "tables"
@@ -1188,7 +1156,7 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
                    model_method=prov.method if prov.method in (
                        "model", "model_from_picture") else "model",
                    model_confidence=float(prov.confidence),
-                   evidence=evidence,
+                   evidence=has_evidence(prov, value.bbox),
                    floor_unit=value.unit,
                    model_unit=twin.value.unit if twin.value else "",
                    model_note=prov.note)
@@ -1203,9 +1171,8 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
                      "replaces the pattern's; the pattern's is kept beside it"
                      if s.verdict == "model_wins" else
                      "the reader's value differs from the one printed beside "
-                     "this label and it named no box and note that print it "
-                     "there; the page's stands and the reader's is kept "
-                     "beside it"),
+                     "this label and it named no box or note for it; the "
+                     "page's stands and the reader's is kept beside it"),
                 page=value.page,
                 floor_method="tables" if value.method == "tables" else "text",
                 floor_confidence=value.confidence,
@@ -1659,22 +1626,58 @@ MAX_HEADER_CHARS = 90
 #: digits folded out first): "150-mm-diameter Micropile" and "400-mm-diameter
 #: Pile" head two pages of one printout and differ by a word.
 TITLE_RATIO = 80.0
+#: A title STANDS OUT from the page it heads: bold where most of the page is
+#: not, or set at least this much larger than the page's median line. A
+#: plot's axis title, a table's heading row and a sentence that happens to
+#: open the top band are set like the body, and a program printout's pages
+#: are full of them; Foundry run 1 cut pile printouts on exactly those, one
+#: of them into 22 one-page items on a sub-table heading. A page whose text
+#: carries no size or weight (an optical reader's) has no title by this rule,
+#: and nothing does not split. LAYOUT JUDGMENT.
+TITLE_SIZE_RATIO = 1.15
+#: Words set in columns -- three or more spaces between them -- are a table's
+#: headings, not a title.
+_COLUMNS_RE = re.compile(r"\S\s{3,}\S")
+#: A label closed by a unit in brackets, "Deflection (meters)", is an axis or
+#: a column heading, not a title.
+_UNIT_LABEL_RE = re.compile(r"\(([^()]{1,12})\)\s*$")
+#: The most pages one item may hold: what the reader's two calls can show,
+#: a window of :data:`MAX_CALC_PAGES` each with the first and the last page in
+#: both (:func:`page_window`). A longer run is cut into balanced parts.
+MAX_RUN_PAGES = 2 * MAX_CALC_PAGES - 2
 #: Words that make a title name a calculation: the kind vocabulary's own
 #: words (the names in :data:`CALC_KIND_DEFINITIONS`, their definitions and
 #: the aliases the builder accepts, :data:`_KIND_ALIASES`), less the ones
 #: that name nothing on their own -- "site", "group", "ground", "design",
-#: "load". Matched inside the folded title, so "pile" is in "Micropile" and
-#: "wall" in "Walls". LAYOUT JUDGMENT, not a printed rule: a title change
-#: splits a run only where both titles say what is worked out, because a
-#: project block, a sheet number, a cover page, a reference table and a code
-#: excerpt's running header say nothing about it and belong to whatever
-#: printout they sit in.
+#: "load". Matched as WHOLE words of the printed title, singular or plural
+#: (:func:`_names_calculation`): "Micropiles" and "Walls" name one, and
+#: "Compiled", "Collateral" and "Uniaxial" do not, though "pile", "lateral"
+#: and "axial" sit inside them. LAYOUT JUDGMENT, not a printed rule: a title
+#: change splits a run only where both titles say what is worked out,
+#: because a project block, a sheet number, a cover page, a reference table
+#: and a code excerpt's running header say nothing about it and belong to
+#: whatever printout they sit in.
 TITLE_WORDS: Tuple[str, ...] = (
-    "pile", "shaft", "lateral", "axial", "footing", "foundation", "bearing",
-    "capacity", "settlement", "consolidation", "slope", "stability",
-    "retaining", "wall", "pressure", "shoring", "excavation", "liquefaction",
-    "seismic", "spectr", "seepage", "dewatering", "pavement", "improvement",
+    "pile", "micropile", "shaft", "lateral", "axial", "footing",
+    "foundation", "bearing", "capacity", "settlement", "consolidation",
+    "slope", "stability", "retaining", "wall", "pressure", "shoring",
+    "excavation", "liquefaction", "seismic", "spectrum", "spectral",
+    "seepage", "dewatering", "pavement", "improvement",
 )
+
+
+def _names_calculation(text: str) -> bool:
+    """Does a printed title carry a :data:`TITLE_WORDS` word, whole?
+
+    A word counts as itself or as its plural: ``-s``, ``-es``, and ``-a``
+    for a Latin ``-um`` ("spectra").
+    """
+    for token in re.findall(r"[a-z]+", str(text or "").lower()):
+        for word in TITLE_WORDS:
+            if token in (word, word + "s", word + "es") or (
+                    word.endswith("um") and token == word[:-2] + "a"):
+                return True
+    return False
 
 
 @dataclass
@@ -1684,11 +1687,41 @@ class _Head:
     title: str = ""            # folded, digits out; "" when there is none
     program: Optional[str] = None
     banner: bool = False       # the page OPENS with a program banner
+    names: bool = False        # the printed title carries a TITLE_WORDS word
 
     @property
     def names_calculation(self) -> bool:
-        return bool(self.title) and any(word in self.title
-                                        for word in TITLE_WORDS)
+        return bool(self.title) and self.names
+
+
+def _one_line(a: Any, b: Any) -> bool:
+    """Do two boxes share a printed line (half the shorter height or more)?"""
+    shared = min(float(a[3]), float(b[3])) - max(float(a[1]), float(b[1]))
+    shorter = min(float(a[3]) - float(a[1]), float(b[3]) - float(b[1]))
+    return shared + BOX_SLACK >= 0.5 * max(0.0, shorter)
+
+
+def _stands_out(line: Any, lines: Sequence[Any], body_size: float,
+                bold_share: float) -> bool:
+    """Is this line set as a title (:data:`TITLE_SIZE_RATIO`)?
+
+    Not when its words are set in columns, when it labels a quantity with
+    its unit in brackets, or when it shares its printed line with other
+    text -- a heading row of a table, a date beside a project name.
+    """
+    raw = str(line.text or "")
+    if _COLUMNS_RE.search(raw):
+        return False
+    unit = _UNIT_LABEL_RE.search(raw.strip())
+    if unit is not None and _canonical_unit(unit.group(1)) is not None:
+        return False
+    if any(other is not line and _one_line(line.bbox, other.bbox)
+           for other in lines):
+        return False
+    if bool(getattr(line, "bold", False)) and bold_share < 0.5:
+        return True
+    size = float(getattr(line, "size", 0.0) or 0.0)
+    return bool(size and body_size and size >= TITLE_SIZE_RATIO * body_size)
 
 
 def _page_head(doc: Any, page: int) -> _Head:
@@ -1697,10 +1730,14 @@ def _page_head(doc: Any, page: int) -> _Head:
     The TITLE is the first short line of the top band that is neither a
     labelled value nor a program banner, folded and with its digits out: a
     printout that numbers its sheets or its cases ("Sheet 3 of 11", "Load
-    Case 2") is one printout. The PROGRAM is the one a known program-name
-    pattern matches ANYWHERE on the page, because a banner is sometimes set
-    below a project block. A page that will not read says nothing, and
-    nothing does not split.
+    Case 2") is one printout. It counts only if it is set as a title
+    (:func:`_stands_out`); a page whose first line is not has no title, and
+    no line further down is taken in its place -- that would find a memo's
+    own heading under its letterhead and cut the memo from the spreadsheets
+    it covers. The PROGRAM is the one a known program-name pattern matches
+    ANYWHERE on the page, because a banner is sometimes set below a project
+    block. A page that will not read says nothing, and nothing does not
+    split.
     """
     try:
         content = doc.page(page)
@@ -1710,8 +1747,15 @@ def _page_head(doc: Any, page: int) -> _Head:
     cut = height * HEADER_BAND_FRAC if height else 0.0
     lines = sorted(content.lines, key=lambda ln: (round(ln.bbox[1], 1),
                                                   ln.bbox[0]))
+    sizes = sorted(float(ln.size) for ln in lines
+                   if getattr(ln, "size", None))
+    body_size = sizes[len(sizes) // 2] if sizes else 0.0
+    bold_share = (sum(1 for ln in lines if getattr(ln, "bold", False))
+                  / len(lines)) if lines else 0.0
+    band = [ln for ln in lines if not cut or float(ln.bbox[1]) <= cut]
     head = _Head()
     first = True
+    looked = False
     for line in lines:
         if cut and float(line.bbox[1]) > cut:
             break
@@ -1727,9 +1771,14 @@ def _page_head(doc: Any, page: int) -> _Head:
             first = False
             continue
         first = False
-        if head.title or len(text) > MAX_HEADER_CHARS or "=" in text:
+        if looked or len(text) > MAX_HEADER_CHARS or "=" in text:
             continue         # a labelled value is the body, not the title
-        head.title = fold(re.sub(r"\d+", "", text))
+        if not fold(re.sub(r"\d+", "", text)):
+            continue         # a rule of dashes, a bare sheet number
+        looked = True
+        if _stands_out(line, band, body_size, bold_share):
+            head.title = fold(re.sub(r"\d+", "", text))
+            head.names = _names_calculation(text)
     for line in lines[:MAX_LINES_PER_PAGE]:
         got = _program_in(line.text)
         if got is not None:
@@ -1753,20 +1802,25 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
 
     A new run starts where
 
-    * the page's title names a calculation and is not the title the run
-      named (:data:`TITLE_WORDS`, :data:`TITLE_RATIO`);
+    * the page's title -- a first line set as a title (:func:`_stands_out`)
+      -- names a calculation and is not the title the run named
+      (:data:`TITLE_WORDS`, :data:`TITLE_RATIO`);
     * the page names a different program from the run's;
     * the page OPENS with a program banner after a page that did not, in a
       run that already held a page that did -- a program printed back to
       back writes its banner at the head of each printout, while one that
       prints it on every page is one printout, and a page that only seems to
-      open with one (a word a program-name pattern matches) is not a run;
-    * the run already holds :data:`MAX_CALC_PAGES` pages, because a run
-      longer than one call can carry is one the reader cannot see whole.
+      open with one (a word a program-name pattern matches) is not a run.
 
     A page with no title, or a title that names no calculation, does not
     split: a cover, a project block or a sheet number is an absence of
     evidence, and splitting on it would cut a printout into single pages.
+
+    A run longer than :data:`MAX_RUN_PAGES` -- more than the reader's two
+    calls can show -- is then cut into the fewest balanced parts that fit,
+    so a long printout is never left with a one-page orphan. A run up to that
+    length stays whole: :func:`read_calculation` windows it, and the floor
+    reads every page of it either way.
     """
     pages = [int(p) for p in pages]
     if len(pages) <= 1:
@@ -1785,8 +1839,6 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
             changed = True
         if head.banner and banner_run and not heads[n - 1].banner:
             changed = True
-        if len(runs[-1]) >= MAX_CALC_PAGES:
-            changed = True
         if changed:
             runs.append([pages[n]])
             title, banner_run = "", False
@@ -1797,7 +1849,23 @@ def split_calc_runs(doc: Any, pages: Sequence[int]) -> List[List[int]]:
         if head.program is not None:
             program_before = head.program
         banner_run = banner_run or head.banner
-    return runs
+    return [part for run in runs for part in _balanced(run, MAX_RUN_PAGES)]
+
+
+def _balanced(run: List[int], cap: int) -> List[List[int]]:
+    """A run cut into the fewest parts of at most ``cap`` pages, their sizes
+    differing by one page at most."""
+    if len(run) <= cap:
+        return [run]
+    parts = -(-len(run) // cap)
+    size, extra = divmod(len(run), parts)
+    out: List[List[int]] = []
+    start = 0
+    for n in range(parts):
+        end = start + size + (1 if n < extra else 0)
+        out.append(run[start:end])
+        start = end
+    return out
 
 
 def split_calc_items(doc: Any, items: Sequence[Any]) -> List[Any]:
@@ -1828,7 +1896,9 @@ def split_calc_items(doc: Any, items: Sequence[Any]) -> List[Any]:
                           "split_reason": "a title naming a different "
                                           "calculation, a different program "
                                           "or a fresh banner starts a new "
-                                          "printout here"}))
+                                          "printout here, or a printout too "
+                                          "long for two calls is cut in "
+                                          "balanced parts"}))
     return out
 
 
@@ -2301,8 +2371,7 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
 
     builder = _Builder(reading, pages, report_id, tools.zooms, pool)
     model_calc = builder.build()
-    merged, merge_log = merge_calculation(floor, model_calc, MergeLog(),
-                                          doc=doc)
+    merged, merge_log = merge_calculation(floor, model_calc, MergeLog())
     merged.unsettled = [dict(u) for u in builder.unresolved]
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)

@@ -362,20 +362,24 @@ drop.** A floor value the reader did not return is kept as an *input* with a
 note (a pattern cannot tell an input from a result, and the smaller claim is
 the honest one); every split is a `disagreement` in QA.
 
-**One slot is one printed place, and evidence is what the page bears out
-(RI-17).** A calculation prints the same label many times — `Nc` once per
-material, a head load in every page's legend — so a slot is a label *at a
-place*: the same page, and boxes on one printed line or one inside the other.
-The reader's row read somewhere else is a different printed value; the floor's
-is kept as its own row (`kept`, saying so), not "corrected" to it. And where
-the two disagree at the same place, the reader's box and note are evidence only
-if the page prints the reader's value inside that box, to the precision it was
-reported at; a page with no text layer, or a reading off the picture, falls
-back to the shared rule (`floor.has_evidence`, unchanged for the other
-readers, whose slots are keyed by depth or test). Re-merged offline over the
-611 saved calculation items of Foundry run 1 (no model call), the nine truth
-runs it covers went from 96 to 108 of 145 values against a ceiling of 109 (the
-floor or the reader alone), and no run lost a value.
+**One slot is one printed place (RI-17).** A calculation prints the same
+label many times — `Nc` once per material, a head load in every page's legend
+— so a slot is a label *at a place*: the same page, and boxes on one printed
+line or one inside the other. The reader's row read somewhere else is a
+different printed value; the floor's is kept as its own row (`kept`, saying
+so), not "corrected" to it. At the same place the shared rule decides
+(`floor.has_evidence`, unchanged, as for the other readers, whose slots are
+keyed by depth or test), and the floor values that have a reading at their own
+place are settled first, so the order the patterns met them in decides
+nothing. Re-merged offline over the 611 saved calculation items of Foundry
+run 1 (no model call), the nine truth runs it covers went from 96 to 108 of
+145 values found, against 109 found by the floor or the reader alone, and no
+run lost a value. **That score counts only values found, so extra rows cannot
+lower it** — and the merge does keep more rows: on the truth pages, under the
+truth's labels, 842 rows became 909, the rows matching no truth value 533
+became 566, and the truth labels carrying such a row 76 became 85. Most of
+the new ones are floor readings the one-row-per-label merge used to hide,
+such as a code table's column headings read as labelled values.
 
 **Three Python gates.** A **result whose number is on none of the pages** to
 the precision it was reported at keeps its place in the record — it may be
@@ -398,15 +402,21 @@ sends every page of it as a picture too, OFF by default because no run has
 measured it.
 
 **One printout is one item.** `split_calc_items` cuts a planlens item where a
-page's title names a *different* calculation (a title is the first short line
-of the page's top band, and it names a calculation only if it carries a word
-of the kind vocabulary, `TITLE_WORDS`), where the program changes, or where a
-banner comes back after pages without one — never on a changed sub-heading,
-legend, cover or project block, which is what cut seven of the ten
-hand-truthed runs into pieces (one into seven single pages) before RI-17.
-Over Foundry run 1's 114 calculation items (796 pages) that is 213 items
-instead of 611, 69 of them one page instead of 485, so at most two calls each
-(about 400 calls instead of 1,134). Its one tool is
+page's title names a *different* calculation, where the program changes, or
+where a banner comes back after pages without one. A page's title is the first
+short line of its top band, and it counts only if it is set as a title — bold
+where the page is not, or at least 15 % larger than its body; alone on its
+line; not words set in columns; not a quantity with its unit in brackets, as
+a plot's axis is labelled — and it names a calculation only if it carries a
+whole word of the kind vocabulary (`TITLE_WORDS`: "Micropiles" does,
+"Compiled" does not). A changed sub-heading, table heading, plot title,
+legend, cover or project block never cuts; before RI-17 those cut seven of
+the ten hand-truthed runs into pieces (one into seven single pages), and a
+first fix still cut pile printouts on their table headings. A run longer than
+the reader's two calls can show (`MAX_RUN_PAGES`, 22 pages) is cut into
+balanced parts. Over Foundry run 1's 114 calculation items (796 pages) that
+is 148 items instead of 611, 31 of them one page instead of 485, at most two
+calls each (at most 296 calls; the old items spent 1,134). Its one tool is
 **`zoom_plot`**, for a result printed *on* a drawing: a slope section with its
 factor of safety written beside the critical surface, which is what a
 stability program prints and what no text pattern will ever find.

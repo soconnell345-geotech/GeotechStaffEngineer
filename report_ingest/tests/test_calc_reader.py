@@ -292,9 +292,6 @@ class TestTheMerge:
 
     def test_a_contradiction_with_a_box_and_a_note_replaces_it(self,
                                                                spreadsheet):
-        """With no page to check the box against, a box at the floor's own
-        place and a note are the evidence (RI-17 adds the page check when
-        the reader hands the merge its document)."""
         doc, _gt = spreadsheet
         floor = _floor_of(doc)
         model = Calculation(
@@ -316,7 +313,7 @@ class TestTheMerge:
         assert split["kept"] == "model"
         assert kept.prov.alternatives[0].value == "8.5 ft"
 
-    # -- RI-17: one slot per printed place, and evidence the page bears out --
+    # -- RI-17: one slot per printed place --
 
     def test_a_label_printed_once_per_block_is_three_values_not_one(
             self, tmp_path):
@@ -339,7 +336,7 @@ class TestTheMerge:
                     prov=Provenance(page=0, bbox=box[v], method="model",
                                     confidence=0.9, note=f"block {block}"))
                 for v, block in ((50.59, "C"), (14.83, "B"))])
-            merged, log = merge_calculation(floor, model, doc=doc)
+            merged, log = merge_calculation(floor, model)
         finally:
             doc.close()
 
@@ -368,7 +365,7 @@ class TestTheMerge:
                                     confidence=0.9, note="the legend"))
                 for name, v, page in (("Head load", 12.5, 0),
                                       ("Head load, Pile P-3", 95.0, 2))])
-            merged, log = merge_calculation(floor, model, doc=doc)
+            merged, log = merge_calculation(floor, model)
         finally:
             doc.close()
 
@@ -378,51 +375,40 @@ class TestTheMerge:
         assert not log.disagreements
         assert log.reconciled == 2
 
-    def test_a_correction_whose_box_does_not_print_it_is_not_evidence(
-            self, spreadsheet):
-        """A box at the floor's place and a note, but the page prints 8.5
-        there and not the reader's 12: the page's value stands."""
-        doc, _gt = spreadsheet
-        engine = FakeEngine([{"final": _reading(inputs=[
-            _value("Footing Width B (ft)", 12.0, "ft",
-                   bbox=(330.0, 112.0, 550.0, 128.0),
-                   note="the cell reads 12.0, not 8.5")])}])
+    @pytest.mark.parametrize("note", ["", "the line in block 2"])
+    def test_the_order_the_patterns_met_the_values_in_decides_nothing(
+            self, note):
+        """Nc is printed 5 in block 1 and 7 in block 2, and the reader read 5
+        with block 2's box. Whichever block the floor read first, the record
+        ends the same; with no note to overrule block 2's 7, both printed
+        values are in it. Settled in the floor's order, block 1's 5 was
+        matched to the reader's row first and lost when block 2's 7 then won
+        that row."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        block_1 = (300.0, 100.0, 360.0, 112.0)
+        block_2 = (300.0, 400.0, 360.0, 412.0)
 
-        result = read_calculation(doc, [0], engine, report_id="SYN")
+        def printed(v, box):
+            return FloorValue(name="Nc", value=v, unit="", text="", page=0,
+                              bbox=box, method="text", confidence=0.6)
 
-        kept = next(r for r in result.calculation.inputs
-                    if r.name == "Footing Width B (ft)")
-        assert kept.value.value == 8.5
-        (split,) = [d for d in result.disagreements
-                    if d["what"] == "Footing Width B (ft)"]
-        assert split["kept"] == "floor"
-        assert kept.prov.alternatives[0].value == "12 ft"
-
-    def test_a_correction_whose_box_prints_it_replaces_a_misread(
-            self, spreadsheet):
-        """The other side: the pattern misread the cell (as a garbled text
-        layer would), the reader points at the cell and the page prints the
-        reader's number there. That is evidence, and the reading stands."""
-        doc, _gt = spreadsheet
-        floor = _floor_of(doc)
-        width = next(v for v in floor.values
-                     if v.name == "Footing Width B (ft)")
-        width.value = 85.0
-        model = Calculation(kind="settlement", inputs=[NamedQuantity(
-            name="Footing Width B (ft)", value=Quantity(value=8.5, unit="ft"),
-            prov=Provenance(page=0, bbox=(330.0, 112.0, 550.0, 128.0),
-                            method="model", confidence=0.9,
-                            note="the cell reads 8.5"))])
-
-        merged, log = merge_calculation(floor, model, doc=doc)
-
-        kept = next(r for r in merged.inputs
-                    if r.name == "Footing Width B (ft)")
-        assert kept.value.value == 8.5
-        (split,) = [d for d in log.disagreements
-                    if d["what"] == "Footing Width B (ft)"]
-        assert split["kept"] == "model"
-        assert kept.prov.alternatives[0].value == "85 ft"
+        records = []
+        for values in ([printed(5.0, block_1), printed(7.0, block_2)],
+                       [printed(7.0, block_2), printed(5.0, block_1)]):
+            floor = CalcFloor(program=None, program_page=0, title="",
+                              values=values, pages=[0])
+            model = Calculation(kind="shallow_foundation_bearing", results=[
+                NamedQuantity(name="Nc", value=Quantity(value=5.0, unit=""),
+                              prov=Provenance(page=0, bbox=block_2,
+                                              method="model", confidence=0.9,
+                                              note=note))])
+            merged, _log = merge_calculation(floor, model)
+            records.append(sorted(r.value.value for r in
+                                  merged.inputs + merged.results
+                                  if r.name == "Nc"))
+        assert records[0] == records[1]
+        if not note:
+            assert records[0] == [5.0, 7.0]
 
     def test_a_reading_off_the_picture_is_settled_by_the_shared_rule(
             self, spreadsheet):
@@ -436,7 +422,7 @@ class TestTheMerge:
             prov=Provenance(page=0, method="model_from_picture",
                             confidence=0.8, note="the picture shows 12.0"))])
 
-        merged, log = merge_calculation(floor, model, doc=doc)
+        merged, log = merge_calculation(floor, model)
 
         kept = next(r for r in merged.inputs
                     if r.name == "Footing Width B (ft)")
@@ -856,13 +842,25 @@ class TestSplittingACalculationRun:
         from report_ingest.calc_reader import split_calc_runs
         assert split_calc_runs(two_banners, [0, 1]) == [[0, 1]]
 
-    def test_a_run_is_capped_at_the_readers_own_ceiling(self, two_banners):
-        from report_ingest.calc_reader import MAX_CALC_PAGES, split_calc_runs
+    def test_a_run_is_capped_at_what_two_calls_can_show(self, two_banners):
+        """RI-17: the cap is the reader's two windows, not one, and a run
+        over it is cut into balanced parts -- not 12 pages and an orphan."""
+        from report_ingest.calc_reader import (
+            MAX_CALC_PAGES, MAX_RUN_PAGES, page_window, split_calc_runs,
+        )
         # Pages the document does not have read as nothing, which does not
         # split; the cap still bites.
-        runs = split_calc_runs(two_banners, list(range(MAX_CALC_PAGES + 4)))
-        assert all(len(run) <= MAX_CALC_PAGES for run in runs)
-        assert len(runs) >= 2
+        whole = list(range(2, 2 + MAX_RUN_PAGES))
+        assert split_calc_runs(two_banners, whole) == [whole]
+        seen = set(page_window(whole)) | set(
+            page_window(whole, MAX_CALC_PAGES - 2))
+        assert seen == set(whole)                    # two calls show it all
+        over = list(range(2, 2 + MAX_RUN_PAGES + 1))
+        assert [len(r) for r in split_calc_runs(two_banners, over)] == [
+            MAX_CALC_PAGES, MAX_CALC_PAGES - 1]
+        long = list(range(2, 2 + 2 * MAX_RUN_PAGES + 1))
+        sizes = [len(r) for r in split_calc_runs(two_banners, long)]
+        assert len(sizes) == 3 and max(sizes) - min(sizes) <= 1
 
     def test_the_items_keep_their_title_and_say_they_were_split(
             self, two_banners):
@@ -966,6 +964,47 @@ class TestSplittingACalculationRun:
         text = " ".join(CALC_KIND_DEFINITIONS.values()).lower()
         for word in TITLE_WORDS:
             assert word in names or word in text, word
+
+    def test_title_words_are_matched_whole(self):
+        from report_ingest.calc_reader import _names_calculation
+        for title in ("Micropiles", "Retaining Walls", "Response Spectra",
+                      "Footings on Clay", "Lateral Pile Analysis"):
+            assert _names_calculation(title), title
+        for title in ("Compiled by the checker", "Collateral notes",
+                      "Uniaxial compression results", "Shafted"):
+            assert not _names_calculation(title), title
+
+    def test_a_word_inside_a_longer_word_does_not_split(self, tmp_path):
+        heads = [(None, ["Footing Settlement Calculation"]),
+                 (None, ["Compiled by the checker"]),
+                 (None, ["Footing Settlement Calculation"]),
+                 (None, ["Collateral notes"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3]]
+
+    def test_a_table_heading_on_a_continuation_page_does_not_split(
+            self, tmp_path):
+        """Column headings, a heading row of cells and a plot's axis title
+        (a quantity with its unit in brackets) are not titles."""
+        heads = [(None, ["Lateral Pile Analysis"]),
+                 (None, ["Depth   Deflection   Moment   Soil Pressure"]),
+                 (None, [("Overburden Pressure", "Depth", "Stress")]),
+                 (None, ["Lateral Pile Deflection (meters)"]),
+                 (None, ["Lateral Pile Analysis"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3, 4]]
+
+    def test_a_line_set_like_the_body_is_not_a_title(self, tmp_path):
+        """A printout's sentence or table caption that opens the top band in
+        the body's type does not say a new calculation starts."""
+        heads = [(None, ["Lateral Pile Analysis"]),
+                 (None, ["Section 1 is a drilled shaft with casing"], False),
+                 (None, ["Summary of Pile-head Responses"], False)]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2]]
+
+    def test_a_title_set_as_a_title_still_splits(self, tmp_path):
+        heads = [(None, ["Lateral Pile Analysis"]),
+                 (None, ["Lateral Pile Analysis"]),
+                 (None, ["Retaining Wall Pressure"])]
+        assert self._runs(tmp_path, heads) == [[0, 1], [2]]
 
 
 # ---------------------------------------------------------------------------
