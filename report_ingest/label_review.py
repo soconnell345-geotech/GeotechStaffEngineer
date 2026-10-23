@@ -46,6 +46,7 @@ __all__ = [
     "LABEL_DEFINITIONS", "Review", "ReviewFindings", "review_labels",
     "budget_for", "budget_for_split", "REVIEW_SYSTEM", "REVIEW_TOOLS",
     "ReviewIncomplete", "FINDINGS_RETRY_MAX_TOKENS", "FINDINGS_BATCH_PAGES",
+    "LOOK_EVIDENCE", "names_a_look",
 ]
 
 #: One line per label. The vocabulary is planlens' ``ROLES``; these are the
@@ -138,6 +139,25 @@ FINDINGS_RETRY_MAX_TOKENS = 32000
 #: at a time, over the same conversation -- no tool is spent again, only the
 #: answer is cut into pieces that fit.
 FINDINGS_BATCH_PAGES = 40
+#: The tools whose result SHOWS the page itself. A change is applied only
+#: when its ``evidence`` names one of them (BACKLOG RI-15). The brief has
+#: always said "Do not change a label you have not checked"; the ledger, the
+#: outline and the voters' split are what the review was GIVEN, not a check
+#: of the page. On the 13-report Foundry run of 2026-10-04 the changes whose
+#: only evidence was the ledger were mostly one voter's label carried across
+#: a run of neighbouring pages that were never opened, and they broke
+#: several times as many labels as they fixed.
+LOOK_EVIDENCE: Tuple[str, ...] = ("read_page", "render_page", "contact_sheet")
+
+
+def names_a_look(evidence: Any) -> bool:
+    """Does a change's ``evidence`` name a tool that showed the page?
+
+    Spelling is forgiven ("read page", "Render-Page"), and so is naming the
+    ledger beside a look. The ledger or the outline alone is not a look.
+    """
+    text = str(evidence or "").lower().replace("-", "_").replace(" ", "_")
+    return any(tool in text for tool in LOOK_EVIDENCE)
 
 
 def budget_for(n_pages: int) -> int:
@@ -229,6 +249,9 @@ class _Tools:
     def __init__(self, doc, outline_text: str) -> None:
         self.doc = doc
         self.outline_text = outline_text
+        #: The pages each look actually put in front of the model, so a
+        #: change's claimed evidence can be set against what was shown.
+        self.shown: Dict[str, set] = {name: set() for name in LOOK_EVIDENCE}
 
     def _page(self, arguments: Dict[str, Any]) -> int:
         page = int(arguments["page"])
@@ -253,11 +276,13 @@ class _Tools:
             text = (text[:MAX_PAGE_CHARS]
                     + "\n[page text cut at the size limit; render_page to see "
                       "the rest of the layout]")
+        self.shown["read_page"].add(page)
         return text
 
     def render_page(self, arguments: Dict[str, Any]) -> Any:
         page = self._page(arguments)
         png, info = self.doc.render(page, dpi=PAGE_DPI)
+        self.shown["render_page"].add(page)
         return [text_block(f"page {page}, rendered at {info['dpi']:.0f} dpi"),
                 image_block(png)]
 
@@ -274,8 +299,17 @@ class _Tools:
         if not sheets:
             raise ValueError(f"no pages between {start} and {end}")
         png, info = sheets[0]
+        self.shown["contact_sheet"].update(range(start, end + 1))
         return [text_block(f"pages {start} to {end}; {info['legend']}"),
                 image_block(png)]
+
+    def tools_that_showed(self, page: Any) -> List[str]:
+        """The looks that put ``page`` in front of the model, in tool order."""
+        try:
+            page = int(page)
+        except (TypeError, ValueError):
+            return []
+        return [name for name in LOOK_EVIDENCE if page in self.shown[name]]
 
     def outline(self, arguments: Dict[str, Any]) -> Any:
         return self.outline_text
@@ -360,6 +394,11 @@ class Review:
     #: the whole report. A change outside the set is still applied -- the
     #: agent looked and may be right -- and the caller flags it.
     asked_pages: List[int] = field(default_factory=list)
+    #: The pages each look (:data:`LOOK_EVIDENCE`) actually showed the
+    #: model. Every change row also carries ``shown``, the looks that showed
+    #: ITS page, so a change whose claimed evidence was never shown can be
+    #: counted. Recorded, not enforced: no run has measured it yet.
+    pages_shown: Dict[str, List[int]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -376,6 +415,7 @@ class Review:
             "model_calls": self.model_calls,
             "model": self.model,
             "asked_pages": list(self.asked_pages),
+            "pages_shown": {k: list(v) for k, v in self.pages_shown.items()},
             "cost": dict(self.cost),
         }
 
@@ -682,7 +722,8 @@ def _brief(ledger: str, outline_text: str, profile: Any,
 def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
                   engine: Engine, max_model_calls: int = 60,
                   pages: Optional[Sequence[int]] = None,
-                  choices: Optional[Sequence[Any]] = None) -> Review:
+                  choices: Optional[Sequence[Any]] = None,
+                  require_look: bool = True) -> Review:
     """Run pass 0c over one open document and return the reviewed labels.
 
     ``budget`` is the tool-call ceiling; it defaults to
@@ -701,6 +742,12 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
     the per-page votes (anything with ``page``, ``label``, ``agreed`` and
     ``voters``), printed in the brief so the model can see what the split
     actually was.
+
+    ``require_look`` (on by default) refuses a change whose evidence names
+    no look at the page (:func:`names_a_look`): it goes to
+    ``rejected_changes`` and the page keeps the label it came in with. What
+    the model is asked is the same either way; ``False`` reproduces the
+    review before BACKLOG RI-15.
     """
     from planlens.document.roles import document_outline, page_ledger, page_roles
     from report_ingest.triage import outline_text as _outline_text
@@ -845,7 +892,8 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
     seen: set = set()
     for c in found.changes:
         row = {"page": int(c.page), "from": c.from_label, "to": c.to_label,
-               "reason": c.reason, "evidence": c.evidence}
+               "reason": c.reason, "evidence": c.evidence,
+               "shown": tools.tools_that_showed(c.page)}
         if c.page not in rules_labels:
             row["rejected"] = "no such page in this document"
             rejected.append(row)
@@ -863,6 +911,12 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
         row["from"] = rules_labels[c.page]
         if row["from"] == c.to_label:
             row["rejected"] = "no change: it already has that label"
+            rejected.append(row)
+            continue
+        if require_look and not names_a_look(c.evidence):
+            row["rejected"] = ("not checked: the evidence names no look at "
+                               "the page (read_page, render_page or "
+                               "contact_sheet)")
             rejected.append(row)
             continue
         seen.add(c.page)
@@ -886,4 +940,6 @@ def review_labels(doc, roles=None, outline=None, profile=None, budget=None, *,
         cost=spent,
         rejected_changes=rejected,
         asked_pages=list(asked or ()),
+        pages_shown={name: sorted(pages)
+                     for name, pages in tools.shown.items()},
     )

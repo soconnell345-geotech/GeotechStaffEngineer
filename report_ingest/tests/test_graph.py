@@ -802,6 +802,31 @@ class TestTheRunFile:
         assert saved["cost"]["vision"]["calls"] == 4
 
 
+class TestASavedReviewIsHeldToTheSameRule:
+    """A review.json saved before BACKLOG RI-15 may hold changes made on the
+    ledger alone; a resumed run applies only what a fresh one would."""
+
+    def test_a_saved_change_that_names_no_look_is_left_out(self):
+        from report_ingest.graph import _review_changes
+
+        blob = {"changes": [
+            {"page": 3, "from": "other", "to": "figure", "evidence": "ledger"},
+            {"page": 4, "from": "other", "to": "plan",
+             "evidence": "render_page"},
+            {"page": 5, "from": "other", "to": "toc", "evidence": "outline"},
+            {"page": 6, "from": "other", "to": "photos"},
+        ]}
+        assert [r["page"] for r in _review_changes(blob, [])] == [4, 6]
+
+    def test_a_reused_label_run_is_not_second_guessed(self):
+        from report_ingest.graph import _review_changes
+        from report_ingest.label_vote import combine
+
+        choices = [combine("other", "figure", page=3)]
+        rows = _review_changes({"final_labels": {"3": "figure"}}, choices)
+        assert [(r["page"], r["evidence"]) for r in rows] == [(3, "reused")]
+
+
 class TestAReportBoundInsideAReport:
     """pages 15-18 of the synthetic report are another firm's whole study.
 

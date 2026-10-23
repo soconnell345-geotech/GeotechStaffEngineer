@@ -10,7 +10,7 @@ import pytest
 
 from report_ingest.label_review import (
     LABEL_DEFINITIONS, LabelChange, ReviewFindings, StructureEntry,
-    UnresolvedPage, budget_for, review_labels,
+    UnresolvedPage, budget_for, names_a_look, review_labels,
 )
 from report_ingest.tests.fake_engine import FakeEngine, ScriptExhausted
 
@@ -290,6 +290,124 @@ def test_the_same_page_is_only_changed_once(synthetic, roles):
     assert review.final_labels[10] == "figure"
     assert len(review.changes) == 1
     assert "already changed once" in review.rejected_changes[0]["rejected"]
+
+
+class TestAChangeMustRestOnALook:
+    """BACKLOG RI-15: the ledger is what the review was given, not a check."""
+
+    def test_a_change_on_the_ledger_alone_is_refused(self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(findings=_findings(
+            changes=[_change(10, "figure", evidence="ledger")])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        assert review.changes == []
+        (row,) = review.rejected_changes
+        assert row["rejected"].startswith("not checked")
+        assert row["evidence"] == "ledger"
+        assert review.final_labels[10] == review.rules_labels[10]
+
+    def test_the_outline_alone_is_not_a_look_either(self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(findings=_findings(
+            changes=[_change(10, "figure", evidence="outline")])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        assert review.changes == []
+        assert "not checked" in review.rejected_changes[0]["rejected"]
+
+    @pytest.mark.parametrize("evidence", [
+        "read_page", "render_page", "contact_sheet", "Read page",
+        "render-page", "ledger, then read_page"])
+    def test_a_look_counts_however_it_is_spelled(self, synthetic, roles,
+                                                  evidence):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(findings=_findings(
+            changes=[_change(10, "figure", evidence=evidence)])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        assert review.final_labels[10] == "figure"
+        assert review.rejected_changes == []
+
+    @pytest.mark.parametrize("evidence", ["ledger", "outline", "", None,
+                                          "the split votes"])
+    def test_what_names_no_look(self, evidence):
+        assert names_a_look(evidence) is False
+
+    def test_a_refused_change_leaves_the_page_free_for_a_checked_one(
+            self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(findings=_findings(changes=[
+            _change(10, "figure", evidence="ledger"),
+            _change(10, "plan", evidence="render_page")])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        assert review.final_labels[10] == "plan"
+        assert [c["to"] for c in review.changes] == ["plan"]
+        assert "not checked" in review.rejected_changes[0]["rejected"]
+
+    def test_require_look_off_applies_it_as_before(self, synthetic, roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(findings=_findings(
+            changes=[_change(10, "figure", evidence="ledger")])))
+        review = review_labels(doc, roles, profile={}, engine=engine,
+                               require_look=False)
+        assert review.final_labels[10] == "figure"
+        assert review.rejected_changes == []
+
+    def test_the_question_asked_is_the_same_either_way(self, synthetic,
+                                                       roles):
+        doc, _ = synthetic
+        sent = []
+        for flag in (True, False):
+            engine = FakeEngine(_script(findings=_findings(
+                changes=[_change(10, "figure", evidence="ledger")])))
+            review_labels(doc, roles, profile={}, engine=engine,
+                          require_look=flag)
+            sent.append([(c["system"], str(c["messages"]))
+                         for c in engine.calls])
+        assert sent[0] == sent[1]
+
+
+class TestWhatTheLooksShowed:
+
+    def test_each_change_carries_the_looks_that_showed_its_page(self,
+                                                               synthetic,
+                                                               roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(
+            {"tools": [("read_page", {"page": 7}),
+                       ("render_page", {"page": 5}),
+                       ("read_page", {"page": 9999})]},
+            findings=_findings(changes=[
+                _change(7, "figure", evidence="read_page"),
+                _change(12, "figure", evidence="read_page")])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        shown = {c["page"]: c["shown"] for c in review.changes}
+        assert shown == {7: ["read_page"], 12: []}
+        assert review.pages_shown["read_page"] == [7], \
+            "a call that failed showed nothing"
+        assert review.pages_shown["render_page"] == [5]
+        assert review.pages_shown["contact_sheet"] == []
+
+    def test_a_contact_sheet_shows_every_page_on_it(self, synthetic, roles):
+        doc, gt = synthetic
+        engine = FakeEngine(_script(
+            {"tools": [("contact_sheet", {"start_page": 3})]},
+            findings=_findings(changes=[
+                _change(12, "figure", evidence="contact_sheet")])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        assert review.changes[0]["shown"] == ["contact_sheet"]
+        assert review.pages_shown["contact_sheet"] == list(range(gt.n_pages))
+
+    def test_it_is_recorded_not_enforced_and_it_serializes(self, synthetic,
+                                                           roles):
+        doc, _ = synthetic
+        engine = FakeEngine(_script(findings=_findings(
+            changes=[_change(10, "figure", evidence="read_page")])))
+        review = review_labels(doc, roles, profile={}, engine=engine)
+        # The model claimed a look the loop never made: kept, and visible.
+        assert review.final_labels[10] == "figure"
+        blob = review.to_dict()
+        assert blob["changes"][0]["shown"] == []
+        assert blob["pages_shown"] == {"read_page": [], "render_page": [],
+                                       "contact_sheet": []}
 
 
 def test_structure_and_unresolved_come_through_and_serialize(synthetic, roles):

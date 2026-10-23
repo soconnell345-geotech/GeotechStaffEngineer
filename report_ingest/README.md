@@ -1828,11 +1828,36 @@ not settle, with why).
 `final_labels` is **not** asked of the model: it is the rules' labels with the
 accepted changes applied, in Python. A model re-emitting 455 page-to-label pairs
 can drop a page or shift a number silently, and the scorecard would then be
-scoring the slip rather than the judgement. Four kinds of change are refused and
+scoring the slip rather than the judgement. Five kinds of change are refused and
 recorded in `rejected_changes` instead of applied: a page that does not exist, a
-label outside the vocabulary, a second change to a page already changed, and a
-change to the label the page already has. A change's `from` is always overwritten
+label outside the vocabulary, a second change to a page already changed, a
+change to the label the page already has, and (BACKLOG RI-15) a change whose
+evidence names no look at the page. A change's `from` is always overwritten
 with what the rules really said, so a model that misremembers is visible.
+
+**A change must rest on a look.** The brief has always said "Do not change a
+label you have not checked", and the model still made changes citing only the
+`ledger`: on the 13-report Foundry run of 2026-10-04 most of those were one
+voter's label carried across a run of neighbouring pages that were never
+opened, and they broke several times as many labels as they fixed, enough to
+make the review as a whole break more than it fixed. So a change is applied
+only when its evidence names `read_page`, `render_page` or `contact_sheet`
+(spelling forgiven, the ledger beside a look allowed); the ledger or the
+outline alone is refused as "not checked", and the page stays what the vote
+said — a `label_disagreement` if the voters split on it. The question the model
+is asked is unchanged. `review_labels(..., require_look=False)` reproduces the
+old behaviour, and a `review.json` saved before the rule is held to it when a
+run resumes from it. The counts are in BACKLOG RI-15 and come from
+`module_work/report_ingest_harness/measure_label_review.py`, which reads any
+ingest stage folder and the hand labels and prints fixed / broke / still wrong
+by report, evidence, move and voter, before and under the rule.
+
+The claimed evidence is the model's word, so the review also records what each
+look actually showed: `Review.pages_shown` (the pages `read_page` and
+`render_page` returned, and every page on a contact sheet it opened) and, on
+every change row, `shown` — the looks that put that page in front of the
+model. A change that claims a look the loop never made is kept for now and is
+countable from `review.json`; no run has measured it yet.
 
 ## Running it on the cluster
 
