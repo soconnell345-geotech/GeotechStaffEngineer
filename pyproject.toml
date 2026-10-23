@@ -100,10 +100,8 @@ dependencies = [
     # (write_xlsx, read_text_file), so it is core in its own right.
     "openpyxl>=3.1",
     "SALib>=1.4",
-    # pystra 2.0.0 (2026-10) removed Transformation.jacobian, which every
-    # pystra_agent analysis and reliability's FORM cross-check call; held
-    # below 2 until the agent is moved to the 2.x API (BACKLOG INF-49).
-    "pystra>=1.3,<2",
+    # pystra 2.x renamed Transformation.jacobian (pystra_agent handles both).
+    "pystra>=1.3",
     # pydiggs is NOT in core (5.10.1): it drags in myst-parser -> sphinx,
     # whose Pygments>=2.17 floor force-UPGRADES the Pygments that Databricks'
     # notebook kernel (IPython) was started with — the platform then flags

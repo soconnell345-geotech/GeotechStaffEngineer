@@ -4,6 +4,8 @@ Utilities for pystra integration and compatibility.
 
 import sys
 
+import numpy as np
+
 
 def has_pystra() -> bool:
     """
@@ -20,6 +22,95 @@ def has_pystra() -> bool:
 
 
 _patches_applied = False
+
+
+def _is_v2() -> bool:
+    """True for pystra 2.x, whose FORM/SORM/Monte Carlo API replaced 1.x's."""
+    import pystra
+    return hasattr(pystra, "FORM")
+
+
+class _Run:
+    """Plain record of one analysis, the same whichever pystra ran it.
+
+    Arrays are in pystra's own order (random variables only, constants left
+    out); ``None`` where the pystra version does not report the quantity.
+    """
+
+    beta = pf = alpha = x = u = kappa = None
+    iterations = 0
+    beta_breitung = pf_breitung = None
+
+
+def run_form(sm, lsf, with_sorm: bool = False) -> _Run:
+    """Run FORM (and SORM when asked) on pystra 1.x or 2.x."""
+    import pystra
+
+    out = _Run()
+    if _is_v2():
+        # on_failure="return" keeps 1.x's behaviour of reporting an
+        # unconverged result instead of raising.
+        form = pystra.FORM(sm, lsf, on_failure="return")
+        res = form.run()
+        out.beta = float(res.beta)
+        out.pf = float(res.failure_probability)
+        out.alpha = None if res.alpha is None else np.asarray(res.alpha)
+        out.x = None if res.design_point_x is None else np.asarray(res.design_point_x)
+        out.u = None if res.design_point_u is None else np.asarray(res.design_point_u)
+        out.iterations = int(res.iterations)
+        if with_sorm:
+            sres = pystra.SORM(sm, lsf, form=form, on_failure="return").run()
+            out.beta_breitung = None if sres.beta is None else float(sres.beta)
+            out.pf_breitung = (
+                None if sres.failure_probability is None
+                else float(sres.failure_probability))
+            out.kappa = np.atleast_1d(np.asarray(sres.curvatures, dtype=float))
+        return out
+
+    options = pystra.AnalysisOptions()
+    options.setPrintOutput(False)
+    form = pystra.Form(sm, lsf, options)
+    form.run()
+    out.beta = float(form.getBeta())
+    out.pf = float(form.getFailure().flat[0])
+    out.alpha = np.asarray(form.getAlpha())
+    out.x = np.asarray(form.getDesignPoint(uspace=False))
+    out.u = np.asarray(form.getDesignPoint(uspace=True))
+    out.iterations = int(form.i)
+    if with_sorm:
+        sorm = pystra.Sorm(sm, lsf, options, form)
+        sorm.run()
+        out.beta_breitung = float(np.ravel(sorm.betag_breitung)[0])
+        out.pf_breitung = float(np.ravel(sorm.pf2_breitung)[0])
+        out.kappa = np.atleast_1d(np.asarray(sorm.kappa, dtype=float))
+    return out
+
+
+def run_monte_carlo(sm, lsf, n_samples: int) -> _Run:
+    """Run crude Monte Carlo on pystra 1.x or 2.x; fills ``beta`` and ``pf``."""
+    import pystra
+
+    out = _Run()
+    if _is_v2():
+        # 2.x does not use numpy's global generator; seed it from there so
+        # np.random.seed still makes a run repeatable, as it did in 1.x.
+        seed = int(np.random.randint(0, 2**31 - 1))
+        mc = pystra.CrudeMonteCarlo(
+            sm, lsf, options=pystra.SimulationOptions(n_samples=n_samples),
+            rng=seed)
+        res = mc.run()
+        out.beta = float(res.beta)
+        out.pf = float(res.failure_probability)
+        return out
+
+    options = pystra.AnalysisOptions()
+    options.setPrintOutput(False)
+    options.setSamples(n_samples)
+    mc = pystra.CrudeMonteCarlo(options, lsf, sm)
+    mc.run()
+    out.beta = float(mc.getBeta())
+    out.pf = float(mc.getFailure().flat[0])
+    return out
 
 
 def _apply_numpy2_patches():
@@ -44,6 +135,12 @@ def _apply_numpy2_patches():
         return  # No patches needed for numpy < 2.0
 
     import pystra
+
+    # pystra 2.x renamed Transformation.jacobian to jacobian_u_wrt_x and
+    # already extracts scalars correctly, so there is nothing to patch.
+    if not hasattr(pystra.Transformation, "jacobian"):
+        _patches_applied = True
+        return
 
     # Save originals (for reference, though we won't restore them)
     _orig_jacobian = pystra.Transformation.jacobian
@@ -398,7 +495,10 @@ def _build_stochastic_model(variables: list, correlation: list = None):
     # Build stochastic model
     sm = pystra.StochasticModel()
     for pvar in pystra_vars:
-        sm.addVariable(pvar)
+        if _is_v2():
+            sm.add_variable(pvar)
+        else:
+            sm.addVariable(pvar)
 
     # Set correlation if provided
     if correlation is not None:
@@ -413,6 +513,9 @@ def _build_stochastic_model(variables: list, correlation: list = None):
                     f"Correlation matrix must be {n_vars}x{n_vars}, "
                     f"found row with {len(row)} columns"
                 )
-        sm.setCorrelation(pystra.CorrelationMatrix(correlation))
+        if _is_v2():
+            sm.set_correlation(pystra.CorrelationMatrix(correlation))
+        else:
+            sm.setCorrelation(pystra.CorrelationMatrix(correlation))
 
     return sm, pystra_vars, var_names
