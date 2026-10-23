@@ -18,7 +18,7 @@ detailed Phase-E history; this file supersedes it.
 - **Waiting on the owner:** the Foundry build c results (INF-40; read every run in full); the Claude-on-Foundry check, which needs the next wheel (INF-40); marking up the Report Questions Desk, https://claude.ai/artifact/RuUVqrbNnaHPaX1YaCyEjd (fold with RI-42); the core's name, reopened because the core is shared with GSE (OWN-72).
 - **Held until the Foundry results:** GM-230, GM-270, GM-196, GM-239. Still no slope_stability changes (GM-140).
 - **Filed today, Later:** GM-279 (GEC-13 never writes n'), REF-44 (a GEC-13 figure label), RI-41 (pydiggs 1.x has no 2.5.a schema folder).
-- **Housekeeping:** many `.claude/worktrees/*` belong to branches already merged; no branch holds unmerged work from this week. `wip/ev06` must never be pushed (Department text in its history).
+- **Housekeeping:** the workspace moved to `C:\dev` on 2026-10-22 (OneDrive's sync was competing for the laptop's memory); start Claude Code there. The gitignored private folders are junctions to the old copy under `C:\Users\socon\OneDrive\dev`, which stays until INF-50. The merged helper worktrees were deleted; the unmerged ones stayed in the OneDrive copy, and no branch holds unmerged work from this week. `wip/ev06` must never be pushed (Department text in its history).
 
 ### Where things stand (5.33.0 released 2026-10-09; master through 2026-10-21)
 
