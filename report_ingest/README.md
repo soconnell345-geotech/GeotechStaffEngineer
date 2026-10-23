@@ -362,6 +362,21 @@ drop.** A floor value the reader did not return is kept as an *input* with a
 note (a pattern cannot tell an input from a result, and the smaller claim is
 the honest one); every split is a `disagreement` in QA.
 
+**One slot is one printed place, and evidence is what the page bears out
+(RI-17).** A calculation prints the same label many times — `Nc` once per
+material, a head load in every page's legend — so a slot is a label *at a
+place*: the same page, and boxes on one printed line or one inside the other.
+The reader's row read somewhere else is a different printed value; the floor's
+is kept as its own row (`kept`, saying so), not "corrected" to it. And where
+the two disagree at the same place, the reader's box and note are evidence only
+if the page prints the reader's value inside that box, to the precision it was
+reported at; a page with no text layer, or a reading off the picture, falls
+back to the shared rule (`floor.has_evidence`, unchanged for the other
+readers, whose slots are keyed by depth or test). Re-merged offline over the
+611 saved calculation items of Foundry run 1 (no model call), the nine truth
+runs it covers went from 96 to 108 of 145 values against a ceiling of 109 (the
+floor or the reader alone), and no run lost a value.
+
 **Three Python gates.** A **result whose number is on none of the pages** to
 the precision it was reported at keeps its place in the record — it may be
 right and the text layer wrong — but drops to **confidence 0.3** and is
@@ -375,7 +390,21 @@ and says on the unsettled list that nothing downstream can convert it.
 longer than `MAX_CALC_PAGES` (12) is shown a window of that many pages with
 the **first and the last always in it** — the first carries the banner and
 the inputs, the last carries the answer — and the second call is spent only
-on the rest of the run or on the reader's own unsettled list. Its one tool is
+on the rest of the run or on the reader's own unsettled list. Every page of
+the window is shown as text and the first as a picture;
+`GEOTECH_INGEST_CALC_PAGE_IMAGES=1` (or `use_page_images()`) sends every page
+of it as a picture too, OFF by default because no run has measured it.
+
+**One printout is one item.** `split_calc_items` cuts a planlens item where a
+page's title names a *different* calculation (a title is the first short line
+of the page's top band, and it names a calculation only if it carries a word
+of the kind vocabulary, `TITLE_WORDS`), where the program changes, or where a
+banner comes back after pages without one — never on a changed sub-heading,
+legend, cover or project block, which is what cut seven of the ten
+hand-truthed runs into pieces (one into seven single pages) before RI-17.
+Over Foundry run 1's 114 calculation items (796 pages) that is 213 items
+instead of 611, 69 of them one page instead of 485, so at most two calls each
+(about 400 calls instead of 1,134). Its one tool is
 **`zoom_plot`**, for a result printed *on* a drawing: a slope section with its
 factor of safety written beside the critical surface, which is what a
 stability program prints and what no text pattern will ever find.

@@ -274,3 +274,75 @@ def build_two_page_printout() -> CalcPageGT:
                 "Applied lateral load": (240.0, "kN")},
         results={"Maximum bending moment": (612.4, "kN-m")},
         n_pages=2)
+
+
+def build_repeated_label_sheet() -> CalcPageGT:
+    """ONE page carrying three blocks of the same worked sheet, one per
+    material, each printing the same labels with its own numbers.
+
+    The shape RI-17 is about: a label printed three times on one page is
+    three values, and a merge that keyed its slots by the label alone let
+    one block's reading replace the other two.
+    """
+    doc, page = _page()
+    _text(page, 150, 46, "Bearing Capacity by the Meyerhof Method", 12,
+          bold=True)
+    blocks = (("Material A", "30", "30.14", "18.40"),
+              ("Material B", "20", "14.83", "6.40"),
+              ("Material C", "36", "50.59", "37.75"))
+    y = 90.0
+    for name, phi, nc, nq in blocks:
+        _text(page, 60, y, name, 10, bold=True)
+        _text(page, 60, y + 16, f"Phi = {phi} degrees", 9)
+        _text(page, 300, y + 16, f"Nc = {nc}", 9)
+        _text(page, 300, y + 30, f"Nq = {nq}", 9)
+        y += 150.0
+    pdf = doc.tobytes()
+    doc.close()
+    return CalcPageGT(
+        pdf=pdf, kind="shallow_foundation_bearing",
+        method="Meyerhof",
+        results={f"Nc, {name}": (float(nc), "")
+                 for name, _phi, nc, _nq in blocks})
+
+
+def build_repeated_label_run() -> CalcPageGT:
+    """Three pages of one printout, each printing the SAME label with its
+    own value -- a head load in each page's legend, for three pile sizes."""
+    import pymupdf
+    doc = pymupdf.open()
+    loads = ("12.5", "40", "95")
+    for n, load in enumerate(loads):
+        _doc, page = _page(doc)
+        _text(page, 60, 46, f"Lateral Analysis of Pile P-{n + 1}", 11,
+              bold=True)
+        _text(page, 60, 300, f"Head load = {load} kN", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return CalcPageGT(
+        pdf=pdf, kind="lateral_pile",
+        inputs={f"Head load, Pile P-{n + 1}": (float(v), "kN")
+                for n, v in enumerate(loads)},
+        n_pages=len(loads))
+
+
+def build_titled_pages(heads) -> bytes:
+    """Pages whose top bands are given: ``(banner or None, [lines])`` each.
+
+    For the run splitter, which reads only a page's head. Every page also
+    carries one labelled value in its body, as a calculation page does.
+    """
+    doc = None
+    for n, (banner, lines) in enumerate(heads):
+        doc, page = _page(doc)
+        y = 46.0
+        if banner:
+            _text(page, 60, y, banner, 10, bold=True)
+            y += 20.0
+        for line in lines:
+            _text(page, 60, y, line, 10)
+            y += 16.0
+        _text(page, 60, 400, f"Value {n + 1} = {n + 1}.5 m", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf

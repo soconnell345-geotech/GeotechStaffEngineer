@@ -292,6 +292,9 @@ class TestTheMerge:
 
     def test_a_contradiction_with_a_box_and_a_note_replaces_it(self,
                                                                spreadsheet):
+        """With no page to check the box against, a box at the floor's own
+        place and a note are the evidence (RI-17 adds the page check when
+        the reader hands the merge its document)."""
         doc, _gt = spreadsheet
         floor = _floor_of(doc)
         model = Calculation(
@@ -312,6 +315,134 @@ class TestTheMerge:
                     if d["what"] == "Footing Width B (ft)"]
         assert split["kept"] == "model"
         assert kept.prov.alternatives[0].value == "8.5 ft"
+
+    # -- RI-17: one slot per printed place, and evidence the page bears out --
+
+    def test_a_label_printed_once_per_block_is_three_values_not_one(
+            self, tmp_path):
+        """One page prints Nc three times, once per material. The reader
+        returned two of them with a box and a note each; the third, which
+        only the floor read, is a different printed value and stays in the
+        record as its own row. Keyed by the label alone, it was 'corrected'
+        to the reader's Nc from another block and lost."""
+        from report_ingest.tests.calc_fixtures import (
+            build_repeated_label_sheet,
+        )
+        gt = build_repeated_label_sheet()
+        doc = _open(gt.pdf, tmp_path)
+        try:
+            floor = _floor_of(doc)
+            box = {v.value: v.bbox for v in floor.values if v.name == "Nc"}
+            model = Calculation(kind="shallow_foundation_bearing", results=[
+                NamedQuantity(
+                    name="Nc", value=Quantity(value=v, unit=""),
+                    prov=Provenance(page=0, bbox=box[v], method="model",
+                                    confidence=0.9, note=f"block {block}"))
+                for v, block in ((50.59, "C"), (14.83, "B"))])
+            merged, log = merge_calculation(floor, model, doc=doc)
+        finally:
+            doc.close()
+
+        values = sorted(r.value.value for r in merged.inputs + merged.results
+                        if r.name == "Nc")
+        assert values == [14.83, 30.14, 50.59]
+        assert not [d for d in log.disagreements if d["what"] == "Nc"]
+        (kept,) = [k for k in log.kept if k["what"] == "Nc"]
+        assert kept["value"] == "30.14"
+        assert "somewhere else" in kept["why"]
+
+    def test_a_label_on_every_page_keeps_each_pages_value(self, tmp_path):
+        """A printout of plots prints the same legend label on every page.
+        The reader's row read on the first page says nothing about the
+        second page's value, which is kept."""
+        from report_ingest.tests.calc_fixtures import build_repeated_label_run
+        gt = build_repeated_label_run()
+        doc = _open(gt.pdf, tmp_path)
+        try:
+            floor = _floor_of(doc, range(gt.n_pages))
+            box = {v.page: v.bbox for v in floor.values}
+            model = Calculation(kind="lateral_pile", inputs=[
+                NamedQuantity(
+                    name=name, value=Quantity(value=v, unit="kN"),
+                    prov=Provenance(page=page, bbox=box[page], method="model",
+                                    confidence=0.9, note="the legend"))
+                for name, v, page in (("Head load", 12.5, 0),
+                                      ("Head load, Pile P-3", 95.0, 2))])
+            merged, log = merge_calculation(floor, model, doc=doc)
+        finally:
+            doc.close()
+
+        values = sorted(r.value.value for r in merged.inputs
+                        if r.name.startswith("Head load"))
+        assert values == [12.5, 40.0, 95.0]
+        assert not log.disagreements
+        assert log.reconciled == 2
+
+    def test_a_correction_whose_box_does_not_print_it_is_not_evidence(
+            self, spreadsheet):
+        """A box at the floor's place and a note, but the page prints 8.5
+        there and not the reader's 12: the page's value stands."""
+        doc, _gt = spreadsheet
+        engine = FakeEngine([{"final": _reading(inputs=[
+            _value("Footing Width B (ft)", 12.0, "ft",
+                   bbox=(330.0, 112.0, 550.0, 128.0),
+                   note="the cell reads 12.0, not 8.5")])}])
+
+        result = read_calculation(doc, [0], engine, report_id="SYN")
+
+        kept = next(r for r in result.calculation.inputs
+                    if r.name == "Footing Width B (ft)")
+        assert kept.value.value == 8.5
+        (split,) = [d for d in result.disagreements
+                    if d["what"] == "Footing Width B (ft)"]
+        assert split["kept"] == "floor"
+        assert kept.prov.alternatives[0].value == "12 ft"
+
+    def test_a_correction_whose_box_prints_it_replaces_a_misread(
+            self, spreadsheet):
+        """The other side: the pattern misread the cell (as a garbled text
+        layer would), the reader points at the cell and the page prints the
+        reader's number there. That is evidence, and the reading stands."""
+        doc, _gt = spreadsheet
+        floor = _floor_of(doc)
+        width = next(v for v in floor.values
+                     if v.name == "Footing Width B (ft)")
+        width.value = 85.0
+        model = Calculation(kind="settlement", inputs=[NamedQuantity(
+            name="Footing Width B (ft)", value=Quantity(value=8.5, unit="ft"),
+            prov=Provenance(page=0, bbox=(330.0, 112.0, 550.0, 128.0),
+                            method="model", confidence=0.9,
+                            note="the cell reads 8.5"))])
+
+        merged, log = merge_calculation(floor, model, doc=doc)
+
+        kept = next(r for r in merged.inputs
+                    if r.name == "Footing Width B (ft)")
+        assert kept.value.value == 8.5
+        (split,) = [d for d in log.disagreements
+                    if d["what"] == "Footing Width B (ft)"]
+        assert split["kept"] == "model"
+        assert kept.prov.alternatives[0].value == "85 ft"
+
+    def test_a_reading_off_the_picture_is_settled_by_the_shared_rule(
+            self, spreadsheet):
+        """A value read off the picture names no box, so nothing is known
+        about its place and the shared rule settles it: a note is what can
+        be said about a picture."""
+        doc, _gt = spreadsheet
+        floor = _floor_of(doc)
+        model = Calculation(kind="settlement", inputs=[NamedQuantity(
+            name="Footing Width B (ft)", value=Quantity(value=12.0, unit="ft"),
+            prov=Provenance(page=0, method="model_from_picture",
+                            confidence=0.8, note="the picture shows 12.0"))])
+
+        merged, log = merge_calculation(floor, model, doc=doc)
+
+        kept = next(r for r in merged.inputs
+                    if r.name == "Footing Width B (ft)")
+        assert kept.value.value == 12.0
+        assert [d["kept"] for d in log.disagreements
+                if d["what"] == "Footing Width B (ft)"] == ["model"]
 
     def test_the_floors_program_fills_a_reader_that_named_none(self, tmp_path):
         from report_ingest.tests.calc_fixtures import build_program_printout
@@ -760,3 +891,150 @@ class TestSplittingACalculationRun:
         second = floor_from_pages(two_banners, runs[1], "RXX")
         assert "lpile" in (first.program or "").lower()
         assert "stabl" in (second.program or "").lower()
+
+    # -- RI-17: what the first fix cut that is one printout ------------------
+
+    @staticmethod
+    def _runs(tmp_path, heads):
+        from report_ingest.calc_reader import split_calc_runs
+        from report_ingest.tests.calc_fixtures import build_titled_pages
+        doc = _open(build_titled_pages(heads), tmp_path)
+        try:
+            return split_calc_runs(doc, list(range(len(heads))))
+        finally:
+            doc.close()
+
+    def test_a_sub_heading_that_changes_page_to_page_does_not_split(
+            self, tmp_path):
+        heads = [(None, ["Footing Settlement Calculation", "Stratum A"]),
+                 (None, ["Footing Settlement Calculation", "Layer Table"]),
+                 (None, ["Footing Settlement Calculation",
+                         "Strain in Each Layer"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2]]
+
+    def test_a_cover_a_project_block_and_a_sheet_number_do_not_split(
+            self, tmp_path):
+        """None of them says what is worked out, so none of them is a title
+        that could name a different calculation."""
+        heads = [(None, ["Riverbend Logistics Park", "Job 24-0117"]),
+                 (None, ["Calculation Output"]),
+                 (None, ["Spread Footing Settlement Calculation"]),
+                 (None, ["Sheet 4 of 5"]),
+                 (None, ["Riverbend Logistics Park", "Job 24-0117"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3, 4]]
+
+    def test_titles_that_name_different_calculations_split(self, tmp_path):
+        heads = [(None, ["Bearing Capacity by the Meyerhof Method"]),
+                 (None, ["Bearing Capacity by the Meyerhof Method"]),
+                 (None, ["Settlement of a Footing on Rock"])]
+        assert self._runs(tmp_path, heads) == [[0, 1], [2]]
+
+    def test_titles_that_differ_by_a_word_are_one_printout(self, tmp_path):
+        heads = [(None, ["Lateral Analysis of Micropile MP-2"]),
+                 (None, ["Lateral Analysis of Pile P-7"])]
+        assert self._runs(tmp_path, heads) == [[0, 1]]
+
+    def test_a_banner_on_every_page_is_one_printout(self, tmp_path):
+        """The first fix split such a printout into pairs of pages."""
+        heads = [("LPILE Version 2019.11.3", ["Lateral Pile Analysis"])] * 3
+        assert self._runs(tmp_path, heads) == [[0, 1, 2]]
+
+    def test_a_banner_back_after_pages_without_one_starts_a_run(
+            self, tmp_path):
+        heads = [("LPILE Version 2019.11.3", ["Lateral Pile Analysis"]),
+                 (None, ["Lateral Pile Analysis"]),
+                 ("LPILE Version 2019.11.3", ["Lateral Pile Analysis"]),
+                 (None, ["Lateral Pile Analysis"])]
+        assert self._runs(tmp_path, heads) == [[0, 1], [2, 3]]
+
+    def test_a_word_a_program_pattern_matches_does_not_split_a_run(
+            self, tmp_path):
+        """'Strata' is an English word as well as a program's name. A page
+        that seems to open with it, in a run that opened with no banner, is
+        not the head of a new printout."""
+        heads = [(None, ["Footing Settlement Calculation"]),
+                 (None, ["Footing Settlement Calculation"]),
+                 ("Strata summary", ["Footing Settlement Calculation"]),
+                 (None, ["Footing Settlement Calculation"])]
+        assert self._runs(tmp_path, heads) == [[0, 1, 2, 3]]
+
+    def test_the_title_words_come_from_the_kind_vocabulary(self):
+        from report_ingest.calc_reader import TITLE_WORDS, _KIND_ALIASES
+        names: set = set()
+        for key in list(CALC_KIND_DEFINITIONS) + list(_KIND_ALIASES):
+            names |= set(key.split("_"))
+        text = " ".join(CALC_KIND_DEFINITIONS.values()).lower()
+        for word in TITLE_WORDS:
+            assert word in names or word in text, word
+
+
+# ---------------------------------------------------------------------------
+# RI-17: which pages travel as pictures
+# ---------------------------------------------------------------------------
+
+class TestThePictures:
+    """A run is shown whole as text; the first page is a picture, and with
+    the switch on every page of the window is."""
+
+    @pytest.fixture
+    def two_pages(self, tmp_path):
+        from report_ingest.tests.calc_fixtures import build_two_page_printout
+        doc = _open(build_two_page_printout().pdf, tmp_path)
+        yield doc
+        doc.close()
+
+    def test_only_the_first_page_is_a_picture_by_default(self, two_pages,
+                                                         monkeypatch):
+        from report_ingest.calc_reader import PAGE_IMAGES_ENV
+        monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")}])
+
+        read_calculation(two_pages, [0, 1], engine, report_id="SYN")
+
+        assert engine.calls[0]["n_images"] == 1
+        assert engine.calls[0]["system"] == CALC_READER_SYSTEM
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "--- page 1:" in brief            # the second page as text
+
+    def test_with_the_switch_every_page_is_a_picture(self, two_pages):
+        from report_ingest.calc_reader import use_page_images
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile")}])
+
+        with use_page_images():
+            read_calculation(two_pages, [0, 1], engine, report_id="SYN")
+
+        assert engine.calls[0]["n_images"] == 2
+        system = engine.calls[0]["system"]
+        assert "every page you are shown as a picture" in system
+        assert "the first page as a picture" not in system
+
+    def test_the_switch_reads_the_environment(self, monkeypatch):
+        from report_ingest.calc_reader import (
+            PAGE_IMAGES_ENV, page_images_enabled, use_page_images,
+        )
+        monkeypatch.setenv(PAGE_IMAGES_ENV, "1")
+        assert page_images_enabled()
+        monkeypatch.setenv(PAGE_IMAGES_ENV, "off")
+        assert not page_images_enabled()
+        with use_page_images(True):
+            assert page_images_enabled()
+        assert not page_images_enabled()
+
+    def test_the_second_window_brings_its_own_pictures(self, tmp_path):
+        from report_ingest.calc_reader import use_page_images
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", continues=True)},
+            {"final": _reading(kind="lateral_pile")},
+        ])
+        try:
+            with use_page_images():
+                read_calculation(doc, list(range(16)), engine,
+                                 report_id="SYN")
+        finally:
+            doc.close()
+
+        assert engine.calls[0]["n_images"] == MAX_CALC_PAGES
+        assert engine.calls[1]["n_images"] == len(
+            page_window(list(range(16)), MAX_CALC_PAGES - 2))
