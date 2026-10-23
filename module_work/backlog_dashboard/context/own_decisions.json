@@ -2006,5 +2006,31 @@
       "BACKLOG.md OWN-88",
       "BACKLOG.md RI-07 (Done)"
     ]
+  },
+  "OWN-89": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the few report values copied into public code be scrubbed from GitHub's history?",
+    "why": "The GitHub repos are public. A privacy audit on 2026-10-23 found a few values copied from saved report records into tests and code comments. The current code is already cleaned; this is only about old commits.",
+    "background": "Checked: every change pushed since 2026-10-19 (and planlens since 2026-10-14), about 54,600 values against 9,538 private files. Found: no project, client, place, firm or person name, and no contract number. Copied: one test's test-pit id, two depths, a pocket-penetrometer reading and a summary row's id and value from one report (first added 2026-10-04); a sample label, two calc page titles and a program version banner used as examples; a planlens test plan reusing a field-session plan's scale and symbol sizes, which were already public in a tracked review note. Since then every builder is told to use made-up values only and every reviewer scans for copies.",
+    "options": [
+      {
+        "label": "No rewrite",
+        "effect": "The values stay in old commits; the current code uses made-up values. Nothing breaks."
+      },
+      {
+        "label": "Rewrite history",
+        "effect": "Old commits are rewritten to remove the values and force-pushed. Every clone, fork, open link to a commit and the CI history breaks; copies already made elsewhere keep the values anyway."
+      }
+    ],
+    "recommendation": "No rewrite: the values identify nothing on their own, and a rewrite cannot reach copies already made.",
+    "if_no_answer": "No rewrite.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-89",
+      "BACKLOG.md INF-51 (Done)"
+    ]
   }
 }
