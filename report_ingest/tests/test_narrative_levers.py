@@ -298,6 +298,17 @@ class TestTheDeterministicExplorationAnswers:
         assert got["testPitCount"] == 1
         assert got["testPitDictionary"] == ["TP-1"]
 
+    def test_a_zero_padded_name_is_the_same_hole(self):
+        got = explorations_found([
+            _Inv("boring", "B-1"), _Inv("boring", "B-01"),
+            _Inv("boring", "B-10"), _Inv("test_pit", "TP-02"),
+            _Inv("test_pit", "tp2"),
+        ])
+
+        assert got["boringCount"] == 2
+        assert got["boringDictionary"] == ["B-1", "B-10"]   # as first printed
+        assert got["testPitCount"] == 1
+
     def test_no_logs_at_all_yields_nothing_and_the_prose_stands(self, doc):
         assert explorations_found([]) == {}
 

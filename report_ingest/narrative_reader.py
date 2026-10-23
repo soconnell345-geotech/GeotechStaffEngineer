@@ -1019,11 +1019,11 @@ def explorations_found(investigations: Sequence[Any]) -> Dict[str, Any]:
     continuation sheet that became a work item of its own, which the corpus
     has (BACKLOG RI-14's measure) -- is one boring, and its name is listed
     once. Names are matched the way the reconciler matches them (``B-1``,
-    ``B 1`` and ``b1`` are one hole), the first spelling is kept, and a log
+    ``B 1``, ``b1`` and ``B-01`` are one hole), the first spelling is kept, and a log
     that printed no name is one hole of its own, since there is nothing to
     tell it from another.
     """
-    from report_ingest.reconciler import fold_id
+    from report_ingest.reconciler import hole_key
 
     by_kind: Dict[str, List[str]] = {}
     for inv in investigations or ():
@@ -1037,8 +1037,8 @@ def explorations_found(investigations: Sequence[Any]) -> Dict[str, Any]:
         """(the distinct names, in order, and how many logs had none)."""
         seen: Dict[str, str] = {}
         for name in names:
-            if name and fold_id(name) not in seen:
-                seen[fold_id(name)] = name
+            if name and hole_key(name) not in seen:
+                seen[hole_key(name)] = name
         return list(seen.values()), sum(1 for name in names if not name)
 
     out: Dict[str, Any] = {}
