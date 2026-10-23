@@ -29,7 +29,7 @@ rather than prints are the model's to add, and the model adds them.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from report_ingest.floor import (
@@ -37,8 +37,8 @@ from report_ingest.floor import (
     has_evidence, same_depth, same_number, same_text, settle, show,
 )
 from report_ingest.model import (
-    DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
-    Quantity, SPT, Sample, WaterLevel, _canonical_unit,
+    Alternative, DrillingDetails, Investigation, Layer, PitDimensions,
+    Provenance, Quantity, SPT, Sample, WaterLevel, _canonical_unit,
 )
 from report_ingest.printed_depths import (
     PrintedDepth, PrintedDepths, PrintedRow, chained, on_line,
@@ -51,9 +51,11 @@ __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
            "N_RULE_SOURCE", "N_HALT_RULE"]
 
 #: How far apart two placed cells may be and still belong to one sample: a
-#: driven sample is 0.46 m (18 in) long and its blow record, its N and its
-#: index values are printed against it, one to three lines apart.
-GROUP_SPAN_M = 0.46
+#: driven sample is three 6 in (150 mm) drives, 18 in (0.4572 m), long (FHWA
+#: NHI-06-088 Vol. I, Sec. 3.7, p. 3-51), and its blow record, its N and its
+#: index values are printed against it. It measures DEPTH; a stack of
+#: printed lines is read by its lines (:func:`_read_stacks`), not by this.
+GROUP_SPAN_M = 0.4572
 FT_PER_M = 3.280839895
 
 #: The columns whose cells mark a sample. A description, a depth tick, a
@@ -144,17 +146,30 @@ def _paren_unit(header: str) -> str:
     return ""
 
 
+#: A drive printed as words: the sampler sank under the weight of the hammer
+#: or of the rods. It is a drive, but not a count.
+_WORD_DRIVE = re.compile(r"\bWO[HR]\b", re.I)
+
+
+def _word_drive(entry: Any) -> bool:
+    """Is this drive ``WOH`` or ``WOR`` as printed?"""
+    return isinstance(entry, str) and fold(entry) in ("woh", "wor")
+
+
 def _blow_tokens(text: str) -> List[Any]:
     """A blow record as the log printed it, or ``[]`` when the text is not
     one. ``5-9-12`` -> ``[5, 9, 12]``; ``12-30-50/5"`` -> ``[12, 30,
-    '50/5"']``; ``5/9/12`` -> ``[5, 9, 12]``; ``2+1+2`` -> ``[2, 1, 2]``.
+    '50/5"']``; ``5/9/12`` -> ``[5, 9, 12]``; ``2+1+2`` -> ``[2, 1, 2]``;
+    ``WOH-2-3`` -> ``['WOH', 2, 3]`` (RI-44: the words stay as printed; a
+    ``WOH`` alone is not a record).
 
     The plus is gINT's own spelling of a driven record and is as common in
     the corpus as the hyphen, so it is read here rather than left on the
     page.
     """
     raw = " ".join(str(text or "").split())
-    if not raw or not re.fullmatch(r'[\d\s+\-–/",.\'inmc]+', raw):
+    if not raw or not re.fullmatch(r'[\d\s+\-–/",.\'inmc]+',
+                                   _WORD_DRIVE.sub("0", raw)):
         return []
     if "+" in raw:
         pieces = re.split(r"\s*\+\s*", raw)
@@ -171,11 +186,14 @@ def _blow_tokens(text: str) -> List[Any]:
             continue
         if re.fullmatch(r"\d+", piece):
             out.append(int(piece))
+        elif _word_drive(piece):
+            out.append(piece)
         elif re.fullmatch(r'\d+\s*/\s*[\d.]+\s*(?:"|\'\'|in|cm|mm)?', piece):
             out.append(piece)
         else:
             return []
-    if len(out) < 2 and not (out and isinstance(out[0], str)):
+    if len(out) < 2 and not (out and isinstance(out[0], str)
+                             and not _word_drive(out[0])):
         return []
     return out
 
@@ -355,7 +373,9 @@ def _id_styles(grid: Any, cells: Sequence[Any],
     samples that way, and a bare number in it is a drive or a value printed
     under the id, not a second id. A column of bare numbers names samples by
     number only when its header says so (``SAMPLE NO.``); in a column headed
-    ``DATA`` a stack of ``4``, ``6``, ``7`` is a blow record.
+    ``DATA`` a stack of ``4``, ``6``, ``7`` is a blow record. Where the header
+    names the blows too, only the first line of each stack is a number
+    (:func:`_read_stacks`).
     """
     shapes: Dict[str, set] = {}
     for cell in cells:
@@ -372,6 +392,299 @@ def _id_styles(grid: Any, cells: Sequence[Any],
             styles[column_id] = ("number" if _NUMBER_HEADER.search(header)
                                  else "")
     return styles
+
+
+# ---------------------------------------------------------------------------
+# a column headed as both the sample numbers and the blows (RI-44)
+# ---------------------------------------------------------------------------
+#
+# "SAMPLE NO. / BLOWS / REC" over a stack of bare numbers, one to a line:
+# the number, the drives, the recovery. The numbers look alike and the
+# header names them all, so the only clue is each line's place in its stack,
+# and a stack is found by the printed LINES, never by a depth: at the scale a
+# log is printed, a stack of four or five lines may run well past the
+# sample's own 18 in. Where the stacks cannot be found and read with
+# certainty, the column is read as it was before RI-44 (no sample number
+# from it, no N) and the QA section lists it: a missing N is a gap the
+# reader fills, a wrong one is a wrong record.
+
+#: How many drives a standard SPT record holds: three 6 in (150 mm)
+#: increments (FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51).
+SPT_DRIVES = 3
+
+# The two thresholds below -- half a text height for "one line", a line and
+# a half of the column's own pitch for "a blank line" -- are judgments about
+# how text is laid out, not rules printed anywhere. Every case they get
+# wrong leaves a stack that does not read, and the column is then read as
+# before RI-44 and listed (floor_stack): they can lose a reading, not make
+# one up.
+
+
+def _centre(cell: Any) -> float:
+    return (float(cell.bbox[1]) + float(cell.bbox[3])) / 2.0
+
+
+def _same_line(a: Any, b: Any) -> bool:
+    """Are two cells printed on one line of text (centres within half the
+    taller one's height; layout judgment, see above)?"""
+    height = max(float(a.bbox[3]) - float(a.bbox[1]),
+                 float(b.bbox[3]) - float(b.bbox[1]), 1e-6)
+    return abs(_centre(a) - _centre(b)) <= 0.5 * height
+
+
+def _above(cell: Any, line: Any) -> bool:
+    """Is ``cell`` printed on a line above ``line``'s?"""
+    return _centre(cell) < _centre(line) and not _same_line(cell, line)
+
+
+def _naming_line(group: Any, grid: Any,
+                 by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                 ) -> Any:
+    """The top cell of a sample that names it -- its id, its number read by
+    place in a stack, or its sampler code -- or None (RI-44)."""
+    found = []
+    for cell in group.cells:
+        names = set(_names(grid, cell, by_column))
+        text = _text(cell)
+        code = text.lower()
+        if (id(cell) in group.heads or _ID_AND_TYPE.match(text)
+                or (code in _TYPE_CODES and (
+                    "sample_type" in names
+                    or (len(code) >= 2 and names & {"sample_id", "blows"})))
+                or ("sample_id" in names and (
+                    _id_shape(text) == "prefixed"
+                    or ("blows" not in names and _id_like(text))))):
+            found.append(cell)
+    return min(found, key=_centre) if found else None
+
+
+def _line_pitch(lines: Sequence[Any]) -> Optional[float]:
+    """The distance from one printed line to the next in a column: the
+    smallest step between two of its lines that are not on one line."""
+    steps = [_centre(b) - _centre(a) for a, b in zip(lines, lines[1:])
+             if not _same_line(a, b)]
+    return min(steps) if steps else None
+
+
+def _runs(lines: Sequence[Any], pitch: Optional[float]) -> List[List[Any]]:
+    """The column's lines cut where a blank line opens: a step of more than
+    a line and a half (layout judgment, see above). Lines printed one under
+    the next stay together."""
+    out: List[List[Any]] = []
+    for cell in lines:
+        if out and (pitch is None
+                    or _centre(cell) - _centre(out[-1][-1]) <= 1.5 * pitch):
+            out[-1].append(cell)
+        else:
+            out.append([cell])
+    return out
+
+
+#: What a header over such a column prints, found by its words: the sample
+#: number, the blows, the N, the recovery (REC, RECOV, RECOVERY or
+#: RECOVERED as a word, never RECORD).
+_LAYOUT_PARTS: Tuple[Tuple[str, Any], ...] = (
+    ("number", _NUMBER_HEADER),
+    ("blows", re.compile(r"\bBLOW", re.I)),
+    ("n", re.compile(r"\bN(?:60)?\b(?![º°])|\bN[- ]?VALUE", re.I)),
+    ("rec", re.compile(r"\bREC(?:OV(?:ERY|ERED)?)?\b", re.I)),
+)
+#: The column name each part of the layout places.
+_LAYOUT_NAMES = {"n": "n_value", "rec": "recovery"}
+
+
+def _stack_layout(header: str) -> Optional[List[str]]:
+    """What each stack prints after its drives, in the header's order --
+    ``[]``, ``["rec"]``, ``["n", "rec"]`` -- or None when the header does not
+    print the sample number first and the blows next ("SAMPLE NO. / REC /
+    BLOWS"): a recovery printed before the drives, where it may or may not
+    be there, cannot be told from the first drive, so such a column is read
+    as before."""
+    found = sorted((m.start(), name) for name, pattern in _LAYOUT_PARTS
+                   for m in [pattern.search(str(header or ""))] if m)
+    order = [name for _at, name in found]
+    if order[:2] != ["number", "blows"]:
+        return None
+    return order[2:]
+
+
+@dataclass
+class _Stack:
+    """One sample's lines in a column headed as both the sample numbers and
+    the blows, top down: its number, its drives, and what the header prints
+    after them."""
+
+    lines: List[Any]
+    recovery: Any = None
+    #: The line the header's N names, read as the printed N.
+    printed_n: Any = None
+    #: Lines after the drives that cannot be told apart: fewer than the
+    #: header names. Kept in the note, not read as any of them.
+    unassigned: List[Any] = field(default_factory=list)
+    #: A cell on the number's line that anchored the stack (a sampler code).
+    anchor: Any = None
+    #: Set when the last drive read may instead be the N or the recovery the
+    #: header prints after the blows: the drives are kept as printed and no
+    #: N is computed from them.
+    doubt: bool = False
+
+
+def _read_stack(lines: Sequence[Any], after: Sequence[str], complete: bool
+                ) -> Optional[_Stack]:
+    """A stack read as a sample number, one to :data:`SPT_DRIVES` drives,
+    then what the header prints after the blows (``after``, from
+    :func:`_stack_layout`), one line each, in the header's order; None when
+    it does not read so.
+
+    The drives are bare counts, ``WOH`` or ``WOR`` one to a line, or one
+    printed record (``4-6-7``). They end at the third drive or at a refusal
+    (``50/3"``), where the drive halts (p. 3-51); the lines after that are
+    the header's N and recovery. A number with no drive under it does not
+    read: it may be a sample started a line early. With ``complete``, a
+    stack whose drives do not end so does not read either: with no sampler
+    code or drawn box to say where a sample starts, a short stack may be the
+    tail of another.
+    """
+    head = lines[0]
+    if _id_shape(_text(head)) != "number":
+        return None
+    entries, done, last = 0, False, ""
+    tail: List[Any] = []
+    for above, cell in zip(lines, lines[1:]):
+        if _same_line(above, cell):
+            return None               # two items on one line: not a stack
+        text = _text(cell)
+        if _N_VALUE.search(text) or _N_PRINTED.search(text):
+            continue                  # a printed N, read as one
+        if done:
+            tail.append(cell)
+            continue
+        tokens = _blow_tokens(text)
+        if re.fullmatch(r"\d{1,3}", text) or _word_drive(text):
+            entries += 1
+            last = "count" if text.isdigit() else "word"
+        elif tokens:
+            entries += len(tokens)
+            last = "record"
+            done = any(isinstance(t, str) and not _word_drive(t)
+                       for t in tokens)
+        else:
+            return None
+        if entries > SPT_DRIVES:
+            return None
+        done = done or entries == SPT_DRIVES
+    if entries == 0 or (complete and not done) or len(tail) > len(after):
+        return None
+    stack = _Stack(list(lines))
+    if len(tail) == len(after):
+        for part, cell in zip(after, tail):
+            if part == "rec":
+                stack.recovery = cell
+            else:
+                stack.printed_n = cell
+    else:
+        # Fewer lines than the header names after the blows: which is which
+        # is not known, and the last count may itself be one of them.
+        stack.unassigned = tail
+        stack.doubt = last == "count"
+    return stack
+
+
+def _number_of(cell: Any) -> int:
+    return int(re.match(r"\d+", _text(cell)).group(0))
+
+
+def _read_stacks(grid: Any, cells: Sequence[Any], styles: Dict[str, str],
+                 by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                 ) -> Tuple[List[_Stack], List[List[Any]]]:
+    """``(stacks read, runs not read)`` for every column whose header names
+    both the samples' numbers and their blows and which numbers its samples
+    (:func:`_id_styles`); a column printing ``S-3`` names its samples by
+    that, and a bare number in it is never an id.
+
+    A sample starts on the line of its sampler code in a TYPE column, or at
+    the first line inside a box ``log_grid`` drew; with neither on the
+    page, at a blank line. A column is read only when EVERY line of it on
+    the page falls in a stack that reads (:func:`_read_stack`) and the
+    numbers its stacks start with run on down the hole, each the one before
+    or the next: a sampler code printed a line below the number, or a stack
+    the blank lines cut wrongly, would otherwise start a sample at a blow
+    count. Any other column is returned as its runs, to be read as before
+    and listed.
+    """
+    columns: Dict[Tuple[int, str], List[Any]] = {}
+    anchors: Dict[int, List[Any]] = {}
+    for cell in cells:
+        names = set(_names(grid, cell, by_column))
+        both = {"sample_id", "blows"} <= names
+        if _text(cell).lower() in _TYPE_CODES:
+            if "sample_type" in names and not both:
+                anchors.setdefault(cell.page, []).append(cell)
+            continue                  # the sampler: neither number nor drive
+        if both and styles.get(cell.column_id) == "number":
+            columns.setdefault((cell.page, cell.column_id), []).append(cell)
+    boxes = list(getattr(grid, "samples", None) or [])
+    read: List[_Stack] = []
+    unread: List[List[Any]] = []
+    for (page, column_id), lines in sorted(columns.items()):
+        lines.sort(key=lambda c: (_centre(c), float(c.bbox[0])))
+        header = str(getattr(grid.column(column_id), "header", "") or "")
+        pitch = _line_pitch(lines)
+        after = _stack_layout(header)
+        # Every quantity the column is named for must have its place in the
+        # layout: a recovery or an N the header's words do not place may be
+        # any line of the stack (a lost drive would shift it into the
+        # drives), so such a column is read as before.
+        named = set(_names(grid, lines[0], by_column)) & (
+            _SAMPLING | set(_INDEX_NAMES))
+        unplaced = named - {"sample_id", "blows", "sample_type"} - {
+            _LAYOUT_NAMES[part] for part in (after or ())}
+        if after is None or unplaced:
+            unread.extend(_runs(lines, pitch))
+            continue
+        starts: Dict[int, Any] = {}
+        for anchor in anchors.get(page, ()):
+            on = [k for k, c in enumerate(lines) if _same_line(c, anchor)]
+            if on:
+                starts.setdefault(on[0], anchor)
+        for box in boxes:
+            pages = (set(getattr(box, "pages", ()) or ())
+                     | {getattr(box, "page", None)})
+            if page not in pages:
+                continue
+            tol = float(getattr(box, "plus_minus", None) or 0.05)
+            inside = [k for k, c in enumerate(lines)
+                      if float(box.top) - tol <= float(c.depth)
+                      <= float(box.bottom) + tol]
+            if inside:
+                starts.setdefault(inside[0], None)
+        if starts:
+            order = sorted(starts)
+            pieces = [lines[k:order[n + 1]] if n + 1 < len(order)
+                      else _runs(lines[k:], pitch)[0]
+                      for n, k in enumerate(order)]
+            stacks = [_read_stack(p, after, complete=False)
+                      for p in pieces]
+            covered = (order[0] == 0
+                       and order[-1] + len(pieces[-1]) == len(lines))
+            for stack, k in zip(stacks, order):
+                if stack is not None:
+                    stack.anchor = starts[k]
+        else:
+            pieces = _runs(lines, pitch)
+            stacks = [_read_stack(p, after, complete=True)
+                      for p in pieces]
+            covered = True
+        numbers = [_number_of(s.lines[0]) for s in stacks if s is not None]
+        if (covered and all(s is not None for s in stacks)
+                and all(b - a in (0, 1) and x.lines[0] is not y.lines[0]
+                        and _text(x.lines[0]) != _text(y.lines[0])
+                        for a, b, x, y in zip(numbers, numbers[1:],
+                                              stacks, stacks[1:]))):
+            read.extend(stacks)                      # type: ignore[arg-type]
+        else:
+            unread.extend(_runs(lines, pitch))
+    return read, unread
 
 
 def _is_words(text: str) -> bool:
@@ -609,6 +922,17 @@ class _Group:
         #: Values printed off every sample's lines on a sheet that has
         #: samples, which the geometry could not bind to one (RI-04).
         self.unbound = False
+        #: From a stack in a column headed as both the sample numbers and
+        #: the blows (:func:`_read_stacks`, RI-44): the cell that is the
+        #: sample's number by its place, and the one that is its recovery.
+        self.heads: set = set()
+        self.recovery: set = set()
+        #: The stack's line the header's N names, and lines after the drives
+        #: that cannot be told apart (kept in the note).
+        self.printed_n: set = set()
+        self.unassigned: set = set()
+        #: Why no N is computed from this sample's drives (RI-44), or empty.
+        self.doubt = ""
 
     def takes(self, cell: Any, span: float,
               keys: Optional[Dict[int, Tuple[str, str]]] = None) -> bool:
@@ -690,6 +1014,20 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         names = _names(grid, cell, by_column)
         text = _text(cell)
         texts.append(text)
+        if id(cell) in group.heads:
+            # The first line of a stack under a header naming both the
+            # sample numbers and the blows: the sample's number (RI-44).
+            if not sample_id:
+                sample_id = text
+            continue
+        if id(cell) in group.recovery:
+            names = ("recovery",)     # the stack's line after its drives
+        if id(cell) in group.printed_n and re.fullmatch(r"\d{1,3}", text):
+            n = int(text)             # the line the header's N names
+            continue
+        if id(cell) in group.printed_n or id(cell) in group.unassigned:
+            unassigned.append((text, _header(grid, cell)))
+            continue
         code = text.lower()
         # A sampler code: SS, ST, MC ... in any sample column; a single
         # letter only where the column is headed as the sample TYPE, since
@@ -757,7 +1095,9 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                                         or "sample_id" in names) else []
         if tokens:
             blows = tokens
-            refusal = any(isinstance(t, str) for t in tokens)
+            refusal = any(isinstance(t, str) and not _word_drive(t)
+                          for t in tokens)
+            unread.extend(t for t in tokens if _word_drive(t))
             blow_cell = cell
             continue
         drive_column = ("blows" in names
@@ -880,6 +1220,39 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     if not blows and len(stacked) >= 2:
         stacked.sort(key=lambda row: row[0])
         blows = [number for _key, number in stacked]
+    elif (blows and blow_cell is not None and len(blows) < SPT_DRIVES
+          and not group.doubt):
+        # A record printed in one cell with fewer than three drives takes the
+        # drives printed one to a line beside it, in the place they are
+        # printed (RI-44): a WOH or WOR line ("WOH" over "2-3"), and the
+        # counts printed ABOVE a record that ends in a refusal ("25" over
+        # '50/3"'), since the drive is halted at the refusal (p. 3-51). Never
+        # past three drives, never from above the line that names the
+        # sample (its id or sampler code: above it is the sample before), and
+        # never a count in a sample-number column unless a stack read it as
+        # a drive (there it may be a sample's number). A lone number beside
+        # a full record, or below a refusal, stays out, as above: it may be
+        # an N. A sample whose stack did not read gets none of this.
+        at = (float(blow_cell.depth), float(blow_cell.bbox[1]),
+              float(blow_cell.bbox[0]))
+        naming = _naming_line(group, grid, by_column)
+        rows = [(row, c) for row, c in zip(stacked, stacked_cells)
+                if naming is None or not _above(c, naming)]
+        extra = [row for row, _c in rows if _word_drive(row[1])]
+        if (naming is not None and isinstance(blows[-1], str)
+                and not _word_drive(blows[-1])):
+            extra += [row for row, c in rows
+                      if isinstance(row[1], int) and row[0] < at
+                      and (group.heads or "sample_id"
+                           not in _names(grid, c, by_column))]
+        extra.sort(key=lambda row: row[0])
+        if len(blows) + len(extra) <= SPT_DRIVES:
+            blows = ([w for key, w in extra if key < at] + list(blows)
+                     + [w for key, w in extra if key >= at])
+    if refusal and not n_printed and not _halted(blows):
+        # Blows over a whole increment ('4/6"-6/6"-7/6"') are drives, not a
+        # halt (RI-44).
+        refusal = False
     # The sampler is the one the log prints. Drives alone do not say SPT: a
     # ring or California sampler is driven too, and the model reads the
     # symbol (RI-04; the floor no longer calls every driven sample an SPT).
@@ -936,28 +1309,42 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         remarks.append("doubtful: " + "; ".join(doubts))
         if notes is not None:
             notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
-    # N, where the log prints a standard SPT's three drives and no N.
-    n_basis = ""
-    if unread and kind == "spt" and n is None and not n_printed:
-        # A drive the floor could not count -- WOH, or a word it cannot
-        # read -- leaves the record's N to the reader (RI-04).
-        remarks.append("a drive printed as '" + "', '".join(unread)
-                       + "' is not a count; no N computed from the drives")
-        if notes is not None:
-            notes.add(page, "drives", f"'{'; '.join(unread)}' at {at}")
-    elif n is None and not n_printed and not refusal and blows:
+    def drives_n() -> Optional[Tuple[Optional[int], str]]:
+        """:func:`n_from_drives` on this sample's drives."""
         drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
                                    else None)
         printed_inc = (header_increment(_header(grid, drive_cell))
                        if drive_cell is not None else None)
         interval = (None if bottom is None
                     else _metres(float(bottom) - float(top), unit))
-        computed = n_from_drives(
+        return n_from_drives(
             blows, sampler=kind, increment_m=printed_inc,
             interval_m=interval,
             increment_from=(f"the column header "
                             f"'{_header(grid, drive_cell)[:40]}'"
                             if printed_inc is not None else ""))
+
+    # N, where the log prints a standard SPT's three drives and no N.
+    n_basis = ""
+    drives_alt: Optional[Alternative] = None
+    if unread and n is None and not n_printed and (
+            kind == "spt"
+            or (kind == "other" and any(_word_drive(t) for t in blows))):
+        # A drive the floor could not count -- WOH, or a word it cannot
+        # read -- leaves the record's N to the reader (RI-04). So does a WOH
+        # kept in a record whose sampler the log does not name: it may be an
+        # SPT's (RI-44).
+        remarks.append("a drive printed as '" + "', '".join(unread)
+                       + "' is not a count; no N computed from the drives")
+        if notes is not None:
+            notes.add(page, "drives", f"'{'; '.join(unread)}' at {at}")
+    elif group.doubt and blows and n is None and not n_printed:
+        # A stack whose lines cannot all be told apart (RI-44): the drives
+        # stay as printed, the N is left to the reader. Listed in QA by
+        # _sample_groups.
+        remarks.append(group.doubt + "; no N computed from the drives")
+    elif n is None and not n_printed and not refusal and blows:
+        computed = drives_n()
         if computed is not None and computed[0] is None:
             # A drive past the printed halt: the record is a refusal as
             # printed, with no N.
@@ -965,6 +1352,39 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             remarks.append(computed[1])
         elif computed is not None:
             n, n_basis = computed
+    elif n is not None and n < SPT_HALT_BLOWS and _halted(blows):
+        # A printed N under 50 on drives that end in a halt: the record has
+        # no N (p. 3-51), so the number is something else -- the next
+        # sample's number, a recovery (RI-44). Kept in the note, never as
+        # the N.
+        remarks.append(f"{n} printed as the N of drives that end in a "
+                       f"halt, which have none (the halts printed in "
+                       f"{N_RULE_SOURCE}); not read as the N")
+        if notes is not None:
+            notes.add(page, "refusal_n", f"{n} at {at}")
+        n = None
+    elif n is not None and blows and not group.doubt:
+        # A printed N set against the drives where the printed rule applies
+        # (RI-44). The printed N stays in the slot; a different N from the
+        # drives stands beside it and the QA section lists both, as a
+        # model's N is checked at the merge (RI-04).
+        computed = drives_n()
+        if computed is not None and computed[0] == n:
+            remarks.append(f"the printed N {n} is the 2nd + 3rd of the "
+                           f"printed drives ({N_RULE_SOURCE})")
+        elif computed is not None and computed[0] is not None:
+            remarks.append(f"the printed N {n} differs from the 2nd + 3rd "
+                           f"of the printed drives, {computed[0]}; the "
+                           f"printed N stands, the drives' N is kept beside "
+                           f"it")
+            if notes is not None:
+                notes.add(page, "n_drives",
+                          f"printed {n}, drives {computed[0]} at {at}")
+            drives_alt = Alternative(
+                field="n", value=show(computed[0]), method="derived",
+                confidence=max(confidence_floor, min(1.0, confidence)),
+                note="the drives' N: " + computed[1].replace(
+                    "not printed; ", "", 1))
     prov = Provenance(
         page=page, bbox=tuple(anchor.bbox), method="grid",
         confidence=max(confidence_floor, min(1.0, confidence)),
@@ -995,6 +1415,8 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                   blows=blows, n=n, n_basis=n_basis, n_printed=n_printed,
                   refusal=refusal, sample_id=sample_id,
                   prov=prov.model_copy(deep=True))
+        if drives_alt is not None:
+            spt.prov.alternatives.append(drives_alt)
     if (notes is not None and not marked and spt is None and not sample_id
             and kind == "other" and drawn is None and printed_row is None
             and not any(v is not None for v in values.values())
@@ -1027,11 +1449,15 @@ def _metres(length: float, unit: str) -> Optional[float]:
 #: is considered as a 'seating' penetration, while the number of blows to
 #: advance the second and third increments are summed to give the N-value".
 N_RULE_SOURCE = "FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51 (ASTM D 1586)"
-#: The halt printed on the same page: past it a drive record is a refusal,
-#: not an N.
-N_HALT_RULE = ("'The SPT can be halted ... if the number of blows exceeds 50 "
-               "in any given 6 in (150 mm) increment'")
+#: The halts printed on the same page, the whole sentence: a record stopped
+#: by one short of its three increments has no N. A halt for failing to
+#: advance can stop under 50 blows ('10/0"') and is still a halt with no N.
+N_HALT_RULE = ("'The SPT can be halted when a total of 100 blows have been "
+               "counted or if the number of blows exceeds 50 in any given "
+               "6 in (150 mm) increment, or if the sampler fails to advance "
+               "during 10 consecutive blows'")
 SPT_HALT_BLOWS = 50
+SPT_HALT_TOTAL = 100
 #: The standard increment, and how far a printed or measured one may sit from
 #: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
 SPT_INCREMENT_M = 0.1524
@@ -1039,17 +1465,40 @@ _INCREMENT_TOL_M = 0.006
 #: A sample's drawn or printed interval over its three drives may be off the
 #: standard by this much a drive (a box is drawn to a line's width).
 _INTERVAL_TOL_M = 0.012
-#: "BLOWS/6 IN", "Blows per 6\"", "blows/15 cm", "blows/150 mm", "por 15 cm".
+_LENGTH_UNIT = (r"(\"|''|inch(?:es)?\b|in\b\.?|cm\b|mm\b|m\b|ft\b|foot\b"
+                r"|feet\b)")
+#: "BLOWS/6 IN", "Blows per 6\"", "Blows per 6-inch", "blows/15 cm",
+#: "blows/150 mm", "por 15 cm".
 _INCREMENT = re.compile(
-    r"(?:/|\bper\b|\bpor\b|\bpour\b)\s*(\d+(?:[.,]\d+)?)?\s*"
-    r"(\"|''|inch(?:es)?\b|in\b\.?|cm\b|mm\b|m\b|ft\b|foot\b|feet\b)", re.I)
+    r"(?:/|\bper\b|\bpor\b|\bpour\b)\s*(?:(\d+(?:[.,]\d+)?)\s*-?\s*)?"
+    + _LENGTH_UNIT, re.I)
+#: An increment the header names as one: '(6" INCREMENTS)', "6-in. incr.".
+_NAMED_INCREMENT = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*-?\s*" + _LENGTH_UNIT + r"\s*-?\s*incr", re.I)
+#: A hammer's weight before the slash, or "drop" after the length: the fall.
+_HAMMER_BEFORE = re.compile(r"(?:\blbs?\.?|\bkg|#|\bpounds?)\s*$", re.I)
+_DROP_AFTER = re.compile(r"\s*\.?\s*(?:drop|fall)\b", re.I)
 
 
 def header_increment(header: str) -> Optional[float]:
     """The drive increment a blows column's header prints, in metres, or
-    None when it prints none. ``BLOWS/FT`` is a foot: the N's own unit, not
-    a drive's, and never the standard increment."""
-    match = _INCREMENT.search(str(header or ""))
+    None when it prints none.
+
+    An increment the header states wins (RI-44): one it names as the
+    increment ('BLOWS / FOOT (6" INCREMENTS)'), else one printed with its
+    length ("Blows per 6 in" after "N-VALUE (blows/ft)"). A bare
+    ``BLOWS/FT`` is a foot: the N's own unit, not a drive's, and never the
+    standard increment, so no N is computed under it.
+    """
+    text = str(header or "")
+    match = _NAMED_INCREMENT.search(text)
+    if match is None:
+        # "140 lb / 30 in drop" is the hammer's weight and fall, not a drive.
+        found = [m for m in _INCREMENT.finditer(text)
+                 if not _HAMMER_BEFORE.search(text[:m.start()])
+                 and not _DROP_AFTER.match(text[m.end():])]
+        match = next((m for m in found if m.group(1)),
+                     found[0] if found else None)
     if match is None:
         return None
     number = float((match.group(1) or "1").replace(",", "."))
@@ -1058,6 +1507,75 @@ def header_increment(header: str) -> Optional[float]:
               "inches": 0.0254, "cm": 0.01, "mm": 0.001, "m": 1.0,
               "ft": 0.3048, "foot": 0.3048, "feet": 0.3048}.get(unit)
     return None if factor is None else number * factor
+
+
+#: A drive printed as blows over a distance: '50/3"', '10/0"', '25/150 mm'.
+_BLOWS_OVER = re.compile(r'(\d+)\s*/\s*([\d.]+)\s*("|\'\'|in|cm|mm)?')
+#: The increment written with no unit, in inches, centimetres and
+#: millimetres (6 in, 150 mm).
+_BARE_INCREMENT = (6.0, 15.0, 150.0)
+
+
+def _short_of_increment(length: float, unit: Optional[str]) -> bool:
+    """Is a drive's printed distance short of the 6 in (150 mm) increment?
+
+    With no unit, 6, 15 and 150 are the increment written per increment
+    ('4/6-6/6-7/6'); any other number under 150 is read as short of it,
+    which it is in centimetres and millimetres (layout judgment: a number
+    over 6 is no 6 in drive).
+    """
+    if unit is None:
+        return length < _BARE_INCREMENT[-1] and length not in _BARE_INCREMENT
+    metres = length * {"\"": 0.0254, "''": 0.0254, "in": 0.0254,
+                       "cm": 0.01, "mm": 0.001}[unit]
+    return metres < SPT_INCREMENT_M - _INCREMENT_TOL_M
+
+
+def _halted(blows: Sequence[Any]) -> bool:
+    """Do these printed drives END in a halt, so that the record has no N?
+
+    The halts are the ones :data:`N_HALT_RULE` prints: 100 blows in all, more
+    than 50 in one increment, or the sampler failing to advance. A record
+    ends in one when its last drive is printed as blows over a distance
+    short of the increment ('50/3"'; '10/0"', which failed to advance under
+    50), when its last drive has more than 50 blows, or when it stops before
+    its third increment at blows over a distance or at 100 blows. Three
+    whole increments are a complete record with its N, however hard the
+    seating drive was ([52, 4, 28]). Blows over a whole increment ('4/6"',
+    '6/6"', '7/6"': a record written per increment) are a drive like any
+    count (RI-44).
+    """
+    counts: List[int] = []
+    for entry in blows:
+        if isinstance(entry, bool):
+            continue
+        if isinstance(entry, int):
+            counts.append(entry)
+            continue
+        match = _BLOWS_OVER.fullmatch(str(entry).strip())
+        if match:
+            counts.append(int(match.group(1)))
+    if not blows:
+        return False
+    last = blows[-1]
+    over = (None if isinstance(last, (int, bool))
+            else _BLOWS_OVER.fullmatch(str(last).strip()))
+    if isinstance(last, int) and not isinstance(last, bool):
+        last_count: Optional[int] = last
+    else:
+        last_count = int(over.group(1)) if over else None
+    if last_count is not None and last_count > SPT_HALT_BLOWS:
+        return True
+    if len(blows) < SPT_DRIVES and (over is not None
+                                    or sum(counts) >= SPT_HALT_TOTAL):
+        return True
+    if over is None:
+        return False
+    try:
+        length = float(over.group(2))
+    except ValueError:
+        return True
+    return _short_of_increment(length, over.group(3))
 
 
 def n_from_drives(blows: Sequence[Any], *, sampler: str,
@@ -1162,12 +1680,33 @@ class _FloorNotes:
         "order": ("samples whose depth contradicts their neighbours' "
                   "(their numbers run out of order down the hole), kept at "
                   "a lower confidence"),
-        "drives": ("SPT drive records with an entry that is not a count "
-                   "(WOH, WOR, or a word the floor cannot read); no N is "
-                   "computed from them"),
+        "drives": ("drive records of an SPT, or of a sampler the log does "
+                   "not name, with an entry that is not a count (WOH, WOR, "
+                   "or a word the floor cannot read); no N is computed from "
+                   "them"),
         "empty": ("rows in the sample columns with nothing a sample has "
                   "(no id, sampler, drives, N or value, no drawn box); not "
                   "seeded as samples"),
+        "stack": ("runs of lines in a column {header} that do not read, "
+                  "line by line, as a sample number, at most three drives "
+                  "(FHWA NHI-06-088 Vol. I, Sec. 3.7, p. 3-51) and a "
+                  "recovery, with each sample's number the one before or "
+                  "the next; read as before, with no sample number taken "
+                  "from them and no N computed"),
+        "stack_tail": ("samples in a column {header} whose last count may "
+                       "be a drive or the N or recovery the header prints "
+                       "after the blows; the lines are kept as drives and "
+                       "no N is computed from them"),
+        "refusal_n": ("numbers under 50 printed as the N of drives that "
+                      "end in a halt (100 blows, more than 50 in an "
+                      "increment, or short of the increment); such a "
+                      "record has no N (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
+                      "p. 3-51), so each is kept in its sample's note, not "
+                      "as the N"),
+        "n_drives": ("printed Ns that differ from the 2nd + 3rd of the "
+                     "printed drives (FHWA NHI-06-088 Vol. I, Sec. 3.7, "
+                     "p. 3-51); the printed N stands and the drives' N is "
+                     "kept beside it"),
     }
 
     def __init__(self) -> None:
@@ -1686,20 +2225,49 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
     cells.extend(labelled)
     cells.sort(key=lambda c: (c.page, float(c.depth), c.bbox[0]))
     styles = _id_styles(grid, cells, by_column)
+    # A column headed as both the sample numbers and the blows, read stack
+    # by stack (RI-44): each stack that reads is one sample, whatever depth
+    # its lines run over.
+    stacks, unread = _read_stacks(grid, cells, styles, by_column)
+    groups: List[_Group] = []
+    for stack in stacks:
+        group = _Group(stack.lines[0])
+        for cell in stack.lines[1:] + [c for c in (stack.anchor,)
+                                       if c is not None]:
+            group.add(cell)
+        group.heads = {id(stack.lines[0])}
+        group.recovery = {id(c) for c in (stack.recovery,) if c is not None}
+        group.printed_n = {id(c) for c in (stack.printed_n,)
+                           if c is not None}
+        group.unassigned = {id(c) for c in stack.unassigned}
+        if stack.doubt:
+            group.doubt = ("the last count may be the N or the recovery the "
+                           "header prints after the blows")
+            notes.add(group.page, "stack_tail",
+                      f"sample {_text(stack.lines[0])} at "
+                      f"{float(group.first):g}",
+                      header=_header(grid, stack.lines[0]))
+        groups.append(group)
+    placed = {id(c) for g in groups for c in g.cells}
+    drives = {id(c) for s in stacks for c in s.lines[1:]}
+    in_unread = {id(c) for run in unread for c in run}
+    for run in unread:
+        notes.add(run[0].page, "stack",
+                  f"'{'; '.join(_text(c) for c in run)[:60]}' at "
+                  f"{float(run[0].depth):g}", header=_header(grid, run[0]))
     keys: Dict[int, Tuple[str, str]] = {}
     marks: set = set()
     for cell in cells:
         names = _names(grid, cell, by_column)
         key = _sample_key(_text(cell), names, styles.get(cell.column_id, ""))
-        if key is not None:
+        if key is not None and not (key[0] == "id" and id(cell) in drives):
             keys[id(cell)] = key
         if id(cell) not in from_results and _marks_a_sample(_text(cell),
                                                             names):
             marks.add(id(cell))
 
-    groups: List[_Group] = []
     for cell in cells:
-        if id(cell) not in marks:
+        if id(cell) not in marks or id(cell) in placed:
             continue
         # Any sample at this depth takes the cell, whichever sheet it is
         # on: the rows are sorted by page first, so a second sheet's
@@ -1721,7 +2289,7 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
             return at - max(lines), 1
         return 0.0, 0
 
-    values = [c for c in cells if id(c) not in marks]
+    values = [c for c in cells if id(c) not in marks and id(c) not in placed]
     left: List[Any] = []
     off_lines: List[Tuple[Any, _Group, int]] = []
     for cell in values:
@@ -1778,6 +2346,12 @@ def _sample_groups(grid: Any, pages: Sequence[int], span: float,
             continue
         group.unbound = True
         kept.append(group)
+    for group in kept:
+        if any(id(c) in in_unread for c in group.cells + group.bound):
+            # Read as before RI-44, and no N from it: which of its numbers
+            # are drives is not known.
+            group.doubt = ("printed in a stack that does not read as a "
+                           "sample number and its drives")
     kept.sort(key=lambda g: (g.page, float(g.first)))
     return kept
 
@@ -2408,6 +2982,17 @@ class _Merger:
                 prov.confidence = max(0.0, min(1.0, confidences[-1]))
             prov.alternatives.extend(alternatives)
             if floor_prov is not None and model_prov is not None:
+                # The floor's drives' N beside a printed one (RI-44) stays
+                # beside the merged N while those drives stand and it is not
+                # the merged N itself; from drives that lost, it is no N of
+                # this record.
+                for alt in floor_prov.alternatives:
+                    if (alt.field == "n"
+                            and getattr(merged, "blows", None)
+                            == getattr(f, "blows", None)
+                            and show(getattr(merged, "n", None)) != alt.value
+                            and alt not in prov.alternatives):
+                        prov.alternatives.append(alt.model_copy(deep=True))
                 prov.note = (f"{model_prov.note}; " if model_prov.note
                              else "") + "matched to the grid's row" \
                     + (f" ({floor_prov.note[:60]})" if floor_prov.note else "")
@@ -2476,7 +3061,14 @@ class _Merger:
         rule applies, and a difference is a disagreement under the floor's
         one rule: the model's N stands only with a box and a note, the
         other is kept beside it, and the QA section lists both.
+
+        An N under 50 on drives that end in a halt is never in the slot,
+        whoever read it (RI-44): such a record has no N (p. 3-51).
         """
+        if (merged.n is not None and merged.n < SPT_HALT_BLOWS
+                and _halted(merged.blows)):
+            self.halt_n(merged, f, m, where, what)
+            return
         if f is not None and f.n_basis:
             if merged.n == f.n:
                 merged.n_basis = f.n_basis
@@ -2526,6 +3118,48 @@ class _Merger:
                     "the model's is kept beside it")),
             page=page, floor_method="derived",
             floor_confidence=computed_confidence,
+            model_confidence=_conf(m.prov, 0.9),
+            model_method=m.prov.method if m.prov is not None else "model")
+
+    def halt_n(self, merged: SPT, f: Optional[SPT], m: SPT, where: str,
+               what: str) -> None:
+        """Take an N under 50 out of the slot of a record whose drives end
+        in a halt, keep it beside the slot, and list it (RI-44)."""
+        n = merged.n
+        if m.n == n:
+            method = (m.prov.method if m.prov is not None
+                      and m.prov.method in ("model", "model_from_picture",
+                                            "vision") else "model")
+            confidence, whose = _conf(m.prov, 0.9), "the model's N"
+        elif f is not None and f.n == n and f.n_basis:
+            method, confidence = "derived", _conf(f.prov, 0.5)
+            whose = f"the floor's N, {f.n_basis}"
+        else:
+            method = (f.prov.method if f is not None and f.prov is not None
+                      else "grid")
+            confidence, whose = _conf(f.prov if f else None, 0.5), \
+                "the floor's N"
+        merged.n, merged.n_basis = None, ""
+        if merged.prov is not None:
+            merged.prov.alternatives.append(Alternative(
+                field="n", value=show(n), method=method,  # type: ignore[arg-type]
+                confidence=confidence,
+                note=(f"{whose}; the drives end in a halt, so the record "
+                      f"has no N ({N_RULE_SOURCE})")))
+        page = (m.prov.page if m.prov is not None
+                else f.prov.page if f is not None and f.prov is not None
+                else None)
+        from_model = method != "derived" and m.n == n
+        self.log.disagree(
+            where, f"{what}: n",
+            "none" if from_model else n, n if from_model else "none",
+            kept="floor" if from_model else "model",
+            why=(f"an N of {n} on drives that end in a halt (100 blows, "
+                 f"more than 50 in an increment, or short of the "
+                 f"increment); such a record has no N ({N_RULE_SOURCE}), "
+                 f"so the N is kept beside the slot, not in it"),
+            page=page, floor_method="derived" if from_model else method,
+            floor_confidence=_conf(f.prov if f else None, 0.5),
             model_confidence=_conf(m.prov, 0.9),
             model_method=m.prov.method if m.prov is not None else "model")
 
