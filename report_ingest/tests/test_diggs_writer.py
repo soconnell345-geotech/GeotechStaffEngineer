@@ -797,16 +797,16 @@ class TestAValuePrintedWithNoUnit:
         # never converted as a bare number -- and the gate has nothing to
         # look for.
         pit = Investigation(
-            investigation_id="STP-02", kind="test_pit", depth_unit="m",
-            samples=[Sample(sample_id="1", top=_m(0.65), kind="bulk",
-                            pocket_pen=Quantity(value=8.0, unit="")),
-                     Sample(sample_id="2", top=_m(0.9), kind="bulk",
+            investigation_id="TP-7", kind="test_pit", depth_unit="m",
+            samples=[Sample(sample_id="1", top=_m(0.55), kind="bulk",
+                            pocket_pen=Quantity(value=6.0, unit="")),
+                     Sample(sample_id="2", top=_m(1.05), kind="bulk",
                             pocket_pen=Quantity(value=1.5, unit="tsf"))])
         notes = []
         xml = write_diggs([pit], notes=notes)
         assert diggs_schema_gate(xml)[0] is True
         assert notes[0].unwritten == []
-        assert any("STP-02/1" in s and "8 with no unit printed" in s
+        assert any("TP-7/1" in s and "6 with no unit printed" in s
                    for s in notes[0].skipped), notes[0].skipped
         ok, diffs = diggs_roundtrip_gate(xml, [pit])
         assert ok, diffs
@@ -817,14 +817,14 @@ class TestAValuePrintedWithNoUnit:
 
     def test_a_pocket_penetrometer_in_the_wrong_kind_of_unit_is_named(self):
         pit = Investigation(
-            investigation_id="STP-02", kind="test_pit", depth_unit="m",
-            samples=[Sample(sample_id="1", top=_m(0.65), kind="bulk",
-                            pocket_pen=Quantity(value=8.0, unit="mm"))])
+            investigation_id="TP-7", kind="test_pit", depth_unit="m",
+            samples=[Sample(sample_id="1", top=_m(0.55), kind="bulk",
+                            pocket_pen=Quantity(value=6.0, unit="mm"))])
         notes = []
         xml = write_diggs([pit], notes=notes)
         assert diggs_schema_gate(xml)[0] is True
-        assert notes[0].unwritten == [("STP-02", pytest.approx(0.65),
-                                       pytest.approx(0.008))]
+        assert notes[0].unwritten == [("TP-7", pytest.approx(0.55),
+                                       pytest.approx(0.006))]
         ok, diffs = diggs_roundtrip_gate(xml, [pit])
         assert ok, diffs
 
@@ -834,13 +834,13 @@ class TestAValuePrintedWithNoUnit:
             LabTest, SummaryRow, SummaryTableResult,
         )
         table = LabTest(kind="summary_table", result=SummaryTableResult(rows=[
-            SummaryRow(investigation_id="LB-12", depth_top=_m(0.0),
-                       wc=12.0, c=Quantity(value=21.5, unit=""))]))
+            SummaryRow(investigation_id="LS-3", depth_top=_m(0.0),
+                       wc=12.0, c=Quantity(value=18.0, unit=""))]))
         notes = []
         xml = write_diggs([table], Project(name="R"), notes=notes)
         assert diggs_schema_gate(xml)[0] is True
         assert notes[0].unwritten == []
-        assert any("Cohesion 21.5 with no unit printed" in s
+        assert any("Cohesion 18 with no unit printed" in s
                    for s in notes[0].skipped), notes[0].skipped
         # no SI value, so nothing for the gate to look for, notes or none
         ok, diffs = diggs_roundtrip_gate(xml, [table],
@@ -854,8 +854,8 @@ class TestAValuePrintedWithNoUnit:
             LabTest, SummaryRow, SummaryTableResult,
         )
         table = LabTest(kind="summary_table", result=SummaryTableResult(rows=[
-            SummaryRow(investigation_id="LB-12", depth_top=_m(0.0),
-                       wc=12.0, c=Quantity(value=21.5, unit="pcf"))]))
+            SummaryRow(investigation_id="LS-3", depth_top=_m(0.0),
+                       wc=12.0, c=Quantity(value=18.0, unit="pcf"))]))
         notes = []
         xml = write_diggs([table], Project(name="R"), notes=notes)
         assert diggs_schema_gate(xml)[0] is True
@@ -865,7 +865,7 @@ class TestAValuePrintedWithNoUnit:
         # notes that do NOT excuse it: the gate says so
         ok, diffs = diggs_roundtrip_gate(xml, [table],
                                          notes=DiggsWriteNotes())
-        assert not ok and any("3.377" in d or "3.38" in d for d in diffs), \
+        assert not ok and any("2.827" in d or "2.83" in d for d in diffs), \
             diffs
 
 

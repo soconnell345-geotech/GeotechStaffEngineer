@@ -180,8 +180,8 @@ class TestTheFloor:
         """RI-17: "SHAFT" and "GROUP" are words as well as programs. Their
         banner is read where it says "for Windows" or gives a version; the
         word in prose is not a banner."""
-        assert _program_in("SHAFT for Windows, Version 2017.8.12") == (
-            "SHAFT", "2017.8.12")
+        assert _program_in("SHAFT for Windows, Version 2019.4.2") == (
+            "SHAFT", "2019.4.2")
         assert _program_in("GROUP for Windows") == ("GROUP", "")
         assert _program_in("Group v10") == ("Group", "10")
         assert _program_in("Section 1 is a drilled shaft with casing") is None

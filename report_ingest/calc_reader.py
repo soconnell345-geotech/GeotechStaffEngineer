@@ -227,7 +227,7 @@ PROGRAM_PATTERNS: Tuple[str, ...] = (
     r"\bgint\b", r"\bgeo5\b", r"\bgeostru\b", r"\bslope\s*w\b",
     # A program whose name is also an ordinary word ("SHAFT", "GROUP") is
     # named only where its banner qualifies it: "for Windows", or a version
-    # ("SHAFT for Windows, Version 2017.8.12", "GROUP v10"). A drilled shaft
+    # ("SHAFT for Windows, Version 2019.4.2", "GROUP v10"). A drilled shaft
     # or a pile group in prose is not a banner.
     r"\b(?:shaft|group)\b(?=\s+for\s+windows\b"
     r"|\s*,?\s*(?:version|ver\.?|release|v)\s*\d)",
@@ -1655,7 +1655,7 @@ HEADER_BAND_FRAC = 0.22
 #: begins in the top band is not a header.
 MAX_HEADER_CHARS = 90
 #: Two titles are one calculation's at this ratio (rapidfuzz's ``ratio``,
-#: digits folded out first): "150-mm-diameter Micropile" and "400-mm-diameter
+#: digits folded out first): "200-mm-diameter Micropile" and "600-mm-diameter
 #: Pile" head two pages of one printout and differ by a word.
 TITLE_RATIO = 80.0
 #: A title STANDS OUT from the page it heads: bold where most of the page is
