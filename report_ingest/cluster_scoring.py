@@ -360,7 +360,9 @@ class _Engines:
     triage and the label review; ``vision_chat_model`` the vision pass (the
     ``vision_labels`` stage and the vote's vision voter inside the ingest),
     and it defaults to ``chat_model``. A callable is asked once per model
-    name and its model kept for the whole run.
+    name and its model kept for the whole run (the key is the source and the
+    name, so a defaulted ``vision_chat_model`` -- the same object -- asks
+    once, and two different sources each get asked).
 
     A run on a chat model says so in every run file and table: ``engine``
     (``chat_model``, or ``prompter`` for a stage left on the Prompter),
@@ -376,7 +378,7 @@ class _Engines:
             False: chat_model,
             True: (vision_chat_model if vision_chat_model is not None
                    else chat_model)}
-        self._chats: Dict[Tuple[bool, str], Any] = {}
+        self._chats: Dict[Tuple[int, str], Any] = {}
 
     @classmethod
     def of(cls, prompter: Any) -> "_Engines":
@@ -396,9 +398,9 @@ class _Engines:
         """The chat model for this model name, made once per run."""
         from report_ingest.engine import _chat_model_in
 
-        key = (vision, name)
+        source = self.sources[vision]
+        key = (id(source), name)
         if key not in self._chats:
-            source = self.sources[vision]
             chat = _chat_model_in(source)
             if chat is None and callable(source):
                 chat = _chat_model_in(source(name))
@@ -611,7 +613,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results (``<ID>.json.gz`` or ``DI_data_<original stem>.json``).
         Without the spreadsheet the run measures but cannot score the
         in-sample set; without the DI results the scanned pages are read
-        from their own text layer alone.
+        from their own text layer alone. ``di_dir=None`` is NOT "no DI": it
+        falls back to a ``di/`` folder beside or inside ``reports_dir``.
+        Pass ``di_dir=False`` to withhold DI text altogether (no fallback);
+        ``results.json`` then carries ``di_withheld: true`` and RESULTS
+        says so.
     out_dir
         Where everything is written. ``/tmp/...`` or a Volume, never
         ``/Workspace``.
@@ -1064,6 +1070,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         if fields.get("chat_model"):
             results["chat_model"] = fields["chat_model"]
     results["stages"] = list(stages)
+    if corpus.di_withheld:
+        results["di_withheld"] = True
     lines = _render(results) if "labels" in stages else _header(results)
 
     if "logs" in stages:
@@ -1812,7 +1820,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost)]
+            _price_note(cost, lab)]
     return out
 
 
@@ -2185,7 +2193,7 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost)]
+            _price_note(cost, calc)]
     return out
 
 
@@ -2532,7 +2540,7 @@ def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost)]
+            _price_note(cost, soundings)]
     return out
 
 
@@ -2870,7 +2878,7 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost)]
+            _price_note(cost, narrative)]
     return out
 
 
@@ -3071,7 +3079,7 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost)]
+            _price_note(cost, logs)]
     return out
 
 
@@ -3534,7 +3542,7 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost),
+            _price_note(cost, vision),
             "",
             "Page mode is one call per page, sheet mode one per six and document "
             "mode one per window of pages: that is the trade this stage exists "
@@ -4083,6 +4091,12 @@ def _run_blob_on_disk(runs_dir: Path, rid: str) -> Dict[str, Any]:
         return {}
 
 
+def _saved_label_engine(runs_dir: Path, rid: str) -> str:
+    """The engine kind a saved label run was made on (``prompter`` for a run
+    file from before the engine was recorded)."""
+    return str(_run_blob_on_disk(runs_dir, rid).get("engine") or "prompter")
+
+
 def _reuse_label_run(folder: Path, runs_dir: Path, rid: str
                      ) -> Tuple[bool, bool]:
     """Seed the ingest folder with a saved triage and review, when present.
@@ -4487,6 +4501,15 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             break
         folder.mkdir(parents=True, exist_ok=True)
         triage_reused, review_reused = _reuse_label_run(folder, runs_dir, rid)
+        # A reused review made on the other engine is named in the run file
+        # and RESULTS; the key exists only then, so a run whose label run
+        # shares its engine writes what it always wrote.
+        other_engine = ""
+        if triage_reused or review_reused:
+            saved_engine = _saved_label_engine(runs_dir, rid)
+            now_engine = "prompter" if engines.on_prompter() else "chat_model"
+            if saved_engine != now_engine:
+                other_engine = saved_engine
         meter = CostMeter()
         engine = engines.build(model, meter)
         vision_engine = engines.build(vision_model, meter, vision=True)
@@ -4569,6 +4592,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "workflow": record.document.workflow,
             "triage_reused": triage_reused,
             "review_reused": review_reused,
+            **({"label_run_engine": other_engine} if other_engine else {}),
+            **({"di_withheld": True} if corpus.di_withheld else {}),
             "labels": _ingest_labels(folder, record, rid, corpus,
                                      oos or {}, mapped),
             "bound": _ingest_bound_rows(record),
@@ -4858,6 +4883,12 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
     out += _engine_lines(ingest, "vision_", "The vision voter")
     if ingest.get("served_by"):
         out.append(f"Served by: {', '.join(ingest['served_by'])}.")
+    crossed = [f"{r['id']} ({r['label_run_engine']})"
+               for r in ingest.get("per_report") or []
+               if r.get("label_run_engine")]
+    if crossed:
+        out.append(f"Reused a saved label run made on the other engine "
+                   f"than this run's: {', '.join(crossed)}.")
     rows = ingest.get("per_report") or []
     if rows:
         out.append(_arm_line(
@@ -5052,7 +5083,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
             "```", "",
-            _price_note(cost)]
+            _price_note(cost, ingest)]
     return out
 
 
@@ -5070,8 +5101,22 @@ def _money(cost: Dict[str, Any], per: float = 1.0) -> str:
     return f", ${each:,.2f}" if each >= 0.01 else f", ${each:.4f}"
 
 
-def _price_note(cost: Dict[str, Any]) -> str:
-    """The line under a cost block saying what its dollars are, or are not."""
+def _price_note(cost: Dict[str, Any],
+                results: Optional[Dict[str, Any]] = None) -> str:
+    """The line under a cost block saying what its dollars are, or are not.
+    ``results`` is the stage's results: on a chat-model run the note names
+    no Funhouse tier or budget endpoint, which that run never used."""
+    if results is not None and _through(results) == "a chat model":
+        if float(cost.get("dollars") or 0.0):
+            return ("Dollars are priced from the rates on file for the "
+                    "model that answered. A call with no rate on file adds "
+                    "its tokens and no dollars, so read a total as a floor "
+                    "and check the provider's own usage report for the "
+                    "same window.")
+        return ("A chat-model call carries no per-token price here, so "
+                "this reports TOKENS rather than dollars. Read the spend "
+                "from the provider's own usage report for the same "
+                "window.")
     if float(cost.get("dollars") or 0.0):
         return ("Dollars are the owner's own Funhouse rates, read from the "
                 "budget page on 2026-09-18, applied to the DEPLOYMENT that "
@@ -5492,9 +5537,19 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
 
 def _header(results: Dict[str, Any]) -> List[str]:
     """The heading a run writes when the labels stage did not run."""
-    return ["# Report ingest on the cluster", "",
+    head = ["# Report ingest on the cluster", "",
             f"Run {results['date']}. Stage(s): "
             f"{', '.join(results.get('stages') or ())}."]
+    return head + _di_lines(results)
+
+
+def _di_lines(results: Dict[str, Any]) -> List[str]:
+    """One line when the run withheld Document Intelligence text; none
+    otherwise, so a run that did not is written as it always was."""
+    if results.get("di_withheld"):
+        return ["Document Intelligence text: withheld (`di_dir=False`); "
+                "every report was read on its own text layer."]
+    return []
 
 
 def _render(results: Dict[str, Any]) -> List[str]:
@@ -5507,10 +5562,15 @@ def _render(results: Dict[str, Any]) -> List[str]:
         f"triage `{results['triage_model']}`.",
     ]
     out += _engine_lines(results)
+    out += _di_lines(results)
     if results.get("served_by"):
-        out.append(f"Served by: {', '.join(results['served_by'])}. A Funhouse "
-                   f"tier is an alias and the deployment behind it changes, "
-                   f"so this is what actually answered.")
+        if _through(results) == "a chat model":
+            out.append(f"Served by: {', '.join(results['served_by'])}.")
+        else:
+            out.append(f"Served by: {', '.join(results['served_by'])}. A "
+                       f"Funhouse tier is an alias and the deployment "
+                       f"behind it changes, so this is what actually "
+                       f"answered.")
     if results.get("absent"):
         out += ["", f"Not in the reports folder, so not run: "
                     f"{', '.join(results['absent'])}."]
@@ -5607,5 +5667,5 @@ def _render(results: Dict[str, Any]) -> List[str]:
             f"{_money(totals)}",
             _failure_line(totals),
             "```", "",
-            _price_note(totals)]
+            _price_note(totals, results)]
     return out

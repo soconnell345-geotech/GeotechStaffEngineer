@@ -3216,3 +3216,198 @@ class TestTheIngestRecordsTheReadersSwitches:
         text = "\n".join(cs._render_ingest(cs._score_ingest(
             {"R90": {"id": "R90", "cost": {}}}, {}, "m")))
         assert "GEOTECH_INGEST_CALC_PAGE_IMAGES): not recorded;" in text
+
+
+class TestMeasurementPlumbingRI69:
+    """BACKLOG RI-69: DI withheld on request, one chat model per name, a chat
+    run's notes in its own words, a label run from the other engine said."""
+
+    @pytest.fixture
+    def langchain(self):
+        pytest.importorskip("langchain_core")
+
+    # -- (1) di_dir=False ------------------------------------------------------
+
+    def test_none_falls_back_to_a_di_folder_and_false_withholds_it(
+            self, tmp_path):
+        from report_ingest.corpus import Corpus
+        reports = tmp_path / "reports"
+        reports.mkdir()
+        (tmp_path / "di").mkdir()
+        (tmp_path / "di" / "R01.json.gz").write_bytes(b"x")
+
+        fallback = Corpus(reports, di_dir=None)
+        assert fallback.di_dir == tmp_path / "di"
+        assert fallback.di_withheld is False
+        assert fallback.di_file("R01").is_file()
+
+        withheld = Corpus(reports, di_dir=False)
+        assert withheld.di_withheld is True
+        assert not withheld.di_file("R01").is_file()
+        assert withheld.has_di("R01") is False
+        assert withheld.load_di("R01") is None
+
+    def test_a_withheld_run_says_so_and_a_normal_run_does_not(
+            self, ingest_cluster, monkeypatch):
+        reports_dir, out, scripts = ingest_cluster
+        (reports_dir.parent / "di").mkdir()
+        handed: list = []
+        _stub_label_passes(monkeypatch, handed)
+
+        results = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=object(),
+            di_dir=False, sets=("oos_open",), stages=("labels",))
+
+        assert results["di_withheld"] is True
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Document Intelligence text: withheld" in text
+        saved = json.loads((out / "results.json").read_text(encoding="utf-8"))
+        assert saved["di_withheld"] is True
+
+        plain_out = out.parent / "out_plain"
+        plain = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=plain_out, prompter=object(),
+            sets=("oos_open",), stages=("labels",))
+        assert "di_withheld" not in plain
+        assert "Document Intelligence" not in (
+            plain_out / "RESULTS.md").read_text(encoding="utf-8")
+
+    # -- (2) one request per name --------------------------------------------
+
+    def test_a_factory_is_asked_once_when_model_and_vision_model_match(
+            self, langchain):
+        from report_ingest.engine import CostMeter
+        from report_ingest.tests.chat_fixtures import ScriptedChatModel
+        asked: list = []
+
+        def factory(name):
+            asked.append(name)
+            return ScriptedChatModel(replies=[], model_name=name)
+
+        engines = cs._Engines(None, factory)
+        first = engines.build("made-up-model", CostMeter())
+        second = engines.build("made-up-model", CostMeter(), vision=True)
+        assert asked == ["made-up-model"]
+        assert first.chat_model is second.chat_model
+
+    def test_two_different_factories_with_one_name_are_each_asked_once(
+            self, langchain):
+        from report_ingest.engine import CostMeter
+        from report_ingest.tests.chat_fixtures import ScriptedChatModel
+        asked: list = []
+
+        def make(tag):
+            def factory(name):
+                asked.append(tag)
+                return ScriptedChatModel(replies=[], model_name=name)
+            return factory
+
+        main, looker = make("main"), make("vision")
+        engines = cs._Engines(None, main, looker)
+        a = engines.build("made-up-model", CostMeter())
+        b = engines.build("made-up-model", CostMeter(), vision=True)
+        engines.build("made-up-model", CostMeter())
+        engines.build("made-up-model", CostMeter(), vision=True)
+        assert asked == ["main", "vision"]
+        assert a.chat_model is not b.chat_model
+
+    # -- (3) a chat run's notes -----------------------------------------------
+
+    def test_a_chat_run_names_no_funhouse_in_its_cost_and_served_by_notes(
+            self, chat_cluster, monkeypatch, langchain):
+        reports_dir, out, scripts = chat_cluster
+        handed: list = []
+        _stub_label_passes(monkeypatch, handed)
+        reader = TestAChatModelInThePromptersPlace._chat("made-up-reader")
+
+        cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=None,
+            chat_model=reader, sets=("oos_open",), stages=("labels",))
+
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "budget endpoint" not in text
+        assert "Funhouse publishes" not in text
+        assert "tier is an alias" not in text
+        assert "provider's own usage report" in text
+
+    def test_the_served_by_line_of_a_chat_run_names_no_tier_alias(
+            self, chat_cluster, monkeypatch, langchain):
+        reports_dir, out, scripts = chat_cluster
+        _stub_label_passes(monkeypatch, [])
+        scored = cs._score
+
+        def with_served_by(*args, **kwargs):
+            results = scored(*args, **kwargs)
+            results["served_by"] = ["made-up-deployment"]
+            return results
+
+        monkeypatch.setattr(cs, "_score", with_served_by)
+        cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=None,
+            chat_model=TestAChatModelInThePromptersPlace._chat(
+                "made-up-reader"),
+            sets=("oos_open",), stages=("labels",))
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Served by: made-up-deployment." in text.splitlines()
+
+    def test_a_prompter_run_prints_the_notes_it_always_printed(
+            self, ingest_cluster, monkeypatch):
+        reports_dir, out, scripts = ingest_cluster
+        _stub_label_passes(monkeypatch, [])
+        cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=object(),
+            sets=("oos_open",), stages=("labels",))
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert ("A Funhouse tier is an alias and the deployment behind it "
+                "changes, so this is what actually answered.") in text
+        assert ("Funhouse publishes no per-token price for a capability "
+                "tier") in text
+        assert "Funhouse's own budget endpoint" in text
+        # the stage's results make no difference to a Prompter note
+        cost = {"dollars": 0.0}
+        assert cs._price_note(cost, {"engine": "prompter"}) == \
+            cs._price_note(cost) == cs._price_note(cost, {})
+        cost = {"dollars": 1.0}
+        assert cs._price_note(cost, {"engine": "prompter"}) == \
+            cs._price_note(cost)
+
+    def test_a_prompter_ingest_run_file_carries_no_new_key(
+            self, ingest_cluster):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster)
+        (row,) = results["ingest"]["per_report"]
+        blob = json.loads((out / "ingest" / "R36" / "run.json").read_text(
+            encoding="utf-8"))
+        for key in ("di_withheld", "label_run_engine"):
+            assert key not in row and key not in blob
+        assert "di_withheld" not in results
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "other engine" not in text
+
+    # -- (6) a label run from the other engine -------------------------------
+
+    def test_an_ingest_that_reuses_the_other_engines_label_run_says_so(
+            self, chat_cluster, langchain):
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = chat_cluster
+        runs = out / "runs"
+        runs.mkdir(parents=True)
+        blob = _run_blob("R36", 22, {3: "plan"}, {3: "plan"})
+        blob["engine"] = "prompter"
+        (runs / "R36.json").write_text(json.dumps(blob), encoding="utf-8")
+        reader = TestAChatModelInThePromptersPlace._chat(
+            "made-up-reader", tg.main_script())
+        looker = TestAChatModelInThePromptersPlace._chat(
+            "made-up-looker", tg.vision_turns())
+
+        results = _ingest_run(chat_cluster, prompter=None,
+                              chat_model=reader, vision_chat_model=looker)
+
+        (row,) = results["ingest"]["per_report"]
+        assert row["review_reused"] or row["triage_reused"]
+        assert row["label_run_engine"] == "prompter"
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Reused a saved label run made on the other engine" in text
+        assert "R36 (prompter)" in text
