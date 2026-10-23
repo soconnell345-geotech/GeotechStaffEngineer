@@ -77,7 +77,7 @@ import time
 import traceback
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.corpus import Corpus
 from report_ingest.mirror import DEFAULT_FOLDER, Mirror
@@ -3810,8 +3810,31 @@ def _truth_files_for(rid: str, truth: Sequence[Optional[Path]]
     return out
 
 
+def _bound_records(record: Any, folder: Path) -> List[Any]:
+    """The records of the reports bound inside this one, off disk.
+
+    The graph writes each beside its parent (``bound/<id>/``) before the
+    parent, and their page numbers are the parent FILE's, so a hand truth on
+    a bound document's pages can be scored against the record that read
+    them. A child that was not read, or will not load, is left out.
+    """
+    from report_ingest.model import ReportRecord
+
+    out: List[Any] = []
+    for row in getattr(record, "bound_documents", ()) or ():
+        if not row.read or not row.record_path:
+            continue
+        try:
+            out.append(ReportRecord.model_validate_json(
+                (folder / row.record_path).read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
 def _score_ingest_record(record: Any, rid: str,
-                         truth: Sequence[Optional[Path]]) -> Dict[str, Any]:
+                         truth: Sequence[Optional[Path]],
+                         bound: Sequence[Any] = ()) -> Dict[str, Any]:
     """The ingest's record against every hand truth this report has.
 
     The SAME scorers the reader stages use, on the record the whole
@@ -3820,6 +3843,13 @@ def _score_ingest_record(record: Any, rid: str,
     a lab truth against the tests read off its page and a calculation truth
     against the calculation read off its run -- not against the whole
     record, or a sample at the right depth in a different hole would count.
+
+    ``bound`` are the records of the reports bound inside this one
+    (:func:`_bound_records`). A truth that names its pages is scored against
+    whatever was read off those pages, the parent's or a bound document's:
+    a page is read on one side of the boundary only (BACKLOG RI-14), so a
+    truth on a bound document's pages has nothing in the parent to meet. A
+    truth that names no page is scored against the parent alone.
     """
     from report_ingest.calc_scoring import pages_of as calc_pages_of
     from report_ingest.calc_scoring import score_record as score_calc
@@ -3831,21 +3861,24 @@ def _score_ingest_record(record: Any, rid: str,
     from report_ingest.sounding_scoring import pages_of as sounding_pages_of
     from report_ingest.sounding_scoring import score_record as score_sounding
 
+    def pool(name: str, pages: Set[int]) -> List[Any]:
+        holders = [record, *bound] if pages else [record]
+        return [x for holder in holders for x in getattr(holder, name)
+                if not pages or set(x.pages) & pages]
+
     files = _truth_files_for(rid, truth)
     out: Dict[str, Any] = {"logs": [], "lab": [], "narrative": None,
                            "calc": [], "soundings": []}
     for name, blob in files["logs"]:
         pages = {int(p) for p in blob.get("pages") or []}
-        invs = [i for i in record.investigations
-                if not pages or set(i.pages) & pages]
+        invs = pool("investigations", pages)
         score = score_log(blob, invs)
         out["logs"].append({"id": name, "overall": score.total.to_dict(),
                             "scores": {k: v.to_dict()
                                        for k, v in score.scores.items()}})
     for name, blob in files["lab"]:
         pages = set(pages_of(blob))
-        tests = [t for t in record.lab_tests
-                 if not pages or set(t.pages) & pages]
+        tests = pool("lab_tests", pages)
         score = score_lab(blob, tests)
         out["lab"].append({"id": name, "kind": blob.get("kind") or "",
                            "overall": score.total.to_dict(),
@@ -3853,8 +3886,7 @@ def _score_ingest_record(record: Any, rid: str,
                                       for k, v in score.scores.items()}})
     for name, blob in files["calc"]:
         pages = set(calc_pages_of(blob))
-        mine = [c for c in record.calculations
-                if not pages or set(c.pages) & pages]
+        mine = pool("calculations", pages)
         if not mine:
             out["calc"].append({"id": name, "kind": blob.get("kind") or "",
                                 "overall": {"found": 0, "total": 0,
@@ -3874,8 +3906,7 @@ def _score_ingest_record(record: Any, rid: str,
                             "read": True})
     for name, blob in files["soundings"]:
         pages = set(sounding_pages_of(blob))
-        invs = [i for i in record.investigations
-                if not pages or set(i.pages) & pages]
+        invs = pool("investigations", pages)
         score = score_sounding(blob, invs)
         out["soundings"].append({
             "id": name, "kind": sounding_kind(blob),
@@ -4157,7 +4188,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "qa_by_kind": qa_by_kind,
             "diggs": _diggs_verdicts(record, outputs),
             "outputs": {k: str(v) for k, v in outputs.items()},
-            "scores": _score_ingest_record(record, rid, truth),
+            "scores": _score_ingest_record(
+                record, rid, truth, _bound_records(record, folder)),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
         }

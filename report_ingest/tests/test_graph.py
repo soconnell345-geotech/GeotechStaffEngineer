@@ -1010,6 +1010,243 @@ class TestAReportBoundInsideAReport:
 
 
 # ---------------------------------------------------------------------------
+# BACKLOG RI-14: the pipeline's structure
+# ---------------------------------------------------------------------------
+
+def _narrative_calls(engine):
+    return [call for call in engine.calls
+            if call["output_format"] is NarrativeReading]
+
+
+def _brief_text(call):
+    return "\n".join(str(block.get("text", ""))
+                     for message in call["messages"]
+                     for block in message["content"]
+                     if isinstance(block, dict))
+
+
+class TestTheNarrativeIsReadOnce:
+    """The vision voter calls page 3 a figure, so the rules' one narrative
+    item (pages 2-4) becomes two, pages 2 and 4, with a figure between."""
+
+    def _script(self):
+        return ([triage_turn()] + vision_turns({3: "figure"})
+                + [identity_turn()] + reader_turns() + bound_reader_turns())
+
+    def test_two_narrative_items_cost_one_read_over_both(self, pdf,
+                                                         tmp_path):
+        engine = FakeEngine(self._script())
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", review_mode="none")
+
+        assert engine.n_calls == len(self._script())
+        parent, child = _narrative_calls(engine)
+        text = _brief_text(parent)
+        assert "=== page 2 ===" in text and "=== page 4 ===" in text
+        assert {2, 4} <= set(record.narrative.pages)
+        (note,) = [e for e in record.qa if e.where == "items.narrative"]
+        assert "read once" in note.detail and note.pages == [2, 4]
+        assert (tmp_path / "items" / "item_2-item_4.json").is_file()
+        assert record.general.projectName == "Rosewood Terrace Development"
+
+    def test_its_unsettled_lines_are_carried_once(self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(self._script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               review_mode="none")
+
+        # Only boringCount carries a citation, so every other answer is an
+        # unsettled line of the ONE reading -- once, not once per item.
+        rows = [e for e in record.qa if e.where == "projectName"]
+        assert len(rows) == 1 and "no citation" in rows[0].detail
+
+    def test_a_resumed_run_reads_it_off_disk(self, pdf, tmp_path):
+        first = ingest_report(pdf, FakeEngine(self._script()),
+                              out_dir=tmp_path, report_id="SYN",
+                              review_mode="none")
+        empty = FakeEngine([])
+        again = ingest_report(pdf, empty, out_dir=tmp_path, report_id="SYN",
+                              review_mode="none")
+
+        assert empty.n_calls == 0
+        assert again.general == first.general
+
+
+class TestABoundRangeTheLabelsDidNotDraw:
+    """Triage says pages 12-17 are another report; the rules call only 15-18
+    ``appended_report``, and pages 12-13 are laboratory sheets as far as the
+    labels go. The bound document is 12-18 and those sheets are ITS: read
+    once, into its record, and never into the parent's as well."""
+
+    def _script(self):
+        parent = [narrative_turn(), log_turn("B-1"),
+                  log_turn("TP-1", "test_pit"), calc_turn()]
+        child = [lab_turn("atterberg", 12), lab_turn("gradation", 13),
+                 log_turn("BH-1")]
+        return ([triage_turn("multi_document", bound_together=[
+            {"kind": "appended_prior_report", "pages": "12-17",
+             "title": "Former Owner Study"}])]
+            + vision_turns() + [identity_turn()] + parent + child)
+
+    def _child(self, tmp_path):
+        return ReportRecord.model_validate(json.loads(
+            (tmp_path / "bound" / "bound1" / "report.record.json")
+            .read_text(encoding="utf-8")))
+
+    def test_its_sheets_are_read_into_the_child_alone(self, pdf, tmp_path):
+        engine = FakeEngine(self._script())
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN")
+
+        assert engine.n_calls == len(self._script())
+        assert record.bound_documents[0].pages == "12-18"
+        assert record.lab_tests == []
+        assert sorted(t.kind for t in self._child(tmp_path).lab_tests) == \
+            ["atterberg", "gradation"]
+        (note,) = [e for e in record.qa if e.where == "bound.items"]
+        assert note.values == ["item_7 lab_test 12", "item_8 lab_test 13"]
+        assert note.pages == [12, 13]
+
+    def test_the_parents_reconciler_does_not_call_them_unread(self, pdf,
+                                                              tmp_path):
+        record = ingest_report(pdf, FakeEngine(self._script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        assert not [e for e in record.qa if e.where.startswith("pages.")
+                    and set(e.pages) & {12, 13}]
+
+    def test_an_item_that_straddles_the_edge_keeps_its_own_pages(self):
+        from planlens.document.roles import Item
+        from report_ingest.graph import _outside_bound
+
+        qa = []
+        items = [Item(id="item_1", kind="lab_test", pages=[11, 12, 13],
+                      evidence={"first_page": 11}),
+                 Item(id="item_2", kind="boring_log", pages=[14, 15]),
+                 Item(id="item_3", kind="appended_report", pages=[15, 16]),
+                 Item(id="item_4", kind="narrative", pages=[16])]
+        kept = _outside_bound(items, {12, 13, 14, 15, 16}, qa)
+
+        assert [(i.id, i.pages) for i in kept] == [
+            ("item_1", [11]), ("item_3", [15, 16]), ("item_4", [16])]
+        assert kept[0].evidence["first_page"] == 11
+        assert qa[0].values == ["item_1 lab_test 12-13",
+                                "item_2 boring_log 14-15"]
+        # The narrative goes too when the switch says so.
+        assert [i.id for i in _outside_bound(items, {16}, [],
+                                             narrative_too=True)] == \
+            ["item_1", "item_2", "item_3"]
+
+
+class TestTheNarrativeAndTheBoundPages:
+    """``narrative_skips_bound``: OFF by default, because it changes what the
+    narrative reader is shown."""
+
+    def test_by_default_the_parents_reader_is_shown_them_and_told(self, pdf,
+                                                                  tmp_path):
+        engine = FakeEngine(full_script())
+        ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN")
+
+        text = _brief_text(_narrative_calls(engine)[0])
+        assert "=== page 16 ===" in text
+        assert "REPORTS BOUND INSIDE THIS ONE" in text
+
+    def test_on_it_is_not_shown_them_and_is_still_told(self, pdf, tmp_path):
+        engine = FakeEngine(full_script())
+        record = ingest_report(pdf, engine, out_dir=tmp_path,
+                               report_id="SYN", narrative_skips_bound=True)
+
+        assert engine.n_calls == len(full_script())
+        parent, child = _narrative_calls(engine)
+        text = _brief_text(parent)
+        for page in (15, 16, 17, 18):
+            assert f"=== page {page} ===" not in text
+        assert "REPORTS BOUND INSIDE THIS ONE" in text
+        assert not set(record.narrative.pages) & {15, 16, 17, 18}
+        # The child is read as before, on its own pages.
+        assert "=== page 16 ===" in _brief_text(child)
+
+
+class TestTheExplorationAnswersAndTheLogs:
+    """The narrative says four borings and three pits and names none; the
+    logs read are B-1 and TP-1 and no cone."""
+
+    def test_by_default_an_unanswered_count_with_no_logs_is_zero(
+            self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN")
+
+        general = record.general
+        assert (general.boringCount, general.testPitCount) == (4, 3)
+        assert general.cptCount == 0
+        # Only the zeros: a list or a count off the logs is not filled in.
+        assert general.boringDictionary is None
+        assert general.testPitDictionary is None
+        (note,) = [e for e in record.qa if e.where == "general.explorations"]
+        assert "cptCount is 0" in note.detail
+        assert note.values == ["cptCount: not stated -> 0"]
+        # The difference over the stated count is still on the record.
+        (entry,) = [e for e in record.qa if e.kind == "count_mismatch"
+                    and e.where == "general.boringCount"]
+        assert entry.values == ["narrative 4", "found 1"]
+
+    def test_fill_takes_every_open_answer_off_the_logs(self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="fill")
+
+        general = record.general
+        assert (general.boringCount, general.testPitCount) == (4, 3)
+        assert general.cptCount == 0
+        assert general.boringDictionary == ["B-1"]
+        assert general.testPitDictionary == ["TP-1"]
+        (note,) = [e for e in record.qa if e.where == "general.explorations"]
+        assert "came from the logs read" in note.detail
+
+    def test_settle_overrules_a_stated_count_and_keeps_what_it_said(
+            self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="settle")
+
+        assert (record.general.boringCount,
+                record.general.testPitCount) == (1, 1)
+        assert record.narrative.stated_counts["borings"] == 4
+        (entry,) = [e for e in record.qa if e.kind == "count_mismatch"
+                    and e.where == "general.boringCount"]
+        assert entry.values == ["narrative 4", "found 1"]
+        (note,) = [e for e in record.qa if e.where == "general.explorations"]
+        assert "boringCount: 4 -> 1" in note.values
+
+    def test_off_leaves_the_narratives_answers_alone(self, pdf, tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="off")
+
+        assert record.general.cptCount is None
+        assert record.general.boringDictionary is None
+        assert not [e for e in record.qa
+                    if e.where == "general.explorations"]
+
+    def test_a_bound_report_is_settled_against_its_own_logs(self, pdf,
+                                                           tmp_path):
+        record = ingest_report(pdf, FakeEngine(full_script()),
+                               out_dir=tmp_path, report_id="SYN",
+                               counts_from_logs="fill")
+
+        child = ReportRecord.model_validate(json.loads(
+            (tmp_path / "bound" / "bound1" / "report.record.json")
+            .read_text(encoding="utf-8")))
+        assert child.general.boringDictionary == ["BH-1"]
+        assert child.general.testPitCount == 0
+        assert record.general.boringDictionary == ["B-1"]
+
+    def test_an_unknown_mode_is_refused(self, pdf, tmp_path):
+        with pytest.raises(ValueError, match="counts_from_logs"):
+            ingest_report(pdf, FakeEngine([]), out_dir=tmp_path,
+                          counts_from_logs="always")
+
+
+# ---------------------------------------------------------------------------
 # a sounding is not a log
 # ---------------------------------------------------------------------------
 

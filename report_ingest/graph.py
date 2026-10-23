@@ -83,9 +83,9 @@ import json
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, List, Optional, Sequence, Tuple
 
-from report_ingest.bound import APPENDED_LABEL
+from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
 from report_ingest.engine import CallCeilingReached
 from report_ingest.label_vote import (
@@ -119,6 +119,43 @@ BOUND_DIR = "bound"
 #: ``none``
 #:     no review; the vote's labels stand.
 REVIEW_MODES: Tuple[str, ...] = ("disagreements", "all", "none")
+
+#: What the five exploration answers (``boringCount``, ``testPitCount``,
+#: ``cptCount``, ``boringDictionary``, ``testPitDictionary``) take from the
+#: logs this record read, once everything is read (BACKLOG RI-14). The rule
+#: is the narrative reader's own, :func:`report_ingest.narrative_reader.
+#: settled_explorations`; this says how much of it runs. Each mode does what
+#: the one before it does, and more.
+#:
+#: ``off``
+#:     the narrative's answers only, as every run before RI-14.
+#: ``zeros``
+#:     the default: a count the narrative left unanswered is 0 where logs of
+#:     other kinds were read and none of this one -- the house convention that
+#:     none means 0 (``narrative_glossary`` convention 1, DRAFT), with the
+#:     appendix as the evidence. The miss run 7 measured most (cptCount null
+#:     on 7 of 8 reports, testPitCount on 5, where the hand writes 0).
+#: ``fill``
+#:     every answer the narrative left open takes the logs' answer: the
+#:     identifiers read and the count of holes, as well as the zeros.
+#: ``settle``
+#:     ``fill``, and a stated answer the logs contradict is overruled too --
+#:     unless the logs' answer is zero or empty, because no cone logs read is
+#:     not the same as no cones pushed. This is the reader's lever 4 as
+#:     5.24.0 wrote it.
+#:
+#: Why ``zeros`` and not more: RI-14's offline measure set the log ITEMS
+#: planlens' rules find (a stand-in for the logs read) against the eight hand
+#: narrative truths. The zeros were right 6 of 6; a non-zero count or list
+#: off the logs 5 of 17 -- an appendix holds earlier investigations' logs a
+#: bound range did not catch, and a hole can be read as two items -- and
+#: overruling a narrative that was right was wrong 12 times in 13.
+#:
+#: Whichever runs, the reconciler has already compared the narrative's own
+#: answer with what was read and recorded every difference as a
+#: ``count_mismatch``, and ``narrative.stated_counts`` keeps the numbers the
+#: narrative stated.
+COUNT_MODES: Tuple[str, ...] = ("off", "zeros", "fill", "settle")
 
 #: Which reader takes which kind of work item. A kind that is not here is
 #: recorded and not read -- ``figures``, ``photos``, ``front_matter`` and
@@ -449,7 +486,9 @@ def ingest_report(source: Any, engine: Any, *,
                   trust_table: Any = None,
                   templates: Any = None,
                   ingest_bound: bool = True,
-                  triage_engine: Any = None) -> ReportRecord:
+                  triage_engine: Any = None,
+                  counts_from_logs: str = "zeros",
+                  narrative_skips_bound: bool = False) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -499,7 +538,22 @@ def ingest_report(source: Any, engine: Any, *,
         ``out_dir/bound/<id>/``, and list it on
         ``ReportRecord.bound_documents``. On by default. ``False`` lists the
         pages in a QA entry and does not read them, which is what every run
-        before this did. See :mod:`report_ingest.bound`.
+        before this did. See :mod:`report_ingest.bound`. A work item of this
+        report whose pages lie inside a bound document -- a log, a sheet, a
+        printout or a sounding on pages triage called another report's while
+        the page labels did not -- is that document's and is read into its
+        record only, never into this one as well.
+    counts_from_logs
+        ``off``, ``zeros`` (the default), ``fill`` or ``settle``: how much
+        of the five exploration answers the logs read decide. See
+        :data:`COUNT_MODES`.
+    narrative_skips_bound
+        OFF by default, because it changes what the narrative reader is
+        shown. On, this report's narrative reader is not given a bound
+        document's pages at all -- not as narrative, not as the front of the
+        report, not as a searched passage -- and the captions it counts are
+        this report's only. Off, it is shown them and TOLD whose they are,
+        which is what every run before RI-14 did. Unmeasured either way.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost.
@@ -513,6 +567,9 @@ def ingest_report(source: Any, engine: Any, *,
     if review_mode not in REVIEW_MODES:
         raise ValueError(f"unknown review_mode {review_mode!r}; the modes "
                          f"are {list(REVIEW_MODES)}")
+    if counts_from_logs not in COUNT_MODES:
+        raise ValueError(f"unknown counts_from_logs {counts_from_logs!r}; "
+                         f"the modes are {list(COUNT_MODES)}")
     labelling = _Labelling(
         policy=label_policy,
         review_mode="none" if not budgets.review else review_mode,
@@ -535,7 +592,8 @@ def ingest_report(source: Any, engine: Any, *,
     try:
         record = _run(doc, engine, budgets, out, resume, questions or [],
                       report_id, spend, qa, unresolved, di_result, labelling,
-                      children, ingest_bound)
+                      children, ingest_bound, counts_from_logs,
+                      narrative_skips_bound)
     finally:
         if not _is_document(source):
             doc.close()
@@ -582,7 +640,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
          qa: List[QAEntry], unresolved: List[Dict[str, Any]],
          di_result: Any, labelling: "_Labelling",
          children: List[Tuple[ReportRecord, str]],
-         ingest_bound: bool = True) -> ReportRecord:
+         ingest_bound: bool = True, counts_from_logs: str = "zeros",
+         narrative_skips_bound: bool = False) -> ReportRecord:
     """The loop itself, with the document open.
 
     ``children`` is filled with ``(record, folder)`` for every report bound
@@ -712,21 +771,38 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     ranges = _bound_ranges(profile, labels, doc.n_pages, qa, ingest_bound)
     told = _identify_bound(doc, engine, out, resume, ranges, spend, qa)
 
+    # A bound document's pages are ITS pages. The work items were built off
+    # the page labels, and a range triage drew where the labels did not say
+    # ``appended_report`` still has logs and sheets labelled as such inside
+    # it: read here as well, they would be in this record AND the child's.
+    bound = {int(page) for row in ranges for page in row.pages}
+    items = _outside_bound(items, bound, qa, narrative_skips_bound)
+    own = {page: label for page, label in labels.items()
+           if page not in bound}
+    window = ([page for page in range(doc.n_pages) if page not in bound]
+              if bound and narrative_skips_bound else None)
+
     # -- 1-2. the readers ---------------------------------------------------
     _read_items(doc, engine, budgets, out, resume, questions, report_id,
-                items, labels, outline, record, spend, qa, unresolved,
-                workflow, no_text, di_pages, told, bool(ranges))
+                items, own if narrative_skips_bound else labels, outline,
+                record, spend, qa, unresolved, workflow, no_text, di_pages,
+                told, bound, window)
 
     # -- 3. the reconciler --------------------------------------------------
-    reconcile(record, labels=labels, items=items, no_text_pages=no_text,
-              di_pages=di_pages, reader_unresolved=unresolved)
+    # Over this report's own pages: the bound documents' are checked in
+    # their own records.
+    reconcile(record, labels=own, items=items,
+              no_text_pages=[p for p in no_text if p not in bound],
+              di_pages=[p for p in di_pages if p not in bound],
+              reader_unresolved=unresolved)
+    _counts_from_logs(record, qa, counts_from_logs)
     record.project = _project_from(record)
 
     # -- 4. each bound document, round this same loop, into its own record --
     if ranges:
         _read_bound(doc, engine, budgets, out, resume, report_id, facts,
                     vision, templates, labelling, ranges, told, record,
-                    children, spend, qa, no_text, di_pages)
+                    children, spend, qa, no_text, di_pages, counts_from_logs)
     return record
 
 
@@ -1080,6 +1156,52 @@ def _bound_ranges(profile: Any, labels: Dict[int, str], n_pages: int,
     return ranges
 
 
+def _outside_bound(items: Sequence[Any], bound: Collection[int],
+                   qa: List[QAEntry],
+                   narrative_too: bool = False) -> List[Any]:
+    """This report's work items, with the bound documents' pages taken out.
+
+    Only the items a reader would read: a log, a sheet, a printout, a
+    sounding -- and the narrative when ``narrative_too``. Each loses the
+    pages that are a bound document's, and an item left with none is not
+    this report's at all; the bound document's own pass reads those pages
+    into its own record. The rest (figures, front matter, the
+    ``appended_report`` run itself) are read by nobody and stay listed.
+    """
+    import dataclasses
+
+    if not bound:
+        return list(items)
+    kept: List[Any] = []
+    moved: List[str] = []
+    pages_moved: List[int] = []
+    for item in items:
+        reader = ITEM_READERS.get(item.kind)
+        inside = [int(p) for p in item.pages if int(p) in bound]
+        if not inside or reader is None or (reader == "narrative"
+                                            and not narrative_too):
+            kept.append(item)
+            continue
+        moved.append(f"{item.id} {item.kind} "
+                     f"{compact_pages(inside)}")
+        pages_moved.extend(inside)
+        outside = [int(p) for p in item.pages if int(p) not in bound]
+        if outside:
+            kept.append(dataclasses.replace(
+                item, pages=outside,
+                evidence={**dict(item.evidence), "first_page": outside[0]}))
+    if moved:
+        qa.append(QAEntry(
+            kind="note", where="bound.items",
+            detail=(f"{len(moved)} work item(s) labelled as this report's "
+                    f"lie on the pages of a report bound inside it; those "
+                    f"pages are that report's, read into its own record on "
+                    f"bound_documents, and are not read as this report's"),
+            values=moved,
+            pages=sorted(set(pages_moved))))
+    return kept
+
+
 def _identify_bound(doc: Any, engine: Any, out: str, resume: bool,
                     ranges: Sequence[Any], spend: _Spend,
                     qa: List[QAEntry]) -> List[Dict[str, Any]]:
@@ -1140,7 +1262,8 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
                 record: ReportRecord,
                 children: List[Tuple[ReportRecord, str]], spend: _Spend,
                 qa: List[QAEntry], no_text: Sequence[int],
-                di_pages: Sequence[int]) -> None:
+                di_pages: Sequence[int],
+                counts_from_logs: str = "zeros") -> None:
     """Each bound document round this same loop, into its own record."""
     by_id = {row["bound_id"]: row for row in told}
     for row in ranges:
@@ -1163,7 +1286,7 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
             child = _one_bound(doc, engine, budgets, folder, resume,
                                report_id, facts, vision, templates,
                                labelling, row, identity, record, spend,
-                               no_text, di_pages)
+                               no_text, di_pages, counts_from_logs)
         except Exception as exc:              # one child, not the report
             spend.settle(mark)
             entry.read = False
@@ -1205,7 +1328,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                templates: Dict[int, Any], labelling: "_Labelling",
                row: Any, identity: Dict[str, Any], parent: ReportRecord,
                spend: _Spend, no_text: Sequence[int],
-               di_pages: Sequence[int]) -> ReportRecord:
+               di_pages: Sequence[int],
+               counts_from_logs: str = "zeros") -> ReportRecord:
     """One bound document as its own record, on the parent's page numbers.
 
     THE RULES ARE RE-RUN, THE OTHER VOTERS ARE NOT. planlens labels every
@@ -1361,6 +1485,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
               no_text_pages=[p for p in no_text if p in at],
               di_pages=[p for p in di_pages if p in at],
               reader_unresolved=unresolved)
+    _counts_from_logs(child, qa, counts_from_logs)
     child.project = _project_from(child)
     child.qa.extend(qa)
     child.document.model_calls = inner_spend.calls
@@ -1465,7 +1590,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 unresolved: List[Dict[str, Any]], workflow: str,
                 no_text: Sequence[int], di_pages: Sequence[int],
                 bound_told: Sequence[Dict[str, Any]] = (),
-                bound_read: bool = False,
+                bound_pages: Collection[int] = (),
                 window: Optional[Sequence[int]] = None) -> None:
     from report_ingest.model import (
         Calculation, GeneralFacts, Investigation, LabTest, NarrativeFacts,
@@ -1475,6 +1600,8 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
     body = [page for page, role in sorted(labels.items())
             if role in ("narrative", "figure", "plan", "profile", "toc")]
     blind = set(int(p) for p in no_text) - set(int(p) for p in di_pages)
+    bound_pages = set(int(p) for p in bound_pages)
+    prose, prose_pages = _narrative_items(items, workflow, blind, qa)
 
     for item in items:
         reader = ITEM_READERS.get(item.kind)
@@ -1484,39 +1611,34 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 # Whether these pages became a record of their own is
                 # decided by the bound pass, not here: this item is one run
                 # of ``appended_report`` pages and a bound document may be
-                # the union of this run and what triage said around it.
+                # the union of this run and what triage said around it. A
+                # run under the page floor for a document is in no range,
+                # stays this report's and is read by nobody.
+                read = bool(pages) and set(pages) <= bound_pages
                 qa.append(QAEntry(
-                    kind="note" if bound_read else "skipped",
+                    kind="note" if read else "skipped",
                     where="items.appended_report",
                     detail=("a report bound inside this one; its pages are "
                             "read into their own record and are listed on "
-                            "bound_documents" if bound_read else
+                            "bound_documents" if read else
                             "a report bound inside this one was not read as "
                             "its own document; its pages are listed here"),
                     pages=pages))
             continue
 
         if reader == "narrative":
-            if workflow == "appendix_only":
-                qa.append(QAEntry(
-                    kind="skipped", where="items.narrative",
-                    detail="this file is appendix or figure material, so the "
-                           "narrative reader did not run",
-                    pages=pages))
+            # Read ONCE, at the first of its items, over all of them; the
+            # ones that are not read were given their QA entry above.
+            if not prose or item is not prose[0]:
                 continue
-            if set(pages) <= blind:
-                qa.append(QAEntry(
-                    kind="unreadable", where="items.narrative",
-                    detail="every narrative page is a scan with no reliable "
-                           "text and no Azure Document Intelligence result; "
-                           "the narrative reader reads text and was not run",
-                    pages=pages))
-                continue
+            pages = prose_pages
 
-        path = os.path.join(out, "items", f"{item.id}.json")
+        key = item.id if reader != "narrative" or len(prose) == 1 \
+            else f"{prose[0].id}-{prose[-1].id}"
+        path = os.path.join(out, "items", f"{key}.json")
         cached = _cached(path, resume)
         mark = spend.mark()
-        where = f"items.{item.kind}.{item.id}"
+        where = f"items.{item.kind}.{key}"
         try:
             if reader == "narrative":
                 blob = cached or _read_narrative(
@@ -1590,11 +1712,124 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
         except Exception as exc:                 # one item must not stop the run
             qa.append(QAEntry(
                 kind="skipped", where=f"items.{item.kind}",
-                detail=f"{item.id} could not be read: "
+                detail=f"{key} could not be read: "
                        f"{type(exc).__name__}: {exc}",
                 pages=pages))
         finally:
             spend.settle(mark)
+
+
+def _narrative_items(items: Sequence[Any], workflow: str, blind: set,
+                     qa: List[QAEntry]) -> Tuple[List[Any], List[int]]:
+    """The narrative work items to read, and all their pages as one set.
+
+    THE NARRATIVE IS READ ONCE. planlens starts a new work item wherever a
+    run of narrative pages is broken -- by a figure, a table page, a tab --
+    so one report's prose is often several items. Each used to be read on
+    its own, over nearly the same pages (the reader adds the front matter
+    and the narrative pages it finds itself), and each answer REPLACED the
+    one before: the record kept the last item's, paid for every one and
+    carried every read's unsettled lines over again (BACKLOG RI-14). Now
+    they are one read. A narrative too long for one call is cut into parts
+    by the reader and merged by its own rule: the first answer kept, lists
+    unioned, every disagreement between two parts recorded.
+
+    The items that are not read get their QA entry here, each as before: no
+    narrative reader on an appendix-only file, and none over items whose
+    every page is a scan with no text.
+    """
+    readable: List[Any] = []
+    for item in items:
+        if ITEM_READERS.get(item.kind) != "narrative":
+            continue
+        pages = [int(p) for p in item.pages]
+        if workflow == "appendix_only":
+            qa.append(QAEntry(
+                kind="skipped", where="items.narrative",
+                detail="this file is appendix or figure material, so the "
+                       "narrative reader did not run",
+                pages=pages))
+            continue
+        if set(pages) <= blind:
+            qa.append(QAEntry(
+                kind="unreadable", where="items.narrative",
+                detail="every narrative page is a scan with no reliable "
+                       "text and no Azure Document Intelligence result; "
+                       "the narrative reader reads text and was not run",
+                pages=pages))
+            continue
+        readable.append(item)
+    pages = sorted({int(p) for item in readable for p in item.pages})
+    if len(readable) > 1:
+        qa.append(QAEntry(
+            kind="note", where="items.narrative",
+            detail=(f"the narrative is {len(readable)} work items, broken by "
+                    f"other pages ({', '.join(i.id for i in readable)}); "
+                    f"it was read once, over all of them"),
+            pages=pages))
+    return readable, pages
+
+
+def _counts_from_logs(record: ReportRecord, qa: List[QAEntry],
+                      mode: str) -> None:
+    """The five exploration answers, against the logs this record read.
+
+    The narrative reader's own rule
+    (:func:`~report_ingest.narrative_reader.settled_explorations`), run HERE
+    rather than inside the reader: the narrative is read before the logs,
+    and a resumed run takes it off disk, so only here are both in hand on
+    every run. And AFTER the reconciler, so that its ``count_mismatch``
+    entries compare what the narrative SAID with what was read; the numbers
+    the narrative stated stay in ``narrative.stated_counts``. Nothing runs
+    on a record whose narrative was not read: these are the narrative's
+    answers, and an appendix-only record does not answer the schemas.
+    See :data:`COUNT_MODES`.
+    """
+    from report_ingest.narrative_reader import (
+        DETERMINISTIC_FIELDS, explorations_found, settled_explorations,
+    )
+
+    if mode == "off" or not record.narrative.pages:
+        return
+    stated = {name: getattr(record.general, name, None)
+              for name in DETERMINISTIC_FIELDS}
+    changed = settled_explorations(
+        stated, explorations_found(record.investigations),
+        overrule=mode == "settle")
+    if mode == "zeros":
+        changed = {name: value for name, value in changed.items()
+                   if value == 0}
+    if not changed:
+        return
+    for name, value in changed.items():
+        setattr(record.general, name, value)
+
+    def show(value: Any) -> str:
+        if value in (None, []):
+            return "not stated"
+        return ", ".join(value) if isinstance(value, list) else str(value)
+
+    filled = [name for name in changed if stated[name] in (None, [])]
+    overruled = [name for name in changed if name not in filled]
+    zeros = [name for name in filled if changed[name] == 0]
+    others = [name for name in filled if name not in zeros]
+    said = []
+    if zeros:
+        said.append(f"{', '.join(zeros)} is 0: the narrative did not say, "
+                    f"and the logs read hold none of that kind while they "
+                    f"hold others (none means 0)")
+    if others:
+        said.append(f"{', '.join(others)} came from the logs read, where the "
+                    f"narrative did not say")
+    if overruled:
+        said.append(f"{', '.join(overruled)} are the logs' answer over the "
+                    f"narrative's ({mode!r}); the narrative's is in the "
+                    f"count_mismatch entries and narrative.stated_counts")
+    qa.append(QAEntry(
+        kind="note", where="general.explorations",
+        detail="; ".join(said),
+        values=[f"{name}: {show(stated[name])} -> {show(value)}"
+                for name, value in changed.items()]))
 
 
 def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],

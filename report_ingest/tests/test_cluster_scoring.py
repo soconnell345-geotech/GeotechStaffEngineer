@@ -2315,6 +2315,28 @@ class TestTheIngestStage:
         totals = results["ingest"]["totals"]["scores"]
         assert totals["logs"]["n"] == 1 and totals["narrative"]["n"] == 1
 
+    def test_a_truth_on_a_bound_reports_pages_meets_that_reports_record(
+            self, ingest_cluster, tmp_path):
+        # BACKLOG RI-14: a page is read on one side of the boundary only, so
+        # the log on page 18 (inside the report bound in at 15-18) is in the
+        # bound record, not the parent's -- and is scored there.
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        truth = tmp_path / "truth"
+        (truth / "logs").mkdir(parents=True)
+        (truth / "logs" / "R36_p18.json").write_text(json.dumps({
+            "id": "R36_p18", "pages": [18], "depth_unit": "m",
+            "fields": {"boring_id": "BH-1"},
+            "layers": [{"top": 0.0, "uscs": "CL"}],
+            "samples": [{"top": 1.5, "blows": [3, 5, 7]}],
+            "water": []}), encoding="utf-8")
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster, truth_dir=truth)
+        (row,) = results["ingest"]["per_report"]
+        assert row["investigations_by_kind"] == {"boring": 1, "test_pit": 1}
+        (log_score,) = row["scores"]["logs"]
+        assert log_score["overall"]["found"] >= 3
+
     def test_a_report_the_folder_does_not_have_is_named_and_skipped(
             self, ingest_cluster, monkeypatch):
         from report_ingest.tests import test_graph as tg
