@@ -2032,5 +2032,35 @@
       "BACKLOG.md OWN-89",
       "BACKLOG.md INF-51 (Done)"
     ]
+  },
+  "OWN-90": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "What should three of the narrative fields hold: the ground layers, the list of structures and the hazards the site is exposed to?",
+    "why": "On the reports we can check openly, four of the six misses on the weakest narrative fields are not reading errors: the reader follows its instructions, and the hand answers hold something different. Only you can say which is meant.",
+    "background": "1) Ground layers ('strata'): the instructions ask for the report's own words in one string, so the reader copies the report's one-line summary; the hand answers build the profile layer by layer with thickness, density, blow counts, fines and groundwater. 2) Structures: one report says the rest of the site will be an on-grade parking lot; the reader listed it as a structure, the hand answer did not (the structure count follows). 3) Hazards: the instructions say both 'examples, not a closed list' and 'the listed phrases and no others'; and the reader listed flooding from a flood-map exhibit title that the report's text never mentions. Each rests on one example.",
+    "options": [
+      {
+        "label": "Match the hand answers",
+        "effect": "Ground layers become a layer-by-layer profile in the report's words; paved areas are not structures; hazards are an open list but only those the report's text says the site is exposed to (a map or exhibit title alone does not count). Written behind a switch, off, and measured on the next live run."
+      },
+      {
+        "label": "Keep the instructions",
+        "effect": "The hand answers are revised to match what the reader is asked for. Nothing in the app changes."
+      },
+      {
+        "label": "Mixed",
+        "effect": "Say which of the three to change."
+      }
+    ],
+    "recommendation": "Match the hand answers: they are your definition of the fields, and the reader can follow them.",
+    "if_no_answer": "Nothing changes; these fields keep missing in the same way.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-90",
+      "BACKLOG.md RI-13 (Done)"
+    ]
   }
 }
