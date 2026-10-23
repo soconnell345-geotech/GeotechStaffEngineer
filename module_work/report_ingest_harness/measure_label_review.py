@@ -179,12 +179,13 @@ def report(runs: Sequence[ReportRun]) -> List[str]:
         calls = int(run.cost.get("calls") or 0)
         tokens = int(run.cost.get("input_tokens") or 0)
         n = base["scored"]
+        n_rule = ruled["scored"]
         out.append(
             f"{run.rid:<8}{run.split:>6}{run.asked:>6}{len(rows):>8}"
             f"{c['fixed']:>6}{c['broke']:>6}{c['still_wrong']:>6}{n:>6}"
             f"{(base['before'] / n if n else float('nan')):>8.3f}"
             f"{(base['after'] / n if n else float('nan')):>8.3f}"
-            f"{(ruled['after'] / n if n else float('nan')):>8.3f}"
+            f"{(ruled['after'] / n_rule if n_rule else float('nan')):>8.3f}"
             f"{calls:>6}{tokens:>9,}"
             f"{(tokens // calls if calls else 0):>9,}")
         totals.update({"hand": n, "before": base["before"],
