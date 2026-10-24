@@ -1536,6 +1536,12 @@ _NOT_ANSWERED = "(this call was not run)"
 _CUT_ANSWER = ("the reply stopped at its output limit, so the answer in it "
                "is incomplete; keep the answer shorter")
 
+#: How much of an answer's raw arguments a call's cost row keeps
+#: (``answer_args``) when the engine unwrapped it, dropped keys from it, set
+#: aside an object in it that named its fields, or did not take it. Only run
+#: files keep the rows.
+RAW_ANSWER_CHARS = 20_000
+
 #: The fields a LangChain chat model keeps its per-reply output cap in.
 _CAP_FIELDS = ("max_tokens", "max_output_tokens", "max_completion_tokens")
 
@@ -1583,7 +1589,15 @@ class ChatModelEngine:
     come back with ``parsed`` None and the pass's own re-ask or QA entry
     follows. Foundry sends tools without strict mode, so a model may add a
     key the schema forbids: unknown keys are dropped, named in
-    :attr:`Reply.notes`, and the answer is validated again.
+    :attr:`Reply.notes`, and the answer is validated again; if what is left
+    once they are dropped is empty or has every field at its default, there
+    is no answer. An answer sent as the only key, one the schema does not
+    have, is unwrapped and the wrapper named (:func:`_validate`). An unknown
+    key BESIDE fields of the answer is a stray, however much it looks like
+    the answer: dropped, never merged in, and named when it held an object
+    naming fields of the answer. When the engine changed an answer, did not
+    take it, or set such an object aside, the call's cost row keeps the raw
+    arguments (``answer_args``).
 
     ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
@@ -1845,38 +1859,55 @@ class ChatModelEngine:
 
         parsed = None
         notes: List[str] = []
+        #: the raw arguments of each answer the engine changed or refused
+        raw: List[str] = []
         #: answer call id -> "" (a whole answer) or why it was not taken
         verdicts: Dict[str, str] = {}
         if output_format is not None:
             offered = ([(c["id"], c.get("args")) for c in answers]
                        + [(None, args) for args in spoiled])
             for call_id, args in offered:
+                strays: List[Tuple[str, List[str]]] = []
                 if cut:
-                    answer, dropped, why = None, [], _CUT_ANSWER
+                    answer, dropped, why, wrappers = None, [], _CUT_ANSWER, []
                 else:
-                    answer, dropped, why = _validate(output_format, args)
-                if dropped:
-                    notes.append("unknown keys dropped from the answer: "
-                                 + ", ".join(dropped))
-                if answer is None:
-                    notes.append(f"an answer was not taken: {why}")
-                elif parsed is None:
+                    answer, dropped, why, wrappers = _validate(output_format,
+                                                               args)
+                    strays = _stray_objects(output_format, args)
+                notes.extend(_answer_notes(answer, dropped, why, wrappers,
+                                           strays))
+                if wrappers or dropped or strays or answer is None:
+                    raw.append(_raw_args(args))
+                if answer is not None and parsed is None:
                     parsed = answer
                 if call_id:
                     verdicts[call_id] = "" if answer is not None else why
             if parsed is None and text and not cut:
-                answer, dropped, _why = _validate(output_format,
-                                                  _json_in(text))
-                if answer is not None:
+                found = _json_in(text)
+                answer, dropped, why, wrappers = _validate(output_format,
+                                                           found)
+                # Text that is no answer at all is a reply, not a refusal;
+                # an answer written out as text is noted like a call's. JSON
+                # in the words of a turn that asked to look ({"page": 4}) is
+                # an answer only if it was taken or names a field of one.
+                named = _names_a_field(output_format, found)
+                tried = answer is not None or dropped or wrappers or named
+                if tried and (answer is not None or not wanted or named):
+                    strays = _stray_objects(output_format, found)
+                    notes.extend(_answer_notes(answer, dropped, why,
+                                               wrappers, strays))
+                    if wrappers or dropped or strays or answer is None:
+                        raw.append(_raw_args(found))
                     parsed = answer
-                    if dropped:
-                        notes.append("unknown keys dropped from the answer: "
-                                     + ", ".join(dropped))
         if notes:
             logging.getLogger(__name__).warning("%s: %s", self.name,
                                                 "; ".join(notes))
             # What the engine did with the answer, on the call's cost row.
             entry["notes"] = list(notes)
+        if raw:
+            # The arguments as they came, so the next odd answer can be read
+            # off the run file rather than guessed at.
+            entry["answer_args"] = raw
 
         blocks: List[Dict[str, Any]] = []
         if text:
@@ -2100,34 +2131,57 @@ def _without_nulls(value: Any) -> Any:
 
 
 def _validate(output_format: Any, args: Any
-              ) -> Tuple[Any, List[str], str]:
-    """``args`` as an ``output_format``: ``(answer, keys dropped, why not)``,
-    the answer None when there is none.
+              ) -> Tuple[Any, List[str], str, List[str]]:
+    """``args`` as an ``output_format``: ``(answer, keys dropped, why not,
+    wrappers taken off)``, the answer None when there is none.
 
     * Empty arguments are no answer. Foundry's classes hand back ``{}`` for
       a call cut mid-arguments, and many reading schemas accept ``{}``.
+    * An answer may come wrapped: ONE key the schema does not have, holding
+      the answer as an object or as JSON text of one (:func:`_unwrapped`).
+      On the local Claude narrative run (2026-10-24) 9 of 20 chunk answers
+      came as ``{"arguments": {...}}``. The key is taken off and the value
+      validated instead. A key the schema has is never taken off. BESIDE
+      other keys an unknown key is a stray, whatever it holds: models add
+      maps of their own (``"evidence": {"has_logs": "pages 5-20"}``,
+      ``"units": {"total_depth": "ft"}``) that name the answer's fields with
+      other values, so it is never merged in and never refuses the answer
+      (:func:`_stray_objects` names it).
     * Strict mode's schema makes every field required, so a model may send
       null for a field that has a default: tried again with the nulls left
       out, letting the defaults stand.
     * Foundry sends tools without strict mode, so a model may add a key the
       schema forbids: the unknown keys are dropped and named, and the
       answer validated again. Any other error stands.
+    * What is left once unknown keys are dropped -- or passed over, on a
+      schema that ignores them -- must still say something. Left empty, or
+      with every field at its default, it is no answer: the keys dropped
+      may have held all of it, and many reading schemas accept ``{}``.
+      ON PURPOSE this also refuses an answer that truly has nothing to say
+      when it carries a stray key: ``{"comments": [], "summary": "none"}``
+      for the reconciler's comments, or ``{"title": null, "reasoning":
+      "..."}`` for a bound document's identity. The schemas that build a
+      blank answer from ``{}`` (the narrative reading and its summary, the
+      bound identity, the conflict comments, the scale labels) cannot tell
+      that from an answer lost to its wrapper; the model is told why, and
+      the pass's own re-ask or warning follows.
     """
     if isinstance(args, str):
         try:
             args = json.loads(args)
         except (json.JSONDecodeError, ValueError):
-            return None, [], "its arguments are not JSON"
+            return None, [], "its arguments are not JSON", []
     if not isinstance(args, dict):
-        return None, [], "it is not a JSON object"
+        return None, [], "it is not a JSON object", []
     if not args:
-        return None, [], "it arrived empty"
+        return None, [], "it arrived empty", []
+    args, wrappers = _unwrapped(output_format, args)
     why = ""
     for candidate in (args, _without_nulls(args)):
         dropped: List[str] = []
         for _ in range(4):
             try:
-                return output_format.model_validate(candidate), dropped, ""
+                answer = output_format.model_validate(candidate)
             except Exception as exc:                     # noqa: BLE001
                 errors = _errors_of(exc)
                 why = ("it does not match the schema ("
@@ -2140,7 +2194,177 @@ def _validate(output_format: Any, args: Any
                 if not removed:
                     break
                 dropped.extend(removed)
-    return None, [], why
+                if not candidate:
+                    return None, dropped, _emptied(dropped), wrappers
+                continue
+            passed = _passed_over(output_format, candidate)
+            if (dropped or passed) and _says_nothing(output_format,
+                                                     candidate, answer):
+                return None, dropped, _emptied(dropped, passed), wrappers
+            return answer, dropped, "", wrappers
+    return None, [], why, wrappers
+
+
+def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
+    """Why an answer that lost everything to its unknown keys is not
+    taken: the keys dropped (a schema that forbids them) and the keys passed
+    over (one that ignores them)."""
+    said = []
+    if dropped:
+        said.append(f"{', '.join(dropped)} were dropped")
+    if passed:
+        said.append(f"{', '.join(passed)} were passed over")
+    return "nothing was left once the unknown keys " + " and ".join(said)
+
+
+def _answer_notes(answer: Any, dropped: Sequence[str], why: str,
+                  wrappers: Sequence[str],
+                  strays: Sequence[Tuple[str, Sequence[str]]] = ()
+                  ) -> List[str]:
+    """What the engine did with one answer, for :attr:`Reply.notes`: one
+    note for its wrappers however deep, one for each stray key that held an
+    object naming fields of the answer, one for the keys dropped, one if it
+    was not taken."""
+    notes = []
+    if wrappers:
+        notes.append("the answer arrived wrapped in "
+                     + ", then ".join(repr(w) for w in wrappers)
+                     + ("; unwrapped" if answer is not None
+                        else "; unwrapped, and still not taken"))
+    for key, named in strays:
+        shown = ", ".join(named[:5]) + (", ..." if len(named) > 5 else "")
+        notes.append(f"the unknown key {key!r} held an object naming fields "
+                     f"of the answer ({shown}); set aside, not merged")
+    if dropped:
+        notes.append("unknown keys dropped from the answer: "
+                     + ", ".join(dropped))
+    if answer is None:
+        notes.append(f"an answer was not taken: {why}")
+    return notes
+
+
+def _raw_args(args: Any, limit: int = RAW_ANSWER_CHARS) -> str:
+    """An answer's arguments as they came, as JSON text cut to ``limit``
+    characters."""
+    if isinstance(args, str):
+        body = args
+    else:
+        try:
+            body = json.dumps(args, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            body = repr(args)
+    if len(body) > limit:
+        body = (body[:limit]
+                + f" ... [cut at {limit:,} of {len(body):,} characters]")
+    return body
+
+
+def _field_names(output_format: Any) -> Optional[set]:
+    """The keys a schema takes at its top: its fields' names and string
+    aliases; None for a schema that does not say."""
+    fields = getattr(output_format, "model_fields", None)
+    if not isinstance(fields, dict):
+        return None
+    names = set()
+    for name, info in fields.items():
+        names.add(name)
+        for alias in (getattr(info, "alias", None),
+                      getattr(info, "validation_alias", None)):
+            if isinstance(alias, str):
+                names.add(alias)
+    return names
+
+
+def _object_in(value: Any) -> Optional[Dict[str, Any]]:
+    """A non-empty object, or JSON text of one, as a dict; else None."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return value if isinstance(value, dict) and value else None
+
+
+def _unwrapped(output_format: Any, args: Dict[str, Any]
+               ) -> Tuple[Dict[str, Any], List[str]]:
+    """``args`` with any wrapper taken off, and the wrappers' names.
+
+    A wrapper is the ONLY key, one the schema does not have, holding a
+    non-empty object or JSON text of one. Taken off at most three deep; a
+    key the schema has is never taken off, whatever it holds. A key beside
+    others is never a wrapper (:func:`_stray_objects`).
+    """
+    names = _field_names(output_format)
+    wrappers: List[str] = []
+    if names is None:
+        return args, wrappers
+    for _ in range(3):
+        if len(args) != 1:
+            break
+        ((key, value),) = args.items()
+        inner = None if key in names else _object_in(value)
+        if inner is None:
+            break
+        wrappers.append(str(key))
+        args = inner
+    return args, wrappers
+
+
+def _stray_objects(output_format: Any, args: Any
+                   ) -> List[Tuple[str, List[str]]]:
+    """The unknown keys beside the answer's fields (any wrapper taken off)
+    that held an object naming fields of the answer, each with the fields
+    it named.
+
+    They are strays all the same -- dropped or passed over, never merged
+    in, never a reason to refuse the answer: a map of the model's own
+    (evidence, units, sources) names the answer's fields with other values.
+    Named, so a run's check can show an answer that may have been hidden
+    beside an id.
+    """
+    names = _field_names(output_format)
+    value = _object_in(args)
+    if not names or value is None:
+        return []
+    value = _unwrapped(output_format, value)[0]
+    out: List[Tuple[str, List[str]]] = []
+    for key, held in value.items():
+        inner = None if key in names else _object_in(held)
+        named = sorted(names.intersection(inner)) if inner else []
+        if named:
+            out.append((str(key), named))
+    return out
+
+
+def _names_a_field(output_format: Any, value: Any) -> bool:
+    """Whether a JSON object names a field of the schema, at its top or
+    inside a wrapper."""
+    names = _field_names(output_format)
+    if not names or not isinstance(value, dict):
+        return False
+    inner = _unwrapped(output_format, value)[0]
+    return bool(names.intersection(value) or names.intersection(inner))
+
+
+def _passed_over(output_format: Any, candidate: Dict[str, Any]) -> List[str]:
+    """The top-level keys a schema that ignores unknown keys passed over."""
+    names = _field_names(output_format)
+    if names is None:
+        return []
+    return [str(k) for k in candidate if k not in names]
+
+
+def _says_nothing(output_format: Any, candidate: Dict[str, Any],
+                  answer: Any) -> bool:
+    """Whether an answer that validated holds nothing: empty, or every field
+    at its default. A schema with a required field always says something."""
+    if not candidate:
+        return True
+    try:
+        blank = output_format()
+        return answer.model_dump() == blank.model_dump()
+    except Exception:                                    # noqa: BLE001
+        return False
 
 
 def _errors_of(exc: Exception) -> List[Dict[str, Any]]:

@@ -505,6 +505,39 @@ class TestALongNarrative:
         assert engine.n_calls == 1                 # one chunk, one kept back
         assert any("were not read" in w for w in result.warnings)
 
+    def test_a_wrapped_answer_is_read_and_an_emptied_one_is_warned_of(
+            self, doc):
+        # 2026-10-24: chunk answers sent as {"arguments": {...}} were folded
+        # in as empty readings, with no warning. On the app's chat model
+        # engine the wrapped one is now read, and one that holds nothing
+        # once its unknown key is dropped is a chunk with no answer.
+        pytest.importorskip("langchain_core")
+        from report_ingest.engine import ChatModelEngine
+        from report_ingest.narrative_reader import SummaryReading
+        from report_ingest.tests.chat_fixtures import (ScriptedChatModel,
+                                                       answer_call)
+
+        first = full_reading(boringCount=4).model_dump(mode="json")
+        third = full_reading(boringDictionary=["B-1"], citations=[]
+                             ).model_dump(mode="json")
+        model = ScriptedChatModel(replies=[
+            answer_call({"arguments": first}),
+            answer_call({"arguments": "see above"}),
+            answer_call(third),
+            answer_call(SummaryReading().model_dump(mode="json")),
+        ])
+        engine = ChatModelEngine(model)
+        result = read(doc, engine, budget=8, max_chunk_chars=1200)
+
+        assert result.general.boringCount == 4     # the unwrapped chunk
+        assert result.general.boringDictionary == ["B-1"]
+        assert [w for w in result.warnings
+                if "no structured answer" in w] != []
+        rows = engine.meter.to_dict()["per_call"]
+        assert rows[0]["notes"] == [
+            "the answer arrived wrapped in 'arguments'; unwrapped"]
+        assert any("nothing was left" in n for n in rows[1]["notes"])
+
 
 def _rank(result, field, words):
     """The rank of the record's QA entry for ``field`` that says ``words``,
