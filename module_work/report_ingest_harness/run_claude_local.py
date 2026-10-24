@@ -529,17 +529,37 @@ def _scored_part(blob: dict) -> dict:
 #: The engine's notes on an answer (report_ingest.engine._answer_notes).
 _DROPPED_NOTE = "unknown keys dropped from the answer: "
 _EMPTIED_NOTE = "nothing was left once the unknown keys"
+_CLASHED_NOTE = "beside keys that say something else"
+#: A key name the model chose goes into RESULTS.md only if it looks like one.
+_KEY_NAME = re.compile(r"[A-Za-z_][\w.]{0,40}", re.ASCII)
+
+
+def _key_name(key: str) -> str:
+    key = key.strip()
+    return key if _KEY_NAME.fullmatch(key) else "(other)"
+
+
+def _emptied_keys(note: str) -> List[str]:
+    """The keys an emptied answer's note names, dropped or passed over."""
+    said = note.split(_EMPTIED_NOTE, 1)[1]
+    for words in (" were dropped", " were passed over"):
+        said = said.replace(words, "")
+    return [k for k in said.replace(" and ", ", ").split(",") if k.strip()]
 
 
 def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
     """Stop reasons, failures, cut-offs, refusals and answers not taken, off
     the run files' per-call cost rows.
 
-    An answer whose unknown keys held all of it is an ERROR, not a count:
-    ``answers_emptied`` (the engine said so and did not take it) and
-    ``emptied_unverified`` (a row from an engine before 2026-10-24, which
-    took what was left and kept no raw arguments: a top-level key dropped
-    from a taken answer may have been the whole answer, wrapped)."""
+    An answer lost to its own keys is an ERROR, not a count:
+    ``answers_emptied`` (nothing was left once its unknown keys were
+    dropped, so the engine did not take it), ``answers_clashed`` (it came
+    wrapped beside keys that say something else, so the engine did not take
+    it) and ``emptied_unverified`` (a row from an engine before 2026-10-24,
+    which took what was left and kept no raw arguments: a top-level key
+    dropped from a taken answer may have been the whole answer, wrapped).
+    Key names are the model's choosing: only identifier-like ones are
+    reported, the rest as "(other)"."""
     from report_ingest.engine import CUT_REASONS
 
     stops: Counter = Counter()
@@ -549,7 +569,8 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
     out = {"replies": 0, "failed": 0, "cut_off": 0, "refusals": 0,
            "answers_not_taken": 0, "unknown_keys_dropped": 0,
            "answers_unwrapped": 0, "answers_emptied": 0,
-           "emptied_unverified": 0, "items_with_error": 0, "cap_refused": 0}
+           "answers_clashed": 0, "emptied_unverified": 0,
+           "items_with_error": 0, "cap_refused": 0}
     for blob in blobs.values():
         if _scored_part(blob).get("error"):
             out["items_with_error"] += 1
@@ -567,28 +588,30 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
                 out["cut_off"] += 1
             if stop == "refusal":
                 out["refusals"] += 1
-            for note in (str(n) for n in row.get("notes") or []):
-                if "not taken" in note:
+            notes = [str(n) for n in row.get("notes") or []]
+            refused = any("not taken: " in n for n in notes)
+            for note in notes:
+                if "not taken: " in note:
                     out["answers_not_taken"] += 1
                 if "arrived wrapped in" in note:
                     out["answers_unwrapped"] += 1
+                if _CLASHED_NOTE in note:
+                    out["answers_clashed"] += 1
                 if _EMPTIED_NOTE in note:
                     out["answers_emptied"] += 1
-                    keys = note.split(_EMPTIED_NOTE, 1)[1]
-                    emptied_by.update(
-                        k.strip() for k in keys.rsplit(" were dropped", 1)[0]
-                        .split(","))
+                    emptied_by.update(_key_name(k)
+                                      for k in _emptied_keys(note))
                 if _DROPPED_NOTE not in note:
                     continue
                 out["unknown_keys_dropped"] += 1
-                # Before 2026-10-24 a note of keys dropped meant the answer
-                # was taken, whatever was left of it, and no raw arguments
-                # were kept to tell.
+                # Before 2026-10-24 a note of keys dropped beside no note of
+                # an answer not taken meant the answer was taken, whatever
+                # was left of it, and no raw arguments were kept to tell.
                 keys = note.split(_DROPPED_NOTE, 1)[1].split(", ")
                 top = [k for k in keys if k and "." not in k]
-                if top and "answer_args" not in row:
+                if top and not refused and "answer_args" not in row:
                     out["emptied_unverified"] += 1
-                    unverified_by.update(top)
+                    unverified_by.update(_key_name(k) for k in top)
     out["emptied_keys"] = dict(emptied_by.most_common())
     out["unverified_keys"] = dict(unverified_by.most_common())
     out["stops"] = dict(stops.most_common())
@@ -843,14 +866,20 @@ def check_lines(out: Path, stage: str, truth_root: Optional[Path] = None
             f"their unknown keys were dropped, and were not taken (keys: "
             f"{_key_list(health['emptied_keys'])}). Those calls' answers are "
             f"lost; each row's answer_args holds what the model sent.")
+    if health["answers_clashed"]:
+        lines.append(
+            f"ERROR: {health['answers_clashed']} answer(s) came wrapped in a "
+            f"key beside keys that say something else, and were not taken. "
+            f"Those calls' answers are lost; each row's answer_args holds "
+            f"what the model sent.")
     if health["emptied_unverified"]:
         lines.append(
             f"ERROR (unverified): {health['emptied_unverified']} answer(s) "
             f"lost a top-level key and were taken, by an engine that kept no "
             f"raw arguments (keys: {_key_list(health['unverified_keys'])}). "
             f"If that key wrapped the whole answer, the answer taken was "
-            f"empty (the wrapped-answer bug fixed 2026-10-24); run these "
-            f"items again.")
+            f"empty (the wrapped-answer bug fixed 2026-10-24); check the "
+            f"reading.")
     calls = spend_log(out)
     seen = [c for c in calls if c.get("lc_images") is not None]
     if seen:

@@ -847,13 +847,22 @@ class TestAWrappedAnswer:
         assert any("nothing was left" in note for note in reply.notes)
 
     def test_every_field_at_its_default_after_the_drop_is_not_taken(self):
-        # Two keys, so no wrapper: the unknown one is dropped, and the only
-        # field left is a null, which is every field at its default.
-        _, _, _, reply = self._read({"arguments": dict(self.WHOLE),
+        # Two keys, and the unknown one holds no object, so no wrapper: it
+        # is dropped, and the only field left is a null, which is every
+        # field at its default.
+        _, _, _, reply = self._read({"arguments": "see the pages",
                                      "projectName": None})
         assert reply.parsed is None
         assert any("nothing was left once the unknown keys arguments"
                    in note for note in reply.notes)
+
+    def test_a_null_beside_a_wrapper_does_not_disagree_with_it(self):
+        _, _, _, reply = self._read({"arguments": dict(self.WHOLE),
+                                     "projectName": None,
+                                     "quickSummary": None})
+        assert reply.parsed.projectName == "Made-up Depot"
+        assert reply.notes == [
+            "the answer arrived wrapped in 'arguments'; unwrapped"]
 
     def test_a_schema_that_ignores_unknown_keys_is_held_to_it_too(self):
         class Loose(BaseModel):                 # pydantic's default: ignore
@@ -864,7 +873,9 @@ class TestAWrappedAnswer:
         reply = engine.complete([user(text_block("go"))],
                                 output_format=Loose)
         assert reply.parsed is None
-        assert any("site_name, site_code" in note for note in reply.notes)
+        assert reply.notes == [
+            "an answer was not taken: nothing was left once the unknown "
+            "keys site_name, site_code were passed over"]
 
     def test_a_wrapped_answer_written_out_as_text_is_unwrapped(self):
         from report_ingest.narrative_reader import NarrativeReading
@@ -893,6 +904,161 @@ class TestAWrappedAnswer:
         assert reply.notes == []
         (row,) = engine.meter.to_dict()["per_call"]
         assert "answer_args" not in row and "notes" not in row
+
+    def test_a_wrapper_two_deep_is_one_note(self):
+        _, _, _, reply = self._read({"arguments": {"answer": self.WHOLE}})
+        assert reply.parsed.projectName == "Made-up Depot"
+        assert reply.notes == [
+            "the answer arrived wrapped in 'arguments', then 'answer'; "
+            "unwrapped"]
+
+    def test_unwrapped_then_refused_says_so(self):
+        _, _, _, reply = self._read({"arguments": {"colour": "red"}})
+        assert reply.parsed is None
+        assert reply.notes == [
+            "the answer arrived wrapped in 'arguments'; unwrapped, and "
+            "still not taken",
+            "unknown keys dropped from the answer: colour",
+            "an answer was not taken: nothing was left once the unknown "
+            "keys colour were dropped"]
+
+    def test_an_alias_of_a_field_is_never_unwrapped(self):
+        class Aliased(BaseModel):
+            model_config = {"extra": "forbid"}
+            site: Optional[dict] = Field(None, alias="siteInfo")
+
+        engine, _ = _engine(answer_call({"siteInfo": {"name": "inner"}}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=Aliased)
+        assert reply.parsed.site == {"name": "inner"}
+        assert reply.notes == []
+
+
+class TestAWrapperBesideAField:
+    """A wrapper beside a field the schema requires, as
+    ``{"investigation_id": "B-1", "arguments": {...}}`` on a log reading:
+    dropping the wrapper would keep a reading of one field. Made-up values
+    only."""
+
+    def _read(self, args):
+        from report_ingest.log_reader import LogReading
+
+        engine, _ = _engine(answer_call(args))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=LogReading)
+        return engine, reply
+
+    def test_it_joins_the_keys_beside_it_when_they_agree(self):
+        _, reply = self._read({
+            "investigation_id": "B-1",
+            "arguments": {"investigation_id": "B-1", "total_depth": 12.5,
+                          "remarks": "made-up remark"}})
+        assert reply.parsed.investigation_id == "B-1"
+        assert reply.parsed.total_depth == 12.5
+        assert reply.parsed.remarks == "made-up remark"
+        assert reply.notes == [
+            "the answer arrived wrapped in 'arguments'; unwrapped"]
+
+    def test_json_text_inside_it_joins_too(self):
+        _, reply = self._read({"investigation_id": "B-1",
+                               "payload": json.dumps({"total_depth": 7.0})})
+        assert reply.parsed.total_depth == 7.0
+
+    def test_when_they_disagree_the_answer_is_not_taken(self):
+        engine, reply = self._read({
+            "investigation_id": "B-1",
+            "arguments": {"investigation_id": "B-2", "total_depth": 12.5}})
+        assert reply.parsed is None
+        assert reply.notes == [
+            "an answer was not taken: the answer came wrapped in "
+            "'arguments' beside keys that say something else "
+            "(investigation_id)"]
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert "B-2" in row["answer_args"][0]
+
+    def test_an_object_that_names_no_field_is_a_stray_key(self):
+        _, reply = self._read({"investigation_id": "B-1",
+                               "meta": {"source": "made-up"}})
+        assert reply.parsed.investigation_id == "B-1"
+        assert reply.notes == ["unknown keys dropped from the answer: meta"]
+
+
+class TestAnEmptyAnswerWithAStrayKey:
+    """ON PURPOSE: a schema that builds a blank answer from ``{}`` cannot
+    tell an answer with nothing to say and a stray key from one lost to its
+    wrapper, so both are refused and the model is told why."""
+
+    def test_the_conflict_comments_with_a_summary_beside_them(self):
+        from report_ingest.reconciler import _ConflictComments
+
+        engine, _ = _engine(answer_call({"comments": [],
+                                         "summary": "none"}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=_ConflictComments)
+        assert reply.parsed is None
+        assert reply.notes == [
+            "an answer was not taken: nothing was left once the unknown "
+            "keys summary were passed over"]
+
+    def test_a_bound_identity_with_a_null_title_and_its_reasoning(self):
+        from report_ingest.bound import BoundIdentity
+
+        engine, _ = _engine(answer_call({"title": None,
+                                         "reasoning": "made-up reasoning"}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=BoundIdentity)
+        assert reply.parsed is None
+        assert any("reasoning were passed over" in note
+                   for note in reply.notes)
+
+    def test_the_same_answer_without_the_stray_key_is_taken(self):
+        from report_ingest.reconciler import _ConflictComments
+
+        engine, _ = _engine(answer_call({"comments": []}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=_ConflictComments)
+        assert reply.parsed is not None and reply.parsed.comments == []
+        assert reply.notes == []
+
+
+class TestJsonInTheWordsOfALook:
+    """A turn that asks to look may say ``{"page": 4}`` in its words: that is
+    not an answer, and is not noted as one refused."""
+
+    def _turn(self, words):
+        return AIMessage(content=words, tool_calls=[
+            {"name": "zoom_plot", "args": {"page": 4}, "id": "z",
+             "type": "tool_call"}],
+            response_metadata={"finish_reason": "tool_calls"})
+
+    def test_it_is_not_noted_as_a_lost_answer(self):
+        from report_ingest.calc_reader import CalcReading
+
+        engine, _ = _engine(self._turn('Looking closer at {"page": 4}.'))
+        reply = engine.complete([user(text_block("go"))], tools=[ZOOM],
+                                output_format=CalcReading)
+        assert reply.parsed is None and reply.notes == []
+        assert [c.name for c in reply.tool_calls] == ["zoom_plot"]
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert "notes" not in row and "answer_args" not in row
+
+    def test_json_that_names_a_field_is_still_noted(self):
+        from report_ingest.calc_reader import CalcReading
+
+        engine, _ = _engine(self._turn('{"kind": ["x"], "page": 4}'))
+        reply = engine.complete([user(text_block("go"))], tools=[ZOOM],
+                                output_format=CalcReading)
+        assert reply.parsed is None
+        assert any("not taken" in note for note in reply.notes)
+
+    def test_with_no_look_asked_the_refusal_is_noted(self):
+        from report_ingest.calc_reader import CalcReading
+
+        engine, _ = _engine(_said('{"page": 4}'))
+        reply = engine.complete([user(text_block("go"))], tools=[ZOOM],
+                                output_format=CalcReading)
+        assert reply.parsed is None
+        assert any("nothing was left" in note for note in reply.notes)
 
 
 # -- every request in the cost record (BACKLOG RI-21) -------------------------

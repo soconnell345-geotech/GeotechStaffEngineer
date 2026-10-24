@@ -1588,11 +1588,13 @@ class ChatModelEngine:
     come back with ``parsed`` None and the pass's own re-ask or QA entry
     follows. Foundry sends tools without strict mode, so a model may add a
     key the schema forbids: unknown keys are dropped, named in
-    :attr:`Reply.notes`, and the answer is validated again; if nothing is
-    left once they are dropped, there is no answer. An answer sent wrapped
-    in one key the schema does not have is unwrapped and the wrapper named
-    (:func:`_validate`). When the engine changed an answer or did not take
-    it, the call's cost row keeps the raw arguments (``answer_args``).
+    :attr:`Reply.notes`, and the answer is validated again; if what is left
+    once they are dropped is empty or has every field at its default, there
+    is no answer. An answer sent wrapped in a key the schema does not have
+    is unwrapped and the wrapper named, or not taken when the keys beside
+    the wrapper say something else (:func:`_validate`). When the engine
+    changed an answer or did not take it, the call's cost row keeps the raw
+    arguments (``answer_args``).
 
     ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
@@ -1879,8 +1881,12 @@ class ChatModelEngine:
                 answer, dropped, why, wrappers = _validate(output_format,
                                                            found)
                 # Text that is no answer at all is a reply, not a refusal;
-                # an answer written out as text is noted like a call's.
-                if answer is not None or dropped or wrappers:
+                # an answer written out as text is noted like a call's. JSON
+                # in the words of a turn that asked to look ({"page": 4}) is
+                # an answer only if it was taken or names a field of one.
+                named = _names_a_field(output_format, found)
+                tried = answer is not None or dropped or wrappers or named
+                if tried and (answer is not None or not wanted or named):
                     notes.extend(_answer_notes(answer, dropped, why,
                                                wrappers))
                     if wrappers or dropped or answer is None:
@@ -2124,11 +2130,14 @@ def _validate(output_format: Any, args: Any
 
     * Empty arguments are no answer. Foundry's classes hand back ``{}`` for
       a call cut mid-arguments, and many reading schemas accept ``{}``.
-    * An answer may come wrapped: ONE key the schema does not have, holding
-      the whole answer as an object or as JSON text of one. The value is
-      validated instead and the wrapper named (:func:`_unwrapped`). On the
-      local Claude narrative run (2026-10-24) 9 of 20 chunk answers came as
-      ``{"arguments": {...}}``. A key the schema has is never taken off.
+    * An answer may come wrapped in a key the schema does not have, holding
+      the answer as an object or as JSON text of one (:func:`_unwrapped`).
+      On the local Claude narrative run (2026-10-24) 9 of 20 chunk answers
+      came as ``{"arguments": {...}}``. Alone, the key is taken off and the
+      value validated instead. Beside other keys, it is taken off when what
+      it holds names a field of the schema and agrees with the keys beside
+      it; when it disagrees, the answer is not taken. A key the schema has
+      is never taken off.
     * Strict mode's schema makes every field required, so a model may send
       null for a field that has a default: tried again with the nulls left
       out, letting the defaults stand.
@@ -2139,6 +2148,14 @@ def _validate(output_format: Any, args: Any
       schema that ignores them -- must still say something. Left empty, or
       with every field at its default, it is no answer: the keys dropped
       may have held all of it, and many reading schemas accept ``{}``.
+      ON PURPOSE this also refuses an answer that truly has nothing to say
+      when it carries a stray key: ``{"comments": [], "summary": "none"}``
+      for the reconciler's comments, or ``{"title": null, "reasoning":
+      "..."}`` for a bound document's identity. The schemas that build a
+      blank answer from ``{}`` (the narrative reading and its summary, the
+      bound identity, the conflict comments, the scale labels) cannot tell
+      that from an answer lost to its wrapper; the model is told why, and
+      the pass's own re-ask or warning follows.
     """
     if isinstance(args, str):
         try:
@@ -2149,7 +2166,9 @@ def _validate(output_format: Any, args: Any
         return None, [], "it is not a JSON object", []
     if not args:
         return None, [], "it arrived empty", []
-    args, wrappers = _unwrapped(output_format, args)
+    args, wrappers, refused = _unwrapped(output_format, args)
+    if refused:
+        return None, [], refused, wrappers
     why = ""
     for candidate in (args, _without_nulls(args)):
         dropped: List[str] = []
@@ -2171,25 +2190,37 @@ def _validate(output_format: Any, args: Any
                 if not candidate:
                     return None, dropped, _emptied(dropped), wrappers
                 continue
-            gone = dropped + _passed_over(output_format, candidate)
-            if gone and _says_nothing(output_format, candidate, answer):
-                return None, dropped, _emptied(gone), wrappers
+            passed = _passed_over(output_format, candidate)
+            if (dropped or passed) and _says_nothing(output_format,
+                                                     candidate, answer):
+                return None, dropped, _emptied(dropped, passed), wrappers
             return answer, dropped, "", wrappers
     return None, [], why, wrappers
 
 
-def _emptied(keys: Sequence[str]) -> str:
+def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
     """Why an answer that lost everything to its unknown keys is not
-    taken."""
-    return (f"nothing was left once the unknown keys {', '.join(keys)} "
-            f"were dropped")
+    taken: the keys dropped (a schema that forbids them) and the keys passed
+    over (one that ignores them)."""
+    said = []
+    if dropped:
+        said.append(f"{', '.join(dropped)} were dropped")
+    if passed:
+        said.append(f"{', '.join(passed)} were passed over")
+    return "nothing was left once the unknown keys " + " and ".join(said)
 
 
 def _answer_notes(answer: Any, dropped: Sequence[str], why: str,
                   wrappers: Sequence[str]) -> List[str]:
-    """What the engine did with one answer, for :attr:`Reply.notes`."""
-    notes = [f"the answer arrived wrapped in {w!r}; unwrapped"
-             for w in wrappers]
+    """What the engine did with one answer, for :attr:`Reply.notes`: one
+    note for its wrappers however deep, one for the keys dropped, one if it
+    was not taken."""
+    notes = []
+    if wrappers:
+        notes.append("the answer arrived wrapped in "
+                     + ", then ".join(repr(w) for w in wrappers)
+                     + ("; unwrapped" if answer is not None
+                        else "; unwrapped, and still not taken"))
     if dropped:
         notes.append("unknown keys dropped from the answer: "
                      + ", ".join(dropped))
@@ -2230,34 +2261,77 @@ def _field_names(output_format: Any) -> Optional[set]:
     return names
 
 
-def _unwrapped(output_format: Any, args: Dict[str, Any]
-               ) -> Tuple[Dict[str, Any], List[str]]:
-    """``args`` with any wrapper taken off, and the wrappers' names.
+def _object_in(value: Any) -> Optional[Dict[str, Any]]:
+    """A non-empty object, or JSON text of one, as a dict; else None."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return value if isinstance(value, dict) and value else None
 
-    A wrapper is the ONLY key, one the schema does not have, holding a
-    non-empty object or JSON text of one. Taken off at most three deep; a
-    key the schema has is never taken off, whatever it holds.
+
+def _unwrapped(output_format: Any, args: Dict[str, Any]
+               ) -> Tuple[Dict[str, Any], List[str], str]:
+    """``args`` with any wrapper taken off, the wrappers' names, and why the
+    answer is not taken ("" when it may be).
+
+    * The ONLY key, one the schema does not have, holding a non-empty object
+      or JSON text of one, is a wrapper: what it holds stands for the
+      answer.
+    * Beside other keys, a key the schema does not have is a wrapper when
+      what it holds names a field of the schema. Taken off, what it holds
+      joins the keys beside it -- unless one of them says something else
+      for the same key; then the answer is not taken, as which of the two
+      is the answer cannot be told. A null says nothing (strict mode has a
+      model send one for every field it leaves), so it never disagrees and
+      never stands over a value.
+    * A key the schema has is never taken off, whatever it holds. Taken off
+      at most three deep.
     """
     names = _field_names(output_format)
     wrappers: List[str] = []
     if names is None:
-        return args, wrappers
+        return args, wrappers, ""
     for _ in range(3):
-        if len(args) != 1:
-            break
-        ((key, value),) = args.items()
-        if key in names:
-            break
-        if isinstance(value, str):
-            try:
-                value = json.loads(value)
-            except (json.JSONDecodeError, ValueError):
+        if len(args) == 1:
+            ((key, value),) = args.items()
+            inner = None if key in names else _object_in(value)
+            if inner is None:
                 break
-        if not isinstance(value, dict) or not value:
+            wrappers.append(str(key))
+            args = inner
+            continue
+        held = {key: inner for key, inner in
+                ((k, _object_in(v)) for k, v in args.items()
+                 if k not in names)
+                if inner and names.intersection(inner)}
+        if not held:
             break
-        wrappers.append(str(key))
-        args = value
-    return args, wrappers
+        merged = {k: v for k, v in args.items() if k not in held}
+        for key, inner in held.items():
+            clash = [str(k) for k, v in inner.items()
+                     if v is not None and merged.get(k) is not None
+                     and merged[k] != v]
+            if clash:
+                return args, wrappers, (
+                    f"the answer came wrapped in {key!r} beside keys that "
+                    f"say something else ({', '.join(clash)})")
+            merged.update((k, v) for k, v in inner.items()
+                          if v is not None or k not in merged)
+            wrappers.append(str(key))
+        args = merged
+    return args, wrappers, ""
+
+
+def _names_a_field(output_format: Any, value: Any) -> bool:
+    """Whether a JSON object names a field of the schema, at its top or
+    inside a wrapper."""
+    names = _field_names(output_format)
+    if not names or not isinstance(value, dict):
+        return False
+    inner = _unwrapped(output_format, value)[0]
+    return bool(names.intersection(value) or names.intersection(inner))
 
 
 def _passed_over(output_format: Any, candidate: Dict[str, Any]) -> List[str]:
