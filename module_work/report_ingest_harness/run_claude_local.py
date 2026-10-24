@@ -62,6 +62,16 @@ metered call of every run of the arm, with the pictures it carried) and
 ``sdk_retries.jsonl`` (each retry the Anthropic SDK made inside a call,
 which no meter sees otherwise).
 
+THE PUBLIC BLIND SET (BACKLOG RI-79) is run the same way, pointed at its
+own folders: ``--raw-dir`` at the set's ``raw/`` (its truth is
+``raw/truth/``, written from AGS4 data by :mod:`.ags_truth`) and
+``--reports-dir`` at ``raw/assembled/``, where its PDFs are ``P01.pdf``
+... Its ``OPEN.txt`` names no report, so every item is scored as blind::
+
+    ... run_claude_local run --stage logs --model claude-sonnet-5-5 \\
+        --raw-dir <set>/raw --reports-dir <set>/raw/assembled \\
+        --wave pb-logs-sonnet --cap 1 --arm public_logs_sonnet
+
 IT RESUMES. The same command again skips every item that already has a run
 file, as ``score_on_cluster`` always has; an item whose reading was cut by
 the cap is set aside under ``<stage>/_capped/`` so it is read again whole.
@@ -114,8 +124,9 @@ STAGES: Dict[str, tuple] = {
 SWITCH_PREFIX = "GEOTECH_INGEST_"
 #: What a refused call's error says (``live_smoke.spend.SpendMeter.check``).
 CAP_TEXT = re.compile(r"cap reached|hard total reached|WaveCapReached", re.I)
-#: The report an item belongs to, out of its file name.
-REPORT_ID = re.compile(r"R\d{2}")
+#: The report an item belongs to, out of its file name: ``R06`` in the
+#: corpus, ``P01`` in the public blind set.
+REPORT_ID = re.compile(r"[RP]\d{2}")
 
 #: Exit codes.
 OK, REFUSED, STOPPED_BY_CAP = 0, 2, 3
@@ -960,6 +971,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "checkout's)")
     run.add_argument("--truth-dir", default=None,
                      help="the truth root (default: <raw-dir>/truth)")
+    run.add_argument("--reports-dir", default=None,
+                     help="the folder holding the PDFs (default: "
+                          "<raw-dir>/corpus)")
     run.add_argument("--ledger", default=None,
                      help="the spend ledger (default: the main checkout's)")
     run.add_argument("--redo", action="store_true",
@@ -975,6 +989,8 @@ def _paths(args: argparse.Namespace) -> Dict[str, Path]:
     main = main_checkout()
     raw = Path(args.raw_dir) if args.raw_dir else main / RAW_REL
     return {"main": main, "raw": raw,
+            "reports": Path(args.reports_dir) if args.reports_dir
+            else raw / "corpus",
             "truth": Path(args.truth_dir) if args.truth_dir
             else raw / "truth",
             "ledger": Path(args.ledger) if args.ledger
@@ -994,8 +1010,9 @@ def run(args: argparse.Namespace,
     for name in {model, vision}:
         rates_for(name, 0)                       # an unpriced model stops here
     paths = _paths(args)
-    if not (paths["raw"] / "corpus").is_dir():
-        print(f"no private corpus at {paths['raw']} (pass --raw-dir)")
+    if not paths["reports"].is_dir():
+        print(f"no reports at {paths['reports']} (pass --raw-dir or "
+              f"--reports-dir)")
         return REFUSED
     budget_arg, budget_default = STAGES[stage]
     budget = args.budget or budget_default
@@ -1063,7 +1080,7 @@ def run(args: argparse.Namespace,
     try:
         with retries:
             results = score_on_cluster(
-                reports_dir=paths["raw"] / "corpus",
+                reports_dir=paths["reports"],
                 di_dir=paths["raw"] / "di",
                 out_dir=out, prompter=None, model=model,
                 vision_model=vision, stages=(stage,), truth_dir=truth_root,

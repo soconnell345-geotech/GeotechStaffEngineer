@@ -251,6 +251,35 @@ def test_sets_and_only_pick_items_and_copy_the_open_file(made_up):
                              picked=False) == truth
 
 
+def test_a_public_set_item_is_picked_by_its_p_id(tmp_path):
+    # BACKLOG RI-79: the public blind set's items are P01_p0 ...; its
+    # OPEN.txt names no report, so every one is blind.
+    logs = tmp_path / "truth" / "logs"
+    logs.mkdir(parents=True)
+    for stem in ("P01_p0", "P01_p4", "P02_p0"):
+        (logs / f"{stem}.json").write_text("{}", encoding="utf-8")
+    (logs / "OPEN.txt").write_text("(none)\n", encoding="utf-8")
+
+    assert rcl.report_of("P01_p4") == "P01"
+    truth = tmp_path / "truth"
+    assert rcl.pick_items("logs", truth, "open", []) == []
+    assert [p.stem for p in rcl.pick_items("logs", truth, "blind", [])] == [
+        "P01_p0", "P01_p4", "P02_p0"]
+    assert [p.stem for p in rcl.pick_items("logs", truth, "all",
+                                           ["P02"])] == ["P02_p0"]
+
+    args = rcl.build_parser().parse_args([
+        "run", "--stage", "logs", "--model", MODEL, "--wave", "w",
+        "--cap", "1", "--raw-dir", str(tmp_path),
+        "--reports-dir", str(tmp_path / "assembled")])
+    paths = rcl._paths(args)
+    assert paths["reports"] == tmp_path / "assembled"
+    assert paths["truth"] == truth
+    # Left out, the reports are the corpus folder, as before.
+    args.reports_dir = None
+    assert rcl._paths(args)["reports"] == tmp_path / "corpus"
+
+
 def test_two_ledgers_on_one_file_keep_one_total(tmp_path):
     path = tmp_path / "ledger.json"
     a, b = rcl.shared_ledger(path), rcl.shared_ledger(path)

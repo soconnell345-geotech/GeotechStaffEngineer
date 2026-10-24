@@ -148,6 +148,21 @@ def test_id_named_pdfs_alone_still_load_without_a_manifest(tmp_path):
     assert corpus.report("R07").pages == 0          # counted, never guessed
 
 
+def test_the_public_sets_pdfs_load_by_their_p_ids(tmp_path):
+    # BACKLOG RI-79: the public blind set's assembled PDFs are P01.pdf ...
+    reports = tmp_path / "assembled"
+    _pdf(reports / "P01.pdf")
+    _pdf(reports / "P12.pdf")
+    _pdf(reports / "P01_pages.pdf")                 # not an ID: left out
+    corpus = Corpus(reports, di_dir=tmp_path / "di")
+
+    assert corpus.available
+    assert corpus.present_ids() == ["P01", "P12"]
+    assert [r.id for r in corpus.list_reports()] == ["P01", "P12"]
+    assert corpus.pdf_path("P12") == reports / "P12.pdf"
+    assert not corpus.has_di("P01")
+
+
 # -- the two DI forms ---------------------------------------------------------
 
 def _gz(path, blob):
