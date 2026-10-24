@@ -747,6 +747,153 @@ class TestAStrayKey:
         assert reply.parsed is None
         assert any("results.0.value" in note for note in reply.notes)
 
+    def test_a_stray_key_beside_a_real_answer_is_still_dropped(self):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        engine, _ = _engine(answer_call({"projectName": "Made-up Depot",
+                                         "confidence": "high"}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=NarrativeReading)
+        assert reply.parsed.projectName == "Made-up Depot"
+        assert reply.notes == [
+            "unknown keys dropped from the answer: confidence"]
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert json.loads(row["answer_args"][0])["confidence"] == "high"
+
+
+class TestAWrappedAnswer:
+    """2026-10-24: on the local Claude narrative run the model sent 9 of 20
+    chunk answers as ``{"arguments": {...the whole answer...}}``. The
+    reading's schema forbids the key, so it was dropped, and what was left,
+    ``{}``, passed as an empty reading. Now the wrapper comes off; and an
+    answer left with nothing once its unknown keys are dropped is not
+    taken. Made-up values only."""
+
+    WHOLE = {"documentType": "geotechnical report",
+             "projectName": "Made-up Depot", "projectNumber": "X-0001"}
+
+    def _read(self, args, **kw):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        engine, model = _engine(answer_call(args, call_id="a1"),
+                                _said("again"), **kw)
+        messages = [user(text_block("read the narrative"))]
+        reply = engine.complete(messages, output_format=NarrativeReading)
+        return engine, model, messages, reply
+
+    def test_a_wrapped_object_is_unwrapped_and_named(self):
+        engine, _, _, reply = self._read({"arguments": dict(self.WHOLE)})
+        assert reply.parsed.projectName == "Made-up Depot"
+        assert reply.parsed.projectNumber == "X-0001"
+        assert reply.notes == [
+            "the answer arrived wrapped in 'arguments'; unwrapped"]
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["notes"] == reply.notes
+        assert json.loads(row["answer_args"][0]) == {
+            "arguments": self.WHOLE}
+
+    def test_any_wrapper_name_and_json_text_inside_it(self):
+        engine, _, _, reply = self._read(
+            {"payload": json.dumps(self.WHOLE)})
+        assert reply.parsed.projectName == "Made-up Depot"
+        assert reply.notes == [
+            "the answer arrived wrapped in 'payload'; unwrapped"]
+
+    def test_the_model_is_told_received_for_an_unwrapped_answer(self):
+        engine, model, messages, reply = self._read(
+            {"arguments": dict(self.WHOLE)})
+        messages += [{"role": "assistant", "content": reply.content},
+                     user(text_block("go on"))]
+        from report_ingest.narrative_reader import NarrativeReading
+        engine.complete(messages, output_format=NarrativeReading)
+        assert _results(model.requests[1])["a1"].content == (
+            "Answer received.")
+
+    def test_a_field_of_the_schema_is_never_unwrapped(self):
+        class Holder(BaseModel):
+            model_config = {"extra": "forbid"}
+            site: Optional[dict] = None
+            note: Optional[str] = None
+
+        engine, _ = _engine(answer_call({"site": {"note": "inner"}}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=Holder)
+        assert reply.parsed.site == {"note": "inner"}
+        assert reply.parsed.note is None
+        assert reply.notes == []
+
+    def test_a_scalar_under_an_unknown_key_is_dropped_and_not_taken(self):
+        engine, model, messages, reply = self._read({"arguments": "yes"})
+        assert reply.parsed is None
+        assert reply.notes == [
+            "unknown keys dropped from the answer: arguments",
+            "an answer was not taken: nothing was left once the unknown "
+            "keys arguments were dropped"]
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["answer_args"] == ['{"arguments": "yes"}']
+
+        from report_ingest.narrative_reader import NarrativeReading
+        messages += [{"role": "assistant", "content": reply.content},
+                     user(text_block("answer again"))]
+        engine.complete(messages, output_format=NarrativeReading)
+        told = _results(model.requests[1])["a1"]
+        assert told.status == "error"
+        assert told.content.startswith("Not taken: nothing was left")
+        assert "Call `answer` again" in told.content
+
+    def test_an_empty_wrapped_object_is_not_taken_either(self):
+        _, _, _, reply = self._read({"arguments": {}})
+        assert reply.parsed is None
+        assert any("nothing was left" in note for note in reply.notes)
+
+    def test_every_field_at_its_default_after_the_drop_is_not_taken(self):
+        # Two keys, so no wrapper: the unknown one is dropped, and the only
+        # field left is a null, which is every field at its default.
+        _, _, _, reply = self._read({"arguments": dict(self.WHOLE),
+                                     "projectName": None})
+        assert reply.parsed is None
+        assert any("nothing was left once the unknown keys arguments"
+                   in note for note in reply.notes)
+
+    def test_a_schema_that_ignores_unknown_keys_is_held_to_it_too(self):
+        class Loose(BaseModel):                 # pydantic's default: ignore
+            site: Optional[str] = None
+
+        engine, _ = _engine(answer_call({"site_name": "Made-up Depot",
+                                         "site_code": "X-0001"}))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=Loose)
+        assert reply.parsed is None
+        assert any("site_name, site_code" in note for note in reply.notes)
+
+    def test_a_wrapped_answer_written_out_as_text_is_unwrapped(self):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        engine, _ = _engine(_said(json.dumps({"answer": self.WHOLE})))
+        reply = engine.complete([user(text_block("go"))],
+                                output_format=NarrativeReading)
+        assert reply.parsed.projectNumber == "X-0001"
+        assert reply.notes == [
+            "the answer arrived wrapped in 'answer'; unwrapped"]
+
+    def test_the_raw_arguments_kept_are_cut_to_size(self):
+        from report_ingest.engine import RAW_ANSWER_CHARS
+
+        engine, _, _, reply = self._read({"arguments": "x" * 50_000})
+        assert reply.parsed is None
+        (row,) = engine.meter.to_dict()["per_call"]
+        (kept,) = row["answer_args"]
+        assert kept.startswith('{"arguments": "xxx')
+        assert len(kept) < RAW_ANSWER_CHARS + 100
+        assert kept.endswith("characters]")
+
+    def test_a_clean_answer_keeps_no_raw_arguments(self):
+        engine, _, _, reply = self._read(dict(self.WHOLE))
+        assert reply.parsed.projectName == "Made-up Depot"
+        assert reply.notes == []
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert "answer_args" not in row and "notes" not in row
+
 
 # -- every request in the cost record (BACKLOG RI-21) -------------------------
 

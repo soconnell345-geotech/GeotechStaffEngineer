@@ -526,16 +526,30 @@ def _scored_part(blob: dict) -> dict:
     return {}
 
 
+#: The engine's notes on an answer (report_ingest.engine._answer_notes).
+_DROPPED_NOTE = "unknown keys dropped from the answer: "
+_EMPTIED_NOTE = "nothing was left once the unknown keys"
+
+
 def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
     """Stop reasons, failures, cut-offs, refusals and answers not taken, off
-    the run files' per-call cost rows."""
+    the run files' per-call cost rows.
+
+    An answer whose unknown keys held all of it is an ERROR, not a count:
+    ``answers_emptied`` (the engine said so and did not take it) and
+    ``emptied_unverified`` (a row from an engine before 2026-10-24, which
+    took what was left and kept no raw arguments: a top-level key dropped
+    from a taken answer may have been the whole answer, wrapped)."""
     from report_ingest.engine import CUT_REASONS
 
     stops: Counter = Counter()
     errors: Counter = Counter()
+    emptied_by: Counter = Counter()
+    unverified_by: Counter = Counter()
     out = {"replies": 0, "failed": 0, "cut_off": 0, "refusals": 0,
            "answers_not_taken": 0, "unknown_keys_dropped": 0,
-           "items_with_error": 0, "cap_refused": 0}
+           "answers_unwrapped": 0, "answers_emptied": 0,
+           "emptied_unverified": 0, "items_with_error": 0, "cap_refused": 0}
     for blob in blobs.values():
         if _scored_part(blob).get("error"):
             out["items_with_error"] += 1
@@ -553,14 +567,37 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
                 out["cut_off"] += 1
             if stop == "refusal":
                 out["refusals"] += 1
-            for note in row.get("notes") or []:
+            for note in (str(n) for n in row.get("notes") or []):
                 if "not taken" in note:
                     out["answers_not_taken"] += 1
-                if "unknown keys dropped" in note:
-                    out["unknown_keys_dropped"] += 1
+                if "arrived wrapped in" in note:
+                    out["answers_unwrapped"] += 1
+                if _EMPTIED_NOTE in note:
+                    out["answers_emptied"] += 1
+                    keys = note.split(_EMPTIED_NOTE, 1)[1]
+                    emptied_by.update(
+                        k.strip() for k in keys.rsplit(" were dropped", 1)[0]
+                        .split(","))
+                if _DROPPED_NOTE not in note:
+                    continue
+                out["unknown_keys_dropped"] += 1
+                # Before 2026-10-24 a note of keys dropped meant the answer
+                # was taken, whatever was left of it, and no raw arguments
+                # were kept to tell.
+                keys = note.split(_DROPPED_NOTE, 1)[1].split(", ")
+                top = [k for k in keys if k and "." not in k]
+                if top and "answer_args" not in row:
+                    out["emptied_unverified"] += 1
+                    unverified_by.update(top)
+    out["emptied_keys"] = dict(emptied_by.most_common())
+    out["unverified_keys"] = dict(unverified_by.most_common())
     out["stops"] = dict(stops.most_common())
     out["errors"] = dict(errors.most_common())
     return out
+
+
+def _key_list(counts: Dict[str, int]) -> str:
+    return ", ".join(f"'{k}' {n}" for k, n in counts.items()) or "none named"
 
 
 def _provs(value: Any) -> List[dict]:
@@ -797,8 +834,23 @@ def check_lines(out: Path, stage: str, truth_root: Optional[Path] = None
         + f". Cut off at the output cap: {health['cut_off']}. Refusals: "
           f"{health['refusals']}. Answers not taken: "
           f"{health['answers_not_taken']}; unknown keys dropped from an "
-          f"answer: {health['unknown_keys_dropped']}. Items carrying an "
+          f"answer: {health['unknown_keys_dropped']}; answers unwrapped: "
+          f"{health['answers_unwrapped']}. Items carrying an "
           f"error: {health['items_with_error']}.")
+    if health["answers_emptied"]:
+        lines.append(
+            f"ERROR: {health['answers_emptied']} answer(s) held nothing once "
+            f"their unknown keys were dropped, and were not taken (keys: "
+            f"{_key_list(health['emptied_keys'])}). Those calls' answers are "
+            f"lost; each row's answer_args holds what the model sent.")
+    if health["emptied_unverified"]:
+        lines.append(
+            f"ERROR (unverified): {health['emptied_unverified']} answer(s) "
+            f"lost a top-level key and were taken, by an engine that kept no "
+            f"raw arguments (keys: {_key_list(health['unverified_keys'])}). "
+            f"If that key wrapped the whole answer, the answer taken was "
+            f"empty (the wrapped-answer bug fixed 2026-10-24); run these "
+            f"items again.")
     calls = spend_log(out)
     seen = [c for c in calls if c.get("lc_images") is not None]
     if seen:

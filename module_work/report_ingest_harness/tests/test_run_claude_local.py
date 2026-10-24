@@ -280,3 +280,57 @@ def test_an_out_dir_git_would_track_is_refused(made_up):
 
     assert rcl.run(args, chat_builder=_builder(made)) == rcl.REFUSED
     assert made == [] and not probe.exists()
+
+
+def _rows_file(out: Path, stage: str, name: str, rows: list) -> None:
+    folder = out / stage
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{name}.json").write_text(json.dumps(
+        {"id": name, "score": {"error": None},
+         "cost": {"per_call": rows}}), encoding="utf-8")
+
+
+def test_an_answer_emptied_by_its_dropped_keys_is_an_error(tmp_path):
+    # Made-up rows, as the engine writes them since 2026-10-24: one answer
+    # unwrapped, one left with nothing once its unknown key was dropped.
+    out = tmp_path / "out"
+    _rows_file(out, "narrative", "R01", [
+        {"call": 1, "outcome": "reply", "stop": "tool_use",
+         "notes": ["the answer arrived wrapped in 'arguments'; unwrapped"],
+         "answer_args": ['{"arguments": {"projectName": "Made-up"}}']},
+        {"call": 2, "outcome": "reply", "stop": "tool_use",
+         "notes": ["unknown keys dropped from the answer: arguments",
+                   "an answer was not taken: nothing was left once the "
+                   "unknown keys arguments were dropped"],
+         "answer_args": ['{"arguments": "see above"}']},
+        {"call": 3, "outcome": "reply", "stop": "tool_use",
+         "notes": ["unknown keys dropped from the answer: confidence"],
+         "answer_args": ['{"projectName": "Made-up", "confidence": 1}']},
+    ])
+    health = rcl.call_health(rcl.run_files(out, "narrative"))
+    assert (health["answers_unwrapped"], health["answers_emptied"],
+            health["answers_not_taken"], health["unknown_keys_dropped"],
+            health["emptied_unverified"]) == (1, 1, 1, 2, 0)
+    assert health["emptied_keys"] == {"arguments": 1}
+
+    lines = rcl.check_lines(out, "narrative")
+    (error,) = [line for line in lines if line.startswith("ERROR")]
+    assert error.startswith("ERROR: 1 answer(s) held nothing")
+    assert "'arguments' 1" in error
+
+
+def test_a_row_from_before_the_fix_is_flagged_unverified(tmp_path):
+    # A taken answer that lost a top-level key, with no raw arguments kept:
+    # the shape the wrapped-answer bug left in the run files.
+    out = tmp_path / "out"
+    _rows_file(out, "narrative", "R02", [
+        {"call": 1, "outcome": "reply", "stop": "tool_use",
+         "notes": ["unknown keys dropped from the answer: arguments"]},
+        {"call": 2, "outcome": "reply", "stop": "tool_use",
+         "notes": ["unknown keys dropped from the answer: results.0.colour"]},
+    ])
+    health = rcl.call_health(rcl.run_files(out, "narrative"))
+    assert health["emptied_unverified"] == 1, "a nested key is not suspect"
+    lines = rcl.check_lines(out, "narrative")
+    (error,) = [line for line in lines if line.startswith("ERROR")]
+    assert error.startswith("ERROR (unverified): 1 answer(s)")
