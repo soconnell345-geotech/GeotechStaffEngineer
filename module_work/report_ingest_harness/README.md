@@ -58,6 +58,24 @@ refuses any report in the blind set before reading it, and never reads a
 change's reason. `--raw-dir` points it at the private corpus when it is run
 from a worktree.
 
+`run_claude_local` (2026-10-24) runs one reader stage -- `logs`, `lab`,
+`calc`, `narrative` or `soundings` -- through `score_on_cluster` on Claude
+over the Anthropic API, locally, against the same hand-truthed items the
+Foundry runs read: a `ChatAnthropic` goes in as `chat_model` (RI-67), so the
+calls take the `ChatModelEngine` path the Foundry Claude run takes. Every
+call is metered by `module_work/live_smoke/spend.py` -- a named wave with a
+cap on the one ledger, the meter on the model object, the next call refused
+once the cap is spent -- and the run appends a block to `RESULTS.md` setting
+the ledger beside the run files' own cost block, with the stop reasons,
+failed requests, SDK retries, the pictures each call carried and how many
+values carry a page and a box. `--sets open|blind` and `--only <item or
+report>` pick items; `--env NAME=VALUE` sets a switch (every
+`GEOTECH_INGEST_*` is cleared first); the out_dir defaults to the main
+checkout's gitignored `module_work/field_feedback/2026-10-24_claude_local/raw/<arm>/`
+and resumes. `check <out_dir>` reads any out_dir back for $0, a Foundry one
+included. The offline test drives it on a made-up printout with a scripted
+model.
+
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
 `module_work/field_feedback/2026-09-16_report-ingest/raw/`, which `.gitignore`
