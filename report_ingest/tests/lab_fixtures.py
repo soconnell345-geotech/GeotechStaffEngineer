@@ -344,3 +344,22 @@ def build_density_run() -> bytes:
     pdf = doc.tobytes()
     doc.close()
     return pdf
+
+
+def build_grading_legend() -> bytes:
+    """A grading sheet with its percent-finer table and the chart's legend
+    table: a key letter, a boring number and a sample type (RI-71).
+    Made-up values."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    _text(page, 150, 60, "PARTICLE SIZE DISTRIBUTION", 14, bold=True)
+    _text(page, 60, 104, "Boring: QB-6")
+    _text(page, 380, 104, "Depth: 3.4 m")
+    _grid(page, 60, 150, (90, 90),
+          [("SIEVE", "PERCENT FINER"), ("No. 4", "96"), ("No. 200", "38")])
+    _grid(page, 60, 260, (40, 60, 60),
+          [("A", "7", "Pail"), ("C", "5", "Drum")], header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf

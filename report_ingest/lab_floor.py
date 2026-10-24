@@ -42,7 +42,8 @@ from report_ingest.model import (
     Alternative, AtterbergResult, CBRResult, ChemicalResult, CompactionResult,
     ConsolidationResult, GradationResult, LabTest, MoistureDensityResult,
     OtherResult, Provenance, Quantity, RESULT_CLASS, SievePoint,
-    StrengthResult, SummaryRow, SummaryTableResult, _canonical_unit,
+    StrengthResult, SummaryRow, SummaryTableResult, UNIT_TO_SI,
+    _canonical_unit,
 )
 
 __all__ = ["FloorSheet", "floor_from_tables", "serialise_floor",
@@ -445,15 +446,87 @@ class _Values:
             self.index[name] = (value, unit, conf)
 
 
-#: A label naming a mass or a weight, or a unit of one: the working of a
-#: water content (the mass of water, in grams), never the water content
-#: itself (RI-56). A label that prints a percent is a percentage, whatever
-#: it is a percent of ("% by weight", "% of dry mass").
-_MASS_LABEL = r"\b(?:mass|weight|wt|mw|k?g|gms?|grams?|lbs?)\b"
-_PERCENT_LABEL = r"%|\bper ?cent\b"
+#: A row whose label names a mass or a weight is the working of a water
+#: content (the mass of water, in grams), never the water content itself
+#: (RI-56). Two signs of a mass, told apart (RI-71):
+#:
+#: * a UNIT of mass, where a unit is printed -- in brackets, after a comma
+#:   or a colon at the end, after "in" or after a number ("(g)", "[gr]",
+#:   ", gm", "in lb", "25 g") -- or a unit's whole name anywhere ("grams",
+#:   "pounds"). It is a mass even where a percent is printed too. The gram's
+#:   one letter is a lower-case g: a capital G, in brackets, after a comma
+#:   or anywhere else, is no unit on its own (a specimen "G", "G-14").
+#: * a WORD for a mass or a weight, in the floor's languages (mass,
+#:   weight, wt, Mw; masse, poids; masa, peso; massa). It is a mass unless
+#:   the label prints a percent ("% by weight", "% of dry mass"), and is
+#:   no word for a mass with a number run on to it: "MW-14" is a well.
+#:
+#: A RATIO of masses or a mass per volume (g/g, kg/kg, g/100 g, g/cm3) is no
+#: mass: a water content printed as a fraction is one (:func:`_wc_factor`).
+_MASS_UNIT = r"(?:(?i:kg|grs?|gms?|lbs?)|g)\.?"
+_NOT_A_NAME = r"(?![\w/]|\s?[-#]\s?\d)"
+_MASS_UNIT_PRINTED = re.compile(
+    rf"[(\[]\s*{_MASS_UNIT}\s*[)\]]"
+    rf"|[,:;]\s*{_MASS_UNIT}\s*(?:$|[)\]])"
+    rf"|\b(?i:in)\s+{_MASS_UNIT}{_NOT_A_NAME}"
+    rf"|\d\s*{_MASS_UNIT}{_NOT_A_NAME}"
+    r"|\b(?i:grams?|grammes?|gramos?|kilograms?|pounds?)\b")
+_MASS_WORD = (r"\b(?:mass|weight|wt|mw|masse|poids|masa|peso|massa)\b"
+              r"(?!\s?[-#]?\s?\d)")
+_MASS_NAMES = r"mg|k?g|grs?|gms?|grams?|lbs?|mass|weight|wt"
+_MASS_RATIO = re.compile(
+    rf"(?<![a-z])(?:\d+(?:[.,]\d+)?\s*)?(?:{_MASS_NAMES})\.?\s*/\s*"
+    r"(?:\d+(?:[.,]\d+)?\s*)?[a-zµμ]+\d?", re.I)
+#: A water content printed as a fraction of masses: the mass a unit names,
+#: in grams; a word for a mass is the same mass on either side.
+_GRAMS = {"mg": 0.001, "g": 1.0, "gr": 1.0, "grs": 1.0, "gm": 1.0,
+          "gms": 1.0, "gram": 1.0, "grams": 1.0, "kg": 1000.0,
+          "lb": 453.59237, "lbs": 453.59237}
+_MASS_FRACTION = re.compile(
+    rf"(?<![a-z])({_MASS_NAMES})\.?\s*/\s*(\d+(?:[.,]\d+)?)?\s*"
+    rf"({_MASS_NAMES})\b")
+_PERCENT_LABEL = r"%|\bper ?cent|\bpct\b|pourcent|porcent"
+#: A ratio a label says is multiplied by 100 is a percent already.
+_TIMES_100 = r"(?<![a-z])[x×*]\s*100(?![\d.,]?\d)"
 #: The values a trial table repeats across its columns, one a trial point:
 #: the first of such a row is no one specimen's value (RI-56).
 _ONE_A_SPECIMEN = ("wc", "dry_density", "wet_density")
+
+
+def _a_mass(label: str) -> bool:
+    """Whether a water content ``label`` names a mass (see
+    :data:`_MASS_UNIT_PRINTED`)."""
+    text = _MASS_RATIO.sub(" ", " ".join(str(label or "").split()))
+    return bool(_MASS_UNIT_PRINTED.search(text)) or bool(
+        re.search(_MASS_WORD, text, re.I)) and not re.search(
+            _PERCENT_LABEL, text, re.I)
+
+
+def _wc_factor(label: str) -> Optional[float]:
+    """What a water content printed under ``label`` is multiplied by to be
+    a percent: 1 for a percent, 100 for a fraction of one mass in the same
+    mass (g/g, kg/kg), 1 for grams per 100 g, by the units for any other
+    ratio of masses; None for a ratio of a word and a unit, which says no
+    amount.
+
+    The water content is the ratio times 100: "the gravimetric water or
+    moisture content, w, expressed as a percentage as follows: w = Ww/Ws
+    x100" (FHWA-NHI-06-088 Vol. I, 2.1.2, Eq. 2-4, pp. 2-4 to 2-5), and
+    "water content is understood to be a weight ratio" (p. 2-5). A label
+    printing the ratio alone (g/g) gives the fraction; one that prints a
+    percent or the "x 100" too ("% wt/wt", "g/g x 100") gives the percent
+    already, and is read as printed (RI-71 review).
+    """
+    text = " ".join(str(label or "").lower().split())
+    match = _MASS_FRACTION.search(text)
+    if match is None or re.search(_PERCENT_LABEL, text) or re.search(
+            _TIMES_100, text):
+        return 1.0
+    top, count, bottom = match.groups()
+    count = float(count.replace(",", ".")) if count else 1.0
+    if top in _GRAMS and bottom in _GRAMS and count > 0:
+        return 100.0 * _GRAMS[top] / (count * _GRAMS[bottom])
+    return 100.0 / count if top == bottom and count > 0 else None
 
 
 def _not_the_specimens(name: str, label: str, numbers: int) -> bool:
@@ -461,18 +534,74 @@ def _not_the_specimens(name: str, label: str, numbers: int) -> bool:
     of ``numbers`` trial points, rather than the specimen's value."""
     if name not in _ONE_A_SPECIMEN:
         return False
-    text = str(label or "").lower()
-    return numbers > 1 or (name == "wc" and bool(
-        re.search(_MASS_LABEL, text)) and not re.search(_PERCENT_LABEL, text))
+    return numbers > 1 or (name == "wc" and _a_mass(label))
+
+
+#: A row read as a cohesion by its one letter ("C", "c'") is one only on
+#: a shear test's sheet or where the row prints a unit of stress (RI-71): a
+#: grading chart's legend key, a person's initial and a composite's mark
+#: are one letter C too. Never where the row, label or cells, names a
+#: temperature or prints degrees C or F. The word itself is a cohesion
+#: anywhere else.
+_COHESION_WORD = r"coh[eé]si[oó]n"
+_TEMPERATURE = (r"[°º]\s?[cf](?![\w'’])|\bdeg(?:rees?)?\.?\s?[cf](?![\w'’])"
+                r"|\btemp")
+#: The name a column of a table of specimens goes by when the per-page
+#: floor reads none of its cells as a value: a summary row keeps them in
+#: its ``other``, as printed (RI-71 review).
+_AS_PRINTED = "as_printed"
+#: A number and the unit printed straight after it ("59 kPa", "0.3kg/cm2").
+_NUMBER_UNIT = re.compile(
+    r"(?<![\w.,])[-+]?\d+(?:[.,]\d+)?\s*([^\s\d,;()\[\]][^\s,;()\[\]]*)")
+
+
+def _a_stress_unit(text: str) -> bool:
+    text = re.sub(r"^[-+]?\d+(?:[.,]\d+)?", "", str(text or "").strip())
+    key = _canonical_unit(text.strip()) if text.strip() else None
+    return bool(key) and UNIT_TO_SI[key][0] == "stress"
+
+
+def _prints_stress(head: str, cells: Sequence[str]) -> bool:
+    """Whether a row or column prints a unit of stress (kPa, psf, kg/cm2):
+    in its ``head`` (the label or the column's header), anywhere; in one of
+    its ``cells``, only as the whole cell (a column of units), in brackets
+    or straight after a number. A word that only reads as a unit ("Bar 4",
+    a sample's name) is not one (RI-71 review)."""
+    head = str(head or "")
+    if any(_a_stress_unit(t) for t in [head] + _PAREN.findall(head)
+           + re.split(r"[\s,;()\[\]]+", head)):
+        return True
+    for cell in cells:
+        cell = str(cell or "")
+        if any(_a_stress_unit(t) for t in [cell] + _PAREN.findall(cell)
+               + _NUMBER_UNIT.findall(cell)):
+            return True
+    return False
+
+
+def _not_a_cohesion(label: str, cells: Sequence[str], kind: str) -> bool:
+    """Whether a ``label`` read as a cohesion is a letter C that is no
+    cohesion on a sheet of ``kind`` (``cells``: the rest of the row, or the
+    column's cells under it)."""
+    row = " ".join([str(label or "")] + [str(c or "") for c in cells])
+    if re.search(_TEMPERATURE, row.lower()):
+        return True
+    if re.search(_COHESION_WORD, str(label or "").lower()):
+        return False
+    return kind not in _STRENGTH_KINDS and not _prints_stress(label, cells)
 
 
 def _read_property_table(rows: List[List[str]], values: _Values,
-                         conf: float, strict: bool = False) -> int:
+                         conf: float, strict: bool = False,
+                         kind: str = "") -> int:
     """``label | value`` rows. Returns how many values were read.
 
     ``strict`` (the per-page floor, RI-56) reads no water content from a
     mass or weight row and none of the per-specimen values from a row of
-    several numbers across (:func:`_not_the_specimens`).
+    several numbers across (:func:`_not_the_specimens`); a water content
+    printed as a fraction of masses as its percent (:func:`_wc_factor`);
+    and a letter C as a cohesion only on a sheet of a shear test (``kind``)
+    or with a unit of stress (:func:`_not_a_cohesion`).
     """
     n = 0
     for row in rows:
@@ -488,6 +617,8 @@ def _read_property_table(rows: List[List[str]], values: _Values,
         if strict and _not_the_specimens(
                 name, label, sum(1 for c in cells[1:] if _num(c) is not None)):
             continue
+        if strict and name == "c" and _not_a_cohesion(label, cells[1:], kind):
+            continue
         number = _num(cell)
         unit = _unit_in(label) or _unit_in(cell)
         if number is None:
@@ -496,6 +627,11 @@ def _read_property_table(rows: List[List[str]], values: _Values,
                 values.put(name, cell, unit, conf)
                 n += 1
             continue
+        if strict and name == "wc" and _wc_factor(label) != 1.0:
+            factor = _wc_factor(label)
+            if factor is None:
+                continue
+            number, unit = number * factor, "%"
         values.put(name, number, unit, conf)
         n += 1
     return n
@@ -533,7 +669,12 @@ def _series_from(rows: List[List[str]], header: List[str],
 
 def _summary_rows(rows: List[List[str]], header: List[str],
                   columns: Dict[int, str], unit: str, conf: float,
-                  prov: Provenance) -> List[SummaryRow]:
+                  prov: Provenance,
+                  wc_factors: Optional[Dict[int, Optional[float]]] = None
+                  ) -> List[SummaryRow]:
+    """The rows of a table of specimens. ``wc_factors`` (the per-page floor)
+    turns a water content column printed as a fraction into a percent, or
+    leaves it unread (None) where its units say no amount."""
     out: List[SummaryRow] = []
     for row in rows:
         cells = {i: (row[i] if i < len(row) else "") for i in columns}
@@ -570,7 +711,9 @@ def _summary_rows(rows: List[List[str]], header: List[str],
             number = _num(text)
             row_unit = _unit_in(head)
             if name == "wc" and number is not None:
-                kwargs["wc"] = number
+                factor = (wc_factors or {}).get(i, 1.0)
+                if factor is not None:
+                    kwargs["wc"] = number * factor
             elif name in ("ll", "pi", "sand_percent", "gravel_percent",
                           "optimum_wc", "phi_deg", "swell_percent",
                           "organic_percent") and number is not None:
@@ -608,15 +751,25 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
     and more than one row), which seeds summary rows; and a one-row table of
     values for the sheet's one specimen. ``key`` files the values under a
     key other than the link's own (a bare page's, see :func:`_floor`);
-    ``strict`` reads no water content from a mass or weight column.
+    ``strict`` reads no water content from a mass or weight column, a water
+    content printed as a fraction as its percent, and a column headed by a
+    letter C as a cohesion only as :func:`_read_property_table` does; such
+    a column's cells stay in a summary row's ``other``, as printed.
     """
     header = rows[0]
     body = rows[1:]
     columns = {i: _field_of(h) for i, h in enumerate(header)
                if _field_of(h) and _field_of(h) != "date"
                and not (strict and _not_the_specimens(_field_of(h), h, 1))}
+    for i, name in columns.items():
+        if strict and name == "c" and _not_a_cohesion(
+                header[i], [r[i] for r in body if i < len(r)], kind):
+            columns[i] = _AS_PRINTED
     if not body or not columns:
         return 0, []
+    factors: Dict[int, Optional[float]] = {
+        i: _wc_factor(header[i]) for i, name in columns.items()
+        if strict and name == "wc"}
     series = _series_from(body, header, columns, conf)
     key = key or _specimen_key(link)
     if series:
@@ -626,13 +779,15 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
     link_names = ("investigation_id", "sample_id", "depth_top", "uscs",
                   "description", "sample_type")
     has_link = any(n in link_names[:3] for n in columns.values())
-    has_value = any(n not in link_names for n in columns.values())
+    has_value = any(n not in link_names + (_AS_PRINTED,)
+                    for n in columns.values())
     if not has_value:
         # A list of samples with no result column -- a certificate's
         # receipt table, a chain of custody -- seeds nothing.
         return 0, []
     if has_link and (len(body) > 1 or kind == "summary_table"):
-        summary = _summary_rows(body, header, columns, link.unit, conf, prov)
+        summary = _summary_rows(body, header, columns, link.unit, conf, prov,
+                                factors)
         return sum(len([v for v in r.model_dump().values() if v])
                    for r in summary), summary
     n = 0
@@ -644,7 +799,7 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
             continue
         if name in ("investigation_id", "sample_id", "depth_top", "uscs",
                     "description", "sample_type", "sieve", "size",
-                    "percent_passing"):
+                    "percent_passing", _AS_PRINTED):
             continue
         number = _num(row[i])
         unit = _unit_in(header[i])
@@ -654,6 +809,10 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
                 values.put(name, row[i], unit, conf)
                 n += 1
             continue
+        if factors.get(i, 1.0) != 1.0:
+            if factors[i] is None:
+                continue
+            number, unit = number * factors[i], "%"
         values.put(name, number, unit, conf)
         n += 1
     return n, []
@@ -939,7 +1098,8 @@ def _floor(doc: Any, pages: Sequence[int], report_id: str,
                 if n or summary:
                     continue
             values = values_by_key.setdefault(key, _Values())
-            n = _read_property_table(rows, values, conf, per_page)
+            n = _read_property_table(rows, values, conf, per_page,
+                                     kind=sheet.kind)
             if n:
                 values.provs.append(prov)
                 sheet.n_values += n

@@ -297,16 +297,24 @@ were checked against their printed labels.
 names one of the hole's samples is that sample, wherever the log puts it; the
 depth decides only where no label names one, and a bare sample word counts
 only where the label names no other hole (a word with a letter in it, or a
-number after a word for an exploration or standing alone, "BH 2, S-3" or
-"2/S-3": the numbers of a printed depth range, a decimal or a depth with its
-unit name no hole). Where the printed interval, widened by 0.15 m each side,
+number after a word for an exploration, "BH 2, S-3", or standing alone as
+the sample label's first word, "9/S-3": a number later in the label, "S-3
+Jar 9" or "S-3 (9)", one a letter runs on to, "Pit 9A", and the numbers of a
+printed depth range, "9 to 16", "9 à 16" or "9 through 16", a decimal or a
+depth with its unit name no hole, RI-71). Where the printed interval, widened
+by 0.15 m each side,
 does not reach the log's interval for the named sample (a sheet and a log
 often give the same sample's depth by different conventions), the link
 follows the label and one `conflict` entry says so for
 each sample and printed depth, however many sheets and rows print it, the
 log's depth in the printed depth's unit; a label naming several of the hole's
 samples, none or more than one of them within the printed interval, links to
-the hole and to no sample. A summary row is
+the hole and to no sample. A name several of the hole's samples carry (a log
+that starts its numbering again) is settled by the printed depth, the nearest
+of them within the widened interval; where none is within it, the link is to
+the hole and to no sample with a `conflict` entry, and where nothing printed
+gives a depth to tell them apart, the same with a `partial` note (RI-71;
+before, the first of them was taken). A summary row is
 linked by the same rules from its own boring, sample and depth columns into its
 own `linked_investigation_id` / `linked_sample_id`, the printed columns
 unchanged. DIGGS writes a row in the hole it is linked to, else in the hole
@@ -396,10 +404,27 @@ no value makes no test, not even of the title's kind alone), with an
 `unresolved` row where another page of the sheet prints one; and where the
 model put its tests on more than one page, the page decides which of the
 specimens a floor value matches. No water content is read from a row or column
-whose label names a mass, a weight or a unit of one (mass, weight, wt, Mw, g,
-gm, grams, kg, lb: the mass of water) unless it prints a percent ("% by weight"
-is a water content), and no specimen's water content or density from a row of
-several numbers across (a worksheet's trial points). The title's kind is
+whose label prints a unit of mass where a unit is printed (in brackets, after
+a comma at the end, after "in" or a number: g, gr, gm, kg, lb; or a unit's
+whole name, grams, pounds), even beside a percent, nor from one whose label
+names a mass or a weight (mass, weight, wt, Mw, masse, poids, masa, peso,
+massa: the mass of water) unless it prints a percent ("% by weight" is a water
+content). The gram's one letter is a lower-case g: a capital G (a specimen
+"(G)", "G-14"), a word for a mass with a number run on to it (a well "MW-14")
+and a ratio of masses (g/g, kg/kg, g/100 g) are no mass. A water content is
+"expressed as a percentage", w = Ww/Ws x100 (FHWA-NHI-06-088 Vol. I, 2.1.2,
+Eq. 2-4, pp. 2-4 to 2-5), so one printed under a ratio of masses alone is read
+as its percent, and one whose label prints a percent or the x 100 beside the
+ratio ("% wt/wt", "g/g x 100") as printed (RI-71). No specimen's water
+content or density is read from a row of several numbers across (a
+worksheet's trial points). A row or column headed by the one letter C is read
+as a cohesion only on a shear test's sheet or where it prints a unit of stress
+(in its label, as a cell of its own, in brackets or straight after a number),
+and never where the row names a temperature (a grading chart's legend key, a
+technician's initial, a hydrometer's corrected reading and a temperature in
+degrees C were all read as one, RI-71: on stage b's saved records 9 such shear
+tests are gone, and no value written to DIGGS changed). Such a column's cells
+stay in a summary row's `other`, as printed. The title's kind is
 corrected by the reader's own kinds: a particle density is a specific gravity
 (the specific gravity of solids "is a measure of solid particle density and is
 referenced to an equivalent volume of water", printed as Gs = ρs / ρd with ρd
@@ -830,7 +855,9 @@ Four facts about 2.6 that the code exists to get right:
   stay in the record, which does not require a value to have a place. A test
   that names a boring no log in the record describes gets a minimal `Borehole`
   of its own, recorded in `DiggsWriteNotes.synthesised`; a summary row
-  printing one gets the same hole, one per printed name (RI-56).
+  printing one gets the same hole, one per printed name (RI-56). A row with a
+  hole and a depth whose values none can be written is named in `skipped` too
+  (RI-71).
 
 A particle size is written in **millimetres** and says so in its `uom`: in
 metres a No. 200 sieve is 7.5e-05, which the file's four decimals would round

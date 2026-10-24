@@ -2504,8 +2504,18 @@ class _Writer:
             if placed is None:
                 continue
             gml_id, top, bottom = placed
+            said = len(self.notes.skipped)
             values = _Values(self, where, hole, top)
             self._summary_values(row, values)
+            if not values and not row.percent_passing:
+                # Placed, and nothing written: said, as a sheet's is (RI-71).
+                self.notes.skipped.append(
+                    f"{where}: " + (
+                        "none of the row's values could be written (each is "
+                        "named above)" if len(self.notes.skipped) > said else
+                        "the row carries no value this writer can put in a "
+                        "result set") + "; kept in the record, not written "
+                                         "here")
             stem = f"labsummary_{_ncname(gml_id)}_{n}_{i}"
             if values:
                 test_id = self.uid(stem)

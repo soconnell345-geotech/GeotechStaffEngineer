@@ -380,6 +380,34 @@ def test_a_summary_row_printing_no_boring_stays_in_the_record():
                for s in notes[0].skipped), notes[0].skipped
 
 
+def test_a_placed_summary_row_with_nothing_to_write_says_so():
+    """RI-71: a row with a hole and a depth but nothing the writer can put
+    in a result set is named in the notes, as a sheet is."""
+    bare = SummaryRow(investigation_id="B-1", depth_top=q(2.0, "m"),
+                      other=[("Shelf", "kept dry")])
+    unit = SummaryRow(investigation_id="B-1", depth_top=q(3.0, "m"),
+                      qu=q(1.0, "furlongs"))
+    kept = SummaryRow(investigation_id="B-1", depth_top=q(4.0, "m"), ll=40.0)
+    log = Investigation(investigation_id="B-1", depth_unit="m")
+    notes = []
+    xml = write_diggs([log, _row_table(bare, unit, kept)], Project(name="R"),
+                      notes=notes)
+    assert notes[0].lab_tests == 1
+    (first,) = [s for s in notes[0].skipped
+                if s.startswith("summary row 1 of")]
+    assert first.endswith("the row carries no value this writer can put in "
+                          "a result set; kept in the record, not written "
+                          "here")
+    second = [s for s in notes[0].skipped
+              if s.startswith("summary row 2 of")]
+    assert len(second) == 2 and "furlongs" in second[0]
+    assert "none of the row's values could be written" in second[1]
+    assert not [s for s in notes[0].skipped
+                if s.startswith("summary row 3 of")]
+    ok, diffs = diggs_roundtrip_gate(xml, [log, _row_table(bare, unit, kept)])
+    assert ok, diffs
+
+
 def test_a_summary_row_is_written_in_the_hole_it_was_linked_to():
     row = SummaryRow(investigation_id="B-1", depth_top=q(2.0, "m"), ll=40.0)
     row.linked_investigation_id = "B-01"

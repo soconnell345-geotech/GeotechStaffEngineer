@@ -641,6 +641,27 @@ class TestALogInAnUnknownUnit:
         ok, diffs = diggs_roundtrip_gate(xml, record)
         assert ok, diffs
 
+    def test_a_summary_row_on_that_log_is_told_it_was_left_out(self):
+        # RI-71: a row linked to the log left out is not told that no log
+        # names its hole.
+        from report_ingest.model import (
+            LabTest, SummaryRow, SummaryTableResult,
+        )
+        record = self._record()
+        row = SummaryRow(investigation_id="TP-2", depth_top=_m(0.6),
+                         ll=40.0)
+        row.linked_investigation_id = "TP-2"
+        record.lab_tests = [LabTest(kind="summary_table",
+                                    result=SummaryTableResult(rows=[row]))]
+        notes = []
+        xml = write_diggs(record, notes=notes)
+        (made,) = notes[0].synthesised
+        assert made.startswith("TP-2: named by a row of a laboratory "
+                               "summary table; its log is left out")
+        assert notes[0].lab_tests == 1
+        ok, diffs = diggs_roundtrip_gate(xml, record)
+        assert ok, diffs
+
 
 class TestAnUnnamedLog:
     """A log that printed no identifier is named in the file by its id, and

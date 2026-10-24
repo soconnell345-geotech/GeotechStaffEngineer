@@ -455,6 +455,51 @@ class TestTheLabelBeforeTheDepth:
         (entry,) = self._conflicts(record)
         assert "Linked to S-3 by the label" in entry.detail
 
+    @pytest.mark.parametrize("label", ["9 S-3", "TP9 S-3"])
+    def test_a_bare_number_first_in_the_label_is_that_hole(self, label):
+        # RI-71: a number standing alone as the label's first word, or run
+        # on to a word for an exploration, names hole 9: the depth decides.
+        sheet = atterberg(investigation="1", sample=label, depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("1"), boring("9")], lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "1"
+        assert sheet.linked_sample_id == "S-1"
+        assert self._conflicts(record) == []
+
+    @pytest.mark.parametrize("label", [
+        "S-3 Jar 9", "S-3 #9", "S-3 (9)", "S-3 @ 9", "S-3 Run 9",
+        "S-3 9 a 16", "S-3 9 à 16", "S-3 9 through 16"])
+    def test_a_number_later_in_the_label_is_no_hole(self, label):
+        # RI-71: only the sample label's first word can be a hole's bare
+        # number; a later one is a jar's, a run's, a specimen's or a depth.
+        sheet = atterberg(investigation="1", sample=label, depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("1"), boring("9")], lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert "Linked to S-3 by the label" in entry.detail
+
+    @pytest.mark.parametrize("label", ["Pit 9A S-3", "BH-9A S-3",
+                                       "9A S-3"])
+    def test_a_number_a_letter_runs_on_to_is_not_that_hole(self, label):
+        # RI-71: pit 9A is not hole 9, so the label's S-3 is hole 1's.
+        sheet = atterberg(investigation="1", sample=label, depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("1"), boring("9")], lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert "Linked to S-3 by the label" in entry.detail
+
+    @pytest.mark.parametrize("label", ["9 a 16", "9 à 16", "9 through 16",
+                                       "9 to 16"])
+    def test_a_range_first_in_the_label_names_no_hole(self, label):
+        from report_ingest.reconciler import _numbers_named
+        assert _numbers_named("1", label) == set()
+        assert _numbers_named("1", "9/S-3") == {"9"}
+
     def test_the_log_s_depth_is_said_in_the_printed_unit_and_rounded(self):
         hole = boring("B-1")
         hole.samples[2].top = q(4.4651, "m")
@@ -546,6 +591,90 @@ class TestTheLabelBeforeTheDepth:
         assert table.result.rows[0].linked_investigation_id == ""
         assert not [e for e in kinds_of(record, "partial")
                     if "summary table" in e.detail]
+
+
+class TestASampleNameTheHoleGivesTwice:
+    """RI-71: where several samples of one hole carry the printed name, the
+    printed depth decides; where it cannot, the test is linked to the hole
+    only and the reason said, never to the first of them."""
+
+    @staticmethod
+    def _hole():
+        from report_ingest.model import Sample
+        hole = boring("B-1")
+        # the log starts its numbering again further down
+        hole.samples.append(Sample(sample_id="S-1", top=q(20.0, "ft"),
+                                   bottom=q(21.5, "ft"), kind="spt"))
+        return hole
+
+    def _record(self, *tests):
+        return reconcile(build_record(investigations=[self._hole()],
+                                      lab_tests=list(tests)))
+
+    @staticmethod
+    def _said(record):
+        return [e for e in record.qa if "a name its log gives" in e.detail]
+
+    @pytest.mark.parametrize("depth_ft", [2.0, 20.5])
+    def test_the_depth_picks_the_one_of_that_name_there(self, depth_ft):
+        sheet = atterberg(sample="S-1", depth_ft=depth_ft)
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == "S-1"
+        assert sheet.linked_depth_delta_m == pytest.approx(
+            0.0 if depth_ft == 2.0 else 0.152, abs=1e-3)
+        assert self._said(record) == []
+        assert [e for e in kinds_of(record, "conflict")
+                if e.where.endswith(".lab_tests")] == []
+
+    def test_none_at_the_depth_links_the_hole_only_and_says_so(self):
+        sheet = atterberg(sample="S-1", depth_ft=11.0)
+        record = self._record(sheet)
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._said(record)
+        assert entry.kind == "conflict" and entry.rank == "open"
+        assert entry.detail == (
+            "1 lab sheet names sample S-1 of B-1, a name its log gives 2 "
+            "samples (at 2 ft, 20 ft), and prints a depth of 11 ft; none of "
+            "them is within 0.15 m of the printed interval. Linked to B-1 "
+            "and to no sample")
+        assert entry.values == ["label B-1 S-1", "depth 11 ft"]
+        assert not [e for e in record.qa
+                    if "no sample of it sits within" in e.detail]
+
+    def test_no_printed_depth_cannot_tell_them_apart(self):
+        sheet = atterberg(sample="S-1")
+        sheet.depth_top = None
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._said(record)
+        assert entry.kind == "partial" and entry.rank == "note"
+        assert "prints no depth to tell them apart" in entry.detail
+        assert entry.values == ["label B-1 S-1"]
+        assert not [e for e in record.qa
+                    if "no sample could be matched" in e.detail]
+
+    def test_a_word_of_a_longer_label_is_held_to_the_same_rule(self):
+        sheet = atterberg(sample="S-1 jar", depth_ft=11.0)
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == ""
+        assert len(self._said(record)) == 1
+
+    def test_a_summary_row_is_held_to_the_same_rule(self):
+        table = summary_table()
+        table.result.rows[0].depth_top = q(11.0, "ft")
+        record = self._record(table)
+
+        row = table.result.rows[0]
+        assert (row.linked_investigation_id, row.linked_sample_id) == (
+            "B-1", "")
+        (entry,) = self._said(record)
+        assert entry.detail.startswith("1 summary row names sample S-1 of "
+                                       "B-1, a name its log gives 2")
 
 
 def _calc(kind, subject="", results=(), pages=(20, 21)):

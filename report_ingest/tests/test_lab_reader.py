@@ -1044,6 +1044,14 @@ def particle_density_page(tmp_path):
 
 
 @pytest.fixture
+def grading_legend(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_grading_legend
+    doc = _open(build_grading_legend(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
 def no_per_page_switch(monkeypatch):
     monkeypatch.delenv(FLOOR_PER_PAGE_ENV, raising=False)
 
@@ -1326,6 +1334,82 @@ def _moisture(page, method, wc, dry=None, **link):
                          if dry is not None else None)), **link)
 
 
+class TestALetterCIsACohesionOnlyWhereOneCanBe:
+    """RI-71: the per-page floor reads a row headed by the one letter C as
+    a cohesion only on a shear test's sheet or where the row prints a unit
+    of stress; a grading chart's legend key is not one."""
+
+    @pytest.mark.parametrize("row, kind, read", [
+        (["C", "5", "Drum"], "gradation", False),
+        (["C", "5"], "", False),
+        (["C", "5"], "summary_table", False),
+        (["C", "12"], "direct_shear", True),
+        (["c'", "12"], "triaxial", True),
+        (["C (kPa)", "12"], "gradation", True),
+        (["C", "12", "kPa"], "", True),
+        (["C", "0.4", "kg/cm2"], "atterberg", True),
+        (["Cohesion", "12"], "gradation", True),
+        (["Bath temp (°C)", "21"], "direct_shear", False),
+        # RI-71 review: a temperature anywhere in the row; a unit of
+        # stress only in the label, as a cell, in brackets or after a number
+        (["C", "26", "°C"], "direct_shear", False),
+        (["C", "6", "Bar 4"], "gradation", False),
+        (["C", "0.6", "59 kPa"], "gradation", True),
+        (["C", "6", "(kPa)"], "gradation", True)])
+    def test_the_rows(self, row, kind, read):
+        from report_ingest.lab_floor import (
+            _field_of, _read_property_table, _Values,
+        )
+        values, before = _Values(), _Values()
+        _read_property_table([row], values, 0.8, strict=True, kind=kind)
+        _read_property_table([row], before, 0.8, kind=kind)
+
+        assert ("c" in values.index) is read
+        # the brief's floor as before reads every one
+        assert ("c" in before.index) is (_field_of(row[0]) == "c")
+
+    def test_a_column_headed_c_is_held_to_the_same_rule(self):
+        from report_ingest.lab_floor import _Link, _read_header_table
+        from report_ingest.model import Provenance
+        prov = Provenance(page=0, method="tables", confidence=0.8)
+        rows = [["Boring", "Depth (m)", "LL", "C", "Bath temp (°C)"],
+                ["QB-1", "1.0", "41", "Ct", "21"],
+                ["QB-2", "2.5", "38", "7", "22"]]
+        _n, summary = _read_header_table(rows, {}, _Link(page=0), "", 0.8,
+                                         prov, strict=True)
+        assert [(r.ll, r.c) for r in summary] == [(41.0, None), (38.0, None)]
+        # RI-71 review: their cells stay in the row's other, as printed
+        assert [[tuple(o) for o in r.other] for r in summary] == [
+            [("C", "Ct"), ("Bath temp (°C)", "21")],
+            [("C", "7"), ("Bath temp (°C)", "22")]]
+        rows[0][3], rows[1][3] = "C (kPa)", "5"
+        _n, summary = _read_header_table(rows, {}, _Link(page=0), "", 0.8,
+                                         prov, strict=True)
+        assert [r.c.value for r in summary] == [5.0, 7.0]
+        assert [[tuple(o) for o in r.other] for r in summary] == [
+            [("Bath temp (°C)", "21")], [("Bath temp (°C)", "22")]]
+
+    def test_a_table_whose_only_value_is_such_a_column_seeds_nothing(self):
+        from report_ingest.lab_floor import _Link, _read_header_table
+        from report_ingest.model import Provenance
+        prov = Provenance(page=0, method="tables", confidence=0.8)
+        rows = [["Boring", "Depth (m)", "C"],
+                ["QB-1", "1.0", "5"], ["QB-2", "2.5", "7"]]
+        assert _read_header_table(rows, {}, _Link(page=0), "", 0.8, prov,
+                                  strict=True) == (0, [])
+        _n, before = _read_header_table(rows, {}, _Link(page=0), "", 0.8,
+                                        prov)
+        assert [r.c.value for r in before] == [5.0, 7.0]
+
+    def test_a_grading_sheet_s_legend_makes_no_shear_test(
+            self, grading_legend):
+        floor = floor_from_tables(grading_legend, [0], "RXX")
+
+        assert floor.kind == "gradation"
+        assert [t.kind for t in floor.tests] == ["gradation"]
+        assert "direct_shear" in [t.kind for t in floor.as_before.tests]
+
+
 class TestNoValueThatIsNotTheSpecimens:
     """RI-56 review, round 2: the per-page floor reads no water content
     from a mass of water, and no specimen's value from a row of trials; and
@@ -1365,13 +1449,83 @@ class TestNoValueThatIsNotTheSpecimens:
 
     @pytest.mark.parametrize("label", [
         "Moisture (gm)", "Moisture, g", "Moisture (grams)",
-        "Moisture lost, gm", "Moisture (Mw)", "Moisture (lb)"])
+        "Moisture lost, gm", "Moisture (Mw)", "Moisture (lb)",
+        # RI-71: grams as "gr"; a unit of mass beside a percent; a mass
+        # word in the floor's other languages
+        "Moisture (gr)", "Humedad (gr.)", "Moisture lost (g) %",
+        "Moisture, % [g]", "Moisture in g", "Peso de humedad",
+        "Moisture content, Mw"])
     def test_a_mass_in_any_spelling_is_no_water_content(self, label):
         from report_ingest.lab_floor import _Values, _read_property_table
         values = _Values()
         _read_property_table([[label, "9.65"]], values, 0.8, strict=True)
 
         assert "wc" not in values.index
+
+    @pytest.mark.parametrize("label, printed", [
+        ("Water content, specimen G", "17.4"),
+        ("Water content G-14", "17.4"),
+        ("Moisture content MW-14", "17.4"),
+        ("Moisture content, G-14", "17.4"),
+        ("Water content (g/100 g)", "17.4"), ("Water content (g/g)", "0.174"),
+        ("Water content (kg/kg)", "0.174"), ("Moisture (wt/wt)", "0.174"),
+        ("Water content (g/kg)", "174"),
+        ("Water content, percentage of dry weight", "17.4"),
+        # RI-71 review: a capital G alone is no gram
+        ("Water content, G", "17.4"), ("Water content (G)", "17.4")])
+    def test_a_name_or_a_ratio_hides_no_water_content(self, label, printed):
+        # RI-71: a specimen or a well named G-14 or MW-14 is no mass, nor is a
+        # ratio of masses: a water content printed as a fraction is read as
+        # its percent. The brief's floor as before reads what is printed.
+        from report_ingest.lab_floor import _Values, _read_property_table
+        values, before = _Values(), _Values()
+        _read_property_table([[label, printed]], values, 0.8, strict=True)
+        _read_property_table([[label, printed]], before, 0.8)
+
+        assert values.index["wc"][0] == pytest.approx(17.4)
+        assert before.index["wc"][0] == float(printed)
+
+    @pytest.mark.parametrize("label", [
+        "Moisture content (% wt/wt)", "Water content (%, g/g)",
+        "Moisture, wt/wt %", "Water content, g/g x 100",
+        "Water content (g/g)×100"])
+    def test_a_ratio_printed_as_a_percent_is_read_as_printed(self, label):
+        # RI-71 review: w = Ww/Ws x100 is "expressed as a percentage"
+        # (FHWA-NHI-06-088 Eq. 2-4); a label that prints the percent or the
+        # x 100 beside the ratio gives the percent already.
+        from report_ingest.lab_floor import (
+            _Link, _read_header_table, _read_property_table, _Values,
+        )
+        from report_ingest.model import Provenance
+        values = _Values()
+        _read_property_table([[label, "14.8"]], values, 0.8, strict=True)
+        assert values.index["wc"][0] == 14.8
+
+        prov = Provenance(page=0, method="tables", confidence=0.8)
+        rows = [["Boring", "Depth (m)", label],
+                ["QB-1", "1.0", "14.8"], ["QB-2", "2.5", "23.5"]]
+        _n, summary = _read_header_table(rows, {}, _Link(page=0), "", 0.8,
+                                         prov, strict=True)
+        assert [r.wc for r in summary] == [14.8, 23.5]
+
+    def test_a_fraction_column_is_read_as_its_percent(self):
+        from report_ingest.lab_floor import _Link, _read_header_table
+        from report_ingest.model import Provenance
+        prov = Provenance(page=0, method="tables", confidence=0.8)
+        rows = [["Boring", "Depth (m)", "Water content (g/g)"],
+                ["QB-1", "1.0", "0.264"], ["QB-2", "2.5", "0.159"]]
+        _n, summary = _read_header_table(rows, {}, _Link(page=0), "", 0.8,
+                                         prov, strict=True)
+        assert [r.wc for r in summary] == pytest.approx([26.4, 15.9])
+        _n, before = _read_header_table(rows, {}, _Link(page=0), "", 0.8,
+                                        prov)
+        assert [r.wc for r in before] == [0.264, 0.159]
+
+        one = {}
+        _read_header_table([["Water content (kg/kg)"], ["0.264"]], one,
+                           _Link(page=0), "", 0.8, prov, key="k",
+                           strict=True)
+        assert one["k"].index["wc"][:2] == (pytest.approx(26.4), "%")
 
     def test_a_run_of_bare_pages_with_no_value_makes_no_test(
             self, bare_empty_run):

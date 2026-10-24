@@ -807,8 +807,10 @@ def _sample_for(inv: Investigation, test: Any,
     label names no other hole -- is that sample, wherever the log puts it.
     A word names another hole only if it has a letter in it, or it is a
     number after a word for an exploration ("BH 2", "Hole 2") or standing
-    alone ("2/S-3"): the numbers of a printed depth range ("4.0-5.5") or of
-    a depth with its unit are not hole "4" (:func:`_numbers_named`). The
+    alone as the sample label's first word ("2/S-3"): a number later in the
+    label ("S-3 Jar 9"), one a letter runs on to ("Pit 9A"), and the
+    numbers of a printed depth range ("4.0-5.5") or of a depth with its
+    unit are not a hole (:func:`_numbers_named`). The
     depth decides only where the label names none of the hole's samples,
     or which of two the label named. A sheet's depth agrees with a sample
     when the printed interval, widened by :data:`DEPTH_TOL_M` each side,
@@ -817,16 +819,15 @@ def _sample_for(inv: Investigation, test: Any,
     Where they do not meet, the label is followed and the disagreement
     comes back for a QA entry. A label that names several of the hole's
     samples (a composite, "S-2,S-3") is linked to no sample where none of
-    them, or more than one, meets the printed interval.
+    them, or more than one, meets the printed interval; a name several of
+    the hole's samples carry is settled by the depth or not at all
+    (:func:`_one_name`).
     """
     if test.sample_id:
         wanted = fold_id(test.sample_id)
         whole = [s for s in inv.samples if fold_id(s.sample_id) == wanted]
         if whole:
-            sample = next((s for s in whole
-                           if _interval_gap(s, test) is not None), whole[0])
-            return sample, _delta(sample, test), _clash(inv, test, [sample],
-                                                        sample)
+            return _one_name(inv, test, whole)
     label = f"{test.investigation_id} {test.sample_id}"
     words = {fold_id(w) for w in re.split(r"[^0-9A-Za-z-]+", label)
              if fold_id(w)}
@@ -835,7 +836,8 @@ def _sample_for(inv: Investigation, test: Any,
               if re.search(r"[A-Za-z]", fold_id(h))} - {own, ""}
     numbered = {hole_key(h) for h in holes
                 if fold_id(h).isdigit()} - {hole_key(own), ""}
-    named = [] if words & others or _numbers_named(label) & numbered else [
+    named = [] if words & others or _numbers_named(
+        test.investigation_id, test.sample_id) & numbered else [
         s for s in inv.samples
         if fold_id(s.sample_id) and fold_id(s.sample_id) in words
         and fold_id(s.sample_id) != own
@@ -845,33 +847,85 @@ def _sample_for(inv: Investigation, test: Any,
         return sample, delta, None
     meets = [s for s in named if _interval_gap(s, test) is not None]
     if len({fold_id(s.sample_id) for s in meets}) == 1:
-        return meets[0], _interval_gap(meets[0], test), None
+        nearest = _nearest(meets, test)
+        return nearest, _interval_gap(nearest, test), None
     if len({fold_id(s.sample_id) for s in named}) > 1:
         return None, None, _clash(inv, test, named, None)
-    return named[0], _delta(named[0], test), _clash(inv, test, named,
-                                                    named[0])
+    return _one_name(inv, test, named)
+
+
+def _one_name(inv: Investigation, test: Any, same: Sequence[Sample]
+              ) -> Tuple[Optional[Sample], Optional[float],
+                         Optional[Dict[str, Any]]]:
+    """:func:`_sample_for` for a label naming ``same``, the samples of the
+    hole that carry one name.
+
+    One sample is that sample, wherever the log puts it; a disagreement
+    with the depth comes back to be said. Several samples of one hole can
+    carry one name (a log that starts its numbering again, a sample type
+    read as the name): the printed depth decides, the nearest of those
+    within the printed interval widened by :data:`DEPTH_TOL_M` (RI-71).
+    Where none is within it, or nothing printed gives a depth to tell them
+    apart, the label names no one of them: the test is linked to the hole
+    and to no sample, and the reason comes back to be said.
+    """
+    if len(same) == 1:
+        return same[0], _delta(same[0], test), _clash(inv, test, same,
+                                                      same[0])
+    meets = [s for s in same if _interval_gap(s, test) is not None]
+    if meets:
+        nearest = _nearest(meets, test)
+        return nearest, _delta(nearest, test), None
+    there, _delta_there = _sample_at_depth(inv, test)
+    return None, None, {
+        "hole": inv.investigation_id, "named": [same[0].sample_id],
+        "label": " ".join(str(x).strip() for x in (
+            test.investigation_id, test.sample_id) if str(x).strip()),
+        "depth": test.depth_top, "linked": None, "there": there,
+        "within": [], "shared": [s.top for s in same]}
+
+
+def _nearest(samples: Sequence[Sample], test: Any) -> Sample:
+    """The sample nearest the printed interval, then nearest the printed
+    top; the first of equals."""
+    def key(sample: Sample) -> Tuple[float, float]:
+        gap, delta = _interval_gap(sample, test), _delta(sample, test)
+        return (math.inf if gap is None else gap,
+                math.inf if delta is None else delta)
+    return min(samples, key=key)
 
 
 #: A number after a word for an exploration ("BH 2", "Hole-2", "TP2"),
-#: not the start of a decimal.
+#: not the start of a decimal, and not one a letter runs on to: "Pit 9A"
+#: and "BH-9A" are not hole 9.
 _HOLE_NUMBER = re.compile(
     r"\b(?:bh|bore ?hole|boring|hole|tp|test ?pit|pit|trench|well|cpt)"
-    r"\s*[-#.:]?\s*(\d+)(?!\d|[.,]\d)", re.I)
-#: A number standing alone: not part of a word, a range ("4-5", "4 to 5")
-#: or a decimal, and not a depth (a unit after it).
+    r"\s*[-#.:]?\s*(\d+)(?!\d|[.,]\d|[A-Za-z])", re.I)
+#: A number standing alone: not part of a word, a range ("4-5", "4 to 5",
+#: "4 a 5", "4 à 5", "4 through 5") or a decimal, and not a depth (a unit
+#: after it).
 _LONE_NUMBER = re.compile(
     r"(?<![\w.,\-–])(?<![-–]\s)(?<!to\s)(\d+)"
-    r"(?![\w\-–]|[.,]\d|\s*(?:-|–|to)\s*\d|"
+    r"(?![\w\-–]|[.,]\d|\s*(?:-|–|to|a|à|through|thru)\s*\d|"
     r"\s*(?:mm|cm|m|ft|feet|in)\b|\s*['\"])", re.I)
 
 
-def _numbers_named(label: str) -> Set[str]:
-    """The bare numbers a label gives as a hole's name, folded as
-    :func:`hole_key` folds them: a number after a word for an exploration,
-    or one standing alone ("2/S-3", "BH 2, S-3"); never one inside a word, a
-    range or a decimal, nor a depth with its unit."""
-    found = [m.group(1) for m in _HOLE_NUMBER.finditer(label)]
-    found += [m.group(1) for m in _LONE_NUMBER.finditer(label)]
+def _numbers_named(boring: Any, sample: Any = "") -> Set[str]:
+    """The bare numbers a printed boring and sample label give as a hole's
+    name, folded as :func:`hole_key` folds them.
+
+    A number after a word for an exploration, anywhere ("BH 2, S-3"), and
+    a number standing alone as the FIRST word of the sample label ("2/S-3",
+    "9 S-3"). A number later in the label is the sample's own or a depth
+    ("S-3 Jar 9", "S-3 #9", "S-3 (9)", "S-3 @ 9"), never a hole (RI-71).
+    Never one a letter runs on to ("Pit 9A"), one inside a word, a range or
+    a decimal, nor a depth with its unit.
+    """
+    found = [m.group(1) for m in _HOLE_NUMBER.finditer(
+        f"{boring or ''} {sample or ''}")]
+    lone = _LONE_NUMBER.match(str(sample or "").strip())
+    if lone:
+        found.append(lone.group(1))
     return {hole_key(n) for n in found}
 
 
@@ -913,7 +967,8 @@ def _gather(clashes: Dict[Tuple[Any, ...], Dict[str, Any]],
     many sheets and rows print it: five sheets cut from one sample are one
     disagreement between its label and the log, not five.
     """
-    key = (clash["hole"], tuple(clash["named"]), _show(clash["depth"]))
+    key = (clash["hole"], tuple(clash["named"]), _show(clash["depth"]),
+           "shared" in clash)
     group = clashes.setdefault(key, {**clash, "kinds": [], "labels": [],
                                      "pages": set()})
     group["kinds"].append(kind)
@@ -936,6 +991,8 @@ def _label_depth_entry(group: Dict[str, Any]) -> QAEntry:
     there = group["there"]
     linked = group["linked"]
     unit = getattr(group["depth"], "unit", "")
+    if "shared" in group:
+        return _shared_name_entry(group, who, name, prints)
     if linked is not None:
         has = (f"has {there.sample_id or 'an unnamed sample'} there"
                if there is not None else "has no sample there")
@@ -963,6 +1020,44 @@ def _label_depth_entry(group: Dict[str, Any]) -> QAEntry:
                    + ([f"... {len(labels) - 3} more"]
                       if len(labels) > 3 else [])
                    + [f"depth {depth}"],
+                   pages=sorted(group["pages"]))
+
+
+def _shared_name_entry(group: Dict[str, Any], who: str, name: str,
+                       prints: str) -> QAEntry:
+    """The QA entry for a label naming a sample whose name several of the
+    hole's samples carry, none of which the printed depth settles
+    (:func:`_one_name`): a ``conflict`` where the sheet's depth and the
+    log's disagree, a ``partial`` where either gives no depth to compare."""
+    hole, sample = group["hole"], group["named"][0]
+    unit = getattr(group["depth"], "unit", "")
+    logged = [_depth_in(top, unit) for top in group["shared"]
+              if depth_m(top) is not None]
+    head = (f"{who} {name} sample {sample} of {hole}, a name its log gives "
+            f"{len(group['shared'])} samples"
+            + (f" (at {', '.join(logged)})" if logged else ""))
+    depth = _show(group["depth"])
+    if depth_m(group["depth"]) is not None and logged:
+        kind = "conflict"
+        detail = (f"{head}, and {prints} a depth of {depth}; none of them is "
+                  f"within {DEPTH_TOL_M} m of the printed interval. Linked "
+                  f"to {hole} and to no sample")
+    else:
+        kind = "partial"
+        why = (f"{prints} no depth to tell them apart"
+               if group["depth"] is None else
+               f"{prints} a depth of {depth} in a unit that does not "
+               f"convert to compare" if depth_m(group["depth"]) is None else
+               f"{prints} a depth of {depth}, and its log gives none of them "
+               f"a depth")
+        detail = f"{head}, and {why}. Linked to {hole} and to no sample"
+    labels = group["labels"]
+    return QAEntry(kind=kind, where=f"{hole}.lab_tests", detail=detail,
+                   values=[f"label {label}" for label in labels[:3]]
+                   + ([f"... {len(labels) - 3} more"]
+                      if len(labels) > 3 else [])
+                   + ([f"depth {_show(group['depth'])}"]
+                      if group["depth"] is not None else []),
                    pages=sorted(group["pages"]))
 
 
