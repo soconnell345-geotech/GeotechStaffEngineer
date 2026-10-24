@@ -52,8 +52,9 @@ except Exception:  # pragma: no cover - langchain is always present here
 
 #: The owner's hard total across all live runs (USD): $80 of the first
 #: grant (2026-10-08; $62.93 spent by w12) plus a fresh $200 (owner,
-#: 2026-10-19).
-HARD_TOTAL_USD = 263.0
+#: 2026-10-19). Lowered 2026-10-24: the account showed $22 left when the
+#: ledger stood at $227.71, so the total is that plus $20 (a margin kept).
+HARD_TOTAL_USD = 247.71
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_LEDGER = os.path.join(HERE, "spend_ledger.json")
