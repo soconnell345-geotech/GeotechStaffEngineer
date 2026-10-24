@@ -365,7 +365,7 @@ Key conventions:
   test-loaded in a child process (`planlens.opencv`) so a FIPS host hides
   `find_like` instead of aborting; tool-surface fixes for the geotech eval's
   31 real tool errors; report-ingest scoring/DIGGS/label-review fixes and
-  the narrative conventions re-read from the owner's answer keys (DRAFT).
+  the narrative conventions re-read from the narrative answer sheets (transcribed by a Claude session, not the owner; RI-72) (DRAFT).
   Suite: 37 tasks, the `minimal` arm, `rescore=True`. Review switches stay
   OFF (sweep ties baseline at 2.4x tokens). Unverified live items:
   `module_work/LIVE_TEST_QUEUE.md`. Pickup: `HANDOFF.md` §0a-current.

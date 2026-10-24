@@ -2477,7 +2477,9 @@ column with no engine, no key and no network at all.
 
 The `narrative` stage runs `read_narrative` over every report that has a hand
 answer in `narrative_truth_dir` (`<ID>.json`, the owner's two schemas answered
-by hand with **null** where the report does not say) and scores it field by
+with **null** where the report does not say; the current eight were transcribed
+from each report by a Claude session on 2026-09-17, not by the owner, so a
+score is agreement with another careful reading, not with an engineer's) and scores it field by
 field. It reads the truth files that are PRESENT and skips every report without
 one, because the hand answers arrive a few reports at a time.
 

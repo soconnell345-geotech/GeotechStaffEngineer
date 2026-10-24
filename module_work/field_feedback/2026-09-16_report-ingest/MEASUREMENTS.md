@@ -4216,7 +4216,8 @@ over the model's. Unconfirmed until the per-sheet run files arrive (asked for
 2026-10-04).
 
 **Fixed from this run (2026-10-04):** the narrative "mention" conventions
-(the first draft contradicted the owner's answer keys: siteResponseMention is
+(the first draft contradicted the narrative answer sheets, which a Claude session transcribed
+on 2026-09-17 and the owner never checked (RI-72): siteResponseMention is
 'no' on all eight; soilCorrosion is the finding), 8e428ce; dollar figures on a
 Foundry run (Funhouse rates were applied, "$5.85"), 3818dd3. Ingest triage now
 honours `triage_model` (4b08784). Stage b (whole pipeline on keyed reports)

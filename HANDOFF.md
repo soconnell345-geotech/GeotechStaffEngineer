@@ -301,7 +301,7 @@ large-result reads); report ingest: lab scorer folds hole IDs, run files keep
 records + misses (`rescore_saved`), recovery printed as a length scores,
 DIGGS writes past one bad-unit log and round-trips unnamed holes / pit water,
 the label review survives running out of output room, no Funhouse dollars on
-Foundry, narrative conventions re-read from the owner's answer keys (DRAFT).
+Foundry, narrative conventions re-read from the narrative answer sheets (transcribed by a Claude session, not the owner; RI-72) (DRAFT).
 Suite checks: LaTeX numbers, "pages:" and bulleted page lists;
 `score_review_suite(rescore=True)`.
 
