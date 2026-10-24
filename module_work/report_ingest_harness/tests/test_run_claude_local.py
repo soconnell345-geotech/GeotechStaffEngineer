@@ -251,6 +251,67 @@ def test_sets_and_only_pick_items_and_copy_the_open_file(made_up):
                              picked=False) == truth
 
 
+def test_a_public_set_item_is_picked_by_its_p_id(tmp_path):
+    # BACKLOG RI-79: the public blind set's items are P01_p0 ...; its
+    # OPEN.txt names no report, so every one is blind.
+    logs = tmp_path / "truth" / "logs"
+    logs.mkdir(parents=True)
+    for stem in ("P01_p0", "P01_p4", "P02_p0"):
+        (logs / f"{stem}.json").write_text("{}", encoding="utf-8")
+    (logs / "OPEN.txt").write_text("(none)\n", encoding="utf-8")
+
+    assert rcl.report_of("P01_p4") == "P01"
+    truth = tmp_path / "truth"
+    assert rcl.pick_items("logs", truth, "open", []) == []
+    assert [p.stem for p in rcl.pick_items("logs", truth, "blind", [])] == [
+        "P01_p0", "P01_p4", "P02_p0"]
+    assert [p.stem for p in rcl.pick_items("logs", truth, "all",
+                                           ["P02"])] == ["P02_p0"]
+
+    args = rcl.build_parser().parse_args([
+        "run", "--stage", "logs", "--model", MODEL, "--wave", "w",
+        "--cap", "1", "--raw-dir", str(tmp_path),
+        "--reports-dir", str(tmp_path / "assembled")])
+    paths = rcl._paths(args)
+    assert paths["reports"] == tmp_path / "assembled"
+    assert paths["truth"] == truth
+    # Left out, the reports are the corpus folder, as before.
+    args.reports_dir = None
+    assert rcl._paths(args)["reports"] == tmp_path / "corpus"
+
+
+def test_a_log_that_can_keep_no_depth_is_found_before_any_call(tmp_path):
+    """A boring whose pages give the grid no depth scale and no printed
+    depth is listed; a log on a fitted scale and a test pit (its printed
+    numbers are read off the picture) are not."""
+    from planlens.testing import build_metric_log
+
+    reports = tmp_path / "assembled"
+    reports.mkdir()
+    (reports / "P98.pdf").write_bytes(build_metric_log().pdf)
+    doc = pymupdf.open()
+    for _ in range(2):
+        doc.new_page().insert_text((72, 72), "MADE UP SHEET", fontsize=11)
+    doc.save(str(reports / "P97.pdf"))
+    doc.close()
+    logs = tmp_path / "truth" / "logs"
+    logs.mkdir(parents=True)
+    for stem, pages, kind in (("P98_p0", [0], "boring"),
+                              ("P97_p0", [0], "boring"),
+                              ("P97_p1", [1], "test_pit")):
+        (logs / f"{stem}.json").write_text(json.dumps(
+            {"id": stem, "pages": pages, "kind": kind}), encoding="utf-8")
+
+    chosen = rcl.pick_items("logs", tmp_path / "truth", "all", [])
+    rows = rcl.logs_with_no_depths(reports, tmp_path / "di", chosen)
+    assert [r["item"] for r in rows] == ["P97_p0"]
+    assert rows[0]["pages"] == 1 and rows[0]["di_pages"] == 0
+    assert rows[0]["cells"] == 0
+    text = "\n".join(rcl.no_depth_lines(rows, len(chosen), tmp_path / "di"))
+    assert "1 of 3 logs item(s) can keep NO depth" in text
+    assert "--allow-no-depths" in text
+
+
 def test_two_ledgers_on_one_file_keep_one_total(tmp_path):
     path = tmp_path / "ledger.json"
     a, b = rcl.shared_ledger(path), rcl.shared_ledger(path)

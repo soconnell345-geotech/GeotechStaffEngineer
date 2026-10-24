@@ -107,6 +107,10 @@ RAW_TO_LABEL: Dict[str, str] = {
 
 DI_MODES = ("auto", "all", "none")
 _ID_RE = re.compile(r"^R\d\d$")
+#: The PDFs a reports folder holds under their IDs: ``R01.pdf`` ... in the
+#: corpus, and ``P01.pdf`` ... in the public blind set, assembled from scans
+#: and scored against AGS4 data (BACKLOG RI-79).
+_ID_PDF_GLOBS = ("R[0-9][0-9].pdf", "P[0-9][0-9].pdf")
 
 
 class UnknownPageType(ValueError):
@@ -292,8 +296,9 @@ class Corpus:
             self._pdfs = found
             return found
 
-        for path in sorted(self.reports_dir.glob("R[0-9][0-9].pdf")):
-            found[path.stem] = path
+        for pattern in _ID_PDF_GLOBS:
+            for path in sorted(self.reports_dir.glob(pattern)):
+                found[path.stem] = path
 
         rows = [r for r in self._rows_from_manifest() if r.id not in found]
         if rows:
@@ -360,7 +365,8 @@ class Corpus:
             # counts stay zero rather than being guessed; nothing here needs
             # them, and an original-name folder cannot get this far.
             rows = [ReportInfo(id=p.stem, private_name=p.stem)
-                    for p in sorted(self.reports_dir.glob("R[0-9][0-9].pdf"))]
+                    for pattern in _ID_PDF_GLOBS
+                    for p in sorted(self.reports_dir.glob(pattern))]
         rows.sort(key=lambda r: r.id)
         self._reports = rows
         return list(rows)

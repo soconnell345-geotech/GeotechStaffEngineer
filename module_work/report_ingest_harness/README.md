@@ -76,6 +76,17 @@ and resumes. `check <out_dir>` reads any out_dir back for $0, a Foundry one
 included. The offline test drives it on a made-up printout with a scripted
 model.
 
+`ags_truth` (2026-10-24, RI-79) writes the logs stage's answer sheets for
+the public blind set's BGS scans from the AGS4 data delivered for the same
+holes -- the one answer set no Claude session wrote. `build` assembles one
+PDF per set ID (`P01.pdf` ...) from its scans in hole order without
+rendering a page, writes the page map, and writes one answer sheet per hole
+that has both a scan and AGS data, in the hand truth's shape; what AGS holds
+that the schema has no slot for is listed in the sheet's `ags_unslotted`.
+Everything goes under the set's gitignored `raw/`. `run_claude_local run
+--raw-dir <set>/raw --reports-dir <set>/raw/assembled` then scores the
+reader on them, every item blind. Its tests use a made-up AGS4 file.
+
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
 `module_work/field_feedback/2026-09-16_report-ingest/raw/`, which `.gitignore`
