@@ -529,7 +529,9 @@ def _scored_part(blob: dict) -> dict:
 #: The engine's notes on an answer (report_ingest.engine._answer_notes).
 _DROPPED_NOTE = "unknown keys dropped from the answer: "
 _EMPTIED_NOTE = "nothing was left once the unknown keys"
-_CLASHED_NOTE = "beside keys that say something else"
+#: An unknown key beside the answer's fields that held an object naming them.
+_STRAY_OBJECT = re.compile(
+    r"the unknown key (['\"])(.*?)\1 held an object naming fields")
 #: A key name the model chose goes into RESULTS.md only if it looks like one.
 _KEY_NAME = re.compile(r"[A-Za-z_][\w.]{0,40}", re.ASCII)
 
@@ -553,11 +555,13 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
 
     An answer lost to its own keys is an ERROR, not a count:
     ``answers_emptied`` (nothing was left once its unknown keys were
-    dropped, so the engine did not take it), ``answers_clashed`` (it came
-    wrapped beside keys that say something else, so the engine did not take
-    it) and ``emptied_unverified`` (a row from an engine before 2026-10-24,
-    which took what was left and kept no raw arguments: a top-level key
-    dropped from a taken answer may have been the whole answer, wrapped).
+    dropped, so the engine did not take it) and ``emptied_unverified`` (a
+    row from an engine before 2026-10-24, which took what was left and kept
+    no raw arguments: a top-level key dropped from a taken answer may have
+    been the whole answer, wrapped). ``stray_objects`` is a WARNING: an
+    unknown key beside the answer's fields held an object naming them. The
+    engine sets it aside, never merges it -- most are a map of the model's
+    own (evidence, units) -- but it may be the answer hidden beside an id.
     Key names are the model's choosing: only identifier-like ones are
     reported, the rest as "(other)"."""
     from report_ingest.engine import CUT_REASONS
@@ -566,10 +570,11 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
     errors: Counter = Counter()
     emptied_by: Counter = Counter()
     unverified_by: Counter = Counter()
+    stray_by: Counter = Counter()
     out = {"replies": 0, "failed": 0, "cut_off": 0, "refusals": 0,
            "answers_not_taken": 0, "unknown_keys_dropped": 0,
            "answers_unwrapped": 0, "answers_emptied": 0,
-           "answers_clashed": 0, "emptied_unverified": 0,
+           "stray_objects": 0, "emptied_unverified": 0,
            "items_with_error": 0, "cap_refused": 0}
     for blob in blobs.values():
         if _scored_part(blob).get("error"):
@@ -595,8 +600,10 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
                     out["answers_not_taken"] += 1
                 if "arrived wrapped in" in note:
                     out["answers_unwrapped"] += 1
-                if _CLASHED_NOTE in note:
-                    out["answers_clashed"] += 1
+                stray = _STRAY_OBJECT.search(note)
+                if stray:
+                    out["stray_objects"] += 1
+                    stray_by[_key_name(stray.group(2))] += 1
                 if _EMPTIED_NOTE in note:
                     out["answers_emptied"] += 1
                     emptied_by.update(_key_name(k)
@@ -614,6 +621,7 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
                     unverified_by.update(_key_name(k) for k in top)
     out["emptied_keys"] = dict(emptied_by.most_common())
     out["unverified_keys"] = dict(unverified_by.most_common())
+    out["stray_keys"] = dict(stray_by.most_common())
     out["stops"] = dict(stops.most_common())
     out["errors"] = dict(errors.most_common())
     return out
@@ -866,12 +874,14 @@ def check_lines(out: Path, stage: str, truth_root: Optional[Path] = None
             f"their unknown keys were dropped, and were not taken (keys: "
             f"{_key_list(health['emptied_keys'])}). Those calls' answers are "
             f"lost; each row's answer_args holds what the model sent.")
-    if health["answers_clashed"]:
+    if health["stray_objects"]:
         lines.append(
-            f"ERROR: {health['answers_clashed']} answer(s) came wrapped in a "
-            f"key beside keys that say something else, and were not taken. "
-            f"Those calls' answers are lost; each row's answer_args holds "
-            f"what the model sent.")
+            f"WARNING: {health['stray_objects']} answer(s) carried an unknown "
+            f"key beside the answer's fields holding an object that names "
+            f"them (keys: {_key_list(health['stray_keys'])}). Each was set "
+            f"aside, not merged: usually a map of the model's own, but it "
+            f"may be the answer hidden beside an id; each row's answer_args "
+            f"holds what the model sent.")
     if health["emptied_unverified"]:
         lines.append(
             f"ERROR (unverified): {health['emptied_unverified']} answer(s) "

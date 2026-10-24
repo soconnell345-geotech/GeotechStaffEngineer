@@ -362,11 +362,12 @@ def test_the_check_reads_the_engine_s_own_notes(tmp_path):
         answer_call({"arguments": {"answer": {"site": "Made-up"}}}),
         answer_call({"arguments": {"colour": "red"}}),
         answer_call({"site": "A", "arguments": {"site": "B"}}),
+        answer_call({"site": "A", "<b>odd</b>": {"depth_m": 3.0}}),
         answer_call({"<b>odd key</b>": 1, "fine_key": 2}),
         answer_call({"stray": 1}),
     ])
     chat = engine.ChatModelEngine(model)
-    for schema in (Reading, Reading, Reading, Loose, Reading):
+    for schema in (Reading, Reading, Reading, Reading, Loose, Reading):
         chat.complete([engine.user(engine.text_block("go"))],
                       output_format=schema)
     out = tmp_path / "out"
@@ -374,12 +375,13 @@ def test_the_check_reads_the_engine_s_own_notes(tmp_path):
 
     health = rcl.call_health(rcl.run_files(out, "narrative"))
     assert (health["answers_unwrapped"], health["answers_emptied"],
-            health["answers_clashed"], health["answers_not_taken"],
-            health["emptied_unverified"]) == (2, 3, 1, 4, 0)
+            health["stray_objects"], health["answers_not_taken"],
+            health["emptied_unverified"]) == (2, 3, 2, 3, 0)
     assert health["emptied_keys"] == {"colour": 1, "(other)": 1,
                                       "fine_key": 1, "stray": 1}
-    errors = [line for line in rcl.check_lines(out, "narrative")
-              if line.startswith("ERROR")]
-    assert [e.split(" answer(s)")[0] for e in errors] == [
-        "ERROR: 3", "ERROR: 1"]
-    assert "odd key" not in "\n".join(errors)
+    assert health["stray_keys"] == {"arguments": 1, "(other)": 1}
+    flagged = [line for line in rcl.check_lines(out, "narrative")
+               if line.startswith(("ERROR", "WARNING"))]
+    assert [e.split(" answer(s)")[0] for e in flagged] == [
+        "ERROR: 3", "WARNING: 2"]
+    assert "odd" not in "\n".join(flagged)

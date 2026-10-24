@@ -856,13 +856,19 @@ class TestAWrappedAnswer:
         assert any("nothing was left once the unknown keys arguments"
                    in note for note in reply.notes)
 
-    def test_a_null_beside_a_wrapper_does_not_disagree_with_it(self):
-        _, _, _, reply = self._read({"arguments": dict(self.WHOLE),
-                                     "projectName": None,
-                                     "quickSummary": None})
-        assert reply.parsed.projectName == "Made-up Depot"
-        assert reply.notes == [
-            "the answer arrived wrapped in 'arguments'; unwrapped"]
+    def test_the_answer_beside_nulls_is_set_aside_and_named(self):
+        # Beside other keys an object is never taken for the answer; the
+        # nulls left are every field at its default, so nothing is taken,
+        # and the object that named the answer's fields is named.
+        engine, _, _, reply = self._read({"arguments": dict(self.WHOLE),
+                                          "projectName": None})
+        assert reply.parsed is None
+        assert reply.notes[0] == (
+            "the unknown key 'arguments' held an object naming fields of "
+            "the answer (documentType, projectName, projectNumber); set "
+            "aside, not merged")
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert "Made-up Depot" in row["answer_args"][0]
 
     def test_a_schema_that_ignores_unknown_keys_is_held_to_it_too(self):
         class Loose(BaseModel):                 # pydantic's default: ignore
@@ -934,51 +940,96 @@ class TestAWrappedAnswer:
         assert reply.notes == []
 
 
-class TestAWrapperBesideAField:
-    """A wrapper beside a field the schema requires, as
-    ``{"investigation_id": "B-1", "arguments": {...}}`` on a log reading:
-    dropping the wrapper would keep a reading of one field. Made-up values
+class TestAnObjectBesideTheAnswer:
+    """An unknown key BESIDE the answer's fields is a stray, whatever it
+    holds. Models add maps of their own that name the answer's fields with
+    other values -- evidence, units, sources, an alternative -- so it is
+    taken as the answer with the key dropped or passed over: never merged
+    in, never a reason to refuse. When the object named fields of the
+    answer the key is named, for the run's check to warn of. Made-up values
     only."""
 
-    def _read(self, args):
-        from report_ingest.log_reader import LogReading
-
+    def _complete(self, schema, args):
         engine, _ = _engine(answer_call(args))
         reply = engine.complete([user(text_block("go"))],
-                                output_format=LogReading)
-        return engine, reply
-
-    def test_it_joins_the_keys_beside_it_when_they_agree(self):
-        _, reply = self._read({
-            "investigation_id": "B-1",
-            "arguments": {"investigation_id": "B-1", "total_depth": 12.5,
-                          "remarks": "made-up remark"}})
-        assert reply.parsed.investigation_id == "B-1"
-        assert reply.parsed.total_depth == 12.5
-        assert reply.parsed.remarks == "made-up remark"
-        assert reply.notes == [
-            "the answer arrived wrapped in 'arguments'; unwrapped"]
-
-    def test_json_text_inside_it_joins_too(self):
-        _, reply = self._read({"investigation_id": "B-1",
-                               "payload": json.dumps({"total_depth": 7.0})})
-        assert reply.parsed.total_depth == 7.0
-
-    def test_when_they_disagree_the_answer_is_not_taken(self):
-        engine, reply = self._read({
-            "investigation_id": "B-1",
-            "arguments": {"investigation_id": "B-2", "total_depth": 12.5}})
-        assert reply.parsed is None
-        assert reply.notes == [
-            "an answer was not taken: the answer came wrapped in "
-            "'arguments' beside keys that say something else "
-            "(investigation_id)"]
+                                output_format=schema)
         (row,) = engine.meter.to_dict()["per_call"]
-        assert "B-2" in row["answer_args"][0]
+        return reply, row
 
-    def test_an_object_that_names_no_field_is_a_stray_key(self):
-        _, reply = self._read({"investigation_id": "B-1",
-                               "meta": {"source": "made-up"}})
+    def _triage(self, **over):
+        answer = {"document_type": "geotechnical report",
+                  "bound_together": [], "has_narrative": True,
+                  "has_logs": True, "has_lab": False, "has_calcs": False,
+                  "languages": ["en"], "toc_agreement": "agrees",
+                  "anomalies": [], "workflow": "standard",
+                  "rationale": "made-up rationale"}
+        answer.update(over)
+        return answer
+
+    def test_triage_with_an_evidence_map_is_taken(self):
+        from report_ingest.triage import TriageFindings
+
+        reply, row = self._complete(TriageFindings, self._triage(
+            evidence={"has_logs": "pages 5-20", "has_lab": "none"}))
+        assert reply.parsed is not None
+        assert reply.parsed.has_logs is True and reply.parsed.has_lab is False
+        assert reply.notes == [
+            "the unknown key 'evidence' held an object naming fields of the "
+            "answer (has_lab, has_logs); set aside, not merged"]
+        assert "pages 5-20" in row["answer_args"][0]
+
+    def test_a_page_label_with_an_alternative_is_taken(self):
+        from report_ingest.vision_labels import VisionPageAnswer
+
+        reply, _ = self._complete(VisionPageAnswer, {
+            "page": 3, "label": "narrative", "confidence": 0.9,
+            "reason": "made-up reason",
+            "alternative": {"label": "figure", "confidence": 0.1}})
+        assert (reply.parsed.label, reply.parsed.confidence) == (
+            "narrative", 0.9)
+        assert len(reply.notes) == 1 and "'alternative'" in reply.notes[0]
+
+    def test_a_narrative_null_is_not_filled_from_a_sources_map(self):
+        from report_ingest.narrative_reader import NarrativeReading
+
+        reply, _ = self._complete(NarrativeReading, {
+            "projectName": None, "projectNumber": "X-0001",
+            "sources": {"projectName": "page 3"}})
+        assert reply.parsed.projectName is None
+        assert reply.parsed.projectNumber == "X-0001"
+        assert reply.notes[-1] == (
+            "unknown keys dropped from the answer: sources")
+
+    def test_a_log_with_a_units_map_keeps_its_own_values(self):
+        from report_ingest.log_reader import LogReading
+
+        reply, _ = self._complete(LogReading, {
+            "investigation_id": "B-1", "total_depth": 40.0,
+            "units": {"total_depth": "ft"}})
+        assert reply.parsed.total_depth == 40.0
+        assert reply.notes == [
+            "the unknown key 'units' held an object naming fields of the "
+            "answer (total_depth); set aside, not merged",
+            "unknown keys dropped from the answer: units"]
+
+    def test_the_answer_hidden_beside_an_id_is_set_aside_and_named(self):
+        # The case the engine cannot tell from a map of the model's own: it
+        # is taken as what is beside it, and the check warns of it.
+        from report_ingest.log_reader import LogReading
+
+        reply, row = self._complete(LogReading, {
+            "investigation_id": "B-1",
+            "arguments": {"investigation_id": "B-1", "total_depth": 12.5}})
+        assert reply.parsed.investigation_id == "B-1"
+        assert reply.parsed.total_depth is None, "never merged in"
+        assert "'arguments' held an object" in reply.notes[0]
+        assert "12.5" in row["answer_args"][0]
+
+    def test_an_object_that_names_no_field_is_only_dropped(self):
+        from report_ingest.log_reader import LogReading
+
+        reply, _ = self._complete(LogReading, {
+            "investigation_id": "B-1", "meta": {"source": "made-up"}})
         assert reply.parsed.investigation_id == "B-1"
         assert reply.notes == ["unknown keys dropped from the answer: meta"]
 
