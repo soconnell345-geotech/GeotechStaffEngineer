@@ -36,8 +36,8 @@ THE METRICS, and the tolerance each is judged at:
 THE TRUTH FILES' OWN SHAPE is read here rather than in the harness, because
 this module ships in the wheel and runs on the cluster while the measurement
 script lives in the repo. A truth file names its values the way the PAGE
-names them and carries the unit as a field of its own -- ``{"name": "Footing
-Width B (ft)", "value": 25.8, "unit": "ft", "page": 43}`` -- because a
+names them and carries the unit as a field of its own -- ``{"name": "Mat
+Width B (ft)", "value": 31.5, "unit": "ft", "page": 8}`` -- because a
 calculation's label is the page's own words and splitting a unit out of a key
 the way the laboratory truth does would lose them.
 """
@@ -48,7 +48,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from report_ingest.model import Quantity
+from report_ingest.model import Quantity, calc_si
 
 __all__ = [
     "METRICS", "MODEL_ONLY", "NAME_RATIO", "PROGRAM_RATIO", "VALUE_TOL",
@@ -58,8 +58,10 @@ __all__ = [
 ]
 
 #: Two printed labels are the same label at this partial ratio. The reader's
-#: own figure (:data:`report_ingest.calc_reader.NAME_RATIO`), so the merge and
-#: the scorecard draw the line in the same place.
+#: figure too (:data:`report_ingest.calc_reader.NAME_RATIO`), but the
+#: scorecard is the looser of the two: it also lets the word order go and
+#: spells Greek letters as their names (:func:`same_name`), where the merge
+#: compares the folded labels only.
 NAME_RATIO = 80.0
 #: A program name matches at this partial ratio. Tighter than a label,
 #: because a program name is short and a loose match would let any four
@@ -67,7 +69,7 @@ NAME_RATIO = 80.0
 PROGRAM_RATIO = 85.0
 #: A value is the truth's value within two per cent, or within the last
 #: printed digit, whichever is LOOSER. The relative part carries a
-#: conversion; the precision part carries a page that printed 0.74.
+#: conversion; the precision part carries a page that printed 0.63.
 VALUE_TOL = 0.02
 
 #: The metrics, in the order a scorecard prints them.
@@ -175,6 +177,31 @@ def _fold(text: Any) -> str:
     return "".join(ch.lower() for ch in str(text or "") if ch.isalnum())
 
 
+#: The Greek letters a printout sets as symbols, by the name a hand types
+#: for them: a page prints ``Nγ``, ``ρ`` and ``ΔKae`` where an answer sheet
+#: writes ``Ngamma``, ``rho`` and ``delta Kae``. The capital sigma is the
+#: summation sign on a calculation sheet, as is the n-ary summation.
+_SYMBOL_NAMES: Dict[str, str] = {
+    "α": "alpha", "β": "beta", "γ": "gamma", "δ": "delta",
+    "ε": "epsilon", "ϵ": "epsilon", "ζ": "zeta", "η": "eta",
+    "θ": "theta", "ϑ": "theta", "ι": "iota", "κ": "kappa",
+    "λ": "lambda", "μ": "mu", "µ": "mu", "ν": "nu", "ξ": "xi",
+    "π": "pi", "ρ": "rho", "σ": "sigma", "ς": "sigma", "τ": "tau",
+    "υ": "upsilon", "φ": "phi", "ϕ": "phi", "χ": "chi", "ψ": "psi",
+    "ω": "omega", "Σ": "sum", "∑": "sum",
+}
+
+
+def _name_words(text: Any) -> List[str]:
+    """A label's words: lower case, each Greek letter spelled as its name
+    and standing as a word of its own, punctuation dropped."""
+    spelled = "".join(
+        f" {_SYMBOL_NAMES[ch]} " if ch in _SYMBOL_NAMES
+        else f" {_SYMBOL_NAMES[ch.lower()]} " if ch.lower() in _SYMBOL_NAMES
+        else ch for ch in str(text or ""))
+    return re.findall(r"[^\W_]+", spelled.lower())
+
+
 def _ratio(left: str, right: str) -> float:
     """rapidfuzz's partial ratio, or containment without it.
 
@@ -191,12 +218,45 @@ def _ratio(left: str, right: str) -> float:
     return float(fuzz.partial_ratio(left, right))
 
 
-def same_name(left: str, right: str, ratio: float = NAME_RATIO) -> bool:
-    """Do two printed labels name the same thing?"""
-    a, b = _fold(left), _fold(right)
+def _words_within(left: Sequence[str], right: Sequence[str]) -> bool:
+    """Is every word of the shorter label among the longer's, the numbers
+    agreeing where both labels print some?
+
+    A strict subset, not a ratio: a token-set ratio of 90 passed
+    "Allowable, case 2, Clay" against "Allowable Bearing Capacity (kPa),
+    Clay, Case 1", because the words the two share outweigh the one that
+    differs. Where both labels name a case, a scenario or a load case by
+    number, the numbers must be the same ones; a label that names none
+    ("Allowable, Clay") is matched by its words alone, as the partial
+    ratio already matched it inside the longer label.
+    """
+    a, b = set(left), set(right)
     if not a or not b:
         return False
-    return a == b or _ratio(a, b) >= ratio
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    a_numbers = {w for w in a if w.isdigit()}
+    b_numbers = {w for w in b if w.isdigit()}
+    return short <= long_ and (not a_numbers or not b_numbers
+                               or a_numbers == b_numbers)
+
+
+def same_name(left: str, right: str, ratio: float = NAME_RATIO) -> bool:
+    """Do two printed labels name the same thing?
+
+    The partial ratio over the folded labels, as before -- one label inside
+    the other passes -- and, since RI-74 (1), the WORD ORDER let go: every
+    word of the shorter label among the longer's, the numbers agreeing
+    where both print some (:func:`_words_within`). A reader writes "Ultimate
+    Bearing Capacity (kPa), Clay, Scenario 1" for the hand's "Ultimate,
+    scenario 1, Clay", and that is the one label. Greek letters are spelled
+    as their names on both sides first (:data:`_SYMBOL_NAMES`).
+    """
+    a_words, b_words = _name_words(left), _name_words(right)
+    a, b = "".join(a_words), "".join(b_words)
+    if not a or not b:
+        return False
+    return (a == b or _ratio(a, b) >= ratio
+            or _words_within(a_words, b_words))
 
 
 def _precision(value: float) -> float:
@@ -231,6 +291,8 @@ def same_value(expect: Expected, got: Any) -> bool:
     Compared in SI where both units convert and both are stated, and as
     printed otherwise: a record in kips beside a truth in kN is one number,
     and a record in a unit neither side can convert is compared to itself.
+    Two units of different kinds never agree
+    (:func:`report_ingest.model.calc_si`, where ``g`` is gravity).
     """
     if expect.value is None:
         said = str(getattr(got, "text", "") or "").strip()
@@ -247,10 +309,10 @@ def same_value(expect: Expected, got: Any) -> bool:
     left, right = quantity.value, wanted.value
     if expect.unit and quantity.unit and \
             _fold(quantity.unit) != _fold(expect.unit):
-        si_got, si_want = quantity.si_value, wanted.si_value
-        if si_got is None or si_want is None:
+        si_got, si_want = calc_si(quantity), calc_si(wanted)
+        if si_got is None or si_want is None or si_got[1] != si_want[1]:
             return False
-        left, right = si_got, si_want
+        left, right = si_got[0], si_want[0]
     tol = max(abs(right) * VALUE_TOL, _precision(right))
     return abs(left - right) <= max(tol, abs(right) * 1e-9)
 
@@ -545,8 +607,8 @@ def _scored(score: CalcScore) -> Dict[str, Any]:
             "overall": score.total.to_dict(), "misplaced": score.misplaced}
 
 
-def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
-                  ) -> Optional[Dict[str, Any]]:
+def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any], *,
+                  remerge: bool = False) -> Optional[Dict[str, Any]]:
     """Re-score a saved run file's ``after`` blob against ``truth`` with the
     CURRENT checks -- no model call, no PDF.
 
@@ -555,14 +617,35 @@ def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
     the floor's, where kept, is scored the floor's way into ``floor_alone``.
     ``None`` for a run file written before the records were kept (before
     2026-10-04).
+
+    ``remerge``: merge the saved floor and model records again with the
+    CURRENT merge (:func:`report_ingest.calc_reader.merge_calculation`) and
+    score that, so a change to the merge is measured on a saved run as a
+    change to the scorer is. The new record replaces ``record``, the merge's
+    counts are its own, and ``remerged`` says so. A run file missing either
+    record is scored as saved.
     """
     from report_ingest.model import Calculation
 
     if not after or after.get("record") is None:
         return None
     out = dict(after)
-    out.update(_scored(score_record(
-        truth, Calculation.model_validate(after["record"]))))
+    record = Calculation.model_validate(after["record"])
+    if remerge and after.get("floor_record") is not None \
+            and after.get("model_record") is not None:
+        from report_ingest.calc_reader import (
+            floor_from_record, merge_calculation,
+        )
+        record, log = merge_calculation(
+            floor_from_record(Calculation.model_validate(
+                after["floor_record"])),
+            Calculation.model_validate(after["model_record"]))
+        record.unsettled = list(Calculation.model_validate(
+            after["record"]).unsettled)
+        out.update(record=_dump(record), remerged=True,
+                   disagreements=len(log.disagreements), kept=len(log.kept),
+                   added=len(log.added), reconciled=log.reconciled)
+    out.update(_scored(score_record(truth, record)))
     if after.get("model_record") is not None:
         alone = _scored(score_record(
             truth, Calculation.model_validate(after["model_record"])))

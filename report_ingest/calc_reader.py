@@ -93,7 +93,7 @@ from report_ingest.engine import (
 from report_ingest.floor import MergeLog, fold, has_evidence, settle, show
 from report_ingest.model import (
     CALC_KINDS, Calculation, NamedQuantity, Provenance, Quantity,
-    _canonical_unit,
+    _canonical_unit, calc_si,
 )
 
 __all__ = [
@@ -101,7 +101,8 @@ __all__ = [
     "CALC_READER_SYSTEM", "CALC_TOOLS", "CALC_KIND_DEFINITIONS",
     "MAX_CALC_CALLS", "MAX_CALC_PAGES", "PAGE_DPI", "ZOOM_DPI",
     "PROGRAM_PATTERNS", "FloorValue", "CalcFloor", "floor_from_pages",
-    "serialise_floor", "merge_calculation", "page_window", "printed_numbers",
+    "serialise_floor", "merge_calculation", "floor_from_record",
+    "page_window", "printed_numbers",
     "NAME_RATIO", "SUMMARY_WORDS",
     "split_calc_runs", "split_calc_items", "HEADER_BAND_FRAC",
     "TITLE_WORDS", "MAX_RUN_PAGES", "PAGE_IMAGES_ENV", "page_images_enabled",
@@ -134,10 +135,18 @@ MAX_TABLE_CHARS = 7000
 MAX_FLOOR_VALUES = 140
 #: What the reader's own summary may run to.
 SUMMARY_WORDS = 60
-#: Two printed labels are the same label at this partial ratio. The scorer's
-#: own figure (:data:`report_ingest.calc_scoring.NAME_RATIO`), so a
-#: difference the scorecard would never see is not a disagreement either.
+#: Two printed labels are the same label at this partial ratio over the
+#: folded labels. The scorer uses the same figure
+#: (:data:`report_ingest.calc_scoring.NAME_RATIO`) but is the looser of the
+#: two: it also lets the word order go and spells Greek letters as their
+#: names. The merge does neither, so two labels the scorecard would credit
+#: as one can still be two slots here.
 NAME_RATIO = 80.0
+#: What the floor appends to a label it took off a table's last filled row
+#: (:func:`_values_from_table`). It says which row, not what was printed, so
+#: it is not a word of the label when two labels are compared
+#: (:func:`_names_same_thing`).
+LAST_ROW_SUFFIX = ", last row of the table"
 
 #: One line per kind, in wording that belongs to no firm and no program.
 #: These are what the model chooses between, and they are about WHAT IS
@@ -496,6 +505,38 @@ class CalcFloor:
                      f"off these pages by pattern")])
 
 
+_FLOOR_NOTE = re.compile(r"read off the page by pattern \((\w+)\)")
+
+
+def floor_from_record(calc: Calculation) -> CalcFloor:
+    """The floor back out of its record (:meth:`CalcFloor.as_calculation`).
+
+    A run file keeps the floor as a record (``floor_record``) beside the
+    model's (``model_record``), so a change to the MERGE can be measured on
+    a saved run with no model call and no PDF
+    (:func:`report_ingest.calc_scoring.rescore_saved`). Every value, its
+    page, box, pattern and confidence come back. The banner's page does not
+    (:attr:`CalcFloor.program_page` stays None): the record keeps only the
+    program's name, so a merge done again logs the program with no page.
+    """
+    values: List[FloorValue] = []
+    for named in list(calc.inputs) + list(calc.results):
+        prov = named.prov
+        said = _FLOOR_NOTE.search(str(prov.note or "")) if prov else None
+        values.append(FloorValue(
+            name=named.name,
+            value=None if named.value is None else float(named.value.value),
+            unit="" if named.value is None else named.value.unit,
+            text=named.text or "",
+            page=int(prov.page) if prov else 0,
+            bbox=tuple(prov.bbox) if prov and prov.bbox else None,
+            method=said.group(1) if said else (
+                prov.method if prov else "tables"),
+            confidence=float(prov.confidence) if prov else CONF_TABLE))
+    return CalcFloor(program=calc.program, title=calc.subject or "",
+                     values=values, pages=list(calc.pages))
+
+
 def _clip(text: str, n: int = MAX_LINE_CHARS) -> str:
     text = " ".join(str(text or "").split())
     return text if len(text) <= n else text[:n - 1] + "…"
@@ -564,7 +605,7 @@ def _is_label(text: str) -> bool:
 
     Two letters is enough -- a worked sheet labels things ``Fa``, ``SS`` and
     ``qu`` -- but they have to be most of what the span says. Mostly digits
-    is a column of a data row, and ``19.6000 0.00206 1.41E-04`` names
+    is a column of a data row, and ``18.4000 0.00317 2.06E-04`` names
     nothing.
     """
     name = _clean_name(text)
@@ -579,7 +620,7 @@ def _pair_in_line(text: str) -> Optional[Tuple[str, float, str]]:
 
     Two shapes, and both of them are how a printout puts a number beside its
     own name in ONE span: ``Pile-head deflection = 0.02500000 meters`` and
-    ``Design ESALs ........ 137,774``. A span of several numbers is a row of
+    ``Design ESALs ........ 245,318``. A span of several numbers is a row of
     a table and is left alone.
     """
     line = str(text or "").replace(" ", " ").strip()
@@ -629,8 +670,8 @@ def _label_before(line: str, mention: str) -> str:
 def _bands(lines: Sequence[Any]) -> List[List[Any]]:
     """The page's text spans grouped into the printed LINES they sit on.
 
-    planlens returns a span per run of text, so a spreadsheet's ``Footing
-    Width B (ft)`` and its ``25.8`` are two spans at the same height and a
+    planlens returns a span per run of text, so a spreadsheet's ``Mat
+    Width B (ft)`` and its ``31.5`` are two spans at the same height and a
     reader that looked at one span at a time would never see the pair. They
     are grouped by the top of their box, because a label and its value are
     often set in different sizes and their boxes rarely start level.
@@ -748,7 +789,7 @@ def _values_from_table(table: Any, page: int) -> List[FloorValue]:
                 if sum(1 for c in r if str(c).strip()) >= 2]
         if body:
             row = body[-1]
-            suffix = "" if len(body) == 1 else ", last row of the table"
+            suffix = "" if len(body) == 1 else LAST_ROW_SUFFIX
             for i, label in enumerate(header):
                 if i >= len(row):
                     break
@@ -807,8 +848,8 @@ def floor_from_pages(doc: Any, pages: Sequence[int],
     """The pages' own labelled values, before any model call is spent.
 
     Nothing here is inferred beyond the label printed beside the number: a
-    table row that reads ``Footing Width B (ft) | 25.8``, a header table's
-    one row of values, a line reading ``Design ESALs ... 137,774``, and
+    table row that reads ``Mat Width B (ft) | 31.5``, a header table's
+    one row of values, a line reading ``Design ESALs ... 245,318``, and
     planlens' own ``quantities`` pass for a value stated in prose. The
     program name comes off a running banner only where a known program-name
     pattern matches, and is ``None`` otherwise -- which, on a spreadsheet, is
@@ -978,12 +1019,37 @@ def _same_name(left: str, right: str) -> bool:
     return a == b or _ratio(a, b) >= NAME_RATIO
 
 
+def _label_words(text: str) -> set:
+    return set(re.findall(r"[^\W_]+", str(text or "").lower()))
+
+
+def _names_same_thing(floor_name: str, reader_name: str) -> bool:
+    """Do the floor's label and the reader's name one quantity?
+
+    Stricter than :func:`_same_name`, which is a partial ratio over the
+    folded labels: it passes a short label inside a longer one ("q" in
+    "qult") and lets the floor's :data:`LAST_ROW_SUFFIX` match words of the
+    reader's. Before a floor value is demoted at its own place, every word
+    of its label, the suffix taken off, must be among the reader's words.
+    The reader's label may say more -- a case, a layer -- but not something
+    else.
+    """
+    name = str(floor_name or "")
+    if name.endswith(LAST_ROW_SUFFIX):
+        name = name[:-len(LAST_ROW_SUFFIX)]
+    words = _label_words(name)
+    return bool(words) and words <= _label_words(reader_name)
+
+
 def _same_value(left: NamedQuantity, right: NamedQuantity) -> Optional[bool]:
     """Are two readings of one label the same reading?
 
     Compared in SI where both units convert, and as printed where they do
     not -- a printout in kips beside a truth in kN is one number, and a
-    printout in a unit the record cannot convert is compared to itself.
+    printout in a unit the record cannot convert is compared to itself. Two
+    units of different kinds are two readings, whatever their numbers: 750
+    mm and 0.75 % are both 0.75 in SI (:func:`report_ingest.model.calc_si`,
+    the scorer's conversion too, with ``g`` as gravity).
     """
     if left.value is None or right.value is None:
         if left.value is None and right.value is None:
@@ -992,9 +1058,11 @@ def _same_value(left: NamedQuantity, right: NamedQuantity) -> Optional[bool]:
         return None
     a, b = left.value, right.value
     if fold(a.unit) != fold(b.unit):
-        sa, sb = a.si_value, b.si_value
+        sa, sb = calc_si(a), calc_si(b)
         if sa is not None and sb is not None:
-            return abs(sa - sb) <= max(1e-9, abs(sb) * 0.005)
+            if sa[1] != sb[1]:
+                return False
+            return abs(sa[0] - sb[0]) <= max(1e-9, abs(sb[0]) * 0.005)
     return abs(a.value - b.value) <= max(1e-9, abs(b.value) * 0.005)
 
 
@@ -1060,7 +1128,8 @@ def _twin(value: FloorValue, named: NamedQuantity,
     """The reader's row a floor value is settled against, and its place.
 
     Among the rows under the same label: one read at the same place, the one
-    of those with the same value first; then one with the same value
+    of those with the same value first and then one whose label names the
+    same thing (:func:`_names_same_thing`); then one with the same value
     wherever it was read, because that number is in the record already; then
     one whose place is unknown, settled as before. ``(None, None)`` when the
     reader returned nothing under the label, ``(None, False)`` when every row
@@ -1071,7 +1140,8 @@ def _twin(value: FloorValue, named: NamedQuantity,
     if not same_label:
         return None, None
     placed = [(r, _same_place(value, r.prov)) for r in same_label]
-    here = [r for r, p in placed if p is True]
+    here = sorted((r for r, p in placed if p is True),
+                  key=lambda r: not _names_same_thing(value.name, r.name))
     for row in here:
         if _same_value(named, row):
             return row, True
@@ -1086,8 +1156,83 @@ def _twin(value: FloorValue, named: NamedQuantity,
     return None, False
 
 
+def _printed(twin: NamedQuantity, pool: Sequence[float]) -> bool:
+    """Is the reader's number one these pages print (:func:`_on_the_page`)?
+
+    A reading in words has no number for the pool to check and passes, as
+    before. On the saved runs most readings in words that met a floor
+    number on its own line were the better reading: a contract number the
+    pattern split into a value and a "unit", a code's edition.
+    """
+    if twin.value is None:
+        return True
+    return _on_the_page(float(twin.value.value), pool)
+
+
+def _overrules(value: FloorValue, twin: NamedQuantity,
+               prov: Provenance, place: Optional[bool],
+               pool: Optional[Sequence[float]] = None) -> str:
+    """Why the reader's value replaces the floor's in this slot; empty when
+    nothing says it should.
+
+    The shared rule (:func:`report_ingest.floor.has_evidence`) asks for a
+    box AND a note. On a calculation that is too much (RI-78, RI-74 (2)):
+    the pattern reads ``label -> the next number on the line``, so where a
+    line holds a row of numbers it takes the wrong column, and where the
+    value is a symbol or sits on the next line it takes a label fragment
+    ("f =", a bare unit). The Claude runs left the note empty on four rows
+    in five, as the schema allows, and 39 of the 40 floor wins left a worse
+    value in the record. Two things therefore count as evidence here:
+
+    * the reader's box is on the floor's own printed line
+      (:func:`_same_place`): it read that line and returned a different
+      number, and the line is where the page settles it -- but only where
+      the two labels name the same thing (:func:`_names_same_thing`) and,
+      when the merge is given the pages' printed numbers (``pool``), the
+      reader's number is one of them (:func:`_printed`). Otherwise nothing
+      at that place settles it, and both stand;
+    * the floor found no number beside the label and the reader did: a
+      pattern that read words cannot correct a number.
+
+    The floor's value is kept on the provenance as the alternative either
+    way, and the split is a disagreement for QA. The log and laboratory
+    merges keep the shared rule: their floor is the grid and the detected
+    tables, not a pattern over a line.
+    """
+    if place is True:
+        if not _names_same_thing(value.name, twin.name):
+            return ""
+        if pool is not None and not _printed(twin, pool):
+            return ""
+        return ("the reader boxed this label's own printed line and read a "
+                "different value there")
+    if value.value is None and twin.value is not None:
+        return ("the pattern found no number beside this label and the "
+                "reader read one")
+    if has_evidence(prov, value.bbox):
+        return "the reader named a box and a note"
+    return ""
+
+
+def _both_stand(value: FloorValue, twin: NamedQuantity,
+                place: Optional[bool]) -> str:
+    """Why a differing floor value and the reader's row both stand."""
+    if place is None:
+        return ("the reader named no place for its reading of this label, "
+                "so nothing says the two came off one place; both stand, "
+                "the pattern's as its own row")
+    if not _names_same_thing(value.name, twin.name):
+        return (f"the reader read this place under another label "
+                f"({twin.name!r}), so the two need not be one quantity; "
+                f"both stand, the pattern's as its own row")
+    return ("the reader's number at this place is printed nowhere on these "
+            "pages, so the page does not back it over the pattern's; both "
+            "stand, the pattern's as its own row")
+
+
 def merge_calculation(floor: CalcFloor, model: Calculation,
-                      log: Optional[MergeLog] = None
+                      log: Optional[MergeLog] = None,
+                      pool: Optional[Sequence[float]] = None
                       ) -> Tuple[Calculation, MergeLog]:
     """The floor's values folded onto the model's calculation.
 
@@ -1106,11 +1251,23 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
     and the floor's is kept as its own row beside it. Foundry run 1 lost
     floor values exactly so: one row per label stood for every printing of
     that label, and the reader's reading of one block replaced the floor's
-    readings of the other two. At the same place the shared rule decides
-    (:func:`report_ingest.floor.has_evidence`). The floor values that have a
-    reading at their own place are settled FIRST, and only then the rest
-    against a reading elsewhere, so the order the patterns found them in
+    readings of the other two. Where the two differ at the same place, the
+    reader's reading stands (:func:`_overrules`) where the two labels name
+    the same thing and, given ``pool`` (every number the pages print,
+    :func:`printed_numbers`), the reader's number is printed there; else
+    both stand. The floor values that
+    have a reading at their own place are settled FIRST, and only then the
+    rest against a reading elsewhere, so the order the patterns found them in
     cannot decide which printed value ends in the record.
+
+    WHERE THE PLACE IS UNKNOWN -- the reader named no box, because it read
+    the value off a picture or because Python refused the page it cited and
+    dropped the box -- a floor value under the same label that differs is
+    NOT settled against the reader's row: nothing says the two came off one
+    place. Both stand, the floor's as its own row, and the split is a
+    disagreement (RI-74 (2)). Before, the floor's value replaced the
+    reader's, and on a sheet that prints one label several times every one
+    of them replaced it in turn, the last standing.
     """
     log = log if log is not None else MergeLog()
     out = model.model_copy(deep=True)
@@ -1156,15 +1313,28 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
             continue
         same = _same_value(named, twin)
         prov = twin.prov or Provenance(page=value.page, method="model")
+        floor_method = "tables" if value.method == "tables" else "text"
+        overruled = "" if same else _overrules(value, twin, prov, place,
+                                               pool)
+        if not same and not overruled:
+            out.inputs.append(named)
+            log.disagree(
+                where, value.name, named.value or named.text,
+                twin.value or twin.text, kept="both",
+                why=_both_stand(value, twin, place),
+                page=value.page, floor_method=floor_method,
+                floor_confidence=value.confidence,
+                model_confidence=float(prov.confidence),
+                model_method=prov.method)
+            continue
         s = settle(value.name, named.value or named.text,
                    twin.value or twin.text, same,
-                   floor_method="tables" if value.method == "tables"
-                   else "text",
+                   floor_method=floor_method,
                    floor_confidence=value.confidence,
                    model_method=prov.method if prov.method in (
                        "model", "model_from_picture") else "model",
                    model_confidence=float(prov.confidence),
-                   evidence=has_evidence(prov, value.bbox),
+                   evidence=bool(overruled),
                    floor_unit=value.unit,
                    model_unit=twin.value.unit if twin.value else "",
                    model_note=prov.note)
@@ -1175,20 +1345,22 @@ def merge_calculation(floor: CalcFloor, model: Calculation,
                 where, value.name, named.value or named.text,
                 twin.value or twin.text,
                 kept="model" if s.verdict == "model_wins" else "floor",
-                why=("the reader named a box and a note, so its reading "
-                     "replaces the pattern's; the pattern's is kept beside it"
+                why=(f"{overruled}, so its reading replaces the pattern's; "
+                     f"the pattern's is kept beside it"
                      if s.verdict == "model_wins" else
                      "the reader's value differs from the one printed beside "
                      "this label and it named no box or note for it; the "
                      "page's stands and the reader's is kept beside it"),
                 page=value.page,
-                floor_method="tables" if value.method == "tables" else "text",
+                floor_method=floor_method,
                 floor_confidence=value.confidence,
                 model_confidence=float(prov.confidence),
                 model_method=prov.method)
             if s.verdict == "floor_wins":
                 twin.value, twin.text = named.value, named.text
             if s.alternative is not None:
+                if s.verdict == "model_wins":
+                    s.alternative.note = f"the floor's value; {overruled}"
                 prov.alternatives.append(s.alternative)
                 twin.prov = prov
         elif s.verdict == "floor_only":
@@ -2058,10 +2230,10 @@ def printed_numbers(doc: Any, pages: Sequence[int]) -> List[float]:
 def _precision_tol(value: float) -> float:
     """Half of the last printed digit's place, from the value as printed.
 
-    A page printing 0.74 has said "between 0.735 and 0.745"; a page printing
-    137,774 has said that number exactly. Matching a reported value to the
+    A page printing 0.63 has said "between 0.625 and 0.635"; a page printing
+    245,318 has said that number to the unit. Matching a reported value to the
     page at the PRINTED precision is the honest test, and a bare relative
-    tolerance would let 0.7 pass for 0.74 on a page that printed two
+    tolerance would let 0.6 pass for 0.63 on a page that printed two
     decimals.
     """
     text = f"{value!r}"
@@ -2094,6 +2266,17 @@ class _Builder:
         self.pool = list(pool)
         self.unresolved: List[Dict[str, Any]] = []
         self.changes: List[Dict[str, Any]] = []
+        #: ``cited page -> how many values`` the reader put on a page outside
+        #: a one-page printout, each read as that page (:meth:`provenance`).
+        self.repaged: Dict[int, int] = {}
+
+    @property
+    def warnings(self) -> List[str]:
+        """What the builder corrected without refusing, for the result."""
+        return [f"page {self.pages[0]}: the reader cited page {cited} for "
+                f"{n} value(s); this printout is that one page, so they "
+                f"were read as page {self.pages[0]} with their boxes"
+                for cited, n in sorted(self.repaged.items())]
 
     def _refuse(self, what: str, why: str, value: Any = None,
                 page: Optional[int] = None) -> None:
@@ -2123,6 +2306,16 @@ class _Builder:
 
     def provenance(self, prov: ReadProv, what: str) -> Provenance:
         page = int(prov.page)
+        if page not in self.pages and len(self.pages) == 1:
+            # A ONE-PAGE printout: the reader was shown that page and no
+            # other, so whatever number it cites -- a position in the
+            # printout, a picture's index, the page's printed number -- it
+            # read the value there, and the box it copied is that page's
+            # (RI-74 (2): a cited 0 on a one-page item lost every box, and
+            # the merge then let the floor's numbers in).
+            self.repaged.setdefault(page, 0)
+            self.repaged[page] += 1
+            page = self.pages[0]
         if page not in self.pages:
             self._refuse(
                 what, f"the reader put this on page {page}, which is not "
@@ -2454,7 +2647,9 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
 
     builder = _Builder(reading, pages, report_id, tools.zooms, pool)
     model_calc = builder.build()
-    merged, merge_log = merge_calculation(floor, model_calc, MergeLog())
+    warnings.extend(builder.warnings)
+    merged, merge_log = merge_calculation(floor, model_calc, MergeLog(),
+                                          pool=pool)
     merged.unsettled = [dict(u) for u in builder.unresolved]
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)

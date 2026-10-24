@@ -64,7 +64,7 @@ __all__ = [
     "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
     "DocumentFacts", "Workflow", "WORKFLOW_VALUES",
     "LabelVote", "PageLabel", "ParentReport", "BoundReport",
-    "ReportRecord", "to_si", "si_numbers",
+    "ReportRecord", "to_si", "si_numbers", "calc_si",
     "record_json_schema",
     # the narrative (WP4): the owner's two schemas and their typed twins
     "Citation", "Mention", "BearingValue", "Stratum",
@@ -606,6 +606,36 @@ class Quantity(BaseModel):
 
     def __str__(self) -> str:                       # pragma: no cover - repr
         return f"{self.value:g} {self.unit}".strip()
+
+
+#: Accelerations a calculation prints, to m/s2. ``g`` is gravity here
+#: (:data:`G`): a seismic coefficient, a peak ground acceleration. The unit
+#: table reads ``g`` as grams, which is what a laboratory sheet means by it;
+#: a calculation sheet never weighs anything in grams.
+_ACCELERATIONS: Dict[str, float] = {
+    "g": G, "m/s2": 1.0, "m/s^2": 1.0, "m/s²": 1.0,
+    "ft/s2": 0.3048, "ft/s^2": 0.3048, "ft/s²": 0.3048,
+}
+
+
+def calc_si(quantity: Optional[Quantity]) -> Optional[Tuple[float, str]]:
+    """``(value in SI, the SI unit)`` for a calculation's quantity, or None.
+
+    The record's own conversion (:func:`to_si`), except that ``g`` is
+    gravity. The SI UNIT comes back with the number because two numbers are
+    one reading only in one unit: 750 mm and 0.75 % are both 0.75 in SI, and
+    they are not the same value. The calculation merge and the calculation
+    scorer both compare by it.
+    """
+    if quantity is None:
+        return None
+    unit = str(quantity.unit or "").strip().lower().replace(" ", "")
+    if unit in _ACCELERATIONS:
+        return float(quantity.value) * _ACCELERATIONS[unit], "m/s2"
+    converted = quantity.to_si()
+    if converted is None:
+        return None
+    return converted.value, converted.unit
 
 
 # ---------------------------------------------------------------------------
@@ -2399,8 +2429,8 @@ class NamedQuantity(BaseModel):
     """One labelled value a calculation printed: the label, and the value.
 
     A calculation sheet is a list of labelled numbers -- ``Footing Width B
-    (ft)  25.8``, ``Total Settlement (inches)  0.74``, ``PCC Thickness
-    5.46 inches`` -- so the PRINTED LABEL paired with the value is the whole
+    (ft)  31.5``, ``Total Settlement (inches)  0.63``, ``PCC Thickness
+    7.15 inches`` -- so the PRINTED LABEL paired with the value is the whole
     of what this record holds. The label stays the sheet's own words: a
     reviewer goes looking for what the page says, not for a name this
     package invented for it.

@@ -523,7 +523,7 @@ its own headings, the **last filled row** of a ruled data table (which is
 where a cumulative settlement and a governing case live), a label span and a
 value span on the same printed *line* (which is how a spreadsheet sets them,
 and why the floor groups spans into bands first), a single span reading
-`Pile-head deflection = 0.025 meters` or `Design ESALs ...... 137,774`, and
+`Pile-head deflection = 0.025 meters` or `Design ESALs ...... 245,318`, and
 planlens' own `quantities` pass for a value stated in prose, labelled by the
 words in front of it. The program name comes off a running banner only where
 a small **generic** list of commercial program-name patterns matches, and is
@@ -539,19 +539,56 @@ label many times — `Nc` once per material, a head load in every page's legend
 — so a slot is a label *at a place*: the same page, and boxes on one printed
 line or one inside the other. The reader's row read somewhere else is a
 different printed value; the floor's is kept as its own row (`kept`, saying
-so), not "corrected" to it. At the same place the shared rule decides
-(`floor.has_evidence`, unchanged, as for the other readers, whose slots are
-keyed by depth or test), and the floor values that have a reading at their own
-place are settled first, so the order the patterns met them in decides
-nothing. Re-merged offline over the 611 saved calculation items of Foundry
-run 1 (no model call), the nine truth runs it covers went from 96 to 108 of
-145 values found, against 109 found by the floor or the reader alone, and no
-run lost a value. **That score counts only values found, so extra rows cannot
-lower it** — and the merge does keep more rows: on the truth pages, under the
-truth's labels, 842 rows became 909, the rows matching no truth value 533
-became 566, and the truth labels carrying such a row 76 became 85. Most of
-the new ones are floor readings the one-row-per-label merge used to hide,
-such as a code table's column headings read as labelled values.
+so), not "corrected" to it. Where the two differ at the same place, the
+reader's reading stands (below), and the floor values that have a reading
+at their own place are settled first, so the order the patterns met them in
+decides nothing. Re-merged offline over the 611 saved calculation items of
+Foundry run 1 (no model call), the nine truth runs it covers went from 96 to
+108 of 145 values found, against 109 found by the floor or the reader alone,
+and no run lost a value. **That score counts only values found, so extra
+rows cannot lower it** — and the merge does keep more rows: on the truth
+pages, under the truth's labels, 842 rows became 909, the rows matching no
+truth value 533 became 566, and the truth labels carrying such a row 76
+became 85. Most of the new ones are floor readings the one-row-per-label
+merge used to hide, such as a code table's column headings read as labelled
+values.
+
+**Who wins at one place (RI-74 (2), 2026-10-24).** The shared rule
+(`floor.has_evidence`: a box AND a note) still serves the log and laboratory
+merges, whose floor is the grid and the detected tables. A calculation's
+floor is a pattern over a line — the next number after a label, which on a
+row of numbers is another column's, and on a symbol's line is a label
+fragment ("f =", a bare unit) — and the readers on Claude left the note empty
+on four rows in five, as the schema allows; 39 of the 40 floor wins on those
+runs left a worse value. So the calc merge (`_overrules`) lets the reader's
+value replace the floor's when its **box is on the floor's own printed
+line**, or when the **floor found no number** and the reader did, as well as
+on the shared rule; the floor's value stays beside it as the alternative and
+the split is a disagreement. The line settles it only where **the two labels
+name the same thing** — every word of the floor's label, less its ", last row
+of the table", among the reader's (`_names_same_thing`); the merge's fuzzy
+label test alone paired "Q" with "Qult" and one column of a table with
+another — and, live, only where **the reader's number is printed
+on the pages** (`read_calculation` passes the result gate's pool of printed
+numbers; a saved run merged again has none and is not held to it).
+Otherwise both stand. **Where the place is unknown** — no box, because
+the value was read off a picture or because Python refused the page cited
+and dropped the box — a floor value under the same label that differs is not
+settled against the reader's row at all: both stand, the floor's as its own
+row, and the disagreement says `kept: both`. Before, each floor value under
+a matching label replaced that row in turn, and the last stood. Two readings
+in units of different kinds (750 mm and 0.75 %, both 0.75 in SI) are never "the
+same reading", and `g` is gravity, not grams (`model.calc_si`). On a
+**one-page printout** a cited page outside it is read as that page, box and
+all (a position in the printout, a picture's index: the reader was shown no
+other page), with a warning on the result rather than a refusal. Re-merged
+offline over the saved runs (no model call, the old scorer), Sonnet 5.5 went
+162 → 165, Opus 5.5 158 → 161, GPT-5.4 with pictures on 165 → 169 and off
+158 → 158, of 203; the fourth value each Claude run lost is the program
+(RI-74 (3)). The label test then keeps 15 floor values as rows of their own
+across the four runs instead of demoting them (none is an answer-sheet value,
+so no score moves), and no reader number at a floor value's own line was
+missing from its pages, so the printed-number guard changed nothing there.
 
 **Three Python gates.** A **result whose number is on none of the pages** to
 the precision it was reported at keeps its place in the record — it may be
@@ -2435,7 +2472,32 @@ Six metrics: **kind** (what it works out), **program** (the program and its
 version as printed, fuzzy at 85), **method**, **subject** (both fuzzy at 80),
 **inputs** and **results** (each value matched by its printed LABEL at 80 and
 its VALUE within 2 % or the last printed digit, whichever is looser, compared
-in SI wherever both units convert).
+in SI wherever both units convert to the same kind; `g` is gravity).
+
+**A label in another word order is the same label (RI-74 (1), 2026-10-24).**
+Besides the partial ratio, two labels match when every word of the shorter is
+among the longer's, in any order, and where both print numbers they are the
+same numbers, with Greek letters spelled as their names first (`Nγ` is
+`Ngamma`, `ΔP` is `delta P`, `Σ` is `sum`): a reader writes "Ultimate Bearing
+Capacity (kPa), Clay, Scenario 1" for the hand's "Ultimate, scenario 1, Clay".
+A ratio would not do: a token-set ratio of 90 passed "Allowable, case 2, Silt"
+against "Allowable Bearing Capacity (kPa), Silt, Case 1". A label is still
+matched by containment, as before, so a terse label inside the hand's longer
+one passes either way round. The merge does neither of these (its own
+`_same_name` is the partial ratio alone), so the scorecard is the looser of the
+two. Rescored offline (the new merge too, no model call), the four arms on the
+ten open items went from 162 / 158 / 158 / 165 of 203 (Sonnet 5.5, Opus 5.5,
+GPT-5.4 pictures off, on) to 175 / 181 / 184 / 184; Sonnet's 162 held 4 false
+credits, a length credited for four percentages equal to it only in SI, which
+the same-kind check removes. The scorer alone gives 172 / 178 / 184 / 180.
+
+**A saved run is scored, and merged, again with no model call.**
+`calc_scoring.rescore_saved(truth, after)` scores a run file's saved records
+with the current checks; `remerge=True` first merges its saved floor and
+model records again with the current merge (`calc_reader.floor_from_record`
+rebuilds the floor). From the repo root, `python -m
+module_work.report_ingest_harness.measure_wp5_calc --rescore DIR[,DIR]
+[--remerge] [--truth-dir ...]` prints each item's saved and new scores.
 
 **`kind`, `method` and `subject` have no before column.** A pattern over a
 page cannot say that a printout is a settlement calculation, that the method

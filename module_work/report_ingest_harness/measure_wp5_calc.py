@@ -8,6 +8,17 @@ Run from the repo root::
     ... --floor-only            # no model at all: the BEFORE column by itself
     ... --detail                # every miss
     ... --append                # write the scorecard into MEASUREMENTS.md
+    ... --rescore DIR[,DIR]     # re-score saved run files, no model call
+    ... --rescore DIR --remerge # ... merging the floor and the model again
+
+``--rescore`` reads the ``<kind>__<ID>_p<n>.json`` run files a calc stage
+left in each ``DIR`` (or in ``DIR/calc``) and scores the saved records again
+with the CURRENT scorer (``calc_scoring.rescore_saved``); with ``--remerge``
+it first merges each file's saved floor and model records again with the
+CURRENT merge, so a change to either is measured on a saved run with no
+model call and no PDF. It prints, per item, the saved score and the new one
+for the merged record and for the model alone. ``--truth-dir`` points it at
+the hand answers when it runs from a worktree that has none.
 
 WHAT IT MEASURES. For each hand-truthed calculation it scores the FLOOR --
 every (label, value) a pattern reads off the pages' tables and lines with no
@@ -53,8 +64,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from module_work.report_ingest_harness import corpus as C
 from report_ingest.calc_scoring import (
-    METRICS, MODEL_ONLY, NAME_RATIO, PROGRAM_RATIO, VALUE_TOL, CalcScore,
-    Score, pages_of, report_of, score_floor, score_one_calc,
+    METRICS, MODEL_ONLY, NAME_RATIO, PROGRAM_RATIO, VALUE_TOL,
+    CalcScore, Score, pages_of, report_of, rescore_saved, score_floor,
+    score_one_calc,
 )
 
 LEDGER = C.RAW_DIR.parent / "MEASUREMENTS.md"
@@ -272,6 +284,47 @@ def report(rows: Sequence[Tuple[CalcScore, Optional[CalcScore]]],
     return "\n".join(lines)
 
 
+def rescore_dirs(truths: Sequence[Dict[str, Any]], dirs: Sequence[Path], *,
+                 remerge: bool = False) -> str:
+    """Saved calc run files scored again with the current checks.
+
+    One table per folder: each item's saved score and the new one, for the
+    merged record and for the model alone, and the totals. A file with no
+    hand answer, or written before the records were kept, is named and
+    skipped.
+    """
+    by_id = {str(t.get("id") or ""): t for t in truths}
+    out: List[str] = []
+    for folder in dirs:
+        runs = folder / "calc" if (folder / "calc").is_dir() else folder
+        out += ["", f"## {folder.name}" + (" (merged again)" if remerge
+                                           else ""), "",
+                "| item | after saved | after now | model saved | "
+                "model now | of |", "|---|---|---|---|---|---|"]
+        sums = [0, 0, 0, 0, 0]
+        for path in sorted(runs.glob("*.json")):
+            truth = by_id.get(path.stem)
+            blob = json.loads(path.read_text(encoding="utf-8"))
+            after = blob.get("after") if isinstance(blob, dict) else None
+            new = (rescore_saved(truth, after, remerge=remerge)
+                   if truth is not None and after else None)
+            if new is None:
+                out.append(f"| {path.stem} | not re-scorable (no hand "
+                           f"answer or no saved record) | | | | |")
+                continue
+            row = [after["overall"]["found"], new["overall"]["found"],
+                   ((after.get("model_alone") or {}).get("overall")
+                    or {}).get("found", 0),
+                   ((new.get("model_alone") or {}).get("overall")
+                    or {}).get("found", 0),
+                   new["overall"]["total"]]
+            sums = [a + b for a, b in zip(sums, row)]
+            out.append(f"| {path.stem} | " + " | ".join(map(str, row))
+                       + " |")
+        out.append("| **total** | " + " | ".join(map(str, sums)) + " |")
+    return "\n".join(out)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--only", default="", help="comma-separated report IDs")
@@ -290,7 +343,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--append", action="store_true",
                     help="append the scorecard to MEASUREMENTS.md")
     ap.add_argument("--note", default="", help="what changed this round")
+    ap.add_argument("--rescore", default="",
+                    help="comma-separated folders of saved calc run files: "
+                         "score them again, no model call")
+    ap.add_argument("--remerge", action="store_true",
+                    help="with --rescore: merge the saved floor and model "
+                         "records again with the current merge")
+    ap.add_argument("--truth-dir", default="",
+                    help="the hand answers' calc folder (default: the "
+                         "gitignored truth folder beside this harness)")
     args = ap.parse_args(argv)
+
+    global TRUTH_DIR
+    if args.truth_dir:
+        TRUTH_DIR = Path(args.truth_dir)
+    if args.remerge and not args.rescore:
+        print("--remerge works on saved run files: give --rescore DIR",
+              file=sys.stderr)
+        return 1
+    if args.rescore:
+        if args.append:
+            print("--rescore does not append to the ledger", file=sys.stderr)
+            return 1
+        dirs = [Path(x.strip()) for x in args.rescore.split(",")
+                if x.strip()]
+        print(rescore_dirs(load_truth(), dirs, remerge=args.remerge))
+        return 0
 
     only = tuple(x.strip() for x in args.only.split(",") if x.strip()) or None
     kinds = {x.strip() for x in args.kind.split(",") if x.strip()}
@@ -327,10 +405,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         block = (f"\n### WP5 calc reader -- {head}, {stamp}\n\n"
                  + (f"{args.note}\n\n" if args.note else "")
                  + f"A value matches when its printed LABEL matches at "
-                   f"partial ratio {NAME_RATIO:g} and its VALUE within "
+                   f"partial ratio {NAME_RATIO:g}, or every word of the "
+                   f"shorter label is among the other's in any order with "
+                   f"the same numbers in both, and its VALUE within "
                    f"{VALUE_TOL:.0%} or the last printed digit, compared in "
-                   f"SI wherever both units convert; a program name matches "
-                   f"at {PROGRAM_RATIO:g}. "
+                   f"SI wherever both units convert to the same kind; a "
+                   f"program name matches at {PROGRAM_RATIO:g}. "
                    f"{', '.join('`' + m + '`' for m in MODEL_ONLY)} have no "
                    f"before column: a pattern over a page cannot answer "
                    f"them. THERE IS NO BLIND SET -- all "

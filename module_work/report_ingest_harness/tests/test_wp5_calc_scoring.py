@@ -42,20 +42,21 @@ def _pair(calc_id, report, kind, **over):
     return before, after
 
 
-ROWS = [_pair("settlement__R18_p41", "R18", "settlement"),
-        _pair("pavement__R29_p127", "R29", "pavement")]
+# Every id and value here is made up: none comes off a report.
+ROWS = [_pair("settlement__R91_p6", "R91", "settlement"),
+        _pair("pavement__R92_p9", "R92", "pavement")]
 
 
 class TestTheScorecard:
 
     def test_the_two_columns_are_both_printed(self):
-        text = m.report(ROWS, openset=("R18", "R29"))
+        text = m.report(ROWS, openset=("R91", "R92"))
 
         assert "metric" in text and "before" in text and "after" in text
         assert "inputs" in text and "results" in text
 
     def test_the_three_the_floor_cannot_answer_have_no_before(self):
-        text = m.report(ROWS, openset=("R18", "R29"))
+        text = m.report(ROWS, openset=("R91", "R92"))
         seen = set()
         for line in text.splitlines():
             if "runs" in line and "pages" in line:
@@ -69,7 +70,7 @@ class TestTheScorecard:
     def test_the_before_overall_leaves_those_three_out(self):
         """Or it would count six metrics in one column and three in the
         other and call the difference the model."""
-        text = m.report(ROWS, openset=("R18", "R29"))
+        text = m.report(ROWS, openset=("R91", "R92"))
         overall = next(ln for ln in text.splitlines()
                        if ln.startswith("OVERALL"))
 
@@ -77,30 +78,30 @@ class TestTheScorecard:
         assert "40/42" in overall            # all six, after
 
     def test_every_run_has_a_line_with_its_id_and_its_pages(self):
-        text = m.report(ROWS, openset=("R18", "R29"))
+        text = m.report(ROWS, openset=("R91", "R92"))
 
-        assert "settlement__R18_p41" in text
-        assert "pavement__R29_p127" in text
+        assert "settlement__R91_p6" in text
+        assert "pavement__R92_p9" in text
         assert "floor" in text and "misp" in text
 
     def test_the_per_kind_table_appears_when_there_is_more_than_one(self):
-        text = m.report(ROWS, openset=("R18", "R29"))
+        text = m.report(ROWS, openset=("R91", "R92"))
 
         assert "kind" in text and "runs" in text and "pages" in text
 
     def test_the_merge_counts_are_reported(self):
-        text = m.report(ROWS, openset=("R18", "R29"))
+        text = m.report(ROWS, openset=("R91", "R92"))
 
         assert "merge: 2 disagreement(s), 68 kept from the floor" in text
         assert "12 added by the reader, 16 reconciled" in text
 
     def test_a_reader_that_failed_is_loud_and_out_of_every_number(self):
-        before, after = _pair("slope_stability__R23_p386", "R23",
+        before, after = _pair("slope_stability__R93_p4", "R93",
                               "slope_stability")
         after.error = "BadRequestError: too many images"
         rows = ROWS + [(before, after)]
 
-        text = m.report(rows, openset=("R18", "R29", "R23"))
+        text = m.report(rows, openset=("R91", "R92", "R93"))
 
         assert "THE READER FAILED ON 1 OF 3 RUN(S)" in text
         assert "READER FAILED" in text
@@ -109,23 +110,23 @@ class TestTheScorecard:
     def test_the_floor_alone_prints_no_after_column(self):
         rows = [(before, None) for before, _after in ROWS]
 
-        text = m.report(rows, openset=("R18", "R29"))
+        text = m.report(rows, openset=("R91", "R92"))
 
         assert "merge:" not in text
         assert "cost:" not in text
 
     def test_the_blind_group_appears_only_when_something_is_blind(self):
-        assert "blind" not in m.report(ROWS, openset=("R18", "R29"))
-        assert "blind --" in m.report(ROWS, openset=("R18",))
+        assert "blind" not in m.report(ROWS, openset=("R91", "R92"))
+        assert "blind --" in m.report(ROWS, openset=("R91",))
 
     def test_the_detail_lists_the_misses(self):
-        before, after = _pair("settlement__R16_p162", "R16", "settlement")
-        after.scores["results"].misses = ["rho = 25.8 mm [p164]"]
+        before, after = _pair("settlement__R94_p3", "R94", "settlement")
+        after.scores["results"].misses = ["rho = 17.6 mm [p5]"]
 
-        text = m.report([(before, after)], openset=("R16",), detail=True)
+        text = m.report([(before, after)], openset=("R94",), detail=True)
 
         assert "misses:" in text
-        assert "settlement__R16_p162 record results: rho = 25.8 mm" in text
+        assert "settlement__R94_p3 record results: rho = 17.6 mm" in text
 
 
 class TestTheTruthFolder:
@@ -143,12 +144,61 @@ class TestTheTruthFolder:
             m.load_truth()
 
     def test_the_open_set_comes_off_open_txt(self, monkeypatch, tmp_path):
-        (tmp_path / "OPEN.txt").write_text("R18\nR29\n", encoding="utf-8")
+        (tmp_path / "OPEN.txt").write_text("R91\nR92\n", encoding="utf-8")
         monkeypatch.setattr(m, "TRUTH_DIR", tmp_path)
 
-        assert m.open_reports() == ("R18", "R29")
+        assert m.open_reports() == ("R91", "R92")
 
     def test_no_open_txt_means_no_open_set(self, monkeypatch, tmp_path):
         monkeypatch.setattr(m, "TRUTH_DIR", tmp_path)
 
         assert m.open_reports() == ()
+
+
+class TestRescoringSavedRuns:
+    """``--rescore``: saved run files scored again, no model call."""
+
+    def _run_file(self, folder, truth, merged, model, floor):
+        import json
+        from report_ingest.calc_scoring import score_record
+        after = score_record(truth, merged)
+        after.record = merged.model_dump(mode="json")
+        after.model_record = model.model_dump(mode="json")
+        after.floor_record = floor.model_dump(mode="json")
+        (folder / "calc").mkdir(parents=True, exist_ok=True)
+        (folder / "calc" / f"{truth['id']}.json").write_text(
+            json.dumps({"calc_id": truth["id"], "after": after.to_dict()}),
+            encoding="utf-8")
+
+    def test_a_folder_is_scored_again_and_merged_again(self, tmp_path):
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        from report_ingest.model import Calculation, NamedQuantity, Quantity
+        truth = {"id": "settlement__R99_p7", "kind": "settlement",
+                 "pages": [7], "program": None,
+                 "inputs": [{"name": "Pad width (m)", "value": 2.4,
+                             "unit": "m", "page": 7}]}
+        floor = CalcFloor(pages=[7], values=[FloorValue(
+            name="Pad width (m)", text="B =", page=7,
+            bbox=(10.0, 20.0, 90.0, 30.0), method="text", confidence=0.7)])
+        model = Calculation(kind="settlement", pages=[7], inputs=[
+            NamedQuantity(name="Pad width (m)",
+                          value=Quantity(value=2.4, unit="m"))])
+        stale = Calculation(kind="settlement", pages=[7], inputs=[
+            NamedQuantity(name="Pad width (m)", text="B =")])
+        self._run_file(tmp_path / "arm", truth, stale, model,
+                       floor.as_calculation())
+        (tmp_path / "arm" / "calc" / "other__R98_p1.json").write_text(
+            '{"after": {}}', encoding="utf-8")
+
+        again = m.rescore_dirs([truth], [tmp_path / "arm"], remerge=True)
+        as_saved = m.rescore_dirs([truth], [tmp_path / "arm"])
+
+        # the synthetic file carries no saved model-alone score: 0
+        assert "| settlement__R99_p7 | 2 | 3 | 0 | 3 | 3 |" in again
+        assert "| settlement__R99_p7 | 2 | 2 | 0 | 3 | 3 |" in as_saved
+        assert "other__R98_p1 | not re-scorable" in again
+        assert "(merged again)" in again and "(merged again)" not in as_saved
+
+    def test_remerge_alone_is_refused(self, capsys):
+        assert m.main(["--remerge"]) == 1
+        assert "--rescore" in capsys.readouterr().err

@@ -198,8 +198,8 @@ class TestTheFloor:
     def test_a_clock_time_in_a_footer_is_not_a_labelled_value(self):
         assert _pair_in_line("Thursday, June 29, 2006 11:53:13 AM") is None
         assert _pair_in_line("Date: 4/29/2024") is None
-        assert _pair_in_line("Design ESALs .......... 137,774") == (
-            "Design ESALs", 137774.0, "")
+        assert _pair_in_line("Design ESALs .......... 245,318") == (
+            "Design ESALs", 245318.0, "")
 
     def test_the_floor_becomes_a_calculation_of_kind_other(self,
                                                            spreadsheet):
@@ -279,8 +279,11 @@ class TestTheMerge:
         assert log.reconciled >= 1
         assert not log.disagreements
 
-    def test_a_contradiction_without_evidence_keeps_the_pages_value(
+    def test_a_contradiction_with_no_place_keeps_both_values(
             self, spreadsheet):
+        """The reader named no box, so nothing says its 12.0 and the
+        pattern's 8.5 came off one place (RI-74 (2)). Neither replaces the
+        other: both stand as rows, and the split is a disagreement."""
         doc, _gt = spreadsheet
         floor = _floor_of(doc)
         model = Calculation(
@@ -292,14 +295,217 @@ class TestTheMerge:
 
         merged, log = merge_calculation(floor, model)
 
-        kept = next(r for r in merged.inputs
-                    if r.name == "Footing Width B (ft)")
-        assert kept.value.value == 8.5
+        values = sorted(r.value.value for r in merged.inputs
+                        if r.name == "Footing Width B (ft)")
+        assert values == [8.5, 12.0]
         (split,) = [d for d in log.disagreements
                     if d["what"] == "Footing Width B (ft)"]
-        assert split["kept"] == "floor"
+        assert split["kept"] == "both"
         assert split["floor"] == "8.5 ft" and split["model"] == "12 ft"
-        assert kept.prov.alternatives[0].value == "12 ft"
+
+    def test_a_reading_with_no_place_is_not_overwritten_in_turn(self):
+        """A sheet prints a short label on several cells of a table, and the
+        reader's one row under a longer label that contains it names no box
+        (its page was refused and the box dropped). Settled against that
+        row one after another, each pattern value replaced the last and the
+        last stood. Now the reader's value stands and each printed value is
+        its own row."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        cells = [FloorValue(name="Fs", value=v, unit="", page=0,
+                            bbox=(100.0 + 60 * n, 200.0, 140.0 + 60 * n,
+                                  210.0),
+                            method="text", confidence=0.7)
+                 for n, v in enumerate((0.45, 0.85, 1.15))]
+        floor = CalcFloor(values=cells, pages=[0])
+        model = Calculation(kind="site_response", inputs=[NamedQuantity(
+            name="Site Class (Fs table)", text="B",
+            prov=Provenance(page=0, method="model", confidence=0.4))])
+
+        merged, log = merge_calculation(floor, model)
+
+        reader = next(r for r in merged.inputs
+                      if r.name == "Site Class (Fs table)")
+        assert reader.text == "B" and reader.value is None
+        assert not reader.prov.alternatives
+        assert sorted(r.value.value for r in merged.inputs
+                      if r.name == "Fs") == [0.45, 0.85, 1.15]
+        assert [d["kept"] for d in log.disagreements] == ["both"] * 3
+
+    def test_a_box_on_the_floors_own_line_overrules_it_without_a_note(self):
+        """The pattern took the next number on the line, which was another
+        column's; the reader boxed the same line and read its own column.
+        The line is where the page settles it (RI-74 (2) (b)); the floor's
+        number stays beside the reader's as the alternative."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        line = (40.0, 300.0, 520.0, 312.0)
+        floor = CalcFloor(values=[FloorValue(
+            name="Allowable bearing (kPa)", value=410.0, unit="kPa", page=0,
+            bbox=line, method="tables", confidence=0.85)], pages=[0])
+        model = Calculation(kind="shallow_foundation_bearing", results=[
+            NamedQuantity(name="Allowable bearing (kPa), case A",
+                          value=Quantity(value=137.0, unit="kPa"),
+                          prov=Provenance(page=0,
+                                          bbox=(300.0, 300.0, 340.0, 312.0),
+                                          method="model", confidence=0.9))])
+
+        merged, log = merge_calculation(floor, model)
+
+        (row,) = merged.results
+        assert row.value.value == 137.0
+        assert [a.value for a in row.prov.alternatives] == ["410 kPa"]
+        assert "own printed line" in row.prov.alternatives[0].note
+        assert [d["kept"] for d in log.disagreements] == ["model"]
+        assert not [r for r in merged.inputs
+                    if r.name.startswith("Allowable")]
+
+    def test_a_floor_entry_with_no_number_never_wins_against_a_number(self):
+        """The value is a symbol's, printed after "phi =", and the pattern
+        read the label's own tail as the value. A pattern that read words
+        cannot correct a number (RI-74 (2) (a)), boxed or not."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        floor = CalcFloor(values=[FloorValue(
+            name="Backfill friction angle", text="phi =", page=0,
+            bbox=(40.0, 120.0, 200.0, 132.0), method="text",
+            confidence=0.7)], pages=[0])
+        model = Calculation(kind="retaining_wall", inputs=[NamedQuantity(
+            name="Backfill friction angle: phi",
+            value=Quantity(value=31.0, unit="deg"),
+            prov=Provenance(page=0, method="model", confidence=0.9))])
+
+        merged, log = merge_calculation(floor, model)
+
+        (row,) = merged.inputs
+        assert row.value.value == 31.0
+        assert [a.value for a in row.prov.alternatives] == ["phi ="]
+        assert [d["kept"] for d in log.disagreements] == ["model"]
+
+    def test_two_units_of_different_kinds_are_two_readings(self):
+        """A diameter of 700 mm and a reinforcement ratio of 0.7 % are both
+        0.7 in SI. They are not one reading, so the floor's is not folded
+        away as 'reconciled'."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        floor = CalcFloor(values=[FloorValue(
+            name="Shaft, reinforcement ratio", value=0.7, unit="%", page=0,
+            bbox=(40.0, 120.0, 200.0, 132.0), method="text",
+            confidence=0.7)], pages=[0])
+        model = Calculation(kind="lateral_pile", inputs=[NamedQuantity(
+            name="Shaft, reinforcement ratio",
+            value=Quantity(value=700.0, unit="mm"),
+            prov=Provenance(page=0, bbox=(40.0, 120.0, 200.0, 132.0),
+                            method="model", confidence=0.9))])
+
+        _merged, log = merge_calculation(floor, model)
+
+        assert log.reconciled == 0
+        assert [d["floor"] for d in log.disagreements] == ["0.7 %"]
+
+    # -- a place is not a label: what demotes the floor at its own line --
+
+    def test_a_label_names_the_same_thing_only_with_all_its_words(self):
+        from report_ingest.calc_reader import _names_same_thing
+        assert _names_same_thing("Allowable bearing (kPa)",
+                                 "Allowable bearing (kPa), case A")
+        assert _names_same_thing("Settlement (in), last row of the table",
+                                 "Settlement (in), case 3")
+        assert not _names_same_thing("Q", "Qult")
+        assert not _names_same_thing("Width (B), case 1",
+                                     "Width (B), case 2")
+
+    def test_another_label_at_the_floors_place_keeps_both(self):
+        """A short label inside a longer one passes the merge's fuzzy label
+        test, and the reader boxed the same line: but "Q" is not "Qult".
+        The floor's number is not demoted on the strength of the place."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        floor = CalcFloor(values=[FloorValue(
+            name="Q", value=150.0, unit="kN", page=0,
+            bbox=(40.0, 300.0, 520.0, 312.0), method="text",
+            confidence=0.7)], pages=[0])
+        model = Calculation(kind="lateral_pile", results=[NamedQuantity(
+            name="Qult", value=Quantity(value=450.0, unit="kN"),
+            prov=Provenance(page=0, bbox=(300.0, 300.0, 340.0, 312.0),
+                            method="model", confidence=0.9))])
+
+        merged, log = merge_calculation(floor, model)
+
+        assert [r.value.value for r in merged.results] == [450.0]
+        assert not merged.results[0].prov.alternatives
+        assert [(r.name, r.value.value) for r in merged.inputs] == [
+            ("Q", 150.0)]
+        (split,) = log.disagreements
+        assert split["kept"] == "both" and "another label" in split["why"]
+
+    @pytest.mark.parametrize("pool, kept", [
+        (None, "model"), ([410.0, 137.0, 3.75], "model"),
+        ([410.0, 3.75], "both")])
+    def test_at_its_own_line_the_reader_wins_only_with_a_printed_number(
+            self, pool, kept):
+        """Given the pages' printed numbers, a reader's number on the
+        floor's own line replaces the floor's only if the page prints it.
+        With no numbers given -- a saved run merged again -- as before."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        floor = CalcFloor(values=[FloorValue(
+            name="Allowable bearing (kPa)", value=410.0, unit="kPa", page=0,
+            bbox=(40.0, 300.0, 520.0, 312.0), method="tables",
+            confidence=0.85)], pages=[0])
+        model = Calculation(kind="shallow_foundation_bearing", results=[
+            NamedQuantity(name="Allowable bearing (kPa), case A",
+                          value=Quantity(value=137.0, unit="kPa"),
+                          prov=Provenance(page=0,
+                                          bbox=(300.0, 300.0, 340.0, 312.0),
+                                          method="model", confidence=0.9))])
+
+        merged, log = merge_calculation(floor, model, pool=pool)
+
+        assert [d["kept"] for d in log.disagreements] == [kept]
+        assert [r.value.value for r in merged.results] == [137.0]
+        floor_rows = [r.value.value for r in merged.inputs]
+        assert floor_rows == ([410.0] if kept == "both" else [])
+
+    def test_a_reading_in_words_is_not_held_to_the_printed_numbers(self):
+        """The pool checks numbers. A contract number the pattern split
+        into a value and a "unit" is read whole by the reader, in words, on
+        the same line, and the reader's reading stands."""
+        from report_ingest.calc_reader import CalcFloor, FloorValue
+        floor = CalcFloor(values=[FloorValue(
+            name="Contract No", value=47.0, unit="K1180", page=0,
+            bbox=(40.0, 300.0, 520.0, 312.0), method="text",
+            confidence=0.7)], pages=[0])
+        model = Calculation(kind="site_response", inputs=[NamedQuantity(
+            name="Contract No", text="47K1180",
+            prov=Provenance(page=0, bbox=(300.0, 300.0, 340.0, 312.0),
+                            method="model", confidence=0.9))])
+
+        merged, log = merge_calculation(floor, model, pool=[47.0])
+
+        (row,) = merged.inputs
+        assert row.text == "47K1180"
+        assert [d["kept"] for d in log.disagreements] == ["model"]
+
+    def test_the_merge_is_given_the_pages_printed_numbers(self, tmp_path,
+                                                         monkeypatch):
+        """read_calculation passes the pool it already builds for the
+        result gate; the merge does not read the pages itself."""
+        import report_ingest.calc_reader as cr
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        seen = {}
+        real = cr.merge_calculation
+
+        def spy(floor, model, log=None, pool=None):
+            seen["pool"] = pool
+            return real(floor, model, log, pool=pool)
+
+        monkeypatch.setattr(cr, "merge_calculation", spy)
+        doc = _open(build_long_printout(3).pdf, tmp_path)
+        engine = FakeEngine([{"final": _reading(inputs=[
+            _value("Footing Depth (ft)", 3.0, "ft", page=0)])}])
+        try:
+            read_calculation(doc, [0, 1, 2], engine, budget=1,
+                             report_id="SYN")
+            pool = printed_numbers(doc, [0, 1, 2])
+        finally:
+            doc.close()
+
+        assert seen["pool"] == pool and pool
 
     def test_a_contradiction_with_a_box_and_a_note_replaces_it(self,
                                                                spreadsheet):
@@ -391,10 +597,10 @@ class TestTheMerge:
             self, note):
         """Nc is printed 5 in block 1 and 7 in block 2, and the reader read 5
         with block 2's box. Whichever block the floor read first, the record
-        ends the same; with no note to overrule block 2's 7, both printed
-        values are in it. Settled in the floor's order, block 1's 5 was
-        matched to the reader's row first and lost when block 2's 7 then won
-        that row."""
+        ends the same, and both printed values are in it: the reader's in
+        the slot, block 2's 7 beside it as the floor's alternative. Settled
+        in the floor's order, block 1's 5 was matched to the reader's row
+        first and lost when block 2's 7 then won that row."""
         from report_ingest.calc_reader import CalcFloor, FloorValue
         block_1 = (300.0, 100.0, 360.0, 112.0)
         block_2 = (300.0, 400.0, 360.0, 412.0)
@@ -414,12 +620,11 @@ class TestTheMerge:
                                               method="model", confidence=0.9,
                                               note=note))])
             merged, _log = merge_calculation(floor, model)
-            records.append(sorted(r.value.value for r in
-                                  merged.inputs + merged.results
-                                  if r.name == "Nc"))
+            records.append(sorted(
+                (r.value.value, tuple(a.value for a in r.prov.alternatives))
+                for r in merged.inputs + merged.results if r.name == "Nc"))
         assert records[0] == records[1]
-        if not note:
-            assert records[0] == [5.0, 7.0]
+        assert records[0] == [(5.0, ("7",))]
 
     def test_a_reading_off_the_picture_is_settled_by_the_shared_rule(
             self, spreadsheet):
@@ -565,18 +770,23 @@ class TestTheGates:
         assert "not one the record can convert" in flag["why"]
 
     def test_what_is_left_unsettled_is_ranked_by_what_happened(
-            self, spreadsheet):
+            self, tmp_path):
         # BACKLOG RI-08: a value kept as printed is a note, a value the
-        # page does not show is left open, a box dropped is a change.
+        # page does not show is left open, a box dropped is a change. A box
+        # is dropped only on a printout of more than one page (RI-74 (2)).
         from report_ingest.model import ReportRecord
         from report_ingest.reconciler import reconcile
-        doc, _gt = spreadsheet
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(3).pdf, tmp_path)
         engine = FakeEngine([{"final": _reading(
             inputs=[_value("Wall load", 3.0, "tons/ft"),
-                    _value("Footing Depth (ft)", 3.0, "ft", page=41)],
+                    _value("Footing Depth (ft)", 3.0, "ft", page=57)],
             results=[_value("Total settlement", 987.654, "in")])}])
-
-        result = read_calculation(doc, [0], engine, report_id="SYN")
+        try:
+            result = read_calculation(doc, [0, 1, 2], engine, budget=1,
+                                      report_id="SYN")
+        finally:
+            doc.close()
         record = reconcile(ReportRecord(), reader_unresolved=result.unresolved)
 
         rank = {e.where: e.rank for e in record.qa}
@@ -610,19 +820,51 @@ class TestTheGates:
         assert result.calculation.results == []
         assert any("unnamed" in u["what"] for u in result.unresolved)
 
-    def test_a_page_outside_the_run_loses_its_box(self, spreadsheet):
-        doc, _gt = spreadsheet
+    def test_a_page_outside_the_run_loses_its_box(self, tmp_path):
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        gt = build_long_printout(3)
+        doc = _open(gt.pdf, tmp_path)
         engine = FakeEngine([{"final": _reading(inputs=[
-            _value("Footing Depth (ft)", 3.0, "ft", page=41,
+            _value("Footing Depth (ft)", 3.0, "ft", page=57,
                    bbox=(1.0, 2.0, 3.0, 4.0))])}])
-
-        result = read_calculation(doc, [0], engine, report_id="SYN")
+        try:
+            result = read_calculation(doc, [0, 1, 2], engine, budget=1,
+                                      report_id="SYN")
+        finally:
+            doc.close()
 
         row = next(r for r in result.calculation.inputs
                    if r.name == "Footing Depth (ft)")
         assert row.prov.page == 0 and row.prov.bbox is None
         assert any("is not part of this printout" in u["why"]
                    for u in result.unresolved)
+
+    @pytest.mark.parametrize("cited", [0, 1, 57])
+    def test_a_one_page_printout_reads_any_cited_page_as_its_page(
+            self, tmp_path, cited):
+        """The reader was shown one page and no other, so whatever page it
+        cites -- a position in the printout, a picture's index -- it read the
+        value there, and the box it copied is that page's (RI-74 (2)). Not a
+        refusal; the result's warnings say it was read so."""
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        gt = build_long_printout(3)
+        doc = _open(gt.pdf, tmp_path)
+        engine = FakeEngine([{"final": _reading(inputs=[
+            _value("Footing Depth (ft)", 3.0, "ft", page=cited,
+                   bbox=(1.0, 2.0, 3.0, 4.0))])}])
+        try:
+            result = read_calculation(doc, [2], engine, budget=1,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        row = next(r for r in result.calculation.inputs
+                   if r.name == "Footing Depth (ft)")
+        assert row.prov.page == 2 and row.prov.bbox == (1.0, 2.0, 3.0, 4.0)
+        assert not any("is not part of this printout" in u["why"]
+                       for u in result.unresolved)
+        assert any(f"cited page {cited} for 1 value" in w
+                   for w in result.warnings)
 
     def test_a_summary_past_sixty_words_is_cut_and_recorded(self,
                                                             spreadsheet):

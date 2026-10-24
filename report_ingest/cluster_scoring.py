@@ -2102,9 +2102,12 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
         f"{' and '.join('`' + m + '`' for m in MODEL_ONLY)} have no before "
         f"column; `program` does, because a banner is a pattern. A value "
         f"matches when its printed LABEL matches at partial ratio "
-        f"{NAME_RATIO:g} and its VALUE within {VALUE_TOL:.0%} or the last "
-        f"printed digit, compared in SI wherever both units convert; a "
-        f"program name matches at {PROGRAM_RATIO:g}.",
+        f"{NAME_RATIO:g}, or every word of the shorter label is among the "
+        f"other's in any order with the same numbers in both (Greek letters "
+        f"spelled as their names), and its "
+        f"VALUE within {VALUE_TOL:.0%} or the last printed digit, compared "
+        f"in SI wherever both units convert to the same kind; a program "
+        f"name matches at {PROGRAM_RATIO:g}.",
     ]
     out += _engine_lines(calc)
     if calc.get("served_by"):
