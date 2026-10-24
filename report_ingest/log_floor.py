@@ -1530,8 +1530,13 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     def drives_n() -> Optional[Tuple[int, str]]:
         """:func:`n_from_drives` on this sample's drives, three of them. The
         seed is the reader's brief, which prints the N, its basis and the
-        sample's note, so a record with a fourth drive keeps the seed it had
-        and has its N computed and checked at the merge only (RI-70)."""
+        sample's note, so a record with a fourth drive keeps the seed it had,
+        with no N computed (RI-70). The merge computes the 2nd + 3rd of a
+        four-drive record only to check a model's printed N, or where the
+        model's four drives replace the floor's three-drive computed N;
+        otherwise a four-drive record with no printed N gets no N anywhere.
+        A floor's printed N on a four-drive record is not checked against
+        its drives' 2nd + 3rd."""
         if len(blows) != SPT_DRIVES:
             return None
         drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
@@ -3500,7 +3505,9 @@ class _Merger:
         is set against the second plus the third drive where the printed
         rule applies, and a difference is a disagreement under the floor's
         one rule: the model's N stands only with a box and a note, the
-        other is kept beside it, and the QA section lists both.
+        other is kept beside it, and the QA section lists both. A four-drive
+        record's N from the sample's interval alone never replaces a printed
+        one (RI-70; :meth:`check_model_n`).
 
         An N under 50 on a record that halts within its first three
         increments is never in the slot, whoever read it (RI-44), whether
@@ -3542,20 +3549,35 @@ class _Merger:
         derived = self.drives_n(merged, f)
         if derived is None or derived[0] == m.n:
             return
-        self.check_model_n(merged, f, m, where, what, derived)
+        # A record with a fourth drive and neither drive lengths nor an
+        # increment of its own: drives_n had its N from the interval alone
+        # (a floor's computed N never has four drives).
+        self.check_model_n(merged, f, m, where, what, derived,
+                           interval_only=(len(merged.blows) > SPT_DRIVES
+                                          and not merged.increments
+                                          and merged.increment is None))
 
     def check_model_n(self, merged: SPT, f: Optional[SPT], m: SPT,
                       where: str, what: str,
-                      derived: Tuple[int, str]) -> None:
+                      derived: Tuple[int, str],
+                      interval_only: bool = False) -> None:
         """The model's printed N set against the 2nd + 3rd of the drives
         that stand, ``derived``, which differs from it: a disagreement under
         the floor's one rule (the model's N stands only with a box and a
-        note, the other is kept beside it), listed (RI-04)."""
+        note, the other is kept beside it), listed (RI-04).
+
+        With ``interval_only``, the drives' N is that of a four-drive record
+        whose 6 in drives rest on the sample's interval alone, split over the
+        four: no drive lengths or increment is printed. Such an N never
+        replaces a printed one, box or no box; it is kept beside the slot
+        and listed (RI-70)."""
         n, basis = derived
         page = (m.prov.page if m.prov is not None
                 else f.prov.page if f is not None and f.prov is not None
                 else None)
         computed_confidence = _conf(f.prov if f is not None else m.prov, 0.5)
+        evidence = has_evidence(
+            m.prov, f.prov.bbox if f is not None and f.prov else None)
         s = settle("n", n, m.n, False, floor_method="derived",
                    floor_confidence=computed_confidence,
                    model_method=(m.prov.method if m.prov is not None
@@ -3563,9 +3585,7 @@ class _Merger:
                                  ("model", "model_from_picture", "vision")
                                  else "model"),
                    model_confidence=_conf(m.prov, 0.9),
-                   evidence=has_evidence(
-                       m.prov, f.prov.bbox if f is not None and f.prov
-                       else None),
+                   evidence=evidence or interval_only,
                    model_note=m.prov.note if m.prov is not None else "")
         merged.n = s.value
         merged.n_basis = basis if s.verdict == "floor_wins" else ""
@@ -3578,7 +3598,12 @@ class _Merger:
             kept="model" if s.verdict == "model_wins" else "floor",
             why=("the model's N differs from the second plus the third of "
                  "the printed drives; "
-                 + ("it named a box and a note, so it stands and the "
+                 + ("it named no box or note, but the drives' 6 in "
+                    "increments rest on the sample's interval alone (no "
+                    "drive lengths or increment printed), so the printed N "
+                    "stands and the drives' N is kept beside it"
+                    if interval_only and not evidence else
+                    "it named a box and a note, so it stands and the "
                     "drives' N is kept beside it"
                     if s.verdict == "model_wins" else
                     "it named no box or note, so the drives' N stands and "

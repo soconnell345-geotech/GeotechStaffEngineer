@@ -2511,6 +2511,38 @@ class TestAFourthDriveGivesTheN:
         (row,) = [r for r in log.disagreements if r["what"].endswith(": n")]
         assert (row["floor"], row["model"]) == ("43", "59")
 
+    @pytest.mark.parametrize("evidence", [False, True])
+    def test_an_n_from_the_interval_alone_never_replaces_a_printed_one(
+            self, evidence):
+        # No drive lengths or increment printed: the 6 in drives rest on the
+        # interval, split over four. The printed N stands, box or no box.
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        model = _model(59, blows=[6, 17, 26, 33], evidence=evidence,
+                       increment=None)
+        model.spt[0].depth_bottom = _q(1.5 + 4 * 0.1524)
+        merged, log = merge_investigations(floor, model)
+        record = merged.spt[0]
+        assert (record.n, record.n_basis) == (59, "")
+        (alt,) = [a for a in record.prov.alternatives if a.field == "n"]
+        assert alt.value == "43" and "over four drives" in alt.note
+        (row,) = [r for r in log.disagreements if r["what"].endswith(": n")]
+        assert (row["floor"], row["model"], row["kept"]) == ("43", "59",
+                                                           "model")
+        assert ("interval alone" in row["why"]) is not evidence
+
+    def test_printed_drive_lengths_keep_the_rule_with_no_box(self):
+        floor = Investigation(investigation_id="B-1", depth_unit="m")
+        model = _model(59, blows=[6, 17, 26, 33], increment=None)
+        model.spt[0].increments = _inches(6, 6, 6, 6)
+        model.spt[0].depth_bottom = _q(1.5 + 4 * 0.1524)
+        merged, log = merge_investigations(floor, model)
+        record = merged.spt[0]
+        assert record.n == 43 and "drive lengths" in record.n_basis
+        assert [a.value for a in record.prov.alternatives
+                if a.field == "n"] == ["59"]
+        (row,) = [r for r in log.disagreements if r["what"].endswith(": n")]
+        assert row["kept"] == "floor"
+
     def test_the_floors_n_stands_where_the_models_four_drives_win(self):
         floor, _ = _beside("6-17-26", "", top=1.5)
         floor.investigation_id = "B-1"

@@ -886,12 +886,17 @@ class SPT(BaseModel):
     floor's (RI-04): where a log prints a standard SPT's three 6 in (150 mm)
     drives and no N, the N is the second drive plus the third, as FHWA
     NHI-06-088 Vol. I Sec. 3.7 (p. 3-51) prints the rule, and ``n_basis``
-    says so; a record with one more drive after the three, the occasional
-    fourth increment of Fig. 3-20 (p. 3-52), has its N from the first three,
-    computed in the merge only (RI-70). Nothing else is computed: a
-    refusal, a ring or California sampler, or drives of any other length
-    keep ``n`` None, because adding two of their drives would invent a
-    number.
+    says so. A record with one more drive after the three, the occasional
+    fourth increment of Fig. 3-20 (p. 3-52), is not given an N by the
+    floor (RI-70). The merge computes the 2nd + 3rd of its first three only
+    to check a model's printed N, or where the model's four drives replace
+    the floor's three-drive computed N; otherwise a four-drive record with
+    no printed N gets no N anywhere. A four-drive N whose 6 in drives rest
+    on the sample's interval alone never replaces a printed N; it is kept
+    beside it. A floor's printed N on a four-drive record is not checked
+    against its drives' 2nd + 3rd. Nothing else is computed: a refusal, a
+    ring or California sampler, or drives of any other length keep ``n``
+    None, because adding two of their drives would invent a number.
     """
 
     model_config = ConfigDict(extra="forbid")
