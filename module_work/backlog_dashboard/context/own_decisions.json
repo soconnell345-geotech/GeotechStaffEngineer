@@ -2155,5 +2155,65 @@
       "BACKLOG.md OWN-93",
       "BACKLOG.md RI-71"
     ]
+  },
+  "OWN-94": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Could you run Document Intelligence on the 73 scanned pages of the public test set?",
+    "why": "The pages are scans with no text. Without OCR text the log reader can place no depth on a boring, so the set scores 19 % and tells us little about reading.",
+    "background": "The set is three UK borehole-record sets from the British Geological Survey, scored against the survey's own AGS data (answers nobody here wrote). Our own scanned reports work because they have DI text. Cost about $0.15. The PDFs sit in the private folder module_work/field_feedback/2026-10-24_public_blind/raw/assembled/ (P01.pdf to P03.pdf).",
+    "options": [
+      {
+        "label": "Run DI on them",
+        "effect": "Drop the output beside the set (raw/di); I rerun the logs on Claude and score against the AGS data."
+      },
+      {
+        "label": "Skip it",
+        "effect": "The set stays a test of reading depth scales from pictures only."
+      }
+    ],
+    "recommendation": "Run DI when convenient: it is the only test set whose answers come from published data rather than a Claude transcription.",
+    "if_no_answer": "The set waits; nothing else depends on it.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "RI-79"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-94",
+      "BACKLOG.md RI-79"
+    ]
+  },
+  "OWN-95": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "On a boring log, is a new description paragraph with no drawn stratum line a separate layer?",
+    "why": "The answer sheets count it as a layer on some logs and not on others; it decides values on three logs, and the reader needs one rule.",
+    "background": "Some logs start a new soil description partway down the column without drawing a line across it; one log has only a remark there.",
+    "options": [
+      {
+        "label": "A layer wherever the description changes",
+        "effect": "Every new description paragraph starts a layer, line or not."
+      },
+      {
+        "label": "A layer only where a line is drawn",
+        "effect": "A paragraph with no line is a note inside the layer above."
+      },
+      {
+        "label": "Both, with the undrawn ones marked",
+        "effect": "Each change is a layer, and a layer with no drawn line is flagged as such."
+      }
+    ],
+    "recommendation": "Both, with the undrawn ones marked: nothing printed is lost and the reviewer can see which boundaries the logger drew.",
+    "if_no_answer": "The answer sheets stay as they are and these values stay disputed.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "RI-82"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-95",
+      "BACKLOG.md RI-82"
+    ]
   }
 }

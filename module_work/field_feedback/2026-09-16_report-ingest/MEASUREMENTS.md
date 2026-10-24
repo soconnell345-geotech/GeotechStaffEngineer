@@ -4375,3 +4375,27 @@ RESULTS.md should print `floor_alone` and `model_alone` beside before/after; the
    - 11 strict verdicts rest only on `_proper` (RI-66 3); both open ones share numbers, not words.
 
 6. **Answer sheets (RI-72).** Suspected: log R37_p26 (SS-3 depth); lab R06_p67 (percent finer: one unprinted sieve, two printed ones missing, five values off by 0.1-0.4); narrative R36 earthHazardsExposed (judgment). No truth file was changed.
+
+
+## CLAUDE LOCAL RUN 1 (2026-10-24): the readers on Claude Sonnet 5.5 and Opus 5.5, local API
+
+Run with `module_work/report_ingest_harness/run_claude_local.py` (RI-78, merged c4e022a) on master at c4e022a-3106be6; every call metered on the shared spend ledger; lab arms with `GEOTECH_INGEST_LAB_LINK_FROM_LABEL=1`; no prompt caching; thinking at the API default. Private outputs and reviews: `module_work/field_feedback/2026-10-24_claude_local/raw/`. All calls ended in a tool call: 0 failed, retried, cut off or refused.
+
+| stage | GPT-5.4 (FOUNDRY RUN 4) | Sonnet 5.5 | Opus 5.5 | cost S / O |
+|---|---|---|---|---|
+| logs, after, open /307 | 295 | 295 | 296 | $2.29 / $4.43 |
+| logs, after, blind /214 | 183 | 180 | 182 | |
+| lab, after /826 (switch on) | 600 / 622 | 742 | 768 | $2.24 / $4.91 |
+| lab, links /79 | 74 | 79 | 79 | |
+| calc, after /203 | 158 (pictures off) | 158 (printed 162: 4 scorer false credits) | 158 | $1.01 / $2.40 |
+| narrative, recall / precision | 80 / 81 % | 83 / 85 % | 83 / 85 % (after RI-80; first run 56 / 88 %) | $2.11 / $4.36 |
+
+- Logs: the merge loses 0 values in every arm and adds 10-16; the largest blind miss class in every arm is the project name and number, which `LogReading` has no slot for (RI-82).
+- Lab: the request is byte-identical to wave 1's; wave 1's saved answers replayed through master give 600 / 622 again, so the code's share of the gain is 0 values. Opus leads Sonnet by 26 values (+29 blind), mostly completeness.
+- Calc: the merge's note rule writes floor values over right Claude readings (RI-74 (5)); with the scorer fixes the totals would be Sonnet 175, Opus 179, GPT 184.
+- Narrative: Opus's first run lost 9 of 20 chunk answers wrapped in one key, taken as empty by the engine (RI-80); after the fix the two models tie.
+- Samples are small (9 blind logs, 31 lab sheets, 10 calc items all open, 8 narrative reports), one run per arm, answer sheets made by Claude sessions (RI-72).
+
+Page labels by section from a description of every page (RI-73, stage b, 13 reports, 3,418 pages; harmful = sent to the wrong reader or none; in brackets with divider pages left out): rules 227 (216), master 290 (265), Sonnet describing + Opus labelling 183 (148), the same with the rules' labels as hints 162 (124), Haiku describing + Opus 170 (131); describing cost $83.36 (Sonnet) and $8.40 (Haiku). 136 of the 162 are pages where the hand labels follow another convention (OWN-92).
+
+Public blind set P01-P03 (RI-79; BGS scans scored against AGS4 data, 54 items, 2,068 values): the scans carry no text and there is no DI text, so no depth is placed on a boring; with `GEOTECH_INGEST_VISUAL_SCALES=1` on Sonnet 396 / 2,068 (19 %), $11.36.
