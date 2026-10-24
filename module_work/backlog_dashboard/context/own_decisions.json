@@ -2062,5 +2062,35 @@
       "BACKLOG.md OWN-90",
       "BACKLOG.md RI-13 (Done)"
     ]
+  },
+  "OWN-91": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When a report's lab sheet or lab summary table names a boring that no log in the report shows, should the DIGGS file still carry those lab results under a placeholder Borehole with that name?",
+    "why": "About 2,000 lab values over the saved reports sit under such placeholders. Keeping them keeps every lab result in DIGGS under the boring the report names; dropping them keeps DIGGS to borings the report actually logs.",
+    "background": "Today the file writes a Borehole carrying only the printed name (no depth, position or layers) and says so in the file's notes. Over the saved reports there are 262 such placeholders: 148 named by lab sheets only, 69 by summary-table rows only, 45 by both. A row or sheet that names a boring with a log now goes to that log (RI-56). Usual causes: the boring's log is in an appendix the report left out, or the lab used another name for it.",
+    "options": [
+      {
+        "label": "Keep the placeholders",
+        "effect": "Every lab result stays in DIGGS under the boring the report names, with a note that no log describes it. Nothing changes."
+      },
+      {
+        "label": "Leave those results out of DIGGS",
+        "effect": "DIGGS holds only borings with a log; the lab results stay in the record and the file's notes list each one left out (about 2,000 values over the saved reports)."
+      },
+      {
+        "label": "Keep them for sheets, drop them for summary rows",
+        "effect": "A lab sheet's own boring keeps its placeholder; a summary table's row naming no logged boring is listed in the notes instead."
+      }
+    ],
+    "recommendation": "Keep the placeholders: the report names those borings, and a reader of the DIGGS file can still see the result and the note.",
+    "if_no_answer": "The placeholders stay as they are.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-91",
+      "BACKLOG.md RI-56 (Done)"
+    ]
   }
 }
