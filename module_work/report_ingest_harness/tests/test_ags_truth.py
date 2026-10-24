@@ -492,11 +492,17 @@ def test_the_logs_stage_runs_on_a_public_set_item(made_up_set, monkeypatch):
         return fake
 
     out = raw.parent / "out"
-    args = rcl.build_parser().parse_args([
-        "run", "--stage", "logs", "--model", "claude-sonnet-5-5",
-        "--wave", "t-wave", "--cap", "1", "--raw-dir", str(raw),
-        "--reports-dir", str(raw / "assembled"),
-        "--ledger", str(raw.parent / "ledger.json"), "--out-dir", str(out)])
+    argv = ["run", "--stage", "logs", "--model", "claude-sonnet-5-5",
+            "--wave", "t-wave", "--cap", "1", "--raw-dir", str(raw),
+            "--reports-dir", str(raw / "assembled"),
+            "--ledger", str(raw.parent / "ledger.json"),
+            "--out-dir", str(out)]
+    # The made-up scan has no depth scale and prints no depth, so the run
+    # is refused before anything is spent unless that is asked for.
+    assert rcl.run(rcl.build_parser().parse_args(argv),
+                   chat_builder=build) == rcl.REFUSED
+    assert not made and not (raw.parent / "ledger.json").exists()
+    args = rcl.build_parser().parse_args(argv + ["--allow-no-depths"])
     assert rcl.run(args, chat_builder=build) == rcl.OK
 
     blob = json.loads((out / "logs" / "P99_p0.json").read_text(

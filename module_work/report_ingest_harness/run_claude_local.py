@@ -72,6 +72,14 @@ own folders: ``--raw-dir`` at the set's ``raw/`` (its truth is
         --raw-dir <set>/raw --reports-dir <set>/raw/assembled \\
         --wave pb-logs-sonnet --cap 1 --arm public_logs_sonnet
 
+A LOG THAT CAN KEEP NO DEPTH IS REFUSED BEFORE ANY CALL. The logs reader
+keeps a depth only on a scale the grid fitted or where the page prints it as
+text; a scan with no text layer and no DI text gives it neither, so on a
+boring every depth is refused and only header values can score (the public
+set's first smoke: 3/76 and 5/69). Before a logs run opens its wave,
+:func:`logs_with_no_depths` lists such items at $0 and the run stops, unless
+the visual-scales switch is on or ``--allow-no-depths`` is passed.
+
 IT RESUMES. The same command again skips every item that already has a run
 file, as ``score_on_cluster`` always has; an item whose reading was cut by
 the cap is set aside under ``<stage>/_capped/`` so it is read again whole.
@@ -265,6 +273,82 @@ def set_switches(pairs: Sequence[str]) -> Dict[str, str]:
         switches[key] = value.strip()
         os.environ[key] = value.strip()
     return switches
+
+
+def logs_with_no_depths(reports_dir: Path, di_dir: Path,
+                        chosen: Sequence[Path]) -> List[Dict[str, Any]]:
+    """$0, before any call: the logs items on which the reader can keep no
+    depth at all.
+
+    The reader keeps a depth only inside a depth scale the grid fitted, or
+    where the page prints that depth as text the grid can read
+    (:mod:`report_ingest.log_reader`'s gate; RI-18); a test pit is the one
+    exception, its printed numbers read off the picture. A scan with no
+    text layer and no Document Intelligence text gives the grid neither, so
+    on a boring every depth the model reads off the picture is refused and
+    only header values can score. The public blind set's first smoke paid
+    for exactly that. One row per such item, with the counts that show it.
+    """
+    from planlens.document.loggrid import log_grid
+    from planlens.document.model import SOURCE_AZURE_DI
+    from report_ingest.corpus import Corpus
+    from report_ingest.printed_depths import printed_depths
+
+    corpus = Corpus(reports_dir, di_dir=di_dir)
+    present = set(corpus.present_ids())
+    docs: Dict[str, Any] = {}
+    out: List[Dict[str, Any]] = []
+    try:
+        for path in chosen:
+            truth = json.loads(path.read_text(encoding="utf-8"))
+            blocks = list(truth.get("investigations") or []) or [truth]
+            if any(b.get("kind") == "test_pit" for b in blocks):
+                continue
+            report = report_of(path.stem)
+            pages = [int(p) for p in truth.get("pages") or []]
+            if not pages or report not in present:
+                continue                  # the stage itself reports these
+            if report not in docs:
+                docs[report] = corpus.open_report(report, di="auto",
+                                                  warn=False)
+            doc = docs[report]
+            grid = log_grid(doc, pages)
+            lines = {p: list(doc.page(p).lines) for p in pages}
+            printed = printed_depths(grid, pages, lines=lines)
+            if grid.rulers or printed.readings:
+                continue
+            di = sum(1 for p in pages if doc.summary(p).evidence.get(
+                "text_source") == SOURCE_AZURE_DI)
+            nv = getattr(grid, "needs_values", None) or {}
+            out.append({"item": path.stem, "pages": len(pages),
+                        "di_pages": di, "cells": len(grid.rows),
+                        "text_lines": sum(len(v) for v in lines.values()),
+                        "scale_labels": sum(len(v.get("labels") or [])
+                                            for v in nv.values())})
+    finally:
+        for doc in docs.values():
+            doc.close()
+    return out
+
+
+def no_depth_lines(rows: Sequence[Dict[str, Any]], n_items: int,
+                   di_dir: Path) -> List[str]:
+    """What :func:`logs_with_no_depths` found, as the run prints it."""
+    out = [f"{len(rows)} of {n_items} logs item(s) can keep NO depth: no "
+           f"depth scale was fitted and no printed depth was read on any of "
+           f"their pages, so the reader refuses every depth it reads off the "
+           f"picture and only header values can score."]
+    for row in rows:
+        out.append(f"  {row['item']}: {row['pages']} page(s), "
+                   f"{row['di_pages']} with DI text, {row['text_lines']} "
+                   f"text line(s), {row['cells']} placed cell(s), "
+                   f"{row['scale_labels']} scale label(s) the "
+                   f"visual-scales switch would read")
+    out.append(f"  Give these pages text (DI results in {di_dir}), or run "
+               f"with --env GEOTECH_INGEST_VISUAL_SCALES=1 (it reads the "
+               f"scale labels above, where there are any), or pass "
+               f"--allow-no-depths to pay for the header values alone.")
+    return out
 
 
 def usd(value: float) -> str:
@@ -978,6 +1062,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="the spend ledger (default: the main checkout's)")
     run.add_argument("--redo", action="store_true",
                      help="read every chosen item again")
+    run.add_argument("--allow-no-depths", action="store_true",
+                     help="run logs items on which no depth can be kept "
+                          "(refused by default; see logs_with_no_depths)")
     chk = sub.add_parser("check", help="read an out_dir back ($0)")
     chk.add_argument("out_dir")
     chk.add_argument("--stage", default=None, choices=tuple(STAGES))
@@ -1053,6 +1140,17 @@ def run(args: argparse.Namespace,
               + (f" among {', '.join(only)}" if only else ""))
         return REFUSED
     picked = bool(only) or args.sets != "all"
+    if stage == "logs":
+        from report_ingest import visual_scales
+
+        no_depths = logs_with_no_depths(paths["reports"],
+                                        paths["raw"] / "di", chosen)
+        if no_depths:
+            print("\n".join(no_depth_lines(no_depths, len(chosen),
+                                           paths["raw"] / "di")))
+            if not (args.allow_no_depths or visual_scales.enabled()):
+                print("refused: nothing was spent")
+                return REFUSED
     truth_root = truth_for_run(stage, paths["truth"], chosen, out, picked)
 
     ledger = shared_ledger(paths["ledger"])
