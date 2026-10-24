@@ -1064,6 +1064,15 @@ class TestALogAgainstItself:
         record = _reconciled(_hole(rows))
         assert len(kinds_of(record, "conflict")) == conflicts
 
+    def test_a_lone_counts_length_with_no_unit_does_not_silence_it(self):
+        # The length says nothing (RI-70 (4)): the count is as lone as one
+        # with no length, and its drive sum is still checked.
+        inch = 0.0254
+        rows = [{"depth_top": _m(1.5), "depth_bottom": _m(1.5 + 18 * inch),
+                 "blows": [67], "increments": [Quantity(value=6, unit="")]}]
+        record = _reconciled(_hole(rows))
+        assert len(kinds_of(record, "conflict")) == 1
+
     def test_a_record_that_halts_before_its_third_drive_is_no_form(self):
         # Two drives, the second over 50 and no refusal flag: a halt, not a
         # record of a form that drives twice (RI-50).
@@ -1170,6 +1179,26 @@ class TestTheRank:
 
         assert [(e.kind, e.rank) for e in qa] == [
             ("disagreement", "changed"), ("note", "note")]
+
+    @pytest.mark.parametrize("what, floor, model", [
+        ("water at 3 m: depth", "3 m", "not_encountered"),
+        ("kind", "atterberg", "gradation"),
+    ])
+    def test_a_split_whose_record_carries_both_is_open(self, what, floor,
+                                                       model):
+        # Two water readings, or two lab kinds, stand side by side in the
+        # record: the line says so, and nothing settled it (RI-70 (8)).
+        from report_ingest.graph import _vote_qa
+
+        qa = []
+        _vote_qa(qa, {"disagreements": [{
+            "what": what, "where": "B-1", "floor": floor, "model": model,
+            "kept": "both", "why": "both are in the record"}]}, pages=[4])
+        (entry,) = qa
+        assert "; the record carries both. Both are in the record." in \
+            entry.detail
+        assert "both's" not in entry.detail
+        assert entry.rank == "open"
 
     def test_the_ones_that_need_a_person_come_first_and_are_counted(self):
         record = reconcile(build_record(lab_tests=[

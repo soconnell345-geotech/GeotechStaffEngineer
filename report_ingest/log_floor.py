@@ -1528,7 +1528,17 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if notes is not None:
             notes.add(page, "doubtful", f"at {at}: " + "; ".join(doubts))
     def drives_n() -> Optional[Tuple[int, str]]:
-        """:func:`n_from_drives` on this sample's drives."""
+        """:func:`n_from_drives` on this sample's drives, three of them. The
+        seed is the reader's brief, which prints the N, its basis and the
+        sample's note, so a record with a fourth drive keeps the seed it had,
+        with no N computed (RI-70). The merge computes the 2nd + 3rd of a
+        four-drive record only to check a model's printed N, or where the
+        model's four drives replace the floor's three-drive computed N;
+        otherwise a four-drive record with no printed N gets no N anywhere.
+        A floor's printed N on a four-drive record is not checked against
+        its drives' 2nd + 3rd."""
+        if len(blows) != SPT_DRIVES:
+            return None
         drive_cell = blow_cell or (stacked_cells[0] if stacked_cells
                                    else None)
         printed_inc = (header_increment(_header(grid, drive_cell))
@@ -1720,6 +1730,14 @@ N_HALT_RULE = ("'The SPT can be halted when a total of 100 blows have been "
                "during 10 consecutive blows'")
 SPT_HALT_BLOWS = 50
 SPT_HALT_TOTAL = 100
+#: Where a drive after the third is printed: Fig. 3-20 (FHWA NHI-06-088
+#: Vol. I, Sec. 3.7, p. 3-52) draws "First Increment", "Second Increment",
+#: "Third Increment" and "Note: Occasional Fourth Increment Used to provide
+#: additional soil material". The N is still the 2nd + 3rd (p. 3-51), so a
+#: record of three whole drives and one more has its N from the first three
+#: (RI-70). The figure prints one such increment, so a record of five or more
+#: drives is not this case.
+FOURTH_INCREMENT_SOURCE = "Fig. 3-20, FHWA NHI-06-088 Vol. I, p. 3-52"
 #: The standard increment, and how far a printed or measured one may sit from
 #: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
 SPT_INCREMENT_M = 0.1524
@@ -1897,19 +1915,26 @@ def _halt_how(record: Any) -> str:
     if not _halted(blows) and _halted(blows, lengths):
         given = ", ".join(f"{q.value:g} {q.unit}"
                           for q in record.increments[:SPT_DRIVES])
+        if len(blows) == SPT_DRIVES:
+            return (f"its third increment is short: its own drive lengths "
+                    f"are {given}")
         return (f"its own drive lengths ({given}) end short of the 6 in "
                 f"(150 mm) increment")
     if len(blows) < SPT_DRIVES:
         return "it stops before the third increment"
-    which = "last" if len(record.blows) == SPT_DRIVES else "third"
-    return (f"its {which} drive, {show(blows[-1])}, is short of its "
-            f"increment")
+    # Three drives here, the third short of its increment (_halted).
+    return f"its third increment is short: {show(blows[-1])}"
 
 
 def _a_lone_count(record: Any) -> bool:
-    """One whole number for drives, no distance and no lengths: as likely
-    the N filed as a drive as a drive of its own (RI-50 review)."""
-    if len(record.blows) != 1 or _lengths_m(record):
+    """One whole number for drives, no distance and no length of its own:
+    as likely the N filed as a drive as a drive of its own (RI-50 review).
+    A length says what the drive is only where it lines up with it and
+    converts, as in :func:`_halted`; one with no unit says nothing
+    (RI-70)."""
+    lengths = _lengths_m(record)
+    if len(record.blows) != 1 or (len(lengths) == 1
+                                  and lengths[0] is not None):
         return False
     entry = record.blows[0]
     if isinstance(entry, bool):
@@ -1926,7 +1951,8 @@ def shows_halt(record: Any) -> bool:
     rests only on a bare number read as short ('7/13':
     :func:`_short_of_increment`'s layout judgment, wrong in centimetres from
     16 and in inches from 7; the notation may be another one), and a lone
-    whole number over 50 with no distance or lengths (:func:`_a_lone_count`:
+    whole number over 50 with no distance and no length of its own that
+    converts (:func:`_a_lone_count`:
     it may be the N filed as a drive, which the drive check then catches)."""
     if not ends_in_halt(record) or _a_lone_count(record):
         return False
@@ -1937,15 +1963,29 @@ def shows_halt(record: Any) -> bool:
 
 
 def _whole_lengths(record: Any) -> bool:
-    """No drive lengths of its own, or one whole 6 in (150 mm) increment for
-    each drive: lengths that are not rule out an N computed at the 6 in
-    increment the floor read off the header (RI-45, RI-50)."""
-    lengths = _lengths_m(record)
-    if not lengths:
+    """No drive lengths of its own, or lengths that line up with its drives
+    and give each of the first three, the drives the N is taken from, one
+    whole 6 in (150 mm) increment: lengths that do not rule out an N
+    computed at the 6 in increment the floor read off the header (RI-45,
+    RI-50). A fourth drive's length does not bear on the N, short or whole,
+    as in :func:`halts_before_n` (:data:`FOURTH_INCREMENT_SOURCE`; RI-70)."""
+    if not _lengths_m(record):
         return True
-    return len(lengths) == len(record.blows) and all(
+    _blows, three = _first_three(record)
+    return bool(three) and all(
         v is not None and abs(v - SPT_INCREMENT_M) <= _INCREMENT_TOL_M
-        for v in lengths)
+        for v in three)
+
+
+def _a_count(entry: Any) -> Optional[int]:
+    """A drive printed as a whole number of blows, else None."""
+    if isinstance(entry, bool):
+        return None
+    if isinstance(entry, int):
+        return entry
+    if isinstance(entry, str) and entry.strip().isdigit():
+        return int(entry.strip())
+    return None
 
 
 def n_from_drives(blows: Sequence[Any], *, sampler: str,
@@ -1953,46 +1993,64 @@ def n_from_drives(blows: Sequence[Any], *, sampler: str,
                   interval_m: Optional[float] = None,
                   increment_from: str = ""
                   ) -> Optional[Tuple[int, str]]:
-    """``(N, how it was had)`` from a standard SPT's three printed drives, or
-    None when the rule does not apply.
+    """``(N, how it was had)`` from a standard SPT's printed drives, or None
+    when the rule does not apply.
 
     The rule is printed in :data:`N_RULE_SOURCE`: N is the second drive plus
     the third. It applies only to an SPT sampler the log names (``sampler``
-    is ``"spt"``), to exactly three whole-number drives (a refusal, a
-    weight-of-hammer entry or a fourth drive is not this case), and to drives
-    of 6 in or 150 mm: the increment a header prints (``increment_m``) must
-    be that, and with none printed the sample's interval (``interval_m``)
-    must be three of them. A drive over 50 blows does not stop it: the halts
-    the same page prints (:data:`N_HALT_RULE`) are ones the test CAN make,
-    and three whole drives show it did not (RI-45).
+    is ``"spt"``), to three whole-number drives (a refusal or a
+    weight-of-hammer entry among them is not this case), and to drives of
+    6 in or 150 mm: the increment a header prints (``increment_m``) must be
+    that, and with none printed the sample's interval (``interval_m``) must
+    be three of them. A drive over 50 blows does not stop it: the halts the
+    same page prints (:data:`N_HALT_RULE`) are ones the test CAN make, and
+    three whole drives show it did not (RI-45).
+
+    One more drive may follow the three, a count or blows over a distance
+    ('50/2"'): the occasional fourth increment (:data:`FOURTH_INCREMENT_SOURCE`)
+    is not part of the N, which is still the 2nd + 3rd, as
+    :func:`halts_before_n` reads such a record (RI-70). With no increment
+    printed, the interval must then be four increments, so a fourth printed
+    over a distance needs the printed increment.
     """
-    if sampler != "spt":
+    if sampler != "spt" or not (
+            SPT_DRIVES <= len(blows) <= SPT_DRIVES + 1):
         return None
-    counts: List[int] = []
-    for entry in blows:
-        if isinstance(entry, bool):
-            return None
-        if isinstance(entry, int):
-            counts.append(entry)
-        elif isinstance(entry, str) and entry.strip().isdigit():
-            counts.append(int(entry.strip()))
+    counts = [_a_count(entry) for entry in blows[:SPT_DRIVES]]
+    if None in counts:
+        return None
+    fourth = list(blows[SPT_DRIVES:])
+    in_interval: Optional[int] = SPT_DRIVES
+    if fourth:
+        if _a_count(fourth[0]) is not None:
+            in_interval = SPT_DRIVES + 1
+        elif (isinstance(fourth[0], str)
+              and _BLOWS_OVER.fullmatch(fourth[0].strip())):
+            in_interval = None
         else:
             return None
-    if len(counts) != 3:
-        return None
     if increment_m is not None:
         if abs(increment_m - SPT_INCREMENT_M) > _INCREMENT_TOL_M:
             return None
         how = increment_from or "the printed increment"
-    elif interval_m is not None and abs(
-            interval_m / 3.0 - SPT_INCREMENT_M) <= _INTERVAL_TOL_M:
-        how = f"the sample's interval ({interval_m:.3g} m over three drives)"
+    elif interval_m is not None and in_interval is not None and abs(
+            interval_m / in_interval - SPT_INCREMENT_M) <= _INTERVAL_TOL_M:
+        how = (f"the sample's interval ({interval_m:.3g} m over "
+               f"{'three' if in_interval == SPT_DRIVES else 'four'} drives)")
     else:
         return None
-    n = counts[1] + counts[2]
-    return n, (f"not printed; the 2nd + 3rd of three 6 in (150 mm) drives, "
-               f"{counts[1]} + {counts[2]} = {n}, by the rule printed in "
-               f"{N_RULE_SOURCE}; 6 in drives from {how}")
+    second, third = counts[1], counts[2]
+    n = second + third
+    if not fourth:
+        return n, (f"not printed; the 2nd + 3rd of three 6 in (150 mm) "
+                   f"drives, {second} + {third} = {n}, by the rule printed "
+                   f"in {N_RULE_SOURCE}; 6 in drives from {how}")
+    return n, (f"not printed; the 2nd + 3rd of the first three of four "
+               f"6 in (150 mm) drives, {second} + {third} = {n}, by the rule "
+               f"printed in {N_RULE_SOURCE}; the fourth, "
+               f"{show(fourth[0])}, is the occasional fourth increment "
+               f"({FOURTH_INCREMENT_SOURCE}), not part of the N; 6 in drives "
+               f"from {how}")
 
 
 def _doubts(values: Dict[str, Any], units: Dict[str, str]) -> List[str]:
@@ -3416,10 +3474,9 @@ class _Merger:
         increment: Optional[float] = None
         how = ""
         if record.increments:
-            lengths = [q.si_value for q in record.increments]
-            if len(lengths) != len(record.blows) or any(
-                    v is None or abs(v - SPT_INCREMENT_M) > _INCREMENT_TOL_M
-                    for v in lengths):
+            # Each of the drives the N is taken from must be one whole
+            # increment; a fourth drive's length does not bear on it (RI-70).
+            if not _whole_lengths(record):
                 return None
             increment, how = SPT_INCREMENT_M, "the record's drive lengths"
         elif record.increment is not None:
@@ -3448,12 +3505,27 @@ class _Merger:
         is set against the second plus the third drive where the printed
         rule applies, and a difference is a disagreement under the floor's
         one rule: the model's N stands only with a box and a note, the
-        other is kept beside it, and the QA section lists both.
+        other is kept beside it, and the QA section lists both. A four-drive
+        record's N from the sample's interval alone never replaces a printed
+        one (RI-70; :meth:`check_model_n`).
 
         An N under 50 on a record that halts within its first three
         increments is never in the slot, whoever read it (RI-44), whether
         its drives show the halt or its own drive lengths do (RI-50): such a
         record has no N (p. 3-51; :func:`halts_before_n`).
+
+        An N of 50 or more on such a record stays as read, unchecked
+        (RI-70). Page 3-51 defines the N only for a test that advanced its
+        second and third increments, and prints no figure for one that
+        halted: its halt sentence (:data:`N_HALT_RULE`) says when the test
+        can stop, and its refusal is a resistance in blows per 2 in (or per
+        1 in), not an N. What a log prints for a halted record (50, 100, the
+        blows it counted) is the log's own figure, which nothing on the page
+        confirms or rules out, so it is not set against the drives. The line
+        at 50 is the code's (RI-44: a figure under it is taken for another
+        number, the next sample's or a recovery), not a printed one; the
+        page's own 50 is the count past which, in one increment, the test
+        can be halted. Exactly 50 is not under it and stands as read.
         """
         if (merged.n is not None and merged.n < SPT_HALT_BLOWS
                 and halts_before_n(merged)):
@@ -3477,20 +3549,35 @@ class _Merger:
         derived = self.drives_n(merged, f)
         if derived is None or derived[0] == m.n:
             return
-        self.check_model_n(merged, f, m, where, what, derived)
+        # A record with a fourth drive and neither drive lengths nor an
+        # increment of its own: drives_n had its N from the interval alone
+        # (a floor's computed N never has four drives).
+        self.check_model_n(merged, f, m, where, what, derived,
+                           interval_only=(len(merged.blows) > SPT_DRIVES
+                                          and not merged.increments
+                                          and merged.increment is None))
 
     def check_model_n(self, merged: SPT, f: Optional[SPT], m: SPT,
                       where: str, what: str,
-                      derived: Tuple[int, str]) -> None:
+                      derived: Tuple[int, str],
+                      interval_only: bool = False) -> None:
         """The model's printed N set against the 2nd + 3rd of the drives
         that stand, ``derived``, which differs from it: a disagreement under
         the floor's one rule (the model's N stands only with a box and a
-        note, the other is kept beside it), listed (RI-04)."""
+        note, the other is kept beside it), listed (RI-04).
+
+        With ``interval_only``, the drives' N is that of a four-drive record
+        whose 6 in drives rest on the sample's interval alone, split over the
+        four: no drive lengths or increment is printed. Such an N never
+        replaces a printed one, box or no box; it is kept beside the slot
+        and listed (RI-70)."""
         n, basis = derived
         page = (m.prov.page if m.prov is not None
                 else f.prov.page if f is not None and f.prov is not None
                 else None)
         computed_confidence = _conf(f.prov if f is not None else m.prov, 0.5)
+        evidence = has_evidence(
+            m.prov, f.prov.bbox if f is not None and f.prov else None)
         s = settle("n", n, m.n, False, floor_method="derived",
                    floor_confidence=computed_confidence,
                    model_method=(m.prov.method if m.prov is not None
@@ -3498,9 +3585,7 @@ class _Merger:
                                  ("model", "model_from_picture", "vision")
                                  else "model"),
                    model_confidence=_conf(m.prov, 0.9),
-                   evidence=has_evidence(
-                       m.prov, f.prov.bbox if f is not None and f.prov
-                       else None),
+                   evidence=evidence or interval_only,
                    model_note=m.prov.note if m.prov is not None else "")
         merged.n = s.value
         merged.n_basis = basis if s.verdict == "floor_wins" else ""
@@ -3513,7 +3598,12 @@ class _Merger:
             kept="model" if s.verdict == "model_wins" else "floor",
             why=("the model's N differs from the second plus the third of "
                  "the printed drives; "
-                 + ("it named a box and a note, so it stands and the "
+                 + ("it named no box or note, but the drives' 6 in "
+                    "increments rest on the sample's interval alone (no "
+                    "drive lengths or increment printed), so the printed N "
+                    "stands and the drives' N is kept beside it"
+                    if interval_only and not evidence else
+                    "it named a box and a note, so it stands and the "
                     "drives' N is kept beside it"
                     if s.verdict == "model_wins" else
                     "it named no box or note, so the drives' N stands and "
@@ -3631,12 +3721,17 @@ class _Merger:
         if f is not None and f.refusal:
             return
         derived = self.drives_n(merged, f, beside=True)
-        if derived is None:
+        # A fourth drive that ends short after three whole ones leaves the N
+        # but ends the record in a halt, which the model's flag then says
+        # (RI-70; halt_flag sets it where the record shows it plainly).
+        if derived is None or ends_in_halt(merged):
             return
         merged.refusal = False
+        drives = ("three whole 6 in drives" if len(merged.blows) == SPT_DRIVES
+                  else "three whole 6 in drives and a fourth")
         self.log.disagree(
             where, f"{what}: refusal", False, True, kept="floor",
-            why=("the model calls a record of three whole 6 in drives a "
+            why=(f"the model calls a record of {drives} a "
                  "refusal; the test drove all three increments, so it did "
                  f"not halt and its N is the 2nd + 3rd, {derived[0]} "
                  f"({N_RULE_SOURCE}); not kept as a refusal"),
@@ -3723,6 +3818,7 @@ class _Merger:
                 alternatives[:] = [a for a in alternatives
                                    if not (a.field == "n"
                                            and a.value == held)]
+            written: Dict[str, Alternative] = {}
             for whose, n, method, confidence, note in (
                     ("floor", floor_n, floor_method,
                      _conf(f.prov if f is not None else None, 0.5),
@@ -3733,16 +3829,26 @@ class _Merger:
                         stands and n == merged.n):
                     continue
                 alt_note = f"{note}; {out[whose]}"
+                both = written.get(show(n))
+                if both is not None:
+                    # Both voters read this N and both are ruled out: one
+                    # entry beside the slot, with each one's reason (RI-70).
+                    both.method = "reconciled"  # type: ignore[assignment]
+                    both.confidence = max(both.confidence, confidence)
+                    both.note = f"{both.note}; and {alt_note}"
+                    continue
                 same = next((a for a in alternatives
                              if a.field == "n" and a.value == show(n)), None)
                 if same is not None:
                     same.method = method  # type: ignore[assignment]
                     same.note = alt_note
                 else:
-                    alternatives.append(Alternative(
+                    same = Alternative(
                         field="n", value=show(n),
                         method=method,  # type: ignore[arg-type]
-                        confidence=confidence, note=alt_note))
+                        confidence=confidence, note=alt_note)
+                    alternatives.append(same)
+                written[show(n)] = same
         slot = f"{what}: n"
         self.log.disagreements[:] = [
             r for r in self.log.disagreements
@@ -3756,6 +3862,9 @@ class _Merger:
             other = "model" if stands == "floor" else "floor"
             tail = (f"the {stands}'s N {merged.n} stands, as it would had "
                     f"the {other}'s not been read")
+        elif floor_n is not None and floor_n == model_n:
+            tail = ("both read it and it is not the N; it is kept beside "
+                    "the slot")
         elif floor_n is not None and model_n is not None:
             tail = "neither is the N; both are kept beside the slot"
         else:
