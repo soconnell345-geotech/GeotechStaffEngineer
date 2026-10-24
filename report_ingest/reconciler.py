@@ -58,8 +58,10 @@ values and the verdict are untouched.
 
 from __future__ import annotations
 
+import math
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import (Any, Dict, Iterable, List, Optional, Sequence, Set,
+                    Tuple)
 
 from pydantic import BaseModel, Field
 
@@ -633,12 +635,13 @@ def _fold_continuations(record: ReportRecord, qa: List[QAEntry]) -> None:
 _SAMPLED_KINDS = ("boring", "test_pit", "hand_auger", "well")
 
 
-def _hole_for(test: LabTest, by_id: Dict[str, Investigation],
+def _hole_for(test: Any, by_id: Dict[str, Investigation],
               samples: Optional[Dict[str, List[Tuple[Investigation,
                                                      Sample]]]] = None,
               by_fold: Optional[Dict[str, Investigation]] = None
               ) -> Tuple[Optional[Investigation], str]:
-    """The investigation a lab test names, and where the name was found.
+    """The investigation a lab test (or a summary row) names, and where the
+    name was found.
 
     The printed boring first, matched whole: exactly as the logs spell it
     (``fold_id``), then with leading zeros folded (``hole_key``, used only
@@ -704,14 +707,18 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
                 sample_names.setdefault(hole_key(sample.sample_id),
                                         []).append((inv, sample))
 
-    from_labels: List[Tuple[LabTest, str, Investigation]] = []
+    # (the label it was read from, the hole, the pages, a summary row?)
+    from_labels: List[Tuple[str, Investigation, List[int], bool]] = []
+    clashes: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for test in record.lab_tests:
         if test.kind == "summary_table":
-            _link_summary_rows(test, by_fold, qa)
+            _link_summary_rows(test, by_id, sample_names, by_fold,
+                               from_labels, clashes, qa)
             continue
         inv, through = _hole_for(test, by_id, sample_names, by_fold)
         if inv is not None and through:
-            from_labels.append((test, through, inv))
+            from_labels.append((_label_read(test, through), inv,
+                                list(test.pages), False))
         printed = fold_id(test.investigation_id)
         if not printed and inv is None:
             qa.append(QAEntry(
@@ -729,8 +736,12 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
                 pages=list(test.pages)))
             continue
         test.linked_investigation_id = inv.investigation_id
-        sample, delta = _sample_for(inv, test)
+        sample, delta, clash = _sample_for(inv, test, by_fold)
+        if clash is not None:
+            _gather(clashes, clash, test.kind, test.pages)
         if sample is None:
+            if clash is not None:
+                continue                         # its conflict entry says why
             wanted = depth_m(test.depth_top)
             qa.append(QAEntry(
                 kind="partial", where=f"lab_tests.{test.kind}",
@@ -749,54 +760,232 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
         # One note for the report, not one a test: a reviewer wants to know
         # that these links were read out of a longer label, and which.
         shown: List[str] = []
-        for test, through, inv in from_labels:
-            label = test.investigation_id if through == "the boring as " \
-                "printed" else test.sample_id
+        for label, inv, _pages, _row in from_labels:
             line = f"{label!r} -> {inv.investigation_id}"
             if line not in shown:
                 shown.append(line)
+        rows = sum(1 for *_rest, row in from_labels if row)
+        tests = len(from_labels) - rows
+        counted = " and ".join(
+            part for part in (f"{tests} lab test(s)" if tests else "",
+                              f"{rows} summary row(s)" if rows else "")
+            if part)
         qa.append(QAEntry(
             kind="note", where="lab_tests",
-            detail=(f"{len(from_labels)} lab test(s) were linked to the hole "
-                    f"at the head of a longer label -- the boring as printed "
-                    f"(a hole, sample and depth run together), or the sample "
-                    f"label where the sheet printed no boring; only holes "
-                    f"read from this report's logs were looked for"),
+            detail=(f"{counted} were linked to the hole at the head of a "
+                    f"longer label -- the boring as printed (a hole, sample "
+                    f"and depth run together), or the sample label where "
+                    f"the sheet printed no boring; only holes read from this "
+                    f"report's logs were looked for"),
             values=shown[:12] + ([f"... {len(shown) - 12} more"]
                                  if len(shown) > 12 else []),
-            pages=sorted({int(p) for test, _t, _i in from_labels
-                          for p in test.pages})))
+            pages=sorted({int(p) for _l, _i, pages, _r in from_labels
+                          for p in pages})))
+    qa.extend(_label_depth_entry(group) for group in clashes.values())
 
 
-def _sample_for(inv: Investigation,
-                test: LabTest) -> Tuple[Optional[Sample], Optional[float]]:
-    """The sample this sheet's specimen came from, and how far off it was.
+def _label_read(test: Any, through: str) -> str:
+    """The printed words a hole was read out of (see :func:`_hole_for`)."""
+    return (test.investigation_id if through == "the boring as printed"
+            else test.sample_id)
 
-    The sample label matched whole first, as it always was. Then a word of
-    a longer label that IS one of this hole's sample names ("BH-7 U3" ->
-    U3), taken only when that sample sits at the sheet's depth: the word
-    may be a sample number of another kind, and the depth is what says it
-    is this one (RI-07). Then the sample at the sheet's depth.
+
+def _sample_for(inv: Investigation, test: Any,
+                holes: Iterable[str] = ()
+                ) -> Tuple[Optional[Sample], Optional[float],
+                           Optional[Dict[str, Any]]]:
+    """The sample this specimen came from, how far off it was, and what the
+    label and the depth disagree on (None when they do not).
+
+    ``test`` is a sheet or a summary row: anything with a printed
+    ``investigation_id``, ``sample_id`` and ``depth_top``. ``holes`` are the
+    folded names of the record's explorations.
+
+    THE LABEL FIRST (RI-56). A label that names one of this hole's samples
+    -- the sample label whole, as it always was, or a word of a longer label
+    that IS one of the hole's sample names ("BH-7 U3" -> U3), where the
+    label names no other hole -- is that sample, wherever the log puts it.
+    A word names another hole only if it has a letter in it, or it is a
+    number after a word for an exploration ("BH 2", "Hole 2") or standing
+    alone ("2/S-3"): the numbers of a printed depth range ("4.0-5.5") or of
+    a depth with its unit are not hole "4" (:func:`_numbers_named`). The
+    depth decides only where the label names none of the hole's samples,
+    or which of two the label named. A sheet's depth agrees with a sample
+    when the printed interval, widened by :data:`DEPTH_TOL_M` each side,
+    meets the log's interval for it (:func:`_interval_gap`): a sheet
+    prints the interval it sampled, a log may hold one point inside it.
+    Where they do not meet, the label is followed and the disagreement
+    comes back for a QA entry. A label that names several of the hole's
+    samples (a composite, "S-2,S-3") is linked to no sample where none of
+    them, or more than one, meets the printed interval.
     """
     if test.sample_id:
         wanted = fold_id(test.sample_id)
-        for sample in inv.samples:
-            if fold_id(sample.sample_id) == wanted:
-                return sample, _delta(sample, test)
-    words = {fold_id(w) for w in re.split(
-        r"[^0-9A-Za-z-]+", f"{test.investigation_id} {test.sample_id}")
-        if fold_id(w)}
+        whole = [s for s in inv.samples if fold_id(s.sample_id) == wanted]
+        if whole:
+            sample = next((s for s in whole
+                           if _interval_gap(s, test) is not None), whole[0])
+            return sample, _delta(sample, test), _clash(inv, test, [sample],
+                                                        sample)
+    label = f"{test.investigation_id} {test.sample_id}"
+    words = {fold_id(w) for w in re.split(r"[^0-9A-Za-z-]+", label)
+             if fold_id(w)}
     own = fold_id(inv.investigation_id)
-    for sample in inv.samples:
-        name = fold_id(sample.sample_id)
-        if name and name in words and name != own and not name.isdigit():
-            delta = _at_depth(sample, test)
-            if delta is not None:
-                return sample, delta
-    return _sample_at_depth(inv, test)
+    others = {fold_id(h) for h in holes
+              if re.search(r"[A-Za-z]", fold_id(h))} - {own, ""}
+    numbered = {hole_key(h) for h in holes
+                if fold_id(h).isdigit()} - {hole_key(own), ""}
+    named = [] if words & others or _numbers_named(label) & numbered else [
+        s for s in inv.samples
+        if fold_id(s.sample_id) and fold_id(s.sample_id) in words
+        and fold_id(s.sample_id) != own
+        and not fold_id(s.sample_id).isdigit()]
+    if not named:
+        sample, delta = _sample_at_depth(inv, test)
+        return sample, delta, None
+    meets = [s for s in named if _interval_gap(s, test) is not None]
+    if len({fold_id(s.sample_id) for s in meets}) == 1:
+        return meets[0], _interval_gap(meets[0], test), None
+    if len({fold_id(s.sample_id) for s in named}) > 1:
+        return None, None, _clash(inv, test, named, None)
+    return named[0], _delta(named[0], test), _clash(inv, test, named,
+                                                    named[0])
 
 
-def _at_depth(sample: Sample, test: LabTest) -> Optional[float]:
+#: A number after a word for an exploration ("BH 2", "Hole-2", "TP2"),
+#: not the start of a decimal.
+_HOLE_NUMBER = re.compile(
+    r"\b(?:bh|bore ?hole|boring|hole|tp|test ?pit|pit|trench|well|cpt)"
+    r"\s*[-#.:]?\s*(\d+)(?!\d|[.,]\d)", re.I)
+#: A number standing alone: not part of a word, a range ("4-5", "4 to 5")
+#: or a decimal, and not a depth (a unit after it).
+_LONE_NUMBER = re.compile(
+    r"(?<![\w.,\-–])(?<![-–]\s)(?<!to\s)(\d+)"
+    r"(?![\w\-–]|[.,]\d|\s*(?:-|–|to)\s*\d|"
+    r"\s*(?:mm|cm|m|ft|feet|in)\b|\s*['\"])", re.I)
+
+
+def _numbers_named(label: str) -> Set[str]:
+    """The bare numbers a label gives as a hole's name, folded as
+    :func:`hole_key` folds them: a number after a word for an exploration,
+    or one standing alone ("2/S-3", "BH 2, S-3"); never one inside a word, a
+    range or a decimal, nor a depth with its unit."""
+    found = [m.group(1) for m in _HOLE_NUMBER.finditer(label)]
+    found += [m.group(1) for m in _LONE_NUMBER.finditer(label)]
+    return {hole_key(n) for n in found}
+
+
+def _clash(inv: Investigation, test: Any, named: Sequence[Sample],
+           linked: Optional[Sample]) -> Optional[Dict[str, Any]]:
+    """What the label and the depth disagree on, or None.
+
+    None where they agree, and where there is nothing to disagree with: the
+    sheet prints no depth that converts, or the log gives none of the named
+    samples a depth.
+    """
+    if depth_m(test.depth_top) is None:
+        return None
+    if linked is not None and _interval_gap(linked, test) is not None:
+        return None
+    if all(depth_m(s.top) is None for s in named):
+        return None
+    names: List[str] = []
+    for s in named:
+        if s.sample_id not in names:
+            names.append(s.sample_id)
+    there, _delta_there = _sample_at_depth(inv, test)
+    within: List[str] = []
+    for s in named:
+        if _interval_gap(s, test) is not None and s.sample_id not in within:
+            within.append(s.sample_id)
+    return {"hole": inv.investigation_id, "named": names,
+            "label": " ".join(str(x).strip() for x in (
+                test.investigation_id, test.sample_id) if str(x).strip()),
+            "depth": test.depth_top, "linked": linked,
+            "there": there, "within": within}
+
+
+def _gather(clashes: Dict[Tuple[Any, ...], Dict[str, Any]],
+            clash: Dict[str, Any], kind: str, pages: Sequence[int]) -> None:
+    """Add one label/depth disagreement to its group.
+
+    One entry for each sample a label names at each printed depth, however
+    many sheets and rows print it: five sheets cut from one sample are one
+    disagreement between its label and the log, not five.
+    """
+    key = (clash["hole"], tuple(clash["named"]), _show(clash["depth"]))
+    group = clashes.setdefault(key, {**clash, "kinds": [], "labels": [],
+                                     "pages": set()})
+    group["kinds"].append(kind)
+    if clash["label"] not in group["labels"]:
+        group["labels"].append(clash["label"])
+    group["pages"].update(int(p) for p in pages)
+
+
+def _label_depth_entry(group: Dict[str, Any]) -> QAEntry:
+    """The QA entry for labels that name a sample the depth does not."""
+    hole, depth = group["hole"], _show(group["depth"])
+    rows = group["kinds"].count("summary_table")
+    sheets = len(group["kinds"]) - rows
+    who = " and ".join(part for part in (
+        f"{sheets} lab sheet{'s' if sheets > 1 else ''}" if sheets else "",
+        f"{rows} summary row{'s' if rows > 1 else ''}" if rows else "")
+        if part)
+    name, prints = (("names", "prints") if len(group["kinds"]) == 1
+                    else ("name", "print"))
+    there = group["there"]
+    linked = group["linked"]
+    unit = getattr(group["depth"], "unit", "")
+    if linked is not None:
+        has = (f"has {there.sample_id or 'an unnamed sample'} there"
+               if there is not None else "has no sample there")
+        detail = (f"{who} {name} sample {linked.sample_id} of {hole} and "
+                  f"{prints} a depth of {depth}; its log puts "
+                  f"{linked.sample_id} at {_depth_in(linked.top, unit)} and "
+                  f"{has}. Linked to {linked.sample_id} by the label; the "
+                  f"depth is kept as printed")
+    elif len(group.get("within", [])) > 1:
+        detail = (f"{who} {name} samples {', '.join(group['named'])} of "
+                  f"{hole} and {prints} a depth of {depth}; its log puts "
+                  f"{', '.join(group['within'])} within {DEPTH_TOL_M} m of "
+                  f"the printed interval, so the specimen is not one of them "
+                  f"alone. Linked to {hole} and to no sample")
+    else:
+        detail = (f"{who} {name} samples {', '.join(group['named'])} of "
+                  f"{hole} and {prints} a depth of {depth}; its log puts none "
+                  f"of them within {DEPTH_TOL_M} m of the printed interval. "
+                  f"Linked to {hole} and to no sample")
+    labels = group["labels"]
+    return QAEntry(kind="conflict",
+                   where=f"{hole}.lab_tests",
+                   detail=detail,
+                   values=[f"label {label}" for label in labels[:3]]
+                   + ([f"... {len(labels) - 3} more"]
+                      if len(labels) > 3 else [])
+                   + [f"depth {depth}"],
+                   pages=sorted(group["pages"]))
+
+
+def _depth_in(value: Optional[Quantity], unit: str) -> str:
+    """A log's depth for a QA line, in ``unit`` (the printed depth's, so the
+    line reads in one unit), to the nearest centimetre or the nearest step
+    of that unit above it (0.1 ft): a depth read off a drawn log carries
+    more figures than the log was drawn to. In the log's own unit where
+    ``unit`` does not convert."""
+    metres = depth_m(value)
+    if metres is None or value is None:
+        return _show(value)
+    per_unit = depth_m(Quantity(value=1.0, unit=unit)) if unit else None
+    if not per_unit:
+        unit = value.unit
+        per_unit = depth_m(Quantity(value=1.0, unit=unit)) if unit else None
+    if not per_unit:
+        return _show(value)
+    places = max(0, round(math.log10(per_unit / 0.01)))
+    return f"{round(metres / per_unit, places):g} {unit}"
+
+
+def _at_depth(sample: Sample, test: Any) -> Optional[float]:
     """How far the sheet's depth sits from ``sample``, in metres, when it
     is within :data:`DEPTH_TOL_M` of it; else None."""
     depth, top = depth_m(test.depth_top), depth_m(sample.top)
@@ -812,7 +1001,29 @@ def _at_depth(sample: Sample, test: LabTest) -> Optional[float]:
     return delta if delta <= DEPTH_TOL_M else None
 
 
-def _sample_at_depth(inv: Investigation, test: LabTest
+def _interval_gap(sample: Sample, test: Any) -> Optional[float]:
+    """How far the sheet's printed interval sits from the log's interval
+    for ``sample``, in metres, when the printed one, widened by
+    :data:`DEPTH_TOL_M` each side, meets it; else None.
+
+    A point stands for an interval of no length: a sheet that prints only a
+    top, or a log sample with no bottom. Used for the label check only; a
+    link by depth alone stays with :func:`_at_depth`.
+    """
+    top, s_top = depth_m(test.depth_top), depth_m(sample.top)
+    if top is None or s_top is None:
+        return None
+    bottom = depth_m(getattr(test, "depth_bottom", None))
+    if bottom is None or bottom < top:
+        bottom = top
+    s_bottom = depth_m(sample.bottom)
+    if s_bottom is None or s_bottom < s_top:
+        s_bottom = s_top
+    gap = max(0.0, s_top - bottom, top - s_bottom)
+    return gap if gap <= DEPTH_TOL_M else None
+
+
+def _sample_at_depth(inv: Investigation, test: Any
                      ) -> Tuple[Optional[Sample], Optional[float]]:
     """The sample of ``inv`` at the sheet's depth, by depth alone."""
     best: Optional[Sample] = None
@@ -824,7 +1035,7 @@ def _sample_at_depth(inv: Investigation, test: LabTest
     return best, best_delta
 
 
-def _delta(sample: Sample, test: LabTest) -> Optional[float]:
+def _delta(sample: Sample, test: Any) -> Optional[float]:
     top, depth = depth_m(sample.top), depth_m(test.depth_top)
     if top is None or depth is None:
         return None
@@ -832,22 +1043,39 @@ def _delta(sample: Sample, test: LabTest) -> Optional[float]:
 
 
 def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
+                       samples: Dict[str, List[Tuple[Investigation, Sample]]],
+                       by_fold: Dict[str, Investigation],
+                       from_labels: List[Tuple[str, Investigation, List[int],
+                                               bool]],
+                       clashes: Dict[Tuple[Any, ...], Dict[str, Any]],
                        qa: List[QAEntry]) -> None:
-    """A summary table names many holes; report the ones that are not here.
+    """Each row of a summary table linked as a sheet is, from its own columns.
 
-    Matched exactly as printed (``fold_id``), not with the lab link's zero
-    fold or label head: a summary row carries no link of its own, so the
-    DIGGS writer still places it by the printed words, and a row the logs
-    spell differently is still a hole "not here" until rows are linked.
+    A row prints its own boring, sample and depth, and is linked by the
+    sheet's rules (:func:`_hole_for`, :func:`_sample_for`) into its own link
+    fields (RI-56); the printed columns never change. The holes the table
+    names that no log holds are one entry for the table; the DIGGS writer
+    gives each such name the hole a sheet printing it would get.
     """
     result = test.result
     rows = list(getattr(result, "rows", ()) or ())
     missing: List[str] = []
     for row in rows:
-        printed = fold_id(row.investigation_id)
-        if printed and printed not in by_id and \
-                row.investigation_id not in missing:
-            missing.append(row.investigation_id)
+        inv, through = _hole_for(row, by_id, samples, by_fold)
+        if inv is None:
+            if fold_id(row.investigation_id) and \
+                    row.investigation_id not in missing:
+                missing.append(row.investigation_id)
+            continue
+        if through:
+            from_labels.append((_label_read(row, through), inv,
+                                list(test.pages), True))
+        row.linked_investigation_id = inv.investigation_id
+        sample, _delta_m, clash = _sample_for(inv, row, by_fold)
+        if clash is not None:
+            _gather(clashes, clash, test.kind, test.pages)
+        if sample is not None:
+            row.linked_sample_id = sample.sample_id
     if missing:
         qa.append(QAEntry(
             kind="partial", where="lab_tests.summary_table",

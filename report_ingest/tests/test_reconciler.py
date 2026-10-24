@@ -225,16 +225,19 @@ class TestTheHoleInsideALabel:
 
         assert sheet.linked_investigation_id == "S-2"
 
-    def test_a_summary_row_spelt_otherwise_is_still_named_missing(self):
-        # A summary row carries no link, so DIGGS still places it by the
-        # printed words: until rows are linked, "B-01" is a hole not here.
+    def test_a_summary_row_spelt_otherwise_is_linked_as_a_sheet_is(self):
+        # RI-56: a row is linked by the sheet's rules into its own link
+        # fields, so "B-01" is the logged B-1 and not a hole missing.
         table = summary_table()
         table.result.rows[0].investigation_id = "B-01"
         record = reconcile(build_record(lab_tests=[table]))
 
-        (entry,) = [e for e in kinds_of(record, "partial")
+        row = table.result.rows[0]
+        assert (row.linked_investigation_id, row.linked_sample_id) == \
+            ("B-1", "S-1")
+        assert row.investigation_id == "B-01"           # as printed
+        assert not [e for e in kinds_of(record, "partial")
                     if "summary table" in e.detail]
-        assert entry.values == ["B-01"]
 
 
 def _sounding(name):
@@ -341,9 +344,208 @@ class TestTheReviewProbes:
         by_name = _linked([hole], label="B-1 U-1")
         assert by_name.linked_sample_id == "U-1"
 
-    def test_a_sample_named_in_the_label_elsewhere_is_not_taken(self):
-        sheet = _linked([boring("B-1")], label="B-1 S-3")     # S-3 at 14.5 ft
-        assert sheet.linked_sample_id == "S-1"               # the sheet's 2 ft
+    def test_a_sample_named_in_the_label_elsewhere_is_still_taken(self):
+        # RI-56: the label names S-3, which the log puts at 14.5 ft; the
+        # sheet prints 2 ft, where the log has S-1. The label is followed.
+        sheet = _linked([boring("B-1")], label="B-1 S-3")
+        assert sheet.linked_sample_id == "S-3"
+
+
+class TestTheLabelBeforeTheDepth:
+    """RI-56: a printed label that names one of the hole's samples is that
+    sample; the depth decides only where no label names one, and a label
+    the depth disagrees with is followed and said."""
+
+    def _conflicts(self, record):
+        return [e for e in kinds_of(record, "conflict")
+                if e.where.endswith(".lab_tests")]
+
+    def test_a_label_the_depth_disagrees_with_is_followed_and_said(self):
+        sheet = atterberg(sample="S-3", depth_ft=2.0)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert entry.rank == "open"
+        assert entry.where == "B-1.lab_tests"
+        assert "Linked to S-3 by the label" in entry.detail
+        assert "has S-1 there" in entry.detail
+        assert entry.values == ["label B-1 S-3", "depth 2 ft"]
+        assert entry.pages == [12]
+
+    def test_a_label_the_depth_agrees_with_raises_nothing(self):
+        sheet = atterberg(sample="S-3", depth_ft=14.5)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        assert self._conflicts(record) == []
+
+    def test_a_label_naming_no_sample_is_linked_by_depth_alone(self):
+        sheet = atterberg(sample="Bag 4", depth_ft=7.0)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-2"
+        assert self._conflicts(record) == []
+
+    def test_sheets_cut_from_one_sample_are_one_entry(self):
+        one = atterberg(sample="S-3", depth_ft=2.0, page=12)
+        two = atterberg(sample="S-3", depth_ft=2.0, page=13)
+        record = reconcile(build_record(lab_tests=[one, two]))
+
+        (entry,) = self._conflicts(record)
+        assert entry.detail.startswith("2 lab sheets name sample S-3")
+        assert entry.pages == [12, 13]
+
+    def test_a_label_naming_several_samples_links_to_none(self):
+        sheet = atterberg(sample="S-2,S-3", depth_ft=2.0)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._conflicts(record)
+        assert "samples S-2, S-3 of B-1" in entry.detail
+        assert "to no sample" in entry.detail
+        # the conflict says why, so no second entry for the missing sample
+        assert not [e for e in record.qa
+                    if "no sample of it sits within" in e.detail]
+
+    def test_an_interval_meeting_several_named_samples_is_a_composite(self):
+        sheet = atterberg(sample="S-2,S-3", depth_ft=7.0)
+        sheet.depth_bottom = q(16.0, "ft")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._conflicts(record)
+        assert "puts S-2, S-3 within" in entry.detail
+        assert "to no sample" in entry.detail
+
+    def test_the_numbers_of_a_depth_range_are_not_another_hole(self):
+        # A record with a hole named by a bare number: "4.0-5.5" in the
+        # label does not name it, so S-3 is still the label's sample.
+        sheet = atterberg(investigation="B-1", sample="S-3 4.0-5.5",
+                          depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("B-1"), boring("4")], lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert "Linked to S-3 by the label" in entry.detail
+
+    @pytest.mark.parametrize("label", ["Hole 2 S-3", "2/S-3", "BH 2, S-3"])
+    def test_a_bare_number_naming_another_hole_is_that_hole(self, label):
+        # A sheet of hole 1 whose label names hole 2 by its number: S-3 is
+        # not hole 1's S-3, so the depth decides.
+        sheet = atterberg(investigation="1", sample=label, depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("1"), boring("2")], lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "1"
+        assert sheet.linked_sample_id == "S-1"
+        assert self._conflicts(record) == []
+
+    @pytest.mark.parametrize("label", ["S-3, 2 - 3.5 ft", "S-3 2 to 3",
+                                       "S-3 at 2 ft"])
+    def test_a_number_in_a_range_or_a_depth_is_no_hole(self, label):
+        sheet = atterberg(investigation="1", sample=label, depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("1"), boring("2")], lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert "Linked to S-3 by the label" in entry.detail
+
+    def test_the_log_s_depth_is_said_in_the_printed_unit_and_rounded(self):
+        hole = boring("B-1")
+        hole.samples[2].top = q(4.4651, "m")
+        sheet = atterberg(sample="S-3", depth_ft=2.0)
+        record = reconcile(build_record(investigations=[hole],
+                                        lab_tests=[sheet]))
+
+        (entry,) = self._conflicts(record)
+        assert "a depth of 2 ft; its log puts S-3 at 14.6 ft" in entry.detail
+
+    def test_several_named_samples_one_at_the_depth_is_that_one(self):
+        sheet = atterberg(sample="S-2,S-3", depth_ft=14.5)
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        assert self._conflicts(record) == []
+
+    def test_a_printed_interval_holding_the_log_s_point_raises_nothing(self):
+        # The sheet prints the interval it sampled; the log holds one point
+        # inside it, 0.4 ft below the printed top.
+        hole = boring("B-1")
+        hole.samples[2].top, hole.samples[2].bottom = q(13.6, "ft"), None
+        sheet = atterberg(sample="S-3", depth_ft=13.2)
+        sheet.depth_bottom = q(14.9, "ft")
+        record = reconcile(build_record(investigations=[hole],
+                                        lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        assert self._conflicts(record) == []
+
+    def test_the_printed_interval_is_widened_by_the_tolerance(self):
+        # 11.8-14.2 ft printed, 14.5-16.0 ft logged: 0.3 ft apart.
+        sheet = atterberg(sample="S-3", depth_ft=11.8)
+        sheet.depth_bottom = q(14.2, "ft")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        assert self._conflicts(record) == []
+
+    def test_an_interval_short_of_the_sample_is_still_said(self):
+        sheet = atterberg(sample="S-3", depth_ft=2.0)
+        sheet.depth_bottom = q(3.5, "ft")
+        record = reconcile(build_record(lab_tests=[sheet]))
+
+        assert sheet.linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert "within" not in entry.detail and "has S-1 there" in \
+            entry.detail
+
+    def test_a_sample_word_beside_another_hole_s_name_is_not_counted(self):
+        # "S-3 (B-2)" printed under B-1: the label names another hole, so its
+        # sample word names no sample of B-1 and the depth decides.
+        sheet = atterberg(investigation="B-1", sample="S-3 (B-2)",
+                          depth_ft=2.0)
+        record = reconcile(build_record(
+            investigations=[boring("B-1"), boring("B-2")],
+            lab_tests=[sheet]))
+
+        assert sheet.linked_investigation_id == "B-1"
+        assert sheet.linked_sample_id == "S-1"
+        assert self._conflicts(record) == []
+
+    def test_a_summary_row_is_linked_by_its_own_columns(self):
+        table = summary_table()
+        record = reconcile(build_record(lab_tests=[table]))
+
+        links = [(r.linked_investigation_id, r.linked_sample_id)
+                 for r in table.result.rows]
+        assert links == [("B-1", "S-1"), ("B-1", "S-3")]
+        assert table.linked_investigation_id == ""      # the table: none
+        assert self._conflicts(record) == []
+
+    def test_a_summary_row_the_depth_disagrees_with_is_said(self):
+        table = summary_table()
+        table.result.rows[1].depth_top = q(7.0, "ft")    # S-2's depth
+        record = reconcile(build_record(lab_tests=[table]))
+
+        assert table.result.rows[1].linked_sample_id == "S-3"
+        (entry,) = self._conflicts(record)
+        assert entry.detail.startswith("1 summary row names sample S-3")
+        assert entry.pages == [14]
+
+    def test_a_summary_row_naming_no_hole_is_left_unlinked(self):
+        table = summary_table()
+        table.result.rows[0].investigation_id = ""
+        table.result.rows[0].sample_id = ""
+        record = reconcile(build_record(lab_tests=[table]))
+
+        assert table.result.rows[0].linked_investigation_id == ""
+        assert not [e for e in kinds_of(record, "partial")
+                    if "summary table" in e.detail]
 
 
 def _calc(kind, subject="", results=(), pages=(20, 21)):

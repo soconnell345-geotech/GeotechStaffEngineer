@@ -19,6 +19,11 @@ to be. Those are named in the writer's notes and kept in the record, and this
 file asserts WHICH they are -- so the number cannot drift without a test
 saying so.
 
+A summary row is written only in a hole the file holds, and makes none of its
+own (RI-56). A real record holds the logs its rows name; these sheets come
+without them, so each summary table is written beside a bare log of every
+hole its rows print and no sheet names.
+
 It SKIPS when the gitignored raw folder is absent, which is everywhere but the
 owner's machine. ``report_ingest/tests/test_diggs_lab.py`` walks the same path
 on synthetic records, so CI still covers it.
@@ -35,7 +40,7 @@ from module_work.report_ingest_harness import lab_truth_records as T
 from report_ingest.diggs_writer import (
     diggs_roundtrip_gate, diggs_schema_gate, write_diggs,
 )
-from report_ingest.model import Project
+from report_ingest.model import Investigation, Project, SummaryTableResult
 
 pytestmark = pytest.mark.skipif(
     not T.truth_available(),
@@ -60,6 +65,21 @@ def _ids():
     return [t["id"] for t in _truths()]
 
 
+def _row_holes(tests):
+    """A bare log for each hole a summary row prints and no sheet names."""
+    sheets = {(t.investigation_id or "").strip() for t in tests
+              if not isinstance(t.result, SummaryTableResult)}
+    names = []
+    for test in tests:
+        if isinstance(test.result, SummaryTableResult):
+            for row in test.result.rows:
+                name = (row.investigation_id or "").strip()
+                if name and name not in sheets and name not in names:
+                    names.append(name)
+    return [Investigation(investigation_id=name, depth_unit="m")
+            for name in names]
+
+
 @pytest.fixture(scope="module")
 def written():
     """``{sheet id: (tests, xml, notes)}`` for every truth sheet."""
@@ -67,7 +87,7 @@ def written():
     for truth in _truths():
         tests = T.lab_tests_from_truth(truth)
         notes = []
-        xml = write_diggs(tests, Project(name="Report"),
+        xml = write_diggs(_row_holes(tests) + tests, Project(name="Report"),
                           document_id=truth["id"], notes=notes)
         out[truth["id"]] = (tests, xml, notes[0])
     return out
@@ -83,7 +103,7 @@ def test_every_truth_sheet_writes_valid_diggs(written, sheet_id):
 @pytest.mark.parametrize("sheet_id", _ids())
 def test_every_truth_sheet_round_trips(written, sheet_id):
     tests, xml, _notes = written[sheet_id]
-    ok, diffs = diggs_roundtrip_gate(xml, tests)
+    ok, diffs = diggs_roundtrip_gate(xml, _row_holes(tests) + tests)
     assert ok, f"{sheet_id}: " + "; ".join(diffs[:6])
 
 

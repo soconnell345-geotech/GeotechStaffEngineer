@@ -575,6 +575,20 @@ def _lab_hole(test: LabTest) -> str:
     return (test.linked_investigation_id or test.investigation_id or "")
 
 
+def _row_hole(row: SummaryRow) -> str:
+    """The hole a summary row is written in, as :func:`_lab_hole` is a
+    sheet's: the one the reconciler linked it to (RI-56), else the boring
+    the row printed.
+
+    A printed boring no log describes gets the same hole a sheet printing
+    it would (``_Writer._synthesise_holes``): one per printed name, shared
+    by the sheets and rows that print it, named as printed. A row printing
+    no boring has no hole. The writer, its synthesised holes and the
+    round-trip gate all ask this one function.
+    """
+    return (row.linked_investigation_id or row.investigation_id or "")
+
+
 def _unique(stem: str, issued: set, counts: Dict[str, int]) -> str:
     """``stem``, or ``stem_2``, ``stem_3`` ... -- the first not yet issued."""
     n = counts.get(stem, 0)
@@ -655,13 +669,18 @@ class _Writer:
         is created with its identifier and nothing else, and said out loud in
         the notes -- an identifier a lab sheet printed is a real fact, and a
         depth, a position and a layer sequence it does not have are not
-        invented to go with it.
+        invented to go with it. A summary row's printed boring counts as a
+        sheet's does: one hole per printed name, shared by the sheets and
+        rows that print it; the note says which named it.
         """
         known = {inv.investigation_id.strip()
                  for inv in self.investigations if inv.investigation_id}
         wanted: Dict[str, str] = {}
-        for name, depth in self._lab_positions():
+        by_sheet: set = set()
+        for name, depth, row in self._lab_positions():
             name = name.strip()
+            if name and not row:
+                by_sheet.add(name)
             if not name or name in known or name in wanted:
                 continue
             wanted[name] = depth.unit if depth is not None else ""
@@ -670,24 +689,27 @@ class _Writer:
                                  units_known=bool(unit))
             self._synthesised.add(id(hole))
             self.investigations.append(hole)
+            what = ("a laboratory sheet" if name in by_sheet
+                    else "a row of a laboratory summary table")
             self.notes.synthesised.append(
-                f"{name}: named by a laboratory sheet; its log is left out "
+                f"{name}: named by {what}; its log is left out "
                 f"of this file (depths in an unknown unit), so it is written "
                 f"as a Borehole carrying its identifier only"
                 if name in self._left_out_ids else
-                f"{name}: named by a laboratory sheet and described by no "
+                f"{name}: named by {what} and described by no "
                 f"log in this record; written as a Borehole carrying its "
                 f"identifier only")
 
-    def _lab_positions(self) -> List[Tuple[str, Optional[Quantity]]]:
-        """``(boring, depth)`` for every lab result this file will position."""
-        out: List[Tuple[str, Optional[Quantity]]] = []
+    def _lab_positions(self) -> List[Tuple[str, Optional[Quantity], bool]]:
+        """``(boring, depth, a summary row?)`` for every lab result this file
+        will position."""
+        out: List[Tuple[str, Optional[Quantity], bool]] = []
         for test in self.lab:
             if isinstance(test.result, SummaryTableResult):
-                out.extend((row.investigation_id, row.depth_top)
+                out.extend((_row_hole(row), row.depth_top, True)
                            for row in test.result.rows)
             else:
-                out.append((_lab_hole(test), test.depth_top))
+                out.append((_lab_hole(test), test.depth_top, False))
         return out
 
     # -- id bookkeeping ----------------------------------------------------
@@ -2466,7 +2488,9 @@ class _Writer:
         cannot be one positioned result. Each row becomes its own Test with
         no procedure element: a row is one sample's results gathered out of
         several tests, and naming one procedure for it would say the
-        laboratory ran a test it did not.
+        laboratory ran a test it did not. A row goes in the hole the
+        reconciler linked it to, else the hole of its printed boring
+        (:func:`_row_hole`).
         """
         result = test.result
         if not isinstance(result, SummaryTableResult):
@@ -2474,12 +2498,13 @@ class _Writer:
         for i, row in enumerate(result.rows):
             where = (f"summary row {i + 1} of lab test {n + 1} "
                      f"({row.investigation_id or 'no boring named'})")
-            placed = self._place(holes, row.investigation_id, row.depth_top,
+            hole = _row_hole(row).strip()
+            placed = self._place(holes, hole, row.depth_top,
                                  row.depth_bottom, where)
             if placed is None:
                 continue
             gml_id, top, bottom = placed
-            values = _Values(self, where, row.investigation_id.strip(), top)
+            values = _Values(self, where, hole, top)
             self._summary_values(row, values)
             stem = f"labsummary_{_ncname(gml_id)}_{n}_{i}"
             if values:
@@ -3154,7 +3179,7 @@ def _lab_targets(test: LabTest) -> List[Tuple[str, str, Optional[Quantity],
     """
     result = test.result
     if isinstance(result, SummaryTableResult):
-        return [(f"{test.kind} row {i + 1}", row.investigation_id,
+        return [(f"{test.kind} row {i + 1}", _row_hole(row),
                  row.depth_top, row)
                 for i, row in enumerate(result.rows)]
     return [(test.kind, _lab_hole(test), test.depth_top, result)]

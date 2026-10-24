@@ -1481,7 +1481,9 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
     ``lab/<sheet id>.json`` as it finishes and a later call skips it.
     """
     from report_ingest.engine import CostMeter
-    from report_ingest.lab_reader import link_from_label_enabled
+    from report_ingest.lab_reader import (
+        floor_per_page_enabled, link_from_label_enabled,
+    )
     from report_ingest.lab_scoring import pages_of, report_of, score_one_sheet
 
     if not truth_dir.is_dir():
@@ -1572,6 +1574,10 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "link_from_label": (after.link_from_label
                                 if after.link_from_label is not None
                                 else link_from_label_enabled()),
+            # ... and of the per-page floor switch (RI-56), the same way.
+            "floor_per_page": (after.floor_per_page
+                               if after.floor_per_page is not None
+                               else floor_per_page_enabled()),
             # What the visual-scales voters could act on (BACKLOG RI-05).
             "visual_scales_on": visual_scales_enabled(),
             "page_sources": sources,
@@ -1660,6 +1666,9 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
         # written before the switch existed ran with it off.
         "link_from_label": sorted({bool(r.get("link_from_label"))
                                    for r in rows}),
+        # ... and the per-page floor switch's (RI-56), the same way.
+        "floor_per_page": sorted({bool(r.get("floor_per_page"))
+                                  for r in rows}),
         "sets": sets,
         "kinds": by_kind,
         "per_sheet": [{
@@ -1724,6 +1733,13 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
     if arms:
         out.append("Specimen-label paragraph (RI-07, "
                    "GEOTECH_INGEST_LAB_LINK_FROM_LABEL): "
+                   + " and ".join("on" if a else "off" for a in arms)
+                   + (" -- MIXED: these sheets did not all run in one arm"
+                      if len(arms) > 1 else "") + ".")
+    arms = lab.get("floor_per_page")
+    if arms:
+        out.append("Per-page floor in the brief (RI-56, "
+                   "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE): "
                    + " and ".join("on" if a else "off" for a in arms)
                    + (" -- MIXED: these sheets did not all run in one arm"
                       if len(arms) > 1 else "") + ".")
@@ -4462,7 +4478,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     from report_ingest.calc_reader import page_images_enabled
     from report_ingest.engine import CostMeter
     from report_ingest.graph import Budgets, ingest_report, output_paths
-    from report_ingest.lab_reader import link_from_label_enabled
+    from report_ingest.lab_reader import (
+        floor_per_page_enabled, link_from_label_enabled,
+    )
     from report_ingest.log_templates import load_templates
 
     runs_dir = Path(review_dir) if review_dir is not None else out / "runs"
@@ -4615,12 +4633,14 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             # (BACKLOG RI-21), and what the visual-scales voters did in its
             # item files (RI-05).
             "visual_scales_on": visual_scales_enabled(),
-            # The two readers' switches as this stage ran them (RI-67):
-            # every calculation page as a picture (RI-17) and the
-            # specimen-label paragraph (RI-07). Each calc and lab item
-            # file under items/ says the arm its own reader ran in.
+            # The readers' switches as this stage ran them (RI-67):
+            # every calculation page as a picture (RI-17), the
+            # specimen-label paragraph (RI-07) and the per-page lab floor
+            # in the brief (RI-56). Each calc and lab item file under
+            # items/ says the arm its own reader ran in.
             "calc_page_images": page_images_enabled(),
             "lab_link_from_label": link_from_label_enabled(),
+            "lab_floor_per_page": floor_per_page_enabled(),
             **_ingest_steps(folder),
         }
         run_file.write_text(_dumps(blob), encoding="utf-8")
@@ -4899,6 +4919,10 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             "Specimen-label paragraph (RI-07, "
             "GEOTECH_INGEST_LAB_LINK_FROM_LABEL)",
             _arms(r.get("lab_link_from_label") for r in rows), "reports"))
+        out.append(_arm_line(
+            "Per-page lab floor in the brief (RI-56, "
+            "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE)",
+            _arms(r.get("lab_floor_per_page") for r in rows), "reports"))
     if ingest.get("failures"):
         out += ["", "**Reports that failed and are NOT in any number below:**"]
         out += [f"- {rid}: {why}" for rid, why in ingest["failures"].items()]

@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import pytest
 
-from report_ingest.lab_floor import floor_from_tables, kind_from_title
+from report_ingest.floor import MergeLog
+from report_ingest.lab_floor import (
+    floor_from_tables, kind_from_title, merge_lab_tests,
+)
 from report_ingest.lab_reader import (
     KIND_DEFINITIONS, LAB_READER_SYSTEM, LAB_TOOLS, LINK_FROM_LABEL,
-    LINK_FROM_LABEL_ENV, MAX_LAB_PAGES, LabSheetReading, MAX_MODEL_CALLS,
+    FLOOR_PER_PAGE_ENV, LINK_FROM_LABEL_ENV, MAX_LAB_PAGES, LabSheetReading,
+    MAX_MODEL_CALLS, floor_per_page_enabled, use_floor_per_page,
     ReadPassing, ReadPoint, ReadProv, ReadQuantity, ReadReported, ReadRow,
     ReadSeries, ReadSpecimen, ReadTest, SERIES_NAMES, Unsettled, lab_windows,
     link_from_label_enabled, read_lab_sheet, reader_system, serialise_page,
@@ -985,3 +989,520 @@ class TestTheFloor:
         assert [t["kind"] for t in blob["model_tests"]] == \
             ["gradation", "atterberg"]
         assert blob["reconciled"] > 0
+
+
+# ---------------------------------------------------------------------------
+# RI-56: each page its own link; a compaction named by its parts
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def water_run(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_water_content_run
+    doc = _open(build_water_content_run(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def density_run(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_density_run
+    doc = _open(build_density_run(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def bare_run(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_bare_run
+    doc = _open(build_bare_run(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def limits_trials(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_limits_trials
+    doc = _open(build_limits_trials(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def bare_empty_run(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_bare_empty_run
+    doc = _open(build_bare_empty_run(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def particle_density_page(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_particle_density_page
+    doc = _open(build_particle_density_page(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def no_per_page_switch(monkeypatch):
+    monkeypatch.delenv(FLOOR_PER_PAGE_ENV, raising=False)
+
+
+class TestEachPageItsOwnLink:
+
+    def test_each_page_s_values_carry_that_page_s_link(self, water_run):
+        floor = floor_from_tables(water_run, [0, 1, 2], "RXX")
+        got = [(t.kind, t.investigation_id,
+                t.depth_top.value if t.depth_top else None, t.result.wc)
+               for t in floor.tests]
+        assert got == [("moisture_content", "B-7", 3.0, 21.4),
+                       ("moisture_content", "B-8", 6.0, 17.9),
+                       ("moisture_content", "", None, 25.0)]
+
+    def test_a_page_printing_no_link_is_left_unbound_and_named(
+            self, water_run):
+        floor = floor_from_tables(water_run, [0, 1, 2], "RXX")
+        assert floor.unbound == [{"page": 2, "values": 2, "linked": [0, 1]}]
+        unbound = floor.tests[-1]
+        assert unbound.investigation_id == "" and unbound.depth_top is None
+
+    def test_a_sheet_printing_no_link_anywhere_names_no_page(self, water_run):
+        floor = floor_from_tables(water_run, [2], "RXX")
+        assert floor.unbound == []
+
+    def test_the_brief_shows_the_floor_as_before_with_the_switch_off(
+            self, water_run, no_per_page_switch):
+        # Switch off, the brief is as before RI-56: one test under the
+        # first page's link, its values the first read.
+        floor = floor_from_tables(water_run, [0, 1, 2], "RXX")
+        (before,) = floor.as_before.tests
+        assert (before.investigation_id, before.result.wc) == ("B-7", 21.4)
+        engine = FakeEngine([{"final": LabSheetReading(tests=[])}])
+        result = read_lab_sheet(water_run, [0, 1, 2], engine,
+                                report_id="RXX")
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        record = brief.split("THE STARTING RECORD")[1].split("THE PAGE")[0]
+        assert "boring 'B-7'" in record and "wc 21.4" in record
+        assert "17.9" not in record and "wc 25" not in record
+        # ... while the merge, and the record, take each page's own.
+        assert [t.investigation_id for t in result.tests] == \
+            ["B-7", "B-8", ""]
+        (row,) = [u for u in result.unresolved
+                  if u["what"] == "lab_tests floor link"]
+        assert row["page"] == 2 and "left unbound" in row["why"]
+        assert "page(s) 0, 1" in row["why"]
+
+
+class TestTheTitleKindIsCorrected:
+    """The reader's kinds: a density or water content test reports that one
+    measurement and nothing else; a compaction prints its own parts; a
+    particle density is the specific gravity of solids (FHWA-NHI-06-088
+    Vol. I, 5.3.6)."""
+
+    @pytest.mark.parametrize("lines,kind", [
+        (["Particle density by gas jar"], "specific_gravity"),
+        (["Particle density of soil solids"], "specific_gravity"),
+        (["BULK AND PARTICLE DENSITY"], "density"),
+        (["DRY DENSITY", "Particle density assumed"], "density"),
+        # a mould, the word compaction or a maximum dry density alone is
+        # not enough; two different ones are
+        (["BULK DENSITY", "Mould volume, cm3"],
+         "density"),
+        (["BULK DENSITY", "Mould mass, grams", "Compacted soil and mould"],
+         "compaction"),
+        # the review's six: field and index density tests quote a
+        # compaction and are not one
+        (["Field density, fill lift 3", "Proctor maximum 1.95 Mg/m3"],
+         "density"),
+        (["NUCLEAR GAUGE DENSITY", "Relative compaction (%)"], "density"),
+        (["SAND CONE DENSITY", "Max. dry density (pcf)",
+          "Relative compaction (%)"], "density"),
+        (["MAXIMUM INDEX DENSITY", "Mold volume (cm3)",
+          "Compacted on a vibrating table"], "density"),
+        (["RELATIVE DENSITY", "Maximum dry density", "Minimum dry density"],
+         "density"),
+        (["UNIT WEIGHT AND MOISTURE CONTENT", "Mold no. 3"],
+         "moisture_content"),
+        (["In-place density of fill", "Optimum moisture content 12 %"],
+         "density"),
+        # round 2: in situ and drive cylinder tests, and a lab sheet giving
+        # a relative compaction, quote a compaction's maximum dry density
+        (["IN SITU DENSITY, LIFT 4", "Maximum dry density 1.98 Mg/m3",
+          "Relative compaction 96 %"], "density"),
+        (["Density by drive cylinder", "MDD (Mg/m3)",
+          "Relative compaction (%)"], "density"),
+        (["LAB DENSITY RESULTS, FILL", "Relative compaction (%)",
+          "MDD (Mg/m3)"], "density"),
+        # round 3: other field methods, and a compaction given as a percent
+        (["DRIVE TUBE DENSITY", "Max. dry density (Mg/m3)",
+          "Compaction (%)"], "density"),
+        (["CORE CUTTER DENSITY", "MDD (Mg/m3)", "Degree of compaction (%)"],
+         "density"),
+        (["DENSITY - RUBBER BALLOON METHOD", "Maximum dry density (pcf)",
+          "Compacted fill, layer 2"], "density"),
+        (["LAB DENSITY RESULTS", "Percent compaction (%)",
+          "Max. dry density (pcf)"], "density"),
+        (["Dry density / water content relationship"], "compaction"),
+        (["Water content", "Maximum dry density", "Optimum moisture"],
+         "compaction"),
+        (["BULK DENSITY"], "density"),
+        (["MOISTURE CONTENT", "Natural water content (%)"],
+         "moisture_content"),
+        (["DRY DENSITY", "CBR", "Rammer: 2.5 kg"], "density"),
+        (["PROCTOR TEST, STANDARD EFFORT"], "compaction"),
+        (["ATTERBERG LIMITS", "Mould"], "atterberg"),
+    ])
+    def test_the_title_kind(self, lines, kind):
+        assert kind_from_title(lines)[0] == kind
+
+    def test_the_line_naming_the_part_is_the_title(self):
+        assert kind_from_title(["BULK DENSITY", "Rammer: 2.5 kg"]) == \
+            ("compaction", "Rammer: 2.5 kg")
+
+    def test_the_rule_before_it_is_kept_for_the_brief(self):
+        assert kind_from_title(["BULK DENSITY", "Mould volume, cm3"],
+                               corrected=False) == ("density", "BULK DENSITY")
+        assert kind_from_title(["PARTICLE DENSITY"], corrected=False) == \
+            ("density", "PARTICLE DENSITY")
+
+
+#: The starting record master (before RI-56) gives the model for
+#: :func:`lab_fixtures.build_density_run`, byte for byte. With the per-page
+#: switch off the brief must still be exactly this.
+_MASTER_DENSITY_RECORD = (
+    "THE STARTING RECORD (read off the sheet's title and its detected "
+    "tables before you were called, with the page and box each came from "
+    "and the reader's confidence -- build on it; add, correct with the box "
+    "and a note, never drop)\n"
+    "kind from the title: density ('BULK DENSITY')\n"
+    "link printed on the sheet: boring 'TP-4', depth 1 m\n"
+    "density (page 0 box 60,150,310,182, page 0 box 60,150,310,182, "
+    "page 1 box 60,150,310,182, page 1 box 60,150,310,182)  "
+    "[confidence 0.85]\n"
+    "  wc 14.2, wet_density 2.05 Mg/m3\n")
+
+
+def _brief_and_result(doc, pages, on=None):
+    engine = FakeEngine([{"final": LabSheetReading(tests=[])}])
+    if on is None:
+        result = read_lab_sheet(doc, pages, engine, report_id="RXX")
+    else:
+        with use_floor_per_page(on):
+            result = read_lab_sheet(doc, pages, engine, report_id="RXX")
+    (call,) = engine.calls
+    return call["messages"][0]["content"][0]["text"], call["system"], result
+
+
+def _record_of(brief):
+    start = brief.index("THE STARTING RECORD")
+    return brief[start:brief.index("\nTHE PAGE\n", start)]
+
+
+class TestThePerPageFloorSwitch:
+    """RI-56: the merge always takes the per-page floor and the corrected
+    kind; GEOTECH_INGEST_LAB_FLOOR_PER_PAGE also shows them to the model."""
+
+    def test_off_by_default_the_brief_is_master_s_byte_for_byte(
+            self, density_run, no_per_page_switch):
+        brief, _system, result = _brief_and_result(density_run, [0, 1])
+        assert not floor_per_page_enabled()
+        assert _record_of(brief) == _MASTER_DENSITY_RECORD
+        assert result.floor_per_page is False
+        assert "floor_per_page" not in result.to_dict()
+
+    @pytest.mark.parametrize("fixture,pages", [
+        ("density_run", [0, 1]), ("water_run", [0, 1, 2])])
+    def test_the_switch_changes_the_starting_record_and_nothing_else(
+            self, request, fixture, pages, no_per_page_switch):
+        doc = request.getfixturevalue(fixture)
+        off, off_system, _ = _brief_and_result(doc, pages)
+        on, on_system, _ = _brief_and_result(doc, pages, on=True)
+        assert on != off and on_system == off_system
+        assert on.replace(_record_of(on), _record_of(off)) == off
+
+    def test_on_the_brief_shows_the_corrected_kind_and_each_page_s_link(
+            self, density_run, no_per_page_switch):
+        brief, _system, result = _brief_and_result(density_run, [0, 1],
+                                                   on=True)
+        record = _record_of(brief)
+        assert "kind from the title: compaction ('Mould volume (cm3): " \
+            "944')" in record
+        assert "link printed on page 0: boring 'TP-4', depth 1 m" in record
+        # the water content and density are the compaction's, not a
+        # moisture test of their own
+        assert record.count("link printed on its page: boring 'TP-5', "
+                            "depth 2 m") == 1
+        assert "moisture_content" not in record
+        assert "also printed: wet_density 2.11 Mg/m3, wc 12.6" in record
+        assert result.floor_per_page is True
+        assert result.to_dict()["floor_per_page"] is True
+
+    def test_a_sheet_whose_floor_is_the_same_reads_the_same_in_both_arms(
+            self, atterberg, no_per_page_switch):
+        doc, _gt = atterberg
+        off, _system, _result = _brief_and_result(doc, [0])
+        on, _system, result = _brief_and_result(doc, [0], on=True)
+        assert on == off and result.floor_per_page is True
+
+    def test_on_a_page_printing_no_link_is_said_to_be_unbound(
+            self, water_run, no_per_page_switch):
+        brief, _system, _result = _brief_and_result(water_run, [0, 1, 2],
+                                                    on=True)
+        assert "link printed on its page: none (its values are left " \
+            "unbound)\n  wc 25," in _record_of(brief)
+
+    def test_the_merge_is_the_same_in_both_arms(self, water_run,
+                                                no_per_page_switch):
+        _b, _s, off = _brief_and_result(water_run, [0, 1, 2], on=False)
+        _b, _s, on = _brief_and_result(water_run, [0, 1, 2], on=True)
+        assert [t.model_dump() for t in on.tests] == \
+            [t.model_dump() for t in off.tests]
+        assert on.floor_kind == off.floor_kind == "moisture_content"
+
+    def test_the_block_outranks_the_environment(self, monkeypatch):
+        monkeypatch.setenv(FLOOR_PER_PAGE_ENV, "on")
+        assert floor_per_page_enabled()
+        with use_floor_per_page(False):
+            assert not floor_per_page_enabled()
+        assert floor_per_page_enabled()
+
+
+class TestTheMergeFollowsThePage:
+    """RI-56: with each page's own link, a page that prints only a depth
+    (or nothing) matches more than one of the model's specimens; the page
+    the model put each one on decides."""
+
+    @staticmethod
+    def _test(kind, page, method, **over):
+        from report_ingest.model import CBRResult, LabTest, Provenance
+        base = dict(kind=kind, pages=[10, 11, 12],
+                    prov=[Provenance(page=page, method=method,
+                                     confidence=0.85)])
+        result = over.pop("result")
+        base.update(over)
+        return LabTest(result=CBRResult(**result), **base)
+
+    def test_a_continuation_page_joins_the_specimen_above_it(self):
+        from report_ingest.model import Quantity
+
+        def m(value):
+            return Quantity(value=value, unit="m")
+
+        floor = [
+            self._test("cbr", 10, "tables", sample_id="S-5",
+                       depth_top=m(3.0), result={"cbr_percent": 12.0}),
+            # page 11 continues S-5 and prints no sample or depth
+            self._test("cbr", 11, "tables", result={"wc": 8.0}),
+            self._test("cbr", 12, "tables", sample_id="S-6",
+                       depth_top=m(3.1), result={"cbr_percent": 30.0,
+                                                 "wc": 9.0}),
+        ]
+        model = [
+            self._test("cbr", 10, "model", investigation_id="B-1",
+                       sample_id="S-5", depth_top=m(3.0),
+                       result={"cbr_percent": 12.0, "wc": 8.0}),
+            self._test("cbr", 12, "model", investigation_id="B-1",
+                       sample_id="S-6", depth_top=m(3.1),
+                       result={"cbr_percent": 30.0, "wc": 9.0}),
+        ]
+        merged, log = merge_lab_tests(floor, model, MergeLog())
+        assert len(merged) == 2
+        assert log.disagreements == []
+        assert [t.result.cbr_percent for t in merged] == [12.0, 30.0]
+
+
+def _moisture(page, method, wc, dry=None, **link):
+    from report_ingest.model import (
+        LabTest, MoistureDensityResult, Provenance, Quantity,
+    )
+    if "depth" in link:
+        link["depth_top"] = Quantity(value=link.pop("depth"), unit="m")
+    return LabTest(
+        kind="moisture_content", pages=[10, 11, 12],
+        prov=[Provenance(page=page, method=method, confidence=0.85)],
+        result=MoistureDensityResult(
+            kind="moisture_content", wc=wc,
+            dry_density=(Quantity(value=dry, unit="pcf")
+                         if dry is not None else None)), **link)
+
+
+class TestNoValueThatIsNotTheSpecimens:
+    """RI-56 review, round 2: the per-page floor reads no water content
+    from a mass of water, and no specimen's value from a row of trials; and
+    a page or a corrected kind with no value makes no empty test."""
+
+    def test_a_mass_of_water_or_a_row_of_trials_is_no_water_content(
+            self, limits_trials):
+        floor = floor_from_tables(limits_trials, [0], "RXX")
+
+        assert floor.kind == ""
+        assert floor.tests
+        assert all(getattr(t.result, "wc", None) is None
+                   and getattr(t.result, "water_content", None) is None
+                   for t in floor.tests)
+        assert [t.result.ll for t in floor.tests
+                if t.kind == "atterberg"] == [41.0]
+
+    def test_the_rows_one_at_a_time(self):
+        from report_ingest.lab_floor import _Values, _read_property_table
+        rows = [["Moisture lost, mass (g)", "12.7"],
+                ["Moisture content, trials (%)", "38.2", "41.5", "44.0"],
+                ["Water content, natural (%)", "23.6"]]
+        values = _Values()
+        _read_property_table(rows, values, 0.8, strict=True)
+
+        assert values.index["wc"][0] == 23.6
+
+    @pytest.mark.parametrize("label", [
+        "Moisture content (% by weight)", "Water content, % by wt.",
+        "Moisture content, % dry weight", "Water content (% of dry mass)"])
+    def test_a_percent_of_a_weight_is_a_water_content(self, label):
+        from report_ingest.lab_floor import _Values, _read_property_table
+        values = _Values()
+        _read_property_table([[label, "17.4"]], values, 0.8, strict=True)
+
+        assert values.index["wc"][0] == 17.4
+
+    @pytest.mark.parametrize("label", [
+        "Moisture (gm)", "Moisture, g", "Moisture (grams)",
+        "Moisture lost, gm", "Moisture (Mw)", "Moisture (lb)"])
+    def test_a_mass_in_any_spelling_is_no_water_content(self, label):
+        from report_ingest.lab_floor import _Values, _read_property_table
+        values = _Values()
+        _read_property_table([[label, "9.65"]], values, 0.8, strict=True)
+
+        assert "wc" not in values.index
+
+    def test_a_run_of_bare_pages_with_no_value_makes_no_test(
+            self, bare_empty_run):
+        floor = floor_from_tables(bare_empty_run, [0, 1], "RXX")
+
+        assert floor.kind == "atterberg"
+        assert floor.tests == []
+        # one sheet with no value still gives its kind alone
+        assert [t.kind for t in floor_from_tables(
+            bare_empty_run, [0], "RXX").tests] == ["atterberg"]
+
+    def test_each_bare_page_of_a_run_is_its_own_specimen(self, bare_run):
+        floor = floor_from_tables(bare_run, [0, 1, 2], "RXX")
+
+        assert [(t.kind, t.result.wc, t.prov[1].page)
+                for t in floor.tests] == [
+            ("moisture_content", 23.6, 0), ("moisture_content", 19.2, 1)]
+        # the brief's floor is as before: one specimen for the run
+        assert len(floor.as_before.tests) == 1
+
+    def test_a_corrected_kind_with_no_value_makes_no_test(
+            self, particle_density_page):
+        floor = floor_from_tables(particle_density_page, [0], "RXX")
+
+        assert floor.kind == "specific_gravity"
+        assert floor.tests == []
+
+
+class TestAFloorValueThatPinsNoSpecimen:
+    """RI-56 review: a floor test whose page prints no boring and no depth,
+    or whose link matches more than one of the model's tests of its kind,
+    may fill an empty slot but never wins a contradiction."""
+
+    def test_a_bare_page_the_model_missed_overrules_nothing(
+            self, water_run):
+        # The model read the two linked pages and missed the bare page's
+        # specimen, whose 25.0 % the floor would put on B-8.
+        floor = floor_from_tables(water_run, [0, 1, 2], "RXX")
+        model = [
+            _moisture(0, "model", 21.4, 101.2, investigation_id="B-7"),
+            _moisture(1, "model", 17.9, None, investigation_id="B-8"),
+        ]
+        model[0].depth_top = floor.tests[0].depth_top
+        model[1].depth_top = floor.tests[1].depth_top
+        merged, log = merge_lab_tests(floor.tests, model, MergeLog(),
+                                      title_kind=floor.kind)
+
+        b8 = next(t for t in merged if t.investigation_id == "B-8")
+        assert b8.result.wc == 17.9
+        assert b8.result.dry_density.value == 106.5     # B-8's own page
+        assert not [d for d in log.disagreements if d["kept"] == "floor"]
+        (row,) = [d for d in log.disagreements if d["floor"] == "25"]
+        assert row["kept"] == "model" and "do not pin" in row["why"]
+        assert any(a.value == "25" and "did not overrule" in a.note
+                   for a in b8.prov[0].alternatives)
+
+    def test_a_depth_matching_two_specimens_overrules_neither(self):
+        floor = [_moisture(10, "tables", 33.7, depth=3.25)]
+        model = [
+            _moisture(10, "model", 8.6, investigation_id="TP-6", depth=3.25),
+            _moisture(10, "model", 6.9, investigation_id="TP-7", depth=3.25),
+        ]
+        merged, log = merge_lab_tests(floor, model, MergeLog())
+
+        assert [t.result.wc for t in merged] == [8.6, 6.9]
+        (row,) = log.disagreements
+        assert row["kept"] == "model" and row["floor"] == "33.7"
+
+    def test_it_still_fills_an_empty_slot(self):
+        floor = [_moisture(10, "tables", 33.7, 94.1, depth=3.25)]
+        model = [
+            _moisture(10, "model", 33.7, investigation_id="TP-6", depth=3.25),
+            _moisture(10, "model", 6.9, investigation_id="TP-7", depth=3.25),
+        ]
+        merged, _log = merge_lab_tests(floor, model, MergeLog())
+
+        assert merged[0].result.dry_density.value == 94.1
+
+    def test_a_link_that_pins_one_specimen_still_wins(self):
+        floor = [_moisture(10, "tables", 33.7, investigation_id="TP-6",
+                           depth=3.25)]
+        model = [_moisture(10, "model", 8.6, investigation_id="TP-6",
+                           depth=3.25)]
+        merged, log = merge_lab_tests(floor, model, MergeLog())
+
+        assert merged[0].result.wc == 33.7
+        assert log.disagreements[0]["kept"] == "floor"
+
+
+class TestAValueNamedFloorTestJoinsTheModelsTest:
+    """RI-56 review: a floor test named by its values, on a specimen the
+    model reported as another kind, goes into that test's fields."""
+
+    def _limits(self):
+        from report_ingest.model import (
+            AtterbergResult, LabTest, Provenance, Quantity,
+        )
+        return LabTest(
+            kind="atterberg", investigation_id="TP-8", sample_id="S-6",
+            depth_top=Quantity(value=3.75, unit="m"), pages=[10],
+            prov=[Provenance(page=10, method="model", confidence=0.85)],
+            result=AtterbergResult(ll=43.0, pl=21.0, pi=22.0))
+
+    def test_a_water_content_beside_the_limits_is_the_limits_test_s(self):
+        # Its slot in the Atterberg test where it has one; the density, which
+        # has none there, in the test's fields.
+        floor = [_moisture(10, "tables", 18.3, 95.6, sample_id="S-6",
+                           depth=3.75)]
+        merged, log = merge_lab_tests(floor, [self._limits()], MergeLog(),
+                                      title_kind="")
+
+        assert [t.kind for t in merged] == ["atterberg"]
+        assert merged[0].result.water_content == 18.3
+        assert merged[0].fields == {"dry_density": "95.6 pcf"}
+        assert {k["what"] for k in log.kept} == {
+            "moisture_content: water_content",
+            "moisture_content: dry_density"}
+
+    def test_a_titled_water_content_test_stays_its_own(self):
+        floor = [_moisture(10, "tables", 18.3, sample_id="S-6", depth=3.75)]
+        merged, _log = merge_lab_tests(floor, [self._limits()], MergeLog(),
+                                       title_kind="moisture_content")
+
+        assert [t.kind for t in merged] == ["atterberg", "moisture_content"]
+
+    def test_a_compaction_sheet_s_water_content_is_its_compaction_s(
+            self, density_run):
+        floor = floor_from_tables(density_run, [0, 1], "RXX")
+        assert floor.kind == "compaction"
+        assert [t.kind for t in floor.tests] == ["compaction", "compaction"]
+        assert floor.tests[1].fields == {"wet_density": "2.11 Mg/m3",
+                                         "wc": "12.6"}
+        # the brief's floor is as before: a density test, values and all
+        assert [t.kind for t in floor.as_before.tests] == ["density"]

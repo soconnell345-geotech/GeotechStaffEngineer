@@ -291,9 +291,32 @@ well. On the 13 records of Foundry run 1 (stage b) that links 558 of
 and writes 1824 lab results to DIGGS against 1767 with 242 holes synthesised
 for printed words against 278. One of the 131 new links falls on a
 hand-truthed sheet, and it is right; the 123 on reports that are not blind
-were checked against their printed labels. Summary-table rows are still
-matched exactly as printed: a row carries no link, so DIGGS still places it by
-its printed words.
+were checked against their printed labels.
+
+**The label before the depth, and summary rows (RI-56).** A printed label that
+names one of the hole's samples is that sample, wherever the log puts it; the
+depth decides only where no label names one, and a bare sample word counts
+only where the label names no other hole (a word with a letter in it, or a
+number after a word for an exploration or standing alone, "BH 2, S-3" or
+"2/S-3": the numbers of a printed depth range, a decimal or a depth with its
+unit name no hole). Where the printed interval, widened by 0.15 m each side,
+does not reach the log's interval for the named sample (a sheet and a log
+often give the same sample's depth by different conventions), the link
+follows the label and one `conflict` entry says so for
+each sample and printed depth, however many sheets and rows print it, the
+log's depth in the printed depth's unit; a label naming several of the hole's
+samples, none or more than one of them within the printed interval, links to
+the hole and to no sample. A summary row is
+linked by the same rules from its own boring, sample and depth columns into its
+own `linked_investigation_id` / `linked_sample_id`, the printed columns
+unchanged. DIGGS writes a row in the hole it is linked to, else in the hole
+made for the boring it prints, the one a sheet printing that name gets (one per
+printed name, named as printed); a row printing no boring stays in the record
+and is named in the writer's notes. On the same 13 records: 323 of 1842 rows
+linked to a hole (156 to a sample), 6 label/depth conflict entries and 4 for
+composites (36 in all before the widened interval), DIGGS lab results 1824 as
+before and holes made for printed words 243 -> 219 (rows that spell a logged
+hole another way now go to its log); no sheet's hole link changed.
 
 **The specimen-label paragraph (RI-07), off by default.** The Foundry runs lost
 whole sheets — a compaction 1/10 whose values were read 8/8 — because the model
@@ -304,6 +327,19 @@ one paragraph after the link rule: a hole printed inside a specimen or sample
 label, in whatever layout the form uses, names that hole. It changes what the
 model is asked, so it stays off until a Foundry pair of runs measures it; a run
 file says which arm it ran in.
+
+**The per-page floor in the brief (RI-56), off by default.**
+`GEOTECH_INGEST_LAB_FLOOR_PER_PAGE=1` (or `with use_floor_per_page():`) shows
+the model THE STARTING RECORD as the merge takes it: the corrected kind, and,
+where a page prints a link other than the first page's, each test under the
+boring and depth its own page prints ("none" where its page prints neither);
+a sheet whose floor is the same either way reads the same in both arms. Off,
+the brief is the one before RI-56 byte for byte
+(`FloorSheet.as_before`: the first page's link and first-read values, the
+kind by line order alone); the floor itself, the merge, the reconciler and
+DIGGS are the same in both arms. It changes what the model is shown, so it
+stays off until a Foundry pair of runs measures it (with RI-55's); a run file
+and `RESULTS.md` say which arm, and `MIXED` when a resumed run holds both.
 
 **A summary table is one test**, with a row per specimen, because the table is a
 thing the report prints and splitting it would lose which values were printed
@@ -352,11 +388,49 @@ series (a SIEVE or SIZE column beside a PERCENT FINER column) and every row of a
 summary table (a BORING or DEPTH column and more than one row) — each with the
 table's own confidence — and the model is shown them as THE STARTING RECORD. Its
 answer is merged back (`lab_floor.merge_lab_tests`) under the same rule as the
-log's: a kind, a link, a value or a specimen the model **adds** is accepted; a
-value it **corrects** with a box and a note replaces the table's, with the
-table's kept beside it; a contradiction without evidence leaves the table's
-value in the slot with the model's beside it; a value it **omits** is kept, and
-a whole test it omits stands in the record as its own test, from the tables.
+log's. Each page's values carry the boring, sample and depth THAT page prints
+(RI-56): a page that prints neither a boring nor a depth leaves its values
+unbound, never given another page's, each such page of a run its own specimen
+(and no specimen at all where it holds no value: a run of such pages that holds
+no value makes no test, not even of the title's kind alone), with an
+`unresolved` row where another page of the sheet prints one; and where the
+model put its tests on more than one page, the page decides which of the
+specimens a floor value matches. No water content is read from a row or column
+whose label names a mass, a weight or a unit of one (mass, weight, wt, Mw, g,
+gm, grams, kg, lb: the mass of water) unless it prints a percent ("% by weight"
+is a water content), and no specimen's water content or density from a row of
+several numbers across (a worksheet's trial points). The title's kind is
+corrected by the reader's own kinds: a particle density is a specific gravity
+(the specific gravity of solids "is a measure of solid particle density and is
+referenced to an equivalent volume of water", printed as Gs = ρs / ρd with ρd
+"the mass density of water", FHWA-NHI-06-088 Vol. I, 5.3.6, p. 5-19), and a
+title that names only a density or a water content is a compaction where the
+top of the page also names one of a compaction's own parts (a Proctor, a
+moisture-density relationship, an optimum water content, a rammer, blows per
+layer) or two different parts other density tests print too (a mould, the word
+compaction, a maximum dry density), and does not name a field, in-place, in
+situ, nuclear, sand-cone, drive-cylinder, drive-tube, core-cutter, balloon,
+relative or index density test, or a compaction given as a percent (relative,
+percent or degree of compaction, "Compaction (%)"), which a compaction never
+reports of itself. A specific gravity corrected from a particle density
+makes no test where the tables read no value for it (the model reads the
+sheet's one value); a corrected compaction keeps its test of the kind alone.
+A compaction sheet's water content and densities are its compaction test's
+(in its `fields` where the result has no slot), as an Atterberg sheet's water
+content is its Atterberg test's. The merge, the reconciler and DIGGS always
+take this floor; the model's brief shows it only with the per-page switch
+below on. The merge rule is the log's: a kind, a link, a value or a specimen
+the model **adds** is accepted; a value it **corrects** with a box and a note
+replaces the table's, with the table's kept beside it; a contradiction without
+evidence leaves the table's value in the slot with the model's beside it; a
+value it **omits** is kept, and a whole test it omits stands in the record as
+its own test, from the tables. Two limits (RI-56): a table value whose page
+prints no boring and no depth, or whose link matches more than one of the
+model's tests of its kind, fills an empty slot but never wins a contradiction
+(the model's stands, the table's beside it); and a water content or density
+the tables name by its values alone (no title kind was read, or the title
+names another kind), on a specimen the model reported as another kind, goes
+into that test (its slot, else its `fields`), not a test of its own.
 An index value agrees to 0.01, a grading point to one percentage point. Every
 split is a `disagreement` in QA. Six sheets of the first cluster run came back
 below the tables alone (a gradation 28/28 → 11/30, a chemical 18/18 → 14/22);
@@ -755,7 +829,8 @@ Four facts about 2.6 that the code exists to get right:
   in the file for it to be. Those are named in `DiggsWriteNotes.skipped` and
   stay in the record, which does not require a value to have a place. A test
   that names a boring no log in the record describes gets a minimal `Borehole`
-  of its own, recorded in `DiggsWriteNotes.synthesised`.
+  of its own, recorded in `DiggsWriteNotes.synthesised`; a summary row
+  printing one gets the same hole, one per printed name (RI-56).
 
 A particle size is written in **millimetres** and says so in its `uom`: in
 metres a No. 200 sieve is 7.5e-05, which the file's four decimals would round
@@ -2361,9 +2436,11 @@ runs read in both arms. A run file written before this was recorded reads
 `not recorded`, not `off`: the switch existed before it was written down, so
 only that `out_dir`'s name says which arm it ran in. The ingest's `run.json`
 records the switch as the stage ran it (`calc_page_images`), with the lab
-reader's specimen-label switch beside it (`lab_link_from_label`), and its
-`RESULTS.md` block prints both; a calc item file carries `"page_images": true`
-only when the switch was on, as a lab item file does `link_from_label`.
+reader's specimen-label and per-page floor switches beside it
+(`lab_link_from_label`, `lab_floor_per_page`), and its `RESULTS.md` block
+prints all three; a calc item file carries `"page_images": true` only when the
+switch was on, as a lab item file does `link_from_label` and `floor_per_page`.
+The lab stage's run files record `floor_per_page` beside `link_from_label`.
 
 Locally, `module_work/report_ingest_harness/measure_wp5_calc.py` does the same
 scoring against the development engine, and `--floor-only` prints the before

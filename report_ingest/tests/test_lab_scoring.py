@@ -458,6 +458,25 @@ class TestReadingAndLinkingApart:
                                              report_id="R99")
         assert after.link_from_label is arm
 
+    @pytest.mark.parametrize("arm", [False, True])
+    def test_the_per_page_floor_arm_is_the_one_the_reader_reports(
+            self, monkeypatch, arm):
+        """RI-56: the per-page floor switch is recorded as RI-07's is."""
+        from types import SimpleNamespace
+        import report_ingest.lab_reader as reader
+        from report_ingest.lab_scoring import score_one_sheet
+        tests = _grading_record()
+        monkeypatch.setattr(reader, "read_lab_sheet", lambda *a, **k:
+                            SimpleNamespace(
+                                tests=tests, model_tests=tests,
+                                floor_tests=tests, cost={}, model_calls=1,
+                                tool_calls=0, unresolved=[], changes=[],
+                                warnings=[], floor_per_page=arm))
+        with reader.use_floor_per_page(not arm):
+            _before, after = score_one_sheet(GRADING_TRUTH, object(), None,
+                                             report_id="R99")
+        assert after.floor_per_page is arm
+
 
 def test_the_plot_check_the_reader_ran_reaches_the_run_file(monkeypatch):
     """BACKLOG RI-05 (G3): what the visual-scales check of the plotted

@@ -1718,6 +1718,18 @@ class SummaryRow(BaseModel):
         default_factory=list,
         description="any column this row carries that has no field here, as "
                     "(the column's printed heading, the cell's text)")
+    #: What the RECONCILER matched this row to, as for a sheet
+    #: (``LabTest.linked_investigation_id``): the row's own boring and sample
+    #: columns above never change, and these stay empty when nothing matched.
+    #: The DIGGS writer writes a row only in a hole the file holds, and makes
+    #: none for it (RI-56).
+    #: Text only: a row's numbers are what it printed, and a derived distance
+    #: here would join every pool of them (``si_numbers``).
+    linked_investigation_id: str = Field(
+        default="",
+        description="the investigation this row was matched to, or empty")
+    linked_sample_id: str = Field(
+        default="", description="the sample it was matched to, or empty")
 
 
 class SummaryTableResult(BaseModel):

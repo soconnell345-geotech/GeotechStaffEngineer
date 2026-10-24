@@ -710,6 +710,15 @@ class TestTheLabStage:
                            {}, "m", ("R06",))
         assert mixed["link_from_label"] == [False, True]
         assert "MIXED" in "\n".join(_render_lab(mixed))
+        # RI-56's per-page floor switch is stated the same way.
+        assert old["floor_per_page"] == [False]
+        assert "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE): off." in \
+            "\n".join(_render_lab(old))
+        mixed = _score_lab({"a": row("a"), "b": row("b", floor_per_page=True)},
+                           {}, "m", ("R06",))
+        assert mixed["floor_per_page"] == [False, True]
+        assert ("GEOTECH_INGEST_LAB_FLOOR_PER_PAGE): off and on -- MIXED"
+                in "\n".join(_render_lab(mixed)))
 
 
 # ---------------------------------------------------------------------------
@@ -3179,9 +3188,12 @@ class TestTheIngestRecordsTheReadersSwitches:
     @pytest.fixture(autouse=True)
     def _no_switch_in_the_environment(self, monkeypatch):
         from report_ingest.calc_reader import PAGE_IMAGES_ENV
-        from report_ingest.lab_reader import LINK_FROM_LABEL_ENV
+        from report_ingest.lab_reader import (
+            FLOOR_PER_PAGE_ENV, LINK_FROM_LABEL_ENV,
+        )
         monkeypatch.delenv(PAGE_IMAGES_ENV, raising=False)
         monkeypatch.delenv(LINK_FROM_LABEL_ENV, raising=False)
+        monkeypatch.delenv(FLOOR_PER_PAGE_ENV, raising=False)
 
     def test_both_are_off_by_default_and_said_so(self, ingest_cluster):
         from report_ingest.tests import test_graph as tg
@@ -3192,11 +3204,29 @@ class TestTheIngestRecordsTheReadersSwitches:
 
         assert row["calc_page_images"] is False
         assert row["lab_link_from_label"] is False
+        assert row["lab_floor_per_page"] is False
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert ("Every calculation page as a picture (RI-17, "
                 "GEOTECH_INGEST_CALC_PAGE_IMAGES): off.") in text
         assert ("Specimen-label paragraph (RI-07, "
                 "GEOTECH_INGEST_LAB_LINK_FROM_LABEL): off.") in text
+        assert ("Per-page lab floor in the brief (RI-56, "
+                "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE): off.") in text
+
+    def test_the_per_page_floor_switch_on_is_recorded_on(
+            self, ingest_cluster):
+        from report_ingest.lab_reader import use_floor_per_page
+        from report_ingest.tests import test_graph as tg
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+
+        with use_floor_per_page():
+            (row,) = _ingest_run(ingest_cluster)["ingest"]["per_report"]
+
+        assert row["lab_floor_per_page"] is True
+        assert row["lab_link_from_label"] is False
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE): on." in text
 
     def test_the_calc_switch_on_is_recorded_on(self, ingest_cluster):
         from report_ingest.calc_reader import use_page_images

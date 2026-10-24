@@ -95,6 +95,49 @@ TITLE_KINDS: Tuple[Tuple[str, str], ...] = (
     (r"\bdensity\b|unit weight|densite|densidad", "density"),
 )
 
+#: What a laboratory COMPACTION sheet prints that a density or water content
+#: test does not: the test's own names (a Proctor, a moisture-density or
+#: dry density and water content relationship) and the parts the DIGGS
+#: writer records for one (``LabCompactionTest``: optimum water content,
+#: rammer, blows per layer). Any one of these is enough. See
+#: :func:`kind_from_title`.
+COMPACTION_PARTS = (
+    r"proctor|(?:moisture|water)[- ]density relation|"
+    r"density ?/ ?(?:moisture|water) content relation|"
+    r"optimum (?:moisture|water)|\bomc\b|rammer|blows? per layer")
+#: Parts other density tests print too: a mould (a unit weight, a maximum
+#: index density), the word compaction (a field test's relative
+#: compaction), a maximum dry density (quoted by a field test, or a relative
+#: density's maximum). None counts on its own; two different ones do.
+COMPACTION_WEAK_PARTS: Tuple[str, ...] = (
+    r"\bmou?ld\b", r"\bcompact(?:ion|ed)?\b",
+    r"max(?:imum|\.)? dry (?:density|unit weight)|\bmdd\b")
+#: Density tests that are not a laboratory compaction, though they quote
+#: one (its maximum dry density, the relative compaction it gives): a sheet
+#: naming any of these at its top keeps its kind: the field methods by name,
+#: and a compaction given as a percent ("percent compaction", "degree of
+#: compaction", "Compaction (%)"), which is a specimen measured against a
+#: compaction; a compaction never reports that of itself.
+NOT_COMPACTION = (r"\bfield\b|in[- ]place|in[- ]?situ|nuclear|sand[- ]cone|"
+                  r"drive[- ](?:tube|cylinder)|core[- ]cutter|balloon|"
+                  r"relative density|index density|"
+                  r"(?:percent|per cent|degree of|relative)\s+compaction|"
+                  r"compaction\s*\(?\s*%|%\s*compaction")
+#: The kinds that report one measurement "and nothing else"
+#: (``lab_reader.KIND_DEFINITIONS``): a compaction sheet prints both.
+_ONE_MEASUREMENT = ("density", "moisture_content")
+_CBR_TITLE = r"\bcbr\b|bearing ratio"
+#: A title naming the density of the solid particles: that is the specific
+#: gravity of solids, which "is a measure of solid particle density and is
+#: referenced to an equivalent volume of water", printed as Gs = ρs / ρd
+#: with ρd "the mass density of water" (FHWA-NHI-06-088, Soils and
+#: Foundations Reference Manual Vol. I, 5.3.6, p. 5-19), as
+#: :data:`TITLE_KINDS` already reads "densite des grains". A title that also
+#: names a bulk, dry or wet density reports those too and keeps its kind.
+_PARTICLE_DENSITY = r"particle density"
+_OTHER_DENSITY = (r"\b(?:bulk|dry|wet|moist|total|field|in[- ]?situ|"
+                  r"in[- ]place)\b")
+
 #: A printed label -> the record's own name for the value. Applied to a
 #: row's first cell in a property/value table and to a column head in a
 #: header-row table, after folding to lower case and one space. The first
@@ -243,14 +286,53 @@ def _unit_in(label: str) -> str:
     return ""
 
 
-def kind_from_title(lines: Sequence[str]) -> Tuple[str, str]:
-    """``(kind, the title line)`` from the top of the page, or ``("", "")``."""
-    for line in lines:
-        text = " ".join(str(line or "").lower().split())
-        for pattern, kind in TITLE_KINDS:
-            if re.search(pattern, text):
-                return kind, str(line).strip()
-    return "", ""
+def kind_from_title(lines: Sequence[str],
+                    corrected: bool = True) -> Tuple[str, str]:
+    """``(kind, the title line)`` from the top of the page, or ``("", "")``.
+
+    Line by line, each line against :data:`TITLE_KINDS` in order. Then the
+    lab module's own kinds correct a title that names only a density or a
+    water content (RI-56): a particle density is a specific gravity
+    (:data:`_PARTICLE_DENSITY`); and those tests report that one
+    measurement and nothing else, so where the top of the page also names a
+    compaction's own part (:data:`COMPACTION_PARTS`), or two different parts
+    other density tests print too (:data:`COMPACTION_WEAK_PARTS`), and no
+    CBR and no field or index density test (:data:`NOT_COMPACTION`), the
+    sheet is a compaction, and the first line that names a part is the
+    title.
+    ``corrected=False`` is the rule before RI-56, which the model's brief
+    shows unless ``GEOTECH_INGEST_LAB_FLOOR_PER_PAGE`` is on
+    (:attr:`FloorSheet.as_before`).
+    """
+    kind, title = "", ""
+    texts = [" ".join(str(line or "").lower().split()) for line in lines]
+    for line, text in zip(lines, texts):
+        kind = next((name for pattern, name in TITLE_KINDS
+                     if re.search(pattern, text)), "")
+        if kind:
+            title = str(line).strip()
+            break
+    if not corrected:
+        return kind, title
+    folded = " ".join(title.lower().split())
+    if kind == "density" and re.search(_PARTICLE_DENSITY, folded) and \
+            not re.search(_OTHER_DENSITY, folded):
+        return "specific_gravity", title
+    if kind not in _ONE_MEASUREMENT or any(
+            re.search(_CBR_TITLE, text) or re.search(NOT_COMPACTION, text)
+            for text in texts):
+        return kind, title
+    weak = {i for text in texts
+            for i, part in enumerate(COMPACTION_WEAK_PARTS)
+            if re.search(part, text)}
+    if not any(re.search(COMPACTION_PARTS, text) for text in texts) and \
+            len(weak) < 2:
+        return kind, title
+    for line, text in zip(lines, texts):
+        if re.search(COMPACTION_PARTS, text) or any(
+                re.search(part, text) for part in COMPACTION_WEAK_PARTS):
+            return "compaction", str(line).strip()
+    return kind, title
 
 
 @dataclass
@@ -275,6 +357,18 @@ class FloorSheet:
     n_values: int = 0
     pages: List[int] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    #: The pages whose tables gave values under no boring and no depth of
+    #: their own while another page of the sheet prints one (RI-56): those
+    #: values are left unbound, never given the other page's link. Each is
+    #: ``{"page", "values", "linked"}``, ``linked`` naming the pages that
+    #: print a link.
+    unbound: List[Dict[str, Any]] = field(default_factory=list)
+    #: The floor as it was before RI-56: the first page's link on every
+    #: page's values and the title's kind by line order alone. The model's
+    #: brief shows it (:func:`serialise_floor`) unless
+    #: ``GEOTECH_INGEST_LAB_FLOOR_PER_PAGE`` is on; the merge never uses it.
+    #: None on that floor itself.
+    as_before: Optional["FloorSheet"] = None
 
 
 def _lines_of(doc: Any, page: int) -> List[Any]:
@@ -351,9 +445,35 @@ class _Values:
             self.index[name] = (value, unit, conf)
 
 
+#: A label naming a mass or a weight, or a unit of one: the working of a
+#: water content (the mass of water, in grams), never the water content
+#: itself (RI-56). A label that prints a percent is a percentage, whatever
+#: it is a percent of ("% by weight", "% of dry mass").
+_MASS_LABEL = r"\b(?:mass|weight|wt|mw|k?g|gms?|grams?|lbs?)\b"
+_PERCENT_LABEL = r"%|\bper ?cent\b"
+#: The values a trial table repeats across its columns, one a trial point:
+#: the first of such a row is no one specimen's value (RI-56).
+_ONE_A_SPECIMEN = ("wc", "dry_density", "wet_density")
+
+
+def _not_the_specimens(name: str, label: str, numbers: int) -> bool:
+    """Whether a ``label`` row read as ``name`` is a mass of water, or a row
+    of ``numbers`` trial points, rather than the specimen's value."""
+    if name not in _ONE_A_SPECIMEN:
+        return False
+    text = str(label or "").lower()
+    return numbers > 1 or (name == "wc" and bool(
+        re.search(_MASS_LABEL, text)) and not re.search(_PERCENT_LABEL, text))
+
+
 def _read_property_table(rows: List[List[str]], values: _Values,
-                         conf: float) -> int:
-    """``label | value`` rows. Returns how many values were read."""
+                         conf: float, strict: bool = False) -> int:
+    """``label | value`` rows. Returns how many values were read.
+
+    ``strict`` (the per-page floor, RI-56) reads no water content from a
+    mass or weight row and none of the per-specimen values from a row of
+    several numbers across (:func:`_not_the_specimens`).
+    """
     n = 0
     for row in rows:
         cells = [c for c in row if c]
@@ -364,6 +484,9 @@ def _read_property_table(rows: List[List[str]], values: _Values,
         if not name or name in ("investigation_id", "sample_id", "depth_top",
                                 "uscs", "description", "sample_type",
                                 "sieve", "size", "percent_passing", "date"):
+            continue
+        if strict and _not_the_specimens(
+                name, label, sum(1 for c in cells[1:] if _num(c) is not None)):
             continue
         number = _num(cell)
         unit = _unit_in(label) or _unit_in(cell)
@@ -476,23 +599,27 @@ def _summary_rows(rows: List[List[str]], header: List[str],
 
 def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
                        link: _Link, kind: str, conf: float, prov: Provenance,
+                       key: str = "", strict: bool = False
                        ) -> Tuple[int, List[SummaryRow]]:
     """A table whose first row names its columns.
 
     Three shapes: a grading series (a sieve or size column beside a percent
     passing column); a table of specimens (a boring, sample or depth column
     and more than one row), which seeds summary rows; and a one-row table of
-    values for the sheet's one specimen.
+    values for the sheet's one specimen. ``key`` files the values under a
+    key other than the link's own (a bare page's, see :func:`_floor`);
+    ``strict`` reads no water content from a mass or weight column.
     """
     header = rows[0]
     body = rows[1:]
     columns = {i: _field_of(h) for i, h in enumerate(header)
-               if _field_of(h) and _field_of(h) != "date"}
+               if _field_of(h) and _field_of(h) != "date"
+               and not (strict and _not_the_specimens(_field_of(h), h, 1))}
     if not body or not columns:
         return 0, []
     series = _series_from(body, header, columns, conf)
+    key = key or _specimen_key(link)
     if series:
-        key = _specimen_key(link)
         values_by_key.setdefault(key, _Values()).series.extend(series)
         values_by_key[key].provs.append(prov)
         return len(series), []
@@ -510,7 +637,6 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
                    for r in summary), summary
     n = 0
     row = body[0]
-    key = _specimen_key(link)
     values = values_by_key.setdefault(key, _Values())
     values.provs.append(prov)
     for i, name in columns.items():
@@ -645,16 +771,26 @@ def _mm(idx: Dict[str, Any], name: str) -> Optional[Quantity]:
     return Quantity(value=float(got[0]), unit="mm")
 
 
-def _kinds_for(values: _Values, hint: str) -> List[str]:
-    """Which result kinds one specimen's floor values call for."""
+#: Sheets whose water content and densities belong to their own test, not
+#: a moisture test of their own: in its result where it has the slot, else
+#: carried in the test's ``fields`` (a compaction's, RI-56).
+_HOLDS_MOISTURE = _MOISTURE_KINDS + ("atterberg", "gradation", "cbr",
+                                     "swell_consolidation") + _STRENGTH_KINDS
+
+
+def _kinds_for(values: _Values, hint: str,
+               per_page: bool = False) -> List[str]:
+    """Which result kinds one specimen's floor values call for.
+
+    ``per_page`` (the floor the merge takes, RI-56) holds a compaction
+    sheet's water content and densities in its compaction test as well.
+    """
     homes: List[str] = []
+    holds = _HOLDS_MOISTURE + (("compaction",) if per_page else ())
     for name in values.index:
         home = FIELD_HOME.get(name, "")
         if home == "moisture":
-            home = (hint if hint in _MOISTURE_KINDS + ("atterberg",
-                                                       "gradation", "cbr",
-                                                       "swell_consolidation")
-                    + _STRENGTH_KINDS else "moisture_content")
+            home = hint if hint in holds else "moisture_content"
             if hint in _STRENGTH_KINDS:
                 home = hint
         elif home == "strength":
@@ -670,9 +806,11 @@ def _kinds_for(values: _Values, hint: str) -> List[str]:
         elif hint not in ("moisture_content", "density", "organic_content"):
             homes.append(hint)
     # 'wc' alone on an Atterberg sheet is the natural water content beside
-    # the limits, not a moisture test of its own.
-    if hint in ("atterberg", "gradation") and "moisture_content" in homes \
-            and hint in homes:
+    # the limits, not a moisture test of its own; nor, on the per-page
+    # floor, on a compaction or CBR sheet (RI-56).
+    beside = ("atterberg", "gradation") + (("compaction", "cbr")
+                                           if per_page else ())
+    if hint in beside and "moisture_content" in homes and hint in homes:
         homes.remove("moisture_content")
     order = [k for k in ([hint] if hint else []) + homes if k]
     seen: List[str] = []
@@ -682,6 +820,27 @@ def _kinds_for(values: _Values, hint: str) -> List[str]:
     return seen
 
 
+def _no_value(result: Any) -> bool:
+    """Whether a floor result holds no value at all."""
+    if result is None:
+        return True
+    return all(value in (None, "", [], {}, False)
+               for name, value in result.model_dump().items()
+               if name != "kind")
+
+
+def _held_moisture(values: _Values, result: Any) -> Dict[str, str]:
+    """A compaction sheet's water content and densities its result has no
+    slot for, as printed, so that they stay with the test (RI-56)."""
+    out: Dict[str, str] = {}
+    for name, (value, unit, _conf) in values.index.items():
+        if FIELD_HOME.get(name) == "moisture" and \
+                getattr(result, name, None) is None:
+            out[name] = show(value) if unit in ("", "%") else \
+                f"{show(value)} {unit}"
+    return out
+
+
 def floor_from_tables(doc: Any, pages: Sequence[int],
                       report_id: str = "") -> FloorSheet:
     """The page's own tables and title as :class:`LabTest` records.
@@ -689,7 +848,40 @@ def floor_from_tables(doc: Any, pages: Sequence[int],
     Nothing here is inferred beyond the word printed beside the number. A
     sheet whose title names no kind and whose tables hold no labelled value
     comes back with an empty test list, which is an honest floor.
+
+    EACH PAGE ITS OWN LINK (RI-56). A page's values carry the boring, sample
+    and depth that page prints. A page that prints neither a boring nor a
+    depth leaves its values unbound -- never given another page's -- and is
+    named in :attr:`FloorSheet.unbound` where another page of the sheet
+    prints one. The title's kind is corrected as :func:`kind_from_title`
+    says. The merge always takes this floor. The model's brief shows the
+    floor as it was before RI-56 (:attr:`FloorSheet.as_before`) unless
+    ``GEOTECH_INGEST_LAB_FLOOR_PER_PAGE`` is on.
     """
+    sheet = _floor(doc, pages, report_id, per_page=True)
+    sheet.as_before = _floor(doc, pages, report_id, per_page=False)
+    return sheet
+
+
+def _page_link(own: _Link, first: _Link) -> _Link:
+    """A later page's link: what the page prints itself, never the first
+    page's boring, sample or depth. Where the page prints no unit, the first
+    page's depth UNIT stands: for a depth printed bare, and for a summary
+    table's depth column that prints none."""
+    if not own.unit:
+        own.unit = first.unit
+    return own
+
+
+def _bound(link: _Link) -> bool:
+    return bool(link.investigation_id) or link.depth_top is not None
+
+
+def _floor(doc: Any, pages: Sequence[int], report_id: str,
+           per_page: bool) -> FloorSheet:
+    """:func:`floor_from_tables`, with each page's own link and the
+    corrected kind (``per_page``), or with the first page's link on every
+    page and the kind by line order alone, as before RI-56."""
     pages = [int(p) for p in pages]
     sheet = FloorSheet(pages=pages)
     if not pages:
@@ -701,14 +893,29 @@ def floor_from_tables(doc: Any, pages: Sequence[int],
         height = 792.0
     top = [ln.text for ln in first if ln.bbox[1] <= 0.22 * height] \
         or [ln.text for ln in first[:6]]
-    sheet.kind, sheet.title = kind_from_title(top)
+    sheet.kind, sheet.title = kind_from_title(top, corrected=per_page)
     sheet.link = _link_from_lines(first, pages[0])
-    link = sheet.link
+    links: Dict[int, _Link] = {pages[0]: sheet.link}
+    for page in pages[1:]:
+        links[page] = (_page_link(_link_from_lines(_lines_of(doc, page),
+                                                   page), sheet.link)
+                       if per_page else sheet.link)
 
     values_by_key: Dict[str, _Values] = {}
+    link_of: Dict[str, _Link] = {}
+    keyed: Dict[int, int] = {}                  # page -> values it keyed
     summary_rows: List[SummaryRow] = []
     table_provs: List[Provenance] = []
+    linked = [p for p in pages if _bound(links[p])]
+    bare: List[str] = []
     for page in pages:
+        link = links[page]
+        key = _specimen_key(link)
+        if per_page and len(pages) > 1 and not _bound(link):
+            # A bare page of a run: its own specimen, not one shared with
+            # every other bare page.
+            key = f"{key}#page{page}"
+            bare.append(key)
         for table in _tables_of(doc, page):
             rows = _table_rows(table)
             if not rows:
@@ -722,55 +929,91 @@ def floor_from_tables(doc: Any, pages: Sequence[int],
             if _is_header_row(rows[0]) and len(rows) >= 2 and \
                     len([c for c in rows[0] if c]) >= 2:
                 n, summary = _read_header_table(rows, values_by_key, link,
-                                                sheet.kind, conf, prov)
+                                                sheet.kind, conf, prov, key,
+                                                per_page)
                 if summary:
                     summary_rows.extend(summary)
+                elif n:
+                    keyed[page] = keyed.get(page, 0) + n
                 sheet.n_values += n
                 if n or summary:
                     continue
-            key = _specimen_key(link)
             values = values_by_key.setdefault(key, _Values())
-            n = _read_property_table(rows, values, conf)
+            n = _read_property_table(rows, values, conf, per_page)
             if n:
                 values.provs.append(prov)
                 sheet.n_values += n
+                keyed[page] = keyed.get(page, 0) + n
+        if key in values_by_key:
+            link_of.setdefault(key, link)
 
-    link_prov = Provenance(page=link.page, bbox=link.bbox, method="text",
-                           confidence=CONF_LINK,
-                           note="the boring and depth printed on the sheet")
-    depth = (Quantity(value=link.depth_top, unit=link.unit)
-             if link.depth_top is not None else None)
-    depth_bottom = (Quantity(value=link.depth_bottom, unit=link.unit)
-                    if link.depth_bottom is not None else None)
+    if per_page and linked:
+        sheet.unbound = [{"page": p, "values": keyed[p], "linked": linked}
+                         for p in pages
+                         if keyed.get(p) and not _bound(links[p])]
+
+    def link_prov(link: _Link) -> Provenance:
+        return Provenance(page=link.page, bbox=link.bbox, method="text",
+                          confidence=CONF_LINK,
+                          note=("the boring and depth printed on the sheet"
+                                if _bound(link) or not per_page else
+                                "no boring or depth printed on this page"))
+
+    def depths(link: _Link) -> Tuple[Optional[Quantity], Optional[Quantity]]:
+        return ((Quantity(value=link.depth_top, unit=link.unit)
+                 if link.depth_top is not None else None),
+                (Quantity(value=link.depth_bottom, unit=link.unit)
+                 if link.depth_bottom is not None else None))
 
     if summary_rows:
-        prov = table_provs[0] if table_provs else link_prov
+        prov = table_provs[0] if table_provs else link_prov(sheet.link)
         sheet.tests.append(LabTest(
             kind="summary_table",
             result=SummaryTableResult(rows=summary_rows, title=sheet.title),
             pages=list(pages), source_report=report_id,
             prov=[prov]))
 
+    # A particle density corrected to a specific gravity (RI-56) is told to
+    # the model, and makes no test of its own where the tables read no value
+    # for it: the sheet's one value is the model's to read. A corrected
+    # compaction keeps its test of the kind alone, which is an answer.
+    corrected = per_page and sheet.kind == "specific_gravity" and \
+        sheet.kind != kind_from_title(top, corrected=False)[0]
     for key, values in values_by_key.items():
-        for kind in _kinds_for(values, sheet.kind):
+        if key in bare and not values.index and not values.series:
+            continue                # a bare page with no value: no test
+        link = link_of.get(key, sheet.link)
+        depth, depth_bottom = depths(link)
+        for kind in _kinds_for(values, sheet.kind, per_page):
             if kind == "summary_table":
                 continue
             result = _build_result(kind, values, sheet.kind)
-            provs = [link_prov] + [p for p in values.provs]
+            fields = (_held_moisture(values, result) if per_page and
+                      kind == "compaction" else {})
+            if corrected and kind == sheet.kind and not fields and \
+                    _no_value(result):
+                continue
+            provs = [link_prov(link)] + [p for p in values.provs]
             sheet.tests.append(LabTest(
                 kind=kind, investigation_id=link.investigation_id,
                 sample_id=link.sample_id, depth_top=depth,
                 depth_bottom=depth_bottom, pages=list(pages),
-                source_report=report_id, result=result, prov=provs))
+                source_report=report_id, result=result, prov=provs,
+                fields=fields))
 
-    if not sheet.tests and sheet.kind:
+    # A run of pages none of which prints a boring or a depth: each page is
+    # its own specimen, and a page with no value is none, so a run whose
+    # pages hold no value has no specimen to give the kind alone (RI-56).
+    all_bare = per_page and len(pages) > 1 and not linked
+    if not sheet.tests and sheet.kind and not corrected and not all_bare:
         # The title names the kind and the tables hold no value: the kind
         # alone is the floor, and it is an answer.
+        depth, depth_bottom = depths(sheet.link)
         result = (OtherResult(no_results=True) if sheet.kind == "other"
                   else None)
         sheet.tests.append(LabTest(
-            kind=sheet.kind, investigation_id=link.investigation_id,
-            sample_id=link.sample_id, depth_top=depth,
+            kind=sheet.kind, investigation_id=sheet.link.investigation_id,
+            sample_id=sheet.link.sample_id, depth_top=depth,
             depth_bottom=depth_bottom, pages=list(pages),
             source_report=report_id, result=result,
             prov=[Provenance(page=pages[0], method="text",
@@ -823,23 +1066,51 @@ def _result_lines(test: LabTest) -> List[str]:
     return out
 
 
-def serialise_floor(sheet: FloorSheet) -> str:
-    """The floor as compact lines the model builds on."""
+def _link_words(boring: str, sample: str, top: Optional[float],
+                bottom: Optional[float], unit: str) -> str:
+    bits = []
+    if boring:
+        bits.append(f"boring '{boring}'")
+    if sample:
+        bits.append(f"sample '{sample}'")
+    if top is not None:
+        bits.append(f"depth {top:g}"
+                    + (f" to {bottom:g}" if bottom is not None else "")
+                    + (f" {unit}" if unit else " (unit not printed)"))
+    return ", ".join(bits)
+
+
+def _test_link_words(test: LabTest) -> str:
+    top, bottom = test.depth_top, test.depth_bottom
+    return _link_words(test.investigation_id, test.sample_id,
+                       top.value if top is not None else None,
+                       bottom.value if bottom is not None else None,
+                       (top.unit if top is not None else "") or "")
+
+
+def serialise_floor(sheet: FloorSheet, per_page: bool = False) -> str:
+    """The floor as compact lines the model builds on.
+
+    By default the floor as the brief showed it before RI-56
+    (:attr:`FloorSheet.as_before`), byte for byte. ``per_page``
+    (``GEOTECH_INGEST_LAB_FLOOR_PER_PAGE``) shows the floor the merge takes:
+    the corrected kind, and, where a test's page prints a link other than
+    the first page's, each test under the link its own page prints. A sheet
+    whose floor is the same either way reads the same either way.
+    """
+    if not per_page:
+        sheet = sheet.as_before or sheet
     out: List[str] = []
     out.append(f"kind from the title: {sheet.kind or 'none read'}"
                + (f" ('{sheet.title[:70]}')" if sheet.title else ""))
     link = sheet.link
-    bits = []
-    if link.investigation_id:
-        bits.append(f"boring '{link.investigation_id}'")
-    if link.sample_id:
-        bits.append(f"sample '{link.sample_id}'")
-    if link.depth_top is not None:
-        bits.append(f"depth {link.depth_top:g}"
-                    + (f" to {link.depth_bottom:g}" if link.depth_bottom
-                       is not None else "")
-                    + (f" {link.unit}" if link.unit else " (unit not printed)"))
-    out.append("link printed on the sheet: " + (", ".join(bits) or "none read"))
+    words = _link_words(link.investigation_id, link.sample_id,
+                        link.depth_top, link.depth_bottom, link.unit)
+    own = {id(test): _test_link_words(test) for test in sheet.tests
+           if test.kind != "summary_table"} if per_page else {}
+    per_test = any(text != words for text in own.values())
+    out.append((f"link printed on page {link.page}: " if per_test else
+                "link printed on the sheet: ") + (words or "none read"))
     for test in sheet.tests:
         where = ", ".join(
             f"page {p.page}" + (" box " + ",".join(f"{v:.0f}" for v in p.bbox)
@@ -848,7 +1119,13 @@ def serialise_floor(sheet: FloorSheet) -> str:
             f"page {test.pages[0] if test.pages else '?'}"
         conf = max((p.confidence for p in test.prov), default=0.5)
         out.append(f"{test.kind} ({where})  [confidence {conf:.2f}]")
+        if per_test and id(test) in own:
+            out.append("  link printed on its page: " + (
+                own[id(test)] or "none (its values are left unbound)"))
         out.extend(_result_lines(test))
+        if per_page and test.fields:
+            out.append("  also printed: " + ", ".join(
+                f"{name} {value}" for name, value in test.fields.items()))
     return "\n".join(out)
 
 
@@ -908,13 +1185,46 @@ def _scalar_fields(result: Any) -> List[str]:
     return out
 
 
+def _slot(kind: str, name: str) -> str:
+    """The result field of a ``kind`` test that holds the value a floor
+    test names ``name``."""
+    return _RENAME.get(kind, {}).get(name, name)
+
+
+#: Why a floor value that does not pin one specimen lost (RI-56).
+_UNPINNED_WHY = ("the table's value comes from a page whose boring and "
+                 "depth do not pin one specimen, so it fills an empty slot "
+                 "but does not overrule the model; the model's reading "
+                 "stands and the table's is kept beside it")
+_UNPINNED_NOTE = ("the table's value; its page's boring and depth do not "
+                  "pin one specimen, so it did not overrule the model")
+#: Why a floor value carried into a test's fields lost (RI-56).
+_FIELD_WHY = ("the model's test already holds another value here; the "
+              "model's stands and the table's is kept beside it")
+
+
 class _LabMerger:
     def __init__(self, floor: Sequence[LabTest], model: Sequence[LabTest],
-                 log: MergeLog) -> None:
+                 log: MergeLog, title_kind: str = "") -> None:
         self.floor = list(floor)
         self.model = [t.model_copy(deep=True) for t in model]
         self.log = log
         self.paired: set = set()
+        self.title_kind = title_kind
+
+    def _pinned(self, f: LabTest, kind: str) -> bool:
+        """Whether a floor test's link pins ONE of the model's ``kind``
+        tests: it prints a boring or a depth, and matches no more than one.
+
+        A floor test that is not pinned may fill an empty slot but never
+        wins a contradiction (RI-56): a page printing no boring or depth
+        matches every specimen, a depth matches every one within the
+        tolerance, and its value may be another specimen's.
+        """
+        if not fold(f.investigation_id) and f.depth_top is None:
+            return False
+        return sum(1 for m in self.model
+                   if m.kind == kind and _same_specimen(f, m)) <= 1
 
     @staticmethod
     def _label(test: LabTest) -> str:
@@ -936,8 +1246,12 @@ class _LabMerger:
 
     def _settle_into(self, target: LabTest, holder: Any, name: str,
                      fv: Any, floor_test: LabTest, where: str,
-                     what: str) -> None:
-        """Settle one floor value against the model's ``holder.name``."""
+                     what: str, pinned: bool = True) -> None:
+        """Settle one floor value against the model's ``holder.name``.
+
+        A floor value that is not ``pinned`` (:meth:`_pinned`) fills an
+        empty slot and loses every contradiction, kept beside the model's.
+        """
         mv = getattr(holder, name, None)
         if mv == "" or mv == []:
             mv = None
@@ -945,16 +1259,20 @@ class _LabMerger:
         mprov = self._prov0(target)
         page = mprov.page
         evidence = has_evidence(mprov, None)
+        unpinned = not pinned and not evidence
         s = settle(name, fv, mv, same,
                    floor_method="tables",
                    floor_confidence=self._floor_conf(floor_test),
                    model_method=mprov.method if mprov.method in (
                        "model", "model_from_picture", "vision") else "model",
                    model_confidence=float(mprov.confidence),
-                   evidence=evidence,
+                   evidence=evidence or not pinned,
                    floor_unit=fv.unit if isinstance(fv, Quantity) else "",
                    model_unit=mv.unit if isinstance(mv, Quantity) else "",
                    model_note=mprov.note)
+        if unpinned and s.alternative is not None:
+            s.alternative = s.alternative.model_copy(update={
+                "note": _UNPINNED_NOTE})
         if s.verdict == "reconciled":
             self.log.reconciled += 1
         elif s.verdict == "floor_only":
@@ -963,7 +1281,8 @@ class _LabMerger:
             self.log.disagree(
                 where, f"{what}: {name}", fv, mv,
                 kept="model" if s.verdict == "model_wins" else "floor",
-                why=("the model named a box and a note, so its reading "
+                why=(_UNPINNED_WHY if unpinned else
+                     "the model named a box and a note, so its reading "
                      "replaces the table's; the table's is kept beside it"
                      if s.verdict == "model_wins" else
                      "the model's reading differs from the table's and it "
@@ -985,9 +1304,9 @@ class _LabMerger:
 
     def _merge_series(self, target: LabTest, result: GradationResult,
                       floor_points: Sequence[SievePoint], floor_test: LabTest,
-                      where: str) -> None:
+                      where: str, pinned: bool = True) -> None:
         mprov = self._prov0(target)
-        evidence = has_evidence(mprov, None)
+        evidence = has_evidence(mprov, None) or not pinned
         for fp in floor_points:
             twin = None
             for mp in result.percent_passing:
@@ -1094,17 +1413,45 @@ class _LabMerger:
                 if not any(fold(h) == fold(head) for h, _t in twin.other):
                     twin.other.append((head, text))
 
+    def _fill_fields(self, target: LabTest, fields: Dict[str, str],
+                     floor_test: LabTest, where: str, what: str) -> None:
+        """Values the floor holds as printed text, into the empty slots of
+        ``target.fields``; one the model filled otherwise stays the
+        model's, with the table's beside it."""
+        mprov = self._prov0(target)
+        conf = self._floor_conf(floor_test)
+        for name, value in fields.items():
+            have = target.fields.get(name)
+            if have is None:
+                target.fields[name] = value
+                self.log.keep(where, f"{what}: {name}", mprov.page, value)
+            elif same_text(have, value):
+                self.log.reconciled += 1
+            else:
+                self.log.disagree(
+                    where, f"{what}: {name}", value, have, kept="model",
+                    why=_FIELD_WHY, page=mprov.page,
+                    floor_method="tables", floor_confidence=conf,
+                    model_confidence=float(mprov.confidence),
+                    model_method=mprov.method)
+                mprov.alternatives.append(Alternative(
+                    field=name, value=value, method="tables",
+                    confidence=conf, note="the table's value"))
+
     def merge_pair(self, f: LabTest, m: LabTest) -> None:
         where = self._label(m)
         what = f.kind
         mprov = self._prov0(m)
+        pinned = self._pinned(f, m.kind)
         # The link, then the values.
         for name in ("investigation_id", "sample_id", "depth_top",
                      "depth_bottom"):
             fv = getattr(f, name)
             if fv in (None, ""):
                 continue
-            self._settle_into(m, m, name, fv, f, where, "link")
+            self._settle_into(m, m, name, fv, f, where, "link", pinned)
+        if f.fields:
+            self._fill_fields(m, f.fields, f, where, what)
         if f.result is None:
             pass
         elif m.result is None:
@@ -1122,37 +1469,83 @@ class _LabMerger:
                     m.fields.setdefault(name, show(fv))
                     self.log.keep(where, f"{what}: {name}", mprov.page, fv)
                     continue
-                self._settle_into(m, m.result, name, fv, f, where, what)
+                self._settle_into(m, m.result, name, fv, f, where, what,
+                                  pinned)
             if isinstance(f.result, GradationResult) and \
                     isinstance(m.result, GradationResult):
                 self._merge_series(m, m.result, f.result.percent_passing,
-                                   f, where)
+                                   f, where, pinned)
         for p in f.prov:
             if p not in m.prov:
                 m.prov.append(p)
 
+    def _order(self, f: LabTest) -> Optional[List[int]]:
+        """The order a floor test looks through the model's tests for its
+        specimen, or None for the model's own order.
+
+        Each page's values carry that page's link (RI-56), and a link
+        matches more than one specimen: a page that prints no boring or
+        depth matches every one, a depth matches every specimen within the
+        tolerance whatever its sample. Where the model put its tests on more
+        than one page, the page decides among the specimens that match: the
+        model's test on the floor test's page, else the nearest that starts
+        before it (a sheet runs down its pages), else the rest in the
+        model's order.
+        """
+        pages = sorted({p.page for p in f.prov if p.method == "tables"})
+        if not pages:
+            return None
+
+        def page_of(m: LabTest) -> Optional[int]:
+            return m.prov[0].page if m.prov else None
+
+        if len({page_of(m) for m in self.model}) < 2:
+            return None
+
+        def rank(i: int) -> Tuple[int, int, int]:
+            page = page_of(self.model[i])
+            if page in pages:
+                return (0, 0, i)
+            if page is not None and page < pages[0]:
+                return (1, pages[0] - page, i)
+            return (2, 0, i)
+
+        return sorted(range(len(self.model)), key=rank)
+
     def place_values(self, f: LabTest) -> Optional[LabTest]:
         """A floor test with no twin: its values find homes, or it stays."""
-        candidates = [m for m in self.model if _same_specimen(f, m)]
+        order = self._order(f) or range(len(self.model))
+        candidates = [self.model[i] for i in order
+                      if _same_specimen(f, self.model[i])]
         if f.result is None or isinstance(f.result, (SummaryTableResult,
                                                      OtherResult)):
             return f.model_copy(deep=True) if not any(
                 m.kind == f.kind for m in candidates) else None
         homeless: Dict[str, Any] = {}
         homed = 0
+        first_home: Optional[LabTest] = None
+        by_values = f.kind in _MOISTURE_KINDS and f.kind != self.title_kind
+
+        def slot(m: LabTest, name: str) -> str:
+            return _slot(m.kind, name) if by_values else name
+
         for name in _scalar_fields(f.result):
             fv = getattr(f.result, name, None)
             if fv in (None, "", False):
                 continue
-            home = next((m for m in candidates
-                         if m.result is not None and hasattr(m.result, name)),
-                        None)
+            # A test named by its values (``by_values``) finds its slot in
+            # the home's own kind: an Atterberg test's water content is its
+            # ``water_content`` (:data:`_RENAME`).
+            home = next((m for m in candidates if m.result is not None
+                         and hasattr(m.result, slot(m, name))), None)
             if home is None:
                 homeless[name] = fv
                 continue
-            self._settle_into(home, home.result, name, fv, f,
-                              self._label(home), f.kind)
+            self._settle_into(home, home.result, slot(home, name), fv,
+                              f, self._label(home), f.kind,
+                              self._pinned(f, home.kind))
             homed += 1
+            first_home = first_home or home
         series = (f.result.percent_passing
                   if isinstance(f.result, GradationResult) else [])
         if series:
@@ -1160,11 +1553,29 @@ class _LabMerger:
                          if isinstance(m.result, GradationResult)), None)
             if home is not None:
                 self._merge_series(home, home.result, series, f,
-                                   self._label(home))
+                                   self._label(home),
+                                   self._pinned(f, home.kind))
                 homed += 1
+                first_home = first_home or home
             else:
                 homeless["percent_passing"] = series
+        # A water content or density the floor named by its values (no
+        # title kind was read, or the title names another kind), on a
+        # specimen the model reported as another kind, is part of that test
+        # -- an Atterberg sheet's natural water content, a compaction's --
+        # not a test of its own: what has no slot there goes into its fields
+        # (RI-56).
+        other = next((m for m in candidates if m.kind != f.kind), None)
+        if other is not None and by_values and (f.fields or homeless):
+            moved = dict(f.fields)
+            for name in list(homeless):
+                moved[name] = show(homeless.pop(name))
+            self._fill_fields(other, moved, f, self._label(other), f.kind)
+            return None
         if not homeless:
+            if f.fields and first_home is not None:
+                self._fill_fields(first_home, f.fields, f,
+                                  self._label(first_home), f.kind)
             return None
         if homed == 0:
             return f.model_copy(deep=True)
@@ -1184,12 +1595,21 @@ class _LabMerger:
         extra: List[LabTest] = []
         for f in self.floor:
             twin = None
-            for i, m in enumerate(self.model):
-                if i in self.paired or m.kind != f.kind:
-                    continue
-                if _same_specimen(f, m):
-                    twin = i
-                    break
+            order = self._order(f)
+            if order is not None:
+                # The specimen its page names, paired or not: a later one is
+                # another specimen, and a paired one takes its values below.
+                twin = next((i for i in order if self.model[i].kind == f.kind
+                             and _same_specimen(f, self.model[i])), None)
+                if twin in self.paired:
+                    twin = None
+            else:
+                for i, m in enumerate(self.model):
+                    if i in self.paired or m.kind != f.kind:
+                        continue
+                    if _same_specimen(f, m):
+                        twin = i
+                        break
             if twin is not None:
                 self.paired.add(twin)
                 self.merge_pair(f, self.model[twin])
@@ -1223,15 +1643,17 @@ class _LabMerger:
 
 
 def merge_lab_tests(floor: Sequence[LabTest], model: Sequence[LabTest],
-                    log: Optional[MergeLog] = None
+                    log: Optional[MergeLog] = None, title_kind: str = ""
                     ) -> Tuple[List[LabTest], MergeLog]:
     """The tables' tests and the model's as one list, and what the merge did.
 
     The model's tests come first, in the model's own order, each merged
     with the floor test of the same kind on the same specimen where there
     is one; floor tests with no twin follow, whole where none of their
-    values found a home and as a residue where some did.
+    values found a home and as a residue where some did. ``title_kind`` is
+    the kind the sheet's title names (:attr:`FloorSheet.kind`, ``""`` where
+    none was read): a floor test of any other kind was named by its values.
     """
     log = log if log is not None else MergeLog()
-    merged = _LabMerger(floor, model, log).run()
+    merged = _LabMerger(floor, model, log, title_kind).run()
     return merged, log

@@ -332,6 +332,83 @@ def test_a_test_the_reconciler_linked_is_written_in_the_hole_it_names(
     assert test.investigation_id == printed          # the record untouched
 
 
+def _row_table(*rows):
+    return LabTest(kind="summary_table",
+                   result=SummaryTableResult(rows=list(rows)))
+
+
+def test_a_summary_row_naming_no_log_gets_a_hole_named_as_printed():
+    """A row printing a boring no log describes is written in a hole
+    carrying that name, as a sheet printing it would be, and the note says
+    a summary row named it."""
+    table = _row_table(SummaryRow(investigation_id="QZ-7",
+                                  depth_top=q(2.0, "m"), ll=40.0))
+    log = Investigation(investigation_id="B-1", depth_unit="m")
+    notes = []
+    xml = write_diggs([log, table], Project(name="R"), notes=notes)
+    (made,) = notes[0].synthesised
+    assert made.startswith("QZ-7: named by a row of a laboratory summary")
+    assert notes[0].lab_tests == 1
+    assert diggs_schema_gate(xml)[0] is True
+    ok, diffs = diggs_roundtrip_gate(xml, [log, table])
+    assert ok, diffs
+
+
+def test_rows_and_a_sheet_printing_one_name_share_one_hole():
+    sheet = _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),
+                 investigation_id="QZ-7")
+    table = _row_table(
+        SummaryRow(investigation_id="QZ-7", depth_top=q(3.0, "m"), ll=41.0),
+        SummaryRow(investigation_id="QZ-7", depth_top=q(5.0, "m"), ll=46.5))
+    notes = []
+    xml = write_diggs([table, sheet], Project(name="R"), notes=notes)
+    (made,) = notes[0].synthesised
+    assert made.startswith("QZ-7: named by a laboratory sheet")
+    assert notes[0].lab_tests == 3
+    ok, diffs = diggs_roundtrip_gate(xml, [table, sheet])
+    assert ok, diffs
+
+
+def test_a_summary_row_printing_no_boring_stays_in_the_record():
+    table = _row_table(SummaryRow(depth_top=q(2.0, "m"), ll=40.0))
+    log = Investigation(investigation_id="B-1", depth_unit="m")
+    notes = []
+    write_diggs([log, table], Project(name="R"), notes=notes)
+    assert notes[0].synthesised == []
+    assert notes[0].lab_tests == 0
+    assert any("no boring named" in s and "kept in the record" in s
+               for s in notes[0].skipped), notes[0].skipped
+
+
+def test_a_summary_row_is_written_in_the_hole_it_was_linked_to():
+    row = SummaryRow(investigation_id="B-1", depth_top=q(2.0, "m"), ll=40.0)
+    row.linked_investigation_id = "B-01"
+    log = Investigation(investigation_id="B-01", depth_unit="m")
+    notes = []
+    xml = write_diggs([log, _row_table(row)], Project(name="R"),
+                      notes=notes)
+    assert notes[0].synthesised == []
+    assert notes[0].lab_tests == 1
+    ok, diffs = diggs_roundtrip_gate(xml, [log, _row_table(row)])
+    assert ok, diffs
+    assert row.investigation_id == "B-1"             # the record untouched
+
+
+def test_a_summary_row_shares_the_hole_made_for_a_sheet():
+    """A sheet naming a hole no log describes still gets a hole carrying its
+    name; a row printing that name is written in it, and adds none."""
+    sheet = _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),
+                 investigation_id="QZ-7")
+    row = SummaryRow(investigation_id="QZ-7", depth_top=q(3.0, "m"), ll=41.0)
+    notes = []
+    xml = write_diggs([sheet, _row_table(row)], Project(name="R"),
+                      notes=notes)
+    assert [s.split(":")[0] for s in notes[0].synthesised] == ["QZ-7"]
+    assert notes[0].lab_tests == 2
+    ok, diffs = diggs_roundtrip_gate(xml, [sheet, _row_table(row)])
+    assert ok, diffs
+
+
 def test_a_test_nobody_linked_is_placed_by_its_printed_hole_as_before():
     log = Investigation(investigation_id="B-01", depth_unit="ft")
     test = _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),

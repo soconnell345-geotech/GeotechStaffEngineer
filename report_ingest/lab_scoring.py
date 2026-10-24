@@ -619,6 +619,9 @@ class LabScore:
     #: (RI-07's switch), as the reader itself reported it; None when no
     #: reading came back.
     link_from_label: Optional[bool] = None
+    #: Whether the reader's brief showed the per-page floor (RI-56's
+    #: switch), as the reader reported it; None when no reading came back.
+    floor_per_page: Optional[bool] = None
     #: The visual-scales check of a tabulated gradation against the curve
     #: the sheet plots (:func:`report_ingest.visual_scales.plot_check`);
     #: None when it did not run (BACKLOG RI-05).
@@ -995,6 +998,7 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.changes = len(result.changes)
     after.warnings = list(result.warnings)
     after.link_from_label = bool(getattr(result, "link_from_label", False))
+    after.floor_per_page = bool(getattr(result, "floor_per_page", False))
     plot = getattr(result, "plot_check", None)
     after.plot_check = dict(plot) if plot is not None else None
     # The model's answer alone, before the merge with the tables' floor.

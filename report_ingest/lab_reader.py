@@ -80,6 +80,15 @@ leaves the boring empty, and the test cannot be linked to the ground.
 one paragraph telling it that a hole printed inside a specimen or sample
 label names the hole. It changes what the model is asked, so it stays off
 until a cluster run measures it.
+
+THE PER-PAGE FLOOR SWITCH (RI-56, off by default). The floor gives each
+page's values the boring, sample and depth that page prints, and corrects
+the title's kind (a particle density is a specific gravity; a density or
+water content title over a compaction's parts is a compaction). The merge
+always takes that floor. :func:`use_floor_per_page` (or
+``GEOTECH_INGEST_LAB_FLOOR_PER_PAGE``) also shows it to the model as THE
+STARTING RECORD; off, the brief shows the floor as it was before RI-56,
+byte for byte, until a cluster run measures the difference.
 """
 
 from __future__ import annotations
@@ -113,6 +122,7 @@ __all__ = [
     "PAGE_DPI", "ZOOM_DPI", "MAX_DEPTH_M", "SERIES_NAMES", "MAX_LAB_PAGES",
     "lab_windows", "reader_system", "link_from_label_enabled",
     "use_link_from_label", "LINK_FROM_LABEL_ENV", "LINK_FROM_LABEL",
+    "floor_per_page_enabled", "use_floor_per_page", "FLOOR_PER_PAGE_ENV",
 ]
 
 #: The ceiling in the brief: four model calls for one sheet, the last of them
@@ -624,6 +634,9 @@ class LabReadResult:
     #: True when the reader was told about holes inside specimen labels
     #: (:data:`LINK_FROM_LABEL`), so a run file says which arm it is.
     link_from_label: bool = False
+    #: True when the brief showed the per-page floor
+    #: (:data:`FLOOR_PER_PAGE_ENV`, RI-56), so a run file says which arm.
+    floor_per_page: bool = False
     #: The windows a run longer than :data:`MAX_LAB_PAGES` was read in;
     #: empty when it was read whole.
     windows: List[List[int]] = field(default_factory=list)
@@ -657,6 +670,7 @@ class LabReadResult:
             **({"plot_check": dict(self.plot_check)}
                if self.plot_check is not None else {}),
             **({"link_from_label": True} if self.link_from_label else {}),
+            **({"floor_per_page": True} if self.floor_per_page else {}),
             **({"windows": [list(w) for w in self.windows]}
                if self.windows else {}),
         }
@@ -878,6 +892,32 @@ def use_link_from_label(on: bool = True) -> Iterator[None]:
         _LINK_FORCED.reset(token)
 
 
+#: The switch that shows the model the per-page floor (RI-56, off by
+#: default); see the module docstring.
+FLOOR_PER_PAGE_ENV = "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE"
+_PER_PAGE_FORCED: ContextVar[Optional[bool]] = ContextVar(
+    "ingest_lab_floor_per_page", default=None)
+
+
+def floor_per_page_enabled() -> bool:
+    """Whether the brief shows the per-page floor (default: off)."""
+    forced = _PER_PAGE_FORCED.get()
+    if forced is not None:
+        return forced
+    return (os.environ.get(FLOOR_PER_PAGE_ENV) or "").strip().lower() in (
+        "1", "on", "true", "yes")
+
+
+@contextmanager
+def use_floor_per_page(on: bool = True) -> Iterator[None]:
+    """Show the per-page floor in the brief (or not) inside the block."""
+    token = _PER_PAGE_FORCED.set(bool(on))
+    try:
+        yield
+    finally:
+        _PER_PAGE_FORCED.reset(token)
+
+
 def reader_system(link_from_label: Optional[bool] = None) -> str:
     """The system prompt, with :data:`LINK_FROM_LABEL` after the link
     paragraph when the switch is on. Off, it is :data:`LAB_READER_SYSTEM`
@@ -1023,7 +1063,8 @@ def _specimen_starts(doc: Any, pages: Sequence[int]) -> List[int]:
 def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str, hint_kind: Optional[str],
            budget: int, floor: Optional[FloorSheet] = None,
-           run_pages: Optional[Sequence[int]] = None) -> str:
+           run_pages: Optional[Sequence[int]] = None,
+           per_page: bool = False) -> str:
     vocabulary = "\n".join(f"  {name}: {text}"
                            for name, text in KIND_DEFINITIONS.items())
     series = "\n".join(f"  {name}: {text}"
@@ -1070,7 +1111,7 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
             "detected tables before you were called, with the page and box "
             "each came from and the reader's confidence -- build on it; "
             "add, correct with the box and a note, never drop)",
-            serialise_floor(floor),
+            serialise_floor(floor, per_page=per_page),
             "",
         ]
     parts += ["THE PAGE"]
@@ -1755,7 +1796,21 @@ def _combine(parts: Sequence[LabReadResult], pages: Sequence[int],
         reconciled=sum(part.reconciled for part in parts),
         plot_check=_merge_plot_checks([part.plot_check for part in parts]),
         link_from_label=any(part.link_from_label for part in parts),
+        floor_per_page=any(part.floor_per_page for part in parts),
         windows=[[int(p) for p in w] for w in windows])
+
+
+def _unbound_rows(floor: FloorSheet) -> List[Dict[str, Any]]:
+    """One unresolved row for each page whose table values the floor left
+    unbound because the page prints no boring or depth of its own while
+    another page of the sheet does (RI-56)."""
+    return [{"what": "lab_tests floor link",
+             "why": (f"page {row['page']}'s tables give {row['values']} "
+                     f"value(s) under no boring and no depth of its own; "
+                     f"they are left unbound rather than given the link "
+                     f"printed on page(s) "
+                     f"{', '.join(str(p) for p in row['linked'])}"),
+             "page": int(row["page"])} for row in floor.unbound]
 
 
 def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
@@ -1765,6 +1820,7 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
     """One sheet, or one window of a run, read and merged with its floor."""
     pages = [int(p) for p in pages]
     system = reader_system()
+    per_page = floor_per_page_enabled()
     spent = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
              "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0}
 
@@ -1792,11 +1848,13 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
         images.append(png)
 
     # THE FLOOR: the page's tables and title, read before any call is spent
-    # and shown to the model as the record it starts from.
+    # and shown to the model as the record it starts from (as it was before
+    # RI-56 unless the per-page switch is on; the merge takes it per page).
     floor = floor_from_tables(doc, pages, report_id)
     warnings.extend(floor.warnings)
     brief = _brief(doc, pages, ledger, item_title, report_id, hint_kind,
-                   budget, floor=floor, run_pages=run_pages)
+                   budget, floor=floor, run_pages=run_pages,
+                   per_page=per_page)
     tools = _Tools(doc, pages)
     tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
@@ -1853,7 +1911,8 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
     model_tests = builder.build()
     # THE MERGE: the model's answer folded onto the floor. Nothing a table
     # held is lost; every contradiction is on the record.
-    merged, merge_log = merge_lab_tests(floor.tests, model_tests, MergeLog())
+    merged, merge_log = merge_lab_tests(floor.tests, model_tests, MergeLog(),
+                                        title_kind=floor.kind)
     # VISUAL SCALES (off by default): the tabulated gradation set against
     # the curve the sheet plots, read by code. The table stays the record.
     plot = None
@@ -1870,7 +1929,7 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
     return LabReadResult(
         tests=merged,
         changes=builder.changes,
-        unresolved=builder.unresolved,
+        unresolved=builder.unresolved + _unbound_rows(floor),
         cost=spent,
         model_calls=model_calls,
         tool_calls=tool_calls,
@@ -1885,4 +1944,5 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
         added=merge_log.added,
         reconciled=merge_log.reconciled,
         plot_check=plot,
-        link_from_label=system != LAB_READER_SYSTEM)
+        link_from_label=system != LAB_READER_SYSTEM,
+        floor_per_page=per_page)

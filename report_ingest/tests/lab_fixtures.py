@@ -233,3 +233,114 @@ def build_certificate_page() -> LabSheetGT:
     pdf = doc.tobytes()
     doc.close()
     return LabSheetGT(pdf=pdf, kind="other", depth_unit="m")
+
+def build_water_content_run() -> bytes:
+    """Three water content sheets, one specimen a page (RI-56).
+
+    The first two pages print their own boring and depth; the third prints
+    neither. Made-up values: 21.4, 17.9 and 25.0 %.
+    """
+    import pymupdf
+    doc = pymupdf.open()
+    for boring, depth, wc, dry in (("B-7", "3.0 ft", "21.4", "101.2"),
+                                   ("B-8", "6.0 ft", "17.9", "106.5"),
+                                   ("", "", "25.0", "98.3")):
+        page = doc.new_page(width=LETTER[0], height=LETTER[1])
+        _text(page, 180, 60, "MOISTURE CONTENT", 14, bold=True)
+        if boring:
+            _text(page, 60, 110, f"Boring: {boring}")
+            _text(page, 380, 110, f"Depth: {depth}")
+        _grid(page, 60, 150, (150, 80),
+              [("Water content (%)", wc), ("Dry density (pcf)", dry)],
+              header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_bare_run() -> bytes:
+    """Three water content sheets that print no boring and no depth (RI-56).
+
+    The first two hold one made-up value each (23.6 and 19.2 %); the third
+    holds no value at all.
+    """
+    import pymupdf
+    doc = pymupdf.open()
+    for rows in ([("Water content, natural (%)", "23.6")],
+                 [("Water content, natural (%)", "19.2")],
+                 [("Remarks", "retained")]):
+        page = doc.new_page(width=LETTER[0], height=LETTER[1])
+        _text(page, 180, 60, "MOISTURE CONTENT", 14, bold=True)
+        _grid(page, 60, 150, (170, 80), rows, header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_bare_empty_run() -> bytes:
+    """Two Atterberg sheets that print no boring, no depth and no value: the
+    first a remarks table, the second its title alone (RI-56)."""
+    import pymupdf
+    doc = pymupdf.open()
+    for rows in ([("Remarks", "retained")], []):
+        page = doc.new_page(width=LETTER[0], height=LETTER[1])
+        _text(page, 180, 60, "ATTERBERG LIMITS", 14, bold=True)
+        if rows:
+            _grid(page, 60, 150, (170, 80), rows, header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_limits_trials() -> bytes:
+    """A limits worksheet whose title is not read, with its trial rows: a
+    mass of water in grams and the water contents of three trials (RI-56).
+    Made-up values."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    _text(page, 60, 110, "Boring: B-11")
+    _text(page, 380, 110, "Depth: 4.0 ft")
+    _grid(page, 60, 200, (170, 60, 60, 60),
+          [("Moisture lost, mass (g)", "12.7", "14.1", "13.3"),
+           ("Moisture content, trials (%)", "38.2", "41.5", "44.0"),
+           ("Liquid limit (%)", "41", "", "")], header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_particle_density_page() -> bytes:
+    """A particle density sheet whose tables hold no value (RI-56)."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    _text(page, 160, 60, "Particle density by gas jar", 14, bold=True)
+    _grid(page, 60, 150, (170, 80), [("Remarks", "retained")],
+          header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_density_run() -> bytes:
+    """Two sheets titled a density that print a compaction mould (RI-56).
+
+    Each page prints its own boring and depth. Made-up values.
+    """
+    import pymupdf
+    doc = pymupdf.open()
+    for boring, depth, bulk, wc in (("TP-4", "1.0 m", "2.05", "14.2"),
+                                    ("TP-5", "2.0 m", "2.11", "12.6")):
+        page = doc.new_page(width=LETTER[0], height=LETTER[1])
+        _text(page, 200, 60, "BULK DENSITY", 14, bold=True)
+        _text(page, 60, 82, "Mould volume (cm3): 944")
+        _text(page, 330, 82, "Rammer: 2.5 kg")
+        _text(page, 60, 110, f"Boring: {boring}")
+        _text(page, 380, 110, f"Depth: {depth}")
+        _grid(page, 60, 150, (170, 80),
+              [("Bulk density (Mg/m3)", bulk), ("Water content (%)", wc)],
+              header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
