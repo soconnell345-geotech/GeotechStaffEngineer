@@ -4314,3 +4314,64 @@ RESULTS.md should print `floor_alone` and `model_alone` beside before/after; the
 3. **Visual scales in ingest cannot be measured on this corpus.** The voters act only on scans whose labels lack text, and DI supplies that text.
    - Leave the switch off.
    - RESULTS should print the `visual_scales` counts (fix G3).
+
+
+## FOUNDRY RUN 4 -- 2026-10-23 -- 5.33.0+foundry.20261023.1, GPT-5.4
+
+- **What ran:** brief 2026-10-23 Part A wave 1 on Palantir Foundry, run by the AI FDE.
+  - Wheel `5.33.0+foundry.20261023.1` (report_ingest at `342e102`), planlens `0.13.0+main.c79d1f3`.
+  - GPT-5.4 (Responses route), numpy 1.26.4.
+  - Arms: calc with page pictures off and on; lab with the specimen-label link off and on, twice each; logs; narrative.
+  - Arm 1f (scans without DI) was not run.
+- **Cost:** 223 calls, 2,959,952 input / 383,190 output tokens, 4,479 s of builds. 0 retries, 0 gave up, 0 throttle waits, every call stopped normally.
+  - 12 repeat calls in the "b" lab arms came back from a response cache (0.1-0.5 s, identical answers), so those repeats are not independent.
+- **Files:** `module_work/field_feedback/2026-10-24_foundry_brief_1023/raw/wave1/` only, never committed.
+- **Full reading:** `TRACE_REVIEW.md` in the same folder.
+
+| reader | set | RUN 1 (5.31.0) | RUN 2 (5.32.1rc3) | RUN 3 (5.33.0rc1, VS off / on) | RUN 4 | note |
+|---|---|---|---|---|---|---|
+| calculation | 10 runs (no blind set) | 72 % 146/203 | -- | -- | pictures off **78 % 158/203**; on **81 % 165/203** | floor 108/173 unchanged. Results 44 -> 51 (off) / 58 (on) of 75. +7 for pictures = R30_p542 label word order on a 1-page item; R18_p50 -1 (pictures lost page and box, merge wrote 4 floor values). Disagreements 166 -> 27 / 36 |
+| lab | open 16 | 46 % 167/367 | 51 % 188/367 | 42 % 155 / 40 % 147 | label link off 191 / 156; **on 227 / 250** | link open 20 / 14 off, **28 / 28 on** (of 33) |
+| lab | blind 15 | 82 % 375/458 | 78 % 359/458 | 365 / 369 | off 368 / 343; on 373 / 372 (of 459) | link blind 45 / 30 off, **46 / 46 on** |
+| lab | all 31 | 66 % 542/825, link 64/79 | 66 % 547/825, link 65/79 | 520 / 516, link 60/79 | off 559 / 499, link 65 / 44; **on 600 / 622, link 74 / 74** (of 826) | after == model alone in every arm; flips off: R28_p163, R36_p58, R15_p82, R27_p45 (whole answer 1 of 17 tests); on: none |
+| log | open 6 | 98 % 301/307 | 98 % 301/307 | 300 / 300 | **96 % 295/307** | R37_p26 -4 (answer sheet, one sample depth 0.5 ft off the drawn box); R06_p51 -1 (total depth read off the axis). Floor 248 -> 266 |
+| log | blind 9 | 73 % 156/214 | 78 % 166/214 | 166 / 168 | **86 % 183/214** | R13_p45 +9 (reader binds the floor's unbound index values, RI-04), R25_p19 +5 (RI-18), R34_p49 +3. Floor 146 -> 139, model 154 -> 167 |
+| log | blind index | 0/16 | 0/16 | 0 / 2 | **10/16** | model 9, floor 1 |
+| log | blind layer_top | -- | -- | 22/36 | **29/36** | model 29, floor 16 |
+| narrative | open 2 | 43/55, 42/52 | 46/55, 46/53 | -- | 47/55, 47/55 (lenient 48) | piece rule decides R05 recommendedFoundations |
+| narrative | blind 6 | 134/180, 133/176 | 149/180, 149/176 | -- | 142/180, 142/179 (lenient 144) | structureCount 3 -> 1 and figureCount 5 -> 3 of 8 (RI-36); the sheets predate OWN-08 |
+| narrative | all 8 | recall 75 %, precision 77 % | 83 %, 85 % | -- | **80 %, 81 %** | list recall 57 %; structureCount 1/8, structureList 2/7, recommendedFoundations 4/8, strata 4/8, earthHazardsExposed 0/3 |
+
+**Reading.**
+
+1. **Plumbing is clean.**
+   - 24 builds ok; a 0-call resume pass on every arm; counts match glue and package.
+   - New: a response cache served 12 repeat calls (off_b 6, on_b 6).
+   - No `durable_dir` was passed.
+
+2. **Calc (RI-57).** The place merge cuts disagreements from 166 to 27 and costs one value in off (R16_p162's program, taken from the floor's banner pattern).
+   - 33 of off's 40 value misses are on the right page under another label: word order, Greek letters, one unit.
+   - Seven are absent: R20_p344's title value x6, and one coefficient.
+   - Pictures: keep OFF. They added nothing on 8 multi-page items and broke provenance on R18_p50.
+   - The forced second call and the fold need wave 2.
+
+3. **Lab (RI-55, RI-06).** The specimen-label link wins: 74/79 twice against 44-65 in six off observations, with no flips.
+   - R17_p136: 1 -> 10 of 10.
+   - R36_p56: 1 -> 9 of 10.
+   - R17_p114: 5 -> 42 of 56.
+   - Left with it on: R17_p155 (kind `other`, OWN-88 a) and R28_p176/177. There the hole name sits alone in the sampling-point field: 32 series values read and lost to the link.
+
+4. **Logs (RI-38, RI-44/45/48).** The live floor equals the offline one (open 266, blind 139).
+   - The floor's 2nd + 3rd N agrees with the printed N on all 11 rows where both exist.
+   - Halts carry no N on every route.
+   - Drive lengths come from the model alone: 13 rows, 12 of the 27 rows on logs that print an increment. The floor never fills the field.
+   - Printed N goes to `n_printed` on one form (12 rows) and to `n` on two others (8 rows).
+   - The floor says "not printed" on R21/R30/R34, which print an N-Value column.
+
+5. **Narrative (RI-13, RI-66).** `rescore_saved` reproduces every saved verdict.
+   - The piece rule decided 3 lenient verdicts: R05 recommendedFoundations, R28 structureList and recommendedFoundations.
+   - R05 passes by one item: 0.67 against 0.60.
+   - Best-first pairing (RI-66 1) changes no strict verdict and undoes R05's lenient credit.
+   - 11 strict verdicts rest only on `_proper` (RI-66 3); both open ones share numbers, not words.
+
+6. **Answer sheets (RI-72).** Suspected: log R37_p26 (SS-3 depth); lab R06_p67 (percent finer: one unprinted sieve, two printed ones missing, five values off by 0.1-0.4); narrative R36 earthHazardsExposed (judgment). No truth file was changed.
