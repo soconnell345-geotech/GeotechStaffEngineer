@@ -76,6 +76,20 @@ and resumes. `check <out_dir>` reads any out_dir back for $0, a Foundry one
 included. The offline test drives it on a made-up printout with a scripted
 model.
 
+`run_plain_baseline` (2026-10-24) is the baseline the owner asked for: "a
+capable model handed the pages and asked to extract". Each item's own pages
+are cut into one small PDF and sent as a PDF document block with one short
+instruction per stage and the stage's own answer schema as the answer tool:
+ONE call, no triage, brief, text-layer cells, floor or merge. The record is
+built from the answer alone by the stage's builder (the log depth gate
+opened, since there is no ruler) and scored by the stage's scorer, so it
+sits beside the pipeline's `model` and `after`. It is metered and resumes as
+`run_claude_local` does (`--time-limit` keeps one command under ten
+minutes), writes `plain_<stage>_<model>/` in the same gitignored folder, and
+rewrites `RESULTS.md` there with each item beside the pipeline's arm
+re-scored with the current scorers. `report --stage <stage>` rewrites it for
+$0. The offline test drives it with a scripted model.
+
 `ags_truth` (2026-10-24, RI-79) writes the logs stage's answer sheets for
 the public blind set's BGS scans from the AGS4 data delivered for the same
 holes -- the one answer set no Claude session wrote. `build` assembles one
