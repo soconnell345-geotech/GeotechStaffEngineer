@@ -4399,3 +4399,27 @@ Run with `module_work/report_ingest_harness/run_claude_local.py` (RI-78, merged 
 Page labels by section from a description of every page (RI-73, stage b, 13 reports, 3,418 pages; harmful = sent to the wrong reader or none; in brackets with divider pages left out): rules 227 (216), master 290 (265), Sonnet describing + Opus labelling 183 (148), the same with the rules' labels as hints 162 (124), Haiku describing + Opus 170 (131); describing cost $83.36 (Sonnet) and $8.40 (Haiku). 136 of the 162 are pages where the hand labels follow another convention (OWN-92).
 
 Public blind set P01-P03 (RI-79; BGS scans scored against AGS4 data, 54 items, 2,068 values): the scans carry no text and there is no DI text, so no depth is placed on a boring; with `GEOTECH_INGEST_VISUAL_SCALES=1` on Sonnet 396 / 2,068 (19 %), $11.36.
+
+
+## CLAUDE LOCAL RUN 2 (2026-10-24): the plain baseline, the lab repeat, page labels under conventions B
+
+Local API, metered on the shared spend ledger (hard total lowered to $247.71, df8e665; $243 spent at the end). Private outputs under `module_work/field_feedback/2026-10-24_claude_local/raw/`.
+
+**Plain baseline (RI-86, `run_plain_baseline.py`, 250aebb), Opus 5.5, $6.81.** Each item's own pages as one PDF, one short instruction, the stage's answer schema, one call; scored by the stage's scorer.
+
+| stage, set | plain | pipeline, model alone | pipeline, after |
+|---|---|---|---|
+| logs, open (6) | 279 / 307 | 287 | 296 |
+| logs, blind (9) | 175 / 214 | 167 | 182 |
+| lab, open (16) | 330 / 367 | 351 | 351 |
+| lab, blind (15) | 420 / 459 | 417 | 417 |
+| calc (10, open) | 176 / 203 | 182 | 181 |
+| narrative R05 recall | 24 / 27 | | 25 |
+
+Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91, calc $1.18 / $2.40, narrative R05 $0.29 / $0.22. The pipeline arms were re-scored with the current scorers (calc after the RI-74 merge). Boxes: the pipeline places 557 of 619 log values, 71 of 72 lab tests and every calc value; the plain answer places none.
+
+**Lab repeat (RI-78), the 11 sheets where the first runs differ, switch on:** Opus 182 / 234, Sonnet 164 (first runs: Opus +26). $0.73 / $1.79.
+
+**Page labels under conventions B (RI-73), 13 reports, 3,418 pages, harmful / strict:** rules 227 / .896; master 290 / .887; conventions A 182 / .908; B with Sonnet's descriptions 56 / .950; B with Haiku's 50 / .949. B-Haiku $6.72 of Opus labelling on saved descriptions. In-sample.
+
+**Calc one-page fix, live (RI-74):** R30_p555 5/8 -> 11/11 on Sonnet, $0.03.

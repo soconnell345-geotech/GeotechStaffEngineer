@@ -2098,7 +2098,7 @@
     "ask_who": null,
     "question": "How should a page be labelled when what it looks like differs from the section it sits in?",
     "why": "Most page labels that send a page to the wrong reader (64 % on the 13 labelled reports) are this convention, not a misreading. The new range labeller (RI-73) and the label review need it in writing.",
-    "background": "The labelled spreadsheet mostly names a page by its section: a photo in a test-pit appendix is a test-pit log, a calc's title page is a calculation. Vision and the label review name it by its look (photos, figure, divider). The spreadsheet is itself inconsistent on tab pages (divider in two reports, the section's label in three) and slip-sheets (other in one, lab_test in another). Four questions: (1) photos, plots, title pages and certificates inside a section; (2) prose inside an appendix (procedures, general notes, classification criteria); (3) tab and divider pages; (4) slip-sheets in a lab appendix.",
+    "background": "The labelled spreadsheet mostly names a page by its section: a photo in a test-pit appendix is a test-pit log, a calc's title page is a calculation. Vision and the label review name it by its look (photos, figure, divider). The spreadsheet is itself inconsistent on tab pages (divider in two reports, the section's label in three) and slip-sheets (other in one, lab_test in another). Four questions: (1) photos, plots, title pages and certificates inside a section; (2) prose inside an appendix (procedures, general notes, classification criteria); (3) tab and divider pages; (4) slip-sheets in a lab appendix. Measured 2026-10-24 on the 13 labelled reports: labelled under the hand labels' own conventions (a photo log is its own section, tabs 'divider', slip-sheets 'other'), the new labeller sends 50-56 pages to the wrong reader, against 182 under the recommended conventions and 290 today. That is agreement with these same hand labels, so it favours them by construction. A fifth question: (5) the sub-divider page in front of each calculation in a calc appendix is 'calculation' in the hand labels, while a lab appendix's slip-sheet is 'other' (16 of the 56).",
     "options": [
       {
         "label": "Section label for (1)-(4)",
@@ -2111,9 +2111,13 @@
       {
         "label": "Label by the page's own look",
         "effect": "Photos stay photos, tabs stay dividers; the readers are handed sections by range instead of by label."
+      },
+      {
+        "label": "The hand labels' own conventions",
+        "effect": "Photo logs their own section, tabs 'divider', slip-sheets 'other'; the labeller agrees with the spreadsheet on all but 50-56 of 3,418 pages. (5) is decided on its own."
       }
     ],
-    "recommendation": "Section label for (1), (3), (4) and 'other' for appendix prose: it matches most of the existing hand labels, so the scores stay comparable, and it hands each reader its whole section.",
+    "recommendation": "The hand labels' own conventions, with (5) as 'calculation': the labeller then agrees with the spreadsheet on all but 50-56 of 3,418 pages, the scores stay comparable, and each calc reaches its reader whole.",
     "if_no_answer": "The labels are scored against the spreadsheet as it is, inconsistencies included.",
     "message_to_send": null,
     "steps": [],
@@ -2214,6 +2218,41 @@
     "sources": [
       "BACKLOG.md OWN-95",
       "BACKLOG.md RI-82"
+    ]
+  },
+  "OWN-96": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should report ingest be rebuilt model-first: the model reads each section's pages directly, and our code keeps only what the model cannot do?",
+    "why": "Handed an item's pages and our answer form, a plain Opus call read the unseen logs and lab sheets about as well as the whole pipeline (logs 175 against 182 of 214, lab 420 against 417 of 459), for about half the cost.",
+    "background": "Model-first: (1) Haiku describes every page and Opus labels the sections (about 95 % right, RI-73); (2) each section's pages go to the reader as a PDF with the answer form (lab on Opus, the rest on Sonnet); (3) our code keeps the location of each value on the page, the checks, the fields the form lacks, and DIGGS. The pipeline today places each value on the page (the plain call does not) and fills a few fields the form has no slot for; the plain call exposed two pipeline defects (water depths refused on one log, a compaction sheet read as a summary table). Small samples, each arm run once.",
+    "options": [
+      {
+        "label": "Build model-first behind a switch",
+        "effect": "Built alongside today's pipeline and measured on the unseen reports; the switch turns on only if it is at least as accurate."
+      },
+      {
+        "label": "Keep the pipeline and fix it",
+        "effect": "The defects and missing fields the baseline found are fixed; the design stays as it is."
+      },
+      {
+        "label": "Wait for my whole-report FDE test",
+        "effect": "You hand the Foundry FDE one whole report with 'extract all the report data'; I score what it writes against the same answer sheets before deciding."
+      }
+    ],
+    "recommendation": "Build model-first behind a switch, and run your whole-report FDE test alongside: the switch keeps today's pipeline until the new path measures at least as accurate on the unseen reports.",
+    "if_no_answer": "Nothing changes: the pipeline stays as it is and its fixes continue.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "RI-86",
+      "RI-73"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-96",
+      "BACKLOG.md RI-86",
+      "BACKLOG.md RI-73",
+      "MEASUREMENTS 'CLAUDE LOCAL RUN 2'"
     ]
   }
 }
