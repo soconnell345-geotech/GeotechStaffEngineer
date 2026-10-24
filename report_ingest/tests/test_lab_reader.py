@@ -1052,6 +1052,22 @@ def grading_legend(tmp_path):
 
 
 @pytest.fixture
+def field_density(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_field_density_sheet
+    doc = _open(build_field_density_sheet(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
+def compaction_trials(tmp_path):
+    from report_ingest.tests.lab_fixtures import build_compaction_trials
+    doc = _open(build_compaction_trials(), tmp_path)
+    yield doc
+    doc.close()
+
+
+@pytest.fixture
 def no_per_page_switch(monkeypatch):
     monkeypatch.delenv(FLOOR_PER_PAGE_ENV, raising=False)
 
@@ -1660,3 +1676,128 @@ class TestAValueNamedFloorTestJoinsTheModelsTest:
                                          "wc": "12.6"}
         # the brief's floor is as before: a density test, values and all
         assert [t.kind for t in floor.as_before.tests] == ["density"]
+
+    def test_a_quoted_compaction_holds_none_of_a_field_test_s_values(
+            self, field_density):
+        # RI-71: a field density sheet quoting its compaction: the dry
+        # density and water content are the field test's, not copied into
+        # the quoted compaction's fields as well.
+        floor = floor_from_tables(field_density, [0], "RXX")
+        assert floor.kind == "density"
+        assert [t.kind for t in floor.tests] == ["density", "compaction"]
+        density, compaction = floor.tests
+        assert (density.result.wc, density.result.dry_density.value) == (
+            14.62, 1.794)
+        assert compaction.result.max_dry_density.value == 1.951
+        assert compaction.fields == {}
+
+
+class TestTheFloorReadsTheSpecimensOwnValues:
+    """RI-71: the per-page floor reads a value printed across a row once,
+    and a value beside another label; no trial point as the specimen's; and
+    no header text as a chemical result. The brief's floor as before reads
+    as it did."""
+
+    @pytest.mark.parametrize("row, read", [
+        (["Water content (%)", "16.45", "Specific gravity", "2.71"], 16.45),
+        (["Average water content (%)", "13.65", "13.65", "13.65"], 13.65),
+        (["Water content, trials (%)", "31.64", "33.87", "36.21"], None),
+        (["Water content (%)", "16.45", "Average", "17.45"], None),
+        # a link word between them names no other value: two specimens
+        (["Water content (%)", "16.45", "Specimen K", "17.45"], None),
+        (["Water content (%)", "16.45", "Ring No. 4", "17.45"], None),
+        # a CBR's swell and CBR are one a mould
+        (["Swell, each mould (%)", "0.264", "0.715", "1.193"], None),
+        (["Bearing ratio, each mould (%)", "4", "9", "15"], None)])
+    def test_a_row_s_numbers(self, row, read):
+        from report_ingest.lab_floor import (
+            _field_of, _Values, _read_property_table,
+        )
+        values = _Values()
+        _read_property_table([row], values, 0.8, strict=True)
+
+        assert values.index.get(_field_of(row[0]), (None,))[0] == read
+
+    def test_a_trial_table_s_first_row_is_no_specimen_s_value(
+            self, compaction_trials):
+        floor = floor_from_tables(compaction_trials, [0], "RXX")
+
+        assert floor.kind == "compaction"
+        (test,) = floor.tests
+        assert (test.result.max_dry_density.value,
+                test.result.optimum_wc) == (1.871, 11.46)
+        assert test.fields == {}
+        # the brief's floor as before reads the first point
+        assert [(t.kind, t.result.wc, t.result.dry_density.value)
+                for t in floor.as_before.tests
+                if t.kind == "density"] == [("density", 8.72, 1.793)]
+
+    def test_a_cbr_trial_table_seeds_no_value(self):
+        from report_ingest.lab_floor import _Link, _read_header_table
+        from report_ingest.model import Provenance
+        prov = Provenance(page=0, method="tables", confidence=0.8)
+        rows = [["Blows per lift", "Dry density (Mg/m3)",
+                 "Water content (%)", "Bearing ratio, each mould (%)"],
+                ["11", "1.66", "12.3", "5"], ["26", "1.74", "12.1", "11"],
+                ["57", "1.82", "11.8", "19"]]
+        strict, before = {}, {}
+        assert _read_header_table(rows, strict, _Link(page=0), "cbr", 0.8,
+                                  prov, key="k", strict=True) == (0, [])
+        _read_header_table(rows, before, _Link(page=0), "cbr", 0.8, prov,
+                           key="k")
+        assert before["k"].index["cbr_percent"][0] == 5.0
+        # a one-row table of the specimen's values is still read
+        one = {}
+        _read_header_table([["LL", "PL", "PI"], ["57.4", "31.9", "25.5"]], one,
+                           _Link(page=0), "atterberg", 0.8, prov, key="k",
+                           strict=True)
+        assert {k: v[0] for k, v in one["k"].index.items()} == {
+            "ll": 57.4, "pl": 31.9, "pi": 25.5}
+
+    def test_a_unit_column_is_no_chemical_result(self):
+        from report_ingest.lab_floor import _Values, _read_property_table
+        rows = [["Determination", "Units", "Result"],
+                ["Resistivity", "ohm-cm", "8,300"], ["pH", "-", "8.35"],
+                ["Redox", "mV", "-46"], ["Sulphide", "pos/neg", "Trace"]]
+        values, before = _Values(), _Values()
+        _read_property_table(rows, values, 0.8, strict=True)
+        _read_property_table(rows, before, 0.8)
+
+        assert values.index == {}
+        assert before.index["sulfides"][0] == "pos/neg"
+        # a result printed as words is still read
+        words = _Values()
+        _read_property_table([["Sulfate", "None detected"],
+                              ["Sulphide", "Trace"],
+                              ["Chloride", "<20 mg/kg"]], words, 0.8,
+                             strict=True)
+        assert {k: v[0] for k, v in words.index.items()} == {
+            "sulfate": "None detected", "sulfides": "Trace",
+            "chloride": "<20 mg/kg"}
+        # a mark for no result is none
+        marks = [["pH", "N/A"], ["Redox", "NT"], ["Sulfate", "n/a"]]
+        none, before = _Values(), _Values()
+        _read_property_table(marks, none, 0.8, strict=True)
+        _read_property_table(marks, before, 0.8)
+        assert none.index == {}
+        assert before.index["pH"][0] == "N/A"
+
+    def test_the_next_row_s_label_is_no_chemical_result(self):
+        from report_ingest.lab_floor import (
+            _Link, _read_header_table, _read_property_table, _Values,
+        )
+        from report_ingest.model import Provenance
+        prov = Provenance(page=0, method="tables", confidence=0.8)
+        rows = [["Resistivity", "2.9E+03", "ohm-m"],
+                ["Chloride", "6", ""], ["Redox", "133", ""]]
+        got = {}
+        assert _read_header_table(rows, got, _Link(page=0), "chemical", 0.8,
+                                  prov, key="k", strict=True) == (0, [])
+        before = {}
+        _read_header_table(rows, before, _Link(page=0), "chemical", 0.8,
+                           prov, key="k")
+        assert before["k"].index["resistivity"][0] == "Chloride"
+        # read as the property table it is, the rows give their own values
+        values = _Values()
+        _read_property_table(rows, values, 0.8, strict=True)
+        assert values.index["chloride"][0] == 6.0

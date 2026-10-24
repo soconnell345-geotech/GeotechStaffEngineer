@@ -516,6 +516,10 @@ class TestTheLabelBeforeTheDepth:
 
         assert sheet.linked_sample_id == "S-3"
         assert self._conflicts(record) == []
+        # RI-71: and it is said, as a note
+        (entry,) = [e for e in kinds_of(record, "partial")
+                    if e.where == "B-1.lab_tests"]
+        assert "only S-3 within" in entry.detail
 
     def test_a_printed_interval_holding_the_log_s_point_raises_nothing(self):
         # The sheet prints the interval it sampled; the log holds one point
@@ -591,6 +595,91 @@ class TestTheLabelBeforeTheDepth:
         assert table.result.rows[0].linked_investigation_id == ""
         assert not [e for e in kinds_of(record, "partial")
                     if "summary table" in e.detail]
+
+
+class TestALabelNamingSeveralSamples:
+    """RI-71: a label naming several of the hole's samples -- a list, or a
+    range of names, which names every sample between its ends -- is linked
+    to the one the printed depth meets, and that is said."""
+
+    @staticmethod
+    def _hole(names=("J-11", "J-12", "J-13")):
+        hole = boring("B-1")
+        for sample, name in zip(hole.samples, names):
+            sample.sample_id = name
+        return hole
+
+    def _record(self, *tests, names=("J-11", "J-12", "J-13")):
+        return reconcile(build_record(investigations=[self._hole(names)],
+                                      lab_tests=list(tests)))
+
+    @staticmethod
+    def _said(record):
+        return [e for e in record.qa if e.where == "B-1.lab_tests"]
+
+    @pytest.mark.parametrize("label", ["J-11 to J-13", "J-11 - J-13",
+                                       "J-11 thru J-13", "J-11 a J-13",
+                                       "J-11 – J-13"])
+    def test_a_range_names_the_samples_between_its_ends(self, label):
+        sheet = atterberg(sample=label, depth_ft=7.0)
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == "J-12"
+        (entry,) = self._said(record)
+        assert entry.kind == "partial" and entry.rank == "note"
+        assert entry.detail == (
+            "1 lab sheet names samples J-11, J-12, J-13 of B-1 and prints a "
+            "depth of 7 ft; its log puts only J-12 within 0.15 m of the "
+            "printed interval. Linked to J-12; J-11, J-13 not linked")
+
+    def test_a_range_none_of_whose_samples_is_at_the_depth(self):
+        sheet = atterberg(sample="J-11 to J-13", depth_ft=11.0)
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._said(record)
+        assert entry.kind == "conflict"
+        assert "samples J-11, J-12, J-13 of B-1" in entry.detail
+        assert "puts none of them within" in entry.detail
+
+    def test_a_list_is_no_range(self):
+        sheet = atterberg(sample="J-11, J-13", depth_ft=7.0)
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._said(record)
+        assert "samples J-11, J-13 of B-1" in entry.detail
+        assert "puts none of them within" in entry.detail
+
+    def test_ends_with_other_letters_are_no_range(self):
+        sheet = atterberg(sample="J-11 to K-13", depth_ft=7.0)
+        record = self._record(sheet, names=("J-11", "J-12", "K-13"))
+
+        assert sheet.linked_sample_id == ""
+        (entry,) = self._said(record)
+        assert "samples J-11, K-13 of B-1" in entry.detail
+
+    def test_a_list_at_one_sample_s_depth_is_linked_and_said(self):
+        sheet = atterberg(sample="J-12,J-13", depth_ft=14.5)
+        record = self._record(sheet)
+
+        assert sheet.linked_sample_id == "J-13"
+        (entry,) = self._said(record)
+        assert entry.kind == "partial"
+        assert entry.detail.endswith("Linked to J-13; J-12 not linked")
+        assert entry.values == ["label B-1 J-12,J-13", "depth 14.5 ft"]
+
+    def test_a_summary_row_is_held_to_the_same_rule(self):
+        table = summary_table()
+        table.result.rows[0].sample_id = "J-11 to J-13"
+        table.result.rows[0].depth_top = q(7.0, "ft")
+        table.result.rows[1].sample_id = "J-13"
+        record = self._record(table)
+
+        assert table.result.rows[0].linked_sample_id == "J-12"
+        (entry,) = self._said(record)
+        assert entry.detail.startswith(
+            "1 summary row names samples J-11, J-12, J-13 of B-1")
 
 
 class TestASampleNameTheHoleGivesTwice:

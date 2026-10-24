@@ -309,9 +309,13 @@ follows the label and one `conflict` entry says so for
 each sample and printed depth, however many sheets and rows print it, the
 log's depth in the printed depth's unit; a label naming several of the hole's
 samples, none or more than one of them within the printed interval, links to
-the hole and to no sample. A name several of the hole's samples carry (a log
-that starts its numbering again) is settled by the printed depth, the nearest
-of them within the widened interval; where none is within it, the link is to
+the hole and to no sample, and one of them within it links to that one with a
+`partial` note naming the others; a range of names (two names with "to",
+"thru", "a" or a dash between them) names every sample of the hole between
+its ends, with the same letters and a number between theirs (RI-71). A name
+several of the hole's samples carry (a log that starts its numbering again)
+is settled by the printed depth, the nearest of them within the widened
+interval; where none is within it, the link is to
 the hole and to no sample with a `conflict` entry, and where nothing printed
 gives a depth to tell them apart, the same with a `partial` note (RI-71;
 before, the first of them was taken). A summary row is
@@ -416,8 +420,22 @@ and a ratio of masses (g/g, kg/kg, g/100 g) are no mass. A water content is
 Eq. 2-4, pp. 2-4 to 2-5), so one printed under a ratio of masses alone is read
 as its percent, and one whose label prints a percent or the x 100 beside the
 ratio ("% wt/wt", "g/g x 100") as printed (RI-71). No specimen's water
-content or density is read from a row of several numbers across (a
-worksheet's trial points). A row or column headed by the one letter C is read
+content, density, swell or CBR is read from a row of several different numbers
+across (a worksheet's trial points, a CBR's moulds; one number printed across
+the columns, a cell spanning them, is one value, and a row's numbers end at a
+cell naming another value, RI-71), and no value at all from a column with a
+number in more than one row of a table with no boring, sample or depth column
+(a compaction's or a CBR's trial points: the first row was read as the
+specimen's, RI-71). A chemical result printed as words ("Trace", "None
+detected") is read as printed, but no header text is one: a unit, a mark that
+prints nothing ("-", "N/A", "NT"), the entry of a column headed Units, or the
+next row's label (RI-71). On stage b's saved records ten disagreements that
+were a trial row or header text are gone (eight an Atterberg sheet's container
+numbers, two a chemical sheet's mark and unit), two new ones set a CBR sheet's
+CBR at its printed compaction against the model's first mould, and seven junk
+values leave the record with the four tests that held only them; the DIGGS
+writer had skipped all four (no boring, or no depth), so no value written to
+DIGGS changed. A row or column headed by the one letter C is read
 as a cohesion only on a shear test's sheet or where it prints a unit of stress
 (in its label, as a cell of its own, in brackets or straight after a number),
 and never where the row names a temperature (a grading chart's legend key, a
@@ -442,7 +460,9 @@ makes no test where the tables read no value for it (the model reads the
 sheet's one value); a corrected compaction keeps its test of the kind alone.
 A compaction sheet's water content and densities are its compaction test's
 (in its `fields` where the result has no slot), as an Atterberg sheet's water
-content is its Atterberg test's. The merge, the reconciler and DIGGS always
+content is its Atterberg test's; only on a sheet whose title names a
+compaction: a field density test quoting the compaction it is measured
+against keeps its own (RI-71). The merge, the reconciler and DIGGS always
 take this floor; the model's brief shows it only with the per-page switch
 below on. The merge rule is the log's: a kind, a link, a value or a specimen
 the model **adds** is accepted; a value it **corrects** with a box and a note

@@ -363,3 +363,44 @@ def build_grading_legend() -> bytes:
     pdf = doc.tobytes()
     doc.close()
     return pdf
+
+
+def build_field_density_sheet() -> bytes:
+    """A field density sheet quoting the compaction it is measured against:
+    the field test's own dry density and water content beside the
+    compaction's maximum dry density and optimum (RI-71). Made-up values."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    _text(page, 160, 60, "FIELD DENSITY, SAND CONE", 14, bold=True)
+    _text(page, 60, 110, "Boring: QB-9")
+    _text(page, 380, 110, "Depth: 0.65 m")
+    _grid(page, 60, 150, (190, 80),
+          [("Dry density (Mg/m3)", "1.794"), ("Water content (%)", "14.62"),
+           ("Maximum dry density (Mg/m3)", "1.951"),
+           ("Optimum water (%)", "12.38")], header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_compaction_trials() -> bytes:
+    """A compaction sheet with its trial points in a table under a header
+    row, one point a row, and its result in a second table (RI-71).
+    Made-up values."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    _text(page, 140, 60, "WATER-DENSITY RELATION (TRIALS)", 14, bold=True)
+    _text(page, 60, 110, "Boring: QB-12")
+    _text(page, 380, 110, "Depth: 1.35 m")
+    _grid(page, 60, 150, (60, 130, 130),
+          [("Point", "Water content (%)", "Dry density (Mg/m3)"),
+           ("1", "8.72", "1.793"), ("2", "10.94", "1.862"),
+           ("3", "13.18", "1.836")])
+    _grid(page, 60, 300, (190, 80),
+          [("Maximum dry density (Mg/m3)", "1.871"),
+           ("Optimum water (%)", "11.46")], header=False)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf

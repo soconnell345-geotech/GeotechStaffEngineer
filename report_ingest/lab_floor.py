@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.floor import (
     EXACT_TOL, MergeLog, fold, has_evidence, same_depth, same_number,
@@ -489,8 +489,10 @@ _PERCENT_LABEL = r"%|\bper ?cent|\bpct\b|pourcent|porcent"
 #: A ratio a label says is multiplied by 100 is a percent already.
 _TIMES_100 = r"(?<![a-z])[x×*]\s*100(?![\d.,]?\d)"
 #: The values a trial table repeats across its columns, one a trial point:
-#: the first of such a row is no one specimen's value (RI-56).
-_ONE_A_SPECIMEN = ("wc", "dry_density", "wet_density")
+#: the first of such a row is no one specimen's value (RI-56); a CBR's
+#: swell and CBR are one a mould too (RI-71).
+_ONE_A_SPECIMEN = ("wc", "dry_density", "wet_density", "swell_percent",
+                   "cbr_percent")
 
 
 def _a_mass(label: str) -> bool:
@@ -535,6 +537,22 @@ def _not_the_specimens(name: str, label: str, numbers: int) -> bool:
     if name not in _ONE_A_SPECIMEN:
         return False
     return numbers > 1 or (name == "wc" and _a_mass(label))
+
+
+def _row_numbers(cells: Sequence[str]) -> int:
+    """How many different numbers a property row prints for its label, in
+    ``cells`` (the row after the label): up to a cell naming another value
+    ("Water content (%) | 15.2 | Specific gravity | 2.69" prints one), and
+    one number printed across the columns once ("Average water content |
+    12.85 | 12.85 | 12.85", a cell spanning the trial columns) (RI-71)."""
+    found: Set[float] = set()
+    for cell in cells:
+        number = _num(cell)
+        if number is not None:
+            found.add(number)
+        elif _field_of(cell) in FIELD_HOME:
+            break
+    return len(found)
 
 
 #: A row read as a cohesion by its one letter ("C", "c'") is one only on
@@ -591,6 +609,39 @@ def _not_a_cohesion(label: str, cells: Sequence[str], kind: str) -> bool:
     return kind not in _STRENGTH_KINDS and not _prints_stress(label, cells)
 
 
+#: A column a table heads with the word unit(s): it holds units, and the
+#: entry a test without one prints there ("pos/neg") (RI-71).
+_UNITS_HEAD = re.compile(r"\s*units?\b", re.I)
+
+
+def _reported_text(cell: str, head: str = "") -> bool:
+    """Whether a chemical result printed as words ("Trace", "Not
+    detected", "<0.5") is one, and not header text (RI-71): a mark that
+    prints nothing ("-", "N/A", "NT"), a unit ("ohm-cm", "mV"), a word
+    with no digit naming a value of its own (the next row's label,
+    "Chloride"), or the entry of a column whose ``head`` is the word
+    unit(s)."""
+    text = " ".join(str(cell or "").split())
+    if not re.search(r"[0-9A-Za-z]", text) or _canonical_unit(text):
+        return False
+    if re.fullmatch(r"n/?a|nt", text, re.I):
+        return False
+    if not re.search(r"\d", text) and _field_of(text):
+        return False
+    return not _UNITS_HEAD.match(str(head or ""))
+
+
+def _head_over(rows: Sequence[Sequence[str]], row: Sequence[str]) -> str:
+    """The first row's cell over ``row``'s value (its second cell that
+    prints anything), or ``""`` for the first row itself."""
+    if not rows or row is rows[0]:
+        return ""
+    printed = [i for i, c in enumerate(row) if c]
+    if len(printed) < 2 or printed[1] >= len(rows[0]):
+        return ""
+    return str(rows[0][printed[1]] or "")
+
+
 def _read_property_table(rows: List[List[str]], values: _Values,
                          conf: float, strict: bool = False,
                          kind: str = "") -> int:
@@ -598,10 +649,12 @@ def _read_property_table(rows: List[List[str]], values: _Values,
 
     ``strict`` (the per-page floor, RI-56) reads no water content from a
     mass or weight row and none of the per-specimen values from a row of
-    several numbers across (:func:`_not_the_specimens`); a water content
-    printed as a fraction of masses as its percent (:func:`_wc_factor`);
-    and a letter C as a cohesion only on a sheet of a shear test (``kind``)
-    or with a unit of stress (:func:`_not_a_cohesion`).
+    several different numbers across (:func:`_not_the_specimens`,
+    :func:`_row_numbers`); a water content printed as a fraction of masses
+    as its percent (:func:`_wc_factor`); a letter C as a cohesion only on a
+    sheet of a shear test (``kind``) or with a unit of stress
+    (:func:`_not_a_cohesion`); and no header text as a chemical result
+    (:func:`_reported_text`).
     """
     n = 0
     for row in rows:
@@ -614,8 +667,8 @@ def _read_property_table(rows: List[List[str]], values: _Values,
                                 "uscs", "description", "sample_type",
                                 "sieve", "size", "percent_passing", "date"):
             continue
-        if strict and _not_the_specimens(
-                name, label, sum(1 for c in cells[1:] if _num(c) is not None)):
+        if strict and _not_the_specimens(name, label,
+                                         _row_numbers(cells[1:])):
             continue
         if strict and name == "c" and _not_a_cohesion(label, cells[1:], kind):
             continue
@@ -623,7 +676,9 @@ def _read_property_table(rows: List[List[str]], values: _Values,
         unit = _unit_in(label) or _unit_in(cell)
         if number is None:
             if name in ("pH", "resistivity", "sulfate", "chloride",
-                        "sulfides", "redox") and cell:
+                        "sulfides", "redox") and cell and (
+                    not strict or _reported_text(cell, _head_over(rows,
+                                                                  row))):
                 values.put(name, cell, unit, conf)
                 n += 1
             continue
@@ -754,7 +809,11 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
     ``strict`` reads no water content from a mass or weight column, a water
     content printed as a fraction as its percent, and a column headed by a
     letter C as a cohesion only as :func:`_read_property_table` does; such
-    a column's cells stay in a summary row's ``other``, as printed.
+    a column's cells stay in a summary row's ``other``, as printed. Nor,
+    where no column names a boring, sample or depth, any value from a
+    column with a number in more than one row: those are one a row (a
+    compaction's or a CBR's trial points), not the specimen's; nor header
+    text as a chemical result (:func:`_reported_text`) (RI-71).
     """
     header = rows[0]
     body = rows[1:]
@@ -801,11 +860,19 @@ def _read_header_table(rows: List[List[str]], values_by_key: Dict[str, _Values],
                     "description", "sample_type", "sieve", "size",
                     "percent_passing", _AS_PRINTED):
             continue
+        if strict and sum(1 for r in body
+                          if i < len(r) and _num(r[i]) is not None) > 1:
+            # A column with a number in more than one row and no boring,
+            # sample or depth beside it: one value a row -- a compaction's
+            # or a CBR's trial points, a test's specimens -- and the first
+            # is no one specimen's value (RI-71).
+            continue
         number = _num(row[i])
         unit = _unit_in(header[i])
         if number is None:
             if name in ("pH", "resistivity", "sulfate", "chloride",
-                        "sulfides", "redox"):
+                        "sulfides", "redox") and (
+                    not strict or _reported_text(row[i])):
                 values.put(name, row[i], unit, conf)
                 n += 1
             continue
@@ -990,7 +1057,13 @@ def _no_value(result: Any) -> bool:
 
 def _held_moisture(values: _Values, result: Any) -> Dict[str, str]:
     """A compaction sheet's water content and densities its result has no
-    slot for, as printed, so that they stay with the test (RI-56)."""
+    slot for, as printed, so that they stay with the test (RI-56).
+
+    Only on a sheet whose title names a compaction (RI-71). A compaction
+    another sheet quotes -- the maximum dry density a field density test is
+    measured against -- holds none of that sheet's values: they are the
+    sheet's own test's.
+    """
     out: Dict[str, str] = {}
     for name, (value, unit, _conf) in values.index.items():
         if FIELD_HOME.get(name) == "moisture" and \
@@ -1149,7 +1222,7 @@ def _floor(doc: Any, pages: Sequence[int], report_id: str,
                 continue
             result = _build_result(kind, values, sheet.kind)
             fields = (_held_moisture(values, result) if per_page and
-                      kind == "compaction" else {})
+                      kind == sheet.kind == "compaction" else {})
             if corrected and kind == sheet.kind and not fields and \
                     _no_value(result):
                 continue

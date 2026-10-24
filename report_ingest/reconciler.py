@@ -819,9 +819,11 @@ def _sample_for(inv: Investigation, test: Any,
     Where they do not meet, the label is followed and the disagreement
     comes back for a QA entry. A label that names several of the hole's
     samples (a composite, "S-2,S-3") is linked to no sample where none of
-    them, or more than one, meets the printed interval; a name several of
-    the hole's samples carry is settled by the depth or not at all
-    (:func:`_one_name`).
+    them, or more than one, meets the printed interval, and to the one that
+    meets it where one does, which comes back to be said too (RI-71); a
+    range of names ("U-21 to U-23") names every sample between its ends
+    (:func:`_in_range`); a name several of the hole's samples carry is
+    settled by the depth or not at all (:func:`_one_name`).
     """
     if test.sample_id:
         wanted = fold_id(test.sample_id)
@@ -845,10 +847,12 @@ def _sample_for(inv: Investigation, test: Any,
     if not named:
         sample, delta = _sample_at_depth(inv, test)
         return sample, delta, None
+    named = _in_range(inv, label, named)
     meets = [s for s in named if _interval_gap(s, test) is not None]
     if len({fold_id(s.sample_id) for s in meets}) == 1:
         nearest = _nearest(meets, test)
-        return nearest, _interval_gap(nearest, test), None
+        return nearest, _interval_gap(nearest, test), _one_of(
+            inv, test, named, nearest)
     if len({fold_id(s.sample_id) for s in named}) > 1:
         return None, None, _clash(inv, test, named, None)
     return _one_name(inv, test, named)
@@ -893,6 +897,69 @@ def _nearest(samples: Sequence[Sample], test: Any) -> Sample:
         return (math.inf if gap is None else gap,
                 math.inf if delta is None else delta)
     return min(samples, key=key)
+
+
+#: The words a label prints between the two ends of a range of names.
+_RANGE_WORD = re.compile(r"\s*(?:-|–|—|to|thru|through|a|à)\s*", re.I)
+#: A folded sample name as its letters, its number and any letters after.
+_NAME_NUMBER = re.compile(r"(\D*)(\d+)([A-Z]*)")
+
+
+def _in_range(inv: Investigation, label: str, named: Sequence[Sample]
+              ) -> List[Sample]:
+    """``named``, with every sample of ``inv`` a range of names in
+    ``label`` covers (RI-71).
+
+    Two named samples with only a range word between them ("U-21 to
+    U-23", "U21 - U23", "U-21 a U-23") name the samples between them as
+    well: those of the hole whose names are the ends' letters with a number
+    between the ends' numbers ("U-22", "U-22A"). Ends whose letters differ,
+    or that carry no number, name themselves only.
+    """
+    names = {fold_id(s.sample_id) for s in named}
+    if len(names) < 2:
+        return list(named)
+    words = [m for m in re.finditer(r"[0-9A-Za-z-]+", label)
+             if fold_id(m.group(0)) in names]
+    out = list(named)
+    for first, last in zip(words, words[1:]):
+        if not _RANGE_WORD.fullmatch(label[first.end():last.start()]):
+            continue
+        ends = [_NAME_NUMBER.fullmatch(fold_id(m.group(0)))
+                for m in (first, last)]
+        if None in ends or ends[0].group(1) != ends[1].group(1):
+            continue
+        low, high = sorted(int(end.group(2)) for end in ends)
+        for sample in inv.samples:
+            got = _NAME_NUMBER.fullmatch(fold_id(sample.sample_id))
+            if got and got.group(1) == ends[0].group(1) and \
+                    low < int(got.group(2)) < high and \
+                    not any(sample is s for s in out):
+                out.append(sample)
+    if len(out) == len(named):
+        return out
+    # In the log's order, as a reviewer reads them there.
+    order = {id(s): i for i, s in enumerate(inv.samples)}
+    return sorted(out, key=lambda s: order.get(id(s), len(order)))
+
+
+def _one_of(inv: Investigation, test: Any, named: Sequence[Sample],
+            linked: Sample) -> Optional[Dict[str, Any]]:
+    """What is said of a label naming several of the hole's samples, of
+    which only ``linked`` meets the printed interval, or None for a label
+    naming one (RI-71): the test is linked to that one, and the others the
+    label names are not linked."""
+    names: List[str] = []
+    for s in named:
+        if s.sample_id not in names:
+            names.append(s.sample_id)
+    if len({fold_id(name) for name in names}) < 2:
+        return None
+    return {"hole": inv.investigation_id, "named": names,
+            "label": " ".join(str(x).strip() for x in (
+                test.investigation_id, test.sample_id) if str(x).strip()),
+            "depth": test.depth_top, "linked": linked, "there": linked,
+            "within": [linked.sample_id], "one of": True}
 
 
 #: A number after a word for an exploration ("BH 2", "Hole-2", "TP2"),
@@ -968,7 +1035,7 @@ def _gather(clashes: Dict[Tuple[Any, ...], Dict[str, Any]],
     disagreement between its label and the log, not five.
     """
     key = (clash["hole"], tuple(clash["named"]), _show(clash["depth"]),
-           "shared" in clash)
+           "shared" in clash, "one of" in clash)
     group = clashes.setdefault(key, {**clash, "kinds": [], "labels": [],
                                      "pages": set()})
     group["kinds"].append(kind)
@@ -993,7 +1060,17 @@ def _label_depth_entry(group: Dict[str, Any]) -> QAEntry:
     unit = getattr(group["depth"], "unit", "")
     if "shared" in group:
         return _shared_name_entry(group, who, name, prints)
-    if linked is not None:
+    kind = "conflict"
+    if "one of" in group:
+        others = [n for n in group["named"]
+                  if fold_id(n) != fold_id(linked.sample_id)]
+        kind = "partial"
+        detail = (f"{who} {name} samples {', '.join(group['named'])} of "
+                  f"{hole} and {prints} a depth of {depth}; its log puts "
+                  f"only {linked.sample_id} within {DEPTH_TOL_M} m of the "
+                  f"printed interval. Linked to {linked.sample_id}; "
+                  f"{', '.join(others)} not linked")
+    elif linked is not None:
         has = (f"has {there.sample_id or 'an unnamed sample'} there"
                if there is not None else "has no sample there")
         detail = (f"{who} {name} sample {linked.sample_id} of {hole} and "
@@ -1013,7 +1090,7 @@ def _label_depth_entry(group: Dict[str, Any]) -> QAEntry:
                   f"of them within {DEPTH_TOL_M} m of the printed interval. "
                   f"Linked to {hole} and to no sample")
     labels = group["labels"]
-    return QAEntry(kind="conflict",
+    return QAEntry(kind=kind,
                    where=f"{hole}.lab_tests",
                    detail=detail,
                    values=[f"label {label}" for label in labels[:3]]
