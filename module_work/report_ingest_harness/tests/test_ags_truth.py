@@ -171,6 +171,7 @@ def test_the_groups_parse_with_their_units(ags):
     ("N=12 (1,2/2,3,3,4)", 12, [1, 2, 2, 3, 3, 4], False, True),
     ("50 (4,21 for 60mm/40,10)", None, [4, 21, 40, 10], True, True),
     ("N=7", 7, [], False, True),
+    ("N=0 (1,1/-,-,-,-)", 0, [1, 1], False, True),
     ("", None, [], False, False),
     ("N=5 (a,b/c)", 5, [], False, False),
 ])
@@ -327,6 +328,18 @@ def test_a_depth_not_in_metres_stops_the_build(tmp_path):
         at.truth_for_hole(ags, "BH9", item_id="P98_p0", pages=[0])
 
 
+def test_the_spt_goes_on_the_sample_whose_interval_is_the_drive():
+    # Two small disturbed samples at one top, in either order: the SPT
+    # takes the one 0.45 m long, whatever the file's row order.
+    jar = {"id": "7", "top": 6.0, "bottom": None, "type": "D"}
+    spoon = {"id": "8", "top": 6.0, "bottom": 6.45, "type": "D"}
+    assert at._spoon_sample([dict(jar), dict(spoon)], 6.0)["id"] == "8"
+    assert at._spoon_sample([dict(spoon), dict(jar)], 6.0)["id"] == "8"
+    assert at._spoon_sample([dict(jar)], 6.0)["id"] == "7"
+    long_d = {"id": "9", "top": 6.0, "bottom": 7.0, "type": "D"}
+    assert at._spoon_sample([long_d], 6.0) is None
+
+
 def test_dates_are_scored_only_when_asked(ags):
     truth = at.truth_for_hole(ags, "BH1", item_id="P99_p0", pages=[0],
                               score_dates=True)
@@ -399,6 +412,51 @@ def test_build_assembles_in_hole_order_and_writes_the_sheets(made_up_set):
     assert summary["spt_n"] == 2 and summary["spt_blows"] == 3
     assert summary["tube_blows"] == 1 and summary["water"] == 2
     assert summary["lab"] == 5
+
+
+def _second_export(text: str) -> str:
+    """BH1 exported again under location 112: no ABBR rows, no TP1, and
+    one more value (a strike remark) than the first export holds."""
+    abbr = text.index('"GROUP","ABBR"')
+    text = text[:abbr] + text[text.index('"GROUP","LOCA"'):]
+    lines = [ln for ln in text.splitlines() if '"TP1"' not in ln]
+    text = "\n".join(lines) + "\n"
+    text = text.replace('"111"', '"112"')
+    head = '"HEADING","LOCA_ID","WSTG_DPTH","WSTG_DTIM","WSTG_CAS","WSTG_SEAL"'
+    text = text.replace(head, head + ',"WSTG_REM"')
+    text = text.replace('"UNIT","","m","yyyy-mm-ddThh:mm","m","m"',
+                        '"UNIT","","m","yyyy-mm-ddThh:mm","m","m",""')
+    text = text.replace('"TYPE","ID","2DP","DT","2DP","2DP"',
+                        '"TYPE","ID","2DP","DT","2DP","2DP","X"')
+    return text.replace('"3.50","6.00"', '"3.50","6.00","seepage"')
+
+
+def test_a_hole_exported_twice_uses_the_fuller_dataset(made_up_set):
+    raw = made_up_set
+    folder = raw / "P99"
+    _write(folder / "ags", _second_export(MADE_UP), "5_112.ags")
+    records = json.loads((folder / "onshore_index_records.json")
+                         .read_text(encoding="utf-8"))
+    for record in records:
+        if record["bgs_id"] == 5.0:
+            record["ags_log_url"] += ",https://example.invalid/x?loca_id=112"
+    (folder / "onshore_index_records.json").write_text(
+        json.dumps(records), encoding="utf-8")
+
+    summary = at.build(raw, ["P99"])["P99"]
+
+    assert summary["answer_sheets"] == 1
+    assert summary["holes_with_two_datasets"] == 1
+    assert summary["datasets_disagreeing"] == 0
+    truth = json.loads((raw / "truth" / "logs" / "P99_p0.json")
+                       .read_text(encoding="utf-8"))
+    # The fuller export is used, and its codes are spelled out from the
+    # other export's ABBR rows.
+    assert truth["ags"]["file"] == "P99/ags/5_112.ags"
+    assert truth["ags"]["other_datasets"] == ["made_up.ags"]
+    assert truth["ags"]["other_datasets_agree"] is True
+    assert truth["fields"]["method"] == "Cable percussion"
+    assert truth["water"][1]["note"] == "seepage"
 
 
 def test_the_logs_stage_runs_on_a_public_set_item(made_up_set, monkeypatch):

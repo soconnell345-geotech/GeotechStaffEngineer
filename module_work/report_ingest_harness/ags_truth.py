@@ -64,6 +64,13 @@ the whole hole. Holes are matched to scans through the BGS index
 (``onshore_index_records.json``): the scan's BGS ID gives the hole name and
 the AGS location IDs, which are the AGS file's ``BGS_LOCA_ID``.
 
+TWO DATASETS FOR ONE HOLE. BGS loaded some projects twice, so a hole can
+have two exports (``<bgs_id>_<location id>.ags``). The fuller one -- more
+values filled for the hole -- is used, the others are checked against it on
+every scored value, and the answer sheet says which files there were and
+whether they agreed. The ABBR rows of all a project's files are pooled,
+because some exports carry them and some do not.
+
 BLINDNESS. Nothing here renders, reads or describes a scanned page: the scan
 PDFs are only counted and concatenated.
 
@@ -233,7 +240,9 @@ def parse_spt_report(text: Any) -> Dict[str, Any]:
     increment driven short of its length, as the report words it;
     ``refusal`` is a report with blows and no ``N=`` (the drive was stopped);
     ``parsed`` is False when the bracket held something this cannot read,
-    and the report then gives no blows at all rather than some of them.
+    and the report then gives no blows at all rather than some of them. A
+    dash (``N=0 (1,1/-,-,-,-)``: the rods sank) is an increment with no
+    count, so it adds none.
     """
     text = str(text or "").strip()
     out: Dict[str, Any] = {"n": None, "blows": [], "partial": [],
@@ -248,7 +257,7 @@ def parse_spt_report(text: Any) -> Dict[str, Any]:
     if bracket:
         for part in re.split(r"[,/]", bracket.group(1)):
             part = part.strip()
-            if not part:
+            if not part or part == "-":
                 continue
             one = _INCREMENT_RE.fullmatch(part)
             if one is None:
@@ -423,7 +432,11 @@ def _samples(ags: Dict[str, Any], loca_id: str,
 def _spoon_sample(samples: List[Dict[str, Any]], top: float
                   ) -> Optional[Dict[str, Any]]:
     """The small disturbed sample taken from the spoon at ``top``: same
-    top, an interval no longer than the drive, no blows of its own."""
+    top, an interval no longer than the drive, no blows of its own. Where
+    two qualify, the one whose interval IS the drive, then one with no
+    base, then the shorter -- never the file's row order, which differs
+    between two exports of one hole."""
+    found = []
     for sample in samples:
         if not _same(sample["top"], top) or sample.get("blows"):
             continue
@@ -431,9 +444,14 @@ def _spoon_sample(samples: List[Dict[str, Any]], top: float
                                                        "SPTLS"):
             continue
         bottom = sample.get("bottom")
-        if bottom is None or bottom - top <= SPT_DRIVE_M + SAME_DEPTH_M:
-            return sample
-    return None
+        if bottom is None:
+            found.append((1, 0.0, str(sample.get("id") or ""), sample))
+        elif bottom - top <= SPT_DRIVE_M + SAME_DEPTH_M:
+            exact = abs(bottom - top - SPT_DRIVE_M) < SAME_DEPTH_M
+            found.append((0 if exact else 2, -(bottom - top),
+                          str(sample.get("id") or ""), sample))
+    found.sort(key=lambda one: one[:3])
+    return found[0][3] if found else None
 
 
 def _spt(ags: Dict[str, Any], loca_id: str, samples: List[Dict[str, Any]],
@@ -603,15 +621,23 @@ def _lab(ags: Dict[str, Any], loca_id: str, samples: List[Dict[str, Any]],
 
 def truth_for_hole(ags: Dict[str, Any], loca_id: str, *, item_id: str,
                    pages: Sequence[int], source_file: str = "",
-                   score_dates: bool = False) -> Dict[str, Any]:
-    """One hole of an AGS4 file as a logs-stage answer sheet."""
+                   score_dates: bool = False,
+                   abbr: Optional[Dict[Tuple[str, str], str]] = None
+                   ) -> Dict[str, Any]:
+    """One hole of an AGS4 file as a logs-stage answer sheet.
+
+    ``abbr`` adds abbreviations from the project's other files: the BGS
+    exports of one project carry the ABBR rows in some files and not in
+    others, and a code means the same across the project. The file's own
+    rows win where both spell a code.
+    """
     loca = next((r for r in (ags.get("LOCA") or {}).get("rows") or []
                  if r.get("LOCA_ID") == loca_id), None)
     if loca is None:
         raise KeyError(f"{loca_id} is not in the file's LOCA group")
     units: Dict[str, str] = {}
     _check_depth_units(ags, units)
-    abbr = abbreviations(ags)
+    abbr = {**(abbr or {}), **abbreviations(ags)}
     code = loca.get("LOCA_TYPE", "")
     pit = bool(code) and _is_pit(code, _spell(code, abbr) or "")
     unslotted = _Unslotted()
@@ -680,6 +706,34 @@ def counts(truth: Dict[str, Any]) -> Dict[str, int]:
                              if k in FIELD_MAP),
         "unslotted_rows": len(truth.get("ags_unslotted") or []),
     }
+
+
+def scored_view(truth: Dict[str, Any]) -> Dict[str, Any]:
+    """Only what the scorer reads off an answer sheet: layer tops, each
+    sample's interval, blows, N and index values, water depths and the
+    scored header fields. Two datasets for one hole agree when these do."""
+    from report_ingest.log_scoring import FIELD_MAP
+
+    keys = ("top", "bottom", "blows", "n", "recovery") + INDEX_KEYS
+    return {
+        "layers": sorted(x["top"] for x in truth.get("layers") or []),
+        "samples": sorted(json.dumps({k: s.get(k) for k in keys},
+                                     sort_keys=True)
+                          for s in truth.get("samples") or []),
+        "water": sorted(w["depth"] for w in truth.get("water") or []
+                        if w.get("depth") is not None),
+        "fields": {k: v for k, v in (truth.get("fields") or {}).items()
+                   if k in FIELD_MAP},
+    }
+
+
+def _filled(ags: Dict[str, Any], loca_id: str) -> int:
+    """How many values a file holds for one hole: the fuller of two
+    datasets for a hole is the one used."""
+    return sum(1 for group in ags.values() for row in group.get("rows") or []
+               if row.get("LOCA_ID") == loca_id
+               for heading, value in row.items()
+               if value and heading != "LOCA_ID")
 
 
 # ---------------------------------------------------------------------------
@@ -803,11 +857,23 @@ def build(set_dir: Path, ids: Sequence[str], *,
             if hole["hole"]:
                 by_name.setdefault(hole["hole"], []).append(hole)
 
-        sheets: Dict[str, Dict[str, Any]] = {}
+        # Every file first: one project's abbreviations are spread over its
+        # exports, some carrying the ABBR rows and some not.
+        files = [(path, read_ags(path))
+                 for path in sorted((folder / "ags").glob("*.ags"))]
+        abbr: Dict[Tuple[str, str], str] = {}
+        for _path, ags in files:
+            for key, desc in abbreviations(ags).items():
+                abbr.setdefault(key, desc)
+
+        # A hole can be exported under two BGS location IDs (BGS re-loaded
+        # the projects): every dataset of a hole is gathered, the fuller one
+        # is used, and the others are checked against it.
+        found: Dict[str, List[Tuple[Path, Dict[str, Any], str,
+                                    Dict[str, Any]]]] = {}
         no_scan: List[Dict[str, str]] = []
         locations = 0
-        for ags_path in sorted((folder / "ags").glob("*.ags")):
-            ags = read_ags(ags_path)
+        for ags_path, ags in files:
             for loca in (ags.get("LOCA") or {}).get("rows") or []:
                 locations += 1
                 hole = by_loca.get(loca.get("BGS_LOCA_ID", ""))
@@ -819,18 +885,34 @@ def build(set_dir: Path, ids: Sequence[str], *,
                                                             ""),
                                     "file": ags_path.name})
                     continue
-                item_id = f"{pid}_p{hole['pages'][0]}"
-                if item_id in sheets:
-                    notes.append(f"{item_id}: a second AGS location for the "
-                                 f"same scan in {ags_path.name}; the first "
-                                 f"is kept")
-                    continue
-                sheets[item_id] = truth_for_hole(
-                    ags, loca["LOCA_ID"], item_id=item_id,
-                    pages=hole["pages"],
-                    source_file=f"{pid}/ags/{ags_path.name}",
-                    score_dates=score_dates)
-                hole["answer_sheet"] = item_id
+                found.setdefault(f"{pid}_p{hole['pages'][0]}", []).append(
+                    (ags_path, ags, loca["LOCA_ID"], hole))
+
+        sheets: Dict[str, Dict[str, Any]] = {}
+        disagreeing = 0
+        for item_id, datasets in found.items():
+            built = [(path, _filled(ags, loca_id), truth_for_hole(
+                ags, loca_id, item_id=item_id, pages=hole["pages"],
+                source_file=f"{pid}/ags/{path.name}",
+                score_dates=score_dates, abbr=abbr), hole)
+                for path, ags, loca_id, hole in datasets]
+            # The fuller dataset; on a tie, the first file name.
+            built.sort(key=lambda one: -one[1])
+            _path, _n, truth, hole = built[0]
+            if len(built) > 1:
+                differ = [path.name for path, _m, other, _h in built[1:]
+                          if scored_view(other) != scored_view(truth)]
+                truth["ags"]["other_datasets"] = [
+                    path.name for path, *_rest in built[1:]]
+                truth["ags"]["other_datasets_agree"] = not differ
+                if differ:
+                    disagreeing += 1
+                    notes.append(f"{item_id}: {len(differ)} other dataset(s) "
+                                 f"for this hole differ on scored values "
+                                 f"({', '.join(differ)}); the fuller one is "
+                                 f"used")
+            sheets[item_id] = truth
+            hole["answer_sheet"] = item_id
 
         truth_dir.mkdir(parents=True, exist_ok=True)
         for stale in truth_dir.glob(f"{pid}_p*.json"):
@@ -855,9 +937,16 @@ def build(set_dir: Path, ids: Sequence[str], *,
         summary[pid] = {
             "pages": len(page_map), "scans": len(holes),
             "ags_locations": locations, "answer_sheets": len(sheets),
+            "pits": sum(1 for t in sheets.values()
+                        if t["kind"] == "test_pit"),
             "pages_with_answers": sum(len(t["pages"])
                                       for t in sheets.values()),
+            "scans_without_ags": sum(1 for h in holes
+                                     if "answer_sheet" not in h),
             "ags_locations_with_no_scan": len(no_scan),
+            "holes_with_two_datasets": sum(1 for d in found.values()
+                                           if len(d) > 1),
+            "datasets_disagreeing": disagreeing,
             "notes": len(notes), **totals}
 
     truth_dir.mkdir(parents=True, exist_ok=True)
@@ -867,10 +956,13 @@ def build(set_dir: Path, ids: Sequence[str], *,
 
 def summary_line(pid: str, row: Dict[str, Any]) -> str:
     return (f"{pid}: {row['pages']} page(s) from {row['scans']} scan(s); "
-            f"{row['ags_locations']} AGS location(s), "
-            f"{row['answer_sheets']} matched to a scan "
-            f"({row['pages_with_answers']} page(s)), "
-            f"{row['ags_locations_with_no_scan']} with no scan. Answer "
+            f"{row['ags_locations']} AGS location(s); "
+            f"{row['answer_sheets']} answer sheet(s) "
+            f"({row['pits']} of them pits, {row['pages_with_answers']} "
+            f"page(s)); {row['scans_without_ags']} scan(s) with no AGS; "
+            f"{row['ags_locations_with_no_scan']} AGS location(s) with no "
+            f"scan; {row['holes_with_two_datasets']} hole(s) with two "
+            f"datasets, {row['datasets_disagreeing']} disagreeing. Answer "
             f"values: layers {row.get('layers', 0)}, samples "
             f"{row.get('samples', 0)}, SPT N {row.get('spt_n', 0)}, SPT "
             f"blows {row.get('spt_blows', 0)}, tube blows "
