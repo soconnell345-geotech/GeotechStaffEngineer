@@ -2125,5 +2125,35 @@
       "BACKLOG.md RI-73",
       "BACKLOG.md RI-64"
     ]
+  },
+  "OWN-93": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the specific gravity printed on a hydrometer sheet go into the DIGGS file as a specific gravity result?",
+    "why": "The sheet prints the Gs its hydrometer analysis used, but not whether it was measured or assumed. Today it stays with the grading test and DIGGS leaves it out.",
+    "background": "UFS 3-220-10 (p. 138 and Table 3-3) says a Gs is needed in the hydrometer's data reduction; FHWA-NHI-06-088 (p. 5-20) says a Gs is commonly assumed and confirmed by test where it matters. Neither says how to tell from a given sheet. In the saved reports two hydrometer sheets carry one.",
+    "options": [
+      {
+        "label": "Keep it out of DIGGS",
+        "effect": "The Gs stays in the record with the grading test, as now. DIGGS carries only specific gravities from a sheet that is a specific gravity test."
+      },
+      {
+        "label": "Write it as a specific gravity result",
+        "effect": "Every hydrometer Gs goes to DIGGS under its sample, with a note that it is the value the analysis used."
+      },
+      {
+        "label": "Write it only where the sheet says it was measured",
+        "effect": "A Gs labelled measured (or with a method) goes to DIGGS; an assumed or unlabelled one stays with the grading test."
+      }
+    ],
+    "recommendation": "Keep it out of DIGGS: an assumed Gs written as a test result would read as a measurement, and the record still keeps it.",
+    "if_no_answer": "It stays out of DIGGS, as now.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-93",
+      "BACKLOG.md RI-71"
+    ]
   }
 }
