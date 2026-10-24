@@ -2034,8 +2034,10 @@ def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],
         why = (why[0].upper() + why[1:] + ("" if why.endswith(".") else ".")
                if why else "")
         kept_side = str(row.get("kept") or "floor")
-        # Neither voter's reading: both were ruled out (RI-47).
-        carries = ("neither" if kept_side == "neither"
+        # Neither voter's reading: both were ruled out (RI-47). Both: the
+        # two stand side by side in the record, two water readings or two
+        # lab kinds (RI-70).
+        carries = (kept_side if kept_side in ("neither", "both")
                    else f"the {kept_side}'s")
         qa.append(QAEntry(
             kind="disagreement", where=str(row.get("where") or ""),

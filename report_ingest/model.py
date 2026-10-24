@@ -886,9 +886,12 @@ class SPT(BaseModel):
     floor's (RI-04): where a log prints a standard SPT's three 6 in (150 mm)
     drives and no N, the N is the second drive plus the third, as FHWA
     NHI-06-088 Vol. I Sec. 3.7 (p. 3-51) prints the rule, and ``n_basis``
-    says so. Nothing else is computed: a four-drive record, a refusal, a
-    ring or California sampler, or drives of any other length keep ``n``
-    None, because adding two of their drives would invent a number.
+    says so; a record with one more drive after the three, the occasional
+    fourth increment of Fig. 3-20 (p. 3-52), has its N from the first three,
+    computed in the merge only (RI-70). Nothing else is computed: a
+    refusal, a ring or California sampler, or drives of any other length
+    keep ``n`` None, because adding two of their drives would invent a
+    number.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -2578,6 +2581,9 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     # rule and kept beside it (an N under 50 on a halted drive, RI-47).
     (("disagreement",), "the record carries the", "changed"),
     (("disagreement",), "the record carries neither", "changed"),
+    # Both readings stand side by side in the record (two water readings,
+    # two lab kinds) and nothing settled which is right: open (RI-70).
+    (("disagreement",), "the record carries both", "open"),
     # A lab test the logs hold no hole or sample for: the sheet and the
     # logs disagree, and the link is left unmade.
     (("partial",), "which is not among the explorations read from this "
@@ -2611,6 +2617,8 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
 #: it: ``<what>: <method> read <floor>, <method> read <model>; the record
 #: carries the <kept>'s.`` A row whose record carries neither reading (both
 #: ruled out, RI-47) does not match: it is a change whatever the two read.
+#: Nor does one whose record carries both (RI-70): both stand, and the two
+#: are open whatever they read.
 _VOTE_SPLIT = re.compile(r": \S+ read (?P<floor>.*?), \S+ read (?P<model>.*?);"
                          r" the record carries the \w+'s\.")
 #: A number as printed, with the minus that leads it (a hyphen, or the minus
