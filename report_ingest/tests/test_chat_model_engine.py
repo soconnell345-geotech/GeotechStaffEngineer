@@ -16,6 +16,7 @@ only.
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 from typing import List, Optional
 
@@ -1323,8 +1324,11 @@ class TestAPdf:
         chat_models = pytest.importorskip("langchain_anthropic.chat_models")
         engine, model = _with_a_pdf()
         engine.complete([user(pdf_block(PDF), text_block("Extract it."))])
+        # Newer langchain-anthropic releases also want the model's name.
+        params = inspect.signature(chat_models._format_messages).parameters
+        extra = {"model": "claude-made-up"} if "model" in params else {}
         _system, formatted = chat_models._format_messages(
-            model.requests[0]["messages"])
+            model.requests[0]["messages"], **extra)
         first, words = formatted[0]["content"]
         assert first["type"] == "document"
         assert first["source"]["media_type"] == "application/pdf"
@@ -1413,7 +1417,8 @@ class TestWhichRouteTakesAPdf:
                            "https://proxy.example.invalid/anthropic")
         unsaid = anthropic.ChatAnthropic(model="claude-made-up",
                                          api_key="made-up", base_url=None)
-        assert unsaid.anthropic_api_url is None
+        # Older releases leave the address empty, newer ones fill it in
+        # from the variable: either way no PDF goes out.
         assert takes_pdf(unsaid) is False
 
     def test_the_foundry_proxy_does_only_with_its_switch(self, anthropic,
