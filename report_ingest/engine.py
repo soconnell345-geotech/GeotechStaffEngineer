@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -445,6 +446,13 @@ def _usage_in_error(error: Any) -> Optional[Usage]:
     return Usage(input_tokens=spent_in or 0, output_tokens=spent_out or 0)
 
 
+#: Held while a :class:`CostMeter` records a call, so that pages described
+#: on several threads at once (BACKLOG RI-73) never lose a count. One lock
+#: for every meter: a record is a few additions, and a lock on the instance
+#: would not survive the copies some callers take of a meter.
+_METER_LOCK = threading.RLock()
+
+
 class CostMeter:
     """What a run has spent so far, per model and in total.
 
@@ -553,7 +561,15 @@ class CostMeter:
             served_by: Optional[str] = None, *, attempt: int = 1,
             stop: str = "", adapted: Sequence[str] = ()) -> Dict[str, Any]:
         """A reply. Returns its :attr:`per_call` row, for a note the engine
-        has only after reading the reply."""
+        has only after reading the reply. Safe from several threads at once
+        (:data:`_METER_LOCK`)."""
+        with _METER_LOCK:
+            return self._add(model, usage, seconds, served_by,
+                             attempt=attempt, stop=stop, adapted=adapted)
+
+    def _add(self, model: str, usage: Usage, seconds: float,
+             served_by: Optional[str] = None, *, attempt: int = 1,
+             stop: str = "", adapted: Sequence[str] = ()) -> Dict[str, Any]:
         self.calls += 1
         self.seconds += float(seconds)
         priced_as = served_by if price_for(served_by or "") else model
@@ -588,6 +604,19 @@ class CostMeter:
              waited: float = 0.0, adapted: Sequence[str] = (),
              served_by: Optional[str] = None,
              usage: Optional[Usage] = None) -> Dict[str, Any]:
+        """A request that came back with an error: :meth:`_fail`, under
+        :data:`_METER_LOCK`."""
+        with _METER_LOCK:
+            return self._fail(model, error, kind=kind, seconds=seconds,
+                              attempt=attempt, retried=retried,
+                              waited=waited, adapted=adapted,
+                              served_by=served_by, usage=usage)
+
+    def _fail(self, model: str, error: Any, *, kind: Optional[str] = None,
+              seconds: float = 0.0, attempt: int = 1, retried: bool = False,
+              waited: float = 0.0, adapted: Sequence[str] = (),
+              served_by: Optional[str] = None,
+              usage: Optional[Usage] = None) -> Dict[str, Any]:
         """A request that came back with an error instead of a reply.
 
         ``retried``: the engine sent it again (``waited`` seconds first);

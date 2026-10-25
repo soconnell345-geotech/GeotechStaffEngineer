@@ -214,6 +214,11 @@ class Budgets:
     #: A ceiling on the vision pass's MODEL CALLS; None is no ceiling and
     #: the mode decides (sheet mode is about one call per six pages).
     vision_model_calls: Optional[int] = None
+    #: A ceiling on the range voter's DESCRIBER calls (BACKLOG RI-73, off
+    #: unless its switch is on); None is no ceiling: one call a page, and a
+    #: second where the first answer was not taken. Reached, the pages left
+    #: are described on the next run and the voter sits this one out.
+    range_describe_calls: Optional[int] = None
     #: Skip a pass entirely. Triage off means no workflow and the standard
     #: path; review off is ``review_mode="none"`` however it was asked for,
     #: and is kept because callers already spell it this way.
@@ -458,6 +463,15 @@ class _Labelling:
     review_cost: Dict[str, Any] = field(default_factory=dict)
     vision_paid: bool = False
     review_paid: bool = False
+    #: The range voter (BACKLOG RI-73): its arm, ``None`` for off (the
+    #: default), and the engines that describe the pages and label them by
+    #: sections (``None`` = the main engine).
+    range_arm: Optional[str] = None
+    describe_engine: Any = None
+    range_engine: Any = None
+    describe_cost: Dict[str, Any] = field(default_factory=dict)
+    range_cost: Dict[str, Any] = field(default_factory=dict)
+    range_paid: bool = False
 
     def resolve(self) -> Dict[str, Any]:
         """The trust table, with the fallback the ``trust`` policy needs."""
@@ -491,7 +505,10 @@ def ingest_report(source: Any, engine: Any, *,
                   ingest_bound: bool = True,
                   triage_engine: Any = None,
                   counts_from_logs: str = "off",
-                  narrative_skips_bound: bool = False) -> ReportRecord:
+                  narrative_skips_bound: bool = False,
+                  range_labels: Optional[str] = None,
+                  describe_engine: Any = None,
+                  range_engine: Any = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -559,6 +576,20 @@ def ingest_report(source: Any, engine: Any, *,
         report, not as a searched passage -- and the captions it counts are
         this report's only. Off, it is shown them and TOLD whose they are,
         which is what every run before RI-14 did. Unmeasured either way.
+    range_labels, describe_engine, range_engine
+        The range voter (BACKLOG RI-73), OFF by default because its prompts
+        are new model-facing behaviour. ``range_labels`` is ``plain`` or
+        ``hinted`` (the rules' labels given as a hint) to run it, ``off`` to
+        keep it off, or ``None`` to follow ``GEOTECH_INGEST_RANGE_LABELS``.
+        On, every page is described by ``describe_engine`` (one vision call
+        a page, saved under ``out_dir/descriptions/``) and the report is
+        labelled by sections by ``range_engine`` (one call, or one per
+        window of a long report, saved to ``out_dir/ranges-<arm>.json``);
+        that label settles every page it gave one. The describer defaults
+        to ``vision_engine``, then ``engine``; the labeller to ``engine``.
+        ``Budgets.range_describe_calls`` caps the describer's calls.
+        ``label_policy="rules"`` does not run it. See
+        :mod:`report_ingest.range_labels`.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost.
@@ -575,12 +606,17 @@ def ingest_report(source: Any, engine: Any, *,
     if counts_from_logs not in COUNT_MODES:
         raise ValueError(f"unknown counts_from_logs {counts_from_logs!r}; "
                          f"the modes are {list(COUNT_MODES)}")
+    from report_ingest.range_labels import range_arm_of, range_labels_arm
+
     labelling = _Labelling(
         policy=label_policy,
         review_mode="none" if not budgets.review else review_mode,
         vision_engine=vision_engine, vision_mode=vision_mode,
         vision_detail=vision_detail, trust_table=trust_table,
-        templates=templates, triage_engine=triage_engine)
+        templates=templates, triage_engine=triage_engine,
+        range_arm=(range_labels_arm() if range_labels is None
+                   else range_arm_of(range_labels)),
+        describe_engine=describe_engine, range_engine=range_engine)
     out = str(out_dir)
     os.makedirs(os.path.join(out, "items"), exist_ok=True)
     started = time.time()
@@ -588,6 +624,8 @@ def ingest_report(source: Any, engine: Any, *,
     engine = tally.wrap(engine)
     labelling.vision_engine = tally.wrap(labelling.vision_engine)
     labelling.triage_engine = tally.wrap(labelling.triage_engine)
+    labelling.describe_engine = tally.wrap(labelling.describe_engine)
+    labelling.range_engine = tally.wrap(labelling.range_engine)
     spend = _Spend(tally)
     qa: List[QAEntry] = []
     unresolved: List[Dict[str, Any]] = []
@@ -740,7 +778,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
 
     # -- 0c. the vote: the rules, the picture and the printed form ----------
     choices, vision, templates = _vote_labels(
-        doc, engine, budgets, out, resume, roles, labelling, spend, qa)
+        doc, engine, budgets, out, resume, roles, labelling, spend, qa,
+        outline)
     labels = {c.page: c.label for c in choices}
     split = split_pages(choices)
     confidence = {c.page: c.confidence for c in choices}
@@ -848,7 +887,7 @@ def _relabel(roles: Sequence[Any], labels: Dict[int, str],
 
 def _vote_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
                  resume: bool, roles: Sequence[Any], labelling: "_Labelling",
-                 spend: _Spend, qa: List[QAEntry]
+                 spend: _Spend, qa: List[QAEntry], outline: Any = None
                  ) -> Tuple[List[PageChoice], Dict[int, Tuple[str, float]],
                             Dict[int, Any]]:
     """One :class:`PageChoice` per page, from the voters this run has.
@@ -856,7 +895,8 @@ def _vote_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
     The rules always vote. The vision pass votes unless the policy is
     ``rules``, and a pass that will not run is a QA note and one voter
     fewer rather than a failed report. The template votes only where a
-    fingerprint file is in force, which is not the default state.
+    fingerprint file is in force, which is not the default state. The range
+    voter votes only where its switch is on (:func:`_range_labels`).
 
     The two non-rules voters' answers come back with the choices so that a
     bound document, whose RULES answer has to be recomputed over its own
@@ -868,7 +908,9 @@ def _vote_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
     vision = _vision_labels(doc, engine, budgets, out, resume, labelling,
                             spend, qa)
     templates = _template_labels(doc, labelling, qa)
-    pages = sorted(set(rules) | set(vision))
+    ranged = _range_labels(doc, engine, out, resume, rules, outline,
+                           labelling, spend, qa, budgets)
+    pages = sorted(set(rules) | set(vision) | set(ranged))
     out_rows: List[PageChoice] = []
     for page in pages:
         role, confidence = rules.get(page, ("", None))
@@ -879,8 +921,122 @@ def _vote_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
             Voter("vision", seen[0], seen[1]) if seen else None,
             Voter("template", "", match.confidence, match.family)
             if match else None,
-            policy=labelling.policy, trust_table=table, page=page))
+            policy=labelling.policy, trust_table=table, page=page,
+            ranges=Voter("ranges", ranged[page]) if page in ranged
+            else None))
     return out_rows, vision, templates
+
+
+def _range_labels(doc: Any, engine: Any, out: str, resume: bool,
+                  rules: Dict[int, Tuple[str, float]], outline: Any,
+                  labelling: "_Labelling", spend: _Spend,
+                  qa: List[QAEntry],
+                  budgets: Optional[Budgets] = None) -> Dict[int, str]:
+    """``page -> label`` from the range voter (BACKLOG RI-73), or nothing.
+
+    Nothing unless the switch names an arm. The descriptions are saved one
+    page at a time as they are made, so a run cut short pays again only for
+    the pages it had not reached; the sections are saved once the labeller
+    has answered over a COMPLETE set of descriptions, so a page that could
+    not be described is asked about again next time rather than labelled
+    from a gap for good. A pass that fails is a QA note and one voter fewer.
+
+    The saved sections record the describer, the labeller, the describer's
+    prompt version, the conventions and a fingerprint of the labeller's
+    instructions; a saved file that differs in any of them is not used. A
+    describing pass stopped by its ceiling labels nothing: the voter sits
+    this run out, and the next one describes the pages left.
+    """
+    arm = labelling.range_arm
+    if arm is None:
+        return {}
+    if labelling.policy == "rules":
+        qa.append(QAEntry(
+            kind="note", where="labels.ranges",
+            detail="the range voter is switched on, but label_policy='rules' "
+                   "takes the rules alone, so it did not run"))
+        return {}
+    from report_ingest.range_labels import (
+        DESCRIBE_PROMPT_VERSION, _engine_name, conventions_version,
+        describe_pages, label_by_ranges, labeller_fingerprint,
+    )
+
+    describer = labelling.describe_engine or labelling.vision_engine or engine
+    labeller = labelling.range_engine or engine
+    made_by = {"describer": _engine_name(describer),
+               "labeller": _engine_name(labeller),
+               "describe_prompt": DESCRIBE_PROMPT_VERSION,
+               "conventions": conventions_version(),
+               "labeller_prompt": labeller_fingerprint(arm == "hinted")}
+    path = os.path.join(out, f"ranges-{arm}.json")
+    blob = _cached(path, resume)
+    if blob is not None and any(blob.get(key) != value
+                                for key, value in made_by.items()):
+        qa.append(QAEntry(
+            kind="note", where="labels.ranges",
+            detail="the saved sections came from another describer or "
+                   "labeller (or set of instructions) and were not used"))
+        blob = None
+    if blob is None:
+        from report_ingest.triage import outline_text
+
+        mark = spend.mark()
+        try:
+            described = describe_pages(
+                doc, describer, folder=os.path.join(out, "descriptions"),
+                redo=not resume,
+                max_calls=(budgets.range_describe_calls if budgets
+                           else None))
+            spend.add(described.cost)
+            if described.stopped:
+                spend.settle(mark)
+                left = doc.n_pages - len(described.pages)
+                qa.append(QAEntry(
+                    kind="partial", where="labels.ranges",
+                    detail=f"the describer stopped ({described.stopped}) "
+                           f"with {left} page(s) not described, so the "
+                           f"range voter did not label this run; asking "
+                           f"for the report again describes the rest"))
+                return {}
+            found = label_by_ranges(
+                described.pages, doc.n_pages, labeller,
+                outline=outline_text(outline) if outline is not None else "",
+                hints=({page: role for page, (role, _c) in rules.items()}
+                       if arm == "hinted" else None))
+        except Exception as exc:              # one voter, not the report
+            spend.settle(mark)
+            qa.append(QAEntry(
+                kind="note", where="labels.ranges",
+                detail=f"the range voter did not run ({type(exc).__name__}: "
+                       f"{exc}), so the page labels are the other voters'"))
+            return {}
+        spend.add(found.cost)
+        blob = found.to_dict()
+        blob.update(made_by)
+        blob["describe"] = described.to_dict()
+        missing = [row["page"] for row in described.unresolved]
+        if missing:
+            qa.append(QAEntry(
+                kind="partial", where="labels.ranges",
+                detail=f"{len(missing)} page(s) could not be described, so "
+                       f"the sections were drawn with a gap there and are "
+                       f"not saved as finished; asking for the report again "
+                       f"describes those pages and draws them again",
+                pages=missing[:200]))
+        else:
+            _keep(path, blob, spend, mark, qa, "labels.ranges")
+        spend.settle(mark)
+        labelling.range_paid = True
+    labelling.describe_cost = dict(
+        (blob.get("describe") or {}).get("saved_cost") or {})
+    labelling.range_cost = dict(blob.get("cost") or {})
+    if blob.get("unresolved"):
+        qa.append(QAEntry(
+            kind="note", where="labels.ranges",
+            detail=f"{len(blob['unresolved'])} page(s) no section settled; "
+                   f"the other voters label them",
+            pages=list(blob["unresolved"])[:200]))
+    return {int(k): str(v) for k, v in (blob.get("labels") or {}).items()}
 
 
 def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
@@ -1141,6 +1297,8 @@ def _labels_blob(choices: Sequence[PageChoice], split: Sequence[int],
         "vision_mode": (labelling.vision_mode
                         if labelling.policy != "rules" else ""),
         "note": labelling.note,
+        **({"range_arm": labelling.range_arm} if labelling.range_arm
+           else {}),
         "n_pages": int(n_pages),
         "pages_voted": len(choices),
         "split_pages": list(split),
@@ -1153,7 +1311,11 @@ def _labels_blob(choices: Sequence[PageChoice], split: Sequence[int],
         "cost": {"vision": dict(labelling.vision_cost),
                  "review": dict(labelling.review_cost),
                  "vision_paid": labelling.vision_paid,
-                 "review_paid": labelling.review_paid},
+                 "review_paid": labelling.review_paid,
+                 **({"describe": dict(labelling.describe_cost),
+                     "ranges": dict(labelling.range_cost),
+                     "ranges_paid": labelling.range_paid}
+                    if labelling.range_arm else {})},
         "labels": {str(c.page): (str(changed[c.page].get("to"))
                                  if c.page in changed else c.label)
                    for c in choices},

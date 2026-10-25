@@ -741,7 +741,9 @@ class LabelVote(BaseModel):
 
     voter: str = Field(
         description="rules (planlens), vision (a model looking at the page), "
-                    "or template (the printed form it was recognised as)")
+                    "template (the printed form it was recognised as) or "
+                    "ranges (a model reading every page's description, "
+                    "BACKLOG RI-73)")
     label: str = Field(
         default="",
         description="the page label this voter gave; empty for the template "

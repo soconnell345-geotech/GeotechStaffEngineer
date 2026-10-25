@@ -362,6 +362,7 @@ All OFF unless marked. Decisions: OWN-06.
 | `GEOTECH_INGEST_LAB_FLOOR_PER_PAGE` | off | RI-55 (paired on/off on Foundry; the brief shows the per-page floor and the corrected kind; the merge uses them either way) |
 | `GEOTECH_INGEST_CALC_PAGE_IMAGES` | off | RI-57 |
 | `GEOTECH_INGEST_QA_BY_RANK` | off | RI-61 (library eval) |
+| `GEOTECH_INGEST_RANGE_LABELS` (`plain` / `hinted`) | off | RI-73 (built 2026-10-24 on `wip/ri73`: a vision description of every page, then one call labels the report by sections under OWN-92's default conventions, and its label settles the page; cluster stage `range_labels`; measured only on the R18 smoke) |
 | `counts_from_logs` / `narrative_skips_bound` (ingest options) | off | RI-54 |
 | `GEOTECH_CHART_CODE_VOTER` | **on** | Inert on real reference charts (`no_scale` 9/9) until PL-03, VIS-10 |
 | `GEOTECH_VISION_POLICY` | robust | OWN-24, VIS-20 |

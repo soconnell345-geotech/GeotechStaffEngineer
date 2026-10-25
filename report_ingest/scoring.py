@@ -24,6 +24,9 @@ __all__ = [
     "KEY_CONTENT", "GATE", "OOS_OPEN", "OOS_BLIND", "CHECKPOINT", "DISPUTED",
     "Scores", "disputed_drop", "verdict_for", "label_table",
     "columns_label_table", "rate", "gate_failures",
+    "NARRATIVE_FRONT", "BOUND_READER", "CONSEQUENCES", "HARMLESS",
+    "STRUCTURE", "reader_for", "consequence", "is_harmful",
+    "hand_sections", "miss_structure", "harm_score",
 ]
 
 #: The labels a downstream reader depends on. The gate after review is 0.98
@@ -242,3 +245,168 @@ def gate_failures(after: Scores, gate: float = GATE) -> List[str]:
                 precision, recall) < gate:
             failed.append(name)
     return failed
+
+
+# ---------------------------------------------------------------------------
+# what a wrong label costs: the reader it sends the page to (BACKLOG RI-73)
+# ---------------------------------------------------------------------------
+
+#: The labels the narrative reader is handed as the front of the report
+#: beside ``narrative`` (:data:`report_ingest.narrative_reader.FRONT_LABELS`),
+#: so a wrong one of these reaches that reader too.
+NARRATIVE_FRONT: Tuple[str, ...] = ("cover", "letter", "toc")
+
+#: The reader a page of a bound document goes to: its own record.
+BOUND_READER = "bound"
+
+#: Every way a wrong label can land, from the hand label's reader and the
+#: given label's. The first two change no reader; the rest do, and
+#: ``harmful`` counts them. ``bound/parent swap`` is a page read into the
+#: wrong one of a bound document and its parent.
+CONSEQUENCES: Tuple[str, ...] = (
+    "same reader", "same (neither read)", "different reader",
+    "should be read, is not", "read, should not be", "bound/parent swap",
+    "bound page not read", "page read as bound",
+)
+HARMLESS: Tuple[str, ...] = CONSEQUENCES[:2]
+
+#: How a wrong page sits in the run of pages its hand label makes (a run =
+#: the longest stretch of consecutive pages with one hand label): every page
+#: of a run of two or more wrong; a block of wrong pages touching the run's
+#: first or last page, one page or more; a block strictly inside the run;
+#: a run of one page.
+STRUCTURE: Tuple[str, ...] = (
+    "whole section wrong", "edge, 1 page", "edge, 2+ pages",
+    "inside, 1 page", "inside, 2+ pages", "one-page section",
+)
+
+
+def reader_for(label: Optional[str]) -> Optional[str]:
+    """The reader a page with this label goes to, or None for none.
+
+    The graph's own table (:data:`report_ingest.graph.ITEM_READERS`), with the
+    front matter the narrative reader is handed and a bound document's pages,
+    which are read into a record of their own. Imported where it is used:
+    the graph imports the readers and this module is imported by scorers that
+    open no document.
+    """
+    from report_ingest.bound import APPENDED_LABEL
+    from report_ingest.graph import ITEM_READERS
+
+    if not label:
+        return None
+    if label == APPENDED_LABEL:
+        return BOUND_READER
+    if label in NARRATIVE_FRONT:
+        return "narrative"
+    return ITEM_READERS.get(label)
+
+
+def consequence(hand: str, given: str) -> str:
+    """What a page labelled ``given`` instead of ``hand`` costs its reading.
+
+    Called on a WRONG page only (``given != hand``); see
+    :data:`CONSEQUENCES`.
+    """
+    want, got = reader_for(hand), reader_for(given)
+    if want == got:
+        return "same reader" if want else "same (neither read)"
+    if BOUND_READER in (want, got):
+        if want and got:
+            return "bound/parent swap"
+        return ("bound page not read" if want == BOUND_READER
+                else "page read as bound")
+    if want is None:
+        return "read, should not be"
+    if got is None:
+        return "should be read, is not"
+    return "different reader"
+
+
+def is_harmful(hand: str, given: str) -> bool:
+    """Does ``given`` send this page to another reader than ``hand`` does,
+    or to none, or to one where it should go to none?"""
+    return given != hand and consequence(hand, given) not in HARMLESS
+
+
+def hand_sections(hand: Dict[int, str]) -> List[Tuple[int, int, str]]:
+    """``(first, last, label)`` for every run of one hand label, in order;
+    a page missing from ``hand`` ends a run."""
+    out: List[Tuple[int, int, str]] = []
+    for page in sorted(hand):
+        label = hand[page]
+        if out and out[-1][2] == label and out[-1][1] == page - 1:
+            out[-1] = (out[-1][0], page, label)
+        else:
+            out.append((page, page, label))
+    return out
+
+
+def miss_structure(hand: Dict[int, str], given: Dict[int, str]
+                   ) -> Dict[int, str]:
+    """``page -> one of`` :data:`STRUCTURE` for every wrong page.
+
+    A page missing from ``given`` is ``other``, as everywhere in scoring.
+    """
+    out: Dict[int, str] = {}
+    for first, last, label in hand_sections(hand):
+        pages = list(range(first, last + 1))
+        wrong = [p for p in pages if given.get(p, "other") != label]
+        if not wrong:
+            continue
+        if len(pages) == 1:
+            out[first] = "one-page section"
+            continue
+        if len(wrong) == len(pages):
+            for page in pages:
+                out[page] = "whole section wrong"
+            continue
+        block: List[int] = []
+        for page in wrong + [None]:
+            if block and (page is None or page != block[-1] + 1):
+                edge = block[0] == first or block[-1] == last
+                size = "1 page" if len(block) == 1 else "2+ pages"
+                for p in block:
+                    out[p] = f"{'edge' if edge else 'inside'}, {size}"
+                block = []
+            if page is not None:
+                block.append(page)
+    return out
+
+
+def harm_score(hand: Dict[int, str], given: Dict[int, str]
+               ) -> Dict[str, Any]:
+    """Strict accuracy, the wrong pages by consequence and by structure,
+    and how many of them change a reader, for one report or many joined.
+
+    ``hand`` and ``given`` are ``page -> label``; only hand-labelled pages
+    are scored, and a page ``given`` has no label for is ``other``.
+    """
+    by_consequence: Counter = Counter()
+    by_structure: Counter = Counter()
+    harmful_structure: Counter = Counter()
+    moves: Counter = Counter()
+    structure = miss_structure(hand, given)
+    hits = harmful = 0
+    for page, want in hand.items():
+        got = given.get(page, "other")
+        if got == want:
+            hits += 1
+            continue
+        what = consequence(want, got)
+        by_consequence[what] += 1
+        by_structure[structure[page]] += 1
+        if what not in HARMLESS:
+            harmful += 1
+            harmful_structure[structure[page]] += 1
+            moves[f"{want} -> {got}"] += 1
+    n = len(hand)
+    return {
+        "pages": n, "right": hits,
+        "strict": (hits / n) if n else float("nan"),
+        "wrong": n - hits, "harmful": harmful,
+        "by_consequence": dict(by_consequence),
+        "by_structure": dict(by_structure),
+        "harmful_by_structure": dict(harmful_structure),
+        "harmful_moves": dict(moves),
+    }

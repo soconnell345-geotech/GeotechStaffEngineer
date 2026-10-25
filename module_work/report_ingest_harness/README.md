@@ -101,6 +101,24 @@ Everything goes under the set's gitignored `raw/`. `run_claude_local run
 --raw-dir <set>/raw --reports-dir <set>/raw/assembled` then scores the
 reader on them, every item blind. Its tests use a made-up AGS4 file.
 
+`run_range_labels` (2026-10-24, BACKLOG RI-73) runs the range voter on
+Claude the same way: one model describes every page (`--describe-model`,
+one call a page, `--workers` at once), another labels each report by
+sections (`--label-model`) in the `plain` and `hinted` arms, through the
+`range_labels` stage's own functions, on the same ledger (a wave and a cap;
+a reserve also refuses a call whose estimate would pass the cap). `run`
+takes the thirteen stage-b reports unless `--only` names some, and stops
+sending pages after `--max-minutes` (7) so the same command again goes on;
+`probe` describes the first few pages of one report and prints what each
+cost.
+`measure_range_labels` scores any set of page labels -- the stage-b runs'
+rules, vision, vote, master and stored labels, and any `--runs` folder of
+`<ID>.json` label files -- by strict accuracy, by the pages a wrong label
+sends to the wrong reader (or none), and by where the misses sit in the hand
+labels' runs, each again with the divider pages left out (OWN-92 (3));
+`--harmful-runs SET` lists a set's largest runs of harmful pages; no model,
+and the blind reports are refused.
+
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
 `module_work/field_feedback/2026-09-16_report-ingest/raw/`, which `.gitignore`

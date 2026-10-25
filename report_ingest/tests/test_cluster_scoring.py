@@ -3441,3 +3441,211 @@ class TestMeasurementPlumbingRI69:
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert "Reused a saved label run made on the other engine" in text
         assert "R36 (prompter)" in text
+
+
+# -- range_labels (BACKLOG RI-73) ---------------------------------------------
+
+def _range_blob(rid, n_pages, arm, rules, labels, dollars=0.0):
+    """One report's saved range run for one arm, as the stage writes it,
+    made by the stage's default models from today's instructions."""
+    from report_ingest.range_labels import (DESCRIBE_PROMPT_VERSION,
+                                            labeller_fingerprint)
+
+    return {
+        "id": rid, "run_date": "2026-10-24", "n_pages": n_pages, "arm": arm,
+        "describe_model": "funhouse-gpt-low",
+        "range_model": "funhouse-gpt-high",
+        "describe_prompt": DESCRIBE_PROMPT_VERSION,
+        "labeller_prompt": labeller_fingerprint(arm == "hinted"),
+        "conventions": "made-up", "describer": {"model": "made-up-eyes"},
+        "labeller": {"model": "made-up-reader"}, "served_by": [],
+        "rules_labels": {str(k): v for k, v in rules.items()},
+        "labels": {str(k): v for k, v in labels.items()},
+        "ranges": {"labels": {str(k): v for k, v in labels.items()},
+                   "sections": [], "exceptions": [], "unresolved": [],
+                   "qa": [], "windows": []},
+        "describe": {"n_described": n_pages},
+        "describe_cost": {"calls": n_pages, "input_tokens": 9000,
+                          "output_tokens": 900, "dollars": 0.5},
+        "cost": {"calls": 1, "input_tokens": 4000, "output_tokens": 600,
+                 "dollars": dollars},
+        "seconds": 30.0,
+    }
+
+
+@pytest.fixture()
+def range_cluster(cluster):
+    """The two reports of ``cluster``, each with both arms already run."""
+    reports_dir, out, oos = cluster
+    rules = {"R36": {3: "figure", 7: "boring_log"},
+             "R31": {5: "lab_test", 9: "narrative"}}
+    arms = {"plain": {"R36": {3: "plan", 7: "figure"},
+                      "R31": {5: "lab_test", 9: "narrative"}},
+            "hinted": {"R36": {3: "plan", 7: "boring_log"},
+                       "R31": {5: "lab_test", 9: "narrative"}}}
+    for arm, per_report in arms.items():
+        (out / "ranges" / arm).mkdir(parents=True)
+        for rid, labels in per_report.items():
+            (out / "ranges" / arm / f"{rid}.json").write_text(json.dumps(
+                _range_blob(rid, 100, arm, rules[rid], labels, 0.25)),
+                encoding="utf-8")
+    return reports_dir, out, oos
+
+
+def _range_run(range_cluster, **over):
+    reports_dir, out, oos = range_cluster
+    kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
+                  oos_labels=oos, sets=("oos_blind",),
+                  stages=("range_labels",))
+    kwargs.update(over)
+    return cs.score_on_cluster(**kwargs)
+
+
+class TestTheRangeStage:
+    """RI-73: the rules and both arms on one set of hand labels."""
+
+    def test_it_is_a_stage_and_a_resume_is_free(self, range_cluster, capsys):
+        assert "range_labels" in cs.STAGE_NAMES
+        results = _range_run(range_cluster)
+        assert "R36: already done, skipping" in capsys.readouterr().out
+        assert results["range_labels"]["sets"]["oos_blind"]["n_reports"] == 2
+
+    def test_each_column_is_scored_strictly_and_by_harm(self, range_cluster):
+        row = _range_run(range_cluster)["range_labels"]["sets"]["oos_blind"]
+        columns = row["columns"]
+        # Four hand pages. Rules: R36 p3 figure for plan (neither read):
+        # wrong, not harmful. Plain: R36 p7 figure for boring_log: wrong and
+        # harmful (a log no reader reads). Hinted: all four right.
+        assert columns["rules"]["accuracy"] == pytest.approx(0.75)
+        assert columns["rules"]["harmful"] == 0
+        assert columns["plain"]["accuracy"] == pytest.approx(0.75)
+        assert columns["plain"]["harmful"] == 1
+        assert columns["hinted"]["accuracy"] == pytest.approx(1.0)
+        assert columns["hinted"]["harmful"] == 0
+
+    def test_the_describer_is_counted_once_a_report_not_once_an_arm(
+            self, range_cluster):
+        cost = _range_run(range_cluster)["range_labels"]["cost"]
+        assert cost["describe"]["calls"] == 200
+        assert cost["label"]["calls"] == 4
+        assert cost["label"]["dollars"] == pytest.approx(1.0)
+
+    def test_an_unknown_arm_is_refused(self, range_cluster):
+        with pytest.raises(ValueError, match="range_arms"):
+            _range_run(range_cluster, range_arms=("plain", "guessed"),
+                       redo=True)
+
+    def test_results_carry_ids_and_numbers_and_no_working_state(
+            self, range_cluster):
+        reports_dir, out, oos = range_cluster
+        _range_run(range_cluster)
+        blob = json.loads((out / "results.json").read_text(encoding="utf-8"))
+        assert "_scores" not in blob["range_labels"]["sets"]["oos_blind"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "# RI-73: every page described" in text
+        assert "RI-73 on the cluster" not in text
+        assert "HARMFUL pages" in text
+        assert "made up" not in text
+
+    def test_a_run_drawn_over_an_undescribed_page_is_not_skipped(
+            self, range_cluster, capsys):
+        reports_dir, out, oos = range_cluster
+        path = out / "ranges" / "plain" / "R31.json"
+        blob = json.loads(path.read_text(encoding="utf-8"))
+        blob["describe"]["unresolved"] = [{"page": 9, "why": "made up"}]
+        path.write_text(json.dumps(blob), encoding="utf-8")
+        results = _range_run(range_cluster)
+        printed = capsys.readouterr().out
+        assert "R36: already done, skipping" in printed
+        assert "R31: already done" not in printed
+        assert "R31" in results["range_labels"]["failures"]
+
+    @pytest.mark.parametrize("key, value", [
+        ("labeller_prompt", "made-up-old"), ("describe_prompt", "ri73-0"),
+        ("range_model", "made-up-other-labeller"),
+        ("describe_model", "made-up-other-eyes")])
+    def test_a_run_from_other_instructions_or_models_is_not_skipped(
+            self, range_cluster, capsys, key, value):
+        reports_dir, out, oos = range_cluster
+        path = out / "ranges" / "hinted" / "R31.json"
+        blob = json.loads(path.read_text(encoding="utf-8"))
+        blob[key] = value
+        path.write_text(json.dumps(blob), encoding="utf-8")
+        _range_run(range_cluster)
+        printed = capsys.readouterr().out
+        assert "R36: already done, skipping" in printed
+        assert "R31: already done" not in printed
+
+    def test_a_corrupt_run_file_is_not_finished_and_the_run_goes_on(
+            self, range_cluster, capsys):
+        reports_dir, out, oos = range_cluster
+        (out / "ranges" / "plain" / "R31.json").write_text(
+            "{ not json", encoding="utf-8")
+        assert cs._finished_range_run(
+            out / "ranges" / "plain" / "R31.json") is None
+        results = _range_run(range_cluster)
+        printed = capsys.readouterr().out
+        assert "R36: already done, skipping" in printed
+        assert "R31" in results["range_labels"]["failures"]
+
+    def test_the_saved_runs_are_read_back_without_a_call(self, range_cluster):
+        reports_dir, out, oos = range_cluster
+        saved = cs._saved_ranges(out, ["R31", "R36", "R99"],
+                                 ("plain", "hinted"), "funhouse-gpt-low",
+                                 "funhouse-gpt-high")
+        assert sorted(saved["runs"]["plain"]) == ["R31", "R36"]
+        assert sorted(saved["runs"]["hinted"]) == ["R31", "R36"]
+        other = cs._saved_ranges(out, ["R31"], ("plain",),
+                                 "made-up-eyes", "funhouse-gpt-high")
+        assert other["runs"]["plain"] == {}
+
+
+def test_a_describing_pass_keeps_its_cost_record_beside_the_runs(tmp_path):
+    from report_ingest.engine import CostMeter, Usage
+
+    meter = CostMeter()
+    cs._keep_meter(tmp_path, "R99", meter)
+    assert not tmp_path.exists() or not list(tmp_path.iterdir())
+    entry = meter.add("made-up-model", Usage(input_tokens=10), 1.0)
+    entry["notes"] = ["an answer was not taken: made up"]
+    cs._keep_meter(tmp_path / "meters", "R99", meter)
+    (saved,) = list((tmp_path / "meters").glob("R99-*.json"))
+    blob = json.loads(saved.read_text(encoding="utf-8"))
+    assert blob["id"] == "R99" and blob["cost"]["calls"] == 1
+    assert "an answer was not taken: made up" in saved.read_text(
+        encoding="utf-8")
+
+
+def test_the_mirror_is_synced_every_n_pages_described():
+    synced = []
+    progress = cs._mirror_every(3, lambda: synced.append(1))
+    for done in range(1, 10):
+        progress(done, 9)
+    assert len(synced) == 3
+    assert cs._mirror_every(3, None) is None
+
+
+def test_another_conventions_runs_go_in_their_own_folder_and_column():
+    assert cs._range_column("hinted") == "hinted"
+    assert cs._range_column("hinted", "b") == "hinted_B"
+
+
+def test_a_conventions_a_run_is_not_a_finished_conventions_b_run(
+        range_cluster):
+    reports_dir, out, oos = range_cluster
+    path = out / "ranges" / "hinted" / "R31.json"
+    assert cs._finished_range_run(path, "hinted", "funhouse-gpt-low",
+                                  "funhouse-gpt-high") is not None
+    assert cs._finished_range_run(path, "hinted", "funhouse-gpt-low",
+                                  "funhouse-gpt-high", "B") is None
+    saved = cs._saved_ranges(out, ["R31", "R36"], ("hinted",),
+                             "funhouse-gpt-low", "funhouse-gpt-high", "B")
+    assert saved["arms"] == ["hinted_B"] and saved["runs"]["hinted_B"] == {}
+
+
+def test_an_unknown_conventions_name_is_refused(range_cluster, tmp_path):
+    reports_dir, out, oos = range_cluster
+    with pytest.raises(ValueError, match="conventions must be one of"):
+        cs._run_ranges(None, None, "made-up-eyes", "made-up-reader", out,
+                       [], arms=("hinted",), workers=1, redo=False,
+                       conventions="Z")

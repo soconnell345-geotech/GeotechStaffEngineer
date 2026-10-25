@@ -205,7 +205,7 @@ def _by_policy(rules: Voter, vision: Voter, policy: str,
 def combine(rules: Any, vision: Any = None, template: Any = None, *,
             policy: str = DEFAULT_POLICY,
             trust_table: Optional[Mapping[str, Mapping[str, Any]]] = None,
-            page: int = 0) -> PageChoice:
+            page: int = 0, ranges: Any = None) -> PageChoice:
     """Settle one page under one policy, and say whether the voters agreed.
 
     ``rules``, ``vision`` and ``template`` are :class:`Voter` instances, or
@@ -222,6 +222,16 @@ def combine(rules: Any, vision: Any = None, template: Any = None, *,
     tie towards: the policy's answer stands and ``agreed`` is False, which
     is exactly the page a second look is for. ``policy="rules"`` reproduces
     the old behaviour and is not subject to the rule.
+
+    THE RANGE VOTER (BACKLOG RI-73), off unless the graph's switch runs it.
+    ``ranges`` is the label a model gave the page from a description of
+    every page of the report, by sections and under the written labelling
+    conventions (:mod:`report_ingest.range_labels`). Where it spoke, its
+    label is the answer, over the policy's and over the template rule: it
+    is the only voter that decides a page by the section the page sits in,
+    which is how the hand labels decide it. ``policy="rules"`` ignores it,
+    as it ignores the template. The other voters still count towards
+    ``agreed``, so the pages they dispute with it go to the review.
 
     ``agreed`` is True when every voter that had a view concurs with the
     chosen label -- the template concurring when the chosen label is a log
@@ -251,7 +261,15 @@ def combine(rules: Any, vision: Any = None, template: Any = None, *,
                        f"log form, so {other.name}'s {other.label} wins")
                 break
 
-    voters = tuple(v for v in (rules_v, vision_v, template_v)
+    ranges_v = _as_voter(ranges, "ranges")
+    by_range = ranges_v.spoke and policy != "rules"
+    if by_range:
+        label = ranges_v.label
+        why = (f"ranges: the section this page sits in is {label}"
+               + ("" if label == rules_v.label else
+                  f" (the rules said {rules_v.label or 'nothing'})"))
+
+    voters = tuple(v for v in (rules_v, vision_v, template_v, ranges_v)
                    if v.spoke or v.family)
     spoken = [v for v in voters if v.spoke]
     agreed = all(v.label == label for v in spoken)

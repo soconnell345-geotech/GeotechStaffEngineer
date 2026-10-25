@@ -79,6 +79,7 @@ the cluster unless the owner moves them deliberately.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import traceback
 from datetime import date
@@ -144,9 +145,12 @@ SET_NAMES: Tuple[str, ...] = ("insample", "oos_open", "oos_blind")
 #: sits in ``runs/``), the three readers with their floors, the reconciler,
 #: the writers -- producing the record and its exports, DIGGS included, and
 #: scoring the record against whatever hand truth exists for that report.
+#: ``range_labels`` (BACKLOG RI-73) describes every page with a vision model
+#: and labels each report by sections from the descriptions, scored by
+#: accuracy and by the pages a wrong label sends to the wrong reader.
 STAGE_NAMES: Tuple[str, ...] = ("labels", "logs", "lab", "calc",
                                 "soundings", "narrative", "vision_labels",
-                                "vote", "ingest")
+                                "vote", "range_labels", "ingest")
 
 #: The stages that make no model call, and so need no prompter: the vote
 #: combines label and vision runs already on disk (BACKLOG RI-08).
@@ -593,7 +597,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      ingest_narrative_skips_bound: bool = False,
                      trust_table: Any = None,
                      chat_model: Any = None,
-                     vision_chat_model: Any = None
+                     vision_chat_model: Any = None,
+                     describe_model: Optional[str] = None,
+                     range_model: Optional[str] = None,
+                     range_arms: Sequence[str] = ("plain", "hinted"),
+                     range_workers: int = 1
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -673,7 +681,12 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         review of the splits would have to be. Pass any combination; all six
         is ``stages=("labels", "logs", "lab", "narrative", "vision_labels",
         "vote")``, though the vote is usually run on its own over run files
-        that already exist. ``"ingest"`` (5.23.0) is the whole pipeline on
+        that already exist. ``"range_labels"`` (BACKLOG RI-73) describes
+        every page of every report in the chosen sets with a vision model
+        and labels each report by sections from the descriptions, in each
+        of ``range_arms``, scored against the hand labels by strict accuracy
+        and by HARMFUL pages (sent to the wrong reader or none); see
+        ``describe_model`` below. ``"ingest"`` (5.23.0) is the whole pipeline on
         each report in the chosen sets: ``graph.ingest_report`` end to end,
         into ``out_dir/ingest/<ID>/`` -- the record, the summary, the
         library page, the DIGGS file with both gates, ``qa.json`` -- reusing
@@ -815,6 +828,19 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         ``run.json`` records them, and a report already done under other
         settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
         to compare two settings.
+    describe_model, range_model, range_arms, range_workers
+        The ``range_labels`` stage (BACKLOG RI-73). ``describe_model``
+        describes the pages, one vision call a page, on the vision engine
+        (``vision_chat_model`` when one is given); it defaults to
+        ``vision_model``. ``range_model`` labels each report by sections
+        from the descriptions, on the readers' engine; it defaults to
+        ``model``. ``range_arms`` is which of ``plain`` (descriptions and
+        the printed outline) and ``hinted`` (the rules' label on every
+        line as well) to run; both by default, over the same descriptions.
+        ``range_workers`` is how many pages are described at once.
+        Descriptions are saved one file a page under
+        ``out_dir/ranges/descriptions/<ID>/`` and each arm's labels to
+        ``out_dir/ranges/<arm>/<ID>.json``.
     chat_model, vision_chat_model
         A LangChain chat model to read with INSTEAD OF the Prompter (BACKLOG
         RI-67), or a callable that returns one for a model name. Each
@@ -874,8 +900,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     # A stage left on the Prompter needs it; one on a chat model does not.
     on_prompter = [s for s in calling
                    if (s != "vision_labels" and engines.on_prompter())
-                   or (s in ("vision_labels", "ingest")
+                   or (s in ("vision_labels", "ingest", "range_labels")
                        and engines.on_prompter(vision=True))]
+    describe_model = describe_model or vision_model
+    range_model = range_model or model
     if prompter is None and on_prompter:
         raise ValueError(
             f"pass the live fh_prompter: stage(s) {on_prompter} call the "
@@ -893,6 +921,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                 asked_for.append(("triage", triage_model, False))
         if any(s in ("vision_labels", "ingest") for s in calling):
             asked_for.append(("vision", vision_model, True))
+        if "range_labels" in stages:
+            asked_for.append(("describer", describe_model, True))
+            if range_model != model:
+                asked_for.append(("range labeller", range_model, False))
         for what, name, vision in asked_for:
             said = engines.describe(name, vision=vision)
             engine_notes.append(
@@ -963,6 +995,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         (out / "vote").mkdir(parents=True, exist_ok=True)
     if "ingest" in stages:
         (out / "ingest").mkdir(parents=True, exist_ok=True)
+    if "range_labels" in stages:
+        (out / "ranges").mkdir(parents=True, exist_ok=True)
 
     # THE DURABLE COPY, before anything else: a wiped /tmp resumes from what
     # the mirror holds rather than paying the model for it a second time.
@@ -991,7 +1025,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     # experiment -- run over the same reports, because they are two answers
     # to one question and are scored against one set of hand labels.
     by_report = (("labels" in stages) or ("vision_labels" in stages)
-                 or ("ingest" in stages))
+                 or ("ingest" in stages) or ("range_labels" in stages))
     asked: List[str] = []
     if by_report:
         for name in sets:
@@ -1006,7 +1040,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
               if rid in present
               or (out / "runs" / f"{rid}.json").is_file()
               or (out / "vision" / f"{rid}.json").is_file()
-              or (out / "ingest" / rid / "run.json").is_file()]
+              or (out / "ingest" / rid / "run.json").is_file()
+              or any((out / "ranges" / arm / f"{rid}.json").is_file()
+                     for arm in range_arms)]
     absent = [rid for rid in asked if rid not in wanted]
     if max_reports:
         wanted = wanted[:int(max_reports)]
@@ -1162,6 +1198,17 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["ingest"] = ingest
         lines += _render_ingest(ingest)
 
+    if "range_labels" in stages:
+        ranged = _run_ranges(corpus, source, describe_model, range_model,
+                             out, wanted, arms=tuple(range_arms),
+                             workers=range_workers, redo=redo, sync=sync)
+        scored_ranges = _score_ranges(ranged, corpus, oos, mapped, sets)
+        scored_ranges["describer"] = engines.describe(describe_model,
+                                                      vision=True)
+        scored_ranges["labeller"] = engines.describe(range_model)
+        results["range_labels"] = scored_ranges
+        lines += _render_ranges(scored_ranges)
+
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1185,6 +1232,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-report disagreement lists in {out / 'vote'}")
     if "ingest" in stages:
         print(f"per-report records and exports in {out / 'ingest'}")
+    if "range_labels" in stages:
+        print(f"per-report descriptions and section labels in "
+              f"{out / 'ranges'}")
     sync.report()
     return results
 
@@ -3667,6 +3717,428 @@ def _vote_rules(rid: str, corpus: Corpus, blob: dict, present: set
             if doc is not None:
                 doc.close()
     return labels, confidence, "saved run, no confidence"
+
+
+# ---------------------------------------------------------------------------
+# range_labels: every page described, then labelled by sections (RI-73)
+# ---------------------------------------------------------------------------
+
+def _run_ranges(corpus: Corpus, prompter: Any, describe_model: str,
+                range_model: str, out: Path, report_ids: Sequence[str], *,
+                arms: Sequence[str], workers: int, redo: bool,
+                sync: Optional[Any] = None,
+                deadline: Optional[float] = None,
+                conventions: str = "A") -> Dict[str, Any]:
+    """The range voter on every report, each arm, written per report.
+
+    One vision call a page on ``describe_model`` (the vision engine) makes
+    the descriptions, saved one file a page under
+    ``ranges/descriptions/<ID>/`` and shared by the arms; then one call a
+    report (or a window) on ``range_model`` (the readers' engine) labels
+    them by sections, per arm, into ``ranges/<arm>/<ID>.json`` -- a folder
+    of label files ``module_work/report_ingest_harness/
+    measure_range_labels.py --runs`` reads as a column. The rules' labels
+    are computed here too, with no model.
+
+    Restartable at two grains: a report whose every arm file is finished
+    (:func:`_finished_range_run`: the same models, the same describer
+    prompt, the same labeller instructions) is skipped, and a description
+    already on disk is not asked for again. While a report is described,
+    ``sync`` mirrors what is saved every :data:`RANGE_MIRROR_EVERY` pages,
+    so a restart loses few paid descriptions.
+    ``conventions`` names the labeller's conventions
+    (:data:`report_ingest.range_labels.CONVENTIONS`): ``A``'s runs are in
+    ``ranges/<arm>/``, any other's in ``ranges/<arm>_<name>/``, and their
+    columns are named the same way, so two conventions never share a file.
+    ``deadline`` (a ``time.time()`` value) stops the describer sending
+    pages; a report it stops in is a failure that the same call again
+    goes on with. Each describing pass's cost record -- with what the engine
+    said about every answer it did not take -- is kept under
+    ``ranges/describe_meters/``.
+    """
+    from planlens.document.roles import document_outline, page_roles
+
+    from report_ingest.engine import CostMeter
+    from report_ingest.range_labels import (
+        ARMS, DESCRIBE_PROMPT_VERSION, conventions_named,
+        conventions_version, describe_pages, label_by_ranges,
+        labeller_fingerprint,
+    )
+    from report_ingest.triage import outline_text
+
+    bad = [arm for arm in arms if arm not in ARMS]
+    if bad or not arms:
+        raise ValueError(f"range_arms must be some of {list(ARMS)}, not "
+                         f"{list(arms)}")
+    conventions = str(conventions).strip().upper()
+    text, not_used = conventions_named(conventions)
+    column = {arm: _range_column(arm, conventions) for arm in arms}
+    print(f"  range_labels: {len(report_ids)} report(s); describer "
+          f"{describe_model}, labeller {range_model}, arm(s) "
+          f"{', '.join(arms)}, conventions {conventions}, {int(workers)} "
+          f"page(s) at a time")
+    for arm in arms:
+        (out / "ranges" / column[arm]).mkdir(parents=True, exist_ok=True)
+    present = set(corpus.present_ids())
+    engines = _Engines.of(prompter)
+    done: Dict[str, Dict[str, dict]] = {column[arm]: {} for arm in arms}
+    failures: Dict[str, str] = {}
+    for n, rid in enumerate(report_ids, 1):
+        files = {arm: out / "ranges" / column[arm] / f"{rid}.json"
+                 for arm in arms}
+        saved = {arm: _finished_range_run(path, arm, describe_model,
+                                          range_model, conventions)
+                 for arm, path in files.items()}
+        if not redo and all(saved.values()):
+            for arm, blob in saved.items():
+                done[column[arm]][rid] = blob
+            print(f"  [{n}/{len(report_ids)}] {rid}: already done, skipping")
+            continue
+        if rid not in present:
+            failures[rid] = f"{rid} is not in the reports folder"
+            print(f"  [{n}/{len(report_ids)}] {rid}: skipped -- "
+                  f"{failures[rid]}")
+            continue
+        started = time.time()
+        doc = None
+        try:
+            doc = corpus.open_report(rid, di="auto", warn=False)
+            rules = {r.page: r.role for r in page_roles(doc)}
+            outline = outline_text(document_outline(doc))
+            d_meter = CostMeter()
+            d_engine = engines.build(describe_model, d_meter, vision=True)
+            try:
+                described = describe_pages(
+                    doc, d_engine,
+                    folder=str(out / "ranges" / "descriptions" / rid),
+                    workers=workers, redo=redo, deadline=deadline,
+                    progress=_mirror_every(RANGE_MIRROR_EVERY, sync))
+            finally:
+                _keep_meter(out / "ranges" / "describe_meters", rid, d_meter)
+            n_pages = doc.n_pages
+            if described.stopped:
+                failures[rid] = (f"the describer stopped: "
+                                 f"{described.stopped}; the same call "
+                                 f"again goes on")
+                print(f"  [{n}/{len(report_ids)}] {rid}: "
+                      f"{len(described.pages)} of {n_pages} described "
+                      f"({described.reused} from disk), {d_meter.calls} "
+                      f"describer call(s); STOPPED -- {described.stopped}")
+                continue
+            notes = [{"call": e.get("call"), "notes": e["notes"]}
+                     for e in d_meter.per_call if e.get("notes")]
+            line = []
+            for arm in arms:
+                if saved[arm] and not redo and not described.unresolved:
+                    done[column[arm]][rid] = saved[arm]
+                    continue
+                l_meter = CostMeter()
+                l_engine = engines.build(range_model, l_meter)
+                found = label_by_ranges(
+                    described.pages, n_pages, l_engine, outline=outline,
+                    hints=rules if arm == "hinted" else None,
+                    conventions=text, not_used=not_used)
+                blob = {
+                    "id": rid,
+                    "run_date": date.today().isoformat(),
+                    "n_pages": n_pages,
+                    "arm": arm,
+                    "describe_model": describe_model,
+                    "range_model": range_model,
+                    "describe_prompt": DESCRIBE_PROMPT_VERSION,
+                    "labeller_prompt": labeller_fingerprint(
+                        arm == "hinted", text, not_used),
+                    "conventions_name": conventions,
+                    "conventions": conventions_version(text),
+                    "describer": engines.record(describe_model, d_engine),
+                    "labeller": engines.record(range_model, l_engine),
+                    "served_by": sorted({x for x in (d_engine.served_by,
+                                                     l_engine.served_by)
+                                         if x}),
+                    "rules_labels": {str(k): v
+                                     for k, v in sorted(rules.items())},
+                    "labels": {str(k): v
+                               for k, v in sorted(found.labels.items())},
+                    "ranges": found.to_dict(),
+                    "describe": described.to_dict(),
+                    "describe_cost": dict(described.saved_cost),
+                    "describe_notes": notes,
+                    "cost": l_meter.to_dict(),
+                    "seconds": round(time.time() - started, 1),
+                }
+                files[arm].write_text(_dumps(blob), encoding="utf-8")
+                _sync(sync)
+                done[column[arm]][rid] = blob
+                line.append(f"{arm} {len(found.sections)} section(s), "
+                            f"{len(found.unresolved)} unresolved, "
+                            f"{l_meter.calls} call(s)")
+        except KeyboardInterrupt:
+            print("  interrupted; what is finished is on disk and a later "
+                  "call resumes")
+            break
+        except Exception as exc:                     # keep the run going
+            failures[rid] = f"{type(exc).__name__}: {exc}"
+            print(f"  [{n}/{len(report_ids)}] {rid}: FAILED -- "
+                  f"{failures[rid]}")
+            traceback.print_exc()
+            continue
+        finally:
+            if doc is not None:
+                doc.close()
+        print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
+              f"{len(described.pages)} described ({described.reused} from "
+              f"disk, {len(described.unresolved)} not), {d_meter.calls} "
+              f"describer call(s); " + "; ".join(line)
+              + f"; {time.time() - started:.0f} s")
+    return {"runs": done, "failures": failures,
+            "arms": [column[arm] for arm in arms],
+            "describe_model": describe_model, "range_model": range_model}
+
+
+def _range_column(arm: str, conventions: str = "A") -> str:
+    """The folder and column an arm's runs go in: the arm under conventions
+    A, ``<arm>_<name>`` under any other."""
+    name = str(conventions).strip().upper()
+    return arm if name == "A" else f"{arm}_{name}"
+
+
+def _keep_meter(folder: Path, rid: str, meter: Any) -> None:
+    """One describing pass's cost record, beside the runs, if it made any
+    call: each pass its own file, so a resumed report keeps every pass's."""
+    if not (meter.calls or meter.failed):
+        return
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    (folder / f"{rid}-{stamp}.json").write_text(
+        _dumps({"id": rid, "cost": meter.to_dict()}), encoding="utf-8")
+
+
+#: Pages between two mirror syncs while a report is described.
+RANGE_MIRROR_EVERY = 50
+
+
+def _mirror_every(n: int, sync: Optional[Any]) -> Optional[Any]:
+    """A ``describe_pages`` progress callback that syncs the mirror every
+    ``n`` pages described, or None with no mirror. A sync still running
+    when the next is due is not started twice."""
+    if sync is None:
+        return None
+    busy = threading.Lock()
+
+    def progress(done: int, _wanted: int) -> None:
+        if done % int(n) or not busy.acquire(blocking=False):
+            return
+        try:
+            _sync(sync)
+        finally:
+            busy.release()
+    return progress
+
+
+def _finished_range_run(path: Path, arm: Optional[str] = None,
+                        describe_model: Optional[str] = None,
+                        range_model: Optional[str] = None,
+                        conventions: str = "A") -> Optional[dict]:
+    """A saved range run that is finished, or None.
+
+    Not finished: a file that cannot be read (it is made again, and the run
+    goes on); one drawn over a gap -- a page that could not be described --
+    (the next call describes the page and draws the sections again); and one
+    made by other models, from another describer prompt, or with other
+    labeller instructions than this call's (its labels are drawn again; its
+    descriptions are reused where the describer and its prompt match)."""
+    if not path.is_file():
+        return None
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(blob, dict):
+        return None
+    if (blob.get("describe") or {}).get("unresolved"):
+        return None
+    from report_ingest.range_labels import (DESCRIBE_PROMPT_VERSION,
+                                            conventions_named,
+                                            labeller_fingerprint)
+    if blob.get("describe_prompt") != DESCRIBE_PROMPT_VERSION:
+        return None
+    if arm is not None and blob.get("labeller_prompt") != \
+            labeller_fingerprint(arm == "hinted",
+                                 *conventions_named(conventions)):
+        return None
+    if describe_model is not None and \
+            blob.get("describe_model") != describe_model:
+        return None
+    if range_model is not None and blob.get("range_model") != range_model:
+        return None
+    return blob
+
+
+def _saved_ranges(out: Path, report_ids: Sequence[str],
+                  arms: Sequence[str], describe_model: str,
+                  range_model: str, conventions: str = "A"
+                  ) -> Dict[str, Any]:
+    """Every finished range run of ``report_ids`` on disk, in the shape
+    :func:`_run_ranges` returns, with no call made: what a results table
+    over a run done a few reports at a time is drawn from."""
+    column = {arm: _range_column(arm, conventions) for arm in arms}
+    runs: Dict[str, Dict[str, dict]] = {column[arm]: {} for arm in arms}
+    for rid in report_ids:
+        for arm in arms:
+            blob = _finished_range_run(
+                out / "ranges" / column[arm] / f"{rid}.json", arm,
+                describe_model, range_model, conventions)
+            if blob is not None:
+                runs[column[arm]][rid] = blob
+    return {"runs": runs, "failures": {},
+            "arms": [column[arm] for arm in arms],
+            "describe_model": describe_model, "range_model": range_model}
+
+
+def _score_ranges(ranges: Dict[str, Any], corpus: Corpus,
+                  oos: Dict[str, Dict[int, dict]], mapped: Sequence[str],
+                  sets: Sequence[str]) -> Dict[str, Any]:
+    """The rules and each arm, on one set of hand labels, two ways.
+
+    Strict accuracy (and with the out-of-sample file's alternates) through
+    :class:`report_ingest.scoring.Scores`, the scorer every label stage
+    uses; and the HARMFUL pages -- a page sent to another reader than its
+    hand label sends it to, or to none, or to one where it should go to none
+    (:func:`report_ingest.scoring.harm_score`) -- which is what a wrong label
+    costs the record. No disputed page is dropped: the numbers are the
+    strict ones the offline analysis of 2026-10-24 printed.
+    """
+    from report_ingest.scoring import harm_score, hand_sections
+
+    arms = list(ranges["arms"])
+    runs = ranges["runs"]
+    columns = ["rules"] + arms
+    sets_out: Dict[str, Any] = {}
+    per_report: List[dict] = []
+    seen: set = set()
+    cost = {"describe": _cost_totals(), "label": _cost_totals()}
+    for name in sets:
+        ids = [rid for rid in _set_ids(name, corpus)
+               if all(rid in runs[arm] for arm in arms)]
+        scores = {c: Scores() for c in columns}
+        harm = {c: 0 for c in columns}
+        runs_drawn = {c: 0 for c in columns}
+        hand_runs = 0
+        for rid in ids:
+            first = runs[arms[0]][rid]
+            hand, alternates, source = _truth_for(rid, corpus, oos, mapped)
+            given = {"rules": {int(k): v for k, v in
+                               (first.get("rules_labels") or {}).items()}}
+            for arm in arms:
+                given[arm] = {int(k): v for k, v in
+                              (runs[arm][rid].get("labels") or {}).items()}
+            row: Dict[str, Any] = {"id": rid, "set": name,
+                                   "pages": first.get("n_pages", 0),
+                                   "scored": len(hand), "truth": source}
+            pages = sorted(hand)
+            hand_runs += len(hand_sections(hand)) if hand else 0
+            for column in columns:
+                for page, want in sorted(hand.items()):
+                    scores[column].add(want, given[column].get(page, "other"),
+                                       tuple(alternates.get(page) or ()))
+                scored = harm_score(hand, given[column]) if hand else None
+                harm[column] += scored["harmful"] if scored else 0
+                drawn = len(hand_sections(
+                    {p: given[column].get(p, "other") for p in pages}))
+                runs_drawn[column] += drawn if hand else 0
+                row[column] = ({"strict": scored["strict"],
+                                "harmful": scored["harmful"],
+                                "runs": drawn} if scored else None)
+            if rid not in seen:
+                seen.add(rid)
+                _add_cost(cost["describe"], first.get("describe_cost"))
+                for arm in arms:
+                    _add_cost(cost["label"], runs[arm][rid].get("cost"))
+                row["describe_dollars"] = float(
+                    (first.get("describe_cost") or {}).get("dollars") or 0.0)
+                row["label_dollars"] = {
+                    arm: float((runs[arm][rid].get("cost") or {})
+                               .get("dollars") or 0.0) for arm in arms}
+                row["unresolved"] = {
+                    arm: len((runs[arm][rid].get("ranges") or {})
+                             .get("unresolved") or []) for arm in arms}
+                per_report.append(row)
+        sets_out[name] = {
+            "reports": ids, "n_reports": len(ids),
+            "columns": {c: {**scores[c].to_dict(), "harmful": harm[c],
+                            "runs": runs_drawn[c]} for c in columns},
+            "hand_runs": hand_runs,
+            "_scores": scores,
+        }
+    return {"date": date.today().isoformat(), "arms": arms,
+            "describe_model": ranges["describe_model"],
+            "range_model": ranges["range_model"],
+            "failures": dict(ranges["failures"]), "sets": sets_out,
+            "per_report": per_report, "cost": cost}
+
+
+def _render_ranges(scored: Dict[str, Any]) -> List[str]:
+    """The range voter's table. IDs, labels, counts and rates only: the
+    descriptions and the sections' reasons quote the pages, and stay in
+    ``ranges/``."""
+    columns = ["rules"] + list(scored["arms"])
+    out: List[str] = [
+        "", "# RI-73: every page described, then labelled by sections", "",
+        f"Run {scored['date']}. Describer `{scored['describe_model']}` "
+        f"(one call a page), labeller `{scored['range_model']}` (one call a "
+        f"report, or a window of a long one). **plain** gives the labeller "
+        f"the descriptions and the report's printed outline; **hinted** adds "
+        f"the rules' label on every line. **HARMFUL** counts the pages a "
+        f"label sends to another reader than the hand label does, or to "
+        f"none, or to one where it should go to none. No disputed page is "
+        f"dropped. A page no section settled counts as `other`.",
+    ]
+    if scored.get("failures"):
+        out += ["", "**Reports that failed and are NOT in any number below:**"]
+        out += [f"- {rid}: {why}" for rid, why in scored["failures"].items()]
+    for name, row in scored["sets"].items():
+        if not row["n_reports"]:
+            continue
+        scores = row["_scores"]
+        n = scores["rules"].n
+        out += ["", f"## {name} -- {row['n_reports']} report(s), {n} scored "
+                    f"pages", "", "```",
+                f"{'':<24}" + "".join(f"{c:>10}" for c in columns),
+                f"{'strict accuracy':<24}" + "".join(
+                    f"{scores[c].accuracy:>10.3f}" for c in columns),
+                f"{'HARMFUL pages':<24}" + "".join(
+                    f"{row['columns'][c]['harmful']:>10}" for c in columns),
+                f"{'runs drawn':<24}" + "".join(
+                    f"{row['columns'][c]['runs']:>10}" for c in columns)
+                + f"   (hand: {row['hand_runs']})", "```"]
+        out += ["", "```"] + columns_label_table(
+            [(c, scores[c]) for c in columns]) + ["```"]
+    out += ["", "## Per report", "", "```",
+            f"{'report':<8}{'pages':>6}"
+            + "".join(f"{c + ' acc':>12}{c + ' harm':>12}" for c in columns)
+            + f"{'describe $':>12}"
+            + "".join(f"{a + ' $':>10}" for a in scored["arms"])]
+    for row in scored["per_report"]:
+        if "describe_dollars" not in row:
+            continue
+        line = f"{row['id']:<8}{row['pages']:>6}"
+        for c in columns:
+            cell = row.get(c)
+            line += (f"{cell['strict']:>12.3f}{cell['harmful']:>12}"
+                     if cell else f"{'--':>12}{'--':>12}")
+        line += f"{row['describe_dollars']:>12.2f}"
+        line += "".join(f"{row['label_dollars'][a]:>10.2f}"
+                        for a in scored["arms"])
+        out.append(line)
+    out.append("```")
+    cost = scored["cost"]
+    out += ["", f"Describer: {cost['describe'].get('calls', 0)} call(s)"
+                f"{_money(cost['describe'])}; labeller: "
+                f"{cost['label'].get('calls', 0)} call(s)"
+                f"{_money(cost['label'])}. The describer's cost counts each "
+                f"description once, when it was made, though a resumed run "
+                f"read it off disk."]
+    return out
 
 
 def _run_vote(corpus: Corpus, oos: Dict[str, Dict[int, dict]],

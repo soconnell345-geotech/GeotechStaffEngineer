@@ -425,48 +425,64 @@ def _shared_ledger_class():
         writes all of it back on every call, so two arms running at once
         would each overwrite the other's spend. Here the totals are always
         the file's. A read that fails (OneDrive holding the file a moment)
-        is retried and, failing still, keeps what was last read -- it never
-        starts from an empty ledger.
+        is retried. Before a change it must succeed: failing still, the
+        change is refused rather than saved over the file from what was last
+        read. A cap check that cannot read keeps what was last read -- it
+        never starts from an empty ledger.
         """
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self._held = False
 
-        def _refresh(self) -> None:
+        def _refresh(self, strict: bool = False) -> None:
+            why = ""
             for attempt in range(8):
                 try:
                     with open(self.path, encoding="utf-8") as fh:
                         data = json.load(fh)
                 except FileNotFoundError:
                     return
-                except (OSError, ValueError):
+                except (OSError, ValueError) as exc:
+                    why = f"{type(exc).__name__}: {exc}"
                     time.sleep(0.1 * (attempt + 1))
                     continue
                 if isinstance(data, dict) and "waves" in data:
                     data.setdefault("cumulative_usd", 0.0)
                     self.data = data
-                return
+                    return
+                why = "it holds no waves"
+                break
+            if strict:
+                raise RuntimeError(
+                    f"the ledger {self.path} could not be read ({why}); "
+                    f"nothing was saved over it")
 
         def _locked(self, method: Callable, *args: Any, **kwargs: Any) -> Any:
             with self._lock, _FileLock(self.path):
                 self._held = True
                 try:
-                    self._refresh()
+                    self._refresh(strict=True)
                     return method(*args, **kwargs)
                 finally:
                     self._held = False
 
+        # A read refreshes under the same in-process lock as a change: a
+        # refresh on another thread swapped ``self.data`` between a change
+        # and its save, and the change was lost (BACKLOG RI-73: 5 of 73
+        # calls described six pages at a time never reached the ledger).
         @property
         def cumulative(self) -> float:
-            if not self._held:
-                self._refresh()
-            return float(self.data.get("cumulative_usd") or 0.0)
+            with self._lock:
+                if not self._held:
+                    self._refresh()
+                return float(self.data.get("cumulative_usd") or 0.0)
 
         def wave_spent(self, wave: str) -> float:
-            if not self._held:
-                self._refresh()
-            return super().wave_spent(wave)
+            with self._lock:
+                if not self._held:
+                    self._refresh()
+                return super().wave_spent(wave)
 
         def begin_wave(self, *args: Any, **kwargs: Any) -> dict:
             return self._locked(super().begin_wave, *args, **kwargs)
