@@ -102,6 +102,20 @@ class TestAPerfectRecord:
         score = score_record(TRUTH, [record])
         assert not score.scores["fields"].misses
 
+    def test_a_field_kept_under_its_printed_label_is_found(self):
+        """A header field kept as the log printed its label is offered in the
+        truth's snake case, and under the name FIELD_MAP gives that."""
+        truth = dict(TRUTH, fields={"foreman": "A. Sample",
+                                    "drill_rig": "Track rig",
+                                    "project_number": "EX-0000"})
+        record = _perfect()
+        record.fields = {"Foreman": "A. Sample", "Drill Rig": "Track rig",
+                         "Contract Number": "EX-0000"}
+        assert score_record(truth, [record]).scores["fields"].found == 3
+        record.fields = {"Crew Chief": "A. Sample", "Rig": "Track rig",
+                         "Job": "EX-0000"}
+        assert score_record(truth, [record]).scores["fields"].found == 0
+
 
 class TestWhatItCatches:
     def test_an_empty_record_scores_nothing_and_does_not_crash(self):

@@ -40,6 +40,7 @@ binding.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -527,9 +528,14 @@ def _record_fields(inv: Any) -> Dict[str, str]:
     for key, value in inv.fields.items():
         out.setdefault(key, value)
         # The grid's canonical names are what FIELD_MAP points at, and the
-        # record keeps the log's own keys, so both spellings are offered.
-        for canonical in FIELD_MAP.get(key, ()):
-            out.setdefault(canonical, value)
+        # record keeps the log's own keys, so both spellings are offered. A
+        # key kept as the log printed its label ("Foreman", "Drill Rig") is
+        # offered in the truth's snake case too.
+        snake = re.sub(r"[^a-z0-9]+", "_", str(key).lower()).strip("_")
+        out.setdefault(snake, value)
+        for name in (key, snake):
+            for canonical in FIELD_MAP.get(name, ()):
+                out.setdefault(canonical, value)
     return {k: v for k, v in out.items() if str(v or "").strip()}
 
 

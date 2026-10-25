@@ -76,6 +76,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from module_work.report_ingest_harness import run_claude_local as rcl
+from report_ingest import model_first as _model_first
 # The cut, the API's limits on one PDF and the page map moved into the
 # package (RI-87), which the model-first readers share.
 from report_ingest.model_first_pages import (  # noqa: F401
@@ -100,68 +101,16 @@ DEFAULT_TIME_LIMIT = 420.0
 # the instruction: one short paragraph per stage, in general terms
 # ---------------------------------------------------------------------------
 
-INSTRUCTIONS: Dict[str, str] = {
-    "logs": (
-        "These pages are from a geotechnical report ({where}). Extract the "
-        "exploration log on them (a boring, test pit or similar log): its "
-        "header (the hole's identifier, location, elevation, total depth, "
-        "dates, drilling method, hammer, who logged it), every layer with "
-        "its depths, description and the USCS symbol where one is printed, "
-        "every sample with its depths and any laboratory values printed "
-        "beside it, every SPT or other blow-count record, and the water "
-        "levels. Give depths in the log's own unit and say which unit. "
-        "{pages_note} Return it with the answer tool."),
-    "lab": (
-        "These pages are from a geotechnical report ({where}). Extract the "
-        "laboratory test results on them: for each test, its kind, the "
-        "boring or test pit and the sample depth it belongs to, and every "
-        "value it reports (index values, grading points, curve points, "
-        "strengths and so on) with the units as printed. Give depths in the "
-        "sheet's own unit and say which unit. {pages_note}\n\n"
-        "Test kinds:\n{kinds}\n\nSeries names:\n{series}\n\n"
-        "Return it with the answer tool."),
-    "calc": (
-        "These pages are from a geotechnical report ({where}). They hold one "
-        "calculation. Extract it: what kind of calculation it is, the "
-        "program that printed it if one is named, the method, what it is "
-        "for, the labelled values it was given (inputs) and the labelled "
-        "values it worked out (results), each with its label and unit as "
-        "printed. {pages_note}\n\nCalculation kinds:\n{kinds}\n\n"
-        "Return it with the answer tool."),
-    "narrative": (
-        "This is a geotechnical report ({where}). Answer each field of the "
-        "answer tool from it, and leave a field null when the report does "
-        "not say. {pages_note}\n\n{vocabulary}\n\n"
-        "Return it with the answer tool."),
-}
-
-
-def _kinds_text(definitions: Dict[str, str]) -> str:
-    return "\n".join(f"  {name}: {text}" for name, text in definitions.items())
+#: The measured text, kept in the package beside the model-first readers'
+#: instructions that start from it (RI-87 piece 4); this is the same dict.
+INSTRUCTIONS: Dict[str, str] = _model_first.PLAIN_INSTRUCTIONS
 
 
 def instruction(stage: str, report: str, pages: Sequence[int],
                 whole: bool = False) -> str:
     """The plain instruction for one item."""
-    pages = [int(p) for p in pages]
-    if whole:
-        where = f"report {report}, all {len(pages)} pages"
-    else:
-        where = (f"report {report}, page{'s' if len(pages) > 1 else ''} "
-                 + ", ".join(str(p) for p in pages))
-    note = page_map_sentence(pages, whole=whole)
-    fill: Dict[str, str] = {"where": where, "pages_note": note}
-    if stage == "lab":
-        from report_ingest.lab_reader import KIND_DEFINITIONS, SERIES_NAMES
-        fill.update(kinds=_kinds_text(KIND_DEFINITIONS),
-                    series=_kinds_text(SERIES_NAMES))
-    elif stage == "calc":
-        from report_ingest.calc_reader import CALC_KIND_DEFINITIONS
-        fill.update(kinds=_kinds_text(CALC_KIND_DEFINITIONS))
-    elif stage == "narrative":
-        from report_ingest.narrative_reader import _vocabulary_block
-        fill.update(vocabulary=_vocabulary_block())
-    return INSTRUCTIONS[stage].format(**fill)
+    return _model_first.instruction(stage, report, pages, whole=whole,
+                                    texts=INSTRUCTIONS)
 
 
 def reading_class(stage: str) -> Any:
