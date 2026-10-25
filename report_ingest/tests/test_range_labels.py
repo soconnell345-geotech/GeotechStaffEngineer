@@ -670,7 +670,16 @@ def test_the_issuer_and_date_reach_the_labeller_and_its_instructions():
     assert "issued: Made-Up Consultants, Job 123, 2001" in line
     assert "'issued'" in rl.labeller_system()
     assert "issuer_date" in rl.DESCRIBE_SYSTEM
-    assert rl.DESCRIBE_PROMPT_VERSION == "ri73-2"
+
+
+def test_the_describer_names_the_exploration_a_page_logs():
+    """RI-87: the hole a log page belongs to is the describer's to name, so
+    grouping needs no list of ways reports print one."""
+    assert "exploration:" in rl.DESCRIBE_SYSTEM
+    assert rl.DESCRIBE_PROMPT_VERSION == "ri73-3"
+    assert _description(exploration="QX-7").exploration == "QX-7"
+    answer = {"title": "", "kind": "made-up page", "summary": "made up"}
+    assert rl.PageDescription(**answer).exploration == ""
 
 
 def test_a_page_that_needed_a_second_call_says_why(synthetic, tmp_path):

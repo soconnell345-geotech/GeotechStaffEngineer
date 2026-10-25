@@ -76,6 +76,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from module_work.report_ingest_harness import run_claude_local as rcl
+# The cut, the API's limits on one PDF and the page map moved into the
+# package (RI-87), which the model-first readers share.
+from report_ingest.model_first_pages import (  # noqa: F401
+    MAX_PDF_BYTES, MAX_PDF_PAGES, SANITIZE_ABOVE, cut_pdf, page_map_sentence,
+    pdf_problem,
+)
 
 #: The stages this baseline runs.
 STAGES: Tuple[str, ...] = ("logs", "lab", "calc", "narrative")
@@ -85,13 +91,6 @@ PIPELINE_ARMS: Dict[str, str] = {"logs": "logs_opus",
                                  "lab": "lab_opus_linkon",
                                  "calc": "calc_opus",
                                  "narrative": "narrative_opus"}
-
-#: The Anthropic API's limits on one PDF document (pages, bytes).
-MAX_PDF_PAGES = 100
-MAX_PDF_BYTES = 32 * 1024 * 1024
-
-#: A cut larger than this is sanitized (:func:`cut_pdf`).
-SANITIZE_ABOVE = 8 * 1024 * 1024
 
 #: Seconds after which no new item is started (one command, < 10 minutes).
 DEFAULT_TIME_LIMIT = 420.0
@@ -147,16 +146,10 @@ def instruction(stage: str, report: str, pages: Sequence[int],
     pages = [int(p) for p in pages]
     if whole:
         where = f"report {report}, all {len(pages)} pages"
-        note = ("Wherever a page is asked for, give the 0-based page index "
-                "(the PDF's first page is 0).")
     else:
         where = (f"report {report}, page{'s' if len(pages) > 1 else ''} "
                  + ", ".join(str(p) for p in pages))
-        mapping = ", ".join(f"PDF page {n + 1} is page {p}"
-                            for n, p in enumerate(pages))
-        note = (f"The attached PDF holds only these pages, in order; "
-                f"wherever a page is asked for, give the report's 0-based "
-                f"page index ({mapping}).")
+    note = page_map_sentence(pages, whole=whole)
     fill: Dict[str, str] = {"where": where, "pages_note": note}
     if stage == "lab":
         from report_ingest.lab_reader import KIND_DEFINITIONS, SERIES_NAMES
@@ -189,45 +182,6 @@ def reading_class(stage: str) -> Any:
 # ---------------------------------------------------------------------------
 # the pages, as a PDF, and the engine that sends one
 # ---------------------------------------------------------------------------
-
-def cut_pdf(source: Path, pages: Optional[Sequence[int]]
-            ) -> Tuple[bytes, int, bool]:
-    """``(the PDF's bytes, its page count, sanitized)``: ``pages`` (0-based,
-    in order) copied out of ``source`` with their text layer and images, or
-    the whole file for ``None``. Nothing is written to disk.
-
-    A copied page keeps its whole resource dictionary, and some reports hang
-    every font and form of the file on every page: four corpus items cut to
-    25-284 MB, past the API's 32 MB. A cut larger than
-    :data:`SANITIZE_ABOVE` is therefore SANITIZED (its content streams
-    rewritten and the resources they never use dropped: 69 MB to 74 KB);
-    on those four the text and a 40 dpi rendering came out identical. Not
-    every page does -- one other corpus page renders differently once
-    sanitized -- so a cut that fits is sent as copied."""
-    import pymupdf
-
-    if pages is None:
-        data = source.read_bytes()
-        with pymupdf.open(stream=data, filetype="pdf") as doc:
-            return data, doc.page_count, False
-    with pymupdf.open(str(source)) as src:
-        out = pymupdf.open()
-        try:
-            for page in pages:
-                page = int(page)
-                if not 0 <= page < src.page_count:
-                    raise ValueError(f"page {page} is not in {source.name} "
-                                     f"({src.page_count} pages)")
-                out.insert_pdf(src, from_page=page, to_page=page)
-            data = out.tobytes(garbage=3, deflate=True)
-            if len(data) <= SANITIZE_ABOVE:
-                return data, out.page_count, False
-            for page in out:
-                page.clean_contents(sanitize=True)
-            return (out.tobytes(garbage=4, deflate=True, clean=True),
-                    out.page_count, True)
-        finally:
-            out.close()
 
 
 def pdf_block(data: bytes) -> Dict[str, Any]:
@@ -404,11 +358,9 @@ def read_item(stage: str, truth_path: Path, reports: Path, engine: Any,
         "stage": stage, "arm": "plain", "pages": list(pages),
         "pdf_pages": n_pages, "pdf_bytes": len(data),
         "pdf_sanitized": sanitized}
-    if n_pages > MAX_PDF_PAGES or len(data) > MAX_PDF_BYTES:
-        blob["skipped"] = (f"the PDF is {n_pages} pages and {len(data):,} "
-                           f"bytes; the API takes at most {MAX_PDF_PAGES} "
-                           f"pages and {MAX_PDF_BYTES:,} bytes in one "
-                           f"document")
+    problem = pdf_problem(n_pages, len(data))
+    if problem:
+        blob["skipped"] = problem
         return blob
     said = instruction(stage, report, pages, whole=whole)
     blob["instruction_chars"] = len(said)

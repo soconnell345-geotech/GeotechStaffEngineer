@@ -42,6 +42,24 @@ def test_no_report_named_is_the_thirteen_stage_b_reports():
     assert len(rrl.STAGE_B_REPORTS) == 13
 
 
+def test_a_probe_describes_the_pages_a_list_names_and_no_blind_report(
+        tmp_path):
+    listed = tmp_path / "pages.json"
+    listed.write_text('{"R18": [7, 3, 7], "R20": [1]}', encoding="utf-8")
+    args = rrl.build_parser().parse_args(
+        ["probe", "--wave", "made-up", "--cap", "0", "--page-list",
+         str(listed)])
+    assert rrl._probe_pages(args) == {"R18": [3, 7], "R20": [1]}
+    args.only = "R20"
+    assert rrl._probe_pages(args) == {"R20": [1]}
+    args.page_list = None
+    assert rrl._probe_pages(args) == {"R20": None}
+    listed.write_text('{"R17": [1]}', encoding="utf-8")
+    args.page_list, args.only = str(listed), ""
+    with pytest.raises(SystemExit, match="blind set"):
+        rrl._probe_pages(args)
+
+
 def test_a_picture_is_estimated_as_a_picture_not_as_its_base64():
     picture = {"type": "image_url",
                "image_url": {"url": "data:image/png;base64," + "A" * 300000}}

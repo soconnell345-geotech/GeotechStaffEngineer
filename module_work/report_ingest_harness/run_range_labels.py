@@ -18,7 +18,9 @@ root (or a worktree) with the app venv::
 ``run`` with no ``--only`` takes the thirteen in-sample reports the stage-b
 labels cover (:data:`STAGE_B_REPORTS`). ``probe`` describes the first
 ``--pages`` pages of one report and prints what each cost, to price a
-describer before a whole run; it labels nothing.
+describer before a whole run; with ``--page-list`` (a JSON file of report
+IDs and pages) it describes the pages listed instead, to re-describe a
+sample under a new prompt. It labels nothing.
 
 THE SPEND. One wave on the ONE ledger (the main checkout's
 ``module_work/live_smoke/spend_ledger.json``), shared with every other local
@@ -343,9 +345,21 @@ def run(args: argparse.Namespace) -> int:
     return OK
 
 
+def _probe_pages(args: argparse.Namespace) -> Dict[str, Optional[List[int]]]:
+    """``report -> the pages to describe`` (None: the first ``--pages``)."""
+    if not args.page_list:
+        return {rid: None for rid in _report_ids(args.only)[:1]}
+    listed = json.loads(Path(args.page_list).read_text(encoding="utf-8"))
+    only = {t.strip() for t in (args.only or "").split(",") if t.strip()}
+    ids = [rid for rid in listed if not only or rid in only]
+    return {rid: sorted({int(p) for p in listed[rid]})
+            for rid in _report_ids(",".join(ids))}
+
+
 def probe(args: argparse.Namespace) -> int:
-    """The first ``--pages`` pages of one report described, and what each
-    cost; nothing is labelled."""
+    """The first ``--pages`` pages of one report described, or the pages
+    ``--page-list`` names of each report in it, and what each cost; nothing
+    is labelled."""
     from report_ingest.engine import CostMeter, engine_for
     from report_ingest.range_labels import describe_pages
 
@@ -353,30 +367,45 @@ def probe(args: argparse.Namespace) -> int:
     out = paths["out"]
     if _refuse_unignored(out, paths["main"]):
         return REFUSED
-    (rid,) = _report_ids(args.only)[:1]
+    wanted = _probe_pages(args)
     wave = _Wave(args, paths, f"report_ingest:range_labels:probe")
     meter = CostMeter()
-    folder = out / "probe" / wave.describe_model / rid
+    corpus = _corpus(paths["raw"])
     try:
-        doc = _corpus(paths["raw"]).open_report(rid, di="auto", warn=False)
-        try:
-            found = describe_pages(
-                doc, engine_for(wave.describer, meter=meter),
-                pages=range(min(int(args.pages), doc.n_pages)),
-                folder=str(folder), workers=args.workers, redo=args.redo)
-        finally:
-            doc.close()
+        for rid, pages in wanted.items():
+            if wave.stopped:
+                break
+            folder = out / "probe" / wave.describe_model / rid
+            doc = corpus.open_report(rid, di="auto", warn=False)
+            try:
+                if pages is None:
+                    pages = list(range(min(int(args.pages), doc.n_pages)))
+                found = describe_pages(
+                    doc, engine_for(wave.describer, meter=meter),
+                    pages=[p for p in pages if 0 <= p < doc.n_pages],
+                    folder=str(folder), workers=args.workers,
+                    redo=args.redo)
+            finally:
+                doc.close()
+            costs = [found.pages[p].get("cost") or {} for p in found.pages]
+            print(f"probe {rid} on {wave.describe_model}: "
+                  f"{len(found.pages)} page(s) of {len(pages)}, "
+                  f"{len(found.unresolved)} unresolved, "
+                  f"{sum(int(c.get('input_tokens') or 0) for c in costs)} in"
+                  f" / {sum(int(c.get('output_tokens') or 0) for c in costs)}"
+                  f" out")
+            if args.page_list:
+                continue
+            for page in sorted(found.pages):
+                cost = found.pages[page].get("cost") or {}
+                render = found.pages[page].get("render") or {}
+                print(f"  p{page}: {render.get('width_px')}x"
+                      f"{render.get('height_px')} {render.get('format')}, "
+                      f"{cost.get('input_tokens')} in / "
+                      f"{cost.get('output_tokens')} out, "
+                      f"${float(cost.get('dollars') or 0):.4f}")
     finally:
         wave.close(out)
-    print(f"probe {rid} on {wave.describe_model}: {len(found.pages)} "
-          f"page(s), {len(found.unresolved)} unresolved")
-    for page in sorted(found.pages):
-        cost = found.pages[page].get("cost") or {}
-        render = found.pages[page].get("render") or {}
-        print(f"  p{page}: {render.get('width_px')}x{render.get('height_px')}"
-              f" {render.get('format')}, {cost.get('input_tokens')} in / "
-              f"{cost.get('output_tokens')} out, "
-              f"${float(cost.get('dollars') or 0):.4f}")
     print("\n".join(wave.spend_lines()))
     return STOPPED_BY_CAP if wave.stopped else OK
 
@@ -411,6 +440,11 @@ def build_parser() -> argparse.ArgumentParser:
                            choices=["plain", "hinted"])
         else:
             p.add_argument("--pages", type=int, default=4)
+            p.add_argument("--page-list", default=None,
+                           help="a JSON file {report ID: [pages]}: describe "
+                                "those pages of each report it names (within "
+                                "--only, if given) instead of the first "
+                                "--pages of one")
     return ap
 
 

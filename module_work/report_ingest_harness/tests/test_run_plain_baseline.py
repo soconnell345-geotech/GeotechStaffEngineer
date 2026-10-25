@@ -155,8 +155,11 @@ def test_the_item_pages_are_cut_out_in_order(made_up):
 
 
 def test_a_cut_too_big_to_send_is_sanitized(made_up, monkeypatch):
+    from report_ingest import model_first_pages
+
     source = made_up / "raw" / "corpus" / "R01.pdf"
-    monkeypatch.setattr(rpb, "SANITIZE_ABOVE", 10)
+    # The cut lives in the package now (RI-87) and reads its own threshold.
+    monkeypatch.setattr(model_first_pages, "SANITIZE_ABOVE", 10)
     data, n, sanitized = rpb.cut_pdf(source, [0])
     assert sanitized and n == 1
     assert "BEARING CAPACITY CHECK" in _text_of(data)[0]

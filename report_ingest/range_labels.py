@@ -118,7 +118,7 @@ STOP_ERRORS: Tuple[str, ...] = ("CallCeilingReached", "WaveCapReached")
 
 #: Changed whenever what the describer is asked changes, so a saved
 #: description from another wording is never reused as if it were this one.
-DESCRIBE_PROMPT_VERSION = "ri73-2"
+DESCRIBE_PROMPT_VERSION = "ri73-3"
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +277,9 @@ class PageDescription(BaseModel):
         description="every exploration, sample, test, figure, table, plate, "
                     "drawing or appendix identifier the page prints, as "
                     "printed, at most 30")
+    exploration: str = Field(
+        description="the boring, test pit, probe or well this page logs, "
+                    "as printed; empty if the page logs none")
     continues: str = Field(
         description="what the page prints about being one of a set ('sheet 2 "
                     "of 3', 'continued', 'page 4 of 7'), as printed; empty "
@@ -376,6 +379,8 @@ the kind of page and in the page's own words for everything printed.
 - names: the test, method, standard or program the page names.
 - identifiers: every boring, test pit, probe, sample, test, figure, table,
   plate, drawing and appendix identifier the page prints.
+- exploration: the boring, test pit, probe or well this page logs, as
+  printed; empty if the page logs none.
 - continues: what the page prints about being one of a set.
 - header_footer: running header, footer or margin text that names the
   document, part or appendix -- this is often what says which section a
