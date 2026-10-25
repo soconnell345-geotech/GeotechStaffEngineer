@@ -1065,10 +1065,86 @@ def _claude_image(url: str, v3):
             data=m.group(2), media_type=media))))
 
 
+class UnsendableBlock(ValueError):
+    """A content block this route cannot send, refused before any request
+    went out (BACKLOG RI-87)."""
+
+    #: Nothing reached the model: report_ingest's ``ChatModelEngine`` reads
+    #: this and meters no call.
+    nothing_sent = True
+
+
+#: The content block types that carry an image.
+_IMAGE_KINDS = ("image", "image_url")
+
+
+def _unsendable_kind(block: Any) -> Optional[str]:
+    """The type of a content block this route cannot send, or None for one
+    it can: words, or an image given as data or by web address."""
+    if isinstance(block, str):
+        return None
+    if not isinstance(block, dict):
+        return type(block).__name__
+    if block.get("type") == "text" or _image_url(block):
+        return None
+    return str(block.get("type"))
+
+
+def _unsendable(block: Any) -> str:
+    """Why a content block is refused on this route, naming the block (its
+    type and media type; never its data)."""
+    end = ("It is refused rather than dropped, so the model never answers "
+           "without it.")
+    if isinstance(block, dict) and block.get("type") in _IMAGE_KINDS:
+        return (f"a content block of type {block.get('type')!r} holds no "
+                f"image: no data and no web address, so there is nothing "
+                f"to send. {end}")
+    if isinstance(block, dict):
+        mime = block.get("mime_type")
+        what = (f"a content block of type {block.get('type')!r}"
+                + (f" ({mime})" if mime else ""))
+    else:
+        what = f"a {type(block).__name__} content item"
+    return (f"{what} cannot be sent to Claude through palantir_models, "
+            f"which carries text and images only. {end}")
+
+
+def _left_out(content: Any) -> list:
+    """One line for each block of a tool result that does not go out: one
+    this route cannot send, an image with no data, an image given by web
+    address."""
+    lines = []
+    for block in content if isinstance(content, list) else []:
+        kind = _unsendable_kind(block)
+        article = "an" if str(kind)[:1].lower() in "aeiou" else "a"
+        if kind in _IMAGE_KINDS:
+            lines.append(f"({article} {kind} block with no data was left "
+                         f"out)")
+        elif kind is not None:
+            lines.append(f"({article} {kind} block this route cannot send "
+                         f"was left out)")
+        elif isinstance(block, dict) and block.get("type") != "text":
+            data = _DATA_URI.match(_image_url(block) or "")
+            if not (data and data.group(2)):        # as _claude_image reads it
+                lines.append("(an image given by web address was left out: "
+                             "this route sends images as data only)")
+    return lines
+
+
 def _claude_contents(content: Any, v3, images_only: bool = False) -> list:
     """LangChain content -> text and image blocks (Anthropic refuses an
     empty text block, so none is sent). An image by web address cannot go
-    on this route and is said in a line of text instead."""
+    on this route and is said in a line of text instead.
+
+    Any other block (a PDF ``file`` block, audio, an image with no data)
+    cannot go at all (BACKLOG RI-87). In a user turn it raises
+    :class:`UnsendableBlock` (a ``ValueError``) naming it: dropped without
+    a word, a PDF would leave the model answering from the words alone. In
+    a tool result (``images_only``) it is left out here and said in a line
+    of the result's own text (:func:`_claude_tool_result`), as an image by
+    web address is there, so the agent's turn goes on: deepagents'
+    ``read_file`` answers a scratch file with a binary extension with a
+    ``file`` block."""
     if isinstance(content, str):
         return ([] if images_only or not content.strip()
                 else [_claude_text(content, v3)])
@@ -1077,22 +1153,23 @@ def _claude_contents(content: Any, v3, images_only: bool = False) -> list:
         if isinstance(block, str):
             if not images_only and block.strip():
                 out.append(_claude_text(block, v3))
-        elif isinstance(block, dict):
-            if block.get("type") == "text":
-                text = block.get("text") or ""
-                if not images_only and text.strip():
-                    out.append(_claude_text(text, v3))
+            continue
+        if _unsendable_kind(block) is not None:
+            if images_only:
                 continue
-            url = _image_url(block)
-            if not url:
-                continue
-            image = _claude_image(url, v3)
-            if image is not None:
-                out.append(image)
-            elif not images_only:
-                out.append(_claude_text(
-                    "[An image given by web address was left out: this "
-                    "route sends images as data only.]", v3))
+            raise UnsendableBlock(_unsendable(block))
+        if block.get("type") == "text":
+            text = block.get("text") or ""
+            if not images_only and text.strip():
+                out.append(_claude_text(text, v3))
+            continue
+        image = _claude_image(_image_url(block), v3)
+        if image is not None:
+            out.append(image)
+        elif not images_only:
+            out.append(_claude_text(
+                "[An image given by web address was left out: this "
+                "route sends images as data only.]", v3))
     return out
 
 
@@ -1140,8 +1217,12 @@ def _claude_assistant(message: AIMessage, v3, keep_thinking: bool) -> list:
 
 
 def _claude_tool_result(message: ToolMessage, v3):
+    """A tool result: its words, then a line for each block this route
+    cannot send (:func:`_left_out`)."""
+    text = "\n".join(t for t in [_text_content(message.content)]
+                     + _left_out(message.content) if t)
     kwargs = {"tool_use_id": message.tool_call_id or "",
-              "content": _text_content(message.content) or "(no output)"}
+              "content": text or "(no output)"}
     if getattr(message, "status", None) == "error":
         kwargs["is_error"] = True
     return v3.ClaudeChatMessageContent(
@@ -1581,7 +1662,8 @@ PalantirSdkChatModel.model_rebuild()
 PalantirClaudeChatModel.model_rebuild()
 
 __all__ = ["PalantirSdkChatModel", "PalantirClaudeChatModel",
-           "FoundryModelNotImported", "sdk_available", "claude_sdk_available",
+           "FoundryModelNotImported", "UnsendableBlock", "sdk_available",
+           "claude_sdk_available",
            "responses_available", "call_with_retries", "transient_kind",
            "model_not_imported", "ROUTES", "REASONING_SUMMARY_ENV",
            "reasoning_summary_level"]

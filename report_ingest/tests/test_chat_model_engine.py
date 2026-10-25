@@ -7,8 +7,10 @@ stands in for it (:mod:`report_ingest.tests.chat_fixtures`), as strict as a
 provider about a conversation's shape. What is checked: a reader call with
 tools, a structured answer through the answer tool, pictures, the counting
 the ingest's ceiling relies on (one call, one request), a reply cut at its
-output cap, and :func:`~report_ingest.engine.engine_for` finding the chat
-model inside the page's wrapper. Public fixtures only.
+output cap, :func:`~report_ingest.engine.engine_for` finding the chat
+model inside the page's wrapper, and a PDF going out only on a route that
+takes one, with a call that carries none unchanged (RI-87). Public fixtures
+only.
 """
 
 from __future__ import annotations
@@ -27,9 +29,10 @@ from langchain_core.messages import (  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 from report_ingest.engine import (  # noqa: E402
-    ANSWER_TOOL, DEFAULT_MAX_TOKENS, ChatModelEngine, PrompterEngine, Reply,
-    engine_for, image_block, strict_schema, text_block, tool_result_block,
-    user,
+    ANSWER_TOOL, DEFAULT_MAX_TOKENS, FOUNDRY_CLAUDE_PDF_ENV,
+    FOUNDRY_PROXY_LLM_TYPE, ChatModelEngine, PrompterEngine, Reply,
+    engine_for, image_block, pdf_block, strict_schema, takes_pdf, text_block,
+    tool_result_block, user,
 )
 from report_ingest.subagent import CallCeiling, CallCeilingReached  # noqa: E402
 from report_ingest.tests.chat_fixtures import (  # noqa: E402
@@ -1211,3 +1214,222 @@ class TestTheCostRecord:
         engine, _ = _engine(message)
         reply = engine.complete([user(text_block("go"))])
         assert reply.text == "ok" and reply.usage.reasoning_tokens is None
+
+
+# ---------------------------------------------------------------------------
+# a PDF, and only where the route takes one (BACKLOG RI-87)
+# ---------------------------------------------------------------------------
+
+#: Bytes standing in for a PDF: the engine never opens one.
+PDF = b"%PDF-1.7 made-up bytes"
+
+
+def _wire(request):
+    """What a request carried, in plain values: each message's kind,
+    content, tool calls and result id, and the tools and cap it went with."""
+    out = []
+    for m in request["messages"]:
+        row = {"type": m.type, "content": m.content}
+        if getattr(m, "tool_calls", None):
+            row["tool_calls"] = [{"name": c["name"], "args": c["args"],
+                                  "id": c["id"]} for c in m.tool_calls]
+        if isinstance(m, ToolMessage):
+            row["tool_call_id"] = m.tool_call_id
+            row["status"] = m.status
+        out.append(row)
+    return {"messages": out, "tools": request["tools"],
+            "max_tokens": request["max_tokens"]}
+
+
+#: The call of :func:`_a_call_with_no_pdf` as master sent it before the PDF
+#: block was added (taken on b713dcf).
+MASTER_REQUEST = {
+    "messages": [
+        {"type": "system",
+         "content": "You read made-up logs.\n\nUse the other tools to look "
+                    "further when you need to. Give your answer by calling "
+                    "the `answer` tool, with the whole answer as its "
+                    "arguments, not by writing it out as text."},
+        {"type": "human",
+         "content": [{"type": "text", "text": "Read the log on this page."},
+                     {"type": "image_url", "image_url": {
+                         "url": "data:image/png;base64,iVBORw0KGgoAAAAAAAAAA"
+                                "AAAAAAAAAAAAAAAAAAAAAA=",
+                         "detail": "high"}}]},
+        {"type": "ai", "content": "Looking closer.",
+         "tool_calls": [{"name": "zoom_plot", "args": {"page": 3},
+                         "id": "z1"}]},
+        {"type": "tool",
+         "content": "page 3, magnified [the picture follows in the next "
+                    "message]",
+         "tool_call_id": "z1", "status": "success"},
+        {"type": "human",
+         "content": [{"type": "text",
+                      "text": "Picture for tool call z1: page 3, magnified"},
+                     {"type": "image_url", "image_url": {
+                         "url": "data:image/jpeg;base64,/9j/4AAAAAAAAAAAAAAA"
+                                "AAAAAAAAAAAAAAAAAA=="}}]}],
+    "tools": ["zoom_plot", "answer"],
+    "max_tokens": 32000,
+}
+
+
+def _a_call_with_no_pdf(engine):
+    """A reader's call: words and a picture, a look, its result and its
+    picture, the answer tool."""
+    engine.complete([
+        user(text_block("Read the log on this page."),
+             image_block(PNG, detail="high")),
+        {"role": "assistant", "content": [
+            text_block("Looking closer."),
+            {"type": "tool_use", "id": "z1", "name": "zoom_plot",
+             "input": {"page": 3}}]},
+        {"role": "user", "content": [tool_result_block(
+            "z1", [text_block("page 3, magnified"), image_block(JPEG)])]},
+    ], system="You read made-up logs.", tools=[ZOOM], output_format=Reading)
+
+
+def _with_a_pdf(*replies, accepts_pdf=True):
+    model = ScriptedChatModel(replies=list(replies) or [_said("read")])
+    return ChatModelEngine(model, accepts_pdf=accepts_pdf), model
+
+
+class TestAPdf:
+
+    @pytest.mark.parametrize("switch", [None, "1"], ids=["unset", "on"])
+    @pytest.mark.parametrize("accepts", [None, True, False],
+                             ids=["read_off", "allowed", "refused"])
+    def test_a_call_with_no_pdf_goes_out_as_it_did_on_master(
+            self, monkeypatch, switch, accepts):
+        if switch is None:
+            monkeypatch.delenv(FOUNDRY_CLAUDE_PDF_ENV, raising=False)
+        else:
+            monkeypatch.setenv(FOUNDRY_CLAUDE_PDF_ENV, switch)
+        model = ScriptedChatModel(replies=[answer_call({"title": "B-1"})])
+        _a_call_with_no_pdf(ChatModelEngine(model, accepts_pdf=accepts))
+        sent = _wire(model.requests[0])
+        assert sent == MASTER_REQUEST
+        assert json.dumps(sent) == json.dumps(MASTER_REQUEST), "key order"
+
+    def test_a_pdf_goes_out_as_a_file_block_where_it_was_put(self):
+        engine, model = _with_a_pdf()
+        engine.complete([user(pdf_block(PDF), text_block("Extract it."))])
+        assert model.requests[0]["messages"][-1].content == [
+            {"type": "file", "mime_type": "application/pdf",
+             "base64": base64.b64encode(PDF).decode("ascii")},
+            {"type": "text", "text": "Extract it."}]
+
+    def test_langchain_anthropic_sends_it_as_a_document_block(self):
+        chat_models = pytest.importorskip("langchain_anthropic.chat_models")
+        engine, model = _with_a_pdf()
+        engine.complete([user(pdf_block(PDF), text_block("Extract it."))])
+        _system, formatted = chat_models._format_messages(
+            model.requests[0]["messages"])
+        first, words = formatted[0]["content"]
+        assert first["type"] == "document"
+        assert first["source"]["media_type"] == "application/pdf"
+        assert base64.b64decode(first["source"]["data"]) == PDF
+        assert words == {"type": "text", "text": "Extract it."}
+
+    def test_a_route_not_known_to_take_one_refuses_it_before_any_request(
+            self):
+        engine, model = _with_a_pdf(accepts_pdf=None)
+        assert engine.accepts_pdf is False, "a scripted model is no Claude"
+        with pytest.raises(ValueError,
+                           match="not known to take a PDF") as refused:
+            engine.complete([user(pdf_block(PDF), text_block("Extract it."))])
+        assert FOUNDRY_CLAUDE_PDF_ENV in str(refused.value)
+        assert model.requests == []
+        assert (engine.meter.calls, engine.meter.failed) == (0, 0)
+
+    def test_a_pdf_in_a_tool_result_is_refused_not_dropped(self):
+        engine, model = _with_a_pdf()
+        with pytest.raises(ValueError, match="user turn"):
+            engine.complete([
+                user(text_block("go")),
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "r1", "name": "zoom_plot",
+                     "input": {"page": 1}}]},
+                {"role": "user", "content": [tool_result_block(
+                    "r1", [text_block("the sheet"), pdf_block(PDF)])]}],
+                tools=[ZOOM])
+        assert model.requests == []
+
+    def test_the_prompter_engine_refuses_one_in_a_tool_result_too(self):
+        with pytest.raises(ValueError, match="user turn"):
+            PrompterEngine._to_provider([
+                user(text_block("go")),
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "r1", "name": "zoom_plot",
+                     "input": {"page": 1}}]},
+                {"role": "user", "content": [tool_result_block(
+                    "r1", [text_block("the sheet"), pdf_block(PDF)])]}],
+                None)
+
+    def test_a_refusal_that_sent_nothing_is_no_call_on_the_meter(self):
+        class _Refused(ValueError):
+            nothing_sent = True
+
+        engine, _ = _with_a_pdf(_Refused("cannot send that block"),
+                                ValueError("a reply that did not parse"))
+        with pytest.raises(_Refused):
+            engine.complete([user(pdf_block(PDF), text_block("Extract it."))])
+        assert (engine.meter.calls, engine.meter.failed) == (0, 0)
+        with pytest.raises(ValueError):
+            engine.complete([user(text_block("go"))])
+        assert engine.meter.failed == 1, "any other error is a failed call"
+
+
+class TestWhichRouteTakesAPdf:
+
+    @pytest.fixture()
+    def anthropic(self, monkeypatch):
+        module = pytest.importorskip("langchain_anthropic")
+        for name in ("ANTHROPIC_API_URL", "ANTHROPIC_BASE_URL"):
+            monkeypatch.delenv(name, raising=False)
+        return module
+
+    def test_a_model_that_is_no_chat_anthropic_does_not(self):
+        assert takes_pdf(ScriptedChatModel()) is False
+        assert takes_pdf(object()) is False
+
+    def test_chat_anthropic_on_anthropics_own_api_does(self, anthropic):
+        direct = anthropic.ChatAnthropic(model="claude-made-up",
+                                         api_key="made-up")
+        assert takes_pdf(direct) is True
+        assert ChatModelEngine(direct).accepts_pdf is True
+        assert ChatModelEngine(direct, accepts_pdf=False).accepts_pdf is False
+
+    def test_chat_anthropic_at_another_address_does_not(self, anthropic):
+        elsewhere = anthropic.ChatAnthropic(
+            model="claude-made-up", api_key="made-up",
+            base_url="https://proxy.example.invalid/anthropic")
+        assert takes_pdf(elsewhere) is False
+
+    def test_chat_anthropic_with_no_address_of_its_own_does_not(
+            self, anthropic, monkeypatch):
+        # Its client then goes wherever ANTHROPIC_BASE_URL says.
+        monkeypatch.setenv("ANTHROPIC_BASE_URL",
+                           "https://proxy.example.invalid/anthropic")
+        unsaid = anthropic.ChatAnthropic(model="claude-made-up",
+                                         api_key="made-up", base_url=None)
+        assert unsaid.anthropic_api_url is None
+        assert takes_pdf(unsaid) is False
+
+    def test_the_foundry_proxy_does_only_with_its_switch(self, anthropic,
+                                                         monkeypatch):
+        class Proxy(anthropic.ChatAnthropic):
+            @property
+            def _llm_type(self) -> str:
+                return FOUNDRY_PROXY_LLM_TYPE
+
+        proxy = Proxy(model="claude-made-up", api_key="made-up",
+                      base_url="https://foundry.example.invalid/anthropic")
+        monkeypatch.delenv(FOUNDRY_CLAUDE_PDF_ENV, raising=False)
+        assert takes_pdf(proxy) is False
+        for off in ("0", "off", ""):
+            monkeypatch.setenv(FOUNDRY_CLAUDE_PDF_ENV, off)
+            assert takes_pdf(proxy) is False
+        for on in ("1", "on", "true", " YES "):
+            monkeypatch.setenv(FOUNDRY_CLAUDE_PDF_ENV, on)
+            assert takes_pdf(proxy) is True

@@ -23,6 +23,8 @@ straight back into its message list without knowing what a provider block
 looks like. ``opaque`` is how that works for blocks a pass must carry but
 must not read or rewrite -- a thinking block has to be echoed back unchanged
 to the model that produced it, and is therefore carried, not inspected.
+:func:`pdf_block` goes out on :class:`ChatModelEngine` alone, and only on a
+route that takes one (:func:`takes_pdf`); every engine refuses it elsewhere.
 
 COST. Every call is metered into a :class:`CostMeter`: calls, input and
 output tokens, cache reads and writes, reasoning tokens, wall clock, and
@@ -230,6 +232,29 @@ def image_block(data: bytes, detail: Optional[str] = None) -> Dict[str, Any]:
     if detail:
         block["detail"] = str(detail)
     return block
+
+
+def pdf_block(data: bytes) -> Dict[str, Any]:
+    """A PDF for the model to read: its text layer and its pages' pictures
+    both, where the provider reads a PDF that way (Anthropic's ``document``
+    block; BACKLOG RI-86, RI-87). Bytes held in memory, like a picture.
+
+    Only :class:`ChatModelEngine` sends one, and only when its
+    :attr:`~ChatModelEngine.accepts_pdf` is on; a route that cannot carry
+    it refuses it before the request. Put it first in its turn, ahead of
+    the words, as Anthropic advises.
+    """
+    return {"type": "pdf", "data": bytes(data)}
+
+
+def _no_pdf_in(result_body: Sequence[Any]) -> None:
+    """Refuse a PDF inside a tool result: a tool message holds text on
+    every route, so it would be lost there."""
+    if any(isinstance(b, dict) and b.get("type") == "pdf"
+           for b in result_body):
+        raise ValueError(
+            "a PDF goes in a user turn, not in a tool result: a tool "
+            "message holds text on every route, and the PDF would be lost")
 
 
 def tool_use_block(call_id: str, name: str,
@@ -1334,6 +1359,7 @@ class PrompterEngine:
                 if isinstance(body, str):
                     text = body
                 else:
+                    _no_pdf_in(body)
                     words = [b["text"] for b in body
                              if isinstance(b, dict) and b.get("type") == "text"]
                     images = [b for b in body
@@ -1574,6 +1600,55 @@ RAW_ANSWER_CHARS = 20_000
 #: The fields a LangChain chat model keeps its per-reply output cap in.
 _CAP_FIELDS = ("max_tokens", "max_output_tokens", "max_completion_tokens")
 
+#: Lets a PDF block go out to Claude through the Foundry Anthropic proxy
+#: (BACKLOG RI-87). Off by default: no document block had been sent through
+#: the proxy when this was written. Set it only once
+#: :func:`report_ingest.model_first.probe_pdf_route` has read page 2 there.
+#: Read when an engine is built.
+FOUNDRY_CLAUDE_PDF_ENV = "GEOTECH_FOUNDRY_CLAUDE_PDF"
+
+#: The ``_llm_type`` of the Foundry proxy's ``ChatAnthropic``
+#: (``webapp.engine_config.foundry_chat_anthropic_class``).
+FOUNDRY_PROXY_LLM_TYPE = "anthropic-chat-foundry-proxy"
+
+#: Where ``ChatAnthropic`` reaches Anthropic's own API.
+ANTHROPIC_API_HOST = "api.anthropic.com"
+
+
+def takes_pdf(chat_model: Any) -> bool:
+    """Whether a :func:`pdf_block` can go out on this chat model's route.
+
+    * ``ChatAnthropic`` on Anthropic's own API: yes. langchain_anthropic
+      sends LangChain's ``file`` block as a ``document`` block, which is
+      how the plain baseline sent its PDFs (RI-86).
+    * The Foundry proxy's ``ChatAnthropic``: only with
+      :data:`FOUNDRY_CLAUDE_PDF_ENV` on.
+    * Anything else: no. ``ChatAnthropic`` at any other address is a proxy
+      nobody has tried, and so is one with no address of its own (its
+      client then takes ``ANTHROPIC_BASE_URL``); the ``palantir_models``
+      classes carry text and pictures only; the Prompter and OpenAI
+      classes are untried.
+
+    Read off the class and its ``_llm_type``, so nothing is imported.
+    """
+    if not any(c.__name__ == "ChatAnthropic"
+               and c.__module__.startswith("langchain_anthropic")
+               for c in type(chat_model).__mro__):
+        return False
+    try:
+        kind = chat_model._llm_type
+    except Exception:                                    # noqa: BLE001
+        return False
+    if kind == FOUNDRY_PROXY_LLM_TYPE:
+        return (os.environ.get(FOUNDRY_CLAUDE_PDF_ENV) or "").strip() \
+            .lower() in ("1", "on", "true", "yes")
+    if kind != "anthropic-chat":
+        return False
+    from urllib.parse import urlparse
+
+    url = getattr(chat_model, "anthropic_api_url", None)
+    return bool(url) and urlparse(str(url)).hostname == ANTHROPIC_API_HOST
+
 
 class ChatModelEngine:
     """:class:`Engine` over any LangChain chat model: the app's own (RI-03).
@@ -1604,6 +1679,14 @@ class ChatModelEngine:
       a tool's picture rides in a user message straight after the tool
       results, as on :class:`PrompterEngine`, because a tool message holds
       text on every route;
+    * a PDF (:func:`pdf_block`, in a user turn) goes in as LangChain's
+      ``file`` block, which langchain_anthropic sends as a ``document``
+      block, and only when :attr:`accepts_pdf` is on (:func:`takes_pdf`
+      unless the caller says). Otherwise the call raises ``ValueError``
+      before any request: a PDF that vanished on the way would leave the
+      model answering from the words alone. A PDF in a tool result is
+      refused the same way, here and on :class:`PrompterEngine`. A call
+      with no PDF goes out exactly as it did before PDFs were added;
     * the assistant turn comes back with the provider's own message carried
       as an ``opaque`` block, so a Claude thinking block or a call id goes
       back exactly as it arrived; the answer call, which no pass answers,
@@ -1632,8 +1715,10 @@ class ChatModelEngine:
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
     :attr:`meter` all see the same number (the meter's replies and failed
     requests together: a request that raised is recorded as failed before
-    it is raised). Usage is read off the reply's ``usage_metadata``, the
-    cached input apart from the rest and the reasoning tokens counted.
+    it is raised). A call refused before anything went out (a PDF on a
+    route that takes none) is no request, and the meter does not count it.
+    Usage is read off the reply's ``usage_metadata``, the cached input
+    apart from the rest and the reasoning tokens counted.
 
     THE OUTPUT CAP (BACKLOG RI-19) is the model's own: no cap is sent unless
     a call names one, so every call kind gets what the host built the model
@@ -1647,12 +1732,17 @@ class ChatModelEngine:
     def __init__(self, chat_model: Any, *,
                  meter: Optional[CostMeter] = None,
                  max_tokens: Optional[int] = None,
-                 name: Optional[str] = None) -> None:
+                 name: Optional[str] = None,
+                 accepts_pdf: Optional[bool] = None) -> None:
         self.chat_model = chat_model
         self.name = str(name or _chat_model_name(chat_model)
                         or type(chat_model).__name__)
         self.model = self.name
         self.meter = meter if meter is not None else CostMeter()
+        #: Whether a :func:`pdf_block` may go out on this model's route:
+        #: :func:`takes_pdf` unless the caller says.
+        self.accepts_pdf: bool = (takes_pdf(chat_model) if accepts_pdf is None
+                                  else bool(accepts_pdf))
         #: The model's own per-reply cap, as the host built it; None when it
         #: carries none (the provider's default then applies).
         self.output_cap: Optional[int] = _own_cap(chat_model)
@@ -1725,6 +1815,11 @@ class ChatModelEngine:
                 if block.get("detail"):
                     url["detail"] = str(block["detail"])
                 out.append({"type": "image_url", "image_url": url})
+            elif kind == "pdf":
+                # Whether the route takes one is decided in complete().
+                out.append({"type": "file", "mime_type": "application/pdf",
+                            "base64": base64.b64encode(
+                                block["data"]).decode("ascii")})
             elif kind == "opaque":
                 continue                # another engine's block: not ours
             else:
@@ -1786,6 +1881,7 @@ class ChatModelEngine:
                 if isinstance(body, str):
                     text = body
                 else:
+                    _no_pdf_in(body)
                     words = [b["text"] for b in body
                              if isinstance(b, dict) and b.get("type") == "text"]
                     images = [b for b in body
@@ -1826,6 +1922,16 @@ class ChatModelEngine:
             msgs[-1] = {"role": "user",
                         "content": list(content)
                         + [image_block(p) for p in images]}
+        if not self.accepts_pdf and any(
+                isinstance(b, dict) and b.get("type") == "pdf"
+                for m in msgs if not isinstance(m["content"], str)
+                for b in m["content"]):
+            raise ValueError(
+                f"{self.name} ({type(self.chat_model).__name__}) is not known "
+                f"to take a PDF, so none is sent (accepts_pdf is off). On the "
+                f"Foundry Anthropic proxy, {FOUNDRY_CLAUDE_PDF_ENV}=1 turns "
+                f"it on once report_ingest.model_first.probe_pdf_route has "
+                f"read page 2 there; elsewhere send the pages as pictures")
 
         offered = [_function_spec(t) for t in (tools or [])]
         if output_format is not None:
@@ -1847,8 +1953,12 @@ class ChatModelEngine:
         except Exception as exc:
             # Recorded, then raised as before: a failed call is a call
             # (BACKLOG RI-21). The model's own retries happen inside it.
-            self.meter.fail(self.name, exc, seconds=time.time() - started,
-                            adapted=self.adaptations[learned:])
+            # A refusal that says nothing went out (``nothing_sent``: the
+            # palantir_models Claude class refusing a PDF) is no request.
+            if not getattr(exc, "nothing_sent", False):
+                self.meter.fail(self.name, exc,
+                                seconds=time.time() - started,
+                                adapted=self.adaptations[learned:])
             raise
         seconds = time.time() - started
         return self._reply(message, output_format, seconds,

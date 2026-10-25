@@ -68,7 +68,6 @@ by ``live_smoke.models`` and never printed.
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import math
 import sys
@@ -96,9 +95,6 @@ SANITIZE_ABOVE = 8 * 1024 * 1024
 
 #: Seconds after which no new item is started (one command, < 10 minutes).
 DEFAULT_TIME_LIMIT = 420.0
-
-#: The block type this script's engine turns into a PDF document block.
-PDF_BLOCK = "pdf"
 
 
 # ---------------------------------------------------------------------------
@@ -235,40 +231,28 @@ def cut_pdf(source: Path, pages: Optional[Sequence[int]]
 
 
 def pdf_block(data: bytes) -> Dict[str, Any]:
-    """A PDF for the model to read, as this script's engine takes it."""
-    return {"type": PDF_BLOCK, "data": bytes(data)}
+    """A PDF for the model to read: the engine's own block (RI-87)."""
+    from report_ingest.engine import pdf_block as block
+
+    return block(data)
 
 
 def _engine_class() -> Any:
+    """The stage's own engine with the PDF block on.
+
+    The engine sends a :func:`pdf_block` as LangChain's ``file`` block,
+    which ``langchain_anthropic`` sends as an Anthropic ``document`` block
+    (text layer and page images both); :func:`read_item` puts it first in
+    the turn, ahead of the words, as the API advises. This script reads
+    over Anthropic's own API, which takes one, so the PDF is allowed
+    outright rather than read off the model (the tests' stand-in is no
+    ``ChatAnthropic``). Everything else -- the answer tool, its schema,
+    how an answer is taken -- is the stage's own engine unchanged."""
+    from functools import partial
+
     from report_ingest.engine import ChatModelEngine
 
-    class PdfChatEngine(ChatModelEngine):
-        """:class:`ChatModelEngine` that also sends a PDF in a user turn.
-
-        A ``{"type": "pdf"}`` block becomes LangChain's standard ``file``
-        block, which ``langchain_anthropic`` sends as an Anthropic
-        ``document`` block (text layer and page images both). It is put
-        first in the turn, ahead of the words, as the API advises.
-        Everything else -- the answer tool, its schema, how an answer is
-        taken -- is the stage's own engine unchanged."""
-
-        @staticmethod
-        def _user_content(blocks: Sequence[Any]) -> Any:
-            pdfs = [b for b in blocks if isinstance(b, dict)
-                    and b.get("type") == PDF_BLOCK]
-            rest = [b for b in blocks if not (isinstance(b, dict)
-                                              and b.get("type") == PDF_BLOCK)]
-            body = ChatModelEngine._user_content(rest) if rest else []
-            if not pdfs:
-                return body
-            if isinstance(body, str):
-                body = [{"type": "text", "text": body}]
-            files = [{"type": "file", "mime_type": "application/pdf",
-                      "base64": base64.b64encode(b["data"]).decode("ascii")}
-                     for b in pdfs]
-            return files + list(body)
-
-    return PdfChatEngine
+    return partial(ChatModelEngine, accepts_pdf=True)
 
 
 # ---------------------------------------------------------------------------

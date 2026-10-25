@@ -599,6 +599,129 @@ def test_an_image_by_web_address_is_said_not_sent(monkeypatch):
     assert msg.content[0].image is None
 
 
+# ---------------------------------------------------------------------------
+# A block this route cannot send is refused, not dropped (BACKLOG RI-87)
+# ---------------------------------------------------------------------------
+
+_PDF_FILE = {"type": "file", "base64": "JVBERi0xLjcgbWFkZS11cA==",
+             "mime_type": "application/pdf"}
+
+
+@pytest.mark.parametrize("block, named", [
+    (_PDF_FILE, "type 'file' (application/pdf)"),
+    ({"type": "audio", "base64": "UklGRmFrZQ==", "mime_type": "audio/wav"},
+     "type 'audio' (audio/wav)"),
+    ({"type": "image", "mime_type": "image/png"},
+     "type 'image' holds no image: no data and no web address"),
+], ids=["pdf", "audio", "image_with_no_data"])
+def test_a_block_this_route_cannot_send_is_refused_not_dropped(
+        monkeypatch, block, named):
+    """Until RI-87 such a block was left out without a word, and the model
+    answered from the words alone."""
+    _install_fake_sdk(monkeypatch)
+    _FakeClaude.queue = [_reply(_text("answered without it"))]
+    with pytest.raises(ValueError) as refused:
+        _model().invoke([HumanMessage(content=[
+            block, {"type": "text", "text": "Extract it."}])])
+    assert named in str(refused.value)
+    if block["type"] == "image":     # this route does carry images
+        assert "carries text and images only" not in str(refused.value)
+    assert refused.value.nothing_sent is True
+    if block.get("base64"):
+        assert block["base64"] not in str(refused.value), "data never shown"
+    assert _FakeClaude.requests == []
+
+
+@pytest.mark.parametrize("content, said", [
+    ([_PDF_FILE], "(a file block this route cannot send was left out)"),
+    ([{"type": "text", "text": "Saved notes:"}, _PDF_FILE,
+      {"type": "audio", "base64": "UklGRmFrZQ==", "mime_type": "audio/wav"}],
+     "Saved notes:\n(a file block this route cannot send was left out)\n"
+     "(an audio block this route cannot send was left out)"),
+    ([{"type": "text", "text": "The chart:"},
+      {"type": "image_url", "image_url": {"url": "https://x/y.png"}}],
+     "The chart:\n(an image given by web address was left out: this route "
+     "sends images as data only)"),
+    ([{"type": "image", "mime_type": "image/png"}],
+     "(an image block with no data was left out)"),
+], ids=["file_alone", "beside_words", "image_by_web_address",
+        "image_with_no_data"])
+def test_a_block_a_tool_result_cannot_send_is_said_in_its_text(
+        monkeypatch, content, said):
+    """deepagents' ``read_file`` answers a scratch file with a binary
+    extension with a ``file`` block. Dropped, the model read only "(no
+    output)"; refused, the agent's turn would end. It is said instead,
+    as the web-address image is, and the turn goes on."""
+    _install_fake_sdk(monkeypatch)
+    _FakeClaude.queue = [_reply(_text("The notes file is not readable."))]
+    out = _model().invoke([
+        HumanMessage(content="read my notes"),
+        AIMessage(content="", tool_calls=[
+            {"name": "read_file", "args": {"file_path": "/notes.pdf"},
+             "id": "toolu_9"}]),
+        ToolMessage(content=content, tool_call_id="toolu_9")])
+    assert out.content == "The notes file is not readable."
+    [request] = _FakeClaude.requests
+    [result] = request.messages[2].content      # nothing beside the result
+    assert result.tool_result.tool_use_id == "toolu_9"
+    assert result.tool_result.content == said
+
+
+def test_the_ingest_engine_sends_no_pdf_on_this_route(monkeypatch):
+    """report_ingest's engine knows this class takes no PDF; told it does,
+    the class refuses the PDF itself. Either way nothing is sent."""
+    from report_ingest.engine import (ChatModelEngine, pdf_block, text_block,
+                                      user)
+    _install_fake_sdk(monkeypatch)
+    _FakeClaude.queue = [_reply(_text("never"))]
+    turn = [user(pdf_block(b"%PDF-1.7 made-up"), text_block("Extract it."))]
+    engine = ChatModelEngine(_model())
+    assert engine.accepts_pdf is False
+    with pytest.raises(ValueError, match="not known to take a PDF"):
+        engine.complete(turn)
+    told = ChatModelEngine(_model(), accepts_pdf=True)
+    with pytest.raises(ValueError, match="palantir_models"):
+        told.complete(turn)
+    assert _FakeClaude.requests == []
+    # Nothing went out, so neither engine counts a call.
+    for each in (engine, told):
+        assert (each.meter.calls, each.meter.failed) == (0, 0)
+
+
+def test_the_proxy_takes_a_pdf_only_with_its_switch(monkeypatch):
+    """The Foundry proxy's ``ChatAnthropic``: no document block had been
+    sent through it, so the ingest sends none until
+    GEOTECH_FOUNDRY_CLAUDE_PDF is on (once the probe has read page 2)."""
+    pytest.importorskip("langchain_anthropic")
+    from report_ingest.engine import FOUNDRY_CLAUDE_PDF_ENV, ChatModelEngine
+    proxy = engine_config.foundry_chat_anthropic_class()(
+        model="claude-made-up", max_tokens=1000,
+        anthropic_api_url="https://foundry.example.invalid/proxy/anthropic",
+        anthropic_api_key="made-up")
+    monkeypatch.delenv(FOUNDRY_CLAUDE_PDF_ENV, raising=False)
+    assert ChatModelEngine(proxy).accepts_pdf is False
+    monkeypatch.setenv(FOUNDRY_CLAUDE_PDF_ENV, "1")
+    assert ChatModelEngine(proxy).accepts_pdf is True
+
+
+def test_the_pdf_probe_on_this_route_reports_the_refusal(monkeypatch):
+    pytest.importorskip("pymupdf")
+    from report_ingest.model_first import probe_pdf_route
+    _install_fake_sdk(monkeypatch)
+    _FakeClaude.queue = [_reply(_text("QUILLBANK-2468"))]
+    out = probe_pdf_route(_model(), words=("AMBERWICK-1357",
+                                           "QUILLBANK-2468"))
+    assert out["use_pdf"] is False and out["accepts_pdf"] is False
+    assert out["pdf"]["outcome"] == "refused"
+    assert "type 'file' (application/pdf)" in out["pdf"]["error"]
+    assert out["pictures"]["picture_read"] is True
+    [request] = _FakeClaude.requests        # the pictures call alone
+    pictures = [c for c in request.messages[0].content if c.image is not None]
+    assert len(pictures) == 2
+    assert "refused before it was sent" in out["says"]
+    assert "send the pages as pictures" in out["says"]
+
+
 def test_the_vision_probe_sizes_it_as_claude(monkeypatch):
     _install_fake_sdk(monkeypatch)
     from funhouse_agent import vision_probe

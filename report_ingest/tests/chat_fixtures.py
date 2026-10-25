@@ -94,6 +94,8 @@ class ScriptedChatModel(BaseChatModel):
         reply = self.replies.pop(0)
         if isinstance(reply, BaseException):
             raise reply
+        if callable(reply):             # a reply worked out from the request
+            reply = reply(list(messages))
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
