@@ -949,9 +949,11 @@ if its trigger is met.
   labels by sections over the descriptions, conventions B) sends 50-56 of
   3,418 pages to the wrong reader, against 290 for master's labels. In
   sample; on branch wip/ri73 behind `GEOTECH_INGEST_RANGE_LABELS`.
-- **Models** (RI-78): lab on Opus 5.5; logs, narrative and calc on Sonnet
+- **Models** (RI-78): lab on Opus 5.5; logs and calc on Sonnet
   5.5. That was measured on the pipeline. The plain call was measured on
-  Opus only.
+  Opus only. The narrative on Opus 5.5 with every question in one call (owner
+  2026-10-25, from their own runs: Opus with all the questions, or Sonnet 5.5
+  only as one call per category of questions; Opus is likely cheaper in the end).
 
 The plain arm was handed the right pages from the answer sheets. Model-first
 has to find them itself, so the whole-report wave (§8.8) is the one that
@@ -1001,7 +1003,7 @@ Under `on` one report runs as below. "Code" marks a step with no model call.
 6. **Group the pages for each call** (code; §8.2.1): one log per call, lab
    sheets in windows, one calculation printout per call, the narrative in one
    call or a few.
-7. **Read** (one call per group; lab on Opus, the rest on Sonnet). The call
+7. **Read** (one call per group; lab and narrative on Opus, the rest on Sonnet). The call
    carries the pages (one PDF, or each page as a picture with its text), the
    stage's short instruction (RI-86's, moved into the package) and the
    stage's answer schema with the additions in §8.5, offered as the `answer`
@@ -1297,8 +1299,8 @@ So the design covers both:
   none).
 - **Size the describer's thread pool** for Foundry's tokens-per-minute limit,
   which is what bites there.
-- **Name the models per stage** (`stage_models=`): lab on Opus 5.5; logs,
-  calc and narrative on Sonnet 5.5, plus the Opus arms of §8.8.
+- **Name the models per stage** (`stage_models=`): lab and narrative on Opus 5.5;
+  logs and calc on Sonnet 5.5, plus the Opus arms of §8.8.
 
 ### 8.8 Measurement plan
 
@@ -1331,7 +1333,7 @@ sheets). `score_on_cluster`'s reader stages gain `model_first=` and
 | logs | today, `on` | Sonnet and Opus (the plain call was measured on Opus only) |
 | lab | today, `on` | Opus |
 | calc | today, `on` | Sonnet and Opus |
-| narrative | today, `on` | Sonnet |
+| narrative | today, `on` | Opus (owner 2026-10-25) |
 
 Today's arm is run again on Foundry's Claude in the same wave: every Foundry
 number so far is GPT-5.4, and RI-78's Claude numbers came over the direct
@@ -1375,8 +1377,8 @@ organisation's, and the number to watch is tokens.
 | logs | Sonnet | about 15 | $0.85 |
 | lab | Opus | 5-25 | $3.00 |
 | calc | Sonnet | 6-8 | $0.40 |
-| narrative | Sonnet | 1-2 | $0.30 |
-| **total** | | **about 190** | **about $5.30** |
+| narrative | Opus | 1-2 | $0.60 |
+| **total** | | **about 190** | **about $5.60** |
 
 That is about 1 M input and 0.2 M output tokens. Today's pipeline on the same
 models comes to about $7.70 for the same report: its readers cost 1.3 to 2.6
