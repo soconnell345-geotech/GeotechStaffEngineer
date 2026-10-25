@@ -911,3 +911,590 @@ page count are recorded per run in the QA section.
    carry project names in their paths. Owner's call: make the repo private,
    or scrub. This train keeps everything private under gitignored `raw/`
    and IDs elsewhere regardless.
+
+## 8. MODEL-FIRST INGEST (RI-87, owner 2026-10-25)
+
+**Status: design, not built.** The owner's decision (OWN-96, 2026-10-25):
+"Yes, turn report ingest model first." This section is the design. Its build
+pieces (§8.9) go on BACKLOG RI-87 and nowhere else. Today's pipeline stays
+the default until the measurement in §8.8 says otherwise.
+
+**The rule this design follows** (owner, 2026-10-25): "Simple is better, I
+think we got too complex chasing narrow goals." So the plain path is built
+and measured first, and code is added to it only where it measurably beats
+the plain path. Everything below that is marked as a fallback is built only
+if its trigger is met.
+
+### 8.1 What the evidence says
+
+- **A plain call reads about as well as the pipeline.** RI-86 handed Opus
+  5.5 each hand-truthed item's own pages as one PDF, one short instruction
+  and the stage's answer schema as the answer tool: one call, no brief, no
+  floor, no merge. Blind logs 175 of 214 against the pipeline's 182; blind
+  lab 420 of 459 against 417; calc 176 of 203 against 181 (open set);
+  narrative R05 recall 24 of 27 against 25. The call cost about half as much
+  (MEASUREMENTS 'CLAUDE LOCAL RUN 2').
+- **Where the pipeline still leads**, the floor and merge fill fields the
+  answer schema has no slot for (RI-82: recovery printed as a length, a
+  summary row's bottom elevation, the project name and number on a log), and
+  the pipeline gives a box on the page (logs 557 of 619 values, lab 71 of 72
+  tests, every calc value; the plain answer places none).
+- **The floor adds values only on logs.** The pipeline's record against its
+  own model's answer alone: logs +9 open (287 to 296) and +15 blind (167 to
+  182); lab +0 on both sets (351, 417); calc -1 (182 to 181).
+- **The plain arm exposed two pipeline defects**: the log depth gate refused
+  six water depths on R15_p46 (RI-76), and a scanned compaction sheet was
+  read as one summary table (RI-81, R15_p184).
+- **Page labels**: RI-73's range labeller (Haiku describes every page, Opus
+  labels by sections over the descriptions, conventions B) sends 50-56 of
+  3,418 pages to the wrong reader, against 290 for master's labels. In
+  sample; on branch wip/ri73 behind `GEOTECH_INGEST_RANGE_LABELS`.
+- **Models** (RI-78): lab on Opus 5.5; logs, narrative and calc on Sonnet
+  5.5. That was measured on the pipeline. The plain call was measured on
+  Opus only.
+
+The plain arm was handed the right pages from the answer sheets. Model-first
+has to find them itself, so the whole-report wave (§8.8) is the one that
+decides.
+
+### 8.2 The flow
+
+The switch is **`GEOTECH_INGEST_MODEL_FIRST`**: `off` (the default; unset or
+`0`) is today's pipeline, byte-identical (§8.2.2); `on` (or `1`) makes the
+model's answer the record. `ingest_report(..., model_first=None)` follows the
+variable; a string names the setting directly. A second variable says how
+pages reach the model: **`GEOTECH_INGEST_MODEL_FIRST_PAGES`** = `auto` (the
+default: a PDF where the engine can send one, otherwise pictures), `pdf` or
+`pictures` (§8.7).
+
+**Under `on`, only the model reads values into the record.** The floors
+(`seed_from_grid`, `floor_from_tables`, `floor_from_pages`) and the merges do
+not run. A value the code reads by itself (today, only the narrative's
+caption counts) goes to the QA list as "read by the code, not by the model"
+and never into the record. The schema additions of §8.5 are what close the
+gaps the floor used to fill (recovery as a length, a row's bottom elevation,
+the project fields).
+
+Under `on` one report runs as below. "Code" marks a step with no model call.
+
+1. **Open** (code). planlens opens the PDF and puts any Azure DI text into
+   the same frame, as today. `facts_from_document`, `assign`,
+   `document_outline` and `document_facts` run as today: the rules' labels
+   are one voter and the outline goes to the labeller.
+2. **Triage** (one call, as today). It still decides the workflow
+   (`needs_person` stops; `appendix_only` skips the narrative) and the
+   ranges of bound documents.
+3. **Describe every page** (Haiku 5.5, one call a page; RI-73's
+   `describe_pages`). Each description is saved under
+   `out_dir/descriptions/` as it is made, so a run resumes. On a scanned page
+   the describer reads the picture.
+4. **Label by sections** (Opus 5.5, one call per report or per 300-page
+   window; RI-73's `label_by_ranges` with conventions B).
+   `label_vote.combine` takes the range label for every page it labelled; a
+   page it left unresolved keeps the rules' label with a
+   `label_disagreement` entry, as RI-73 already does. **The range labels
+   replace the vision voter and the label review** (decided, §8.10): neither
+   runs under `on`.
+5. **Bound documents** (one identity call each, as today, `bound.py`). Each
+   child goes round this same flow over its own pages. Its descriptions are
+   already on disk; it gets its own range-label call.
+6. **Group the pages for each call** (code; §8.2.1): one log per call, lab
+   sheets in windows, one calculation printout per call, the narrative in one
+   call or a few.
+7. **Read** (one call per group; lab on Opus, the rest on Sonnet). The call
+   carries the pages (one PDF, or each page as a picture with its text), the
+   stage's short instruction (RI-86's, moved into the package) and the
+   stage's answer schema with the additions in §8.5, offered as the `answer`
+   tool through `ChatModelEngine`. No brief, no grid rows, no floor, no zoom
+   tool.
+8. **Build** (code). The stage's own `_Builder` turns the answer into record
+   objects. Its checks run in the flag-not-drop form of §8.6.
+9. **Place** (code; §8.4). Each value gets its page checked and a box where
+   the page's printed text can give one.
+10. **Reconcile, write** (code, unchanged). `reconcile`, the checklist,
+    `write_outputs`, the DIGGS writer and the library run on the record as
+    today.
+
+Cone soundings and dynamic probes keep today's sounding reader under `on`. A
+sounding is a series that code digitises, and no plain call was measured on
+one.
+
+#### 8.2.1 Which pages go in each call
+
+The groups come from the range labels and the page descriptions alone. All of
+it is code, and it is scored offline against the answer sheets' item pages
+before any call is paid for (piece 3). Today's other grouping signals
+(planlens' item key, the lab floor's specimen starts) are added back only if
+that score shows the descriptions miss something they catch.
+
+- **Logs: one log per call, all its sheets together.** A new log starts at a
+  page whose description prints an exploration identifier other than the
+  current log's, unless its `continues` field says it carries on the current
+  one ("sheet 2 of 3"). A page that prints no identifier joins the log before
+  it. This also fixes a scan problem of today's path: with no text layer
+  every scanned log page has the same planlens key, so twenty scanned logs in
+  a row become one item. A log longer than 12 pages (rare) is cut at a sheet
+  boundary into two calls; the second part's layers, samples, drives and
+  water readings are appended to the first's, the header is the first
+  part's, and a QA note names the cut.
+- **Lab: windows of at most 12 pages** (`MAX_LAB_PAGES`), cut by
+  `lab_windows`, with the cuts moved to pages where the description's title
+  or specimen identifiers change. Each test's `pages` are the pages it cites
+  inside the window, not the whole window, so the whole-record scorer never
+  sets one sheet's test against another sheet's answer sheet.
+- **Calc: today's grouping.** `split_calc_items` cuts runs by each page's
+  head. A printout of 12 pages or fewer is one call. A longer one (up to 22
+  pages) is two calls through `page_window` (the first and last page in
+  both), folded by `_fold_readings`.
+- **Narrative: the narrative pages and the front of the report**, as
+  `reading_pages` picks them today (cover, letter, contents and the first
+  pages), plus the figure and table pages of the main body. Up to 100 pages
+  inside the narrative's token budget go in one call. A longer narrative is
+  read in consecutive parts and merged by the narrative builder's own rule
+  (the first answer kept, lists joined, every disagreement between parts
+  recorded), with one summary call after (`_summarise`), as today.
+- **Limits.** The Anthropic API takes at most 100 pages and 32 MB in one PDF;
+  a cut larger than 8 MB is sanitised (`cut_pdf`, from the plain baseline). A
+  reply that stops at its output cap gives no answer (`Reply.cut_off`). That
+  group is asked once more as two halves, split at a sheet boundary, and a
+  half that is still cut off becomes a `skipped` entry naming its pages.
+
+#### 8.2.2 Off is today
+
+Every new piece of code runs only under `on`. The shared functions it reuses
+gain parameters whose defaults are today's behaviour (the builders' check
+mode). No field is added to the record (§8.5 says where the new values go),
+so `report.record.json` keeps its keys; the setting a run used is written in
+`run.json`, and in one QA note (`where="model_first"`) only under `on`. A
+test runs the scripted-engine graph with the switch unset and checks that
+every request and every output file is byte-identical to a run of master; a
+second checks that no model-first module is imported.
+
+### 8.3 What is kept, what is reused, what is bypassed
+
+| Module | Kept as is | Reused differently under `on` | Not run under `on` |
+|---|---|---|---|
+| `graph.py` | triage, bound documents, the reconciler call, writing, the cost tally, per-item resume | `_read_items` takes the model-first readers' results, which keep today's dict shape (`investigation`, `tests`, `calculation`, `general`, `unresolved`, `cost`; `disagreements` and `kept` empty), cached as `items/mf-<key>.json` so a resume never mixes the two | `_vision_labels`, `_review` |
+| `label_vote.py` | `combine` (with RI-73's range voter), `split_pages`, the policies | the range label decides each page it labelled | the vision voter's input; `neighbourhood` (no review) |
+| `range_labels.py` (wip/ri73) | `describe_pages`, `label_by_ranges`, conventions B | the descriptions also drive the grouping (§8.2.1) | |
+| `log_reader.py` | `LogReading` and its parts, `_Builder`, `_depth_window` (from `log_grid_for` with visual scales off: planlens' grid, no call) | the builder's checks in flag mode (§8.6); the grid's ruler is also a placement anchor (§8.4) | `read_log`: the brief, the grid rows, the zooms, the follow-up calls |
+| `log_floor.py` | | | `seed_from_grid`, `merge_investigations` |
+| `lab_reader.py` | `LabSheetReading`, `_Builder`, `lab_windows`, the kind vocabulary | the checks in flag mode (§8.6); each test's pages narrowed | `read_lab_sheet`: the brief, `zoom_plot`, the per-page floor; `_specimen_starts` |
+| `lab_floor.py` | | | `floor_from_tables`, `merge_lab_tests` |
+| `calc_reader.py` | `CalcReading`, `_Builder` (given no pool of printed numbers, as the baseline did), `split_calc_items`, `page_window`, `_fold_readings` | `_precision_tol` and `_on_the_page` become placement's number match for every stage (§8.4) | `read_calculation`: the brief, the page pictures; `floor_from_pages`, `merge_calculation` |
+| `narrative_reader.py` | `NarrativeReading`, `_Builder`, `check_quotes`, `_summarise`, `reading_pages`, `_vocabulary_block` (the glossary) | the builder gets no caption count and no logs, as the baseline did; `count_captions` runs (text only, no call) and a count that differs from the model's answer is a QA note, not the record's value | `read_narrative`: the text chunks, the brief, the retrieval passages, the pictures of text-less pages |
+| `sounding_reader.py` | all | | |
+| `floor.py` | | | all (the fallback of §8.4 would use `settle`) |
+| `engine.py` | `ChatModelEngine`, `strict_schema`, the answer tool, RI-80's unwrap | gains a PDF block (§8.7) | |
+| `model.py`, `reconciler.py`, `checklist.py`, `writers.py`, `diggs_writer.py`, `library.py`, the scorers | all | | |
+| `subagent.py`, `run_folder.py` | all: they call `ingest_report` and follow the variable | | |
+| `run_plain_baseline.py` | its scoring | `INSTRUCTIONS`, `instruction`, `cut_pdf` and `PdfChatEngine` move into the package and the script imports them | |
+
+### 8.4 Provenance after the answer: the text match
+
+The model gives the page (the report's page index: the instruction maps each
+PDF page to it, as RI-86's does) and no box. The answer schema's `bbox` is
+ignored under `on`, because the model was shown no rows or cells to copy one
+from. One new module, `report_ingest/locate.py`, finds the box after the
+answer:
+
+1. **Check the page.** A cited page outside the call that is a PDF-local
+   index (0 to n-1) is mapped to the report's page with a note: the class
+   RI-74 (6) fixed for one-page printouts, applied to every stage. Any other
+   page outside the call keeps the value, takes the call's first page at
+   confidence 0.4 and a note, as the builders do today.
+2. **Find the object's printed words on its cited page**, among the words
+   that carry boxes: `Document.page(p, words=True)` gives the text layer, or
+   the DI words on a scan, in planlens' one frame. An object is placed by the
+   first of its anchors that is found:
+   - a log layer by its description's words, a sample or drive by its label,
+     then by its printed depth on the row the ruler puts at that depth
+     (`Ruler.y_at`; the grid already runs for the depth check, §8.6), a water
+     reading by its printed depth;
+   - a lab test by its sample label, then its test title;
+   - a calc value by its label and its number on one printed line;
+   - a narrative answer by its quote, which is `check_quotes` as today. No box
+     field is added to `Citation`; a viewer that wants one finds the quote
+     with planlens' search.
+
+   Text is matched with `Document.search(..., fuzzy=True)`, a number at its
+   printed precision (`_precision_tol`, `_on_the_page`). One candidate gives
+   its box, method `model` and the note "box from the text layer" (or "from DI
+   words"). Several with no anchor between them give the page only and a note
+   with the count. A log value need not be printed itself (a layer boundary
+   is often drawn, not printed): its object's box is enough.
+3. **The call's other pages.** An object found on one other page of the call,
+   and only one, moves to that page with a note.
+4. **Not placed.** The object stays in the record with its page and no box.
+   On a page with text, its confidence drops to 0.6 and the item's QA note
+   counts it ("N of M not found printed on the cited page"). This is today's
+   calc result check, applied to every stage, and it never removes a value.
+   On a page with no text layer and no DI text nothing can be placed and
+   nothing is lowered; the note says the page has no text.
+
+**Measured first, offline.** Piece 5 runs the text match on the saved RI-86
+answers (Opus, the plain arm, today's schema) at no cost: objects placed, by
+stage, on pages with text, beside the pipeline's 557 of 619 log values and
+71 of 72 lab tests.
+
+**The fallback, built only if a stage misses the gate.** If the text match
+places fewer than 90 % of values on pages with text in a stage, that stage
+gets the floor as a source of boxes: its floor runs, the stage's merge pairs
+the floor's objects with the model's by the rules it already has, and a pair
+gives the model's object the floor's box. The model's value always keeps the
+slot, and no floor value enters the record. It is a `place` policy on
+`settle` and on that stage's `merge_*` (default: today's), with tests that the
+default reproduces today's merges.
+
+### 8.5 Schema additions (model-facing)
+
+The answer schema's text is what the model reads, so each addition is listed
+with the description it carries. They go into model-first subclasses in
+`report_ingest/model_first.py`. `LogReading`, `ReadSample` and `ReadRow`
+themselves do not change, so with the switch off the answer tool's schema is
+today's. Nothing else in the schemas changes: the rest stays as the plain
+baseline measured it. These are what close the floor's lead (§8.1) without
+the floor.
+
+`LogReading` (logs):
+
+| Field | Type | Description the model sees |
+|---|---|---|
+| `project` | str, default "" | "the project or job name the log prints in its title block, as printed; empty if none" |
+| `project_number` | str, default "" | "the project, job or contract number the log prints, as printed; empty if none" |
+| `client` | str, default "" | "the client or owner the log names, as printed; empty if none" |
+| `header_fields` | list of {`name`, `value`}, default [] | "every other header field the log prints that has no field here: its label and its value, as printed" |
+
+`ReadSample` (logs; `LogReading.samples` retyped to the subclass):
+
+| Field | Type | Description the model sees |
+|---|---|---|
+| `recovery_length` | float or null | "recovery printed as a LENGTH, a number under a heading such as REC (in) or RECOVERY (cm); null when it is printed as a percent or not at all" |
+| `recovery_length_unit` | str, default "" | "the unit of recovery_length as the column heads it: in, cm, ft or m" |
+| `recovery_percent` | (exists) | description gains: "only when the log prints a percent" |
+
+`ReadRow` (a lab summary table's row; `ReadTest.rows` retyped):
+
+| Field | Type | Description the model sees |
+|---|---|---|
+| `elevation_bottom` | `ReadQuantity` or null | "the bottom of the specimen's elevation range, when the table prints a range; null otherwise" |
+
+Where the builder puts them, with no record field added:
+
+- `project`, `project_number` and `client` go into `Investigation.fields`
+  under the keys the log scorer's `FIELD_MAP` reads (`project`,
+  `project_number`, `client`: the grid's names). `header_fields` go in under
+  the label as printed, or under the grid's name where planlens' header
+  vocabulary has one.
+- `recovery_length` goes into `Sample.recovery` (a `Quantity`), which the
+  record already has and the scorer already reads (`_recovery_numbers`).
+- `elevation_bottom` goes where the scorer looks for it. Today the lab floor
+  reads an elevation column into the row's depth slots (`lab_floor`'s column
+  vocabulary), so piece 4's builder checks R28_p159's answer sheet offline
+  and uses `SummaryRow.other` if the row has no field for it.
+
+`ReportRecord.project` is still filled from the narrative (`_project_from`),
+as today.
+
+### 8.6 The checks that stay
+
+Every check today's builders run stays. Under `on` they flag rather than drop,
+and they split into two kinds:
+
+- **Impossible** (no real sheet prints it: a percent outside 0 to 100, a
+  liquid limit below the plastic limit, a grading in which more passes the
+  smaller sieve, a depth past 300 m, a negative depth). The value stays out of
+  the typed slot, so nothing downstream (DIGGS, the reconciler, `si_numbers`)
+  takes it as a reading, and a QA entry of rank `open` carries the values as
+  read. The record's own validators (`ge=0, le=100` on a percent) would
+  refuse it in the slot anyway.
+- **Implausible** (a check on where it sits on the paper, or which number it
+  is). The value stays in its slot at a lowered confidence, with an
+  `out_of_range` or `note` entry.
+
+| Check | Today | Under `on` |
+|---|---|---|
+| log depth window (`_Builder._depth`) | outside the ruler's window: refused, and a layer or sample whose top is refused is dropped whole; no ruler on a boring: every depth refused | **implausible.** Kept at confidence 0.5, one `out_of_range` entry per value naming the window. No ruler on any page: every depth kept, and one note per log ("no depth scale found; the depths are as read, not checked against a ruler"). The window applies only to values placed against the ruler (layers, samples, drives). A water, casing or cave depth is checked against 0 to the total depth plus the window's slack. This is the class of RI-76 (5) on R15_p46: six water depths printed in a table on the sheet, refused for lying outside the ruler's window. It is also most of RI-79's misses on scans. |
+| log total depth negative | refused | impossible: as now |
+| lab depth outside 0 to 300 m | refused | impossible: out of the slot, `open` entry with the value |
+| lab percent outside 0 to 100 | refused | impossible: the same |
+| lab liquid limit below plastic limit | all three refused | impossible: all three out of their slots, one `open` entry with the three values |
+| lab grading that rises | the series refused | impossible: the series out, one `open` entry |
+| lab kind outside the vocabulary | `other` with a note | as now |
+| calc value printed on the pages (`_on_the_page`) | confidence lowered | moves into placement (§8.4 step 4), for every stage |
+| narrative quote check (`check_quotes`) | confidence lowered, listed | as now |
+| narrative caption counts (`count_captions`) | the code's count is stored over the model's answer | the model's answer is stored; a code count that differs is a QA note "read by the code, not by the model" |
+| narrative `structureCount` from `structureList` (OWN-08) | the list's length is stored | as now: it is the owner's rule over the model's own answer |
+| narrative builder refusals (outside an enumeration, a citation off the narrative's pages, a bearing value with no unit, past a word limit, two parts disagreeing) | refused or recorded | as now |
+| a page outside the item | value kept, page and box dropped | §8.4 step 1 |
+
+The flag mode is a builder parameter (`checks="refuse"` today, `"flag"` under
+`on`). RI-76's fix on today's path stays its own item, because it changes the
+default path and is measured on its own.
+
+### 8.7 Calling the model on Foundry
+
+The run package (INF-40) is the AI FDE running a lightweight Python transform
+that calls `score_on_cluster` with a chat model, read through
+`ChatModelEngine`. Claude reaches that code by one of two routes. What the
+repo shows about a PDF document block on each:
+
+- **The LLM proxy** (Claude's default route on Foundry;
+  `webapp.engine_config.foundry_chat_anthropic_class`, a `ChatAnthropic`
+  against `/language-model-service/api/proxy/anthropic`). It takes the
+  Anthropic Messages shape, and `langchain_anthropic` turns LangChain's
+  `file` block into an Anthropic `document` block, which is how the plain
+  baseline sent its PDF over the direct API. The AI FDE's measurements of the
+  proxy (2026-10-20) cover cache marks, `service_tier`, thinking and
+  `tool_choice`; no document block has been sent through it. **Unknown.**
+- **The `palantir_models` class** (`GEOTECH_FOUNDRY_CLAUDE_SDK=1`;
+  `webapp.palantir_sdk_engine.PalantirClaudeChatModel`). The request types
+  the repo uses carry text (`ClaudeChatTextContent`) and images
+  (`ClaudeChatImageContent`: base64 PNG, JPEG, GIF or WebP) and nothing else,
+  and `_claude_contents` **drops any other block without a word**. A PDF sent
+  this way would vanish and the model would answer from the instruction
+  alone. Whether the SDK has a document content type is not in the repo.
+  **Unknown, and unsafe as the code stands.**
+
+So the design covers both:
+
+1. **`ChatModelEngine` gains a PDF block** (the plain baseline's
+   `PdfChatEngine` folded in) and an `accepts_pdf` flag: true for
+   `ChatAnthropic` on the direct API; true for the proxy class only once the
+   probe passes (`GEOTECH_FOUNDRY_CLAUDE_PDF=1`, set by the brief after the
+   probe); false for `PalantirClaudeChatModel` and for the Prompter and OpenAI
+   classes.
+2. **The SDK class refuses a block it cannot send** instead of dropping it (a
+   `ValueError` naming the block). No caller sends one today, so nothing else
+   changes.
+3. **The pictures route** sends each page as a picture followed by the page's
+   text. The picture is rendered at the size the model reads without
+   shrinking it (the RI-73 describer's `doc.render(page, budget=...)`); the
+   text is what a PDF block would carry, from planlens' frame (the text layer,
+   or DI text on a scan), between markers, as the describer sends it. Both
+   Foundry routes take images. On a scan with DI text this route sends more
+   than the PDF route, since a scanned PDF page has no text layer; the wave
+   shows what that is worth.
+4. **A probe, two calls** (`report_ingest.model_first.probe_pdf_route`): a
+   two-page PDF built in memory by pymupdf, with a code word printed only in
+   page 2's text, sent once as a PDF and once as pictures. It reports which
+   route returned the word. It ships in the wheel and is the wave's first
+   cell.
+
+#### 8.7.1 For the INF-40 brief
+
+- **Run the probe first** (wave MF-0, two calls) on each Claude route the
+  workspace has. Set `GEOTECH_FOUNDRY_CLAUDE_PDF=1` only if the proxy
+  returned the code word from the PDF.
+- **Is Haiku 5.5 imported in the workspace's Models panel?** INF-40's notes
+  name only Opus 5.5 and Sonnet 5.5. If it is not, Sonnet describes the pages
+  (RI-73: 56 harmful pages against Haiku's 50, at ten times the price over the
+  API; on Foundry it is tokens).
+- **Bypass the response cache for every repeat arm.** Wave 1 served 12 repeat
+  calls from it in under half a second with identical answers, so those
+  repeats were not independent. Ask the AI FDE how before the wave.
+- **Pass `durable_dir`**, so the run files survive a restart (wave 1 passed
+  none).
+- **Size the describer's thread pool** for Foundry's tokens-per-minute limit,
+  which is what bites there.
+- **Name the models per stage** (`stage_models=`): lab on Opus 5.5; logs,
+  calc and narrative on Sonnet 5.5, plus the Opus arms of §8.8.
+
+### 8.8 Measurement plan
+
+The same answer sheets and the same scorers (`log_scoring.score_record`,
+`lab_scoring.score_record`, `calc_scoring.score_record`,
+`narrative_scoring.score_narrative`, with `rescore_saved` bringing both arms
+to the current scorers at $0 before any comparison), on Foundry with Opus 5.5
+and Sonnet 5.5, as a wave of the INF-40 run package. The local API credit is
+spent. Every run's full trace is reviewed (the owner's standing rule), and
+the review explains any item that moves.
+
+**Offline first, at no cost:** the grouping score (piece 3: answer-sheet
+items that fall whole inside one group, on stage b's saved descriptions and
+range labels) and the placement score (piece 5: the 90 % gate of §8.4, on the
+saved RI-86 answers). A stage that misses the placement gate gets its
+fallback before the wave.
+
+**Blind sets first:** logs blind (9 items), lab blind (15), narrative (8
+reports, 6 of them blind). Calc has no blind set (§7 item 4): it moves on its
+ten open items (decided, §8.10).
+
+**Wave MF-0, the probe:** two calls per route (§8.7.1).
+
+**Wave MF-1, items handed over** (as RI-86: the pages taken from the answer
+sheets). `score_on_cluster`'s reader stages gain `model_first=` and
+`stage_models=`.
+
+| Stage | Arms | Models |
+|---|---|---|
+| logs | today, `on` | Sonnet and Opus (the plain call was measured on Opus only) |
+| lab | today, `on` | Opus |
+| calc | today, `on` | Sonnet and Opus |
+| narrative | today, `on` | Sonnet |
+
+Today's arm is run again on Foundry's Claude in the same wave: every Foundry
+number so far is GPT-5.4, and RI-78's Claude numbers came over the direct
+API. If the probe passes on one route only, both page routes are run on lab
+blind (15 items) to see what the pictures route costs in accuracy.
+
+**Wave MF-2, whole reports:** the `ingest` stage with the switch on and off,
+on the stage-b reports that hold blind answer sheets, scored by
+`_score_ingest_record` (the reader scorers over the whole record) and by
+pages sent to the wrong reader against the hand labels. This is the
+measurement that includes finding the pages.
+
+**The acceptance rule.** The switch's default moves from `off` to `on` only
+if `on` is at least as accurate as today on each of blind logs, blind lab,
+calc (open) and narrative, in both waves:
+
+- per stage, values found (the scorer's total) are at least today's, on the
+  same models, the same day and the current scorers; for the narrative,
+  recall and precision are both at least today's;
+- where the two arms are within one run's noise (the lab repeat moved 14
+  values over 11 sheets), both arms run again on the items where they differ,
+  and the two runs together decide;
+- no item loses values without a reason in the trace review;
+- over whole reports, pages sent to the wrong reader are no more than today's,
+  and there is no new DIGGS round-trip or schema failure;
+- at least 90 % of values on pages with text are placed (§8.4).
+
+The same measurement settles `pdf` against `pictures`.
+
+**Cost per report.** An estimate for the plan's median report (§6: about 150
+pages, with 20 narrative, 30 log, 40 lab and 30 calc pages; taken as about 15
+logs, 25 lab sheets and 6 printouts), from RI-86's and RI-73's measured costs
+per item and per page at Claude API list prices. On Foundry the bill is the
+organisation's, and the number to watch is tokens.
+
+| Step | Model | Calls | Estimate |
+|---|---|---|---|
+| describe every page | Haiku | 150 | $0.37 |
+| label by sections | Opus | 1 | $0.30 |
+| triage, bound identity | as today | 1-3 | $0.05 |
+| logs | Sonnet | about 15 | $0.85 |
+| lab | Opus | 5-25 | $3.00 |
+| calc | Sonnet | 6-8 | $0.40 |
+| narrative | Sonnet | 1-2 | $0.30 |
+| **total** | | **about 190** | **about $5.30** |
+
+That is about 1 M input and 0.2 M output tokens. Today's pipeline on the same
+models comes to about $7.70 for the same report: its readers cost 1.3 to 2.6
+times the plain call per item (RI-86's and RI-78's runs), and the vision pass
+and the label review add about $0.50. Lab on Opus is more than half of the
+model-first cost. The wave's own token counts replace this table.
+
+### 8.9 Build pieces, in order
+
+Each piece is one builder and one reviewer. A model-facing piece changes what
+the model is asked; it sits behind the switch and is measured before the
+default moves. RI-73 (wip/ri73) merges first. After it, pieces 1, 2, 3 and 5
+can be built offline in any order; 4 and 6 come before 7; 8 and 9 come last,
+before the wave.
+
+1. **The PDF block, the SDK guard, the probe** (S). `report_ingest/engine.py`
+   (`ChatModelEngine`: a `pdf` block, `accepts_pdf`),
+   `webapp/palantir_sdk_engine.py` (`_claude_contents` refuses a block it
+   cannot send), `report_ingest/model_first.py` (new: `probe_pdf_route`),
+   `module_work/report_ingest_harness/run_plain_baseline.py` (uses the
+   engine's block); tests in `report_ingest/tests/test_chat_model_engine.py`
+   and `webapp/tests/test_palantir_claude_engine.py`. Not model-facing.
+2. **Sending the pages** (S). `report_ingest/model_first_pages.py` (new):
+   `cut_pdf` from the baseline, the API limits, the pictures route (the
+   picture and its text between markers), the sentence mapping PDF pages to
+   report pages. Tests on a PDF made inside the test. Not model-facing on its
+   own: it carries what piece 7 asks.
+3. **Grouping the pages for each call** (S-M).
+   `report_ingest/model_first_pages.py`: logs by identifier and `continues`,
+   lab windows cut at the descriptions' sheet starts, calc and narrative as
+   today. Scored offline on stage b's saved descriptions and range labels.
+   Tests on made-up descriptions. Not model-facing.
+4. **Schema additions and instructions** (M, **model-facing**).
+   `report_ingest/model_first.py`: the subclasses of §8.5, the per-stage
+   instructions moved from `run_plain_baseline.INSTRUCTIONS` with a version
+   string, and the builder's mapping of the new fields into the record.
+   Tests: today's reading classes give the same `strict_schema` output (a
+   snapshot); the subclasses carry the new fields.
+5. **Placement by text match** (M). `report_ingest/locate.py` (new: the page
+   check, the anchors, the words, the ruler row, the QA note) and its tests;
+   then the offline placement score on the saved RI-86 answers, per stage,
+   against the 90 % gate. Not model-facing.
+6. **Builders in flag mode** (M). `report_ingest/log_reader.py`,
+   `lab_reader.py`, `calc_reader.py` (a `checks` parameter, default `refuse`;
+   the PDF-local page fix; each lab test's pages narrowed) and
+   `narrative_reader.py` (the caption count as a QA note under `on`), with
+   their tests. Not model-facing.
+7. **The model-first readers** (M, **model-facing**).
+   `report_ingest/model_first.py`: one call per group, the cut-off halves,
+   build, place, the result dict in today's shape; the narrative's parts and
+   summary call. Tests with a scripted engine.
+8. **Graph wiring and the byte-identical test** (M).
+   `report_ingest/graph.py` (`model_first=`, `stage_engines=`,
+   `page_route=`; the vision voter and the review off under `on`; the floors
+   not run; the `items/mf-` keys; bound documents) and
+   `report_ingest/tests/test_graph*.py` (switch off: every request and output
+   file byte-identical to master's; no model-first module imported). Not
+   model-facing beyond pieces 4 and 7.
+9. **Measurement plumbing** (S). `report_ingest/cluster_scoring.py`
+   (`model_first=`, `stage_models=`, `page_route=` on the reader stages and
+   `ingest`; run files and `RESULTS.md` name the setting),
+   `module_work/report_ingest_harness/run_plain_baseline.py` (scores through
+   the same path), tests in `report_ingest/tests/test_cluster_scoring.py`. The
+   wave brief itself (INF-40, §8.7.1) follows.
+
+**Fallback, built only if piece 5 misses the 90 % gate in a stage** (S-M per
+stage): the floor as a source of boxes for that stage (§8.4).
+`report_ingest/floor.py` (`settle` gains a `place` policy, default today's)
+and that stage's `log_floor.merge_investigations`,
+`lab_floor.merge_lab_tests` or `calc_reader.merge_calculation`, with tests
+that the default reproduces today's merges on the saved Foundry and local
+runs. Not model-facing.
+
+### 8.10 Decisions, and what the simple path gives up
+
+Decided here (they were owner questions in the first draft):
+
+1. **Calc moves on the open set's numbers.** It has no blind answer sheets
+   (§7 item 4). Under `on` there is no calc prompt tuned on those ten items:
+   the instruction is RI-86's short general one and the answer schema is
+   today's, so the open-set bias is small. What bias remains (the kind
+   vocabulary, the schema and the scorer's RI-74 fixes were all written while
+   reading these items) applies to both arms alike.
+2. **No code-read value enters the record under `on`.** There is no fill
+   setting; the schema additions (§8.5) close the gaps the floor filled, and a
+   value only the code read is a QA note at most.
+3. **The range labels replace the vision voter and the label review** under
+   `on`.
+
+What the simple path gives up, as far as the numbers say:
+
+- **The floor's added log values.** On the pipeline's own model reading the
+  floor and merge add 9 open and 15 blind log values (287 to 296, 167 to 182),
+  and 10-16 per arm in CLAUDE LOCAL RUN 1; on lab they add 0 and on calc -1.
+  The plain arm is 7 blind and 17 open log values behind the pipeline. The
+  schema additions give a slot to about 21 blind values the plain schema
+  cannot hold (the project fields, 12 misses in every pipeline arm; recovery
+  lengths, 9 on R34_p49 and R21_p96). Whether the model fills them is what wave MF-1
+  measures. A value the model leaves out is now invisible in production: there is no floor to
+  catch it and no note to say so.
+- **The second voter's flags.** Today every split between the floor and the
+  model is a `disagreement` entry, the trigger for a second look (calc kept
+  27 and 36 of them per arm in Foundry run 4, after the place rule). Under
+  `on` there are none; the per-value check left is "not found printed on the
+  cited page", which catches an invented number but not a printed number put
+  in the wrong slot.
+- **Boxes are unmeasured** until piece 5: today 557 of 619 log values (90 %)
+  and 71 of 72 lab tests are placed. A layer boundary the log draws but does
+  not print gets its object's box, not one of its own. A scan with no DI text
+  gets its pages and no boxes, as today's floor would.
+- **The narrative's caption counts** stop overriding the model's answer;
+  unmeasured either way.
+- **Grouping without planlens' item key and the lab floor's specimen starts**
+  rests on the descriptions; the offline score (piece 3) says whether either
+  has to come back.
+
+Other risks: small samples (9 blind logs, 15 blind lab sheets, 8 narratives,
+10 open calc items, one run per arm, answer sheets made by Claude sessions,
+RI-72); the pictures route is unmeasured (the plain result is the PDF
+route's); a dense lab window may stop at the output cap (the halves rule
+covers it at one more call).
