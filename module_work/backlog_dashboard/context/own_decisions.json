@@ -2215,5 +2215,32 @@
       "BACKLOG.md OWN-95",
       "BACKLOG.md RI-82"
     ]
+  },
+  "OWN-97": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Where should your report question list live, so the app reads it on every run and you can change a question without a release?",
+    "why": "The list names your organisation's posts and standards, so it can't go in the public code. If the app reads it from a file when it runs, you edit a question in Excel and the next run uses it. A release takes a day or two to reach you; this takes none.",
+    "background": "Report ingest runs on Foundry. The app needs one private place to read two files: the question list (your .xlsx, as is) and the list of posts for the post-name question. My offline tests use a private copy on the laptop.",
+    "options": [
+      {
+        "label": "Foundry project folder",
+        "effect": "You upload the two files to the Foundry project beside the reports; each run reads them there. To change a question, you replace the file."
+      },
+      {
+        "label": "Somewhere else",
+        "effect": "Say where."
+      }
+    ],
+    "recommendation": "Foundry project folder: it's where the runs happen, with nothing else to connect.",
+    "if_no_answer": "I build the reading of the list against the private laptop copy; the Foundry location is wired in when you answer.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "RI-90"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-97, RI-90"
+    ]
   }
 }
