@@ -1868,7 +1868,11 @@ def _carry_unresolved(qa: List[QAEntry],
     for row in rows or ():
         pages = []
         page = row.get("page")
-        if page is not None:
+        if row.get("pages"):
+            # A group of pages no answer came back for (model-first ingest's
+            # ``skipped`` rows): every page of it, not only the first.
+            pages = sorted({int(p) for p in row["pages"]})[:200]
+        elif page is not None:
             pages = [int(page)]
         what = str(row.get("what") or row.get("field") or "reader")
         why = str(row.get("why") or row.get("detail") or "")

@@ -75,6 +75,24 @@ it, what it was given and what it concluded -- onto
 WHAT IS STILL NOT READ. ``figures``, ``photos``, ``plan``, ``profile`` and
 ``front_matter`` items: the narrative reader is shown those pages, and
 nothing reads them as items of their own.
+
+MODEL-FIRST INGEST IS A SWITCH, OFF BY DEFAULT (BACKLOG RI-87,
+``module_work/REPORT_INGEST_PLAN.md`` section 8).
+``GEOTECH_INGEST_MODEL_FIRST`` (or ``ingest_report(model_first=...)``) is
+``off``, and the graph is the one described above, byte for byte; no
+model-first module is imported. ``on``
+reads each section's pages in one call and makes the model's answer the
+record: every page is described and the report labelled by sections (the
+range voter, RI-73), and those labels replace the vision voter and the label
+review, which do not run; the logs, laboratory sheets, printouts and
+narrative are grouped from the labels and the descriptions and read by
+:mod:`report_ingest.model_first_read`, with no floor; each value is placed
+on its page by the words printed there (:mod:`report_ingest.locate`). A
+bound document labels its own pages by sections and reads them in its own
+window, and this report's narrative is given none of them. Cone soundings
+and dynamic probes keep the sounding reader. Each stage's result is saved
+as ``items/mf-<key>.json``; one no answer came back for is not saved, so a
+resumed run asks again.
 """
 
 from __future__ import annotations
@@ -99,7 +117,8 @@ from report_ingest.model import (
 
 __all__ = [
     "ingest_report", "Budgets", "output_paths", "ITEM_READERS",
-    "OUTPUT_NAMES", "REVIEW_MODES", "BOUND_DIR",
+    "OUTPUT_NAMES", "REVIEW_MODES", "BOUND_DIR", "MODEL_FIRST_ENV",
+    "model_first_setting",
 ]
 
 #: Where a bound document's own folder goes, under the parent's ``out_dir``.
@@ -180,6 +199,30 @@ OUTPUT_NAMES: Tuple[str, ...] = (
     "report.record.json", "report.summary.md", "report.page.md",
     "report.diggs.xml", "reports.db",
 )
+
+#: The model-first switch (BACKLOG RI-87): ``off``, the default (unset or
+#: ``0``), or ``on`` (``1``). See :func:`model_first_setting`.
+MODEL_FIRST_ENV = "GEOTECH_INGEST_MODEL_FIRST"
+
+#: The readers model-first ingest replaces (``ITEM_READERS``' names), and
+#: the stage of :mod:`report_ingest.model_first_read` each becomes.
+_MODEL_FIRST_STAGES: Dict[str, str] = {
+    "log": "logs", "lab": "lab", "calc": "calc", "narrative": "narrative"}
+
+
+def model_first_setting(value: Any = None) -> str:
+    """``off`` or ``on``: ``value``, or :data:`MODEL_FIRST_ENV` when
+    ``value`` is None. Unset or empty is ``off``; a typo is refused."""
+    if value is None:
+        value = os.environ.get(MODEL_FIRST_ENV)
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    text = str(value or "").strip().lower()
+    if text in ("", "0", "off", "false", "no"):
+        return "off"
+    if text in ("1", "on", "true", "yes"):
+        return "on"
+    raise ValueError(f"{MODEL_FIRST_ENV}={value!r}: use off or on")
 
 
 @dataclass
@@ -472,6 +515,9 @@ class _Labelling:
     describe_cost: Dict[str, Any] = field(default_factory=dict)
     range_cost: Dict[str, Any] = field(default_factory=dict)
     range_paid: bool = False
+    #: Model-first ingest (BACKLOG RI-87): the range labels replace the
+    #: vision voter and the label review, which do not run.
+    model_first: bool = False
 
     def resolve(self) -> Dict[str, Any]:
         """The trust table, with the fallback the ``trust`` policy needs."""
@@ -484,6 +530,49 @@ class _Labelling:
                 "was given, so this run falls back to 'structural'.")
             print(f"  {self.note}")
         return table
+
+
+@dataclass
+class _ModelFirst:
+    """How a model-first run reads (BACKLOG RI-87): each stage's engine and
+    page route, the page descriptions its groups are drawn from, the report
+    to cut each call's PDF from, and the placement."""
+
+    #: ``stage -> engine`` for ``logs``, ``lab``, ``calc`` and
+    #: ``narrative``.
+    engines: Dict[str, Any]
+    #: ``stage -> pdf | pictures``: the route each stage's engine takes.
+    routes: Dict[str, str]
+    #: The route as it was asked for: ``auto``, ``pdf`` or ``pictures``.
+    asked: str = "auto"
+    #: A path or the report's bytes; None takes the open document's bytes,
+    #: once, when a stage first sends a PDF.
+    pdf: Any = None
+    descriptions: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    #: ``place(stage, record, pages, doc, rulers=None)``
+    #: (:func:`_placer`).
+    place: Any = None
+
+    def source(self, doc: Any) -> Any:
+        if self.pdf is None:
+            self.pdf = doc.tobytes()
+        return self.pdf
+
+
+@dataclass
+class _Unit:
+    """What one model-first result read -- a log, a laboratory window, a
+    printout, the narrative -- in the shape the graph's checks read off a
+    planlens work item (``kind``, ``id``, ``pages``). ``shown``: every page
+    its calls carry, where that is more than ``pages`` (the narrative's
+    front pages, shown whatever their label)."""
+
+    kind: str
+    id: str
+    pages: List[int]
+    title: str = ""
+    evidence: Dict[str, Any] = field(default_factory=dict)
+    shown: List[int] = field(default_factory=list)
 
 
 def ingest_report(source: Any, engine: Any, *,
@@ -508,7 +597,10 @@ def ingest_report(source: Any, engine: Any, *,
                   narrative_skips_bound: bool = False,
                   range_labels: Optional[str] = None,
                   describe_engine: Any = None,
-                  range_engine: Any = None) -> ReportRecord:
+                  range_engine: Any = None,
+                  model_first: Any = None,
+                  stage_engines: Any = None,
+                  page_route: Optional[str] = None) -> ReportRecord:
     """Read one report end to end and write its record and its exports.
 
     ``source`` is a PDF path, its bytes, or an OPEN planlens document (the
@@ -590,6 +682,23 @@ def ingest_report(source: Any, engine: Any, *,
         ``Budgets.range_describe_calls`` caps the describer's calls.
         ``label_policy="rules"`` does not run it. See
         :mod:`report_ingest.range_labels`.
+    model_first, stage_engines, page_route
+        Model-first ingest (BACKLOG RI-87), OFF by default: ``model_first``
+        is ``off`` or ``on``, or ``None`` to follow
+        ``GEOTECH_INGEST_MODEL_FIRST`` (:func:`model_first_setting`). On,
+        the range voter runs (``plain`` unless ``range_labels`` names an
+        arm), the vision voter and the label review do not, and the logs,
+        laboratory sheets, printouts and narrative are read model first.
+        ``stage_engines`` gives each stage's engine: a mapping from
+        ``logs``, ``lab``, ``calc`` and ``narrative`` to an engine (a stage
+        not in it reads on ``engine``), or a callable that takes a model
+        name and returns an engine, called with each stage's model in
+        :data:`report_ingest.model_first_read.STAGE_MODELS`; ``None`` reads
+        every stage on ``engine``. ``page_route`` says how the pages are
+        sent: ``auto``, ``pdf`` or ``pictures``, or ``None`` to follow
+        ``GEOTECH_INGEST_MODEL_FIRST_PAGES``. ``label_policy="rules"`` is
+        refused: the groups are drawn from the range labels. Ignored when
+        off.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost.
@@ -606,6 +715,10 @@ def ingest_report(source: Any, engine: Any, *,
     if counts_from_logs not in COUNT_MODES:
         raise ValueError(f"unknown counts_from_logs {counts_from_logs!r}; "
                          f"the modes are {list(COUNT_MODES)}")
+    first = model_first_setting(model_first) == "on"
+    if first and label_policy == "rules":
+        raise ValueError("model-first ingest draws its groups from the range "
+                         "labels; label_policy='rules' takes the rules alone")
     from report_ingest.range_labels import range_arm_of, range_labels_arm
 
     labelling = _Labelling(
@@ -630,13 +743,18 @@ def ingest_report(source: Any, engine: Any, *,
     qa: List[QAEntry] = []
     unresolved: List[Dict[str, Any]] = []
     children: List[Tuple[ReportRecord, str]] = []
+    first_run = (_model_first_run(source, engine, tally, labelling,
+                                  stage_engines, page_route, questions, qa)
+                 if first else None)
 
     doc = _open(source, di_result, report_id)
     try:
+        if first_run is not None:
+            first_run.place = _placer(doc)
         record = _run(doc, engine, budgets, out, resume, questions or [],
                       report_id, spend, qa, unresolved, di_result, labelling,
                       children, ingest_bound, counts_from_logs,
-                      narrative_skips_bound)
+                      narrative_skips_bound, first_run)
     finally:
         if not _is_document(source):
             doc.close()
@@ -684,7 +802,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
          di_result: Any, labelling: "_Labelling",
          children: List[Tuple[ReportRecord, str]],
          ingest_bound: bool = True, counts_from_logs: str = "off",
-         narrative_skips_bound: bool = False) -> ReportRecord:
+         narrative_skips_bound: bool = False,
+         model_first: Optional[_ModelFirst] = None) -> ReportRecord:
     """The loop itself, with the document open.
 
     ``children`` is filled with ``(record, folder)`` for every report bound
@@ -783,6 +902,10 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     labels = {c.page: c.label for c in choices}
     split = split_pages(choices)
     confidence = {c.page: c.confidence for c in choices}
+    if model_first is not None:
+        from report_ingest.range_labels import load_descriptions
+        model_first.descriptions = load_descriptions(
+            os.path.join(out, "descriptions"))
     # The review checks the labels the record CURRENTLY has, which after the
     # vote are the vote's and not the rules'. So the roles it is handed --
     # its ledger, its weak-spot list and the labels it validates a change
@@ -819,21 +942,38 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     # They are HANDED to the bound document's pass, which keeps these
     # labels (:func:`_one_bound`), and what it does not read is said below.
     bound = {int(page) for row in ranges for page in row.pages}
-    items, handed = _outside_bound(items, bound, qa, narrative_skips_bound)
+    # Model first, the narrative is given none of a bound document's pages
+    # (``narrative_skips_bound`` always on): its groups are drawn from the
+    # labels, and a range triage drew round pages labelled narrative would
+    # otherwise be read as this report's.
+    skips_bound = narrative_skips_bound or model_first is not None
+    items, handed = _outside_bound(items, bound, qa, skips_bound)
     every = list(items)
     if budgets.max_items:
         items = items[:int(budgets.max_items)]
     own = {page: label for page, label in labels.items()
            if page not in bound}
     window = ([page for page in range(doc.n_pages) if page not in bound]
-              if bound and narrative_skips_bound else None)
+              if bound and skips_bound else None)
 
     # -- 1-2. the readers ---------------------------------------------------
-    read = _read_items(doc, engine, budgets, out, resume, questions,
-                       report_id, items, own if narrative_skips_bound
-                       else labels, outline, record, spend, qa, unresolved,
-                       workflow, no_text, di_pages, told, bound, window,
-                       narrative_key="-skips-bound" if window else "")
+    if model_first is None:
+        read = _read_items(doc, engine, budgets, out, resume, questions,
+                           report_id, items, own if narrative_skips_bound
+                           else labels, outline, record, spend, qa,
+                           unresolved, workflow, no_text, di_pages, told,
+                           bound, window,
+                           narrative_key="-skips-bound" if window else "")
+    else:
+        mine, every, items, rest = _model_first_plan(
+            doc, model_first, own, window, every, budgets.max_items)
+        read = _read_model_first(
+            doc, model_first, out, resume, report_id, own, outline, record,
+            spend, qa, unresolved, workflow, mine, window)
+        read += _read_items(doc, engine, budgets, out, resume, questions,
+                            report_id, rest, own, outline, record, spend, qa,
+                            unresolved, workflow, no_text, di_pages, told,
+                            bound, window)
 
     # -- 3. the reconciler --------------------------------------------------
     # Over this report's own pages: the bound documents' are checked in
@@ -850,7 +990,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         reads = _read_bound(doc, engine, budgets, out, resume, report_id,
                             facts, vision, templates, labelling, ranges,
                             told, record, children, spend, qa, no_text,
-                            di_pages, counts_from_logs)
+                            di_pages, counts_from_logs, model_first)
         _handed_over(every, handed, ranges, reads, qa)
     return record
 
@@ -1042,8 +1182,10 @@ def _range_labels(doc: Any, engine: Any, out: str, resume: bool,
 def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
                    resume: bool, labelling: "_Labelling", spend: _Spend,
                    qa: List[QAEntry]) -> Dict[int, Tuple[str, float]]:
-    """``page -> (label, confidence)`` from one pass over the pictures."""
-    if labelling.policy == "rules":
+    """``page -> (label, confidence)`` from one pass over the pictures.
+    None under ``rules``, and none model first: the range labels replace
+    it."""
+    if labelling.policy == "rules" or labelling.model_first:
         return {}
     path = os.path.join(out, "vision.json")
     blob = _cached(path, resume)
@@ -1199,8 +1341,11 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             continue
         qa.append(QAEntry(
             kind="label_disagreement", where=f"labels.page{choice.page}",
-            detail=(f"the page labellers did not agree and the review did "
-                    f"not settle it; the record calls page {choice.page} "
+            detail=(("the page labellers did not agree, and the label review "
+                     "does not run model first" if labelling.model_first else
+                     "the page labellers did not agree and the review did "
+                     "not settle it")
+                    + f"; the record calls page {choice.page} "
                     f"'{choice.label}' under the '{choice.policy}' policy"),
             values=[_voter_line(v) for v in choice.voters],
             pages=[choice.page]))
@@ -1295,8 +1440,10 @@ def _labels_blob(choices: Sequence[PageChoice], split: Sequence[int],
         "policy": labelling.policy,
         "review_mode": labelling.review_mode,
         "vision_mode": (labelling.vision_mode
-                        if labelling.policy != "rules" else ""),
+                        if labelling.policy != "rules"
+                        and not labelling.model_first else ""),
         "note": labelling.note,
+        **({"model_first": "on"} if labelling.model_first else {}),
         **({"range_arm": labelling.range_arm} if labelling.range_arm
            else {}),
         "n_pages": int(n_pages),
@@ -1506,7 +1653,8 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
                 children: List[Tuple[ReportRecord, str]], spend: _Spend,
                 qa: List[QAEntry], no_text: Sequence[int],
                 di_pages: Sequence[int],
-                counts_from_logs: str = "off"
+                counts_from_logs: str = "off",
+                model_first: Optional[_ModelFirst] = None
                 ) -> Dict[str, Optional[Set[Tuple[int, str]]]]:
     """Each bound document round this same loop, into its own record.
 
@@ -1536,7 +1684,8 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
             child, done = _one_bound(doc, engine, budgets, folder, resume,
                                      report_id, facts, vision, templates,
                                      labelling, row, identity, record, spend,
-                                     no_text, di_pages, counts_from_logs)
+                                     no_text, di_pages, counts_from_logs,
+                                     model_first)
         except Exception as exc:              # one child, not the report
             spend.settle(mark)
             entry.read = False
@@ -1550,8 +1699,11 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
                 pages=[row.first_page, row.last_page]))
             record.bound_documents.append(entry)
             continue
+        # A model-first narrative read every page it was shown.
         reads[row.bound_id] = {(int(page), ITEM_READERS.get(item.kind, ""))
-                               for item in done for page in item.pages}
+                               for item in done
+                               for page in (getattr(item, "shown", None)
+                                            or item.pages)}
         entry.report_id = child.document.report_id
         entry.counts = child.counts()
         record.bound_documents.append(entry)
@@ -1582,7 +1734,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                row: Any, identity: Dict[str, Any], parent: ReportRecord,
                spend: _Spend, no_text: Sequence[int],
                di_pages: Sequence[int],
-               counts_from_logs: str = "off"
+               counts_from_logs: str = "off",
+               model_first: Optional[_ModelFirst] = None
                ) -> Tuple[ReportRecord, List[Any]]:
     """One bound document as its own record, on the parent's page numbers.
 
@@ -1608,6 +1761,12 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     Everything the child stores is on the PARENT file's page numbers. There
     is one PDF. Returns the record and the work items its readers read to
     the end.
+
+    MODEL FIRST (BACKLOG RI-87), the child labels its pages by sections in a
+    call of its own, over the descriptions its pages already have
+    (:func:`_bound_range_labels`); that label settles each page it gives,
+    and the rules re-run decide the rest. Its pages are then read model
+    first in its own window, as the parent's are.
     """
     import dataclasses
 
@@ -1624,6 +1783,21 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     inner_roles = assign(inner)
     rules = {window[r.page]: (r.role, float(r.confidence))
              for r in inner_roles}
+
+    def lines_of(index: int) -> List[str]:
+        return [line.text for line in doc.page(index, tables=False).lines
+                if (line.text or "").strip()]
+
+    inner_spend = _Spend(spend.tally)
+    qa_labels: List[QAEntry] = []
+    ranged: Dict[int, str] = {}
+    if model_first is not None:
+        ranged = _bound_range_labels(
+            engine, folder, resume, window, rules,
+            outline_from([f for f in facts if f.page in at],
+                         [dataclasses.replace(r, page=window[r.page])
+                          for r in inner_roles], lines_of),
+            labelling, model_first.descriptions, inner_spend, qa_labels)
 
     table = labelling.resolve()
     choices = []
@@ -1645,7 +1819,9 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
             Voter("vision", seen[0], seen[1]) if seen else None,
             Voter("template", "", match.confidence, match.family)
             if match else None,
-            policy=labelling.policy, trust_table=table, page=page))
+            policy=labelling.policy, trust_table=table, page=page,
+            ranges=Voter("ranges", ranged[page]) if page in ranged
+            else None))
     held = {pl.page: pl.label for pl in parent.page_labels
             if pl.page in at and ITEM_READERS.get(pl.label)
             not in (None, "narrative")}
@@ -1678,10 +1854,6 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
         # smoke run over a big report must not turn into a full run of the
         # report bound inside it.
         items = items[:int(budgets.max_items)]
-
-    def lines_of(index: int) -> List[str]:
-        return [line.text for line in doc.page(index, tables=False).lines
-                if (line.text or "").strip()]
 
     outline = outline_from(
         [f for f in facts if f.page in at],
@@ -1718,11 +1890,15 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
         detail=(f"this record is a report bound inside another one, at pages "
                 f"{row.spec} of that file; every page number in it is a page "
                 f"of that same file. The page labels are the vote's "
-                f"(planlens' rules re-run over these pages alone, with the "
-                f"whole file's vision pass reused), except that a page the "
-                f"whole file's pass gave a reader keeps that label; the "
-                f"label review does not run over a bound document"),
-        pages=[row.first_page, row.last_page])]
+                + ("(its own pages labelled by sections, and planlens' rules "
+                   "re-run over these pages alone where the sections left a "
+                   "page unsettled)" if model_first is not None else
+                   "(planlens' rules re-run over these pages alone, with the "
+                   "whole file's vision pass reused)")
+                + ", except that a page the whole file's pass gave a reader "
+                  "keeps that label; the label review does not run over a "
+                  "bound document"),
+        pages=[row.first_page, row.last_page])] + qa_labels
     for name, value in (("title", identity.get("title")),
                         ("firm", identity.get("firm")),
                         ("date", identity.get("date"))):
@@ -1756,19 +1932,33 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
             pages=[choice.page]))
 
     unresolved: List[Dict[str, Any]] = []
-    inner_spend = _Spend(spend.tally)
     started = time.time()
     # A report bound inside a report bound inside a report is where this
     # stops: the child's own ``appended_report`` pages are listed in its QA
     # and not read again. One level is what the corpus has and what a record
     # of a record of a record would be worth.
-    done = _read_items(doc, engine, budgets, folder, resume, (),
-                       child.document.report_id, items, labels, outline,
-                       child, inner_spend, qa, unresolved,
-                       child.document.workflow,
-                       [p for p in no_text if p in at],
-                       [p for p in di_pages if p in at],
-                       window=window)
+    if model_first is None:
+        done = _read_items(doc, engine, budgets, folder, resume, (),
+                           child.document.report_id, items, labels, outline,
+                           child, inner_spend, qa, unresolved,
+                           child.document.workflow,
+                           [p for p in no_text if p in at],
+                           [p for p in di_pages if p in at],
+                           window=window)
+    else:
+        mine, every, items, rest = _model_first_plan(
+            doc, model_first, labels, window, every, budgets.max_items)
+        done = _read_model_first(
+            doc, model_first, folder, resume, child.document.report_id,
+            labels, outline, child, inner_spend, qa, unresolved,
+            child.document.workflow, mine, window)
+        done += _read_items(doc, engine, budgets, folder, resume, (),
+                            child.document.report_id, rest, labels, outline,
+                            child, inner_spend, qa, unresolved,
+                            child.document.workflow,
+                            [p for p in no_text if p in at],
+                            [p for p in di_pages if p in at],
+                            window=window)
     _save(os.path.join(folder, "labels.json"),
           _labels_blob(choices, split, {},
                        dataclasses.replace(labelling, review_mode="none"),
@@ -2269,3 +2459,566 @@ def _read_sounding(doc, pages, engine, budgets, item, report_id, kind
                            budget=budgets.sounding,
                            item_title=item.title or "", report_id=report_id)
     return result.to_dict()
+
+
+# ---------------------------------------------------------------------------
+# model-first ingest (BACKLOG RI-87), only under GEOTECH_INGEST_MODEL_FIRST=on
+# ---------------------------------------------------------------------------
+
+def _model_first_run(source: Any, engine: Any, tally: _Tally,
+                     labelling: "_Labelling", stage_engines: Any,
+                     page_route: Optional[str],
+                     questions: Optional[Sequence[str]],
+                     qa: List[QAEntry]) -> _ModelFirst:
+    """The run's model-first settings, and the one QA note that names them.
+
+    The range voter is switched on (``plain`` unless an arm was named), and
+    the vision voter and the label review off. Each stage's engine is the
+    one ``stage_engines`` gives (:func:`ingest_report`), counted on the
+    run's tally; its route is resolved here, so a ``pdf`` route an engine
+    cannot send is refused before anything is read."""
+    from report_ingest.model_first_pages import page_route as route_setting
+    from report_ingest.model_first_pages import resolve_route
+    from report_ingest.model_first_read import STAGE_MODELS
+
+    asked = route_setting(page_route)
+    labelling.model_first = True
+    labelling.review_mode = "none"
+    labelling.range_arm = labelling.range_arm or "plain"
+    engines: Dict[str, Any] = {}
+    routes: Dict[str, str] = {}
+    for stage, model in STAGE_MODELS.items():
+        if callable(stage_engines):
+            given = stage_engines(model)
+        else:
+            given = (stage_engines or {}).get(stage)
+        engines[stage] = tally.wrap(given) if given is not None else engine
+        routes[stage] = resolve_route(
+            asked, bool(getattr(engines[stage], "accepts_pdf", False)))
+    if _is_document(source):
+        pdf = None
+    elif isinstance(source, (bytes, bytearray)):
+        pdf = bytes(source)
+    else:
+        pdf = str(source)
+    qa.append(QAEntry(
+        kind="note", where="model_first",
+        detail=(f"read model first ({MODEL_FIRST_ENV}=on): each group of "
+                f"pages was read in one call and the model's answer is the "
+                f"record; the pages were labelled by sections (the range "
+                f"voter, arm {labelling.range_arm!r}), and the vision voter, "
+                f"the label review and the floors did not run"
+                + ("; the caller's own questions were not asked: the "
+                   "narrative's call carries its stage's instruction only"
+                   if questions else "")),
+        values=[f"{stage}: {getattr(engines[stage], 'name', '') or 'engine'}"
+                f", pages as {routes[stage]}" for stage in STAGE_MODELS]))
+    return _ModelFirst(engines=engines, routes=routes, asked=asked, pdf=pdf)
+
+
+def _placer(doc: Any) -> Any:
+    """``place(stage, record, pages, doc, rulers=None)`` for the readers:
+    each answer's record placed on its pages by the words printed there
+    (:mod:`report_ingest.locate`), over one reading of each page's words.
+
+    The record a reader hands it is its builder's, whose pages are already
+    the report's: the builder read the answer's cited pages once, as pages
+    or as positions in the call (:func:`report_ingest.checks.pdf_local`).
+    So locate is told to take them as they stand, rather than decide again
+    from the cites the record kept, which could decide otherwise, or turn a
+    position twice. A laboratory test placed on another page of its call
+    takes that page as its ``pages``. Returns what locate found
+    (``Placements.to_dict()``)."""
+    from report_ingest import locate
+    from report_ingest.checks import PageNumbers
+
+    words = locate.PageWords(doc)
+
+    def place(stage: str, record: Any, pages: Sequence[int], _doc: Any,
+              rulers: Any = None) -> Dict[str, Any]:
+        as_built = PageNumbers(tuple(int(p) for p in pages))
+        if stage == "logs":
+            found = locate.place_investigation(words, record, pages,
+                                               rulers=rulers,
+                                               numbers=as_built)
+        elif stage == "lab":
+            found = locate.place_lab_tests(words, record, pages,
+                                           numbers=as_built)
+            # One placement per test, in order: a test found on another
+            # page of its call is on that page.
+            for test, placed in zip(record, found.items):
+                if placed.status == locate.MOVED:
+                    test.pages = [int(placed.page)]
+        elif stage == "calc":
+            found = locate.place_calculation(words, record, pages,
+                                             numbers=as_built)
+        else:
+            found = locate.place_citations(words, record, pages)
+        return found.to_dict()
+
+    return place
+
+
+def _model_first_units(doc: Any, model_first: _ModelFirst,
+                       labels: Dict[int, str],
+                       window: Optional[Sequence[int]] = None
+                       ) -> List[Tuple[_Unit, List[Any]]]:
+    """The logs, laboratory windows, printouts and narrative to read model
+    first, each with the groups of pages its calls carry, in page order.
+
+    The pages are grouped from the labels and the page descriptions
+    (:func:`report_ingest.model_first_pages.group_pages`, the narrative's
+    parts cut to its route's page limit and its text budget), within
+    ``window`` when one is given. A unit's pages are every page its calls
+    carry, but the narrative's: its pages are those labelled its own
+    (cover, letter, contents, narrative and figures), and the front pages
+    it is also shown, whatever their label, are its ``shown``."""
+    from report_ingest.model_first_pages import (FIGURE_LABELS,
+                                                 NARRATIVE_LABELS,
+                                                 group_pages)
+    from report_ingest.narrative_reader import (CHARS_PER_TOKEN,
+                                                INPUT_TOKEN_BUDGET)
+
+    inside = None if window is None else {int(p) for p in window}
+    page_chars = {int(s.page): int(s.n_text_chars) for s in doc.page_map()
+                  if inside is None or int(s.page) in inside}
+    groups = group_pages(labels, model_first.descriptions,
+                         n_pages=doc.n_pages, doc=doc,
+                         route=model_first.routes["narrative"],
+                         window=window, page_chars=page_chars,
+                         max_chars=INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN)
+    units: List[Tuple[_Unit, List[Any]]] = []
+    if groups["narrative"]:
+        shown = _group_pages(groups["narrative"])
+        own = [p for p in shown
+               if labels.get(p) in NARRATIVE_LABELS + FIGURE_LABELS]
+        units.append((_Unit("narrative", "narrative", own or shown,
+                            shown=shown), groups["narrative"]))
+    logs: Dict[str, List[Any]] = {}
+    for group in groups["logs"]:
+        logs.setdefault(group.key, []).append(group)
+    for key, parts in logs.items():
+        pages = _group_pages(parts)
+        units.append((_Unit(labels.get(pages[0], "boring_log"), key, pages),
+                      parts))
+    for group in groups["lab"]:
+        key = group.key + (f"-{group.part[0]}" if group.part else "")
+        units.append((_Unit("lab_test", key, _group_pages([group])),
+                      [group]))
+    for group in groups["calc"]:
+        units.append((_Unit("calculation", group.key,
+                            _group_pages([group])), [group]))
+    units.sort(key=lambda u: min(u[0].pages))
+    return units
+
+
+def _group_pages(parts: Sequence[Any]) -> List[int]:
+    """Every page the groups carry, in order."""
+    return sorted({int(p) for g in parts for p in g.pages})
+
+
+def _model_first_plan(doc: Any, model_first: _ModelFirst,
+                      labels: Dict[int, str],
+                      window: Optional[Sequence[int]], every: Sequence[Any],
+                      max_items: Optional[int]
+                      ) -> Tuple[List[Tuple[_Unit, List[Any]]], List[Any],
+                                 List[Any], List[Any]]:
+    """What a model-first pass reads: the model-first units
+    (:func:`_model_first_units`) in place of the work items of their
+    stages, beside today's items of the other readers (the soundings), and
+    the item ceiling applied once over all of them in page order. The
+    items no reader reads (figures, the ``appended_report`` run) stay
+    listed and do not count against it.
+
+    Returns the units to read, every item, the items given a reader (what
+    the reconciler counts as read) and today's items to read."""
+    def first(item: Any) -> int:
+        return min(item.pages) if item.pages else 0
+
+    units = _model_first_units(doc, model_first, labels, window)
+    soundings = [item for item in every if ITEM_READERS.get(item.kind)
+                 not in (None, *_MODEL_FIRST_STAGES)]
+    listed = [item for item in every if ITEM_READERS.get(item.kind) is None]
+    combined = sorted([unit for unit, _parts in units] + soundings,
+                      key=first)
+    read = combined[:int(max_items)] if max_items else combined
+    kept = {id(item) for item in read}
+    return ([(unit, parts) for unit, parts in units if id(unit) in kept],
+            sorted(combined + listed, key=first),
+            sorted(read + listed, key=first),
+            [item for item in soundings if id(item) in kept])
+
+
+def _still_current(blob: Dict[str, Any], parts: Sequence[Any],
+                   route: str) -> bool:
+    """Is a saved model-first result one this run would ask for: the same
+    pages, the same instruction and schema (``READ_PROMPT_VERSION``) and
+    the same route? Any other is read again."""
+    from report_ingest.model_first import READ_PROMPT_VERSION
+
+    return (sorted(int(p) for p in blob.get("pages") or [])
+            == _group_pages(parts)
+            and blob.get("prompt_version") == READ_PROMPT_VERSION
+            and blob.get("route") == route)
+
+
+def _part_skipped(blob: Dict[str, Any]) -> bool:
+    """Did part of a result's pages get no answer (a ``skipped`` row,
+    :func:`report_ingest.model_first_read._skipped`)?"""
+    return any(row.get("refused_by") == "budget" and row.get("pages")
+               for row in blob.get("unresolved") or [])
+
+
+def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
+                      resume: bool, report_id: str, labels: Dict[int, str],
+                      outline: Any, record: ReportRecord, spend: _Spend,
+                      qa: List[QAEntry], unresolved: List[Dict[str, Any]],
+                      workflow: str,
+                      units: Sequence[Tuple[_Unit, List[Any]]],
+                      window: Optional[Sequence[int]] = None) -> List[_Unit]:
+    """The logs, laboratory sheets, printouts and narrative, model first:
+    each of ``units`` (:func:`_model_first_plan`) read in its own calls and
+    saved as ``items/mf-<key>.json``.
+
+    A saved result is used again only while it is still current
+    (:func:`_still_current`). A result no answer came back for (``error``
+    set) puts its ``skipped`` entries, with all their pages, on the
+    record's list and nothing else; one with part of its pages unanswered
+    is used, its entries carried, but neither is saved, so a resumed run
+    asks for the whole group again. What placement could not place is one
+    QA note per answer. One hole's logs read in more than one place are
+    joined (:func:`_join_by_hole`). On an ``appendix_only`` file the
+    narrative is not read, as today.
+
+    Returns the units read to the end.
+    """
+    inside = None if window is None else {int(p) for p in window}
+    body = [page for page, role in sorted(labels.items())
+            if role in ("narrative", "figure", "plan", "profile", "toc")
+            and (inside is None or page in inside)]
+
+    done: List[_Unit] = []
+    first_log = len(record.investigations)
+    for unit, parts in units:
+        stage = _MODEL_FIRST_STAGES[ITEM_READERS[unit.kind]]
+        if stage == "narrative" and workflow == "appendix_only":
+            prose = [p for p in unit.pages if labels.get(p) == "narrative"]
+            if prose:
+                qa.append(QAEntry(
+                    kind="skipped", where="items.narrative",
+                    detail="this file is appendix or figure material, so "
+                           "the narrative reader did not run",
+                    pages=prose))
+            continue
+        key = f"mf-{unit.id}"
+        path = os.path.join(out, "items", f"{key}.json")
+        cached = _cached(path, resume)
+        if cached is not None and not _still_current(
+                cached, parts, model_first.routes[stage]):
+            cached = None
+        mark = spend.mark()
+        where = f"items.{unit.kind}.{key}"
+        try:
+            blob = cached or _read_unit(doc, model_first, stage, parts,
+                                        report_id, outline, body)
+            spend.add(blob.get("cost"))
+            # The skipped entries first: a result with nothing read has no
+            # record to validate, and its pages must still be listed.
+            unresolved.extend(blob.get("unresolved") or [])
+            if blob.get("error"):
+                continue
+            if cached is None and not _part_skipped(blob):
+                _keep(path, blob, spend, mark, qa, where, unit.pages)
+            _into_record(stage, blob, record)
+            qa.extend(_placement_qa(blob, where, unit.pages))
+            done.append(unit)
+        except Exception as exc:                 # one item must not stop the run
+            qa.append(QAEntry(
+                kind="skipped", where=f"items.{unit.kind}",
+                detail=f"{key} could not be read: "
+                       f"{type(exc).__name__}: {exc}",
+                pages=unit.pages))
+        finally:
+            spend.settle(mark)
+    _join_by_hole(record, first_log, unresolved, qa, _ruler_slack(doc, qa))
+    return done
+
+
+def _ruler_slack(doc: Any, qa: List[QAEntry]) -> Any:
+    """``slack(pages)`` for :func:`_join_by_hole`: the logs' ruler slack
+    on those pages, from planlens' grid (no model call;
+    :func:`report_ingest.log_reader._depth_slack`). Where planlens cannot
+    read the grid, 0.0 and one QA note: the run goes on."""
+    def slack(pages: Sequence[int]) -> float:
+        from report_ingest.log_reader import _depth_slack
+        from report_ingest.model_first_read import _span
+        from report_ingest.visual_scales import log_grid_for
+
+        try:
+            grid, _info = log_grid_for(doc, list(pages))
+            return _depth_slack(grid, pages)
+        except Exception as exc:          # a planlens error must not end it
+            qa.append(QAEntry(
+                kind="note", where="investigations",
+                detail=(f"the depth rulers on {_span(pages)} could not be "
+                        f"read ({type(exc).__name__}: {exc}); two logs of "
+                        f"one hole there were compared with no slack"),
+                pages=list(pages)))
+            return 0.0
+
+    return slack
+
+
+def _join_by_hole(record: ReportRecord, start: int,
+                  unresolved: List[Dict[str, Any]], qa: List[QAEntry],
+                  slack: Any = None) -> None:
+    """One exploration's logs read in more than one place (model first).
+
+    Among the logs from ``start`` on, those whose identifiers are one
+    written two ways (:func:`report_ingest.reconciler.fold_id`) are taken in
+    page order, and a later one is joined to the log before it only when it
+    continues that log (:func:`_continues_log`, within ``slack(pages)``, the
+    logs' ruler slack; none when not given), by the rule that joins a long
+    log's parts (``model_first_read._join_logs``: the first's header, each
+    later header value that differs listed as read, the rest appended). A
+    join is one note, "logged in two places". A later log that does not
+    continue the one before is kept apart, with one note naming the
+    possible duplicate. Identifiers that differ only in leading zeros
+    ("B-01" and "B-1") are never joined, as a report can number two holes
+    so, and one note says so. A log with no identifier is joined to none.
+    """
+    from report_ingest.model_first_read import _join_logs, _span
+    from report_ingest.reconciler import fold_id, hole_key
+
+    logs: Dict[str, List[Any]] = {}
+    for n, inv in enumerate(record.investigations[start:]):
+        logs.setdefault(fold_id(inv.investigation_id) or f"#{n}",
+                        []).append(inv)
+    out: List[Any] = []
+    for invs in logs.values():
+        invs = sorted(invs, key=lambda inv: min(inv.pages) if inv.pages
+                      else 0)
+        kept: List[Tuple[Any, List[Any]]] = [(invs[0], [invs[0]])]
+        for later in invs[1:]:
+            first, parts = kept[-1]
+            pages = sorted(set(first.pages) | set(later.pages))
+            why = _continues_log(first, later,
+                                 slack(pages) if slack else 0.0)
+            if not why:
+                joined, rows = _join_logs([first, later])
+                # The last row names a join of calls; the note below says
+                # what this join is.
+                unresolved.extend(rows[:-1])
+                kept[-1] = (joined, parts + [later])
+                continue
+            kept.append((later, [later]))
+            qa.append(QAEntry(
+                kind="note",
+                where=f"investigations.{later.investigation_id}",
+                detail=(f"log {later.investigation_id} on "
+                        f"{_span(later.pages)} has the identifier of the log "
+                        f"on {_span(first.pages)}, but does not continue it "
+                        f"({why}); the two are kept apart: one may be the "
+                        f"other printed again, or two holes given one name"),
+                pages=pages))
+        for inv, parts in kept:
+            if len(parts) > 1:
+                places = {2: "two", 3: "three"}.get(len(parts),
+                                                     str(len(parts)))
+                qa.append(QAEntry(
+                    kind="note",
+                    where=f"investigations.{inv.investigation_id}",
+                    detail=(f"log {inv.investigation_id} is logged in "
+                            f"{places} places ("
+                            + "; ".join(_span(p.pages) for p in parts)
+                            + "), each continuing the one before, and they "
+                              "are joined: the header is the first's, and "
+                              "each later one's layers, samples, blow "
+                              "counts and water readings are appended"),
+                    pages=list(inv.pages)))
+            out.append(inv)
+    record.investigations[start:] = out
+
+    padded: Dict[str, List[str]] = {}
+    for folded, invs in logs.items():
+        if not folded.startswith("#"):
+            padded.setdefault(hole_key(folded), []).append(folded)
+    for folds in padded.values():
+        if len(folds) < 2:
+            continue
+        names = [logs[f][0].investigation_id for f in folds]
+        qa.append(QAEntry(
+            kind="note", where=f"investigations.{names[0]}",
+            detail=(f"the logs {' and '.join(names)} have identifiers that "
+                    f"differ only in leading zeros; they are kept as "
+                    f"separate logs, as a report can number two holes so"),
+            pages=sorted({p for f in folds for inv in logs[f]
+                          for p in inv.pages})))
+
+
+def _continues_log(first: Any, later: Any, slack: float = 0.0) -> str:
+    """Why ``later`` does not continue ``first``, or ``""`` when it does:
+    its depths, in the same unit, start below the surface and at or below
+    the deepest depth ``first`` gives, less ``slack``. A log that starts at
+    the surface continues none."""
+    if (first.depth_unit or "") != (later.depth_unit or ""):
+        return (f"its depths are in {later.depth_unit or 'no stated unit'}, "
+                f"the first's in {first.depth_unit or 'no stated unit'}")
+    above, below = _log_depths(first), _log_depths(later)
+    if not above or not below:
+        return "one of them gives no depths"
+    if min(below) <= 0:
+        return f"it starts at the surface, {min(below):g}"
+    if min(below) >= max(above) - slack:
+        return ""
+    return (f"its depths start at {min(below):g}, above the first's "
+            f"deepest, {max(above):g}")
+
+
+def _log_depths(inv: Any) -> List[float]:
+    """Every depth a log gives: its layers', samples' and drives'."""
+    quantities = ([q for ly in inv.layers for q in (ly.top, ly.bottom)]
+                  + [q for sm in inv.samples for q in (sm.top, sm.bottom)]
+                  + [q for d in inv.spt for q in (d.depth_top,
+                                                    d.depth_bottom)])
+    return [float(q.value) for q in quantities if q is not None]
+
+
+def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
+               groups: Sequence[Any], report_id: str, outline: Any,
+               body: Sequence[int]) -> Dict[str, Any]:
+    """One model-first result: a log (its parts), a laboratory window, a
+    printout or the narrative (its parts)."""
+    from report_ingest import model_first_read as readers
+
+    engine = model_first.engines[stage]
+    route = model_first.routes[stage]
+    common = dict(report_id=report_id, route=route,
+                  pdf=model_first.source(doc) if route == "pdf" else None,
+                  place=model_first.place)
+    if stage == "logs":
+        return readers.read_logs(doc, groups, engine, **common)[0]
+    if stage == "lab":
+        return readers.read_lab(doc, groups, engine,
+                                descriptions=model_first.descriptions,
+                                **common)[0]
+    if stage == "calc":
+        return readers.read_calcs(doc, groups, engine, **common)[0]
+    return readers.read_narrative(doc, groups, engine, outline=outline,
+                                  body_pages=list(body) or None, **common)
+
+
+def _into_record(stage: str, blob: Dict[str, Any],
+                 record: ReportRecord) -> None:
+    """A model-first result's record objects, into ``record``."""
+    from report_ingest.model import (
+        Calculation, GeneralFacts, Investigation, LabTest, NarrativeFacts,
+        NaturalHazardFacts,
+    )
+
+    if stage == "narrative":
+        record.general = GeneralFacts.model_validate(blob["general"])
+        record.natural_hazards = NaturalHazardFacts.model_validate(
+            blob["natural_hazards"])
+        record.narrative = NarrativeFacts.model_validate(blob["facts"])
+    elif stage == "logs":
+        if blob.get("investigation"):
+            record.investigations.append(
+                Investigation.model_validate(blob["investigation"]))
+    elif stage == "lab":
+        for test in blob.get("tests") or []:
+            record.lab_tests.append(LabTest.model_validate(test))
+    elif blob.get("calculation"):
+        record.calculations.append(
+            Calculation.model_validate(blob["calculation"]))
+
+
+def _placement_qa(blob: Dict[str, Any], where: str,
+                  pages: Sequence[int]) -> List[QAEntry]:
+    """One note per answer whose values were not all placed where cited
+    ("N of M not found printed on the cited page"), on the pages of the
+    values it names."""
+    out: List[QAEntry] = []
+    for found in blob.get("placement") or []:
+        note = str((found or {}).get("note") or "").strip()
+        if not note:
+            continue
+        named = sorted({int(item["page"]) for item in found.get("items") or []
+                        if item.get("page") is not None
+                        and (item.get("status") != "placed"
+                             or item.get("page_level"))})
+        out.append(QAEntry(kind="note", where=f"{where}.placement",
+                           detail=note,
+                           pages=named or [int(p) for p in pages][:200]))
+    return out
+
+
+def _bound_range_labels(engine: Any, folder: str, resume: bool,
+                        window: Sequence[int],
+                        rules: Dict[int, Tuple[str, float]], outline: Any,
+                        labelling: "_Labelling",
+                        descriptions: Dict[int, Dict[str, Any]],
+                        spend: _Spend, qa: List[QAEntry]) -> Dict[int, str]:
+    """A bound document's own range labels, model first (plan section 8.2
+    step 5): its pages' descriptions, already made for the whole file,
+    labelled by sections in one call of their own, on the parent file's
+    page numbers. Saved in the child's folder when every page had a
+    description; a call that fails is a QA note and no labels."""
+    from report_ingest.range_labels import (
+        DESCRIBE_PROMPT_VERSION, _engine_name, conventions_version,
+        label_by_ranges, labeller_fingerprint,
+    )
+    from report_ingest.triage import outline_text
+
+    arm = labelling.range_arm or "plain"
+    describer = labelling.describe_engine or labelling.vision_engine or engine
+    labeller = labelling.range_engine or engine
+    made_by = {"describer": _engine_name(describer),
+               "labeller": _engine_name(labeller),
+               "describe_prompt": DESCRIBE_PROMPT_VERSION,
+               "conventions": conventions_version(),
+               "labeller_prompt": labeller_fingerprint(arm == "hinted")}
+    window = [int(p) for p in window]
+    ends = [window[0], window[-1]]
+    path = os.path.join(folder, f"ranges-{arm}.json")
+    blob = _cached(path, resume)
+    if blob is not None and any(blob.get(key) != value
+                                for key, value in made_by.items()):
+        blob = None
+    if blob is None:
+        local = {n: descriptions[p] for n, p in enumerate(window)
+                 if p in descriptions}
+        mark = spend.mark()
+        try:
+            found = label_by_ranges(
+                local, len(window), labeller,
+                outline=outline_text(outline) if outline is not None else "",
+                hints=({n: rules.get(p, ("", 0.0))[0]
+                        for n, p in enumerate(window)}
+                       if arm == "hinted" else None))
+        except Exception as exc:              # the labels, not the document
+            spend.settle(mark)
+            qa.append(QAEntry(
+                kind="note", where="labels.ranges",
+                detail=f"the range labeller did not run over this bound "
+                       f"document ({type(exc).__name__}: {exc}), so its page "
+                       f"labels are the rules' re-run over its pages",
+                pages=ends))
+            return {}
+        spend.add(found.cost)
+        blob = found.to_dict()
+        blob.update(made_by)
+        if len(local) == len(window):
+            _keep(path, blob, spend, mark, qa, "labels.ranges", ends)
+        spend.settle(mark)
+    left = [window[int(p)] for p in (blob.get("unresolved") or [])
+            if 0 <= int(p) < len(window)]
+    if left:
+        qa.append(QAEntry(
+            kind="note", where="labels.ranges",
+            detail=f"{len(left)} page(s) no section settled; the rules "
+                   f"re-run over this document's pages label them",
+            pages=left[:200]))
+    return {window[int(k)]: str(v)
+            for k, v in (blob.get("labels") or {}).items()
+            if 0 <= int(k) < len(window)}

@@ -1,0 +1,206 @@
+{
+ "planlens": "7bcc6beee5cfde2b",
+ "rules": {
+  "files": {
+   "bound/bound1/identity.json": "5453ed7b597d3962",
+   "bound/bound1/items/item_2.json": "a3e69bbbdd759014",
+   "bound/bound1/items/item_3.json": "4dc0dcd7baecffd0",
+   "bound/bound1/labels.json": "5d0ba20101045aba",
+   "bound/bound1/report.diggs.xml": "537bf79f1fe8c66e",
+   "bound/bound1/report.page.md": "e84345f0a74dc116",
+   "bound/bound1/report.record.json": "4bfd16980522b51f",
+   "bound/bound1/report.summary.md": "dba0fc4ec0f678cf",
+   "items/item_10.json": "f00faeaadee1ff15",
+   "items/item_2.json": "04233c429736364c",
+   "items/item_4.json": "346f8f0fa90957dc",
+   "items/item_5.json": "fceddedde49334ad",
+   "items/item_7.json": "479182b93c04fdc8",
+   "items/item_8.json": "e0520996bbbdc5ca",
+   "labels.json": "19031669398d3990",
+   "report.diggs.xml": "298136287e6f7ef2",
+   "report.page.md": "ca21f43d864e509f",
+   "report.record.json": "cd13734d04dc4470",
+   "report.summary.md": "7c5b0c37160c91c1",
+   "reports.db": "fa46175da0a66fe4",
+   "review.json": "b266205eb4d5745f",
+   "triage.json": "31a5307a347a51af"
+  },
+  "requests": [
+   {
+    "digest": "b09a2d703a3bae7b",
+    "system": "You are triaging one engineering report PDF before any of it",
+    "tools": []
+   },
+   {
+    "digest": "83ac6e0ce5f35666",
+    "system": "You are reviewing the page labels a rule engine put on one e",
+    "tools": [
+     "read_page",
+     "render_page",
+     "contact_sheet",
+     "outline"
+    ]
+   },
+   {
+    "digest": "d1e551bb51ea3e11",
+    "system": "You are reviewing the page labels a rule engine put on one e",
+    "tools": []
+   },
+   {
+    "digest": "c714738762319b9f",
+    "system": "You are looking at the FIRST FEW PAGES of a report that was ",
+    "tools": []
+   },
+   {
+    "digest": "aa55ab5892112ed3",
+    "system": "You are reading the narrative of ONE geotechnical report and",
+    "tools": []
+   },
+   {
+    "digest": "511c1b0108ab71ec",
+    "system": "You are reading ONE exploration log -- a boring, a test pit,",
+    "tools": []
+   },
+   {
+    "digest": "a1a549183a2b1107",
+    "system": "You are reading ONE exploration log -- a boring, a test pit,",
+    "tools": []
+   },
+   {
+    "digest": "d8d9a33a0382c262",
+    "system": "You are reading ONE laboratory test sheet out of an engineer",
+    "tools": [
+     "zoom_plot"
+    ]
+   },
+   {
+    "digest": "fcbcb890cadefb12",
+    "system": "You are reading ONE laboratory test sheet out of an engineer",
+    "tools": [
+     "zoom_plot"
+    ]
+   },
+   {
+    "digest": "3b7425f35b48f3ad",
+    "system": "You are reading ONE calculation out of an engineering report",
+    "tools": [
+     "zoom_plot"
+    ]
+   },
+   {
+    "digest": "88c2e0da888748cd",
+    "system": "You are reading the narrative of ONE geotechnical report and",
+    "tools": []
+   },
+   {
+    "digest": "b9a0df8750e708d1",
+    "system": "You are reading ONE exploration log -- a boring, a test pit,",
+    "tools": []
+   }
+  ]
+ },
+ "standard": {
+  "files": {
+   "bound/bound1/identity.json": "5453ed7b597d3962",
+   "bound/bound1/items/item_2.json": "a3e69bbbdd759014",
+   "bound/bound1/items/item_3.json": "4dc0dcd7baecffd0",
+   "bound/bound1/labels.json": "3fc563f0e996f01b",
+   "bound/bound1/report.diggs.xml": "537bf79f1fe8c66e",
+   "bound/bound1/report.page.md": "e84345f0a74dc116",
+   "bound/bound1/report.record.json": "81c4e9f455433202",
+   "bound/bound1/report.summary.md": "dba0fc4ec0f678cf",
+   "items/item_10.json": "f00faeaadee1ff15",
+   "items/item_2.json": "04233c429736364c",
+   "items/item_4.json": "346f8f0fa90957dc",
+   "items/item_5.json": "fceddedde49334ad",
+   "items/item_7.json": "479182b93c04fdc8",
+   "items/item_8.json": "e0520996bbbdc5ca",
+   "labels.json": "a2c0a6c0853519eb",
+   "report.diggs.xml": "298136287e6f7ef2",
+   "report.page.md": "ca21f43d864e509f",
+   "report.record.json": "c1c3db467857d77f",
+   "report.summary.md": "7aa6b862a015ba3e",
+   "reports.db": "fa46175da0a66fe4",
+   "triage.json": "31a5307a347a51af",
+   "vision.json": "572bcf6a4bd5a70e"
+  },
+  "requests": [
+   {
+    "digest": "b09a2d703a3bae7b",
+    "system": "You are triaging one engineering report PDF before any of it",
+    "tools": []
+   },
+   {
+    "digest": "ad310762093cbf7e",
+    "system": "You are looking at pages of one engineering report and sayin",
+    "tools": []
+   },
+   {
+    "digest": "11031b2c7dfb40fc",
+    "system": "You are looking at pages of one engineering report and sayin",
+    "tools": []
+   },
+   {
+    "digest": "9bc2193c1f8acfd9",
+    "system": "You are looking at pages of one engineering report and sayin",
+    "tools": []
+   },
+   {
+    "digest": "11628978f6ea1f30",
+    "system": "You are looking at pages of one engineering report and sayin",
+    "tools": []
+   },
+   {
+    "digest": "c714738762319b9f",
+    "system": "You are looking at the FIRST FEW PAGES of a report that was ",
+    "tools": []
+   },
+   {
+    "digest": "aa55ab5892112ed3",
+    "system": "You are reading the narrative of ONE geotechnical report and",
+    "tools": []
+   },
+   {
+    "digest": "511c1b0108ab71ec",
+    "system": "You are reading ONE exploration log -- a boring, a test pit,",
+    "tools": []
+   },
+   {
+    "digest": "a1a549183a2b1107",
+    "system": "You are reading ONE exploration log -- a boring, a test pit,",
+    "tools": []
+   },
+   {
+    "digest": "d8d9a33a0382c262",
+    "system": "You are reading ONE laboratory test sheet out of an engineer",
+    "tools": [
+     "zoom_plot"
+    ]
+   },
+   {
+    "digest": "fcbcb890cadefb12",
+    "system": "You are reading ONE laboratory test sheet out of an engineer",
+    "tools": [
+     "zoom_plot"
+    ]
+   },
+   {
+    "digest": "3b7425f35b48f3ad",
+    "system": "You are reading ONE calculation out of an engineering report",
+    "tools": [
+     "zoom_plot"
+    ]
+   },
+   {
+    "digest": "88c2e0da888748cd",
+    "system": "You are reading the narrative of ONE geotechnical report and",
+    "tools": []
+   },
+   {
+    "digest": "b9a0df8750e708d1",
+    "system": "You are reading ONE exploration log -- a boring, a test pit,",
+    "tools": []
+   }
+  ]
+ }
+}
