@@ -4608,8 +4608,137 @@ class TestEveryAttemptInARun:
         for key in ("earlier_attempts", "all_attempts"):
             assert key not in run
         for key in ("cost_last_attempt", "reports_with_earlier_attempts",
-                    "cost_covers"):
+                    "cost_covers", "cost_unfinished", "cost_every_report"):
             assert key not in results["ingest"]
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert "over every attempt" not in text
         assert "last attempt alone" not in text
+        assert "reports not finished" not in text
+        assert "every report, finished or not" not in text
+
+
+class TestUnfinishedReportsInTheCost:
+    """BACKLOG RI-124: a report still unfinished when a call ends is not a
+    result, but what it spent, over every attempt, is in the Cost block."""
+
+    def test_a_braked_report_alone_is_counted_as_unfinished(
+            self, ingest_cluster, monkeypatch):
+        from report_ingest.tests import test_graph as tg
+
+        _reports, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)                # 1,000 in a call
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              max_report_tokens_in=2500)
+        ingest = results["ingest"]
+        assert ingest["n_reports"] == 0 and ingest["cost"]["calls"] == 0
+        left = ingest["cost_unfinished"]
+        assert left["reports"] == ["R36"]
+        assert (left["calls"], left["input_tokens"]) == (3, 3000)
+        every = ingest["cost_every_report"]
+        assert (every["calls"], every["input_tokens"]) == (3, 3000)
+        assert "token brake" in ingest["failures"]["R36"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert ("reports not finished (listed under failures): 1, 3 calls, "
+                "3,000 in / 300 out, 0 failed requests, over every "
+                "attempt") in text
+        assert ("every report, finished or not: 3 calls, 3,000 in / 300 "
+                "out, 0 failed requests") in text
+
+    def test_the_run_goes_on_after_a_report_skipped_at_its_limit(
+            self, ingest_cluster, monkeypatch, capsys):
+        from report_ingest.tests import test_graph as tg
+
+        reports_dir, out, scripts = ingest_cluster
+        (reports_dir / "R37.pdf").write_bytes(
+            (reports_dir / "R36.pdf").read_bytes())
+        monkeypatch.setattr(
+            cs, "_set_ids",
+            lambda name, corpus: ("R36", "R37") if name == "oos_open" else ())
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        _ingest_run(ingest_cluster, model="fake-main",
+                    max_report_tokens_in=2500)
+        assert "stopping after R36" in capsys.readouterr().out
+        assert not (out / "ingest" / "R37").exists()  # the run ended there
+        r36 = out / "ingest" / "R36" / "run.json"
+        before = r36.read_text("utf-8")
+        sent = json.loads(before)["cost"]["input_tokens"]
+
+        # The same limit as R36 has already sent: R36 is skipped, and the
+        # run goes on to R37, which the brake then stops in its turn.
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              max_report_tokens_in=sent)
+        printed = capsys.readouterr().out
+        assert "R36: not retried" in printed
+        assert "stopping after R37" in printed
+        assert r36.read_text("utf-8") == before
+        r37 = json.loads((out / "ingest" / "R37" / "run.json").read_text(
+            "utf-8"))
+        assert r37["token_brake"]["limit"] == "max_report_tokens_in"
+        ingest = results["ingest"]
+        assert "per-report ceiling" in ingest["failures"]["R36"]
+        assert "token brake" in ingest["failures"]["R37"]
+        left = ingest["cost_unfinished"]
+        assert left["reports"] == ["R36", "R37"]
+        assert left["calls"] == (json.loads(before)["cost"]["calls"]
+                                 + r37["cost"]["calls"])
+
+    def test_a_report_left_unfinished_by_an_earlier_call_is_listed(
+            self, ingest_cluster, monkeypatch):
+        from report_ingest.tests import test_graph as tg
+
+        _reports, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        _ingest_run(ingest_cluster, model="fake-main",
+                    max_report_tokens_in=2500)
+        # A second call asked for another (absent) report only.
+        monkeypatch.setattr(
+            cs, "_set_ids",
+            lambda name, corpus: ("R99",) if name == "oos_open" else ())
+        ingest = _ingest_run(ingest_cluster, model="fake-main")["ingest"]
+        assert ingest["failures"]["R36"].startswith(
+            "left unfinished by an earlier call: cut short by the token "
+            "brake")
+        assert ingest["cost_unfinished"]["reports"] == ["R36"]
+        assert ingest["cost_unfinished"]["calls"] == 3
+
+    def test_the_unfinished_line_counts_every_attempt_and_names_the_kinds(
+            self):
+        done = {"R8": _ingest_row("R8", _attempt_cost(2, 1000, 100), 1.0)}
+        unfinished = {"R9": {
+            "id": "R9", "error": "made up",
+            "cost": _attempt_cost(1, 400, 0, failed=3, retried=2,
+                                  failed_by_kind={"rate_limit": 3},
+                                  seconds=2.0),
+            "earlier_attempts": [{
+                "run_date": "2026-01-02", "ended": "item_errors",
+                "seconds": 6.0,
+                "cost": _attempt_cost(5, 5000, 500, failed=1,
+                                      failed_by_kind={"timeout": 1})}]}}
+        scored = cs._score_ingest(done, {"R9": "made up"}, "m", unfinished)
+        assert scored["cost"]["calls"] == 2           # finished reports only
+        left = scored["cost_unfinished"]
+        assert (left["calls"], left["failed"], left["input_tokens"]) == (
+            6, 4, 5400)
+        assert left["failed_by_kind"] == {"rate_limit": 3, "timeout": 1}
+        assert left["seconds"] == 8.0
+        every = scored["cost_every_report"]
+        assert (every["calls"], every["failed"], every["input_tokens"]) == (
+            8, 4, 6400)
+        assert every["seconds"] == 9.0
+        text = "\n".join(cs._render_ingest(scored))
+        assert ("reports not finished (listed under failures): 1, 6 calls, "
+                "5,400 in / 500 out, 4 failed requests (3 rate limited, 1 "
+                "timed out), over every attempt") in text
+        assert ("every report, finished or not: 8 calls, 6,400 in / 600 "
+                "out, 4 failed requests, 9 s") in text
+        assert "per report: 2.0 calls" in text        # averages: finished
+
+    def test_no_unfinished_report_adds_nothing(self):
+        done = {"R8": _ingest_row("R8", _attempt_cost(2, 1000, 100), 1.0)}
+        for unfinished in (None, {}):
+            scored = cs._score_ingest(done, {}, "m", unfinished)
+            assert "cost_unfinished" not in scored
+            assert "cost_every_report" not in scored
