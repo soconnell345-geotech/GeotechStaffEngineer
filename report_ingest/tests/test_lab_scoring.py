@@ -19,8 +19,9 @@ from report_ingest.lab_scoring import (
     score_record, score_tables, split_unit, table_numbers,
 )
 from report_ingest.model import (
-    AtterbergResult, GradationResult, LabTest, Quantity, SievePoint,
-    StrengthResult, StrengthSpecimen,
+    AtterbergResult, GradationResult, LabTest, Provenance, Quantity,
+    SievePoint, StrengthResult, StrengthSpecimen, SummaryRow,
+    SummaryTableResult,
 )
 
 
@@ -496,3 +497,73 @@ def test_the_plot_check_the_reader_ran_reaches_the_run_file(monkeypatch):
     _before, after = score_one_sheet(GRADING_TRUTH, object(), None,
                                      report_id="R99")
     assert after.to_dict()["plot_check"] == check
+
+
+# ---------------------------------------------------------------------------
+# an elevation printed in feet is compared as printed (RI-88)
+# ---------------------------------------------------------------------------
+
+ELEVATION_TRUTH = {
+    "id": "summary_table__R99_p3",
+    "kind": "summary_table",
+    "depth_unit": "ft",
+    "rows": [{"investigation_id": "B-7", "depth_top": 10.0,
+              "elev_top": 104.0, "elev_bottom": 94.0}],
+}
+
+
+def _summary(top_unit, top_value, bottom_text):
+    prov = Provenance(page=3, method="model", confidence=0.9)
+    row = SummaryRow(investigation_id="B-7", depth_top=q(10.0, "ft"),
+                     elevation_top=q(top_value, top_unit),
+                     other=[("elev_bottom", bottom_text)])
+    return [LabTest(kind="summary_table", investigation_id="B-7",
+                    result=SummaryTableResult(rows=[row]), prov=[prov])]
+
+
+@pytest.mark.parametrize("unit, value", [("ft", 104.0), ("m", 104.0)],
+                         ids=["feet", "metres"])
+def test_a_top_elevation_scores_in_the_unit_the_report_printed(unit, value):
+    score = score_record(ELEVATION_TRUTH, _summary(unit, value, "94"))
+    assert score.score("index").found == score.score("index").total == 2
+
+
+def test_the_top_and_the_bottom_of_a_range_are_compared_alike():
+    score = score_record(ELEVATION_TRUTH, _summary("ft", 105.0, "94"))
+    assert (score.score("index").found, score.score("index").total) == (1, 2)
+
+
+def _row_test(**fields):
+    prov = Provenance(page=3, method="model", confidence=0.9)
+    row = SummaryRow(investigation_id="B-7", depth_top=q(15.0, "ft"),
+                     **fields)
+    return [LabTest(kind="summary_table", investigation_id="B-7",
+                    result=SummaryTableResult(rows=[row]), prov=[prov])]
+
+
+def _row_truth(**values):
+    return {"id": "summary_table__R99_p4", "kind": "summary_table",
+            "depth_unit": "ft",
+            "rows": [dict({"investigation_id": "B-7", "depth_top": 15.0},
+                          **values)]}
+
+
+def test_a_depth_in_feet_does_not_credit_a_value_that_was_never_read():
+    truth = _row_truth(wc=15, ll=30, fines_pct=20)
+    tests = _row_test(depth_bottom=q(20.0, "ft"), elevation_top=q(30.0, "ft"))
+    got = score_record(truth, tests).score("index")
+    assert (got.found, got.total) == (0, 3)
+
+
+def test_an_elevation_in_feet_does_not_credit_a_density():
+    truth = _row_truth(dry_density_pcf=104)
+    got = score_record(truth, _row_test(elevation_top=q(104.0, "ft"))
+                       ).score("index")
+    assert (got.found, got.total) == (0, 1)
+
+
+def test_a_strength_in_ksf_does_not_credit_the_same_number_in_psf():
+    truth = _row_truth(c_psf=250, phi_deg=30)
+    got = score_record(truth, _row_test(c=q(250.0, "ksf"), phi_deg=30.0)
+                       ).score("index")
+    assert (got.found, got.total) == (1, 2)

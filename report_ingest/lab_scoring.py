@@ -450,7 +450,8 @@ def _flatten(block: Dict[str, Any], prefix: str = "",
     return out
 
 
-def _index_of(block: Dict[str, Any]) -> Dict[str, Tuple[float, str, float]]:
+def _index_of(block: Dict[str, Any], depth_unit: str = ""
+              ) -> Dict[str, Tuple[float, str, float]]:
     """``stem -> (value in SI, the SI unit, the value as printed)``.
 
     Generic on purpose. The hand wrote each sheet's unit into its key, so a
@@ -461,12 +462,17 @@ def _index_of(block: Dict[str, Any]) -> Dict[str, Tuple[float, str, float]]:
     The printed value is carried alongside the converted one because a reader
     may keep a value the record has no typed field for, as printed, in the
     test's ``fields``. That is a recovery and is scored as one.
+
+    An elevation key with no unit suffix is in the sheet's depth unit, the
+    way the report printed it, so it converts like the record's elevation.
     """
     out: Dict[str, Tuple[float, str, float]] = {}
     for key, value in _flatten(block).items():
         if value is None:
             continue
         stem, unit = split_unit(key)
+        if not unit and depth_unit and                 stem.rsplit(".", 1)[-1].lower().startswith("elev"):
+            unit = depth_unit
         leaf = stem.rsplit(".", 1)[-1].lower()
         if leaf in _NOT_INDEX or key.rsplit(".", 1)[-1].lower() in _NOT_INDEX:
             continue
@@ -532,7 +538,7 @@ def expectations_for(truth: Dict[str, Any]) -> List[Expectation]:
             investigation_id=str(block.get("investigation_id") or "").strip(),
             depth_m=in_metres,
             depth_printed=f"{depth} {unit}" if depth is not None else "",
-            index=_index_of(block),
+            index=_index_of(block, unit),
             series=grading_in(block),
             curves=curves))
     return out
@@ -778,6 +784,29 @@ def _rows_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
     return out
 
 
+def _printed_numbers(value: Any) -> List[float]:
+    """The number of every :class:`Quantity` with no SI value, AS PRINTED.
+
+    A quantity whose unit is blank or not in the table has no converted
+    number, and the scorer's pool takes it as printed (the model's
+    ``unitless_as_printed``). A quantity that converts is NOT pooled as
+    printed as well: its feet number would then be credited to any answer
+    item that happens to equal it, a depth of 15 ft to a water content of 15.
+    """
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return []
+    if isinstance(value, Quantity):
+        return [float(value.value)] if value.si_value is None else []
+    out: List[float] = []
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            out.extend(_printed_numbers(item))
+        return out
+    for name in getattr(type(value), "model_fields", None) or ():
+        out.extend(_printed_numbers(getattr(value, name, None)))
+    return out
+
+
 def _pool_for(tests: Sequence[Any], expect: Expectation) -> List[float]:
     """Every number the record holds for this specimen.
 
@@ -795,6 +824,7 @@ def _pool_for(tests: Sequence[Any], expect: Expectation) -> List[float]:
     for holder in holders:
         pool.extend(value for _path, value, _unit in
                     si_numbers(holder, unitless_as_printed=True))
+        pool.extend(_printed_numbers(holder))
     texts: List[str] = []
     for test in near:
         texts.extend(str(v) for v in test.fields.values())
@@ -884,6 +914,7 @@ def _pool_all(tests: Sequence[Any]) -> List[float]:
         if result is not None:
             pool.extend(v for _p, v, _u in
                         si_numbers(result, unitless_as_printed=True))
+            pool.extend(_printed_numbers(result))
             if isinstance(result, SummaryTableResult):
                 for row in result.rows:
                     texts.extend(str(v) for _name, v in row.other)
