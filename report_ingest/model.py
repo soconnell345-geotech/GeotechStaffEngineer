@@ -52,8 +52,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI", "UNITLESS_KINDS",
-    "UNITLESS_FIELDS", "unit_printed", "G", "MASS_DENSITY_UNITS",
-    "is_mass_density",
+    "UNITLESS_FIELDS", "STRESS_FIELDS", "unit_printed", "G",
+    "MASS_DENSITY_UNITS", "is_mass_density", "read_as_stress",
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
     "Layer", "Sample",
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
@@ -307,8 +307,9 @@ _UNIT_ALIASES: Dict[str, str] = {
     "centimeter": "cm", "centimeters": "cm",
     "feet": "ft", "foot": "ft", "'": "ft", "ft.": "ft",
     "inch": "in", "inches": "in", '"': "in", "in.": "in",
+    "pulgada": "in", "pulgadas": "in",
     "kn/m^3": "kn/m3", "kn/m³": "kn/m3", "knm3": "kn/m3",
-    "lb/ft3": "pcf", "lb/ft^3": "pcf", "lbs/ft3": "pcf", "pounds/ft3": "pcf",
+    "lbs/pie3": "pcf", "lb/pie3": "pcf", "lb/ft3": "pcf", "lb/ft^3": "pcf", "lbs/ft3": "pcf", "pounds/ft3": "pcf",
     "g/cc": "g/cm3", "g/cm^3": "g/cm3", "g/cm³": "g/cm3",
     "mg/m^3": "mg/m3", "mg/m³": "mg/m3",
     "kg/cm^2": "kg/cm2", "kg/cm²": "kg/cm2", "ksc": "kg/cm2",
@@ -317,7 +318,7 @@ _UNIT_ALIASES: Dict[str, str] = {
     "blows/foot": "blows/ft", "bpf": "blows/ft",
     "blows per foot": "blows/ft", "blows per 0.3m": "blows/0.3m",
     "degrees": "deg", "degree": "deg", "°": "deg",
-    "percent": "%", "pct.": "%",
+    "percent": "%", "pct.": "%", "percent%": "%",
     # the laboratory's own spellings
     "ohm.cm": "ohm-cm", "ohmcm": "ohm-cm", "ohm cm": "ohm-cm",
     "ohm-centimeter": "ohm-cm", "ohm·cm": "ohm-cm", "ω-cm": "ohm-cm",
@@ -328,6 +329,7 @@ _UNIT_ALIASES: Dict[str, str] = {
     "mg/kilogram": "mg/kg", "milligram/kg": "mg/kg", "mg kg": "mg/kg",
     "parts per million": "ppm",
     "c": "degc", "°c": "degc", "deg c": "degc", "celsius": "degc",
+    "oc": "degc", "ºc": "degc", "degrees c": "degc",
     "cc": "cm3", "cm^3": "cm3", "cm³": "cm3", "millilitre": "ml",
     "milliliter": "ml", "m^3": "m3", "m³": "m3",
     "gram": "g", "grams": "g", "gm": "g",
@@ -397,6 +399,23 @@ _SQUARE_CUBE = re.compile(
     r"(?<![a-z])(sq|cu)(?:\.\s*|\s+)(mm|cm|m|ft|inch|in|yd)(?![a-z])\.?")
 
 
+#: A unit a sheet prints with its exponent lost, and what it means ON A
+#: FIELD THAT HOLDS A STRESS: ``N/mm`` is N/mm2 (a megapascal) on a strength.
+#: Elsewhere ``N/mm`` is the line load the table above reads it as.
+_STRESS_READINGS: Dict[str, str] = {"n/mm": "mpa"}
+
+
+def read_as_stress(unit: Any, kind: Optional[str]) -> bool:
+    """Is this printed unit read as a stress it was not printed as?
+
+    True for ``N/mm`` on a field whose quantity is a stress (``kind`` is
+    ``"stress"``): the square of the millimetre was lost in printing. The
+    caller that writes a note says so ("printed N/mm, read as N/mm2").
+    """
+    return kind == "stress" and any(
+        c in _STRESS_READINGS for c in _spellings(str(unit or "")))
+
+
 def _spellings(unit: str) -> List[str]:
     """The forms of one printed unit worth looking up, most literal first.
 
@@ -464,6 +483,13 @@ UNITLESS_FIELDS: Dict[str, str] = {
     "wc": "percent", "pl": "percent", "organic_percent": "percent",
 }
 
+#: The record's fields that hold a stress, so a sheet's ``N/mm`` there is
+#: N/mm2 (:func:`read_as_stress`). A name appears in more than one result;
+#: each holds a stress wherever it appears.
+STRESS_FIELDS: Tuple[str, ...] = (
+    "qu", "su", "c", "c_residual", "pc", "swell_at", "swell_pressure",
+    "pocket_pen", "confining", "peak_deviator", "pore_pressure")
+
 
 def to_si(value: float, unit: str, *,
           kind: Optional[str] = None) -> Optional[Tuple[float, str]]:
@@ -483,6 +509,9 @@ def to_si(value: float, unit: str, *,
             return float(value), SI_UNITS[kind]
         return None
     key = _canonical_unit(unit)
+    if read_as_stress(unit, kind):
+        key = _STRESS_READINGS[next(c for c in _spellings(str(unit))
+                                    if c in _STRESS_READINGS)]
     if key is None:
         return None
     unit_kind, factor = UNIT_TO_SI[key]
@@ -3048,7 +3077,9 @@ def si_numbers(value: Any, path: str = "",
             here = f"{path}.{name}" if path else name
             out.extend(si_numbers(getattr(value, name, None), here,
                                   unitless_as_printed=unitless_as_printed,
-                                  _kind=UNITLESS_FIELDS.get(name)))
+                                  _kind=UNITLESS_FIELDS.get(name) or (
+                                      "stress" if name in STRESS_FIELDS
+                                      else None)))
     return out
 
 

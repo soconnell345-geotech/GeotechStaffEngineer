@@ -580,3 +580,40 @@ class TestTheSoundings:
                                    "kind": "boring"}]}
         again = ReportRecord.model_validate(old)
         assert again.investigations[0].cpt is None
+
+
+class TestUnitSpellings:
+    """RI-93: spellings a sheet prints that the table dropped."""
+
+    @pytest.mark.parametrize("unit, want, si_unit", [
+        ("oC", 21.5, "degC"), ("OC", 21.5, "degC"),
+        ("percent %", 21.5, "%"), ("percent%", 21.5, "%"),
+        ("pulgadas", 0.254, "m"),
+    ])
+    def test_these_spellings_convert_as_the_unit_they_mean(
+            self, unit, want, si_unit):
+        value = {"degC": 21.5, "%": 21.5, "m": 10.0}[si_unit]
+        got = to_si(value, unit)
+        assert got is not None and got[1] == si_unit
+        assert got[0] == pytest.approx(want if si_unit == "m" else value)
+
+    def test_n_per_mm_is_a_stress_only_on_a_field_that_holds_one(self):
+        from report_ingest.model import StrengthResult, read_as_stress
+        # as printed it is the line load the table reads it as ...
+        assert to_si(3.0, "N/mm") == (3.0, "kN/m")
+        # ... and on a stress it is N/mm2, the square lost in printing
+        assert to_si(3.0, "N/mm", kind="stress") == (3000.0, "kPa")
+        assert read_as_stress("N/mm", "stress")
+        assert not read_as_stress("N/mm", None)
+        assert not read_as_stress("kPa", "stress")
+        result = StrengthResult(kind="unconfined",
+                                qu=Quantity(value=3.0, unit="N/mm"))
+        assert [(p, v, u) for p, v, u in si_numbers(result)] == [
+            ("qu", 3000.0, "kPa")]
+
+    def test_n_per_mm_on_a_field_that_is_no_stress_is_left_alone(self):
+        from report_ingest.model import SummaryRow
+        row = SummaryRow(investigation_id="B-1",
+                         wet_density=Quantity(value=3.0, unit="N/mm"))
+        assert [(p, v, u) for p, v, u in si_numbers(row)] == [
+            ("wet_density", 3.0, "kN/m")]

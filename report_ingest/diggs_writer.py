@@ -168,7 +168,8 @@ from report_ingest.model import (
     ConsolidationResult, DCPData, GradationResult, Investigation, LabTest,
     Layer, MoistureDensityResult, OtherResult, Project, Quantity,
     ReportRecord, Sample, SPT, StrengthResult, SummaryRow,
-    SummaryTableResult, WaterLevel, G, is_mass_density, si_numbers,
+    SummaryTableResult, WaterLevel, G, is_mass_density, read_as_stress,
+    si_numbers,
     unit_printed,
 )
 # The remark a pit's "groundwater not encountered" is written as (a TrialPit
@@ -1886,8 +1887,13 @@ class _Writer:
             q: Optional[Quantity] = getattr(sample, field)
             if q is None:
                 return
-            got = _si(q)
+            kind = "stress" if PROPERTY_CLASS[field][1] == "kPa" else None
+            got = _si(q, kind)
             klass, uom, proc = PROPERTY_CLASS[field]
+            if read_as_stress(q.unit, kind):
+                self.notes.assumed.append(
+                    f"{inv.investigation_id}/{sample.sample_id}: {label} "
+                    f"printed {q.unit!r}, read as N/mm2")
             if got is None:
                 self.notes.skipped.append(
                     f"{inv.investigation_id}/{sample.sample_id}: {label} "
@@ -2510,7 +2516,8 @@ class _Writer:
         for n, specimen in enumerate(result.specimens, start=1):
             row: List[Any] = [specimen.specimen_id or str(n)]
             for _name, _klass, uom, attr in present:
-                got = _si(getattr(specimen, attr))
+                got = _si(getattr(specimen, attr),
+                          "stress" if uom == "kPa" else None)
                 row.append(got[0] if got is not None else "-")
             for _name, _klass, _uom, attr in plain:
                 value = getattr(specimen, attr)
@@ -2739,11 +2746,17 @@ class _Values:
         """
         if quantity is None:
             return
+        if kind is None and uom == "kPa":
+            kind = "stress"           # a property written as a stress
         got = _si(quantity, kind)
         if got is None:
             self.writer.notes.skipped.append(
                 f"{self.where}: {name} {_as_printed(quantity)}")
             return
+        if read_as_stress(quantity.unit, kind):
+            self.writer.notes.assumed.append(
+                f"{self.where}: {name} printed {quantity.unit!r}, read as "
+                f"N/mm2")
         if uom is not None and got[1] != uom:
             self.writer.notes.skipped.append(
                 f"{self.where}: {name} {quantity.value:g} {quantity.unit!r} "

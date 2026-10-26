@@ -633,7 +633,7 @@ def test_a_row_whose_only_value_is_unwritable_does_not_fail_the_gate():
     """RI-97: the writer names a value it cannot write; the gate does not
     call the row's hole missing for the want of it."""
     log = Investigation(investigation_id="B-1", depth_unit="ft")
-    test = _qu_row("N/mm")
+    test = _qu_row("kN/m3")
     notes = []
     xml = write_diggs([log, test], Project(name="R"), notes=notes)
     assert notes[0].unwritten
@@ -650,6 +650,20 @@ def test_the_gate_still_fails_a_hole_that_is_really_missing():
 
 def test_the_gate_still_fails_a_written_value_that_is_missing():
     log = Investigation(investigation_id="B-1", depth_unit="ft")
-    xml = write_diggs([log, _qu_row("N/mm")])
-    ok, diffs = diggs_roundtrip_gate(xml, [log, _qu_row("N/mm", ll=40.0)])
+    xml = write_diggs([log, _qu_row("kN/m3")])
+    ok, diffs = diggs_roundtrip_gate(xml, [log, _qu_row("kN/m3", ll=40.0)])
     assert not ok
+
+
+def test_n_per_mm_on_a_strength_is_written_as_a_stress_and_said():
+    """RI-93: the square of the millimetre lost in printing is put back, and
+    the notes say so."""
+    log = Investigation(investigation_id="B-1", depth_unit="ft")
+    test = _qu_row("N/mm")
+    notes = []
+    xml = write_diggs([log, test], Project(name="R"), notes=notes)
+    assert not notes[0].unwritten
+    assert any("N/mm" in s and "read as N/mm2" in s
+               for s in notes[0].assumed)
+    ok, diffs = diggs_roundtrip_gate(xml, [log, test])
+    assert ok, diffs
