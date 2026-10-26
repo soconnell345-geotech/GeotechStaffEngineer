@@ -4092,3 +4092,127 @@ class TestThePlacementFile:
         graph._write_placement(str(tmp_path), {})
         assert json.loads((tmp_path / "placement.json").read_text(
             "utf-8")) == {}
+
+    def test_the_run_file_counts_the_placement_file_and_ignores_item_files(
+            self, tmp_path):
+        from report_ingest.cluster_scoring import _Engines
+        from report_ingest.model_first import READ_PROMPT_VERSION
+
+        folder = tmp_path / "R1"
+        (folder / "items").mkdir(parents=True)
+        (folder / "bound" / "b1").mkdir(parents=True)
+        (folder / "placement.json").write_text(json.dumps({
+            "mf-a": [{"counts": {"placed": 2, "not_found": 1}, "items": []}]}),
+            "utf-8")
+        (folder / "bound" / "b1" / "placement.json").write_text(json.dumps({
+            "mf-b": [{"counts": {"placed": 4}, "items": []}]}), "utf-8")
+        (folder / "items" / "mf-stale.json").write_text(json.dumps({
+            "placement": [{"counts": {"placed": 50}, "items": []}]}), "utf-8")
+        engine = _Counted()
+        kwargs = {"stage_engines": {s: engine for s in cs.FIRST_STAGES},
+                  "describe_engine": engine, "range_engine": engine}
+        names = {s: "made-up" for s in cs.FIRST_STAGES}
+        names.update(describer="made-up", labeller="made-up")
+        fields = cs._ingest_arm_fields(cs._FirstArm("on"),
+                                       _Engines.of(object()), kwargs,
+                                       names, folder)
+        assert fields["prompt_version"] == READ_PROMPT_VERSION
+        assert fields["placement"]["counts"]["placed"] == 6
+        assert fields["placement"]["counts"]["not_found"] == 1
+
+    def test_a_stale_file_is_replaced_when_the_read_starts(
+            self, tmp_path, monkeypatch):
+        import types
+        from report_ingest import graph
+
+        monkeypatch.setattr(graph, "_join_by_hole", lambda *a, **k: None)
+        (tmp_path / "placement.json").write_text(
+            json.dumps({"mf-old": [{"counts": {"placed": 9}}]}), "utf-8")
+        record = types.SimpleNamespace(investigations=[])
+        graph._read_model_first(None, None, str(tmp_path), True, "R1", {},
+                                None, record, None, [], [], "standard", [])
+        # No units read: an empty file, never the earlier run's.
+        assert json.loads((tmp_path / "placement.json").read_text(
+            "utf-8")) == {}
+
+
+def _metered(monkeypatch, scripts):
+    """The fixture's fake engines, each charging its reply to the meter it
+    is built on, as a real engine does (the fixture's do not)."""
+    import report_ingest.engine as engine_module
+    from report_ingest.engine import Usage
+    from report_ingest.tests.fake_engine import FakeEngine
+
+    def build(prompter, model, meter=None, **kwargs):
+        turns = (scripts["vision"] if model == "funhouse-gpt-low"
+                 else scripts["turns"])
+
+        class Metered(FakeEngine):
+            def complete(self, messages, **kw):
+                reply = super().complete(messages, **kw)
+                if meter is not None:
+                    meter.add(model, Usage(input_tokens=1000,
+                                           output_tokens=100), 0.0)
+                return reply
+
+        engine = Metered(list(turns or []), name=model)
+        engine.served_by = "fake-deployment"
+        return engine
+
+    monkeypatch.setattr(engine_module, "PrompterEngine", build)
+
+
+class TestTheBrakeInsideARun:
+    def test_a_braked_report_is_marked_ends_the_run_and_is_retried(
+            self, ingest_cluster, monkeypatch, capsys):
+        from report_ingest.tests import test_graph as tg
+
+        _reports, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        _ingest_run(ingest_cluster, model="fake-main",
+                    max_report_tokens_in=2500)
+        run_file = out / "ingest" / "R36" / "run.json"
+        braked = json.loads(run_file.read_text("utf-8"))
+        assert braked["token_brake"]["limit"] == "max_report_tokens_in"
+        assert not braked.get("error")
+        printed = capsys.readouterr().out
+        assert "stopping after R36" in printed        # the run ended
+        saved = {p.name for p in (out / "ingest" / "R36" / "items").glob(
+            "*.json")} if (out / "ingest" / "R36" / "items").is_dir() else set()
+
+        # A second call with no limit does not skip it as done.
+        _ingest_run(ingest_cluster, model="fake-main")
+        printed = capsys.readouterr().out
+        assert "cut short by the token brake" in printed
+        assert "already done" not in printed
+        again = json.loads(run_file.read_text("utf-8"))
+        assert "token_brake" not in again
+        kept = {p.name for p in (out / "ingest" / "R36" / "items").glob(
+            "*.json")}
+        assert saved <= kept                        # saved items kept
+
+    def test_what_a_failed_report_spent_counts_toward_the_total(
+            self, ingest_cluster, monkeypatch, capsys):
+        from report_ingest import graph
+
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = []
+        _metered(monkeypatch, scripts)
+        (reports_dir / "R37.pdf").write_bytes(
+            (reports_dir / "R36.pdf").read_bytes())
+        monkeypatch.setattr(
+            cs, "_set_ids",
+            lambda name, corpus: ("R36", "R37") if name == "oos_open" else ())
+
+        def boom(doc, engine, *args, **kwargs):
+            engine.complete([{"role": "user", "content": "x"}])
+            raise RuntimeError("made-up failure")
+
+        monkeypatch.setattr(graph, "ingest_report", boom)
+        scripts["turns"] = [{"final": None}]
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              max_total_tokens=1000)
+        assert "made-up failure" in results["ingest"]["failures"]["R36"]
+        assert "stopping before R37" in capsys.readouterr().out
+        assert not (out / "ingest" / "R37" / "arm.json").exists()

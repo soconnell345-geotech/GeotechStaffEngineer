@@ -557,7 +557,10 @@ def _stamp_arm(folder: Path, first: _FirstArm) -> None:
     """Write ``arm.json`` into a report's output folder, once, when the
     folder is made (BACKLOG RI-120). It is what keeps an interrupted folder
     -- one with items but no ``run.json`` yet -- from being taken over by
-    the other arm (:func:`_arm_clash`)."""
+    the other arm (:func:`_arm_clash`). A folder made before the stamp
+    existed, with items but no ``run.json`` and no ``arm.json``, is
+    stamped with the arm of the run that finds it; nothing says which arm
+    began it."""
     stamp = folder / "arm.json"
     if stamp.is_file():
         return
@@ -5413,13 +5416,21 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
-            if not blob.get("error"):
+            # A report the token brake cut short is unfinished, like one
+            # that failed: its unsaved steps are asked for again (the saved
+            # items are kept).
+            if not blob.get("error") and not blob.get("token_brake"):
                 done[rid] = blob
                 print(f"  [{n}/{len(report_ids)}] {rid}: already done, "
                       "skipping")
                 continue
-            print(f"  [{n}/{len(report_ids)}] {rid}: previous attempt failed "
-                  f"({str(blob.get('error'))[:90]}); retrying")
+            if blob.get("token_brake"):
+                print(f"  [{n}/{len(report_ids)}] {rid}: cut short by the "
+                      f"token brake ({blob['token_brake'].get('limit')}); "
+                      "retrying")
+            else:
+                print(f"  [{n}/{len(report_ids)}] {rid}: previous attempt "
+                      f"failed ({str(blob.get('error'))[:90]}); retrying")
         if rid not in present:
             failures[rid] = f"{rid} is not in the reports folder"
             print(f"  [{n}/{len(report_ids)}] {rid}: skipped -- "
@@ -5495,6 +5506,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 "error": failures[rid], "cost": meter.to_dict(),
                 "model_first": first.setting}),
                 encoding="utf-8")
+            # What a failed report spent still counts toward the ceiling.
+            spent_tokens += _tokens_of(meter.to_dict())
             _sync(sync)
             continue
         finally:
