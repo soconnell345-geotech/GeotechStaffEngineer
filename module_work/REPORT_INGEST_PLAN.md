@@ -1100,11 +1100,17 @@ ignored under `on`, because the model was shown no rows or cells to copy one
 from. One new module, `report_ingest/locate.py`, finds the box after the
 answer:
 
-1. **Check the page.** A cited page outside the call that is a PDF-local
-   index (0 to n-1) is mapped to the report's page with a note: the class
-   RI-74 (6) fixed for one-page printouts, applied to every stage. Any other
-   page outside the call keeps the value, takes the call's first page at
-   confidence 0.4 and a note, as the builders do today.
+1. **Check the page.** Decided once per answer, not value by value
+   (`report_ingest.checks.pdf_local`): when every page the answer cites is a
+   PDF-local index (0 to n-1) and at least one is not a page of the call,
+   all its cites are mapped to the report's pages, each with a note: the
+   class RI-74 (6) fixed for one-page printouts, applied to every stage.
+   Otherwise every cite is the report's page. When the call's pages start
+   below n and the answer cites both pages of the call and pages outside it,
+   the answer gets one QA note saying the numbers are ambiguous and which
+   reading was taken. A page outside the call on that reading keeps the
+   value, takes the call's first page at confidence 0.4 and a note, as the
+   builders do today.
 2. **Find the object's printed words on its cited page**, among the words
    that carry boxes: `Document.page(p, words=True)` gives the text layer, or
    the DI words on a scan, in planlens' one frame. An object is placed by the
@@ -1203,9 +1209,10 @@ as today.
 Every check today's builders run stays. Under `on` they flag rather than drop,
 and they split into two kinds:
 
-- **Impossible** (no real sheet prints it: a percent outside 0 to 100, a
-  liquid limit below the plastic limit, a grading in which more passes the
-  smaller sieve, a depth past 300 m, a negative depth). The value stays out of
+- **Impossible** (no real sheet prints it: a fraction outside 0 to 100, a
+  water content or an Atterberg limit below 0, a liquid limit below the
+  plastic limit, a grading in which more passes the smaller sieve, a depth
+  past 300 m, a negative depth). The value stays out of
   the typed slot, so nothing downstream (DIGGS, the reconciler, `si_numbers`)
   takes it as a reading, and a QA entry of rank `open` carries the values as
   read. The record's own validators (`ge=0, le=100` on a percent) would
@@ -1216,10 +1223,14 @@ and they split into two kinds:
 
 | Check | Today | Under `on` |
 |---|---|---|
-| log depth window (`_Builder._depth`) | outside the ruler's window: refused, and a layer or sample whose top is refused is dropped whole; no ruler on a boring: every depth refused | **implausible.** Kept at confidence 0.5, one `out_of_range` entry per value naming the window. No ruler on any page: every depth kept, and one note per log ("no depth scale found; the depths are as read, not checked against a ruler"). The window applies only to values placed against the ruler (layers, samples, drives). A water, casing or cave depth is checked against 0 to the total depth plus the window's slack. This is the class of RI-76 (5) on R15_p46: six water depths printed in a table on the sheet, refused for lying outside the ruler's window. It is also most of RI-79's misses on scans. |
+| log depth window (`_Builder._depth`) | outside the ruler's window: refused, and a layer or sample whose top is refused is dropped whole; no ruler on a boring: every depth refused | **implausible.** Kept at confidence 0.5, one `out_of_range` entry per value naming the window. No ruler on any page: every depth kept, and one note per log ("no depth scale found; the depths are as read, not checked against a ruler"). The window applies only to values placed against the ruler (layers, samples, drives). A water, casing or cave depth is checked against 0 to the total depth plus the window's slack; with no total depth it is kept and counted in the log's one note. This is the class of RI-76 (5) on R15_p46: six water depths printed in a table on the sheet, refused for lying outside the ruler's window. It is also most of RI-79's misses on scans. |
 | log total depth negative | refused | impossible: as now |
 | lab depth outside 0 to 300 m | refused | impossible: out of the slot, `open` entry with the value |
-| lab percent outside 0 to 100 | refused | impossible: the same |
+| lab percent outside 0 to 100 | refused | a fraction (gravel, sand, silt, clay, fines, percent passing, saturation, organic, ash) outside 0 to 100: impossible, the same. A water content (test, specimen, optimum, compaction point) or an Atterberg limit (LL, PL, PI, shrinkage limit): impossible only below 0, kept above 100. The water content can be greater than 100 % (FHWA-NHI-06-088 Vol. I §2.1.2, p. 2-5); DM 7.1 (UFS 3-220-10) §8-2.2.2 cites clays with liquid limits to 143 and PIs to 112; GEC-13 §3.7.4 (p. 3-53) has water contents of 94 to 364 percent. |
+| log recovery percent over 100 | clamped to 100 | out of the slot (the record's field holds 0 to 100), `open` entry with the value and words that it is a reading, not a misreading: recoveries over 100 % are recorded (FHWA-NHI-06-088 p. 3-44). Below 0: impossible |
+| log drive lengths that do not line up with the blows, or have no unit | dropped without a word | out of the drive, `open` entry with the lengths, the blows and the unit as read |
+| log word outside a vocabulary (sample kind, exploration kind, water `when`) | `other` / `unknown`, without a word | `other` / `unknown`, with an entry naming the word as read |
+| log pit dimension with no unit | refused | kept in no unit, one note, as the total depth is |
 | lab liquid limit below plastic limit | all three refused | impossible: all three out of their slots, one `open` entry with the three values |
 | lab grading that rises | the series refused | impossible: the series out, one `open` entry |
 | lab kind outside the vocabulary | `other` with a note | as now |

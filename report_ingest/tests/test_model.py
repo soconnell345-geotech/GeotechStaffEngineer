@@ -265,6 +265,23 @@ class TestRecord:
         with use_qa_by_rank(False):
             assert qa_by_rank_enabled() is False
 
+    def test_the_flag_modes_entries_are_open(self):
+        """RI-87: a value kept out of its slot by the builders' flag mode,
+        and one kept at a lowered confidence, are both for a person; today's
+        refusal of the same value stays a change."""
+        from report_ingest.checks import IMPOSSIBLE, doubtful
+        from report_ingest.model import QAEntry, qa_rank
+        today = "105 is not a percentage; refused rather than accepted"
+        assert qa_rank("out_of_range", today) == "changed"
+        assert qa_rank("out_of_range", f"{today}; {IMPOSSIBLE}") == "open"
+        assert qa_rank("out_of_range", doubtful("depth 24 is outside")) \
+            == "open"
+        entry = QAEntry(kind="out_of_range", detail=f"x; {IMPOSSIBLE}")
+        assert entry.rank == "open"
+        # a value kept as printed in an unconverted unit is still a note
+        assert qa_rank("out_of_range", "the value is kept as printed") \
+            == "note"
+
     def test_the_record_round_trips_through_json(self):
         record = ReportRecord(
             investigations=[Investigation(

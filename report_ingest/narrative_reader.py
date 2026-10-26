@@ -58,6 +58,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from report_ingest.checks import check_mode
 from report_ingest.engine import Engine, image_block, text_block, user
 from report_ingest.model import (
     BearingValue, Citation, DOCUMENT_TYPE_VALUES, EARTH_HAZARD_VALUES,
@@ -1319,9 +1320,18 @@ class _Builder:
     part of this narrative, a bearing pressure with no unit, a summary past
     its word limit, and -- on a narrative long enough to have been read in
     parts -- two parts that answer the same field differently.
+
+    ``checks`` (:mod:`report_ingest.checks`): ``"refuse"``, the default, is
+    the above. ``"flag"`` is model-first ingest's (RI-87): every refusal
+    stays, but the caption counts Python makes (:func:`count_captions`) no
+    longer replace the reading's answer. A count that differs from it is a
+    QA note, "read by the code, not by the model", and the record keeps the
+    reading's answer and no count of the code's own.
     """
 
-    def __init__(self, pages: Sequence[int]) -> None:
+    def __init__(self, pages: Sequence[int], *,
+                 checks: str = "refuse") -> None:
+        self.flag = check_mode(checks) == "flag"
         self.pages = set(int(p) for p in pages)
         self.unresolved: List[Dict[str, Any]] = []
         self.citations: Dict[str, List[Citation]] = {}
@@ -1600,6 +1610,17 @@ class _Builder:
         for name, key in _COUNTED_FIELD.items():
             ours = int(counted.get(key) or 0)
             theirs = values.get(name)
+            if self.flag:
+                # Model-first (RI-87): no code-read value enters the record.
+                if ours and theirs != ours:
+                    said = ("gives none" if theirs is None
+                            else f"says {theirs}")
+                    self.refuse(
+                        name,
+                        f"the captions in the body count {ours}; the reading "
+                        f"{said}. Read by the code, not by the model: the "
+                        f"reading's answer is the one recorded", ours)
+                continue
             if ours:
                 if theirs is not None and theirs != ours:
                     self.refuse(
@@ -1660,8 +1681,9 @@ class _Builder:
 
         facts = NarrativeFacts(
             stated_counts=dict(self.stated),
-            counted={k: int(v) for k, v in counted.items()
-                     if isinstance(v, int)},
+            counted=({} if self.flag else
+                     {k: int(v) for k, v in counted.items()
+                      if isinstance(v, int)}),
             pages=[int(p) for p in pages],
             extra_answers=[dict(row) for row in self.extra],
             unresolved=[dict(u) for u in self.unresolved])

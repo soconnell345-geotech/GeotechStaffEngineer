@@ -1,0 +1,2607 @@
+{
+ "calc/multi": {
+  "changes": [],
+  "record": {
+   "inputs": [
+    {
+     "name": "Made-up pad breadth",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": [
+       10.0,
+       10.0,
+       90.0,
+       20.0
+      ],
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 30
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "ft",
+      "value": 4.0
+     }
+    },
+    {
+     "name": "Embedment Df",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 31
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "ft",
+      "value": 2.0
+     }
+    },
+    {
+     "name": "Unit weight",
+     "note": "the unit 'blorps' is not one the record can convert; the value is kept as printed and nothing converts it",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 30
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "blorps",
+      "value": 120.0
+     }
+    }
+   ],
+   "kind": "shallow_foundation_bearing",
+   "linked_investigation_id": "",
+   "method": "a made-up method",
+   "pages": [
+    30,
+    31,
+    32
+   ],
+   "program": "MadeUpCalc 2.1",
+   "prov": [
+    {
+     "alternatives": [],
+     "bbox": null,
+     "confidence": 0.9,
+     "method": "model",
+     "note": "read from page(s) 30, 31, 32",
+     "page": 30
+    }
+   ],
+   "results": [
+    {
+     "name": "Allowable bearing",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 32
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "ksf",
+      "value": 2.0
+     }
+    },
+    {
+     "name": "Factor of safety",
+     "note": "this number is on none of these pages to the precision it was reported at; it is kept at confidence 0.3 for review rather than dropped",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.3,
+      "method": "model",
+      "note": "",
+      "page": 31
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "",
+      "value": 3.7
+     }
+    },
+    {
+     "name": "Check",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 32
+     },
+     "text": "OK",
+     "value": null
+    }
+   ],
+   "source_report": "R-made-up",
+   "subject": "Footing F-1",
+   "summary": "A made-up bearing check.",
+   "unsettled": [
+    {
+     "page": 31,
+     "refused_by": "reader",
+     "what": "a footnote",
+     "why": "cut off"
+    },
+    {
+     "page": 99,
+     "refused_by": "python",
+     "what": "input Unit weight",
+     "why": "the reader put this on page 99, which is not part of this printout ([30, 31, 32]); the box was dropped"
+    },
+    {
+     "page": 30,
+     "refused_by": "python",
+     "value": "120 blorps",
+     "what": "input Unit weight",
+     "why": "the unit 'blorps' is not one the record can convert; the value is kept as printed and nothing converts it"
+    },
+    {
+     "page": 30,
+     "refused_by": "python",
+     "value": "7",
+     "what": "an unnamed input",
+     "why": "the reader returned a value with no printed label; a value with no label cannot be checked and was not recorded"
+    },
+    {
+     "page": 31,
+     "refused_by": "python",
+     "value": "3.7 ",
+     "what": "result Factor of safety",
+     "why": "this number is on none of these pages to the precision it was reported at; it is kept at confidence 0.3 for review rather than dropped"
+    }
+   ]
+  },
+  "unresolved": [
+   {
+    "page": 31,
+    "refused_by": "reader",
+    "what": "a footnote",
+    "why": "cut off"
+   },
+   {
+    "page": 99,
+    "refused_by": "python",
+    "what": "input Unit weight",
+    "why": "the reader put this on page 99, which is not part of this printout ([30, 31, 32]); the box was dropped"
+   },
+   {
+    "page": 30,
+    "refused_by": "python",
+    "value": "120 blorps",
+    "what": "input Unit weight",
+    "why": "the unit 'blorps' is not one the record can convert; the value is kept as printed and nothing converts it"
+   },
+   {
+    "page": 30,
+    "refused_by": "python",
+    "value": "7",
+    "what": "an unnamed input",
+    "why": "the reader returned a value with no printed label; a value with no label cannot be checked and was not recorded"
+   },
+   {
+    "page": 31,
+    "refused_by": "python",
+    "value": "3.7 ",
+    "what": "result Factor of safety",
+    "why": "this number is on none of these pages to the precision it was reported at; it is kept at confidence 0.3 for review rather than dropped"
+   }
+  ],
+  "warnings": []
+ },
+ "calc/one_page": {
+  "changes": [],
+  "record": {
+   "inputs": [
+    {
+     "name": "Load",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 40
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "kips",
+      "value": 50.0
+     }
+    }
+   ],
+   "kind": "settlement",
+   "linked_investigation_id": "",
+   "method": "",
+   "pages": [
+    40
+   ],
+   "program": null,
+   "prov": [
+    {
+     "alternatives": [],
+     "bbox": null,
+     "confidence": 0.9,
+     "method": "model",
+     "note": "read from page(s) 40",
+     "page": 40
+    }
+   ],
+   "results": [
+    {
+     "name": "Settlement",
+     "note": "this number is on none of these pages to the precision it was reported at; it is kept at confidence 0.3 for review rather than dropped",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.3,
+      "method": "model",
+      "note": "",
+      "page": 40
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "in",
+      "value": 0.8
+     }
+    }
+   ],
+   "source_report": "R-made-up",
+   "subject": "",
+   "summary": "",
+   "unsettled": [
+    {
+     "page": 40,
+     "refused_by": "python",
+     "value": "0.8 in",
+     "what": "result Settlement",
+     "why": "this number is on none of these pages to the precision it was reported at; it is kept at confidence 0.3 for review rather than dropped"
+    }
+   ]
+  },
+  "unresolved": [
+   {
+    "page": 40,
+    "refused_by": "python",
+    "value": "0.8 in",
+    "what": "result Settlement",
+    "why": "this number is on none of these pages to the precision it was reported at; it is kept at confidence 0.3 for review rather than dropped"
+   }
+  ],
+  "warnings": [
+   "page 40: the reader cited page 0 for 1 value(s); this printout is that one page, so they were read as page 40 with their boxes",
+   "page 40: the reader cited page 3 for 1 value(s); this printout is that one page, so they were read as page 40 with their boxes"
+  ]
+ },
+ "calc/positions": {
+  "changes": [],
+  "record": {
+   "inputs": [
+    {
+     "name": "Made-up load",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 30
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "kips",
+      "value": 50.0
+     }
+    },
+    {
+     "name": "Made-up layer thickness",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 30
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "ft",
+      "value": 4.0
+     }
+    }
+   ],
+   "kind": "settlement",
+   "linked_investigation_id": "",
+   "method": "",
+   "pages": [
+    30,
+    31,
+    32
+   ],
+   "program": null,
+   "prov": [
+    {
+     "alternatives": [],
+     "bbox": null,
+     "confidence": 0.9,
+     "method": "model",
+     "note": "read from page(s) 30, 31, 32",
+     "page": 30
+    }
+   ],
+   "results": [
+    {
+     "name": "Made-up settlement",
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 30
+     },
+     "text": "",
+     "value": {
+      "prov": null,
+      "unit": "in",
+      "value": 2.0
+     }
+    }
+   ],
+   "source_report": "R-made-up",
+   "subject": "",
+   "summary": "",
+   "unsettled": [
+    {
+     "page": 1,
+     "refused_by": "reader",
+     "what": "a note",
+     "why": "cut off"
+    },
+    {
+     "page": 0,
+     "refused_by": "python",
+     "what": "input Made-up load",
+     "why": "the reader put this on page 0, which is not part of this printout ([30, 31, 32]); the box was dropped"
+    },
+    {
+     "page": 1,
+     "refused_by": "python",
+     "what": "input Made-up layer thickness",
+     "why": "the reader put this on page 1, which is not part of this printout ([30, 31, 32]); the box was dropped"
+    },
+    {
+     "page": 2,
+     "refused_by": "python",
+     "what": "result Made-up settlement",
+     "why": "the reader put this on page 2, which is not part of this printout ([30, 31, 32]); the box was dropped"
+    }
+   ]
+  },
+  "unresolved": [
+   {
+    "page": 1,
+    "refused_by": "reader",
+    "what": "a note",
+    "why": "cut off"
+   },
+   {
+    "page": 0,
+    "refused_by": "python",
+    "what": "input Made-up load",
+    "why": "the reader put this on page 0, which is not part of this printout ([30, 31, 32]); the box was dropped"
+   },
+   {
+    "page": 1,
+    "refused_by": "python",
+    "what": "input Made-up layer thickness",
+    "why": "the reader put this on page 1, which is not part of this printout ([30, 31, 32]); the box was dropped"
+   },
+   {
+    "page": 2,
+    "refused_by": "python",
+    "what": "result Made-up settlement",
+    "why": "the reader put this on page 2, which is not part of this printout ([30, 31, 32]); the box was dropped"
+   }
+  ],
+  "warnings": []
+ },
+ "lab/no_unit": {
+  "changes": [],
+  "record": [
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": {
+     "prov": null,
+     "unit": "",
+     "value": 4.0
+    },
+    "depth_top": null,
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-5",
+    "kind": "moisture_content",
+    "lab": "",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 21
+     }
+    ],
+    "result": {
+     "ash_percent": null,
+     "description": "",
+     "dry_density": null,
+     "kind": "moisture_content",
+     "organic_percent": null,
+     "saturation_percent": null,
+     "specific_gravity": null,
+     "uscs": "",
+     "void_ratio": null,
+     "water_contents": [],
+     "wc": 9.0,
+     "wet_density": null
+    },
+    "sample_id": "",
+    "source_report": "R-made-up",
+    "standard": ""
+   }
+  ],
+  "unresolved": [
+   {
+    "refused_by": "python",
+    "value": 2000.0,
+    "what": "moisture_content 1 (B-5): depth",
+    "why": "depth 2000 (no unit printed) is past 300 m even read as feet; refused rather than accepted"
+   }
+  ]
+ },
+ "lab/positions": {
+  "changes": [],
+  "record": [
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": null,
+    "depth_top": {
+     "prov": null,
+     "unit": "ft",
+     "value": 4.0
+    },
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-7",
+    "kind": "atterberg",
+    "lab": "",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 20
+     }
+    ],
+    "result": {
+     "description": "",
+     "flow_curve": [],
+     "kind": "atterberg",
+     "ll": null,
+     "non_plastic": false,
+     "pi": 75.0,
+     "pl": 45.0,
+     "pl_trials": [],
+     "shrinkage_limit": null,
+     "uscs": "",
+     "water_content": null
+    },
+    "sample_id": "S-1",
+    "source_report": "R-made-up",
+    "standard": ""
+   },
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": null,
+    "depth_top": {
+     "prov": null,
+     "unit": "ft",
+     "value": 9.0
+    },
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-7",
+    "kind": "moisture_content",
+    "lab": "",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 20
+     }
+    ],
+    "result": {
+     "ash_percent": null,
+     "description": "",
+     "dry_density": null,
+     "kind": "moisture_content",
+     "organic_percent": null,
+     "saturation_percent": null,
+     "specific_gravity": null,
+     "uscs": "",
+     "void_ratio": null,
+     "water_contents": [],
+     "wc": null,
+     "wet_density": null
+    },
+    "sample_id": "S-3",
+    "source_report": "R-made-up",
+    "standard": ""
+   }
+  ],
+  "unresolved": [
+   {
+    "refused_by": "python",
+    "value": 120.0,
+    "what": "atterberg 1 (B-7): liquid limit",
+    "why": "120 is not a percentage; refused rather than accepted"
+   },
+   {
+    "refused_by": "python",
+    "value": 150.0,
+    "what": "atterberg 1 (B-7): water content",
+    "why": "150 is not a percentage; refused rather than accepted"
+   },
+   {
+    "page": 0,
+    "refused_by": "python",
+    "what": "atterberg 1 (B-7): provenance",
+    "why": "page 0 is not part of this sheet ([20, 21, 22]); the box was dropped"
+   },
+   {
+    "refused_by": "python",
+    "value": -3.0,
+    "what": "moisture_content 2 (B-7): water content",
+    "why": "-3 is not a percentage; refused rather than accepted"
+   },
+   {
+    "page": 2,
+    "refused_by": "python",
+    "what": "moisture_content 2 (B-7): provenance",
+    "why": "page 2 is not part of this sheet ([20, 21, 22]); the box was dropped"
+   },
+   {
+    "page": 1,
+    "refused_by": "reader",
+    "what": "a stamp",
+    "why": "smudged"
+   }
+  ]
+ },
+ "lab/sheet": {
+  "changes": [],
+  "record": [
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": {
+     "prov": null,
+     "unit": "ft",
+     "value": 6.5
+    },
+    "depth_top": {
+     "prov": null,
+     "unit": "ft",
+     "value": 5.0
+    },
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-1",
+    "kind": "atterberg",
+    "lab": "Made-up Testing Lab",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 21
+     }
+    ],
+    "result": {
+     "description": "",
+     "flow_curve": [],
+     "kind": "atterberg",
+     "ll": null,
+     "non_plastic": false,
+     "pi": null,
+     "pl": null,
+     "pl_trials": [],
+     "shrinkage_limit": null,
+     "uscs": "",
+     "water_content": 22.0
+    },
+    "sample_id": "S-2",
+    "source_report": "R-made-up",
+    "standard": ""
+   },
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": null,
+    "depth_top": null,
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-1",
+    "kind": "gradation",
+    "lab": "Made-up Testing Lab",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": [
+       50.0,
+       60.0,
+       300.0,
+       400.0
+      ],
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 22
+     }
+    ],
+    "result": {
+     "cc": null,
+     "clay_percent": null,
+     "cobbles_percent": null,
+     "cu": null,
+     "d10": null,
+     "d100": null,
+     "d30": null,
+     "d50": null,
+     "d60": null,
+     "d85": null,
+     "d90": null,
+     "description": "",
+     "fines_percent": 12.0,
+     "gravel_percent": null,
+     "hydrometer": false,
+     "kind": "gradation",
+     "percent_passing": [],
+     "sand_percent": 60.0,
+     "silt_percent": null,
+     "uscs": "",
+     "water_content": null
+    },
+    "sample_id": "S-4",
+    "source_report": "R-made-up",
+    "standard": ""
+   },
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": null,
+    "depth_top": null,
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-2",
+    "kind": "compaction",
+    "lab": "Made-up Testing Lab",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 20
+     }
+    ],
+    "result": {
+     "blows_per_layer": null,
+     "description": "",
+     "kind": "compaction",
+     "layers": null,
+     "max_dry_density": {
+      "prov": null,
+      "unit": "pcf",
+      "value": 118.0
+     },
+     "method": "",
+     "mould_volume": null,
+     "optimum_wc": 12.0,
+     "oversize_percent": null,
+     "points": [
+      {
+       "dry_density": {
+        "prov": null,
+        "unit": "pcf",
+        "value": 112.0
+       },
+       "water_content": 8.0
+      },
+      {
+       "dry_density": {
+        "prov": null,
+        "unit": "pcf",
+        "value": 116.0
+       },
+       "water_content": 14.0
+      }
+     ],
+     "rammer_mass": null,
+     "uscs": ""
+    },
+    "sample_id": "",
+    "source_report": "R-made-up",
+    "standard": ""
+   },
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": null,
+    "depth_top": null,
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "",
+    "kind": "summary_table",
+    "lab": "Made-up Testing Lab",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 20
+     }
+    ],
+    "result": {
+     "kind": "summary_table",
+     "rows": [
+      {
+       "c": null,
+       "chloride": null,
+       "depth_bottom": null,
+       "depth_top": {
+        "prov": null,
+        "unit": "ft",
+        "value": 2.0
+       },
+       "description": "",
+       "dry_density": null,
+       "elevation_top": null,
+       "fines_percent": null,
+       "gravel_percent": null,
+       "investigation_id": "B-1",
+       "lab": "",
+       "linked_investigation_id": "",
+       "linked_sample_id": "",
+       "ll": 40.0,
+       "max_dry_density": null,
+       "optimum_wc": null,
+       "organic_percent": null,
+       "other": [],
+       "pH": null,
+       "percent_passing": [
+        {
+         "method": "",
+         "percent_passing": 30.0,
+         "sieve": "No. 200",
+         "size": null
+        }
+       ],
+       "phi_deg": null,
+       "pi": 20.0,
+       "pl": 20.0,
+       "qu": null,
+       "redox": null,
+       "resistivity": null,
+       "sample_id": "S-1",
+       "sample_type": "",
+       "sand_percent": null,
+       "silt_clay_percent": null,
+       "stratum": "",
+       "su": null,
+       "sulfate": null,
+       "sulfides": null,
+       "swell_percent": null,
+       "uscs": "",
+       "wc": 15.0,
+       "wet_density": null
+      },
+      {
+       "c": null,
+       "chloride": null,
+       "depth_bottom": null,
+       "depth_top": null,
+       "description": "",
+       "dry_density": null,
+       "elevation_top": null,
+       "fines_percent": null,
+       "gravel_percent": null,
+       "investigation_id": "B-3",
+       "lab": "",
+       "linked_investigation_id": "",
+       "linked_sample_id": "",
+       "ll": null,
+       "max_dry_density": null,
+       "optimum_wc": null,
+       "organic_percent": null,
+       "other": [],
+       "pH": null,
+       "percent_passing": [],
+       "phi_deg": null,
+       "pi": null,
+       "pl": null,
+       "qu": null,
+       "redox": null,
+       "resistivity": null,
+       "sample_id": "S-5",
+       "sample_type": "",
+       "sand_percent": null,
+       "silt_clay_percent": null,
+       "stratum": "",
+       "su": null,
+       "sulfate": null,
+       "sulfides": null,
+       "swell_percent": null,
+       "uscs": "",
+       "wc": null,
+       "wet_density": null
+      }
+     ],
+     "sheet": "Summary of tests",
+     "title": ""
+    },
+    "sample_id": "",
+    "source_report": "R-made-up",
+    "standard": ""
+   },
+   {
+    "curves_digitised": false,
+    "date": "",
+    "depth_bottom": null,
+    "depth_top": null,
+    "elevation": null,
+    "fields": {},
+    "investigation_id": "B-4",
+    "kind": "moisture_content",
+    "lab": "Made-up Testing Lab",
+    "language": "",
+    "linked_depth_delta_m": null,
+    "linked_investigation_id": "",
+    "linked_sample_id": "",
+    "note": "",
+    "pages": [
+     20,
+     21,
+     22
+    ],
+    "prov": [
+     {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 22
+     }
+    ],
+    "result": {
+     "ash_percent": null,
+     "description": "",
+     "dry_density": null,
+     "kind": "moisture_content",
+     "organic_percent": null,
+     "saturation_percent": null,
+     "specific_gravity": null,
+     "uscs": "",
+     "void_ratio": null,
+     "water_contents": [],
+     "wc": 30.0,
+     "wet_density": null
+    },
+    "sample_id": "",
+    "source_report": "R-made-up",
+    "standard": ""
+   }
+  ],
+  "unresolved": [
+   {
+    "refused_by": "python",
+    "value": -5.0,
+    "what": "atterberg 1 (B-1): plasticity index",
+    "why": "-5 is not a percentage; refused rather than accepted"
+   },
+   {
+    "refused_by": "python",
+    "value": [
+     25.0,
+     30.0,
+     null
+    ],
+    "what": "atterberg 1 (B-1): Atterberg limits",
+    "why": "liquid limit 25 is below plastic limit 30, which no soil does; all three limits refused rather than one guessed at"
+   },
+   {
+    "refused_by": "python",
+    "value": [
+     80.0,
+     92.0
+    ],
+    "what": "gradation 2 (B-1): grading series",
+    "why": "92% passes a smaller sieve than the 80% that passed a larger one; the series runs the wrong way and was refused whole"
+   },
+   {
+    "refused_by": "python",
+    "value": 105.0,
+    "what": "gradation 2 (B-1): gravel",
+    "why": "105 is not a percentage; refused rather than accepted"
+   },
+   {
+    "refused_by": "python",
+    "value": 1500.0,
+    "what": "gradation 2 (B-1): depth",
+    "why": "depth 1500 ft is 457.2 m, outside 0 to 300 m; refused rather than accepted"
+   },
+   {
+    "refused_by": "python",
+    "value": -8.0,
+    "what": "compaction 3 (B-2): compaction point water content",
+    "why": "-8 is not a percentage; refused rather than accepted"
+   },
+   {
+    "page": 57,
+    "refused_by": "python",
+    "what": "compaction 3 (B-2): provenance",
+    "why": "page 57 is not part of this sheet ([20, 21, 22]); the box was dropped"
+   },
+   {
+    "refused_by": "python",
+    "value": 101.0,
+    "what": "summary row 1 (B-1): percent passing No. 4",
+    "why": "101 is not a percentage; refused rather than accepted"
+   },
+   {
+    "refused_by": "python",
+    "value": [
+     18.0,
+     26.0,
+     8.0
+    ],
+    "what": "summary row 2 (B-3): Atterberg limits",
+    "why": "liquid limit 18 is below plastic limit 26, which no soil does; all three limits refused rather than one guessed at"
+   },
+   {
+    "refused_by": "python",
+    "value": -4.0,
+    "what": "summary row 2 (B-3): row depth",
+    "why": "depth -4 ft is -1.2 m, outside 0 to 300 m; refused rather than accepted"
+   },
+   {
+    "refused_by": "python",
+    "value": 2500.0,
+    "what": "moisture_content 5 (B-4): depth",
+    "why": "depth 2500 ft is 762.0 m, outside 0 to 300 m; refused rather than accepted"
+   },
+   {
+    "page": 21,
+    "refused_by": "reader",
+    "what": "a stamp",
+    "why": "smudged"
+   }
+  ]
+ },
+ "log/deep": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "ft",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "B-9",
+   "kind": "boring",
+   "layers": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 1100.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Weathered rock",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 0.0
+     },
+     "uscs": ""
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 1250.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Fresh rock",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 1100.0
+     },
+     "uscs": ""
+    }
+   ],
+   "offset": "",
+   "pages": [
+    10,
+    11
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": {
+    "prov": null,
+    "unit": "ft",
+    "value": 1250.0
+   },
+   "units_known": true,
+   "water": [],
+   "x": null,
+   "y": null
+  },
+  "unresolved": []
+ },
+ "log/no_ruler": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "m",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "B-8",
+   "kind": "other",
+   "layers": [],
+   "offset": "",
+   "pages": [
+    10,
+    11
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": {
+    "prov": null,
+    "unit": "m",
+    "value": 6.0
+   },
+   "units_known": true,
+   "water": [
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": null,
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 11
+     },
+     "when": "at_completion"
+    }
+   ],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": 0.0,
+    "what": "layer 1 (Fill) top",
+    "why": "no depth scale was found on any page of this log, so the page carries no depths; the reader returned one anyway and it was refused"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 2.5,
+    "what": "layer 2 (Stiff brown CLAY) top",
+    "why": "no depth scale was found on any page of this log, so the page carries no depths; the reader returned one anyway and it was refused"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 3.0,
+    "what": "sample U1 top",
+    "why": "no depth scale was found on any page of this log, so the page carries no depths; the reader returned one anyway and it was refused"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 4.2,
+    "what": "water observation 1",
+    "why": "no depth scale was found on any page of this log, so the page carries no depths; the reader returned one anyway and it was refused"
+   }
+  ]
+ },
+ "log/one_based": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "ft",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "B-10",
+   "kind": "boring",
+   "layers": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 5.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 1",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 3
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 0.0
+     },
+     "uscs": ""
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 10.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 2",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 3
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 5.0
+     },
+     "uscs": ""
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 15.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 3",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 3
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 10.0
+     },
+     "uscs": ""
+    }
+   ],
+   "offset": "",
+   "pages": [
+    3,
+    4,
+    5
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": {
+    "prov": null,
+    "unit": "ft",
+    "value": 15.0
+   },
+   "units_known": true,
+   "water": [
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": {
+      "prov": null,
+      "unit": "ft",
+      "value": 8.0
+     },
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 3
+     },
+     "when": "at_completion"
+    }
+   ],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": 1,
+    "refused_by": "reader",
+    "what": "a smudge",
+    "why": "smudged"
+   },
+   {
+    "page": 1,
+    "refused_by": "python",
+    "what": "layer 1 (Made-up layer 1)",
+    "why": "provenance names page 1, which is not part of this log ([3, 4, 5]); the box was dropped"
+   },
+   {
+    "page": 2,
+    "refused_by": "python",
+    "what": "layer 2 (Made-up layer 2)",
+    "why": "provenance names page 2, which is not part of this log ([3, 4, 5]); the box was dropped"
+   }
+  ]
+ },
+ "log/pit": {
+  "changes": [
+   {
+    "page": 10,
+    "what": "layer 1 (Topsoil) top",
+    "why": "read off a pit log with no depth scale; the number is the one printed on the sheet and nothing checked it against a ruler"
+   },
+   {
+    "page": 10,
+    "what": "layer 1 (Topsoil) base",
+    "why": "read off a pit log with no depth scale; the number is the one printed on the sheet and nothing checked it against a ruler"
+   }
+  ],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "m",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "TP-3",
+   "kind": "test_pit",
+   "layers": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "m",
+      "value": 0.4
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Topsoil",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "top": {
+      "prov": null,
+      "unit": "m",
+      "value": 0.0
+     },
+     "uscs": ""
+    }
+   ],
+   "offset": "",
+   "pages": [
+    10,
+    11
+   ],
+   "pit": {
+    "depth": {
+     "prov": null,
+     "unit": "m",
+     "value": 2.0
+    },
+    "length": {
+     "prov": null,
+     "unit": "m",
+     "value": 3.0
+    },
+    "method": "",
+    "prov": null,
+    "width": null
+   },
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": null,
+   "units_known": true,
+   "water": [],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": null,
+    "refused_by": "python",
+    "value": -1.0,
+    "what": "total depth",
+    "why": "a hole cannot have a negative total depth"
+   },
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": -0.3,
+    "what": "layer 2 (Red sandy CLAY) top",
+    "why": "this pit has no depth scale and the depth is negative"
+   },
+   {
+    "page": null,
+    "refused_by": "python",
+    "value": 0.0,
+    "what": "pit width",
+    "why": "a pit dimension must be greater than zero"
+   }
+  ]
+ },
+ "log/pit_no_unit": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "TP-4",
+   "kind": "test_pit",
+   "layers": [],
+   "offset": "",
+   "pages": [
+    10,
+    11
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": null,
+   "units_known": false,
+   "water": [
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": null,
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "when": "while_drilling"
+    }
+   ],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": 0.0,
+    "what": "layer 1 (Sandy fill) top",
+    "why": "this pit has no depth scale and no depth unit was printed, so the number has no meaning"
+   },
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": 1.0,
+    "what": "water observation 1",
+    "why": "this pit has no depth scale and no depth unit was printed, so the number has no meaning"
+   },
+   {
+    "page": null,
+    "refused_by": "python",
+    "value": 3.0,
+    "what": "pit length",
+    "why": "no unit was printed for it and the log states none, so the number has no meaning"
+   },
+   {
+    "page": null,
+    "refused_by": "python",
+    "value": 2.0,
+    "what": "pit width",
+    "why": "no unit was printed for it and the log states none, so the number has no meaning"
+   }
+  ]
+ },
+ "log/positions": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "ft",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "B-10",
+   "kind": "boring",
+   "layers": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 5.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 1",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 0.0
+     },
+     "uscs": ""
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 10.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 2",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 5.0
+     },
+     "uscs": ""
+    }
+   ],
+   "offset": "",
+   "pages": [
+    10,
+    11
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": {
+    "prov": null,
+    "unit": "ft",
+    "value": 10.0
+   },
+   "units_known": true,
+   "water": [
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": {
+      "prov": null,
+      "unit": "ft",
+      "value": 8.0
+     },
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "when": "at_completion"
+    }
+   ],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": 0,
+    "refused_by": "reader",
+    "what": "a smudge",
+    "why": "smudged"
+   },
+   {
+    "page": 0,
+    "refused_by": "python",
+    "what": "layer 1 (Made-up layer 1)",
+    "why": "provenance names page 0, which is not part of this log ([10, 11]); the box was dropped"
+   },
+   {
+    "page": 1,
+    "refused_by": "python",
+    "what": "layer 2 (Made-up layer 2)",
+    "why": "provenance names page 1, which is not part of this log ([10, 11]); the box was dropped"
+   },
+   {
+    "page": 1,
+    "refused_by": "python",
+    "what": "water observation 1",
+    "why": "provenance names page 1, which is not part of this log ([10, 11]); the box was dropped"
+   }
+  ]
+ },
+ "log/window": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "ft",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "automatic",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "hollow stem auger",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": {
+    "prov": null,
+    "unit": "ft",
+    "value": 101.5
+   },
+   "fields": {},
+   "investigation_id": "B-7",
+   "kind": "boring",
+   "layers": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 4.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Brown silty SAND",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": [
+       10.0,
+       20.0,
+       200.0,
+       30.0
+      ],
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 0.0
+     },
+     "uscs": "SM"
+    },
+    {
+     "bottom": null,
+     "color": "",
+     "consistency": "",
+     "description": "Grey lean CLAY",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 11
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 4.0
+     },
+     "uscs": "CL"
+    }
+   ],
+   "offset": "",
+   "pages": [
+    10,
+    11
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 3.5
+     },
+     "dry_unit_weight": null,
+     "fines_percent": 40.0,
+     "kind": "spt",
+     "liquid_limit": null,
+     "note": "",
+     "plastic_limit": null,
+     "plasticity_index": null,
+     "pocket_pen": null,
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "qu": null,
+     "recovery": null,
+     "recovery_percent": 100.0,
+     "rqd_percent": 0.0,
+     "sample_id": "S-1",
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 2.0
+     },
+     "uscs": "",
+     "water_content": 18.0
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 16.5
+     },
+     "dry_unit_weight": null,
+     "fines_percent": null,
+     "kind": "other",
+     "liquid_limit": null,
+     "note": "",
+     "plastic_limit": null,
+     "plasticity_index": null,
+     "pocket_pen": null,
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 11
+     },
+     "qu": null,
+     "recovery": null,
+     "recovery_percent": null,
+     "rqd_percent": null,
+     "sample_id": "S-4",
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 15.0
+     },
+     "uscs": "",
+     "water_content": null
+    }
+   ],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [
+    {
+     "blows": [
+      3,
+      5,
+      7
+     ],
+     "depth_bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 3.5
+     },
+     "depth_top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 2.0
+     },
+     "hammer": "automatic",
+     "increment": null,
+     "increments": [],
+     "n": 12,
+     "n_basis": "",
+     "n_printed": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "refusal": false,
+     "sample_id": "S-1"
+    }
+   ],
+   "station": "",
+   "total_depth": {
+    "prov": null,
+    "unit": "ft",
+    "value": 30.0
+   },
+   "units_known": true,
+   "water": [
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": {
+      "prov": null,
+      "unit": "ft",
+      "value": 12.0
+     },
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 10
+     },
+     "when": "while_drilling"
+    },
+    {
+     "casing_depth": {
+      "prov": null,
+      "unit": "ft",
+      "value": 18.0
+     },
+     "caved_depth": null,
+     "date": "",
+     "depth": null,
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 11
+     },
+     "when": "at_completion"
+    },
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": null,
+     "elevation": null,
+     "hours": 24.0,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 11
+     },
+     "when": "after_hours"
+    },
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": {
+      "prov": null,
+      "unit": "ft",
+      "value": 10.0
+     },
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 11
+     },
+     "when": "unknown"
+    }
+   ],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": 10,
+    "refused_by": "reader",
+    "what": "a faint symbol at 9 ft",
+    "why": "too faint to read"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 24.0,
+    "what": "layer 2 (Grey lean CLAY) base",
+    "why": "depth 24 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 57,
+    "refused_by": "python",
+    "value": 24.0,
+    "what": "layer 3 (Grey sandy GRAVEL) top",
+    "why": "depth 24 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": -2.0,
+    "what": "sample S-2 top",
+    "why": "depth -2 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 22.0,
+    "what": "sample S-3 top",
+    "why": "depth 22 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 22.0,
+    "what": "driven record 2 at 22",
+    "why": "depth 22 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 25.0,
+    "what": "water observation 2",
+    "why": "depth 25 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 33.0,
+    "what": "water observation 3",
+    "why": "depth 33 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 11,
+    "refused_by": "python",
+    "value": 40.0,
+    "what": "water observation 3 caved",
+    "why": "depth 40 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   }
+  ]
+ },
+ "log/zero_based": {
+  "changes": [],
+  "record": {
+   "coordinate_system": "",
+   "cpt": null,
+   "date_finished": "",
+   "date_started": "",
+   "dcp": null,
+   "depth_unit": "ft",
+   "drilling": {
+    "contractor": "",
+    "driller": "",
+    "equipment": "",
+    "hammer_drop": null,
+    "hammer_energy_ratio": null,
+    "hammer_mass": null,
+    "hammer_type": "",
+    "hole_diameter": null,
+    "logged_by": "",
+    "method": "",
+    "prov": [],
+    "sampler": ""
+   },
+   "elevation": null,
+   "fields": {},
+   "investigation_id": "B-10",
+   "kind": "boring",
+   "layers": [
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 5.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 1",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.4,
+      "method": "model",
+      "note": "",
+      "page": 1
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 0.0
+     },
+     "uscs": ""
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 10.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 2",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 1
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 5.0
+     },
+     "uscs": ""
+    },
+    {
+     "bottom": {
+      "prov": null,
+      "unit": "ft",
+      "value": 15.0
+     },
+     "color": "",
+     "consistency": "",
+     "description": "Made-up layer 3",
+     "moisture": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 2
+     },
+     "top": {
+      "prov": null,
+      "unit": "ft",
+      "value": 10.0
+     },
+     "uscs": ""
+    }
+   ],
+   "offset": "",
+   "pages": [
+    1,
+    2,
+    3
+   ],
+   "pit": null,
+   "prov": [],
+   "remarks": "",
+   "samples": [],
+   "sheet": "",
+   "source_report": "R-made-up",
+   "spt": [],
+   "station": "",
+   "total_depth": {
+    "prov": null,
+    "unit": "ft",
+    "value": 15.0
+   },
+   "units_known": true,
+   "water": [
+    {
+     "casing_depth": null,
+     "caved_depth": null,
+     "date": "",
+     "depth": {
+      "prov": null,
+      "unit": "ft",
+      "value": 8.0
+     },
+     "elevation": null,
+     "hours": null,
+     "note": "",
+     "prov": {
+      "alternatives": [],
+      "bbox": null,
+      "confidence": 0.9,
+      "method": "model",
+      "note": "",
+      "page": 2
+     },
+     "when": "at_completion"
+    }
+   ],
+   "x": null,
+   "y": null
+  },
+  "unresolved": [
+   {
+    "page": 0,
+    "refused_by": "reader",
+    "what": "a smudge",
+    "why": "smudged"
+   },
+   {
+    "page": 0,
+    "refused_by": "python",
+    "what": "layer 1 (Made-up layer 1)",
+    "why": "provenance names page 0, which is not part of this log ([1, 2, 3]); the box was dropped"
+   }
+  ]
+ },
+ "narrative/counts_agree": {
+  "facts": {
+   "counted": {
+    "figures": 0,
+    "tables": 3
+   },
+   "extra_answers": [],
+   "found_counts": {},
+   "found_ids": {},
+   "pages": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "stated_counts": {
+    "borings": 4,
+    "tables": 3
+   },
+   "unresolved": []
+  },
+  "general": {
+   "bearingCapacity": null,
+   "bearingCapacityValues": [],
+   "boringCount": 4,
+   "boringDictionary": null,
+   "citations": {
+    "boringCount": [
+     {
+      "page": 2,
+      "quote": "four borings were drilled"
+     }
+    ],
+    "documentType": [
+     {
+      "page": 0,
+      "quote": "Geotechnical report"
+     }
+    ],
+    "projectName": [
+     {
+      "page": 0,
+      "quote": "Made-up Bridge Replacement"
+     }
+    ],
+    "tableCount": [
+     {
+      "page": 3,
+      "quote": "Table 3"
+     }
+    ]
+   },
+   "cptCount": null,
+   "documentType": "geotechnical report",
+   "figureCount": null,
+   "geotechnicalEngineerFirm": null,
+   "outsideProject": null,
+   "outsideProjectAnswer": null,
+   "postName": null,
+   "previousInvestigationCount": null,
+   "primeAe": null,
+   "primeContractor": null,
+   "projectName": "Made-up Bridge Replacement",
+   "projectNumber": null,
+   "projectPhase": null,
+   "propertyType": null,
+   "quickSummary": null,
+   "recommendedFoundations": null,
+   "strata": null,
+   "strataList": [],
+   "structureCount": null,
+   "structureList": null,
+   "tableCount": 3,
+   "testPitCount": null,
+   "testPitDictionary": null,
+   "testingProgramSummary": null
+  },
+  "hazards": {
+   "asceSevenVersion": null,
+   "asceSevenVersionNormalized": null,
+   "citations": {},
+   "earthHazardsExposed": null,
+   "geophysicalTestingAnswer": null,
+   "geophysicalTestingMention": null,
+   "hazardAnalysisAnswer": null,
+   "hazardAnalysisMention": null,
+   "liquefactionPotential": null,
+   "naturalHazardSummary": null,
+   "reportDate": null,
+   "reportDateISO": null,
+   "seismicCodeUsed": null,
+   "seismicParameterSummary": null,
+   "siteClass": null,
+   "siteClassNormalized": null,
+   "siteResponseAnswer": null,
+   "siteResponseMention": null,
+   "soilCorrosion": null,
+   "soilCorrosionAnswer": null
+  },
+  "unresolved": []
+ },
+ "narrative/counts_differ": {
+  "facts": {
+   "counted": {
+    "figures": 2,
+    "tables": 4
+   },
+   "extra_answers": [],
+   "found_counts": {},
+   "found_ids": {},
+   "pages": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "stated_counts": {
+    "borings": 4,
+    "tables": 3
+   },
+   "unresolved": [
+    {
+     "value": "3",
+     "what": "tableCount",
+     "why": "the captions in the body count 4; the reading says 3. The counted number is stored"
+    },
+    {
+     "what": "figureCount",
+     "why": "answered with no citation"
+    }
+   ]
+  },
+  "general": {
+   "bearingCapacity": null,
+   "bearingCapacityValues": [],
+   "boringCount": 4,
+   "boringDictionary": null,
+   "citations": {
+    "boringCount": [
+     {
+      "page": 2,
+      "quote": "four borings were drilled"
+     }
+    ],
+    "documentType": [
+     {
+      "page": 0,
+      "quote": "Geotechnical report"
+     }
+    ],
+    "projectName": [
+     {
+      "page": 0,
+      "quote": "Made-up Bridge Replacement"
+     }
+    ],
+    "tableCount": [
+     {
+      "page": 3,
+      "quote": "Table 3"
+     }
+    ]
+   },
+   "cptCount": null,
+   "documentType": "geotechnical report",
+   "figureCount": 2,
+   "geotechnicalEngineerFirm": null,
+   "outsideProject": null,
+   "outsideProjectAnswer": null,
+   "postName": null,
+   "previousInvestigationCount": null,
+   "primeAe": null,
+   "primeContractor": null,
+   "projectName": "Made-up Bridge Replacement",
+   "projectNumber": null,
+   "projectPhase": null,
+   "propertyType": null,
+   "quickSummary": null,
+   "recommendedFoundations": null,
+   "strata": null,
+   "strataList": [],
+   "structureCount": null,
+   "structureList": null,
+   "tableCount": 4,
+   "testPitCount": null,
+   "testPitDictionary": null,
+   "testingProgramSummary": null
+  },
+  "hazards": {
+   "asceSevenVersion": null,
+   "asceSevenVersionNormalized": null,
+   "citations": {},
+   "earthHazardsExposed": null,
+   "geophysicalTestingAnswer": null,
+   "geophysicalTestingMention": null,
+   "hazardAnalysisAnswer": null,
+   "hazardAnalysisMention": null,
+   "liquefactionPotential": null,
+   "naturalHazardSummary": null,
+   "reportDate": null,
+   "reportDateISO": null,
+   "seismicCodeUsed": null,
+   "seismicParameterSummary": null,
+   "siteClass": null,
+   "siteClassNormalized": null,
+   "siteResponseAnswer": null,
+   "siteResponseMention": null,
+   "soilCorrosion": null,
+   "soilCorrosionAnswer": null
+  },
+  "unresolved": [
+   {
+    "value": "3",
+    "what": "tableCount",
+    "why": "the captions in the body count 4; the reading says 3. The counted number is stored"
+   },
+   {
+    "what": "figureCount",
+    "why": "answered with no citation"
+   }
+  ]
+ }
+}

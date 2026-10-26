@@ -1801,3 +1801,197 @@ class TestTheFloorReadsTheSpecimensOwnValues:
         values = _Values()
         _read_property_table(rows, values, 0.8, strict=True)
         assert values.index["chloride"][0] == 6.0
+
+
+# ---------------------------------------------------------------------------
+# the builder's check mode (RI-87 piece 6, plan section 8.6)
+# ---------------------------------------------------------------------------
+
+def _ranked(rows):
+    """The QA entries the reconciler makes of ``rows``, with their ranks."""
+    from report_ingest.reconciler import _carry_unresolved
+    qa = []
+    _carry_unresolved(qa, rows)
+    return qa
+
+
+def _lab_flag(reading=None, pages=None):
+    from report_ingest.lab_reader import _Builder
+    from report_ingest.tests.checks_fixtures import LAB_PAGES, lab_reading
+    builder = _Builder(reading or lab_reading(), pages or LAB_PAGES,
+                       "R-made-up", [], checks="flag")
+    return builder, builder.build()
+
+
+def _rows_about(builder, what):
+    return [u for u in builder.unresolved if u["what"].endswith(what)]
+
+
+class TestLabChecksDefaultIsMaster:
+
+    def test_every_lab_case_builds_as_on_master(self):
+        from report_ingest.tests.checks_fixtures import (
+            build_default, lab_cases, load_snapshot,
+        )
+        now, then = build_default(), load_snapshot()
+        for case in lab_cases():
+            assert now[f"lab/{case}"] == then[f"lab/{case}"], case
+
+    def test_refuse_named_is_the_default(self):
+        from report_ingest.lab_reader import _Builder
+        from report_ingest.tests.checks_fixtures import LAB_PAGES, lab_reading
+        a = _Builder(lab_reading(), LAB_PAGES, "R", [])
+        b = _Builder(lab_reading(), LAB_PAGES, "R", [], checks="refuse")
+        assert a.build() == b.build()
+        assert a.unresolved == b.unresolved and a.changes == b.changes
+        # every test carries the whole sheet's pages, as before
+        assert {tuple(t.pages) for t in _Builder(
+            lab_reading(), LAB_PAGES, "R", []).build()} == {(20, 21, 22)}
+
+    def test_refuse_still_bounds_water_content_at_100(self):
+        from report_ingest.lab_reader import _Builder
+        from report_ingest.tests.checks_fixtures import (
+            LAB_PAGES, lab_positions_reading,
+        )
+        builder = _Builder(lab_positions_reading(), LAB_PAGES, "R", [])
+        tests = builder.build()
+        assert tests[0].result.water_content is None
+        assert tests[0].result.ll is None
+
+
+class TestLabChecksFlag:
+
+    def test_a_liquid_limit_below_the_plastic_limit_is_kept_out(self):
+        builder, tests = _lab_flag()
+        atterberg = tests[0].result
+        assert (atterberg.ll, atterberg.pl, atterberg.pi) == (None, None, None)
+        (row,) = _rows_about(builder, "atterberg 1 (B-1): Atterberg limits")
+        assert row["value"] == [25.0, 30.0, None]
+        assert row["page"] == 21
+        assert row["why"] == (
+            "liquid limit 25 is below plastic limit 30, which no soil does; "
+            "which of the three is wrong cannot be told, so all three go; "
+            "no real sheet prints this, so it is kept out of the record and "
+            "listed here as read")
+        (entry,) = _ranked([row])
+        assert entry.kind == "out_of_range" and entry.rank == "open"
+        # the summary row's triple too, with its printed plastic limit
+        (row,) = [u for u in builder.unresolved
+                  if u["what"] == "summary row 2 (B-3): Atterberg limits"]
+        assert row["value"] == [18.0, 26.0, 8.0]
+        summary = tests[3].result.rows[1]
+        assert (summary.ll, summary.pl, summary.pi) == (None, None, None)
+
+    def test_a_rising_grading_is_kept_out_whole_with_the_series(self):
+        import json
+        builder, tests = _lab_flag()
+        assert tests[1].result.percent_passing == []
+        (row,) = _rows_about(builder, "grading series")
+        assert row["value"] == [80.0, 92.0]
+        assert row["page"] == 22
+        assert "the series runs the wrong way, so the whole series goes; " \
+               "no real sheet prints this" in row["why"]
+        read = json.loads(row["read"])
+        assert [(p["x"], p["y"]) for p in read["points"]] == [
+            (19.0, 100.0), (4.75, 80.0), (0.075, 92.0)]
+        (entry,) = _ranked([row])
+        assert entry.rank == "open" and entry.values[-1] == row["read"]
+
+    def test_percentages_and_depths_that_cannot_be_are_kept_out(self):
+        builder, tests = _lab_flag()
+        assert tests[1].result.gravel_percent is None
+        assert tests[1].result.sand_percent == 60.0
+        assert tests[1].depth_top is None
+        assert tests[4].depth_top is None
+        assert tests[3].result.rows[1].depth_top is None
+        rows = {u["what"]: u for u in builder.unresolved}
+        assert rows["gradation 2 (B-1): gravel"]["value"] == 105.0
+        assert rows["gradation 2 (B-1): depth"]["value"] == 1500.0
+        assert rows["summary row 2 (B-3): row depth"]["value"] == -4.0
+        assert rows["moisture_content 5 (B-4): depth"]["value"] == 2500.0
+        assert rows[
+            "compaction 3 (B-2): compaction point water content "
+            "(dry density 117 pcf)"]["value"] == -8.0
+        impossible = [u for u in builder.unresolved
+                      if u.get("refused_by") == "python"
+                      and "provenance" not in u["what"]]
+        assert impossible and all("listed here as read" in u["why"]
+                                  for u in impossible)
+        assert {e.rank for e in _ranked(impossible)} == {"open"}
+
+    def test_an_entry_says_kept_out_once(self):
+        """The refuse words ("refused rather than accepted", "the series
+        was refused") are not repeated before the flag words."""
+        builder, tests = _lab_flag()
+        flagged = [u for u in builder.unresolved
+                   if "listed here as read" in u["why"]]
+        assert flagged
+        assert not any("refused" in u["why"] for u in flagged)
+        assert (_rows_about(builder, "gradation 2 (B-1): gravel")[0]["why"]
+                == "105 is not a percentage; no real sheet prints this, so "
+                   "it is kept out of the record and listed here as read")
+
+    def test_an_entry_names_its_tests_page(self):
+        builder, tests = _lab_flag()
+        rows = {u["what"]: u for u in builder.unresolved}
+        assert rows["gradation 2 (B-1): gravel"]["page"] == 22
+        assert rows["gradation 2 (B-1): depth"]["page"] == 22
+        assert rows["summary row 1 (B-1): percent passing No. 4"][
+            "page"] == 20
+        assert rows["moisture_content 5 (B-4): depth"]["page"] == 22
+        # a test citing a page outside the sheet names none
+        assert "page" not in rows[
+            "compaction 3 (B-2): compaction point water content "
+            "(dry density 117 pcf)"]
+
+    def test_water_contents_and_limits_past_100_are_kept(self):
+        """A water content can be greater than 100 % (FHWA-NHI-06-088 Vol. I
+        p. 2-5); liquid limits run to 143 (DM 7.1 section 8-2.2.2). Only a
+        negative one cannot be."""
+        from report_ingest.tests.checks_fixtures import lab_positions_reading
+        builder, tests = _lab_flag(lab_positions_reading())
+        atterberg = tests[0].result
+        assert (atterberg.ll, atterberg.pl, atterberg.pi) == (120.0, 45.0,
+                                                              75.0)
+        assert atterberg.water_content == 150.0
+        assert tests[1].result.wc is None
+        (row,) = [u for u in builder.unresolved if u.get("value") == -3.0]
+        assert row["why"].startswith(
+            "-3 is negative, which no water content or limit is; no real "
+            "sheet prints this")
+        assert row["page"] == 22
+        assert _ranked([row])[0].rank == "open"
+
+    def test_a_depth_with_no_unit_is_bounded_as_feet(self):
+        from report_ingest.tests.checks_fixtures import lab_no_unit_reading
+        builder, tests = _lab_flag(lab_no_unit_reading())
+        assert tests[0].depth_top is None
+        assert tests[0].depth_bottom.value == 4.0
+        (row,) = builder.unresolved
+        assert "even read as feet" in row["why"]
+        assert row["page"] == 21
+        assert _ranked([row])[0].rank == "open"
+
+    def test_an_answer_citing_positions_is_read_as_positions(self):
+        from report_ingest.tests.checks_fixtures import lab_positions_reading
+        builder, tests = _lab_flag(lab_positions_reading())
+        assert [t.prov[0].page for t in tests] == [20, 22]
+        assert [t.pages for t in tests] == [[20], [22]]
+        assert "a position in the 3 page(s)" in tests[0].prov[0].note
+        assert [c["page"] for c in builder.changes] == [20, 22]
+        (row,) = [u for u in builder.unresolved if u["what"] == "a stamp"]
+        assert row["page"] == 21
+        assert not any(u["what"].endswith("provenance")
+                       for u in builder.unresolved)
+
+    def test_a_mixed_answer_is_read_as_the_reports_pages(self):
+        """The sheet's answer cites 20, 21, 22 and 57: the report's pages,
+        so 57 is outside the sheet, as today, and nothing is moved."""
+        builder, tests = _lab_flag()
+        assert builder.changes == []
+        assert [t.pages for t in tests] == [
+            [21], [22], [20, 21, 22], [20], [22]]
+        # cited page 57 is no page of the sheet: the whole window, as today,
+        # on the first page at confidence 0.4
+        assert tests[2].prov[0].page == 20
+        assert tests[2].prov[0].confidence == 0.4

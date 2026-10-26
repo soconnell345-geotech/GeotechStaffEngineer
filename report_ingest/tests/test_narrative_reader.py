@@ -692,3 +692,75 @@ class TestTheCallersOwnQuestions:
 
         brief = engine.calls[0]["messages"][0]["content"][0]["text"]
         assert "THE CALLER'S OWN QUESTIONS" not in brief
+
+
+# ---------------------------------------------------------------------------
+# the builder's check mode (RI-87 piece 6, plan section 8.6)
+# ---------------------------------------------------------------------------
+
+def _narrative_build(case, **kw):
+    from report_ingest.narrative_reader import _Builder
+    from report_ingest.tests.checks_fixtures import (
+        NARRATIVE_PAGES, narrative_cases,
+    )
+    reading, counted = narrative_cases()[case]
+    builder = _Builder(NARRATIVE_PAGES, **kw)
+    builder.add(reading)
+    general, hazards, facts = builder.build(NARRATIVE_PAGES, counted, None)
+    return builder, general, facts
+
+
+class TestNarrativeChecksDefaultIsMaster:
+
+    def test_every_narrative_case_builds_as_on_master(self):
+        from report_ingest.tests.checks_fixtures import (
+            build_default, load_snapshot,
+        )
+        now, then = build_default(), load_snapshot()
+        for case in ("narrative/counts_differ", "narrative/counts_agree"):
+            assert now[case] == then[case], case
+
+    def test_refuse_named_is_the_default(self):
+        a = _narrative_build("counts_differ")
+        b = _narrative_build("counts_differ", checks="refuse")
+        assert a[1] == b[1] and a[2] == b[2]
+        assert a[0].unresolved == b[0].unresolved
+        # today the code's count is stored over the reading's answer
+        assert (a[1].tableCount, a[1].figureCount) == (4, 2)
+
+
+class TestNarrativeChecksFlag:
+
+    def test_the_caption_count_is_a_note_not_the_answer(self):
+        from report_ingest.reconciler import _carry_unresolved
+        builder, general, facts = _narrative_build("counts_differ",
+                                                   checks="flag")
+        assert (general.tableCount, general.figureCount) == (3, None)
+        assert facts.counted == {}
+        rows = {u["what"]: u for u in builder.unresolved}
+        table, figure = rows["tableCount"], rows["figureCount"]
+        assert table["value"] == "4" and figure["value"] == "2"
+        for row in (table, figure):
+            assert "Read by the code, not by the model" in row["why"]
+        assert "the reading says 3" in table["why"]
+        assert "the reading gives none" in figure["why"]
+        qa = []
+        _carry_unresolved(qa, [table, figure])
+        assert {e.rank for e in qa} == {"note"}
+        # no "answered with no citation" for a count the model never gave
+        assert len(builder.unresolved) == 2
+
+    def test_a_count_that_agrees_says_nothing(self):
+        builder, general, facts = _narrative_build("counts_agree",
+                                                   checks="flag")
+        assert general.tableCount == 3 and builder.unresolved == []
+
+    def test_the_other_checks_stand(self):
+        from report_ingest.narrative_reader import NarrativeReading, _Builder
+        builder = _Builder([0, 1], checks="flag")
+        builder.add(NarrativeReading.model_validate({
+            "boringCount": -2, "siteClass": "Q",
+            "citations": [{"field": "siteClass", "page": 9, "quote": "Q"}]}))
+        whys = " | ".join(u["why"] for u in builder.unresolved)
+        assert "a count cannot be negative" in whys
+        assert "cited a page that is not in this narrative" in whys

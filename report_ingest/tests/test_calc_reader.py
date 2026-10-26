@@ -1664,3 +1664,100 @@ class TestThePictures:
         assert _scanned(_Doc(sources=(SOURCE_OCR,)), 0)
         assert _scanned(_Doc(reliable=False), 0)          # unmapped fonts
         assert _scanned(_Doc(broken=True), 0)
+
+
+# ---------------------------------------------------------------------------
+# the builder's check mode (RI-87 piece 6, plan section 8.6)
+# ---------------------------------------------------------------------------
+
+def _calc_flag(case="multi"):
+    from report_ingest.calc_reader import _Builder
+    from report_ingest.tests.checks_fixtures import CALC_POOL, calc_cases
+    reading, pages = calc_cases()[case]
+    builder = _Builder(reading, pages, "R-made-up", [], CALC_POOL,
+                       checks="flag")
+    return builder, builder.build()
+
+
+class TestCalcChecksDefaultIsMaster:
+
+    def test_every_calc_case_builds_as_on_master(self):
+        from report_ingest.tests.checks_fixtures import (
+            build_default, calc_cases, load_snapshot,
+        )
+        now, then = build_default(), load_snapshot()
+        for case in calc_cases():
+            assert now[f"calc/{case}"] == then[f"calc/{case}"], case
+
+    def test_refuse_named_is_the_default(self):
+        from report_ingest.calc_reader import _Builder
+        from report_ingest.tests.checks_fixtures import (
+            CALC_PAGES, CALC_POOL, calc_reading,
+        )
+        a = _Builder(calc_reading(), CALC_PAGES, "R", [], CALC_POOL)
+        b = _Builder(calc_reading(), CALC_PAGES, "R", [], CALC_POOL,
+                     checks="refuse")
+        assert a.build() == b.build()
+        assert a.unresolved == b.unresolved and a.warnings == b.warnings
+
+
+class TestCalcChecksFlag:
+
+    def test_an_answer_citing_positions_is_read_as_positions(self):
+        builder, calc = _calc_flag("positions")       # cites 0-2 of 30-32
+        load = calc.inputs[0]
+        assert load.prov.page == 30 and load.prov.confidence == 0.9
+        assert load.prov.bbox == (5.0, 5.0, 50.0, 15.0)
+        assert "a position in the 3 page(s)" in load.prov.note
+        assert [v.prov.page for v in calc.inputs + calc.results] == [
+            30, 31, 32]
+        assert [c["page"] for c in builder.changes] == [30, 31, 32]
+        assert [u["page"] for u in builder.unresolved] == [31]
+
+    def test_a_mixed_answer_is_read_as_the_reports_pages(self):
+        """The printout's answer cites 30 to 32 and 99: the report's pages,
+        so 99 is outside the printout, as today, and nothing is moved."""
+        builder, calc = _calc_flag()
+        assert builder.changes == []
+        breadth = calc.inputs[0]
+        assert breadth.prov.page == 30 and breadth.prov.confidence == 0.9
+        weight = [v for v in calc.inputs if v.name == "Unit weight"][0]
+        assert weight.prov.page == 30 and weight.prov.confidence == 0.4
+        assert any("put this on page 99" in u["why"]
+                   for u in builder.unresolved)
+
+    def test_an_ambiguous_answer_gets_one_note(self):
+        from report_ingest.calc_reader import _Builder
+        reading = CalcReading.model_validate({
+            "kind": "settlement",
+            "inputs": [{"name": "Made-up load", "value": 5.0,
+                        "unit": "kips", "prov": {"page": 0}},
+                       {"name": "Made-up depth", "value": 3.0,
+                        "unit": "ft", "prov": {"page": 2}}]})
+        builder = _Builder(reading, [1, 2, 3], "R", [], [5.0, 3.0],
+                           checks="flag")
+        calc = builder.build()
+        assert [v.prov.page for v in calc.inputs] == [1, 3]
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "page_numbers"]
+        assert "2 is among this call's pages and 0 is not" in note["why"]
+
+    def test_a_one_page_printout_keeps_its_own_rule(self):
+        builder, calc = _calc_flag("one_page")
+        assert [v.prov.page for v in calc.inputs + calc.results] == [40, 40]
+        assert len(builder.warnings) == 2 and builder.changes == []
+
+    def test_a_result_is_not_checked_against_the_pool(self):
+        """Under flag the printed-number check is placement's (plan 8.4
+        step 4), for every stage: the builder keeps the result as read."""
+        builder, calc = _calc_flag()
+        safety = [r for r in calc.results if r.name == "Factor of safety"][0]
+        assert safety.prov.confidence == 0.9 and safety.note == ""
+        assert not any("on none of these pages" in u["why"]
+                       for u in builder.unresolved)
+
+    def test_the_other_gates_stand(self):
+        builder, calc = _calc_flag()
+        whys = " | ".join(u["why"] for u in builder.unresolved)
+        assert "no printed label" in whys
+        assert "'blorps' is not one the record can convert" in whys

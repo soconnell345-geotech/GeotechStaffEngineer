@@ -1873,6 +1873,10 @@ def _carry_unresolved(qa: List[QAEntry],
         what = str(row.get("what") or row.get("field") or "reader")
         why = str(row.get("why") or row.get("detail") or "")
         values = [str(row["value"])] if row.get("value") is not None else []
+        if row.get("read"):
+            # An object kept out of the record whole, as the model read it
+            # (the builders' flag mode, report_ingest.checks.as_read).
+            values.append(str(row["read"]))
         # What a reader could not settle is ``partial``; what PYTHON refused
         # -- a depth off the sheet's ruler, a percentage past 100 -- is
         # ``out_of_range``, so the two are countable apart: one is a gap in

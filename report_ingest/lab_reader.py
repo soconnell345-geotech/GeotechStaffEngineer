@@ -39,6 +39,10 @@ sheet, each of which a model does produce now and then: a depth outside
 and a grading series in which MORE passes a smaller sieve. Each is refused
 into ``unresolved`` rather than accepted, and the rest of the sheet is kept:
 one bad series is not a reason to lose the eleven good values beside it.
+Model-first ingest (RI-87) builds with ``checks="flag"``, which keeps these
+four and lists each value as read, except that a water content or an
+Atterberg limit is refused only below 0, since real ones pass 100
+(:meth:`_Builder.water`).
 
 THE FLOOR (5.23.0). The page's detected tables and its title are the FIRST
 voter. Before any call they are read into typed :class:`LabTest` records
@@ -101,6 +105,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from report_ingest.checks import IMPOSSIBLE, as_read, check_mode, pdf_local
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
 )
@@ -1133,14 +1138,34 @@ class _Builder:
     Every value passes one of four gates on the way, and a refusal costs that
     value and nothing else: a sheet with one impossible percentage still has
     twenty good numbers on it and the record should carry them.
+
+    ``checks`` (:mod:`report_ingest.checks`): ``"refuse"``, the default, is
+    the above. ``"flag"`` is model-first ingest's (RI-87): the four gates
+    still keep their values out of the record, and each entry says it was
+    listed as read and names the page its test cites (a refused grading
+    carries the whole series as read); a water content or an Atterberg
+    limit is refused only below 0 (:meth:`water`); the answer's page
+    numbers are read one way for the whole answer
+    (:func:`~report_ingest.checks.pdf_local`); and each test's ``pages``
+    are the page it cites inside the window, not the whole window.
     """
 
     def __init__(self, reading: LabSheetReading, pages: Sequence[int],
-                 report_id: str, zooms: Sequence[Dict[str, Any]]) -> None:
+                 report_id: str, zooms: Sequence[Dict[str, Any]], *,
+                 checks: str = "refuse") -> None:
         self.reading = reading
+        self.flag = check_mode(checks) == "flag"
         self.pages = list(pages)
         self.report_id = report_id
         self.zooms = list(zooms)
+        #: Under ``flag``: how this answer's page numbers are read, decided
+        #: once for the whole answer, and the page of the test being built,
+        #: which its entries name. None under ``refuse``.
+        self._numbers = (pdf_local(
+            [test.prov.page for test in reading.tests]
+            + [item.page for item in reading.unsettled], pages)
+            if self.flag else None)
+        self._at: Optional[int] = None
         self.unit = (reading.depth_unit or "").strip()
         self.unresolved: List[Dict[str, Any]] = []
         self.changes: List[Dict[str, Any]] = []
@@ -1148,14 +1173,33 @@ class _Builder:
 
     # -- the gates ---------------------------------------------------------
     def _refuse(self, what: str, why: str, value: Any = None,
-                page: Optional[int] = None) -> None:
+                page: Optional[int] = None, read: Any = None) -> None:
         row: Dict[str, Any] = {"what": f"{self._what}: {what}" if self._what
                                else what, "why": why, "refused_by": "python"}
         if value is not None:
             row["value"] = value
+        if page is None:
+            page = self._at
         if page is not None:
             row["page"] = page
+        if read is not None:
+            row["read"] = as_read(read)
         self.unresolved.append(row)
+
+    def _cannot(self, why: str, refused: str, goes: str = "") -> str:
+        """A gate's words for a value that cannot be true: ``why`` and what
+        was ``refused``; under ``flag``, ``why``, what ``goes`` with it and
+        the words that rank its entry open."""
+        if not self.flag:
+            return f"{why}; {refused}"
+        return "; ".join(part for part in (why, goes, IMPOSSIBLE) if part)
+
+    def _page(self, page: Optional[int]) -> Optional[int]:
+        """The report's page for a page the answer cites: under ``flag`` read
+        the way the whole answer is read; as cited otherwise."""
+        if page is None or self._numbers is None:
+            return page
+        return self._numbers.page(page)[0]
 
     def depth(self, value: Optional[float], what: str) -> Optional[Quantity]:
         """A depth as a Quantity, or None with the refusal recorded.
@@ -1176,10 +1220,10 @@ class _Builder:
             # depth in EITHER -- past the window in feet -- is still a
             # column read wrong and refused.
             if not (0.0 <= value <= MAX_DEPTH_M / 0.3048):
-                self._refuse(what, f"depth {value:g} (no unit printed) is "
-                                   f"past {MAX_DEPTH_M:g} m even read as "
-                                   f"feet; refused rather than accepted",
-                             value)
+                self._refuse(what, self._cannot(
+                    f"depth {value:g} (no unit printed) is past "
+                    f"{MAX_DEPTH_M:g} m even read as feet",
+                    "refused rather than accepted"), value)
                 return None
             return quantity
         if metres is None:
@@ -1192,10 +1236,10 @@ class _Builder:
                                f"as printed", value)
             return quantity
         if not (0.0 <= metres <= MAX_DEPTH_M):
-            self._refuse(what, f"depth {value:g} {self.unit or '(no unit)'} "
-                               f"is {metres:.1f} m, outside 0 to "
-                               f"{MAX_DEPTH_M:g} m; refused rather than "
-                               f"accepted", value)
+            self._refuse(what, self._cannot(
+                f"depth {value:g} {self.unit or '(no unit)'} is "
+                f"{metres:.1f} m, outside 0 to {MAX_DEPTH_M:g} m",
+                "refused rather than accepted"), value)
             return None
         return quantity
 
@@ -1204,8 +1248,32 @@ class _Builder:
         if value is None:
             return None
         if not _pct_ok(value):
-            self._refuse(what, f"{value:g} is not a percentage; refused "
-                               f"rather than accepted", value)
+            self._refuse(what, self._cannot(
+                f"{value:g} is not a percentage",
+                "refused rather than accepted"), value)
+            return None
+        return float(value)
+
+    def water(self, value: Optional[float], what: str) -> Optional[float]:
+        """A water content or an Atterberg limit.
+
+        Under ``refuse`` the 0 to 100 gate of :meth:`percent`, as today.
+        Under ``flag`` only a negative one is refused: these are percentages
+        of the dry weight, not shares of a whole, and real sheets print them
+        past 100. The water content can be greater than 100 %
+        (FHWA-NHI-06-088 Vol. I section 2.1.2, p. 2-5); ring shear tests ran
+        on clays with liquid limits to 143 and plasticity indices to 112
+        (DM 7.1 (UFS 3-220-10) section 8-2.2.2); an organic silt had water
+        contents of 94 to 364 percent (GEC-13 section 3.7.4, p. 3-53).
+        """
+        if not self.flag:
+            return self.percent(value, what)
+        if value is None:
+            return None
+        if float(value) < 0.0:
+            self._refuse(what, self._cannot(
+                f"{value:g} is negative, which no water content or limit is",
+                ""), value)
             return None
         return float(value)
 
@@ -1249,9 +1317,12 @@ class _Builder:
         if float(ll) < float(pl):
             self._refuse(
                 "Atterberg limits",
-                f"liquid limit {ll:g} is below plastic limit {pl:g}, which "
-                f"no soil does; all three limits refused rather than one "
-                f"guessed at", [ll, pl, pi])
+                self._cannot(
+                    f"liquid limit {ll:g} is below plastic limit {pl:g}, "
+                    f"which no soil does",
+                    "all three limits refused rather than one guessed at",
+                    "which of the three is wrong cannot be told, so all "
+                    "three go"), [ll, pl, pi])
             return None, None, None
         return ll, pl, pi
 
@@ -1264,6 +1335,8 @@ class _Builder:
         one, and it is refused whole: a partly-reversed grading is worse than
         none, because it looks like a reading.
         """
+        # Under flag a refused series is kept whole in its entry, as read.
+        read = series if self.flag else None
         points: List[Tuple[Optional[float], float, str]] = []
         for point in series.points:
             percent = point.y
@@ -1271,8 +1344,10 @@ class _Builder:
             if not _pct_ok(percent):
                 self._refuse(
                     "grading series",
-                    f"percent passing {percent:g} is not a percentage; the "
-                    f"series was refused", percent)
+                    self._cannot(
+                        f"percent passing {percent:g} is not a percentage",
+                        "the series was refused",
+                        "the whole series goes with it"), percent, read=read)
                 return []
             points.append((size, float(percent), point.label))
         with_size = [(s, p) for s, p, _lbl in points if s is not None]
@@ -1281,9 +1356,12 @@ class _Builder:
             if p2 > p1 + 0.51:
                 self._refuse(
                     "grading series",
-                    f"{p2:g}% passes a smaller sieve than the {p1:g}% that "
-                    f"passed a larger one; the series runs the wrong way and "
-                    f"was refused whole", [p1, p2])
+                    self._cannot(
+                        f"{p2:g}% passes a smaller sieve than the {p1:g}% "
+                        f"that passed a larger one",
+                        "the series runs the wrong way and was refused whole",
+                        "the series runs the wrong way, so the whole series "
+                        "goes"), [p1, p2], read=read)
                 return []
         unit = (series.x_unit or "mm").strip()
         out: List[SievePoint] = []
@@ -1328,8 +1406,29 @@ class _Builder:
                              f"recorded as 'other'")
         return "other"
 
+    def cited_page(self, prov: ReadProv) -> Optional[int]:
+        """The page of this sheet a test cites, under ``flag`` read the way
+        the whole answer is read (RI-87); None when it cites no page of the
+        sheet."""
+        page = self._page(int(prov.page))
+        return page if page in self.pages else None
+
+    def test_pages(self, test: ReadTest) -> List[int]:
+        """A test's ``pages``: the whole sheet under ``refuse``; under
+        ``flag`` the page it cites, when that is a page of the sheet."""
+        cited = self.cited_page(test.prov) if self.flag else None
+        return [cited] if cited is not None else list(self.pages)
+
     def provenance(self, prov: ReadProv, digitised: bool) -> Provenance:
         page = int(prov.page)
+        note = prov.note
+        if self._numbers is not None:
+            # A position in the pages the call was sent (RI-87).
+            page, said = self._numbers.page(page)
+            if said:
+                note = "; ".join(n for n in (prov.note.strip(), said) if n)
+                self.changes.append({"what": self._what, "page": page,
+                                     "why": said})
         if page not in self.pages:
             self._refuse(
                 "provenance",
@@ -1350,7 +1449,7 @@ class _Builder:
                           method=method,
                           confidence=(0.8 if method == "model_from_picture"
                                       else 0.9),
-                          note=prov.note)
+                          note=note)
 
     def result_for(self, kind: str, test: ReadTest) -> Any:
         builder = {
@@ -1370,19 +1469,19 @@ class _Builder:
 
     def _atterberg(self, kind: str, test: ReadTest) -> AtterbergResult:
         ll, pl, pi = self.atterberg_ok(
-            self.percent(test.ll, "liquid limit"),
-            self.percent(test.pl, "plastic limit"),
-            self.percent(test.pi, "plasticity index"))
+            self.water(test.ll, "liquid limit"),
+            self.water(test.pl, "plastic limit"),
+            self.water(test.pi, "plasticity index"))
         flow = self.series_named(test, "flow_curve")
         return AtterbergResult(
             ll=ll, pl=pl, pi=pi,
             non_plastic=bool(test.non_plastic),
-            shrinkage_limit=self.percent(test.shrinkage_limit,
-                                         "shrinkage limit"),
+            shrinkage_limit=self.water(test.shrinkage_limit,
+                                       "shrinkage limit"),
             flow_curve=[(int(round(p.x)), float(p.y))
                         for p in (flow.points if flow else ())],
             pl_trials=[float(v) for v in test.pl_trials],
-            water_content=self.percent(test.wc, "water content"),
+            water_content=self.water(test.wc, "water content"),
             uscs=test.uscs.strip(), description=test.description)
 
     def _gradation(self, kind: str, test: ReadTest) -> GradationResult:
@@ -1401,7 +1500,7 @@ class _Builder:
             clay_percent=self.percent(test.clay_percent, "clay"),
             fines_percent=self.percent(test.fines_percent, "fines"),
             hydrometer=bool(test.hydrometer),
-            water_content=self.percent(test.wc, "water content"),
+            water_content=self.water(test.wc, "water content"),
             uscs=test.uscs.strip(), description=test.description)
 
     def _consolidation(self, kind: str, test: ReadTest) -> ConsolidationResult:
@@ -1425,7 +1524,7 @@ class _Builder:
             cc=test.compression_index, cr=test.recompression_index,
             cv=self.quantity(test.cv), e0=test.e0,
             dry_unit_weight=self.quantity(test.dry_density),
-            wc=self.percent(test.wc, "water content"),
+            wc=self.water(test.wc, "water content"),
             saturation_percent=self.percent(test.saturation_percent,
                                             "saturation"),
             uscs=test.uscs.strip(), description=test.description)
@@ -1440,7 +1539,7 @@ class _Builder:
                 pore_pressure=self.quantity(s.pore_pressure),
                 stress_ratio=s.stress_ratio,
                 c=self.quantity(s.c), phi_deg=s.phi_deg,
-                wc=self.percent(s.wc, "specimen water content"),
+                wc=self.water(s.wc, "specimen water content"),
                 dry_density=self.quantity(s.dry_density),
                 wet_density=self.quantity(s.wet_density),
                 height=self.quantity(s.height),
@@ -1467,7 +1566,7 @@ class _Builder:
             qu=self.quantity(test.qu), su=self.quantity(test.su),
             strain_at_failure_percent=test.strain_at_failure_percent,
             points=points,
-            wc=self.percent(test.wc, "water content"),
+            wc=self.water(test.wc, "water content"),
             dry_density=self.quantity(test.dry_density),
             wet_density=self.quantity(test.wet_density),
             rock_type=test.rock_type, weathering=test.weathering,
@@ -1477,7 +1576,12 @@ class _Builder:
         series = self.series_named(test, "compaction")
         points: List[CompactionPoint] = []
         for point in (series.points if series else ()):
-            water = self.percent(point.x, "compaction point water content")
+            what = "compaction point water content"
+            if self.flag:
+                # The point's density goes with it: name it in the entry.
+                density = f"{point.y:g} {(series.y_unit or '').strip()}"
+                what += f" (dry density {density.strip()})"
+            water = self.water(point.x, what)
             if water is None:
                 continue
             points.append(CompactionPoint(
@@ -1487,7 +1591,8 @@ class _Builder:
         return CompactionResult(
             points=points,
             max_dry_density=self.quantity(test.max_dry_density),
-            optimum_wc=self.percent(test.optimum_wc, "optimum water content"),
+            optimum_wc=self.water(test.optimum_wc,
+                                  "optimum water content"),
             method=test.method or test.test_type,
             mould_volume=self.quantity(test.mould_volume),
             blows_per_layer=test.blows_per_layer, layers=test.layers,
@@ -1502,7 +1607,7 @@ class _Builder:
             swell_percent=test.swell_percent, soaked=test.soaked,
             surcharge=self.quantity(test.surcharge),
             dry_density=self.quantity(test.dry_density),
-            wc=self.percent(test.wc, "water content"),
+            wc=self.water(test.wc, "water content"),
             compaction_percent=test.compaction_percent,
             points=[(float(p.x), float(p.y))
                     for p in (series.points if series else ())],
@@ -1511,7 +1616,7 @@ class _Builder:
     def _moisture(self, kind: str, test: ReadTest) -> MoistureDensityResult:
         return MoistureDensityResult(
             kind=kind,
-            wc=self.percent(test.wc, "water content"),
+            wc=self.water(test.wc, "water content"),
             water_contents=[float(v) for v in test.water_contents],
             wet_density=self.quantity(test.wet_density),
             dry_density=self.quantity(test.dry_density),
@@ -1546,9 +1651,9 @@ class _Builder:
         for n, row in enumerate(test.rows, start=1):
             self._what = f"summary row {n} ({row.investigation_id or '?'})"
             ll, pl_number, pi = self.atterberg_ok(
-                self.percent(row.ll, "liquid limit"),
+                self.water(row.ll, "liquid limit"),
                 (row.pl.value if row.pl is not None else None),
-                self.percent(row.pi, "plasticity index"))
+                self.water(row.pi, "plasticity index"))
             passing: List[SievePoint] = []
             for entry in row.passing:
                 percent = self.percent(entry.percent_passing,
@@ -1570,7 +1675,7 @@ class _Builder:
                 elevation_top=self.quantity(row.elevation_top),
                 sample_type=row.sample_type, description=row.description,
                 uscs=row.uscs.strip(), stratum=row.stratum, lab=row.lab,
-                wc=self.percent(row.wc, "water content"),
+                wc=self.water(row.wc, "water content"),
                 ll=ll, pl=pl_value, pi=pi,
                 percent_passing=passing,
                 fines_percent=self.percent(row.fines_percent, "fines"),
@@ -1581,7 +1686,7 @@ class _Builder:
                 wet_density=self.quantity(row.wet_density),
                 dry_density=self.quantity(row.dry_density),
                 max_dry_density=self.quantity(row.max_dry_density),
-                optimum_wc=self.percent(row.optimum_wc, "optimum"),
+                optimum_wc=self.water(row.optimum_wc, "optimum"),
                 qu=self.quantity(row.qu), su=self.quantity(row.su),
                 c=self.quantity(row.c), phi_deg=row.phi_deg,
                 swell_percent=row.swell_percent,
@@ -1613,6 +1718,7 @@ class _Builder:
             label = (f"{kind} {n} "
                      f"({test.investigation_id or 'no boring named'})")
             self._what = label
+            self._at = self.cited_page(test.prov) if self.flag else None
             digitised = any(s.digitised for s in test.series)
             result = self.result_for(kind, test)
             fields = {f.name: f.value for f in test.fields}
@@ -1627,7 +1733,7 @@ class _Builder:
                 lab=(test.lab or self.reading.lab).strip(),
                 date=test.date.strip(),
                 language=(self.reading.language or "").strip().lower()[:2],
-                pages=list(self.pages),
+                pages=self.test_pages(test),
                 source_report=self.report_id,
                 curves_digitised=digitised,
                 result=result,
@@ -1636,15 +1742,20 @@ class _Builder:
                 prov=[self.provenance(test.prov, digitised)])
             if digitised:
                 self.changes.append({
-                    "what": label, "page": test.prov.page,
+                    "what": label, "page": self._page(test.prov.page),
                     "why": "a curve was digitised: the sheet tabulates these "
                            "values nowhere"})
             out.append(lab_test)
         self._what = ""
+        self._at = None
         for item in self.reading.unsettled:
             self.unresolved.append({
-                "what": item.what, "page": item.page, "why": item.why,
-                "refused_by": "reader"})
+                "what": item.what, "page": self._page(item.page),
+                "why": item.why, "refused_by": "reader"})
+        if self._numbers is not None and self._numbers.ambiguous:
+            self.unresolved.append({"what": "page numbers",
+                                    "why": self._numbers.ambiguous,
+                                    "flag": "page_numbers"})
         for zoom in self.zooms:
             self.changes.append({
                 "what": "zoom_plot", "page": zoom["page"],

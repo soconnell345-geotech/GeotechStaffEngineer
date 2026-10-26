@@ -2603,6 +2603,10 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     # A value kept in the record at a lowered confidence because the page
     # does not show it: kept, and in question.
     (("out_of_range", "partial"), "kept at confidence", "open"),
+    # A value no real sheet prints, kept out of its slot by the builders'
+    # flag mode and listed with the values as read (RI-87, report_ingest.
+    # checks.IMPOSSIBLE): which reading is right is for a person to say.
+    (("out_of_range",), "listed here as read", "open"),
     # A value kept as the page printed it; only its conversion is missing.
     (("out_of_range",), "kept as printed", "note"),
     # A label the reader returned with nothing under it: nothing was lost.

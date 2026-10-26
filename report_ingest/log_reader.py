@@ -22,6 +22,9 @@ it is an invention -- and it is REFUSED here, moved into ``unresolved`` with
 the range it fell outside. The same holds for a depth on a page with no ruler
 at all: there is no scale, so there is no depth. Refusing costs a real value
 now and then; accepting one costs a reviewer's trust in all of them.
+Model-first ingest (RI-87) builds with ``checks="flag"`` instead, where such
+a depth is kept and flagged and only one that cannot be a depth is kept out
+(:class:`_Builder`, :mod:`report_ingest.checks`).
 
 THE FLOOR (5.23.0). The grid is the FIRST voter. Before any call, what it
 placed is turned into an :class:`Investigation` with the grid's own
@@ -52,14 +55,19 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from report_ingest.checks import (
+    FLAG_CONFIDENCE, IMPOSSIBLE, LISTED, as_read, check_mode, doubtful,
+    pdf_local,
+)
 from report_ingest.engine import Engine, image_block, text_block, user
 from report_ingest.floor import MergeLog
+from report_ingest.lab_reader import MAX_DEPTH_M
 from report_ingest.log_floor import (
     _SAMPLE_FAMILY, merge_investigations, seed_from_grid, serialise_seed,
 )
 from report_ingest.model import (
     DrillingDetails, Investigation, Layer, PitDimensions, Provenance,
-    Quantity, Sample, SPT, WaterLevel,
+    Quantity, Sample, SPT, WaterLevel, unit_printed,
 )
 from report_ingest.printed_depths import PrintedDepths, printed_depths
 
@@ -839,20 +847,63 @@ def _depth_window(doc: Any, grid: Any, pages: Sequence[int]
     return (lo, hi)
 
 
+def _depth_slack(grid: Any, pages: Sequence[int]) -> float:
+    """The slack :func:`_depth_window` adds to the window, over all the
+    log's sheets (the largest); 0 when no page has a ruler. Model-first
+    ingest's builder lets a water, casing or caved depth lie this far below
+    the hole's total depth (RI-87)."""
+    steps = [abs(ruler.step or 0.0) for ruler in
+             (grid.rulers.get(page) for page in pages) if ruler is not None]
+    return DEPTH_SLACK * max(steps) if steps else 0.0
+
+
 class _Builder:
     """Turns one :class:`LogReading` into an :class:`Investigation`.
 
     Every depth passes :meth:`_depth` first. That is the only place a value
     can be refused, and it is deliberately the narrow gate the whole reading
     goes through.
+
+    ``checks`` (:mod:`report_ingest.checks`): ``"refuse"``, the default, is
+    the gate above. ``"flag"`` is model-first ingest's (RI-87): a depth
+    outside the ruler's window is kept at
+    :data:`~report_ingest.checks.FLAG_CONFIDENCE` with an entry naming the
+    window; a water, casing or caved depth is checked against the hole's
+    total depth plus ``slack`` (:func:`_depth_slack`) instead; with no ruler
+    on any page every depth is kept and the log gets one note; a negative
+    depth, a depth past ``MAX_DEPTH_M`` and a percentage outside 0 to 100
+    are kept out of their slots with an entry that keeps them as read (a
+    recovery over 100 % with words saying a log may print one); drive
+    lengths that cannot be placed against the blows, a word outside a
+    vocabulary and a pit dimension with no unit are listed, not dropped;
+    and the answer's page numbers are read one way for the whole answer
+    (:func:`~report_ingest.checks.pdf_local`), before any check, so every
+    entry names the report's page.
     """
 
     def __init__(self, reading: LogReading, window: Optional[Tuple[float, float]],
                  pages: Sequence[int], report_id: str,
                  no_ruler: bool = False,
-                 printed: Optional[PrintedDepths] = None) -> None:
+                 printed: Optional[PrintedDepths] = None, *,
+                 slack: float = 0.0, checks: str = "refuse") -> None:
         self.reading = reading
         self.window = window
+        self.flag = check_mode(checks) == "flag"
+        #: How far past the total depth a water, casing or caved depth may
+        #: lie under ``flag``: the ruler window's own slack.
+        self.slack = float(slack)
+        #: Under ``flag``: whether a depth of the object being built was
+        #: doubtful (its confidence is lowered when its provenance is made),
+        #: and how many depths were kept with no ruler to check them.
+        self._doubted = False
+        self._unchecked = 0
+        #: Under ``flag``: how many water, casing or caved depths were kept
+        #: with no total depth to check them against.
+        self._unbounded = 0
+        #: Under ``flag``: how this answer's page numbers are read, decided
+        #: once for the whole answer. None under ``refuse``.
+        self._numbers = (pdf_local(_cited_pages(reading), pages)
+                         if self.flag else None)
         #: The depths the pages with no ruler PRINT (RI-18). On such a page a
         #: depth the window cannot vouch for is accepted when it is one of
         #: these, and refused when it is not. Empty on a log whose every page
@@ -879,16 +930,21 @@ class _Builder:
     # -- the gate ----------------------------------------------------------
     def _depth(self, value: Optional[float], what: str,
                page: Optional[int] = None,
-               kind: str = "") -> Optional[Quantity]:
+               kind: str = "", whole: Any = None) -> Optional[Quantity]:
         """A depth as a Quantity, or None with the refusal recorded.
 
         ``kind`` (``layer``, ``sample``, ``water``) says what the depth is
         of: on a page with no ruler a printed number backs it only when it
         was printed for that kind of value (see printed_depths.SERVES).
+        ``whole`` is ``(noun, reading)`` for the object whose top this is,
+        which the record cannot hold without it: under ``flag`` an
+        impossible top keeps the object as read in its QA entry.
         """
         if value is None:
             return None
         value = float(value)
+        if self.flag:
+            return self._flagged_depth(value, what, page, kind, whole)
         if self.window is None and self.no_scale_pit:
             if value < 0.0 or not self.unit:
                 self.unresolved.append({
@@ -932,6 +988,133 @@ class _Builder:
             return None
         return Quantity(value=value, unit=self.unit)
 
+    # -- the flag mode (RI-87) ---------------------------------------------
+    def _past_bound(self, value: float) -> str:
+        """Why ``value`` cannot be a depth, or "" when it can: negative, or
+        past the lab reader's ``MAX_DEPTH_M`` (read as feet when no unit is
+        printed, as the lab reader reads it). A depth in a unit the record
+        cannot convert is not bounded."""
+        if value < 0.0:
+            return f"depth {value:g} is negative"
+        metres = Quantity(value=value, unit=self.unit).si_value
+        if metres is None and not unit_printed(self.unit):
+            if value > MAX_DEPTH_M / 0.3048:
+                return (f"depth {value:g} (no unit printed) is past "
+                        f"{MAX_DEPTH_M:g} m even read as feet")
+        elif metres is not None and metres > MAX_DEPTH_M:
+            return (f"depth {value:g} {self.unit} is {metres:.1f} m, past "
+                    f"{MAX_DEPTH_M:g} m")
+        return ""
+
+    def _impossible(self, what: str, page: Optional[int], value: Any,
+                    why: str, read: Any = None) -> None:
+        """A value no real sheet prints, kept out of its slot and listed
+        with what was read."""
+        self._kept_out(what, page, value, f"{why}; {IMPOSSIBLE}", read)
+
+    def _kept_out(self, what: str, page: Optional[int], value: Any,
+                  why: str, read: Any = None) -> None:
+        """A value kept out of its slot and listed with what was read;
+        ``why`` ends saying so (:data:`~report_ingest.checks.LISTED`)."""
+        row: Dict[str, Any] = {"what": what, "page": page, "value": value,
+                               "why": why, "refused_by": "python"}
+        if read is not None:
+            row["read"] = as_read(read)
+        self.unresolved.append(row)
+
+    def _page(self, page: Optional[int]) -> Optional[int]:
+        """The report's page for a page the answer cites: under ``flag`` read
+        the way the whole answer is read
+        (:func:`~report_ingest.checks.pdf_local`); as cited otherwise."""
+        if page is None or self._numbers is None:
+            return page
+        return self._numbers.page(page)[0]
+
+    def _outside(self, word: str, vocabulary: str, recorded: str,
+                 what: str, page: Optional[int]) -> None:
+        """Under ``flag``, a word the reading gave that is not in its
+        vocabulary, listed beside the word recorded instead."""
+        if self.flag and word.strip():
+            self.unresolved.append({
+                "what": what, "page": page, "value": word,
+                "why": f"{word!r} is not in the {vocabulary} vocabulary; "
+                       f"recorded as {recorded!r} rather than invented",
+                "refused_by": "python"})
+
+    def _doubt(self, what: str, page: Optional[int], value: float,
+               why: str) -> None:
+        """A value kept in its slot at a lowered confidence, flagged."""
+        self._doubted = True
+        self.unresolved.append({"what": what, "page": page, "value": value,
+                                "why": doubtful(why), "refused_by": "python"})
+
+    def _flagged_depth(self, value: float, what: str, page: Optional[int],
+                       kind: str, whole: Any = None) -> Optional[Quantity]:
+        """:meth:`_depth` under ``checks="flag"``."""
+        why = self._past_bound(value)
+        if why:
+            read = None
+            if whole is not None:
+                noun, read = whole
+                why += (f"; the record holds no {noun} without its top, so "
+                        f"the whole {noun} goes with it")
+            self._impossible(what, page, value, why, read=read)
+            return None
+        if kind in ("water", "casing", "caved"):
+            # Not placed against the ruler: a groundwater table may be
+            # printed anywhere on the sheet (RI-76 (5)). The hole is what
+            # bounds it.
+            bottom = self._total_depth()
+            if bottom is None:
+                self._unbounded += 1
+            elif value > bottom + self.slack:
+                self._doubt(what, page, value,
+                            f"depth {value:g} is below the hole's total "
+                            f"depth {bottom:g}")
+        elif self.window is None:
+            self._unchecked += 1
+        else:
+            lo, hi = self.window
+            if not (lo <= value <= hi):
+                self._doubt(what, page, value,
+                            f"depth {value:g} is outside what the scale on "
+                            f"this log reads ({lo:g} to {hi:g})")
+        return Quantity(value=value, unit=self.unit)
+
+    def _total_depth(self) -> Optional[float]:
+        """The total depth as read, when it can be one."""
+        total = self.reading.total_depth
+        if total is None or self._past_bound(float(total)):
+            return None
+        return float(total)
+
+    def _marked(self, prov: Optional[Provenance]) -> Optional[Provenance]:
+        """``prov`` at :data:`FLAG_CONFIDENCE` when a depth of its object was
+        doubtful; as given otherwise (and always under ``refuse``)."""
+        if self._doubted:
+            self._doubted = False
+            if prov is not None:
+                prov.confidence = min(prov.confidence, FLAG_CONFIDENCE)
+        return prov
+
+    def _percent(self, value: Optional[float], what: str,
+                 page: Optional[int], over: str = "") -> Optional[float]:
+        """A percentage: clamped to 0-100 under ``refuse`` (:func:`_pct`);
+        under ``flag`` one outside 0-100 is kept out of its slot, as
+        impossible, or, past 100, with ``over``'s words when a sheet may
+        print it (the record's field still holds only 0 to 100)."""
+        if not self.flag or value is None or 0.0 <= float(value) <= 100.0:
+            return _pct(value)
+        value = float(value)
+        if over and value > 100.0:
+            self._kept_out(what, page, value,
+                           f"{value:g} is over 100; {over}; the record's "
+                           f"field holds 0 to 100, so it is {LISTED}")
+        else:
+            self._impossible(what, page, value,
+                             f"{value:g} is not a percentage")
+        return None
+
     def _printed(self, value: float, what: str, page: Optional[int],
                  kind: str) -> Optional[Quantity]:
         """``value`` as a depth when a page with no ruler prints it, for
@@ -951,6 +1134,14 @@ class _Builder:
         if prov is None:
             return None
         page = int(prov.page)
+        note = prov.note
+        if self._numbers is not None:
+            # A position in the pages the call was sent (RI-87).
+            page, said = self._numbers.page(page)
+            if said:
+                note = "; ".join(n for n in (prov.note.strip(), said) if n)
+                self.changes.append({"what": what, "page": page,
+                                     "why": said})
         if page not in self.pages:
             # A page outside this log is a reading of a different page. The
             # value is kept -- the depth gate is what protects the numbers --
@@ -973,7 +1164,7 @@ class _Builder:
                           bbox=tuple(prov.bbox) if prov.bbox else None,
                           method=method,
                           confidence=0.9 if not prov.from_image else 0.8,
-                          note=prov.note)
+                          note=note)
 
     def _q(self, value: Optional[float], unit: str) -> Optional[Quantity]:
         """A non-depth quantity, in whatever unit the column headed it."""
@@ -986,53 +1177,65 @@ class _Builder:
         out: List[Layer] = []
         for n, ly in enumerate(self.reading.layers):
             what = f"layer {n + 1} ({_clip(ly.description, 40)})"
-            top = self._depth(ly.top, what + " top", ly.prov.page, "layer")
+            page = self._page(ly.prov.page)
+            top = self._depth(ly.top, what + " top", page, "layer",
+                              whole=("layer", ly))
             if top is None:
                 continue
-            bottom = self._depth(ly.bottom, what + " base", ly.prov.page,
-                                 "layer")
+            bottom = self._depth(ly.bottom, what + " base", page, "layer")
             out.append(Layer(
                 top=top, bottom=bottom,
                 description=ly.description, uscs=ly.uscs.strip(),
                 consistency=ly.consistency, color=ly.color,
-                moisture=ly.moisture, prov=self._prov(ly.prov, what)))
+                moisture=ly.moisture,
+                prov=self._marked(self._prov(ly.prov, what))))
         return out
 
     def samples(self) -> List[Sample]:
         out: List[Sample] = []
         for n, s in enumerate(self.reading.samples):
             what = f"sample {s.sample_id or n + 1}"
-            top = self._depth(s.top, what + " top", s.prov.page, "sample")
+            page = self._page(s.prov.page)
+            top = self._depth(s.top, what + " top", page, "sample",
+                              whole=("sample", s))
             if top is None:
                 continue
             kind = s.kind if s.kind in {
                 "spt", "ring", "shelby", "bulk", "grab", "core", "cuttings",
                 "other"} else "other"
+            if kind != s.kind:
+                self._outside(s.kind, "sample kind", kind, what + " kind",
+                              page)
             out.append(Sample(
                 sample_id=s.sample_id, top=top,
-                bottom=self._depth(s.bottom, what + " base", s.prov.page,
-                                   "sample"),
+                bottom=self._depth(s.bottom, what + " base", page, "sample"),
                 kind=kind,
-                recovery_percent=_pct(s.recovery_percent),
-                rqd_percent=_pct(s.rqd_percent),
+                recovery_percent=self._percent(
+                    s.recovery_percent, what + " recovery percent", page,
+                    over=_RECOVERY_OVER),
+                rqd_percent=self._percent(s.rqd_percent, what + " RQD",
+                                          page),
                 water_content=s.water_content,
                 dry_unit_weight=self._q(s.dry_unit_weight,
                                         s.dry_unit_weight_unit),
                 liquid_limit=s.liquid_limit,
                 plastic_limit=s.plastic_limit,
                 plasticity_index=s.plasticity_index,
-                fines_percent=_pct(s.fines_percent),
+                fines_percent=self._percent(s.fines_percent,
+                                            what + " fines percent", page),
                 qu=self._q(s.qu, s.qu_unit),
                 pocket_pen=self._q(s.pocket_pen, s.pocket_pen_unit),
                 uscs=s.uscs.strip(), note=s.note,
-                prov=self._prov(s.prov, what)))
+                prov=self._marked(self._prov(s.prov, what))))
         return out
 
     def spt(self) -> List[SPT]:
         out: List[SPT] = []
         for n, rec in enumerate(self.reading.spt):
             what = f"driven record {n + 1} at {rec.depth_top:g}"
-            top = self._depth(rec.depth_top, what, rec.prov.page, "sample")
+            page = self._page(rec.prov.page)
+            top = self._depth(rec.depth_top, what, page, "sample",
+                              whole=("driven record", rec))
             if top is None:
                 continue
             blows: List[Any] = []
@@ -1048,27 +1251,39 @@ class _Builder:
             # does not line up with them says nothing usable.
             if (len(lengths) != len(blows) or None in lengths
                     or not rec.drive_length_unit.strip()):
+                if self.flag and rec.drive_lengths:
+                    self._kept_out(
+                        what + " drive lengths", page,
+                        ", ".join(f"{v:g}" for v in rec.drive_lengths),
+                        _unplaced(rec, len(blows)) + f"; they are {LISTED}",
+                        read={"blows": rec.blows,
+                              "drive_lengths": rec.drive_lengths,
+                              "drive_length_unit": rec.drive_length_unit})
                 lengths = []
             out.append(SPT(
                 depth_top=top,
                 depth_bottom=self._depth(rec.depth_bottom, what + " base",
-                                         rec.prov.page, "sample"),
+                                         page, "sample"),
                 blows=blows, n=rec.n, refusal=bool(rec.refusal),
                 n_printed=re.sub(r"\s+", "", rec.n_printed or ""),
                 increments=lengths,
                 hammer=self.reading.drilling.hammer_type,
                 sample_id=rec.sample_id,
-                prov=self._prov(rec.prov, what)))
+                prov=self._marked(self._prov(rec.prov, what))))
         return out
 
     def water(self) -> List[WaterLevel]:
         out: List[WaterLevel] = []
         for n, w in enumerate(self.reading.water):
             what = f"water observation {n + 1}"
+            page = self._page(w.prov.page)
             when = w.when if w.when in {
                 "while_drilling", "at_completion", "after_hours",
                 "not_encountered", "unknown"} else "unknown"
-            depth = self._depth(w.depth, what, w.prov.page, "water")
+            if when != w.when:
+                self._outside(w.when, "water observation", when,
+                              what + " when", page)
+            depth = self._depth(w.depth, what, page, "water")
             if w.depth is not None and depth is None:
                 # The depth was refused; the observation itself is still a
                 # fact about the hole and is kept without one.
@@ -1076,10 +1291,10 @@ class _Builder:
             out.append(WaterLevel(
                 depth=depth, when=when, hours=w.hours, date=w.date,
                 casing_depth=self._depth(w.casing_depth, what + " casing",
-                                         w.prov.page, "casing"),
+                                         page, "casing"),
                 caved_depth=self._depth(w.caved_depth, what + " caved",
-                                        w.prov.page, "caved"),
-                note=w.note, prov=self._prov(w.prov, what)))
+                                        page, "caved"),
+                note=w.note, prov=self._marked(self._prov(w.prov, what))))
         return out
 
     def build(self) -> Investigation:
@@ -1087,6 +1302,8 @@ class _Builder:
         kind = r.kind if r.kind in {
             "boring", "test_pit", "cpt", "dcp", "hand_auger", "well",
             "other"} else "other"
+        if kind != r.kind:
+            self._outside(r.kind, "exploration kind", kind, "log kind", None)
         elevation = None
         if r.elevation is not None:
             elevation = Quantity(value=float(r.elevation),
@@ -1097,7 +1314,16 @@ class _Builder:
         # the very number the header exists to state. Only nonsense is
         # refused.
         total = None
-        if r.total_depth is not None:
+        if self.flag and r.total_depth is not None:
+            # Under flag, a total depth that cannot be one is listed as read,
+            # and any other is kept, in the log's unit known or not.
+            past = self._past_bound(float(r.total_depth))
+            if past:
+                self._impossible("total depth", None, float(r.total_depth),
+                                 past)
+            else:
+                total = Quantity(value=float(r.total_depth), unit=self.unit)
+        elif r.total_depth is not None:
             if float(r.total_depth) >= 0.0 and self.units_known:
                 total = Quantity(value=float(r.total_depth), unit=self.unit)
             elif float(r.total_depth) < 0.0:
@@ -1108,15 +1334,16 @@ class _Builder:
                     "refused_by": "python"})
         for item in r.unsettled:
             self.unresolved.append({
-                "what": item.what, "page": item.page, "why": item.why,
-                "refused_by": "reader"})
+                "what": item.what, "page": self._page(item.page),
+                "why": item.why, "refused_by": "reader"})
         for page in r.pages_left:
+            page = self._page(page)
             self.unresolved.append({
                 "what": f"page {page} of this log", "page": page,
                 "why": "the reader did not get to this page within its "
                        "model-call budget",
                 "refused_by": "budget"})
-        return Investigation(
+        investigation = Investigation(
             investigation_id=r.investigation_id.strip(),
             kind=kind,
             depth_unit=self.unit,
@@ -1136,6 +1363,28 @@ class _Builder:
             station=r.station, offset=r.offset,
             pages=list(self.pages), source_report=self.report_id,
             sheet=r.sheet)
+        unbounded = (f"the {self._unbounded} water, casing or caved depth(s) "
+                     f"are as read, not checked against the hole's total "
+                     f"depth, which the log does not give"
+                     if self._unbounded else "")
+        if self._unchecked:
+            # Under flag, no ruler on any page: one note for the log, not
+            # one refusal per depth (RI-87).
+            self.unresolved.append({
+                "what": "depth scale",
+                "why": "; ".join(n for n in (
+                    f"no depth scale found; the {self._unchecked} "
+                    f"depth(s) of layers, samples and drives are as "
+                    f"read, not checked against a ruler", unbounded) if n),
+                "flag": "no_ruler"})
+        elif unbounded:
+            self.unresolved.append({"what": "total depth", "why": unbounded,
+                                    "flag": "no_total_depth"})
+        if self._numbers is not None and self._numbers.ambiguous:
+            self.unresolved.append({"what": "page numbers",
+                                    "why": self._numbers.ambiguous,
+                                    "flag": "page_numbers"})
+        return investigation
 
     def pit(self) -> Optional[PitDimensions]:
         """The pit's dimensions as the model read them.
@@ -1144,23 +1393,35 @@ class _Builder:
         ruler's window: a 2.5 m long pit on a log whose ruler runs to 3 m is
         an ordinary pit, and refusing it would be refusing arithmetic that
         was never done. What IS refused is a negative or zero dimension,
-        which is a misreading of a dash or a blank.
+        which is a misreading of a dash or a blank. Under ``flag`` that is
+        listed as read, and a dimension with no unit is kept as read, with
+        one note, as the total depth is.
         """
         read = self.reading.pit
         if read is None:
             return None
         unit = (read.unit or self.unit).strip()
+        page = self._page(read.prov.page) if read.prov is not None else None
+        unitless: List[str] = []
 
         def one(name: str, value: Optional[float]) -> Optional[Quantity]:
             if value is None:
                 return None
             if float(value) <= 0.0:
+                if self.flag:
+                    self._impossible(f"pit {name}", page, float(value),
+                                     "a pit dimension must be greater than "
+                                     "zero")
+                    return None
                 self.unresolved.append({
                     "what": f"pit {name}", "page": None,
                     "value": float(value),
                     "why": "a pit dimension must be greater than zero",
                     "refused_by": "python"})
                 return None
+            if not unit and self.flag:
+                unitless.append(f"{name} {float(value):g}")
+                return Quantity(value=float(value), unit="")
             if not unit:
                 self.unresolved.append({
                     "what": f"pit {name}", "page": None,
@@ -1174,12 +1435,48 @@ class _Builder:
         length = one("length", read.length)
         width = one("width", read.width)
         depth = one("depth", read.depth)
+        if unitless:
+            self.unresolved.append({
+                "what": "pit dimensions", "page": page,
+                "why": f"no unit was printed for the pit's "
+                       f"{', '.join(unitless)} and the log states none; "
+                       f"kept as read, in no unit",
+                "flag": "no_unit"})
         if length is None and width is None and depth is None:
             return None
         return PitDimensions(
             length=length, width=width, depth=depth,
             method=self.reading.drilling.method,
             prov=self._prov(read.prov, "pit dimensions"))
+
+
+#: Why a recovery over 100 % is a reading, not a misreading: the manual
+#: says such recoveries are recorded (FHWA-NHI-06-088 Vol. I section
+#: 3.6.5.4, p. 3-44: core not recovered in one run is recovered in the
+#: next).
+_RECOVERY_OVER = ("recoveries greater than 100 percent are recorded "
+                  "(FHWA-NHI-06-088 Vol. I p. 3-44)")
+
+
+def _cited_pages(reading: LogReading) -> List[Optional[int]]:
+    """Every page a log answer cites, for
+    :func:`~report_ingest.checks.pdf_local`."""
+    provs = [x.prov for x in (*reading.layers, *reading.samples,
+                              *reading.spt, *reading.water)]
+    if reading.pit is not None:
+        provs.append(reading.pit.prov)
+    return ([p.page for p in provs if p is not None]
+            + [item.page for item in reading.unsettled]
+            + list(reading.pages_left))
+
+
+def _unplaced(rec: Any, blows: int) -> str:
+    """Why a driven record's lengths cannot be placed against its drives."""
+    if len(rec.drive_lengths) != blows:
+        return (f"{len(rec.drive_lengths)} drive length(s) do not line up "
+                f"with the {blows} blow count(s), so they cannot be placed "
+                f"against the drives")
+    return "no unit was given for the drive lengths"
 
 
 def _pct(value: Optional[float]) -> Optional[float]:

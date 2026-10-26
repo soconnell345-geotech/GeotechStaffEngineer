@@ -981,3 +981,352 @@ class TestRI37PrintedNAndDriveLengths:
         merged.x, merged.y = None, None
         xml = write_diggs([merged])
         assert "<diggs_geo:penetration uom=\"m\">0.2</" in xml
+
+
+# ---------------------------------------------------------------------------
+# the builder's check mode (RI-87 piece 6, plan section 8.6)
+# ---------------------------------------------------------------------------
+
+def _ranked(rows):
+    """The QA entries the reconciler makes of ``rows``, with their ranks."""
+    from report_ingest.reconciler import _carry_unresolved
+    qa = []
+    _carry_unresolved(qa, rows)
+    return qa
+
+
+def _flag_build(reading, window=None, pages=(10, 11), **kw):
+    from report_ingest.log_reader import _Builder
+    builder = _Builder(reading, window, list(pages), "R-made-up",
+                       checks="flag", **kw)
+    return builder, builder.build()
+
+
+class TestChecksDefaultIsMaster:
+    """``checks`` left out builds exactly what master built, on made-up
+    answers covering every check (the snapshot was written on master)."""
+
+    def test_every_log_case_builds_as_on_master(self):
+        from report_ingest.tests.checks_fixtures import (
+            build_default, load_snapshot, log_cases,
+        )
+        now, then = build_default(), load_snapshot()
+        for case in log_cases():
+            assert now[f"log/{case}"] == then[f"log/{case}"], case
+
+    def test_refuse_named_is_the_default(self):
+        from report_ingest.log_reader import _Builder
+        from report_ingest.tests.checks_fixtures import (
+            LOG_PAGES, LOG_WINDOW, log_window_reading,
+        )
+        a = _Builder(log_window_reading(), LOG_WINDOW, LOG_PAGES, "R")
+        b = _Builder(log_window_reading(), LOG_WINDOW, LOG_PAGES, "R",
+                     checks="refuse")
+        assert a.build() == b.build()
+        assert a.unresolved == b.unresolved and a.changes == b.changes
+
+    def test_an_unknown_mode_is_refused(self):
+        from report_ingest.log_reader import _Builder
+        from report_ingest.tests.checks_fixtures import log_window_reading
+        with pytest.raises(ValueError, match="checks must be one of"):
+            _Builder(log_window_reading(), None, [10], "R", checks="lenient")
+
+
+def _log_case(case, **kw):
+    from report_ingest.tests.checks_fixtures import log_cases
+    reading, window, pages, no_ruler = log_cases()[case]
+    return _flag_build(reading, window, pages, no_ruler=no_ruler, **kw)
+
+
+class TestChecksFlag:
+
+    def test_a_depth_outside_the_window_is_kept_and_flagged(self):
+        builder, inv = _log_case("window")
+        # Today the third layer, whose top is past the ruler, is dropped
+        # whole; here it stays, at the flag confidence.
+        assert [ly.top.value for ly in inv.layers] == [0.0, 4.0, 24.0]
+        assert inv.layers[1].bottom.value == 24.0
+        assert inv.layers[1].prov.confidence == 0.5
+        assert [s.sample_id for s in inv.samples] == ["S-1", "S-3", "S-4"]
+        assert inv.samples[1].prov.confidence == 0.5
+        assert inv.samples[0].prov.confidence == 0.9
+        assert [r.depth_top.value for r in inv.spt] == [2.0, 22.0]
+        rows = [u for u in builder.unresolved
+                if "outside what the scale" in u["why"]]
+        assert rows and all("kept at confidence 0.5" in u["why"]
+                            and "(-0.5 to 20.5)" in u["why"] for u in rows)
+        assert {e.rank for e in _ranked(rows)} == {"open"}
+        assert {e.kind for e in _ranked(rows)} == {"out_of_range"}
+
+    def test_water_is_checked_against_the_hole_not_the_window(self):
+        """RI-76 (5): water depths printed in a table on the sheet lay
+        outside the ruler's window and were refused. Here the hole bounds
+        them: 25 ft (in a 30 ft hole) stands, 33 ft and a 40 ft cave are
+        kept and flagged."""
+        builder, inv = _log_case("window")
+        depths = [(w.depth.value, w.prov.confidence) for w in inv.water]
+        assert depths == [(12.0, 0.9), (25.0, 0.9), (33.0, 0.5), (10.0, 0.9)]
+        assert inv.water[1].casing_depth.value == 18.0
+        assert inv.water[2].caved_depth.value == 40.0
+        below = [u for u in builder.unresolved
+                 if "below the hole's total depth 30" in u["why"]]
+        assert [u["value"] for u in below] == [33.0, 40.0]
+        # nothing about water mentions the ruler's window
+        assert not any(u["what"].startswith("water")
+                       and "scale" in u["why"] for u in builder.unresolved)
+
+    def test_the_window_slack_carries_to_the_hole_bottom(self):
+        builder, inv = _log_case("window", slack=3.5)
+        # 33 ft is within the slack now; the 40 ft cave of the same
+        # observation is not, and the observation carries it.
+        assert [u["value"] for u in builder.unresolved
+                if "total depth" in u["why"]] == [40.0]
+        assert [w.prov.confidence for w in inv.water] == [0.9, 0.9, 0.5, 0.9]
+
+    def test_water_with_no_total_depth_is_kept_with_one_note(self):
+        reading = LogReading.model_validate({
+            "investigation_id": "B-1", "depth_unit": "ft",
+            "water": [{"depth": 55.0, "prov": {"page": 10}},
+                      {"depth": 50.0, "caved_depth": 52.0,
+                       "prov": {"page": 10}}]})
+        builder, inv = _flag_build(reading, (0.0, 20.0))
+        assert [w.depth.value for w in inv.water] == [55.0, 50.0]
+        assert inv.water[0].prov.confidence == 0.9
+        (note,) = builder.unresolved
+        assert note == {
+            "what": "total depth", "flag": "no_total_depth",
+            "why": "the 3 water, casing or caved depth(s) are as read, not "
+                   "checked against the hole's total depth, which the log "
+                   "does not give"}
+        assert _ranked([note])[0].rank == "note"
+
+    def test_no_ruler_keeps_every_depth_with_one_note(self):
+        builder, inv = _log_case("no_ruler")
+        assert [ly.top.value for ly in inv.layers] == [0.0, 2.5]
+        assert inv.samples[0].top.value == 3.0
+        assert inv.water[0].depth.value == 4.2
+        assert all(ly.prov.confidence == 0.9 for ly in inv.layers)
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "no_ruler"]
+        # 4.2 m of water is checked against the 6 m hole, not counted
+        assert note["why"] == ("no depth scale found; the 5 depth(s) of "
+                               "layers, samples and drives are as read, not "
+                               "checked against a ruler")
+        (entry,) = _ranked([note])
+        assert entry.rank == "note"
+
+    def test_a_pit_with_no_scale_is_the_same(self):
+        builder, inv = _log_case("pit")
+        assert [ly.top.value for ly in inv.layers] == [0.0]
+        assert builder.changes == []          # no per-depth pit changes
+        notes = [u for u in builder.unresolved
+                 if u.get("flag") == "no_ruler"]
+        assert len(notes) == 1
+
+    def test_a_pit_dimension_with_no_unit_is_kept_with_one_note(self):
+        """Under refuse each is refused ("the number has no meaning"); under
+        flag they are kept as read, as the total depth is, with one note,
+        and a water depth with no total depth to check it is counted in the
+        no-ruler note."""
+        builder, inv = _log_case("pit_no_unit")
+        assert (inv.pit.length.value, inv.pit.length.unit) == (3.0, "")
+        assert inv.pit.width.value == 2.0 and inv.pit.depth is None
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "no_unit"]
+        assert note["page"] == 10
+        assert "length 3, width 2" in note["why"]
+        assert note["why"].endswith("kept as read, in no unit")
+        (ruler,) = [u for u in builder.unresolved
+                    if u.get("flag") == "no_ruler"]
+        assert ruler["why"] == (
+            "no depth scale found; the 2 depth(s) of layers, samples and "
+            "drives are as read, not checked against a ruler; the 1 water, "
+            "casing or caved depth(s) are as read, not checked against the "
+            "hole's total depth, which the log does not give")
+        assert {e.rank for e in _ranked([note, ruler])} == {"note"}
+
+    def test_impossible_depths_stay_out_with_what_was_read(self):
+        builder, inv = _log_case("window")
+        assert "S-2" not in [s.sample_id for s in inv.samples]
+        (row,) = [u for u in builder.unresolved
+                  if u["what"] == "sample S-2 top"]
+        assert row["value"] == -2.0 and row["page"] == 10
+        assert "depth -2 is negative" in row["why"]
+        assert "the whole sample goes with it" in row["why"]
+        assert '"kind": "shelby"' in row["read"]
+        (entry,) = _ranked([row])
+        assert entry.kind == "out_of_range" and entry.rank == "open"
+        assert entry.values == ["-2.0", row["read"]]
+        # a negative total depth, and a layer whose top is negative
+        builder, inv = _log_case("pit")
+        assert inv.total_depth is None
+        whats = {u["what"]: u for u in builder.unresolved}
+        assert whats["total depth"]["value"] == -1.0
+        assert "listed here as read" in whats["total depth"]["why"]
+        assert "Red sandy CLAY" in whats["layer 2 (Red sandy CLAY) top"]["read"]
+        assert "listed here as read" in whats["pit width"]["why"]
+
+    def test_a_depth_past_300_m_is_impossible_even_inside_the_window(self):
+        builder, inv = _log_case("deep")
+        assert [ly.top.value for ly in inv.layers] == [0.0]
+        assert inv.layers[0].bottom is None
+        assert inv.total_depth is None
+        past = [u for u in builder.unresolved if "past 300 m" in u["why"]]
+        assert [u["value"] for u in past] == [1250.0, 1100.0, 1100.0]
+        assert {e.rank for e in _ranked(past)} == {"open"}
+
+    def test_with_no_unit_a_depth_is_bounded_as_feet(self):
+        reading = LogReading.model_validate({
+            "investigation_id": "B-1", "depth_unit": "", "units_known": False,
+            "total_depth": 950.0,
+            "layers": [{"top": 0.0, "bottom": 990.0, "description": "x",
+                        "prov": {"page": 10}}]})
+        builder, inv = _flag_build(reading, None)
+        assert inv.total_depth.value == 950.0 and inv.total_depth.unit == ""
+        assert inv.layers[0].bottom is None
+        (row,) = [u for u in builder.unresolved if "value" in u]
+        assert "past 300 m even read as feet" in row["why"]
+
+    def test_a_percentage_outside_0_to_100_is_kept_out_not_clamped(self):
+        builder, inv = _log_case("window")
+        sample = inv.samples[0]
+        assert sample.recovery_percent is None and sample.rqd_percent is None
+        assert sample.fines_percent == 40.0
+        rows = {u["what"]: u for u in builder.unresolved
+                if u["what"].startswith("sample S-1 ")}
+        rqd = rows["sample S-1 RQD"]
+        assert rqd["value"] == -5.0 and rqd["page"] == 10
+        assert "-5 is not a percentage; no real sheet prints" in rqd["why"]
+        assert {e.rank for e in _ranked(list(rows.values()))} == {"open"}
+
+    def test_a_recovery_over_100_is_listed_as_a_reading(self):
+        """FHWA-NHI-06-088 p. 3-44: recoveries greater than 100 percent are
+        recorded. The record's field holds 0 to 100, so it cannot go in,
+        and its entry says why without calling it impossible."""
+        builder, inv = _log_case("window")
+        (row,) = [u for u in builder.unresolved
+                  if u["what"] == "sample S-1 recovery percent"]
+        assert row["value"] == 105.0 and row["page"] == 10
+        assert row["why"] == (
+            "105 is over 100; recoveries greater than 100 percent are "
+            "recorded (FHWA-NHI-06-088 Vol. I p. 3-44); the record's field "
+            "holds 0 to 100, so it is kept out of the record and listed "
+            "here as read")
+        (entry,) = _ranked([row])
+        assert entry.kind == "out_of_range" and entry.rank == "open"
+        # a negative recovery is impossible
+        reading = LogReading.model_validate({
+            "investigation_id": "B-1", "depth_unit": "ft",
+            "samples": [{"sample_id": "S-1", "top": 2.0,
+                         "recovery_percent": -10.0, "prov": {"page": 10}}]})
+        builder, inv = _flag_build(reading, (0.0, 20.0))
+        (row,) = builder.unresolved
+        assert "not a percentage; no real sheet prints" in row["why"]
+
+    def test_drive_lengths_that_cannot_be_placed_are_listed(self):
+        import json
+        builder, inv = _log_case("window")
+        assert [r.increments for r in inv.spt] == [[], []]
+        rows = {u["what"]: u for u in builder.unresolved
+                if u["what"].endswith("drive lengths")}
+        first = rows["driven record 1 at 2 drive lengths"]
+        assert first["value"] == "6, 6" and first["page"] == 10
+        assert first["why"].startswith(
+            "2 drive length(s) do not line up with the 3 blow count(s)")
+        assert json.loads(first["read"]) == {
+            "blows": ["3", "5", "7"], "drive_lengths": [6.0, 6.0],
+            "drive_length_unit": "in"}
+        second = rows["driven record 2 at 22 drive lengths"]
+        assert second["why"].startswith(
+            "no unit was given for the drive lengths")
+        assert {e.rank for e in _ranked(list(rows.values()))} == {"open"}
+        # under refuse they go without a word, as today
+        from report_ingest.log_reader import _Builder
+        from report_ingest.tests.checks_fixtures import (
+            LOG_PAGES, LOG_WINDOW, log_window_reading,
+        )
+        today = _Builder(log_window_reading(), LOG_WINDOW, LOG_PAGES, "R")
+        today.build()
+        assert not any("drive length" in u["what"] for u in today.unresolved)
+
+    def test_a_word_outside_a_vocabulary_is_listed(self):
+        builder, inv = _log_case("window")
+        assert inv.samples[2].kind == "other"
+        assert inv.water[3].when == "unknown"
+        rows = {u["what"]: u for u in builder.unresolved
+                if "vocabulary" in u["why"]}
+        assert rows["sample S-4 kind"]["value"] == "piston"
+        assert rows["sample S-4 kind"]["why"] == (
+            "'piston' is not in the sample kind vocabulary; recorded as "
+            "'other' rather than invented")
+        assert rows["water observation 4 when"]["value"] == "next morning"
+        assert rows["water observation 4 when"]["page"] == 11
+        builder, inv = _log_case("no_ruler")
+        assert inv.kind == "other"
+        (row,) = [u for u in builder.unresolved if u["what"] == "log kind"]
+        assert row["value"] == "auger boring"
+        assert _ranked([row])[0].rank == "changed"
+
+    def test_an_answer_citing_positions_is_read_as_positions(self):
+        builder, inv = _log_case("positions")    # cites 0, 1 of 10, 11
+        assert [ly.prov.page for ly in inv.layers] == [10, 11]
+        assert "a position in the 2 page(s) it was sent" in (
+            inv.layers[0].prov.note)
+        assert inv.water[0].prov.page == 11
+        assert [c["page"] for c in builder.changes] == [10, 11, 11]
+        (row,) = builder.unresolved             # the reader's own note
+        assert row["what"] == "a smudge" and row["page"] == 10
+
+    def test_an_answer_is_read_one_way_not_value_by_value(self):
+        """Pages 3 to 5 cited 1, 2, 3 (counted from 1): 3 is a page of the
+        call, so the answer is the report's pages, and 1 and 2 are pages
+        outside it, as today; none is moved to a position on its own."""
+        builder, inv = _log_case("one_based")
+        assert [ly.prov.page for ly in inv.layers] == [3, 3, 3]
+        assert [ly.prov.confidence for ly in inv.layers] == [0.4, 0.4, 0.9]
+        assert builder.changes == []
+        outside = [u for u in builder.unresolved
+                   if "provenance names page" in u["why"]]
+        assert [u["page"] for u in outside] == [1, 2]
+        assert not any(u.get("flag") == "page_numbers"
+                       for u in builder.unresolved)
+
+    def test_an_ambiguous_answer_is_read_as_positions_with_a_note(self):
+        """Pages 1 to 3 cited 0, 1, 2: 0 is no page of the call and every
+        cite is a position, so all are positions, and since 1 and 2 are
+        also pages of the call the answer gets one note saying so."""
+        builder, inv = _log_case("zero_based")
+        assert [ly.prov.page for ly in inv.layers] == [1, 2, 3]
+        assert inv.water[0].prov.page == 3
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "page_numbers"]
+        assert note["what"] == "page numbers"
+        assert note["why"].startswith(
+            "the page numbers this answer cites are ambiguous: 1, 2 are "
+            "among this call's pages and 0 is not")
+        assert note["why"].endswith("all were read as positions")
+        assert _ranked([note])[0].rank == "note"
+
+    def test_an_entry_names_the_report_page_not_the_position(self):
+        reading = LogReading.model_validate({
+            "investigation_id": "B-1", "depth_unit": "ft",
+            "total_depth": 30.0,
+            "layers": [{"top": 0.0, "bottom": 5.0, "description": "a",
+                        "prov": {"page": 0}},
+                       {"top": 25.0, "bottom": 30.0, "description": "b",
+                        "prov": {"page": 1}}],
+            "samples": [{"sample_id": "S-1", "top": -1.0,
+                         "prov": {"page": 1}}]})
+        builder, inv = _flag_build(reading, (0.0, 20.0))
+        pages = {u["what"]: u["page"] for u in builder.unresolved}
+        assert pages["layer 2 (b) top"] == 11
+        assert pages["sample S-1 top"] == 11
+
+    def test_depth_slack_is_the_window_slack(self):
+        from types import SimpleNamespace
+        from report_ingest.log_reader import DEPTH_SLACK, _depth_slack
+        grid = SimpleNamespace(rulers={
+            10: SimpleNamespace(step=-5.0), 11: SimpleNamespace(step=2.0)})
+        assert _depth_slack(grid, [10, 11]) == DEPTH_SLACK * 5.0
+        assert _depth_slack(grid, [12]) == 0.0
+        assert _depth_slack(SimpleNamespace(rulers={}), [10]) == 0.0

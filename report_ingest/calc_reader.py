@@ -87,6 +87,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from report_ingest.checks import check_mode, pdf_local
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
 )
@@ -2254,12 +2255,21 @@ class _Builder:
     Three gates, and each refusal costs one value and nothing else: a
     printout with one hallucinated total still has thirty good numbers on it
     and the record should carry them.
+
+    ``checks`` (:mod:`report_ingest.checks`): ``"refuse"``, the default, is
+    the above. ``"flag"`` is model-first ingest's (RI-87): on a printout of
+    several pages the answer's page numbers are read one way for the whole
+    answer (:func:`~report_ingest.checks.pdf_local`), and a result is not
+    checked against ``pool`` here, because placement checks every stage's
+    values against the page they cite (``module_work/REPORT_INGEST_PLAN.md``
+    section 8.4 step 4).
     """
 
     def __init__(self, reading: CalcReading, pages: Sequence[int],
                  report_id: str, zooms: Sequence[Dict[str, Any]],
-                 pool: Sequence[float]) -> None:
+                 pool: Sequence[float], *, checks: str = "refuse") -> None:
         self.reading = reading
+        self.flag = check_mode(checks) == "flag"
         self.pages = list(pages)
         self.report_id = report_id
         self.zooms = list(zooms)
@@ -2269,6 +2279,20 @@ class _Builder:
         #: ``cited page -> how many values`` the reader put on a page outside
         #: a one-page printout, each read as that page (:meth:`provenance`).
         self.repaged: Dict[int, int] = {}
+        #: Under ``flag``, on a printout of several pages: how this answer's
+        #: page numbers are read, decided once for the whole answer. None
+        #: otherwise (a one-page printout has the rule above).
+        self._numbers = (pdf_local(
+            [value.prov.page for value in (*reading.inputs, *reading.results)]
+            + [item.page for item in reading.unsettled], self.pages)
+            if self.flag and len(self.pages) > 1 else None)
+
+    def _page(self, page: Optional[int]) -> Optional[int]:
+        """The report's page for a page the answer cites: read the way the
+        whole answer is read under ``flag``; as cited otherwise."""
+        if page is None or self._numbers is None:
+            return page
+        return self._numbers.page(page)[0]
 
     @property
     def warnings(self) -> List[str]:
@@ -2316,6 +2340,15 @@ class _Builder:
             self.repaged.setdefault(page, 0)
             self.repaged[page] += 1
             page = self.pages[0]
+        note = prov.note
+        if self._numbers is not None:
+            # A position in the pages the call was sent, on a printout of
+            # several pages (RI-87).
+            page, said = self._numbers.page(page)
+            if said:
+                note = "; ".join(n for n in (prov.note.strip(), said) if n)
+                self.changes.append({"what": what, "page": page,
+                                     "why": said})
         if page not in self.pages:
             self._refuse(
                 what, f"the reader put this on page {page}, which is not "
@@ -2334,7 +2367,7 @@ class _Builder:
                           bbox=tuple(prov.bbox) if prov.bbox else None,
                           method=method,
                           confidence=0.8 if prov.from_image else 0.9,
-                          note=prov.note)
+                          note=note)
 
     def value(self, read: ReadValue, role: str) -> Optional[NamedQuantity]:
         """One read value as a record value, or None when it is not one."""
@@ -2344,7 +2377,7 @@ class _Builder:
                          "the reader returned a value with no printed label; "
                          "a value with no label cannot be checked and was "
                          "not recorded",
-                         read.value, page=read.prov.page)
+                         read.value, page=self._page(read.prov.page))
             return None
         prov = self.provenance(read.prov, f"{role} {name}")
         text = " ".join(str(read.text or "").split())
@@ -2369,8 +2402,8 @@ class _Builder:
                          f"{read.value:g} {unit}", page=prov.page)
         quantity = Quantity(value=float(read.value), unit=unit)
 
-        if role == "result" and not _on_the_page(float(read.value),
-                                                 self.pool):
+        if role == "result" and not self.flag and not _on_the_page(
+                float(read.value), self.pool):
             prov.confidence = 0.3
             flag = ("this number is on none of these pages to the precision "
                     "it was reported at; it is kept at confidence 0.3 for "
@@ -2410,8 +2443,12 @@ class _Builder:
                  f"{', '.join(str(p) for p in self.pages)}")
         for item in self.reading.unsettled:
             self.unresolved.append({
-                "what": item.what, "page": item.page, "why": item.why,
-                "refused_by": "reader"})
+                "what": item.what, "page": self._page(item.page),
+                "why": item.why, "refused_by": "reader"})
+        if self._numbers is not None and self._numbers.ambiguous:
+            self.unresolved.append({"what": "page numbers",
+                                    "why": self._numbers.ambiguous,
+                                    "flag": "page_numbers"})
         for zoom in self.zooms:
             self.changes.append({
                 "what": "zoom_plot", "page": zoom["page"],
