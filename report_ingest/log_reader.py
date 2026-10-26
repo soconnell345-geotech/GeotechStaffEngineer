@@ -1764,6 +1764,10 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                 text_block(brief),
                 *[image_block(b"") for _ in wanted]), pages, [], limit)
         unsent = [p for p in pages if p not in first_pages]
+        if estimate_tokens(_trial) > limit:
+            size_notes.append(
+                "the first request is over its size limit even with one "
+                "page picture; it was sent as it is")
         if unsent:
             size_notes.append(
                 f"pages {unsent} were not sent with the first request "
@@ -1789,13 +1793,12 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                 if p in pages]
         if not left:
             break
-        rows_text = serialise_rows(grid, left, printed)
 
         def _continue_turn(wanted: Sequence[int]) -> Dict[str, Any]:
             return user(
                 text_block(_CONTINUE_INSTRUCTION.format(
-                    pages=", ".join(str(p) for p in left))),
-                text_block(rows_text),
+                    pages=", ".join(str(p) for p in wanted))),
+                text_block(serialise_rows(grid, wanted, printed)),
                 *[image_block(b"") for _ in wanted])
 
         sent = left
@@ -1815,15 +1818,15 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                          "content": reply.content or [text_block("")]})
         messages.append(user(
             text_block(_CONTINUE_INSTRUCTION.format(
-                pages=", ".join(str(p) for p in left))),
-            text_block(rows_text),
+                pages=", ".join(str(p) for p in sent))),
+            text_block(serialise_rows(grid, sent, printed)),
             *[image_block(png) for png in images_for(sent)]))
         if limit is not None:
             messages, note = fit_conversation(messages, limit)
             if note and note not in size_notes:
                 size_notes.append(note)
         resent_unsent = bool(unsent)
-        unsent = [p for p in unsent if p not in sent]
+        unsent = [p for p in left if p not in sent]     # cut pages carry on
         reply = engine.complete(messages, system=system,
                                 output_format=LogReading)
         charge(reply)
@@ -1831,10 +1834,15 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         if reply.parsed is None:
             break
         if (reply.parsed.pages_left == reading.pages_left
-                and not resent_unsent):
+                and not resent_unsent and not unsent):
             reading = reply.parsed
             break                     # no progress: stop rather than spin
         reading = reply.parsed
+    if unsent:
+        size_notes.append(
+            f"pages {unsent} were left out of a size-limited request and "
+            f"never read (the call budget ran out or the reader returned "
+            f"no answer)")
 
     # The reader's OWN unsettled list, once, when the budget allows: the
     # rows in question again, magnified. The first cluster run showed a

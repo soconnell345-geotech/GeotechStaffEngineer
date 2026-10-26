@@ -3419,8 +3419,12 @@ class TestMeasurementPlumbingRI69:
     # -- (6) a label run from the other engine -------------------------------
 
     def test_an_ingest_that_reuses_the_other_engines_label_run_says_so(
-            self, chat_cluster, langchain):
+            self, chat_cluster, langchain, monkeypatch):
         from report_ingest.tests import test_graph as tg
+        # The scripted chat answers do not all fit the readers' schemas, so
+        # some items go unread; this test is about the label run's engine,
+        # not about unread items (RI-110 keeps such a report out of the rows).
+        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
         reports_dir, out, scripts = chat_cluster
         runs = out / "runs"
         runs.mkdir(parents=True)
@@ -4244,6 +4248,9 @@ class TestAGiveUpIsRetried:
         assert not saved.get("error")
         # The run's failed count includes the report with an unread item.
         assert "R36" in results["ingest"]["failures"]
+        # ... and it is not listed among the finished reports.
+        assert results["ingest"]["per_report"] == []
+        assert results["ingest"]["n_reports"] == 0
 
         # A resume does not skip it as done; it reads the lab items again.
         monkeypatch.setattr(graph, "_read_lab", real)

@@ -5604,7 +5604,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         }
         run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
-        done[rid] = blob
+        if not blob.get("item_errors") and not blob.get("token_brake"):
+            done[rid] = blob          # unfinished reports are not results
         if blob.get("item_errors"):
             # An item the model could not be got to read (a rate-limit
             # give-up, a refused request) is a failed item: the report is

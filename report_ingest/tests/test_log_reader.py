@@ -1429,3 +1429,66 @@ class TestRequestSizeLimit:
         assert pages == [1, 2, 3]
         pages, _trial = _images_fit(build, [1, 2, 3], [], 10)
         assert pages == [1]                         # never fewer than one
+
+
+class TestSplitAcrossCalls:
+    """BACKLOG RI-110 review: pages cut from a size-limited request are read
+    in a later one, and a cut page never read is said."""
+
+    @pytest.fixture
+    def two_sheets(self, tmp_path):
+        from planlens.testing.loggrid_fixtures import build_imperial_log
+        gt = build_imperial_log()
+        src = pymupdf.open(stream=gt.pdf, filetype="pdf")
+        again = pymupdf.open(stream=gt.pdf, filetype="pdf")
+        src.insert_pdf(again)                    # the same sheet twice
+        path = tmp_path / "two.pdf"
+        path.write_bytes(src.tobytes())
+        from planlens.document import open_document
+        doc = open_document(str(path))
+        yield doc
+        doc.close()
+
+    @staticmethod
+    def _pictures(call):
+        return sum(1 for m in call["messages"] for b in m["content"]
+                   if isinstance(b, dict) and b.get("type") == "image")
+
+    def test_a_split_first_request_reads_every_page_eventually(
+            self, two_sheets):
+        from report_ingest.log_reader import estimate_tokens
+        free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
+        read_log(two_sheets, [0, 1], free)
+        both = estimate_tokens(free.calls[0]["messages"])
+        limit = both - 800                       # one picture too many
+        engine = FakeEngine([
+            {"final": _good_imperial_reading(pages_left=[])},
+            {"final": _good_imperial_reading(pages_left=[])}])
+        result = read_log(two_sheets, [0, 1], engine,
+                          max_request_tokens_in=limit)
+        assert result.model_calls == 2           # page 1 followed up
+        assert self._pictures(engine.calls[0]) == 1
+        follow = engine.calls[1]["messages"][-1]["content"][0]["text"]
+        assert "1" in follow
+        assert not any("never read" in w for w in result.warnings)
+
+    def test_a_cut_page_the_budget_never_reaches_is_said(self, two_sheets):
+        from report_ingest.log_reader import estimate_tokens
+        free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
+        read_log(two_sheets, [0, 1], free)
+        limit = estimate_tokens(free.calls[0]["messages"]) - 800
+        engine = FakeEngine([
+            {"final": _good_imperial_reading(pages_left=[])}])
+        result = read_log(two_sheets, [0, 1], engine, budget=1,
+                          max_request_tokens_in=limit)
+        assert result.model_calls == 1
+        assert any("never read" in w and "[1]" in w
+                   for w in result.warnings)
+
+    def test_a_first_request_over_the_limit_with_one_page_is_said(
+            self, imperial):
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        result = read_log(doc, [0], engine, max_request_tokens_in=10)
+        assert result.model_calls == 1
+        assert any("over its size limit" in w for w in result.warnings)
