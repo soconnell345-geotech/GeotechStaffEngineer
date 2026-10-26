@@ -4488,3 +4488,16 @@ Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91
    - Ask about Claude's per-request token limit.
    - Seed both arms with the same bound ranges.
    - Fix the calc position mapping under `refuse` and the continuation budget before the off arm runs, or the off arm loses for reasons that are not the method.
+
+
+## COUNTS THE MODEL-FIRST BRIEF CITES (RI-120 (5), 2026-10-26) -- counts only, copied from the saved runs
+
+The brief (`module_work/FOUNDRY_BRIEF_MODEL_FIRST.md` section 7) quotes these; they are written here so every number it cites has a home. No names, no values from reports.
+
+- **Foundry run 4, wave 1** (GPT-5.4, 2026-10-23): 223 calls, 2.96 M tokens in, 0.38 M out, 0 retries.
+- **Stage b** (GPT-5.4, the whole pipeline, 13 reports, 3,418 pages): 3,737 calls, 39.4 M tokens in, 5.6 M out.
+  - Share of tokens in by step: printouts 36 %, logs and soundings 21 %, lab 18 %, narrative 14 %, label review 5 %, vision voter 5 %, triage 1 %. On R13, R16 and R28 the printouts take 55 %.
+  - R13: 206 calls, 2.67 M in / 0.43 M out. R16: 897 calls, 8.39 M / 1.08 M. R28: 537 calls, 5.08 M / 0.75 M. Average per page on the reports not in stage b: about 1.1 calls, 11.5 k in, 1.6 k out.
+- **Claude against GPT-5.4 on the same reader items** (wave 1 against the local runs): input tokens 1.0 to 1.9 times, output tokens 1.1 to 2.6 times.
+- **Describing, per page** (RI-73's full runs, labeller calls included): Haiku about 5.1 k tokens in and 0.57 k out; Sonnet about 9.1 k in. Costs for the 13 reports (3,418 pages): Haiku $8.40, Sonnet $83.36.
+- **Foundry run 5, wave 2** (GPT-5.4, six reports, 1,235 pages): see 'FOUNDRY RUN 5' above; the off arm came to about 710 calls and 9.6 M tokens in (the brief's earlier 1,800 calls was too high). R28's log conversation reached 118,126 tokens in over 5 calls and was refused (RI-110).

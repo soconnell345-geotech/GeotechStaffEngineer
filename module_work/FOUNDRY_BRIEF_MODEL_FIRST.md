@@ -156,7 +156,7 @@ Estimates for the six reports, at the API rates of the local ledger:
 
 | arm | calls | tokens in / out | API rates | time |
 |---|---:|---:|---:|---|
-| off | about 1,800 | about 18 to 33 M / 2.7 to 6.4 M | about $75 to $160 | stage b took 3.9 h for R13, R16 and R28 |
+| off | about 710 (run 5's count; the earlier 1,800 was too high) | about 9.6 M in on GPT-5.4, so about 10 to 18 M on Claude (1.0 to 1.9 times); out and dollars to be recomputed from run 5 | to be recomputed | stage b took 3.9 h for R13, R16 and R28 |
 | on, Haiku describing | about 1,650 to 2,100 | about 12 to 18 M / 2.1 to 3.7 M | about $45 to $70 | about 1 h describing, then the readers |
 | on, Sonnet describing | about 1,650 to 2,100 | about 17 to 23 M / 2.1 to 3.7 M | about $70 to $95 | about 1.7 h describing, then the readers |
 
@@ -256,6 +256,31 @@ log). Report counts only, as for every blind set.
    token check in point 3 is the only brake. The token ceiling for the
    whole wave is the lead's call (suggested: 1.5 times this brief's high
    estimates).
+
+7. **Added after Foundry run 5 (RI-120):**
+   1. **Stop lines per describer.** The page-group stop line is per page: on
+      Haiku describing about 15 k tokens in a page, on Sonnet describing
+      about 28 k (run 5's Sonnet page).
+   2. **Time limit.** Check it between reports, not only at the start, and
+      expect more than one build per arm: an arm is not one sitting.
+   3. **After each report**, read the run's failed count and its 'could not
+      be read' QA entries as well as its errors. A report with a skipped
+      item is not done (RI-110).
+   4. **One `review_dir` for both arms**, and compare each report's
+      `bound_together` between the arms.
+   5. **The off arm waits for RI-108, RI-109 and RI-110.** (RI-108 and
+      RI-109 are built; RI-110 is open.) Otherwise the off arm loses for
+      reasons that are not the method.
+   6. **Token brake.** Set `max_report_tokens_in` and `max_total_tokens`
+      (RI-120 (1)); the dollar meter reads $0 on Foundry. Set them to the
+      stop lines above, and the wave's ceiling to the lead's number.
+   7. **Request limits.** Before the wave, ask the AI FDE for Claude's
+      per-request and per-minute token limits on Foundry. Run 5's log
+      conversation reached 118 k tokens in and was refused. Size the page
+      groups and each conversation under the per-request limit.
+   8. **Arm stamp.** Each report folder carries `arm.json`; a folder
+      started by one arm is refused to the other (RI-120 (3)). Use one
+      `out_dir` per arm, as in section 2.
 
 ## 6. What goes back
 
