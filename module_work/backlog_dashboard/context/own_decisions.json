@@ -2036,30 +2036,26 @@
   "OWN-90": {
     "kind": "decision",
     "ask_who": null,
-    "question": "What should three of the narrative fields hold: the ground layers, the list of structures and the hazards the site is exposed to?",
-    "why": "On the reports we can check openly, four of the six misses on the weakest narrative fields are not reading errors: the reader follows its instructions, and the hand answers hold something different. Only you can say which is meant.",
-    "background": "1) Ground layers ('strata'): the instructions ask for the report's own words in one string, so the reader copies the report's one-line summary; the hand answers build the profile layer by layer with thickness, density, blow counts, fines and groundwater. 2) Structures: one report says the rest of the site will be an on-grade parking lot; the reader listed it as a structure, the hand answer did not (the structure count follows). 3) Hazards: the instructions say both 'examples, not a closed list' and 'the listed phrases and no others'; and the reader listed flooding from a flood-map exhibit title that the report's text never mentions. Each rests on one example.",
+    "question": "Do the questions in your new report question list (RI-90) settle what three narrative fields hold: the ground layers, the list of structures and the hazards the site is exposed to?",
+    "why": "On the reports we can check openly, four of the six misses on the weakest narrative fields are not reading errors: the reader follows its instructions, and the answer sheets hold something different. Those answer sheets were made by Claude (RI-72), not by you, so neither side is your definition. Your question list now words all three fields.",
+    "background": "1) Ground layers ('strata'): the reader's instructions ask for the report's own words in one string, so it copies the report's one-line summary; the Claude-made answer sheets build the profile layer by layer. Your list asks for each stratum's ID and the consultant's description, and says not to make up strata. 2) Structures: one report says the rest of the site will be an on-grade parking lot; the reader listed it, the answer sheet did not. Your list asks for building structures only, not retaining walls, so a paved lot is not one. 3) Hazards: the instructions say both 'examples, not a closed list' and 'the listed phrases and no others', and the reader listed flooding from a flood-map exhibit title the text never mentions. Your NHA questions give a closed list (landslide, the three liquefaction effects, volcanos, seismic slope instability, tsunami, flooding) 'per the report narrative', which reads as the text, not a figure title.",
     "options": [
       {
-        "label": "Match the hand answers",
-        "effect": "Ground layers become a layer-by-layer profile in the report's words; paved areas are not structures; hazards are an open list but only those the report's text says the site is exposed to (a map or exhibit title alone does not count). Written behind a switch, off, and measured on the next live run."
+        "label": "Your list settles it",
+        "effect": "The reader takes the three fields as your list words them when RI-90 lands (behind the model-first switch, measured against today's), and this card closes."
       },
       {
-        "label": "Keep the instructions",
-        "effect": "The hand answers are revised to match what the reader is asked for. Nothing in the app changes."
-      },
-      {
-        "label": "Mixed",
-        "effect": "Say which of the three to change."
+        "label": "Something else",
+        "effect": "Say which of the three should differ from your list's wording, e.g. whether a hazard named only in a figure title counts."
       }
     ],
-    "recommendation": "Match the hand answers: they are your definition of the fields, and the reader can follow them.",
-    "if_no_answer": "Nothing changes; these fields keep missing in the same way.",
+    "recommendation": "Your list settles it: close this card when you confirm the list on your final review.",
+    "if_no_answer": "Nothing changes until RI-90 lands; then the fields follow your list's wording.",
     "message_to_send": null,
     "steps": [],
     "unblocks": [],
     "sources": [
-      "BACKLOG.md OWN-90",
+      "BACKLOG.md OWN-90, RI-90, RI-72",
       "BACKLOG.md RI-13 (Done)"
     ]
   },
