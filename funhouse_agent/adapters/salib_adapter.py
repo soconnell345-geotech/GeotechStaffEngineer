@@ -13,6 +13,7 @@ import math
 import time
 
 from funhouse_agent.adapters import (
+    ABSENT_MODULES, MODULE_REGISTRY,
     apply_aliases, clean_result, declare_aliases, mark_required,
     reject_unknown_params, require_params,
 )
@@ -32,6 +33,9 @@ _MODEL_MODULES = frozenset({
     "wave_equation", "downdrag", "soe", "pavement_design", "fem2d",
     "section_props", "concrete_props", "pynite", "dm7",
 })
+#: The ones this host has: a module whose package is missing is left out of
+#: the registry (adapters.ABSENT_MODULES, BACKLOG INF-53) and is not offered.
+_MODEL_MODULES_HERE = sorted(_MODEL_MODULES & set(MODULE_REGISTRY))
 
 #: Parameters that name a file to read or write: refused inside a spec, so
 #: thousands of evaluations can never touch the file system.
@@ -136,11 +140,13 @@ def _model_from_spec(spec, var_names, bounds, n_evals, time_budget_s, method):
     require_params(spec, ["agent_name", "method", "output"],
                    method=f"{method} model", valid=_MODEL_SPEC_KEYS)
     agent = _canonical_agent_name(str(spec["agent_name"]))
-    if agent not in _MODEL_MODULES:
+    if agent not in _MODEL_MODULES_HERE:
+        why = ("is not installed on this host" if agent in ABSENT_MODULES
+               else "is not allowed")
         raise ValueError(
-            f"{method}: model.agent_name '{spec['agent_name']}' is not "
-            f"allowed. A model spec runs calculation modules only: "
-            f"{sorted(_MODEL_MODULES)}. For anything else, write the model "
+            f"{method}: model.agent_name '{spec['agent_name']}' {why}. "
+            f"A model spec runs calculation modules only: "
+            f"{_MODEL_MODULES_HERE}. For anything else, write the model "
             f"as an 'expression' of the variables.")
     target_method = str(spec["method"])
     base = spec.get("parameters") or {}
@@ -438,7 +444,7 @@ _MODEL_DOC = (
     "'parameters': {'width': 2, 'depth': 1, 'unit_weight': 18}, 'output': "
     "'q_ultimate_kPa', 'variable_map': {'phi': 'friction_angle', 'c': "
     "'cohesion'}}. Calculation modules only (" + ", ".join(
-        sorted(_MODEL_MODULES)) + "); no file parameters. One trial run "
+        _MODEL_MODULES_HERE) + "); no file parameters. One trial run "
     "at the centre of the bounds checks the spec and prices the design "
     "against time_budget_s. Give this OR expression (exactly one).")
 

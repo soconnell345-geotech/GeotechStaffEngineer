@@ -18,6 +18,7 @@ import json
 import pytest
 
 from funhouse_agent import dispatch as D
+from funhouse_agent.adapters import ABSENT_MODULES
 
 _PROBES = json.load(open(
     __file__.rsplit("tests", 1)[0] + "tests/method_probes.json",
@@ -54,7 +55,10 @@ def _probe(key):
     ("liquepy", "field_correlations", "i_c_limit", 1.8,
      "cpt_liquefaction"),
     ("liquepy", "field_correlations", "s_g", 2.7, "void_ratio"),
-    ("pynite", "continuous_beam", "A", 0.02, "frame_analysis"),
+    pytest.param("pynite", "continuous_beam", "A", 0.02, "frame_analysis",
+                 marks=pytest.mark.skipif(
+                     "pynite" in ABSENT_MODULES,
+                     reason="PyNiteFEA not installed (INF-53)")),
     ("retaining_walls", "mse_wall", "gamma_foundation", 18.0,
      "mse_lrfd_external_stability"),
     ("retaining_walls", "mse_wall", "reinforcement_Fy", 448.0,

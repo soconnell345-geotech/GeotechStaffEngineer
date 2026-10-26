@@ -3075,7 +3075,7 @@ just-added file): unzip and confirm the new files/tokens are present.
 - **geotech-references is an editable install** resolving to the *main*
   checkout's submodule; after a submodule pointer change, `git submodule update`
   the main checkout.
-- **`np.trapezoid`** (not `np.trapz`); SI units throughout.
+- **`trapezoid` from `geotech_common.numpy_compat`** (not `np.trapezoid` or `np.trapz`: the code also runs on numpy 1.26, INF-53); SI units throughout.
 
 ---
 

@@ -47,6 +47,8 @@ import math
 
 import numpy as np
 
+from geotech_common.numpy_compat import trapezoid
+
 G_ACCEL = 9.81
 
 
@@ -374,7 +376,7 @@ def max_ru_at_depths(result, depths=(3.0, 7.0, 16.0)):
         n = next(n for n, y in result["pp_nodes"]
                  if abs((30.0 - y) - d) < 1e-6)
         ys = np.linspace(30.0 - d, 30.0, 401)
-        sv = np.trapezoid([rho(v) * G_ACCEL for v in ys], ys)
+        sv = trapezoid([rho(v) * G_ACCEL for v in ys], ys)
         out.append(result["max_excess_pp"][n] / (sv - G_ACCEL * (d - 2.0)))
     return out
 

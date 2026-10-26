@@ -174,7 +174,7 @@ verified:
 |---|---|---|---|
 | `opencv-python-headless` (via `planlens`) | `>=4.8` — **no ceiling** | **5.0.0.93** | **Verified safe.** Full planlens suite run against OpenCV 5.0.0: 792 passed / 1 skipped on 2026-09-11, and again at planlens 0.13.0 on 2026-10-12, 1,658 passed / 2 skipped (Python 3.12, OpenCV 5.0.0.93, numpy 2.5.4: the TA-02 run on CfA's fleet pins). The cv2 surface we use is small and long-stable (`imdecode`, `cvtColor`, `Canny`, `HoughLinesP`, `HoughCircles`, `findContours`, `approxPolyDP`, `threshold`, `medianBlur`, `rotate`), and `findContours` is already unpacked version-agnostically (`found[0] if len(found)==2 else found[1]`). |
 | `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New at 5.18.0.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
-| `numpy` | `>=2.0` | 2.4.6 | §4 |
+| `numpy` | `>=1.26` (was `>=2.0` to 5.33.0; INF-53, for Foundry's numpy 1.26) | 2.4.6 | §4; still lands on 2.4.6 here, PyNiteFEA needs >=2.4 |
 | `streamlit` | `>=1.39` | 1.65.0 (2026-10-14) | fine; tested to 1.66.0, the drift warning's range is `<1.67` |
 | `openai` | `<3` | 2.54.0 | bounded |
 | agent stack | ranges `<0.8` / `<1.4` / `<1.3` | ceilings | §6 |

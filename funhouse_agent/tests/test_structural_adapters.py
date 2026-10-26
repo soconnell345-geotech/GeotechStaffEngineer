@@ -109,6 +109,7 @@ class TestPyniteMethodInfo:
 
 class TestPyniteDispatch:
     def test_list_and_describe(self):
+        pytest.importorskip("Pynite")
         from funhouse_agent.dispatch import list_methods, describe_method
         methods = list_methods("pynite")
         all_methods = [m for cat in methods.values() for m in cat]
@@ -157,15 +158,85 @@ class TestPyniteDispatch:
         assert "error" in r and "clamped" in r["error"]
 
 
+class TestPyniteOptional:
+    """PyNiteFEA cannot install where numpy is held at 1.26 (Foundry's
+    transforms repos, INF-53): the module is then left out of the registry,
+    so no agent is shown a tool that cannot run."""
+
+    def test_listed_exactly_when_installed(self):
+        import importlib.util
+        from funhouse_agent.adapters import ABSENT_MODULES, MODULE_REGISTRY
+        from funhouse_agent.dispatch import ANALYSIS_MODULES, list_agents
+        # The same check the registry makes: present, not imported.
+        installed = importlib.util.find_spec("Pynite") is not None
+        assert ("pynite" in MODULE_REGISTRY) == installed
+        assert ("pynite" in ANALYSIS_MODULES) == installed
+        assert ("pynite" in list_agents()) == installed
+        assert ABSENT_MODULES == ({} if installed
+                                  else {"pynite": "PyNiteFEA"})
+
+    def test_a_module_left_out_is_unknown(self, monkeypatch):
+        from funhouse_agent import dispatch
+        monkeypatch.delitem(dispatch.MODULE_REGISTRY, "pynite", raising=False)
+        r = dispatch.call_agent("pynite", "continuous_beam",
+                                {"span_lengths": [5, 5], "E": 200e6,
+                                 "I": 1e-4, "udl": 10})
+        assert r["error"].startswith("Unknown module 'pynite'")
+        assert "pynite" not in dispatch.list_agents()
+
+    def test_a_broken_pynite_fails_only_its_own_calls(self, tmp_path):
+        """A Pynite that is installed but raises on import (say an
+        AttributeError against an older numpy): the registry still loads,
+        pynite's call returns an error result, and the other tools run."""
+        import json
+        import os
+        import subprocess
+        import sys
+        import textwrap
+        fake = tmp_path / "Pynite"
+        fake.mkdir()
+        (fake / "__init__.py").write_text(
+            "raise AttributeError(\"module 'numpy' has no attribute "
+            "'broken'\")\n", encoding="utf-8")
+        root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        script = textwrap.dedent(f"""
+            import json, sys
+            sys.path[:0] = [{str(tmp_path)!r}, {root!r}]
+            import funhouse_agent.adapters as adapters
+            from funhouse_agent.dispatch import call_agent
+            beam = call_agent("pynite", "continuous_beam",
+                              {{"span_lengths": [5, 5], "E": 200e6,
+                               "I": 1e-4, "udl": 10}})
+            other = call_agent("bearing_capacity",
+                               "bearing_capacity_analysis",
+                               {{"width": 2, "depth": 1, "unit_weight": 18,
+                                "friction_angle": 30, "cohesion": 0}})
+            print(json.dumps({{"absent": adapters.ABSENT_MODULES,
+                              "listed": "pynite" in adapters.MODULE_REGISTRY,
+                              "beam": beam, "other": other}}, default=str))
+        """)
+        run = subprocess.run([sys.executable, "-c", script],
+                             capture_output=True, text=True, timeout=300,
+                             cwd=root)
+        assert run.returncode == 0, run.stderr[-2000:]
+        out = json.loads(run.stdout.strip().splitlines()[-1])
+        assert out["absent"] == {} and out["listed"]
+        assert out["beam"]["error"].startswith("AttributeError"), out["beam"]
+        assert "error" not in out["other"], out["other"]
+        assert out["other"]["q_ultimate_kPa"] > 0
+
+
 # ===================================================================
 # registry integration
 # ===================================================================
 
 class TestRegistryIntegration:
     def test_modules_registered(self):
+        from funhouse_agent.adapters import ABSENT_MODULES
         from funhouse_agent.dispatch import ANALYSIS_MODULES
         for name in ("section_props", "concrete_props", "pynite"):
-            assert name in ANALYSIS_MODULES
+            assert name in ANALYSIS_MODULES or name in ABSENT_MODULES
 
     def test_catalog_budget(self):
         import json

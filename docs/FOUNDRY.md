@@ -25,8 +25,8 @@ Everything lives in the pip package; the Foundry side is one workspace, a
       versions than langgraph-sdk, pygef and google-genai accept, and
       `pip check` reports the conflict, e.g. `websockets 17.3`,
       `polars 2.0.0`). Add the pins on the conda side beside the other
-      dependencies. The app needs numpy 2 (`np.trapezoid`); Foundry resolved
-      numpy 2.5.4 on Python 3.12.15.
+      dependencies. Foundry resolved numpy 2.5.4 on Python 3.12.15 in the
+      Code Workspace; a transforms repo holds numpy at 1.26.4 (next item).
    2. **Upload the three wheels**, and check their names. Unpacking a zip
       in the workspace dropped the `+` from the names
       (`geotech_staff_engineer-5.33.0foundry.20261020-py3-none-any.whl`),
@@ -45,6 +45,40 @@ Everything lives in the pip package; the Foundry side is one workspace, a
    The clean route is a Foundry Artifacts repository (or conda channel)
    holding the three packages, so the environment lists them like any other
    dependency and step 3 goes away.
+4. **Transforms repos: numpy 1.26** (BACKLOG INF-53; where the evals run).
+   The platform's `transforms` pins a pyspark that needs numpy < 2, so the
+   environment keeps numpy 1.26.4 from the conda layer (Python 3.12), and
+   pip does not move it. The app runs on numpy 1.26, but the newest scipy,
+   pandas, contourpy, OpenCV, SALib, liquepy and pygef need numpy 2: left
+   unpinned, pip put scipy 1.18.1 there, which cannot import its
+   `optimize`, `interpolate`, `integrate` or `stats` on numpy 1.26
+   (`np.long`), and 15 questions of the geotech eval failed on it. So:
+   1. install the three wheels with `--no-deps`, as above;
+   2. `python constraints/foundry_requirements.py > requirements.txt`
+      prints what they need, numpy and PyNiteFEA left out;
+   3. install that list with the constraints:
+      `pip install -r requirements.txt -c constraints/foundry-numpy126.txt`
+      (the constraints file caps each of the seven at the newest release
+      that works on numpy 1.26, pandas below 3 for SALib 1.5.1, and pins
+      numpy at 1.26.4). conda cannot read a pip constraints file: on the
+      conda side, add the same caps as conda pins. conda-forge spells them
+      the same in lower case (SALib is `salib`); liquepy and pygef are not
+      on conda-forge, so cap them wherever they come from.
+      pip then reports that PyNiteFEA is not installed,
+      which is expected. With planlens 0.13 it also reports that planlens
+      declares numpy >= 2.0; planlens runs on 1.26.4 (its suite passes
+      there), and the warning goes away with the next planlens release,
+      which declares numpy >= 1.26.
+
+   PyNiteFEA declares numpy >= 2.4 from release 2.1, so no release the app
+   accepts installs there; the app then leaves its `pynite` tool (frame and
+   continuous-beam analysis) out of the agents' tool list, and everything
+   else runs. (PyNiteFEA 3.2.0 does run on numpy 1.26.4: installed with
+   `pip install --no-deps PyNiteFEA==3.2.0`, then
+   `pip install prettytable -c constraints/foundry-numpy126.txt`, the tool
+   is back and its tests pass.) CI checks this install on pushes to master
+   that touch code, and on pull requests (the `numpy 1.26` job in
+   `.github/workflows/tests.yml`).
 
 ## 2. The app file (the only code that lives in Foundry)
 

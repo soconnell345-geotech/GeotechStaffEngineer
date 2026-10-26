@@ -1,10 +1,13 @@
-"""PyNite adapter — flat dict -> pynite_agent -> dict."""
+"""PyNite adapter — flat dict -> pynite_agent -> dict.
+
+Where PyNiteFEA is missing, the registry leaves the ``pynite`` module out
+(OPTIONAL_MODULES in funhouse_agent/adapters/__init__.py). Where it is
+present but cannot import, a call raises and call_agent returns the error.
+"""
 
 from funhouse_agent.adapters import (
     check_nested_list, clean_result, reject_unknown_params, require_params,
 )
-
-_ERR = "PyNiteFEA is not installed. Install with: pip install PyNiteFEA"
 
 _SUPPORT_TYPES = ["fixed", "pinned", "roller_y", "roller_x", "free"]
 
@@ -34,9 +37,7 @@ _KEY_HINTS = {
 
 
 def _run_frame(params: dict) -> dict:
-    from pynite_agent import analyze_frame, has_pynite
-    if not has_pynite():
-        return {"error": _ERR}
+    from pynite_agent import analyze_frame
     reject_unknown_params(
         params,
         ("nodes", "members", "supports", "nodal_loads",
@@ -59,9 +60,7 @@ def _run_frame(params: dict) -> dict:
 
 
 def _run_continuous_beam(params: dict) -> dict:
-    from pynite_agent import analyze_continuous_beam, has_pynite
-    if not has_pynite():
-        return {"error": _ERR}
+    from pynite_agent import analyze_continuous_beam
     reject_unknown_params(
         params,
         ("span_lengths", "E", "I", "udl", "span_udls", "point_loads",

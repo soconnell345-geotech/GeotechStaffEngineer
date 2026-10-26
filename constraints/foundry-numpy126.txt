@@ -1,0 +1,33 @@
+# pip constraints for the app, planlens and geotech-references where numpy
+# is held at 1.26 (BACKLOG INF-53).
+#
+# Foundry's transforms repos take numpy 1.26.4 from the conda layer (the
+# platform's pyspark needs numpy < 2), on Python 3.12. The newest release of
+# each package below needs numpy 2; its line is the newest release that
+# accepts 1.26 (a uv resolve for Python 3.12 with numpy==1.26.4 fixed,
+# 2026-10-26). pandas is held below 3 for SALib 1.5.1 (its line). Every other
+# dependency's newest release accepts 1.26.
+#
+# Without these, pip on Foundry put scipy 1.18.1 on numpy 1.26.4: scipy.sparse
+# reads np.long, which numpy 1.26 does not have, so scipy.optimize,
+# scipy.interpolate, scipy.integrate and scipy.stats fail to import, and with
+# them every tool built on them.
+#
+# Use with the dependency list from constraints/foundry_requirements.py
+# (docs/FOUNDRY.md, "Transforms repos: numpy 1.26").
+#
+# Not here: PyNiteFEA. Every release from 2.1 declares numpy >= 2.4, so no
+# version the app accepts (>= 3.0) installs on 1.26. Leave it out and the
+# app's `pynite` tool is absent. (PyNiteFEA 3.2.0 does run on 1.26.4: the
+# pynite suites pass when it is installed with --no-deps.)
+
+numpy==1.26.4
+scipy<=1.17.1                       # 1.18 needs numpy >= 2.0
+pandas<3                            # SALib 1.5.1 calls pd.unique on a list,
+                                    # which pandas 3 refuses (Sobol analysis
+                                    # fails); pandas 3.1 needs numpy >= 2
+contourpy<=1.3.3                    # via matplotlib; 1.4 needs numpy >= 2.0
+opencv-python-headless<=4.11.0.86   # via planlens; 4.12 on need numpy >= 2
+SALib<=1.5.1                        # 1.5.2 on need numpy >= 2.0
+liquepy<=0.6.28                     # 0.6.33 on need numpy >= 2.0
+pygef<=0.14.0                       # 0.14.1 needs numpy > 2

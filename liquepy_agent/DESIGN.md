@@ -28,8 +28,9 @@ liquepy_agent_foundry.py   # Foundry wrapper (project root)
    the same pattern as opensees_agent and pystrata_agent. Tier 1 tests work
    without liquepy installed.
 
-2. **numpy 2.0 workaround** — liquepy's `calc_ldi()` uses the removed
-   `np.trapz`. We implement `_calc_ldi_safe()` using `np.trapezoid` instead
+2. **numpy 2.4 workaround** — liquepy's `calc_ldi()` uses `np.trapz`,
+   removed in numpy 2.4. We implement `_calc_ldi_safe()` with `trapezoid`
+   from `geotech_common.numpy_compat` (numpy 1.26 and 2, INF-53) instead
    of calling liquepy's broken function directly.
 
 3. **Two public functions**:

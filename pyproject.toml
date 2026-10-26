@@ -30,7 +30,12 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "numpy>=2.0",
+    # 1.26, not 2.0 (INF-53): Foundry's transforms repos hold numpy at
+    # 1.26.4 (the platform's pyspark needs numpy < 2), and the code runs on
+    # both through geotech_common.numpy_compat. Everywhere else the resolver
+    # still lands on numpy 2 (PyNiteFEA alone needs >= 2.4). The pins for a
+    # numpy 1.26 install are in constraints/foundry-numpy126.txt.
+    "numpy>=1.26",
     "scipy>=1.13",
     "geotech-references>=1.4.1",
     # -- agent stack (formerly the [deep] extra) --
@@ -195,6 +200,9 @@ dependencies = [
     # it is the whole fix, not part of one. Owner's call; the cost is that
     # frame analysis would then need an extra. See docs/DATABRICKS_INSTALL.md
     # section 4 (including a snippet that re-derives the driver from metadata).
+    # Where numpy is held at 1.26 (Foundry, INF-53) it cannot install, and the
+    # `pynite` tool is left out of the agents' registry (OPTIONAL_MODULES in
+    # funhouse_agent/adapters/__init__.py).
     "PyNiteFEA>=3.0",
 ]
 

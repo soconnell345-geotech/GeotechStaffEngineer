@@ -114,6 +114,25 @@ def test_a_backend_already_chosen_is_kept():
     assert run.stdout.strip().lower() == "svg"
 
 
+def test_pyplot_imported_with_no_backend_chosen_gets_agg():
+    """A package imported before the agent is built may import pyplot
+    without choosing a backend (Pynite does)."""
+    env = {k: v for k, v in os.environ.items() if k != "MPLBACKEND"}
+    script = textwrap.dedent(f"""
+        import sys
+        sys.path.insert(0, {ROOT!r})
+        import matplotlib, matplotlib.pyplot
+        assert matplotlib.rcParams._get_backend_or_none() is None
+        from funhouse_agent.deep.warm_imports import warm_pyplot
+        assert warm_pyplot()
+        print(matplotlib.get_backend())
+    """)
+    run = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                         text=True, timeout=300, env=env, cwd=ROOT)
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.strip().lower() == "agg"
+
+
 def test_the_agent_build_warms_pyplot(monkeypatch):
     pytest.importorskip("deepagents")
     from langchain_core.language_models.fake_chat_models import (

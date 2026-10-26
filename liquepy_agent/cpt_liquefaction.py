@@ -9,6 +9,7 @@ import math
 
 import numpy as np
 
+from geotech_common.numpy_compat import trapezoid
 from liquepy_agent.liquepy_utils import import_liquepy_trigger, import_liquepy_field
 from liquepy_agent.results import CPTLiquefactionResult
 
@@ -216,10 +217,10 @@ def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
 
 
 def _calc_ldi_safe(shear_strain, depth, z_max=None):
-    """Calculate Lateral Displacement Index using np.trapezoid.
+    """Calculate Lateral Displacement Index by the trapezoid rule.
 
-    This is a safe replacement for liquepy.trigger.calc_ldi which uses
-    the removed np.trapz on numpy >= 2.0.
+    This is a safe replacement for liquepy.trigger.calc_ldi, which uses
+    numpy's trapz, removed in numpy 2.4.
 
     Parameters
     ----------
@@ -243,7 +244,7 @@ def _calc_ldi_safe(shear_strain, depth, z_max=None):
     if len(depth) < 2:
         return 0.0
 
-    return float(np.trapezoid(y=shear_strain, x=depth))
+    return float(trapezoid(y=shear_strain, x=depth))
 
 
 def analyze_cpt_liquefaction(
@@ -367,7 +368,7 @@ def analyze_cpt_liquefaction(
     # calc_lsn expects volumetric strain in percentage
     lsn_val = float(trigger.calc_lsn(vol_strain * 100, depth))
 
-    # LDI (Lateral Displacement Index) — use safe version (np.trapezoid)
+    # LDI (Lateral Displacement Index) — use safe version (trapezoid rule)
     ldi_val = _calc_ldi_safe(shear_strain, depth)
 
     # Min FoS in liquefiable zone (below GWL, Ic < limit)

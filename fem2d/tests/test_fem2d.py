@@ -15,6 +15,8 @@ import math
 import numpy as np
 import pytest
 
+from geotech_common.numpy_compat import trapezoid
+
 # ---------------------------------------------------------------------------
 # Elements
 # ---------------------------------------------------------------------------
@@ -499,7 +501,7 @@ class TestGenerateSlopeMesh:
         x0, x1 = s[0, 0] - xe, s[-1, 0] + xe
         y_min = s[:, 1].min() - depth
         xs = np.linspace(x0, x1, 20001)
-        section = np.trapezoid(np.interp(xs, s[:, 0], s[:, 1]) - y_min, xs)
+        section = trapezoid(np.interp(xs, s[:, 0], s[:, 1]) - y_min, xs)
         P = nodes[elements]
         area = 0.5 * np.abs((P[:, 1, 0] - P[:, 0, 0]) * (P[:, 2, 1] - P[:, 0, 1])
                             - (P[:, 2, 0] - P[:, 0, 0]) * (P[:, 1, 1] - P[:, 0, 1]))

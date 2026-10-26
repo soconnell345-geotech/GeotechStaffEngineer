@@ -34,7 +34,7 @@ from funhouse_agent.dispatch import (
     DELIVERABLE_MODULES,
     list_agents, list_methods, call_agent,
 )
-from funhouse_agent.adapters import MODULE_REGISTRY
+from funhouse_agent.adapters import ABSENT_MODULES, MODULE_REGISTRY
 from funhouse_agent.review_checklists import (
     SEISMIC_CHECKLIST, SEISMIC_REVIEWER_PREAMBLE,
     FOUNDATIONS_CHECKLIST, FOUNDATIONS_REVIEWER_PREAMBLE,
@@ -306,7 +306,9 @@ class TestStructuralSpecialist:
 
     def test_scope_subsets_and_union(self):
         mods, refs, _, scope, _ = self._imports()
-        assert mods <= ANALYSIS_MODULES
+        # pynite is left out of the registry where PyNiteFEA is missing
+        # (INF-53); the scope still names it.
+        assert mods <= ANALYSIS_MODULES | set(ABSENT_MODULES)
         assert refs <= REFERENCE_MODULES
         assert scope == (mods | refs | DELIVERABLE_MODULES)
         assert len(mods) == 7
@@ -315,7 +317,8 @@ class TestStructuralSpecialist:
             assert name in mods
         assert "ufc_concrete_practice" in refs
         for name in scope:
-            assert name in MODULE_REGISTRY, f"{name} not in MODULE_REGISTRY"
+            assert name in MODULE_REGISTRY or name in ABSENT_MODULES, (
+                f"{name} not in MODULE_REGISTRY")
 
     def test_builds_scoped_design_mode_agent(self):
         _, _, preamble, scope, make = self._imports()
@@ -337,6 +340,84 @@ class TestStructuralSpecialist:
             "make_structural_specialist_deep"
         from funhouse_agent import reviewers
         assert hasattr(reviewers, "make_structural_specialist_deep")
+
+    def test_prompt_names_a_tool_not_installed(self, monkeypatch):
+        """The preamble names pynite; where PyNiteFEA is missing, one line
+        after it says so (INF-53)."""
+        from funhouse_agent import reviewers
+        _, _, preamble, _, make = self._imports()
+        line = ("Not installed on this host, so not in your tools: "
+                "pynite (PyNiteFEA).")
+        monkeypatch.setattr(reviewers, "ABSENT_MODULES", {})
+        assert line not in make(MockEngine([]))._system_prompt
+        monkeypatch.setattr(reviewers, "ABSENT_MODULES",
+                            {"pynite": "PyNiteFEA"})
+        prompt = make(MockEngine([]))._system_prompt
+        assert line in prompt
+        assert prompt.index(line) > prompt.index(preamble)
+        # A scope without the tool gets no such line.
+        seismic = make_seismic_reviewer(MockEngine([]))._system_prompt
+        assert "Not installed on this host" not in seismic
+
+    def test_with_pynite_hidden_nothing_offers_it(self):
+        """In a fresh interpreter where ``import Pynite`` fails: no tool list,
+        method description or error text offers pynite, and the structural
+        specialist's prompt names it only in its preamble and the line that
+        says it is not installed."""
+        import subprocess
+        import sys
+        import textwrap
+        root = str(Path(__file__).resolve().parents[2])
+        script = textwrap.dedent(f"""
+            import json, sys
+            sys.path.insert(0, {root!r})
+            sys.modules["Pynite"] = None          # import Pynite fails
+            from funhouse_agent import dispatch
+            from funhouse_agent.adapters import ABSENT_MODULES, salib_adapter
+            from funhouse_agent.review_checklists import (
+                STRUCTURAL_SPECIALIST_PREAMBLE)
+            from funhouse_agent.reviewers import make_structural_specialist
+
+            class Engine:
+                def chat(self, user, system="", temperature=0):
+                    return "ok"
+
+            agent = make_structural_specialist(Engine())
+            try:
+                salib_adapter._model_from_spec(
+                    {{"agent_name": "pynite", "method": "continuous_beam",
+                     "output": "x"}}, ["a"], [[0.0, 1.0]], 10, 60.0,
+                    "sobol_analysis")
+                error = ""
+            except ValueError as exc:
+                error = str(exc)
+            print(json.dumps({{
+                "absent": ABSENT_MODULES,
+                "catalog": json.dumps(dispatch.list_agents()),
+                "scoped": json.dumps(
+                    dispatch.list_agents(agent._allowed_agents)),
+                "salib": json.dumps(dispatch.describe_method(
+                    "salib", "sobol_analysis")),
+                "error": error,
+                "prompt": agent._system_prompt,
+                "preamble": STRUCTURAL_SPECIALIST_PREAMBLE,
+            }}))
+        """)
+        run = subprocess.run([sys.executable, "-c", script],
+                             capture_output=True, text=True, timeout=300,
+                             cwd=root)
+        assert run.returncode == 0, run.stderr[-2000:]
+        out = json.loads(run.stdout.strip().splitlines()[-1])
+        assert out["absent"] == {"pynite": "PyNiteFEA"}
+        for key in ("catalog", "scoped", "salib"):
+            assert "pynite" not in out[key].lower(), key
+        assert "not installed on this host" in out["error"]
+        assert "pynite" not in out["error"].split("only:", 1)[1]
+        line = ("Not installed on this host, so not in your tools: "
+                "pynite (PyNiteFEA).")
+        assert line in out["prompt"]
+        rest = out["prompt"].replace(out["preamble"], "").replace(line, "")
+        assert "pynite" not in rest.lower()
 
 
 _F8 = [

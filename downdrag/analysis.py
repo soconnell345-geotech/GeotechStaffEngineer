@@ -41,6 +41,7 @@ from downdrag.soil import (
 )
 from downdrag.results import DowndragResult
 from downdrag.cgpr56 import ENDO_NEUTRAL_PLANE_RATIOS
+from geotech_common.numpy_compat import trapezoid
 from geotech_common.alpha_method import (
     CHART_END_KSF, CURVES as FIG_7_17_CURVES, KSF, UFC_EQ_6_9, UFC_SAND_ZONE,
     UFC_TABLE_SOFT, adhesion_fig_7_17, alpha_ufc, alpha_ufc_eq_6_9,
@@ -1153,7 +1154,7 @@ class DowndragAnalysis:
         ff = np.concatenate(([f_np], fb[below]))
         q = q_np - k * (f_np - ff)
         AE = self.pile_area * self.pile_E
-        compression = (float(np.trapezoid(q, zz)) / AE
+        compression = (float(trapezoid(q, zz)) / AE
                        if AE > 0 and len(zz) > 1 else 0.0)
         under_toe = S["s_fill_only"] + self._toe_load_compression(toe_force)
         return under_toe + compression
@@ -1168,7 +1169,7 @@ class DowndragAnalysis:
         if AE <= 0 or len(zz) < 2:
             return 0.0
         qq = np.append(S["drag_from_top"][above], self._load_at(S, z))
-        return float(np.trapezoid(qq, zz)) / AE
+        return float(trapezoid(qq, zz)) / AE
 
     def _plane_numbers(self, S: dict, z: float, toe_force: float) -> dict:
         """Drag load, drag force, load at the plane, the soil and pile
@@ -1880,7 +1881,7 @@ class DowndragAnalysis:
             else:
                 k = q_np / f_below[j]
             q = q_np - k * (f_below[j] - f_below[j:])
-            compression = (float(np.trapezoid(q, z_nodes[j:])) / AE
+            compression = (float(trapezoid(q, z_nodes[j:])) / AE
                            if AE > 0 and n - j > 1 else 0.0)
             penetration = self._toe_load_compression(float(toe_force[j]))
             g[j] = soil_settlement[j] - (penetration + compression)

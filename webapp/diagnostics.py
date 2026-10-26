@@ -59,8 +59,8 @@ def _versions_check() -> dict:
     import importlib.metadata as md
     import sys
     parts = [f"python {sys.version.split()[0]}"]
-    # numpy: the app needs 2.x (np.trapezoid); Foundry's transforms repo
-    # ran 1.26.4 (INF-25).
+    # numpy: the app runs on 1.26 and 2.x (INF-53); Foundry's transforms
+    # repos hold 1.26.4, and scipy must then be 1.17 or older.
     for pkg in ("geotech-staff-engineer", "geotech-references", "planlens",
                 "numpy", "streamlit", "langchain", "langchain-openai",
                 "langchain-anthropic", "deepagents", "websockets"):

@@ -237,7 +237,8 @@ results.summary()
   0.25 E_m y to p_ur (an initial slope of 0.25 E_m against the printed
   100-500 E_m).
   Checked against GEC 10 Fig. 9-31 (p. 9-33) in `tests/test_weak_rock.py`.
-- **numpy >=2.0**: np.trapz renamed to np.trapezoid — use try/except
+- **numpy 1.26 and 2**: np.trapz was renamed np.trapezoid (2.0) and removed
+  (2.4) — take `trapezoid` from `geotech_common.numpy_compat` (INF-53)
 - **Composite / transformed-section EI (`composite_section.py`, v5.4 E5)**:
   `composite_section_ei(section_type, ...)` returns a `CompositeSection` with the
   UNCRACKED transformed-section `EI` (kN·m²), `EA` (kN), transformed area/inertia

@@ -59,6 +59,7 @@ from axial_pile.tomlinson import alpha_tomlinson
 from downdrag import (
     DowndragSoilLayer, DowndragSoilProfile, DowndragAnalysis,
 )
+from geotech_common.numpy_compat import trapezoid
 from wave_equation.hammer import Hammer, list_hammers
 from wave_equation.cushion import make_cushion_from_properties
 from wave_equation.drivability import drivability_study
@@ -403,7 +404,7 @@ def _v004_calibrated_betas():
         if i0 + 1 < len(z) and abs(z[i0 + 1] - z0) < tol:
             i0 += 1
         i1 = int(np.searchsorted(z, z1 + tol, side="right"))
-        return float(np.trapezoid(fs[i0:i1], z[i0:i1]) * pile_perim / KIP)
+        return float(trapezoid(fs[i0:i1], z[i0:i1]) * pile_perim / KIP)
 
     def calibrate(target, z0, z1, idx, fixed):
         lo, hi = 0.05, 2.0

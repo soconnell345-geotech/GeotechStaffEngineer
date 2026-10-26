@@ -82,3 +82,51 @@ jobs:
         # leave the other workers idle at the end. The root conftest gives
         # each worker its own temp dir.
         run: pytest -n auto --dist worksteal -q --tb=short --durations=20
+
+  numpy126:
+    # Foundry's transforms repos hold numpy at 1.26.4 (INF-53). Installs the
+    # way docs/FOUNDRY.md says (the three packages with --no-deps, the rest
+    # with constraints/foundry-numpy126.txt; no PyNiteFEA), then runs the
+    # suites of the tools that broke there and of the code that keeps them
+    # working: np.trapezoid in soe/downdrag, scipy's np.long in fem2d,
+    # liquefaction, reliability, site response, kriging and Sobol.
+    name: "numpy 1.26 (Foundry)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install with numpy 1.26.4 and the constraints
+        run: |
+          pip install --upgrade pip
+          pip install "numpy==1.26.4"
+          pip install --no-deps -e . -e geotech-references/ "planlens>=0.13"
+          python constraints/foundry_requirements.py > foundry-requirements.txt
+          pip install -r foundry-requirements.txt -c constraints/foundry-numpy126.txt
+          pip install pytest pytest-xdist -c constraints/foundry-numpy126.txt
+          python -c "import numpy, scipy; print('numpy', numpy.__version__, 'scipy', scipy.__version__); assert numpy.__version__ == '1.26.4'"
+
+      - name: Run tests
+        # The modules of the 17 eval questions that failed on Foundry, the
+        # files the fix touched, the eval keys that reproduce from the
+        # modules (CON-1, FF-1, FTG-1, MRS-1), and the reviewers, whose
+        # prompts must say the pynite tool is absent here. Slow-marked tests
+        # are left to the main job: about 4 minutes on four workers on the
+        # laptop.
+        run: >-
+          pytest -n auto --dist worksteal -q --tb=short --durations=10
+          -m "not slow"
+          soe downdrag fem2d liquepy_agent pystra_agent pystrata_agent
+          seismic_signals_agent gstools_agent salib_agent reliability
+          geotech_common pynite_agent lateral_pile/validation.py
+          opensees_agent/tests/test_site_response_curves.py
+          funhouse_agent/tests/test_structural_adapters.py
+          funhouse_agent/tests/test_reviewers.py
+          funhouse_agent/tests/test_eval_suite_v54.py
+          validation_examples/test_published_v001_v005.py

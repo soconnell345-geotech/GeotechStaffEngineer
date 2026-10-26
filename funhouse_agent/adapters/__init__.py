@@ -4,6 +4,7 @@ Each adapter bridges flat JSON parameters to structured analysis module APIs.
 Modules are lazy-loaded: imports only happen when call_agent() is invoked.
 """
 
+import importlib.util
 import math
 import numpy as np
 
@@ -645,3 +646,27 @@ MODULE_REGISTRY = {
         "brief": "AASHTO 1993 Pavement Design Guide: flexible SN, rigid slab D, or W18 for either; layer coeffs, roadbed Mr, ZR/So, mi/Cd, ESALs (US)",
     },
 }
+
+#: One rule for a package that can be missing where the app runs (BACKLOG
+#: INF-53). A package that is a whole module is listed here: where it is
+#: missing, the module is left out of the registry, so no agent is shown a
+#: tool that cannot run. A package behind one method of a module is not: the
+#: module stays, and that method errors at call time through its has_X().
+#: module -> (package to install, its import name). The registry checks
+#: that a whole-module package is present without importing it: an import
+#: here would cost every process that loads the registry (Pynite's brings
+#: matplotlib.pyplot), and an error inside it would take every tool down. A
+#: package that is present but cannot import fails only its own calls,
+#: which call_agent returns as error results.
+#: PyNiteFEA declares numpy >= 2.4, so it does not install where numpy is
+#: held at 1.26 (Foundry's transforms repos).
+OPTIONAL_MODULES = {
+    "pynite": ("PyNiteFEA", "Pynite"),
+}
+
+#: The optional modules left out of this registry: module -> missing package.
+ABSENT_MODULES = {}
+for _name, (_package, _import_name) in OPTIONAL_MODULES.items():
+    if importlib.util.find_spec(_import_name) is None:
+        del MODULE_REGISTRY[_name]
+        ABSENT_MODULES[_name] = _package

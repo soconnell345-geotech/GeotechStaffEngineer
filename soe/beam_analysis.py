@@ -32,6 +32,7 @@ from typing import List
 
 import numpy as np
 
+from geotech_common.numpy_compat import trapezoid
 from soe.geometry import ExcavationGeometry
 from soe.free_earth import (
     _grid,
@@ -62,8 +63,8 @@ def _span_load(p, z_top: float, z_bot: float, breaks) -> tuple:
     if z_bot <= z_top:
         return 0.0, 0.0
     segs = _grid(z_top, z_bot, breaks)
-    F = float(sum(np.trapezoid(p(z), z) for z in segs))
-    Mt = float(sum(np.trapezoid(p(z) * (z - z_top), z) for z in segs))
+    F = float(sum(trapezoid(p(z), z) for z in segs))
+    Mt = float(sum(trapezoid(p(z) * (z - z_top), z) for z in segs))
     return F, (Mt / F if F > 0 else 0.5 * (z_bot - z_top))
 
 

@@ -27,6 +27,7 @@ so one chosen in the web app's Agent picker can hand over a calculation
 package, its figures or a PDF (BACKLOG GM-40).
 """
 
+from funhouse_agent.adapters import ABSENT_MODULES
 from funhouse_agent.agent import GeotechAgent
 from funhouse_agent.dispatch import (
     SEISMIC_MODULES, SEISMIC_REFERENCES,
@@ -142,10 +143,17 @@ SLOPE_FEM_REVIEWER_SCOPE = frozenset(
     SLOPE_FEM_MODULES | SLOPE_FEM_REFERENCES | DELIVERABLE_MODULES)
 
 
-def _specialist_prompt(preamble):
+def _specialist_prompt(preamble, scope=()):
     """The preamble, then the paragraph every specialist carries on its
-    report and drawing modules."""
-    return "\n\n".join(p for p in (preamble, SPECIALIST_DELIVERABLES) if p)
+    report and drawing modules, then a line naming any tool of its scope
+    that is not installed here (BACKLOG INF-53: the preamble names it)."""
+    absent = sorted(set(scope) & set(ABSENT_MODULES))
+    note = ("Not installed on this host, so not in your tools: "
+            + ", ".join(f"{m} ({ABSENT_MODULES[m]})" for m in absent)
+            + ". Where the steps above name it, say it is not available "
+            "here.") if absent else ""
+    return "\n\n".join(
+        p for p in (preamble, SPECIALIST_DELIVERABLES, note) if p)
 
 
 def _make_reviewer(scope, preamble, genai_engine, extra_modules=None, **kwargs):
@@ -162,7 +170,7 @@ def _make_reviewer(scope, preamble, genai_engine, extra_modules=None, **kwargs):
     return GeotechAgent(
         genai_engine=genai_engine,
         allowed_agents=frozenset(allowed),
-        system_prompt_extra=_specialist_prompt(preamble),
+        system_prompt_extra=_specialist_prompt(preamble, allowed),
         **kwargs,
     )
 
@@ -186,7 +194,7 @@ def _make_reviewer_deep(scope, preamble, model, extra_modules=None, **kwargs):
         model=model,
         allowed_agents=frozenset(allowed),
         extra_system_prompt="\n\n".join(
-            p for p in (_specialist_prompt(preamble), extra) if p),
+            p for p in (_specialist_prompt(preamble, allowed), extra) if p),
         **kwargs,
     )
 

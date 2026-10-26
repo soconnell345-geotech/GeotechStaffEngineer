@@ -2418,4 +2418,4 @@ only on the refs branch `rescue/reference-wip-2026-06-02` (7fb6fe8, unmerged): B
   documents are never committed: they live only under gitignored paths
   (`tinyapps/reference/`, `module_work/field_feedback/**/raw/`).
 - Git submodule: `geotech-references/` → github.com/soconnell345-geotech/geotech-references (DM7 + future GEC refs)
-- numpy >=2.0: use `np.trapezoid` (was `np.trapz`)
+- numpy >=1.26: the code must also run on numpy 1.26.4, which Foundry's transforms repos hold (INF-53). A name numpy 2 added comes from `geotech_common.numpy_compat` (`trapezoid`, never `np.trapezoid` or `np.trapz`); `geotech_common/tests/test_numpy_compat.py` scans for the rest, and the "numpy 1.26 (Foundry)" CI job installs with `constraints/foundry-numpy126.txt`

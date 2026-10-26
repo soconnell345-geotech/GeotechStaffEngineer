@@ -34,12 +34,7 @@ from lateral_pile.py_curves import (
 )
 from lateral_pile.solver import solve_lateral_pile, hetenyi_solution
 from lateral_pile.analysis import LateralPileAnalysis
-
-# numpy >= 2.0 renamed trapz -> trapezoid
-try:
-    _trapz = np.trapezoid
-except AttributeError:
-    _trapz = np.trapz
+from geotech_common.numpy_compat import trapezoid as _trapz
 
 
 # =============================================================================

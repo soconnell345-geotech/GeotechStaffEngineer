@@ -50,6 +50,8 @@ import math
 
 import numpy as np
 
+from geotech_common.numpy_compat import trapezoid
+
 #: Curve names a layer's ``curve`` may take.
 CURVES = ("opensees", "darendeli", "menq", "user")
 
@@ -241,7 +243,7 @@ def masing_damping(pairs, g_max, strains):
             m = g_pts < g
             gg = np.append(g_pts[m], g)
             tt = np.append(t_pts[m], np.interp(g, g_pts, t_pts))
-        area = np.trapezoid(tt, gg)
+        area = trapezoid(tt, gg)
         tau = tt[-1]
         out.append(max(0.0, (4.0 * area / (tau * g) - 2.0) / math.pi))
     return np.array(out)

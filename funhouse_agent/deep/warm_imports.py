@@ -34,14 +34,16 @@ def warm_pyplot() -> bool:
         try:
             import matplotlib
             fresh = "matplotlib.pyplot" not in sys.modules
-            if fresh:
-                chosen = getattr(matplotlib.rcParams,
-                                 "_get_backend_or_none", lambda: None)()
-                if chosen is None:
-                    # Spelt as the tools spell it, so their own
-                    # matplotlib.use("Agg") finds it set and never reaches
-                    # into pyplot (the w13 failure did).
-                    matplotlib.use("Agg")
+            chosen = getattr(matplotlib.rcParams,
+                             "_get_backend_or_none", lambda: None)()
+            if chosen is None:
+                # Spelt as the tools spell it, so their own
+                # matplotlib.use("Agg") finds it set and never reaches
+                # into pyplot (the w13 failure did). Also when pyplot is
+                # already imported with no backend chosen (a package such
+                # as Pynite imports it): no figure has been made then, so
+                # the switch closes none.
+                matplotlib.use("Agg")
             import matplotlib.pyplot as plt
             if fresh:
                 # The backend module too (pyplot loads it on the first

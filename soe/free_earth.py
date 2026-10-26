@@ -48,6 +48,7 @@ from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 
+from geotech_common.numpy_compat import trapezoid
 from geotech_common.water import GAMMA_W
 from soe.earth_pressure import rankine_Ka, rankine_Kp
 
@@ -209,7 +210,7 @@ def _grid(a: float, b: float, breaks: Sequence[float], n: int = _N_SEG):
 def _integrate(f: Callable, a: float, b: float, breaks: Sequence[float]) -> float:
     if b <= a:
         return 0.0
-    return float(sum(np.trapezoid(f(z), z) for z in _grid(a, b, breaks)))
+    return float(sum(trapezoid(f(z), z) for z in _grid(a, b, breaks)))
 
 
 def _first_root(f: Callable[[float], float], lo: float, hi: float,
