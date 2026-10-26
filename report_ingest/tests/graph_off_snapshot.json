@@ -10,7 +10,7 @@
    "bound/bound1/report.page.md": "d28207c9b2caec7f",
    "bound/bound1/report.record.json": "211a53f0bb73519b",
    "bound/bound1/report.summary.md": "2d2cc31b93ef0250",
-   "items/item_10.json": "c6106397e84a6064",
+   "items/item_10.json": "83286cf63c278357",
    "items/item_2.json": "66c96d0793bce11f",
    "items/item_4.json": "ddf7e6fee9efc5bb",
    "items/item_5.json": "bda2c6428c9cd5a2",
@@ -81,7 +81,7 @@
     ]
    },
    {
-    "digest": "3b7425f35b48f3ad",
+    "digest": "df3c6199623994da",
     "system": "You are reading ONE calculation out of an engineering report",
     "tools": [
      "zoom_plot"
@@ -109,7 +109,7 @@
    "bound/bound1/report.page.md": "d28207c9b2caec7f",
    "bound/bound1/report.record.json": "37466e49e11ad483",
    "bound/bound1/report.summary.md": "2d2cc31b93ef0250",
-   "items/item_10.json": "c6106397e84a6064",
+   "items/item_10.json": "83286cf63c278357",
    "items/item_2.json": "66c96d0793bce11f",
    "items/item_4.json": "ddf7e6fee9efc5bb",
    "items/item_5.json": "bda2c6428c9cd5a2",
@@ -185,7 +185,7 @@
     ]
    },
    {
-    "digest": "3b7425f35b48f3ad",
+    "digest": "df3c6199623994da",
     "system": "You are reading ONE calculation out of an engineering report",
     "tools": [
      "zoom_plot"
@@ -204,11 +204,11 @@
   ]
  },
  "taken_with": {
-  "PyMuPDF": "1.27.2.3",
+  "PyMuPDF": "1.28.2",
   "planlens": "0.13.0",
-  "platform": "Windows",
-  "pydantic": "2.13.4",
-  "pydantic-core": "2.46.4",
-  "python": "3.14.5"
+  "platform": "Linux",
+  "pydantic": "2.14.1",
+  "pydantic-core": "2.50.1",
+  "python": "3.13.16"
  }
 }
