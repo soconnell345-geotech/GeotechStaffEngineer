@@ -29,8 +29,10 @@ pytest.importorskip("planlens.document.roles")
 #: Master's run of the synthetic report, with the switch unset: one digest
 #: per request and per output file (:func:`off_snapshot`), and the digest of
 #: what planlens reads off the report (:func:`planlens_reading`), taken with
-#: it. Written from master's graph by :func:`write_off_snapshot`, which is
-#: run again only when today's path changes on purpose.
+#: it, and the platform and library versions it was taken with
+#: (``taken_with``, which the test prints and does not compare). Written
+#: from master's graph by :func:`write_off_snapshot`, which is run again
+#: only when today's path changes on purpose.
 SNAPSHOT = Path(__file__).with_name("graph_off_snapshot.json")
 
 #: The runs the snapshot holds: a standard run (the vision voter agreeing
@@ -133,18 +135,31 @@ def _db_dump(path: str) -> bytes:
 _TIME = re.compile(
     rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)")
 _KEY_LINE = re.compile(rb'^id: "([0-9a-f]+)"', re.M)
+#: A path under the run's folder once the folder is ``<RUN>``: up to the
+#: quote, space or separator that ends it.
+_RUN_PATH = re.compile(rb"<RUN>[\\/][^\"'\s,;)\]]*")
+
+
+def _slashes(found: "re.Match[bytes]") -> bytes:
+    """A path's separators as ``/``: written raw (``\\``) or inside JSON
+    (``\\\\``) on Windows, ``/`` elsewhere."""
+    return found.group(0).replace(b"\\\\", b"/").replace(b"\\", b"/")
 
 
 def _plain(blob: bytes, folder: Path, keys: List[bytes]) -> bytes:
     """What differs between two runs of one graph, taken out: the run's
     folder, the library keys (made from the PDF's bytes, which carry the
-    time it was drawn) and the library's update time."""
+    time it was drawn) and the library's update time; and what differs
+    between platforms: the path separators under the run's folder and the
+    line endings of a file written as text (CI runs on Linux, the snapshot
+    was taken on Windows)."""
     for text in sorted({str(folder), str(folder).replace("\\", "/")},
                        key=len, reverse=True):
         for form in (text, json.dumps(text)[1:-1]):
             blob = blob.replace(form.encode("utf-8"), b"<RUN>")
     for key in keys:
         blob = blob.replace(key, b"<KEY>")
+    blob = _RUN_PATH.sub(_slashes, blob).replace(b"\r\n", b"\n")
     return _TIME.sub(b"<TIME>", blob)
 
 
@@ -213,10 +228,32 @@ def planlens_reading() -> str:
     return _digest(json.dumps(rows, sort_keys=True).encode("utf-8"))
 
 
+def taken_with() -> Dict[str, str]:
+    """The platform and the versions of the libraries the off runs read
+    with, as :data:`SNAPSHOT` records them."""
+    import platform
+    from importlib import metadata
+
+    out = {"python": platform.python_version(),
+           "platform": platform.system()}
+    for name in ("pydantic", "pydantic-core", "PyMuPDF", "planlens"):
+        try:
+            out[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            out[name] = "not installed"
+    import planlens
+
+    # The version of the code imported: a source checkout on the path can
+    # be newer than the release the installed metadata names.
+    out["planlens"] = str(getattr(planlens, "__version__", None)
+                          or out["planlens"])
+    return out
+
+
 def write_off_snapshot(root: Path) -> Dict[str, Any]:
     """Write :data:`SNAPSHOT` from the graph this checkout has. Run it on
     master's graph only, and only when today's path changes on purpose."""
-    blob = off_snapshot(root)
+    blob = {**off_snapshot(root), "taken_with": taken_with()}
     SNAPSHOT.write_text(json.dumps(blob, indent=1, sort_keys=True) + "\n",
                         encoding="utf-8")
     return blob
@@ -233,6 +270,10 @@ class TestOffIsToday:
             pytest.skip("this planlens reads the synthetic report otherwise "
                         "than the one master's snapshot was taken with")
         now = off_snapshot(tmp_path)
+        # What to look at first when a digest differs: the snapshot's
+        # platform and libraries beside this run's.
+        print(f"snapshot taken with {saved.get('taken_with')}; "
+              f"this run {taken_with()}")
         for name in OFF_RUNS:
             assert [r["tools"] for r in now[name]["requests"]] == [
                 r["tools"] for r in saved[name]["requests"]], name
