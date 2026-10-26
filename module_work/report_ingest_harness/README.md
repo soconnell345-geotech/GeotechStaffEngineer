@@ -142,6 +142,17 @@ page, same printed line, same spot. What was not placed is listed for open
 items only; blind items are counts. No model and no answer sheet; it
 refuses an out folder git does not ignore.
 
+`run_question_list` (2026-10-26, BACKLOG RI-90) runs the owner's report
+question list (`report_ingest.question_list`) on the saved stage-b full
+records: one answer sheet a report for the owner to mark, with code's
+answers on the rows the list gives to code ("Code" and "Both"), and with
+`--engine fake` the whole flow (screening call, gate, main call, code's
+reading beside each Both answer) on an engine that calls no model. The list
+is private: it is read in place from `--list` or `GSE_REPORT_QUESTIONS` and
+nothing in the repo holds a question. It prints, for each Code or Both row,
+on how many records code gave an answer and why not on the others (blind
+reports in the totals only), and refuses an out folder git does not ignore.
+
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
 `module_work/field_feedback/2026-09-16_report-ingest/raw/`, which `.gitignore`
