@@ -3953,3 +3953,142 @@ class TestModelFirstAsASecondArm:
         # sent to the lab reader rather than the narrative's.
         assert row["labels"]["harmful"] == {"rules": 1, "final": 1}
         assert results["ingest"]["totals"]["labels"]["harmful_final"] == 1
+
+
+# -- token limits, the arm stamp and the placement file (BACKLOG RI-120) -------
+
+class _Counted:
+    """An engine that counts its calls, standing in for a real one."""
+
+    accepts_pdf = True
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, **kwargs):
+        self.calls += 1
+        return "reply"
+
+
+def _meter(tokens_in, tokens_out=0):
+    from report_ingest.engine import CostMeter, Usage
+
+    meter = CostMeter()
+    meter.add("made-up-model", Usage(input_tokens=tokens_in,
+                                     output_tokens=tokens_out), 0.1)
+    return meter
+
+
+class TestTokenBrake:
+    def test_no_limit_wraps_nothing(self):
+        inner = _Counted()
+        assert cs._TokenBrake(_meter(10 ** 6), None, None).wrap(inner) is inner
+
+    def test_a_call_past_the_report_limit_is_refused_before_it_is_sent(self):
+        from report_ingest.engine import CallCeilingReached, Usage
+
+        meter, inner = _meter(900), _Counted()
+        brake = cs._TokenBrake(meter, 1000, None)
+        engine = brake.wrap(inner)
+        assert engine.complete([]) == "reply" and inner.calls == 1
+        assert engine.accepts_pdf is True          # attributes pass through
+        meter.add("made-up-model", Usage(input_tokens=150), 0.1)
+        with pytest.raises(CallCeilingReached):
+            engine.complete([])
+        assert inner.calls == 1
+        assert brake.fields()["token_brake"]["limit"] == "max_report_tokens_in"
+
+    def test_the_total_limit_counts_input_and_output(self):
+        from report_ingest.engine import CallCeilingReached
+
+        brake = cs._TokenBrake(_meter(400, 700), None, 1000)
+        with pytest.raises(CallCeilingReached):
+            brake.wrap(_Counted()).complete([])
+        assert brake.fields()["token_brake"]["limit"] == "max_total_tokens"
+
+    def test_a_brake_that_never_fired_adds_nothing_to_the_run_file(self):
+        brake = cs._TokenBrake(_meter(10), 1000, 1000)
+        brake.wrap(_Counted()).complete([])
+        assert brake.fields() == {}
+
+    def test_the_arm_engines_are_wrapped_and_the_callers_dict_is_not(self):
+        brake = cs._TokenBrake(_meter(0), 1000, None)
+        kwargs = {"model_first": "on", "describe_engine": _Counted(),
+                  "range_engine": _Counted(),
+                  "stage_engines": {"logs": _Counted()}}
+        wrapped = brake.wrap_kwargs(kwargs)
+        assert isinstance(wrapped["describe_engine"], cs._BrakedEngine)
+        assert isinstance(wrapped["stage_engines"]["logs"], cs._BrakedEngine)
+        assert isinstance(kwargs["describe_engine"], _Counted)
+        assert wrapped["model_first"] == "on"
+
+
+class TestArmStamp:
+    def test_a_folder_is_held_to_the_arm_it_was_started_in(self, tmp_path):
+        folder = tmp_path / "ingest" / "R1"
+        folder.mkdir(parents=True)
+        cs._stamp_arm(folder, cs._FirstArm("off"))
+        run_file = folder / "run.json"            # no run file yet
+        assert cs._arm_clash(run_file, cs._FirstArm("off")) is None
+        clash = cs._arm_clash(run_file, cs._FirstArm("on"))
+        assert "started with model first off" in clash
+        assert "fresh out_dir" in clash
+
+    def test_the_stamp_is_written_once(self, tmp_path):
+        cs._stamp_arm(tmp_path, cs._FirstArm("off"))
+        cs._stamp_arm(tmp_path, cs._FirstArm("on"))
+        assert json.loads((tmp_path / "arm.json").read_text("utf-8")) == {
+            "model_first": "off"}
+
+    def test_a_folder_with_no_stamp_is_judged_by_its_run_file_as_before(
+            self, tmp_path):
+        run_file = tmp_path / "run.json"
+        run_file.write_text(json.dumps({"model_first": "off"}), "utf-8")
+        assert cs._arm_clash(run_file, cs._FirstArm("on")) is not None
+        assert cs._arm_clash(run_file, cs._FirstArm("off")) is None
+
+
+class TestTheIngestStageLimits:
+    def test_the_stage_stamps_the_folder_and_the_other_arm_cannot_take_it(
+            self, ingest_cluster):
+        _reports, out, _scripts = ingest_cluster
+        _ingest_run(ingest_cluster, model="fake-main")
+        folder = out / "ingest" / "R36"
+        assert json.loads((folder / "arm.json").read_text("utf-8")) == {
+            "model_first": "off"}
+        (folder / "run.json").unlink()            # an interrupted folder
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              model_first="on", stage_models=FIRST_MODELS)
+        assert "started with model first off" in (
+            results["ingest"]["failures"]["R36"])
+        assert not (folder / "run.json").exists()
+
+    def test_a_zero_token_ceiling_stops_before_the_first_report(
+            self, ingest_cluster, capsys):
+        _reports, out, _scripts = ingest_cluster
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              max_total_tokens=0)
+        assert not (out / "ingest" / "R36").exists()
+        assert results["ingest"]["totals"]["pages"] == 0
+        assert "stopping before R36" in capsys.readouterr().out
+
+    def test_the_default_has_no_token_limit(self, ingest_cluster):
+        _reports, out, _scripts = ingest_cluster
+        _ingest_run(ingest_cluster, model="fake-main")
+        run = json.loads((out / "ingest" / "R36" / "run.json").read_text(
+            "utf-8"))
+        assert "token_brake" not in run
+
+
+class TestThePlacementFile:
+    def test_the_graph_writes_what_it_placed_and_replaces_it_each_run(
+            self, tmp_path):
+        from report_ingest import graph
+
+        found = [{"counts": {"placed": 2, "not_found": 1}, "items": []}]
+        graph._write_placement(str(tmp_path), {"mf-a": found})
+        got = json.loads((tmp_path / "placement.json").read_text("utf-8"))
+        assert got == {"mf-a": found}
+        graph._write_placement(str(tmp_path), {})
+        assert json.loads((tmp_path / "placement.json").read_text(
+            "utf-8")) == {}
