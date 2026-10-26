@@ -15,7 +15,10 @@ reading's.
 ``checks`` argument) and returns what came out, as JSON. The snapshot it is
 compared with (``checks_refuse_snapshot.json``) was written by this same
 function on master (32b9645) before the check mode existed, so the
-comparison is the proof that the default path did not move.
+comparison is the proof that the default path did not move. RI-89 rewrote
+it on purpose, and only where that item moves the default: a water content
+and a liquid limit past 100 are kept (lab ``positions``), and a recovery
+past 100 and an RQD below 0 are listed instead of clamped (log ``window``).
 
 Every value here is invented.
 """

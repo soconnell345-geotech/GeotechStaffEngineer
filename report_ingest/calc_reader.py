@@ -2288,9 +2288,15 @@ class _Builder:
             if self.flag and len(self.pages) > 1 else None)
 
     def _page(self, page: Optional[int]) -> Optional[int]:
-        """The report's page for a page the answer cites: read the way the
-        whole answer is read under ``flag``; as cited otherwise."""
-        if page is None or self._numbers is None:
+        """The report's page for a page the answer cites: under ``flag`` read
+        the way the whole answer is read, and on a one-page printout that
+        page, whatever was cited (the rule of :meth:`provenance`); as cited
+        otherwise."""
+        if page is None or not self.flag:
+            return page
+        if len(self.pages) == 1:
+            return self.pages[0]
+        if self._numbers is None:
             return page
         return self._numbers.page(page)[0]
 
@@ -2445,9 +2451,9 @@ class _Builder:
             self.unresolved.append({
                 "what": item.what, "page": self._page(item.page),
                 "why": item.why, "refused_by": "reader"})
-        if self._numbers is not None and self._numbers.ambiguous:
+        if self._numbers is not None and self._numbers.mixed:
             self.unresolved.append({"what": "page numbers",
-                                    "why": self._numbers.ambiguous,
+                                    "why": self._numbers.mixed,
                                     "flag": "page_numbers"})
         for zoom in self.zooms:
             self.changes.append({

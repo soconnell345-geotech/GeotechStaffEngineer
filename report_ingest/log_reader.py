@@ -860,9 +860,11 @@ def _depth_slack(grid: Any, pages: Sequence[int]) -> float:
 class _Builder:
     """Turns one :class:`LogReading` into an :class:`Investigation`.
 
-    Every depth passes :meth:`_depth` first. That is the only place a value
+    Every depth passes :meth:`_depth` first. That is the only place a depth
     can be refused, and it is deliberately the narrow gate the whole reading
-    goes through.
+    goes through. A percentage outside 0 to 100 is kept out of its slot with
+    an entry, never clamped (:meth:`_percent`; RI-89): a recovery over 100 %
+    is listed with words saying a log may print one.
 
     ``checks`` (:mod:`report_ingest.checks`): ``"refuse"``, the default, is
     the gate above. ``"flag"`` is model-first ingest's (RI-87): a depth
@@ -872,8 +874,7 @@ class _Builder:
     total depth plus ``slack`` (:func:`_depth_slack`) instead; with no ruler
     on any page every depth is kept and the log gets one note; a negative
     depth, a depth past ``MAX_DEPTH_M`` and a percentage outside 0 to 100
-    are kept out of their slots with an entry that keeps them as read (a
-    recovery over 100 % with words saying a log may print one); drive
+    are kept out of their slots with an entry that keeps them as read; drive
     lengths that cannot be placed against the blows, a word outside a
     vocabulary and a pit dimension with no unit are listed, not dropped;
     and the answer's page numbers are read one way for the whole answer
@@ -1099,20 +1100,29 @@ class _Builder:
 
     def _percent(self, value: Optional[float], what: str,
                  page: Optional[int], over: str = "") -> Optional[float]:
-        """A percentage: clamped to 0-100 under ``refuse`` (:func:`_pct`);
-        under ``flag`` one outside 0-100 is kept out of its slot, as
-        impossible, or, past 100, with ``over``'s words when a sheet may
-        print it (the record's field still holds only 0 to 100)."""
-        if not self.flag or value is None or 0.0 <= float(value) <= 100.0:
-            return _pct(value)
+        """A percentage, or None with an entry; never clamped (RI-89: a
+        recovery of 120 became 100 without a word). One outside 0-100 is
+        kept out of its slot: past 100 with ``over``'s words when a sheet
+        may print it, the record's field holding only 0 to 100; otherwise
+        refused (listed as impossible under ``flag``)."""
+        if value is None:
+            return None
         value = float(value)
+        if 0.0 <= value <= 100.0:
+            return value
         if over and value > 100.0:
             self._kept_out(what, page, value,
                            f"{value:g} is over 100; {over}; the record's "
                            f"field holds 0 to 100, so it is {LISTED}")
-        else:
+        elif self.flag:
             self._impossible(what, page, value,
                              f"{value:g} is not a percentage")
+        else:
+            self.unresolved.append({
+                "what": what, "page": page, "value": value,
+                "why": f"{value:g} is not a percentage; refused rather than "
+                       f"accepted",
+                "refused_by": "python"})
         return None
 
     def _printed(self, value: float, what: str, page: Optional[int],
@@ -1380,9 +1390,9 @@ class _Builder:
         elif unbounded:
             self.unresolved.append({"what": "total depth", "why": unbounded,
                                     "flag": "no_total_depth"})
-        if self._numbers is not None and self._numbers.ambiguous:
+        if self._numbers is not None and self._numbers.mixed:
             self.unresolved.append({"what": "page numbers",
-                                    "why": self._numbers.ambiguous,
+                                    "why": self._numbers.mixed,
                                     "flag": "page_numbers"})
         return investigation
 
@@ -1477,14 +1487,6 @@ def _unplaced(rec: Any, blows: int) -> str:
                 f"with the {blows} blow count(s), so they cannot be placed "
                 f"against the drives")
     return "no unit was given for the drive lengths"
-
-
-def _pct(value: Optional[float]) -> Optional[float]:
-    """A percentage clamped to 0-100, or None. The record's field is bounded
-    and a reader that returns 105 % must not fail the whole log."""
-    if value is None:
-        return None
-    return max(0.0, min(100.0, float(value)))
 
 
 # ---------------------------------------------------------------------------

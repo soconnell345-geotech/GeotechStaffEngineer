@@ -25,7 +25,8 @@ answer (:func:`pdf_local`): as the report's pages, or, when every one is a
 position in the pages the call was sent (0 to n-1) and at least one is not
 a page of the call, all of them as positions. That is the class RI-74 fixed
 for one-page printouts, for every stage. A page outside the call on the
-first reading is handled as today.
+first reading is handled as today, and an answer that cites both pages of
+the call and pages outside it gets one note saying so.
 """
 
 from __future__ import annotations
@@ -67,13 +68,14 @@ class PageNumbers:
     """How the pages one answer cites are read (:func:`pdf_local`).
 
     ``positions``: every cited page is a position in ``pages``, the pages
-    the call was sent, in order. ``ambiguous``: the QA note to list when the
-    cites could be read either way; empty when they cannot.
+    the call was sent, in order. ``mixed``: the QA note to list when the
+    answer cites both pages of the call and pages outside it; empty when it
+    does not.
     """
 
     pages: Tuple[int, ...]
     positions: bool = False
-    ambiguous: str = ""
+    mixed: str = ""
 
     def page(self, cited: int) -> Tuple[int, str]:
         """The report's page for ``cited``, and the note that says it was
@@ -96,10 +98,10 @@ def pdf_local(cited: Iterable[Optional[int]],
     is 0 to n-1 and at least one is not a page of the call, the answer gave
     positions in the PDF it was sent, and all its cites are read so: one
     value cannot be read one way and its neighbour the other. Otherwise each
-    cite is the report's page. When the call's pages start below n and the
-    answer cites both pages of the call and pages outside it, the numbers
-    could mean either, and :attr:`PageNumbers.ambiguous` says which reading
-    was taken.
+    cite is the report's page. When the answer cites both pages of the
+    call and pages outside it, :attr:`PageNumbers.mixed` says so and which
+    reading was taken; when the call's pages also start below n, the
+    numbers could mean either, and it says that too.
     """
     pages = tuple(int(p) for p in pages)
     n = len(pages)
@@ -107,17 +109,18 @@ def pdf_local(cited: Iterable[Optional[int]],
     inside = [c for c in cites if c in pages]
     outside = [c for c in cites if c not in pages]
     positions = bool(outside) and all(0 <= c < n for c in cites)
-    ambiguous = ""
-    if pages and min(pages) < n and inside and outside:
-        ambiguous = (
-            f"the page numbers this answer cites are ambiguous: "
-            f"{_listed(inside)} {_are(inside)} among this call's pages and "
-            f"{_listed(outside)} {_are(outside)} not, and with the call's "
-            f"pages {_listed(pages)} each could also be a position among "
-            f"the {n} pages sent; "
+    mixed = ""
+    if inside and outside:
+        either = (f", and with the call's pages {_listed(pages)} each could "
+                  f"also be a position among the {n} pages sent"
+                  if min(pages) < n else "")
+        mixed = (
+            f"the page numbers this answer cites mix this call's pages and "
+            f"others: {_listed(inside)} {_are(inside)} among this call's "
+            f"pages and {_listed(outside)} {_are(outside)} not{either}; "
             + ("all were read as positions" if positions
                else "they were read as the report's pages"))
-    return PageNumbers(pages, positions, ambiguous)
+    return PageNumbers(pages, positions, mixed)
 
 
 def _listed(pages: Sequence[int]) -> str:

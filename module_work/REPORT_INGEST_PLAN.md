@@ -1105,10 +1105,11 @@ answer:
    PDF-local index (0 to n-1) and at least one is not a page of the call,
    all its cites are mapped to the report's pages, each with a note: the
    class RI-74 (6) fixed for one-page printouts, applied to every stage.
-   Otherwise every cite is the report's page. When the call's pages start
-   below n and the answer cites both pages of the call and pages outside it,
-   the answer gets one QA note saying the numbers are ambiguous and which
-   reading was taken. A page outside the call on that reading keeps the
+   Otherwise every cite is the report's page. When the answer cites both
+   pages of the call and pages outside it, it gets one QA note saying so and
+   which reading was taken, and, when the call's pages start below n, that
+   the numbers could be read either way. On a one-page calc printout every
+   cite, a note's or a refused value's too, is that page. A page outside the call on that reading keeps the
    value, takes the call's first page at confidence 0.4 and a note, as the
    builders do today.
 2. **Find the object's printed words on its cited page**, among the words
@@ -1226,14 +1227,15 @@ and they split into two kinds:
 | log depth window (`_Builder._depth`) | outside the ruler's window: refused, and a layer or sample whose top is refused is dropped whole; no ruler on a boring: every depth refused | **implausible.** Kept at confidence 0.5, one `out_of_range` entry per value naming the window. No ruler on any page: every depth kept, and one note per log ("no depth scale found; the depths are as read, not checked against a ruler"). The window applies only to values placed against the ruler (layers, samples, drives). A water, casing or cave depth is checked against 0 to the total depth plus the window's slack; with no total depth it is kept and counted in the log's one note. This is the class of RI-76 (5) on R15_p46: six water depths printed in a table on the sheet, refused for lying outside the ruler's window. It is also most of RI-79's misses on scans. |
 | log total depth negative | refused | impossible: as now |
 | lab depth outside 0 to 300 m | refused | impossible: out of the slot, `open` entry with the value |
-| lab percent outside 0 to 100 | refused | a fraction (gravel, sand, silt, clay, fines, percent passing, saturation, organic, ash) outside 0 to 100: impossible, the same. A water content (test, specimen, optimum, compaction point) or an Atterberg limit (LL, PL, PI, shrinkage limit): impossible only below 0, kept above 100. The water content can be greater than 100 % (FHWA-NHI-06-088 Vol. I §2.1.2, p. 2-5); DM 7.1 (UFS 3-220-10) §8-2.2.2 cites clays with liquid limits to 143 and PIs to 112; GEC-13 §3.7.4 (p. 3-53) has water contents of 94 to 364 percent. |
-| log recovery percent over 100 | clamped to 100 | out of the slot (the record's field holds 0 to 100), `open` entry with the value and words that it is a reading, not a misreading: recoveries over 100 % are recorded (FHWA-NHI-06-088 p. 3-44). Below 0: impossible |
+| lab percent outside 0 to 100 | a fraction refused; since RI-89 a water content or an Atterberg limit refused only below 0 | a fraction (gravel, sand, silt, clay, fines, percent passing, saturation, organic, ash) outside 0 to 100: impossible, the same. A water content (test, specimen, optimum, compaction point) or an Atterberg limit (LL, PL, PI, shrinkage limit): impossible only below 0, kept above 100. The water content can be greater than 100 % (FHWA-NHI-06-088 Vol. I §2.1.2, p. 2-5); DM 7.1 (UFS 3-220-10) §8-2.2.2 cites clays with liquid limits to 143 and PIs to 112; GEC-13 §3.7.4 (p. 3-53) has water contents of 94 to 364 percent. |
+| log recovery percent over 100 | clamped to 100 without a word until RI-89; now as under `on` (and any other log percent outside 0 to 100 refused with an entry, not clamped) | out of the slot (the record's field holds 0 to 100), `open` entry with the value and words that it is a reading, not a misreading: recoveries over 100 % are recorded (FHWA-NHI-06-088 p. 3-44). Below 0: impossible |
 | log drive lengths that do not line up with the blows, or have no unit | dropped without a word | out of the drive, `open` entry with the lengths, the blows and the unit as read |
 | log word outside a vocabulary (sample kind, exploration kind, water `when`) | `other` / `unknown`, without a word | `other` / `unknown`, with an entry naming the word as read |
 | log pit dimension with no unit | refused | kept in no unit, one note, as the total depth is |
 | lab liquid limit below plastic limit | all three refused | impossible: all three out of their slots, one `open` entry with the three values |
 | lab grading that rises | the series refused | impossible: the series out, one `open` entry |
 | lab kind outside the vocabulary | `other` with a note | as now |
+| lab series the test's kind does not read | left out without a word | listed with the series as read, `open` |
 | calc value printed on the pages (`_on_the_page`) | confidence lowered | moves into placement (§8.4 step 4), for every stage |
 | narrative quote check (`check_quotes`) | confidence lowered, listed | as now |
 | narrative caption counts (`count_captions`) | the code's count is stored over the model's answer | the model's answer is stored; a code count that differs is a QA note "read by the code, not by the model" |

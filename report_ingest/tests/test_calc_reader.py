@@ -1761,3 +1761,28 @@ class TestCalcChecksFlag:
         whys = " | ".join(u["why"] for u in builder.unresolved)
         assert "no printed label" in whys
         assert "'blorps' is not one the record can convert" in whys
+
+    def test_a_mixed_answer_gets_one_note(self):
+        builder, calc = _calc_flag()
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "page_numbers"]
+        assert note["why"].endswith("99 is not; they were read as the "
+                                    "report's pages")
+
+    def test_a_one_page_printouts_entries_name_its_page(self):
+        """RI-89 review: on a one-page printout every cite is that page
+        (the provenance rule), for the reader's notes and an unnamed
+        value's refusal too. Under refuse they stay as cited."""
+        from report_ingest.calc_reader import _Builder
+        reading = CalcReading.model_validate({
+            "kind": "settlement",
+            "inputs": [{"name": "", "value": 7.0, "prov": {"page": 5}},
+                       {"name": "Made-up load", "value": 5.0,
+                        "unit": "kips", "prov": {"page": 0}}],
+            "unsettled": [{"what": "a note", "page": 2, "why": "cut off"}]})
+        builder = _Builder(reading, [40], "R", [], [5.0], checks="flag")
+        builder.build()
+        assert sorted(u["page"] for u in builder.unresolved) == [40, 40]
+        today = _Builder(reading, [40], "R", [], [5.0])
+        today.build()
+        assert sorted(u["page"] for u in today.unresolved) == [2, 5]

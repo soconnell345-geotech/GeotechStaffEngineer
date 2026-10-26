@@ -383,16 +383,24 @@ class TestWhatPythonRefuses:
         assert result.model_tests[0].depth_top is None
         assert result.tests[0].depth_top.value == 7.5     # the floor's
 
-    def test_a_percentage_past_a_hundred_is_refused(self, atterberg):
+    def test_a_limit_past_a_hundred_is_kept_and_the_table_still_stands(
+            self, atterberg):
+        """RI-89: a liquid limit can pass 100 (UFS 3-220-10 section
+        8-2.2.2 prints clays to 143), so the model's 148 is not refused.
+        The table prints 48: the record carries the table's, and the
+        model's stands beside it as a disagreement."""
         doc, _gt = atterberg
         engine = FakeEngine([{"final": _atterberg_reading(
             test={"ll": 148.0, "pl": 22.0, "pi": 26.0})}])
         result = read_lab_sheet(doc, [0], engine)
-        assert result.model_tests[0].result.ll is None
-        assert result.model_tests[0].result.pl == 22.0
-        assert any("not a percentage" in u["why"] for u in result.unresolved)
-        # The table prints 48; the record carries it, from the floor.
+        assert result.model_tests[0].result.ll == 148.0
+        assert not any("not a percentage" in u["why"]
+                       for u in result.unresolved)
         assert result.tests[0].result.ll == 48.0
+        (row,) = [d for d in result.disagreements
+                  if d["what"] == "atterberg: ll"]
+        assert (row["floor"], row["model"], row["kept"]) == (
+            "48", "148", "floor")
 
     def test_a_liquid_limit_below_the_plastic_limit_takes_all_three(
             self, atterberg):
@@ -1848,15 +1856,27 @@ class TestLabChecksDefaultIsMaster:
         assert {tuple(t.pages) for t in _Builder(
             lab_reading(), LAB_PAGES, "R", []).build()} == {(20, 21, 22)}
 
-    def test_refuse_still_bounds_water_content_at_100(self):
+    def test_refuse_keeps_water_contents_and_limits_past_100(self):
+        """RI-89: on the default path too, a water content or a limit is
+        refused only below 0, and a fraction past 100 still is."""
         from report_ingest.lab_reader import _Builder
         from report_ingest.tests.checks_fixtures import (
-            LAB_PAGES, lab_positions_reading,
+            LAB_PAGES, lab_positions_reading, lab_reading,
         )
         builder = _Builder(lab_positions_reading(), LAB_PAGES, "R", [])
         tests = builder.build()
-        assert tests[0].result.water_content is None
-        assert tests[0].result.ll is None
+        assert tests[0].result.water_content == 150.0
+        assert (tests[0].result.ll, tests[0].result.pl,
+                tests[0].result.pi) == (120.0, 45.0, 75.0)
+        assert tests[1].result.wc is None
+        (row,) = [u for u in builder.unresolved if u.get("value") == -3.0]
+        assert row["why"] == ("-3 is not a percentage; refused rather than "
+                              "accepted")
+        builder = _Builder(lab_reading(), LAB_PAGES, "R", [])
+        tests = builder.build()
+        assert tests[1].result.gravel_percent is None
+        assert any(u["why"] == "105 is not a percentage; refused rather "
+                               "than accepted" for u in builder.unresolved)
 
 
 class TestLabChecksFlag:
@@ -1995,3 +2015,74 @@ class TestLabChecksFlag:
         # on the first page at confidence 0.4
         assert tests[2].prov[0].page == 20
         assert tests[2].prov[0].confidence == 0.4
+
+    def test_a_mixed_answer_gets_one_note(self):
+        """RI-89 review: 20 to 22 are pages of the sheet and 57 is not; the
+        answer is read as the report's pages, and says so once."""
+        builder, tests = _lab_flag()
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "page_numbers"]
+        assert note["why"] == (
+            "the page numbers this answer cites mix this call's pages and "
+            "others: 20, 21, 22 are among this call's pages and 57 is not; "
+            "they were read as the report's pages")
+
+    def test_a_series_the_kind_does_not_read_is_listed(self):
+        """RI-89 review: an Atterberg test reads only a flow curve; a
+        grading series given with it is listed as read under flag, and
+        left out without a word under refuse, as today."""
+        import json
+        from report_ingest.lab_reader import _Builder
+        reading = LabSheetReading.model_validate({
+            "depth_unit": "ft",
+            "tests": [{"kind": "atterberg", "investigation_id": "B-1",
+                       "ll": 40.0, "pl": 20.0, "pi": 20.0,
+                       "series": [
+                           {"name": "flow_curve",
+                            "points": [{"x": 25.0, "y": 41.0}]},
+                           {"name": "percent_passing",
+                            "points": [{"x": 4.75, "y": 90.0}]}],
+                       "prov": {"page": 20}}]})
+        builder = _Builder(reading, [20], "R", [], checks="flag")
+        (test,) = builder.build()
+        assert test.result.flow_curve == [(25, 41.0)]
+        (row,) = builder.unresolved
+        assert row["what"] == "atterberg 1 (B-1): series percent_passing"
+        assert row["page"] == 20
+        assert row["why"] == (
+            "the atterberg test reads no series named 'percent_passing' (it "
+            "reads flow_curve); kept out of the record and listed here as "
+            "read")
+        assert json.loads(row["read"])["points"] == [{"x": 4.75, "y": 90.0}]
+        assert _ranked([row])[0].rank == "open"
+        today = _Builder(reading, [20], "R", [])
+        today.build()
+        assert today.unresolved == []
+
+    def test_a_summary_tables_own_entries_carry_its_label(self):
+        """RI-89 review: the summary builder left its test's label empty,
+        so the table's provenance and picture entries had no 'what'. A
+        default-path fix too."""
+        from report_ingest.lab_reader import _Builder
+        reading = LabSheetReading.model_validate({
+            "depth_unit": "ft",
+            "tests": [{"kind": "summary_table", "investigation_id": "B-1",
+                       "rows": [{"investigation_id": "B-1",
+                                 "depth_top": 2.0, "wc": 12.0}],
+                       "prov": {"page": 57, "from_image": True}}]})
+        for checks in ("refuse", "flag"):
+            builder = _Builder(reading, [20, 21], "R", [], checks=checks)
+            builder.build()
+            whats = [u["what"] for u in builder.unresolved]
+            assert "summary_table 1 (B-1): provenance" in whats, checks
+        positions = LabSheetReading.model_validate({
+            "depth_unit": "ft",
+            "tests": [{"kind": "summary_table", "investigation_id": "B-1",
+                       "rows": [{"investigation_id": "B-1",
+                                 "depth_top": 2.0}],
+                       "prov": {"page": 1}}]})
+        builder = _Builder(positions, [20, 21], "R", [], checks="flag")
+        builder.build()
+        (change,) = builder.changes
+        assert change["what"] == "summary_table 1 (B-1)"
+        assert change["page"] == 21

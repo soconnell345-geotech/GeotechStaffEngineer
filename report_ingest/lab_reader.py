@@ -35,14 +35,13 @@ sieve opening in inches stays in inches. The DIGGS writer converts, once.
 
 WHAT PYTHON CHECKS AFTERWARDS. Four things that cannot be true of a real
 sheet, each of which a model does produce now and then: a depth outside
-0-300 m, a percentage outside 0-100, a liquid limit below the plastic limit,
-and a grading series in which MORE passes a smaller sieve. Each is refused
-into ``unresolved`` rather than accepted, and the rest of the sheet is kept:
-one bad series is not a reason to lose the eleven good values beside it.
-Model-first ingest (RI-87) builds with ``checks="flag"``, which keeps these
-four and lists each value as read, except that a water content or an
-Atterberg limit is refused only below 0, since real ones pass 100
-(:meth:`_Builder.water`).
+0-300 m, a share of the whole outside 0-100 (a water content or an Atterberg
+limit only below 0: real ones pass 100, :meth:`_Builder.water`), a liquid
+limit below the plastic limit, and a grading series in which MORE passes a
+smaller sieve. Each is refused into ``unresolved`` rather than accepted, and
+the rest of the sheet is kept: one bad series is not a reason to lose the
+eleven good values beside it. Model-first ingest (RI-87) builds with
+``checks="flag"``, which keeps these four and lists each value as read.
 
 THE FLOOR (5.23.0). The page's detected tables and its title are the FIRST
 voter. Before any call they are read into typed :class:`LabTest` records
@@ -101,11 +100,15 @@ import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import (
+    Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple,
+)
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from report_ingest.checks import IMPOSSIBLE, as_read, check_mode, pdf_local
+from report_ingest.checks import (
+    IMPOSSIBLE, LISTED, as_read, check_mode, pdf_local,
+)
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
 )
@@ -1143,11 +1146,11 @@ class _Builder:
     the above. ``"flag"`` is model-first ingest's (RI-87): the four gates
     still keep their values out of the record, and each entry says it was
     listed as read and names the page its test cites (a refused grading
-    carries the whole series as read); a water content or an Atterberg
-    limit is refused only below 0 (:meth:`water`); the answer's page
-    numbers are read one way for the whole answer
-    (:func:`~report_ingest.checks.pdf_local`); and each test's ``pages``
-    are the page it cites inside the window, not the whole window.
+    carries the whole series as read); a series the test's kind does not
+    read is listed as read; the answer's page numbers are read one way for
+    the whole answer (:func:`~report_ingest.checks.pdf_local`); and each
+    test's ``pages`` are the page it cites inside the window, not the whole
+    window.
     """
 
     def __init__(self, reading: LabSheetReading, pages: Sequence[int],
@@ -1170,6 +1173,9 @@ class _Builder:
         self.unresolved: List[Dict[str, Any]] = []
         self.changes: List[Dict[str, Any]] = []
         self._what = ""
+        #: The series names the test being built was read for
+        #: (:meth:`series_named`), so ``flag`` can list the rest.
+        self._asked: Set[str] = set()
 
     # -- the gates ---------------------------------------------------------
     def _refuse(self, what: str, why: str, value: Any = None,
@@ -1255,27 +1261,27 @@ class _Builder:
         return float(value)
 
     def water(self, value: Optional[float], what: str) -> Optional[float]:
-        """A water content or an Atterberg limit.
+        """A water content or an Atterberg limit: refused only below 0.
 
-        Under ``refuse`` the 0 to 100 gate of :meth:`percent`, as today.
-        Under ``flag`` only a negative one is refused: these are percentages
-        of the dry weight, not shares of a whole, and real sheets print them
-        past 100. The water content can be greater than 100 %
-        (FHWA-NHI-06-088 Vol. I section 2.1.2, p. 2-5); ring shear tests ran
-        on clays with liquid limits to 143 and plasticity indices to 112
-        (DM 7.1 (UFS 3-220-10) section 8-2.2.2); an organic silt had water
-        contents of 94 to 364 percent (GEC-13 section 3.7.4, p. 3-53).
+        These are percentages of the dry weight, not shares of a whole, and
+        real sheets print them past 100 (RI-89). The water content can be
+        greater than 100 % (FHWA-NHI-06-088 Vol. I section 2.1.2, p. 2-5);
+        ring shear tests ran on clays with liquid limits to 143 and
+        plasticity indices to 112 (DM 7.1 (UFS 3-220-10) section 8-2.2.2);
+        an organic silt had water contents of 94 to 364 percent (GEC-13
+        section 3.7.4, p. 3-53). A negative one is refused with
+        :meth:`percent`'s words under ``refuse``.
         """
-        if not self.flag:
-            return self.percent(value, what)
         if value is None:
             return None
-        if float(value) < 0.0:
-            self._refuse(what, self._cannot(
-                f"{value:g} is negative, which no water content or limit is",
-                ""), value)
-            return None
-        return float(value)
+        if float(value) >= 0.0:
+            return float(value)
+        if not self.flag:
+            return self.percent(value, what)
+        self._refuse(what, self._cannot(
+            f"{value:g} is negative, which no water content or limit is",
+            ""), value)
+        return None
 
     def quantity(self, read: Optional[ReadQuantity]) -> Optional[Quantity]:
         if read is None:
@@ -1375,6 +1381,7 @@ class _Builder:
         return out
 
     def series_named(self, test: ReadTest, name: str) -> Optional[ReadSeries]:
+        self._asked.add(name)
         for series in test.series:
             if (series.name or "").strip().lower() == name:
                 return series
@@ -1648,6 +1655,7 @@ class _Builder:
 
     def _summary(self, kind: str, test: ReadTest) -> SummaryTableResult:
         rows: List[SummaryRow] = []
+        label = self._what
         for n, row in enumerate(test.rows, start=1):
             self._what = f"summary row {n} ({row.investigation_id or '?'})"
             ll, pl_number, pi = self.atterberg_ok(
@@ -1698,7 +1706,9 @@ class _Builder:
                 sulfides=self.reported(row.sulfides),
                 redox=self.reported(row.redox),
                 other=[(f.name, f.value) for f in row.other]))
-        self._what = ""
+        # The table's own depth, page and picture entries carry its label
+        # (they were left with none).
+        self._what = label
         return SummaryTableResult(rows=rows, title=test.description,
                                   sheet=test.test_type)
 
@@ -1710,6 +1720,19 @@ class _Builder:
                                                   "permeability") else "other"),
                            no_results=bool(test.no_results), fields=fields)
 
+    def _unread_series(self, kind: str, test: ReadTest) -> None:
+        """Under ``flag``, each series the test's kind does not read, listed
+        as read rather than left out without a word."""
+        for series in test.series:
+            name = (series.name or "").strip().lower()
+            if name in self._asked:
+                continue
+            reads = ", ".join(sorted(self._asked)) or "none"
+            self._refuse(
+                f"series {name or '(unnamed)'}",
+                f"the {kind} test reads no series named {name!r} (it reads "
+                f"{reads}); {LISTED}", read=series)
+
     # -- the whole sheet ---------------------------------------------------
     def build(self) -> List[LabTest]:
         out: List[LabTest] = []
@@ -1720,7 +1743,10 @@ class _Builder:
             self._what = label
             self._at = self.cited_page(test.prov) if self.flag else None
             digitised = any(s.digitised for s in test.series)
+            self._asked = set()
             result = self.result_for(kind, test)
+            if self.flag:
+                self._unread_series(kind, test)
             fields = {f.name: f.value for f in test.fields}
             lab_test = LabTest(
                 kind=kind,
@@ -1752,9 +1778,9 @@ class _Builder:
             self.unresolved.append({
                 "what": item.what, "page": self._page(item.page),
                 "why": item.why, "refused_by": "reader"})
-        if self._numbers is not None and self._numbers.ambiguous:
+        if self._numbers is not None and self._numbers.mixed:
             self.unresolved.append({"what": "page numbers",
-                                    "why": self._numbers.ambiguous,
+                                    "why": self._numbers.mixed,
                                     "flag": "page_numbers"})
         for zoom in self.zooms:
             self.changes.append({

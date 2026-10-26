@@ -541,14 +541,14 @@
      "description": "",
      "flow_curve": [],
      "kind": "atterberg",
-     "ll": null,
+     "ll": 120.0,
      "non_plastic": false,
      "pi": 75.0,
      "pl": 45.0,
      "pl_trials": [],
      "shrinkage_limit": null,
      "uscs": "",
-     "water_content": null
+     "water_content": 150.0
     },
     "sample_id": "S-1",
     "source_report": "R-made-up",
@@ -608,18 +608,6 @@
    }
   ],
   "unresolved": [
-   {
-    "refused_by": "python",
-    "value": 120.0,
-    "what": "atterberg 1 (B-7): liquid limit",
-    "why": "120 is not a percentage; refused rather than accepted"
-   },
-   {
-    "refused_by": "python",
-    "value": 150.0,
-    "what": "atterberg 1 (B-7): water content",
-    "why": "150 is not a percentage; refused rather than accepted"
-   },
    {
     "page": 0,
     "refused_by": "python",
@@ -1967,8 +1955,8 @@
      },
      "qu": null,
      "recovery": null,
-     "recovery_percent": 100.0,
-     "rqd_percent": 0.0,
+     "recovery_percent": null,
+     "rqd_percent": null,
      "sample_id": "S-1",
      "top": {
       "prov": null,
@@ -2167,6 +2155,20 @@
     "value": 24.0,
     "what": "layer 3 (Grey sandy GRAVEL) top",
     "why": "depth 24 is outside what the scale on this log reads (-0.5 to 20.5); refused rather than accepted"
+   },
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": 105.0,
+    "what": "sample S-1 recovery percent",
+    "why": "105 is over 100; recoveries greater than 100 percent are recorded (FHWA-NHI-06-088 Vol. I p. 3-44); the record's field holds 0 to 100, so it is kept out of the record and listed here as read"
+   },
+   {
+    "page": 10,
+    "refused_by": "python",
+    "value": -5.0,
+    "what": "sample S-1 RQD",
+    "why": "-5 is not a percentage; refused rather than accepted"
    },
    {
     "page": 10,

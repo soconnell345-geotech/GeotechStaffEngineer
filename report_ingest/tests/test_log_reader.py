@@ -395,15 +395,27 @@ class TestWhatItRefuses:
         assert any(u["refused_by"] == "reader"
                    and "symbol" in u["what"] for u in result.unresolved)
 
-    def test_a_percentage_out_of_range_is_clamped_not_fatal(self, imperial):
+    def test_a_percentage_out_of_range_is_kept_out_not_fatal(self, imperial):
+        """RI-89: never clamped. A recovery of 140 is a reading a log may
+        print (FHWA-NHI-06-088 p. 3-44) that the 0-100 field cannot hold;
+        an RQD of -3 is refused. Each says so, and the log still builds."""
         doc, _gt = imperial
         reading = _good_imperial_reading(
             samples=[ReadSample(sample_id="1", top=2.0, recovery_percent=140.0,
                                 rqd_percent=-3.0, prov=_prov())])
         engine = FakeEngine([{"final": reading}])
-        inv = read_log(doc, [0], engine).investigation
-        assert inv.samples[0].recovery_percent == 100.0
-        assert inv.samples[0].rqd_percent == 0.0
+        result = read_log(doc, [0], engine)
+        inv = result.investigation
+        assert inv.samples[0].recovery_percent is None
+        assert inv.samples[0].rqd_percent is None
+        rows = {u["what"]: u for u in result.unresolved}
+        recovery = rows["sample 1 recovery percent"]
+        assert recovery["value"] == 140.0
+        assert ("recoveries greater than 100 percent are recorded "
+                "(FHWA-NHI-06-088 Vol. I p. 3-44)") in recovery["why"]
+        assert recovery["why"].endswith("listed here as read")
+        assert rows["sample 1 RQD"]["why"] == (
+            "-3 is not a percentage; refused rather than accepted")
 
 
 class TestWhatItRecordsAsAChange:
@@ -1288,8 +1300,12 @@ class TestChecksFlag:
         outside = [u for u in builder.unresolved
                    if "provenance names page" in u["why"]]
         assert [u["page"] for u in outside] == [1, 2]
-        assert not any(u.get("flag") == "page_numbers"
-                       for u in builder.unresolved)
+        # the mix is noted (RI-89 review), without the positions clause:
+        # pages from 3 cannot be positions among 3
+        (note,) = [u for u in builder.unresolved
+                   if u.get("flag") == "page_numbers"]
+        assert note["why"].endswith("1, 2 are not; they were read as the "
+                                    "report's pages")
 
     def test_an_ambiguous_answer_is_read_as_positions_with_a_note(self):
         """Pages 1 to 3 cited 0, 1, 2: 0 is no page of the call and every
@@ -1302,8 +1318,9 @@ class TestChecksFlag:
                    if u.get("flag") == "page_numbers"]
         assert note["what"] == "page numbers"
         assert note["why"].startswith(
-            "the page numbers this answer cites are ambiguous: 1, 2 are "
-            "among this call's pages and 0 is not")
+            "the page numbers this answer cites mix this call's pages and "
+            "others: 1, 2 are among this call's pages and 0 is not, and "
+            "with the call's pages 1, 2, 3")
         assert note["why"].endswith("all were read as positions")
         assert _ranked([note])[0].rank == "note"
 
