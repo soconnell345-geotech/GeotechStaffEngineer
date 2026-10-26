@@ -4430,7 +4430,7 @@ Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91
   - Wheel `5.33.0+foundry.20261023.1` (report_ingest at `342e102`), the same as wave 1.
   - GPT-5.4 (Responses route) for every reader; GPT-4.1-mini as the vision voter (sheet mode). `label_policy` structural, `review_mode` disagreements, budgets log 6 / lab 4 / narrative 8.
   - Arm `ri_1023_ingest_off` only, every switch off, including `LAB_LINK_FROM_LABEL` (wave 1 said on; the cell never set it).
-  - Pilot build: R05, R36. Full build: R13, R16, R28. **R37 never ran** (the glue's order put it last and `max_reports` cut it). The copy arms (zeros, fill, skipsbound) did not run: "build budget reached before step 1".
+  - Pilot build: R05, R36. Full build: R13, R16, R28. **R37 never ran** (the glue ran R13, R16 and R28 as one step, 3.07 h, and the 2.5-hour limit is checked only between steps, so the build stopped before the step holding R37). R05 and R36 are in the zip under `ingest/`; RESULTS.md lists only the last call's reports because each call rewrites it (the pilot's tables survive in its stdout log); the pilot adds 71 calls and 0.73 M in to the full build's 609 and 8.5 M. The copy arms (zeros, fill, skipsbound) did not run: "build budget reached before step 1".
 - **Cost:** 680 calls, 9,235,452 input / 1,256,106 output tokens over 1,187 pages (GPT-5.4 481 calls; mini 199). About $40 at GPT-5.4 list rates; Foundry's meter reads $0. Full build 11,050 s of model time.
   - Brief's plan: about 750 calls, 10 M in, 1.4 M out, $46 for six reports.
   - Retries: pilot 12 (all succeeded); full build 195 SDK retries, **7 gave up, all one request** (R28 call 102, 118 k tokens in). R28's log item at pages 76-87 was lost, and the report was saved without an error, so a resume does not retry it.
@@ -4484,7 +4484,7 @@ Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91
 
 9. **For the model-first wave (`FOUNDRY_BRIEF_MODEL_FIRST.md` on `wip/mfp9`).**
    - The off-arm estimate built on run 1 (1,800 calls) is about 2.5 x what this code used: about 710 calls and 9.6 M in on GPT-5.4 for the six reports.
-   - Name the reports rather than rely on `max_reports`. Check each report for lost items, not only failures.
+   - Check the time limit between reports, not only between the glue's steps, and expect more than one build per arm (this build also waited about a day for compute). Check each report for lost items, not only failures.
    - Ask about Claude's per-request token limit.
    - Seed both arms with the same bound ranges.
    - Fix the calc position mapping under `refuse` and the continuation budget before the off arm runs, or the off arm loses for reasons that are not the method.
