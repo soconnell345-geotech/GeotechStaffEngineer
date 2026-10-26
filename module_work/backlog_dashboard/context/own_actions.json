@@ -266,28 +266,29 @@
  "OWN-39": {
   "kind": "action",
   "ask_who": null,
-  "question": "When report ingest resumes, supply the missing data: Azure DI text for the scanned reports, the R39 PDF, and blind truth for new readers.",
+  "question": "Supply the missing report-ingest data: OCR text for the scanned reports (Foundry's own OCR once RI-91 measures it against DI, else Azure DI), the R39 PDF, and blind truth for new readers.",
   "why": "The report-ingest numbers are mostly in-sample: tuned and scored on the same reports. Scanned pages with no text cannot be read at all where the app runs, and the calculation, test-pit and sounding readers have no blind test set, so their scores say little about unseen reports.",
-  "background": "Azure Document Intelligence (DI) is the only OCR on the government hosts, because the free OCR needs OpenCV, which cannot load under FIPS; it costs about $2 per 1,000 pages. Owed: R02, R31, R32, R38, the scanned pages of R03 and R33, and a fresh R17. That is about 1,700 pages whole, of which roughly 300 need OCR, so under $4. R39 is the PDF behind a 153-page hand-label sheet never matched to a report; its DI result already exists, making it the cheapest blind set. Also wanted: hand truth for a few unseen calculation, test-pit and sounding items, and a private question set for the report library (RI-10). Report ingest is parked behind Tiny Apps.",
+  "background": "Report ingest runs on Foundry now (OWN-11), not behind Tiny Apps. Ingest takes a page's words and positions from a saved Azure DI output where one sits beside the report, else from the PDF's own text layer; a scanned page with neither gives the log reader no depths. Foundry has its own OCR that may serve instead of DI; RI-91 measures it on reports you already have DI for. Owed: R02, R31, R32, R38, the scanned pages of R03 and R33, and a fresh R17. That is about 1,700 pages whole, of which roughly 300 need OCR (DI costs about $2 per 1,000 pages, so under $4). R39 is the PDF behind a 153-page hand-label sheet never matched to a report; its DI result already exists, making it the cheapest blind set. Also wanted: hand truth for a few unseen calculation, test-pit and sounding items, and a private question set for the report library (RI-10).",
   "options": [],
-  "recommendation": "Leave it until report ingest resumes, except R39: it costs nothing and gives the first genuinely blind page-label test.",
+  "recommendation": "Do R39 now: it costs nothing and gives the first genuinely blind page-label test. For the scanned reports, let RI-91 decide between Foundry's OCR and DI.",
   "if_no_answer": "Report-ingest accuracy stays measured mainly on the reports it was tuned on, and scanned pages without text stay unread.",
   "message_to_send": null,
   "steps": [
    "Drop the PDF behind the unmatched 153-page label sheet into the private corpus folder as R39.",
-   "Run Azure DI on R02, R31, R32, R38, R17 and the scanned pages of R03 and R33; save the results beside the others.",
+   "For R02, R31, R32, R38, R17 and the scanned pages of R03 and R33: Foundry's OCR if RI-91 shows it reads as well as DI, else run Azure DI as before; save the results beside the others.",
    "Optional: hand-truth a few unseen calculation, test-pit and sounding items before any session sees them.",
    "Optional: write a short private list of library questions with their answers and report pages."
   ],
   "unblocks": [
    "OWN-09",
-   "RI-10"
+   "RI-10",
+   "RI-91"
   ],
   "sources": [
    "BACKLOG.md (OWN-39, OWN-09, RI-10)",
    "module_work/REPORT_INGEST_PLAN.md (R39, item 2)",
    "module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md (page-kind table; R39 holdout note)",
-   "memory feedback_ocr_backend_choice.md (DI cost)"
+   "BACKLOG.md (RI-91, OWN-11)"
   ]
  },
  "OWN-40": {
