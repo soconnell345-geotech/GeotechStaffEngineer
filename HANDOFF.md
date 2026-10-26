@@ -184,7 +184,7 @@ detailed Phase-E history; this file supersedes it.
        8; DM7.2 Fig 4-12);
     4. report ingest with `GEOTECH_INGEST_VISUAL_SCALES` off and on, in
        separate `out_dir`s.
-- **3d. The owner's checklist session** (done 2026-10-26 on the Report Questions Desk; folded by BACKLOG RI-105).
+- **3d. The owner's checklist session** (done 2026-10-26 on the Report Questions Desk and folded the same day: the checklist is draft 2, 17 items).
 - **3e. Live smoke before the Tiny Apps tester deploy (2026-10-08/09).**
   - **The owner's goal:** the Document Review page goes to OTHER testers on Tiny Apps in the week of 2026-10-12, and it is the primary focus. The owner gave $80 of the $100 promotional Anthropic API credit for plumbing smoke tests, with $20 kept for touch-up with the owner. The credit expires 2026-11-05.
   - **The harness:** `module_work/live_smoke/` (`run.py` docstring). It runs 55 flows (F01–F53; F29–F50 are Document Review; F52 / F53 draw report figures, and F52h / F53h repeat them with the figure helper on, a flow's own `env` switches restored after it), the geotech questions and the suite tasks through the app's real turn path, with Claude standing in for GPT. It checks each turn for files outside the conversation folder, links, cards, mirror gaps and tool errors. The spend ledger sits beside it (gitignored).
