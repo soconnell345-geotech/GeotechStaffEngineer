@@ -1105,6 +1105,15 @@ def _resolve_ingest_source(source, attachments):
     return _document_tools.resolve_document_source(source, attachments)
 
 
+def _resolved_or_none(source, attachments):
+    """The readable file behind an ingest source, or None when it cannot be
+    resolved (the folder name then falls back to the file name alone)."""
+    try:
+        return _resolve_ingest_source(source, attachments)
+    except Exception:                                # noqa: BLE001
+        return None
+
+
 def build_deep_agent(
     model,
     *,
@@ -1503,7 +1512,7 @@ def build_deep_agent(
     # agent over an empty folder would only teach the primary to ask it
     # things nothing can answer.
     library_tools = []
-    if enable_report_library:
+    if enable_report_library and not review_page:   # never the review page
         from funhouse_agent.deep.tools import make_report_library_tool
         library_tools = make_report_library_tool(
             model=model, library_root=library_root, db_path=library_db,
@@ -1625,8 +1634,11 @@ def build_deep_agent(
                     engine, model=VISION_TIER),
                 # The conversation's own folder, resolved when the report is
                 # read (the folder is bound per turn), as the tool does.
-                out_dir_factory=(_out if report_ingest_out_dir is None
-                                 else (lambda _source: report_ingest_out_dir)),
+                out_dir_factory=(
+                    (lambda named: _out(named, _resolved_or_none(
+                        named, attachments)))
+                    if report_ingest_out_dir is None
+                    else (lambda _source: report_ingest_out_dir)),
                 budgets=report_ingest_budgets,
                 db_path=report_ingest_db,
                 resolve_source=lambda source: _resolve_ingest_source(

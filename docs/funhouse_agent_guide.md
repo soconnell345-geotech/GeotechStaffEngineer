@@ -381,6 +381,14 @@ the primary to delegate is never added. A freshly ingested report is queryable
 in the same session — the ingest's result now names the `library_root` its row
 landed in.
 
+The app turns the pair's library half on for the GeotechStaffEngineer page
+(never the Document Review page): `library_root` is the folder named by
+`GEOTECH_REPORT_LIBRARY` when that is set — the ingest then also writes each
+report's folder there, `<library>/<file name>/`, so reports from every
+conversation land in one library — else the conversation's own
+`report_ingest` folder. With no record under it the agent carries neither the
+tool nor its prompt line.
+
 ## File Output (save_fn) — verified writes
 
 By default, files save to the local filesystem, and every `save_file` write is

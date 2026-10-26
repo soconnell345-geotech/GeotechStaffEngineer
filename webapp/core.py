@@ -796,6 +796,33 @@ def _add_file_tools(kw: dict, temp_dir: str) -> None:
                 p for p in (kw.get("extra_system_prompt"), prompt) if p)
 
 
+def _add_report_library(kw: dict, temp_dir: str) -> None:
+    """Turn the report-library sub-agent on for the geotech page (RI-95).
+
+    The library is ``GEOTECH_REPORT_LIBRARY`` when the deployment sets one,
+    else the ``report_ingest`` folder in this conversation's working folder,
+    where the ingest writes without it. ``build_deep_agent`` advertises the
+    tool only when a record is under that folder, so with no library read
+    yet the agent carries neither the tool nor its prompt line. A caller's
+    own ``enable_report_library`` / ``library_root`` wins. Never for the
+    Document Review page (the caller skips it).
+    """
+    if "enable_report_library" in kw or "library_root" in kw:
+        return
+    try:
+        from funhouse_agent.deep.tools import shared_report_library
+        root = shared_report_library()
+        if not root:
+            thread_id = os.path.basename(
+                os.path.dirname(os.path.abspath(temp_dir)))
+            root = os.path.join(working_dir_for(thread_id),
+                                "report_ingest")
+    except Exception:
+        return
+    kw["enable_report_library"] = True
+    kw["library_root"] = root
+
+
 def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
                 checkpointer=None, **build_kwargs):
     """Build the compiled deep agent wired to the SHARED attachments dict and a
@@ -821,6 +848,8 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     # conversation's folder beside activity.jsonl, so it outlives a rebuild
     # of the agent and is mirrored with the conversation. Unused when off.
     kw.setdefault("coverage_dir", os.path.dirname(os.path.abspath(temp_dir)))
+    if not kw.get("review_page"):
+        _add_report_library(kw, temp_dir)
     if kw.get("review_page"):
         # The Document Review page's lean agent binds its findings and
         # digests to THIS conversation's folder when it is built; the

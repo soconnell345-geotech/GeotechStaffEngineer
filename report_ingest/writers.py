@@ -133,6 +133,26 @@ def record_key(record: ReportRecord, source: Any = None,
     return base
 
 
+def source_digest(source: Any = None) -> str:
+    """The 16 hex digits of a source file's identity -- its size and first
+    ``HASH_BYTES`` -- or "" when ``source`` is neither a readable file nor
+    bytes. The one hash a record's key and a shared library's folder name
+    both come from."""
+    digest = hashlib.sha256()
+    path = str(source) if source and not isinstance(
+        source, (bytes, bytearray)) else ""
+    if path and os.path.isfile(path):
+        digest.update(str(os.path.getsize(path)).encode("utf-8"))
+        with open(path, "rb") as handle:
+            digest.update(handle.read(HASH_BYTES))
+    elif isinstance(source, (bytes, bytearray)):
+        digest.update(str(len(source)).encode("utf-8"))
+        digest.update(bytes(source[:HASH_BYTES]))
+    else:
+        return ""
+    return digest.hexdigest()[:16]
+
+
 def parent_key(record: ReportRecord, source: Any = None) -> str:
     """The key of the file this record came off, bound document or not.
 
@@ -141,21 +161,14 @@ def parent_key(record: ReportRecord, source: Any = None) -> str:
     ``parent`` column stores and what makes one SQL query return a report
     and everything bound into it.
     """
+    got = source_digest(source)
+    if got:
+        return got
     digest = hashlib.sha256()
-    path = str(source) if source else ""
-    if path and os.path.isfile(path):
-        size = os.path.getsize(path)
-        digest.update(str(size).encode("utf-8"))
-        with open(path, "rb") as handle:
-            digest.update(handle.read(HASH_BYTES))
-    elif isinstance(source, (bytes, bytearray)):
-        digest.update(str(len(source)).encode("utf-8"))
-        digest.update(bytes(source[:HASH_BYTES]))
-    else:
-        parts = [record.document.report_id, record.project.number,
-                 record.project.name, record.general.projectNumber or "",
-                 record.general.projectName or ""]
-        digest.update("|".join(str(p) for p in parts).encode("utf-8"))
+    parts = [record.document.report_id, record.project.number,
+             record.project.name, record.general.projectNumber or "",
+             record.general.projectName or ""]
+    digest.update("|".join(str(p) for p in parts).encode("utf-8"))
     return digest.hexdigest()[:16]
 
 

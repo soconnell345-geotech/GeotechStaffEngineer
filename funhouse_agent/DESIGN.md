@@ -295,7 +295,8 @@ the eyes). What changed on master after 5.33.0, in short:
   cross-checks. `report_checklist(record)` is offered on the geotech page
   only, behind `GEOTECH_REVIEW_CHECKLIST` (OFF); the coverage gate no longer
   adds failed checks to its note. Report ingest itself is on the geotech
-  page behind `GEOTECH_REPORT_INGEST` (OFF; RI-35): the record is written to
+  page behind `GEOTECH_REPORT_INGEST` (OFF; RI-35; the report library it
+  fills is `GEOTECH_REPORT_LIBRARY` when set, RI-95): the record is written to
   `report_ingest/<file name>` in the conversation's folder and, with the
   checklist on, its code checks run on it (`report.checklist.json`). `funhouse_agent/report_checklist.py` is a
   deprecated re-export until INF-26. The Document Review page keeps general

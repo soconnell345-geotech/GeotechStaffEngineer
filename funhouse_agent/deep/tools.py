@@ -764,7 +764,7 @@ def make_report_ingest_tool(
                 "hint": "the ingest runs on the app's own model; tell the "
                         "user it is unavailable here rather than reading the "
                         "report another way"})
-        folder = out_dir or report_ingest_out_dir(source)
+        folder = out_dir or report_ingest_out_dir(source, resolved)
         asked = [line.strip() for line in str(questions or "").splitlines()
                  if line.strip()]
         try:
@@ -789,13 +789,46 @@ def make_report_ingest_tool(
         description=REPORT_INGEST_DESCRIPTION))]
 
 
-def report_ingest_out_dir(source: str) -> str:
-    """Where a report's outputs go: ``report_ingest/<file name>`` in the
-    conversation's own folder (the working folder bound to the turn), for the
-    tool and the sub-agent alike."""
+#: The folder of the SHARED report library, when the deployment has one. The
+#: ingest then writes each report's folder here (``<library>/<file name>/``)
+#: whichever conversation reads it, and the report_library tool reads here.
+REPORT_LIBRARY_ENV = "GEOTECH_REPORT_LIBRARY"
+
+
+def shared_report_library() -> str:
+    """The shared library's folder from ``GEOTECH_REPORT_LIBRARY`` (``~``
+    expanded, made absolute), or "" when none is set."""
+    value = (os.environ.get(REPORT_LIBRARY_ENV) or "").strip()
+    return os.path.abspath(os.path.expanduser(value)) if value else ""
+
+
+def report_ingest_out_dir(source: str, resolved: Any = None) -> str:
+    """Where a report's outputs go: ``<file name>-<8 hex of the file's
+    hash>`` in the shared library (``GEOTECH_REPORT_LIBRARY``) when one is
+    set, else ``report_ingest/<file name>`` in the conversation's own folder
+    (the working folder bound to the turn), for the tool and the sub-agent
+    alike.
+
+    The hash is the one the record's own key is made of
+    (``report_ingest.writers.source_digest``, of the readable file
+    ``resolved``, else of ``source``), so two different PDFs sharing a file
+    name get two folders in the shared library while the same file read
+    again resumes in its own. Where the file cannot be read to hash it, the
+    folder is the bare ``<file name>``.
+    """
     from funhouse_agent._fileio import default_output_dir
 
     stem = os.path.splitext(os.path.basename(str(source)))[0] or "report"
+    shared = shared_report_library()
+    if shared:
+        from report_ingest.writers import source_digest
+        try:
+            digest = (source_digest(resolved) if resolved is not None
+                      else "") or source_digest(source)
+        except Exception:                            # noqa: BLE001
+            digest = ""
+        return os.path.join(shared, f"{stem}-{digest[:8]}" if digest
+                            else stem)
     return os.path.join(default_output_dir(), "report_ingest", stem)
 
 
