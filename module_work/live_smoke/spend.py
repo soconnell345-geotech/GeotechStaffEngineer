@@ -54,6 +54,10 @@ except Exception:  # pragma: no cover - langchain is always present here
 #: grant (2026-10-08; $62.93 spent by w12) plus a fresh $200 (owner,
 #: 2026-10-19). Lowered 2026-10-24: the account showed $22 left when the
 #: ledger stood at $227.71, so the total is that plus $20 (a margin kept).
+#: Checked 2026-10-25 against the console's emails: it showed $246.60 of a $253
+#: limit when the ledger stood at $243.15, so the ledger runs about $3.45 under
+#: the console (the same gap as on 10-24: spend outside this ledger), and this
+#: total stops about $1.85 short of the console's limit.
 HARD_TOTAL_USD = 247.71
 
 HERE = os.path.dirname(os.path.abspath(__file__))
