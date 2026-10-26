@@ -4423,3 +4423,68 @@ Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91
 **Page labels under conventions B (RI-73), 13 reports, 3,418 pages, harmful / strict:** rules 227 / .896; master 290 / .887; conventions A 182 / .908; B with Sonnet's descriptions 56 / .950; B with Haiku's 50 / .949. B-Haiku $6.72 of Opus labelling on saved descriptions. In-sample.
 
 **Calc one-page fix, live (RI-74):** R30_p555 5/8 -> 11/11 on Sonnet, $0.03.
+
+## FOUNDRY RUN 5 -- 2026-10-24/26 -- 5.33.0+foundry.20261023.1, GPT-5.4, whole-report ingest
+
+- **What ran:** brief 2026-10-23 Part A wave 2 on Palantir Foundry, run by the AI FDE.
+  - Wheel `5.33.0+foundry.20261023.1` (report_ingest at `342e102`), the same as wave 1.
+  - GPT-5.4 (Responses route) for every reader; GPT-4.1-mini as the vision voter (sheet mode). `label_policy` structural, `review_mode` disagreements, budgets log 6 / lab 4 / narrative 8.
+  - Arm `ri_1023_ingest_off` only, every switch off, including `LAB_LINK_FROM_LABEL` (wave 1 said on; the cell never set it).
+  - Pilot build: R05, R36. Full build: R13, R16, R28. **R37 never ran** (the glue's order put it last and `max_reports` cut it). The copy arms (zeros, fill, skipsbound) did not run: "build budget reached before step 1".
+- **Cost:** 680 calls, 9,235,452 input / 1,256,106 output tokens over 1,187 pages (GPT-5.4 481 calls; mini 199). About $40 at GPT-5.4 list rates; Foundry's meter reads $0. Full build 11,050 s of model time.
+  - Brief's plan: about 750 calls, 10 M in, 1.4 M out, $46 for six reports.
+  - Retries: pilot 12 (all succeeded); full build 195 SDK retries, **7 gave up, all one request** (R28 call 102, 118 k tokens in). R28's log item at pages 76-87 was lost, and the report was saved without an error, so a resume does not retry it.
+  - No `durable_dir`.
+- **Files:** `module_work/field_feedback/2026-10-24_foundry_brief_1023/raw/wave2/` only, never committed.
+- **Full reading:** `TRACE_REVIEW.md` in the same folder.
+
+| reader | set | RUN 1 ingest (5.31.0, 2026-10-04) | RUN 4 stage arm (wave 1) | RUN 5 ingest | note |
+|---|---|---|---|---|---|
+| calls | R13 / R16 / R28 | 206 / 897 / 537 (16.1 M in) | -- | **111 / 215 / 283 (8.5 M in)** | 0.50-0.62 calls a page. No bound documents read on R13 or R16 this run (triage `bound_together: []`; run 1 found them). Calc printouts 168 calls, 39 % of input |
+| calculation | R16_p162 | 17/25 | off 20/25 | **20/25** (master scorer 22/25) | continuation fired on 5 of 7 printouts over 12 pages; a first-call zoom pre-empted it on 2. 234 values lost page and box to position citations (R28 222) |
+| log | R13_p45 (blind) | 61/76 | 70/76 | **69/76** | counts only |
+| log | R28_p57, R36_p38 | 59/59, -- | -- | 59/59, 44/44 | |
+| soundings | R28 (3 sheets) | 130/143 | -- | **133/143** | test pit p68 11 -> 14/21 |
+| lab | R28 (7 sheets) | 190/220 | p176/p177 1/37 each, every arm | **193/220** | p176/p177 37/37 each: the reconciler links the bare hole name at ingest. p198 7/10 (the lab arm 10/10) |
+| lab | R36 (6 sheets) | -- | off_a 37/48 | **39/48** | p56 9/10 with the switch off; p62 1/8 (the lab arm 7/8) |
+| narrative | R28 (blind) | 21/32 | 23/32 | 23/32 | |
+| narrative | R05 + R36 (open) | -- | 47/55 | **48/55** | |
+| page labels | R13 / R16 / R28 | vote .908 -> .929; fixed 41, broke 18 | -- | **vote .905 -> .943; fixed 60, broke 19** | RI-15 rule refused 0; RI-62: 0 of 107 changes claim an unseen page |
+| DIGGS gate | R13 / R16 / R28 / R36 | -- | -- | differs / differs / ok / ok | master today: R16 ok (RI-97); **R13 still differs: gate defect** |
+
+**Reading.**
+
+1. **Calls per report (RI-57, the owner's question).** On the 10-23 code: 111, 215 and 283 calls for 197, 426 and 455 pages; 6.5-9.4 k input tokens a page; 30-108 minutes each.
+   - Run 1's 897 on R16 came from reading its volume twice; RI-14 has since stopped that.
+   - This run read no bound documents on R13 and R16, because triage found none. With them, expect the same pages once plus about 3 calls per bound document (R36), so about 110-300 calls for a 200-450-page report.
+   - Calc printouts are the largest step (39 % of input), then logs (26 %).
+
+2. **Calc (RI-57).**
+   - 7 printouts over 12 pages. The continuation fired on 5 and gave values on 3 (R13 item_35 86 of 115 values from pages only it saw; R16 item_87 27 of 61; R28 item_121 58 of 164, plus 40 rows the first call missed).
+   - On 2 a first-call zoom used the second call (`MAX_CALC_CALLS = 2`), so no continuation ran. R16 item_64's pages 243-251 were never shown, and its "p246" values were copied from the floor.
+   - The fold keeps the first call's stale "pages not shown" unsettled entries (3 items). Per-call answers are not saved.
+   - 234 values cited 0-based positions in the pages sent and lost page and box (R28 items 100a and 101b, 222). RI-87's position mapping runs only under `flag`, so today's readers would lose them again.
+   - 23 floor-won sign flips (minus dropped) in the saved merge; master's merge keeps 0. Fixed.
+   - R16_p162 20/25, 22/25 on master's scorer; the program still comes from the floor's banner pattern.
+
+3. **Lab.**
+   - At ingest, RI-07's reconciler links the bare hole name the lab arm loses: R28_p176/177 37/37 each, against 1/37 in every wave 1 arm.
+   - The switch-off pattern (the reader writes the hole into `sample_id` with `investigation_id` blank) costs R28_p172 (1/5) and R36_p62 (1/8, all 6 values). The record has a reconciler link on both; the scorer reads `investigation_id`.
+   - R28_p198's flow curve is lost when 11 Atterberg sheets share one call.
+
+4. **Logs and soundings.** R13_p45 69/76 (blind, counts only). R28 soundings 133/143: 3 DCP header misses come from U+FFFD in the text layer, and p68 is read as another pit because item_10 groups pages 67-75. R16's earlier-firm logs: 44 depths refused against a misread ruler.
+
+5. **Rate limits.** One log conversation grew to 118 k input tokens and failed 7 SDK episodes and 6 engine retries (41 minutes). It lost R28's logs at pages 76-87 with no error on the report. A resume would not retry it.
+
+6. **DIGGS.** R16's difference was RI-97's case, fixed on master. R13's remains, and it is the gate: `_compare_refusals` reads `rs.values("n_value")`, `ResultSetRead.column()` returns the first column only, so an earlier firm's printed N values in a second column are never compared. The file is right.
+
+7. **Pages to the wrong reader.** The label review fixed 60 and broke 19 (run 1: 41 and 18). R13's calculation -> narrative moves broke 7.
+
+8. **Narrative.** Level with wave 1's arm (R28 blind 23/32; open 48/55). 119 citations to the model's twin fields (`strataList`, `bearingCapacityValues`, `reportDateISO`) are refused as "a field that does not exist".
+
+9. **For the model-first wave (`FOUNDRY_BRIEF_MODEL_FIRST.md` on `wip/mfp9`).**
+   - The off-arm estimate built on run 1 (1,800 calls) is about 2.5 x what this code used: about 710 calls and 9.6 M in on GPT-5.4 for the six reports.
+   - Name the reports rather than rely on `max_reports`. Check each report for lost items, not only failures.
+   - Ask about Claude's per-request token limit.
+   - Seed both arms with the same bound ranges.
+   - Fix the calc position mapping under `refuse` and the continuation budget before the off arm runs, or the off arm loses for reasons that are not the method.
