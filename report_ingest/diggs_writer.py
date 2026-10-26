@@ -3319,7 +3319,11 @@ def _compare_lab(xml: str, lab: Sequence[LabTest],
                     continue
                 found = True
                 pool.extend(numbers)
-            wanted = si_numbers(payload, skip=_POSITION_FIELDS)
+            # A value the writer said it left out is not expected back, so a
+            # row whose only value is one of those has nothing to be missing.
+            wanted = [item for item in
+                      si_numbers(payload, skip=_POSITION_FIELDS)
+                      if not _excused(unwritten, hole, want_depth, item[1])]
             if not found:
                 if not wanted:
                     continue    # nothing was expected, so nothing is missing
@@ -3328,8 +3332,7 @@ def _compare_lab(xml: str, lab: Sequence[LabTest],
                     f"that hole and depth came back")
                 continue
             for path, value, unit in wanted:
-                if not _found(pool, value, unit) and not _excused(
-                        unwritten, hole, want_depth, value):
+                if not _found(pool, value, unit):
                     diffs.append(
                         f"{label} ({hole} at {want_depth:.3f} m): "
                         f"{path} = {value:.6g} did not come back")

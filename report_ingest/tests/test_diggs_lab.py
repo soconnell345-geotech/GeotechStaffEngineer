@@ -621,3 +621,35 @@ def test_a_spelling_of_a_left_out_log_is_noted_as_left_out():
                 notes=notes)
     (made,) = notes[0].synthesised
     assert made.startswith("b05:") and "left out" in made
+
+
+def _qu_row(qu_unit, **over):
+    row = SummaryRow(investigation_id="B-1", depth_top=q(5.0, "ft"),
+                     qu=q(3.0, qu_unit), **over)
+    return LabTest(kind="summary_table", result=SummaryTableResult(rows=[row]))
+
+
+def test_a_row_whose_only_value_is_unwritable_does_not_fail_the_gate():
+    """RI-97: the writer names a value it cannot write; the gate does not
+    call the row's hole missing for the want of it."""
+    log = Investigation(investigation_id="B-1", depth_unit="ft")
+    test = _qu_row("N/mm")
+    notes = []
+    xml = write_diggs([log, test], Project(name="R"), notes=notes)
+    assert notes[0].unwritten
+    ok, diffs = diggs_roundtrip_gate(xml, [log, test])
+    assert ok, diffs
+
+
+def test_the_gate_still_fails_a_hole_that_is_really_missing():
+    log = Investigation(investigation_id="B-1", depth_unit="ft")
+    xml = write_diggs([log])
+    ok, diffs = diggs_roundtrip_gate(xml, [log, _qu_row("kPa")])
+    assert not ok and any("no result" in d for d in diffs)
+
+
+def test_the_gate_still_fails_a_written_value_that_is_missing():
+    log = Investigation(investigation_id="B-1", depth_unit="ft")
+    xml = write_diggs([log, _qu_row("N/mm")])
+    ok, diffs = diggs_roundtrip_gate(xml, [log, _qu_row("N/mm", ll=40.0)])
+    assert not ok
