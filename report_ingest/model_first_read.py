@@ -30,6 +30,27 @@ does not, and a call that gives no structured answer each become a
 ``skipped`` entry naming the pages (``refused_by: "budget"``, which the
 reconciler files as ``skipped``). Nothing is asked a third time.
 
+A REQUEST OVER THE LIMIT (BACKLOG RI-121). Each reader takes
+``max_request_tokens_in``, a per-request input-token limit (the graph's
+``Budgets.max_request_tokens_in``); None, the default, changes nothing.
+Set, every call's request is estimated before it is sent
+(:func:`report_ingest.engine.estimate_tokens`): a picture by its own pixels
+(:func:`~report_ingest.engine.picture_tokens_est`), a PDF page as its text
+layer and one page picture
+(:func:`~report_ingest.engine.pdf_tokens_est`), the words, and the answer
+schema offered as its tool. A group over the limit is cut in two by
+:func:`_halves` before anything is sent, and each half again while it is
+still over, at no cost: the pieces are then read as groups of their own
+(each asked once more as two halves if its reply is cut off). A log's
+pieces are its own pages, so a piece never holds another hole's, and its
+answers are joined into the one log as a long log's parts are. A single
+page still over the limit is sent as it is. Each cut, and each page sent
+over the limit, is one line in the result's ``warnings`` and one row in its
+``over_limit`` (the graph makes each row a QA note), and each call in
+``calls`` carries its ``estimated_tokens_in`` beside the tokens the reply
+says it took, so the estimate can be checked against a run. With no limit
+the result has no ``over_limit`` and is what it was.
+
 BUILD. Each answer is turned into record objects by its stage's own
 ``_Builder`` with ``checks="flag"`` (:mod:`report_ingest.checks`): a value
 that cannot be true stays out of its slot with an open QA entry, a doubtful
@@ -113,7 +134,9 @@ from pydantic import BaseModel
 
 from report_ingest.checks import (LISTED, _noted, _on_call_pages, _span,
                                   as_read, pdf_local)
-from report_ingest.engine import pdf_block, text_block, user
+from report_ingest.engine import (estimate_tokens, pdf_block,
+                                  picture_tokens_est, schema_tokens_est,
+                                  text_block, user)
 from report_ingest.model_first import (READ_PROMPT_VERSION, _put_field,
                                        answer_schema, apply_lab_additions,
                                        apply_log_additions, instruction)
@@ -161,8 +184,13 @@ class _Spent:
     calls: List[Dict[str, Any]] = field(default_factory=list)
     model: str = ""
     warnings: List[str] = field(default_factory=list)
+    #: Each request estimated over the request limit (RI-121): its pages,
+    #: the estimate, the limit, and the two groups it was cut into (none:
+    #: one page, sent as it is).
+    over_limit: List[Dict[str, Any]] = field(default_factory=list)
 
-    def charge(self, reply: Any, pages: Sequence[int]) -> None:
+    def charge(self, reply: Any, pages: Sequence[int],
+               estimated: Optional[int] = None) -> None:
         self.cost["calls"] += 1
         self.cost["input_tokens"] += reply.usage.input_tokens
         self.cost["output_tokens"] += reply.usage.output_tokens
@@ -170,11 +198,15 @@ class _Spent:
         self.cost["seconds"] += reply.seconds
         self.cost["dollars"] += reply.usage.dollars(reply.model)
         self.model = reply.model or self.model
-        self.calls.append({"pages": list(pages),
-                           "stop_reason": reply.stop_reason,
-                           "cut_off": bool(reply.cut_off),
-                           "answered": reply.parsed is not None
-                           and not reply.cut_off})
+        row = {"pages": list(pages), "stop_reason": reply.stop_reason,
+               "cut_off": bool(reply.cut_off),
+               "answered": reply.parsed is not None and not reply.cut_off}
+        if estimated is not None:
+            # Only under a request limit (RI-121): the estimate the call was
+            # sized by, beside what the reply says the request took.
+            row.update(estimated_tokens_in=int(estimated),
+                       input_tokens=int(reply.usage.input_tokens))
+        self.calls.append(row)
 
     def rounded(self) -> Dict[str, Any]:
         out = dict(self.cost)
@@ -215,7 +247,8 @@ class _Caller:
     comes back."""
 
     def __init__(self, stage: str, doc: Any, engine: Any, report_id: str,
-                 route: Optional[str], pdf: Source) -> None:
+                 route: Optional[str], pdf: Source,
+                 limit: Optional[int] = None) -> None:
         self.stage = stage
         self.doc = doc
         self.engine = engine
@@ -224,6 +257,18 @@ class _Caller:
             route, bool(getattr(engine, "accepts_pdf", False)))
         self.schema = answer_schema(stage)
         self._pdf = pdf
+        #: The per-request input-token limit (RI-121), or None.
+        self.limit: Optional[int] = int(limit) if limit else None
+        self._schema_tokens: Optional[int] = None
+
+    def size(self, blocks: Sequence[Dict[str, Any]]) -> int:
+        """One call's request, estimated in input tokens: its blocks (each
+        picture by its own size, a PDF page as its text and one picture)
+        and the answer schema it offers as its tool."""
+        if self._schema_tokens is None:
+            self._schema_tokens = schema_tokens_est(self.schema)
+        return self._schema_tokens + estimate_tokens(
+            [user(*blocks)], picture=picture_tokens_est)
 
     def _source(self) -> Union[str, Path, bytes]:
         """The report to cut a call's PDF from: what the caller gave, else
@@ -254,15 +299,48 @@ class _Caller:
         One call over ``pages``. A reply cut off at its output cap, or pages
         too large to send, are asked once more as two halves (:func:`_halves`
         at ``starts``); a half that still does not fit, and a call with no
-        structured answer, are skipped entries."""
+        structured answer, are skipped entries.
+
+        Under a request limit (:attr:`limit`, RI-121) a request estimated
+        over it is cut in two before it is sent, each half read as
+        ``pages`` is (``split`` as given), and a single page over it is sent
+        with a warning."""
         pages = [int(p) for p in pages]
         blocks, problem = self.blocks(pages)
+        size = self.size(blocks) if self.limit is not None else None
+        over = size is not None and size > self.limit
+        if over and len(pages) > 1:
+            halves = _halves(pages, starts)
+            spent.over_limit.append({
+                "pages": pages, "estimated_tokens_in": size,
+                "limit": self.limit, "cut_into": halves})
+            spent.warnings.append(
+                f"{_span(pages)}: the request was estimated at {size:,} "
+                f"input tokens, over the limit of {self.limit:,} a request; "
+                f"split before it was sent, into {_span(halves[0])} and "
+                f"{_span(halves[1])}")
+            pieces: List[Tuple[List[int], Any]] = []
+            unread: List[Dict[str, Any]] = []
+            for half in halves:
+                answers, rows = self.read(half, spent, starts, split=split)
+                pieces.extend(answers)
+                unread.extend(rows)
+            return pieces, unread
         if problem:
             why = f"too large for one call ({problem})"
         else:
+            if over:
+                spent.over_limit.append({
+                    "pages": pages, "estimated_tokens_in": size,
+                    "limit": self.limit, "cut_into": []})
+                spent.warnings.append(
+                    f"{_span(pages)}: the request was estimated at {size:,} "
+                    f"input tokens, over the limit of {self.limit:,} a "
+                    f"request, and one page cannot be split; it was sent as "
+                    f"it is")
             reply = self.engine.complete([user(*blocks)],
                                          output_format=self.schema)
-            spent.charge(reply, pages)
+            spent.charge(reply, pages, size)
             if not reply.cut_off and reply.parsed is not None:
                 return [(pages, _without_boxes(reply.parsed))], []
             if not reply.cut_off:
@@ -317,17 +395,21 @@ def _result(stage: str, key: str, caller: _Caller, spent: _Spent,
             pages: Sequence[int], unresolved: List[Dict[str, Any]],
             placement: List[Any], warnings: Sequence[str] = (),
             error: str = "") -> Dict[str, Any]:
-    """The keys every stage's result adds to today's shape."""
-    return {"key": key, "route": caller.route,
-            "prompt_version": READ_PROMPT_VERSION,
-            "calls": list(spent.calls),
-            "placement": [p for p in placement if p is not None],
-            "error": error, "pages": [int(p) for p in pages],
-            "unresolved": unresolved, "cost": spent.rounded(),
-            "model_calls": int(spent.cost["calls"]),
-            "model": spent.model or str(getattr(caller.engine, "name", "")),
-            "warnings": list(warnings) + list(spent.warnings),
-            "disagreements": [], "kept": [], "added": []}
+    """The keys every stage's result adds to today's shape; under a request
+    limit (RI-121) also ``over_limit``, each request estimated over it."""
+    out = {"key": key, "route": caller.route,
+           "prompt_version": READ_PROMPT_VERSION,
+           "calls": list(spent.calls),
+           "placement": [p for p in placement if p is not None],
+           "error": error, "pages": [int(p) for p in pages],
+           "unresolved": unresolved, "cost": spent.rounded(),
+           "model_calls": int(spent.cost["calls"]),
+           "model": spent.model or str(getattr(caller.engine, "name", "")),
+           "warnings": list(warnings) + list(spent.warnings),
+           "disagreements": [], "kept": [], "added": []}
+    if caller.limit is not None:
+        out["over_limit"] = [dict(row) for row in spent.over_limit]
+    return out
 
 
 def _nothing_read(skipped: Sequence[Dict[str, Any]]) -> str:
@@ -460,7 +542,8 @@ def _join_logs(built: Sequence[Any]) -> Tuple[Any, List[Dict[str, Any]]]:
 
 def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
               report_id: str = "", route: Optional[str] = None,
-              pdf: Source = None, place: Optional[Place] = None
+              pdf: Source = None, place: Optional[Place] = None,
+              max_request_tokens_in: Optional[int] = None
               ) -> List[Dict[str, Any]]:
     """Every log of ``groups`` (``group_pages(...)["logs"]``), one call per
     group: a list of results in ``LogReadResult.to_dict()``'s shape, one per
@@ -469,14 +552,16 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
 
     ``engine`` is the logs' engine; ``route`` the page route (None: the
     variable); ``pdf`` the report to cut each call's PDF from (a path or its
-    bytes; None: ``doc.tobytes()``, taken once); ``place`` as the module
-    says. A log no answer came back for has ``investigation`` None and an
-    ``error``."""
+    bytes; None: ``doc.tobytes()``, taken once); ``place`` and
+    ``max_request_tokens_in`` (a group whose request is estimated over it is
+    cut by its pages before it is sent) as the module says. A log no answer
+    came back for has ``investigation`` None and an ``error``."""
     from report_ingest.log_reader import (LogReadResult, _Builder,
                                           _depth_slack, _depth_window)
     from report_ingest.visual_scales import log_grid_for
 
-    caller = _Caller("logs", doc, engine, report_id, route, pdf)
+    caller = _Caller("logs", doc, engine, report_id, route, pdf,
+                     max_request_tokens_in)
     out: List[Dict[str, Any]] = []
     for parts in _by_key(groups):
         spent = _Spent()
@@ -545,19 +630,23 @@ def read_lab(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
              report_id: str = "", route: Optional[str] = None,
              pdf: Source = None,
              descriptions: Optional[Mapping[int, Mapping[str, Any]]] = None,
-             place: Optional[Place] = None) -> List[Dict[str, Any]]:
+             place: Optional[Place] = None,
+             max_request_tokens_in: Optional[int] = None
+             ) -> List[Dict[str, Any]]:
     """Every laboratory window of ``groups`` (``group_pages(...)["lab"]``),
     one call each: a list of results in ``LabReadResult.to_dict()``'s
     shape, one per window.
 
     ``descriptions`` (the page descriptions the groups were drawn from) say
     where a new sheet begins, which is where a window whose reply did not
-    fit is cut in two; without them it is cut at its middle page. The rest
-    as :func:`read_logs`. A window no answer came back for has no tests and
-    an ``error``."""
+    fit, or whose request is over ``max_request_tokens_in``, is cut in two;
+    without them it is cut at its middle page. The rest as
+    :func:`read_logs`. A window no answer came back for has no tests and an
+    ``error``."""
     from report_ingest.lab_reader import LabReadResult, _Builder
 
-    caller = _Caller("lab", doc, engine, report_id, route, pdf)
+    caller = _Caller("lab", doc, engine, report_id, route, pdf,
+                     max_request_tokens_in)
     out: List[Dict[str, Any]] = []
     for group in groups:
         spent = _Spent()
@@ -622,7 +711,8 @@ def _narrative_on_report_pages(reading: Any, pages: Sequence[int]
 
 def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                report_id: str = "", route: Optional[str] = None,
-               pdf: Source = None, place: Optional[Place] = None
+               pdf: Source = None, place: Optional[Place] = None,
+               max_request_tokens_in: Optional[int] = None
                ) -> List[Dict[str, Any]]:
     """Every calculation printout of ``groups`` (``group_pages(...)
     ["calc"]``): a list of results in ``CalcReadResult.to_dict()``'s shape,
@@ -636,7 +726,8 @@ def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     from report_ingest.calc_reader import (CalcReadResult, _Builder,
                                            _fold_readings)
 
-    caller = _Caller("calc", doc, engine, report_id, route, pdf)
+    caller = _Caller("calc", doc, engine, report_id, route, pdf,
+                     max_request_tokens_in)
     out: List[Dict[str, Any]] = []
     for group in groups:
         spent = _Spent()
@@ -705,7 +796,9 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                    report_id: str = "", route: Optional[str] = None,
                    pdf: Source = None, outline: Any = None,
                    body_pages: Optional[Sequence[int]] = None,
-                   place: Optional[Place] = None) -> Dict[str, Any]:
+                   place: Optional[Place] = None,
+                   max_request_tokens_in: Optional[int] = None
+                   ) -> Dict[str, Any]:
     """The narrative (``group_pages(...)["narrative"]``: its consecutive
     parts), one call per part: one result in
     ``NarrativeReadResult.to_dict()``'s shape.
@@ -723,7 +816,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     groups = [g for g in groups if g.pages]
     if not groups:
         raise ValueError("read_narrative needs at least one group of pages")
-    caller = _Caller("narrative", doc, engine, report_id, route, pdf)
+    caller = _Caller("narrative", doc, engine, report_id, route, pdf,
+                     max_request_tokens_in)
     spent = _Spent()
     pages = sorted({int(p) for g in groups for p in g.pages})
     notes = [n for g in groups for n in g.notes]

@@ -1058,8 +1058,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         reader (BACKLOG RI-110): before a request nears it, earlier page
         pictures are dropped from the conversation, then its middle turns,
         and a request carrying too many pages is split across calls. Sized
-        by estimate (a picture counts 1,700 tokens). None, the default,
-        changes nothing.
+        by estimate (a picture counts 1,700 tokens). Model first (BACKLOG
+        RI-121), each page group's request is estimated before it is sent
+        (a picture by its pixels, a PDF page as its text and one picture of
+        up to 4,784 tokens, the answer schema) and a group over the limit
+        is cut into smaller groups. None, the default, changes nothing.
     redo
         Re-run reports that already have a run file. Off by default, which is
         what makes a detached notebook cheap to resume.

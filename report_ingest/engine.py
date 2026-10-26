@@ -65,6 +65,9 @@ __all__ = [
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
     "image_media_type", "IMAGE_SIGNATURES",
+    "IMAGE_TOKENS_EST", "CHARS_PER_TOKEN_EST", "PIXELS_PER_TOKEN_EST",
+    "PDF_PAGE_PICTURE_TOKENS_EST", "estimate_tokens", "image_size",
+    "picture_tokens_est", "pdf_tokens_est", "schema_tokens_est",
 ]
 
 #: List price per MILLION tokens, ``(input, output)``, as published for the
@@ -291,6 +294,129 @@ def user(*content: Any) -> Dict[str, Any]:
 
 def assistant(*content: Any) -> Dict[str, Any]:
     return {"role": "assistant", "content": list(content)}
+
+
+# -- sizing a request before it is sent (BACKLOG RI-110, RI-121) ------------
+
+#: What one page picture is counted as when a request is sized against a
+#: per-request token limit (BACKLOG RI-110). A deliberately high figure for
+#: the log reader's pictures: a letter page at its 110 dpi is about 1,500
+#: tokens on Claude (width x height / 750) and a handful of tiles on GPT.
+IMAGE_TOKENS_EST = 1700
+#: Characters per token when words are sized.
+CHARS_PER_TOKEN_EST = 3.5
+#: Pixels per token of a picture on Claude: width x height / 750 (the vision
+#: page of Claude's API documentation). :func:`picture_tokens_est`.
+PIXELS_PER_TOKEN_EST = 750
+#: What the page picture of one page of a PDF document block is counted as
+#: (:func:`pdf_tokens_est`, BACKLOG RI-121): the most one picture costs on
+#: Claude's high-resolution tier (planlens' ``claude-hires`` budget, 2,576 px
+#: and 4,784 patches of 28 px, the size the model-first pictures route draws
+#: a page at for Claude 5). The API draws each PDF page as a picture and does
+#: not say at what size, so the count is the largest it can be: a request
+#: counted too large is split, one counted too small is refused.
+PDF_PAGE_PICTURE_TOKENS_EST = 4784
+
+
+def _blocks_of(message: Dict[str, Any]) -> List[Any]:
+    content = message.get("content")
+    return list(content) if isinstance(content, list) else [content]
+
+
+def image_size(data: bytes) -> Optional[Tuple[int, int]]:
+    """``(width, height)`` in pixels, read off a PNG's or a JPEG's own
+    header, or None when the bytes are neither."""
+    data = bytes(data or b"")
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR" \
+            and len(data) >= 24:
+        return (int.from_bytes(data[16:20], "big"),
+                int.from_bytes(data[20:24], "big"))
+    if data[:2] != b"\xff\xd8":
+        return None
+    at = 2
+    while at + 4 <= len(data):
+        if data[at] != 0xFF:
+            return None
+        marker = data[at + 1]
+        if marker == 0xFF:                       # a fill byte
+            at += 1
+            continue
+        if marker in (0x01, 0xD8) or 0xD0 <= marker <= 0xD7:
+            at += 2                              # a marker with no length
+            continue
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            if at + 9 > len(data):
+                return None
+            return (int.from_bytes(data[at + 7:at + 9], "big"),
+                    int.from_bytes(data[at + 5:at + 7], "big"))
+        at += 2 + int.from_bytes(data[at + 2:at + 4], "big")
+    return None
+
+
+def picture_tokens_est(block: Dict[str, Any]) -> int:
+    """One picture block's input tokens, by its own size (BACKLOG RI-121):
+    its pixels at :data:`PIXELS_PER_TOKEN_EST` a token, and never less than
+    :data:`IMAGE_TOKENS_EST`, which is also the count when the size cannot
+    be read. On GPT, which counts a picture in tiles, this is too many: a
+    request is then split sooner than it needs to be."""
+    size = image_size(block.get("png") or b"")
+    if not size:
+        return IMAGE_TOKENS_EST
+    width, height = size
+    return max(IMAGE_TOKENS_EST, -(-width * height // PIXELS_PER_TOKEN_EST))
+
+
+def pdf_tokens_est(data: bytes) -> int:
+    """One PDF document block's input tokens (BACKLOG RI-121): the API reads
+    each page as both its text layer and a picture of the page, so each page
+    counts one picture (:data:`PDF_PAGE_PICTURE_TOKENS_EST`) and the words
+    of its text layer at :data:`CHARS_PER_TOKEN_EST` a token. A scanned page
+    with no text layer is its picture alone. Bytes no PDF reader opens count
+    one page picture."""
+    try:
+        import pymupdf
+
+        with pymupdf.open(stream=bytes(data), filetype="pdf") as doc:
+            words = sum(len(page.get_text()) for page in doc)
+            return int(doc.page_count * PDF_PAGE_PICTURE_TOKENS_EST
+                       + words / CHARS_PER_TOKEN_EST)
+    except Exception:                    # sized, not read: never stop a run
+        return PDF_PAGE_PICTURE_TOKENS_EST
+
+
+def estimate_tokens(messages: Sequence[Dict[str, Any]],
+                    picture: Any = None) -> int:
+    """A rough count of the input tokens a conversation costs (BACKLOG
+    RI-110): pictures at :data:`IMAGE_TOKENS_EST` each, or at
+    ``picture(block)`` when given (:func:`picture_tokens_est`); words at
+    :data:`CHARS_PER_TOKEN_EST` a token; a PDF document block at
+    :func:`pdf_tokens_est`."""
+    total = 0.0
+    for message in messages:
+        for block in _blocks_of(message):
+            if isinstance(block, dict) and block.get("type") == "image":
+                total += picture(block) if picture else IMAGE_TOKENS_EST
+            elif isinstance(block, dict) and block.get("type") == "pdf":
+                total += pdf_tokens_est(block.get("data") or b"")
+            elif isinstance(block, dict) and "text" in block:
+                total += len(str(block["text"])) / CHARS_PER_TOKEN_EST
+            elif block:
+                total += len(str(block)) / CHARS_PER_TOKEN_EST
+    return int(total)
+
+
+def schema_tokens_est(schema: Any) -> int:
+    """The input tokens an answer schema costs when it is offered as the
+    answer tool (BACKLOG RI-121): its JSON schema's words at
+    :data:`CHARS_PER_TOKEN_EST` a token; 0 for no schema."""
+    if schema is None:
+        return 0
+    try:
+        shown = (schema.model_json_schema() if hasattr(
+            schema, "model_json_schema") else schema)
+        return int(len(json.dumps(shown, default=str)) / CHARS_PER_TOKEN_EST)
+    except Exception:                    # sized, not read: never stop a run
+        return 0
 
 
 class CallCeilingReached(RuntimeError):
