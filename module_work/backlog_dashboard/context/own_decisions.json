@@ -2187,24 +2187,24 @@
   "OWN-95": {
     "kind": "decision",
     "ask_who": null,
-    "question": "On a boring log, is a new description paragraph with no drawn stratum line a separate layer?",
-    "why": "The answer sheets count it as a layer on some logs and not on others; it decides values on three logs, and the reader needs one rule.",
+    "question": "On a boring log, does a new description paragraph with no drawn stratum line start a new stratum?",
+    "why": "The answer sheets count it as a new stratum on some logs and not on others; it decides values on three logs, and the reader needs one rule.",
     "background": "Some logs start a new soil description partway down the column without drawing a line across it; one log has only a remark there.",
     "options": [
       {
-        "label": "A layer wherever the description changes",
-        "effect": "Every new description paragraph starts a layer, line or not."
+        "label": "A new stratum wherever the description changes",
+        "effect": "Every new description paragraph starts a stratum, line or not."
       },
       {
-        "label": "A layer only where a line is drawn",
-        "effect": "A paragraph with no line is a note inside the layer above."
+        "label": "A new stratum only where a line is drawn",
+        "effect": "A paragraph with no line is a note within the stratum above."
       },
       {
         "label": "Both, with the undrawn ones marked",
-        "effect": "Each change is a layer, and a layer with no drawn line is flagged as such."
+        "effect": "Each change starts a stratum, and one with no drawn line is flagged as such."
       }
     ],
-    "recommendation": "Both, with the undrawn ones marked: nothing printed is lost and the reviewer can see which boundaries the logger drew.",
+    "recommendation": "Both, with the undrawn ones marked: nothing printed is lost and the reviewer can see which stratum lines the logger drew.",
     "if_no_answer": "The answer sheets stay as they are and these values stay disputed.",
     "message_to_send": null,
     "steps": [],
