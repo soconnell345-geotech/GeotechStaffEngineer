@@ -617,3 +617,59 @@ class TestUnitSpellings:
                          wet_density=Quantity(value=3.0, unit="N/mm"))
         assert [(p, v, u) for p, v, u in si_numbers(row)] == [
             ("wet_density", 3.0, "kN/m")]
+
+
+class TestSiDefinitions:
+    """RI-100: spellings whose meaning is a definition, not a judgement."""
+
+    @pytest.mark.parametrize("unit, value, want", [
+        ("megohm-cm", 2.0, 2.0e4), ("megohm - cm", 2.0, 2.0e4),
+        ("Mohm-cm", 2.0, 2.0e4),
+    ])
+    def test_megohm_centimetres_are_a_resistivity(self, unit, value, want):
+        got = to_si(value, unit)
+        assert got is not None and got[1] == "ohm.m"
+        assert got[0] == pytest.approx(want)
+
+    def test_mohm_per_cm_is_megohm_cm_only_on_a_resistivity(self):
+        from report_ingest.model import ChemicalResult
+        assert to_si(2.0, "Mohm/cm") is None
+        assert to_si(2.0, "Mohm/cm", kind="resistivity") == (
+            pytest.approx(2.0e4), "ohm.m")
+        result = ChemicalResult(resistivity=Quantity(value=2.0,
+                                                     unit="Mohm/cm"))
+        assert [(p, v, u) for p, v, u in si_numbers(result)] == [
+            ("resistivity", pytest.approx(2.0e4), "ohm.m")]
+        # on a field that is no resistivity it stays unconverted
+        result = ChemicalResult(sulfate=Quantity(value=2.0, unit="Mohm/cm"))
+        assert si_numbers(result) == []
+
+    @pytest.mark.parametrize("unit", ["cm²/s", "cm2/s", "cm^2/s"])
+    def test_a_coefficient_of_consolidation_converts(self, unit):
+        got = to_si(3.0, unit)
+        assert got is not None and got[1] == "m2/s"
+        assert got[0] == pytest.approx(3.0e-4)
+
+    @pytest.mark.parametrize("unit", [
+        "ppb", "ppb (ug/kg)", "ppb (µg/kg)", "ppb (μg/kg)", "ug/kg"])
+    def test_a_part_per_billion_is_a_microgram_per_kilogram(self, unit):
+        got = to_si(500.0, unit)
+        assert got == (pytest.approx(0.5), "mg/kg")
+
+    def test_a_velocity_is_still_a_velocity(self):
+        assert to_si(3.0, "cm/s") == (pytest.approx(0.03), "m/s")
+
+    @pytest.mark.parametrize("unit, per_second", [
+        ("m2/yr", 1.0 / (365.25 * 86400.0)),
+        ("m2/year", 1.0 / (365.25 * 86400.0)),
+        ("m²/yr", 1.0 / (365.25 * 86400.0)),
+        ("m2/day", 1.0 / 86400.0), ("m2/d", 1.0 / 86400.0),
+        ("ft2/yr", 0.3048 ** 2 / (365.25 * 86400.0)),
+        ("ft2/year", 0.3048 ** 2 / (365.25 * 86400.0)),
+        ("ft2/day", 0.3048 ** 2 / 86400.0), ("ft²/d", 0.3048 ** 2 / 86400.0),
+        ("in2/min", 0.0254 ** 2 / 60.0), ("in^2/min", 0.0254 ** 2 / 60.0),
+        ("cm2/min", 1e-4 / 60.0), ("cm²/min", 1e-4 / 60.0)])
+    def test_a_cv_per_year_day_or_minute_converts(self, unit, per_second):
+        got = to_si(2.5, unit)
+        assert got is not None and got[1] == "m2/s"
+        assert got[0] == pytest.approx(2.5 * per_second, rel=1e-12)

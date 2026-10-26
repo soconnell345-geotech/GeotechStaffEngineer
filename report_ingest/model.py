@@ -52,7 +52,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI", "UNITLESS_KINDS",
-    "UNITLESS_FIELDS", "STRESS_FIELDS", "unit_printed", "G",
+    "UNITLESS_FIELDS", "STRESS_FIELDS", "KIND_FIELDS", "unit_printed", "G",
     "MASS_DENSITY_UNITS", "is_mass_density", "read_as_stress",
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
     "Layer", "Sample",
@@ -142,6 +142,7 @@ SI_UNITS: Dict[str, str] = {
     # between them.
     "concentration": "mg/L",
     "conductivity": "S/m",
+    "consolidation_coefficient": "m2/s",
     "force": "kN",
     "line_load": "kN/m",
     "moment": "kN.m",
@@ -236,9 +237,11 @@ UNIT_TO_SI: Dict[str, Tuple[str, float]] = {
     "ohm.m": ("resistivity", 1.0),
     "ohm-cm": ("resistivity", 0.01),
     "kohm-cm": ("resistivity", 10.0),
+    "megohm-cm": ("resistivity", 1e4),
     "mv": ("potential", 1.0),
     "v": ("potential", 1000.0),
     "mg/kg": ("mass_fraction", 1.0),
+    "ug/kg": ("mass_fraction", 0.001),
     "ppm": ("mass_fraction", 1.0),
     "degc": ("temperature", 1.0),
     "m3": ("volume", 1.0),
@@ -259,6 +262,17 @@ UNIT_TO_SI: Dict[str, Tuple[str, float]] = {
     "g/l": ("concentration", 1000.0),
     "ug/l": ("concentration", 0.001),
     "s/m": ("conductivity", 1.0),
+    # a coefficient of consolidation or of consolidation-swell, cv
+    "m2/s": ("consolidation_coefficient", 1.0),
+    "cm2/s": ("consolidation_coefficient", 1e-4),
+    "mm2/s": ("consolidation_coefficient", 1e-6),
+    # per year, day and minute, as the time units below define them
+    "m2/yr": ("consolidation_coefficient", 1.0 / (365.25 * 86400.0)),
+    "m2/day": ("consolidation_coefficient", 1.0 / 86400.0),
+    "ft2/yr": ("consolidation_coefficient", _FT_M ** 2 / (365.25 * 86400.0)),
+    "ft2/day": ("consolidation_coefficient", _FT_M ** 2 / 86400.0),
+    "in2/min": ("consolidation_coefficient", _IN_M ** 2 / 60.0),
+    "cm2/min": ("consolidation_coefficient", 1e-4 / 60.0),
     "ds/m": ("conductivity", 0.1),
     "ms/cm": ("conductivity", 0.1),
     "us/cm": ("conductivity", 1e-4),
@@ -327,6 +341,14 @@ _UNIT_ALIASES: Dict[str, str] = {
     "kilohm-cm": "kohm-cm", "k-ohm-cm": "kohm-cm",
     "millivolt": "mv", "millivolts": "mv", "volt": "v", "volts": "v",
     "mg/kilogram": "mg/kg", "milligram/kg": "mg/kg", "mg kg": "mg/kg",
+    # a part per billion by mass is a microgram per kilogram
+    "ppb": "ug/kg", "ppb(ug/kg)": "ug/kg", "ppb(µg/kg)": "ug/kg",
+    "ppb(μg/kg)": "ug/kg", "µg/kg": "ug/kg", "μg/kg": "ug/kg",
+    # megohm-centimetres (the M is mega on a soil's resistivity)
+    "m2/year": "m2/yr", "ft2/year": "ft2/yr", "m2/d": "m2/day",
+    "ft2/d": "ft2/day", "m2/years": "m2/yr", "ft2/years": "ft2/yr",
+    "mohm-cm": "megohm-cm", "megohm.cm": "megohm-cm",
+    "mohm.cm": "megohm-cm", "megohms-cm": "megohm-cm",
     "parts per million": "ppm",
     "c": "degc", "°c": "degc", "deg c": "degc", "celsius": "degc",
     "oc": "degc", "ºc": "degc", "degrees c": "degc",
@@ -399,10 +421,28 @@ _SQUARE_CUBE = re.compile(
     r"(?<![a-z])(sq|cu)(?:\.\s*|\s+)(mm|cm|m|ft|inch|in|yd)(?![a-z])\.?")
 
 
-#: A unit a sheet prints with its exponent lost, and what it means ON A
-#: FIELD THAT HOLDS A STRESS: ``N/mm`` is N/mm2 (a megapascal) on a strength.
-#: Elsewhere ``N/mm`` is the line load the table above reads it as.
-_STRESS_READINGS: Dict[str, str] = {"n/mm": "mpa"}
+#: A unit a sheet prints in a way that means one thing ON A FIELD OF A KIND
+#: and something else, or nothing, anywhere else: ``kind -> {spelling: the
+#: table key it is read as}``. ``N/mm`` is N/mm2 (a megapascal) on a stress,
+#: the square of the millimetre lost in printing, and elsewhere the line load
+#: the table reads it as; ``Mohm/cm`` is the laboratory's spelling of
+#: megohm-cm on a resistivity.
+_KIND_READINGS: Dict[str, Dict[str, str]] = {
+    "stress": {"n/mm": "mpa"},
+    "resistivity": {"mohm/cm": "megohm-cm"},
+}
+
+
+def _kind_reading(unit: Any, kind: Optional[str]) -> Optional[str]:
+    """The table key this printed unit is read as ON A FIELD of ``kind``,
+    or None when it is not one of that kind's special spellings."""
+    readings = _KIND_READINGS.get(kind or "")
+    if not readings:
+        return None
+    for candidate in _spellings(str(unit or "")):
+        if candidate in readings:
+            return readings[candidate]
+    return None
 
 
 def read_as_stress(unit: Any, kind: Optional[str]) -> bool:
@@ -412,8 +452,7 @@ def read_as_stress(unit: Any, kind: Optional[str]) -> bool:
     ``"stress"``): the square of the millimetre was lost in printing. The
     caller that writes a note says so ("printed N/mm, read as N/mm2").
     """
-    return kind == "stress" and any(
-        c in _STRESS_READINGS for c in _spellings(str(unit or "")))
+    return kind == "stress" and _kind_reading(unit, kind) is not None
 
 
 def _spellings(unit: str) -> List[str]:
@@ -490,6 +529,12 @@ STRESS_FIELDS: Tuple[str, ...] = (
     "qu", "su", "c", "c_residual", "pc", "swell_at", "swell_pressure",
     "pocket_pen", "confining", "peak_deviator", "pore_pressure")
 
+#: The other fields whose kind decides how a sheet's spelling is read
+#: (:data:`_KIND_READINGS`): the resistivities.
+KIND_FIELDS: Dict[str, str] = {
+    "resistivity": "resistivity", "resistivity_minimum": "resistivity",
+}
+
 
 def to_si(value: float, unit: str, *,
           kind: Optional[str] = None) -> Optional[Tuple[float, str]]:
@@ -510,9 +555,9 @@ def to_si(value: float, unit: str, *,
             return float(value), SI_UNITS[kind]
         return None
     key = _canonical_unit(unit)
-    if read_as_stress(unit, kind):
-        key = _STRESS_READINGS[next(c for c in _spellings(str(unit))
-                                    if c in _STRESS_READINGS)]
+    special = _kind_reading(unit, kind)
+    if special is not None:
+        key = special
     if key is None:
         return None
     unit_kind, factor = UNIT_TO_SI[key]
@@ -3080,7 +3125,7 @@ def si_numbers(value: Any, path: str = "",
                                   unitless_as_printed=unitless_as_printed,
                                   _kind=UNITLESS_FIELDS.get(name) or (
                                       "stress" if name in STRESS_FIELDS
-                                      else None)))
+                                      else KIND_FIELDS.get(name))))
     return out
 
 
