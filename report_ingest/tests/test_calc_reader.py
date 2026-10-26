@@ -1878,6 +1878,9 @@ class TestLongPrintoutCalls:
         left = sorted((u["what"], u["page"]) for u in result.unresolved
                       if u.get("refused_by") == "reader")
         assert left == [("plot axis", 14), ("smudged note", 2)]
+        # A note on a page the call was not shown is no mixed page numbering.
+        assert not any(u.get("flag") == "page_numbers"
+                       for u in result.unresolved)
 
     def test_each_calls_answer_is_kept_beside_the_item(self, tmp_path):
         doc = self._long(tmp_path)
@@ -1927,6 +1930,9 @@ class TestCitedPositionsUnderRefuse:
                        for u in result.unresolved)
 
     def test_a_cited_page_outside_the_item_still_refuses(self, tmp_path):
-        result = self._run(tmp_path, [0, 99])
+        result = self._run(tmp_path, [6, 99])
+        by_name = {r.name: r for r in result.calculation.results
+                   if r.name.startswith("Made-up")}
+        assert by_name["Made-up moment"].prov.page == 6
         assert any("not part of this printout" in u.get("why", "")
                    and u.get("page") == 99 for u in result.unresolved)

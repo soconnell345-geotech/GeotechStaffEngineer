@@ -2717,13 +2717,21 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
                 # report page (RI-109), read call by call because the calls
                 # were sent different pages.
                 from report_ingest.model_first_read import _on_call_pages
+                # Decided on the values' cites alone: an unsettled row names
+                # a page the call may not have been shown ("page 13 not
+                # shown") and is no evidence of how it numbers pages.
+                from report_ingest.checks import pdf_local
                 got = got.model_copy(deep=True)
-                rows, said = _on_call_pages(
-                    [v.prov for v in (*got.inputs, *got.results)]
-                    + list(got.unsettled), shown_now)
+                values = [v.prov for v in (*got.inputs, *got.results)]
+                numbers = pdf_local([v.page for v in values], shown_now)
+                rows, said = _on_call_pages(values, shown_now)
                 position_rows.extend(rows)
                 if said:
                     warnings.append(said)
+                if numbers.positions:
+                    for item in got.unsettled:
+                        if item.page is not None:
+                            item.page = numbers.page(item.page)[0]
             reading = (got if reading is None
                        else _fold_readings(reading, got, fresh=fresh,
                                            later_pages=later_only))
