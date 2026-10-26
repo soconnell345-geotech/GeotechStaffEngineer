@@ -1312,8 +1312,12 @@ So the design covers both:
   none).
 - **Size the describer's thread pool** for Foundry's tokens-per-minute limit,
   which is what bites there.
-- **Name the models per stage** (`stage_models=`): lab and narrative on Opus 5.5;
-  logs and calc on Sonnet 5.5, plus the Opus arms of §8.8.
+- **Name the models per stage** (`stage_models=`), the same in both arms
+  (today's readers take them too): lab and narrative on Opus 5.5; logs and
+  calc on Sonnet 5.5, plus the Opus arms of §8.8.
+- The draft of this section for the brief, with the waves' arms, calls,
+  tokens, stop points and what comes back: `module_work/FOUNDRY_BRIEF_MODEL_FIRST.md`
+  (piece 9).
 
 ### 8.8 Measurement plan
 
@@ -1354,10 +1358,12 @@ API. If the probe passes on one route only, both page routes are run on lab
 blind (15 items) to see what the pictures route costs in accuracy.
 
 **Wave MF-2, whole reports:** the `ingest` stage with the switch on and off,
-on the stage-b reports that hold blind answer sheets, scored by
+on wave 2's six reports (the brief, §4), scored by
 `_score_ingest_record` (the reader scorers over the whole record) and by
 pages sent to the wrong reader against the hand labels. This is the
-measurement that includes finding the pages.
+measurement that includes finding the pages. **Wave MF-3**, only on the
+owner's word and last: the same on the held-out stage-b reports with blind
+answer sheets (R15, R30, then R21), counts only.
 
 **The acceptance rule.** The switch's default moves from `off` to `on` only
 if `on` is at least as accurate as today on each of blind logs, blind lab,

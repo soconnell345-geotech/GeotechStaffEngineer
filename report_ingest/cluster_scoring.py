@@ -34,6 +34,14 @@ puts the app's own engine in the Prompter's place: on Foundry, Claude
 through the workspace's ``palantir_models`` classes, built and
 authenticated by the caller. See :func:`score_on_cluster`.
 
+MODEL FIRST, AS A SECOND ARM (BACKLOG RI-87). ``model_first="on"`` reads
+each hand-truthed item with the model-first reader of its stage
+(:mod:`report_ingest.model_first_scoring`) and each whole report with
+``graph.ingest_report(model_first="on")``, scored by the same scorers as
+today's arm. Every run file and RESULTS block names the arm it ran in, and
+under ``on`` the page route, the models and the instruction version. One
+``out_dir`` holds one arm. See :func:`score_on_cluster`.
+
 WHERE THE OUTPUT GOES. ``out_dir`` is the working folder and local disk is
 the sensible place for it: a run writes one small file per report per stage.
 No path is refused -- a workspace ``out_dir`` is allowed and gets a printed
@@ -484,6 +492,148 @@ def _engine_lines(results: Dict[str, Any], prefix: str = "",
               "Funhouse Prompter; the model is named as it names itself."]
 
 
+# ---------------------------------------------------------------------------
+# model first, as a second arm (BACKLOG RI-87)
+# ---------------------------------------------------------------------------
+
+#: The reader stages model first reads, each on its own model under ``on``
+#: (``stage_models``). The soundings read as today in either arm, as they
+#: do in the graph.
+FIRST_STAGES: Tuple[str, ...] = ("logs", "lab", "calc", "narrative")
+
+
+class _FirstArm:
+    """The run's model-first arm (BACKLOG RI-87). ``off`` reads as today.
+    ``on`` reads the four reader stages' items and the whole reports model
+    first, its pages sent by ``page_route``. In either arm each stage reads
+    on its model in ``stage_models`` (``model`` for a stage not named), so
+    the two arms are compared on the same models (plan section 8.8).
+
+    The setting is resolved once, here, and handed on, so every run file
+    names the arm it ran in and a variable changed during a run cannot put
+    part of it in the other arm.
+    """
+
+    def __init__(self, model_first: Any = "off",
+                 stage_models: Optional[Dict[str, str]] = None,
+                 page_route: Optional[str] = None) -> None:
+        from report_ingest.graph import model_first_setting
+
+        self.setting = model_first_setting(model_first)
+        unknown = sorted(set(stage_models or {}) - set(FIRST_STAGES))
+        if unknown:
+            raise ValueError(f"stage_models names {unknown}; the stages "
+                             f"model first reads are {list(FIRST_STAGES)}")
+        self.stage_models = {str(k): str(v)
+                             for k, v in (stage_models or {}).items()}
+        self.page_route = page_route
+        if self.on:
+            from report_ingest.model_first_pages import page_route as route
+            route(page_route)               # a typo is refused before a call
+
+    @property
+    def on(self) -> bool:
+        return self.setting == "on"
+
+    def model(self, stage: str, model: str) -> str:
+        """The model ``stage`` reads on, in either arm."""
+        return self.stage_models.get(stage, model)
+
+    def describe(self, model: str) -> str:
+        """One line for the run's opening print."""
+        models = "; " + ", ".join(f"{stage} on {self.model(stage, model)}"
+                                  for stage in FIRST_STAGES)
+        if not self.on:
+            return ("model first: off (today's readers)"
+                    + (models if self.stage_models else ""))
+        return ("model first: on (BACKLOG RI-87); pages "
+                + (self.page_route or "as GEOTECH_INGEST_MODEL_FIRST_PAGES "
+                                      "says (auto when unset)")
+                + models)
+
+
+def _arm_clash(run_file: Path, first: _FirstArm) -> Optional[str]:
+    """Why this run may neither use nor replace ``run_file``: it was read
+    in the other model-first arm. None when there is no such file. A run
+    file written before the arm was recorded was read with it off."""
+    if not run_file.is_file():
+        return None
+    try:
+        blob = json.loads(run_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    saved = str(blob.get("model_first") or "off")
+    if saved == first.setting:
+        return None
+    return (f"its run file was read with model first {saved} and this run "
+            f"is {first.setting}; one out_dir holds one arm, so start a "
+            f"fresh out_dir for the other")
+
+
+def _first_results(rows: Iterable[dict]) -> Dict[str, Any]:
+    """What a stage's results say about the arm its run files ran in:
+    ``model_first`` (the arms seen, ``off`` for a file that does not say)
+    and, over the files read model first, the page routes, the instruction
+    versions and the placement counts summed (plan section 8.4's gate)."""
+    rows = list(rows)
+    out: Dict[str, Any] = {"model_first": sorted(
+        {str(r.get("model_first") or "off") for r in rows})}
+    on = [r for r in rows if r.get("model_first") == "on"]
+    if not on:
+        return out
+    routes: Set[str] = set()
+    for row in on:
+        if row.get("route"):
+            routes.add(str(row["route"]))
+        routes.update(str(v) for v in (row.get("routes") or {}).values())
+    placed: Dict[str, Any] = {"values": 0, "with_text": 0, "at_a_spot": 0,
+                              "page_level": 0, "counts": {}}
+    for row in on:
+        got = row.get("placement") or {}
+        for key in ("values", "with_text", "at_a_spot", "page_level"):
+            placed[key] += int(got.get(key) or 0)
+        for status, n in (got.get("counts") or {}).items():
+            placed["counts"][status] = (placed["counts"].get(status, 0)
+                                        + int(n or 0))
+    out.update(routes=sorted(routes), placement=placed,
+               prompt_versions=sorted({str(r["prompt_version"]) for r in on
+                                       if r.get("prompt_version")}))
+    return out
+
+
+def _first_lines(results: Dict[str, Any]) -> List[str]:
+    """The lines naming a stage's model-first arm; none for a stage with
+    no run files."""
+    arms = list(results.get("model_first") or ())
+    if not arms:
+        return []
+    line = ("Model first (RI-87, GEOTECH_INGEST_MODEL_FIRST): "
+            + " and ".join(f"`{arm}`" for arm in arms))
+    if len(arms) > 1:
+        line += " -- MIXED: these run files were not all read in one arm"
+    if "on" not in arms:
+        return [line + "."]
+    out = [line + f"; pages sent as "
+           f"{', '.join(results.get('routes') or ['?'])}; instructions "
+           f"{', '.join(results.get('prompt_versions') or ['?'])}. Under "
+           f"`on` there is no floor and no merge: the record is the "
+           f"model's answer, built with checks='flag', so `model` is "
+           f"`after`; the lab and calculation switches named here act on "
+           f"today's readers only."]
+    placed = results.get("placement") or {}
+    if placed.get("values"):
+        counts = placed.get("counts") or {}
+        share = (f" ({100.0 * placed['at_a_spot'] / placed['with_text']:.1f}"
+                 f" %)" if placed.get("with_text") else "")
+        out.append(f"Placed at a spot (plan section 8.4, gate 90 %): "
+                   f"{placed['at_a_spot']} of {placed['with_text']} values "
+                   f"on pages with text{share}; {placed['page_level']} on "
+                   f"the page only; {counts.get('not_found', 0)} not found "
+                   f"printed on the cited page; {counts.get('no_text', 0)} "
+                   f"on pages with no text.")
+    return out
+
+
 def _run_one(rid: str, corpus: Corpus, prompter: Any, model: str,
              triage_model: str, out_dir: Path) -> dict:
     """Rules, triage and review on one report. Writes its own run file.
@@ -601,7 +751,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      describe_model: Optional[str] = None,
                      range_model: Optional[str] = None,
                      range_arms: Sequence[str] = ("plain", "hinted"),
-                     range_workers: int = 1
+                     range_workers: int = 1,
+                     model_first: Any = None,
+                     stage_models: Optional[Dict[str, str]] = None,
+                     page_route: Optional[str] = None
                      ) -> Dict[str, Any]:
     """Run the rules, triage and the label review over the corpus, and score.
 
@@ -841,6 +994,32 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         Descriptions are saved one file a page under
         ``out_dir/ranges/descriptions/<ID>/`` and each arm's labels to
         ``out_dir/ranges/<arm>/<ID>.json``.
+    model_first, stage_models, page_route
+        Model-first ingest as a second arm on the same items (BACKLOG
+        RI-87; plan section 8.8). ``off`` reads as today. ``on`` reads each
+        hand-truthed item of the ``logs``, ``lab``, ``calc`` and
+        ``narrative`` stages on its own pages with the model-first reader
+        of its stage (:mod:`report_ingest.model_first_scoring`), and each
+        whole report of the ``ingest`` stage with
+        ``graph.ingest_report(model_first="on")``: every page described on
+        ``describe_model`` and labelled by sections on ``range_model``, in
+        place of the vision voter and the label review. Both arms are
+        scored by the same scorers. ``None`` follows
+        ``GEOTECH_INGEST_MODEL_FIRST``; the setting is resolved once and
+        handed on. ``stage_models`` maps each of those four stages to the
+        model it reads on, in either arm, so the two are compared on the
+        same models (the name the Prompter or ``chat_model``'s factory
+        takes; a stage not named reads on ``model``). Off, a named stage is
+        today's reader on that model; in the ``ingest`` stage the triage,
+        the vision voter and the label review stay on their own models.
+        ``page_route`` is ``auto``, ``pdf`` or ``pictures`` (None:
+        ``GEOTECH_INGEST_MODEL_FIRST_PAGES``). The ``soundings`` stage
+        reads as today in either arm, as the graph does. Every run file
+        names its arm (``model_first``) and, under ``on``, the route, the
+        instruction version and what placement found; RESULTS.md says the
+        same per stage. ONE ``out_dir`` HOLDS ONE ARM: an item whose run
+        file was read in the other arm is named among the failures and
+        left as it is, with or without ``redo``.
     chat_model, vision_chat_model
         A LangChain chat model to read with INSTEAD OF the Prompter (BACKLOG
         RI-67), or a callable that returns one for a model name. Each
@@ -897,6 +1076,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         raise ValueError(f"pass at least one stage: {list(STAGE_NAMES)}")
     calling = [s for s in stages if s not in NO_MODEL_STAGES]
     engines = _Engines(prompter, chat_model, vision_chat_model)
+    first = _FirstArm(model_first, stage_models, page_route)
     # A stage left on the Prompter needs it; one on a chat model does not.
     on_prompter = [s for s in calling
                    if (s != "vision_labels" and engines.on_prompter())
@@ -925,6 +1105,17 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             asked_for.append(("describer", describe_model, True))
             if range_model != model:
                 asked_for.append(("range labeller", range_model, False))
+        asked_for += [(f"{stage}, model first" if first.on
+                       else f"{stage} reader", name, False)
+                      for stage, name in first.stage_models.items()
+                      if stage in stages or "ingest" in stages]
+        if first.on:
+            if "ingest" in stages:
+                asked_for.append(("describer, model first", describe_model,
+                                  True))
+                if range_model != model:
+                    asked_for.append(("range labeller, model first",
+                                      range_model, False))
         for what, name, vision in asked_for:
             said = engines.describe(name, vision=vision)
             engine_notes.append(
@@ -1052,6 +1243,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
           f"model {model}, triage {triage_model}; out_dir {out}")
     for note in engine_notes:
         print(note)
+    if any(s in stages for s in FIRST_STAGES + ("ingest",)):
+        print(f"  {first.describe(model)}")
     # Every stage takes this in the Prompter's place: the Prompter itself
     # on a Prompter run, as before, else the run's engines.
     source = prompter if engines.plain else engines
@@ -1111,25 +1304,28 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     lines = _render(results) if "labels" in stages else _header(results)
 
     if "logs" in stages:
-        logs = _run_logs(corpus, source, model, out, logs_truth,
-                         budget=log_budget, redo=redo,
+        logs = _run_logs(corpus, source, first.model("logs", model), out,
+                         logs_truth, budget=log_budget, redo=redo,
                          max_logs=max_reports, open_reports=open_reports,
-                         sync=sync, templates_path=templates_path)
+                         sync=sync, templates_path=templates_path,
+                         first=first)
         results["logs"] = logs
         lines += _render_logs(logs)
 
     if "lab" in stages:
-        lab = _run_lab(corpus, source, model, out, lab_truth,
-                       budget=lab_budget, redo=redo, max_sheets=max_reports,
-                       open_reports=open_lab_reports, sync=sync)
+        lab = _run_lab(corpus, source, first.model("lab", model), out,
+                       lab_truth, budget=lab_budget, redo=redo,
+                       max_sheets=max_reports,
+                       open_reports=open_lab_reports, sync=sync, first=first)
         results["lab"] = lab
         lines += _render_lab(lab)
 
     if "calc" in stages:
-        calc = _run_calc(corpus, source, model, out, calc_truth,
-                         budget=calc_budget, redo=redo,
+        calc = _run_calc(corpus, source, first.model("calc", model), out,
+                         calc_truth, budget=calc_budget, redo=redo,
                          max_calcs=max_reports,
-                         open_reports=open_calc_reports, sync=sync)
+                         open_reports=open_calc_reports, sync=sync,
+                         first=first)
         results["calc"] = calc
         lines += _render_calc(calc)
 
@@ -1143,10 +1339,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
 
     if "narrative" in stages:
         narrative = _run_narrative(
-            corpus, source, model, out, narrative_truth,
-            budget=narrative_budget, redo=redo, max_reports=max_reports,
-            open_reports=open_narrative_reports, sync=sync,
-            front_pages=narrative_front_pages)
+            corpus, source, first.model("narrative", model), out,
+            narrative_truth, budget=narrative_budget, redo=redo,
+            max_reports=max_reports, open_reports=open_narrative_reports,
+            sync=sync, front_pages=narrative_front_pages, first=first)
         results["narrative"] = narrative
         lines += _render_narrative(narrative)
 
@@ -1194,7 +1390,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              counts_from_logs=ingest_counts_from_logs,
                              narrative_skips_bound=(
                                  ingest_narrative_skips_bound),
-                             oos=oos, mapped=mapped, sync=sync)
+                             oos=oos, mapped=mapped, sync=sync,
+                             first=first, describe_model=describe_model,
+                             range_model=range_model)
         results["ingest"] = ingest
         lines += _render_ingest(ingest)
 
@@ -1388,7 +1586,8 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
               max_logs: Optional[int],
               open_reports: Optional[Sequence[str]],
               sync: Optional[Any] = None,
-              templates_path: Any = None) -> Dict[str, Any]:
+              templates_path: Any = None,
+              first: Optional[_FirstArm] = None) -> Dict[str, Any]:
     """Grid and reader over every hand-truthed log, before and after.
 
     Restartable the same way the labels stage is: each log writes
@@ -1401,7 +1600,9 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
     nothing changes.
 
     ``prompter`` is the live Prompter, or the run's :class:`_Engines`; so
-    for every stage below.
+    for every stage below. ``first`` is the run's model-first arm
+    (:class:`_FirstArm`, off when not given); so for the lab, calc and
+    narrative stages, and the ingest.
     """
     from report_ingest.engine import CostMeter
     from report_ingest.log_scoring import METRICS, score_one_log
@@ -1432,12 +1633,18 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"{', '.join(openset)}")
 
     engines = _Engines.of(prompter)
+    first = first or _FirstArm()
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
         log_id = str(truth.get("id") or f"log{n}")
         report = log_id.split("_")[0]
         run_file = out / "logs" / f"{log_id}.json"
+        clash = _arm_clash(run_file, first)
+        if clash:
+            failures[log_id] = clash
+            print(f"  [{n}/{len(truths)}] {log_id}: skipped -- {clash}")
+            continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
             failed = _saved_failure(blob)
@@ -1466,8 +1673,16 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(report, di="auto", warn=False)
-            before, after = score_one_log(truth, doc, engine, budget=budget,
-                                          report_id=report)
+            if first.on:
+                from report_ingest.model_first_scoring import first_log
+                before, after, arm = first_log(
+                    truth, doc, engine, report_id=report,
+                    page_route=first.page_route)
+            else:
+                before, after = score_one_log(truth, doc, engine,
+                                              budget=budget,
+                                              report_id=report)
+                arm = {"model_first": "off"}
             sources = _page_sources(doc, [int(p) for p in
                                           truth.get("pages") or []])
         except KeyboardInterrupt:
@@ -1489,6 +1704,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
             **engines.record(model, engine),
+            **arm,
             "served_by": engine.served_by,
             "pages": [int(p) for p in truth.get("pages") or []],
             "before": before.to_dict(),
@@ -1513,7 +1729,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
 
     stage_model, fields = engines.stage(model)
     return {**_score_logs(done, failures, stage_model, openset),
-            **fields}
+            **fields, **_first_results(done.values())}
 
 
 # ---------------------------------------------------------------------------
@@ -1524,7 +1740,8 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
              truth_dir: Path, *, budget: int, redo: bool,
              max_sheets: Optional[int],
              open_reports: Optional[Sequence[str]],
-             sync: Optional[Any] = None) -> Dict[str, Any]:
+             sync: Optional[Any] = None,
+             first: Optional[_FirstArm] = None) -> Dict[str, Any]:
     """Tables and reader over every hand-truthed laboratory sheet.
 
     Restartable the same way the other stages are: each sheet writes
@@ -1555,12 +1772,18 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"{', '.join(openset)}")
 
     engines = _Engines.of(prompter)
+    first = first or _FirstArm()
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
         sheet_id = str(truth.get("id") or f"sheet{n}")
         report = report_of(truth)
         run_file = out / "lab" / f"{sheet_id}.json"
+        clash = _arm_clash(run_file, first)
+        if clash:
+            failures[sheet_id] = clash
+            print(f"  [{n}/{len(truths)}] {sheet_id}: skipped -- {clash}")
+            continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
             failed = _saved_failure(blob)
@@ -1589,8 +1812,16 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(report, di="auto", warn=False)
-            before, after = score_one_sheet(truth, doc, engine,
-                                            budget=budget, report_id=report)
+            if first.on:
+                from report_ingest.model_first_scoring import first_sheet
+                before, after, arm = first_sheet(
+                    truth, doc, engine, report_id=report,
+                    page_route=first.page_route)
+            else:
+                before, after = score_one_sheet(truth, doc, engine,
+                                                budget=budget,
+                                                report_id=report)
+                arm = {"model_first": "off"}
             sources = _page_sources(doc, pages_of(truth))
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
@@ -1612,6 +1843,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
             **engines.record(model, engine),
+            **arm,
             "served_by": engine.served_by,
             "pages": pages_of(truth),
             "before": before.to_dict(),
@@ -1645,7 +1877,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
     return {**_score_lab(done, failures, stage_model, openset),
-            **fields}
+            **fields, **_first_results(done.values())}
 
 
 def _lab_totals(rows: Sequence[dict], stage: str
@@ -1777,6 +2009,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
         "carries no kind or link.",
     ]
     out += _engine_lines(lab)
+    out += _first_lines(lab)
     if lab.get("served_by"):
         out.append(f"Served by: {', '.join(lab['served_by'])}.")
     arms = lab.get("link_from_label")
@@ -1934,7 +2167,8 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
               truth_dir: Path, *, budget: int, redo: bool,
               max_calcs: Optional[int],
               open_reports: Optional[Sequence[str]],
-              sync: Optional[Any] = None) -> Dict[str, Any]:
+              sync: Optional[Any] = None,
+              first: Optional[_FirstArm] = None) -> Dict[str, Any]:
     """The floor and then the calculation reader over every hand-truthed run.
 
     Restartable the same way the other stages are: each calculation writes
@@ -1965,12 +2199,18 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"{', '.join(openset) or '(none named)'}")
 
     engines = _Engines.of(prompter)
+    first = first or _FirstArm()
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, truth in enumerate(truths, 1):
         calc_id = str(truth.get("id") or f"calc{n}")
         report = report_of(truth)
         run_file = out / "calc" / f"{calc_id}.json"
+        clash = _arm_clash(run_file, first)
+        if clash:
+            failures[calc_id] = clash
+            print(f"  [{n}/{len(truths)}] {calc_id}: skipped -- {clash}")
+            continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
             failed = _saved_failure(blob)
@@ -1997,8 +2237,16 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(report, di="auto", warn=False)
-            before, after = score_one_calc(truth, doc, engine,
-                                           budget=budget, report_id=report)
+            if first.on:
+                from report_ingest.model_first_scoring import first_calc
+                before, after, arm = first_calc(
+                    truth, doc, engine, report_id=report,
+                    page_route=first.page_route)
+            else:
+                before, after = score_one_calc(truth, doc, engine,
+                                               budget=budget,
+                                               report_id=report)
+                arm = {"model_first": "off"}
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")
@@ -2020,6 +2268,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
             "run_date": date.today().isoformat(),
             "set": "open" if report in openset else "blind",
             **engines.record(model, engine),
+            **arm,
             "served_by": engine.served_by,
             "pages": pages,
             "n_pages": len(pages),
@@ -2048,7 +2297,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
     return {**_score_calc(done, failures, stage_model, openset),
-            **fields}
+            **fields, **_first_results(done.values())}
 
 
 def _calc_totals(rows: Sequence[dict], stage: str
@@ -2160,6 +2409,7 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
         f"name matches at {PROGRAM_RATIO:g}.",
     ]
     out += _engine_lines(calc)
+    out += _first_lines(calc)
     if calc.get("served_by"):
         out.append(f"Served by: {', '.join(calc['served_by'])}.")
     if calc.get("page_images"):
@@ -2634,7 +2884,8 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                    max_reports: Optional[int],
                    open_reports: Optional[Sequence[str]],
                    sync: Optional[Any] = None,
-                   front_pages: int = 50) -> Dict[str, Any]:
+                   front_pages: int = 50,
+                   first: Optional[_FirstArm] = None) -> Dict[str, Any]:
     """The narrative reader over every report that has a hand answer.
 
     The stage reads the truth files that are PRESENT and skips every report
@@ -2668,10 +2919,16 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"{', '.join(openset)}")
 
     engines = _Engines.of(prompter)
+    first = first or _FirstArm()
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, (rid, truth) in enumerate(truths, 1):
         run_file = out / "narrative" / f"{rid}.json"
+        clash = _arm_clash(run_file, first)
+        if clash:
+            failures[rid] = clash
+            print(f"  [{n}/{len(truths)}] {rid}: skipped -- {clash}")
+            continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
             failed = _saved_failure(blob)
@@ -2696,8 +2953,15 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(rid, di="auto", warn=False)
-            score = score_one_report(truth, doc, engine, budget=budget,
-                                     report=rid, front_pages=front_pages)
+            if first.on:
+                from report_ingest.model_first_scoring import first_narrative
+                score, arm = first_narrative(
+                    truth, doc, engine, report=rid,
+                    page_route=first.page_route, front_pages=front_pages)
+            else:
+                score = score_one_report(truth, doc, engine, budget=budget,
+                                         report=rid, front_pages=front_pages)
+                arm = {"model_first": "off"}
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
                   "call resumes")
@@ -2715,6 +2979,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
             "run_date": date.today().isoformat(),
             "set": "open" if rid in openset else "blind",
             **engines.record(model, engine),
+            **arm,
             "served_by": engine.served_by,
             "score": score.to_dict(),
             "cost": meter.to_dict(),
@@ -2733,7 +2998,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
     return {**_score_narrative(done, failures, stage_model, openset),
-            **fields}
+            **fields, **_first_results(done.values())}
 
 
 def _open_set_or(truth_dir: Path,
@@ -2870,6 +3135,7 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
         "summary is a person's call.",
     ]
     out += _engine_lines(narrative)
+    out += _first_lines(narrative)
     if narrative.get("served_by"):
         out.append(f"Served by: {', '.join(narrative['served_by'])}.")
     if narrative.get("failures"):
@@ -3076,6 +3342,7 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
         f"log prints. N values exact.",
     ]
     out += _engine_lines(logs)
+    out += _first_lines(logs)
     if logs.get("served_by"):
         out.append(f"Served by: {', '.join(logs['served_by'])}.")
     if logs.get("failures"):
@@ -4588,8 +4855,8 @@ def _saved_label_engine(runs_dir: Path, rid: str) -> str:
     return str(_run_blob_on_disk(runs_dir, rid).get("engine") or "prompter")
 
 
-def _reuse_label_run(folder: Path, runs_dir: Path, rid: str
-                     ) -> Tuple[bool, bool]:
+def _reuse_label_run(folder: Path, runs_dir: Path, rid: str,
+                     review: bool = True) -> Tuple[bool, bool]:
     """Seed the ingest folder with a saved triage and review, when present.
 
     A ``labels`` run leaves ``runs/<ID>.json`` holding the triage profile
@@ -4597,6 +4864,7 @@ def _reuse_label_run(folder: Path, runs_dir: Path, rid: str
     ``triage.json`` and ``review.json`` in its own folder. Copying the one
     into the other is what stops the ingest paying for ~$0.50 of review a
     second time. Nothing already in the folder is overwritten.
+    ``review=False`` seeds the triage alone: model first runs no review.
     """
     blob = _run_blob_on_disk(runs_dir, rid)
     if not blob:
@@ -4613,7 +4881,7 @@ def _reuse_label_run(folder: Path, runs_dir: Path, rid: str
         triage_reused = True
     final = (blob.get("review") or {}).get("final_labels") or {}
     review_file = folder / "review.json"
-    if final and not review_file.is_file():
+    if review and final and not review_file.is_file():
         folder.mkdir(parents=True, exist_ok=True)
         saved = {"final_labels": {str(k): v for k, v in final.items()},
                  "reused_from": str(Path(runs_dir) / f"{rid}.json")}
@@ -4853,6 +5121,13 @@ def _ingest_labels(folder: Path, record: Any, rid: str, corpus: Corpus,
     out["accuracy"] = {name: s.to_dict()["accuracy"]
                        for name, s in scored.items()}
     out["scored_pages"] = scored["final"].n
+    # The pages a label sends to another reader than its hand label does,
+    # or to none, or to one where it should go to none: what a wrong label
+    # costs the record (plan section 8.8, wave MF-2).
+    from report_ingest.scoring import harm_score
+
+    out["harmful"] = {"rules": harm_score(hand, rules)["harmful"],
+                      "final": harm_score(hand, final)["harmful"]}
     return out
 
 
@@ -4925,7 +5200,10 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 narrative_skips_bound: bool = False,
                 oos: Optional[Dict[str, Dict[int, dict]]] = None,
                 mapped: Sequence[str] = (),
-                sync: Optional[Any] = None) -> Dict[str, Any]:
+                sync: Optional[Any] = None,
+                first: Optional[_FirstArm] = None,
+                describe_model: Optional[str] = None,
+                range_model: Optional[str] = None) -> Dict[str, Any]:
     """The whole pipeline on each report, into ``ingest/<ID>/``.
 
     Restartable twice over: the stage skips a report whose ``run.json`` is
@@ -4949,6 +5227,17 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     four of them, so this moves numbers in the per-report table: a report
     whose investigation count falls is one whose appendix was somebody
     else's investigation all along.
+
+    MODEL FIRST (``first`` on, BACKLOG RI-87) runs the same reports with
+    ``ingest_report(model_first="on")``: every page described on
+    ``describe_model`` (the vision engine; default ``vision_model``) and
+    labelled by sections on ``range_model`` (default ``model``), each of
+    the four readers on its model (``first.stage_models``), no vision
+    voter and no review (a saved label run seeds the triage alone). Each
+    ``run.json`` names the arm, the routes, the models, the instruction
+    and describer versions, and what placement found. Off, a stage named
+    in ``first.stage_models`` is today's reader on that model, and
+    ``run.json`` names those models.
     """
     from report_ingest.calc_reader import page_images_enabled
     from report_ingest.engine import CostMeter
@@ -4968,12 +5257,18 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
           f"reused where one exists")
     present = set(corpus.present_ids())
     engines = _Engines.of(prompter)
+    first = first or _FirstArm()
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     spent = 0.0
     for n, rid in enumerate(report_ids, 1):
         folder = out / "ingest" / rid
         run_file = folder / "run.json"
+        clash = _arm_clash(run_file, first)
+        if clash:
+            failures[rid] = clash
+            print(f"  [{n}/{len(report_ids)}] {rid}: skipped -- {clash}")
+            continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
             if not blob.get("error"):
@@ -4993,7 +5288,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f"${max_total_dollars:.2f} ceiling")
             break
         folder.mkdir(parents=True, exist_ok=True)
-        triage_reused, review_reused = _reuse_label_run(folder, runs_dir, rid)
+        triage_reused, review_reused = _reuse_label_run(
+            folder, runs_dir, rid, review=not first.on)
         # A reused review made on the other engine is named in the run file
         # and RESULTS; the key exists only then, so a run whose label run
         # shares its engine writes what it always wrote.
@@ -5008,6 +5304,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         vision_engine = engines.build(vision_model, meter, vision=True)
         triage_engine = (engines.build(triage_model, meter)
                          if triage_model and triage_model != model else None)
+        arm_kwargs, arm_models = _ingest_arm(
+            first, engines, meter, model, describe_model or vision_model,
+            range_model or model)
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
                           lab=lab_budget)
         started = time.time()
@@ -5029,7 +5328,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                    counts_from_logs=counts_from_logs,
                                    narrative_skips_bound=(
                                        narrative_skips_bound),
-                                   triage_engine=triage_engine)
+                                   triage_engine=triage_engine,
+                                   **arm_kwargs)
             n_pages = doc.n_pages
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
@@ -5042,7 +5342,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             traceback.print_exc()
             run_file.write_text(_dumps({
                 "id": rid, "run_date": date.today().isoformat(),
-                "error": failures[rid], "cost": meter.to_dict()}),
+                "error": failures[rid], "cost": meter.to_dict(),
+                "model_first": first.setting}),
                 encoding="utf-8")
             _sync(sync)
             continue
@@ -5093,6 +5394,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "switches": {"ingest_bound": ingest_bound,
                          "counts_from_logs": counts_from_logs,
                          "narrative_skips_bound": narrative_skips_bound},
+            **_ingest_arm_fields(first, engines, arm_kwargs, arm_models,
+                                 folder),
             "counts": record.counts(),
             "investigations_by_kind": by_kind,
             "lab_by_kind": lab_by_kind,
@@ -5138,7 +5441,85 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     if not engines.plain:
         seen = engines.describe(vision_model, vision=True)
         fields.update({f"vision_{k}": v for k, v in seen.items()})
-    return {**_score_ingest(done, failures, stage_model), **fields}
+    return {**_score_ingest(done, failures, stage_model), **fields,
+            **_first_results(done.values())}
+
+
+def _ingest_arm(first: _FirstArm, engines: "_Engines", meter: Any,
+                model: str, describe_model: str, range_model: str
+                ) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """``(ingest_report's arguments for the arm, the model each engine was
+    built for)``. Off names the arm and builds an engine for each stage
+    ``first.stage_models`` names (today's reader of that stage); on builds
+    the describer, the range labeller and each reader's engine. All are on
+    the report's meter."""
+    if not first.on:
+        if not first.stage_models:
+            return {"model_first": "off"}, {}
+        names = dict(first.stage_models)
+        return ({"model_first": "off",
+                 "stage_engines": {stage: engines.build(name, meter)
+                                   for stage, name in names.items()}},
+                names)
+    names = {stage: first.model(stage, model) for stage in FIRST_STAGES}
+    names.update(describer=describe_model, labeller=range_model)
+    return ({"model_first": "on", "page_route": first.page_route,
+             "stage_engines": {stage: engines.build(names[stage], meter)
+                               for stage in FIRST_STAGES},
+             "describe_engine": engines.build(describe_model, meter,
+                                              vision=True),
+             "range_engine": engines.build(range_model, meter)}, names)
+
+
+def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
+                       kwargs: Dict[str, Any], names: Dict[str, str],
+                       folder: Path) -> Dict[str, Any]:
+    """What one report's ``run.json`` says about its arm: ``model_first``;
+    under on the page route asked and each reader's as resolved, the model
+    of each reader, the describer and the labeller, the instruction
+    version, the describer's and labeller's versions as the saved sections
+    record them, and the placement counts over the report's model-first
+    items (its bound reports' included). Off, the models of the stages
+    named in ``stage_models``, when any are."""
+    if not first.on:
+        if not names:
+            return {"model_first": "off"}
+        built = kwargs["stage_engines"]
+        return {"model_first": "off",
+                "models": {stage: engines.record(names[stage],
+                                                 built[stage])["model"]
+                           for stage in built}}
+    from report_ingest.model_first import READ_PROMPT_VERSION
+    from report_ingest.model_first_pages import page_route, resolve_route
+    from report_ingest.model_first_scoring import placement_counts
+
+    built = dict(kwargs["stage_engines"],
+                 describer=kwargs["describe_engine"],
+                 labeller=kwargs["range_engine"])
+    models = {what: engines.record(names[what], engine)["model"]
+              for what, engine in built.items()}
+    ranges: Dict[str, Any] = {}
+    for path in sorted(folder.glob("ranges-*.json")):
+        blob = _run_blob_on_disk(folder, path.stem)
+        ranges = {"arm": path.stem[len("ranges-"):],
+                  **{key: blob.get(key) for key in (
+                      "describe_prompt", "conventions", "labeller_prompt")}}
+        break
+    placements: List[Any] = []
+    for path in sorted(folder.rglob("mf-*.json")):
+        if path.parent.name == "items":
+            blob = _run_blob_on_disk(path.parent, path.stem)
+            placements.extend(blob.get("placement") or [])
+    return {"model_first": "on",
+            "page_route": page_route(first.page_route),
+            "routes": {stage: resolve_route(
+                first.page_route,
+                bool(getattr(kwargs["stage_engines"][stage], "accepts_pdf",
+                             False))) for stage in FIRST_STAGES},
+            "models": models,
+            "prompt_version": READ_PROMPT_VERSION,
+            "ranges": ranges,
+            "placement": placement_counts(placements)}
 
 
 def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
@@ -5155,7 +5536,8 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         "narrative_answered": 0, "narrative_null": 0,
         "labels": {"pages_voted": 0, "split": 0, "review_changed": 0,
                    "review_changed_off_split": 0, "disagreements_left": 0,
-                   "scored_pages": 0, "modes": {}, "policies": {}},
+                   "scored_pages": 0, "harmful_rules": 0,
+                   "harmful_final": 0, "modes": {}, "policies": {}},
         "diggs": {"written": 0, "valid": 0, "not_run": 0, "invalid": 0,
                   "equal": 0, "differs": 0},
         "scores": {"logs": {"found": 0, "total": 0, "n": 0},
@@ -5201,6 +5583,9 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
                     "review_changed_off_split", "disagreements_left",
                     "scored_pages"):
             cell[key] += int(labels.get(key) or 0)
+        for key in ("rules", "final"):
+            cell[f"harmful_{key}"] += int(
+                (labels.get("harmful") or {}).get(key) or 0)
         for key, where in (("review_mode", "modes"), ("policy", "policies")):
             name = str(labels.get(key) or "")
             if name:
@@ -5307,9 +5692,12 @@ def _render_ingest_labels(ingest: Dict[str, Any]) -> List[str]:
         "", "```",
         f"{'report':<8}{'pages':>7}{'split':>7}{'split %':>9}"
         f"{'reviewed':>10}{'off split':>11}{'left':>7}"
-        f"{'rules':>9}{'final':>9}{'scored':>8}"]
+        f"{'rules':>9}{'final':>9}{'scored':>8}{'wrong rdr':>11}"]
     for r in rows:
         row = r["labels"]
+        harm = row.get("harmful")
+        harm_cell = (f"{harm.get('rules', 0)}/{harm.get('final', 0)}"
+                     if harm else "-")
         voted = int(row.get("pages_voted") or 0)
         split = int(row.get("split") or 0)
         accuracy = row.get("accuracy") or {}
@@ -5321,9 +5709,12 @@ def _render_ingest_labels(ingest: Dict[str, Any]) -> List[str]:
             f"{int(row.get('disagreements_left') or 0):>7}"
             f"{_pct(accuracy.get('rules')):>9}"
             f"{_pct(accuracy.get('final')):>9}"
-            f"{int(row.get('scored_pages') or 0):>8}")
+            f"{int(row.get('scored_pages') or 0):>8}{harm_cell:>11}")
     voted = int(cell.get("pages_voted") or 0)
     split = int(cell.get("split") or 0)
+    harm_all = (f"{int(cell.get('harmful_rules') or 0)}/"
+                f"{int(cell.get('harmful_final') or 0)}"
+                if any(r["labels"].get("harmful") for r in rows) else "")
     out += [
         "",
         f"{'ALL':<8}{voted:>7}{split:>7}"
@@ -5331,7 +5722,8 @@ def _render_ingest_labels(ingest: Dict[str, Any]) -> List[str]:
         f"{int(cell.get('review_changed') or 0):>10}"
         f"{int(cell.get('review_changed_off_split') or 0):>11}"
         f"{int(cell.get('disagreements_left') or 0):>7}"
-        f"{'':>9}{'':>9}{int(cell.get('scored_pages') or 0):>8}",
+        f"{'':>9}{'':>9}{int(cell.get('scored_pages') or 0):>8}"
+        f"{harm_all:>11}",
         "```"]
     if any((r["labels"].get("accuracy") or {}) for r in rows):
         out += ["", "`rules` and `final` are strict accuracy over the pages "
@@ -5339,7 +5731,12 @@ def _render_ingest_labels(ingest: Dict[str, Any]) -> List[str]:
                     "against what the record ended up with -- scored by the "
                     "same scorer as the `labels` and `vision_labels` "
                     "stages. A dash is a report with no hand labels, which "
-                    "is unmeasured rather than failing."]
+                    "is unmeasured rather than failing. `wrong rdr` is the "
+                    "rules alone / the final labels counted by what a wrong "
+                    "label costs: the hand-labelled pages it sends to "
+                    "another reader than the hand label does, or to none, "
+                    "or to a reader where the hand label sends it to none "
+                    "(`report_ingest.scoring.harm_score`)."]
     else:
         out += ["", "No hand labels for these reports, so the final labels "
                     "are unscored; `split` is still the number a production "
@@ -5376,6 +5773,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
     ]
     out += _engine_lines(ingest)
     out += _engine_lines(ingest, "vision_", "The vision voter")
+    out += _first_lines(ingest)
     if ingest.get("served_by"):
         out.append(f"Served by: {', '.join(ingest['served_by'])}.")
     crossed = [f"{r['id']} ({r['label_run_engine']})"

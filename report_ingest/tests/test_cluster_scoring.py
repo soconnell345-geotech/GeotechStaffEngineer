@@ -3649,3 +3649,307 @@ def test_an_unknown_conventions_name_is_refused(range_cluster, tmp_path):
         cs._run_ranges(None, None, "made-up-eyes", "made-up-reader", out,
                        [], arms=("hinted",), workers=1, redo=False,
                        conventions="Z")
+
+
+# -- model first as a second arm (BACKLOG RI-87 piece 9) ---------------------
+
+#: The made-up models each reader stage reads on under ``on``.
+FIRST_MODELS = {"logs": "fake-logs", "lab": "fake-lab", "calc": "fake-calc",
+                "narrative": "fake-narrative"}
+
+
+@pytest.fixture()
+def first_cluster(tmp_path, monkeypatch):
+    """The synthetic report, one made-up answer sheet per reader stage, and
+    engines made by model name, each replaying the script ``scripts`` holds
+    for that name (none: an engine that may not be called)."""
+    from report_ingest.tests.fake_engine import FakeEngine
+    from report_ingest.tests.narrative_fixtures import build_narrative_report
+    import report_ingest.engine as engine_module
+
+    reports_dir = tmp_path / "corpus"
+    reports_dir.mkdir()
+    (reports_dir / "R36.pdf").write_bytes(build_narrative_report().pdf)
+    truth = tmp_path / "truth"
+    sheets = {
+        "logs": ("R36_p7", {"id": "R36_p7", "pages": [7, 8],
+                            "depth_unit": "m", "fields": {},
+                            "layers": [{"top": 0.0, "uscs": "CL"}],
+                            "samples": [], "water": []}),
+        "lab": ("atterberg__R36_p12", {
+            "id": "atterberg__R36_p12", "kind": "atterberg",
+            "depth_unit": "m",
+            "tests": [{"investigation_id": "B-1", "depth_top": 4.5,
+                       "ll": 38, "pl": 19, "pi": 19}]}),
+        "calc": ("lateral_pile__R36_p20", {
+            "id": "lateral_pile__R36_p20", "report": "R36",
+            "kind": "lateral_pile", "pages": [20],
+            "inputs": [{"name": "Pile-head load", "value": 120.0,
+                        "unit": "kN", "page": 20}], "results": []}),
+        "narrative": ("R36", {"id": "R36", "general": {
+            "projectName": "Rosewood Terrace Development"},
+            "natural_hazards": {}}),
+    }
+    for stage, (name, blob) in sheets.items():
+        (truth / stage).mkdir(parents=True)
+        (truth / stage / f"{name}.json").write_text(json.dumps(blob),
+                                                    encoding="utf-8")
+    scripts = {"by_model": {}, "engines": []}
+
+    def fake_engine(prompter, model, meter=None, **kwargs):
+        engine = FakeEngine(list(scripts["by_model"].get(model) or []),
+                            name=model)
+        engine.accepts_pdf = True
+        engine.served_by = "fake-deployment"
+        scripts["engines"].append(engine)
+        return engine
+
+    monkeypatch.setattr(engine_module, "PrompterEngine", fake_engine)
+    return reports_dir, tmp_path / "out", truth, scripts
+
+
+def _first_scripts():
+    """Made-up model-first answers for the four reader stages."""
+    from report_ingest.tests import test_graph as tg
+    from report_ingest.tests import test_graph_model_first as tgm
+
+    return {"fake-logs": [tgm._log("B-1", "boring", 7, [
+                (0.0, 31.5, "Brown sandy lean CLAY, stiff, moist")])],
+            "fake-lab": [tg.lab_turn("atterberg", 12)],
+            "fake-calc": [tgm._calc()],
+            "fake-narrative": [tg.narrative_turn()]}
+
+
+def _first_run(first_cluster, stages, **over):
+    reports_dir, out, truth, _scripts = first_cluster
+    kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
+                  stages=stages, sets=(), model="fake-today",
+                  truth_dir=truth / "logs", lab_truth_dir=truth / "lab",
+                  calc_truth_dir=truth / "calc",
+                  narrative_truth_dir=truth / "narrative")
+    kwargs.update(over)
+    return cs.score_on_cluster(**kwargs)
+
+
+class TestModelFirstAsASecondArm:
+    """``model_first`` on the reader stages and the ingest: the same items,
+    the same scorers, and every run file naming its arm (BACKLOG RI-87,
+    plan section 8.8). No model is called."""
+
+    def test_on_reads_each_stage_on_its_own_model_and_names_the_arm(
+            self, first_cluster):
+        from report_ingest.model_first import READ_PROMPT_VERSION
+
+        pytest.importorskip("report_ingest.locate")
+        _reports, out, _truth, scripts = first_cluster
+        scripts["by_model"] = _first_scripts()
+        results = _first_run(first_cluster, tuple(FIRST_MODELS),
+                             model_first="on", stage_models=FIRST_MODELS)
+        called = {e.name: e.n_calls for e in scripts["engines"]}
+        assert called == {name: 1 for name in FIRST_MODELS.values()}
+        for stage, name in FIRST_MODELS.items():
+            assert results[stage]["model"] == name
+            assert results[stage]["model_first"] == ["on"]
+            assert results[stage]["routes"] == ["pdf"]
+            assert results[stage]["prompt_versions"] == [READ_PROMPT_VERSION]
+        log = json.loads((out / "logs" / "R36_p7.json").read_text("utf-8"))
+        assert (log["model_first"], log["route"], log["prompt_version"]) == (
+            "on", "pdf", READ_PROMPT_VERSION)
+        assert log["calls"] == [{"pages": [7, 8], "stop_reason": "end_turn",
+                                 "cut_off": False, "answered": True}]
+        assert log["placement"]["values"] > 0
+        assert log["after"]["error"] is None
+        # Scored by today's scorer: the layer the answer sheet names was
+        # read, and there is no floor.
+        assert log["after"]["scores"]["layer_top"]["found"] == 1
+        assert log["after"]["record"] == log["after"]["model_record"]
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Model first (RI-87, GEOTECH_INGEST_MODEL_FIRST): `on`" in text
+        assert "Placed at a spot (plan section 8.4, gate 90 %)" in text
+
+    def test_off_reads_as_today_and_both_arms_share_the_before_column(
+            self, first_cluster, tmp_path):
+        from report_ingest.tests import test_graph as tg
+
+        pytest.importorskip("report_ingest.locate")
+        _reports, out, _truth, scripts = first_cluster
+        scripts["by_model"] = {"fake-today": [tg.log_turn("B-1")],
+                               **_first_scripts()}
+        off = _first_run(first_cluster, ("logs",), model_first="off")
+        on = _first_run(first_cluster, ("logs",), model_first="on",
+                        stage_models=FIRST_MODELS,
+                        out_dir=tmp_path / "out_on")
+        assert off["logs"]["model"] == "fake-today"
+        assert off["logs"]["model_first"] == ["off"]
+        assert "routes" not in off["logs"]
+        saved_off = json.loads(
+            (out / "logs" / "R36_p7.json").read_text("utf-8"))
+        saved_on = json.loads(
+            (tmp_path / "out_on" / "logs" / "R36_p7.json").read_text("utf-8"))
+        assert saved_off["model_first"] == "off" and "route" not in saved_off
+        # The grid is read with no model call, so it is the same in both.
+        assert saved_off["before"]["scores"] == saved_on["before"]["scores"]
+        assert set(saved_off["after"]["scores"]) == set(
+            saved_on["after"]["scores"])
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "Model first (RI-87, GEOTECH_INGEST_MODEL_FIRST): `off`." \
+            in text
+
+    @pytest.mark.parametrize("redo", [False, True])
+    def test_an_item_read_in_the_other_arm_is_a_failure_and_is_kept(
+            self, logs_cluster, redo, capsys):
+        """The seeded run files say no arm, so they were read with it off;
+        an ``on`` run names them and never overwrites them, even with
+        ``redo``, and builds no engine for them."""
+        _reports, out, _truth = logs_cluster
+        before = (out / "logs" / "R36_p38.json").read_bytes()
+        results = _logs_run(logs_cluster, model_first="on", redo=redo)
+        failures = results["logs"]["failures"]
+        assert set(failures) == {"R36_p38", "R31_p278"}
+        assert "read with model first off and this run is on" in \
+            failures["R36_p38"]
+        assert (out / "logs" / "R36_p38.json").read_bytes() == before
+        assert "skipped -- its run file was read with model first off" in \
+            capsys.readouterr().out
+
+    def test_stage_models_name_the_reader_stages_and_a_route_is_checked(
+            self, logs_cluster):
+        with pytest.raises(ValueError, match="stage_models names"):
+            _logs_run(logs_cluster, model_first="on",
+                      stage_models={"soundings": "fake-x"})
+        with pytest.raises(ValueError):
+            _logs_run(logs_cluster, model_first="on", page_route="fax")
+        with pytest.raises(ValueError):
+            _logs_run(logs_cluster, model_first="sometimes")
+
+    def test_stage_models_under_off_set_todays_reader(
+            self, logs_cluster, capsys):
+        """Both arms on the same models: off reads a named stage on its
+        model, today's reader."""
+        results = _logs_run(logs_cluster, model_first="off",
+                            stage_models={"logs": "fake-logs"})
+        assert results["logs"]["model"] == "fake-logs"
+        printed = capsys.readouterr().out
+        assert ("model first: off (today's readers); logs on fake-logs, "
+                "lab on funhouse-gpt-high") in printed
+
+    def test_the_variable_sets_the_arm_when_none_is_passed(
+            self, logs_cluster, monkeypatch):
+        monkeypatch.setenv("GEOTECH_INGEST_MODEL_FIRST", "on")
+        results = _logs_run(logs_cluster)
+        assert set(results["logs"]["failures"]) == {"R36_p38", "R31_p278"}
+
+    def test_the_ingest_on_runs_the_graph_model_first_and_says_so(
+            self, ingest_cluster, monkeypatch, tmp_path):
+        """The describer, the labeller and each reader on its own model;
+        the triage alone seeded from a label run; ``run.json`` names the
+        arm, the routes, the models, the versions and what placement found;
+        the labels are scored for pages sent to the wrong reader."""
+        from report_ingest.model_first import READ_PROMPT_VERSION
+        from report_ingest.range_labels import DESCRIBE_PROMPT_VERSION
+        from report_ingest.tests import test_graph_model_first as tgm
+        from report_ingest.tests.fake_engine import FakeEngine
+        import report_ingest.engine as engine_module
+
+        pytest.importorskip("report_ingest.locate")
+        reports_dir, out, _scripts = ingest_cluster
+        main, describer, labeller, stages = tgm._engines()
+        by_name = {"fake-main": main, "fake-describer": describer,
+                   "fake-labeller": labeller,
+                   **{FIRST_MODELS[s]: e for s, e in stages.items()}}
+
+        def fake_engine(prompter, model, meter=None, **kwargs):
+            engine = by_name.get(model) or FakeEngine([], name=model)
+            engine.served_by = "fake-deployment"
+            return engine
+
+        monkeypatch.setattr(engine_module, "PrompterEngine", fake_engine)
+        hand = tmp_path / "hand.json"
+        hand.write_text(json.dumps({"R36": {
+            "7": {"label": "boring_log", "alternates": []},
+            "20": {"label": "calculation", "alternates": []}}}),
+            encoding="utf-8")
+        results = _ingest_run(
+            ingest_cluster, model="fake-main", model_first="on",
+            stage_models=FIRST_MODELS, describe_model="fake-describer",
+            range_model="fake-labeller", oos_labels=hand)
+        assert results["ingest"]["failures"] == {}
+        assert describer.n_calls == 22 and labeller.n_calls == 2
+        assert {s: e.n_calls for s, e in stages.items()} == {
+            "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+        run = json.loads((out / "ingest" / "R36" / "run.json").read_text(
+            "utf-8"))
+        assert run["model_first"] == "on"
+        assert run["routes"] == {s: "pdf" for s in FIRST_MODELS}
+        assert run["models"] == {**FIRST_MODELS, "describer": "fake-describer",
+                                 "labeller": "fake-labeller"}
+        assert run["prompt_version"] == READ_PROMPT_VERSION
+        assert run["ranges"]["arm"] == "plain"
+        assert run["ranges"]["describe_prompt"] == DESCRIBE_PROMPT_VERSION
+        assert run["placement"]["values"] > 0
+        assert run["labels"]["harmful"] == {"rules": 0, "final": 0}
+        assert results["ingest"]["model_first"] == ["on"]
+        assert results["ingest"]["routes"] == ["pdf"]
+        assert not (out / "ingest" / "R36" / "vision.json").exists()
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "wrong rdr" in text and "`on`" in text
+
+    def test_the_ingest_off_reads_each_named_stage_on_its_model(
+            self, ingest_cluster, monkeypatch):
+        """Off with ``stage_models``: today's readers each on their stage's
+        model, the triage and the identity call on ``model``, the vision
+        voter on its own; ``run.json`` names the readers' models."""
+        from report_ingest.tests import test_graph as tg
+        from report_ingest.tests.fake_engine import FakeEngine
+        import report_ingest.engine as engine_module
+
+        _reports, out, _scripts = ingest_cluster
+        turns = {
+            "fake-main": [tg.triage_turn(), tg.identity_turn()],
+            "funhouse-gpt-low": tg.vision_turns(),
+            "fake-narrative": [tg.narrative_turn(),
+                               tg.bound_narrative_turn()],
+            "fake-logs": [tg.log_turn("B-1"), tg.log_turn("TP-1", "test_pit"),
+                          tg.log_turn("BH-1")],
+            "fake-lab": [tg.lab_turn("atterberg", 12),
+                         tg.lab_turn("gradation", 13)],
+            "fake-calc": [tg.calc_turn()]}
+        by_name = {name: FakeEngine(list(script), name=name)
+                   for name, script in turns.items()}
+
+        def fake_engine(prompter, model, meter=None, **kwargs):
+            engine = by_name.get(model) or FakeEngine([], name=model)
+            engine.served_by = "fake-deployment"
+            return engine
+
+        monkeypatch.setattr(engine_module, "PrompterEngine", fake_engine)
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              model_first="off", stage_models=FIRST_MODELS)
+        assert results["ingest"]["failures"] == {}
+        assert {name: e.n_calls for name, e in by_name.items()} == {
+            name: len(script) for name, script in turns.items()}
+        run = json.loads((out / "ingest" / "R36" / "run.json").read_text(
+            "utf-8"))
+        assert run["model_first"] == "off"
+        assert run["models"] == FIRST_MODELS
+        assert results["ingest"]["model_first"] == ["off"]
+
+    def test_the_ingest_off_says_off_and_scores_the_wrong_reader_pages(
+            self, ingest_cluster, tmp_path):
+        from report_ingest.tests import test_graph as tg
+
+        _reports, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        hand = tmp_path / "hand.json"
+        hand.write_text(json.dumps({"R36": {
+            "7": {"label": "boring_log", "alternates": []},
+            "12": {"label": "narrative", "alternates": []}}}),
+            encoding="utf-8")
+        results = _ingest_run(ingest_cluster, model_first="off",
+                              oos_labels=hand)
+        (row,) = results["ingest"]["per_report"]
+        assert row["model_first"] == "off" and "routes" not in row
+        # Page 12 is a laboratory sheet the hand calls narrative: a page
+        # sent to the lab reader rather than the narrative's.
+        assert row["labels"]["harmful"] == {"rules": 1, "final": 1}
+        assert results["ingest"]["totals"]["labels"]["harmful_final"] == 1

@@ -194,6 +194,13 @@ ITEM_READERS: Dict[str, str] = {
     "calculation": "calc",
 }
 
+#: Today's reader of each stage model first reads (BACKLOG RI-87), by the
+#: stage names ``stage_engines`` takes. With model first off, a stage named
+#: there is read by this reader on the engine given, so the two arms can be
+#: measured on the same model for each stage (:func:`ingest_report`).
+TODAY_READERS: Dict[str, str] = {
+    "logs": "log", "lab": "lab", "calc": "calc", "narrative": "narrative"}
+
 #: The files :func:`report_ingest.writers.write_outputs` leaves behind.
 OUTPUT_NAMES: Tuple[str, ...] = (
     "report.record.json", "report.summary.md", "report.page.md",
@@ -697,8 +704,12 @@ def ingest_report(source: Any, engine: Any, *,
         every stage on ``engine``. ``page_route`` says how the pages are
         sent: ``auto``, ``pdf`` or ``pictures``, or ``None`` to follow
         ``GEOTECH_INGEST_MODEL_FIRST_PAGES``. ``label_policy="rules"`` is
-        refused: the groups are drawn from the range labels. Ignored when
-        off.
+        refused: the groups are drawn from the range labels. Off,
+        ``stage_engines`` may still be a mapping: today's reader of each
+        stage it names (:data:`TODAY_READERS`) reads on that engine, so the
+        two arms can be measured on the same models; the soundings, the
+        triage, the vision voter and the label review stay on their own
+        engines. ``page_route`` is ignored when off.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost.
@@ -746,6 +757,7 @@ def ingest_report(source: Any, engine: Any, *,
     first_run = (_model_first_run(source, engine, tally, labelling,
                                   stage_engines, page_route, questions, qa)
                  if first else None)
+    readers = None if first else _today_readers(stage_engines, tally, qa)
 
     doc = _open(source, di_result, report_id)
     try:
@@ -754,7 +766,7 @@ def ingest_report(source: Any, engine: Any, *,
         record = _run(doc, engine, budgets, out, resume, questions or [],
                       report_id, spend, qa, unresolved, di_result, labelling,
                       children, ingest_bound, counts_from_logs,
-                      narrative_skips_bound, first_run)
+                      narrative_skips_bound, first_run, readers)
     finally:
         if not _is_document(source):
             doc.close()
@@ -796,6 +808,40 @@ def ingest_report(source: Any, engine: Any, *,
     return record
 
 
+def _today_readers(stage_engines: Any, tally: _Tally,
+                   qa: List[QAEntry]) -> Optional[Dict[str, Any]]:
+    """With model first off, today's readers on the engines
+    ``stage_engines`` names (:data:`TODAY_READERS`), counted on the run's
+    tally, and one QA note that names them. None when it names none: every
+    reader reads on the run's engine, as before.
+
+    A mapping only: a callable is given the model names of
+    :mod:`report_ingest.model_first_read`, which a run with model first off
+    does not import."""
+    if stage_engines is None:
+        return None
+    if not isinstance(stage_engines, dict):
+        raise ValueError("with model first off, stage_engines is a mapping "
+                         "from logs, lab, calc or narrative to an engine")
+    unknown = sorted(set(stage_engines) - set(TODAY_READERS))
+    if unknown:
+        raise ValueError(f"stage_engines names {unknown}; the stages are "
+                         f"{list(TODAY_READERS)}")
+    named = [stage for stage in TODAY_READERS
+             if stage_engines.get(stage) is not None]
+    if not named:
+        return None
+    qa.append(QAEntry(
+        kind="note", where="readers",
+        detail="today's readers, each stage named here on its own engine "
+               "(stage_engines); the rest of the run on the run's engine",
+        values=[f"{stage}: "
+                f"{getattr(stage_engines[stage], 'name', '') or 'engine'}"
+                for stage in named]))
+    return {TODAY_READERS[stage]: tally.wrap(stage_engines[stage])
+            for stage in named}
+
+
 def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
          questions: Sequence[str], report_id: str, spend: _Spend,
          qa: List[QAEntry], unresolved: List[Dict[str, Any]],
@@ -803,13 +849,16 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
          children: List[Tuple[ReportRecord, str]],
          ingest_bound: bool = True, counts_from_logs: str = "off",
          narrative_skips_bound: bool = False,
-         model_first: Optional[_ModelFirst] = None) -> ReportRecord:
+         model_first: Optional[_ModelFirst] = None,
+         readers: Optional[Dict[str, Any]] = None) -> ReportRecord:
     """The loop itself, with the document open.
 
     ``children`` is filled with ``(record, folder)`` for every report bound
     inside this one, for the caller to write; they are not written here
     because the library key and the database both belong to the caller's
-    ``source``, which this function does not have.
+    ``source``, which this function does not have. ``readers`` puts today's
+    reader of a stage on its own engine (:func:`_today_readers`), in this
+    report and in the reports bound inside it.
     """
     from planlens.document.model import SOURCE_AZURE_DI
     from planlens.document.roles import (
@@ -963,7 +1012,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                            else labels, outline, record, spend, qa,
                            unresolved, workflow, no_text, di_pages, told,
                            bound, window,
-                           narrative_key="-skips-bound" if window else "")
+                           narrative_key="-skips-bound" if window else "",
+                           readers=readers)
     else:
         mine, every, items, rest = _model_first_plan(
             doc, model_first, own, window, every, budgets.max_items)
@@ -990,7 +1040,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         reads = _read_bound(doc, engine, budgets, out, resume, report_id,
                             facts, vision, templates, labelling, ranges,
                             told, record, children, spend, qa, no_text,
-                            di_pages, counts_from_logs, model_first)
+                            di_pages, counts_from_logs, model_first,
+                            readers)
         _handed_over(every, handed, ranges, reads, qa)
     return record
 
@@ -1654,7 +1705,8 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
                 qa: List[QAEntry], no_text: Sequence[int],
                 di_pages: Sequence[int],
                 counts_from_logs: str = "off",
-                model_first: Optional[_ModelFirst] = None
+                model_first: Optional[_ModelFirst] = None,
+                readers: Optional[Dict[str, Any]] = None
                 ) -> Dict[str, Optional[Set[Tuple[int, str]]]]:
     """Each bound document round this same loop, into its own record.
 
@@ -1685,7 +1737,7 @@ def _read_bound(doc: Any, engine: Any, budgets: Budgets, out: str,
                                      report_id, facts, vision, templates,
                                      labelling, row, identity, record, spend,
                                      no_text, di_pages, counts_from_logs,
-                                     model_first)
+                                     model_first, readers)
         except Exception as exc:              # one child, not the report
             spend.settle(mark)
             entry.read = False
@@ -1735,7 +1787,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                spend: _Spend, no_text: Sequence[int],
                di_pages: Sequence[int],
                counts_from_logs: str = "off",
-               model_first: Optional[_ModelFirst] = None
+               model_first: Optional[_ModelFirst] = None,
+               readers: Optional[Dict[str, Any]] = None
                ) -> Tuple[ReportRecord, List[Any]]:
     """One bound document as its own record, on the parent's page numbers.
 
@@ -1944,7 +1997,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                            child.document.workflow,
                            [p for p in no_text if p in at],
                            [p for p in di_pages if p in at],
-                           window=window)
+                           window=window, readers=readers)
     else:
         mine, every, items, rest = _model_first_plan(
             doc, model_first, labels, window, every, budgets.max_items)
@@ -2076,14 +2129,17 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 bound_told: Sequence[Dict[str, Any]] = (),
                 bound_pages: Collection[int] = (),
                 window: Optional[Sequence[int]] = None,
-                narrative_key: str = "") -> List[Any]:
+                narrative_key: str = "",
+                readers: Optional[Dict[str, Any]] = None) -> List[Any]:
     """Every work item through its reader, into ``record``.
 
     Returns the items whose reader ran to the end (or whose reading came
     off disk): what a caller may say was READ, as against what was only
     listed. ``narrative_key`` marks the narrative's cache file when what
     its reader is shown differs from the default (``narrative_skips_bound``),
-    so a resumed run never takes one reading for the other.
+    so a resumed run never takes one reading for the other. ``readers``
+    gives today's reader of a stage its own engine (:func:`_today_readers`);
+    a reader not in it reads on ``engine``.
     """
     from report_ingest.model import (
         Calculation, GeneralFacts, Investigation, LabTest, NarrativeFacts,
@@ -2138,10 +2194,11 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
         cached = _cached(path, resume)
         mark = spend.mark()
         where = f"items.{item.kind}.{key}"
+        item_engine = (readers or {}).get(reader, engine)
         try:
             if reader == "narrative":
                 blob = cached or _read_narrative(
-                    doc, pages, engine, budgets, outline, report_id, body,
+                    doc, pages, item_engine, budgets, outline, report_id, body,
                     questions, bound_told, window)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
@@ -2153,7 +2210,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     blob["facts"])
                 unresolved.extend(blob.get("unresolved") or [])
             elif reader == "log":
-                blob = cached or _read_log(doc, pages, engine, budgets,
+                blob = cached or _read_log(doc, pages, item_engine, budgets,
                                            item, report_id)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
@@ -2185,7 +2242,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     from report_ingest.visual_scales import trace_check_qa
                     qa.extend(trace_check_qa(blob["code_trace"], pages))
             elif reader == "calc":
-                blob = cached or _read_calc(doc, pages, engine, budgets,
+                blob = cached or _read_calc(doc, pages, item_engine, budgets,
                                             item, report_id)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
@@ -2196,7 +2253,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 unresolved.extend(blob.get("unresolved") or [])
                 _vote_qa(qa, blob, pages)
             else:
-                blob = cached or _read_lab(doc, pages, engine, budgets,
+                blob = cached or _read_lab(doc, pages, item_engine, budgets,
                                            item, report_id)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)

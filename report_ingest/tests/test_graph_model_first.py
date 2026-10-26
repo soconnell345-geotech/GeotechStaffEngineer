@@ -327,6 +327,77 @@ class TestOffIsToday:
         assert done.stdout.strip().splitlines()[-1] == "[]"
 
 
+class TestTodaysReadersOnTheirOwnEngines:
+    """Off, ``stage_engines`` puts today's reader of each stage it names on
+    that engine, so the two arms are measured on the same models per stage
+    (the Foundry brief's D3). Unset, the snapshot above holds."""
+
+    @staticmethod
+    def _ingest(tmp_path, engine, stage_engines):
+        from report_ingest import graph
+        from report_ingest.tests.narrative_fixtures import (
+            build_narrative_report)
+
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        pdf = tmp_path / "SYN.pdf"
+        pdf.write_bytes(build_narrative_report().pdf)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("GEOTECH_INGEST_")}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.dict(sys.modules,
+                                {m: None for m in MODEL_FIRST_MODULES}):
+            return graph.ingest_report(
+                pdf, engine, out_dir=tmp_path / "out", report_id="SYN",
+                model_first="off", stage_engines=stage_engines)
+
+    def test_each_named_stage_reads_on_its_engine(self, tmp_path):
+        """The scripted standard run with the readers taken off the run's
+        engine: each reader's calls go to its stage's engine, this report's
+        and the bound report's alike; the triage, the vision voter and the
+        identity call stay on the run's engine; the record is the same and
+        counts every call; no model-first module is imported."""
+        from report_ingest.tests import test_graph as tg
+        from report_ingest.tests.fake_engine import FakeEngine
+
+        main = FakeEngine([tg.triage_turn()] + tg.vision_turns()
+                          + [tg.identity_turn()], name="fake-main")
+        stages = {
+            "narrative": FakeEngine([tg.narrative_turn(),
+                                     tg.bound_narrative_turn()],
+                                    name="fake-narrative"),
+            "logs": FakeEngine([tg.log_turn("B-1"),
+                                tg.log_turn("TP-1", "test_pit"),
+                                tg.log_turn("BH-1")], name="fake-logs"),
+            "lab": FakeEngine([tg.lab_turn("atterberg", 12),
+                               tg.lab_turn("gradation", 13)],
+                              name="fake-lab"),
+            "calc": FakeEngine([tg.calc_turn()], name="fake-calc")}
+        record = self._ingest(tmp_path / "split", main, stages)
+        for engine in [main, *stages.values()]:
+            assert engine.n_calls == len(engine.turns), engine.name
+        today = self._ingest(tmp_path / "one", FakeEngine(tg.full_script()),
+                             None)
+        assert record.document.model_calls == today.document.model_calls
+        for part in ("investigations", "lab_tests", "calculations",
+                     "general", "narrative", "bound_documents"):
+            assert (record.model_dump()[part]
+                    == today.model_dump()[part]), part
+        (note,) = [q for q in record.qa if q.where == "readers"]
+        assert note.values == ["logs: fake-logs", "lab: fake-lab",
+                               "calc: fake-calc",
+                               "narrative: fake-narrative"]
+        assert not [q for q in today.qa if q.where == "readers"]
+
+    def test_a_callable_or_an_unknown_stage_is_refused(self, tmp_path):
+        from report_ingest.tests.fake_engine import FakeEngine
+
+        with pytest.raises(ValueError, match="is a mapping"):
+            self._ingest(tmp_path, FakeEngine([]), lambda model: None)
+        with pytest.raises(ValueError, match="stage_engines names"):
+            self._ingest(tmp_path, FakeEngine([]),
+                         {"soundings": FakeEngine([])})
+
+
 # ---------------------------------------------------------------------------
 # the switch's settings
 # ---------------------------------------------------------------------------

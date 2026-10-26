@@ -88,7 +88,20 @@ sits beside the pipeline's `model` and `after`. It is metered and resumes as
 minutes), writes `plain_<stage>_<model>/` in the same gitignored folder, and
 rewrites `RESULTS.md` there with each item beside the pipeline's arm
 re-scored with the current scorers. `report --stage <stage>` rewrites it for
-$0. The offline test drives it with a scripted model.
+$0. The offline test drives it with a scripted model. `--model-first`
+(2026-10-26, RI-87 piece 9) reads the same items with the model-first reader
+of each stage instead (`report_ingest.model_first_scoring`: the model-first
+instruction, `checks='flag'`, placement by text, the same scorer) into
+`first_<stage>_<model>/`; `arm.json` and every run file name the arm, the
+page route and the instruction version, and RESULTS.md adds what placement
+found.
+
+`dry_run_model_first` (2026-10-26, RI-87 piece 9) runs `score_on_cluster`'s
+four reader stages with model first off and on over the first answer sheets
+of each stage, at $0: every call is answered with the plain baseline's saved
+reading for that item. It checks the plumbing of both arms on the real
+reports (page cuts, routes, placement, scorers, run files) and prints counts
+only; both arms' outputs go under the claude_local raw folder.
 
 `ags_truth` (2026-10-24, RI-79) writes the logs stage's answer sheets for
 the public blind set's BGS scans from the AGS4 data delivered for the same

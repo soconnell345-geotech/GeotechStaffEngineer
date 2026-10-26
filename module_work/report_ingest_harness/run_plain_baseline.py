@@ -41,6 +41,22 @@ Run it from the repo root (or a worktree) with the app venv::
 
     ... run_plain_baseline report --stage calc       # $0: RESULTS.md again
 
+THE MODEL-FIRST ARM (``--model-first``; BACKLOG RI-87, plan section 8.8
+wave MF-1) reads the same items with the model-first reader of the stage
+(:mod:`report_ingest.model_first_scoring`) on the same engine: the item's
+own pages as one PDF with the model-first instruction (the plain one plus
+what plan section 8.5 adds), one call where the reply fits (two halves where
+it does not), the record built at ``checks="flag"``, each value placed by
+the words printed on its page, and the score by the same scorer. The
+narrative is read on the graph's narrative pages, not the whole report. The
+report is opened through :class:`report_ingest.corpus.Corpus` (with its
+Document Intelligence text where there is one, as the cluster opens it), so
+placement reads the same words the pipeline does. Its folder is
+``first_<stage>_<model>`` and ``arm.json`` and every run file name it:
+``model_first: "on"``, the page route, the instruction version, each
+call's pages and what placement found. One folder holds one arm; the
+settings check refuses the other.
+
 METERED AND RESUMABLE exactly as :mod:`.run_claude_local`: the wave is
 opened on the one shared ledger (the main checkout's), a ``SpendMeter`` sits
 on the ``ChatAnthropic`` object, and the first call past the wave's cap or
@@ -270,8 +286,14 @@ def _paths(args: argparse.Namespace) -> Dict[str, Path]:
             else main / rcl.OUT_REL}
 
 
+def _first(args: argparse.Namespace) -> bool:
+    """The model-first arm (``--model-first``) rather than the plain one."""
+    return bool(getattr(args, "model_first", False))
+
+
 def _out_dir(args: argparse.Namespace, paths: Dict[str, Path]) -> Path:
-    arm = args.arm or f"plain_{args.stage}_{rcl.short_model(args.model)}"
+    arm = args.arm or (f"{'first' if _first(args) else 'plain'}_"
+                       f"{args.stage}_{rcl.short_model(args.model)}")
     return Path(args.out_dir) if args.out_dir else paths["main"] / \
         rcl.OUT_REL / arm
 
@@ -336,6 +358,54 @@ def read_item(stage: str, truth_path: Path, reports: Path, engine: Any,
     return blob
 
 
+def read_first_item(stage: str, truth_path: Path, corpus: Any,
+                    engine: Any, openset: Sequence[str],
+                    page_route: Optional[str] = None) -> Dict[str, Any]:
+    """One item read model first: the stage's model-first reader, the
+    record at ``checks="flag"``, placement, the stage's scorer. A call
+    refused by the cap is raised, as :func:`read_item` raises it; another
+    call that raised leaves a run file with no ``stop_reason``, which the
+    next run reads again."""
+    from report_ingest import model_first_scoring as mfs
+
+    truth = json.loads(truth_path.read_text(encoding="utf-8"))
+    item = truth_path.stem
+    report = rcl.report_of(item)
+    blob: Dict[str, Any] = {
+        "item": item, "report": report, "set": _set_of(report, openset),
+        "stage": stage, "arm": "model_first"}
+    started = time.time()
+    with corpus.open_report(report, di="auto", warn=False) as doc:
+        if stage == "narrative":
+            score, arm = mfs.first_narrative(truth, doc, engine,
+                                             report=report,
+                                             page_route=page_route)
+            parts = {"score": score.to_dict()}
+            blob["pages"] = [int(p) for p in score.pages or []]
+        else:
+            read = {"logs": mfs.first_log, "lab": mfs.first_sheet,
+                    "calc": mfs.first_calc}[stage]
+            before, after, arm = read(truth, doc, engine, report_id=report,
+                                      page_route=page_route)
+            parts = {"before": before.to_dict(), "after": after.to_dict()}
+            blob["pages"] = item_pages(stage, truth)
+    blob.update(arm)
+    blob.update(parts)
+    blob["pdf_pages"] = len({int(p) for call in arm.get("calls") or []
+                             for p in call.get("pages") or []})
+    blob["seconds"] = round(time.time() - started, 1)
+    blob["served_by"] = engine.served_by
+    if arm.get("calls"):
+        blob["stop_reason"] = str(arm["calls"][-1].get("stop_reason") or "")
+    else:
+        said = str((parts.get("after") or parts.get("score") or {})
+                   .get("error") or "")
+        if rcl.CAP_TEXT.search(said):
+            raise RuntimeError(said)
+    blob["cost"] = engine.meter.to_dict()
+    return blob
+
+
 def run(args: argparse.Namespace,
         chat_builder: Callable[[str, Sequence[Any]], Any] = rcl.claude_chat
         ) -> int:
@@ -356,8 +426,19 @@ def run(args: argparse.Namespace,
                   f"ignore it; run files hold private content")
             return rcl.REFUSED
     (out / stage).mkdir(parents=True, exist_ok=True)
-    settings = {"stage": stage, "model": model, "arm": "plain",
-                "instruction": INSTRUCTIONS[stage]}
+    first_arm = _first(args)
+    page_route = getattr(args, "page_route", None)
+    settings: Dict[str, Any] = {"stage": stage, "model": model,
+                                "arm": "plain",
+                                "instruction": INSTRUCTIONS[stage]}
+    if first_arm:
+        from report_ingest.model_first_pages import page_route as route_of
+
+        settings = {"stage": stage, "model": model, "arm": "model_first",
+                    "model_first": "on",
+                    "prompt_version": _model_first.READ_PROMPT_VERSION,
+                    "page_route": route_of(page_route),
+                    "instruction": _model_first.INSTRUCTIONS[stage]}
     saved = rcl._load(out / "arm.json")
     if saved and {k: saved.get(k) for k in settings} != settings:
         print(f"refused: {out} holds a run with other settings "
@@ -374,7 +455,8 @@ def run(args: argparse.Namespace,
     openset = rcl.open_reports(stage, paths["truth"] / stage)
     todo = [p for p in chosen
             if args.redo or not _saved_ok(out / stage / f"{p.stem}.json")]
-    print(f"plain {stage} on {model}: {len(chosen)} item(s) chosen, "
+    print(f"{'model-first' if first_arm else 'plain'} {stage} on {model}: "
+          f"{len(chosen)} item(s) chosen, "
           f"{len(chosen) - len(todo)} already read, {len(todo)} to read; "
           f"wave {args.wave} cap {rcl.usd(args.cap)}")
     if not todo:
@@ -384,13 +466,21 @@ def run(args: argparse.Namespace,
     ledger = rcl.shared_ledger(paths["ledger"])
     try:
         ledger.begin_wave(args.wave, args.cap, model=model,
-                          mode=f"report_ingest:plain:{stage}")
+                          mode=f"report_ingest:"
+                               f"{'model_first' if first_arm else 'plain'}:"
+                               f"{stage}")
     except RefuseToStart as exc:
         print(f"refused: {exc}")
         return rcl.REFUSED
     meter = SpendMeter(ledger, args.wave, args.cap, model_id=model)
-    meter.scenario = f"plain_{stage}"
+    label = f"{'first' if first_arm else 'plain'}_{stage}"
+    meter.scenario = label
     reader = chat_builder(model, [meter])
+    corpus = None
+    if first_arm:
+        from report_ingest.corpus import Corpus
+
+        corpus = Corpus(paths["reports"])
     rcl.price_the_scorecard({model})
     Engine = _engine_class()
     retries = rcl.RetryLog()
@@ -407,8 +497,10 @@ def run(args: argparse.Namespace,
                 first = len(meter.calls)
                 engine = Engine(reader, meter=CostMeter())
                 try:
-                    blob = read_item(stage, path, paths["reports"], engine,
-                                     openset)
+                    blob = (read_first_item(stage, path, corpus, engine,
+                                            openset, page_route) if first_arm
+                            else read_item(stage, path, paths["reports"],
+                                           engine, openset))
                 except Exception as exc:                # noqa: BLE001
                     said = f"{type(exc).__name__}: {exc}"
                     if rcl.CAP_TEXT.search(said):
@@ -419,7 +511,8 @@ def run(args: argparse.Namespace,
                     blob = {"item": path.stem,
                             "report": rcl.report_of(path.stem),
                             "set": _set_of(rcl.report_of(path.stem), openset),
-                            "stage": stage, "arm": "plain",
+                            "stage": stage,
+                            "arm": "model_first" if first_arm else "plain",
                             "score" if stage == "narrative" else "after":
                                 {"error": said[:500]},
                             "cost": engine.meter.to_dict()}
@@ -438,7 +531,7 @@ def run(args: argparse.Namespace,
     finally:
         ledger.end_wave(args.wave)
         rcl._append_jsonl(out / "spend_calls.jsonl", (
-            {**call, "arm": f"plain_{stage}"} for call in meter.calls))
+            {**call, "arm": label} for call in meter.calls))
         rcl._append_jsonl(out / "sdk_retries.jsonl", retries.rows)
 
     lines = write_results(out, stage, paths, args.pipeline_arm)
@@ -611,21 +704,39 @@ def write_results(out: Path, stage: str, paths: Dict[str, Path],
     the pipeline's arm, per set and per item; and the spend."""
     rows = compare_rows(out, stage, paths, pipeline_arm)
     arm = pipeline_arm or PIPELINE_ARMS[stage]
-    lines = [f"# The plain baseline: {stage}", "",
-             f"Each item's pages as one PDF document block, one short "
-             f"instruction, the stage's own answer schema as the answer tool, "
-             f"ONE call; the record built from the answer alone by the "
-             f"stage's builder and scored by the stage's scorer. Beside it, "
-             f"the pipeline's arm `{arm}`, re-scored with the current "
-             f"scorers at $0"
-             + (" (the calculation merge redone with the current merge)"
-                if stage == "calc" else "")
-             + ". `model` is the pipeline reader's answer alone (it had the "
-               "brief and the starting record in view; the log depth gate "
-               "applied); `after` is the pipeline's record. The plain arm is "
-               "built the way `model` is.", ""]
+    first = (rcl._load(out / "arm.json") or {}).get("model_first") == "on"
+    col = "first" if first else "plain"
+    lines = ([f"# Model first: {stage}", "",
+              f"`first` is the model-first arm (BACKLOG RI-87): each item's "
+              f"pages as one PDF document block with the model-first "
+              f"instruction, the stage's answer schema with plan section "
+              f"8.5's added fields, one call (two halves for a reply that "
+              f"does not fit); the record built at checks='flag', each "
+              f"value placed by the words on its page, and scored by the "
+              f"stage's scorer. Beside it, the pipeline's arm `{arm}`, "
+              f"re-scored with the current scorers at $0"]
+             if first else
+             [f"# The plain baseline: {stage}", "",
+              f"Each item's pages as one PDF document block, one short "
+              f"instruction, the stage's own answer schema as the answer "
+              f"tool, ONE call; the record built from the answer alone by "
+              f"the stage's builder and scored by the stage's scorer. "
+              f"Beside it, the pipeline's arm `{arm}`, re-scored with the "
+              f"current scorers at $0"])
+    lines[-1] = (lines[-1]
+                 + (" (the calculation merge redone with the current "
+                    "merge)" if stage == "calc" else "")
+                 + ". `model` is the pipeline reader's answer alone (it had "
+                   "the brief and the starting record in view; the log depth "
+                   "gate applied); `after` is the pipeline's record. The "
+                 + ("model-first arm has no floor and no merge, so it is "
+                    "built the way `model` is." if first else
+                    "plain arm is built the way `model` is."))
+    lines.append("")
+    if first:
+        lines += _placement_lines(out, stage)
     if stage == "narrative":
-        lines += ["| set | items | plain recall | plain precision | "
+        lines += [f"| set | items | {col} recall | {col} precision | "
                   "pipeline recall | pipeline precision |",
                   "|---|---:|---:|---:|---:|---:|"]
         for name in ("open", "blind", "all"):
@@ -641,8 +752,8 @@ def write_results(out: Path, stage: str, paths: Dict[str, Path],
             lines.append(f"| {name} | {len(group)} | "
                          + " | ".join(_frac(tuple(sums[k])) for k in sums)
                          + " |")
-        lines += ["", "| item | set | plain recall | plain precision | "
-                      "pipeline recall | pipeline precision | plain verdicts "
+        lines += ["", f"| item | set | {col} recall | {col} precision | "
+                      f"pipeline recall | pipeline precision | {col} verdicts "
                       "| pipeline verdicts | USD |",
                   "|---|---|---:|---:|---:|---:|---|---|---:|"]
         for r in rows:
@@ -654,7 +765,8 @@ def write_results(out: Path, stage: str, paths: Dict[str, Path],
                 f"{json.dumps(v.get('plain') or {})} | "
                 f"{json.dumps(v.get('after') or {})} | {r['cost']:.4f} |")
     else:
-        lines += ["| set | items | plain | pipeline model | pipeline after |",
+        lines += [f"| set | items | {col} | pipeline model | "
+                  f"pipeline after |",
                   "|---|---:|---:|---:|---:|"]
         for name in ("open", "blind", "all"):
             group = [r for r in rows if not r.get("skipped")
@@ -669,9 +781,10 @@ def write_results(out: Path, stage: str, paths: Dict[str, Path],
                          + " | ".join(_frac(tuple(sums[k])) for k in sums)
                          + " |")
         lines += ["", "Per item (counts only; `differs` names the metrics "
-                      "where plain and after found a different number):", "",
-                  "| item | set | plain | model | after | plain - after | "
-                  "differs | plain record | pipeline record | page text | "
+                      f"where {col} and after found a different number):",
+                  "",
+                  f"| item | set | {col} | model | after | {col} - after | "
+                  f"differs | {col} record | pipeline record | page text | "
                   "USD |",
                   "|---|---|---:|---:|---:|---:|---|---|---|---|---:|"]
         for r in rows:
@@ -711,9 +824,30 @@ def write_results(out: Path, stage: str, paths: Dict[str, Path],
         lines.append(f"Items skipped (too large for one PDF block): "
                      f"{', '.join(skipped)}.")
     lines += ["", "## The instruction", "", "```",
-              INSTRUCTIONS[stage], "```", ""]
+              (_model_first.INSTRUCTIONS if first else INSTRUCTIONS)[stage],
+              "```", ""]
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return lines
+
+
+def _placement_lines(out: Path, stage: str) -> List[str]:
+    """What placement did over the model-first run files (plan section
+    8.4's gate counts values placed at a spot of those on pages with
+    text)."""
+    values = with_text = at_a_spot = page_level = 0
+    for path in sorted((out / stage).glob("*.json")):
+        placed = (rcl._load(path) or {}).get("placement") or {}
+        values += int(placed.get("values") or 0)
+        with_text += int(placed.get("with_text") or 0)
+        at_a_spot += int(placed.get("at_a_spot") or 0)
+        page_level += int(placed.get("page_level") or 0)
+    if not values:
+        return []
+    share = f" ({100.0 * at_a_spot / with_text:.1f} %)" if with_text else ""
+    return [f"Placed at a spot (plan section 8.4, gate 90 %): {at_a_spot} of "
+            f"{with_text} values on pages with text{share}; {page_level} on "
+            f"the page only; {values - with_text} on pages with no text.",
+            ""]
 
 
 def report(args: argparse.Namespace) -> int:
@@ -739,7 +873,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--model", default="claude-opus-5-5")
         p.add_argument("--arm", default=None,
                        help="the arm's folder name (default "
-                            "plain_<stage>_<model>)")
+                            "plain_<stage>_<model>, or first_<stage>_<model> "
+                            "with --model-first)")
+        p.add_argument("--model-first", action="store_true",
+                       help="read with the model-first readers (BACKLOG "
+                            "RI-87) rather than the plain call")
         p.add_argument("--out-dir", default=None)
         p.add_argument("--raw-dir", default=None)
         p.add_argument("--truth-dir", default=None)
@@ -759,6 +897,10 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--cap", type=float, required=True, help="USD")
             p.add_argument("--ledger", default=None)
             p.add_argument("--redo", action="store_true")
+            p.add_argument("--page-route", default=None,
+                           choices=("auto", "pdf", "pictures"),
+                           help="how --model-first sends the pages (default: "
+                                "GEOTECH_INGEST_MODEL_FIRST_PAGES, else auto)")
             p.add_argument("--time-limit", type=float,
                            default=DEFAULT_TIME_LIMIT,
                            help="seconds after which no new item starts")

@@ -318,3 +318,82 @@ def test_an_arm_is_not_resumed_under_another_instruction(made_up, monkeypatch):
     assert rpb.run(_args(made_up), chat_builder=_builder([], [])) == \
         rcl.REFUSED
     assert os.path.isfile(made_up / "out" / "arm.json")
+
+
+# -- the model-first arm (BACKLOG RI-87 piece 9) -----------------------------
+
+def test_the_model_first_arm_reads_the_same_items_and_names_its_arm(made_up):
+    """The same items and the same scorer, read by the model-first reader:
+    arm.json and every run file name the arm, the route and the instruction
+    version; each value is placed on its page; RESULTS.md says which arm it
+    is and what placement found."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest import model_first as mf
+
+    made: list = []
+    seen: list = []
+    code = rpb.run(_args(made_up, "--model-first"),
+                   chat_builder=_builder(made, seen))
+    assert code == rcl.OK
+    out = made_up / "out"
+    arm = json.loads((out / "arm.json").read_text(encoding="utf-8"))
+    assert (arm["arm"], arm["model_first"], arm["prompt_version"],
+            arm["page_route"]) == ("model_first", "on",
+                                   mf.READ_PROMPT_VERSION, "auto")
+    assert arm["instruction"] == mf.INSTRUCTIONS["calc"]
+    assert sum(len(f.calls) for f in made) == len(ITEMS)
+    wave = _ledger(made_up)["waves"]["t-plain"]
+    assert wave["scenarios"]["first_calc"]["calls"] == len(ITEMS)
+    calls = [json.loads(line) for line in (out / "spend_calls.jsonl")
+             .read_text(encoding="utf-8").splitlines()]
+    assert {c["arm"] for c in calls} == {"first_calc"}
+
+    blob = json.loads((out / "calc" / f"{ITEMS[0]}.json")
+                      .read_text(encoding="utf-8"))
+    assert (blob["arm"], blob["model_first"], blob["route"],
+            blob["prompt_version"]) == ("model_first", "on", "pdf",
+                                        mf.READ_PROMPT_VERSION)
+    assert blob["pages"] == [2] and blob["pdf_pages"] == 1
+    assert [c["pages"] for c in blob["calls"]] == [[2]]
+    assert blob["stop_reason"] == blob["calls"][0]["stop_reason"]
+    assert blob["after"]["error"] is None
+    assert blob["after"]["overall"]["found"] == \
+        blob["after"]["overall"]["total"] > 0
+    # Both values are printed on the page, so both are placed at a spot.
+    assert blob["placement"]["at_a_spot"] == 2
+    # The floor reads the same page with no call: the before column.
+    assert "overall" in blob["before"]
+
+    text = (out / "RESULTS.md").read_text(encoding="utf-8")
+    assert "# Model first: calc" in text
+    assert "| set | items | first | pipeline model | pipeline after |" in text
+    assert "Placed at a spot (plan section 8.4, gate 90 %)" in text
+    assert mf.INSTRUCTIONS["calc"] in text
+
+    # The plain arm is not resumed into the model-first arm's folder.
+    assert rpb.run(_args(made_up), chat_builder=_builder([], [])) == \
+        rcl.REFUSED
+
+
+def test_the_model_first_arm_has_its_own_folder_by_default(made_up):
+    args = _args(made_up, "--model-first")
+    args.out_dir = None
+    paths = rpb._paths(args)
+    assert rpb._out_dir(args, paths).name == "first_calc_opus"
+    args.model_first = False
+    assert rpb._out_dir(args, paths).name == "plain_calc_opus"
+
+
+def test_the_cap_stops_the_model_first_arm_and_leaves_the_item(made_up):
+    pytest.importorskip("report_ingest.locate")
+    made: list = []
+    code = rpb.run(_args(made_up, "--model-first",
+                         cap=str(PER_CALL * 0.5)),
+                   chat_builder=_builder(made, []))
+    assert code == rcl.STOPPED_BY_CAP
+    assert len(list((made_up / "out" / "calc").glob("*.json"))) == 1
+    made2: list = []
+    assert rpb.run(_args(made_up, "--model-first", wave="t-plain-2"),
+                   chat_builder=_builder(made2, [])) == rcl.OK
+    assert len(list((made_up / "out" / "calc").glob("*.json"))) == 2
+    assert sum(len(f.calls) for f in made2) == 1
