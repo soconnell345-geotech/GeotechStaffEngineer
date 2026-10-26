@@ -726,9 +726,12 @@ def read_calcs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                 unresolved.extend(rows)
                 warnings.extend([said] if said else [])
             reading = readings[0]
-            for later in readings[1:]:
-                reading = _fold_readings(reading, later, fresh=True,
-                                         same_value=True)
+            seen = set(answers[0][0])
+            for (call_pages, _a), later in zip(answers[1:], readings[1:]):
+                reading = _fold_readings(
+                    reading, later, fresh=True, same_value=True,
+                    later_pages=[p for p in call_pages if p not in seen])
+                seen.update(call_pages)
         builder = _Builder(reading, pages, report_id, [], [], checks="flag",
                            mapped=mapped)
         calculation = builder.build()

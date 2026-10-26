@@ -114,6 +114,12 @@ __all__ = [
 #: them the answer. A second is spent only on a run too long to show at once
 #: or on the model's own unsettled list.
 MAX_CALC_CALLS = 2
+#: Turns spent looking (a zoom) in one stage -- the first window, then the
+#: continuation -- before the tool is withdrawn. A look is not an answer and
+#: does not spend :data:`MAX_CALC_CALLS` (RI-108): a first-call zoom used to
+#: take the continuation's call, so the rest of a long printout was never
+#: shown.
+MAX_CALC_LOOK_TURNS = 1
 #: How many of a run's pages one call may carry. A calculation appendix run
 #: can be forty pages of load cases; a call that tried to carry them all
 #: would spend its context on echoed columns and answer worse than one shown
@@ -1409,9 +1415,14 @@ class CalcReadResult:
     #: True when every page of a window travelled as a picture
     #: (:data:`PAGE_IMAGES_ENV`), so a run file says which arm it is.
     page_images: bool = False
+    #: Each call's own answer before the calls were folded into one reading
+    #: (RI-108): the pages that call was shown and what it said, so a page it
+    #: cited without being shown can be checked.
+    answers: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "answers": [dict(a) for a in self.answers],
             "calculation": (self.calculation.model_dump(mode="json")
                             if self.calculation is not None else None),
             "changes": [dict(c) for c in self.changes],
@@ -2165,8 +2176,8 @@ def _brief(doc: Any, window: Sequence[int], all_pages: Sequence[int],
         f"ONE CALCULATION, printed on page(s) "
         f"{', '.join(str(p) for p in all_pages)}"
         + (f" of report {report_id}" if report_id else "") + ".",
-        f"You may make {budget} model call(s) in all, the last of them your "
-        f"answer.",
+        f"You may give {budget} answer(s) in all, the last of them final; "
+        f"looking closer at a page does not use one up.",
     ]
     if len(window) < len(all_pages):
         parts.append(
@@ -2509,7 +2520,8 @@ def _read_twice(left: ReadValue, right: ReadValue,
 
 def _fold_readings(first: CalcReading, second: CalcReading,
                    fresh: bool = False,
-                   same_value: bool = False) -> CalcReading:
+                   same_value: bool = False,
+                   later_pages: Sequence[int] = ()) -> CalcReading:
     """Two answers about one printout as one reading.
 
     The later answer wins on the scalar fields only where the first left
@@ -2527,6 +2539,12 @@ def _fold_readings(first: CalcReading, second: CalcReading,
     ``same_value``: two rows with no box are one printed value only when
     they also read the same value (:func:`_read_twice`); model-first
     ingest's answers carry no box.
+
+    ``later_pages`` (with ``fresh``): the pages only the second call was
+    shown. The first call's unsettled entries about them ("page 9 not
+    shown") are settled by the second call's reading and are dropped
+    (RI-108); whatever the second call could not settle on them is in its
+    own list.
     """
     out = first.model_copy(deep=True)
     out.kind = second.kind or first.kind
@@ -2555,7 +2573,10 @@ def _fold_readings(first: CalcReading, second: CalcReading,
                                 + list(second.pages_read)))
     if fresh:
         kept: Dict[Tuple[str, Optional[int]], Unsettled] = {}
-        for item in list(first.unsettled) + list(second.unsettled):
+        later = {int(p) for p in later_pages}
+        for item in ([u for u in first.unsettled
+                      if u.page is None or int(u.page) not in later]
+                     + list(second.unsettled)):
             kept.setdefault((fold(item.what), item.page), item)
         out.unsettled = list(kept.values())
     else:
@@ -2647,21 +2668,35 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     reading: Optional[CalcReading] = None
     final: Any = None
     followed_up = False
+    position_rows: List[Dict[str, Any]] = []
     # The continuation replaces the conversation: its answer has not seen the
     # first one, and is folded in as a reading of other pages.
     fresh = False
+    #: Answers given (a look is not one: RI-108), the turns spent looking in
+    #: this stage, the pages the conversation now shows, and each call's own
+    #: answer.
+    answered = 0
+    looks = 0
+    shown_now = list(window)
+    stage = "first"
+    answers: List[Dict[str, Any]] = []
+    later_only: List[int] = []
 
-    while model_calls < budget:
-        last = model_calls == budget - 1
-        reply = engine.complete(messages, system=system,
-                                tools=None if last else CALC_TOOLS,
-                                output_format=CalcReading)
+    while answered < budget:
+        last = answered == budget - 1
+        reply = engine.complete(
+            messages, system=system,
+            tools=None if last or looks >= MAX_CALC_LOOK_TURNS
+            else CALC_TOOLS,
+            output_format=CalcReading)
         model_calls += 1
         charge(reply)
         final = reply
         # A whole answer is taken even when the same turn also asks to
         # look: the look would cost a call to be told what it already said.
-        if reply.tool_calls and not last and reply.parsed is None:
+        if (reply.tool_calls and not last and looks < MAX_CALC_LOOK_TURNS
+                and reply.parsed is None):
+            looks += 1
             messages.append({"role": "assistant", "content": reply.content})
             results: List[Dict[str, Any]] = []
             for call in reply.tool_calls:
@@ -2671,10 +2706,27 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
                                                  is_error=is_error))
             messages.append({"role": "user", "content": results})
             continue
+        answered += 1
         if reply.parsed is not None:
-            reading = (reply.parsed if reading is None
-                       else _fold_readings(reading, reply.parsed,
-                                           fresh=fresh))
+            answers.append({"call": model_calls, "stage": stage,
+                            "pages_shown": list(shown_now),
+                            "answer": reply.parsed.model_dump(mode="json")})
+            got = reply.parsed
+            if len(shown_now) > 1:
+                # A cited position among the pages this call was sent is its
+                # report page (RI-109), read call by call because the calls
+                # were sent different pages.
+                from report_ingest.model_first_read import _on_call_pages
+                got = got.model_copy(deep=True)
+                rows, said = _on_call_pages(
+                    [v.prov for v in (*got.inputs, *got.results)]
+                    + list(got.unsettled), shown_now)
+                position_rows.extend(rows)
+                if said:
+                    warnings.append(said)
+            reading = (got if reading is None
+                       else _fold_readings(reading, got, fresh=fresh,
+                                           later_pages=later_only))
             if last or followed_up:
                 break
             # The one follow-up this reader spends: the rest of a printout it
@@ -2686,6 +2738,8 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
             rest = page_window(pages, next_start)
             if rest:
                 followed_up = fresh = True
+                shown_now, stage, looks = list(rest), "continuation", 0
+                later_only = [p for p in rest if p not in window]
                 messages = [user(
                     text_block(_CONTINUE_INSTRUCTION), text_block(
                         "\n".join(serialise_page(doc, p) for p in rest)),
@@ -2693,6 +2747,7 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
                 continue
             if reading.unsettled:
                 followed_up = True
+                stage = "unsettled"
                 messages.append({"role": "assistant",
                                  "content": reply.content or [text_block("")]})
                 messages.append(user(text_block(_UNSETTLED_INSTRUCTION.format(
@@ -2716,13 +2771,14 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     warnings.extend(builder.warnings)
     merged, merge_log = merge_calculation(floor, model_calc, MergeLog(),
                                           pool=pool)
-    merged.unsettled = [dict(u) for u in builder.unresolved]
+    unresolved = builder.unresolved + position_rows
+    merged.unsettled = [dict(u) for u in unresolved]
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
     return CalcReadResult(
         calculation=merged,
         changes=builder.changes,
-        unresolved=builder.unresolved,
+        unresolved=unresolved,
         cost=spent,
         model_calls=model_calls,
         tool_calls=tool_calls,
@@ -2736,4 +2792,5 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
         kept=merge_log.kept,
         added=merge_log.added,
         reconciled=merge_log.reconciled,
-        page_images=every_page)
+        page_images=every_page,
+        answers=answers)
