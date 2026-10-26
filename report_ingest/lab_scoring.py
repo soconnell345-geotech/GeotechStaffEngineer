@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, get_args
 
 from report_ingest.model import Quantity, si_numbers, to_si
 
@@ -784,6 +784,98 @@ def _rows_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
     return out
 
 
+class Pool(list):
+    """The numbers a record holds, and which of them are AS PRINTED.
+
+    The list itself holds every number: the converted ones (SI) and the
+    printed ones. ``printed`` holds only the printed ones -- a quantity whose
+    unit is blank or cannot be converted, and the figures a reader kept as
+    text. An answer item is compared in its OWN unit: its converted value
+    against the whole list, and the number the sheet printed only against
+    ``printed``, where the unit is not known to differ. Against a converted
+    number the printed one would credit a c of 250 kPa to an answer of
+    250 psf, and a converted value against a printed one would credit a
+    blank-unit 100 to an answer of 328 ft.
+    """
+
+    printed: List[float]
+    converted: List[float]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.printed = []
+        self.converted = []
+
+    def add_printed(self, numbers: Sequence[float]) -> None:
+        self.extend(numbers)
+        self.printed.extend(numbers)
+
+    def add_converted(self, numbers: Sequence[float]) -> None:
+        self.extend(numbers)
+        self.converted.extend(numbers)
+
+
+def _is_reported(annotation: Any) -> bool:
+    """Is a field typed ``Reported`` -- a quantity, a bare number or text?"""
+    members = set()
+    stack = [annotation]
+    while stack:
+        item = stack.pop()
+        args = get_args(item)
+        if args:
+            stack.extend(args)
+        else:
+            members.add(item)
+    return {Quantity, float, str} <= members
+
+
+def _reported_floats(value: Any, path: str = "") -> set:
+    """Paths of the bare numbers in ``Reported`` fields.
+
+    A reader keeps a value it read with no unit as a bare number there. It
+    says nothing of its unit, so it is as printed, like a blank-unit
+    quantity -- not a dimensionless number, as a plain ``wc`` or ``ll`` is.
+    """
+    out: set = set()
+    if isinstance(value, (list, tuple)):
+        for i, item in enumerate(value):
+            out |= _reported_floats(item, f"{path}[{i}]")
+        return out
+    fields = getattr(type(value), "model_fields", None)
+    if not fields:
+        return out
+    for name, info in fields.items():
+        here = f"{path}.{name}" if path else name
+        item = getattr(value, name, None)
+        if _is_reported(info.annotation):
+            if isinstance(item, (int, float)) and not isinstance(item, bool):
+                out.add(here)
+        else:
+            out |= _reported_floats(item, here)
+    return out
+
+
+def _add_quantities(pool: "Pool", holder: Any) -> None:
+    """``holder``'s numbers into ``pool``, the printed ones marked."""
+    converted = si_numbers(holder)
+    seen = {path for path, _v, _u in converted}
+    bare = _reported_floats(holder)
+    pool.add_converted([value for path, value, _unit in converted
+                        if path not in bare])
+    pool.add_printed([value for path, value, _unit in converted
+                      if path in bare])
+    pool.add_printed([value for path, value, _unit in
+                      si_numbers(holder, unitless_as_printed=True)
+                      if path not in seen])
+    pool.add_printed(_printed_numbers(holder))
+
+
+def _index_hit(pool: "Pool", value: float, printed: float) -> bool:
+    """Is this answer item in the record: converted, or as printed?"""
+    return (any(_close(v, value, EXACT_TOL) for v in pool.converted)
+            or any(_close(v, printed, EXACT_TOL) for v in pool.printed))
+
+
 def _printed_numbers(value: Any) -> List[float]:
     """The number of every :class:`Quantity` with no SI value, AS PRINTED.
 
@@ -807,7 +899,7 @@ def _printed_numbers(value: Any) -> List[float]:
     return out
 
 
-def _pool_for(tests: Sequence[Any], expect: Expectation) -> List[float]:
+def _pool_for(tests: Sequence[Any], expect: Expectation) -> Pool:
     """Every number the record holds for this specimen.
 
     Both the CONVERTED numbers of its typed result and the numbers a reader
@@ -820,19 +912,17 @@ def _pool_for(tests: Sequence[Any], expect: Expectation) -> List[float]:
     holders: List[Any] = list(rows)
     if not holders:
         holders = [test.result for test in near if test.result is not None]
-    pool: List[float] = []
+    pool = Pool()
     for holder in holders:
-        pool.extend(value for _path, value, _unit in
-                    si_numbers(holder, unitless_as_printed=True))
-        pool.extend(_printed_numbers(holder))
+        _add_quantities(pool, holder)
     texts: List[str] = []
     for test in near:
         texts.extend(str(v) for v in test.fields.values())
     for row in rows:
         texts.extend(str(v) for _name, v in row.other)
     for text in texts:
-        for token in re.findall(r"-?\d+(?:\.\d+)?", text):
-            pool.append(float(token))
+        pool.add_printed([float(token) for token in
+                          re.findall(r"-?\d+(?:\.\d+)?", text)])
     return pool
 
 
@@ -880,8 +970,7 @@ def score_record(truth: Dict[str, Any], tests: Sequence[Any]) -> LabScore:
         pool = _pool_for(tests, expect)
         for name, (value, _unit, printed) in sorted(expect.index.items()):
             out.score("index").add(
-                any(_close(v, value, EXACT_TOL)
-                    or _close(v, printed, EXACT_TOL) for v in pool),
+                _index_hit(pool, value, printed),
                 f"{where} {name}={value:.6g}")
         record_sieves = _sieves_for(tests, expect)
         for size, percent, sieve in expect.series:
@@ -903,24 +992,23 @@ def score_record(truth: Dict[str, Any], tests: Sequence[Any]) -> LabScore:
 UNLINKED_METRICS: Tuple[str, ...] = ("index", "series", "curve")
 
 
-def _pool_all(tests: Sequence[Any]) -> List[float]:
+def _pool_all(tests: Sequence[Any]) -> Pool:
     """Every number the record holds, whatever test or row it sits on."""
     from report_ingest.model import SummaryTableResult
 
-    pool: List[float] = []
+    pool = Pool()
     texts: List[str] = []
     for test in tests:
         result = test.result
         if result is not None:
-            pool.extend(v for _p, v, _u in
-                        si_numbers(result, unitless_as_printed=True))
-            pool.extend(_printed_numbers(result))
+            _add_quantities(pool, result)
             if isinstance(result, SummaryTableResult):
                 for row in result.rows:
                     texts.extend(str(v) for _name, v in row.other)
         texts.extend(str(v) for v in test.fields.values())
     for text in texts:
-        pool.extend(float(t) for t in re.findall(r"-?\d+(?:\.\d+)?", text))
+        pool.add_printed([float(t) for t in
+                          re.findall(r"-?\d+(?:\.\d+)?", text)])
     return pool
 
 
@@ -961,8 +1049,7 @@ def score_unlinked(truth: Dict[str, Any], tests: Sequence[Any]) -> LabScore:
         where = expect.label
         for name, (value, _unit, printed) in sorted(expect.index.items()):
             out.score("index").add(
-                any(_close(v, value, EXACT_TOL)
-                    or _close(v, printed, EXACT_TOL) for v in pool),
+                _index_hit(pool, value, printed),
                 f"{where} {name}={value:.6g}")
         for size, percent, sieve in expect.series:
             out.score("series").add(

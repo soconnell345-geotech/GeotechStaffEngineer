@@ -16,7 +16,7 @@ import pytest
 
 from report_ingest.lab_scoring import (
     DEPTH_TOL_M, EXACT_TOL, METRICS, PASSING_TOL, expectations_for,
-    score_record, score_tables, split_unit, table_numbers,
+    score_record, score_tables, score_unlinked, split_unit, table_numbers,
 )
 from report_ingest.model import (
     AtterbergResult, GradationResult, LabTest, Provenance, Quantity,
@@ -514,7 +514,7 @@ ELEVATION_TRUTH = {
 
 def _summary(top_unit, top_value, bottom_text):
     prov = Provenance(page=3, method="model", confidence=0.9)
-    row = SummaryRow(investigation_id="B-7", depth_top=q(10.0, "ft"),
+    row = SummaryRow(investigation_id="B-7", depth_top=q(10.0, top_unit),
                      elevation_top=q(top_value, top_unit),
                      other=[("elev_bottom", bottom_text)])
     return [LabTest(kind="summary_table", investigation_id="B-7",
@@ -524,7 +524,8 @@ def _summary(top_unit, top_value, bottom_text):
 @pytest.mark.parametrize("unit, value", [("ft", 104.0), ("m", 104.0)],
                          ids=["feet", "metres"])
 def test_a_top_elevation_scores_in_the_unit_the_report_printed(unit, value):
-    score = score_record(ELEVATION_TRUTH, _summary(unit, value, "94"))
+    truth = dict(ELEVATION_TRUTH, depth_unit=unit)
+    score = score_record(truth, _summary(unit, value, "94"))
     assert score.score("index").found == score.score("index").total == 2
 
 
@@ -567,3 +568,64 @@ def test_a_strength_in_ksf_does_not_credit_the_same_number_in_psf():
     got = score_record(truth, _row_test(c=q(250.0, "ksf"), phi_deg=30.0)
                        ).score("index")
     assert (got.found, got.total) == (1, 2)
+
+
+# ---------------------------------------------------------------------------
+# an answer item is compared in its own unit (RI-92)
+# ---------------------------------------------------------------------------
+
+def test_a_strength_in_kpa_does_not_credit_an_answer_in_psf():
+    truth = _row_truth(c_psf=250, phi_deg=30)
+    got = score_record(truth, _row_test(c=q(250.0, "kPa"), phi_deg=30.0)
+                       ).score("index")
+    assert (got.found, got.total) == (1, 2)
+
+
+def test_an_answer_in_psf_scores_a_strength_recorded_in_psf_or_in_kpa():
+    truth = _row_truth(c_psf=2088.5)
+    for record in (q(2088.5, "psf"), q(100.0, "kPa")):
+        got = score_record(truth, _row_test(c=record)).score("index")
+        assert (got.found, got.total) == (1, 1)
+
+
+def test_an_answer_in_psf_scores_a_strength_kept_as_printed_text():
+    truth = _row_truth(c_psf=250)
+    got = score_record(truth, _row_test(other=[("c", "250")])
+                       ).score("index")
+    assert (got.found, got.total) == (1, 1)
+
+
+def test_the_unlinked_score_compares_in_the_answer_unit_too():
+    truth = _row_truth(c_psf=250)
+    got = score_unlinked(truth, _row_test(c=q(250.0, "kPa"))
+                         ).score("index")
+    assert (got.found, got.total) == (0, 1)
+
+
+def test_a_reported_value_read_with_no_unit_is_as_printed():
+    from report_ingest.model import ChemicalResult
+    prov = Provenance(page=3, method="model", confidence=0.9)
+    truth = {"id": "chemical__R99_p5", "kind": "chemical",
+             "depth_unit": "ft",
+             "tests": [{"investigation_id": "B-7", "depth_top": 15.0,
+                        "resistivity_ohm_cm": 3500}]}
+    tests = [LabTest(kind="chemical", investigation_id="B-7",
+                     depth_top=q(15.0, "ft"),
+                     result=ChemicalResult(resistivity=3500.0), prov=[prov])]
+    got = score_record(truth, tests).score("index")
+    assert (got.found, got.total) == (1, 1)
+
+
+def test_a_converted_answer_is_not_matched_against_a_printed_number():
+    truth = _row_truth(elev_top_ft=328.084)
+    got = score_record(truth, _row_test(elevation_top=q(100.0, ""))
+                       ).score("index")
+    assert (got.found, got.total) == (0, 1)
+
+
+def test_an_answer_in_feet_does_not_score_the_same_number_in_metres():
+    truth = dict(ELEVATION_TRUTH, depth_unit="ft")
+    tests = _row_test(elevation_top=q(104.0, "m"),
+                      other=[("elev_bottom", "104")])
+    score = score_record(truth, tests)
+    assert (score.score("index").found, score.score("index").total) == (0, 2)
