@@ -74,7 +74,8 @@ from report_ingest.printed_depths import PrintedDepths, printed_depths
 __all__ = [
     "read_log", "LogReadResult", "LogReading", "LOG_READER_SYSTEM",
     "LOG_READER_SYSTEM_PRINTED", "MAX_MODEL_CALLS", "PAGE_DPI",
-    "DEPTH_SLACK", "ZOOM_DPI", "MAX_ZOOMS",
+    "DEPTH_SLACK", "ZOOM_DPI", "MAX_ZOOMS", "estimate_tokens",
+    "fit_conversation",
 ]
 
 #: The ceiling in the brief: one main call plus follow-ups for continuation
@@ -1567,11 +1568,95 @@ def _zooms_for(doc: Any, grid: Any, pages: Sequence[int], unsettled: Any,
 # the reader
 # ---------------------------------------------------------------------------
 
+#: What one page picture is counted as when a request is sized against a
+#: per-request token limit (BACKLOG RI-110). A deliberately high figure: a
+#: page at PAGE_DPI is a handful of tiles on the models this runs on.
+IMAGE_TOKENS_EST = 1700
+#: Characters per token when a text block is sized.
+CHARS_PER_TOKEN_EST = 3.5
+_IMAGE_OMITTED = ("[a page picture shown earlier in this conversation was "
+                  "left out to keep the request under its size limit]")
+
+
+def _blocks_of(message: Dict[str, Any]) -> List[Any]:
+    content = message.get("content")
+    return list(content) if isinstance(content, list) else [content]
+
+
+def estimate_tokens(messages: Sequence[Dict[str, Any]]) -> int:
+    """A rough count of the input tokens a conversation costs: pictures at
+    ``IMAGE_TOKENS_EST``, words at ``CHARS_PER_TOKEN_EST`` a token."""
+    total = 0.0
+    for message in messages:
+        for block in _blocks_of(message):
+            if isinstance(block, dict) and block.get("type") == "image":
+                total += IMAGE_TOKENS_EST
+            elif isinstance(block, dict) and "text" in block:
+                total += len(str(block["text"])) / CHARS_PER_TOKEN_EST
+            elif block:
+                total += len(str(block)) / CHARS_PER_TOKEN_EST
+    return int(total)
+
+
+def _drop_images(message: Dict[str, Any]) -> Dict[str, Any]:
+    blocks = _blocks_of(message)
+    if not any(isinstance(b, dict) and b.get("type") == "image"
+               for b in blocks):
+        return message
+    kept: List[Any] = []
+    said = False
+    for block in blocks:
+        if isinstance(block, dict) and block.get("type") == "image":
+            if not said:
+                kept.append(text_block(_IMAGE_OMITTED))
+                said = True
+            continue
+        kept.append(block)
+    return {**message, "content": kept}
+
+
+def fit_conversation(messages: Sequence[Dict[str, Any]],
+                     limit: Optional[int]
+                     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """``(messages, note)``: the conversation made to fit ``limit`` input
+    tokens, or as near as it can come (BACKLOG RI-110).
+
+    Unchanged (and no note) when ``limit`` is None or it already fits. Else
+    the pictures of every turn but the last are dropped, and if it is still
+    over, the middle turns are cut so that only the first brief (its pictures
+    gone), the last answer and the last request remain."""
+    out = list(messages)
+    if limit is None or estimate_tokens(out) <= limit:
+        return out, None
+    out = [_drop_images(m) for m in out[:-1]] + out[-1:]
+    note = "earlier page pictures were dropped to keep a request under its limit"
+    if estimate_tokens(out) > limit and len(out) > 3:
+        out = [out[0], out[-2], out[-1]]
+        note = ("earlier page pictures and turns were dropped to keep a "
+                "request under its limit")
+    return out, note
+
+
+def _images_fit(build, wanted: Sequence[int], base: Sequence[Dict[str, Any]],
+                limit: Optional[int]) -> Tuple[List[int], List[Dict[str, Any]]]:
+    """The first pages of ``wanted`` whose request (built by ``build(pages)``
+    and appended to ``base``) fits ``limit`` after the conversation is
+    trimmed, and that conversation. Always at least one page; the rest are
+    left for a later call."""
+    pages = list(wanted)
+    while True:
+        trial, _note = fit_conversation(list(base) + [build(pages)], limit)
+        if limit is None or len(pages) <= 1 or estimate_tokens(trial) <= limit:
+            return pages, trial
+        pages = pages[:-1]
+
+
 def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
              budget: int = MAX_MODEL_CALLS, grid: Any = None,
              ledger: Optional[Sequence[str]] = None, item_title: str = "",
              report_id: str = "", dpi: float = PAGE_DPI,
-             template: Any = None) -> LogReadResult:
+             template: Any = None,
+             max_request_tokens_in: Optional[int] = None) -> LogReadResult:
     """Read ONE exploration log and return it as an :class:`Investigation`.
 
     ``item_pages`` are the pages of one log, continuation sheets included --
@@ -1587,8 +1672,18 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     looked for against whatever fingerprints this process has in force,
     which is normally none -- so by default nothing happens and nothing
     changes.
+
+    ``max_request_tokens_in`` (BACKLOG RI-110) is a per-request input-token
+    limit. None, the default, changes nothing. Set, a request is sized
+    before it is sent (:func:`estimate_tokens`): earlier page pictures are
+    dropped from the conversation first, then its middle turns, and a
+    request whose own pages are too many carries the first of them and
+    leaves the rest for the next call.
     """
     pages = [int(p) for p in item_pages]
+    limit = (int(max_request_tokens_in)
+             if max_request_tokens_in else None)
+    size_notes: List[str] = []
     if not pages:
         raise ValueError("read_log needs at least one page")
     budget = max(1, min(int(budget), MAX_MODEL_CALLS))
@@ -1662,9 +1757,24 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
               else LOG_READER_SYSTEM)
     brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor,
                    no_ruler=no_ruler, printed=printed)
+    first_pages, unsent = pages, []
+    if limit is not None:
+        first_pages, _trial = _images_fit(
+            lambda wanted: user(
+                text_block(brief),
+                *[image_block(b"") for _ in wanted]), pages, [], limit)
+        unsent = [p for p in pages if p not in first_pages]
+        if estimate_tokens(_trial) > limit:
+            size_notes.append(
+                "the first request is over its size limit even with one "
+                "page picture; it was sent as it is")
+        if unsent:
+            size_notes.append(
+                f"pages {unsent} were not sent with the first request "
+                f"(its size limit); they are read in a later one")
     messages: List[Dict[str, Any]] = [
         user(text_block(brief),
-             *[image_block(png) for png in images_for(pages)])]
+             *[image_block(png) for png in images_for(first_pages)])]
     reply = engine.complete(messages, system=system,
                             output_format=LogReading)
     charge(reply)
@@ -1678,27 +1788,61 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # Continuation sheets: only when the reader itself says it has pages
     # left, and only within the budget. Each round re-reads the whole log, so
     # the last answer is the complete one.
-    while reading.pages_left and model_calls < budget:
-        left = [p for p in reading.pages_left if p in pages]
+    while (reading.pages_left or unsent) and model_calls < budget:
+        left = [p for p in dict.fromkeys(list(reading.pages_left) + unsent)
+                if p in pages]
         if not left:
             break
+
+        def _continue_turn(wanted: Sequence[int]) -> Dict[str, Any]:
+            return user(
+                text_block(_CONTINUE_INSTRUCTION.format(
+                    pages=", ".join(str(p) for p in wanted))),
+                text_block(serialise_rows(grid, wanted, printed)),
+                *[image_block(b"") for _ in wanted])
+
+        sent = left
+        if limit is not None:
+            sent, _trial = _images_fit(
+                _continue_turn, left,
+                messages + [{"role": "assistant",
+                             "content": reply.content or [text_block("")]}],
+                limit)
+            if estimate_tokens(_trial) > limit:
+                size_notes.append(
+                    "the next request would be over its size limit even "
+                    "with the earlier pictures dropped; the log is read "
+                    "no further")
+                break
         messages.append({"role": "assistant",
                          "content": reply.content or [text_block("")]})
         messages.append(user(
             text_block(_CONTINUE_INSTRUCTION.format(
-                pages=", ".join(str(p) for p in left))),
-            text_block(serialise_rows(grid, left, printed)),
-            *[image_block(png) for png in images_for(left)]))
+                pages=", ".join(str(p) for p in sent))),
+            text_block(serialise_rows(grid, sent, printed)),
+            *[image_block(png) for png in images_for(sent)]))
+        if limit is not None:
+            messages, note = fit_conversation(messages, limit)
+            if note and note not in size_notes:
+                size_notes.append(note)
+        resent_unsent = bool(unsent)
+        unsent = [p for p in left if p not in sent]     # cut pages carry on
         reply = engine.complete(messages, system=system,
                                 output_format=LogReading)
         charge(reply)
         model_calls += 1
         if reply.parsed is None:
             break
-        if reply.parsed.pages_left == reading.pages_left:
+        if (reply.parsed.pages_left == reading.pages_left
+                and not resent_unsent and not unsent):
             reading = reply.parsed
             break                     # no progress: stop rather than spin
         reading = reply.parsed
+    if unsent:
+        size_notes.append(
+            f"pages {unsent} were left out of a size-limited request and "
+            f"never read (the call budget ran out or the reader returned "
+            f"no answer)")
 
     # The reader's OWN unsettled list, once, when the budget allows: the
     # rows in question again, magnified. The first cluster run showed a
@@ -1717,6 +1861,10 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                 n=len(reading.unsettled), items=items,
                 are="are" if zooms else "is the page again, and")),
             *[image_block(png) for _page, _box, png in zooms]))
+        if limit is not None:
+            messages, note = fit_conversation(messages, limit)
+            if note and note not in size_notes:
+                size_notes.append(note)
         reply = engine.complete(messages, system=system,
                                 output_format=LogReading)
         charge(reply)
@@ -1755,7 +1903,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),
-        warnings=list(grid.warnings),
+        warnings=list(grid.warnings) + size_notes,
         pages=pages,
         floor=floor,
         model_investigation=model_investigation,

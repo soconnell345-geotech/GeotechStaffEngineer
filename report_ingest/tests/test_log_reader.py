@@ -1347,3 +1347,148 @@ class TestChecksFlag:
         assert _depth_slack(grid, [10, 11]) == DEPTH_SLACK * 5.0
         assert _depth_slack(grid, [12]) == 0.0
         assert _depth_slack(SimpleNamespace(rulers={}), [10]) == 0.0
+
+
+class TestRequestSizeLimit:
+    """BACKLOG RI-110: a conversation is trimmed or split before a request
+    nears a per-request input-token limit."""
+
+    @staticmethod
+    def _convo(n_images_each):
+        from report_ingest.engine import image_block, text_block, user
+        return [
+            user(text_block("brief"), *[image_block(b"x")] * n_images_each),
+            {"role": "assistant", "content": [text_block("answer")]},
+            user(text_block("again"), *[image_block(b"x")] * n_images_each),
+        ]
+
+    def test_no_limit_changes_nothing(self):
+        from report_ingest.log_reader import fit_conversation
+        msgs = self._convo(5)
+        out, note = fit_conversation(msgs, None)
+        assert out == msgs and note is None
+
+    def test_a_conversation_over_the_limit_loses_its_earlier_pictures(self):
+        from report_ingest.log_reader import (
+            estimate_tokens, fit_conversation)
+        msgs = self._convo(4)                     # about 13,600 tokens
+        limit = 9000
+        assert estimate_tokens(msgs) > limit
+        out, note = fit_conversation(msgs, limit)
+        assert note and "dropped" in note
+        assert estimate_tokens(out) <= limit
+        first = out[0]["content"]
+        assert not any(b.get("type") == "image" for b in first)
+        last = out[-1]["content"]
+        assert sum(b.get("type") == "image" for b in last) == 4
+
+    def test_the_log_reader_drops_earlier_pictures_before_a_follow_up(
+            self, imperial):
+        doc, _gt = imperial
+        first = _good_imperial_reading(pages_left=[0])
+        second = _good_imperial_reading(pages_left=[])
+        free = FakeEngine([{"final": first}, {"final": second}])
+        read_log(doc, [0], free)
+        from report_ingest.log_reader import estimate_tokens
+        # One picture counts 1,700, so a limit 800 under the unlimited
+        # second request is met by dropping the first request's picture.
+        limit = estimate_tokens(free.calls[1]["messages"]) - 800
+        engine = FakeEngine([{"final": first}, {"final": second}])
+        result = read_log(doc, [0], engine, max_request_tokens_in=limit)
+        assert result.model_calls == 2
+        sent = engine.calls[1]["messages"]
+        pictures = [b for m in sent for b in m["content"]
+                    if isinstance(b, dict) and b.get("type") == "image"]
+        assert len(pictures) <= 1
+        assert any("dropped" in w for w in result.warnings)
+
+    def test_with_no_limit_the_log_reader_is_unchanged(self, imperial):
+        doc, _gt = imperial
+        first = _good_imperial_reading(pages_left=[0])
+        second = _good_imperial_reading(pages_left=[])
+        engine = FakeEngine([{"final": first}, {"final": second}])
+        result = read_log(doc, [0], engine)
+        sent = engine.calls[1]["messages"]
+        pictures = [b for m in sent for b in m["content"]
+                    if isinstance(b, dict) and b.get("type") == "image"]
+        assert len(pictures) == 2
+        assert not any("dropped" in w for w in result.warnings)
+
+    def test_pages_over_one_request_are_split_across_calls(self):
+        from report_ingest.engine import text_block, user
+        from report_ingest.log_reader import _images_fit
+        from report_ingest.engine import image_block
+
+        def build(pages):
+            return user(text_block("brief"),
+                        *[image_block(b"x") for _ in pages])
+
+        pages, _trial = _images_fit(build, [1, 2, 3, 4, 5], [], 5000)
+        assert pages == [1, 2]                      # 2 x 1,700 + words
+        pages, _trial = _images_fit(build, [1, 2, 3], [], 10 ** 6)
+        assert pages == [1, 2, 3]
+        pages, _trial = _images_fit(build, [1, 2, 3], [], 10)
+        assert pages == [1]                         # never fewer than one
+
+
+class TestSplitAcrossCalls:
+    """BACKLOG RI-110 review: pages cut from a size-limited request are read
+    in a later one, and a cut page never read is said."""
+
+    @pytest.fixture
+    def two_sheets(self, tmp_path):
+        from planlens.testing.loggrid_fixtures import build_imperial_log
+        gt = build_imperial_log()
+        src = pymupdf.open(stream=gt.pdf, filetype="pdf")
+        again = pymupdf.open(stream=gt.pdf, filetype="pdf")
+        src.insert_pdf(again)                    # the same sheet twice
+        path = tmp_path / "two.pdf"
+        path.write_bytes(src.tobytes())
+        from planlens.document import open_document
+        doc = open_document(str(path))
+        yield doc
+        doc.close()
+
+    @staticmethod
+    def _pictures(call):
+        return sum(1 for m in call["messages"] for b in m["content"]
+                   if isinstance(b, dict) and b.get("type") == "image")
+
+    def test_a_split_first_request_reads_every_page_eventually(
+            self, two_sheets):
+        from report_ingest.log_reader import estimate_tokens
+        free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
+        read_log(two_sheets, [0, 1], free)
+        both = estimate_tokens(free.calls[0]["messages"])
+        limit = both - 800                       # one picture too many
+        engine = FakeEngine([
+            {"final": _good_imperial_reading(pages_left=[])},
+            {"final": _good_imperial_reading(pages_left=[])}])
+        result = read_log(two_sheets, [0, 1], engine,
+                          max_request_tokens_in=limit)
+        assert result.model_calls == 2           # page 1 followed up
+        assert self._pictures(engine.calls[0]) == 1
+        follow = engine.calls[1]["messages"][-1]["content"][0]["text"]
+        assert "1" in follow
+        assert not any("never read" in w for w in result.warnings)
+
+    def test_a_cut_page_the_budget_never_reaches_is_said(self, two_sheets):
+        from report_ingest.log_reader import estimate_tokens
+        free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
+        read_log(two_sheets, [0, 1], free)
+        limit = estimate_tokens(free.calls[0]["messages"]) - 800
+        engine = FakeEngine([
+            {"final": _good_imperial_reading(pages_left=[])}])
+        result = read_log(two_sheets, [0, 1], engine, budget=1,
+                          max_request_tokens_in=limit)
+        assert result.model_calls == 1
+        assert any("never read" in w and "[1]" in w
+                   for w in result.warnings)
+
+    def test_a_first_request_over_the_limit_with_one_page_is_said(
+            self, imperial):
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        result = read_log(doc, [0], engine, max_request_tokens_in=10)
+        assert result.model_calls == 1
+        assert any("over its size limit" in w for w in result.warnings)

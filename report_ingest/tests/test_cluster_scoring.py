@@ -3419,8 +3419,12 @@ class TestMeasurementPlumbingRI69:
     # -- (6) a label run from the other engine -------------------------------
 
     def test_an_ingest_that_reuses_the_other_engines_label_run_says_so(
-            self, chat_cluster, langchain):
+            self, chat_cluster, langchain, monkeypatch):
         from report_ingest.tests import test_graph as tg
+        # The scripted chat answers do not all fit the readers' schemas, so
+        # some items go unread; this test is about the label run's engine,
+        # not about unread items (RI-110 keeps such a report out of the rows).
+        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
         reports_dir, out, scripts = chat_cluster
         runs = out / "runs"
         runs.mkdir(parents=True)
@@ -4216,3 +4220,58 @@ class TestTheBrakeInsideARun:
         assert "made-up failure" in results["ingest"]["failures"]["R36"]
         assert "stopping before R37" in capsys.readouterr().out
         assert not (out / "ingest" / "R37" / "arm.json").exists()
+
+
+class TestAGiveUpIsRetried:
+    """BACKLOG RI-110: an item the model could not be got to read leaves the
+    report unfinished, so a resume reads it again."""
+
+    def test_a_forced_give_up_is_marked_counted_and_retried_on_resume(
+            self, ingest_cluster, monkeypatch, capsys):
+        from report_ingest import graph
+        from report_ingest.tests import test_graph as tg
+
+        _reports, out, scripts = ingest_cluster
+        full = tg.main_script()
+        scripts["turns"] = full[:5] + full[7:]      # the two lab turns out
+        real = graph._read_lab
+
+        def give_up(*args, **kwargs):
+            raise RuntimeError("made-up rate limit: retries exhausted")
+
+        monkeypatch.setattr(graph, "_read_lab", give_up)
+        results = _ingest_run(ingest_cluster)
+        run_file = out / "ingest" / "R36" / "run.json"
+        saved = json.loads(run_file.read_text("utf-8"))
+        assert saved["item_errors"]
+        assert "made-up rate limit" in saved["item_errors"][0]["detail"]
+        assert not saved.get("error")
+        # The run's failed count includes the report with an unread item.
+        assert "R36" in results["ingest"]["failures"]
+        # ... and it is not listed among the finished reports.
+        assert results["ingest"]["per_report"] == []
+        assert results["ingest"]["n_reports"] == 0
+
+        # A resume does not skip it as done; it reads the lab items again.
+        monkeypatch.setattr(graph, "_read_lab", real)
+        scripts["turns"] = [full[5], full[6]] + full[7:]
+        _ingest_run(ingest_cluster)
+        printed = capsys.readouterr().out
+        assert "could not be read (a give-up); retrying" in printed
+        assert "already done" not in printed
+        again = json.loads(run_file.read_text("utf-8"))
+        assert "item_errors" not in again
+
+    def test_results_cover_every_finished_report_in_the_folder(
+            self, ingest_cluster, monkeypatch):
+        from report_ingest.tests import test_graph as tg
+
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _ingest_run(ingest_cluster)
+        # A second call that is asked for another (absent) report only.
+        monkeypatch.setattr(
+            cs, "_set_ids",
+            lambda name, corpus: ("R99",) if name == "oos_open" else ())
+        results = _ingest_run(ingest_cluster)
+        assert [r["id"] for r in results["ingest"]["per_report"]] == ["R36"]
