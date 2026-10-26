@@ -1,8 +1,8 @@
 {
   "title": "Geotechnical report review checklist",
   "status": "DRAFT",
-  "status_note": "First draft, written by the lead from the 2026-10-06 field session and set down in module_work/SCALES_COVERAGE_CROSSCHECKS.md (W4 b) for the owner to mark up. Not yet approved: add, cut or reword items, and say which [judge] items code should learn to check.",
-  "version": "2026-10-08 draft 1",
+  "status_note": "Second draft: the owner's markup of 2026-10-26 on the Report Questions Desk (BACKLOG OWN-31, RI-105) folded into the first draft (written by the lead from the 2026-10-06 field session, module_work/SCALES_COVERAGE_CROSSCHECKS.md W4 b). One item dropped, four reworded, the other 13 as they were. Still a draft: the owner may add, cut or reword items again, and say which [judge] items code should learn to check.",
+  "version": "2026-10-26 draft 2",
   "how_it_is_used": "One file, used two ways. Items with mode 'code' are checked by code (report_ingest/checklist.py) from the record report ingest wrote of the report (report.record.json): what each page was labelled, the explorations and laboratory tests read, the narrative's answers, and the reconciler's QA entries. Items with mode 'judge' are handed to the agent on the GeotechStaffEngineer page by the report_checklist tool, to work through and report against. A 'code' item whose check cannot run on the record it is given (no record yet, no page labels) goes to the agent as a judgement item, so nothing on the list is silently dropped.",
   "how_to_edit": "Edit the 'text' of an item freely. 'mode' is 'code' or 'judge'. A 'code' item names its 'check' (one of the checks in report_ingest/checklist.py: logs_and_lab_read, explorations_vs_logs, lab_ids_vs_logs, summary_and_sheets, cross_checks, values_cite_pages) and may narrow cross_checks with 'kinds' (the reconciler's: conflict, disagreement, partial, unconverted, count_mismatch) or 'where'. Keep the 'id' of an item that stays, so results can be compared between versions.",
   "items": [
@@ -14,11 +14,11 @@
      "text": "Every log page and every lab sheet was read, stated as counts."},
     {"id": "completeness.summary_and_sheets", "section": "Completeness", "mode": "code",
      "check": "summary_and_sheets",
-     "text": "Every sample on a lab summary table has a sheet, and every sheet is on the summary."},
+     "text": "Every sample on a lab summary table has results on a different sheet, and every sheet is on the summary."},
     {"id": "completeness.campaigns", "section": "Completeness", "mode": "judge",
      "text": "Every campaign is identified and dated: earlier reports bound in, and the newest borings."},
     {"id": "completeness.groundwater", "section": "Completeness", "mode": "judge",
-     "text": "Groundwater is recorded for every boring, or stated as not encountered."},
+     "text": "Groundwater is recorded for every boring, or stated as not encountered or not measured: a boring drilled with water added and no well has no reading, which does not mean the water is below the bottom of the hole."},
     {"id": "completeness.locations", "section": "Completeness", "mode": "judge",
      "text": "Locations, elevations and their datum are stated."},
 
@@ -29,15 +29,13 @@
      "check": "lab_ids_vs_logs",
      "text": "Lab sample IDs and depths match samples on the logs."},
     {"id": "consistency.descriptions_vs_lab", "section": "Consistency", "mode": "judge",
-     "text": "Log descriptions agree with the lab classification of the same sample."},
+     "text": "Log descriptions agree with the lab classification of the same sample; a disagreement is a finding about the report, not about how it was read."},
     {"id": "consistency.text_vs_logs", "section": "Consistency", "mode": "judge",
      "text": "Groundwater and stratigraphy stated in the text agree with the logs."},
     {"id": "consistency.units", "section": "Consistency", "mode": "code",
      "check": "cross_checks", "kinds": ["unconverted"],
      "text": "Units are stated and consistent."},
 
-    {"id": "currency.governing_campaign", "section": "Currency", "mode": "judge",
-     "text": "Which campaign governs, and whether superseded data are used in the recommendations."},
     {"id": "currency.code_editions", "section": "Currency", "mode": "judge",
      "text": "The code editions cited (seismic code, ASCE 7 edition) are current for the project."},
 
@@ -53,6 +51,6 @@
     {"id": "recommendations.parameters", "section": "Recommendations", "mode": "judge",
      "text": "Design parameters derived from the data, with the method cited."},
     {"id": "recommendations.topics", "section": "Recommendations", "mode": "judge",
-     "text": "Topics the data call for are addressed: bearing, settlement, seismic site class, liquefaction, and corrosion or chemistry exposure for concrete and steel."}
+     "text": "Topics the data call for are addressed."}
   ]
 }

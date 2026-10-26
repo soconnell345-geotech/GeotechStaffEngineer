@@ -1221,12 +1221,19 @@ conventions (`narrative_glossary.py`) and this checklist. It came from
 the Document Review page no longer offers it.
 
 The checklist is DATA, `report_review_checklist.json` beside the module,
-shipped in the wheel and marked **DRAFT** until the owner has marked it up
-(BACKLOG OWN-31): 18 items in six sections, each `code` or `judge`. Its items
-and wording are the owner's first draft unchanged; the two notes on how it
-is used say where the checks now read from, and the summary item gained a
-`where` (`lab_tests.`), because the record holds every reader's QA entries
-and the ledger's cross-checks held only the laboratory ones.
+shipped in the wheel and marked **DRAFT**: 17 items in six sections, each
+`code` or `judge`. The owner marked up the first draft on 2026-10-26 (OWN-31,
+folded by RI-105, "2026-10-26 draft 2"): the item on which campaign governs
+was dropped (investigations do not govern one another; all are data for the
+analysis); groundwater may be stated as not measured as well as not
+encountered (water added while drilling and no well means no reading, not
+water below the hole); the summary item asks for results on a different
+sheet; the topics item keeps no list (a list reads as the whole of it); and a
+log description that disagrees with the lab is a finding about the report,
+not about the reading. The two notes on how it is used say where the checks
+now read from, and the summary item has a `where` (`lab_tests.`), because the
+record holds every reader's QA entries and the ledger's cross-checks held
+only the laboratory ones.
 
 `run_checklist(record)` takes a `ReportRecord`, its dict, or the path of
 `report.record.json` or of the folder the ingest wrote. It runs every `code`
@@ -1237,7 +1244,7 @@ item it has a check for and returns the `judge` items for the agent:
 | `logs_and_lab_read` | every page labelled an exploration log or a laboratory sheet (`page_labels`) against the pages the explorations and tests read came from, as counts; the reconciler's `skipped` pages beside it |
 | `explorations_vs_logs` | the reconciler's count and list checks (`count_mismatch` on `general.*`) and the narrative reader's own differences with the logs, for the explorations the narrative STATED (an answer with a citation; one filled in from the logs proves nothing) |
 | `lab_ids_vs_logs` | each laboratory test's link to an exploration and a sample on its log, and the reconciler's `partial` entries for the ones that did not link |
-| `summary_and_sheets` | each summary-table row against the sheets, and each sheet of a kind the summary tabulates against the rows (a chemistry sheet beside a table of index tests is not missing from it) |
+| `summary_and_sheets` | each summary-table row against the sheets, and each sheet of a kind the summary tabulates against the rows (a chemistry sheet beside a table of index tests is not missing from it). A test the summary does not name is counted with one it does when it is the same kind, on the same sheet or the page after, and names no other boring, sample or depth: a test run several times on one sheet, or one test over several pages read as a test per page (RI-105). Sheets left off are listed one per specimen, with their PDF pages |
 | `cross_checks` | the reconciler's QA entries of the kinds the item names, narrowed by its `where` (`disagreement`, `conflict` on `lab_tests.` for the summary against the sheets, so a log value read two ways or an SPT whose drives do not add up is not counted there; `unconverted` for units) |
 | `values_cite_pages` | every exploration, test and calculation names its pages, and every narrative answer its citation (except the counts the reader takes from the record itself) |
 
@@ -1250,9 +1257,9 @@ check a JSON item names.
 What the record cannot answer yet: names printed only on the location plan
 (BACKLOG RI-24), so `explorations_vs_logs` compares the narrative and the
 logs only; and the old check's "pages cited that no tool read", which the
-ingest cannot produce (it reads every page it cites). The eleven `judge`
+ingest cannot produce (it reads every page it cites). The ten `judge`
 items stay judgement items; which of them code should learn is the owner's
-call in OWN-31.
+call.
 
 **On the app.** `make_checklist_tool()` is the `report_checklist(record)`
 tool: offered on the GeotechStaffEngineer page only, behind

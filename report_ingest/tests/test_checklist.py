@@ -5,12 +5,14 @@ the reconciler and the writers are tested on
 (:mod:`report_ingest.tests.record_fixtures`), reconciled, with the awkward
 cases a review must catch planted in it: a summary-table value that
 disagrees with its sheet, a sheet naming a hole the report does not carry,
-a log page nobody read, and a stated count the logs do not bear out.
+a log page nobody read, and a stated count the logs do not bear out; and
+the cases it must not flag: a test run several times on one sheet, and one
+test over several pages.
 
 What is pinned:
 
-* the checklist is DATA, DRAFT, its items unchanged since it moved here
-  (BACKLOG RI-34; OWN-31 is the owner's markup);
+* the checklist is DATA, DRAFT, its items as the owner marked them up
+  (OWN-31, folded by RI-105);
 * every code item runs on the record and reads what the record holds: the
   page labels, the explorations and laboratory tests, the narrative's
   answers and citations, and the reconciler's QA entries;
@@ -36,8 +38,9 @@ from report_ingest.tests.record_fixtures import (
     page_context, summary_table,
 )
 
-#: The items as the owner's first draft has them (2026-10-08 draft 1). A
-#: change to this list is the owner's markup (OWN-31), not a refactor.
+#: The items as the owner marked them up on 2026-10-26 (OWN-31, folded by
+#: RI-105: 2026-10-26 draft 2). A change to this list is the owner's markup,
+#: not a refactor.
 DRAFT_ITEMS = {
     "completeness.explorations_have_logs": ("code", "explorations_vs_logs"),
     "completeness.pages_read": ("code", "logs_and_lab_read"),
@@ -50,7 +53,6 @@ DRAFT_ITEMS = {
     "consistency.descriptions_vs_lab": ("judge", None),
     "consistency.text_vs_logs": ("judge", None),
     "consistency.units": ("code", "cross_checks"),
-    "currency.governing_campaign": ("judge", None),
     "currency.code_editions": ("judge", None),
     "traceability.values_cite_pages": ("code", "values_cite_pages"),
     "traceability.recommendations_trace": ("judge", None),
@@ -78,10 +80,11 @@ def _by_id(result):
 # The data
 # ---------------------------------------------------------------------------
 
-def test_the_checklist_is_the_owners_draft_unchanged():
+def test_the_checklist_is_the_owners_markup():
     data = CL.load_checklist()
     assert data["status"] == "DRAFT"
-    assert data["version"] == "2026-10-08 draft 1"
+    assert data["version"] == "2026-10-26 draft 2"
+    assert "2026-10-26" in data["status_note"]
     assert data["title"] == "Geotechnical report review checklist"
     got = {i["id"]: (i["mode"], i.get("check")) for i in data["items"]}
     assert got == DRAFT_ITEMS
@@ -100,6 +103,19 @@ def test_the_checklist_is_the_owners_draft_unchanged():
     # the notes say where it lives now
     assert "report_ingest/checklist.py" in data["how_it_is_used"]
     assert "funhouse_agent" not in data["how_to_edit"]
+    # the owner's wording (RI-105); the topics item keeps no list, which
+    # would read as the whole of what the data call for
+    texts = {i["id"]: i["text"] for i in data["items"]}
+    assert texts["completeness.summary_and_sheets"] == (
+        "Every sample on a lab summary table has results on a different "
+        "sheet, and every sheet is on the summary.")
+    assert texts["completeness.groundwater"].startswith(
+        "Groundwater is recorded for every boring, or stated as not "
+        "encountered or not measured")
+    assert texts["recommendations.topics"] == (
+        "Topics the data call for are addressed.")
+    assert "a finding about the report" in texts[
+        "consistency.descriptions_vs_lab"]
 
 
 def test_the_data_file_ships_in_the_wheel():
@@ -252,6 +268,117 @@ def test_a_sheet_of_a_kind_the_summary_does_not_carry_is_not_missing_from_it():
     sh = _by_id(CL.run_checklist(rec))["completeness.summary_and_sheets"]
     assert sh["status"] == "pass"
     assert "chemical" in sh["detail"]
+
+
+def _run(sample: str, depth_ft, fines: float, page: int = 13):
+    """One sieve run on the gradation sheet, printing what it prints."""
+    from report_ingest.model import GradationResult, LabTest
+    from report_ingest.tests.record_fixtures import q
+    return LabTest(kind="gradation",
+                   investigation_id="B-1" if sample else "",
+                   sample_id=sample,
+                   depth_top=q(depth_ft, "ft", page) if depth_ft else None,
+                   pages=[page], source_report="SYN",
+                   result=GradationResult(kind="gradation",
+                                          fines_percent=fines))
+
+
+def _shear_page(page: int, printed: bool, **values):
+    """One page of a direct shear test read as a test of its own."""
+    from report_ingest.model import LabTest, StrengthResult
+    from report_ingest.tests.record_fixtures import q
+    return LabTest(kind="direct_shear",
+                   investigation_id="B-1" if printed else "",
+                   sample_id="S-2" if printed else "",
+                   depth_top=q(7.0, "ft", page) if printed else None,
+                   pages=[page], source_report="SYN",
+                   result=StrengthResult(kind="direct_shear", **values))
+
+
+def _summary_with(*rows):
+    """The fixture's summary table with more rows on it."""
+    table = summary_table()
+    table.result.rows.extend(rows)
+    return table
+
+
+def _shear_row():
+    from report_ingest.model import SummaryRow
+    from report_ingest.tests.record_fixtures import q
+    return SummaryRow(investigation_id="B-1", sample_id="S-2",
+                      depth_top=q(7.0, "ft", 14), wc=21.5, phi_deg=31.0)
+
+
+@pytest.mark.parametrize("later_runs_print", ["all", "boring and sample",
+                                              "nothing"])
+def test_a_sieve_run_three_times_on_one_sheet_is_on_the_summary(
+        later_runs_print):
+    """RI-105 (owner, OWN-31): one sheet may carry several runs of a test.
+    The summary names B-1 S-3 once; the sheet reports three runs on it, the
+    later two printing the link in full, in part, or not at all."""
+    later = {"all": ("S-3", 14.5), "boring and sample": ("S-3", None),
+             "nothing": ("", None)}[later_runs_print]
+    runs = [_run("S-3", 14.5, 54.0), _run(*later, 52.5), _run(*later, 55.0)]
+    rec = _record(lab_tests=[atterberg(), *runs, summary_table()])
+    sh = _by_id(CL.run_checklist(rec))["completeness.summary_and_sheets"]
+
+    assert sh["status"] == "pass", sh
+    assert ("2 more test(s)" in sh["detail"]) is (later_runs_print != "all")
+
+
+@pytest.mark.parametrize("read_as", ["one test", "a test per page",
+                                     "a test per page, each printing it"])
+def test_one_test_over_three_pages_is_one_sheet_on_the_summary(read_as):
+    """RI-105: a direct shear test runs over pages 17 to 19 (PDF): the
+    results, the specimens' water contents, the envelope. The record may
+    hold it as one test or a test per page, the later pages printing no
+    boring, sample or depth."""
+    from report_ingest.model import LabTest, StrengthResult
+    from report_ingest.tests.record_fixtures import q
+    if read_as == "one test":
+        tests = [LabTest(kind="direct_shear", investigation_id="B-1",
+                         sample_id="S-2", depth_top=q(7.0, "ft", 16),
+                         pages=[16, 17, 18], source_report="SYN",
+                         result=StrengthResult(kind="direct_shear",
+                                               phi_deg=31.0, wc=21.5))]
+    else:
+        each = read_as.endswith("printing it")
+        tests = [_shear_page(16, True, phi_deg=31.0),
+                 _shear_page(17, each, wc=21.5),
+                 _shear_page(18, each, phi_deg=31.0)]
+    rec = _record(lab_tests=[atterberg(), gradation(),
+                             _summary_with(_shear_row()), *tests])
+    sh = _by_id(CL.run_checklist(rec))["completeness.summary_and_sheets"]
+
+    assert sh["status"] == "pass", sh
+    assert ("2 more test(s)" in sh["detail"]) is (read_as == "a test per page")
+
+
+def test_a_real_gap_beside_runs_and_continuations_is_still_found():
+    """What the summary leaves out is still found: a summary sample with no
+    sheet, a run on the same sheet naming another sample, and a sheet the
+    summary does not carry, listed once with its continuation page."""
+    from report_ingest.model import MoistureDensityResult, LabTest, SummaryRow
+    from report_ingest.tests.record_fixtures import q
+    missing = SummaryRow(investigation_id="B-1", sample_id="S-5",
+                         depth_top=q(20.0, "ft", 14), wc=30.2)
+    runs = [_run("S-3", 14.5, 54.0), _run("", None, 52.5),
+            _run("S-2", 7.0, 61.0)]          # another sample on the sheet
+    orphan_next = LabTest(kind="moisture_content", pages=[16],
+                          source_report="SYN",
+                          result=MoistureDensityResult(kind="moisture_content",
+                                                       wc=18.6))
+    rec = _record(lab_tests=[atterberg(), *runs, _summary_with(missing),
+                             orphan_sheet(), orphan_next])
+    sh = _by_id(CL.run_checklist(rec))["completeness.summary_and_sheets"]
+
+    assert sh["status"] == "fail", sh
+    assert "summary rows with no sheet: B-1 S-5 at 20 ft" in sh["detail"]
+    assert "B-1 S-2 at 7 ft (gradation, PDF page 14)" in sh["detail"]
+    assert "B-9 S-1 at 5 ft (moisture_content, PDF pages 16-17)" in \
+        sh["detail"]
+    assert "? (moisture_content" not in sh["detail"]
+    assert "1 more test(s)" in sh["detail"]   # the S-3 run that prints none
 
 
 def test_an_exploration_count_answered_only_from_the_logs_is_not_a_check():

@@ -98,6 +98,8 @@ This is also review-harness Phase 5: the review prompt rewritten around the revi
 
 ### Report-review checklist: FIRST DRAFT, for the owner to mark up
 
+*Superseded 2026-10-26: the owner marked this draft up (OWN-31, folded by BACKLOG RI-105). The current items are in `report_ingest/report_review_checklist.json`; the Currency item on which campaign governs was dropped. The list below is the first draft as written.*
+
 In each item, [code] means a check code can run; [judge] means the agent works through it and reports.
 
 **Completeness**

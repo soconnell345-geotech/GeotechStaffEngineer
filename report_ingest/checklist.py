@@ -9,8 +9,8 @@ from ``funhouse_agent.report_checklist`` with BACKLOG RI-34 (owner,
 report_ingest"); the Document Review page no longer offers it.
 
 The checklist is DATA, in ``report_review_checklist.json`` beside this
-module, marked DRAFT until the owner has marked it up (BACKLOG OWN-31). Each
-item is either:
+module, marked DRAFT; the owner's markup of 2026-10-26 (BACKLOG OWN-31) is
+folded in (RI-105). Each item is either:
 
 * ``code`` - a check made here from the record report ingest wrote
   (:class:`~report_ingest.model.ReportRecord`): what each page was labelled,
@@ -39,7 +39,8 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import (Any, Callable, Dict, Iterable, List, Optional, Sequence,
+                    Tuple)
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          "report_review_checklist.json")
@@ -354,10 +355,65 @@ def _sheet_kinds_on(rows: Sequence[Any], sheet: Any) -> bool:
     return False
 
 
+def _printed(test: Any) -> Tuple[str, Optional[float], str]:
+    """The boring, depth (m) and sample a test prints, folded for matching;
+    empty or ``None`` where it prints none."""
+    from report_ingest.reconciler import depth_m, fold_id, hole_key
+
+    return (hole_key(test.investigation_id), depth_m(test.depth_top),
+            fold_id(test.sample_id))
+
+
+def _nothing_differs(printed: Tuple[str, Optional[float], str],
+                     specimen: Tuple[str, Optional[float], str]) -> bool:
+    """Whether ``printed`` names no other specimen than ``specimen``: its
+    boring, depth and sample are each not printed or the same (the depth
+    within the reconciler's tolerance)."""
+    from report_ingest.reconciler import DEPTH_TOL_M
+
+    (hole, depth, sample), (s_hole, s_depth, s_sample) = printed, specimen
+    if hole and s_hole and hole != s_hole:
+        return False
+    if sample and s_sample and sample != s_sample:
+        return False
+    return (depth is None or s_depth is None
+            or abs(depth - s_depth) <= DEPTH_TOL_M)
+
+
+def _fill(specimen: Tuple[str, Optional[float], str],
+          printed: Tuple[str, Optional[float], str]
+          ) -> Tuple[str, Optional[float], str]:
+    """``specimen`` with what ``printed`` adds where it is blank."""
+    return (specimen[0] or printed[0],
+            specimen[1] if specimen[1] is not None else printed[1],
+            specimen[2] or printed[2])
+
+
+def _on_its_sheet(pages: Sequence[int], sheet_pages: Sequence[int]) -> bool:
+    """Whether a test read from ``pages`` is on the sheet read from
+    ``sheet_pages``: it shares a page with it, or starts on the page after
+    it ends (a continuation page)."""
+    if not pages or not sheet_pages:
+        return False
+    return bool(set(pages) & set(sheet_pages)) or \
+        min(pages) - 1 == max(sheet_pages)
+
+
 def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
                              ) -> Dict[str, Any]:
     """Each summary-table row has a sheet, and each sheet of a kind the
-    summary tabulates is on it."""
+    summary tabulates is on it.
+
+    A sheet may report one test run several times (a sieve analysis repeated
+    on one sample) and one test may run over several pages; the record may
+    hold either as several tests, the later ones printing the boring, sample
+    or depth only in part or not at all. A test the summary does not name is
+    counted with one it does when it is of the same kind, on the same sheet
+    or the page after, and names no other specimen: what the lab reader
+    takes as the same specimen (``lab_reader._specimen_starts``: a page that
+    prints none is a continuation of the one before it). A test that names
+    another sample or depth is still a sheet the summary leaves out.
+    """
     from report_ingest.reconciler import _sheets_for
 
     rec = ctx.record
@@ -376,9 +432,59 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         return f"{x.investigation_id or '?'} {x.sample_id or ''}".strip() + at
 
     no_sheet = [name(r) for r in rows if not _sheets_for(r, sheets)]
-    off = [s for s in sheets if not any(_sheets_for(r, [s]) for r in rows)]
-    not_on = [f"{name(s)} ({s.kind})" for s in off if _sheet_kinds_on(rows, s)]
-    other_kinds = sorted({s.kind for s in off if not _sheet_kinds_on(rows, s)})
+    named = [any(_sheets_for(r, [s]) for r in rows) for s in sheets]
+    pages = [_pages_of(s) for s in sheets]
+    printed = [_printed(s) for s in sheets]
+
+    # The tests the summary names, and those counted with them.
+    on: Dict[int, Tuple[str, Optional[float], str]] = {
+        i: printed[i] for i, yes in enumerate(named) if yes}
+    counted_with = 0
+    grew = True
+    while grew:
+        grew = False
+        for i, sheet in enumerate(sheets):
+            if i in on:
+                continue
+            for j, specimen in list(on.items()):
+                if sheets[j].kind == sheet.kind \
+                        and _on_its_sheet(pages[i], pages[j]) \
+                        and _nothing_differs(printed[i], specimen):
+                    on[i] = _fill(specimen, printed[i])
+                    counted_with += 1
+                    grew = True
+                    break
+
+    # The rest, one line per specimen on a sheet, however many tests or
+    # pages it was read as.
+    off: List[Dict[str, Any]] = []
+    for i in sorted((i for i in range(len(sheets)) if i not in on),
+                    key=lambda i: min(pages[i]) if pages[i] else -1):
+        for group in off:
+            if group["kind"] == sheets[i].kind \
+                    and _on_its_sheet(pages[i], group["pages"]) \
+                    and _nothing_differs(printed[i], group["specimen"]):
+                group["tests"].append(sheets[i])
+                group["pages"] = sorted(set(group["pages"]) | set(pages[i]))
+                group["specimen"] = _fill(group["specimen"], printed[i])
+                break
+        else:
+            off.append({"kind": sheets[i].kind, "tests": [sheets[i]],
+                        "pages": list(pages[i]), "specimen": printed[i]})
+
+    def where(group: Dict[str, Any]) -> str:
+        first = next((t for t in group["tests"]
+                      if t.investigation_id or t.sample_id or t.depth_top),
+                     group["tests"][0])
+        at = (f", PDF page{'s' if len(group['pages']) > 1 else ''} "
+              f"{_pdf(group['pages'])}" if group["pages"] else "")
+        return f"{name(first)} ({group['kind']}{at})"
+
+    tabulated = [any(_sheet_kinds_on(rows, t) for t in g["tests"])
+                 for g in off]
+    not_on = [where(g) for g, yes in zip(off, tabulated) if yes]
+    other_kinds = sorted({g["kind"] for g, yes in zip(off, tabulated)
+                          if not yes})
     problems: List[str] = []
     if no_sheet:
         problems.append(f"summary rows with no sheet: "
@@ -389,6 +495,10 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
                                                "lab_tests.summary_table")]
     note = (f"; sheets of kinds the summary does not tabulate, not counted: "
             f"{', '.join(other_kinds)}" if other_kinds else "")
+    if counted_with:
+        note += (f"; {counted_with} more test(s) on a summary sample's sheet "
+                 "or the page after it, naming no other specimen, counted "
+                 "with it (a test run again, or one over several pages)")
     if problems or entries:
         out = {"status": "fail",
                "detail": "; ".join(problems or ["the summary names "
