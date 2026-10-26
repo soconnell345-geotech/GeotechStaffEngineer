@@ -4433,7 +4433,7 @@ Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91
   - Pilot build: R05, R36. Full build: R13, R16, R28. **R37 never ran** (the glue ran R13, R16 and R28 as one step, 3.07 h, and the 2.5-hour limit is checked only between steps, so the build stopped before the step holding R37). R05 and R36 are in the zip under `ingest/`; RESULTS.md lists only the last call's reports because each call rewrites it (the pilot's tables survive in its stdout log); the pilot adds 71 calls and 0.73 M in to the full build's 609 and 8.5 M. The copy arms (zeros, fill, skipsbound) did not run: "build budget reached before step 1".
 - **Cost:** 680 calls, 9,235,452 input / 1,256,106 output tokens over 1,187 pages (GPT-5.4 481 calls; mini 199). About $40 at GPT-5.4 list rates; Foundry's meter reads $0. Full build 11,050 s of model time.
   - Brief's plan: about 750 calls, 10 M in, 1.4 M out, $46 for six reports.
-  - Retries: pilot 12 (all succeeded); full build 195 SDK retries, **7 gave up, all one request** (R28 call 102, 118 k tokens in). R28's log item at pages 76-87 was lost, and the report was saved without an error, so a resume does not retry it.
+  - Retries: pilot 12 (all succeeded); full build 195 SDK retries, **7 gave up, all one request** (R28 call 102, 118 k tokens in). R28's log item at pages 76-87 was lost, and the report was saved without an error, so a resume does not retry it. *Corrected 2026-10-26 by the second hand-back (private review `raw/wave2_part2/TRACE_REVIEW.md` section 2.2):* the limit was per minute, not per request; the request that gave up was item_11's third call (about 126.6 k in); its second (118,126 in) succeeded, and calls 97-99 were item_10's.
   - No `durable_dir`.
 - **Files:** `module_work/field_feedback/2026-10-24_foundry_brief_1023/raw/wave2/` only, never committed.
 - **Full reading:** `TRACE_REVIEW.md` in the same folder.
@@ -4474,7 +4474,7 @@ Cost for the same items, plain / pipeline: logs $1.69 / $4.43, lab $3.66 / $4.91
 
 4. **Logs and soundings.** R13_p45 69/76 (blind, counts only). R28 soundings 133/143: 3 DCP header misses come from U+FFFD in the text layer, and p68 is read as another pit because item_10 groups pages 67-75. R16's earlier-firm logs: 44 depths refused against a misread ruler.
 
-5. **Rate limits.** One log conversation grew to 118 k input tokens and failed 7 SDK episodes and 6 engine retries (41 minutes). It lost R28's logs at pages 76-87 with no error on the report. A resume would not retry it.
+5. **Rate limits.** One log conversation grew to 118 k input tokens and failed 7 SDK episodes and 6 engine retries (41 minutes). It lost R28's logs at pages 76-87 with no error on the report. A resume would not retry it. *Corrected 2026-10-26 by the second hand-back (private review `raw/wave2_part2/TRACE_REVIEW.md` section 2.2):* the limit was per minute, not per request; the request that gave up was item_11's third call (about 126.6 k in); its second (118,126 in) succeeded, and calls 97-99 were item_10's. The package reads items one at a time, so no smaller request from another item went through meanwhile.
 
 6. **DIGGS.** R16's difference was RI-97's case, fixed on master. R13's remains, and it is the gate: `_compare_refusals` reads `rs.values("n_value")`, `ResultSetRead.column()` returns the first column only, so an earlier firm's printed N values in a second column are never compared. The file is right.
 
@@ -4500,4 +4500,23 @@ The brief (`module_work/FOUNDRY_BRIEF_MODEL_FIRST.md` section 7) quotes these; t
   - R13: 206 calls, 2.67 M in / 0.43 M out. R16: 897 calls, 8.39 M / 1.08 M. R28: 537 calls, 5.08 M / 0.75 M. Average per page on the reports not in stage b: about 1.1 calls, 11.5 k in, 1.6 k out.
 - **Claude against GPT-5.4 on the same reader items** (wave 1 against the local runs): input tokens 1.0 to 1.9 times, output tokens 1.1 to 2.6 times.
 - **Describing, per page** (RI-73's full runs, labeller calls included): Haiku about 5.1 k tokens in and 0.57 k out; Sonnet about 9.1 k in. Costs for the 13 reports (3,418 pages): Haiku $8.40, Sonnet $83.36.
-- **Foundry run 5, wave 2** (GPT-5.4, six reports, 1,235 pages): see 'FOUNDRY RUN 5' above; the off arm came to about 710 calls and 9.6 M tokens in (the brief's earlier 1,800 calls was too high). R28's log conversation reached 118,126 tokens in over 5 calls and was refused (RI-110).
+- **Foundry run 5, wave 2** (GPT-5.4, six reports, 1,235 pages): see 'FOUNDRY RUN 5' above; the off arm came to about 710 calls and 9.6 M tokens in (the brief's earlier 1,800 calls was too high). R28's log item was lost to a per-minute rate limit after 7 give-ups on its third call (about 126.6 k in); its 118,126-token second call had passed (corrected 2026-10-26; 'FOUNDRY RUN 5, second hand-back' below). The whole off arm, all three builds: 716 calls, 9.88 M in.
+
+## FOUNDRY RUN 5, second hand-back -- 2026-10-26 -- the R37 resume, the R28 re-read and three copy arms (GPT-5.4, GPT-4.1-mini)
+
+Counts only. Full read: private `module_work/field_feedback/2026-10-24_foundry_brief_1023/raw/wave2_part2/TRACE_REVIEW.md`; follow-ups BACKLOG RI-117 (extended, now Now), RI-123 to RI-132, OWN-99, and notes on RI-53 and RI-54.
+
+- **Off-arm resume build:** 591 s, 36 calls (GPT-5.4 28, mini 8), 645,091 tokens in, 59,992 out, 52 SDK requests, 16 rate-limit retries, 0 give-ups.
+  - R28's lost log item (pages 76-87): 3 calls, 310,587 in, 13,102 out, 188 s; the largest request 126,558 in, after 4 retries. The pages hold seven boring logs and the reader returned one hole (RI-117).
+  - R37 read whole: 33 calls, 334,504 in, 46,890 out, 404 s, about 72 s of it 7 retries on the first call. Labels 1.000, log 42/46, narrative recall 26/27 and precision 26/28, DIGGS valid and equal.
+- **Copy arms, one build, no reader calls:** zeros 0 calls, 115 s; fill 0 calls, 94 s; skipsbound 3 calls (R36's narrative re-read), 55,897 in, 7,198 out, 141 s, 0 retries. None changed a score: zeros and fill act only on a count the narrative left empty (none here); skipsbound's bound range lies outside the narrative's window.
+- **The off arm in full, three builds** (582 s, 11,050 s and 591 s; 1,235 pages): 716 calls (GPT-5.4 509, mini 207), 9,880,543 in (1,548,454 cached), 1,316,098 out; 939 SDK requests, 223 retries (221 rate limit, 2 connection), 7 give-ups (one request, in the first full build). About 0.58 calls and 8.0 k tokens in a page; the brief planned about 750 calls, 10 M in and 1.4 M out. RESULTS' Cost block shows only the last attempt of a twice-read report (433 calls / 6.0 M; RI-124).
+
+| report | calls | tokens in | tokens out | seconds |
+|---|---:|---:|---:|---:|
+| R05 | 8 | 36,216 | 3,483 | 30 |
+| R13 | 111 | 1,847,363 | 259,356 | 1,816 |
+| R16 | 215 | 2,786,269 | 360,194 | 2,730 |
+| R28 (two attempts) | 286 | 4,181,433 | 566,242 | 6,691 |
+| R36 | 63 | 694,758 | 79,933 | 551 |
+| R37 | 33 | 334,504 | 46,890 | 404 |

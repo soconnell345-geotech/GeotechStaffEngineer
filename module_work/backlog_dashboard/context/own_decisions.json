@@ -2262,5 +2262,27 @@
       "BACKLOG.md OWN-97",
       "BACKLOG.md RI-90"
     ]
+  },
+  "OWN-99": {
+    "kind": "ask",
+    "ask_who": "FDE",
+    "question": "What are the models' rate limits on our Foundry route (tokens and requests per minute, any per-request cap), and are they shared with other Foundry work?",
+    "why": "In wave 2 one report lost a log item after 41 minutes of retries. The second hand-back showed it was the per-minute token limit, not a cap on one request: a 126,558-token request went through after 4 retries. The next wave runs Claude Opus, Sonnet and Haiku, and the page groups and pacing should be sized from the real limits rather than guessed.",
+    "background": "The app now has a per-request size limit (off until set) and will pace after large requests. Neither can be set well without the numbers. The model-first brief asks this before the wave (its stop point 7).",
+    "options": [],
+    "recommendation": "Send the message below to the AI FDE before the model-first brief goes out, and paste the answer onto this card.",
+    "if_no_answer": "The size limit stays off and the wave runs as wave 2 did: large requests retry until the minute clears, which costs time but no tokens.",
+    "message_to_send": "Hi - before the next report-ingest wave: could you tell us the rate limits on the route our project uses, for GPT-5.4 and for Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5? We need tokens per minute, requests per minute, and any cap on input tokens for a single request. Are these limits shared with other work in Foundry, or per project? In the last wave a 126k-token request needed 4 retries and the next small call waited 72 s, so we would like to size our requests and pace them to fit. Thanks.",
+    "steps": [],
+    "unblocks": [
+      "RI-121",
+      "RI-127"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-99",
+      "BACKLOG.md RI-110",
+      "BACKLOG.md RI-121",
+      "BACKLOG.md RI-127"
+    ]
   }
 }

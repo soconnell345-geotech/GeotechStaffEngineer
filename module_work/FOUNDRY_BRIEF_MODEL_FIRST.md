@@ -268,17 +268,33 @@ log). Report counts only, as for every blind set.
       item is not done (RI-110).
    4. **One `review_dir` for both arms**, and compare each report's
       `bound_together` between the arms.
-   5. **The off arm waits for RI-108, RI-109 and RI-110.** (RI-108 and
-      RI-109 are built; RI-110 is open.) Otherwise the off arm loses for
-      reasons that are not the method.
+   5. **The off arm waits for RI-117 and RI-123.** RI-108, RI-109 and
+      RI-110 are merged (2026-10-26). Wave 2's second hand-back showed
+      today's log reader reads several holes' pages as one hole (R28 lacks
+      18 of the 77 holes it prints) and lets depths above the ground
+      surface through; model-first groups log pages by hole, so it would
+      win on grouping alone. If the wave cannot wait, score hole recall
+      (holes printed against holes in the record) as its own line.
    6. **Token brake.** Set `max_report_tokens_in` and `max_total_tokens`
       (RI-120 (1)); the dollar meter reads $0 on Foundry. Set them to the
       stop lines above, and the wave's ceiling to the lead's number.
-   7. **Request limits.** Before the wave, ask the AI FDE for Claude's
-      per-request and per-minute token limits on Foundry. Run 5's log
-      conversation reached 118 k tokens in and was refused. Size the page
-      groups and each conversation under the per-request limit.
-   8. **Arm stamp.** Each report folder carries `arm.json`; a folder
+   7. **Rate limits (OWN-99).** Before the wave, ask the AI FDE for each
+      model's tokens-per-minute and requests-per-minute limits on the
+      route, any per-request input cap, and whether they are shared with
+      other Foundry work. Run 5's lost log item was stopped by the
+      per-minute limit, not a per-request one: a 126,558-token request
+      passed after 4 retries, and the next small call waited 72 s. Set
+      `max_request_tokens_in` (RI-110) and the page groups' split (RI-121)
+      from the answer, and expect slow minutes after any large request.
+   8. **Cost from every attempt.** Until RI-124, a report read in two
+      attempts keeps only the last attempt's cost in RESULTS (run 5: 433
+      calls shown against 716 made). Report the arm's cost from each
+      build's own counts, and return one summary row per build (the glue's
+      table listed only some).
+   9. **Narrative repeats.** The same narrative read twice differed by one
+      field in 28. Compare the arms' narratives only on differences larger
+      than one field a report, or read each twice.
+   10. **Arm stamp.** Each report folder carries `arm.json`; a folder
       started by one arm is refused to the other (RI-120 (3)). Use one
       `out_dir` per arm, as in section 2.
 
