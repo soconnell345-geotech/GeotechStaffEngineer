@@ -1825,3 +1825,114 @@ class TestCalcChecksFlag:
         today = _Builder(reading, [40], "R", [], [5.0])
         today.build()
         assert sorted(u["page"] for u in today.unresolved) == [2, 5]
+
+
+# ---------------------------------------------------------------------------
+# a look is not an answer, stale notes, each call's answer (RI-108, RI-109)
+# ---------------------------------------------------------------------------
+
+class TestLongPrintoutCalls:
+
+    def _long(self, tmp_path):
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        return _open(build_long_printout(16).pdf, tmp_path)
+
+    def test_a_first_call_zoom_does_not_spend_the_continuations_call(
+            self, tmp_path):
+        doc = self._long(tmp_path)
+        engine = FakeEngine([
+            {"tools": [("zoom_plot", {"page": 0, "bbox": [0, 0, 50, 50]})]},
+            {"final": _reading(kind="lateral_pile")},
+            {"final": _reading(kind="lateral_pile", results=[
+                _value("Made-up moment", 12.5, "kN-m", page=14)])},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        assert engine.n_calls == 3 and result.tool_calls == 1
+        # The zoom turn, the first answer, then the rest of the pages.
+        assert "--- page 14:" in engine.calls[2]["messages"][0][
+            "content"][1]["text"]
+        assert any(r.name == "Made-up moment"
+                   for r in result.calculation.results)
+
+    def test_a_note_about_a_page_the_continuation_read_is_dropped(
+            self, tmp_path):
+        doc = self._long(tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", unsettled=[
+                Unsettled(what="load table", page=13, why="not shown"),
+                Unsettled(what="smudged note", page=2, why="smudged")])},
+            {"final": _reading(kind="lateral_pile", unsettled=[
+                Unsettled(what="plot axis", page=14, why="no scale")])},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        left = sorted((u["what"], u["page"]) for u in result.unresolved
+                      if u.get("refused_by") == "reader")
+        assert left == [("plot axis", 14), ("smudged note", 2)]
+        # A note on a page the call was not shown is no mixed page numbering.
+        assert not any(u.get("flag") == "page_numbers"
+                       for u in result.unresolved)
+
+    def test_each_calls_answer_is_kept_beside_the_item(self, tmp_path):
+        doc = self._long(tmp_path)
+        engine = FakeEngine([
+            {"final": _reading(kind="lateral_pile", results=[
+                _value("Made-up first", 1.0, page=3)])},
+            {"final": _reading(kind="lateral_pile", results=[
+                _value("Made-up second", 2.0, page=14)])},
+        ])
+        try:
+            result = read_calculation(doc, list(range(16)), engine,
+                                      report_id="SYN")
+        finally:
+            doc.close()
+
+        blob = result.to_dict()["answers"]
+        assert [a["stage"] for a in blob] == ["first", "continuation"]
+        assert 14 in blob[1]["pages_shown"] and 14 not in blob[0][
+            "pages_shown"]
+        assert blob[1]["answer"]["results"][0]["name"] == "Made-up second"
+
+
+class TestCitedPositionsUnderRefuse:
+
+    def _run(self, tmp_path, cited):
+        from report_ingest.tests.calc_fixtures import build_long_printout
+        doc = _open(build_long_printout(16).pdf, tmp_path)
+        engine = FakeEngine([{"final": _reading(kind="lateral_pile", results=[
+            _value("Made-up moment", 12.5, "kN-m", page=cited[0],
+                   bbox=[10, 10, 50, 20]),
+            _value("Made-up shear", 3.5, "kN", page=cited[1],
+                   bbox=[10, 30, 50, 40])])}])
+        try:
+            return read_calculation(doc, list(range(4, 16)), engine,
+                                    report_id="SYN")
+        finally:
+            doc.close()
+
+    def test_a_cited_position_keeps_its_report_page_and_box(self, tmp_path):
+        result = self._run(tmp_path, [0, 1])
+        by_name = {r.name: r for r in result.calculation.results
+                   if r.name.startswith("Made-up")}
+        assert by_name["Made-up moment"].prov.page == 4
+        assert by_name["Made-up shear"].prov.page == 5
+        assert by_name["Made-up moment"].prov.bbox is not None
+        assert not any("not part of this printout" in u.get("why", "")
+                       for u in result.unresolved)
+
+    def test_a_cited_page_outside_the_item_still_refuses(self, tmp_path):
+        result = self._run(tmp_path, [6, 99])
+        by_name = {r.name: r for r in result.calculation.results
+                   if r.name.startswith("Made-up")}
+        assert by_name["Made-up moment"].prov.page == 6
+        assert any("not part of this printout" in u.get("why", "")
+                   and u.get("page") == 99 for u in result.unresolved)
