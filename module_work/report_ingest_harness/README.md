@@ -119,6 +119,29 @@ labels' runs, each again with the divider pages left out (OWN-92 (3));
 `--harmful-runs SET` lists a set's largest runs of harmful pages; no model,
 and the blind reports are refused.
 
+`measure_placement` (2026-10-25, RI-87 piece 5) places saved answers by
+text match (`report_ingest.locate`). In sample: the plain baseline's answers,
+each stage's record built from the answer as `run_plain_baseline` builds it.
+Held out: the pipeline arms' model-alone records (`after.model_record` of
+logs_opus, logs_sonnet, lab_opus_linkon, lab_sonnet_linkon, calc_opus,
+calc_sonnet) with their boxes taken off. Every value is looked for on its
+cited page in the PDF text layer or the DI words (a log's anchors use the
+page's depth ruler from `log_grid_for`). It writes `placement/RESULTS.md`
+and `results.json` in the claude_local raw folder: per stage and per arm,
+split into the stage's open and blind reports (`OPEN.txt`), the share of
+values on pages with text placed at a spot (the plan's 90 % gate; the
+answer's only test on a page takes the sheet's title as its spot, and the
+gate is also given with every lab title kept apart, and a test whose
+boring label is printed only as a heading is counted in its own column,
+never as a spot by that heading), page
+level (any other lab sheet title, a quote not boxed), moved, several, not
+found, no text, no page; the lab titles by test kind, blind included; and
+each placed value beside another box for the same
+object (in sample the pipeline arm's, held out the box it had) -- same
+page, same printed line, same spot. What was not placed is listed for open
+items only; blind items are counts. No model and no answer sheet; it
+refuses an out folder git does not ignore.
+
 **The corpus is private and this repo is public.** Every PDF, DI result, hand
 label and derived cache lives under
 `module_work/field_feedback/2026-09-16_report-ingest/raw/`, which `.gitignore`
