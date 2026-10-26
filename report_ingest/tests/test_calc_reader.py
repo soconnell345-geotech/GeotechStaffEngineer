@@ -1099,6 +1099,29 @@ class TestTheLoop:
             ("Axial load", 11, 120.0),
         ])
 
+    def test_rows_with_no_box_are_one_value_only_when_they_read_one(self):
+        """RI-87: model-first answers carry no box. By default two rows of
+        one label on one page with no box are one value, as today; with
+        ``same_value`` they are one only when they read the same value, so
+        two factors of safety printed on one page both stand."""
+        from report_ingest.calc_reader import _fold_readings
+        first = _reading(results=[
+            _value("Factor of safety", 1.5, page=33),
+            _value("Factor of safety", 1.3, page=33)])
+        second = _reading(results=[_value("Factor of safety", 1.3, page=33)])
+
+        today = _fold_readings(first, second, fresh=True)
+        assert [r.value for r in today.results] == [1.3, 1.3]
+
+        kept = _fold_readings(first, second, fresh=True, same_value=True)
+        assert [r.value for r in kept.results] == [1.5, 1.3]
+
+        other_unit = _reading(results=[
+            _value("Factor of safety", 1.3, unit="ratio", page=33)])
+        both = _fold_readings(first, other_unit, fresh=True, same_value=True)
+        assert [(r.value, r.unit) for r in both.results] == [
+            (1.5, ""), (1.3, ""), (1.3, "ratio")]
+
     def test_the_unsettled_lists_are_kept_together_only_after_the_rest(self):
         """After the rest of the pages, the second call never saw the first
         answer, so both lists stand (one entry per thing and page). After the
@@ -1713,6 +1736,22 @@ class TestCalcChecksFlag:
             30, 31, 32]
         assert [c["page"] for c in builder.changes] == [30, 31, 32]
         assert [u["page"] for u in builder.unresolved] == [31]
+
+    def test_pages_already_mapped_are_not_read_again(self):
+        """RI-87: model-first ingest reads each call's answer against its
+        own call's pages before folding, and says so with ``mapped``; the
+        builder then takes every cite as the report's page."""
+        from report_ingest.calc_reader import _Builder
+        from report_ingest.tests.checks_fixtures import calc_cases
+        reading, pages = calc_cases()["positions"]     # cites 0-2 of 30-32
+        builder = _Builder(reading, pages, "R", [], [], checks="flag",
+                           mapped=True)
+        calc = builder.build()
+        assert builder.changes == []
+        assert [(v.prov.page, v.prov.confidence)
+                for v in calc.inputs + calc.results] == [(30, 0.4)] * 3
+        assert sum("is not part of this printout" in u["why"]
+                   for u in builder.unresolved) == 3
 
     def test_a_mixed_answer_is_read_as_the_reports_pages(self):
         """The printout's answer cites 30 to 32 and 99: the report's pages,

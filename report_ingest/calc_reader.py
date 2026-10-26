@@ -2263,11 +2263,16 @@ class _Builder:
     checked against ``pool`` here, because placement checks every stage's
     values against the page they cite (``module_work/REPORT_INGEST_PLAN.md``
     section 8.4 step 4).
+
+    ``mapped`` (``flag`` only): the answer's pages were already read as the
+    report's, call by call, before its calls' answers were folded into one
+    (model-first ingest's reader), so they are not read again here.
     """
 
     def __init__(self, reading: CalcReading, pages: Sequence[int],
                  report_id: str, zooms: Sequence[Dict[str, Any]],
-                 pool: Sequence[float], *, checks: str = "refuse") -> None:
+                 pool: Sequence[float], *, checks: str = "refuse",
+                 mapped: bool = False) -> None:
         self.reading = reading
         self.flag = check_mode(checks) == "flag"
         self.pages = list(pages)
@@ -2281,11 +2286,12 @@ class _Builder:
         self.repaged: Dict[int, int] = {}
         #: Under ``flag``, on a printout of several pages: how this answer's
         #: page numbers are read, decided once for the whole answer. None
-        #: otherwise (a one-page printout has the rule above).
+        #: otherwise (a one-page printout has the rule above), and when the
+        #: caller has already read them (``mapped``).
         self._numbers = (pdf_local(
             [value.prov.page for value in (*reading.inputs, *reading.results)]
             + [item.page for item in reading.unsettled], self.pages)
-            if self.flag and len(self.pages) > 1 else None)
+            if self.flag and len(self.pages) > 1 and not mapped else None)
 
     def _page(self, page: Optional[int]) -> Optional[int]:
         """The report's page for a page the answer cites: under ``flag`` read
@@ -2473,24 +2479,37 @@ class _Builder:
             unsettled=[dict(u) for u in self.unresolved])
 
 
-def _read_twice(left: ReadValue, right: ReadValue) -> bool:
+def _read_twice(left: ReadValue, right: ReadValue,
+                same_value: bool = False) -> bool:
     """Are two of the model's rows one printed value read twice?
 
     The merge's own notion of a slot (:func:`_same_place`): the label, at
     one place -- the same page, and boxes on one printed line where both
     name one. A label alone is not a slot: a sheet prints "Maximum bending
     moment" once for each load case.
+
+    ``same_value``: where either row has no box, the two must also read one
+    value -- the same number or words in the same unit. Model-first ingest
+    clears every box (``module_work/REPORT_INGEST_PLAN.md`` section 8.4), and
+    without one, two factors of safety printed on one page would otherwise
+    be one slot and the first lost. The default is today's rule.
     """
     if not _same_name(left.name, right.name):
         return False
     if int(left.prov.page) != int(right.prov.page):
         return False
     a, b = _box(left.prov.bbox), _box(right.prov.bbox)
-    return a is None or b is None or _meet(a, b)
+    if a is not None and b is not None:
+        return _meet(a, b)
+    return not same_value or (
+        left.value == right.value
+        and left.unit.strip() == right.unit.strip()
+        and left.text.strip() == right.text.strip())
 
 
 def _fold_readings(first: CalcReading, second: CalcReading,
-                   fresh: bool = False) -> CalcReading:
+                   fresh: bool = False,
+                   same_value: bool = False) -> CalcReading:
     """Two answers about one printout as one reading.
 
     The later answer wins on the scalar fields only where the first left
@@ -2504,6 +2523,10 @@ def _fold_readings(first: CalcReading, second: CalcReading,
     could not carry the first's unsettled list forward: the two lists are
     kept together. After the unsettled follow-up, which sees the first
     answer, the second list is what is still unsettled.
+
+    ``same_value``: two rows with no box are one printed value only when
+    they also read the same value (:func:`_read_twice`); model-first
+    ingest's answers carry no box.
     """
     out = first.model_copy(deep=True)
     out.kind = second.kind or first.kind
@@ -2519,7 +2542,7 @@ def _fold_readings(first: CalcReading, second: CalcReading,
         replaced: set = set()
         for row in getattr(second, name):
             twins = [n for n in range(earlier) if n not in replaced
-                     and _read_twice(merged[n], row)]
+                     and _read_twice(merged[n], row, same_value)]
             if not twins:
                 merged.append(row)
                 continue

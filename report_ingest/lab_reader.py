@@ -1174,8 +1174,11 @@ class _Builder:
         self.changes: List[Dict[str, Any]] = []
         self._what = ""
         #: The series names the test being built was read for
-        #: (:meth:`series_named`), so ``flag`` can list the rest.
+        #: (:meth:`series_named`), and the series it took (by identity), so
+        #: ``flag`` can list the rest: a series of a name it does not read,
+        #: and a second series of a name it does.
         self._asked: Set[str] = set()
+        self._taken: Set[int] = set()
 
     # -- the gates ---------------------------------------------------------
     def _refuse(self, what: str, why: str, value: Any = None,
@@ -1384,6 +1387,7 @@ class _Builder:
         self._asked.add(name)
         for series in test.series:
             if (series.name or "").strip().lower() == name:
+                self._taken.add(id(series))
                 return series
         return None
 
@@ -1721,17 +1725,23 @@ class _Builder:
                            no_results=bool(test.no_results), fields=fields)
 
     def _unread_series(self, kind: str, test: ReadTest) -> None:
-        """Under ``flag``, each series the test's kind does not read, listed
-        as read rather than left out without a word."""
+        """Under ``flag``, each series the test did not read, listed as read
+        rather than left out without a word: one of a name the test's kind
+        does not read, and a second one of a name it does (the test holds
+        one series of each name, the first given)."""
         for series in test.series:
             name = (series.name or "").strip().lower()
-            if name in self._asked:
+            if id(series) in self._taken:
                 continue
-            reads = ", ".join(sorted(self._asked)) or "none"
-            self._refuse(
-                f"series {name or '(unnamed)'}",
-                f"the {kind} test reads no series named {name!r} (it reads "
-                f"{reads}); {LISTED}", read=series)
+            if name in self._asked:
+                why = (f"the {kind} test keeps one series named {name!r}, "
+                       f"the first one given; this is a second one; "
+                       f"{LISTED}")
+            else:
+                reads = ", ".join(sorted(self._asked)) or "none"
+                why = (f"the {kind} test reads no series named {name!r} (it "
+                       f"reads {reads}); {LISTED}")
+            self._refuse(f"series {name or '(unnamed)'}", why, read=series)
 
     # -- the whole sheet ---------------------------------------------------
     def build(self) -> List[LabTest]:
@@ -1744,6 +1754,7 @@ class _Builder:
             self._at = self.cited_page(test.prov) if self.flag else None
             digitised = any(s.digitised for s in test.series)
             self._asked = set()
+            self._taken = set()
             result = self.result_for(kind, test)
             if self.flag:
                 self._unread_series(kind, test)

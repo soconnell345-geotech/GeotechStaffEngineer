@@ -2059,6 +2059,42 @@ class TestLabChecksFlag:
         today.build()
         assert today.unresolved == []
 
+    def test_a_second_series_of_a_name_already_read_is_listed(self):
+        """A gradation holds one percent-passing curve: the first given is
+        read, and a second of that name is listed as read under flag, and
+        left out without a word under refuse, as today."""
+        import json
+        from report_ingest.lab_reader import _Builder
+        reading = LabSheetReading.model_validate({
+            "depth_unit": "ft",
+            "tests": [{"kind": "gradation", "investigation_id": "B-1",
+                       "series": [
+                           {"name": "percent_passing", "x_unit": "mm",
+                            "points": [{"x": 4.75, "y": 90.0},
+                                       {"x": 0.075, "y": 30.0}]},
+                           {"name": "Percent_Passing", "x_unit": "mm",
+                            "points": [{"x": 4.75, "y": 70.0},
+                                       {"x": 0.075, "y": 12.0}]}],
+                       "prov": {"page": 20}}]})
+        builder = _Builder(reading, [20], "R", [], checks="flag")
+        (test,) = builder.build()
+        assert [p.percent_passing for p in test.result.percent_passing] == [
+            90.0, 30.0]
+        (row,) = builder.unresolved
+        assert row["what"] == "gradation 1 (B-1): series percent_passing"
+        assert row["page"] == 20
+        assert row["why"] == (
+            "the gradation test keeps one series named 'percent_passing', "
+            "the first one given; this is a second one; kept out of the "
+            "record and listed here as read")
+        assert [p["y"] for p in json.loads(row["read"])["points"]] == [
+            70.0, 12.0]
+        assert _ranked([row])[0].rank == "open"
+        today = _Builder(reading, [20], "R", [])
+        (same,) = today.build()
+        assert today.unresolved == []
+        assert same.result == test.result
+
     def test_a_summary_tables_own_entries_carry_its_label(self):
         """RI-89 review: the summary builder left its test's label empty,
         so the table's provenance and picture entries had no 'what'. A
