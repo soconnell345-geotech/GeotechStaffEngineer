@@ -232,7 +232,9 @@ log). Report counts only, as for every blind set.
    record the arm (`model_first`), the route and no error, then run the rest
    in the same `out_dir` (it resumes).
 3. **Each MF-2 arm, the token check:** run R05 and R36 first. Check each
-   `run.json` (arm, models, routes, placement counts) and its tokens in.
+   `run.json` (arm, models, routes, placement counts) and its tokens in
+   (`all_attempts.input_tokens` where the file has it: `cost` is the last
+   attempt alone).
    Stop and send the report back if its tokens in pass the line below: 1.5
    times the high estimate per page (off about 27 k a page, on about 15 k).
    Then run R37, R13, R16 and R28 with `max_reports`, and check each report
@@ -286,11 +288,13 @@ log). Report counts only, as for every blind set.
       passed after 4 retries, and the next small call waited 72 s. Set
       `max_request_tokens_in` (RI-110) and the page groups' split (RI-121)
       from the answer, and expect slow minutes after any large request.
-   8. **Cost from every attempt.** Until RI-124, a report read in two
-      attempts keeps only the last attempt's cost in RESULTS (run 5: 433
-      calls shown against 716 made). Report the arm's cost from each
-      build's own counts, and return one summary row per build (the glue's
-      table listed only some).
+   8. **Cost from every attempt.** RESULTS' Cost block counts every
+      attempt of every report (RI-124): the finished reports, then a line
+      for the reports not finished (braked, given up or failed, all listed
+      under failures), then the total for every report. Read the arm's
+      spend off that total line. `max_total_tokens` counts one build only,
+      so the lead adds the builds' totals for the wave's ceiling (RI-133).
+      Return one summary row per build (the glue's table listed only some).
    9. **Narrative repeats.** The same narrative read twice differed by one
       field in 28. Compare the arms' narratives only on differences larger
       than one field a report, or read each twice.
