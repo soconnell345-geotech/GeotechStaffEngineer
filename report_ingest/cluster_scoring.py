@@ -95,6 +95,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.corpus import Corpus
+from report_ingest.engine import CallCeilingReached
 from report_ingest.mirror import DEFAULT_FOLDER, Mirror
 from report_ingest.scoring import (
     CHECKPOINT, GATE, KEY_CONTENT, OOS_BLIND, OOS_OPEN, Scores,
@@ -552,10 +553,122 @@ class _FirstArm:
                 + models)
 
 
+def _stamp_arm(folder: Path, first: _FirstArm) -> None:
+    """Write ``arm.json`` into a report's output folder, once, when the
+    folder is made (BACKLOG RI-120). It is what keeps an interrupted folder
+    -- one with items but no ``run.json`` yet -- from being taken over by
+    the other arm (:func:`_arm_clash`). A folder made before the stamp
+    existed, with items but no ``run.json`` and no ``arm.json``, is
+    stamped with the arm of the run that finds it; nothing says which arm
+    began it."""
+    stamp = folder / "arm.json"
+    if stamp.is_file():
+        return
+    stamp.write_text(json.dumps({"model_first": first.setting}),
+                     encoding="utf-8")
+
+
+def _tokens_of(cost: Dict[str, Any]) -> int:
+    """Input plus output tokens of a run file's ``cost``."""
+    return (int(cost.get("input_tokens") or 0)
+            + int(cost.get("output_tokens") or 0))
+
+
+class _TokenBrake:
+    """A token limit on one report's model calls, for a route whose dollar
+    meter reads 0 (BACKLOG RI-120).
+
+    :meth:`wrap` puts an engine behind it: a call that would start once the
+    report's meter shows ``report_in`` input tokens, or ``total_left``
+    tokens (input plus output) spent, is refused with
+    :class:`~report_ingest.engine.CallCeilingReached` before anything is
+    sent. The graph already treats that as a step cut short, not failed.
+    Both None wraps nothing."""
+
+    def __init__(self, meter: Any, report_in: Optional[int],
+                 total_left: Optional[int]) -> None:
+        self.meter = meter
+        self.report_in = report_in
+        self.total_left = total_left
+        self.tripped: Optional[str] = None
+
+    def wrap(self, engine: Any) -> Any:
+        if engine is None or (self.report_in is None
+                              and self.total_left is None):
+            return engine
+        return _BrakedEngine(engine, self)
+
+    def wrap_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """``ingest_report``'s arm arguments with each engine behind the
+        brake; the caller's copy is untouched."""
+        out = dict(kwargs)
+        for key in ("describe_engine", "range_engine"):
+            if key in out:
+                out[key] = self.wrap(out[key])
+        if "stage_engines" in out:
+            out["stage_engines"] = {k: self.wrap(v) for k, v
+                                    in out["stage_engines"].items()}
+        return out
+
+    def check(self) -> None:
+        used_in = int(self.meter.input_tokens)
+        if self.report_in is not None and used_in >= self.report_in:
+            self.tripped = "max_report_tokens_in"
+            raise CallCeilingReached(
+                f"the report has sent {used_in:,} input tokens, at its "
+                f"{self.report_in:,} ceiling")
+        if self.total_left is not None and (
+                used_in + int(self.meter.output_tokens) >= self.total_left):
+            self.tripped = "max_total_tokens"
+            raise CallCeilingReached(
+                "the run's token ceiling (max_total_tokens) is reached")
+
+    def fields(self) -> Dict[str, Any]:
+        """The run file's entry; empty unless a call was refused."""
+        if self.tripped is None:
+            return {}
+        return {"token_brake": {
+            "limit": self.tripped,
+            "input_tokens": int(self.meter.input_tokens),
+            "output_tokens": int(self.meter.output_tokens)}}
+
+
+class _BrakedEngine:
+    """An engine whose calls the brake may refuse; everything else is the
+    engine it wraps."""
+
+    def __init__(self, inner: Any, brake: _TokenBrake) -> None:
+        self._inner = inner
+        self._brake = brake
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") or name in ("_inner", "_brake"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+    def complete(self, messages: Any, **kwargs: Any) -> Any:
+        self._brake.check()
+        return self._inner.complete(messages, **kwargs)
+
+
 def _arm_clash(run_file: Path, first: _FirstArm) -> Optional[str]:
     """Why this run may neither use nor replace ``run_file``: it was read
     in the other model-first arm. None when there is no such file. A run
-    file written before the arm was recorded was read with it off."""
+    file written before the arm was recorded was read with it off. The
+    folder's ``arm.json`` (:func:`_stamp_arm`) is checked first, so a folder
+    with no run file yet, one a run was interrupted in, is held to its arm
+    too."""
+    stamp = run_file.parent / "arm.json"
+    if stamp.is_file():
+        try:
+            saved = str(json.loads(stamp.read_text(encoding="utf-8")
+                                   ).get("model_first") or "off")
+        except (json.JSONDecodeError, OSError, AttributeError):
+            saved = first.setting
+        if saved != first.setting:
+            return (f"its folder was started with model first {saved} and "
+                    f"this run is {first.setting}; one out_dir holds one "
+                    f"arm, so start a fresh out_dir for the other")
     if not run_file.is_file():
         return None
     try:
@@ -705,6 +818,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      triage_model: Optional[str] = None,
                      oos_labels: Any = None,
                      max_total_dollars: Optional[float] = None,
+                     max_total_tokens: Optional[int] = None,
+                     max_report_tokens_in: Optional[int] = None,
                      max_reports: Optional[int] = None,
                      redo: bool = False,
                      corpus_dir: Any = None,
@@ -803,6 +918,16 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         Stop before starting another report once the run has spent this
         much. Funhouse publishes no per-token price for a tier, so this only
         bites if a price is known; ``max_reports`` is the reliable cap.
+    max_total_tokens
+        The same stop in tokens (input plus output), for a route whose
+        dollar meter reads 0 (Foundry, BACKLOG RI-120). Checked before each
+        report, and inside the ``ingest`` stage before each model call.
+        None, the default, sets no limit.
+    max_report_tokens_in
+        The ``ingest`` stage's limit on one report's input tokens. A model
+        call that would start past it is refused (``CallCeilingReached``,
+        so the step it belonged to is cut short and not saved), and the
+        run stops after that report. None, the default, sets no limit.
     redo
         Re-run reports that already have a run file. Off by default, which is
         what makes a detached notebook cheap to resume.
@@ -1254,6 +1379,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"  not in {corpus.reports_dir} and skipped: "
               f"{', '.join(absent)}")
     spent = 0.0
+    spent_tokens = 0
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     for n, rid in enumerate(label_ids, 1):
@@ -1265,6 +1391,10 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         if max_total_dollars is not None and spent > max_total_dollars:
             print(f"  stopping before {rid}: spent ${spent:.2f}, past the "
                   f"${max_total_dollars:.2f} ceiling")
+            break
+        if max_total_tokens is not None and spent_tokens >= max_total_tokens:
+            print(f"  stopping before {rid}: {spent_tokens:,} tokens spent, "
+                  f"past the {max_total_tokens:,} ceiling")
             break
         try:
             blob = _run_one(rid, corpus, source, model, triage_model, out)
@@ -1280,6 +1410,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         done[rid] = blob
         sync()                       # the run file is on disk; make it durable
         spent += blob["cost"].get("dollars", 0.0)
+        spent_tokens += _tokens_of(blob["cost"])
         review = blob["review"]
         print(f"  [{n}/{len(wanted)}] {rid}: {blob['n_pages']} pp, "
               f"{len(review['changes'])} change(s), "
@@ -1379,6 +1510,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              narrative_budget=narrative_budget,
                              redo=redo, review_dir=review_dir,
                              max_total_dollars=max_total_dollars,
+                             max_total_tokens=max_total_tokens,
+                             max_report_tokens_in=max_report_tokens_in,
                              label_policy=label_policy,
                              review_mode=review_mode,
                              vision_model=vision_model,
@@ -5188,6 +5321,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 log_budget: int, lab_budget: int, narrative_budget: int,
                 redo: bool, review_dir: Any = None,
                 max_total_dollars: Optional[float] = None,
+                max_total_tokens: Optional[int] = None,
+                max_report_tokens_in: Optional[int] = None,
                 label_policy: str = "structural",
                 review_mode: str = "disagreements",
                 vision_model: str = "funhouse-gpt-low",
@@ -5238,6 +5373,15 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     and describer versions, and what placement found. Off, a stage named
     in ``first.stage_models`` is today's reader on that model, and
     ``run.json`` names those models.
+
+    TOKEN LIMITS (BACKLOG RI-120) work where the dollar meter reads 0.
+    ``max_total_tokens`` stops the run before a report once the reports so
+    far have spent that many (input plus output) and refuses a model call
+    inside a report that would start past what is left;
+    ``max_report_tokens_in`` refuses a call once the report has sent that
+    many input tokens and stops the run after the report. A refused call
+    is a ``CallCeilingReached``: the step is cut short and not saved, and
+    ``run.json`` gains a ``token_brake`` entry saying which limit it was.
     """
     from report_ingest.calc_reader import page_images_enabled
     from report_ingest.engine import CostMeter
@@ -5261,6 +5405,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     done: Dict[str, dict] = {}
     failures: Dict[str, str] = {}
     spent = 0.0
+    spent_tokens = 0
     for n, rid in enumerate(report_ids, 1):
         folder = out / "ingest" / rid
         run_file = folder / "run.json"
@@ -5271,13 +5416,21 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             continue
         if run_file.is_file() and not redo:
             blob = json.loads(run_file.read_text(encoding="utf-8"))
-            if not blob.get("error"):
+            # A report the token brake cut short is unfinished, like one
+            # that failed: its unsaved steps are asked for again (the saved
+            # items are kept).
+            if not blob.get("error") and not blob.get("token_brake"):
                 done[rid] = blob
                 print(f"  [{n}/{len(report_ids)}] {rid}: already done, "
                       "skipping")
                 continue
-            print(f"  [{n}/{len(report_ids)}] {rid}: previous attempt failed "
-                  f"({str(blob.get('error'))[:90]}); retrying")
+            if blob.get("token_brake"):
+                print(f"  [{n}/{len(report_ids)}] {rid}: cut short by the "
+                      f"token brake ({blob['token_brake'].get('limit')}); "
+                      "retrying")
+            else:
+                print(f"  [{n}/{len(report_ids)}] {rid}: previous attempt "
+                      f"failed ({str(blob.get('error'))[:90]}); retrying")
         if rid not in present:
             failures[rid] = f"{rid} is not in the reports folder"
             print(f"  [{n}/{len(report_ids)}] {rid}: skipped -- "
@@ -5287,7 +5440,12 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             print(f"  stopping before {rid}: spent ${spent:.2f}, past the "
                   f"${max_total_dollars:.2f} ceiling")
             break
+        if max_total_tokens is not None and spent_tokens >= max_total_tokens:
+            print(f"  stopping before {rid}: {spent_tokens:,} tokens spent, "
+                  f"past the {max_total_tokens:,} ceiling")
+            break
         folder.mkdir(parents=True, exist_ok=True)
+        _stamp_arm(folder, first)
         triage_reused, review_reused = _reuse_label_run(
             folder, runs_dir, rid, review=not first.on)
         # A reused review made on the other engine is named in the run file
@@ -5309,17 +5467,20 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             range_model or model)
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
                           lab=lab_budget)
+        brake = _TokenBrake(meter, max_report_tokens_in,
+                            None if max_total_tokens is None
+                            else max_total_tokens - spent_tokens)
         started = time.time()
         doc = None
         try:
             doc = corpus.open_report(rid, di="auto", warn=False)
-            record = ingest_report(doc, engine, out_dir=folder,
+            record = ingest_report(doc, brake.wrap(engine), out_dir=folder,
                                    budgets=budgets, report_id=rid,
                                    resume=not redo, write=True,
                                    db_path=out / "ingest" / "reports.db",
                                    label_policy=label_policy,
                                    review_mode=review_mode,
-                                   vision_engine=vision_engine,
+                                   vision_engine=brake.wrap(vision_engine),
                                    vision_mode=vision_mode,
                                    vision_detail=vision_detail,
                                    trust_table=trust_table,
@@ -5328,8 +5489,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                    counts_from_logs=counts_from_logs,
                                    narrative_skips_bound=(
                                        narrative_skips_bound),
-                                   triage_engine=triage_engine,
-                                   **arm_kwargs)
+                                   triage_engine=brake.wrap(triage_engine),
+                                   **brake.wrap_kwargs(arm_kwargs))
             n_pages = doc.n_pages
         except KeyboardInterrupt:
             print("  interrupted; what is finished is on disk and a later "
@@ -5345,6 +5506,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 "error": failures[rid], "cost": meter.to_dict(),
                 "model_first": first.setting}),
                 encoding="utf-8")
+            # What a failed report spent still counts toward the ceiling.
+            spent_tokens += _tokens_of(meter.to_dict())
             _sync(sync)
             continue
         finally:
@@ -5420,11 +5583,13 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "lab_link_from_label": link_from_label_enabled(),
             "lab_floor_per_page": floor_per_page_enabled(),
             **_ingest_steps(folder),
+            **brake.fields(),
         }
         run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[rid] = blob
         spent += blob["cost"].get("dollars", 0.0)
+        spent_tokens += _tokens_of(blob["cost"])
         counts = blob["counts"]
         diggs = blob["diggs"]
         print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
@@ -5437,6 +5602,13 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
+        if (max_report_tokens_in is not None
+                and int(blob["cost"].get("input_tokens") or 0)
+                >= max_report_tokens_in):
+            print(f"  stopping after {rid}: {blob['cost']['input_tokens']:,}"
+                  f" input tokens, at the {max_report_tokens_in:,} "
+                  f"per-report ceiling")
+            break
     stage_model, fields = engines.stage(model)
     if not engines.plain:
         seen = engines.describe(vision_model, vision=True)
@@ -5505,11 +5677,14 @@ def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
                   **{key: blob.get(key) for key in (
                       "describe_prompt", "conventions", "labeller_prompt")}}
         break
+    # What the graph placed, from the file it writes beside the items
+    # (graph._write_placement): not the item files on disk, which leave out
+    # a group part of whose pages went unanswered and keep one a regroup
+    # replaced.
     placements: List[Any] = []
-    for path in sorted(folder.rglob("mf-*.json")):
-        if path.parent.name == "items":
-            blob = _run_blob_on_disk(path.parent, path.stem)
-            placements.extend(blob.get("placement") or [])
+    for path in sorted(folder.rglob("placement.json")):
+        for found in _run_blob_on_disk(path.parent, "placement").values():
+            placements.extend(found or [])
     return {"model_first": "on",
             "page_route": page_route(first.page_route),
             "routes": {stage: resolve_route(

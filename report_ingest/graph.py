@@ -2755,6 +2755,11 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             and (inside is None or page in inside)]
 
     done: List[_Unit] = []
+    placed: Dict[str, List[Any]] = {}
+    try:                       # an earlier run's file must never be read
+        os.remove(os.path.join(out, "placement.json"))
+    except OSError:
+        pass
     first_log = len(record.investigations)
     for unit, parts in units:
         stage = _MODEL_FIRST_STAGES[ITEM_READERS[unit.kind]]
@@ -2787,6 +2792,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             if cached is None and not _part_skipped(blob):
                 _keep(path, blob, spend, mark, qa, where, unit.pages)
             _into_record(stage, blob, record)
+            placed[key] = list(blob.get("placement") or [])
             qa.extend(_placement_qa(blob, where, unit.pages))
             done.append(unit)
         except Exception as exc:                 # one item must not stop the run
@@ -2797,8 +2803,26 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
                 pages=unit.pages))
         finally:
             spend.settle(mark)
+    _write_placement(out, placed)
     _join_by_hole(record, first_log, unresolved, qa, _ruler_slack(doc, qa))
     return done
+
+
+def _write_placement(out: str, placed: Dict[str, List[Any]]) -> None:
+    """``placement.json`` beside ``items/``: the placement of each unit
+    this run put on the record, by its key (BACKLOG RI-120). The item files
+    are not that -- a group with part of its pages unanswered is never
+    saved, and a regroup leaves the old group's files behind -- so a count
+    of what was placed reads this file. :func:`_read_model_first` removes
+    any earlier file when it starts and writes this one as soon as its
+    units are read, so a file on disk is always from the latest run that
+    got that far and a run that stopped sooner leaves none."""
+    try:
+        with open(os.path.join(out, "placement.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(placed, fh)
+    except OSError:                       # a count must not stop the run
+        pass
 
 
 def _ruler_slack(doc: Any, qa: List[QAEntry]) -> Any:
