@@ -73,6 +73,7 @@ WHAT IT WRITES into ``out_dir``::
     ingest/<ID>/          the whole pipeline's output for one report: the
                           record, the summary, the library page, the DIGGS
                           file, qa.json, and run.json with the counts
+                          and the cost of every attempt at the report
     ingest/reports.db     the library index over every report ingested
     results.json          every summary table as data
     RESULTS.md            the same tables to read, and to bring back
@@ -574,6 +575,110 @@ def _tokens_of(cost: Dict[str, Any]) -> int:
             + int(cost.get("output_tokens") or 0))
 
 
+#: What an earlier attempt's entry in a report's ``run.json`` keeps of the
+#: cost block that attempt's run file held (BACKLOG RI-124): its totals. The
+#: row per request (``per_call``) and the per-model split are not carried.
+_ATTEMPT_COST_KEYS: Tuple[str, ...] = (
+    "calls", "failed", "retried", "failed_by_kind", "input_tokens",
+    "output_tokens", "reasoning_tokens", "reasoning_reported",
+    "cache_read_tokens", "cache_write_tokens", "seconds", "waited_seconds",
+    "dollars", "unpriced_calls")
+
+#: The counts an ``all_attempts`` block adds up over a report's attempts.
+_ATTEMPT_SUMS: Tuple[str, ...] = (
+    "calls", "failed", "retried", "input_tokens", "output_tokens",
+    "cache_read_tokens", "cache_write_tokens", "reasoning_tokens",
+    "reasoning_reported", "unpriced_calls")
+
+
+def _attempt_entry(blob: Dict[str, Any]) -> Dict[str, Any]:
+    """One earlier attempt at a report as its ``run.json`` carries it, read
+    off the run file that attempt wrote (BACKLOG RI-124): the date, how it
+    ended (``error``, ``token_brake``, ``item_errors``, or ``finished``),
+    its wall clock and its cost totals. A failed attempt's file keeps no
+    wall clock, so its calls' own seconds stand in."""
+    cost = blob.get("cost") if isinstance(blob.get("cost"), dict) else {}
+    if blob.get("error"):
+        ended = "error"
+    elif blob.get("token_brake"):
+        ended = "token_brake"
+    elif blob.get("item_errors"):
+        ended = "item_errors"
+    else:
+        ended = "finished"
+    seconds = blob.get("seconds", cost.get("seconds"))
+    try:
+        seconds = round(float(seconds or 0.0), 1)
+    except (TypeError, ValueError):
+        seconds = 0.0
+    return {"run_date": blob.get("run_date"), "ended": ended,
+            "seconds": seconds,
+            "cost": {key: cost[key] for key in _ATTEMPT_COST_KEYS
+                     if key in cost}}
+
+
+def _attempt_rows(blob: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The ``earlier_attempts`` a run file carries; none for one written
+    before BACKLOG RI-124 or by a report's first attempt."""
+    rows = blob.get("earlier_attempts")
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _earlier_attempts(blob: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every attempt before the one about to replace ``blob``'s run file:
+    the earlier attempts that file carries, then its own (BACKLOG RI-124)."""
+    return _attempt_rows(blob) + [_attempt_entry(blob)]
+
+
+def _attempts_in(earlier: Sequence[Dict[str, Any]]) -> int:
+    """The input tokens the earlier attempts at a report sent."""
+    total = 0
+    for row in earlier:
+        cost = row.get("cost")
+        if isinstance(cost, dict):
+            total += _n(cost.get("input_tokens"))
+    return total
+
+
+def _float(value: Any) -> float:
+    """A number of seconds or dollars read off a run file, 0.0 where it is
+    not one."""
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _attempts_fields(earlier: Sequence[Dict[str, Any]],
+                     cost: Dict[str, Any], seconds: Any) -> Dict[str, Any]:
+    """A run file's ``earlier_attempts`` and ``all_attempts`` (this attempt's
+    ``cost`` and ``seconds`` added to the earlier ones'); nothing when this
+    is the report's first attempt, so that run file is written as before
+    (BACKLOG RI-124)."""
+    if not earlier:
+        return {}
+    costs = [row.get("cost") if isinstance(row.get("cost"), dict) else {}
+             for row in earlier] + [cost if isinstance(cost, dict) else {}]
+    total: Dict[str, Any] = {"attempts": len(costs)}
+    for key in _ATTEMPT_SUMS:
+        total[key] = sum(_n(c.get(key)) for c in costs)
+    kinds: Dict[str, int] = {}
+    for c in costs:
+        by_kind = c.get("failed_by_kind")
+        for kind, n in (by_kind.items() if isinstance(by_kind, dict) else ()):
+            kinds[kind] = kinds.get(kind, 0) + _n(n)
+    total["failed_by_kind"] = kinds
+    total["dollars"] = round(sum(_float(c.get("dollars")) for c in costs), 4)
+    total["waited_seconds"] = round(
+        sum(_float(c.get("waited_seconds")) for c in costs), 1)
+    total["seconds"] = round(sum(_float(row.get("seconds"))
+                                 for row in earlier) + _float(seconds), 1)
+    return {"earlier_attempts": [dict(row) for row in earlier],
+            "all_attempts": total}
+
+
 class _TokenBrake:
     """A token limit on one report's model calls, for a route whose dollar
     meter reads 0 (BACKLOG RI-120).
@@ -583,13 +688,20 @@ class _TokenBrake:
     tokens (input plus output) spent, is refused with
     :class:`~report_ingest.engine.CallCeilingReached` before anything is
     sent. The graph already treats that as a step cut short, not failed.
-    Both None wraps nothing."""
+    Both None wraps nothing.
+
+    ``earlier_in`` is what the report's earlier attempts sent (BACKLOG
+    RI-124): the report limit counts it with this attempt's meter, so a
+    report retried after the brake, an error or a give-up does not start
+    on a fresh allowance. ``total_left`` is the run's, and counts this
+    call's spending only, as before."""
 
     def __init__(self, meter: Any, report_in: Optional[int],
-                 total_left: Optional[int]) -> None:
+                 total_left: Optional[int], earlier_in: int = 0) -> None:
         self.meter = meter
         self.report_in = report_in
         self.total_left = total_left
+        self.earlier_in = max(0, int(earlier_in or 0))
         self.tripped: Optional[str] = None
 
     def wrap(self, engine: Any) -> Any:
@@ -612,11 +724,14 @@ class _TokenBrake:
 
     def check(self) -> None:
         used_in = int(self.meter.input_tokens)
-        if self.report_in is not None and used_in >= self.report_in:
+        report_used = used_in + self.earlier_in
+        if self.report_in is not None and report_used >= self.report_in:
             self.tripped = "max_report_tokens_in"
             raise CallCeilingReached(
-                f"the report has sent {used_in:,} input tokens, at its "
-                f"{self.report_in:,} ceiling")
+                f"the report has sent {report_used:,} input tokens"
+                + (" over this and its earlier attempts" if self.earlier_in
+                   else "")
+                + f", at its {self.report_in:,} ceiling")
         if self.total_left is not None and (
                 used_in + int(self.meter.output_tokens) >= self.total_left):
             self.tripped = "max_total_tokens"
@@ -624,13 +739,18 @@ class _TokenBrake:
                 "the run's token ceiling (max_total_tokens) is reached")
 
     def fields(self) -> Dict[str, Any]:
-        """The run file's entry; empty unless a call was refused."""
+        """The run file's entry; empty unless a call was refused. Its
+        ``input_tokens`` and ``output_tokens`` are this attempt's; on a
+        report with earlier attempts ``earlier_input_tokens`` says what
+        they sent, which the report limit counted too (BACKLOG RI-124)."""
         if self.tripped is None:
             return {}
-        return {"token_brake": {
-            "limit": self.tripped,
-            "input_tokens": int(self.meter.input_tokens),
-            "output_tokens": int(self.meter.output_tokens)}}
+        entry = {"limit": self.tripped,
+                 "input_tokens": int(self.meter.input_tokens),
+                 "output_tokens": int(self.meter.output_tokens)}
+        if self.earlier_in:
+            entry["earlier_input_tokens"] = self.earlier_in
+        return {"token_brake": entry}
 
 
 class _BrakedEngine:
@@ -928,7 +1048,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         The ``ingest`` stage's limit on one report's input tokens. A model
         call that would start past it is refused (``CallCeilingReached``,
         so the step it belonged to is cut short and not saved), and the
-        run stops after that report. None, the default, sets no limit.
+        run stops after that report. It counts EVERY attempt at the report
+        (BACKLOG RI-124): one read again after the brake, an error or a
+        give-up starts with its earlier attempts' input counted, and one
+        whose earlier attempts already reached the limit is not read again
+        until the limit is raised. None, the default, sets no limit.
     max_request_tokens_in
         A limit on ONE request's input tokens in the ``ingest`` stage's log
         reader (BACKLOG RI-110): before a request nears it, earlier page
@@ -5395,6 +5519,24 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     many input tokens and stops the run after the report. A refused call
     is a ``CallCeilingReached``: the step is cut short and not saved, and
     ``run.json`` gains a ``token_brake`` entry saying which limit it was.
+
+    EVERY ATTEMPT'S COST IS KEPT (BACKLOG RI-124). A report read again --
+    after an error, a give-up (``item_errors``) or the token brake --
+    replaces its ``run.json``; the new file carries ``earlier_attempts``
+    (each earlier attempt's date, how it ended, its wall clock and its cost
+    totals, read off the file it replaces) and ``all_attempts`` (their sum
+    with this attempt), while ``cost`` and ``seconds`` stay this attempt's
+    own. ``max_report_tokens_in`` counts every attempt's input tokens: a
+    retried report starts with its earlier attempts' input counted, and one
+    whose earlier attempts already reached the limit is not read again
+    (it is listed among the failures). A report's first attempt, and any
+    attempt under ``redo``, which starts the report afresh, writes its run
+    file as before. A run file moved aside by hand is not read: only the
+    ``run.json`` an attempt replaces is. A report still unfinished when the
+    call ends (an error, the brake, an unread item, or skipped at the
+    limit), by this call or an earlier one, is listed among the failures,
+    and what it spent over every attempt is a Cost line of its own
+    (``cost_unfinished``), beside the total for every report.
     """
     from report_ingest.calc_reader import page_images_enabled
     from report_ingest.engine import CostMeter
@@ -5422,6 +5564,10 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     for n, rid in enumerate(report_ids, 1):
         folder = out / "ingest" / rid
         run_file = folder / "run.json"
+        # The attempts before this one, read off the run file it replaces
+        # (BACKLOG RI-124); none on a first attempt or a redo, which starts
+        # the report afresh.
+        earlier: List[Dict[str, Any]] = []
         clash = _arm_clash(run_file, first)
         if clash:
             failures[rid] = clash
@@ -5437,6 +5583,21 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 done[rid] = blob
                 print(f"  [{n}/{len(report_ids)}] {rid}: already done, "
                       "skipping")
+                continue
+            earlier = _earlier_attempts(blob)
+            sent = _attempts_in(earlier)
+            if max_report_tokens_in is not None and (
+                    sent >= max_report_tokens_in):
+                # The per-report limit counts every attempt: a report that
+                # has already sent its allowance is not read again, and
+                # this call spends nothing on it.
+                failures[rid] = (
+                    f"its {len(earlier)} earlier attempt(s) sent {sent:,} "
+                    f"input tokens, at the {max_report_tokens_in:,} "
+                    f"per-report ceiling (max_report_tokens_in); raise it "
+                    f"to read the rest")
+                print(f"  [{n}/{len(report_ids)}] {rid}: not retried -- "
+                      f"{failures[rid]}")
                 continue
             if blob.get("item_errors") and not blob.get("token_brake"):
                 print(f"  [{n}/{len(report_ids)}] {rid}: "
@@ -5488,7 +5649,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                           max_request_tokens_in=max_request_tokens_in)
         brake = _TokenBrake(meter, max_report_tokens_in,
                             None if max_total_tokens is None
-                            else max_total_tokens - spent_tokens)
+                            else max_total_tokens - spent_tokens,
+                            earlier_in=_attempts_in(earlier))
         started = time.time()
         doc = None
         try:
@@ -5520,13 +5682,19 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             print(f"  [{n}/{len(report_ids)}] {rid}: FAILED -- "
                   f"{failures[rid]}")
             traceback.print_exc()
+            spent_cost = meter.to_dict()
             run_file.write_text(_dumps({
                 "id": rid, "run_date": date.today().isoformat(),
-                "error": failures[rid], "cost": meter.to_dict(),
-                "model_first": first.setting}),
+                "error": failures[rid], "cost": spent_cost,
+                "model_first": first.setting,
+                # The earlier attempts ride on, so the next one keeps them
+                # (BACKLOG RI-124); this file keeps no wall clock, so this
+                # attempt counts its calls' own seconds.
+                **_attempts_fields(earlier, spent_cost,
+                                   spent_cost.get("seconds"))}),
                 encoding="utf-8")
             # What a failed report spent still counts toward the ceiling.
-            spent_tokens += _tokens_of(meter.to_dict())
+            spent_tokens += _tokens_of(spent_cost)
             _sync(sync)
             continue
         finally:
@@ -5605,21 +5773,26 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             **brake.fields(),
             **_item_error_fields(record),
         }
+        # Every attempt's cost (BACKLOG RI-124): ``cost`` and ``seconds``
+        # stay this attempt's own; a report read before carries its earlier
+        # attempts and their sum with this one.
+        blob.update(_attempts_fields(earlier, blob["cost"], blob["seconds"]))
         run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         if not blob.get("item_errors") and not blob.get("token_brake"):
             done[rid] = blob          # unfinished reports are not results
-        if blob.get("item_errors"):
+        if blob.get("item_errors") or blob.get("token_brake"):
             # An item the model could not be got to read (a rate-limit
             # give-up, a refused request) is a failed item: the report is
             # saved so a resume reads it again, and the run's failed count
-            # (the brief's stop rule) includes it.
-            failures[rid] = (f"{len(blob['item_errors'])} item(s) could not "
-                             "be read; a resume retries them")
+            # (the brief's stop rule) includes it. A report the token brake
+            # cut short says so (BACKLOG RI-124).
+            failures[rid] = _unfinished_reason(blob)
         spent += blob["cost"].get("dollars", 0.0)
         spent_tokens += _tokens_of(blob["cost"])
         counts = blob["counts"]
         diggs = blob["diggs"]
+        every = blob.get("all_attempts")
         print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
               f"{blob['workflow']}, {counts['investigations']} "
               f"investigation(s), {counts['samples']} sample(s), "
@@ -5629,22 +5802,78 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{diggs['roundtrip']}; {blob['cost']['calls']} calls, "
               f"{blob['cost']['input_tokens']:,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
-              f"{blob['seconds']:.0f} s")
+              f"{blob['seconds']:.0f} s"
+              + (f" (this attempt; over its {every['attempts']} attempts "
+                 f"{every['calls']} calls, {every['input_tokens']:,} in / "
+                 f"{every['output_tokens']:,} out, {every['failed']} failed)"
+                 if every else ""))
+        # The per-report limit counts every attempt's input (RI-124).
+        report_in = (int(blob["cost"].get("input_tokens") or 0)
+                     + _attempts_in(earlier))
         if (max_report_tokens_in is not None
-                and int(blob["cost"].get("input_tokens") or 0)
-                >= max_report_tokens_in):
-            print(f"  stopping after {rid}: {blob['cost']['input_tokens']:,}"
-                  f" input tokens, at the {max_report_tokens_in:,} "
+                and report_in >= max_report_tokens_in):
+            print(f"  stopping after {rid}: {report_in:,}"
+                  f" input tokens"
+                  + (" over its attempts" if earlier else "")
+                  + f", at the {max_report_tokens_in:,} "
                   f"per-report ceiling")
             break
     for rid, blob in _finished_elsewhere(out, first, done).items():
         done[rid] = blob
+    # Reports left unfinished in the folder, by this call or an earlier one
+    # (BACKLOG RI-124): their cost goes in the Cost block on a line of its
+    # own, and each is listed among the failures.
+    unfinished = _unfinished_in(out, first, done)
+    for rid, blob in unfinished.items():
+        failures.setdefault(rid, "left unfinished by an earlier call: "
+                                 + _unfinished_reason(blob))
     stage_model, fields = engines.stage(model)
     if not engines.plain:
         seen = engines.describe(vision_model, vision=True)
         fields.update({f"vision_{k}": v for k, v in seen.items()})
-    return {**_score_ingest(done, failures, stage_model), **fields,
-            **_first_results(done.values())}
+    return {**_score_ingest(done, failures, stage_model, unfinished),
+            **fields, **_first_results(done.values())}
+
+
+def _unfinished_reason(blob: Dict[str, Any]) -> str:
+    """Why a report's run file is not a result: the token brake cut it
+    short, items could not be read, or the attempt failed."""
+    if blob.get("token_brake"):
+        limit = (blob["token_brake"].get("limit")
+                 if isinstance(blob["token_brake"], dict) else None)
+        return (f"cut short by the token brake ({limit}); a resume reads "
+                f"the rest")
+    if blob.get("item_errors"):
+        rows = blob["item_errors"]
+        n = len(rows) if isinstance(rows, list) else 1
+        return f"{n} item(s) could not be read; a resume retries them"
+    return (f"the attempt failed ({str(blob.get('error'))[:90]}); a resume "
+            f"retries it")
+
+
+def _unfinished_in(out: Path, first: "_FirstArm",
+                   done: Dict[str, dict]) -> Dict[str, dict]:
+    """Run files in ``out/ingest/*/`` of this arm that are not results: an
+    error, a token brake or an unread item, and not in ``done`` (BACKLOG
+    RI-124). The twin of :func:`_finished_elsewhere`: what these reports
+    spent, over every attempt, is in the Cost block too."""
+    found: Dict[str, dict] = {}
+    root = out / "ingest"
+    if not root.is_dir():
+        return found
+    for run_file in sorted(root.glob("*/run.json")):
+        rid = run_file.parent.name
+        if rid in done or _arm_clash(run_file, first):
+            continue
+        try:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (isinstance(blob, dict) and blob.get("id") == rid
+                and (blob.get("error") or blob.get("token_brake")
+                     or blob.get("item_errors"))):
+            found[rid] = blob
+    return found
 
 
 def _item_error_fields(record: Any) -> Dict[str, Any]:
@@ -5773,9 +6002,28 @@ def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
 
 
 def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
-                  model: str) -> Dict[str, Any]:
+                  model: str,
+                  unfinished: Optional[Dict[str, dict]] = None
+                  ) -> Dict[str, Any]:
+    """The ingest stage's results over its finished run files.
+
+    ``cost`` counts EVERY attempt at each report (BACKLOG RI-124): a run
+    file's own ``cost`` and ``seconds`` plus its ``earlier_attempts``. When
+    any report was read in more than one attempt the results also carry
+    ``cost_last_attempt`` (each run file's own ``cost`` alone, the figure
+    ``cost`` was before), ``reports_with_earlier_attempts`` (report id to
+    how many attempts came before its last) and ``cost_covers``; when none
+    was, they carry neither and ``cost`` is what it always was.
+
+    ``unfinished`` holds the run files that are not results
+    (:func:`_unfinished_in`). When there are any, ``cost_unfinished`` is
+    what they spent over every attempt (with ``reports``, their ids) and
+    ``cost_every_report`` is that added to ``cost``; ``cost`` and the
+    per-report averages stay over the finished reports."""
     rows = [done[k] for k in sorted(done)]
     cost = _cost_totals()
+    own = _cost_totals()
+    retried: Dict[str, int] = {}
     totals: Dict[str, Any] = {
         "pages": 0, "investigations": 0, "samples": 0, "spt": 0,
         "lab_tests": 0, "calculations": 0, "qa": 0,
@@ -5802,6 +6050,14 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
     for row in rows:
         _add_cost(cost, row["cost"])
         cost["seconds"] += row.get("seconds", 0.0)
+        _add_cost(own, row["cost"])
+        own["seconds"] += row.get("seconds", 0.0)
+        earlier = _attempt_rows(row)
+        for entry in earlier:
+            _add_cost(cost, entry.get("cost"))
+            cost["seconds"] += _float(entry.get("seconds"))
+        if earlier:
+            retried[str(row.get("id"))] = len(earlier)
         _merge_visual(visual, row)
         totals["pages"] += int(row.get("n_pages") or 0)
         counts = row.get("counts") or {}
@@ -5906,7 +6162,42 @@ def _score_ingest(done: Dict[str, dict], failures: Dict[str, str],
         "totals": totals,
         "visual_scales": visual,
         "cost": cost,
+        **({"cost_covers": "every attempt at each report (run.json's own "
+                           "cost plus its earlier_attempts); "
+                           "cost_last_attempt is each run.json's own cost "
+                           "alone",
+            "cost_last_attempt": own,
+            "reports_with_earlier_attempts": retried} if retried else {}),
+        **_unfinished_cost(cost, unfinished or {}),
     }
+
+
+def _unfinished_cost(cost: Dict[str, Any],
+                     unfinished: Dict[str, dict]) -> Dict[str, Any]:
+    """``cost_unfinished`` (what the reports that are not results spent,
+    each run file's own attempt and its earlier ones) and
+    ``cost_every_report`` (that added to the finished reports' ``cost``);
+    nothing when every report finished (BACKLOG RI-124)."""
+    if not unfinished:
+        return {}
+    spent = _cost_totals()
+    for rid in sorted(unfinished):
+        # The attempts it carries and its own: every attempt it has had.
+        for entry in _earlier_attempts(unfinished[rid]):
+            _add_cost(spent, entry.get("cost"))
+            spent["seconds"] += _float(entry.get("seconds"))
+    every = _cost_totals()
+    for part in (cost, spent):
+        for key in _COST_SUMS + ("files", "files_counting_failures"):
+            every[key] += _n(part.get(key))
+        for key in ("dollars", "waited_seconds", "seconds"):
+            every[key] += _float(part.get(key))
+        for kind, n in (part.get("failed_by_kind") or {}).items():
+            every["failed_by_kind"][kind] = (
+                every["failed_by_kind"].get(kind, 0) + _n(n))
+    every["waited_seconds"] = round(every["waited_seconds"], 1)
+    spent["reports"] = sorted(unfinished)
+    return {"cost_unfinished": spent, "cost_every_report": every}
 
 
 def _kinds_cell(counts: Dict[str, int]) -> str:
@@ -6218,9 +6509,16 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
         out += [""] + extra[:-1]
     cost = ingest["cost"]
     n = max(1, ingest["n_reports"])
+    # BACKLOG RI-124: when a report was read in more than one attempt the
+    # totals count every attempt, and say so; each report's last attempt
+    # alone, the figure the block printed before, stands beside them.
+    own = ingest.get("cost_last_attempt")
+    retried = ingest.get("reports_with_earlier_attempts") or {}
+    over = " over every attempt" if own else ""
     out += ["", "## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls{over}, {cost['input_tokens']:,} "
+            f"input tokens (+{cost['cache_read_tokens']:,} the provider "
+            f"cached), "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
@@ -6228,9 +6526,43 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"{cost['input_tokens'] / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
-            f"{_money(cost, n)}",
-            "```", "",
-            _price_note(cost, ingest)]
+            f"{_money(cost, n)}"]
+    if own:
+        out += [f"each report's last attempt alone: {own['calls']} model "
+                f"calls, {own['input_tokens']:,} input tokens "
+                f"(+{own['cache_read_tokens']:,} cached), "
+                f"{own['output_tokens']:,} output, {own['seconds']:.0f} s"
+                f"{_money(own)}, {own['failed']} failed requests",
+                "read in more than one attempt: " + ", ".join(
+                    f"{rid} ({k + 1} attempts)"
+                    for rid, k in sorted(retried.items()))]
+    # The reports that are not results, over every attempt, and every
+    # report's total (BACKLOG RI-124); nothing when all of them finished.
+    left = ingest.get("cost_unfinished")
+    every = ingest.get("cost_every_report")
+    if left and every:
+        kinds = _failed_kinds(left)
+        out += [f"reports not finished (listed under failures): "
+                f"{len(left.get('reports') or ())}, {left['calls']} calls, "
+                f"{left['input_tokens']:,} in / {left['output_tokens']:,} "
+                f"out, {left['failed']} failed requests"
+                + (f" ({kinds})" if kinds else "")
+                + f", over every attempt{_money(left)}",
+                f"every report, finished or not: {every['calls']} calls, "
+                f"{every['input_tokens']:,} in / {every['output_tokens']:,} "
+                f"out, {every['failed']} failed requests, "
+                f"{every['seconds']:.0f} s{_money(every)}"]
+    out += ["```", "",
+            _price_note(every or cost, ingest)]
+    if own:
+        out += ["", "The totals above count EVERY attempt at each report: a "
+                    "report read again after an error, a give-up "
+                    "(`item_errors`) or the token brake carries its earlier "
+                    "attempts' cost in its `run.json` (`earlier_attempts`, "
+                    "`all_attempts`), and that is added here (BACKLOG "
+                    "RI-124). The per-report table shows each report's "
+                    "last attempt; the calls-by-step table counts the step "
+                    "files saved, from whichever attempt saved them."]
     return out
 
 
@@ -6349,6 +6681,15 @@ _FAILURE_WORDS: Dict[str, str] = {
     "no_reply": "nothing back", "other": "other errors"}
 
 
+def _failed_kinds(cost: Dict[str, Any]) -> str:
+    """``"4 rate limited, 2 timed out"`` for a cost block's failed requests,
+    most first; empty when none failed."""
+    return ", ".join(
+        f"{n} {_FAILURE_WORDS.get(kind, kind)}"
+        for kind, n in sorted((cost.get("failed_by_kind") or {}).items(),
+                              key=lambda kv: (-kv[1], kv[0])) if n)
+
+
 def _failure_line(cost: Dict[str, Any]) -> str:
     """The cost block's line on the requests that came back with an error,
     how many of them the engine sent again, and the reasoning tokens
@@ -6359,10 +6700,7 @@ def _failure_line(cost: Dict[str, Any]) -> str:
         return ("failed requests: not recorded (these run files were "
                 "written before failed requests were counted)")
     failed = int(cost.get("failed") or 0)
-    kinds = ", ".join(
-        f"{n} {_FAILURE_WORDS.get(kind, kind)}"
-        for kind, n in sorted((cost.get("failed_by_kind") or {}).items(),
-                              key=lambda kv: (-kv[1], kv[0])) if n)
+    kinds = _failed_kinds(cost)
     line = (f"failed requests, not among the calls above: {failed}"
             + (f" ({kinds})" if kinds else "")
             + f", {int(cost.get('retried') or 0)} of them sent again by the "
