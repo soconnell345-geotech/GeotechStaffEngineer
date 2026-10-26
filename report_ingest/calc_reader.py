@@ -2716,11 +2716,10 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
                 # A cited position among the pages this call was sent is its
                 # report page (RI-109), read call by call because the calls
                 # were sent different pages.
-                from report_ingest.model_first_read import _on_call_pages
                 # Decided on the values' cites alone: an unsettled row names
                 # a page the call may not have been shown ("page 13 not
                 # shown") and is no evidence of how it numbers pages.
-                from report_ingest.checks import pdf_local
+                from report_ingest.checks import _on_call_pages, pdf_local
                 got = got.model_copy(deep=True)
                 values = [v.prov for v in (*got.inputs, *got.results)]
                 numbers = pdf_local([v.page for v in values], shown_now)

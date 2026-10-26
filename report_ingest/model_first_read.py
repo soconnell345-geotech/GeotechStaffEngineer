@@ -111,7 +111,8 @@ from typing import (Any, Callable, Dict, List, Mapping, Optional, Sequence,
 
 from pydantic import BaseModel
 
-from report_ingest.checks import LISTED, as_read, pdf_local
+from report_ingest.checks import (LISTED, _noted, _on_call_pages, _span,
+                                  as_read, pdf_local)
 from report_ingest.engine import pdf_block, text_block, user
 from report_ingest.model_first import (READ_PROMPT_VERSION, _put_field,
                                        answer_schema, apply_lab_additions,
@@ -180,15 +181,6 @@ class _Spent:
         out["seconds"] = round(out["seconds"], 2)
         out["dollars"] = round(out["dollars"], 5)
         return out
-
-
-def _span(pages: Sequence[int]) -> str:
-    pages = list(pages)
-    if len(pages) == 1:
-        return f"page {pages[0]}"
-    if pages == list(range(pages[0], pages[-1] + 1)):
-        return f"pages {pages[0]}-{pages[-1]}"
-    return "pages " + ", ".join(str(p) for p in pages)
 
 
 def _skipped(stage: str, pages: Sequence[int], why: str) -> Dict[str, Any]:
@@ -341,51 +333,6 @@ def _result(stage: str, key: str, caller: _Caller, spent: _Spent,
 def _nothing_read(skipped: Sequence[Dict[str, Any]]) -> str:
     return ("no answer came back for any page of this group"
             + (f" ({skipped[0]['why']})" if skipped else ""))
-
-
-def _on_call_pages(holders: Sequence[Any], pages: Sequence[int],
-                   one_page: bool = False
-                   ) -> Tuple[List[Dict[str, Any]], str]:
-    """Each ``page`` the holders cite (a value's provenance, a citation, an
-    unsettled row) read once for the whole answer against the pages of its
-    own call, in place (:func:`~report_ingest.checks.pdf_local`); a holder
-    with a ``note`` gets the reading's words. With ``one_page`` on a call of
-    one page, every cite is that page (the calculation reader's RI-74 rule).
-
-    Returns the entry saying the answer mixed the call's pages with others
-    (none when it did not), and a line for the warnings when any page was
-    read otherwise than cited ("" when none was)."""
-    pages = [int(p) for p in pages]
-    holders = [h for h in holders if getattr(h, "page", None) is not None]
-    if one_page and len(pages) == 1:
-        page = pages[0]
-        moved = sorted({int(h.page) for h in holders if int(h.page) != page})
-        for holder in holders:
-            if int(holder.page) != page:
-                _noted(holder, f"the answer cited page {holder.page}; its "
-                               f"call carried page {page} alone, so it was "
-                               f"read as page {page}")
-                holder.page = page
-        return [], (f"page {page}: the answer cited page(s) "
-                    f"{', '.join(str(p) for p in moved)}; its call carried "
-                    f"this page alone, so they were read as page {page}"
-                    if moved else "")
-    numbers = pdf_local([h.page for h in holders], pages)
-    if numbers.positions:
-        for holder in holders:
-            holder.page, said = numbers.page(holder.page)
-            _noted(holder, said)
-    rows = ([{"what": "page numbers", "why": numbers.mixed,
-              "flag": "page_numbers"}] if numbers.mixed else [])
-    return rows, (f"{_span(pages)}: the answer cited its pages as positions "
-                  f"in the {len(pages)} page(s) its call was sent; they were "
-                  f"read as the report's pages" if numbers.positions else "")
-
-
-def _noted(holder: Any, said: str) -> None:
-    """``said`` added to a holder's note, where it has one."""
-    if said and isinstance(getattr(holder, "note", None), str):
-        holder.note = "; ".join(n for n in (holder.note.strip(), said) if n)
 
 
 def _entries_on_pages(rows: List[Dict[str, Any]], builder: Any
