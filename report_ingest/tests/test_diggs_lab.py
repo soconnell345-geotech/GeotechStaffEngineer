@@ -437,13 +437,13 @@ def test_a_summary_row_shares_the_hole_made_for_a_sheet():
     assert ok, diffs
 
 
-def test_a_test_nobody_linked_is_placed_by_its_printed_hole_as_before():
+def test_a_test_nobody_linked_is_placed_by_its_printed_hole():
     log = Investigation(investigation_id="B-01", depth_unit="ft")
     test = _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),
-                investigation_id="B-1")
+                investigation_id="B-2")
     notes = []
     write_diggs([log, test], Project(name="R"), notes=notes)
-    assert any(s.startswith("B-1:") for s in notes[0].synthesised)
+    assert any(s.startswith("B-2:") for s in notes[0].synthesised)
 
 
 def test_an_unconvertible_unit_is_left_out_and_named():
@@ -532,3 +532,92 @@ def test_a_unit_weight_printed_as_one_needs_no_word_about_g():
     notes = []
     write_diggs([test], Project(name="R"), notes=notes)
     assert not any("gravity" in s for s in notes[0].normalised)
+
+
+# ---------------------------------------------------------------------------
+# a sheet's spelling of a log's id, and a pit named as one (RI-96)
+# ---------------------------------------------------------------------------
+
+def _atterberg(name):
+    return _one("atterberg", AtterbergResult(ll=40, pl=20, pi=20),
+                investigation_id=name)
+
+
+@pytest.mark.parametrize("printed", ["B1", "b-1", "B 1", "B-001", "B_01"])
+def test_a_spelling_of_a_logs_id_is_written_in_that_log(printed):
+    log = Investigation(investigation_id="B-01", depth_unit="ft")
+    test = _atterberg(printed)
+    notes = []
+    xml = write_diggs([log, test], Project(name="R"), notes=notes)
+    assert not notes[0].synthesised
+    assert notes[0].lab_tests == 1
+    ok, errors = diggs_schema_gate(xml)
+    assert ok, errors[:2]
+    ok, diffs = diggs_roundtrip_gate(xml, [log, test])
+    assert ok, diffs[:4]
+
+
+def test_a_summary_row_spelling_is_written_in_the_logs_hole():
+    log = Investigation(investigation_id="B-1", depth_unit="ft")
+    row = SummaryRow(investigation_id="b01", depth_top=q(5.0, "ft"), ll=40.0)
+    test = LabTest(kind="summary_table", result=SummaryTableResult(rows=[row]))
+    notes = []
+    xml = write_diggs([log, test], Project(name="R"), notes=notes)
+    assert not notes[0].synthesised
+    ok, diffs = diggs_roundtrip_gate(xml, [log, test])
+    assert ok, diffs[:4]
+
+
+def test_a_letter_prefix_is_not_stripped_so_lb7_and_b7_stay_apart():
+    log = Investigation(investigation_id="B-7", depth_unit="ft")
+    notes = []
+    write_diggs([log, _atterberg("XB-7")], Project(name="R"), notes=notes)
+    assert [s.split(":")[0] for s in notes[0].synthesised] == ["XB-7"]
+
+
+def test_a_key_two_logs_share_makes_no_guess():
+    logs = [Investigation(investigation_id="B-1", depth_unit="ft"),
+            Investigation(investigation_id="B1", depth_unit="ft")]
+    notes = []
+    write_diggs(logs + [_atterberg("b 01")], Project(name="R"), notes=notes)
+    assert [s.split(":")[0] for s in notes[0].synthesised] == ["b 01"]
+
+
+@pytest.mark.parametrize("name", ["TP-1", "Test Pit 1", "trial pit A"])
+def test_a_stand_in_named_as_a_pit_is_written_as_a_trial_pit(name):
+    notes = []
+    xml = write_diggs([_atterberg(name)], Project(name="R"), notes=notes)
+    assert "<TrialPit" in xml and "<Borehole" not in xml
+    assert "TrialPit carrying" in notes[0].synthesised[0]
+    ok, errors = diggs_schema_gate(xml)
+    assert ok, errors[:2]
+
+
+@pytest.mark.parametrize("name", ["B-1", "TPL-3", "Tpa"])
+def test_a_stand_in_not_named_as_a_pit_stays_a_borehole(name):
+    xml = write_diggs([_atterberg(name)], Project(name="R"))
+    assert "<Borehole" in xml and "<TrialPit" not in xml
+
+
+@pytest.mark.parametrize("log_id, printed", [
+    ("B-11", "B-1-1"), ("B-101", "B-1-01"), ("B-15", "B-1.5"),
+    ("TP-12", "TP-1-2")])
+def test_a_name_with_two_joined_numbers_is_not_another_holes_spelling(
+        log_id, printed):
+    log = Investigation(investigation_id=log_id, depth_unit="ft")
+    notes = []
+    write_diggs([log, _atterberg(printed)], Project(name="R"), notes=notes)
+    assert [s.split(":")[0] for s in notes[0].synthesised] == [printed]
+
+
+def test_a_spelling_of_a_left_out_log_is_noted_as_left_out():
+    from report_ingest.model import Layer
+    left = Investigation(
+        investigation_id="B-5", depth_unit="", units_known=False,
+        layers=[Layer(top=Quantity(value=4.0, unit=""), description="SAND")])
+    keep = Investigation(investigation_id="B-9", depth_unit="ft")
+    notes = []
+    write_diggs([left, keep, _atterberg("b05")], Project(name="R"),
+                notes=notes)
+    (made,) = notes[0].synthesised
+    assert made.startswith("b05:") and "left out" in made

@@ -162,6 +162,7 @@ from datetime import date
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape, quoteattr
 
+from report_ingest.reconciler import _JOINED_NUMBERS, hole_key
 from report_ingest.model import (
     AtterbergResult, CBRResult, CPTData, ChemicalResult, CompactionResult,
     ConsolidationResult, DCPData, GradationResult, Investigation, LabTest,
@@ -560,7 +561,69 @@ def _unwritable(inv: Investigation) -> bool:
         (inv.layers, inv.samples, inv.spt, inv.water))
 
 
-def _lab_hole(test: LabTest) -> str:
+def _hole_key(name: str) -> str:
+    """The reconciler's key for a hole's name (:func:`reconciler.hole_key`):
+    case, spaces, hyphens and zero-padding ignored, so ``B-01``, ``b 1`` and
+    ``B1`` are one key.
+
+    The letters are kept, so ``XB-7`` and ``B-7`` stay two holes. No word is
+    mapped to another (``Test Pit 1`` is not ``TP-1``).
+    """
+    return hole_key(name)
+
+
+def _joined(name: str) -> bool:
+    """Two numbers with only a separator between them (``B-1-1``, ``B-1.5``):
+    the key would run them into one number (``B-11``, ``B-15``)."""
+    return bool(_JOINED_NUMBERS.search(name or ""))
+
+
+def _hole_aliases(known: Iterable[str], printed: Iterable[str]
+                  ) -> Dict[str, str]:
+    """``printed name -> the log's own id`` for each printed name that is not
+    a log's id as it stands but has the key of exactly one log's id.
+
+    A key two logs share gives no alias: guessing between them would put a
+    sheet's results in the wrong hole. Nor does a name with two numbers
+    joined by a separator, on either side: its key is another hole's.
+    """
+    ids = [k.strip() for k in known if k and k.strip()]
+    by_key: Dict[str, set] = {}
+    for name in ids:
+        if not _joined(name):
+            by_key.setdefault(_hole_key(name), set()).add(name)
+    out: Dict[str, str] = {}
+    for name in printed:
+        name = (name or "").strip()
+        if not name or name in ids or _joined(name):
+            continue
+        found = by_key.get(_hole_key(name), set())
+        if len(found) == 1:
+            out[name] = next(iter(found))
+    return out
+
+
+def _lab_names(lab: Iterable[LabTest]) -> List[str]:
+    """Every hole name the lab tests print or are linked to, as it stands."""
+    out: List[str] = []
+    for test in lab:
+        if isinstance(test.result, SummaryTableResult):
+            out.extend(_row_hole(row) for row in test.result.rows)
+        else:
+            out.append(_lab_hole(test))
+    return out
+
+
+_PIT_NAME = re.compile(r"^(?:t\.?p\.?|test[\s\-_]*pit|trial[\s\-_]*pit)"
+                       r"(?![a-z])", re.IGNORECASE)
+
+
+def _is_pit_name(name: str) -> bool:
+    """Does the name plainly say a pit: TP-1, Test Pit 1, Trial Pit A?"""
+    return bool(_PIT_NAME.match((name or "").strip()))
+
+
+def _lab_hole(test: LabTest, aliases: Optional[Dict[str, str]] = None) -> str:
     """The hole a laboratory test is written in: the one the reconciler
     linked it to, else the boring the sheet printed.
 
@@ -570,12 +633,15 @@ def _lab_hole(test: LabTest) -> str:
     those words beside the logged one (RI-07). A record nobody reconciled is
     placed as before. The writer, its synthesised holes and the round-trip
     gate all ask this one function, so the gate looks where the writer
-    wrote.
+    wrote. ``aliases`` (:func:`_hole_aliases`) turns a printed spelling into
+    the log's own id.
     """
-    return (test.linked_investigation_id or test.investigation_id or "")
+    name = test.linked_investigation_id or test.investigation_id or ""
+    return (aliases or {}).get(name.strip(), name)
 
 
-def _row_hole(row: SummaryRow) -> str:
+def _row_hole(row: SummaryRow, aliases: Optional[Dict[str, str]] = None
+              ) -> str:
     """The hole a summary row is written in, as :func:`_lab_hole` is a
     sheet's: the one the reconciler linked it to (RI-56), else the boring
     the row printed.
@@ -586,7 +652,8 @@ def _row_hole(row: SummaryRow) -> str:
     no boring has no hole. The writer, its synthesised holes and the
     round-trip gate all ask this one function.
     """
-    return (row.linked_investigation_id or row.investigation_id or "")
+    name = row.linked_investigation_id or row.investigation_id or ""
+    return (aliases or {}).get(name.strip(), name)
 
 
 def _unique(stem: str, issued: set, counts: Dict[str, int]) -> str:
@@ -632,6 +699,10 @@ class _Writer:
                  left_out: Sequence[Investigation] = ()) -> None:
         self.investigations = list(investigations)
         self.lab = list(lab_tests)
+        #: A sheet's spelling of a log's id (``B1`` for ``B-1``) -> the id.
+        self._aliases = _hole_aliases(
+            (inv.investigation_id for inv in self.investigations),
+            _lab_names(self.lab))
         self.project = project or Project()
         self.doc_id = _ncname(document_id or "report", "report")
         self.project_id = _ncname(
@@ -642,6 +713,8 @@ class _Writer:
         self._issued: set = set()
         self._left_out_ids = {inv.investigation_id.strip()
                               for inv in left_out if inv.investigation_id}
+        self._left_out_aliases = _hole_aliases(
+            self._left_out_ids, _lab_names(self.lab))
         #: The holes a lab sheet named and no log describes, by object id:
         #: their unknown position is said in ``synthesised``, not again in
         #: ``assumed``.
@@ -685,8 +758,10 @@ class _Writer:
                 continue
             wanted[name] = depth.unit if depth is not None else ""
         for name, unit in wanted.items():
+            pit = _is_pit_name(name)
             hole = Investigation(investigation_id=name, depth_unit=unit,
-                                 units_known=bool(unit))
+                                 units_known=bool(unit),
+                                 kind="test_pit" if pit else "boring")
             self._synthesised.add(id(hole))
             self.investigations.append(hole)
             what = ("a laboratory sheet" if name in by_sheet
@@ -694,10 +769,13 @@ class _Writer:
             self.notes.synthesised.append(
                 f"{name}: named by {what}; its log is left out "
                 f"of this file (depths in an unknown unit), so it is written "
-                f"as a Borehole carrying its identifier only"
-                if name in self._left_out_ids else
+                f"as a {'TrialPit' if pit else 'Borehole'} carrying its "
+                f"identifier only"
+                if name in self._left_out_ids
+                or name in self._left_out_aliases else
                 f"{name}: named by {what} and described by no "
-                f"log in this record; written as a Borehole carrying its "
+                f"log in this record; written as a "
+                f"{'TrialPit' if pit else 'Borehole'} carrying its "
                 f"identifier only")
 
     def _lab_positions(self) -> List[Tuple[str, Optional[Quantity], bool]]:
@@ -706,10 +784,12 @@ class _Writer:
         out: List[Tuple[str, Optional[Quantity], bool]] = []
         for test in self.lab:
             if isinstance(test.result, SummaryTableResult):
-                out.extend((_row_hole(row), row.depth_top, True)
+                out.extend((_row_hole(row, self._aliases), row.depth_top,
+                            True)
                            for row in test.result.rows)
             else:
-                out.append((_lab_hole(test), test.depth_top, False))
+                out.append((_lab_hole(test, self._aliases), test.depth_top,
+                            False))
         return out
 
     # -- id bookkeeping ----------------------------------------------------
@@ -1902,7 +1982,7 @@ class _Writer:
         where = (f"lab test {n + 1} ({test.kind}"
                  + (f", {test.investigation_id}" if test.investigation_id
                     else "") + ")")
-        hole = _lab_hole(test)
+        hole = _lab_hole(test, self._aliases)
         placed = self._place(holes, hole, test.depth_top,
                              test.depth_bottom, where)
         if placed is None:
@@ -2498,7 +2578,7 @@ class _Writer:
         for i, row in enumerate(result.rows):
             where = (f"summary row {i + 1} of lab test {n + 1} "
                      f"({row.investigation_id or 'no boring named'})")
-            hole = _row_hole(row).strip()
+            hole = _row_hole(row, self._aliases).strip()
             placed = self._place(holes, hole, row.depth_top,
                                  row.depth_bottom, where)
             if placed is None:
@@ -3045,7 +3125,10 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
         _compare_refusals(label, want, gid, result_sets, diffs, dt)
         _compare_soundings(label, want, got, diffs, dt)
     if lab:
-        _compare_lab(xml, lab, diffs, unwritten=unwritten)
+        _compare_lab(xml, lab, diffs, unwritten=unwritten,
+                     aliases=_hole_aliases(
+                         (i.investigation_id for i in investigations
+                          if not _unwritable(i)), _lab_names(lab)))
     return (not diffs), diffs
 
 
@@ -3179,8 +3262,8 @@ def _file_tests(xml: str) -> List[Tuple[str, Optional[float], List[float]]]:
     return out
 
 
-def _lab_targets(test: LabTest) -> List[Tuple[str, str, Optional[Quantity],
-                                              Any]]:
+def _lab_targets(test: LabTest, aliases: Optional[Dict[str, str]] = None
+                 ) -> List[Tuple[str, str, Optional[Quantity], Any]]:
     """What to look for: one entry per positioned result this test becomes.
 
     One for an ordinary test. One PER ROW for a summary table, because its
@@ -3189,10 +3272,10 @@ def _lab_targets(test: LabTest) -> List[Tuple[str, str, Optional[Quantity],
     """
     result = test.result
     if isinstance(result, SummaryTableResult):
-        return [(f"{test.kind} row {i + 1}", _row_hole(row),
+        return [(f"{test.kind} row {i + 1}", _row_hole(row, aliases),
                  row.depth_top, row)
                 for i, row in enumerate(result.rows)]
-    return [(test.kind, _lab_hole(test), test.depth_top, result)]
+    return [(test.kind, _lab_hole(test, aliases), test.depth_top, result)]
 
 
 def _found(pool: Sequence[float], value: float, unit: str) -> bool:
@@ -3211,8 +3294,8 @@ def _found(pool: Sequence[float], value: float, unit: str) -> bool:
 
 def _compare_lab(xml: str, lab: Sequence[LabTest],
                  diffs: List[str],
-                 unwritten: Sequence[Tuple[str, Optional[float], float]] = ()
-                 ) -> None:
+                 unwritten: Sequence[Tuple[str, Optional[float], float]] = (),
+                 aliases: Optional[Dict[str, str]] = None) -> None:
     """Every laboratory value, against what the file gives back.
 
     A value the writer named in :attr:`DiggsWriteNotes.unwritten` -- a
@@ -3222,7 +3305,7 @@ def _compare_lab(xml: str, lab: Sequence[LabTest],
     in_file = _file_tests(xml)
     dt = TOLERANCE["depth_m"]
     for test in lab:
-        for label, hole, depth, payload in _lab_targets(test):
+        for label, hole, depth, payload in _lab_targets(test, aliases):
             hole = (hole or "").strip()
             want_depth = _si_value(depth)
             if not hole or want_depth is None:
