@@ -1485,6 +1485,32 @@ class TestSplitAcrossCalls:
         assert any("never read" in w and "[1]" in w
                    for w in result.warnings)
 
+    def test_a_page_named_only_in_pages_left_is_said_after_a_size_stop(
+            self, two_sheets):
+        """BACKLOG RI-121 (5): the first request carries both sheets and
+        the reader names sheet 1 in ``pages_left``; the request for it is
+        over the limit even with the earlier pictures dropped, so the log
+        is read no further and sheet 1 is said never read."""
+        from report_ingest.log_reader import estimate_tokens, fit_conversation
+        # The reader says something beside its answer: words the next
+        # request carries back, which the dropped picture does not make up.
+        first = {"final": _good_imperial_reading(pages_left=[1]),
+                 "text": "made-up words " * 500}
+        free = FakeEngine([first,
+                           {"final": _good_imperial_reading(pages_left=[])}])
+        read_log(two_sheets, [0, 1], free)
+        limit = estimate_tokens(free.calls[0]["messages"])  # just fits
+        trimmed, _note = fit_conversation(free.calls[1]["messages"], limit)
+        assert estimate_tokens(trimmed) > limit
+        engine = FakeEngine([first])
+        result = read_log(two_sheets, [0, 1], engine,
+                          max_request_tokens_in=limit)
+        assert result.model_calls == 1
+        assert self._pictures(engine.calls[0]) == 2
+        assert any("read no further" in w for w in result.warnings)
+        assert any("[1]" in w and "never read" in w
+                   and "over its size limit" in w for w in result.warnings)
+
     def test_a_first_request_over_the_limit_with_one_page_is_said(
             self, imperial):
         doc, _gt = imperial

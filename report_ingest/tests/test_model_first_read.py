@@ -717,3 +717,200 @@ def test_the_additions_entries_name_the_page_as_the_answer_is_read(doc):
     (row,) = [r for r in blob["unresolved"]
               if r["what"] == "sample S-1 recovery"]
     assert row["page"] == 13
+
+
+# ---------------------------------------------------------------------------
+# a request over the per-request limit (BACKLOG RI-121)
+# ---------------------------------------------------------------------------
+
+def _sizes(stage, doc, pages_list, pdf=True):
+    """Each page list's request, estimated as the reader estimates it."""
+    caller = mfr._Caller(stage, doc, _engine([], pdf=pdf), REPORT, "auto",
+                         None, limit=1)
+    return [caller.size(caller.blocks(pages)[0]) for pages in pages_list]
+
+
+def _picture_pages(call) -> list:
+    """The page numbers a pictures-route call carries, in order."""
+    return [int(b["text"].split()[1]) for b in _blocks(call)
+            if b["type"] == "text" and "(picture " in b["text"]]
+
+
+def _described(title):
+    return {"description": {"title": title, "kind": "lab", "names": "",
+                            "identifiers": [], "continues": "",
+                            "summary": "made up"}}
+
+
+def test_a_pdf_page_counts_its_text_and_one_page_picture(report_pdf):
+    """The rule for a PDF document block: each page one page picture and
+    the words of its text layer; a page with no text layer its picture
+    alone."""
+    from report_ingest import engine as eng
+
+    data, _n, _sanitized = mfp.cut_pdf(report_pdf, [3, 4])
+    with pymupdf.open(stream=data, filetype="pdf") as cut:
+        words = sum(len(page.get_text()) for page in cut)
+    assert words > 0
+    want = int(2 * eng.PDF_PAGE_PICTURE_TOKENS_EST
+               + words / eng.CHARS_PER_TOKEN_EST)
+    assert eng.pdf_tokens_est(data) == want
+    assert eng.estimate_tokens([eng.user(eng.pdf_block(data))]) == want
+    blank = pymupdf.open()
+    blank.new_page()
+    assert eng.pdf_tokens_est(blank.tobytes()) == \
+        eng.PDF_PAGE_PICTURE_TOKENS_EST
+    blank.close()
+
+
+def test_a_picture_counts_its_pixels_and_never_less_than_today_s_figure():
+    from report_ingest import engine as eng
+
+    big = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 3000, 2000),
+                         False)
+    big.clear_with(255)
+    png = big.tobytes("png")
+    assert eng.image_size(png) == (3000, 2000)
+    assert eng.picture_tokens_est(eng.image_block(png)) == 8000
+    jpeg = big.tobytes("jpeg")
+    assert eng.image_size(jpeg) == (3000, 2000)
+    small = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 300, 200),
+                           False)
+    small.clear_with(255)
+    assert eng.picture_tokens_est(eng.image_block(small.tobytes("png"))) \
+        == eng.IMAGE_TOKENS_EST
+    assert eng.image_size(b"made-up bytes") is None
+    assert eng.picture_tokens_est(eng.image_block(b"")) == \
+        eng.IMAGE_TOKENS_EST
+    # Without the size rule a picture is today's (RI-110) figure.
+    assert eng.estimate_tokens([eng.user(eng.image_block(png))]) == \
+        eng.IMAGE_TOKENS_EST
+
+
+def test_a_log_over_the_limit_is_split_by_its_pages_before_it_is_sent(doc):
+    """Its request estimated over the limit, the log of pages 3 to 6 is
+    cut in two before any call: each half is read, the halves' answers are
+    joined into the one log, and the cut is on the result."""
+    whole, first, second = _sizes("logs", doc, [[3, 4, 5, 6], [3, 4],
+                                                [5, 6]])
+    limit = max(first, second)
+    assert whole > limit
+    engine = _engine([{"final": _log([3, 4], sample="S-1")},
+                      {"final": _log([5, 6], top=10.0, sample="S-2",
+                                     total_depth=None)}])
+    got = mfr.read_logs(doc, [PageGroup("logs", [3, 4, 5, 6], key="log-3")],
+                        engine, report_id=REPORT, max_request_tokens_in=limit)
+    assert engine.n_calls == 2
+    assert [_pdf_pages(_blocks(c)[0]) for c in engine.calls] == \
+        [[3, 4], [5, 6]]
+    assert len(got) == 1
+    blob = got[0]
+    inv = blob["investigation"]
+    assert inv["investigation_id"] == "QX-1"
+    assert [s["sample_id"] for s in inv["samples"]] == ["S-1", "S-2"]
+    assert inv["pages"] == [3, 4, 5, 6]
+    assert any("read in 2 calls" in row["why"] for row in blob["unresolved"])
+    (said,) = [w for w in blob["warnings"] if "estimated" in w]
+    assert said == (f"pages 3-6: the request was estimated at {whole:,} "
+                    f"input tokens, over the limit of {limit:,} a request; "
+                    f"split before it was sent, into pages 3-4 and pages "
+                    f"5-6")
+    assert [(c["pages"], c["estimated_tokens_in"], c["input_tokens"])
+            for c in blob["calls"]] == [([3, 4], first, 1000),
+                                        ([5, 6], second, 1000)]
+    assert blob["error"] == ""
+
+
+def test_a_half_still_over_the_limit_is_cut_again(doc):
+    sizes = _sizes("logs", doc, [[3], [4], [5], [6]])
+    engine = _engine([{"final": _log([p], sample=f"S-{p}", top=p * 10.0)}
+                      for p in (3, 4, 5, 6)])
+    blob = mfr.read_logs(doc, [PageGroup("logs", [3, 4, 5, 6], key="log-3")],
+                         engine, report_id=REPORT,
+                         max_request_tokens_in=max(sizes))[0]
+    assert [_pdf_pages(_blocks(c)[0]) for c in engine.calls] == \
+        [[3], [4], [5], [6]]
+    assert [s["sample_id"] for s in blob["investigation"]["samples"]] == \
+        ["S-3", "S-4", "S-5", "S-6"]
+    assert len([w for w in blob["warnings"]
+                if "split before it was sent" in w]) == 3
+
+
+def test_a_lab_window_over_the_limit_is_cut_where_a_new_sheet_begins(doc):
+    """On the pictures route: a new sheet begins at page 10, so the window
+    of pages 7 to 10 is cut there, and both pieces are read."""
+    descriptions = {7: _described("MADE-UP GRADATION"),
+                    8: _described("MADE-UP GRADATION"),
+                    9: _described("MADE-UP GRADATION"),
+                    10: _described("MADE-UP COMPACTION")}
+    whole, first, second = _sizes("lab", doc, [[7, 8, 9, 10], [7, 8, 9],
+                                               [10]], pdf=False)
+    limit = max(first, second)
+    assert whole > limit
+    engine = _engine([{"final": _lab([7, 8, 9])}, {"final": _lab([10])}],
+                     pdf=False)
+    blob = mfr.read_lab(doc, [PageGroup("lab", [7, 8, 9, 10], key="lab-7")],
+                        engine, report_id=REPORT, descriptions=descriptions,
+                        max_request_tokens_in=limit)[0]
+    assert [_picture_pages(c) for c in engine.calls] == [[7, 8, 9], [10]]
+    assert blob["windows"] == [[7, 8, 9], [10]]
+    assert len(blob["tests"]) == 4
+    assert any("into pages 7-9 and page 10" in w for w in blob["warnings"])
+
+
+def test_one_page_over_the_limit_is_sent_with_a_warning(doc):
+    engine = _engine([{"final": _calc([("Made-up load", 50.0, 20)])}])
+    blob = mfr.read_calcs(doc, [PageGroup("calc", [20], key="calc-20")],
+                          engine, report_id=REPORT,
+                          max_request_tokens_in=10)[0]
+    assert engine.n_calls == 1
+    assert blob["calculation"] is not None and blob["error"] == ""
+    assert any(w.startswith("page 20: the request was estimated at")
+               and w.endswith("one page cannot be split; it was sent as it "
+                              "is") for w in blob["warnings"])
+    assert blob["calls"][0]["estimated_tokens_in"] > 10
+
+
+def test_a_narrative_part_over_the_limit_is_read_in_pieces(doc):
+    """Two answers from one part: merged by the builder and summarised
+    once, as a narrative read in parts is."""
+    from report_ingest.narrative_reader import SummaryReading
+
+    first, second = _sizes("narrative", doc, [[0, 1], [2, 3]])
+    engine = _engine([
+        {"final": _narrative("Made-up Project", 0)},
+        {"final": _narrative("Made-up Project", 2)},
+        {"final": SummaryReading(quickSummary="The made-up report.")}])
+    blob = mfr.read_narrative(doc, [PageGroup("narrative", [0, 1, 2, 3],
+                                              key="narrative")],
+                              engine, report_id=REPORT,
+                              max_request_tokens_in=max(first, second))
+    assert [_pdf_pages(_blocks(c)[0]) for c in engine.calls[:2]] == \
+        [[0, 1], [2, 3]]
+    assert engine.n_calls == 3
+    assert blob["general"]["projectName"] == "Made-up Project"
+    assert [c["pages"] for c in blob["calls"]] == [[0, 1], [2, 3], []]
+    assert "estimated_tokens_in" not in blob["calls"][2]
+
+
+def test_no_limit_changes_nothing(doc):
+    """None, the default, and a limit nothing reaches send the same one
+    call; only a limit puts the estimate on the call's row."""
+    rows, sent = [], []
+    for kwargs in ({}, {"max_request_tokens_in": None},
+                   {"max_request_tokens_in": 10 ** 9}):
+        engine = _engine([{"final": _log([3, 4])}])
+        blob = mfr.read_logs(doc, [PageGroup("logs", [3, 4], key="log-3")],
+                             engine, report_id=REPORT, **kwargs)[0]
+        assert engine.n_calls == 1
+        blocks = _blocks(engine.calls[0])
+        sent.append(([b["type"] for b in blocks], _pdf_pages(blocks[0]),
+                     blocks[1]["text"]))
+        rows.append(blob["calls"])
+        assert not any("estimated" in w for w in blob["warnings"])
+    assert sent[0] == sent[1] == sent[2]
+    plain = [{"pages": [3, 4], "stop_reason": "end_turn", "cut_off": False,
+              "answered": True}]
+    assert rows[0] == rows[1] == plain
+    assert set(rows[2][0]) == set(plain[0]) | {"estimated_tokens_in",
+                                               "input_tokens"}

@@ -277,9 +277,12 @@ class Budgets:
     #: A ceiling on how many work items are read, for a smoke run over a big
     #: report. None reads them all.
     max_items: Optional[int] = None
-    #: A per-request input-token limit for the log reader (BACKLOG RI-110):
-    #: set, a log's conversation drops earlier pictures, or its page window
-    #: is split, before a request nears it. None, the default, sets none.
+    #: A per-request input-token limit (BACKLOG RI-110, RI-121): set, a
+    #: log's conversation drops earlier pictures, or its page window is
+    #: split, before a request nears it; and model first, a page group whose
+    #: request is estimated over it is cut into smaller groups before it is
+    #: sent (:mod:`report_ingest.model_first_read`). None, the default, sets
+    #: none.
     max_request_tokens_in: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -563,6 +566,9 @@ class _ModelFirst:
     #: ``place(stage, record, pages, doc, rulers=None)``
     #: (:func:`_placer`).
     place: Any = None
+    #: ``Budgets.max_request_tokens_in`` (BACKLOG RI-121): each reader's
+    #: per-request input-token limit, or None.
+    max_request_tokens_in: Optional[int] = None
 
     def source(self, doc: Any) -> Any:
         if self.pdf is None:
@@ -708,7 +714,9 @@ def ingest_report(source: Any, engine: Any, *,
         every stage on ``engine``. ``page_route`` says how the pages are
         sent: ``auto``, ``pdf`` or ``pictures``, or ``None`` to follow
         ``GEOTECH_INGEST_MODEL_FIRST_PAGES``. ``label_policy="rules"`` is
-        refused: the groups are drawn from the range labels. Off,
+        refused: the groups are drawn from the range labels.
+        ``Budgets.max_request_tokens_in`` sizes each group's request before
+        it is sent (BACKLOG RI-121). Off,
         ``stage_engines`` may still be a mapping: today's reader of each
         stage it names (:data:`TODAY_READERS`) reads on that engine, so the
         two arms can be measured on the same models; the soundings, the
@@ -758,9 +766,11 @@ def ingest_report(source: Any, engine: Any, *,
     qa: List[QAEntry] = []
     unresolved: List[Dict[str, Any]] = []
     children: List[Tuple[ReportRecord, str]] = []
-    first_run = (_model_first_run(source, engine, tally, labelling,
-                                  stage_engines, page_route, questions, qa)
-                 if first else None)
+    first_run = (_model_first_run(
+        source, engine, tally, labelling, stage_engines, page_route,
+        questions, qa,
+        max_request_tokens_in=budgets.max_request_tokens_in)
+        if first else None)
     readers = None if first else _today_readers(stage_engines, tally, qa)
 
     doc = _open(source, di_result, report_id)
@@ -2533,14 +2543,17 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
                      labelling: "_Labelling", stage_engines: Any,
                      page_route: Optional[str],
                      questions: Optional[Sequence[str]],
-                     qa: List[QAEntry]) -> _ModelFirst:
+                     qa: List[QAEntry],
+                     max_request_tokens_in: Optional[int] = None
+                     ) -> _ModelFirst:
     """The run's model-first settings, and the one QA note that names them.
 
     The range voter is switched on (``plain`` unless an arm was named), and
     the vision voter and the label review off. Each stage's engine is the
     one ``stage_engines`` gives (:func:`ingest_report`), counted on the
     run's tally; its route is resolved here, so a ``pdf`` route an engine
-    cannot send is refused before anything is read."""
+    cannot send is refused before anything is read. A per-request limit
+    (``Budgets.max_request_tokens_in``, RI-121) goes to every reader."""
     from report_ingest.model_first_pages import page_route as route_setting
     from report_ingest.model_first_pages import resolve_route
     from report_ingest.model_first_read import STAGE_MODELS
@@ -2565,6 +2578,7 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
         pdf = bytes(source)
     else:
         pdf = str(source)
+    limit = int(max_request_tokens_in) if max_request_tokens_in else None
     qa.append(QAEntry(
         kind="note", where="model_first",
         detail=(f"read model first ({MODEL_FIRST_ENV}=on): each group of "
@@ -2574,10 +2588,14 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
                 f"the label review and the floors did not run"
                 + ("; the caller's own questions were not asked: the "
                    "narrative's call carries its stage's instruction only"
-                   if questions else "")),
+                   if questions else "")
+                + (f"; a group whose request was estimated over {limit:,} "
+                   f"input tokens was cut into smaller groups before it "
+                   f"was sent" if limit else "")),
         values=[f"{stage}: {getattr(engines[stage], 'name', '') or 'engine'}"
                 f", pages as {routes[stage]}" for stage in STAGE_MODELS]))
-    return _ModelFirst(engines=engines, routes=routes, asked=asked, pdf=pdf)
+    return _ModelFirst(engines=engines, routes=routes, asked=asked, pdf=pdf,
+                       max_request_tokens_in=limit)
 
 
 def _placer(doc: Any) -> Any:
@@ -2984,6 +3002,9 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
     common = dict(report_id=report_id, route=route,
                   pdf=model_first.source(doc) if route == "pdf" else None,
                   place=model_first.place)
+    if model_first.max_request_tokens_in:
+        # Only when set (RI-121): unset, each reader is called as before.
+        common["max_request_tokens_in"] = model_first.max_request_tokens_in
     if stage == "logs":
         return readers.read_logs(doc, groups, engine, **common)[0]
     if stage == "lab":

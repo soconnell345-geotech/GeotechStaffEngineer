@@ -1076,6 +1076,95 @@ def test_the_item_ceiling_counts_the_soundings_with_the_rest(monkeypatch):
                      probe]
 
 
+# ---------------------------------------------------------------------------
+# the per-request limit (BACKLOG RI-121)
+# ---------------------------------------------------------------------------
+
+def _item_calls(out: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Every model-first item file's calls under ``out``, by its path."""
+    return {str(path.relative_to(out)): json.loads(
+        path.read_text("utf-8"))["calls"] for path in out.rglob("mf-*.json")}
+
+
+def test_the_request_limit_reaches_every_reader(synthetic_pdf, tmp_path):
+    """``Budgets.max_request_tokens_in`` goes to every model-first reader,
+    the bound report's too: each reading call is sized (here nothing is
+    over, so the calls are the run's without a limit), and the run's note
+    names the limit."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest.graph import Budgets
+
+    engines = _engines()
+    record = _run_on(synthetic_pdf, tmp_path / "out", engines,
+                     budgets=Budgets(max_request_tokens_in=10 ** 7))
+    assert {stage: e.n_calls for stage, e in engines[3].items()} == {
+        "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+    calls = _item_calls(tmp_path / "out")
+    assert len(calls) == 6
+    for path, rows in calls.items():
+        for row in rows:
+            assert 0 < row["estimated_tokens_in"] <= 10 ** 7, path
+            assert row["input_tokens"] == 1000, path
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert "estimated over 10,000,000 input tokens" in note.detail
+    assert [i.investigation_id for i in record.investigations] == [
+        "B-1", "TP-1"]
+
+
+def test_without_a_limit_no_call_is_sized(first_run):
+    record, out, _engines = first_run
+    for path, rows in _item_calls(out).items():
+        for row in rows:
+            assert "estimated_tokens_in" not in row, path
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert "input tokens" not in note.detail
+
+
+@pytest.mark.parametrize("limit", [None, 0, 5000])
+def test_each_reader_is_handed_the_limit_only_when_set(monkeypatch, limit):
+    from report_ingest import graph
+    from report_ingest import model_first_read as readers
+    from report_ingest.model_first_pages import PageGroup
+
+    asked = {}
+
+    def reader(name):
+        def read(_doc, _groups, _engine, **kwargs):
+            asked[name] = kwargs
+            return [{}] if name != "narrative" else {}
+        return read
+
+    for name in ("read_logs", "read_lab", "read_calcs", "read_narrative"):
+        monkeypatch.setattr(readers, name, reader(name))
+    made = graph._ModelFirst(
+        engines=dict.fromkeys(("logs", "lab", "calc", "narrative"), "E"),
+        routes=dict.fromkeys(("logs", "lab", "calc", "narrative"), "pdf"),
+        pdf=b"%PDF", max_request_tokens_in=limit)
+    for stage in ("logs", "lab", "calc", "narrative"):
+        graph._read_unit(None, made, stage, [PageGroup(stage, [1])], "R00",
+                         None, [])
+    for name, kwargs in asked.items():
+        if limit:
+            assert kwargs["max_request_tokens_in"] == limit, name
+        else:
+            assert "max_request_tokens_in" not in kwargs, name
+    assert len(asked) == 4
+
+
+def test_the_run_s_settings_carry_the_limit():
+    from report_ingest.graph import _Labelling, _model_first_run, _Tally
+    from report_ingest.tests.fake_engine import FakeEngine
+
+    for given, kept in ((None, None), (0, None), (120000, 120000)):
+        qa = []
+        made = _model_first_run(b"%PDF", FakeEngine([], name="fake-main"),
+                                _Tally(), _Labelling(), None, None, None, qa,
+                                max_request_tokens_in=given)
+        assert made.max_request_tokens_in == kept
+        assert ("estimated over 120,000 input tokens" in qa[0].detail) \
+            is bool(kept)
+
+
 def test_a_lab_test_placed_on_another_page_takes_that_page(monkeypatch):
     locate = pytest.importorskip("report_ingest.locate")
     from types import SimpleNamespace
