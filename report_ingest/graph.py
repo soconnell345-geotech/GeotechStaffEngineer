@@ -569,6 +569,10 @@ class _ModelFirst:
     #: ``Budgets.max_request_tokens_in`` (BACKLOG RI-121): each reader's
     #: per-request input-token limit, or None.
     max_request_tokens_in: Optional[int] = None
+    #: How many groups this run cut for the limit, the bound reports'
+    #: included, and the run's QA note, which says so (:func:`_note_cuts`).
+    cut: int = 0
+    note: Any = None
 
     def source(self, doc: Any) -> Any:
         if self.pdf is None:
@@ -785,6 +789,8 @@ def ingest_report(source: Any, engine: Any, *,
         if not _is_document(source):
             doc.close()
 
+    if first_run is not None:
+        _note_cuts(first_run, qa)      # the bound reports' cuts counted too
     record.qa.extend(qa)
     record.document.model_calls = spend.calls
     record.document.input_tokens = spend.input_tokens
@@ -2579,7 +2585,7 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
     else:
         pdf = str(source)
     limit = int(max_request_tokens_in) if max_request_tokens_in else None
-    qa.append(QAEntry(
+    note = QAEntry(
         kind="note", where="model_first",
         detail=(f"read model first ({MODEL_FIRST_ENV}=on): each group of "
                 f"pages was read in one call and the model's answer is the "
@@ -2589,13 +2595,61 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
                 + ("; the caller's own questions were not asked: the "
                    "narrative's call carries its stage's instruction only"
                    if questions else "")
-                + (f"; a group whose request was estimated over {limit:,} "
-                   f"input tokens was cut into smaller groups before it "
-                   f"was sent" if limit else "")),
+                + (f"; each request was sized against a limit of {limit:,} "
+                   f"input tokens before it was sent" if limit else "")),
         values=[f"{stage}: {getattr(engines[stage], 'name', '') or 'engine'}"
-                f", pages as {routes[stage]}" for stage in STAGE_MODELS]))
+                f", pages as {routes[stage]}" for stage in STAGE_MODELS])
+    qa.append(note)
     return _ModelFirst(engines=engines, routes=routes, asked=asked, pdf=pdf,
-                       max_request_tokens_in=limit)
+                       max_request_tokens_in=limit, note=note)
+
+
+def _note_cuts(model_first: _ModelFirst, qa: List[QAEntry]) -> None:
+    """The run's QA note, once a run has cut groups for the request limit
+    (RI-121): it says how many, beside the limit it names. A run that cut
+    none keeps the note as it is."""
+    if not model_first.cut or model_first.note is None:
+        return
+    n = model_first.cut
+    said = (f", and {n} group{'s' if n > 1 else ''} estimated over it "
+            f"{'were' if n > 1 else 'was'} cut into smaller groups, each "
+            f"cut listed in a note of its own")
+    for at, entry in enumerate(qa):
+        if entry is model_first.note:
+            qa[at] = QAEntry(kind=entry.kind, where=entry.where,
+                             detail=entry.detail + said,
+                             values=list(entry.values),
+                             pages=list(entry.pages))
+            model_first.note = qa[at]
+            return
+
+
+def _over_limit_qa(blob: Dict[str, Any], where: str) -> List[QAEntry]:
+    """One note per request a model-first result found over the request
+    limit (RI-121; ``over_limit``, none without a limit): a group cut in
+    two before it was sent, or one page sent as it is."""
+    from report_ingest.checks import _span
+
+    out: List[QAEntry] = []
+    for row in blob.get("over_limit") or []:
+        pages = [int(p) for p in row.get("pages") or []]
+        if not pages:
+            continue
+        said = (f"{_span(pages)}: the request was estimated at "
+                f"{int(row.get('estimated_tokens_in') or 0):,} input "
+                f"tokens, over the limit of {int(row.get('limit') or 0):,} "
+                f"a request")
+        into = [list(p) for p in row.get("cut_into") or [] if p]
+        if into:
+            said += (", so it was cut into "
+                     + " and ".join(_span(p) for p in into)
+                     + " before it was sent, each read as a group of its "
+                       "own")
+        else:
+            said += "; one page cannot be cut, so it was sent as it is"
+        out.append(QAEntry(kind="note", where=f"{where}.request_limit",
+                           detail=said, pages=pages))
+    return out
 
 
 def _placer(doc: Any) -> Any:
@@ -2768,9 +2822,11 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
     record's list and nothing else; one with part of its pages unanswered
     is used, its entries carried, but neither is saved, so a resumed run
     asks for the whole group again. What placement could not place is one
-    QA note per answer. One hole's logs read in more than one place are
-    joined (:func:`_join_by_hole`). On an ``appendix_only`` file the
-    narrative is not read, as today.
+    QA note per answer, and so is each request a reader found over the
+    request limit (:func:`_over_limit_qa`), the run's note counting the
+    groups cut (:func:`_note_cuts`). One hole's logs read in more than one
+    place are joined (:func:`_join_by_hole`). On an ``appendix_only`` file
+    the narrative is not read, as today.
 
     Returns the units read to the end.
     """
@@ -2809,6 +2865,12 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             blob = cached or _read_unit(doc, model_first, stage, parts,
                                         report_id, outline, body)
             spend.add(blob.get("cost"))
+            # Each request found over the request limit (RI-121; none
+            # without one), before anything else, so a cut is listed even
+            # when the groups it was cut into came back with no answer.
+            qa.extend(_over_limit_qa(blob, where))
+            model_first.cut += sum(1 for row in blob.get("over_limit") or []
+                                   if row.get("cut_into"))
             # The skipped entries first: a result with nothing read has no
             # record to validate, and its pages must still be listed.
             unresolved.extend(blob.get("unresolved") or [])

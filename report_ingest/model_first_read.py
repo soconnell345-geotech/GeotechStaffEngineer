@@ -45,9 +45,11 @@ still over, at no cost: the pieces are then read as groups of their own
 pieces are its own pages, so a piece never holds another hole's, and its
 answers are joined into the one log as a long log's parts are. A single
 page still over the limit is sent as it is. Each cut, and each page sent
-over the limit, is one line in the result's ``warnings``, and each call in
+over the limit, is one line in the result's ``warnings`` and one row in its
+``over_limit`` (the graph makes each row a QA note), and each call in
 ``calls`` carries its ``estimated_tokens_in`` beside the tokens the reply
-says it took, so the estimate can be checked against a run.
+says it took, so the estimate can be checked against a run. With no limit
+the result has no ``over_limit`` and is what it was.
 
 BUILD. Each answer is turned into record objects by its stage's own
 ``_Builder`` with ``checks="flag"`` (:mod:`report_ingest.checks`): a value
@@ -182,6 +184,10 @@ class _Spent:
     calls: List[Dict[str, Any]] = field(default_factory=list)
     model: str = ""
     warnings: List[str] = field(default_factory=list)
+    #: Each request estimated over the request limit (RI-121): its pages,
+    #: the estimate, the limit, and the two groups it was cut into (none:
+    #: one page, sent as it is).
+    over_limit: List[Dict[str, Any]] = field(default_factory=list)
 
     def charge(self, reply: Any, pages: Sequence[int],
                estimated: Optional[int] = None) -> None:
@@ -305,6 +311,9 @@ class _Caller:
         over = size is not None and size > self.limit
         if over and len(pages) > 1:
             halves = _halves(pages, starts)
+            spent.over_limit.append({
+                "pages": pages, "estimated_tokens_in": size,
+                "limit": self.limit, "cut_into": halves})
             spent.warnings.append(
                 f"{_span(pages)}: the request was estimated at {size:,} "
                 f"input tokens, over the limit of {self.limit:,} a request; "
@@ -321,6 +330,9 @@ class _Caller:
             why = f"too large for one call ({problem})"
         else:
             if over:
+                spent.over_limit.append({
+                    "pages": pages, "estimated_tokens_in": size,
+                    "limit": self.limit, "cut_into": []})
                 spent.warnings.append(
                     f"{_span(pages)}: the request was estimated at {size:,} "
                     f"input tokens, over the limit of {self.limit:,} a "
@@ -383,17 +395,21 @@ def _result(stage: str, key: str, caller: _Caller, spent: _Spent,
             pages: Sequence[int], unresolved: List[Dict[str, Any]],
             placement: List[Any], warnings: Sequence[str] = (),
             error: str = "") -> Dict[str, Any]:
-    """The keys every stage's result adds to today's shape."""
-    return {"key": key, "route": caller.route,
-            "prompt_version": READ_PROMPT_VERSION,
-            "calls": list(spent.calls),
-            "placement": [p for p in placement if p is not None],
-            "error": error, "pages": [int(p) for p in pages],
-            "unresolved": unresolved, "cost": spent.rounded(),
-            "model_calls": int(spent.cost["calls"]),
-            "model": spent.model or str(getattr(caller.engine, "name", "")),
-            "warnings": list(warnings) + list(spent.warnings),
-            "disagreements": [], "kept": [], "added": []}
+    """The keys every stage's result adds to today's shape; under a request
+    limit (RI-121) also ``over_limit``, each request estimated over it."""
+    out = {"key": key, "route": caller.route,
+           "prompt_version": READ_PROMPT_VERSION,
+           "calls": list(spent.calls),
+           "placement": [p for p in placement if p is not None],
+           "error": error, "pages": [int(p) for p in pages],
+           "unresolved": unresolved, "cost": spent.rounded(),
+           "model_calls": int(spent.cost["calls"]),
+           "model": spent.model or str(getattr(caller.engine, "name", "")),
+           "warnings": list(warnings) + list(spent.warnings),
+           "disagreements": [], "kept": [], "added": []}
+    if caller.limit is not None:
+        out["over_limit"] = [dict(row) for row in spent.over_limit]
+    return out
 
 
 def _nothing_read(skipped: Sequence[Dict[str, Any]]) -> str:

@@ -1349,6 +1349,13 @@ class TestChecksFlag:
         assert _depth_slack(SimpleNamespace(rulers={}), [10]) == 0.0
 
 
+def _sized(call) -> int:
+    """A recorded request's size as the log reader sizes it: its messages,
+    the system prompt and the answer schema (RI-110, the RI-121 review)."""
+    from report_ingest.log_reader import estimate_tokens, request_overhead
+    return estimate_tokens(call["messages"]) + request_overhead(call["system"])
+
+
 class TestRequestSizeLimit:
     """BACKLOG RI-110: a conversation is trimmed or split before a request
     nears a per-request input-token limit."""
@@ -1389,10 +1396,9 @@ class TestRequestSizeLimit:
         second = _good_imperial_reading(pages_left=[])
         free = FakeEngine([{"final": first}, {"final": second}])
         read_log(doc, [0], free)
-        from report_ingest.log_reader import estimate_tokens
         # One picture counts 1,700, so a limit 800 under the unlimited
         # second request is met by dropping the first request's picture.
-        limit = estimate_tokens(free.calls[1]["messages"]) - 800
+        limit = _sized(free.calls[1]) - 800
         engine = FakeEngine([{"final": first}, {"final": second}])
         result = read_log(doc, [0], engine, max_request_tokens_in=limit)
         assert result.model_calls == 2
@@ -1456,10 +1462,9 @@ class TestSplitAcrossCalls:
 
     def test_a_split_first_request_reads_every_page_eventually(
             self, two_sheets):
-        from report_ingest.log_reader import estimate_tokens
         free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
         read_log(two_sheets, [0, 1], free)
-        both = estimate_tokens(free.calls[0]["messages"])
+        both = _sized(free.calls[0])
         limit = both - 800                       # one picture too many
         engine = FakeEngine([
             {"final": _good_imperial_reading(pages_left=[])},
@@ -1473,10 +1478,9 @@ class TestSplitAcrossCalls:
         assert not any("never read" in w for w in result.warnings)
 
     def test_a_cut_page_the_budget_never_reaches_is_said(self, two_sheets):
-        from report_ingest.log_reader import estimate_tokens
         free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
         read_log(two_sheets, [0, 1], free)
-        limit = estimate_tokens(free.calls[0]["messages"]) - 800
+        limit = _sized(free.calls[0]) - 800
         engine = FakeEngine([
             {"final": _good_imperial_reading(pages_left=[])}])
         result = read_log(two_sheets, [0, 1], engine, budget=1,
@@ -1491,7 +1495,9 @@ class TestSplitAcrossCalls:
         the reader names sheet 1 in ``pages_left``; the request for it is
         over the limit even with the earlier pictures dropped, so the log
         is read no further and sheet 1 is said never read."""
-        from report_ingest.log_reader import estimate_tokens, fit_conversation
+        from report_ingest.log_reader import (estimate_tokens,
+                                              fit_conversation,
+                                              request_overhead)
         # The reader says something beside its answer: words the next
         # request carries back, which the dropped picture does not make up.
         first = {"final": _good_imperial_reading(pages_left=[1]),
@@ -1499,9 +1505,10 @@ class TestSplitAcrossCalls:
         free = FakeEngine([first,
                            {"final": _good_imperial_reading(pages_left=[])}])
         read_log(two_sheets, [0, 1], free)
-        limit = estimate_tokens(free.calls[0]["messages"])  # just fits
-        trimmed, _note = fit_conversation(free.calls[1]["messages"], limit)
-        assert estimate_tokens(trimmed) > limit
+        limit = _sized(free.calls[0])                       # just fits
+        room = limit - request_overhead(free.calls[1]["system"])
+        trimmed, _note = fit_conversation(free.calls[1]["messages"], room)
+        assert estimate_tokens(trimmed) > room
         engine = FakeEngine([first])
         result = read_log(two_sheets, [0, 1], engine,
                           max_request_tokens_in=limit)
@@ -1510,6 +1517,36 @@ class TestSplitAcrossCalls:
         assert any("read no further" in w for w in result.warnings)
         assert any("[1]" in w and "never read" in w
                    and "over its size limit" in w for w in result.warnings)
+
+    def test_the_system_prompt_and_schema_count_toward_the_limit(
+            self, two_sheets):
+        """The RI-121 review: a limit the first request's messages fit
+        under, both pictures and all, is passed once the system prompt and
+        the answer schema sent with it are counted, so the request carries
+        one sheet and the other is read in a later call."""
+        from report_ingest.engine import schema_tokens_est
+        from report_ingest.log_reader import (CHARS_PER_TOKEN_EST,
+                                              estimate_tokens,
+                                              request_overhead)
+        free = FakeEngine([{"final": _good_imperial_reading(pages_left=[])}])
+        read_log(two_sheets, [0, 1], free)
+        system = free.calls[0]["system"]
+        overhead = request_overhead(system)
+        assert overhead == (int(len(system) / CHARS_PER_TOKEN_EST)
+                            + schema_tokens_est(LogReading))
+        assert overhead > 2000                 # more than one picture
+        limit = estimate_tokens(free.calls[0]["messages"]) + overhead - 100
+        assert estimate_tokens(free.calls[0]["messages"]) < limit
+        engine = FakeEngine([
+            {"final": _good_imperial_reading(pages_left=[])},
+            {"final": _good_imperial_reading(pages_left=[])}])
+        result = read_log(two_sheets, [0, 1], engine,
+                          max_request_tokens_in=limit)
+        assert self._pictures(engine.calls[0]) == 1
+        assert result.model_calls == 2
+        assert any("were not sent with the first request" in w
+                   for w in result.warnings)
+        assert not any("never read" in w for w in result.warnings)
 
     def test_a_first_request_over_the_limit_with_one_page_is_said(
             self, imperial):

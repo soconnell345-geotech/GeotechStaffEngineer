@@ -1106,9 +1106,66 @@ def test_the_request_limit_reaches_every_reader(synthetic_pdf, tmp_path):
             assert 0 < row["estimated_tokens_in"] <= 10 ** 7, path
             assert row["input_tokens"] == 1000, path
     (note,) = [q for q in record.qa if q.where == "model_first"]
-    assert "estimated over 10,000,000 input tokens" in note.detail
+    assert ("each request was sized against a limit of 10,000,000 input "
+            "tokens before it was sent") in note.detail
+    assert "cut" not in note.detail            # nothing was over it
+    assert not [q for q in record.qa if q.where.endswith(".request_limit")]
     assert [i.investigation_id for i in record.investigations] == [
         "B-1", "TP-1"]
+
+
+def test_a_request_over_the_limit_is_a_qa_note(synthetic_pdf, tmp_path,
+                                               monkeypatch):
+    """Each request a reader finds over the limit is one QA note on its
+    record, beside its group, and the run's note counts the groups cut.
+    Here every request for a log is made to look over the limit: the
+    two-page log B-1 is cut in two and each of its pages, the test pit's
+    and the bound report's log are sent as they are."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest import model_first_read
+    from report_ingest.graph import Budgets
+
+    limit = 10 ** 7
+    sized = model_first_read._Caller.size
+    monkeypatch.setattr(
+        model_first_read._Caller, "size",
+        lambda self, blocks: (limit + 1 if self.stage == "logs"
+                              else sized(self, blocks)))
+    engines = _engines()
+    # B-1 is read as two groups now, so its script has one answer a page.
+    engines[3]["logs"].turns[0:1] = [
+        _log("B-1", "boring", 7, [
+            (0.0, 3.0, "Brown sandy lean CLAY, stiff, moist")]),
+        _log("B-1", "boring", 8, [
+            (3.0, 31.5, "Made-up grey GRAVEL printed nowhere")])]
+    out = tmp_path / "out"
+    record = _run_on(synthetic_pdf, out, engines,
+                     budgets=Budgets(max_request_tokens_in=limit))
+    assert {stage: e.n_calls for stage, e in engines[3].items()} == {
+        "narrative": 2, "logs": 4, "lab": 1, "calc": 1}
+
+    notes = [q for q in record.qa if q.where.endswith(".request_limit")]
+    assert [q.pages for q in notes] == [[7, 8], [7], [8], [9]]
+    assert all(q.kind == "note" and q.rank == "note" for q in notes)
+    cut = notes[0]
+    assert cut.where.startswith("items.")
+    assert ("pages 7-8: the request was estimated at 10,000,001 input "
+            "tokens, over the limit of 10,000,000 a request, so it was cut "
+            "into page 7 and page 8 before it was sent") in cut.detail
+    assert all("sent as it is" in q.detail for q in notes[1:])
+    child = _record_in(out / "bound" / "bound1")
+    (bound,) = [q for q in child.qa if q.where.endswith(".request_limit")]
+    assert "sent as it is" in bound.detail
+
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert note.detail.endswith(
+        "each request was sized against a limit of 10,000,000 input tokens "
+        "before it was sent, and 1 group estimated over it was cut into "
+        "smaller groups, each cut listed in a note of its own")
+    assert note.values                         # the stages, kept
+    saved = _record_in(out)
+    assert [q.detail for q in saved.qa if q.where == "model_first"] == [
+        note.detail]
 
 
 def test_without_a_limit_no_call_is_sized(first_run):
@@ -1161,8 +1218,10 @@ def test_the_run_s_settings_carry_the_limit():
                                 _Tally(), _Labelling(), None, None, None, qa,
                                 max_request_tokens_in=given)
         assert made.max_request_tokens_in == kept
-        assert ("estimated over 120,000 input tokens" in qa[0].detail) \
-            is bool(kept)
+        assert ("sized against a limit of 120,000 input tokens"
+                in qa[0].detail) is bool(kept)
+        assert "cut" not in qa[0].detail       # nothing read yet
+        assert made.note is qa[0]
 
 
 def test_a_lab_test_placed_on_another_page_takes_that_page(monkeypatch):

@@ -61,7 +61,7 @@ from report_ingest.checks import (
 )
 from report_ingest.engine import (  # noqa: F401 -- the sizing, re-exported
     CHARS_PER_TOKEN_EST, IMAGE_TOKENS_EST, Engine, _blocks_of,
-    estimate_tokens, image_block, text_block, user,
+    estimate_tokens, image_block, schema_tokens_est, text_block, user,
 )
 from report_ingest.floor import MergeLog
 from report_ingest.lab_reader import MAX_DEPTH_M
@@ -78,7 +78,7 @@ __all__ = [
     "read_log", "LogReadResult", "LogReading", "LOG_READER_SYSTEM",
     "LOG_READER_SYSTEM_PRINTED", "MAX_MODEL_CALLS", "PAGE_DPI",
     "DEPTH_SLACK", "ZOOM_DPI", "MAX_ZOOMS", "estimate_tokens",
-    "fit_conversation",
+    "fit_conversation", "request_overhead",
 ]
 
 #: The ceiling in the brief: one main call plus follow-ups for continuation
@@ -1619,6 +1619,16 @@ def fit_conversation(messages: Sequence[Dict[str, Any]],
     return out, note
 
 
+def request_overhead(system: str) -> int:
+    """What every request of the log reader carries beside its messages,
+    in input tokens (the RI-121 review): the system prompt at
+    :data:`~report_ingest.engine.CHARS_PER_TOKEN_EST` characters a token
+    and the answer schema offered as its tool
+    (:func:`~report_ingest.engine.schema_tokens_est`)."""
+    return (int(len(system or "") / CHARS_PER_TOKEN_EST)
+            + schema_tokens_est(LogReading))
+
+
 def _images_fit(build, wanted: Sequence[int], base: Sequence[Dict[str, Any]],
                 limit: Optional[int]) -> Tuple[List[int], List[Dict[str, Any]]]:
     """The first pages of ``wanted`` whose request (built by ``build(pages)``
@@ -1657,7 +1667,8 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
 
     ``max_request_tokens_in`` (BACKLOG RI-110) is a per-request input-token
     limit. None, the default, changes nothing. Set, a request is sized
-    before it is sent (:func:`estimate_tokens`): earlier page pictures are
+    before it is sent (:func:`estimate_tokens`, plus the system prompt and
+    the answer schema, :func:`request_overhead`): earlier page pictures are
     dropped from the conversation first, then its middle turns, and a
     request whose own pages are too many carries the first of them and
     leaves the rest for the next call.
@@ -1737,6 +1748,10 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     no_ruler = not bool(getattr(grid, "rulers", None))
     system = (LOG_READER_SYSTEM_PRINTED if no_ruler and printed
               else LOG_READER_SYSTEM)
+    if limit is not None:
+        # What the conversation itself may take: the limit less the system
+        # prompt and the answer schema, which go with every request.
+        limit -= request_overhead(system)
     brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor,
                    no_ruler=no_ruler, printed=printed)
     first_pages, unsent = pages, []

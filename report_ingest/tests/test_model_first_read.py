@@ -818,6 +818,10 @@ def test_a_log_over_the_limit_is_split_by_its_pages_before_it_is_sent(doc):
     assert [(c["pages"], c["estimated_tokens_in"], c["input_tokens"])
             for c in blob["calls"]] == [([3, 4], first, 1000),
                                         ([5, 6], second, 1000)]
+    assert blob["over_limit"] == [{"pages": [3, 4, 5, 6],
+                                   "estimated_tokens_in": whole,
+                                   "limit": limit,
+                                   "cut_into": [[3, 4], [5, 6]]}]
     assert blob["error"] == ""
 
 
@@ -869,6 +873,10 @@ def test_one_page_over_the_limit_is_sent_with_a_warning(doc):
                and w.endswith("one page cannot be split; it was sent as it "
                               "is") for w in blob["warnings"])
     assert blob["calls"][0]["estimated_tokens_in"] > 10
+    (row,) = blob["over_limit"]
+    assert (row["pages"], row["limit"], row["cut_into"]) == ([20], 10, [])
+    assert row["estimated_tokens_in"] == blob["calls"][0][
+        "estimated_tokens_in"]
 
 
 def test_a_narrative_part_over_the_limit_is_read_in_pieces(doc):
@@ -908,6 +916,10 @@ def test_no_limit_changes_nothing(doc):
                      blocks[1]["text"]))
         rows.append(blob["calls"])
         assert not any("estimated" in w for w in blob["warnings"])
+        # The result's keys as they were; a limit adds an empty list.
+        assert ("over_limit" in blob) is bool(
+            kwargs.get("max_request_tokens_in"))
+        assert blob.get("over_limit", []) == []
     assert sent[0] == sent[1] == sent[2]
     plain = [{"pages": [3, 4], "stop_reason": "end_turn", "cut_off": False,
               "answered": True}]
