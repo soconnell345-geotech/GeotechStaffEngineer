@@ -277,6 +277,10 @@ class Budgets:
     #: A ceiling on how many work items are read, for a smoke run over a big
     #: report. None reads them all.
     max_items: Optional[int] = None
+    #: A per-request input-token limit for the log reader (BACKLOG RI-110):
+    #: set, a log's conversation drops earlier pictures, or its page window
+    #: is split, before a request nears it. None, the default, sets none.
+    max_request_tokens_in: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -2488,8 +2492,11 @@ def _read_narrative(doc, pages, engine, budgets, outline, report_id, body,
 
 def _read_log(doc, pages, engine, budgets, item, report_id) -> Dict[str, Any]:
     from report_ingest.log_reader import read_log
+    extra = ({"max_request_tokens_in": budgets.max_request_tokens_in}
+             if budgets.max_request_tokens_in else {})
     result = read_log(doc, pages, engine, budget=budgets.log,
-                      item_title=item.title or "", report_id=report_id)
+                      item_title=item.title or "", report_id=report_id,
+                      **extra)
     return result.to_dict()
 
 

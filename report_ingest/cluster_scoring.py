@@ -820,6 +820,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      max_total_dollars: Optional[float] = None,
                      max_total_tokens: Optional[int] = None,
                      max_report_tokens_in: Optional[int] = None,
+                     max_request_tokens_in: Optional[int] = None,
                      max_reports: Optional[int] = None,
                      redo: bool = False,
                      corpus_dir: Any = None,
@@ -928,6 +929,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         call that would start past it is refused (``CallCeilingReached``,
         so the step it belonged to is cut short and not saved), and the
         run stops after that report. None, the default, sets no limit.
+    max_request_tokens_in
+        A limit on ONE request's input tokens in the ``ingest`` stage's log
+        reader (BACKLOG RI-110): before a request nears it, earlier page
+        pictures are dropped from the conversation, then its middle turns,
+        and a request carrying too many pages is split across calls. Sized
+        by estimate (a picture counts 1,700 tokens). None, the default,
+        changes nothing.
     redo
         Re-run reports that already have a run file. Off by default, which is
         what makes a detached notebook cheap to resume.
@@ -1512,6 +1520,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              max_total_dollars=max_total_dollars,
                              max_total_tokens=max_total_tokens,
                              max_report_tokens_in=max_report_tokens_in,
+                             max_request_tokens_in=max_request_tokens_in,
                              label_policy=label_policy,
                              review_mode=review_mode,
                              vision_model=vision_model,
@@ -5323,6 +5332,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 max_total_dollars: Optional[float] = None,
                 max_total_tokens: Optional[int] = None,
                 max_report_tokens_in: Optional[int] = None,
+                max_request_tokens_in: Optional[int] = None,
                 label_policy: str = "structural",
                 review_mode: str = "disagreements",
                 vision_model: str = "funhouse-gpt-low",
@@ -5419,12 +5429,17 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             # A report the token brake cut short is unfinished, like one
             # that failed: its unsaved steps are asked for again (the saved
             # items are kept).
-            if not blob.get("error") and not blob.get("token_brake"):
+            if (not blob.get("error") and not blob.get("token_brake")
+                    and not blob.get("item_errors")):
                 done[rid] = blob
                 print(f"  [{n}/{len(report_ids)}] {rid}: already done, "
                       "skipping")
                 continue
-            if blob.get("token_brake"):
+            if blob.get("item_errors") and not blob.get("token_brake"):
+                print(f"  [{n}/{len(report_ids)}] {rid}: "
+                      f"{len(blob['item_errors'])} item(s) could not be "
+                      "read (a give-up); retrying them")
+            elif blob.get("token_brake"):
                 print(f"  [{n}/{len(report_ids)}] {rid}: cut short by the "
                       f"token brake ({blob['token_brake'].get('limit')}); "
                       "retrying")
@@ -5466,7 +5481,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             first, engines, meter, model, describe_model or vision_model,
             range_model or model)
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
-                          lab=lab_budget)
+                          lab=lab_budget,
+                          max_request_tokens_in=max_request_tokens_in)
         brake = _TokenBrake(meter, max_report_tokens_in,
                             None if max_total_tokens is None
                             else max_total_tokens - spent_tokens)
@@ -5584,10 +5600,18 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "lab_floor_per_page": floor_per_page_enabled(),
             **_ingest_steps(folder),
             **brake.fields(),
+            **_item_error_fields(record),
         }
         run_file.write_text(_dumps(blob), encoding="utf-8")
         _sync(sync)
         done[rid] = blob
+        if blob.get("item_errors"):
+            # An item the model could not be got to read (a rate-limit
+            # give-up, a refused request) is a failed item: the report is
+            # saved so a resume reads it again, and the run's failed count
+            # (the brief's stop rule) includes it.
+            failures[rid] = (f"{len(blob['item_errors'])} item(s) could not "
+                             "be read; a resume retries them")
         spent += blob["cost"].get("dollars", 0.0)
         spent_tokens += _tokens_of(blob["cost"])
         counts = blob["counts"]
@@ -5609,12 +5633,59 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                   f" input tokens, at the {max_report_tokens_in:,} "
                   f"per-report ceiling")
             break
+    for rid, blob in _finished_elsewhere(out, first, done).items():
+        done[rid] = blob
     stage_model, fields = engines.stage(model)
     if not engines.plain:
         seen = engines.describe(vision_model, vision=True)
         fields.update({f"vision_{k}": v for k, v in seen.items()})
     return {**_score_ingest(done, failures, stage_model), **fields,
             **_first_results(done.values())}
+
+
+def _item_error_fields(record: Any) -> Dict[str, Any]:
+    """``{"item_errors": [...]}`` for the work items (or bound documents)
+    the graph could not read, from the record's ``skipped`` QA entries that
+    say "could not be read" (BACKLOG RI-110); empty when there are none.
+
+    These are the entries a rate-limit give-up, a refused request or a
+    token-brake refusal leave behind: the exception is caught per item so
+    the report goes on, and the item has no saved file, so a resume reads
+    it again. Without this field the run file carried no sign of them."""
+    rows = []
+    for entry in getattr(record, "qa", None) or []:
+        if entry.kind != "skipped" or "could not be read" not in (
+                entry.detail or ""):
+            continue
+        rows.append({"where": entry.where,
+                     "pages": [int(p) for p in (entry.pages or [])],
+                     "detail": str(entry.detail)[:300]})
+    return {"item_errors": rows} if rows else {}
+
+
+def _finished_elsewhere(out: Path, first: "_FirstArm",
+                        have: Dict[str, dict]) -> Dict[str, dict]:
+    """Run files in ``out/ingest/*/`` of reports finished by an earlier
+    call (no error, no brake, no unread item), of this arm, that this call
+    did not run: RESULTS.md covers every finished report in the folder, not
+    only the call's own (BACKLOG RI-110)."""
+    found: Dict[str, dict] = {}
+    root = out / "ingest"
+    if not root.is_dir():
+        return found
+    for run_file in sorted(root.glob("*/run.json")):
+        rid = run_file.parent.name
+        if rid in have or _arm_clash(run_file, first):
+            continue
+        try:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (isinstance(blob, dict) and blob.get("id") == rid
+                and not blob.get("error") and not blob.get("token_brake")
+                and not blob.get("item_errors") and blob.get("counts")):
+            found[rid] = blob
+    return found
 
 
 def _ingest_arm(first: _FirstArm, engines: "_Engines", meter: Any,

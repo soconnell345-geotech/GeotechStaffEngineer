@@ -1347,3 +1347,85 @@ class TestChecksFlag:
         assert _depth_slack(grid, [10, 11]) == DEPTH_SLACK * 5.0
         assert _depth_slack(grid, [12]) == 0.0
         assert _depth_slack(SimpleNamespace(rulers={}), [10]) == 0.0
+
+
+class TestRequestSizeLimit:
+    """BACKLOG RI-110: a conversation is trimmed or split before a request
+    nears a per-request input-token limit."""
+
+    @staticmethod
+    def _convo(n_images_each):
+        from report_ingest.engine import image_block, text_block, user
+        return [
+            user(text_block("brief"), *[image_block(b"x")] * n_images_each),
+            {"role": "assistant", "content": [text_block("answer")]},
+            user(text_block("again"), *[image_block(b"x")] * n_images_each),
+        ]
+
+    def test_no_limit_changes_nothing(self):
+        from report_ingest.log_reader import fit_conversation
+        msgs = self._convo(5)
+        out, note = fit_conversation(msgs, None)
+        assert out == msgs and note is None
+
+    def test_a_conversation_over_the_limit_loses_its_earlier_pictures(self):
+        from report_ingest.log_reader import (
+            estimate_tokens, fit_conversation)
+        msgs = self._convo(4)                     # about 13,600 tokens
+        limit = 9000
+        assert estimate_tokens(msgs) > limit
+        out, note = fit_conversation(msgs, limit)
+        assert note and "dropped" in note
+        assert estimate_tokens(out) <= limit
+        first = out[0]["content"]
+        assert not any(b.get("type") == "image" for b in first)
+        last = out[-1]["content"]
+        assert sum(b.get("type") == "image" for b in last) == 4
+
+    def test_the_log_reader_drops_earlier_pictures_before_a_follow_up(
+            self, imperial):
+        doc, _gt = imperial
+        first = _good_imperial_reading(pages_left=[0])
+        second = _good_imperial_reading(pages_left=[])
+        free = FakeEngine([{"final": first}, {"final": second}])
+        read_log(doc, [0], free)
+        from report_ingest.log_reader import estimate_tokens
+        # One picture counts 1,700, so a limit 800 under the unlimited
+        # second request is met by dropping the first request's picture.
+        limit = estimate_tokens(free.calls[1]["messages"]) - 800
+        engine = FakeEngine([{"final": first}, {"final": second}])
+        result = read_log(doc, [0], engine, max_request_tokens_in=limit)
+        assert result.model_calls == 2
+        sent = engine.calls[1]["messages"]
+        pictures = [b for m in sent for b in m["content"]
+                    if isinstance(b, dict) and b.get("type") == "image"]
+        assert len(pictures) <= 1
+        assert any("dropped" in w for w in result.warnings)
+
+    def test_with_no_limit_the_log_reader_is_unchanged(self, imperial):
+        doc, _gt = imperial
+        first = _good_imperial_reading(pages_left=[0])
+        second = _good_imperial_reading(pages_left=[])
+        engine = FakeEngine([{"final": first}, {"final": second}])
+        result = read_log(doc, [0], engine)
+        sent = engine.calls[1]["messages"]
+        pictures = [b for m in sent for b in m["content"]
+                    if isinstance(b, dict) and b.get("type") == "image"]
+        assert len(pictures) == 2
+        assert not any("dropped" in w for w in result.warnings)
+
+    def test_pages_over_one_request_are_split_across_calls(self):
+        from report_ingest.engine import text_block, user
+        from report_ingest.log_reader import _images_fit
+        from report_ingest.engine import image_block
+
+        def build(pages):
+            return user(text_block("brief"),
+                        *[image_block(b"x") for _ in pages])
+
+        pages, _trial = _images_fit(build, [1, 2, 3, 4, 5], [], 5000)
+        assert pages == [1, 2]                      # 2 x 1,700 + words
+        pages, _trial = _images_fit(build, [1, 2, 3], [], 10 ** 6)
+        assert pages == [1, 2, 3]
+        pages, _trial = _images_fit(build, [1, 2, 3], [], 10)
+        assert pages == [1]                         # never fewer than one
