@@ -498,11 +498,12 @@ def to_si(value: float, unit: str, *,
     None is an answer, not a failure: a writer that needs SI records that it
     could not convert rather than shipping a number in the wrong unit.
 
-    ``kind`` is what the CALLER knows the quantity to be, and it decides only
-    a BLANK unit. A kind in :data:`UNITLESS_KINDS` -- ``"ratio"`` for a pH,
+    ``kind`` is what the CALLER knows the quantity to be. It decides a BLANK
+    unit: a kind in :data:`UNITLESS_KINDS` -- ``"ratio"`` for a pH,
     ``"percent"`` for a water content -- has no unit to print, so the number
     is the value. Any other blank is a unit the page did not print, and the
-    answer is None: a depth of "4" is not 4 m.
+    answer is None: a depth of "4" is not 4 m. And ``"stress"`` reads a
+    printed ``N/mm`` as N/mm2 (:func:`read_as_stress`).
     """
     if not unit_printed(unit):
         if kind in UNITLESS_KINDS:
