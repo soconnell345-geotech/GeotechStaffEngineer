@@ -1076,6 +1076,154 @@ def test_the_item_ceiling_counts_the_soundings_with_the_rest(monkeypatch):
                      probe]
 
 
+# ---------------------------------------------------------------------------
+# the per-request limit (BACKLOG RI-121)
+# ---------------------------------------------------------------------------
+
+def _item_calls(out: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Every model-first item file's calls under ``out``, by its path."""
+    return {str(path.relative_to(out)): json.loads(
+        path.read_text("utf-8"))["calls"] for path in out.rglob("mf-*.json")}
+
+
+def test_the_request_limit_reaches_every_reader(synthetic_pdf, tmp_path):
+    """``Budgets.max_request_tokens_in`` goes to every model-first reader,
+    the bound report's too: each reading call is sized (here nothing is
+    over, so the calls are the run's without a limit), and the run's note
+    names the limit."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest.graph import Budgets
+
+    engines = _engines()
+    record = _run_on(synthetic_pdf, tmp_path / "out", engines,
+                     budgets=Budgets(max_request_tokens_in=10 ** 7))
+    assert {stage: e.n_calls for stage, e in engines[3].items()} == {
+        "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+    calls = _item_calls(tmp_path / "out")
+    assert len(calls) == 6
+    for path, rows in calls.items():
+        for row in rows:
+            assert 0 < row["estimated_tokens_in"] <= 10 ** 7, path
+            assert row["input_tokens"] == 1000, path
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert ("each request was sized against a limit of 10,000,000 input "
+            "tokens before it was sent") in note.detail
+    assert "cut" not in note.detail            # nothing was over it
+    assert not [q for q in record.qa if q.where.endswith(".request_limit")]
+    assert [i.investigation_id for i in record.investigations] == [
+        "B-1", "TP-1"]
+
+
+def test_a_request_over_the_limit_is_a_qa_note(synthetic_pdf, tmp_path,
+                                               monkeypatch):
+    """Each request a reader finds over the limit is one QA note on its
+    record, beside its group, and the run's note counts the groups cut.
+    Here every request for a log is made to look over the limit: the
+    two-page log B-1 is cut in two and each of its pages, the test pit's
+    and the bound report's log are sent as they are."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest import model_first_read
+    from report_ingest.graph import Budgets
+
+    limit = 10 ** 7
+    sized = model_first_read._Caller.size
+    monkeypatch.setattr(
+        model_first_read._Caller, "size",
+        lambda self, blocks: (limit + 1 if self.stage == "logs"
+                              else sized(self, blocks)))
+    engines = _engines()
+    # B-1 is read as two groups now, so its script has one answer a page.
+    engines[3]["logs"].turns[0:1] = [
+        _log("B-1", "boring", 7, [
+            (0.0, 3.0, "Brown sandy lean CLAY, stiff, moist")]),
+        _log("B-1", "boring", 8, [
+            (3.0, 31.5, "Made-up grey GRAVEL printed nowhere")])]
+    out = tmp_path / "out"
+    record = _run_on(synthetic_pdf, out, engines,
+                     budgets=Budgets(max_request_tokens_in=limit))
+    assert {stage: e.n_calls for stage, e in engines[3].items()} == {
+        "narrative": 2, "logs": 4, "lab": 1, "calc": 1}
+
+    notes = [q for q in record.qa if q.where.endswith(".request_limit")]
+    assert [q.pages for q in notes] == [[7, 8], [7], [8], [9]]
+    assert all(q.kind == "note" and q.rank == "note" for q in notes)
+    cut = notes[0]
+    assert cut.where.startswith("items.")
+    assert ("pages 7-8: the request was estimated at 10,000,001 input "
+            "tokens, over the limit of 10,000,000 a request, so it was cut "
+            "into page 7 and page 8 before it was sent") in cut.detail
+    assert all("sent as it is" in q.detail for q in notes[1:])
+    child = _record_in(out / "bound" / "bound1")
+    (bound,) = [q for q in child.qa if q.where.endswith(".request_limit")]
+    assert "sent as it is" in bound.detail
+
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert note.detail.endswith(
+        "each request was sized against a limit of 10,000,000 input tokens "
+        "before it was sent, and 1 group estimated over it was cut into "
+        "smaller groups, each cut listed in a note of its own")
+    assert note.values                         # the stages, kept
+    saved = _record_in(out)
+    assert [q.detail for q in saved.qa if q.where == "model_first"] == [
+        note.detail]
+
+
+def test_without_a_limit_no_call_is_sized(first_run):
+    record, out, _engines = first_run
+    for path, rows in _item_calls(out).items():
+        for row in rows:
+            assert "estimated_tokens_in" not in row, path
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert "input tokens" not in note.detail
+
+
+@pytest.mark.parametrize("limit", [None, 0, 5000])
+def test_each_reader_is_handed_the_limit_only_when_set(monkeypatch, limit):
+    from report_ingest import graph
+    from report_ingest import model_first_read as readers
+    from report_ingest.model_first_pages import PageGroup
+
+    asked = {}
+
+    def reader(name):
+        def read(_doc, _groups, _engine, **kwargs):
+            asked[name] = kwargs
+            return [{}] if name != "narrative" else {}
+        return read
+
+    for name in ("read_logs", "read_lab", "read_calcs", "read_narrative"):
+        monkeypatch.setattr(readers, name, reader(name))
+    made = graph._ModelFirst(
+        engines=dict.fromkeys(("logs", "lab", "calc", "narrative"), "E"),
+        routes=dict.fromkeys(("logs", "lab", "calc", "narrative"), "pdf"),
+        pdf=b"%PDF", max_request_tokens_in=limit)
+    for stage in ("logs", "lab", "calc", "narrative"):
+        graph._read_unit(None, made, stage, [PageGroup(stage, [1])], "R00",
+                         None, [])
+    for name, kwargs in asked.items():
+        if limit:
+            assert kwargs["max_request_tokens_in"] == limit, name
+        else:
+            assert "max_request_tokens_in" not in kwargs, name
+    assert len(asked) == 4
+
+
+def test_the_run_s_settings_carry_the_limit():
+    from report_ingest.graph import _Labelling, _model_first_run, _Tally
+    from report_ingest.tests.fake_engine import FakeEngine
+
+    for given, kept in ((None, None), (0, None), (120000, 120000)):
+        qa = []
+        made = _model_first_run(b"%PDF", FakeEngine([], name="fake-main"),
+                                _Tally(), _Labelling(), None, None, None, qa,
+                                max_request_tokens_in=given)
+        assert made.max_request_tokens_in == kept
+        assert ("sized against a limit of 120,000 input tokens"
+                in qa[0].detail) is bool(kept)
+        assert "cut" not in qa[0].detail       # nothing read yet
+        assert made.note is qa[0]
+
+
 def test_a_lab_test_placed_on_another_page_takes_that_page(monkeypatch):
     locate = pytest.importorskip("report_ingest.locate")
     from types import SimpleNamespace
