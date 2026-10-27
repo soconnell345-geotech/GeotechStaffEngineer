@@ -69,7 +69,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from module_work.report_ingest_harness.run_claude_local import (
     LEDGER_REL, OUT_REL, RAW_REL, REPO, RetryLog, _append_jsonl, _inside,
-    claude_chat, git_ignored, main_checkout, price_the_scorecard,
+    claude_chat, git_ignored, main_checkout, out_dir_refusal, price_the_scorecard,
     shared_ledger, usd,
 )
 
@@ -170,11 +170,11 @@ def _paths(args: argparse.Namespace) -> Dict[str, Path]:
 
 
 def _refuse_unignored(out: Path, main: Path) -> bool:
-    for root in {main, REPO}:
-        if _inside(out, root) and git_ignored(out, root) is False:
-            print(f"refused: {out} is inside the repo and git does not "
-                  f"ignore it; descriptions quote the pages")
-            return True
+    refusal = out_dir_refusal(out, {main, REPO},
+                              "descriptions quote the pages")
+    if refusal:
+        print(refusal)
+        return True
     return False
 
 

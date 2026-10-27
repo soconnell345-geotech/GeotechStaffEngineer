@@ -420,11 +420,10 @@ def run(args: argparse.Namespace,
         print(f"no reports at {paths['reports']}")
         return rcl.REFUSED
     out = _out_dir(args, paths)
-    for root in {paths["main"], rcl.REPO}:
-        if rcl._inside(out, root) and rcl.git_ignored(out, root) is False:
-            print(f"refused: {out} is inside the repo and git does not "
-                  f"ignore it; run files hold private content")
-            return rcl.REFUSED
+    refusal = rcl.out_dir_refusal(out, {paths["main"], rcl.REPO})
+    if refusal:
+        print(refusal)
+        return rcl.REFUSED
     (out / stage).mkdir(parents=True, exist_ok=True)
     first_arm = _first(args)
     page_route = getattr(args, "page_route", None)

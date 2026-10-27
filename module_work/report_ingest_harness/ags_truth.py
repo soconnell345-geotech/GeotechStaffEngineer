@@ -812,15 +812,15 @@ def assemble(folder: Path, target: Path
 def _refuse_tracked(paths: Iterable[Path]) -> None:
     """Stop before writing a path a checkout would track."""
     from module_work.report_ingest_harness.run_claude_local import (
-        REPO, _inside, git_ignored, main_checkout,
+        REPO, main_checkout, out_dir_refusal,
     )
 
     for path in paths:
-        for root in {main_checkout(), REPO}:
-            if _inside(path, root) and git_ignored(path, root) is False:
-                raise PermissionError(
-                    f"refused: {path} is inside the repo and git does not "
-                    f"ignore it; the answer sheets and scans are private")
+        refusal = out_dir_refusal(
+            path, {main_checkout(), REPO},
+            "the answer sheets and scans are private")
+        if refusal:
+            raise PermissionError(refusal)
 
 
 def _hole_view(hole: Dict[str, Any]) -> Dict[str, Any]:

@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from module_work.report_ingest_harness.run_claude_local import (
-    RAW_REL, REPO, _inside, git_ignored, main_checkout,
+    RAW_REL, REPO, _inside, git_ignored, main_checkout, out_dir_refusal,
 )
 
 #: The saved Foundry full records, relative to the main checkout.
@@ -158,12 +158,11 @@ def run(args: argparse.Namespace) -> int:
     records = Path(args.records) if args.records else main / RECORDS_REL
     out = (Path(args.out_dir) if args.out_dir
            else main / OUT_REL / time.strftime("%Y-%m-%d"))
-    for root in {main, REPO}:
-        if _inside(out, root) and git_ignored(out, root) is False:
-            print(f"refused: the output folder is inside the repo and git "
-                  f"does not ignore it; the sheets quote the list and the "
-                  f"reports")
-            return 2
+    refusal = out_dir_refusal(out, {main, REPO},
+                              "the sheets quote the list and the reports")
+    if refusal:
+        print(refusal)
+        return 2
     try:
         qlist = load_questions(args.list, code_map=args.map)
     except QuestionListError as exc:

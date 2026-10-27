@@ -336,6 +336,73 @@ def test_an_out_dir_git_would_track_is_refused(made_up, tmp_path,
     assert rpb.run(args, chat_builder=_builder([], [])) == rcl.OK
 
 
+def _repo_git_cannot_read(tmp_path):
+    """A folder whose ``.git`` file names a gitdir that does not exist, as
+    a worktree seen from WSL does: git answers 'not a git repository'."""
+    repo = tmp_path / "blind"
+    repo.mkdir()
+    (repo / ".git").write_text("gitdir: /no/such/place/.git/worktrees/x\n",
+                               encoding="utf-8")
+    return repo
+
+
+def test_an_out_dir_git_cannot_judge_is_refused_unless_overridden(
+        made_up, tmp_path, monkeypatch):
+    import shutil
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    repo = _repo_git_cannot_read(tmp_path)
+    monkeypatch.setattr(rcl, "REPO", repo)
+    monkeypatch.setattr(rcl, "main_checkout", lambda start=repo: repo)
+    monkeypatch.delenv(rcl.PRIVATE_OUT_ENV, raising=False)
+
+    # git gives no answer: refused, and the message says what to do.
+    plain = repo / "module_work" / "_plain_t"
+    msg = rcl.out_dir_refusal(plain, {repo})
+    assert msg and str(plain) in msg and "could not say" in msg
+    assert "main checkout" in msg and rcl.PRIVATE_OUT_ENV in msg
+    args = _args(made_up)
+    args.out_dir = str(plain)
+    assert rpb.run(args, chat_builder=_builder([], [])) == rcl.REFUSED
+    assert not plain.exists()
+
+    # A raw/ folder is still refused without the override ...
+    raw = repo / "raw" / "plain_t"
+    assert rcl.out_dir_refusal(raw, {repo})
+    args = _args(made_up)
+    args.out_dir = str(raw)
+    assert rpb.run(args, chat_builder=_builder([], [])) == rcl.REFUSED
+
+    # ... allowed with it ...
+    monkeypatch.setenv(rcl.PRIVATE_OUT_ENV, "1")
+    assert rcl.out_dir_refusal(raw, {repo}) is None
+    args = _args(made_up)
+    args.out_dir = str(raw)
+    assert rpb.run(args, chat_builder=_builder([], [])) == rcl.OK
+
+    # ... and the override covers no folder without a raw/ segment.
+    assert rcl.out_dir_refusal(plain, {repo})
+
+
+def test_the_override_never_allows_a_folder_git_says_is_tracked(
+        tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    repo = tmp_path / "repo2"
+    repo.mkdir()
+    if subprocess.run(["git", "init", "-q", str(repo)],
+                      capture_output=True).returncode != 0:
+        pytest.skip("git init failed")
+    monkeypatch.setenv(rcl.PRIVATE_OUT_ENV, "1")
+    assert rcl.out_dir_refusal(repo / "raw" / "x", {repo})   # tracked
+    (repo / ".gitignore").write_text("raw/\n", encoding="utf-8")
+    assert rcl.out_dir_refusal(repo / "raw" / "x", {repo}) is None
+    # a folder outside every checkout is not the guard's business
+    assert rcl.out_dir_refusal(tmp_path / "elsewhere", {repo}) is None
+
+
 def test_an_arm_is_not_resumed_under_another_instruction(made_up, monkeypatch):
     assert rpb.run(_args(made_up, "--only", ITEMS[0]),
                    chat_builder=_builder([], [])) == rcl.OK

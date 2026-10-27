@@ -877,11 +877,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = ap.parse_args(argv)
     paths = _paths(args)
     out = paths["out"]
-    for root in {paths["main"], rcl.REPO}:
-        if rcl._inside(out, root) and rcl.git_ignored(out, root) is False:
-            print(f"refused: {out} is inside the repo and git does not "
-                  f"ignore it; the results name private pages")
-            return rcl.REFUSED
+    refusal = rcl.out_dir_refusal(out, {paths["main"], rcl.REPO},
+                                  "the results name private pages")
+    if refusal:
+        print(refusal)
+        return rcl.REFUSED
     out.mkdir(parents=True, exist_ok=True)
     stages = STAGES if args.stage == "all" else (args.stage,)
     started = time.time()
