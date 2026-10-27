@@ -2858,6 +2858,10 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
                    "report", "open"),
     (("partial",), "are not among those read from this report", "open"),
     (("partial",), "no sample of it sits within", "open"),
+    # A log item's pages print, in a field or a title, a hole no log in the
+    # record carries (RI-117, report_ingest.log_holes.missing_holes_qa): a
+    # hole may be missing.
+    (("partial",), "no log in the record carries", "open"),
     # Two parts of the narrative answer differently and the first is kept
     # by its place in the report, not by any evidence: as open as a page
     # label the voters split on.

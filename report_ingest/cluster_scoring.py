@@ -7189,7 +7189,9 @@ def _ingest_steps(folder: Path,
     file's own ``cost``, which counts this attempt only. A narrative item
     file left behind by a re-read (the newest one is the reading the record
     used) is not counted in the step cells; it is listed apart under
-    ``superseded_item_files`` (BACKLOG RI-129). Never fails a
+    ``superseded_item_files`` (BACKLOG RI-129), as are a lab item's other
+    reading (RI-138) and a log item's file read whole where its parts, one
+    per hole, are beside it (RI-117). Never fails a
     run: it is called after the run's model calls are paid for, and an
     item file it cannot read is counted as unreadable and passed over.
     """
@@ -7287,6 +7289,29 @@ def _ingest_steps(folder: Path,
                 got["files"] += len(lab_old)
                 got["calls"] += sum(calls(load(f)) for f in lab_old)
                 kept_old |= lab_old
+            # A log item cut into one item per hole is read as ``item_Na``,
+            # ``item_Nb`` ... (log_holes.split_log_items); a folder reused
+            # from a run before the cut keeps ``item_N`` beside them. The
+            # parts are the reading the record used (BACKLOG RI-117). An
+            # item whose bound pages were handed over carries ``-own``
+            # (graph.py) on the whole item and on its parts alike.
+            stems = {path.stem: path for path in paths
+                     if path not in kept_old}
+            cut: Dict[str, List[Path]] = {}
+            for stem, path in stems.items():
+                own = "-own" if stem.endswith("-own") else ""
+                base = stem[:len(stem) - len(own)]
+                whole = base[:-1] + own
+                if base[-1:].islower() and whole in stems:
+                    cut.setdefault(whole, []).append(path)
+            log_old = {stems[base] for base, parts in cut.items()
+                       if _item_step(load(stems[base])) == "log"
+                       and any(_item_step(load(p)) == "log" for p in parts)}
+            if log_old:
+                superseded.setdefault(name, {})["log"] = {
+                    "files": len(log_old), "chosen_by": "split_parts",
+                    "calls": sum(calls(load(f)) for f in log_old)}
+                kept_old |= log_old
             for path in paths:
                 if path in kept_old:
                     continue
@@ -7393,6 +7418,14 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
                             f"({_n(got.get('calls'))} calls), not counted "
                             f"above; the file used was the one matching "
                             f"the run's recorded lab_sheets_per_call.", ""]
+                    continue
+                if step == "log":
+                    out += [f"{r.get('id', '')} {doc}: {got['files']} log "
+                            f"item file(s) read whole before the item was "
+                            f"cut into one item per hole, kept from an "
+                            f"earlier run ({_n(got.get('calls'))} calls), "
+                            f"not counted above; the parts' files are the "
+                            f"ones used.", ""]
                     continue
                 out += [f"{r.get('id', '')} {doc}: {got['files']} older "
                         f"narrative item file(s) kept from a re-read "

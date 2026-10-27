@@ -121,14 +121,16 @@ from typing import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from report_ingest.checks import (
-    IMPOSSIBLE, LISTED, as_read, check_mode, pdf_local,
+    FLAG_CONFIDENCE, IMPOSSIBLE, LISTED, as_read, check_mode, doubtful,
+    pdf_local,
 )
 from report_ingest.engine import (
     Engine, image_block, text_block, tool_result_block, user,
 )
 from report_ingest.floor import MergeLog
 from report_ingest.lab_floor import (
-    FloorSheet, floor_from_tables, merge_lab_tests, serialise_floor,
+    FloorSheet, _field_of, _num, floor_from_tables, merge_lab_tests,
+    names_solids, serialise_floor, solids_can_equal_water,
 )
 from report_ingest.model import (
     AtterbergResult, CBRResult, ChemicalResult, CompactionPoint,
@@ -1206,6 +1208,9 @@ class _Builder:
                  checks: str = "refuse") -> None:
         self.reading = reading
         self.flag = check_mode(checks) == "flag"
+        #: Under ``flag``: the test being built kept a doubtful value, so
+        #: its provenance is lowered to ``FLAG_CONFIDENCE``.
+        self._doubted = False
         self.pages = list(pages)
         self.report_id = report_id
         self.zooms = list(zooms)
@@ -1332,6 +1337,46 @@ class _Builder:
         self._refuse(what, self._cannot(
             f"{value:g} is negative, which no water content or limit is",
             ""), value)
+        return None
+
+    def wc_of(self, test: ReadTest) -> Optional[float]:
+        """The test's water content, gated where it is the number the
+        sheet prints under a share of dry solids (``lab_floor.
+        SOLIDS_HEADING``: "% Solids", "Dry matter") (BACKLOG RI-143). A
+        chemistry lab prints its percent solids beside its results, and a
+        specimen's water content is that number only where the solids are
+        50 % (a wet basis) or 61.80 % (a dry basis)
+        (:func:`~report_ingest.lab_floor.solids_can_equal_water`): a
+        specimen of 85 % solids holds 15 % water on a wet basis and about
+        18 % on a dry one. Elsewhere the number is the solids column read as
+        the water content, unless the test also prints that same number
+        under a water-content heading of its own.
+
+        Gated, it is refused (None, the refusal recorded); under ``flag``
+        it is doubtful, not impossible, so it is kept at
+        ``FLAG_CONFIDENCE`` with the entry saying so
+        (:func:`~report_ingest.checks.doubtful`)."""
+        if test.wc is None:
+            return None
+        wc = float(test.wc)
+        same = [f for f in test.fields
+                if _num(f.value) is not None
+                and abs(_num(f.value) - wc) < 0.005]
+        solids = [f for f in same if names_solids(f.name)]
+        if not solids or \
+                any(_field_of(f.name) == "wc" for f in same) or \
+                solids_can_equal_water(solids[0].value):
+            return wc
+        why = (f"{wc:g} is the number the sheet prints under "
+               f"{solids[0].name!r}, a share of dry solids, which a water "
+               f"content of the same specimen equals only at 50 % solids "
+               f"(wet basis) or 61.8 % (dry basis)")
+        if self.flag:
+            self._doubted = True
+            self._refuse("water content", doubtful(why), wc)
+            return wc
+        self._refuse("water content", f"{why}; refused rather than accepted",
+                     wc)
         return None
 
     def quantity(self, read: Optional[ReadQuantity]) -> Optional[Quantity]:
@@ -1540,7 +1585,7 @@ class _Builder:
             flow_curve=[(int(round(p.x)), float(p.y))
                         for p in (flow.points if flow else ())],
             pl_trials=[float(v) for v in test.pl_trials],
-            water_content=self.water(test.wc, "water content"),
+            water_content=self.water(self.wc_of(test), "water content"),
             uscs=test.uscs.strip(), description=test.description)
 
     def _gradation(self, kind: str, test: ReadTest) -> GradationResult:
@@ -1559,7 +1604,7 @@ class _Builder:
             clay_percent=self.percent(test.clay_percent, "clay"),
             fines_percent=self.percent(test.fines_percent, "fines"),
             hydrometer=bool(test.hydrometer),
-            water_content=self.water(test.wc, "water content"),
+            water_content=self.water(self.wc_of(test), "water content"),
             uscs=test.uscs.strip(), description=test.description)
 
     def _consolidation(self, kind: str, test: ReadTest) -> ConsolidationResult:
@@ -1583,7 +1628,7 @@ class _Builder:
             cc=test.compression_index, cr=test.recompression_index,
             cv=self.quantity(test.cv), e0=test.e0,
             dry_unit_weight=self.quantity(test.dry_density),
-            wc=self.water(test.wc, "water content"),
+            wc=self.water(self.wc_of(test), "water content"),
             saturation_percent=self.percent(test.saturation_percent,
                                             "saturation"),
             uscs=test.uscs.strip(), description=test.description)
@@ -1625,7 +1670,7 @@ class _Builder:
             qu=self.quantity(test.qu), su=self.quantity(test.su),
             strain_at_failure_percent=test.strain_at_failure_percent,
             points=points,
-            wc=self.water(test.wc, "water content"),
+            wc=self.water(self.wc_of(test), "water content"),
             dry_density=self.quantity(test.dry_density),
             wet_density=self.quantity(test.wet_density),
             rock_type=test.rock_type, weathering=test.weathering,
@@ -1666,7 +1711,7 @@ class _Builder:
             swell_percent=test.swell_percent, soaked=test.soaked,
             surcharge=self.quantity(test.surcharge),
             dry_density=self.quantity(test.dry_density),
-            wc=self.water(test.wc, "water content"),
+            wc=self.water(self.wc_of(test), "water content"),
             compaction_percent=test.compaction_percent,
             points=[(float(p.x), float(p.y))
                     for p in (series.points if series else ())],
@@ -1675,7 +1720,7 @@ class _Builder:
     def _moisture(self, kind: str, test: ReadTest) -> MoistureDensityResult:
         return MoistureDensityResult(
             kind=kind,
-            wc=self.water(test.wc, "water content"),
+            wc=self.water(self.wc_of(test), "water content"),
             water_contents=[float(v) for v in test.water_contents],
             wet_density=self.quantity(test.wet_density),
             dry_density=self.quantity(test.dry_density),
@@ -1700,7 +1745,7 @@ class _Builder:
             conductivity=self.reported(test.conductivity),
             organic_percent=(self.percent(test.organic_percent, "organic")),
             temperature=self.reported(test.temperature),
-            wc=(float(test.wc) if test.wc is not None else None),
+            wc=self.wc_of(test),
             reporting_limit=self.reported(test.reporting_limit),
             lab_sample_id=test.lab_sample_id,
             description=test.description)
@@ -1803,6 +1848,7 @@ class _Builder:
             digitised = any(s.digitised for s in test.series)
             self._asked = set()
             self._taken = set()
+            self._doubted = False
             result = self.result_for(kind, test)
             if self.flag:
                 self._unread_series(kind, test)
@@ -1825,6 +1871,9 @@ class _Builder:
                 fields={k: str(v) for k, v in fields.items()
                         if str(v or "").strip()},
                 prov=[self.provenance(test.prov, digitised)])
+            if self._doubted:            # a doubtful value kept (flag)
+                for prov in lab_test.prov:
+                    prov.confidence = min(prov.confidence, FLAG_CONFIDENCE)
             if digitised:
                 self.changes.append({
                     "what": label, "page": self._page(test.prov.page),

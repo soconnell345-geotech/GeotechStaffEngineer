@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from report_ingest.floor import (
     DEPTH_TOL_M, LAYER_TOL_M, MergeLog, Settled, carry, depth_m, fold,
@@ -2917,12 +2917,76 @@ def _on_the_ground(inv: Investigation, grid: Any, pages: Sequence[int],
             "flag": "surface_snap"})
 
 
+def _grid_without(grid: Any, foreign: Mapping[int, str]) -> Any:
+    """A shallow copy of ``grid`` holding nothing read off the ``foreign``
+    pages (RI-117): their cells, columns, rulers and drawn samples, the
+    layers that start on them and the header fields printed on them. Done
+    BEFORE anything is seeded, because the floor joins rows sheet to sheet
+    by depth: a row of another hole at the same depth as one of this hole's
+    would otherwise stand in for it."""
+    import copy
+
+    out = copy.copy(grid)
+
+    def keep(page: Any) -> bool:
+        return page is None or int(page) not in foreign
+
+    def put(name: str, value: Any) -> None:
+        if hasattr(out, name):
+            setattr(out, name, value)
+
+    put("pages", [p for p in getattr(grid, "pages", None) or [] if keep(p)])
+    for name in ("rows", "columns", "samples"):
+        put(name, [x for x in getattr(grid, name, None) or []
+                   if keep(getattr(x, "page", None))])
+    put("layers", [ly for ly in getattr(grid, "layers", None) or []
+                   if not getattr(ly, "pages", None) or keep(ly.pages[0])])
+    for name in ("rulers", "elevation_rulers", "needs_values", "scales"):
+        value = getattr(grid, name, None)
+        if isinstance(value, dict):
+            put(name, {p: v for p, v in value.items() if keep(p)})
+    boxes = dict(getattr(grid, "field_boxes", None) or {})
+    there = {key for key, (page, _box) in boxes.items() if not keep(page)}
+    put("fields", {k: v for k, v in dict(getattr(grid, "fields", None)
+                                          or {}).items() if k not in there})
+    put("field_boxes", {k: v for k, v in boxes.items() if k not in there})
+    return out
+
+
+def _printed_without(printed: PrintedDepths, foreign: Mapping[int, str]
+                     ) -> PrintedDepths:
+    """``printed`` with nothing read off the ``foreign`` pages (RI-117)."""
+    import dataclasses
+
+    return dataclasses.replace(
+        printed,
+        pages=[p for p in printed.pages if p not in foreign],
+        readings=[r for r in printed.readings if r.page not in foreign],
+        dropped=[d for d in printed.dropped
+                 if d.get("page") not in foreign],
+        reasons={p: v for p, v in printed.reasons.items()
+                 if p not in foreign},
+        page_units={p: v for p, v in printed.page_units.items()
+                    if p not in foreign})
+
+
+def _other_hole_rows(foreign: Mapping[int, str]) -> List[Dict[str, Any]]:
+    """One unresolved row per page left out for naming another hole."""
+    return [{"what": f"log floor, page {page}", "page": page,
+             "why": (f"The header of page {page} names the hole {name}, not "
+                     f"this log's; nothing the grid read on that page is "
+                     f"seeded into this hole."),
+             "value": name, "flag": "floor_other_hole"}
+            for page, name in sorted(foreign.items())]
+
+
 def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                    confidence_floor: float = 0.3,
                    template: Any = None,
                    lines: Sequence[Any] = (),
                    printed: Optional[PrintedDepths] = None,
-                   qa: Optional[List[Dict[str, Any]]] = None
+                   qa: Optional[List[Dict[str, Any]]] = None,
+                   other_holes: Optional[Mapping[int, str]] = None
                    ) -> Investigation:
     """The grid's own reading of one log as an :class:`Investigation`.
 
@@ -2964,6 +3028,15 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     contradict their column or their neighbours.
     The rows have the shape the log reader's ``unresolved`` list carries.
 
+    ``other_holes`` maps a page to the hole its header names, for every page
+    of these whose header names a hole OTHER than the log's own
+    (:func:`report_ingest.log_holes.other_hole_pages`, RI-117). Nothing read
+    off such a page is seeded into this hole -- no layer, sample, driven
+    record, header field or water level, and no row of what could not be
+    settled -- and each such page is one ``floor_other_hole`` row in ``qa``.
+    The record's ``pages`` are this hole's. Left empty, or naming every
+    page, nothing changes.
+
     Last, every depth is checked against the ground surface (RI-123,
     :func:`report_ingest.checks.ground_investigation`): one read just above
     it is set to 0, one further above is refused with a row, and a page
@@ -2972,6 +3045,15 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     ``qa`` is given; the rows go into it when it is.
     """
     pages = [int(p) for p in pages]
+    foreign = {int(p): str(name) for p, name in (other_holes or {}).items()
+               if int(p) in pages}
+    if foreign and len(foreign) < len(pages):
+        grid = _grid_without(grid, foreign)
+        pages = [p for p in pages if p not in foreign]
+        if printed is not None:
+            printed = _printed_without(printed, foreign)
+    else:
+        foreign = {}
     unit = (grid.unit or "").strip()
     if printed is None:
         printed = printed_depths(grid, pages)
@@ -3188,6 +3270,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     _check_order(samples, spt, unit, confidence_floor, notes)
     if qa is not None:
         qa.extend(notes.qa_rows())
+        qa.extend(_other_hole_rows(foreign))
 
     extra = {k: str(v) for k, v in fields.items()
              if k not in used and str(v or "").strip()}
