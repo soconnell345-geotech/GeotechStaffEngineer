@@ -75,7 +75,9 @@ WHAT IT WRITES into ``out_dir``::
                           file, qa.json, and run.json with the counts
                           and the cost of every attempt at the report
     ingest/reports.db     the library index over every report ingested
-    results.json          every summary table as data
+    results.json          every summary table as data; its ``totals`` add
+                          up every stage, with each stage's failed items
+                          and failed requests (BACKLOG RI-173)
     RESULTS.md            the same tables to read, and to bring back
 
 ``RESULTS.md`` is the file to bring home. It carries IDs, labels, counts and
@@ -1717,6 +1719,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["range_labels"] = scored_ranges
         lines += _render_ranges(scored_ranges)
 
+    # The run's totals over every stage, with each stage's failed items and
+    # requests (BACKLOG RI-173): what reads the run reads these.
+    _fold_totals(results)
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1744,7 +1749,107 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-report descriptions and section labels in "
               f"{out / 'ranges'}")
     sync.report()
+    print(_failures_line(results["totals"]))
     return results
+
+
+#: Each stage's per-item rows in ``results.json`` and the key naming the
+#: item (BACKLOG RI-173). The labels stage's rows are its ``triage`` list.
+_STAGE_ITEMS: Dict[str, Tuple[str, str]] = {
+    "labels": ("triage", "id"), "logs": ("per_log", "log_id"),
+    "lab": ("per_sheet", "sheet_id"), "calc": ("per_calc", "calc_id"),
+    "soundings": ("per_sounding", "sounding_id"),
+    "narrative": ("per_report", "id"), "vision_labels": ("per_report", "id"),
+    "vote": ("per_report", "id"), "ingest": ("per_report", "id"),
+    "range_labels": ("per_report", "id"),
+}
+
+
+def _stage_costs(stage: str,
+                 scored: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The cost totals one stage's results carry: the labels stage's
+    ``totals``, the ingest's over every report finished or not, the range
+    labels' describer and labeller apart; none for the vote."""
+    if stage == "labels":
+        return [scored["totals"]]
+    cost = scored.get("cost_every_report") or scored.get("cost")
+    if not isinstance(cost, dict):
+        return []
+    if stage == "range_labels":
+        return [part for part in cost.values() if isinstance(part, dict)]
+    return [cost]
+
+
+def _stage_failures(stage: str,
+                    scored: Dict[str, Any]) -> Tuple[List[str], int]:
+    """The items one stage could not read, sorted, and how many it tried:
+    every entry of its ``failures`` and every row carrying an ``error``."""
+    failed = {str(key) for key in (scored.get("failures") or {})}
+    tried = set(failed)
+    rows, id_key = _STAGE_ITEMS.get(stage, ("per_report", "id"))
+    for row in scored.get(rows) or ():
+        if not isinstance(row, dict):
+            continue
+        item = str(row.get(id_key))
+        tried.add(item)
+        if row.get("error"):
+            failed.add(item)
+    return sorted(failed), len(tried)
+
+
+def _fold_totals(results: Dict[str, Any]) -> None:
+    """``results["totals"]`` over EVERY stage that ran (BACKLOG RI-173).
+
+    The totals were the labels stage's alone, so a run whose other stages
+    failed requests and lost items still read 0 failed there, and what reads
+    the totals reported every arm ok. They now add every stage's cost totals
+    and carry each stage's failed items (``failed_items_by_stage``, out of
+    ``items_by_stage``) and failed requests (``failed_requests_by_stage``),
+    with ``failed_items`` their sum. The labels stage's own totals stay in
+    ``labels_cost`` when other stages ran beside it."""
+    stages = [stage for stage in results.get("stages") or ()
+              if stage == "labels" or isinstance(results.get(stage), dict)]
+    parts: List[Dict[str, Any]] = []
+    failed_items: Dict[str, List[str]] = {}
+    tried: Dict[str, int] = {}
+    requests: Dict[str, int] = {}
+    for stage in stages:
+        scored = results if stage == "labels" else results[stage]
+        costs = _stage_costs(stage, scored)
+        parts += costs
+        failed_items[stage], tried[stage] = _stage_failures(stage, scored)
+        requests[stage] = sum(_n(cost.get("failed")) for cost in costs)
+    if "labels" in stages and len(stages) > 1:
+        results["labels_cost"] = results["totals"]
+    totals = _sum_costs(parts)
+    totals.update({
+        "stages": stages,
+        "failed_items": sum(len(ids) for ids in failed_items.values()),
+        "failed_items_by_stage": failed_items,
+        "items_by_stage": tried,
+        "failed_requests_by_stage": requests,
+    })
+    results["totals"] = totals
+
+
+def _failures_line(totals: Dict[str, Any]) -> str:
+    """The run's last printed line (BACKLOG RI-173): each stage, with the
+    items it could not read and its failed requests, or "none"."""
+    cells = []
+    for stage in totals.get("stages") or ():
+        failed = totals["failed_items_by_stage"].get(stage) or []
+        requests = totals["failed_requests_by_stage"].get(stage) or 0
+        said = []
+        if failed:
+            named = ", ".join(failed[:8]) + (
+                f" and {len(failed) - 8} more" if len(failed) > 8 else "")
+            said.append(f"{len(failed)} of "
+                        f"{totals['items_by_stage'].get(stage, 0)} item(s) "
+                        f"not read ({named})")
+        if requests:
+            said.append(f"{requests} failed request(s)")
+        cells.append(f"{stage} " + (", ".join(said) if said else "none"))
+    return "failures by stage: " + ("; ".join(cells) or "no stage ran")
 
 
 def _score(done: Dict[str, dict], corpus: Corpus,
@@ -6401,8 +6506,16 @@ def _unfinished_cost(cost: Dict[str, Any],
         for entry in _earlier_attempts(unfinished[rid]):
             _add_cost(spent, entry.get("cost"))
             spent["seconds"] += _float(entry.get("seconds"))
+    every = _sum_costs((cost, spent))
+    spent["reports"] = sorted(unfinished)
+    return {"cost_unfinished": spent, "cost_every_report": every}
+
+
+def _sum_costs(parts: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Stage cost totals added together: every count, the dollars, the wall
+    clock and waits, and each kind of failed request."""
     every = _cost_totals()
-    for part in (cost, spent):
+    for part in parts:
         for key in _COST_SUMS + ("files", "files_counting_failures"):
             every[key] += _n(part.get(key))
         for key in ("dollars", "waited_seconds", "seconds"):
@@ -6416,8 +6529,7 @@ def _unfinished_cost(cost: Dict[str, Any],
     every["waited_seconds"] = round(every["waited_seconds"], 1)
     if "paced_seconds" in every:
         every["paced_seconds"] = round(every["paced_seconds"], 1)
-    spent["reports"] = sorted(unfinished)
-    return {"cost_unfinished": spent, "cost_every_report": every}
+    return every
 
 
 def _kinds_cell(counts: Dict[str, int]) -> str:

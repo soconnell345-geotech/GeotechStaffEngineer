@@ -306,6 +306,91 @@ def test_tokens_are_totalled_and_reported_instead_of_dollars(cluster):
     assert "no per-token price" in text
 
 
+class TestTheTotalsCountEveryStage:
+    """BACKLOG RI-173: the totals, and the run's last printed line, count
+    every stage's failed items and requests. Every number is made up."""
+
+    def test_a_labels_run_alone_keeps_its_totals_and_says_none(
+            self, cluster, capsys):
+        reports_dir, out, oos = cluster
+        results = cs.score_on_cluster(reports_dir=reports_dir, out_dir=out,
+                                      prompter=object(), oos_labels=oos,
+                                      sets=("oos_blind",))
+        totals = results["totals"]
+        assert (totals["stages"], totals["failed_items"]) == (["labels"], 0)
+        assert totals["input_tokens"] == 80000
+        assert "labels_cost" not in results
+        printed = capsys.readouterr().out.rstrip().splitlines()
+        assert printed[-1] == "failures by stage: labels none"
+
+    def test_a_stages_failed_items_and_requests_reach_the_totals(
+            self, logs_cluster, capsys):
+        _reports_dir, out, _truth = logs_cluster
+        path = out / "logs" / "R36_p38.json"
+        blob = json.loads(path.read_text(encoding="utf-8"))
+        blob["after"]["error"] = "TypeError: made up"
+        blob["cost"].update(failed=3, failed_by_kind={"other": 3})
+        path.write_text(json.dumps(blob), encoding="utf-8")
+        capsys.readouterr()
+
+        # object() has no chat(): the failed log's retry fails again.
+        results = _logs_run(logs_cluster)
+        totals = results["totals"]
+        assert totals["stages"] == ["logs"]
+        assert totals["failed_items_by_stage"] == {"logs": ["R36_p38"]}
+        assert totals["items_by_stage"] == {"logs": 2}
+        assert totals["failed_items"] == 1
+        assert totals["failed"] == results["logs"]["cost"]["failed"]
+        assert totals["calls"] == results["logs"]["cost"]["calls"]
+        saved = json.loads((out / "results.json").read_text("utf-8"))
+        assert saved["totals"]["failed_items"] == 1
+        last = capsys.readouterr().out.rstrip().splitlines()[-1]
+        assert last.startswith("failures by stage: logs 1 of 2 item(s) not "
+                               "read (R36_p38)")
+
+    def test_every_stage_adds_into_the_totals(self):
+        def cost(calls, failed):
+            total = cs._cost_totals()
+            cs._add_cost(total, {"calls": calls, "failed": failed,
+                                 "input_tokens": 10 * calls,
+                                 "failed_by_kind": {"other": failed}})
+            return total
+
+        results = {
+            "stages": ["labels", "logs", "ingest", "range_labels", "vote"],
+            "failures": {}, "triage": [{"id": "R1"}], "totals": cost(2, 0),
+            "logs": {"failures": {"R2_p1": "made up"},
+                     "per_log": [{"log_id": "R1_p4", "error": "made up"},
+                                 {"log_id": "R1_p5", "error": None}],
+                     "cost": cost(5, 4)},
+            "ingest": {"failures": {"R3": "made up"}, "per_report": [],
+                       "cost": cost(1, 0), "cost_every_report": cost(3, 1)},
+            "range_labels": {"failures": {}, "per_report": [{"id": "R1"}],
+                             "cost": {"describe": cost(1, 0),
+                                      "label": cost(1, 2)}},
+            "vote": {"per_report": [{"id": "R1"}]},
+        }
+        cs._fold_totals(results)
+        totals = results["totals"]
+        assert (totals["calls"], totals["failed"]) == (12, 7)
+        assert totals["input_tokens"] == 120
+        assert totals["failed_by_kind"] == {"other": 7}
+        assert totals["failed_items_by_stage"] == {
+            "labels": [], "logs": ["R1_p4", "R2_p1"], "ingest": ["R3"],
+            "range_labels": [], "vote": []}
+        assert totals["failed_requests_by_stage"] == {
+            "labels": 0, "logs": 4, "ingest": 1, "range_labels": 2,
+            "vote": 0}
+        assert totals["items_by_stage"]["logs"] == 3
+        assert totals["failed_items"] == 3
+        assert results["labels_cost"]["calls"] == 2
+        assert cs._failures_line(totals) == (
+            "failures by stage: labels none; logs 2 of 3 item(s) not read "
+            "(R1_p4, R2_p1), 4 failed request(s); ingest 1 of 1 item(s) not "
+            "read (R3), 1 failed request(s); range_labels 2 failed "
+            "request(s); vote none")
+
+
 # ---------------------------------------------------------------------------
 # the logs stage (WP2b)
 # ---------------------------------------------------------------------------
