@@ -2693,7 +2693,8 @@ class TestAnotherHolesPage:
     (made-up holes), read by planlens' own grid."""
 
     @pytest.fixture(scope="class")
-    def multi(self, tmp_path_factory):
+    @classmethod
+    def multi(cls, tmp_path_factory):
         from planlens.document import open_document
         from report_ingest.tests.multi_hole_fixtures import (
             build_multi_hole_log)
