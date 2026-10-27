@@ -134,6 +134,8 @@ def _db_dump(path: str) -> bytes:
 
 _TIME = re.compile(
     rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)")
+#: The DIGGS file's creation date: the day the run happened, with no time.
+_CREATION_DATE = re.compile(rb"<creationDate>\d{4}-\d{2}-\d{2}</creationDate>")
 _KEY_LINE = re.compile(rb'^id: "([0-9a-f]+)"', re.M)
 #: A path under the run's folder once the folder is ``<RUN>``: up to the
 #: quote, space or separator that ends it.
@@ -149,10 +151,10 @@ def _slashes(found: "re.Match[bytes]") -> bytes:
 def _plain(blob: bytes, folder: Path, keys: List[bytes]) -> bytes:
     """What differs between two runs of one graph, taken out: the run's
     folder, the library keys (made from the PDF's bytes, which carry the
-    time it was drawn) and the library's update time; and what differs
-    between platforms: the path separators under the run's folder and the
-    line endings of a file written as text (CI runs on Linux, the snapshot
-    was taken on Windows)."""
+    time it was drawn), the library's update time and the DIGGS file's
+    creation date; and what differs between platforms: the path separators
+    under the run's folder and the line endings of a file written as text
+    (CI runs on Linux, the snapshot was taken on Windows)."""
     for text in sorted({str(folder), str(folder).replace("\\", "/")},
                        key=len, reverse=True):
         for form in (text, json.dumps(text)[1:-1]):
@@ -160,6 +162,7 @@ def _plain(blob: bytes, folder: Path, keys: List[bytes]) -> bytes:
     for key in keys:
         blob = blob.replace(key, b"<KEY>")
     blob = _RUN_PATH.sub(_slashes, blob).replace(b"\r\n", b"\n")
+    blob = _CREATION_DATE.sub(b"<creationDate><DATE></creationDate>", blob)
     return _TIME.sub(b"<TIME>", blob)
 
 
