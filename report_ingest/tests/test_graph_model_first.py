@@ -455,12 +455,13 @@ EXPLORATIONS = {7: "B-1", 8: "B-1", 9: "TP-1", 18: "BH-1"}
 TITLES = {12: "Atterberg limits", 13: "Sieve analysis"}
 
 
-def _descriptions():
+def _descriptions(explorations=None):
     from report_ingest.range_labels import PageDescription
 
+    explorations = EXPLORATIONS if explorations is None else explorations
     return [{"final": PageDescription(
         title=TITLES.get(page, f"Made-up page {page}"), kind="report page",
-        names="", identifiers=[], exploration=EXPLORATIONS.get(page, ""),
+        names="", identifiers=[], exploration=explorations.get(page, ""),
         continues="", header_footer="", issuer_date="", language="English",
         summary="A made-up page.")} for page in range(22)]
 
@@ -796,6 +797,101 @@ class TestOneHoleInTwoPlaces:
         assert note.pages == [7, 20]
         assert "the depth rulers on pages 7, 20 could not be read " \
             "(RuntimeError: made-up grid failure)" in note.detail
+
+
+# ---------------------------------------------------------------------------
+# a log group drawn round two holes' pages (RI-144, RI-145)
+# ---------------------------------------------------------------------------
+
+class TestAGroupOfTwoHoles:
+    """The made-up describer names no exploration on page 9, so the test
+    pit's page joins the boring's group: one call for pages 7 to 9, whose
+    answer puts a layer read off page 9 in B-1. No log of TP-1 is read."""
+
+    @staticmethod
+    def _engines():
+        from report_ingest.model_first import LogReading
+
+        engines = _engines()
+        main, describer, labeller, stages = engines
+        describer.turns = _descriptions({7: "B-1", 8: "B-1", 18: "BH-1"})
+        stages["logs"].turns = [
+            {"final": LogReading.model_validate({
+                "investigation_id": "B-1", "kind": "boring",
+                "depth_unit": "m", "units_known": True, "total_depth": 31.5,
+                "layers": [
+                    {"top": 0.0, "bottom": 3.0, "prov": {"page": 7},
+                     "description": "Brown sandy lean CLAY, stiff, moist"},
+                    {"top": 0.0, "bottom": 2.0, "prov": {"page": 9},
+                     "description": "Made-up FILL of the other hole"}]})},
+            _log("BH-1", "boring", 18, [(0.0, 9.0, "Made-up SILT")])]
+        return engines
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def two_holes(cls, synthetic_pdf, tmp_path_factory):
+        pytest.importorskip("report_ingest.locate")
+        out = tmp_path_factory.mktemp("mf_two")
+        engines = cls._engines()
+        return _run_on(synthetic_pdf, out, engines), out, engines
+
+    @staticmethod
+    def _sorted(record):
+        return [q for q in record.qa if q.where == "investigations.B-1"
+                and "names the hole TP-1" in q.detail]
+
+    def test_the_group_is_one_call_for_both_holes_pages(self, two_holes):
+        _record, out, (_main, _describer, _labeller, stages) = two_holes
+        assert stages["logs"].n_calls == 2
+        saved = json.loads((out / "items" / "mf-log-7.json")
+                           .read_text("utf-8"))
+        assert saved["pages"] == [7, 8, 9]
+
+    def test_the_other_hole_s_layer_is_dropped_and_kept_as_read(
+            self, two_holes):
+        record, _out, _engines = two_holes
+        (log,) = record.investigations
+        assert log.investigation_id == "B-1"
+        assert [layer.description for layer in log.layers] == [
+            "Brown sandy lean CLAY, stiff, moist"]
+        assert 9 not in log.pages
+        (entry,) = self._sorted(record)
+        assert entry.kind == "out_of_range" and entry.pages == [9]
+        assert "no other log in the record carries that name" in entry.detail
+        assert "Made-up FILL of the other hole" in entry.values[0]
+
+    def test_the_hole_no_log_carries_is_listed_by_its_group(self, two_holes):
+        """RI-144: the check today's path makes, over the model-first
+        group."""
+        record, _out, _engines = two_holes
+        (entry,) = [q for q in record.qa if q.kind == "partial"
+                    and "no log in the record carries" in q.detail]
+        assert entry.where == "items.boring_log.mf-log-7"
+        assert entry.values == ["TP-1: page 9"] and entry.rank == "open"
+
+    def test_a_resumed_run_sorts_the_saved_answer_the_same(
+            self, synthetic_pdf, two_holes, tmp_path):
+        """The saved answer still holds the layer off page 9; taken off
+        disk with no call, it is sorted as the fresh one was."""
+        import shutil
+
+        again = tmp_path / "again"
+        shutil.copytree(two_holes[1], again)
+        engines = _silent(_engines())
+        engines[3]["lab"].turns = [{"text": "Still no answer."}]
+        record = _run_on(synthetic_pdf, again, engines)
+        assert {k: v for k, v in _n_calls(engines).items() if v} == {
+            "lab": 1}
+        (log,) = record.investigations
+        assert [layer.description for layer in log.layers] == [
+            "Brown sandy lean CLAY, stiff, moist"]
+        assert len(self._sorted(record)) == 1
+
+    def test_one_log_per_group_gives_no_entry(self, first_run):
+        record, _out, _engines = first_run
+        assert not [q for q in record.qa
+                    if "no log in the record carries" in q.detail
+                    or "names the hole" in q.detail]
 
 
 class TestTheRunsSettings:

@@ -1626,3 +1626,30 @@ class TestAnotherHolesPage:
         brief = engine.calls[0]["messages"][0]["content"][0]["text"]
         assert "The headers name this log" not in brief
         assert not any("names the hole" in w for w in result.warnings)
+        assert not any(row.get("flag") == "reader_other_hole"
+                       for row in result.unresolved)
+
+    def test_rows_the_model_read_off_the_other_hole_s_page_are_dropped(
+            self, multi):
+        """RI-145: told to leave page HX-4 alone, the model still returns a
+        layer off it. The layer is not in the log, the page leaves the
+        log's pages, and one unresolved row keeps the layer as read."""
+        doc, gt = multi
+        hx3, hx4 = gt.holes["HX-3"], gt.holes["HX-4"]
+        reading = self._reading(hx3[0])
+        reading.layers.append(ReadLayer(
+            top=0.0, bottom=6.0, uscs="SM",
+            description="Made-up SILTY SAND of the other hole",
+            prov=ReadProv(page=hx4[0], bbox=(60.0, 220.0, 300.0, 240.0))))
+        engine = FakeEngine([{"final": reading}])
+        result = read_log(doc, hx3 + hx4, engine)
+        log = result.investigation
+        assert all(layer.prov.page in hx3 for layer in log.layers)
+        assert not any("other hole" in layer.description
+                       for layer in log.layers)
+        assert not set(log.pages) & set(hx4)
+        (row,) = [r for r in result.unresolved
+                  if r.get("flag") == "reader_other_hole"]
+        assert row["page"] == hx4[0] and row["refused_by"] == "python"
+        assert "names the hole HX-4, not this log's (HX-3)" in row["why"]
+        assert "Made-up SILTY SAND of the other hole" in row["read"]
