@@ -7,6 +7,13 @@ import pytest
 
 pytest.importorskip("gstools")
 
+
+@pytest.fixture(autouse=True)
+def _outputs_in_tmp_path(tmp_path, monkeypatch):
+    """INF-55: the adapter writes its CSVs and figures into the working
+    folder; point it at this test's tmp_path so nothing lands in the repo."""
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+
 from funhouse_agent import dispatch as D
 
 X = [0, 10, 20, 30, 40, 5, 15, 25]
