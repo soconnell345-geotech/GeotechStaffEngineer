@@ -592,39 +592,90 @@ def _count(value: Any) -> Optional[int]:
     return None
 
 
-#: What a rate limit says of itself, in an error's message or its body,
-#: lower case. Read off the WORDS, never the status alone (BACKLOG RI-139):
-#: Foundry's proxy sends a rate limit as a 400, and a 400 that says none of
-#: these is a refused request like any other.
+#: What a rate limit says of itself, lower case, in the words a provider
+#: puts its own message in (:func:`_own_words`). Read off the WORDS, never a
+#: 400 status alone (BACKLOG RI-139): Foundry's proxy sends a rate limit as
+#: a 400, and a 400 that says none of these is a refused request like any
+#: other.
 RATE_LIMIT_WORDS: Tuple[str, ...] = ("too many requests", "rate limit",
                                      "rate_limit", "throttl")
 
+#: The fields of an error body a provider writes its own words in, under
+#: ``error`` or at the top (OpenAI's ``error.message`` / ``code`` /
+#: ``type``, Anthropic's the same).
+_BODY_WORD_FIELDS: Tuple[str, ...] = ("message", "code", "type")
 
-def _body_text(error: Any) -> str:
-    """An error response's body as text (an SDK error keeps it on
-    ``body``), lower case; ``""`` when it has none or it will not read."""
+
+def _status_of(error: Any) -> Optional[int]:
+    """The HTTP status an error carries as ``status_code``, on itself or on
+    its ``response``; None when it carries none."""
+    for holder in (error, getattr(error, "response", None)):
+        try:
+            code = getattr(holder, "status_code", None)
+        except Exception:                   # noqa: BLE001 - never raise here
+            continue
+        if isinstance(code, int) and not isinstance(code, bool):
+            return code
+    return None
+
+
+def _own_words(error: Any) -> str:
+    """What an error says of itself, lower case, for :func:`is_rate_limit`
+    (BACKLOG RI-139): its message, and the fields of its body a provider
+    writes its own words in (:data:`_BODY_WORD_FIELDS`, under ``error`` or
+    at the top; ``error`` itself where it is a string).
+
+    Never the rest of a body: a validation error can echo the request back
+    ("field required ... the outlet valve was throttled"), and an SDK's
+    message carries the whole body after the status ("Error code: 422 -
+    {...}"). So where the body is structured, the message is read only up
+    to the first ``{`` or ``[``; a body that is plain text is read as its
+    first line, 200 characters at most, and the message without that body.
+    ``""`` where nothing will read."""
     try:
-        body = getattr(error, "body", None)
-        if body is None:
-            return ""
-        if not isinstance(body, str):
-            body = json.dumps(body, default=str)
-        return body.lower()
+        text = _message_of(error)
+        try:
+            body = getattr(error, "body", None)
+        except Exception:                   # noqa: BLE001 - never raise here
+            body = None
+        parts: List[str] = []
+        if isinstance(body, (dict, list)):
+            cut = [i for i in (text.find("{"), text.find("[")) if i >= 0]
+            parts.append(text[:min(cut)] if cut else text)
+            if isinstance(body, dict):
+                inner = body.get("error")
+                if isinstance(inner, str):
+                    parts.append(inner)
+                for holder in (inner, body):
+                    if isinstance(holder, dict):
+                        parts.extend(str(holder[key])
+                                     for key in _BODY_WORD_FIELDS
+                                     if isinstance(holder.get(key),
+                                                   (str, int)))
+        elif isinstance(body, str) and body.strip():
+            own = body.strip()
+            parts.append(text.replace(own, " "))
+            parts.append(own.splitlines()[0][:200])
+        else:
+            parts.append(text)
+        return " ".join(parts).lower()
     except Exception:                       # noqa: BLE001 - never raise here
         return ""
 
 
 def is_rate_limit(error: Any) -> bool:
     """Whether an error is the provider saying 'too many requests': its
-    class name (``RateLimitError``, a host's ``RateLimitGaveUp``), a 429 in
-    its message, or :data:`RATE_LIMIT_WORDS` in its message or its body,
-    whatever the status. Never raises."""
+    class name (``RateLimitError``, a host's ``RateLimitGaveUp``), a 429
+    status (``status_code``, or "Error code: 429" in its message), or
+    :data:`RATE_LIMIT_WORDS` in its own words (:func:`_own_words`), whatever
+    the status. Never raises."""
     name = type(error).__name__.lower() if isinstance(error, BaseException) \
         else ""
-    text = _message_of(error).lower()
-    if "ratelimit" in name or "error code: 429" in text:
+    if "ratelimit" in name or _status_of(error) == 429:
         return True
-    said = text + " " + _body_text(error)
+    said = _own_words(error)
+    if "error code: 429" in said:
+        return True
     return any(word in said for word in RATE_LIMIT_WORDS)
 
 
@@ -1089,13 +1140,19 @@ LARGE_REQUEST_FRACTION = 0.5
 #: The window a per-minute limit counts over, in seconds.
 PACER_WINDOW_SECONDS = 60.0
 
+#: Seconds to wait before each retry of a rate-limited request, in order:
+#: :attr:`PrompterEngine.RATE_LIMIT_WAITS`, and the step a
+#: ``retry-after: 0`` takes (:meth:`RequestPacer.backoff`).
+RATE_LIMIT_LADDER: Tuple[float, ...] = (15.0, 30.0, 60.0, 120.0, 120.0,
+                                        120.0)
+
 
 def _retry_after_of(exc: Any) -> Optional[float]:
     """The provider's own wait, when its error response carried a
     ``retry-after`` header in seconds; None when it did not, or it will not
     read as a number of seconds of 0 or more (a date, a negative, an
-    infinity). A ``0`` reads as 0.0 -- "no wait" -- not as None
-    (BACKLOG RI-139)."""
+    infinity). A ``0`` reads as 0.0, not as None (BACKLOG RI-139):
+    :meth:`RequestPacer.backoff` says what wait it gets."""
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     if not headers:
@@ -1136,9 +1193,11 @@ class RequestPacer:
       (:meth:`backoff`), so a retry is not spent inside the window that
       refused it; and the next request to that model waits too
       (:meth:`hold`). A ``retry-after`` the provider sends is honoured as
-      it is, a ``0`` as no wait (BACKLOG RI-139): the window is the
-      engine's guess for when the provider says nothing, not a floor
-      under what it says.
+      it is. A ``0`` takes the engine's own ladder step instead (BACKLOG
+      RI-139): a provider stuck on 0 would otherwise be sent every retry
+      back to back, and the next request at once; the step is the wait
+      the ladder gives a rate limit, without the window's minimum, which
+      is for a provider that names no wait at all.
 
     Each model has its own window: a large request on one model does not
     hold a request on another. One pacer serves every engine it is given,
@@ -1212,12 +1271,15 @@ class RequestPacer:
     def backoff(self, retry_after: Optional[float],
                 ladder: float = 0.0) -> float:
         """The wait before a rate-limited request is sent again: the
-        provider's ``retry-after`` when it sent one, a ``0`` included (no
-        wait; BACKLOG RI-139), else the engine's own step (``ladder``) and
-        never less than a whole window."""
-        if retry_after is not None:
-            return max(0.0, float(retry_after))
-        return max(float(ladder or 0.0), self.window)
+        provider's ``retry-after`` when it named a wait; for a ``0``, the
+        engine's own step (``ladder``, or the ladder's first step when the
+        engine has none), without the window's minimum (BACKLOG RI-139);
+        for none, the engine's step and never less than a whole window."""
+        if retry_after is None:
+            return max(float(ladder or 0.0), self.window)
+        if float(retry_after) <= 0.0:
+            return float(ladder) if ladder else RATE_LIMIT_LADDER[0]
+        return float(retry_after)
 
     def hold(self, model: str, seconds: float) -> None:
         """A rate limit on ``model``: its next request waits ``seconds``
@@ -1290,12 +1352,15 @@ class _Request:
     For an engine that sends a call's request again (:class:`PrompterEngine`)
     it is also the call's own record (BACKLOG RI-139): ``attempt``, the
     attempt the call is on; ``out``, whether any of its requests has gone
-    out (:meth:`send`); and ``number``, the call number its first cost row
+    out (:meth:`send`); ``number``, the call number its first cost row
     was filed under (:meth:`keep`), which its later attempts are filed
-    under. It is made for one call and handed down that call's path, never
-    kept on the engine, because calls on several threads at once share one
-    engine (``range_workers`` above 1) and one call's clock, size or attempt
-    must not land on another's row."""
+    under; and ``ladder_wait``, the last wait it took on the engine's
+    ladder, which a ``retry-after: 0`` on its last request holds the
+    model's next request for (:meth:`came_back`). It is made for one call
+    and handed down that call's path, never kept on the engine, because
+    calls on several threads at once share one engine (``range_workers``
+    above 1) and one call's clock, size or attempt must not land on
+    another's row."""
 
     def __init__(self, engine: Any, model: str, size: Any) -> None:
         self.pacer: Optional[RequestPacer] = getattr(engine, "pacer", None)
@@ -1307,6 +1372,7 @@ class _Request:
         self.attempt = 1
         self.out = False
         self.number: Optional[int] = None
+        self.ladder_wait: Optional[float] = None
         self.began = float(self.clock())
         self.paced = self.pacer.wait(self.model) if self.pacer else 0.0
         self.sent = float(self.clock()) if self.paced else self.began
@@ -1346,13 +1412,17 @@ class _Request:
 
     def came_back(self, error: Any = None) -> None:
         """Tell the pacer a request came back: a large one, or a rate limit,
-        holds the next request to this model. Never raises."""
+        holds the next request to this model. A rate limit that named a
+        wait of 0 holds it for the last step this call took on the ladder,
+        or the ladder's first step (BACKLOG RI-139); one that named none
+        for a window, as before. Never raises."""
         if self.pacer is None:
             return
         try:
             if error is not None and error_kind(error) == "rate_limit":
-                self.pacer.hold(self.model,
-                                self.pacer.backoff(_retry_after_of(error)))
+                named = _retry_after_of(error)
+                step = (self.ladder_wait or 0.0) if named == 0.0 else 0.0
+                self.pacer.hold(self.model, self.pacer.backoff(named, step))
             self.pacer.sent(self.model, self.size())
         except Exception:                   # noqa: BLE001 - never in the way
             logging.getLogger(__name__).warning(
@@ -1846,8 +1916,7 @@ class PrompterEngine:
     #: with a sub-second pause, so the first full cluster run (2026-09-18)
     #: lost 10 of 38 label reviews and 5 of 15 logs to 429s. A retry-after
     #: header, when the provider sends one, is honoured instead.
-    RATE_LIMIT_WAITS: Tuple[float, ...] = (15.0, 30.0, 60.0, 120.0, 120.0,
-                                           120.0)
+    RATE_LIMIT_WAITS: Tuple[float, ...] = RATE_LIMIT_LADDER
 
     @staticmethod
     def is_rate_limit(exc: BaseException) -> bool:
@@ -1871,9 +1940,10 @@ class PrompterEngine:
         other second the call took. With a :attr:`pacer`, a wait the
         provider did not name is never shorter than the pacer's window
         (:meth:`RequestPacer.backoff`), and the model's next request is
-        held as long (BACKLOG RI-127); a retry-after of 0 is no wait
-        (BACKLOG RI-139). ``call`` is this call's own record, which every
-        request of it is timed and filed by."""
+        held as long (BACKLOG RI-127); a retry-after of 0 takes the
+        ladder's step, without the window's minimum (BACKLOG RI-139).
+        ``call`` is this call's own record, which every request of it is
+        timed and filed by."""
         create = client.chat.completions.create
         request = dict(kwargs)
         waits = list(self.RATE_LIMIT_WAITS)
@@ -1884,14 +1954,17 @@ class PrompterEngine:
             except Exception as exc:                # noqa: BLE001 - inspected
                 if self.is_rate_limit(exc) and waits:
                     named = self._retry_after(exc)
-                    # Without a pacer, as before: a named wait of 0 takes
-                    # the ladder's step. Either way a 0 spends a step, so
-                    # a provider that keeps saying 0 gets the ladder's
-                    # tries and no more.
+                    # A named wait of 0 takes the ladder's step, paced or
+                    # not (BACKLOG RI-139): a provider stuck on 0 gets the
+                    # ladder's waits and tries, not its retries back to
+                    # back. With a pacer, a wait named by nobody is never
+                    # under the window; a 0 is not forced up to it.
                     wait = named or waits.pop(0)
                     if self.pacer is not None:
                         wait = self.pacer.backoff(named, wait)
                         self.pacer.hold(self.model, wait)
+                    if not named:
+                        call.ladder_wait = wait
                     self.adaptations.append(
                         f"{self.model}: rate limited; waited {wait:.0f} s")
                     logging.getLogger(__name__).info(
@@ -2439,10 +2512,15 @@ class ChatModelEngine:
             return None
         return wanted
 
-    def _model_for(self, cap: Optional[int]) -> Any:
+    def _model_for(self, cap: Optional[int],
+                   lessons: Optional[List[str]] = None) -> Any:
         """The model with its cap held to ``cap``: a copy made once per cap
         that shares the original's client; the model itself for None or for
-        a model that keeps no cap a copy can change."""
+        a model that keeps no cap a copy can change. A lesson learned here
+        goes on :attr:`adaptations` and on ``lessons``, the call's own list
+        for its cost row: calls on several threads share the engine, so a
+        slice of :attr:`adaptations` could hold another call's (BACKLOG
+        RI-139)."""
         if cap is None:
             return self.chat_model
         if cap in self._capped:
@@ -2457,11 +2535,13 @@ class ChatModelEngine:
                         made = copy(update={key: cap})
                     except Exception as exc:        # noqa: BLE001
                         made = self.chat_model
-                        self.adaptations.append(
-                            f"{self.name}: a cap of {cap} could not be set "
-                            f"on a copy of the model "
-                            f"({_first_line(exc)}); the model's own cap "
-                            f"applies")
+                        lesson = (f"{self.name}: a cap of {cap} could not be "
+                                  f"set on a copy of the model "
+                                  f"({_first_line(exc)}); the model's own "
+                                  f"cap applies")
+                        self.adaptations.append(lesson)
+                        if lessons is not None:
+                            lessons.append(lesson)
                     break
         self._capped[cap] = made
         return made
@@ -2615,8 +2695,9 @@ class ChatModelEngine:
             note = _ANSWER_NOTE_WITH_TOOLS if tools else _ANSWER_NOTE
             system = f"{system}\n\n{note}" if system else note
 
-        learned = len(self.adaptations)
-        model = self._model_for(self._cap_for(max_tokens))
+        # This call's own lessons, for its row (BACKLOG RI-139).
+        learned: List[str] = []
+        model = self._model_for(self._cap_for(max_tokens), learned)
         runnable = model.bind_tools(offered) if offered else model
         request = self._to_langchain(msgs, system)
         call = _Request(self, self.name, lambda: estimate_request(
@@ -2633,7 +2714,7 @@ class ChatModelEngine:
             if not getattr(exc, "nothing_sent", False):
                 self.meter.fail(self.name, exc,
                                 seconds=self._clock() - call.began,
-                                adapted=self.adaptations[learned:],
+                                adapted=list(learned),
                                 estimated_in=call.size(), started=call.sent,
                                 duration=call.took(), paced=call.paced)
                 call.came_back(exc)
@@ -2645,7 +2726,7 @@ class ChatModelEngine:
         took = call.took()
         call.came_back()
         return self._reply(message, output_format, seconds,
-                           adapted=self.adaptations[learned:],
+                           adapted=list(learned),
                            timing={"started": call.sent, "duration": took,
                                    "paced": call.paced})
 

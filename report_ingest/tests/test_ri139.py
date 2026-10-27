@@ -4,9 +4,12 @@
 recorded; (b) ``paced_seconds`` reaches the attempt keys, results.json and
 RESULTS, only where something was held; (c) a call's clock, size, attempt
 and number are the call's own when calls run on several threads at once;
-(d) a ``retry-after: 0`` is no wait, not the pacer's minute; (e) a rate
-limit is known by its words in the message or the body, whatever the
-status.
+(d) a ``retry-after: 0`` takes the engine's ladder step, not the pacer's
+minute and not no wait at all; (e) a rate limit is known by a 429 or by its
+words in the message or the fields of the body a provider writes its own
+words in, whatever the status, and never by a request the body echoes back.
+And: a page's ``served_by`` is its own reply's model; the harness counts no
+``not_sent`` row as a reply; a cap lesson rides on its own call's row.
 
 Every model name, size, count, time and message here is made up.
 """
@@ -388,6 +391,40 @@ class TestTwoCallsOnTwoThreads:
         assert [(r["call"], r["attempt"], r["outcome"]) for r in rows] == [
             (1, 1, "error"), (1, 2, "reply"), (2, 1, "reply")]
 
+    @pytest.mark.parametrize("fails", [False, True])
+    def test_a_lesson_another_call_learns_meanwhile_is_not_on_this_row(
+            self, fails):
+        """The Foundry engine's rows took a slice of the engine's lessons
+        from where the call began, so a lesson another thread learned while
+        this call was out landed on this call's row."""
+        pytest.importorskip("langchain_core")
+        from langchain_core.messages import AIMessage
+
+        from report_ingest.engine import ChatModelEngine
+        from report_ingest.tests.chat_fixtures import ScriptedChatModel
+
+        other = "made-up-model: a lesson another call learned meanwhile"
+        held = {}
+
+        class _Meanwhile(ScriptedChatModel):
+            def invoke(self, *args, **kwargs):
+                held["engine"].adaptations.append(other)
+                return super().invoke(*args, **kwargs)
+
+        said = AIMessage(content="ok",
+                         response_metadata={"finish_reason": "stop"})
+        reply = RuntimeError("made-up outage") if fails else said
+        engine = ChatModelEngine(_Meanwhile(replies=[reply]))
+        held["engine"] = engine
+        if fails:
+            with pytest.raises(RuntimeError):
+                engine.complete([user(text_block("go"))])
+        else:
+            engine.complete([user(text_block("go"))])
+        (row,) = engine.meter.per_call
+        assert other not in (row.get("adapted") or [])
+        assert engine.adaptations == [other], "the engine keeps it"
+
 
 # ---------------------------------------------------------------------------
 # (d) a retry-after of 0
@@ -404,26 +441,66 @@ class TestARetryAfterOfZero:
 
         assert _retry_after_of(_limited("x", retry_after=header)) == seconds
 
-    def test_the_pacer_honours_a_zero_and_keeps_its_minute_for_none(self):
+    def test_the_pacer_gives_a_zero_the_ladder_step_and_none_its_minute(
+            self):
+        from report_ingest.engine import RATE_LIMIT_LADDER
+
         clock = _Clock()
         pacer = _pacer(clock)
-        assert pacer.backoff(0.0, 15.0) == 0.0
+        assert pacer.backoff(0.0, 30.0) == 30.0, "the step, not 0"
+        assert pacer.backoff(0.0, 15.0) == 15.0, "and not the minute"
+        assert pacer.backoff(0.0) == RATE_LIMIT_LADDER[0], "no step: the first"
         assert pacer.backoff(None, 15.0) == 60.0, "said nothing: a minute"
-        pacer.hold("made-up-model", pacer.backoff(0.0))
-        assert pacer.wait("made-up-model") == 0.0
-        assert clock.slept == []
+        assert pacer.backoff(7.0, 15.0) == 7.0, "a named wait as it is"
 
-    def test_a_paced_prompter_call_told_zero_is_sent_again_at_once(self):
+    def test_a_provider_stuck_on_zero_is_sent_each_retry_a_step_apart(self):
+        """The regression the review found: every request answered 429 with
+        ``retry-after: 0``, paced, used to go out back to back."""
+        clock = _Clock()
+        sent = []
+
+        def create(**kwargs):
+            sent.append(clock.at)
+            clock.at += 1.0
+            raise _limited("Error code: 429 - made up", retry_after="0")
+
+        pacer = _pacer(clock)
+        engine = _prompter_engine(create, clock, pacer=pacer)
+        with pytest.raises(RateLimitError):
+            engine.complete([user(text_block("go"))], tools=TOOL)
+        ladder = list(PrompterEngine.RATE_LIMIT_WAITS)
+        assert len(sent) == len(ladder) + 1
+        gaps = [later - earlier - 1.0 for earlier, later in zip(sent, sent[1:])]
+        assert gaps == ladder, "each retry a ladder step after the last"
+        held = pacer.wait(engine.model)
+        assert held == pytest.approx(ladder[-1]), \
+            "the model's next request held for the last step"
+
+    def test_the_next_request_after_a_zero_waits_out_the_hold(self):
+        clock = _Clock()
+        engine = _prompter_engine(
+            _flaky([_limited("Error code: 429 - x", retry_after="0")
+                    for _ in range(7)], _response("ok"), clock, takes=1.0),
+            clock, pacer=_pacer(clock))
+        with pytest.raises(RateLimitError):
+            engine.complete([user(text_block("go"))], tools=TOOL)
+        slept = list(clock.slept)
+        assert slept == list(PrompterEngine.RATE_LIMIT_WAITS)
+        engine.complete([user(text_block("again"))], tools=TOOL)
+        assert clock.slept[len(slept):] == pytest.approx(
+            [PrompterEngine.RATE_LIMIT_WAITS[-1]]), "held, not sent at once"
+        assert engine.meter.per_call[-1]["paced"] == pytest.approx(
+            PrompterEngine.RATE_LIMIT_WAITS[-1])
+
+    def test_a_paced_call_told_zero_once_waits_the_first_step(self):
         clock = _Clock()
         engine = _prompter_engine(
             _flaky([_limited("Error code: 429 - x", retry_after="0")],
                    _response("ok"), clock, takes=1.0),
             clock, pacer=_pacer(clock))
         engine.complete([user(text_block("go"))], tools=TOOL)
-        assert clock.slept == [0.0], "not the minute"
-        engine.complete([user(text_block("again"))], tools=TOOL)
-        assert clock.slept == [0.0], "and the next request is not held"
-        assert "paced_seconds" not in engine.meter.to_dict()
+        assert clock.slept == [PrompterEngine.RATE_LIMIT_WAITS[0]], \
+            "the step: neither 0 nor the minute"
 
     def test_without_a_pacer_a_zero_takes_the_ladder_as_before(self):
         clock = _Clock()
@@ -433,11 +510,11 @@ class TestARetryAfterOfZero:
         engine.complete([user(text_block("go"))], tools=TOOL)
         assert clock.slept == [PrompterEngine.RATE_LIMIT_WAITS[0]]
 
-    def test_a_give_up_told_zero_does_not_hold_the_next_request(self):
+    def test_a_give_up_told_zero_holds_the_next_request_a_first_step(self):
         pytest.importorskip("langchain_core")
         from langchain_core.messages import AIMessage
 
-        from report_ingest.engine import ChatModelEngine
+        from report_ingest.engine import ChatModelEngine, RATE_LIMIT_LADDER
         from report_ingest.tests.chat_fixtures import ScriptedChatModel
 
         class RateLimitGaveUp(Exception):
@@ -454,7 +531,8 @@ class TestARetryAfterOfZero:
         with pytest.raises(RateLimitGaveUp):
             engine.complete([user(text_block("small"))])
         engine.complete([user(text_block("small"))])
-        assert clock.slept == []
+        assert clock.slept == [RATE_LIMIT_LADDER[0]], \
+            "not sent at once, and not the minute"
 
 
 # ---------------------------------------------------------------------------
@@ -486,6 +564,22 @@ SAYS_NOT = [
     _StatusError("Error code: 400", body=None),
 ]
 
+#: A validation error that echoes the request back: the words are the
+#: report's, not the provider's (the review's repro, made up).
+_ECHO = {"detail": [{"msg": "field required",
+                     "input": {"content": "the made-up sluice was throttled "
+                                          "back; no rate limit applied"}}]}
+
+ECHOES = [
+    _StatusError("Error code: 422 - validation failed", status=422,
+                 body=_ECHO),
+    # An SDK's message carries the whole body after the status.
+    _StatusError(f"Error code: 422 - {_ECHO}", status=422, body=_ECHO),
+    _StatusError("Error code: 400 - bad request", body={
+        "error": {"message": "invalid input: made up",
+                  "param": "the gate was throttled (made up)"}}),
+]
+
 
 class TestARateLimitByItsWords:
 
@@ -499,6 +593,43 @@ class TestARateLimitByItsWords:
                                                                 error):
         assert not is_rate_limit(error)
         assert error_kind(error) == "other"
+
+    @pytest.mark.parametrize("error", ECHOES)
+    def test_a_request_the_body_echoes_back_is_not_read(self, error):
+        assert not is_rate_limit(error)
+        assert error_kind(error) == "other"
+
+    def test_an_sdk_message_with_the_body_in_it_reads_the_body_s_fields(
+            self):
+        body = {"error": {"message": "Rate limit reached (made up)",
+                          "type": "made_up"}}
+        error = _StatusError(f"Error code: 400 - {body}", body=body)
+        assert is_rate_limit(error)
+
+    @pytest.mark.parametrize("holder", ["error", "response"])
+    def test_a_429_status_is_a_rate_limit_whatever_it_says(self, holder):
+        error = _StatusError("made up", status=None)
+        if holder == "error":
+            error.status_code = 429
+        else:
+            error.response = SimpleNamespace(status_code=429, headers={})
+        assert is_rate_limit(error) and error_kind(error) == "rate_limit"
+
+    def test_the_prompter_engine_raises_an_echo_at_once(self):
+        """The review's repro sent seven requests and waited 465 s."""
+        clock = _Clock()
+        sent = []
+
+        def create(**kwargs):
+            sent.append(clock.at)
+            raise _StatusError("Error code: 422 - validation failed",
+                               status=422, body=_ECHO)
+
+        engine = _prompter_engine(create, clock, pacer=_pacer(clock))
+        with pytest.raises(_StatusError):
+            engine.complete([user(text_block("go"))], tools=TOOL)
+        assert len(sent) == 1 and clock.slept == []
+        assert engine.meter.failed_by_kind == {"other": 1}
 
     def test_a_body_that_will_not_read_is_no_rate_limit_and_no_error(self):
         class _Odd(Exception):

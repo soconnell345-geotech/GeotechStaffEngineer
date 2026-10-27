@@ -261,6 +261,30 @@ def test_several_pages_at_once_give_the_same_descriptions(synthetic,
     assert found.cost["calls"] == 4
 
 
+def test_each_page_names_the_model_its_own_reply_came_from(synthetic,
+                                                           tmp_path):
+    """BACKLOG RI-139: with pages on several threads, the engine's
+    ``served_by`` is whichever call came back last; a page keeps the model
+    its own reply names."""
+    import re
+
+    class _Served(FakeEngine):
+        def complete(self, messages, **kw):
+            reply = super().complete(messages, **kw)
+            words = messages[0]["content"][0]["text"]
+            page = re.search(r"page index (\d+)\)", words).group(1)
+            reply.model = f"made-up-served-{page}"
+            self.served_by = "made-up-last-thread"
+            return reply
+
+    engine = _Served([{"final": _description()} for _ in range(3)])
+    found = rl.describe_pages(synthetic, engine, pages=[0, 1, 2],
+                              folder=str(tmp_path), workers=2)
+    assert {page: blob["served_by"] for page, blob in found.pages.items()} \
+        == {0: "made-up-served-0", 1: "made-up-served-1",
+            2: "made-up-served-2"}
+
+
 # -- the labeller: coverage ------------------------------------------------------
 
 def test_sections_label_every_page_and_an_exception_overrides_its_section():

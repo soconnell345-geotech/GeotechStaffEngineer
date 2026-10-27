@@ -380,6 +380,22 @@ def test_an_answer_emptied_by_its_dropped_keys_is_an_error(tmp_path):
     assert "'arguments' 1" in error
 
 
+def test_a_hold_before_a_request_never_sent_is_no_reply(tmp_path):
+    # BACKLOG RI-139: the engine files a pacer's hold before a request the
+    # route refused to send as a row of its own. Made-up rows.
+    out = tmp_path / "out"
+    _rows_file(out, "narrative", "R04", [
+        {"call": 1, "outcome": "reply", "stop": "end_turn"},
+        {"outcome": "not_sent", "paced": 12.5, "duration": 0.0,
+         "error": "RuntimeError: made up: nothing was sent"},
+        {"call": 2, "outcome": "error", "error_kind": "rate_limit",
+         "error": "RateLimitError: made up"},
+    ])
+    health = rcl.call_health(rcl.run_files(out, "narrative"))
+    assert (health["replies"], health["failed"]) == (1, 1)
+    assert health["stops"] == {"end_turn": 1}
+
+
 def test_a_row_from_before_the_fix_is_flagged_unverified(tmp_path):
     # A taken answer that lost a top-level key, with no raw arguments kept:
     # the shape the wrapped-answer bug left in the run files.

@@ -2334,10 +2334,15 @@ names no retry-after waits a whole minute before it is sent again, and holds
 the model's next request as long. A held request's row carries `paced`
 (seconds), and the cost block `paced_seconds`. None, the default, paces
 nothing and the cost block is what it was. Since BACKLOG RI-139: a
-`retry-after: 0` is honoured as no wait (the minute is for a rate limit that
-names no wait); a rate limit is known by its words in the error's message
-or body (`rate limit`, `too many requests`, `throttl...`), whatever the
-status, so a 400 that says so is paced and a 400 that does not is not; a
+`retry-after: 0` takes the engine's own ladder step (15, 30, 60, 120, 120,
+120 s) for the retry and for the hold on the model's next request, so a
+provider stuck on 0 is not sent every retry back to back; the minute's
+minimum is only for a rate limit that names no wait. A rate limit is known
+by a 429, or by its words (`rate limit`, `too many requests`, `throttl...`)
+in the error's message or in the fields of its body a provider writes its
+own message in (`error.message` / `code` / `type`), whatever the status, so
+a 400 that says so is paced and a 400 that does not is not; the rest of a
+body is never read, since a validation error can echo the request back. A
 hold before a request the route then refused to send is a row of its own
 (`outcome: "not_sent"`, with its `paced`) and in `paced_seconds`, though no
 call; `paced_seconds` is carried into `earlier_attempts` / `all_attempts`,

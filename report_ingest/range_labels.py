@@ -650,6 +650,10 @@ def describe_pages(doc: Any, engine: Engine, *,
             return
         own = _cost_row()
         retried: List[str] = []
+        #: What answered THIS page, off its own reply: the engine's
+        #: ``served_by`` is whichever page's call came back last when
+        #: pages are described on several threads (BACKLOG RI-139).
+        served: Optional[str] = None
         try:
             with drawing:
                 content, facts = _page_message(doc, page, max_text_chars,
@@ -666,6 +670,7 @@ def describe_pages(doc: Any, engine: Engine, *,
                                         system=DESCRIBE_SYSTEM,
                                         output_format=PageDescription)
                 _charge(own, reply)
+                served = getattr(reply, "model", None) or served
                 answer = reply.parsed
                 if answer is not None:
                     break
@@ -690,7 +695,7 @@ def describe_pages(doc: Any, engine: Engine, *,
                 return
         blob = {"page": page, "pdf_page": page + 1, **facts,
                 "description": answer.model_dump(), "model": name,
-                "served_by": getattr(engine, "served_by", None) or name,
+                "served_by": served or name,
                 "prompt": DESCRIBE_PROMPT_VERSION, "cost": own}
         if retried:
             blob["retried"] = retried

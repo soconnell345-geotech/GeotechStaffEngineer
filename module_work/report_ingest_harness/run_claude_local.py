@@ -734,6 +734,11 @@ def call_health(blobs: Dict[str, dict]) -> Dict[str, Any]:
         if _scored_part(blob).get("error"):
             out["items_with_error"] += 1
         for row in (blob.get("cost") or {}).get("per_call") or []:
+            if row.get("outcome") == "not_sent":
+                # A pacer's hold before a request the route refused to send
+                # (BACKLOG RI-139): no request, so neither a reply nor a
+                # failure.
+                continue
             if row.get("outcome") == "error":
                 out["failed"] += 1
                 errors[str(row.get("error_kind") or "other")] += 1
