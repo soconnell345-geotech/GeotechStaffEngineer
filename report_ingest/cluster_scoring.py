@@ -579,11 +579,14 @@ def _tokens_of(cost: Dict[str, Any]) -> int:
 #: What an earlier attempt's entry in a report's ``run.json`` keeps of the
 #: cost block that attempt's run file held (BACKLOG RI-124): its totals. The
 #: row per request (``per_call``) and the per-model split are not carried.
+#: A key the block does not hold is left out, so ``paced_seconds`` (BACKLOG
+#: RI-127, RI-139; only in a block a pacer held a request in) is carried
+#: only where there was a hold.
 _ATTEMPT_COST_KEYS: Tuple[str, ...] = (
     "calls", "failed", "retried", "failed_by_kind", "input_tokens",
     "output_tokens", "reasoning_tokens", "reasoning_reported",
     "cache_read_tokens", "cache_write_tokens", "seconds", "waited_seconds",
-    "dollars", "unpriced_calls")
+    "paced_seconds", "dollars", "unpriced_calls")
 
 #: The counts an ``all_attempts`` block adds up over a report's attempts.
 _ATTEMPT_SUMS: Tuple[str, ...] = (
@@ -674,6 +677,11 @@ def _attempts_fields(earlier: Sequence[Dict[str, Any]],
     total["dollars"] = round(sum(_float(c.get("dollars")) for c in costs), 4)
     total["waited_seconds"] = round(
         sum(_float(c.get("waited_seconds")) for c in costs), 1)
+    # Only when a pacer held a request in some attempt (BACKLOG RI-139), as
+    # the cost block itself carries it.
+    paced = round(sum(_float(c.get("paced_seconds")) for c in costs), 1)
+    if paced:
+        total["paced_seconds"] = paced
     total["seconds"] = round(sum(_float(row.get("seconds"))
                                  for row in earlier) + _float(seconds), 1)
     return {"earlier_attempts": [dict(row) for row in earlier],
@@ -1078,8 +1086,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         estimated above half of it comes back, the next request to that
         model waits out the minute, across reports; a rate limit with no
         retry-after holds the next request a whole minute. Every request's
-        row in the cost record says how long it was held (``paced``). None,
-        the default, paces nothing.
+        row in the cost record says how long it was held (``paced``); the
+        holds add up in each cost block's ``paced_seconds``, in a run file's
+        ``earlier_attempts`` / ``all_attempts``, in ``results.json``'s cost
+        totals and on RESULTS' failed-requests line (BACKLOG RI-139), each
+        only where a request was held. None, the default, paces nothing.
     redo
         Re-run reports that already have a run file. Off by default, which is
         what makes a detached notebook cheap to resume.
@@ -6389,10 +6400,15 @@ def _unfinished_cost(cost: Dict[str, Any],
             every[key] += _n(part.get(key))
         for key in ("dollars", "waited_seconds", "seconds"):
             every[key] += _float(part.get(key))
+        if _float(part.get("paced_seconds")):
+            every["paced_seconds"] = (_float(every.get("paced_seconds"))
+                                      + _float(part.get("paced_seconds")))
         for kind, n in (part.get("failed_by_kind") or {}).items():
             every["failed_by_kind"][kind] = (
                 every["failed_by_kind"].get(kind, 0) + _n(n))
     every["waited_seconds"] = round(every["waited_seconds"], 1)
+    if "paced_seconds" in every:
+        every["paced_seconds"] = round(every["paced_seconds"], 1)
     spent["reports"] = sorted(unfinished)
     return {"cost_unfinished": spent, "cost_every_report": every}
 
@@ -6892,6 +6908,12 @@ def _add_cost(total: Dict[str, Any], cost: Optional[Dict[str, Any]]) -> None:
     total["waited_seconds"] = round(total.get("waited_seconds", 0.0)
                                     + float(cost.get("waited_seconds") or 0.0),
                                     1)
+    # Only once a run file says a pacer held a request (BACKLOG RI-127,
+    # RI-139): with no pacer the total is what it always was.
+    paced = _float(cost.get("paced_seconds"))
+    if paced:
+        total["paced_seconds"] = round(
+            _float(total.get("paced_seconds")) + paced, 1)
     total["files"] = total.get("files", 0) + 1
     if "failed" in cost:
         total["files_counting_failures"] = (
@@ -6946,6 +6968,10 @@ def _failure_line(cost: Dict[str, Any]) -> str:
     waited = float(cost.get("waited_seconds") or 0.0)
     if waited:
         line += f", {waited:.0f} s waiting on rate limits"
+    # The pacer's holds (BACKLOG RI-127, RI-139): only when it held any.
+    paced = _float(cost.get("paced_seconds"))
+    if paced:
+        line += f", {paced:.0f} s held back by the pacer (tokens_per_minute)"
     calls = int(cost.get("calls") or 0)
     reported = int(cost.get("reasoning_reported") or 0)
     if not reported:
