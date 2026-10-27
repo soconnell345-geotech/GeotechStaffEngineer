@@ -742,6 +742,165 @@ class TestTheWindow:
 
 
 # ---------------------------------------------------------------------------
+# a run of look-alike sheets read a few sheets a call (RI-116)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def atterberg_run(tmp_path):
+    """Seven made-up Atterberg sheets, each with a plotted flow curve."""
+    from report_ingest.tests.lab_fixtures import build_atterberg_run
+    pdf, sheets = build_atterberg_run(7)
+    doc = _open(pdf, tmp_path)
+    yield doc, sheets
+    doc.close()
+
+
+def _atterberg_run_reading(sheets, pages) -> LabSheetReading:
+    """A careful reading of the run's sheets on ``pages``, curves and all."""
+    tests = []
+    for p in pages:
+        sheet = sheets[p]
+        tests.append(ReadTest(
+            kind="atterberg", investigation_id=sheet["boring"],
+            depth_top=sheet["depth_ft"], ll=sheet["ll"], pl=sheet["pl"],
+            pi=sheet["ll"] - sheet["pl"],
+            series=[ReadSeries(
+                name="flow_curve", x_unit="blows", y_unit="%",
+                digitised=True,
+                points=[ReadPoint(x=float(b), y=w)
+                        for b, w in sheet["flow_curve"]])],
+            prov=_prov(page=p, bbox=(120.0, 300.0, 480.0, 520.0),
+                       from_image=True)))
+    return LabSheetReading(depth_unit="ft", tests=tests,
+                           pages_read=list(pages))
+
+
+def _pages_of(call):
+    """The pages a call's brief says it carries."""
+    head = _brief_of(call).splitlines()[0]
+    listed = head.split("on page(s) ", 1)[1].split(" of report")[0]
+    return [int(p) for p in listed.rstrip(".").split(", ")]
+
+
+def _requests(engine):
+    return [(c["system"], c["tools"], c["n_images"], c["messages"],
+             c["output_format"]) for c in engine.calls]
+
+
+class TestSheetsPerCall:
+    def test_the_setting_splits_only_what_it_should(self):
+        from report_ingest.lab_reader import split_key, split_size
+        assert split_size(7, None) is None
+        assert split_size(7, 3) == 3
+        assert split_size(3, 3) is None          # the item fits: as before
+        assert split_size(2, 3) is None
+        # Never a window wider than the long-run window: no change at all.
+        assert split_size(14, MAX_LAB_PAGES) is None
+        assert split_size(30, 40) is None
+        assert split_size(14, 5) == 5
+        for bad in (0, -2, True):
+            with pytest.raises(ValueError, match="sheets per call"):
+                split_size(7, bad)
+        assert split_key(7, 3) == "-per3"
+        assert split_key(7, None) == "" and split_key(3, 3) == ""
+
+    def test_seven_sheets_at_three_make_three_calls_covering_each_once(
+            self, atterberg_run):
+        doc, sheets = atterberg_run
+        pages = list(range(7))
+        windows = [[0, 1, 2], [3, 4], [5, 6]]
+        engine = FakeEngine([{"final": _atterberg_run_reading(sheets, w)}
+                             for w in windows])
+        result = read_lab_sheet(doc, pages, engine, sheets_per_call=3)
+
+        assert engine.n_calls == 3 and result.model_calls == 3
+        sent = [_pages_of(c) for c in engine.calls]
+        assert sent == windows
+        assert sorted(sum(sent, [])) == pages     # each sheet once
+        assert [c["n_images"] for c in engine.calls] == [3, 2, 2]
+        for call in engine.calls:
+            brief = _brief_of(call)
+            assert ("one window of a run of laboratory sheets on pages 0-6, "
+                    "read 3 pages or fewer at a time") in brief
+            assert "You may make 4 model call(s)" in brief
+        assert result.windows == windows
+        assert result.sheets_per_call == 3
+        blob = result.to_dict()
+        assert blob["sheets_per_call"] == 3 and blob["windows"] == windows
+        # Every page prints its own boring: no cut parts a test.
+        assert not [u for u in result.unresolved
+                    if "separate windows" in u["why"]]
+
+    def test_the_curves_are_joined_end_to_end(self, atterberg_run):
+        doc, sheets = atterberg_run
+        windows = [[0, 1, 2], [3, 4], [5, 6]]
+        engine = FakeEngine([{"final": _atterberg_run_reading(sheets, w)}
+                             for w in windows])
+        result = read_lab_sheet(doc, list(range(7)), engine,
+                                sheets_per_call=3)
+        tests = [t for t in result.tests if t.kind == "atterberg"]
+        assert [t.investigation_id for t in tests] == \
+            [s["boring"] for s in sheets]
+        assert [t.result.flow_curve for t in tests] == \
+            [[(b, w) for b, w in s["flow_curve"]] for s in sheets]
+        assert [t.result.ll for t in tests] == [s["ll"] for s in sheets]
+        assert result.pages == list(range(7))
+
+    def test_none_makes_the_same_requests_as_before(self, atterberg_run):
+        doc, sheets = atterberg_run
+        pages = list(range(7))
+
+        def read(**kwargs):
+            engine = FakeEngine([{"final": _atterberg_run_reading(sheets,
+                                                                  pages)}])
+            result = read_lab_sheet(doc, pages, engine, **kwargs)
+            return engine, result
+
+        before, was = read()
+        for kwargs in ({"sheets_per_call": None},
+                       {"sheets_per_call": MAX_LAB_PAGES},
+                       {"sheets_per_call": 7}):
+            now, got = read(**kwargs)
+            assert now.n_calls == 1
+            assert _requests(now) == _requests(before), kwargs
+            assert got.to_dict() == was.to_dict(), kwargs
+            assert "sheets_per_call" not in got.to_dict()
+            assert got.sheets_per_call is None
+
+    def test_none_keeps_a_long_runs_windows_as_before(self, run_of):
+        doc = run_of(14)
+        pages = list(range(14))
+
+        def read(**kwargs):
+            engine = FakeEngine([{"final": _run_reading(pages[:7])},
+                                 {"final": _run_reading(pages[7:])}])
+            result = read_lab_sheet(doc, pages, engine, **kwargs)
+            return engine, result
+
+        before, was = read()
+        now, got = read(sheets_per_call=None)
+        assert _requests(now) == _requests(before)
+        assert got.to_dict() == was.to_dict()
+        assert "read 12 pages or fewer at a time" in _brief_of(now.calls[0])
+
+    def test_a_window_may_still_look_at_its_plot(self, atterberg_run):
+        """Each window has the whole budget, as a long run's windows do: a
+        window that zooms on its curve spends a call, the others one each."""
+        doc, sheets = atterberg_run
+        zoom = {"tools": [("zoom_plot", {"page": 3,
+                                         "bbox": [120, 300, 480, 520]})]}
+        engine = FakeEngine([
+            {"final": _atterberg_run_reading(sheets, [0, 1, 2])},
+            zoom, {"final": _atterberg_run_reading(sheets, [3, 4])},
+            {"final": _atterberg_run_reading(sheets, [5, 6])}])
+        result = read_lab_sheet(doc, list(range(7)), engine,
+                                sheets_per_call=3)
+        assert result.model_calls == 4 and result.tool_calls == 1
+        assert engine.calls[1]["tools"] == ["zoom_plot"]
+        assert len([t for t in result.tests if t.kind == "atterberg"]) == 7
+
+
+# ---------------------------------------------------------------------------
 # the specimen-label paragraph, behind a switch that is off (RI-07)
 # ---------------------------------------------------------------------------
 

@@ -404,3 +404,37 @@ def build_compaction_trials() -> bytes:
     pdf = doc.tobytes()
     doc.close()
     return pdf
+
+
+def build_atterberg_run(n: int = 7) -> Tuple[bytes, List[Dict[str, Any]]]:
+    """``n`` look-alike Atterberg sheets, one specimen a page (RI-116).
+
+    Every page prints the same title, its own boring and depth, its limits
+    as text lines and a flow curve PLOTTED with no table of its trials, so a
+    reader has the curve only from the plot. Returns the PDF and, per page,
+    what it prints. Made-up values.
+    """
+    import pymupdf
+    doc = pymupdf.open()
+    sheets: List[Dict[str, Any]] = []
+    for i in range(n):
+        ll, pl = 33.0 + 3.0 * i, 16.0 + i
+        flow = [(16, round(ll + 2.1, 1)), (23, round(ll + 0.6, 1)),
+                (31, round(ll - 1.0, 1))]
+        sheet = {"boring": f"TB-{i + 1}", "depth_ft": 2.5 + 2.5 * i,
+                 "ll": ll, "pl": pl, "flow_curve": flow}
+        sheets.append(sheet)
+        page = doc.new_page(width=LETTER[0], height=LETTER[1])
+        _text(page, 180, 60, "ATTERBERG LIMITS", 14, bold=True)
+        _text(page, 60, 110, f"Boring: {sheet['boring']}")
+        _text(page, 380, 110, f"Depth: {sheet['depth_ft']} ft")
+        _text(page, 60, 140, f"Liquid limit: {ll:.0f}")
+        _text(page, 60, 156, f"Plastic limit: {pl:.0f}")
+        _plot(page, 120, 300, 480, 520,
+              [(10, 0.0), (20, 0.33), (30, 0.66), (40, 1.0)],
+              [(round(ll - 5), 0.0), (round(ll + 5), 1.0)],
+              [((b - 10) / 30.0, (w - (ll - 5)) / 10.0) for b, w in flow])
+        _text(page, 250, 545, "FLOW CURVE", 9)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf, sheets

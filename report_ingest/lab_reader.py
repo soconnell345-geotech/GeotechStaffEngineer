@@ -74,6 +74,20 @@ end. A cut moves to the nearest page that prints a new specimen; where none
 is in reach the boundary is said in ``unresolved``. An item that fits is
 read exactly as before.
 
+SHEETS PER CALL (RI-116, off by default). A run of look-alike sheets read
+in one call can come back with every sheet's tabulated values and none of
+its curves: Foundry run 5 read eleven Atterberg sheets in one call and
+returned no flow curve on any of them, while the same sheet read alone gave
+its curve. ``sheets_per_call=N`` reads an item of more than N pages in
+windows of at most N, cut and briefed exactly as a long run's windows are
+(each window is told the run it belongs to, has its own floor and the whole
+budget, and the windows' tests are put end to end); the result records N
+and the windows. Each window costs one call when it answers without looking,
+as the measured reads did, so an item of n sheets costs about ceil(n / N)
+calls, with ``budget`` per window as the ceiling. None, the default, reads
+every item as before, request for request; N of :data:`MAX_LAB_PAGES` or
+more changes nothing.
+
 THE SPECIMEN-LABEL SWITCH (RI-07, off by default). Many sheets print no
 boring heading and name the specimen by the hole it came from -- the hole
 alone, or the hole, sample and depth in one label, wherever the form puts
@@ -131,6 +145,7 @@ __all__ = [
     "lab_windows", "reader_system", "link_from_label_enabled",
     "use_link_from_label", "LINK_FROM_LABEL_ENV", "LINK_FROM_LABEL",
     "floor_per_page_enabled", "use_floor_per_page", "FLOOR_PER_PAGE_ENV",
+    "split_size", "split_key",
 ]
 
 #: The ceiling in the brief: four model calls for one sheet, the last of them
@@ -648,6 +663,9 @@ class LabReadResult:
     #: The windows a run longer than :data:`MAX_LAB_PAGES` was read in;
     #: empty when it was read whole.
     windows: List[List[int]] = field(default_factory=list)
+    #: The sheets per call an item was split by (RI-116); None when it was
+    #: not split by that setting.
+    sheets_per_call: Optional[int] = None
 
     @property
     def kinds(self) -> List[str]:
@@ -681,6 +699,8 @@ class LabReadResult:
             **({"floor_per_page": True} if self.floor_per_page else {}),
             **({"windows": [list(w) for w in self.windows]}
                if self.windows else {}),
+            **({"sheets_per_call": self.sheets_per_call}
+               if self.sheets_per_call is not None else {}),
         }
 
 
@@ -1042,6 +1062,34 @@ def lab_windows(pages: Sequence[int], size: int = MAX_LAB_PAGES,
     return [pages[a:b] for a, b in zip(edges, edges[1:])]
 
 
+def split_size(n_pages: int, sheets_per_call: Optional[int]) -> Optional[int]:
+    """The window size ``sheets_per_call`` reads an item of ``n_pages`` in,
+    or None when the setting leaves that item read as it is without it
+    (RI-116).
+
+    None is no setting. N splits an item of more than N pages into windows
+    of at most N; it never makes a window larger than :data:`MAX_LAB_PAGES`,
+    so an N that large changes nothing. N below one is refused.
+    """
+    if sheets_per_call is None:
+        return None
+    if isinstance(sheets_per_call, bool) or int(sheets_per_call) < 1:
+        raise ValueError(f"lab sheets per call must be a whole number of at "
+                         f"least 1, or None; got {sheets_per_call!r}")
+    size = int(sheets_per_call)
+    if size >= MAX_LAB_PAGES or int(n_pages) <= size:
+        return None
+    return size
+
+
+def split_key(n_pages: int, sheets_per_call: Optional[int]) -> str:
+    """What a saved reading's file name carries when ``sheets_per_call``
+    splits an item of ``n_pages``, so a resumed run never takes a reading
+    made one way for one made the other; empty when it does not split it."""
+    size = split_size(n_pages, sheets_per_call)
+    return "" if size is None else f"-per{size}"
+
+
 def _specimen_starts(doc: Any, pages: Sequence[int]) -> List[int]:
     """The pages of a run on which the sheet prints a new specimen.
 
@@ -1072,7 +1120,7 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str, hint_kind: Optional[str],
            budget: int, floor: Optional[FloorSheet] = None,
            run_pages: Optional[Sequence[int]] = None,
-           per_page: bool = False) -> str:
+           per_page: bool = False, window_size: int = MAX_LAB_PAGES) -> str:
     vocabulary = "\n".join(f"  {name}: {text}"
                            for name, text in KIND_DEFINITIONS.items())
     series = "\n".join(f"  {name}: {text}"
@@ -1086,7 +1134,7 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
         parts.append(
             f"These pages are one window of a run of laboratory sheets on "
             f"pages {run_pages[0]}-{run_pages[-1]}, read "
-            f"{MAX_LAB_PAGES} pages or fewer at a time. Report the tests "
+            f"{window_size} pages or fewer at a time. Report the tests "
             f"these pages print. A test whose sheet began on an earlier page "
             f"is reported with the boring and depth these pages print, or "
             f"with none.")
@@ -1809,7 +1857,8 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
                    hint_kind: Optional[str] = None,
                    ledger: Optional[Sequence[str]] = None,
                    item_title: str = "", report_id: str = "",
-                   dpi: float = PAGE_DPI) -> LabReadResult:
+                   dpi: float = PAGE_DPI,
+                   sheets_per_call: Optional[int] = None) -> LabReadResult:
     """Read ONE laboratory sheet and return its tests as records.
 
     ``item_pages`` are the pages of one sheet or one multi-page test --
@@ -1827,11 +1876,16 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     windows were read. A window the model gives no answer for is recorded in
     ``unresolved`` and the others are kept; when no window answers, the
     error is raised as for a single sheet.
+
+    ``sheets_per_call`` (RI-116) reads an item of more than that many pages
+    in windows of at most that many, the same way (:func:`split_size`);
+    None, the default, leaves every item as above.
     """
     pages = [int(p) for p in item_pages]
     if not pages:
         raise ValueError("read_lab_sheet needs at least one page")
     budget = max(1, min(int(budget), MAX_MODEL_CALLS))
+    split = split_size(len(pages), sheets_per_call)
 
     if ledger is None:
         try:
@@ -1842,13 +1896,14 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         except Exception:                        # a ledger is a nicety
             ledger = []
 
-    if len(pages) <= MAX_LAB_PAGES:
+    if split is None and len(pages) <= MAX_LAB_PAGES:
         return _read_window(doc, pages, engine, budget=budget,
                             hint_kind=hint_kind, ledger=ledger,
                             item_title=item_title, report_id=report_id,
                             dpi=dpi)
+    size = MAX_LAB_PAGES if split is None else split
     starts = _specimen_starts(doc, pages)
-    windows = lab_windows(pages, starts=starts)
+    windows = lab_windows(pages, size=size, starts=starts)
     parts: List[LabReadResult] = []
     failed: List[Tuple[List[int], str]] = []
     for window in windows:
@@ -1858,12 +1913,13 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
             parts.append(_read_window(
                 doc, window, engine, budget=budget, hint_kind=hint_kind,
                 ledger=mine, item_title=item_title, report_id=report_id,
-                dpi=dpi, run_pages=pages))
+                dpi=dpi, run_pages=pages, window_size=size))
         except RuntimeError as exc:              # no answer for this window
             if not parts and len(failed) == len(windows) - 1:
                 raise
             failed.append((window, str(exc)))
     result = _combine(parts, pages, windows, failed)
+    result.sheets_per_call = split
     # A cut where the sheet prints no new specimen may part one test: the
     # two halves are kept as read -- merging two partial readings would be
     # a guess about which half holds what -- and the boundary is said.
@@ -1964,7 +2020,8 @@ def _unbound_rows(floor: FloorSheet) -> List[Dict[str, Any]]:
 def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
                  hint_kind: Optional[str], ledger: Sequence[str],
                  item_title: str, report_id: str, dpi: float,
-                 run_pages: Optional[Sequence[int]] = None) -> LabReadResult:
+                 run_pages: Optional[Sequence[int]] = None,
+                 window_size: int = MAX_LAB_PAGES) -> LabReadResult:
     """One sheet, or one window of a run, read and merged with its floor."""
     pages = [int(p) for p in pages]
     system = reader_system()
@@ -2002,7 +2059,7 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
     warnings.extend(floor.warnings)
     brief = _brief(doc, pages, ledger, item_title, report_id, hint_kind,
                    budget, floor=floor, run_pages=run_pages,
-                   per_page=per_page)
+                   per_page=per_page, window_size=window_size)
     tools = _Tools(doc, pages)
     tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
