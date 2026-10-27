@@ -25,11 +25,13 @@ from typing import List, Optional, Tuple
 #: the drift canary's deep + webapp gate on 2026-10-12 (no failure of its
 #: own), and the owner's Funhouse sessions of 2026-10-14 ran on it.
 #: Streamlit 1.66.0: the INF-10 fresh resolve (webapp suite, 645 passed).
+#: deepagents 0.7.24, langchain 1.4.5 and openai 3.29.0 (with langgraph
+#: 1.2.15): the INF-03 run on Python 3.12, 2026-10-27.
 TESTED_MAX_EXCLUSIVE = {
-    "deepagents": ("0.6.8", "0.8"),
-    "langchain": ("1.3", "1.4"),
+    "deepagents": ("0.6.8", "0.7.25"),
+    "langchain": ("1.3", "1.4.6"),
     "langgraph": ("1.2", "1.3"),
-    "openai": (None, "3"),
+    "openai": (None, "3.29.1"),
     "streamlit": ("1.36", "1.67"),
 }
 

@@ -45,8 +45,17 @@ dependencies = [
     # highest versions actually exercised by the offline gate (deepagents
     # 0.7.11 / langchain 1.3.18 / langgraph 1.2.x, 2026-08-03). Raise them
     # ONLY after running the deep+webapp suites on the newer version.
-    "deepagents>=0.6.8,<0.8",
-    "langchain>=1.3,<1.4",
+    # 2026-10-27 (INF-03, Python 3.12): with deepagents 0.7.24 / langchain
+    # 1.4.5 / langgraph 1.2.15 / openai 3.29.0 (the newest releases at least
+    # two weeks old), funhouse_agent/tests, webapp/tests and
+    # funhouse_agent/deep/tests gave the same results as at the old caps,
+    # once one test read deepagents' preview from its new ContentPreview.
+    # So langchain is raised to 1.4.5, the highest tested. Below langchain 1.4
+    # the resolver held deepagents at 0.7.13 (0.7.14 needs langchain>=1.4);
+    # above it, deepagents 0.7.25 (langchain>=1.4.5) would resolve untested,
+    # so deepagents stops at 0.7.24. langgraph keeps its cap: no 1.3 yet.
+    "deepagents>=0.6.8,<0.7.25",
+    "langchain>=1.3,<1.4.6",
     "langgraph>=1.2,<1.3",
     # The httpx2/httpcore2 fork stack arrives via langsmith, not openai:
     # langsmith requires httpx2 from 0.12.0 (2026-09-01, the day it was seen
@@ -55,8 +64,12 @@ dependencies = [
     # default client, which it builds on httpx2 (openai 3.0.0 requires
     # httpx2). The Funhouse SDK's NTLM http_client path has never run against
     # openai 3. 2.x is what every live-verified session ran; langchain-openai
-    # 1.6 accepts both.
-    "openai<3",
+    # 1.6 accepts both. Raised to 3.29.0, the highest tested (2026-10-27,
+    # INF-03): the suites above passed, the request timeout is honoured on
+    # its httpx2 client (webapp/tests/test_tinyapps_wiring.py), and it still
+    # accepts a plain httpx client and sends requests through it; the NTLM
+    # handshake itself is not exercised offline.
+    "openai<3.29.1",
     "langchain-anthropic>=1.4",
     # Foundry LLM-proxy GPT RIDs need the OpenAI chat client out of the box.
     "langchain-openai>=1.3",
