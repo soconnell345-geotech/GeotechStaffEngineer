@@ -395,3 +395,301 @@ def test_the_model_and_deployment_are_written_once_not_on_every_row():
     assert "served_by" not in rows[4], "nothing served a failed request"
     assert "attempt" not in rows[4] and rows[5]["attempt"] == 2
     assert rows[5]["call"] == rows[4]["call"] == 5
+
+
+# -- when each request went out, and a failed one's size (BACKLOG RI-126) -----
+#
+# Every number and time below is made up for the test.
+
+#: A made-up moment: 2027-01-15T08:00:00Z.
+_T0 = 1_800_000_000.0
+
+
+class _FakeClock:
+    """A clock that moves only when told; :meth:`sleep` moves it too, and
+    remembers each wait, so nothing here waits for real."""
+
+    def __init__(self, at: float = _T0):
+        self.at = float(at)
+        self.slept = []
+
+    def time(self):
+        return self.at
+
+    def sleep(self, seconds):
+        self.slept.append(round(float(seconds), 3))
+        self.at += float(seconds)
+
+    def tick(self, seconds):
+        self.at += float(seconds)
+
+
+class _Timed(_Messages):
+    """A client whose requests take ``takes`` seconds on the fake clock,
+    each answering with ``response`` or raising what ``errors`` holds."""
+
+    def __init__(self, response, clock, takes, errors=()):
+        super().__init__(response)
+        self.clock = clock
+        self.takes = takes
+        self.errors = list(errors)
+
+    def create(self, **kwargs):
+        self.last = kwargs
+        self.clock.tick(self.takes)
+        if self.errors:
+            raise self.errors.pop(0)
+        return self.response
+
+    parse = create
+
+
+def _timed_claude(clock, takes, errors=(), pacer=None):
+    client = _Client(None)
+    client.messages = _Timed(
+        _Response([_Block(type="text", text="ok")], _Usage(40, 4)), clock,
+        takes, errors)
+    engine = ClaudeEngine("claude-opus-5", client=client,
+                          meter=CostMeter(clock=clock.time), pacer=pacer)
+    engine._clock = clock.time
+    return engine
+
+
+def _png(width, height):
+    """A PNG header with a made-up size: all the size estimate reads."""
+    return (b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0d" + b"IHDR"
+            + int(width).to_bytes(4, "big") + int(height).to_bytes(4, "big")
+            + b"\x00" * 4000)
+
+
+class TestEveryRowSaysWhen:
+
+    def test_a_reply_row_carries_its_start_and_its_duration(self):
+        clock = _FakeClock()
+        engine = _timed_claude(clock, takes=4.5)
+        engine.complete([user(text_block("go"))])
+        clock.tick(10.0)
+        engine.complete([user(text_block("again"))])
+        first, second = engine.meter.to_dict()["per_call"]
+        assert first["started"] == "2027-01-15T08:00:00.000Z"
+        assert first["duration"] == 4.5 and first["seconds"] == 4.5
+        assert second["started"] == "2027-01-15T08:00:14.500Z"
+        assert second["duration"] == 4.5
+
+    def test_a_failed_row_carries_its_start_and_its_duration(self):
+        clock = _FakeClock()
+        engine = _timed_claude(clock, takes=2.25, errors=[
+            RuntimeError("Error code: 500 - made up")])
+        with pytest.raises(RuntimeError):
+            engine.complete([user(text_block("go"))])
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["outcome"] == "error"
+        assert row["started"] == "2027-01-15T08:00:00.000Z"
+        assert row["duration"] == 2.25
+
+    def test_a_row_recorded_without_times_is_dated_by_the_meter(self):
+        clock = _FakeClock()
+        meter = CostMeter(clock=clock.time)
+        meter.add("m", Usage(input_tokens=5), 2.0)
+        meter.fail("m", RuntimeError("Error code: 500"), retried=True)
+        reply, error = meter.to_dict()["per_call"]
+        assert reply["started"] == "2027-01-15T07:59:58.000Z"
+        assert reply["duration"] == 2.0
+        assert error["started"] == "2027-01-15T08:00:00.000Z"
+        assert error["duration"] == 0.0
+
+
+class TestAFailedRequestsSize:
+
+    def test_a_failed_request_carries_its_estimated_input_tokens(self):
+        from report_ingest.engine import estimate_request
+
+        clock = _FakeClock()
+        engine = _timed_claude(clock, takes=1.0, errors=[
+            RuntimeError("Error code: 429 - too many requests")])
+        messages = [user(text_block("w" * 7000))]
+        with pytest.raises(RuntimeError):
+            engine.complete(messages, system="s" * 350)
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["input_tokens"] == estimate_request(
+            messages, system="s" * 350) == 2100
+        assert row["input_tokens_estimated"] is True
+        meter = engine.meter
+        assert meter.input_tokens == 0, "an estimate is not in the totals"
+        assert meter.by_model["claude-opus-5"]["input_tokens"] == 0
+
+    def test_a_count_the_error_carried_is_kept_and_not_marked(self):
+        class _WithBody(Exception):
+            body = {"usage": {"input_tokens": 700, "output_tokens": 0}}
+
+        meter = CostMeter()
+        meter.fail("m", _WithBody("cut off"), estimated_in=9999)
+        (row,) = meter.to_dict()["per_call"]
+        assert row["input_tokens"] == 700
+        assert "input_tokens_estimated" not in row
+
+    def test_a_reply_is_not_estimated_without_a_pacer(self, monkeypatch):
+        import report_ingest.engine as engine_module
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("a reply with no pacer was estimated")
+
+        monkeypatch.setattr(engine_module, "estimate_request", refuse)
+        engine = _timed_claude(_FakeClock(), takes=1.0)
+        assert engine.complete([user(text_block("go"))]).text == "ok"
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert "input_tokens_estimated" not in row
+        assert "paced" not in row
+        assert "paced_seconds" not in engine.meter.to_dict()
+
+    def test_a_tool_s_picture_is_sized_by_its_pixels_not_its_bytes(self):
+        from report_ingest.engine import estimate_request
+
+        picture = _png(1500, 1000)              # 2,000 tokens at 750 px
+        sized = estimate_request([user(tool_result_block(
+            "t1", [image_block(picture)]))])
+        assert sized == 2000
+
+    def test_the_tools_and_the_answer_schema_count(self):
+        from report_ingest.engine import estimate_request, schema_tokens_est
+
+        tools = [{"name": "zoom", "description": "d" * 1400}]
+        bare = estimate_request([user(text_block("go"))])
+        with_tools = estimate_request([user(text_block("go"))], tools=tools)
+        assert with_tools > bare + 400            # 1,400 characters or so
+        from pydantic import BaseModel
+
+        class _Answer(BaseModel):
+            soil: str
+
+        answered = estimate_request([user(text_block("go"))],
+                                    output_format=_Answer)
+        assert answered == bare + schema_tokens_est(_Answer)
+
+    def test_something_that_cannot_be_sized_is_none(self):
+        from report_ingest.engine import estimate_request
+
+        assert estimate_request([{"role": "user"}], tools=object()) is None
+
+
+# -- pacing to a per-minute token limit (BACKLOG RI-127) ----------------------
+#
+# Every budget, size and time below is made up for the test.
+
+def _pacer(clock, tokens_per_minute=100_000, **kw):
+    from report_ingest.engine import RequestPacer
+
+    return RequestPacer(tokens_per_minute, clock=clock.time,
+                        sleep=clock.sleep, **kw)
+
+
+class TestTheRequestPacer:
+
+    def test_after_a_large_request_the_next_waits_out_the_minute(self):
+        clock = _FakeClock()
+        pacer = _pacer(clock)                    # large: over 50,000
+        pacer.sent("model-a", 60_000)
+        clock.tick(15.0)
+        assert pacer.wait("model-a") == 45.0
+        assert clock.slept == [45.0]
+        assert (pacer.held, pacer.held_seconds) == (1, 45.0)
+        assert pacer.wait("model-a") == 0.0, "the window has passed"
+
+    def test_a_large_request_holds_its_own_model_only(self):
+        clock = _FakeClock()
+        pacer = _pacer(clock)
+        pacer.sent("model-a", 60_000)
+        assert pacer.wait("model-b") == 0.0
+        assert clock.slept == []
+
+    def test_a_request_at_or_under_the_fraction_holds_nothing(self):
+        clock = _FakeClock()
+        pacer = _pacer(clock, large_fraction=0.4)
+        assert pacer.large_tokens == 40_000
+        pacer.sent("model-a", 40_000)
+        pacer.sent("model-a", None)              # could not be sized
+        assert pacer.wait("model-a") == 0.0
+
+    def test_a_rate_limit_backs_off_a_whole_window_unless_told(self):
+        clock = _FakeClock()
+        pacer = _pacer(clock)
+        assert pacer.backoff(None, 15.0) == 60.0
+        assert pacer.backoff(None, 120.0) == 120.0
+        assert pacer.backoff(7.0, 15.0) == 7.0, "a retry-after is honoured"
+        pacer.hold("model-a", pacer.backoff(None))
+        clock.tick(20.0)
+        assert pacer.wait("model-a") == 40.0
+
+    @pytest.mark.parametrize("given", [
+        {"tokens_per_minute": 0}, {"tokens_per_minute": -5},
+        {"tokens_per_minute": True}, {"large_fraction": 0.0},
+        {"large_fraction": 1.5}, {"window": 0.0}])
+    def test_settings_that_mean_nothing_are_refused(self, given):
+        from report_ingest.engine import RequestPacer
+
+        kwargs = {"tokens_per_minute": 100_000, **given}
+        with pytest.raises(ValueError):
+            RequestPacer(kwargs.pop("tokens_per_minute"), **kwargs)
+
+    def test_the_process_keeps_one_pacer_per_setting(self):
+        from report_ingest.engine import shared_pacer
+
+        a = shared_pacer(123_457)
+        assert shared_pacer(123_457) is a
+        assert shared_pacer(123_457, large_fraction=0.25) is not a
+        assert shared_pacer(765_431) is not a
+
+    def test_pace_engines_looks_through_wrappers_and_keeps_a_pacer(self):
+        from report_ingest.engine import pace_engines
+
+        clock = _FakeClock()
+        pacer, own = _pacer(clock), _pacer(clock)
+        bare = _timed_claude(clock, 1.0)
+        mine = _timed_claude(clock, 1.0, pacer=own)
+
+        class _Wrapper:
+            def __init__(self, inner):
+                self._inner = inner
+
+        put = pace_engines([_Wrapper(_Wrapper(bare)), mine, None, object(),
+                            bare], pacer)
+        assert put == [bare]
+        assert bare.pacer is pacer and mine.pacer is own
+        assert pace_engines([bare], None) == []
+
+
+class TestAPacedClaudeEngine:
+
+    def test_after_a_large_request_the_next_is_held_not_refused(self):
+        clock = _FakeClock()
+        engine = _timed_claude(clock, takes=20.0, pacer=_pacer(clock))
+        engine.complete([user(text_block("w" * 210_000))])   # 60,000 in
+        clock.tick(5.0)
+        engine.complete([user(text_block("small"))])
+        # Its reply came back at 08:00:20, so the next waits to 08:01:20.
+        assert clock.slept == [55.0], "the minute counts from its reply"
+        first, second = engine.meter.to_dict()["per_call"]
+        assert "paced" not in first
+        assert second["paced"] == 55.0
+        assert second["started"] == "2027-01-15T08:01:20.000Z"
+        assert second["duration"] == 20.0
+        assert second["seconds"] == 75.0, "the hold is in the call's time"
+        assert engine.meter.to_dict()["paced_seconds"] == 55.0
+
+    def test_a_rate_limit_holds_the_next_request_a_whole_window(self):
+        clock = _FakeClock()
+        engine = _timed_claude(clock, takes=1.0, pacer=_pacer(clock),
+                               errors=[RuntimeError(
+                                   "Error code: 429 - too many requests")])
+        with pytest.raises(RuntimeError):
+            engine.complete([user(text_block("small"))])
+        engine.complete([user(text_block("small"))])
+        assert clock.slept == [60.0]
+
+    def test_small_requests_are_never_held(self):
+        clock = _FakeClock()
+        engine = _timed_claude(clock, takes=1.0, pacer=_pacer(clock))
+        for _ in range(3):
+            engine.complete([user(text_block("small"))])
+        assert clock.slept == []
+        assert "paced_seconds" not in engine.meter.to_dict()

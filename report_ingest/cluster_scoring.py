@@ -943,6 +943,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      max_report_tokens_in: Optional[int] = None,
                      max_request_tokens_in: Optional[int] = None,
                      lab_sheets_per_call: Optional[int] = None,
+                     tokens_per_minute: Optional[int] = None,
                      max_reports: Optional[int] = None,
                      redo: bool = False,
                      corpus_dir: Any = None,
@@ -1071,6 +1072,14 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         the run it belongs to, as a long run's windows are; the item file
         records the number and the windows. None, the default, changes
         nothing.
+    tokens_per_minute
+        The ``ingest`` stage's per-minute input-token budget for each model
+        (BACKLOG RI-127; ``Budgets.tokens_per_minute``). After a request
+        estimated above half of it comes back, the next request to that
+        model waits out the minute, across reports; a rate limit with no
+        retry-after holds the next request a whole minute. Every request's
+        row in the cost record says how long it was held (``paced``). None,
+        the default, paces nothing.
     redo
         Re-run reports that already have a run file. Off by default, which is
         what makes a detached notebook cheap to resume.
@@ -1657,6 +1666,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                              max_report_tokens_in=max_report_tokens_in,
                              max_request_tokens_in=max_request_tokens_in,
                              lab_sheets_per_call=lab_sheets_per_call,
+                             tokens_per_minute=tokens_per_minute,
                              label_policy=label_policy,
                              review_mode=review_mode,
                              vision_model=vision_model,
@@ -5470,6 +5480,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 max_report_tokens_in: Optional[int] = None,
                 max_request_tokens_in: Optional[int] = None,
                 lab_sheets_per_call: Optional[int] = None,
+                tokens_per_minute: Optional[int] = None,
                 label_policy: str = "structural",
                 review_mode: str = "disagreements",
                 vision_model: str = "funhouse-gpt-low",
@@ -5657,7 +5668,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         budgets = Budgets(narrative=narrative_budget, log=log_budget,
                           lab=lab_budget,
                           max_request_tokens_in=max_request_tokens_in,
-                          lab_sheets_per_call=lab_sheets_per_call)
+                          lab_sheets_per_call=lab_sheets_per_call,
+                          tokens_per_minute=tokens_per_minute)
         brake = _TokenBrake(meter, max_report_tokens_in,
                             None if max_total_tokens is None
                             else max_total_tokens - spent_tokens,

@@ -4178,6 +4178,36 @@ class TestTheIngestStageLimits:
         assert "token_brake" not in run
 
 
+class TestTheRequestPacingSetting:
+    """``score_on_cluster(tokens_per_minute=...)`` reaches the graph's
+    ``Budgets`` (BACKLOG RI-127); unset it is None there. The budget is
+    made up."""
+
+    @staticmethod
+    def _budgets(ingest_cluster, monkeypatch, **over):
+        from report_ingest import graph
+
+        seen = {}
+
+        def stop(doc, engine, *args, **kwargs):
+            seen["budgets"] = kwargs["budgets"]
+            raise RuntimeError("made-up stop")
+
+        monkeypatch.setattr(graph, "ingest_report", stop)
+        _ingest_run(ingest_cluster, model="fake-main", **over)
+        return seen["budgets"]
+
+    def test_the_setting_reaches_the_budgets(self, ingest_cluster,
+                                             monkeypatch):
+        budgets = self._budgets(ingest_cluster, monkeypatch,
+                                tokens_per_minute=123_467)
+        assert budgets.tokens_per_minute == 123_467
+
+    def test_unset_it_is_none(self, ingest_cluster, monkeypatch):
+        assert self._budgets(ingest_cluster,
+                             monkeypatch).tokens_per_minute is None
+
+
 class TestThePlacementFile:
     def test_the_graph_writes_what_it_placed_and_replaces_it_each_run(
             self, tmp_path):
