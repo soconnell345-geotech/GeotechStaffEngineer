@@ -44,6 +44,9 @@ MODEL_FIRST_ASKS = {
     # SHOWN changed (a sheet scanned sideways is sent upright, its text row
     # by row), so an answer saved under mf-1 is read again.
     "mf-2": "99aafd0dbd196bf8961ea25054e9c8646f15c40c711de3788de477f1c151246d",
+    # mf-3 (RI-174): the narrative's vocabulary offers outsideProject yes,
+    # no or unclear, no longer mixed.
+    "mf-3": "8787793c6b76558674779055f43a3c26a548cfd734798fe6a0da6bd85de55112",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

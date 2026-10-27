@@ -74,6 +74,7 @@ __all__ = [
     "Citation", "Mention", "BearingValue", "Stratum",
     "DOCUMENT_TYPE_VALUES", "PROPERTY_TYPE_VALUES", "PROJECT_PHASE_VALUES",
     "LIQUEFACTION_VALUES", "EARTH_HAZARD_VALUES", "YES_NO_UNCLEAR",
+    "OUTSIDE_PROJECT_VALUES",
     "GENERAL_FIELDS", "NATURAL_HAZARD_FIELDS", "SUMMARY_FIELDS",
     "SUMMARY_WORD_LIMITS",
     # the typed laboratory results (WP3)
@@ -2357,6 +2358,14 @@ EARTH_HAZARD_VALUES: Tuple[str, ...] = (
 #: hand's own: soil that is not corrosive to one thing and is to another is
 #: neither a yes nor a no, and flattening it either way loses the finding.
 YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "mixed", "unclear")
+#: What ``outsideProject`` is answered with (BACKLOG RI-174). The owner's
+#: schema asks it as a yes-or-no question and the owner's question list of
+#: 2026-10-26 types it a boolean that may be left empty ("unclear" here), so
+#: "mixed" is not one of its answers. The prompt offers exactly these words
+#: and :class:`GeneralFacts` takes exactly these: Foundry build e lost one
+#: report's whole narrative to a "mixed" the prompt had offered and this
+#: class then refused.
+OUTSIDE_PROJECT_VALUES: Tuple[str, ...] = ("yes", "no", "unclear")
 
 
 class Citation(BaseModel):

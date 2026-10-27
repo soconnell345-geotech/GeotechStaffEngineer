@@ -282,8 +282,10 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: instruction below or a field the classes below add -- or what they are
 #: shown, so a saved answer from another wording is never reused as if it
 #: were this one. mf-2 (RI-149): a sheet scanned sideways is sent upright,
-#: its text row by row as the sheet reads; the wording is mf-1's.
-READ_PROMPT_VERSION = "mf-2"
+#: its text row by row as the sheet reads; the wording is mf-1's. mf-3
+#: (RI-174): the narrative's outsideProject is offered yes, no or unclear,
+#: no longer mixed.
+READ_PROMPT_VERSION = "mf-3"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:

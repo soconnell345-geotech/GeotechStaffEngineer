@@ -64,8 +64,8 @@ from report_ingest.model import (
     BearingValue, Citation, DOCUMENT_TYPE_VALUES, EARTH_HAZARD_VALUES,
     GENERAL_FIELDS, GeneralFacts, LIQUEFACTION_VALUES, Mention,
     NATURAL_HAZARD_FIELDS, NarrativeFacts, NaturalHazardFacts,
-    PROJECT_PHASE_VALUES, PROPERTY_TYPE_VALUES, Quantity, SUMMARY_FIELDS,
-    SUMMARY_WORD_LIMITS, Stratum, YES_NO_UNCLEAR,
+    OUTSIDE_PROJECT_VALUES, PROJECT_PHASE_VALUES, PROPERTY_TYPE_VALUES,
+    Quantity, SUMMARY_FIELDS, SUMMARY_WORD_LIMITS, Stratum, YES_NO_UNCLEAR,
 )
 
 __all__ = [
@@ -162,7 +162,7 @@ VOCABULARIES: Dict[str, Tuple[str, ...]] = {
     "documentType": DOCUMENT_TYPE_VALUES,
     "propertyType": PROPERTY_TYPE_VALUES,
     "projectPhase": PROJECT_PHASE_VALUES,
-    "outsideProject": YES_NO_UNCLEAR,
+    "outsideProject": OUTSIDE_PROJECT_VALUES,
     "liquefactionPotential": LIQUEFACTION_VALUES,
     "earthHazardsExposed": EARTH_HAZARD_VALUES,
     "geophysicalTestingMention": YES_NO_UNCLEAR,
