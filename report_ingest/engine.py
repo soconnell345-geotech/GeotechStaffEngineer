@@ -596,9 +596,14 @@ def _count(value: Any) -> Optional[int]:
 #: puts its own message in (:func:`_own_words`). Read off the WORDS, never a
 #: 400 status alone (BACKLOG RI-139): Foundry's proxy sends a rate limit as
 #: a 400, and a 400 that says none of these is a refused request like any
-#: other.
+#: other. Foundry's model service names its own in the error
+#: ("ErrorName: 'LanguageModelService:RateLimitsExceeded'", or a QoS
+#: exception), which the app's Foundry layer retries for five minutes and
+#: then raises as it came (the AI FDE's table of wave 2's 221 rate limits,
+#: 2026-10-27: every one a 400 by that name, none a 429).
 RATE_LIMIT_WORDS: Tuple[str, ...] = ("too many requests", "rate limit",
-                                     "rate_limit", "throttl")
+                                     "rate_limit", "throttl",
+                                     "ratelimitsexceeded", "qosexception")
 
 #: The fields of an error body a provider writes its own words in, under
 #: ``error`` or at the top (OpenAI's ``error.message`` / ``code`` /
@@ -672,6 +677,12 @@ def is_rate_limit(error: Any) -> bool:
     name = type(error).__name__.lower() if isinstance(error, BaseException) \
         else ""
     if "ratelimit" in name or _status_of(error) == 429:
+        return True
+    try:
+        named = str(getattr(error, "error_name", None) or "").lower()
+    except Exception:                       # noqa: BLE001 - never raise here
+        named = ""
+    if "ratelimitsexceeded" in named or "qosexception" in named:
         return True
     said = _own_words(error)
     if "error code: 429" in said:
