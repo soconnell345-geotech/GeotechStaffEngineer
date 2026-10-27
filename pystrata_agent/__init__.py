@@ -19,11 +19,12 @@ from pystrata_agent.eql_site_response import (
     analyze_eql_site_response,
     analyze_linear_site_response,
 )
-from pystrata_agent.pystrata_utils import has_pystrata
+from pystrata_agent.pystrata_utils import has_pystrata, pystrata_import_error
 
 __all__ = [
     'analyze_eql_site_response',
     'analyze_linear_site_response',
     'EQLSiteResponseResult',
     'has_pystrata',
+    'pystrata_import_error',
 ]

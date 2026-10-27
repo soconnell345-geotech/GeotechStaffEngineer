@@ -8,6 +8,15 @@ helpers used by every OpenSees analysis wrapper.
 import math
 import numpy as np
 
+from geotech_common.optional_packages import import_error
+
+
+def opensees_import_error():
+    """Why openseespy cannot be imported (not installed, or its import's own
+    error, such as a native library the host refuses to load), or None when
+    it can (BACKLOG INF-54)."""
+    return import_error("openseespy.opensees", "openseespy")
+
 
 def import_ops():
     """Import openseespy with a helpful error message.
@@ -20,25 +29,18 @@ def import_ops():
     Raises
     ------
     ImportError
-        If openseespy is not installed.
+        If openseespy is not installed or its import fails.
     """
-    try:
-        import openseespy.opensees as ops
-        return ops
-    except ImportError:
-        raise ImportError(
-            "openseespy is required for OpenSees analyses. "
-            "Install with: pip install openseespy"
-        )
+    error = opensees_import_error()
+    if error:
+        raise ImportError(f"openseespy is required for OpenSees analyses. {error}")
+    import openseespy.opensees as ops
+    return ops
 
 
 def has_opensees() -> bool:
     """Return True if openseespy is importable."""
-    try:
-        import openseespy.opensees  # noqa: F401
-        return True
-    except (ImportError, RuntimeError):
-        return False
+    return opensees_import_error() is None
 
 
 def fresh_model(ndm: int = 2, ndf: int = 3):

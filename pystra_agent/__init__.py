@@ -26,7 +26,7 @@ Install via: pip install pystra
 
 from pystra_agent.reliability import analyze_form, analyze_sorm, analyze_monte_carlo
 from pystra_agent.results import FormResult, SormResult, MonteCarloResult
-from pystra_agent.pystra_utils import has_pystra
+from pystra_agent.pystra_utils import has_pystra, pystra_import_error
 
 __all__ = [
     "analyze_form",
@@ -36,4 +36,5 @@ __all__ = [
     "SormResult",
     "MonteCarloResult",
     "has_pystra",
+    "pystra_import_error",
 ]

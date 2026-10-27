@@ -197,6 +197,30 @@ def test_run_suite_records_missing_optional_deps(monkeypatch):
     assert "geotech-staff-engineer[deep,full]" in md
 
 
+def test_run_suite_banner_gives_an_import_error_not_missing(monkeypatch,
+                                                          capsys):
+    """A backend installed but failing to import is shown with its error,
+    on one quoted line, and not as missing (BACKLOG INF-54; made-up text)."""
+    _patch_build(monkeypatch, _StubDeepAgent())
+    error = ("SALib is installed but cannot be imported: ImportError: "
+             "inf54 made-up\n  second line")
+    monkeypatch.setattr(
+        eh, "check_optional_deps",
+        lambda *a, **k: [{"import": "SALib", "extra": "salib",
+                          "error": error},
+                         {"import": "pygef", "extra": "subsurface"}],
+    )
+    out = eh.run_suite("fake-model", questions=_tiny_suite(), verbose=True)
+    printed = capsys.readouterr().out
+    assert "1 optional package(s) not installed: pygef." in printed
+    assert f"WARNING: {error} (questions" in printed
+
+    md = eh.render_suite_markdown(out)
+    assert "**Missing optional packages:** pygef —" in md
+    assert ("> ⚠ **Installed but will not import:** SALib is installed but "
+            "cannot be imported: ImportError: inf54 made-up second line") in md
+
+
 def test_run_suite_no_banner_when_all_deps_present(monkeypatch):
     """No missing-deps banner when the preflight comes back empty."""
     _patch_build(monkeypatch, _StubDeepAgent())

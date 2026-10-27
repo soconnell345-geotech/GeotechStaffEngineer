@@ -249,10 +249,15 @@ def _nan_to_none(obj):
     return obj
 
 
+#: What a call says when SALib is missing; a SALib that is installed but
+#: fails to import says its import's own error instead (BACKLOG INF-54).
+_SALIB_MISSING = "SALib is not installed. Install via: pip install SALib"
+
+
 def _one_call(params: dict, method: str, extra_valid) -> dict:
-    from salib_agent import has_salib
+    from salib_agent import has_salib, salib_import_error
     if not has_salib():
-        return {"error": "SALib is not installed. Install via: pip install SALib"}
+        return {"error": salib_import_error() or _SALIB_MISSING}
 
     params = apply_aliases(params, _ONE_CALL_ALIASES)
     valid = _ONE_CALL_COMMON + tuple(extra_valid)
@@ -334,10 +339,10 @@ def _run_morris_analysis(params: dict) -> dict:
 
 
 def _run_sobol_sample(params: dict) -> dict:
-    from salib_agent import sobol_sample, has_salib
+    from salib_agent import sobol_sample, has_salib, salib_import_error
 
     if not has_salib():
-        return {"error": "SALib is not installed. Install via: pip install SALib"}
+        return {"error": salib_import_error() or _SALIB_MISSING}
 
     require_params(params, ["var_names", "bounds"], method="sobol_sample")
     sample_matrix = sobol_sample(
@@ -356,10 +361,10 @@ def _run_sobol_sample(params: dict) -> dict:
 
 
 def _run_sobol_analyze(params: dict) -> dict:
-    from salib_agent import sobol_analyze, has_salib
+    from salib_agent import sobol_analyze, has_salib, salib_import_error
 
     if not has_salib():
-        return {"error": "SALib is not installed. Install via: pip install SALib"}
+        return {"error": salib_import_error() or _SALIB_MISSING}
 
     require_params(params, ["var_names", "bounds", "Y"], method="sobol_analyze")
     result = sobol_analyze(
@@ -374,10 +379,10 @@ def _run_sobol_analyze(params: dict) -> dict:
 
 
 def _run_morris_sample(params: dict) -> dict:
-    from salib_agent import morris_sample, has_salib
+    from salib_agent import morris_sample, has_salib, salib_import_error
 
     if not has_salib():
-        return {"error": "SALib is not installed. Install via: pip install SALib"}
+        return {"error": salib_import_error() or _SALIB_MISSING}
 
     require_params(params, ["var_names", "bounds"], method="morris_sample")
     sample_matrix = morris_sample(
@@ -396,10 +401,10 @@ def _run_morris_sample(params: dict) -> dict:
 
 
 def _run_morris_analyze(params: dict) -> dict:
-    from salib_agent import morris_analyze, has_salib
+    from salib_agent import morris_analyze, has_salib, salib_import_error
 
     if not has_salib():
-        return {"error": "SALib is not installed. Install via: pip install SALib"}
+        return {"error": salib_import_error() or _SALIB_MISSING}
 
     require_params(params, ["var_names", "bounds", "X", "Y"],
                    method="morris_analyze")

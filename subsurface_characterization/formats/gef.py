@@ -16,6 +16,7 @@ has_pygef : Check if pygef is installed
 
 import numpy as np
 
+from geotech_common.optional_packages import import_error
 from subsurface_characterization.formats.gef_results import (
     CPTParseResult,
     BoreParseResult,
@@ -26,24 +27,25 @@ from subsurface_characterization.formats.gef_results import (
 # Optional-dependency guards
 # ---------------------------------------------------------------------------
 
+def pygef_import_error():
+    """Why pygef cannot be imported (not installed, or its import's own
+    error), or None when it can (BACKLOG INF-54)."""
+    return import_error("pygef")
+
+
 def has_pygef():
     """Return True if pygef is installed and importable."""
-    try:
-        import pygef  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return pygef_import_error() is None
 
 
 def import_pygef():
-    """Import and return the pygef package, raising RuntimeError if missing."""
-    try:
-        import pygef
-        return pygef
-    except ImportError:
-        raise RuntimeError(
-            "pygef is not installed. Install with: pip install pygef"
-        )
+    """Import and return the pygef package, raising RuntimeError if it is
+    missing or its import fails."""
+    error = pygef_import_error()
+    if error:
+        raise RuntimeError(error)
+    import pygef
+    return pygef
 
 
 # ---------------------------------------------------------------------------

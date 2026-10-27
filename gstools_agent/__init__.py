@@ -26,7 +26,7 @@ from gstools_agent.results import (
     ConditionalSimulationResult, KrigingResult, RandomFieldResult,
     VariogramResult,
 )
-from gstools_agent.gstools_utils import has_gstools
+from gstools_agent.gstools_utils import has_gstools, gstools_import_error
 
 __all__ = [
     "analyze_kriging",
@@ -38,4 +38,5 @@ __all__ = [
     "RandomFieldResult",
     "ConditionalSimulationResult",
     "has_gstools",
+    "gstools_import_error",
 ]

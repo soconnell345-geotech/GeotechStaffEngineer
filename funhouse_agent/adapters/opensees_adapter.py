@@ -62,11 +62,12 @@ def _check_layers(layers):
 
 
 def _check_opensees():
-    """Raise ValueError if OpenSeesPy is not installed."""
-    from opensees_agent import has_opensees
+    """Raise ValueError if OpenSeesPy is not installed or fails to import."""
+    from opensees_agent import has_opensees, opensees_import_error
     if not has_opensees():
         raise ValueError(
-            "OpenSeesPy is not installed. Install with: pip install openseespy"
+            opensees_import_error()
+            or "OpenSeesPy is not installed. Install with: pip install openseespy"
         )
 
 

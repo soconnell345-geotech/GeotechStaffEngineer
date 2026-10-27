@@ -24,6 +24,7 @@ validate_diggs_schema() - Validate DIGGS XML against XSD schema
 validate_diggs_dictionary() - Validate DIGGS propertyClass values against dictionary
 DiggValidationResult - Result dataclass with summary() and to_dict()
 has_pydiggs() - Check if pydiggs is installed
+pydiggs_import_error() - Why pydiggs cannot be imported, or None
 has_schema_check() - Whether a schema version can be checked here
 bundled_schema_path() - The bundled DIGGS 2.6 ``Diggs.xsd``, unpacked on first use
 
@@ -45,6 +46,7 @@ import threading
 import zipfile
 from typing import Dict, Optional
 
+from geotech_common.optional_packages import import_error
 from subsurface_characterization.formats.diggs_validation_results import (
     DiggValidationResult,
 )
@@ -69,6 +71,12 @@ _compiled: Dict[str, object] = {}
 # Optional-dependency guards
 # ---------------------------------------------------------------------------
 
+def pydiggs_import_error() -> Optional[str]:
+    """Why pydiggs cannot be imported (not installed, or its import's own
+    error), or None when it can (BACKLOG INF-54)."""
+    return import_error("pydiggs")
+
+
 def has_pydiggs() -> bool:
     """
     Check if pydiggs is installed.
@@ -76,11 +84,7 @@ def has_pydiggs() -> bool:
     Returns:
         bool: True if pydiggs is available, False otherwise
     """
-    try:
-        import pydiggs  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return pydiggs_import_error() is None
 
 
 def _has_lxml() -> bool:
@@ -173,8 +177,9 @@ def get_schema_path(version: str = "2.6") -> str:
         raise ValueError(f"Unsupported schema version: {version}. Use '2.6' or '2.5.a'")
     if version == BUNDLED_SCHEMA_VERSION:
         return bundled_schema_path()
-    if not has_pydiggs():
-        raise ImportError("pydiggs is not installed")
+    error = pydiggs_import_error()
+    if error:
+        raise ImportError(error)
 
     import pydiggs
 
@@ -201,8 +206,9 @@ def get_dictionary_path() -> str:
     Raises:
         ImportError: If pydiggs is not installed
     """
-    if not has_pydiggs():
-        raise ImportError("pydiggs is not installed")
+    error = pydiggs_import_error()
+    if error:
+        raise ImportError(error)
 
     import pydiggs
 
@@ -252,10 +258,9 @@ def validate_diggs_schema(
     if schema_version == BUNDLED_SCHEMA_VERSION:
         return _validate_bundled(filepath, content)
 
-    if not has_pydiggs():
-        raise ImportError(
-            "pydiggs is not installed. Install with: pip install pydiggs"
-        )
+    error = pydiggs_import_error()
+    if error:
+        raise ImportError(error)
 
     from pydiggs import validator
 
@@ -397,10 +402,9 @@ def validate_diggs_dictionary(
         ImportError: If pydiggs is not installed
         ValueError: If neither or both filepath and content are provided
     """
-    if not has_pydiggs():
-        raise ImportError(
-            "pydiggs is not installed. Install with: pip install pydiggs"
-        )
+    error = pydiggs_import_error()
+    if error:
+        raise ImportError(error)
 
     # Validate inputs
     if filepath is None and content is None:

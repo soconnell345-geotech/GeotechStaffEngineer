@@ -56,12 +56,13 @@ _METHOD_NORMALIZE = {
 
 
 def _check_liquepy():
-    from liquepy_agent import has_liquepy
+    from liquepy_agent import has_liquepy, liquepy_import_error
     if not has_liquepy():
         raise ValueError(
-            "liquepy is not installed (required for B&I-2014). "
-            "Install with: pip install liquepy — or use method='nceer2001' "
-            "for the native SPT procedure."
+            (liquepy_import_error()
+             or "liquepy is not installed. Install with: pip install liquepy")
+            + " (liquepy is required for B&I-2014; method='nceer2001' runs "
+            "the native SPT procedure without it.)"
         )
 
 
