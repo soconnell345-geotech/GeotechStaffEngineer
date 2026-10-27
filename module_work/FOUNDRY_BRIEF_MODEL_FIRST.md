@@ -22,6 +22,15 @@ decisions D1 to D3, are in §2.
 
 ## 1. Before the wave
 
+- **Where the last session left off.** The AI FDE's handoff note is
+  `setup/HANDOFF_brief1023.md` in the Jupyter workspace repo (master
+  99ba2fb): where the branch, wheels and glue are, which datasets hold each
+  wave's results, waves 1 and 2 done, wave 3 never started. The transforms
+  work is on the branch named in that note,
+  not merged: review it fully before any merge, and keep the crash dump
+  `transforms-python/src/core.10847` out of every commit. Builds can sit in
+  the queue for hours, and a build can show "Failed to fetch" while it is
+  still running: check the build's own page before starting it again.
 - **MF-0, the probe:** `report_ingest.model_first.probe_pdf_route(chat_model)`,
   two calls each, about 8 calls in all:
   - Opus 5.5 on the `palantir_models` class, for the PDF route. The AI FDE
@@ -310,12 +319,19 @@ log). Report counts only, as for every blind set.
       Request; the engine already reads those as rate limits. The owner
       accepted running without the admin's numbers: keep the FDE's throttle at 22.5
       GPT-5.4 calls a minute (the resume run then had 16 retries and no
-      give-ups, against 45 a minute before), set
+      give-ups, against 45 a minute before; the FDE's table of wave 2's
+      221 rate limits: every one a 400 named
+      `LanguageModelService:RateLimitsExceeded`, none a 429, all 7 give-ups
+      in one run's bursts; the package reads that name as a rate limit
+      since RI-169), set
       `max_request_tokens_in=100000` on both arms, and expect slow minutes
       after any large request. If the numbers ever come (asking is optional),
       set RI-127's `tokens_per_minute` and size the limit from them; the
-      FDE's table of run 5's rate-limit events against request sizes may
-      give an effective ceiling first.
+      FDE's table of rate-limit events may give an effective ceiling first:
+      it could not match events to request sizes on wave 2, because the
+      10-23 wheel's call records had no start times; this build's cost rows
+      carry `started` (RI-126), so ask for the table again after the run,
+      matched on those times.
    8. **Cost from every attempt.** RESULTS' Cost block counts every
       attempt of every report (RI-124): the finished reports, then a line
       for the reports not finished (braked, given up or failed, all listed
