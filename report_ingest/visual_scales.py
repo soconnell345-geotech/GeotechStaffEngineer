@@ -46,6 +46,7 @@ from __future__ import annotations
 import dataclasses
 import math
 import os
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -277,16 +278,184 @@ def without_pixel_layers(grid: Any) -> Any:
         return grid
 
 
+#: A ruler label printed between two short ticks, as optical text gives it
+#: ("-2-"): a numeral with a dash on both sides (RI-159).
+_TICK_FLANKED = re.compile(
+    r"^\s*[-−–—]\s*\d*\.?\d+\s*[-–—]\s*$")
+
+
+def _negated(v: Any) -> Any:
+    return v if v is None else (0.0 - float(v)) + 0.0
+
+
+def _flanked_pages(grid: Any) -> List[int]:
+    """The pages whose depth ruler planlens fitted FALLING because it read
+    the leading tick of each "-2-" label as a minus sign (RI-159): a ruler
+    of kind ``elevation`` in the depth slot, every tick at or below 0, every
+    label it kept printed dash-numeral-dash, and not a column the header
+    calls elevation."""
+    out: List[int] = []
+    scales = getattr(grid, "scales", None) or {}
+    for page, ruler in (getattr(grid, "rulers", None) or {}).items():
+        if getattr(ruler, "kind", "") != "elevation":
+            continue
+        ticks = [float(v) for _y, v in (getattr(ruler, "ticks", None) or ())]
+        if len(ticks) < 2 or any(v > 0 for v in ticks):
+            continue
+        labels = [getattr(a, "label", None)
+                  for a in getattr(scales.get(page), "anchors", None) or ()
+                  if getattr(a, "kind", "") != "frame_line"]
+        if not labels or not all(_TICK_FLANKED.match(str(t or ""))
+                                 for t in labels):
+            continue
+        column = (grid.column(ruler.column_id)
+                  if getattr(ruler, "column_id", None)
+                  and hasattr(grid, "column") else None)
+        names = set(getattr(column, "names", None) or ())
+        if "elevation" in names and "depth" not in names:
+            continue
+        out.append(int(page))
+    return sorted(out)
+
+
+def _own_labels(grid: Any, page: int
+                ) -> Tuple[List[Tuple[str, float]], Optional[float]]:
+    """The ruler's own labels on ``page`` as (printed text, y of its tick),
+    and half a tick step in points (None where the ruler has no slope)."""
+    ruler = grid.rulers[page]
+    scale = (getattr(grid, "scales", None) or {}).get(page)
+    tick_y = {round(float(v), 6): float(y) for y, v in ruler.ticks}
+    marks = []
+    for a in getattr(scale, "anchors", None) or ():
+        if getattr(a, "kind", "") == "frame_line" or a.label is None:
+            continue
+        y = tick_y.get(round(float(a.value), 6))
+        if y is not None:
+            marks.append((str(a.label).strip(), y))
+    slope = float(getattr(ruler, "slope", 0.0) or 0.0)
+    step = float(getattr(ruler, "step", 0.0) or 0.0)
+    half = 0.5 * abs(step / slope) if slope and step else None
+    return marks, half
+
+
+def _is_own_label(cell: Any, marks: List[Tuple[str, float]],
+                  half: Optional[float]) -> bool:
+    """A cell that prints one of the ruler's labels beside its tick: the
+    ruler itself, which the installed planlens left among the rows."""
+    text = str(getattr(cell, "text", "") or "").strip()
+    box = getattr(cell, "bbox", None)
+    if not text or box is None or half is None:
+        return False
+    mid = (float(box[1]) + float(box[3])) / 2.0
+    return any(text == t and abs(mid - y) <= half for t, y in marks)
+
+
+def unflank_depths(grid: Any) -> Any:
+    """``grid`` with the depths of every page whose ruler labels are printed
+    between two ticks read as printed (RI-159; planlens PL-35 is the fix).
+
+    A scanned log form can print each depth numeral between two short ticks,
+    which optical text gives as "-1-", "-2-"; planlens 0.13 reads the leading
+    tick as a minus sign, so the ruler falls down the page, is called an
+    elevation scale and still fills the depth slot, and every depth on the
+    page comes out negated. On such a page (:func:`_flanked_pages`) the
+    ruler, the rows, the layers that start there and the drawn samples are
+    read again with their signs turned, and the grid says so in a warning.
+    A cell printing one of the ruler's own labels beside its tick ("-4-")
+    is the ruler, not a row, and is set aside: read at its turned depth it
+    would become a sample of its own (a planlens that reads the ruler right
+    puts those cells in the ruler's column). A layer's bottom below 0 is
+    turned too, wherever the layer starts: a
+    layer can end on the next sheet, and on a log with such a page a depth
+    below 0 (above the ground) is what a falling ruler reads. A planlens that
+    reads these labels as depths fits a rising ruler of kind ``depth``, so
+    nothing here fires: the check is the misreading itself, not a version.
+    The grid itself is not changed; a copy is returned.
+    """
+    fixed = _flanked_pages(grid)
+    if not fixed:
+        return grid
+    on = set(fixed)
+    rulers = dict(getattr(grid, "rulers", None) or {})
+    for page in fixed:
+        r = rulers[page]
+        ev = dict(getattr(r, "evidence", None) or {})
+        ev["read_as_printed"] = ("labels printed between two ticks: the "
+                                 "leading dash is a tick, not a minus sign "
+                                 "(RI-159)")
+        rulers[page] = dataclasses.replace(
+            r, kind="depth", slope=_negated(r.slope),
+            intercept=_negated(r.intercept),
+            ticks=tuple((y, _negated(v)) for y, v in r.ticks), evidence=ev)
+    own = {page: _own_labels(grid, page) for page in fixed}
+    rows, set_aside = [], 0
+    for c in getattr(grid, "rows", None) or []:
+        page = getattr(c, "page", None)
+        if page in on and _is_own_label(c, *own[page]):
+            set_aside += 1
+            continue
+        if page in on and c.depth is not None:
+            c = dataclasses.replace(c, depth=_negated(c.depth),
+                                    depth_top=_negated(c.depth_top),
+                                    depth_bottom=_negated(c.depth_bottom))
+        rows.append(c)
+    layers = []
+    for ly in getattr(grid, "layers", None) or []:
+        top = ly.top
+        # a top the page prints as a number ("depth_tick") is the print's
+        # own value, not the ruler's reading, and is turned only if negative
+        if (ly.pages and int(ly.pages[0]) in on and top is not None
+                and (getattr(ly, "source", "") != "depth_tick"
+                     or float(top) < 0)):
+            top = _negated(top)
+        bottom = ly.bottom
+        if bottom is not None and float(bottom) < 0:
+            bottom = _negated(bottom)
+        if (top, bottom) != (ly.top, ly.bottom):
+            ly = dataclasses.replace(ly, top=top, bottom=bottom)
+        layers.append(ly)
+    samples = []
+    for s in getattr(grid, "samples", None) or []:
+        if getattr(s, "page", None) in on:
+            a, b = sorted((_negated(s.top), _negated(s.bottom)))
+            s = dataclasses.replace(s, top=a, bottom=b)
+        samples.append(s)
+    warnings = list(getattr(grid, "warnings", None) or [])
+    warnings.append(
+        f"page(s) {', '.join(str(p) for p in fixed)}: the depth labels are "
+        f"printed between two ticks and the installed planlens read the "
+        f"leading tick as a minus sign, so the ruler fell down the page; the "
+        f"depths read through it (ruler, rows, layers, drawn samples) are "
+        f"turned to the depths the page prints"
+        + (f", and {set_aside} cell(s) that are the ruler's own labels are "
+           f"set aside, not read as rows" if set_aside else "")
+        + " (RI-159)")
+    changes: Dict[str, Any] = {"rulers": rulers, "rows": rows,
+                               "layers": layers, "samples": samples,
+                               "warnings": warnings}
+    try:
+        names = {f.name for f in dataclasses.fields(grid)}
+        return dataclasses.replace(
+            grid, **{k: v for k, v in changes.items() if k in names})
+    except TypeError:                           # pragma: no cover - not a
+        for k, v in changes.items():            # dataclass: change in place
+            if hasattr(grid, k):
+                setattr(grid, k, v)
+        return grid
+
+
 def log_grid_for(doc: Any, pages: Sequence[int], engine: Any = None,
                  charge: Optional[Callable[[Any], None]] = None
                  ) -> Tuple[Any, Dict[str, Any]]:
     """``(grid, info)``: ``log_grid`` over one log's pages, as the setting
     says. OFF: pixel-found layer boundaries folded away. ON: a textless
     scan's depth labels read (one structured call over numbered crops) and
-    the grid read again with them; ``info`` says what was read."""
+    the grid read again with them; ``info`` says what was read. Either way a
+    page whose ruler labels are printed between two ticks has its depths
+    read as printed (:func:`unflank_depths`, RI-159)."""
     from planlens.document.loggrid import log_grid
     pages = [int(p) for p in pages]
-    grid = log_grid(doc, pages)
+    grid = unflank_depths(log_grid(doc, pages))
     if not enabled():
         return without_pixel_layers(grid), {}
     info: Dict[str, Any] = {"visual_scales": True}
@@ -305,7 +474,7 @@ def log_grid_for(doc: Any, pages: Sequence[int], engine: Any = None,
                                for pg, vals in values.items()}
         info["label_calls"] = linfo["calls"]
         if any(t is not None for t in texts):
-            grid = log_grid(doc, pages, values=values)
+            grid = unflank_depths(log_grid(doc, pages, values=values))
     info["pixel_layers"] = sum(1 for ly in grid.layers if _pixel_layer(ly))
     return grid, info
 
@@ -792,6 +961,7 @@ def zoom_plot(doc: Any, pages: Sequence[int], arguments: Dict[str, Any], *,
 
 
 __all__ = ["enabled", "use_visual_scales", "ENV", "read_labels",
-           "page_scales", "without_pixel_layers", "log_grid_for",
+           "page_scales", "without_pixel_layers", "unflank_depths",
+           "log_grid_for",
            "plot_markers", "plot_check", "trace_check", "plot_check_qa",
            "trace_check_qa", "zoom_plot", "LabelReading", "LabelCell"]

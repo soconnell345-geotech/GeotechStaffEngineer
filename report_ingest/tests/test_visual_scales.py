@@ -181,6 +181,193 @@ def test_on_measured_tops_enter_the_floor_where_the_scan_has_text(ocr_scan):
 
 
 # ---------------------------------------------------------------------------
+# Logs: depth labels printed between two ticks (RI-159)
+# ---------------------------------------------------------------------------
+
+def _flanked_grid(labels=("-1-", "-2-", "-3-"), kind="elevation",
+                  sign=-1.0, header="SAMPLE", names=("sample_id",),
+                  ruler_names=("depth",), page=0, offset=0.0, drawn=True,
+                  own_label=False):
+    """A made-up one-page grid as planlens 0.13 reads a ruler whose labels
+    are printed between two ticks: ticks at y 140/180/220 for depths
+    ``offset`` + 1/2/3, every depth with the sign ``sign`` (the misreading
+    is -1)."""
+    import dataclasses
+    from planlens.document import loggrid as LG
+    from planlens.document.scales import Anchor, Scale
+
+    def d(v):
+        return sign * (offset + v) + 0.0
+
+    ticks = ((140.0, d(1.0)), (180.0, d(2.0)), (220.0, d(3.0)))
+    ruler = LG.Ruler(page=page, kind=kind, column_id=f"p{page}c0",
+                     slope=sign * 0.025, intercept=sign * (offset - 2.5),
+                     residual=0.01, step=1.0, ticks=ticks, unit="m")
+    scale = Scale(id=f"p{page}.depth", page=page,
+                  extent=(0.0, 0.0, 1.0, 1.0), quantity="depth", unit="m",
+                  axis="y", b=sign * 0.025,
+                  anchors=[Anchor(position=y, value=v, label=t)
+                           for (y, v), t in zip(ticks, labels)])
+    columns = [LG.Column(id=f"p{page}c0", page=page, x0=20.0, x1=50.0,
+                         name="depth", names=tuple(ruler_names),
+                         header="DEPTH"),
+               LG.Column(id=f"p{page}c1", page=page, x0=60.0, x1=90.0,
+                         name=names[0], names=tuple(names), header=header)]
+
+    def cell(text, y, depth):
+        return LG.Cell(page=page, column=names[0], column_id=f"p{page}c1",
+                       text=text, bbox=(62.0, y - 4.0, 88.0, y + 4.0),
+                       depth=d(depth), depth_top=d(depth - 0.1),
+                       depth_bottom=d(depth + 0.1), confidence=0.9)
+
+    rows = [cell("S-1", 150.0, 1.25), cell("S-2", 210.0, 2.75)]
+    if own_label:
+        # the ruler's own label "-2-" beside its tick, left among the rows
+        rows.append(cell(labels[1], 180.0, 2.0))
+    layers = [LG.Layer(top=d(0.0), bottom=d(1.85),
+                       description="made-up clay", pages=(page,),
+                       source="page_top"),
+              LG.Layer(top=d(1.85), bottom=None, description="made-up sand",
+                       pages=(page,), source="stratum_rule")]
+    grid = LG.LogGrid(pages=[page], unit="m", columns=columns,
+                      rulers={page: ruler}, rows=rows, layers=layers)
+    grid.scales = {page: scale}
+    if drawn and "samples" in {f.name for f in dataclasses.fields(grid)}:
+        grid.samples = [LG.Sample(page=page, top=d(1.2), bottom=d(1.65),
+                                  read="pixels")]
+    return grid
+
+
+def test_a_ruler_misread_off_tick_flanked_labels_is_turned_as_printed():
+    grid = _flanked_grid()
+    fixed = VS.unflank_depths(grid)
+    r = fixed.rulers[0]
+    assert r.kind == "depth"
+    assert [v for _y, v in r.ticks] == [1.0, 2.0, 3.0]
+    assert r.value_at(160.0) == pytest.approx(1.5)
+    assert r.evidence.get("read_as_printed")
+    assert [(c.text, c.depth, c.depth_top, c.depth_bottom)
+            for c in fixed.rows] == [
+        ("S-1", pytest.approx(1.25), pytest.approx(1.15), pytest.approx(1.35)),
+        ("S-2", pytest.approx(2.75), pytest.approx(2.65), pytest.approx(2.85))]
+    assert [(ly.top, ly.bottom) for ly in fixed.layers] == [
+        (0.0, pytest.approx(1.85)), (pytest.approx(1.85), None)]
+    for s in getattr(fixed, "samples", None) or []:
+        assert (s.top, s.bottom) == (pytest.approx(1.2), pytest.approx(1.65))
+    assert any("RI-159" in w for w in fixed.warnings)
+    assert not any("set aside" in w for w in fixed.warnings)
+    # the grid handed in is left as planlens read it
+    assert grid.rulers[0].kind == "elevation"
+    assert grid.rows[0].depth == pytest.approx(-1.25)
+
+
+def test_a_layer_depth_the_page_prints_keeps_its_value():
+    """A layer top read off a printed number ("depth_tick") is the print's
+    own value and stays, unless it was read with the tick as a minus."""
+    import dataclasses
+    from planlens.document import loggrid as LG
+    grid = _flanked_grid()
+
+    def layer(top, bottom, source):
+        return LG.Layer(top=top, bottom=bottom, description="made-up",
+                        pages=(0,), source=source)
+
+    grid = dataclasses.replace(grid, layers=[
+        layer(0.0, -2.4, "page_top"), layer(2.4, -2.6, "depth_tick"),
+        layer(-2.6, None, "depth_tick")])
+    fixed = VS.unflank_depths(grid)
+    assert [(ly.top, ly.bottom) for ly in fixed.layers] == [
+        (0.0, 2.4), (2.4, 2.6), (2.6, None)]
+
+
+def test_the_rulers_own_label_left_among_the_rows_is_set_aside():
+    """A '-2-' cell beside the ruler's tick is the ruler, not a sample; a
+    data cell elsewhere on the page stays."""
+    grid = _flanked_grid(own_label=True)
+    fixed = VS.unflank_depths(grid)
+    assert [c.text for c in fixed.rows] == ["S-1", "S-2"]
+    assert any("1 cell(s) that are the ruler's own labels are set aside"
+               in w for w in fixed.warnings)
+
+
+@pytest.mark.parametrize("change", [
+    {"kind": "depth", "sign": 1.0},              # read right: a depth ruler
+    {"labels": ("-1", "-2", "-3")},              # a minus sign, no tick after
+    {"labels": ("-1-", "-2", "-3-")},            # not every label flanked
+    {"ruler_names": ("elevation",)},             # a column headed elevation
+])
+def test_a_ruler_read_right_or_a_true_elevation_scale_is_left_alone(change):
+    grid = _flanked_grid(**change)
+    assert VS.unflank_depths(grid) is grid
+
+
+def test_a_layer_ending_on_a_turned_sheet_takes_its_printed_bottom():
+    """A two-sheet log, the first sheet read right and the second misread:
+    the first sheet's last layer ends at the second sheet's top, which the
+    misread ruler gave below 0."""
+    import dataclasses
+    first = _flanked_grid(kind="depth", sign=1.0, page=0)
+    second = _flanked_grid(page=1, offset=3.0)
+    upper = [first.layers[0],
+             dataclasses.replace(first.layers[1], bottom=second.layers[0].top)]
+    grid = dataclasses.replace(
+        second, pages=[0, 1], columns=first.columns + second.columns,
+        rulers={**first.rulers, **second.rulers},
+        rows=first.rows + second.rows, layers=upper + second.layers)
+    grid.scales = {**first.scales, **second.scales}
+    fixed = VS.unflank_depths(grid)
+    assert fixed.rulers[0] is grid.rulers[0]
+    assert [v for _y, v in fixed.rulers[1].ticks] == [4.0, 5.0, 6.0]
+    assert [(ly.top, ly.bottom) for ly in fixed.layers] == [
+        (0.0, pytest.approx(1.85)), (pytest.approx(1.85), pytest.approx(3.0)),
+        (pytest.approx(3.0), pytest.approx(4.85)), (pytest.approx(4.85), None)]
+    assert [round(c.depth, 2) for c in fixed.rows] == [1.25, 2.75, 4.25, 5.75]
+
+
+def test_samples_on_a_turned_ruler_are_kept_by_the_floor():
+    """The repro of RI-159: two samples on a '-1-/-2-/-3-' ruler were refused
+    as above the ground (RI-123); read as printed, the floor keeps them."""
+    from report_ingest.log_floor import seed_from_grid
+    qa = []
+    misread = seed_from_grid(_flanked_grid(drawn=False), [0], "MADE-UP",
+                             qa=qa)
+    assert not misread.samples
+    assert any(r.get("refused_by") == "python" for r in qa)
+    qa = []
+    inv = seed_from_grid(VS.unflank_depths(_flanked_grid(drawn=False)), [0],
+                         "MADE-UP", qa=qa)
+    assert sorted(round(s.top.value, 2) for s in inv.samples) == [1.25, 2.75]
+    assert not any(r.get("refused_by") == "python" for r in qa)
+    assert not any(r.get("flag") == "ruler_above_ground" for r in qa)
+
+
+def test_a_scan_printing_its_depth_labels_between_ticks(ocr_scan):
+    """A made-up scan whose optical text gives each depth label as "-N-":
+    whichever planlens is installed, ``log_grid_for`` returns the depths the
+    page prints; the app's turn (RI-159) fires exactly where the installed
+    planlens fitted the ruler falling."""
+    import dataclasses
+    from planlens.testing.visual_scale_fixtures import OcrLines
+    by_text = {lb.text: lb.value for lb in ocr_scan.labels}
+    lines = [((f"-{by_text[t]:g}-" if t in by_text else t), b)
+             for t, b in ocr_scan.text_source._lines]
+    fx = dataclasses.replace(ocr_scan, text_source=OcrLines(lines, page=0,
+                                                            name="ocr"))
+    raw = log_grid(fx.open(), [0])
+    with VS.use_visual_scales():       # ON keeps the pixel-found layer tops
+        grid, _info = VS.log_grid_for(fx.open(), [0])
+    r = grid.rulers[0]
+    assert r.kind == "depth"
+    assert sorted(v for _y, v in r.ticks) == sorted(by_text.values())
+    tops = [ly.top for ly in grid.layers if ly.source == "stratum_rule"]
+    assert len(tops) == len(ocr_scan.readings)
+    for rd, top in zip(ocr_scan.readings, tops):
+        assert abs(top - rd.value) < 0.05
+    turned = any("RI-159" in w for w in grid.warnings)
+    assert turned == (raw.rulers[0].kind == "elevation")
+
+
+# ---------------------------------------------------------------------------
 # Lab: plot against table
 # ---------------------------------------------------------------------------
 
