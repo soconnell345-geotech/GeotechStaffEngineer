@@ -376,8 +376,10 @@ class TestDiggsLastGate:
                          "lab test 2 (summary_table) row 1"]
         assert note.samples == 1 and note.layers == 2 and note.water == 0
         assert any("written as 0" in line for line in note.normalised)
-        assert all("left out of the DIGGS file" in line
-                   for line in note.skipped if "is negative" in line)
+        assert all("left out of the DIGGS file" in row["why"]
+                   for row in note.above_ground)
+        # Said once: in above_ground, not again among the skipped lines.
+        assert not [line for line in note.skipped if "is negative" in line]
         # The inputs are never changed; the file holds no negative depth.
         assert (hole.model_dump(), [t.model_dump() for t in lab]) == before
         ok, diffs = diggs_roundtrip_gate(xml, [hole], lab_tests=lab,
@@ -398,6 +400,54 @@ class TestDiggsLastGate:
         assert len(above) == 1
         assert above[0].kind == "out_of_range" and above[0].rank == "changed"
         assert "4 depth(s)" in above[0].detail
+        # Not counted a second time in the roll-up of the writer's notes.
+        for entry in record.qa:
+            if entry.where == "diggs.notes":
+                assert not [v for v in entry.values if "is negative" in v]
+
+    @staticmethod
+    def _wet(depth: float) -> Investigation:
+        """A boring whose log says no water while drilling and gives a
+        reading the next day."""
+        return Investigation(
+            investigation_id="ZZ-W", kind="boring", depth_unit="m",
+            units_known=True, total_depth=_m(6.0),
+            layers=[Layer(top=_m(0.0), bottom=_m(6.0),
+                          description="made-up SILT")],
+            water=[WaterLevel(when="not_encountered"),
+                   WaterLevel(depth=_m(depth), when="after_hours",
+                              hours=24.0)],
+            pages=[2])
+
+    def test_a_reading_above_ground_does_not_become_none_encountered(self):
+        from report_ingest.diggs_writer import (
+            diggs_roundtrip_gate, write_diggs,
+        )
+        hole = self._wet(-0.4)
+        notes = []
+        xml = write_diggs([hole], Project(name="made-up"), notes=notes)
+        assert "notEncountered" not in xml
+        assert "WaterStrike" not in xml
+        assert notes[0].water == 0
+        assert [r["what"] for r in notes[0].above_ground] == [
+            "ZZ-W: water observation 2"]
+        assert any("a water reading above the ground surface was left out"
+                   in line and "not encountered" in line
+                   for line in notes[0].skipped)
+        assert [w.when for w in hole.water] == ["not_encountered",
+                                                 "after_hours"]
+        ok, diffs = diggs_roundtrip_gate(xml, [hole], notes=notes[0])
+        assert ok, diffs
+
+    def test_the_same_reading_below_ground_is_written(self):
+        from report_ingest.diggs_writer import write_diggs
+        notes = []
+        xml = write_diggs([self._wet(0.4)], Project(name="made-up"),
+                          notes=notes)
+        assert "notEncountered" not in xml
+        assert "WaterStrikeReading" in xml
+        assert notes[0].water == 1
+        assert notes[0].above_ground == []
 
     def test_a_record_with_none_writes_as_before(self):
         from report_ingest.diggs_writer import write_diggs
