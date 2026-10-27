@@ -1218,6 +1218,105 @@ class TestTheCostRecord:
 
 
 # ---------------------------------------------------------------------------
+# when each request went out, a failed one's size, and pacing (BACKLOG
+# RI-126, RI-127). Every budget, size and time here is made up.
+# ---------------------------------------------------------------------------
+
+class _Clock:
+    """A clock that moves only when told; a sleep moves it and is kept."""
+
+    def __init__(self, at=1_800_000_000.0):     # 2027-01-15T08:00:00Z
+        self.at = at
+        self.slept = []
+
+    def time(self):
+        return self.at
+
+    def sleep(self, seconds):
+        self.slept.append(float(seconds))
+        self.at += float(seconds)
+
+
+class RateLimitGaveUp(Exception):
+    """Named like the error a host's client raises once its own retries
+    are spent: the engine knows a rate limit by its name."""
+
+
+def _clocked(*replies, pacer=None):
+    clock = _Clock()
+    engine, model = _engine(*replies)
+    engine._clock = clock.time
+    if pacer:
+        from report_ingest.engine import RequestPacer
+
+        engine.pacer = RequestPacer(pacer, clock=clock.time,
+                                    sleep=clock.sleep)
+    return engine, model, clock
+
+
+class TestTheCostRecordSaysWhen:
+
+    def test_every_row_has_a_start_and_a_duration(self):
+        engine, _, clock = _clocked(_said("ok"), TimeoutError("made up"))
+        engine.complete([user(text_block("go"))])
+        clock.at += 12.5
+        with pytest.raises(TimeoutError):
+            engine.complete([user(text_block("go"))])
+        reply, error = engine.meter.to_dict()["per_call"]
+        assert reply["started"] == "2027-01-15T08:00:00.000Z"
+        assert error["started"] == "2027-01-15T08:00:12.500Z"
+        assert reply["duration"] == error["duration"] == 0.0
+
+    def test_a_failed_request_carries_its_estimated_size(self):
+        from report_ingest.engine import estimate_request
+
+        engine, _, _clock = _clocked(RateLimitGaveUp("made up"))
+        messages = [user(text_block("w" * 7000))]
+        with pytest.raises(RateLimitGaveUp):
+            engine.complete(messages, system="Read the log.",
+                            output_format=Reading)
+        (row,) = engine.meter.to_dict()["per_call"]
+        assert row["error_kind"] == "rate_limit"
+        assert row["input_tokens_estimated"] is True
+        # What went out: the words, the system prompt with the answer note,
+        # and the answer tool's spec.
+        assert row["input_tokens"] > estimate_request(messages) == 2000
+        assert engine.meter.input_tokens == 0
+
+
+class TestAPacedChatModel:
+
+    def test_after_a_large_request_the_next_waits_out_the_minute(self):
+        engine, model, clock = _clocked(_said("ok"), _said("again"),
+                                        pacer=100_000)
+        engine.complete([user(text_block("w" * 210_000))])   # 60,000 in
+        clock.at += 25.0
+        engine.complete([user(text_block("small"))])
+        assert clock.slept == [35.0]
+        assert len(model.requests) == 2
+        _first, second = engine.meter.to_dict()["per_call"]
+        assert second["paced"] == 35.0
+        assert second["started"] == "2027-01-15T08:01:00.000Z"
+
+    def test_a_give_up_holds_the_next_request_and_is_not_retried_here(self):
+        engine, model, clock = _clocked(RateLimitGaveUp("made up"),
+                                        _said("ok"), pacer=100_000)
+        with pytest.raises(RateLimitGaveUp):
+            engine.complete([user(text_block("small"))])
+        assert len(model.requests) == 1, "one call, one request"
+        engine.complete([user(text_block("small"))])
+        assert clock.slept == [60.0], "a whole window, no retry-after given"
+        assert (engine.meter.calls, engine.meter.failed) == (1, 1)
+
+    def test_without_a_pacer_nothing_waits(self):
+        engine, _, clock = _clocked(RateLimitGaveUp("made up"), _said("ok"))
+        with pytest.raises(RateLimitGaveUp):
+            engine.complete([user(text_block("w" * 210_000))])
+        engine.complete([user(text_block("small"))])
+        assert clock.slept == []
+
+
+# ---------------------------------------------------------------------------
 # a PDF, and only where the route takes one (BACKLOG RI-87)
 # ---------------------------------------------------------------------------
 

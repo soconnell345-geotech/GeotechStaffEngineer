@@ -58,6 +58,8 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 __all__ = [
     "Engine", "Reply", "ToolCall", "Usage", "CostMeter", "ClaudeEngine",
+    "RequestPacer", "shared_pacer", "pace_engines", "estimate_request",
+    "LARGE_REQUEST_FRACTION", "PACER_WINDOW_SECONDS",
     "engine_for", "ChatModelEngine", "ANSWER_TOOL", "CUT_REASONS",
     "DEFAULT_MAX_TOKENS", "CallCeilingReached",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
@@ -419,6 +421,60 @@ def schema_tokens_est(schema: Any) -> int:
         return 0
 
 
+def _flat_for_size(messages: Sequence[Dict[str, Any]]
+                   ) -> List[Dict[str, Any]]:
+    """The messages with each tool result's own blocks put in its place and
+    each opaque block as its text, so :func:`estimate_tokens` sizes a
+    picture a tool returned by its pixels rather than by the text of its
+    bytes."""
+    out: List[Dict[str, Any]] = []
+    for message in messages:
+        blocks: List[Any] = []
+        for block in _blocks_of(message):
+            kind = block.get("type") if isinstance(block, dict) else None
+            if kind == "tool_result":
+                body = block.get("content")
+                blocks.extend(body if isinstance(body, list)
+                              else [str(body or "")])
+            elif kind == "opaque":
+                blocks.append(str(block.get("data") or ""))
+            else:
+                blocks.append(block)
+        out.append({"role": message.get("role"), "content": blocks})
+    return out
+
+
+def estimate_request(messages: Sequence[Dict[str, Any]], *,
+                     system: Optional[str] = None,
+                     tools: Any = None,
+                     output_format: Any = None) -> Optional[int]:
+    """A request's input tokens, estimated before it is sent (BACKLOG
+    RI-126, RI-127): its messages by :func:`estimate_tokens` (pictures by
+    their pixels, :func:`picture_tokens_est`, a tool's pictures and words
+    as their own blocks), the system prompt's and the tool specs' words at
+    :data:`CHARS_PER_TOKEN_EST` a token, and the answer schema
+    (:func:`schema_tokens_est`). None when it cannot be sized: an estimate
+    never stops a request."""
+    try:
+        total = estimate_tokens(_flat_for_size(messages),
+                                picture=picture_tokens_est)
+        words = len(system or "")
+        if tools:
+            words += len(json.dumps(list(tools), default=str))
+        return int(total + words / CHARS_PER_TOKEN_EST
+                   + schema_tokens_est(output_format))
+    except Exception:                       # noqa: BLE001 - sized, not read
+        return None
+
+
+def _utc_iso(seconds: float) -> str:
+    """An epoch time as UTC ISO 8601 to the millisecond, ``Z`` for UTC."""
+    from datetime import datetime, timezone
+
+    return datetime.fromtimestamp(float(seconds), timezone.utc).isoformat(
+        timespec="milliseconds").replace("+00:00", "Z")
+
+
 class CallCeilingReached(RuntimeError):
     """A model call refused, before anything was sent, because the run's
     ceiling of model calls was reached (``subagent.CallCeiling``).
@@ -633,6 +689,20 @@ class CostMeter:
     call's, and so does an error that ended a call; an error that was sent
     again carries its wait instead.
 
+    EVERY ROW SAYS WHEN (BACKLOG RI-126): ``started``, the moment its
+    request went out, as UTC ISO 8601 to the millisecond, and ``duration``,
+    the seconds from then until it came back -- the request's own, without
+    the waits before it, and with any retries a provider's client made
+    inside it. An engine passes both; a row recorded without them is dated
+    by the meter's clock when it was recorded, less its seconds. A failed
+    request's row carries its ``input_tokens`` as the error said, or, where
+    the error said nothing, as the engine estimated them before sending
+    (:func:`estimate_request`), marked ``input_tokens_estimated``; an
+    estimate is never added to the totals. A request held back by a
+    :class:`RequestPacer` (BACKLOG RI-127) carries the seconds it was held,
+    ``paced``, and :attr:`paced_seconds` adds them up (in :meth:`to_dict`
+    only when there were any); they are in the call's ``seconds`` too.
+
     Recording never stands in the way of the call it records: an error
     whose text or body will not read is recorded with what can be read, and
     anything else that goes wrong while recording is logged and dropped, so
@@ -644,7 +714,9 @@ class CostMeter:
     in front of it: only what reaches the engine is recorded.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, clock: Any = None) -> None:
+        #: Dates a row recorded without a start time; a test replaces it.
+        self._clock = clock or time.time
         self.calls = 0
         self.input_tokens = 0
         self.output_tokens = 0
@@ -660,6 +732,7 @@ class CostMeter:
         self.retried = 0
         self.failed_by_kind: Dict[str, int] = {}
         self.waited_seconds = 0.0
+        self.paced_seconds = 0.0
         self.adaptations: List[str] = []
         self.per_call: List[Dict[str, Any]] = []
         self._call_no = 0
@@ -680,8 +753,13 @@ class CostMeter:
 
     def _entry(self, model: str, served_by: Optional[str], attempt: int,
                usage: Optional[Usage], seconds: float,
-               adapted: Sequence[str]) -> Dict[str, Any]:
-        """One :attr:`per_call` row; attempt 1 starts a new call."""
+               adapted: Sequence[str], *, started: Optional[float] = None,
+               duration: Optional[float] = None,
+               paced: float = 0.0) -> Dict[str, Any]:
+        """One :attr:`per_call` row; attempt 1 starts a new call. ``started``
+        is the epoch time the request went out and ``duration`` its own
+        seconds (BACKLOG RI-126); without them the row is dated by
+        :attr:`_clock`, less ``seconds``."""
         if int(attempt) <= 1 or not self._call_no:
             self._call_no += 1
         entry: Dict[str, Any] = {"call": self._call_no,
@@ -689,6 +767,11 @@ class CostMeter:
                                  "model": model}
         if served_by:
             entry["served_by"] = served_by
+        took = float(duration if duration is not None else (seconds or 0.0))
+        when = (float(started) if started is not None
+                else float(self._clock()) - took)
+        entry["started"] = _utc_iso(when)
+        entry["duration"] = round(max(0.0, took), 2)
         for key in ("input_tokens", "output_tokens", "cache_read_tokens",
                     "cache_write_tokens"):
             value = int(getattr(usage, key, 0) or 0) if usage else 0
@@ -699,6 +782,9 @@ class CostMeter:
             entry["reasoning_tokens"] = int(thought)
         if seconds:
             entry["seconds"] = round(float(seconds), 2)
+        if paced:
+            entry["paced"] = round(float(paced), 1)
+            self.paced_seconds += float(paced)
         lessons = [str(a) for a in adapted or () if a]
         if lessons:
             entry["adapted"] = lessons
@@ -710,17 +796,26 @@ class CostMeter:
 
     def add(self, model: str, usage: Usage, seconds: float,
             served_by: Optional[str] = None, *, attempt: int = 1,
-            stop: str = "", adapted: Sequence[str] = ()) -> Dict[str, Any]:
+            stop: str = "", adapted: Sequence[str] = (),
+            started: Optional[float] = None,
+            duration: Optional[float] = None,
+            paced: float = 0.0) -> Dict[str, Any]:
         """A reply. Returns its :attr:`per_call` row, for a note the engine
         has only after reading the reply. Safe from several threads at once
-        (:data:`_METER_LOCK`)."""
+        (:data:`_METER_LOCK`). ``started``, ``duration``, ``paced``: see
+        :meth:`_entry`."""
         with _METER_LOCK:
             return self._add(model, usage, seconds, served_by,
-                             attempt=attempt, stop=stop, adapted=adapted)
+                             attempt=attempt, stop=stop, adapted=adapted,
+                             started=started, duration=duration,
+                             paced=paced)
 
     def _add(self, model: str, usage: Usage, seconds: float,
              served_by: Optional[str] = None, *, attempt: int = 1,
-             stop: str = "", adapted: Sequence[str] = ()) -> Dict[str, Any]:
+             stop: str = "", adapted: Sequence[str] = (),
+             started: Optional[float] = None,
+             duration: Optional[float] = None,
+             paced: float = 0.0) -> Dict[str, Any]:
         self.calls += 1
         self.seconds += float(seconds)
         priced_as = served_by if price_for(served_by or "") else model
@@ -739,7 +834,8 @@ class CostMeter:
             row["priced_as"].append(priced_as)
         try:
             entry = self._entry(model, served_by or model, attempt, usage,
-                                seconds, adapted)
+                                seconds, adapted, started=started,
+                                duration=duration, paced=paced)
             entry["outcome"] = "reply"
             if stop:
                 entry["stop"] = _reason(stop)
@@ -754,29 +850,43 @@ class CostMeter:
              seconds: float = 0.0, attempt: int = 1, retried: bool = False,
              waited: float = 0.0, adapted: Sequence[str] = (),
              served_by: Optional[str] = None,
-             usage: Optional[Usage] = None) -> Dict[str, Any]:
+             usage: Optional[Usage] = None,
+             estimated_in: Optional[int] = None,
+             started: Optional[float] = None,
+             duration: Optional[float] = None,
+             paced: float = 0.0) -> Dict[str, Any]:
         """A request that came back with an error: :meth:`_fail`, under
         :data:`_METER_LOCK`."""
         with _METER_LOCK:
             return self._fail(model, error, kind=kind, seconds=seconds,
                               attempt=attempt, retried=retried,
                               waited=waited, adapted=adapted,
-                              served_by=served_by, usage=usage)
+                              served_by=served_by, usage=usage,
+                              estimated_in=estimated_in, started=started,
+                              duration=duration, paced=paced)
 
     def _fail(self, model: str, error: Any, *, kind: Optional[str] = None,
               seconds: float = 0.0, attempt: int = 1, retried: bool = False,
               waited: float = 0.0, adapted: Sequence[str] = (),
               served_by: Optional[str] = None,
-              usage: Optional[Usage] = None) -> Dict[str, Any]:
+              usage: Optional[Usage] = None,
+              estimated_in: Optional[int] = None,
+              started: Optional[float] = None,
+              duration: Optional[float] = None,
+              paced: float = 0.0) -> Dict[str, Any]:
         """A request that came back with an error instead of a reply.
 
         ``retried``: the engine sent it again (``waited`` seconds first);
         ``seconds``: the wall clock of a call this error ENDED, waits
         included -- left 0 on one that was sent again, whose time the call's
         last row carries. ``usage``: what the error response said it spent,
-        when it said (:func:`_usage_in_error` looks). Never raises: the
-        caller is about to raise the provider's error, and a failure here
-        must not take its place.
+        when it said (:func:`_usage_in_error` looks). ``estimated_in``: the
+        engine's estimate of the request's input tokens (BACKLOG RI-126),
+        written on the row, marked as an estimate, where the error said no
+        input count; never added to the totals. ``started``, ``duration``,
+        ``paced``: see :meth:`_entry`. Never raises: the caller is about to
+        raise the provider's error, and a failure here must not take its
+        place.
         """
         try:
             kind = kind if kind in FAILURE_KINDS else error_kind(error)
@@ -795,7 +905,11 @@ class CostMeter:
             if usage is not None:
                 self._tokens(row, usage)
             entry = self._entry(model, served_by, attempt, usage, seconds,
-                                adapted)
+                                adapted, started=started, duration=duration,
+                                paced=paced)
+            if "input_tokens" not in entry and estimated_in is not None:
+                entry["input_tokens"] = int(estimated_in)
+                entry["input_tokens_estimated"] = True
             entry.update({"outcome": "error", "error_kind": kind,
                           "error": said})
             if retried:
@@ -840,6 +954,10 @@ class CostMeter:
 
     def to_dict(self) -> Dict[str, Any]:
         defaults, rows = self._rows()
+        # Only when a pacer held a request (BACKLOG RI-127): a run with no
+        # pacer writes the cost block it always wrote.
+        paced = ({"paced_seconds": round(self.paced_seconds, 1)}
+                 if self.paced_seconds else {})
         return {
             "calls": self.calls,
             "failed": self.failed,
@@ -853,6 +971,7 @@ class CostMeter:
             "cache_write_tokens": self.cache_write_tokens,
             "seconds": round(self.seconds, 1),
             "waited_seconds": round(self.waited_seconds, 1),
+            **paced,
             "dollars": round(self.dollars, 4),
             "unpriced_calls": self.unpriced_calls,
             "adaptations": list(self.adaptations),
@@ -873,6 +992,252 @@ class CostMeter:
                 f"(+{self.cache_read_tokens:,} cached), "
                 f"{self.output_tokens:,} out, {self.seconds:.0f} s{money}"
                 f"{failed}")
+
+
+# -- pacing to a per-minute token limit (BACKLOG RI-127) --------------------
+
+#: A request is LARGE, for :class:`RequestPacer`, when its estimated input
+#: is above this fraction of the per-minute budget.
+LARGE_REQUEST_FRACTION = 0.5
+
+#: The window a per-minute limit counts over, in seconds.
+PACER_WINDOW_SECONDS = 60.0
+
+
+def _retry_after_of(exc: Any) -> Optional[float]:
+    """The provider's own wait, when its error response carried a
+    ``retry-after`` header; None when it did not or it will not read."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    try:
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        return float(value) if value is not None else None
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+class RequestPacer:
+    """Holds requests back so a large one does not fill a per-minute token
+    limit for the next (BACKLOG RI-127).
+
+    Foundry run 5 (2026-10-26) showed the limit that stopped a log item is
+    per minute, not per request: two requests of about 118 k and 127 k input
+    tokens each went through after a few rate-limit retries, and the 6 k
+    request that followed waited 72 s over seven. So:
+
+    * after a LARGE request -- estimated input (:func:`estimate_request`)
+      above ``large_fraction`` of ``tokens_per_minute`` -- comes back, the
+      next request to the same model waits until ``window`` seconds have
+      passed since then (:meth:`wait`). The window counts from when the
+      large request came BACK, not from when it went out: the provider
+      counted its tokens at some moment in between, which the engine cannot
+      see when the provider's own client retried inside the request;
+    * a rate-limited request whose response carries no ``retry-after``
+      waits at least a whole window before it is sent again
+      (:meth:`backoff`), so a retry is not spent inside the window that
+      refused it; and the next request to that model waits too
+      (:meth:`hold`). A ``retry-after`` the provider sends is honoured as
+      it is.
+
+    Each model has its own window: a large request on one model does not
+    hold a request on another. One pacer serves every engine it is given,
+    and :func:`shared_pacer` hands the same one to every run in a process
+    with the same settings, so the window carries from one report, and one
+    ``ingest_report`` call, to the next. Safe from several threads at once;
+    a wait is spent outside the lock.
+
+    ``clock`` and ``sleep`` are ``time.time`` and ``time.sleep`` unless a
+    test gives others. :attr:`held` and :attr:`held_seconds` count the
+    requests held back and the seconds they waited.
+    """
+
+    def __init__(self, tokens_per_minute: int, *,
+                 large_fraction: float = LARGE_REQUEST_FRACTION,
+                 window: float = PACER_WINDOW_SECONDS,
+                 clock: Any = None, sleep: Any = None) -> None:
+        if isinstance(tokens_per_minute, bool) or int(tokens_per_minute) <= 0:
+            raise ValueError(f"tokens_per_minute must be a positive number "
+                             f"of tokens; got {tokens_per_minute!r}")
+        if not 0.0 < float(large_fraction) <= 1.0:
+            raise ValueError(f"large_fraction must be above 0 and at most 1; "
+                             f"got {large_fraction!r}")
+        if float(window) <= 0.0:
+            raise ValueError(f"window must be a positive number of seconds; "
+                             f"got {window!r}")
+        self.tokens_per_minute = int(tokens_per_minute)
+        self.large_fraction = float(large_fraction)
+        self.window = float(window)
+        self._clock = clock or time.time
+        self._sleep = sleep or time.sleep
+        self._lock = threading.Lock()
+        #: model -> the epoch time before which its next request is held.
+        self._until: Dict[str, float] = {}
+        self.held = 0
+        self.held_seconds = 0.0
+
+    @property
+    def large_tokens(self) -> int:
+        """The estimated input above which a request is large."""
+        return int(self.tokens_per_minute * self.large_fraction)
+
+    def is_large(self, estimate: Optional[int]) -> bool:
+        return estimate is not None and int(estimate) > self.large_tokens
+
+    def _hold_until(self, model: str, until: float) -> None:
+        with self._lock:
+            key = str(model)
+            self._until[key] = max(self._until.get(key, 0.0), float(until))
+
+    def wait(self, model: str) -> float:
+        """Before a request to ``model``: wait out what is left of a window
+        a large request or a rate limit opened. Returns the seconds waited
+        (0.0 when nothing held it)."""
+        with self._lock:
+            left = self._until.get(str(model), 0.0) - float(self._clock())
+        if left <= 0.0:
+            return 0.0
+        self._sleep(left)
+        with self._lock:
+            self.held += 1
+            self.held_seconds += left
+        return left
+
+    def sent(self, model: str, estimate: Optional[int]) -> None:
+        """A request to ``model`` came back (a reply or an error): a large
+        one holds the next request until a window from now."""
+        if self.is_large(estimate):
+            self._hold_until(model, float(self._clock()) + self.window)
+
+    def backoff(self, retry_after: Optional[float],
+                ladder: float = 0.0) -> float:
+        """The wait before a rate-limited request is sent again: the
+        provider's ``retry-after`` when it sent one, else the engine's own
+        step (``ladder``) and never less than a whole window."""
+        if retry_after:
+            return float(retry_after)
+        return max(float(ladder or 0.0), self.window)
+
+    def hold(self, model: str, seconds: float) -> None:
+        """A rate limit on ``model``: its next request waits ``seconds``
+        from now (:meth:`backoff`'s answer)."""
+        self._hold_until(model, float(self._clock()) + float(seconds))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"tokens_per_minute": self.tokens_per_minute,
+                "large_fraction": self.large_fraction,
+                "large_tokens": self.large_tokens, "window": self.window,
+                "held": self.held, "held_seconds": round(self.held_seconds, 1)}
+
+
+_SHARED_PACERS: Dict[Tuple[int, float, float], RequestPacer] = {}
+_SHARED_LOCK = threading.Lock()
+
+
+def shared_pacer(tokens_per_minute: int, *,
+                 large_fraction: float = LARGE_REQUEST_FRACTION,
+                 window: float = PACER_WINDOW_SECONDS) -> RequestPacer:
+    """The process's one :class:`RequestPacer` for these settings, made on
+    first use: a per-minute limit belongs to the deployment, not to one
+    report, so the window a report's last large request opened holds the
+    next report's first request too."""
+    key = (int(tokens_per_minute), float(large_fraction), float(window))
+    with _SHARED_LOCK:
+        if key not in _SHARED_PACERS:
+            _SHARED_PACERS[key] = RequestPacer(
+                key[0], large_fraction=key[1], window=key[2])
+        return _SHARED_PACERS[key]
+
+
+def pace_engines(engines: Sequence[Any], pacer: Optional[RequestPacer]
+                 ) -> List[Any]:
+    """Put ``pacer`` on each engine here that has none, looking through the
+    wrappers a run puts round an engine (each keeps it as ``_inner``).
+    Returns the engines it was put on, so the caller can take it off again
+    (``engine.pacer = None``); an engine that already has a pacer keeps it,
+    and anything that is not one of this module's engines is left alone."""
+    put: List[Any] = []
+    if pacer is None:
+        return put
+    for engine in engines:
+        # A few wrappers deep at most: a stand-in that makes up any
+        # attribute asked for would otherwise be followed for ever.
+        for _ in range(8):
+            if engine is None or isinstance(
+                    engine, (ClaudeEngine, PrompterEngine, ChatModelEngine)):
+                break
+            engine = getattr(engine, "_inner", None)
+        if isinstance(engine, (ClaudeEngine, PrompterEngine,
+                               ChatModelEngine)) and engine.pacer is None \
+                and not any(engine is e for e in put):
+            engine.pacer = pacer
+            put.append(engine)
+    return put
+
+
+class _Request:
+    """One call's clock, its size and its pacing, for the cost record
+    (BACKLOG RI-126) and the engine's pacer (RI-127).
+
+    Made as a call begins: with a pacer, it waits out any window first.
+    ``began`` is when the call began (the call's ``seconds`` count from it,
+    waits included), ``sent`` when the request under way went out (an
+    engine that sends again calls :meth:`send`), ``paced`` the seconds the
+    pacer held it. The size is estimated once, and only when asked: on a
+    failure, or for a pacer -- with neither, nothing is estimated."""
+
+    def __init__(self, engine: Any, model: str, size: Any) -> None:
+        self.pacer: Optional[RequestPacer] = getattr(engine, "pacer", None)
+        self.clock = getattr(engine, "_clock", None) or time.time
+        self.model = str(model)
+        self._sizer = size
+        self._sized = False
+        self._size: Optional[int] = None
+        self.began = float(self.clock())
+        self.paced = self.pacer.wait(self.model) if self.pacer else 0.0
+        self.sent = float(self.clock()) if self.paced else self.began
+        self._paced_told = False
+
+    def take_paced(self) -> float:
+        """:attr:`paced` the first time, 0.0 after: the hold is on the row
+        of the request it held, not on the retries after it."""
+        if self._paced_told:
+            return 0.0
+        self._paced_told = True
+        return self.paced
+
+    def size(self) -> Optional[int]:
+        if not self._sized:
+            self._sized = True
+            try:
+                self._size = self._sizer()
+            except Exception:               # noqa: BLE001 - sized, not read
+                self._size = None
+        return self._size
+
+    def send(self) -> None:
+        """Another request of this call goes out now."""
+        self.sent = float(self.clock())
+
+    def took(self) -> float:
+        """The request under way's own seconds so far."""
+        return max(0.0, float(self.clock()) - self.sent)
+
+    def came_back(self, error: Any = None) -> None:
+        """Tell the pacer a request came back: a large one, or a rate limit,
+        holds the next request to this model. Never raises."""
+        if self.pacer is None:
+            return
+        try:
+            if error is not None and error_kind(error) == "rate_limit":
+                self.pacer.hold(self.model,
+                                self.pacer.backoff(_retry_after_of(error)))
+            self.pacer.sent(self.model, self.size())
+        except Exception:                   # noqa: BLE001 - never in the way
+            logging.getLogger(__name__).warning(
+                "the pacer could not record a request to %s", self.model,
+                exc_info=True)
 
 
 class Engine(Protocol):
@@ -916,11 +1281,17 @@ class ClaudeEngine:
                  max_retries: int = 4,
                  timeout: float = 900.0,
                  auto_cache: bool = True,
-                 client: Any = None) -> None:
+                 client: Any = None,
+                 pacer: Optional[RequestPacer] = None) -> None:
         self.model = str(model)
         self.name = self.model
         self.meter = meter if meter is not None else CostMeter()
         self.max_tokens = int(max_tokens)
+        #: Paces requests to a per-minute token limit (BACKLOG RI-127);
+        #: None, the default, sends each request as it comes.
+        self.pacer: Optional[RequestPacer] = pacer
+        #: The clock a call is timed by; a test replaces it.
+        self._clock = time.time
         #: Cache the request's prefix. The label review resends its whole
         #: conversation every turn, and the brief alone is the document's
         #: entire ledger -- tens of thousands of tokens on a long report,
@@ -1037,7 +1408,8 @@ class ClaudeEngine:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = list(tools)
-        started = time.time()
+        call = _Request(self, self.model, lambda: estimate_request(
+            msgs, system=system, tools=tools, output_format=output_format))
         try:
             if output_format is not None:
                 # ``parse`` builds the output format itself and takes no
@@ -1055,9 +1427,15 @@ class ClaudeEngine:
         except Exception as exc:
             # Recorded, then raised as before: a failed call is a call
             # (BACKLOG RI-21). The SDK's own retries happen inside it.
-            self.meter.fail(self.model, exc, seconds=time.time() - started)
+            self.meter.fail(self.model, exc,
+                            seconds=self._clock() - call.began,
+                            estimated_in=call.size(), started=call.sent,
+                            duration=call.took(), paced=call.paced)
+            call.came_back(exc)
             raise
-        seconds = time.time() - started
+        seconds = self._clock() - call.began
+        took = call.took()
+        call.came_back()
 
         raw = response.usage
         usage = Usage(
@@ -1069,7 +1447,8 @@ class ClaudeEngine:
                 getattr(raw, "cache_creation_input_tokens", 0) or 0),
         )
         self.meter.add(self.model, usage, seconds,
-                       stop=str(getattr(response, "stop_reason", "") or ""))
+                       stop=str(getattr(response, "stop_reason", "") or ""),
+                       started=call.sent, duration=took, paced=call.paced)
         blocks = self._from_provider(response.content)
         return Reply(
             text="".join(b["text"] for b in blocks if b["type"] == "text"),
@@ -1276,13 +1655,22 @@ class PrompterEngine:
     def __init__(self, prompter: Any, model: str = "funhouse-gpt-medium", *,
                  meter: Optional[CostMeter] = None,
                  max_tokens: int = DEFAULT_MAX_TOKENS,
-                 prefer_chat_for_single_calls: bool = True) -> None:
+                 prefer_chat_for_single_calls: bool = True,
+                 pacer: Optional[RequestPacer] = None) -> None:
         self._prompter = prompter
         self.model = str(model)
         self.name = self.model
         self.meter = meter if meter is not None else CostMeter()
         self.max_tokens = int(max_tokens)
         self.prefer_chat = bool(prefer_chat_for_single_calls)
+        #: Paces requests to a per-minute token limit (BACKLOG RI-127);
+        #: None, the default, sends each request as it comes and waits on
+        #: :attr:`RATE_LIMIT_WAITS` alone.
+        self.pacer: Optional[RequestPacer] = pacer
+        #: The clock a call is timed by; a test replaces it.
+        self._clock = time.time
+        #: The call under way's clock and size (:class:`_Request`).
+        self._call: Optional[_Request] = None
         #: The deployment that actually served the last call. Funhouse tiers
         #: are aliases and the model behind one changes without notice, so a
         #: run records what answered as well as what it asked for.
@@ -1305,10 +1693,19 @@ class PrompterEngine:
                     lesson: str = "") -> None:
         """Record a request that came back with an error and is about to be
         sent again; the next request is the call's next attempt."""
+        call = self._call
         self.meter.fail(self.model, error, kind=kind, attempt=self._attempt,
                         retried=True, waited=waited,
-                        adapted=[lesson] if lesson else ())
+                        adapted=[lesson] if lesson else (),
+                        **(self._timing(call) if call else {}))
         self._attempt += 1
+
+    @staticmethod
+    def _timing(call: "_Request") -> Dict[str, Any]:
+        """A failed request's size, start and duration for its cost row
+        (BACKLOG RI-126); the pacer's hold rides on the call's first row."""
+        return {"estimated_in": call.size(), "started": call.sent,
+                "duration": call.took(), "paced": call.take_paced()}
 
     @staticmethod
     def adjust_for_param_error(request: Dict[str, Any],
@@ -1348,15 +1745,7 @@ class PrompterEngine:
     @staticmethod
     def _retry_after(exc: BaseException) -> Optional[float]:
         """The provider's own wait, when its response carried one."""
-        response = getattr(exc, "response", None)
-        headers = getattr(response, "headers", None)
-        if not headers:
-            return None
-        try:
-            value = headers.get("retry-after") or headers.get("Retry-After")
-            return float(value) if value is not None else None
-        except (TypeError, ValueError, AttributeError):
-            return None
+        return _retry_after_of(exc)
 
     def _create_adaptive(self, client: Any, kwargs: Dict[str, Any]) -> Any:
         """One call on the raw client, retried with each refused parameter
@@ -1364,17 +1753,26 @@ class PrompterEngine:
         every fix remembered for every later call. A rate-limited call
         waits (:attr:`RATE_LIMIT_WAITS`, or the provider's retry-after)
         and tries again; the waits are metered as wall clock like any
-        other second the call took."""
+        other second the call took. With a :attr:`pacer`, a wait the
+        provider did not name is never shorter than the pacer's window
+        (:meth:`RequestPacer.backoff`), and the model's next request is
+        held as long (BACKLOG RI-127)."""
         create = client.chat.completions.create
         request = dict(kwargs)
         waits = list(self.RATE_LIMIT_WAITS)
         for _ in range(3 + len(waits)):
             try:
                 self._sent = True
+                if self._call is not None:
+                    self._call.send()
                 return create(**request)
             except Exception as exc:                # noqa: BLE001 - inspected
                 if self.is_rate_limit(exc) and waits:
-                    wait = self._retry_after(exc) or waits.pop(0)
+                    named = self._retry_after(exc)
+                    wait = named or waits.pop(0)
+                    if self.pacer is not None:
+                        wait = self.pacer.backoff(named, wait)
+                        self.pacer.hold(self.model, wait)
                     self.adaptations.append(
                         f"{self.model}: rate limited; waited {wait:.0f} s")
                     logging.getLogger(__name__).info(
@@ -1400,6 +1798,8 @@ class PrompterEngine:
                 self._sent_again(exc, "parameter", lesson=lesson)
                 request = adjusted
         self._sent = True
+        if self._call is not None:
+            self._call.send()
         return create(**request)
 
     @property
@@ -1540,7 +1940,8 @@ class PrompterEngine:
                   and len(openai_messages) <= (2 if system else 1)
                   and all(m["role"] in ("system", "user")
                           for m in openai_messages))
-        started = time.time()
+        call = self._call = _Request(self, self.model, lambda: estimate_request(
+            msgs, system=system, tools=tools, output_format=output_format))
         cap = int(max_tokens or self.max_tokens)
         raw = None
         tried_chat = False
@@ -1554,6 +1955,7 @@ class PrompterEngine:
                 # that does not need a tool loop -- triage, above all.
                 last = openai_messages[-1]
                 tried_chat = self._sent = True
+                call.send()
                 raw = self._prompter.chat(
                     user=last["content"], system=system or
                     "You are a helpful assistant.",
@@ -1621,12 +2023,19 @@ class PrompterEngine:
             if self._sent:
                 self.meter.fail(self.model, exc, kind=ended_kind,
                                 attempt=self._attempt,
-                                seconds=time.time() - started)
+                                seconds=self._clock() - call.began,
+                                **self._timing(call))
+                call.came_back(exc)
             raise
-        seconds = time.time() - started
-        return self._reply(raw, output_format, seconds)
+        seconds = self._clock() - call.began
+        took = call.took()
+        call.came_back()
+        return self._reply(raw, output_format, seconds,
+                           timing={"started": call.sent, "duration": took,
+                                   "paced": call.take_paced()})
 
-    def _reply(self, raw: Any, output_format: Any, seconds: float) -> Reply:
+    def _reply(self, raw: Any, output_format: Any, seconds: float,
+               timing: Optional[Dict[str, Any]] = None) -> Reply:
         if raw is None:
             raise RuntimeError(
                 "Prompter returned nothing; the call failed or was refused "
@@ -1648,7 +2057,8 @@ class PrompterEngine:
         # one (:data:`PROMPTER_PRICES`).
         self.meter.add(self.model, usage, seconds, served_by=self.served_by,
                        attempt=self._attempt,
-                       stop=str(getattr(choice, "finish_reason", "") or ""))
+                       stop=str(getattr(choice, "finish_reason", "") or ""),
+                       **(timing or {}))
 
         message = getattr(choice, "message", None)
         text = (getattr(message, "content", None) or "") if message else ""
@@ -1859,12 +2269,20 @@ class ChatModelEngine:
                  meter: Optional[CostMeter] = None,
                  max_tokens: Optional[int] = None,
                  name: Optional[str] = None,
-                 accepts_pdf: Optional[bool] = None) -> None:
+                 accepts_pdf: Optional[bool] = None,
+                 pacer: Optional[RequestPacer] = None) -> None:
         self.chat_model = chat_model
         self.name = str(name or _chat_model_name(chat_model)
                         or type(chat_model).__name__)
         self.model = self.name
         self.meter = meter if meter is not None else CostMeter()
+        #: Paces requests to a per-minute token limit (BACKLOG RI-127);
+        #: None, the default, sends each request as it comes. This engine
+        #: still sends each call once: a rate limit that comes out of the
+        #: model holds the NEXT request instead (:meth:`RequestPacer.hold`).
+        self.pacer: Optional[RequestPacer] = pacer
+        #: The clock a call is timed by; a test replaces it.
+        self._clock = time.time
         #: Whether a :func:`pdf_block` may go out on this model's route:
         #: :func:`takes_pdf` unless the caller says.
         self.accepts_pdf: bool = (takes_pdf(chat_model) if accepts_pdf is None
@@ -2073,7 +2491,8 @@ class ChatModelEngine:
         model = self._model_for(self._cap_for(max_tokens))
         runnable = model.bind_tools(offered) if offered else model
         request = self._to_langchain(msgs, system)
-        started = time.time()
+        call = _Request(self, self.name, lambda: estimate_request(
+            msgs, system=system, tools=offered))
         try:
             message = runnable.invoke(request)
         except Exception as exc:
@@ -2083,15 +2502,23 @@ class ChatModelEngine:
             # palantir_models Claude class refusing a PDF) is no request.
             if not getattr(exc, "nothing_sent", False):
                 self.meter.fail(self.name, exc,
-                                seconds=time.time() - started,
-                                adapted=self.adaptations[learned:])
+                                seconds=self._clock() - call.began,
+                                adapted=self.adaptations[learned:],
+                                estimated_in=call.size(), started=call.sent,
+                                duration=call.took(), paced=call.paced)
+                call.came_back(exc)
             raise
-        seconds = time.time() - started
+        seconds = self._clock() - call.began
+        took = call.took()
+        call.came_back()
         return self._reply(message, output_format, seconds,
-                           adapted=self.adaptations[learned:])
+                           adapted=self.adaptations[learned:],
+                           timing={"started": call.sent, "duration": took,
+                                   "paced": call.paced})
 
     def _reply(self, message: Any, output_format: Any,
-               seconds: float, adapted: Sequence[str] = ()) -> Reply:
+               seconds: float, adapted: Sequence[str] = (),
+               timing: Optional[Dict[str, Any]] = None) -> Reply:
         meta = getattr(message, "response_metadata", None) or {}
         self.served_by = str(meta.get("model_name") or meta.get("model")
                              or "") or self.name
@@ -2103,7 +2530,7 @@ class ChatModelEngine:
                        or meta.get("status"))
         entry = self.meter.add(self.name, usage, seconds,
                                served_by=self.served_by, stop=stop,
-                               adapted=adapted)
+                               adapted=adapted, **(timing or {}))
 
         # A call whose arguments did not parse (a reply cut mid-call) is kept
         # by ChatOpenAI as text on ``invalid_tool_calls``, and sent back as a

@@ -1047,3 +1047,128 @@ def test_a_reported_zero_is_kept_as_zero():
     reply = engine.complete([user(text_block("go"))], tools=_TOOL)
     assert reply.usage.reasoning_tokens == 0
     assert engine.meter.reasoning_reported == 1
+
+
+# -- each attempt's time and size, and pacing (BACKLOG RI-126, RI-127) ---------
+#
+# Every budget, size and time below is made up for the test.
+
+class _Clock:
+    """A clock that moves only when told; a sleep moves it and is kept."""
+
+    def __init__(self, at=1_800_000_000.0):
+        self.at = at
+        self.slept = []
+
+    def time(self):
+        return self.at
+
+    def sleep(self, seconds):
+        self.slept.append(float(seconds))
+        self.at += float(seconds)
+
+
+def _timed_engine(clock, takes, fails=0, retry_after=None, pacer=None):
+    """A Prompter whose requests take ``takes`` seconds on ``clock``, the
+    first ``fails`` of them rate limited, with the engine on that clock."""
+    engine, prompter = _fussy_engine(refuse=())
+    completions = prompter.client.chat.completions
+    real = completions.create
+    state = {"left": fails}
+
+    class _Resp:
+        headers = {"retry-after": str(retry_after)}
+
+    def timed(**kw):
+        clock.at += takes
+        if state["left"]:
+            state["left"] -= 1
+            exc = RateLimitError(_RATE_LIMITED)
+            if retry_after is not None:
+                exc.response = _Resp()
+            raise exc
+        return real(**kw)
+
+    completions.create = timed
+    engine._clock = clock.time
+    engine._sleep = clock.sleep
+    engine.pacer = pacer
+    return engine
+
+
+def _pacer(clock, tokens_per_minute=100_000):
+    from report_ingest.engine import RequestPacer
+
+    return RequestPacer(tokens_per_minute, clock=clock.time,
+                        sleep=clock.sleep)
+
+
+def test_every_attempt_has_its_own_start_duration_and_size():
+    from report_ingest.engine import estimate_request
+
+    clock = _Clock()
+    engine = _timed_engine(clock, takes=2.0, fails=1)
+    messages = [user(text_block("w" * 3500))]
+    engine.complete(messages, tools=_TOOL)
+    error, reply = _rows(engine)
+    assert error["started"] == "2027-01-15T08:00:00.000Z"
+    assert error["duration"] == 2.0 and error["waited"] == 15.0
+    assert error["input_tokens"] == estimate_request(messages, tools=_TOOL)
+    assert error["input_tokens_estimated"] is True
+    # Sent again once the 15 s wait was over.
+    assert reply["started"] == "2027-01-15T08:00:17.000Z"
+    assert reply["duration"] == 2.0 and reply["seconds"] == 19.0
+    assert "input_tokens_estimated" not in reply
+    assert engine.meter.input_tokens == 100, "the reply's own count only"
+
+
+def test_a_paced_rate_limit_waits_a_whole_window_not_the_ladder():
+    clock = _Clock()
+    engine = _timed_engine(clock, takes=1.0, fails=2, pacer=_pacer(clock))
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert clock.slept == [60.0, 60.0], "not 15 and 30 inside the window"
+    assert [r.get("waited") for r in _rows(engine)] == [60.0, 60.0, None]
+
+
+def test_a_paced_rate_limit_still_honours_the_retry_after():
+    clock = _Clock()
+    engine = _timed_engine(clock, takes=1.0, fails=1, retry_after=7,
+                           pacer=_pacer(clock))
+    engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert clock.slept == [7.0]
+
+
+def test_a_rate_limit_that_never_lifts_holds_the_next_call_a_window():
+    clock = _Clock()
+    pacer = _pacer(clock)
+    ladder = len(PrompterEngine.RATE_LIMIT_WAITS)
+    engine = _timed_engine(clock, takes=1.0, fails=ladder + 1, pacer=pacer)
+    with pytest.raises(RateLimitError):
+        engine.complete([user(text_block("go"))], tools=_TOOL)
+    assert clock.slept == [max(w, 60.0)
+                           for w in PrompterEngine.RATE_LIMIT_WAITS]
+    other = _timed_engine(clock, takes=1.0, pacer=pacer)   # the same model
+    other.complete([user(text_block("go"))], tools=_TOOL)
+    assert clock.slept[ladder:] == [60.0]
+    (row,) = _rows(other)
+    assert row["paced"] == 60.0
+
+
+def test_after_a_large_call_the_next_waits_out_the_minute():
+    clock = _Clock()
+    engine = _timed_engine(clock, takes=10.0, pacer=_pacer(clock))
+    engine.complete([user(text_block("w" * 210_000))], tools=_TOOL)
+    engine.complete([user(text_block("small"))], tools=_TOOL)
+    assert clock.slept == [60.0]
+    first, second = _rows(engine)
+    assert second["paced"] == 60.0 and "paced" not in first
+    assert second["started"] == "2027-01-15T08:01:10.000Z"
+
+
+def test_without_a_pacer_the_ladder_is_today_s():
+    clock = _Clock()
+    engine = _timed_engine(clock, takes=1.0, fails=2)
+    engine.complete([user(text_block("w" * 210_000))], tools=_TOOL)
+    engine.complete([user(text_block("small"))], tools=_TOOL)
+    assert clock.slept == [15.0, 30.0]
+    assert "paced_seconds" not in engine.meter.to_dict()

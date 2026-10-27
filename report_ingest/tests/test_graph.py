@@ -1595,3 +1595,79 @@ class TestTriageEngine:
         main = FakeEngine(full_script())
         ingest_report(pdf, main, out_dir=tmp_path, report_id="SYN")
         assert main.n_calls == len(full_script())
+
+
+class TestTheMinuteBudget:
+    """``Budgets.tokens_per_minute`` (BACKLOG RI-127) puts the process's
+    pacer for it on the run's engines for the length of the run, and unset
+    puts nothing anywhere. The budgets are made up."""
+
+    @staticmethod
+    def _engine(name="made-up-model"):
+        from report_ingest.engine import ClaudeEngine
+
+        return ClaudeEngine(name, client=object())    # never called here
+
+    def test_unset_paces_nothing(self):
+        from report_ingest import graph
+
+        engine = self._engine()
+        assert Budgets().tokens_per_minute is None
+        assert graph._pace(Budgets(), engine, graph._Labelling(), None,
+                           None) == []
+        assert engine.pacer is None
+
+    def test_set_every_engine_of_the_run_shares_one_pacer(self):
+        import types
+
+        from report_ingest import graph
+        from report_ingest.engine import shared_pacer
+
+        tally = graph._Tally()
+        main, vision, reader, staged = (self._engine(n) for n in (
+            "made-up-a", "made-up-b", "made-up-c", "made-up-d"))
+        labelling = graph._Labelling(vision_engine=tally.wrap(vision))
+        first_run = types.SimpleNamespace(engines={"logs": tally.wrap(
+            staged)})
+        put = graph._pace(Budgets(tokens_per_minute=123_459), tally.wrap(main),
+                          labelling, {"log": tally.wrap(reader)}, first_run)
+        pacer = shared_pacer(123_459)
+        assert put == [main, vision, reader, staged]
+        assert all(e.pacer is pacer for e in put)
+
+    def test_the_run_carries_it_and_takes_it_off_at_the_end(
+            self, pdf, tmp_path, monkeypatch):
+        from report_ingest import graph
+        from report_ingest.engine import shared_pacer
+
+        seen = {}
+
+        def stop(doc, engine, *args, **kwargs):
+            seen["pacer"] = engine.pacer        # through the run's wrapper
+            raise RuntimeError("made-up stop")
+
+        monkeypatch.setattr(graph, "_run", stop)
+        engine = self._engine()
+        with pytest.raises(RuntimeError, match="made-up stop"):
+            ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN",
+                          budgets=Budgets(tokens_per_minute=123_461,
+                                          large_request_fraction=0.25))
+        assert seen["pacer"] is shared_pacer(123_461, large_fraction=0.25)
+        assert engine.pacer is None, "taken off when the run ended"
+
+    def test_an_engine_s_own_pacer_is_kept(self, pdf, tmp_path, monkeypatch):
+        from report_ingest import graph
+        from report_ingest.engine import RequestPacer
+
+        own = RequestPacer(54_321)
+        engine = self._engine()
+        engine.pacer = own
+
+        def stop(*args, **kwargs):
+            raise RuntimeError("made-up stop")
+
+        monkeypatch.setattr(graph, "_run", stop)
+        with pytest.raises(RuntimeError):
+            ingest_report(pdf, engine, out_dir=tmp_path, report_id="SYN",
+                          budgets=Budgets(tokens_per_minute=123_463))
+        assert engine.pacer is own

@@ -105,7 +105,7 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
-from report_ingest.engine import CallCeilingReached
+from report_ingest.engine import LARGE_REQUEST_FRACTION, CallCeilingReached
 from report_ingest.label_vote import (
     DEFAULT_POLICY, POLICIES, PageChoice, Voter, combine, load_trust_table,
     neighbourhood, split_pages,
@@ -284,6 +284,14 @@ class Budgets:
     #: sent (:mod:`report_ingest.model_first_read`). None, the default, sets
     #: none.
     max_request_tokens_in: Optional[int] = None
+    #: A per-minute input-token budget per model (BACKLOG RI-127): set, the
+    #: run's engines share the process's
+    #: :class:`~report_ingest.engine.RequestPacer` for it, and after a
+    #: request estimated above ``large_request_fraction`` of it, the next
+    #: request to that model waits out the minute rather than meet a rate
+    #: limit. None, the default, paces nothing.
+    tokens_per_minute: Optional[int] = None
+    large_request_fraction: float = LARGE_REQUEST_FRACTION
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -778,7 +786,9 @@ def ingest_report(source: Any, engine: Any, *,
     readers = None if first else _today_readers(stage_engines, tally, qa)
 
     doc = _open(source, di_result, report_id)
+    paced: List[Any] = []
     try:
+        paced = _pace(budgets, engine, labelling, readers, first_run)
         if first_run is not None:
             first_run.place = _placer(doc)
         record = _run(doc, engine, budgets, out, resume, questions or [],
@@ -786,6 +796,8 @@ def ingest_report(source: Any, engine: Any, *,
                       children, ingest_bound, counts_from_logs,
                       narrative_skips_bound, first_run, readers)
     finally:
+        for real in paced:
+            real.pacer = None
         if not _is_document(source):
             doc.close()
 
@@ -826,6 +838,27 @@ def ingest_report(source: Any, engine: Any, *,
                 row.counts = child.counts()
         write_outputs(record, out, source=key_source, db_path=db_path)
     return record
+
+
+def _pace(budgets: Budgets, engine: Any, labelling: "_Labelling",
+          readers: Optional[Dict[str, Any]], first_run: Any) -> List[Any]:
+    """With ``Budgets.tokens_per_minute`` set (BACKLOG RI-127), the
+    process's pacer for it on every engine of this run that has none: the
+    run's, the labelling's, today's readers' and the model-first stages'.
+    Returns the engines it was put on, which the run takes it off again
+    when it ends; nothing when the budget is unset."""
+    if not budgets.tokens_per_minute:
+        return []
+    from report_ingest.engine import pace_engines, shared_pacer
+
+    engines = [engine, labelling.vision_engine, labelling.triage_engine,
+               labelling.describe_engine, labelling.range_engine]
+    engines += list((readers or {}).values())
+    if first_run is not None:
+        engines += list(first_run.engines.values())
+    return pace_engines(engines, shared_pacer(
+        budgets.tokens_per_minute,
+        large_fraction=budgets.large_request_fraction))
 
 
 def _today_readers(stage_engines: Any, tally: _Tally,

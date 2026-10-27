@@ -2299,6 +2299,23 @@ a line for them, with `reasoning: not reported` where no reply said; a run
 file written before this says `not recorded`. `results.json` keeps the
 totals and leaves the rows in each run file.
 
+Since BACKLOG RI-126 every row also says **when**: `started` (the moment its
+request went out, UTC ISO 8601 to the millisecond) and `duration` (that
+request's own seconds, without the waits before it). A failed request's row
+carries its `input_tokens` as the error said or, where it said nothing, as
+the engine estimated them before sending, marked `input_tokens_estimated:
+true`; an estimate is never added to the totals.
+
+**Pacing to a per-minute limit** (BACKLOG RI-127): `tokens_per_minute=` on
+`score_on_cluster` (`Budgets.tokens_per_minute` in the graph) gives the
+ingest's engines one shared `RequestPacer`. After a request estimated above
+half the budget (`Budgets.large_request_fraction`) comes back, the next
+request to that model waits until a minute has passed; a rate limit that
+names no retry-after waits a whole minute before it is sent again, and holds
+the model's next request as long. A held request's row carries `paced`
+(seconds), and the cost block `paced_seconds`. None, the default, paces
+nothing and the cost block is what it was.
+
 Bring home **`RESULTS.md` only**, from whichever `out_dir` the cell used. It
 carries IDs, labels, counts and rates. The per-report runs and the triage
 profiles stay on the cluster, because a change's reason or a triage rationale
