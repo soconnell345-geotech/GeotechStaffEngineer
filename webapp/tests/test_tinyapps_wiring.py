@@ -266,6 +266,67 @@ def test_every_built_model_has_a_request_timeout(monkeypatch):
     assert claude.model._client.timeout == limit
 
 
+@pytest.mark.parametrize("with_ca", [False, True],
+                         ids=["sdk_client", "ca_bundle_client"])
+def test_foundry_openai_request_times_out_on_a_silent_server(
+        monkeypatch, with_ca):
+    """The Foundry OpenAI route's timeout is honoured, not only set: a
+    request the proxy never answers fails as a timeout, on the SDK's own
+    client and on the CA-bundle client built from the SDK's classes (which
+    openai 3 builds on httpx2; BACKLOG INF-03)."""
+    pytest.importorskip("langchain_openai")
+    import socket
+    import threading
+    import time
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(8)
+    held = []
+
+    def _accept():
+        try:
+            while True:
+                held.append(srv.accept()[0])
+        except OSError:
+            pass
+
+    threading.Thread(target=_accept, daemon=True).start()
+    port = srv.getsockname()[1]
+    for env in engine_config.FOUNDRY_CA_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    if with_ca:
+        certifi = pytest.importorskip("certifi")
+        monkeypatch.setenv("SSL_CERT_FILE", certifi.where())
+    monkeypatch.setattr(engine_config, "_CA_HTTP_CLIENTS", {})
+    monkeypatch.setattr(engine_config, "MODEL_REQUEST_TIMEOUT_S", 1.0)
+    monkeypatch.setenv("GEOTECH_FOUNDRY_TOKEN", "t")
+    monkeypatch.setenv("GEOTECH_FOUNDRY_HOST", f"http://127.0.0.1:{port}")
+    res = engine_config._resolve_foundry("ri.language-model-service..gpt-x")
+    model = res.model
+    assert (engine_config.foundry_ca_bundle() is not None) == with_ca
+    assert model.root_client.timeout == 1.0
+    outcome = {}
+
+    def _call():
+        try:
+            model.invoke("hi")
+            outcome["result"] = "answered"
+        except Exception as exc:  # noqa: BLE001
+            outcome["result"] = type(exc).__name__
+
+    started = time.monotonic()
+    worker = threading.Thread(target=_call, daemon=True)
+    worker.start()
+    worker.join(30)
+    srv.close()
+    for conn in held:
+        conn.close()
+    assert not worker.is_alive(), "the request never timed out"
+    assert "Timeout" in outcome["result"]
+    assert time.monotonic() - started < 30
+
+
 def test_register_installs_builder_and_publishes_model(monkeypatch):
     pytest.importorskip("langchain_openai")
     assert te.register() is False
