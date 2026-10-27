@@ -285,7 +285,12 @@ class _Caller:
         said = text_block(instruction(self.stage, self.report_id, pages,
                                       route=self.route))
         if self.route == "pdf":
-            data, n_pages, _sanitized = cut_pdf(self._source(), pages)
+            # A sheet scanned sideways is sent rotated upright (RI-149).
+            from report_ingest.turned import turn_of
+            turns = {p: turn_of(self.doc, p).quarter for p in pages}
+            data, n_pages, _sanitized = cut_pdf(
+                self._source(), pages,
+                turns={p: q for p, q in turns.items() if q})
             return [pdf_block(data), said], pdf_problem(n_pages, len(data))
         shown = picture_blocks(self.doc, pages,
                                model=getattr(self.engine, "name", None))

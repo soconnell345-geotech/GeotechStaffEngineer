@@ -40,6 +40,10 @@ MASTER_SCHEMAS = {
 #: schemas), by READ_PROMPT_VERSION.
 MODEL_FIRST_ASKS = {
     "mf-1": "99aafd0dbd196bf8961ea25054e9c8646f15c40c711de3788de477f1c151246d",
+    # mf-2 (RI-149): the same instruction and schemas; what the readers are
+    # SHOWN changed (a sheet scanned sideways is sent upright, its text row
+    # by row), so an answer saved under mf-1 is read again.
+    "mf-2": "99aafd0dbd196bf8961ea25054e9c8646f15c40c711de3788de477f1c151246d",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

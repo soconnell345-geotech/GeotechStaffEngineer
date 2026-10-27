@@ -761,11 +761,24 @@ def _code_note(doc: Any, page: int, box: Sequence[float], engine: Any = None,
 def zoom_plot(doc: Any, pages: Sequence[int], arguments: Dict[str, Any], *,
               dpi: float, noun: str, instruction: str,
               zooms: List[Dict[str, Any]], engine: Any = None,
-              charge: Optional[Callable[[Any], None]] = None) -> List[Any]:
+              charge: Optional[Callable[[Any], None]] = None,
+              upright_frame: bool = False) -> List[Any]:
     """The readers' ``zoom_plot`` tool: a magnified crop of one region of a
     page, as content blocks. With visual scales on, a crop holding a fitted
-    plot also carries code's reading of it."""
+    plot also carries code's reading of it.
+
+    A sheet scanned sideways (RI-149) is cropped upright. With
+    ``upright_frame`` (a reader that lists such a page and shows its picture
+    in the upright frame, :func:`report_ingest.lab_reader.serialise_page`)
+    the box asked for is in that frame and is taken back to the page's
+    frame as displayed before the crop is cut; the box reported, and the
+    one kept in ``zooms``, are each in the frame its reader uses (the
+    reply's in the frame asked in, ``zooms``' as displayed). The size
+    reported is the upright crop's."""
     from report_ingest.engine import image_block, text_block
+    from report_ingest.turned import (
+        displayed_box, turn_of, upright_box, upright_png,
+    )
     page = int(arguments.get("page", pages[0]))
     if page not in list(pages):
         raise ValueError(f"page {page} is not part of this {noun} "
@@ -774,13 +787,32 @@ def zoom_plot(doc: Any, pages: Sequence[int], arguments: Dict[str, Any], *,
     if not bbox or len(list(bbox)) != 4:
         raise ValueError("bbox must be four numbers: x0, y0, x1, y1")
     box = [float(v) for v in bbox]
+    turn = turn_of(doc, page)
+    if upright_frame and turn.turned:
+        box = list(displayed_box(box, turn))
     png, info = doc.render(page, bbox=box, dpi=dpi)
     zooms.append({"page": page, "bbox": box,
                   "why": str(arguments.get("why") or "")})
+    shown = upright_png(png, turn)
+    clip = [float(v) for v in info["clip"]]
+    width_px, height_px = info["width_px"], info["height_px"]
+    if shown is not png and turn.quarter in (90, 270):
+        width_px, height_px = height_px, width_px
+    turned = ""
+    if upright_frame and turn.turned:
+        clip = list(upright_box(clip, turn))
+        turned = (" The page's text runs a quarter turn from the page; the "
+                  "box is in the upright picture's frame, as the page was "
+                  "listed" + (", and the crop is shown upright."
+                              if shown is not png else "."))
+    elif shown is not png:
+        turned = (f" The page's text runs a quarter turn from the page, so "
+                  f"the crop is shown turned upright ({turn.quarter} degrees "
+                  f"back); the box is the page's as displayed.")
     blocks: List[Any] = [text_block(
-        f"page {page}, box {[round(v, 1) for v in info['clip']]} at "
-        f"{info['dpi']} dpi ({info['width_px']}x{info['height_px']} px). "
-        + instruction), image_block(png)]
+        f"page {page}, box {[round(v, 1) for v in clip]} at "
+        f"{info['dpi']} dpi ({width_px}x{height_px} px)."
+        + turned + " " + instruction), image_block(shown)]
     if enabled():
         try:
             note = _code_note(doc, page, box, engine, charge)

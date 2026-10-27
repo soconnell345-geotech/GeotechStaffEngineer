@@ -406,6 +406,174 @@ def build_compaction_trials() -> bytes:
     return pdf
 
 
+#: A made-up legend of four specimens (RI-149): each row's label, its
+#: description and the percentages printed on its row. The values lines
+#: are of different lengths on purpose: listed top to bottom as displayed,
+#: a sheet scanned sideways gives them in the order of their lengths.
+TURNED_LEGEND: Tuple[Tuple[str, str, str, Dict[str, float]], ...] = (
+    ("2.0-3.3", "Silty fine SAND w/ Clay",
+     "Silt =30%, SAND =62%, Clay =8%",
+     {"silt_percent": 30.0, "sand_percent": 62.0, "clay_percent": 8.0}),
+    ("5.0-6.3", "Gravelly coarse SAND w/ Silt",
+     "SAND =47%, Gravel =21%, Silt =22%, Clay =10%",
+     {"sand_percent": 47.0, "gravel_percent": 21.0, "silt_percent": 22.0,
+      "clay_percent": 10.0}),
+    ("8.0-9.3", "Clayey SILT w/ fine Sand",
+     "Clay =35%, SILT =55%, Sand =10%",
+     {"clay_percent": 35.0, "silt_percent": 55.0, "sand_percent": 10.0}),
+    ("11.0-12.3", "Fine SAND w/ Silt",
+     "SAND =88%, Silt =12%",
+     {"sand_percent": 88.0, "silt_percent": 12.0}),
+)
+TURNED_HOLE = "QX-4"
+
+
+#: Where a sheet turned by each quarter (counter-clockwise as displayed)
+#: puts its top-left corner on a letter page: bottom-left for a quarter,
+#: bottom-right upside down, top-right for three quarters.
+TURNED_ORIGIN = {90: (24.0, 770.0), 180: (588.0, 770.0), 270: (588.0, 22.0)}
+
+
+def _turned_text(page, origin: Tuple[float, float], skew: float, u: float,
+                 v: float, text: str, size: float = 8.0,
+                 angle: float = 0.0, quarter: int = 90) -> None:
+    """``text`` placed at ``(u, v)`` on a sheet turned ``quarter`` degrees
+    counter-clockwise and skewed ``skew`` degrees off it (``u`` along its
+    rows, ``v`` down the sheet from its top), its own line drawn at
+    ``angle`` (the sheet's own direction, ``quarter + skew``, by default):
+    an optical reader gives a short line's direction a degree or so out."""
+    import math
+
+    import pymupdf
+    theta = math.radians(quarter + skew)
+    x = origin[0] + u * math.cos(theta) + v * math.sin(theta)
+    y = origin[1] - u * math.sin(theta) + v * math.cos(theta)
+    point = pymupdf.Point(x, y)
+    page.insert_text(point, text, fontsize=size, fontname="helv",
+                     morph=(point, pymupdf.Matrix(angle or quarter + skew)))
+
+
+def build_turned_legend_page(doc, skew: float = -1.0, hole: str = TURNED_HOLE,
+                             rows=TURNED_LEGEND, title: str =
+                             "GRAIN SIZE DISTRIBUTION",
+                             jitter: bool = True, quarter: int = 90,
+                             label_codes=None) -> None:
+    """One grading sheet scanned sideways onto a portrait page: its title,
+    its hole, a chart's axis numbers and a legend of several specimens, the
+    whole turned ``quarter`` degrees counter-clockwise (90 by default) and
+    ``skew`` degrees further. With ``jitter`` each kind of line is drawn a
+    little off the sheet's own direction, as an optical reader reports them.
+    ``label_codes``: a code printed before each row's label (a hole's or a
+    sample's), or None."""
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    origin = TURNED_ORIGIN[quarter]
+    own = quarter + skew
+
+    def put(u, v, text, size=8.0, off=0.0):
+        _turned_text(page, origin, skew, u, v, text, size,
+                     angle=own + (off if jitter else 0.0), quarter=quarter)
+
+    put(220, 40, title, 12)
+    put(40, 70, f"BORE HOLE NO. ({hole})", 9)
+    put(40, 90, "PROJECT  Made-up Works, Sheet 1")
+    for n, tick in enumerate(("0", "20", "40", "60", "80", "100")):
+        put(30, 140 + 50 * n, tick, off=1.5)
+    put(300, 410, "CUMULATIVE % FINER", off=0.4)
+    for n, (label, words, values, _expected) in enumerate(rows):
+        v = 470.0 + 13.0 * n
+        if label_codes:
+            label = f"{label_codes[n]} {label}"
+        put(40, v, label, off=0.6)
+        put(120, v, words)
+        put(330, v, values, off=-0.3)
+
+
+def build_turned_sheets(quarters=(90, 180, 270), skew: float = -0.8,
+                        **kwargs) -> bytes:
+    """One made-up grading sheet per quarter turn, each skewed ``skew``
+    degrees further (RI-149)."""
+    import pymupdf
+    doc = pymupdf.open()
+    for quarter in quarters:
+        build_turned_legend_page(doc, skew=skew, quarter=quarter, **kwargs)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_portrait_form() -> bytes:
+    """A made-up particle-size form printed upright with its chart turned:
+    a portrait header (title, project, sample) over a landscape chart whose
+    axis titles, size bands and ticks read bottom to top (RI-149). Its
+    letters split about evenly between the two: a little more than half of
+    them run turned on a page that is upright."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    for y, text in ((50, "PARTICLE SIZE DISTRIBUTION TEST REPORT"),
+                    (70, "Project: Made-up Works, Phase 2"),
+                    (84, "Client: Made-up Client"),
+                    (98, "Location: QX-4   Depth: 2.0-3.3 m"),
+                    (112, "Sample No.: S-1   Tested by: AB")):
+        _text(page, 60, y, text, 9)
+
+    def turned(x, y, text):
+        point = pymupdf.Point(x, y)
+        page.insert_text(point, text, fontsize=8, fontname="helv",
+                         morph=(point, pymupdf.Matrix(90.0)))
+
+    turned(80, 700, "PERCENT FINER BY WEIGHT")
+    turned(560, 700, "GRAIN SIZE IN MILLIMETERS")
+    turned(530, 700, "COBBLES  GRAVEL  SAND  SILT OR CLAY")
+    turned(515, 700, "coarse  fine  coarse  medium  fine")
+    turned(110, 700, "U.S. STANDARD SIEVE NUMBERS")
+    for n, tick in enumerate(("100", "10", "1", "0.1", "0.01", "0.001")):
+        turned(500, 690 - 80 * n, tick)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_turned_run(skews=(-1.0, 0.0)) -> bytes:
+    """A summary of grading and Atterberg results and the grading sheets
+    after it, all scanned sideways: page 0 the summary, then one grading
+    sheet per skew (RI-149, RI-150). Made-up values."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    origin = (24.0, 770.0)
+    for u, v, text, size in (
+            (120, 40, "TABLE 2. GRAIN SIZE DISTRIBUTION & ATTERBERG LIMITS "
+                      "TEST RESULTS", 12),
+            (40, 90, f"BORE HOLE NO. ({TURNED_HOLE})", 9),
+            (40, 120, "2.0-3.3   Silty fine SAND w/ Clay   30  62  8  NL  NP", 8),
+            (40, 135, "5.0-6.3   Gravelly coarse SAND   21  47  22  10  NL", 8)):
+        _turned_text(page, origin, -1.0, u, v, text, size)
+    for skew in skews:
+        build_turned_legend_page(doc, skew=skew)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
+def build_upright_legend_sheet() -> bytes:
+    """The same legend on an upright sheet, each row on one printed line
+    (RI-149: a legend is read the same way upright). Made-up values."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=LETTER[0], height=LETTER[1])
+    _text(page, 150, 60, "GRAIN SIZE DISTRIBUTION", 14, bold=True)
+    _text(page, 60, 100, f"Bore hole: {TURNED_HOLE}")
+    for n, (label, words, values, _expected) in enumerate(TURNED_LEGEND):
+        y = 600.0 + 14.0 * n
+        _text(page, 60, y, label, 8)
+        _text(page, 120, y, words, 8)
+        _text(page, 330, y, values, 8)
+    pdf = doc.tobytes()
+    doc.close()
+    return pdf
+
+
 def build_atterberg_run(n: int = 7) -> Tuple[bytes, List[Dict[str, Any]]]:
     """``n`` look-alike Atterberg sheets, one specimen a page (RI-116).
 

@@ -139,6 +139,10 @@ from report_ingest.model import (
     Quantity, RESULT_CLASS, ShearPoint, SievePoint, StrengthResult,
     StrengthSpecimen, SummaryRow, SummaryTableResult, unit_printed,
 )
+from report_ingest.turned import (
+    Turn, displayed_box, page_turn, reading_order, runs_with, turn_of,
+    upright_box, upright_png, upright_size,
+)
 
 __all__ = [
     "read_lab_sheet", "LabReadResult", "LabSheetReading", "ReadTest",
@@ -147,7 +151,7 @@ __all__ = [
     "lab_windows", "reader_system", "link_from_label_enabled",
     "use_link_from_label", "LINK_FROM_LABEL_ENV", "LINK_FROM_LABEL",
     "floor_per_page_enabled", "use_floor_per_page", "FLOOR_PER_PAGE_ENV",
-    "split_size", "split_key",
+    "split_size", "split_key", "split_lab_items",
 ]
 
 #: The ceiling in the brief: four model calls for one sheet, the last of them
@@ -756,12 +760,15 @@ class _Tools:
 
     def zoom_plot(self, arguments: Dict[str, Any]) -> Any:
         from report_ingest.visual_scales import zoom_plot
+        # A turned page's listing and picture are in the upright frame
+        # (serialise_page), so the box asked for is too (RI-149).
         return zoom_plot(
             self.doc, self.pages, arguments, dpi=ZOOM_DPI, noun="sheet",
             instruction=("Read the values against the axis ticks you can "
                          "see, and set digitised true on the series you "
                          "build from them."),
-            zooms=self.zooms, engine=self.engine, charge=self.charge)
+            zooms=self.zooms, engine=self.engine, charge=self.charge,
+            upright_frame=True)
 
     def run(self, name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
         """``(content, is_error)`` -- a tool mistake is an answer, not a stop."""
@@ -1000,12 +1007,41 @@ def serialise_page(doc: Any, page: int) -> str:
     if not content.lines:
         out.append("  THIS PAGE CARRIES NO TEXT. Read it from the picture, "
                    "and say so on every value.")
+    turn = page_turn(content.lines,
+                     float(getattr(content, "width", 612.0) or 612.0),
+                     float(getattr(content, "height", 792.0) or 792.0))
+
+    def shown(bbox: Sequence[float]) -> Tuple[float, ...]:
+        return tuple(upright_box(bbox, turn)) if turn.turned else \
+            tuple(bbox)
+
+    if turn.turned:
+        # A sheet scanned sideways (RI-149): listed top to bottom as
+        # displayed, its lines come in the order each one starts along the
+        # turned direction, and a legend's labels and values fall apart.
+        # Its picture is sent upright, so its boxes are given in the
+        # picture's frame: one frame for a box copied from a line and a box
+        # read off the picture (the reader takes them back, _Builder).
+        width, height = upright_size(turn)
+        out.append(f"  THIS PAGE'S TEXT RUNS TURNED, a quarter turn from the "
+                   f"page ({turn.quarter} degrees counter-clockwise as "
+                   f"displayed: a sheet scanned sideways). Its picture is "
+                   f"shown turned upright, and every box on this page is "
+                   f"given in that upright picture's frame: points from its "
+                   f"top-left corner, {width:.0f} wide and {height:.0f} "
+                   f"high. Give any box on this page in the same frame. Its "
+                   f"lines are listed as the sheet reads: row by row from "
+                   f"the top of the turned sheet, each row in reading order, "
+                   f"so the lines of one printed row (a legend's label and "
+                   f"the values printed after it) come together.")
     out.append("  x0,y0,x1,y1 | text")
-    lines = sorted(content.lines, key=lambda ln: (round(ln.bbox[1], 1),
-                                                  ln.bbox[0]))
+    lines = reading_order(content.lines, turn)
     for line in lines[:MAX_LINES_PER_PAGE]:
-        x0, y0, x1, y1 = line.bbox
-        turned = " [turned]" if (line.rotation or 0) else ""
+        x0, y0, x1, y1 = shown(line.bbox)
+        if turn.turned:
+            turned = "" if runs_with(line, turn) else " [turned]"
+        else:
+            turned = " [turned]" if (line.rotation or 0) else ""
         out.append(f"  {x0:.0f},{y0:.0f},{x1:.0f},{y1:.0f}{turned} | "
                    f"{_clip(line.text)}")
     if len(lines) > MAX_LINES_PER_PAGE:
@@ -1017,7 +1053,7 @@ def serialise_page(doc: Any, page: int) -> str:
             out.append("  [further table(s) not listed: the tables on this "
                        "page are longer than one sheet's worth]")
             break
-        x0, y0, x1, y1 = table.bbox
+        x0, y0, x1, y1 = shown(table.bbox)
         markdown = table.to_markdown()
         if len(markdown) > budget:
             markdown = markdown[:budget] + "\n  [table truncated]"
@@ -1118,11 +1154,187 @@ def _specimen_starts(doc: Any, pages: Sequence[int]) -> List[int]:
     return out
 
 
+#: The work-item kinds :func:`split_lab_items` cuts.
+LAB_ITEM_KINDS = ("lab_test",)
+
+
+#: Test kinds one sheet, or one run of sheets, prints together, any two of
+#: one group: a compaction curve (a moisture-density relation, whose title
+#: names a density and a water content too) with the CBR on it; a sieve
+#: analysis with its hydrometer (both ``gradation``) and specific gravity;
+#: Atterberg limits with the water content; a density with its water
+#: content.
+COMPANION_KINDS: Tuple[frozenset, ...] = (
+    frozenset(("compaction", "cbr", "density", "moisture_content")),
+    frozenset(("gradation", "specific_gravity")),
+    frozenset(("atterberg", "moisture_content")),
+    frozenset(("density", "moisture_content")),
+)
+
+
+def _companions(a: str, b: str) -> bool:
+    return a == b or any(a in group and b in group
+                         for group in COMPANION_KINDS)
+
+
+def _summary_title(kinds: Sequence[str]) -> bool:
+    """Whether a title names a summary of results rather than one test's
+    sheet: it says it is a summary, or it names two kinds that are not
+    companions (a table of grading and Atterberg results)."""
+    named = [k for k in kinds if k != "other"]
+    if "summary_table" in named:
+        return True
+    return any(not _companions(a, b)
+               for n, a in enumerate(named) for b in named[n + 1:])
+
+
+def _sheet_changes(have: Sequence[str], kinds: Sequence[str]) -> bool:
+    """Whether a page titled ``kinds`` starts another sheet than a part
+    titled ``have``: a summary after a test's sheet or a test's sheet after
+    a summary, or two sheets of test kinds that share none and are no
+    companions. A summary's next page that adds a kind word, and a sheet
+    of one test followed by its companion's, continue it."""
+    if not have or not kinds:
+        return False
+    if _summary_title(have) != _summary_title(kinds):
+        return True
+    if _summary_title(have):
+        return False
+    return not any(_companions(a, b) for a in have for b in kinds)
+
+
+def lab_parts(doc: Any, pages: Sequence[int]
+              ) -> List[Tuple[List[int], Tuple[str, ...]]]:
+    """A lab item's pages cut where the sheet changes: ``[(pages, the kinds
+    its pages' titles name), ...]``.
+
+    A page whose title band names test kinds
+    (:func:`report_ingest.lab_floor.page_title_kinds`, the band as the page
+    reads, turned or not) starts a new part where :func:`_sheet_changes`
+    says it is another sheet than the last titled page before it: a summary
+    of grading and Atterberg results and the grading sheets after it are
+    two sheets, though planlens' rules may group them (BACKLOG RI-150). A
+    page whose title names no kind continues the part before it, and so
+    does one naming the same kinds, a companion's (:data:`COMPANION_KINDS`)
+    or, after a summary, more kinds. A part's kinds are every kind its
+    pages' titles name."""
+    from report_ingest.lab_floor import page_title_kinds
+    parts: List[Tuple[List[int], Tuple[str, ...]]] = []
+    last: Tuple[str, ...] = ()
+    for page in [int(p) for p in pages]:
+        try:
+            kinds = tuple(page_title_kinds(doc, page))
+        except Exception:                        # a page that will not read
+            kinds = ()
+        if not parts or _sheet_changes(last, kinds):
+            parts.append(([page], kinds))
+            last = kinds or last
+            continue
+        run, have = parts[-1]
+        run.append(page)
+        if kinds:
+            parts[-1] = (run, tuple(dict.fromkeys(tuple(have) + kinds)))
+            last = kinds
+    return parts
+
+
+def _printed_link(doc: Any, pages: Sequence[int]) -> Dict[str, Any]:
+    """The first boring and sample the pages print (as the floor reads a
+    sheet's link), with the page that prints them; empty where none does."""
+    from report_ingest.lab_floor import _lines_of, _link_from_lines
+    for page in pages:
+        try:
+            link = _link_from_lines(_lines_of(doc, page), page)
+        except Exception:                        # a page that will not read
+            continue
+        if link.investigation_id or link.sample_id:
+            return {k: v for k, v in (
+                ("investigation_id", link.investigation_id),
+                ("sample_id", link.sample_id), ("page", int(page))) if v
+                or k == "page"}
+    return {}
+
+
+def split_lab_items(doc: Any, items: Sequence[Any]) -> List[Any]:
+    """Every work item, with each lab item cut where its sheet changes
+    (:func:`lab_parts`, BACKLOG RI-150).
+
+    planlens starts a new lab item where the test phrase in a page's title
+    or bands changes; on a sheet scanned sideways its bands are the sides of
+    the sheet, and one hole's grading sheets were grouped with the summary
+    table before them. The reader, told the summary already gives the
+    values, then left the sheets unread. Items of every other kind, and a
+    lab item whose pages are one sheet, pass through untouched and in
+    order. A cut item's parts keep its kind and evidence and take ids of
+    the form ``<id>a``, ``<id>b`` ... (as
+    :func:`report_ingest.calc_reader.split_calc_items` names its parts).
+
+    A later part whose own pages print no boring or sample carries the one
+    the item's first part prints (``evidence["carried_link"]``): a hole's
+    header printed once over its summary and its sheets is the sheets'
+    too, and the reader is told it (:func:`read_lab_sheet`'s
+    ``carried_link``).
+
+    A RESUMED run reads a cut item again: its parts are saved under their
+    own ids (``items/<id>a.json``), and a reading saved whole under
+    ``items/<id>.json`` before the cut is never taken for a part (nor
+    deleted). That is new spend on resume, once per cut item, and it is
+    what the cut is for: the whole item's reading is the one that left the
+    sheets unread.
+    """
+    out: List[Any] = []
+    for item in items:
+        pages = [int(p) for p in (getattr(item, "pages", ()) or ())]
+        if getattr(item, "kind", "") not in LAB_ITEM_KINDS or len(pages) < 2:
+            out.append(item)
+            continue
+        parts = lab_parts(doc, pages)
+        if len(parts) <= 1:
+            out.append(item)
+            continue
+        evidence = dict(getattr(item, "evidence", {}) or {})
+        first = _printed_link(doc, parts[0][0])
+        for n, (run, kinds) in enumerate(parts):
+            suffix = chr(ord("a") + n) if n < 26 else f"_{n + 1}"
+            extra: Dict[str, Any] = {}
+            if n and first and not _printed_link(doc, run):
+                extra["carried_link"] = dict(first)
+            out.append(item.__class__(
+                id=f"{item.id}{suffix}", kind=item.kind, pages=list(run),
+                title=getattr(item, "title", None),
+                evidence={**evidence, "first_page": run[0],
+                          "split_from": item.id,
+                          "title_kinds": list(kinds),
+                          "split_reason": "the page's title names another "
+                                          "sheet than the pages before it "
+                                          "(RI-150)", **extra}))
+    return out
+
+
+def _carried_words(carried: Optional[Dict[str, Any]]) -> str:
+    """The brief's sentence for a cut part's carried link, or ``""``."""
+    if not carried:
+        return ""
+    bits = []
+    if carried.get("investigation_id"):
+        bits.append(f"boring {carried['investigation_id']!r}")
+    if carried.get("sample_id"):
+        bits.append(f"sample {carried['sample_id']!r}")
+    if not bits:
+        return ""
+    return (f"These pages print no boring or sample of their own; the pages "
+            f"before them in the same run (page {carried.get('page')}) print "
+            f"{' and '.join(bits)}. A test on these pages that names no "
+            f"boring or sample is that one's, unless the sheet says "
+            f"otherwise.")
+
+
 def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str, hint_kind: Optional[str],
            budget: int, floor: Optional[FloorSheet] = None,
            run_pages: Optional[Sequence[int]] = None,
-           per_page: bool = False, window_size: int = MAX_LAB_PAGES) -> str:
+           per_page: bool = False, window_size: int = MAX_LAB_PAGES,
+           turns: Optional[Dict[int, Turn]] = None, carried: str = "") -> str:
     vocabulary = "\n".join(f"  {name}: {text}"
                            for name, text in KIND_DEFINITIONS.items())
     series = "\n".join(f"  {name}: {text}"
@@ -1146,6 +1358,8 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
     ]
     if item_title:
         parts.append(f"The document titles it: {item_title}")
+    if carried:
+        parts.append(carried)
     if hint_kind:
         parts.append(
             f"The page labels suggest this is a {hint_kind!r} sheet. That is "
@@ -1169,7 +1383,7 @@ def _brief(doc: Any, pages: Sequence[int], ledger: Sequence[str],
             "detected tables before you were called, with the page and box "
             "each came from and the reader's confidence -- build on it; "
             "add, correct with the box and a note, never drop)",
-            serialise_floor(floor, per_page=per_page),
+            serialise_floor(floor, per_page=per_page, turns=turns),
             "",
         ]
     parts += ["THE PAGE"]
@@ -1205,8 +1419,14 @@ class _Builder:
 
     def __init__(self, reading: LabSheetReading, pages: Sequence[int],
                  report_id: str, zooms: Sequence[Dict[str, Any]], *,
-                 checks: str = "refuse") -> None:
+                 checks: str = "refuse",
+                 turns: Optional[Dict[int, Turn]] = None) -> None:
         self.reading = reading
+        #: The turn of each page whose listing and picture the model was
+        #: given in the upright frame (RI-149): a box it gives on such a
+        #: page is taken back to the displayed frame (:meth:`provenance`).
+        self.turns = {int(p): t for p, t in (turns or {}).items()
+                      if t is not None and t.turned}
         self.flag = check_mode(checks) == "flag"
         #: Under ``flag``: the test being built kept a doubtful value, so
         #: its provenance is lowered to ``FLAG_CONFIDENCE``.
@@ -1548,8 +1768,12 @@ class _Builder:
             self.changes.append({
                 "what": self._what, "page": page,
                 "why": prov.note or "read off the picture, not the text"})
+        bbox = tuple(prov.bbox) if prov.bbox else None
+        if bbox is not None and len(bbox) == 4 and page in self.turns:
+            # Given in the upright picture's frame; kept as displayed.
+            bbox = displayed_box(bbox, self.turns[page])
         return Provenance(page=page,
-                          bbox=tuple(prov.bbox) if prov.bbox else None,
+                          bbox=bbox,
                           method=method,
                           confidence=(0.8 if method == "model_from_picture"
                                       else 0.9),
@@ -1907,7 +2131,9 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
                    ledger: Optional[Sequence[str]] = None,
                    item_title: str = "", report_id: str = "",
                    dpi: float = PAGE_DPI,
-                   sheets_per_call: Optional[int] = None) -> LabReadResult:
+                   sheets_per_call: Optional[int] = None,
+                   carried_link: Optional[Dict[str, Any]] = None
+                   ) -> LabReadResult:
     """Read ONE laboratory sheet and return its tests as records.
 
     ``item_pages`` are the pages of one sheet or one multi-page test --
@@ -1929,6 +2155,10 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     ``sheets_per_call`` (RI-116) reads an item of more than that many pages
     in windows of at most that many, the same way (:func:`split_size`);
     None, the default, leaves every item as above.
+
+    ``carried_link`` is a cut part's (:func:`split_lab_items`): the boring
+    and sample the pages before it print where its own print none; the
+    brief says it.
     """
     pages = [int(p) for p in item_pages]
     if not pages:
@@ -1949,7 +2179,7 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         return _read_window(doc, pages, engine, budget=budget,
                             hint_kind=hint_kind, ledger=ledger,
                             item_title=item_title, report_id=report_id,
-                            dpi=dpi)
+                            dpi=dpi, carried_link=carried_link)
     size = MAX_LAB_PAGES if split is None else split
     starts = _specimen_starts(doc, pages)
     windows = lab_windows(pages, size=size, starts=starts)
@@ -1962,7 +2192,8 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
             parts.append(_read_window(
                 doc, window, engine, budget=budget, hint_kind=hint_kind,
                 ledger=mine, item_title=item_title, report_id=report_id,
-                dpi=dpi, run_pages=pages, window_size=size))
+                dpi=dpi, run_pages=pages, window_size=size,
+                carried_link=carried_link))
         except RuntimeError as exc:              # no answer for this window
             if not parts and len(failed) == len(windows) - 1:
                 raise
@@ -2070,7 +2301,9 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
                  hint_kind: Optional[str], ledger: Sequence[str],
                  item_title: str, report_id: str, dpi: float,
                  run_pages: Optional[Sequence[int]] = None,
-                 window_size: int = MAX_LAB_PAGES) -> LabReadResult:
+                 window_size: int = MAX_LAB_PAGES,
+                 carried_link: Optional[Dict[str, Any]] = None
+                 ) -> LabReadResult:
     """One sheet, or one window of a run, read and merged with its floor."""
     pages = [int(p) for p in pages]
     system = reader_system()
@@ -2088,6 +2321,7 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
 
     warnings: List[str] = []
     images: List[bytes] = []
+    turns: Dict[int, Turn] = {}
     for page in pages:
         try:
             content = doc.page(page)
@@ -2095,11 +2329,13 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
             warnings.append(f"page {page}: {type(exc).__name__}: {exc}")
         else:
             warnings.extend(f"page {page}: {w}" for w in content.warnings)
+        turns[page] = turn_of(doc, page)
         try:
             png, _info = doc.render(page, dpi=dpi)
         except Exception:                        # a page that will not draw
             continue                             # is read from its text alone
-        images.append(png)
+        # A sheet scanned sideways is shown upright (RI-149).
+        images.append(upright_png(png, turns[page]))
 
     # THE FLOOR: the page's tables and title, read before any call is spent
     # and shown to the model as the record it starts from (as it was before
@@ -2108,7 +2344,8 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
     warnings.extend(floor.warnings)
     brief = _brief(doc, pages, ledger, item_title, report_id, hint_kind,
                    budget, floor=floor, run_pages=run_pages,
-                   per_page=per_page, window_size=window_size)
+                   per_page=per_page, window_size=window_size, turns=turns,
+                   carried=_carried_words(carried_link))
     tools = _Tools(doc, pages)
     tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
@@ -2161,7 +2398,7 @@ def _read_window(doc, pages: Sequence[int], engine: Engine, *, budget: int,
             f"{pages} in {model_calls} call(s) (stop_reason "
             f"{getattr(final, 'stop_reason', None)!r})")
 
-    builder = _Builder(reading, pages, report_id, tools.zooms)
+    builder = _Builder(reading, pages, report_id, tools.zooms, turns=turns)
     model_tests = builder.build()
     # THE MERGE: the model's answer folded onto the floor. Nothing a table
     # held is lost; every contradiction is on the record.
