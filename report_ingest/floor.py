@@ -160,6 +160,31 @@ class MergeLog:
     kept: List[Dict[str, Any]] = field(default_factory=list)
     added: List[Dict[str, Any]] = field(default_factory=list)
     reconciled: int = 0
+    #: Slots where the model returned the floor's own value, unrounded, as
+    #: the starting record showed it: one reading, not two that agree
+    #: (RI-131). Not counted in ``reconciled``.
+    echoed: List[Dict[str, Any]] = field(default_factory=list)
+    #: Values neither voter's record can hold, refused rather than kept as
+    #: the slot's value or beside it (RI-130: a blow record of more counts
+    #: than a driven record has drives).
+    refused: List[Dict[str, Any]] = field(default_factory=list)
+
+    def echo(self, where: str, what: str, page: Optional[int] = None,
+             value: Any = None) -> None:
+        row: Dict[str, Any] = {"where": where, "what": what}
+        if page is not None:
+            row["page"] = int(page)
+        if value is not None:
+            row["value"] = show(value)
+        self.echoed.append(row)
+
+    def refuse(self, where: str, what: str, voter: str, value: Any,
+               why: str, page: Optional[int] = None) -> None:
+        row: Dict[str, Any] = {"where": where, "what": what, "voter": voter,
+                               "value": show(value)[:200], "why": why}
+        if page is not None:
+            row["page"] = int(page)
+        self.refused.append(row)
 
     def keep(self, where: str, what: str, page: Optional[int] = None,
              value: Any = None, why: str = "") -> None:
@@ -205,7 +230,11 @@ class MergeLog:
         return {"disagreements": [dict(d) for d in self.disagreements],
                 "kept": [dict(k) for k in self.kept],
                 "added": [dict(a) for a in self.added],
-                "reconciled": self.reconciled}
+                "reconciled": self.reconciled,
+                **({"echoed": [dict(e) for e in self.echoed]}
+                   if self.echoed else {}),
+                **({"refused": [dict(r) for r in self.refused]}
+                   if self.refused else {})}
 
 
 @dataclass
