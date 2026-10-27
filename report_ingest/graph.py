@@ -2651,6 +2651,29 @@ def _vote_qa(qa: List[QAEntry], blob: Dict[str, Any],
             pages=sorted({int(k["page"]) for k in kept
                           if k.get("page") is not None})
             or [int(p) for p in pages]))
+    # A blow record of more counts than drives, refused (RI-130), and a
+    # depth the model copied off the starting record (RI-131): both said,
+    # so a reviewer knows what the record does not hold and which depths
+    # rest on the floor alone.
+    for name, detail in (
+            ("refused", "blow record(s) of more counts than a driven record "
+                        "has drives were refused (not kept as the record's "
+                        "blows or as an alternative): "),
+            ("echoed", "depth(s) the model returned as the floor's own "
+                       "worked-out value (to more decimals than a log "
+                       "prints) are one reading, the floor's, at its method "
+                       "and confidence: ")):
+        rows = blob.get(name) or []
+        if not rows:
+            continue
+        qa.append(QAEntry(
+            kind="note", where="floor",
+            detail=(f"{len(rows)} {detail}" + "; ".join(
+                str(r.get("what") or "") for r in rows[:8])
+                + (" ..." if len(rows) > 8 else "")),
+            pages=sorted({int(r["page"]) for r in rows
+                          if r.get("page") is not None})
+            or [int(p) for p in pages]))
 
 
 def _read_narrative(doc, pages, engine, budgets, outline, report_id, body,

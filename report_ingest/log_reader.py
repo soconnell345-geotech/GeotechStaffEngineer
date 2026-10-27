@@ -406,6 +406,12 @@ class LogReadResult:
     kept: List[Dict[str, Any]] = field(default_factory=list)
     added: List[Dict[str, Any]] = field(default_factory=list)
     reconciled: int = 0
+    #: Slots where the model returned the floor's own worked-out depth: one
+    #: reading, the floor's, not counted in ``reconciled`` (RI-131); and
+    #: blow records of more counts than drives, refused (RI-130). Written
+    #: only when not empty.
+    echoed: List[Dict[str, Any]] = field(default_factory=list)
+    refused: List[Dict[str, Any]] = field(default_factory=list)
     #: Whether the follow-up call on the unsettled list was made.
     follow_up: bool = False
     #: The printed FORM this log was recognised as, when a fingerprint file
@@ -442,6 +448,10 @@ class LogReadResult:
             "kept": [dict(k) for k in self.kept],
             "added": [dict(a) for a in self.added],
             "reconciled": self.reconciled,
+            **({"echoed": [dict(e) for e in self.echoed]}
+               if self.echoed else {}),
+            **({"refused": [dict(r) for r in self.refused]}
+               if self.refused else {}),
             "follow_up": self.follow_up,
             "template": (self.template.to_dict()
                          if self.template is not None else None),
@@ -2023,6 +2033,8 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         kept=merge_log.kept,
         added=merge_log.added,
         reconciled=merge_log.reconciled,
+        echoed=merge_log.echoed,
+        refused=merge_log.refused,
         follow_up=follow_up,
         template=template,
         visual_scales=scales_info,

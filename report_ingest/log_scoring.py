@@ -256,6 +256,12 @@ class LogScore:
     kept: int = 0
     added: int = 0
     reconciled: int = 0
+    #: Slots where the model returned the floor's own unrounded depth: one
+    #: reading, the floor's, and not counted in ``reconciled`` (RI-131); a
+    #: run before RI-131 counted them there. And blow records refused for
+    #: more counts than a driven record has drives (RI-130).
+    echoed: int = 0
+    refused: int = 0
     #: What the reader recorded for this log -- the merged investigation,
     #: the model's own and the grid's floor -- so a check fixed after a run
     #: can be re-applied to the run file with no model call
@@ -297,6 +303,7 @@ class LogScore:
             "floor_alone": self.floor_alone,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
+            "echoed": self.echoed, "refused": self.refused,
             "record": self.record, "model_record": self.model_record,
             "floor_record": self.floor_record,
         }
@@ -788,6 +795,8 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
     after.kept = len(getattr(result, "kept", ()) or ())
     after.added = len(getattr(result, "added", ()) or ())
     after.reconciled = int(getattr(result, "reconciled", 0) or 0)
+    after.echoed = len(getattr(result, "echoed", ()) or ())
+    after.refused = len(getattr(result, "refused", ()) or ())
     # The grid's own (label calls, pixel layer tops) and the reader's (the
     # votes), together: a reader handed the grid holds only its votes.
     after.visual_scales = {**(scales_info or {}),

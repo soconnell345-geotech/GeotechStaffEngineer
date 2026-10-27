@@ -1113,13 +1113,105 @@ def _drawn_box(group: _Group, boxes: Sequence[Any]) -> Any:
     return best
 
 
+#: Names that make a drive column's header one of several quantities: a
+#: number side by side with a drive in it may be either (RI-130).
+_BESIDE_DRIVES = frozenset({"n_value", "recovery", "rqd"})
+
+
+def _side_by_side(grid: Any, cells: Sequence[Any],
+                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None
+                  ) -> set:
+    """The cells, of those a sample's drives were gathered from one to a
+    cell, in a column that prints two of them side by side on one line,
+    where the column's header names other quantities beside the blows
+    (:data:`_BESIDE_DRIVES`). Such a column is several printed columns the
+    grid drew as one (a sheet with no ruled column edges): the row's
+    numbers are different quantities, not drives one to a line, and so is
+    every other number of the sample in that column, whose place among
+    them cannot be told either (RI-130). A column named for the blows alone
+    keeps its side-by-side numbers as drives, in the order printed."""
+    bands: set = set()
+    for i, a in enumerate(cells):
+        if not set(_names(grid, a, by_column)) & _BESIDE_DRIVES:
+            continue
+        for b in cells[i + 1:]:
+            apart = (float(a.bbox[2]) <= float(b.bbox[0])
+                     or float(b.bbox[2]) <= float(a.bbox[0]))
+            if (b.page == a.page and b.column_id == a.column_id
+                    and _same_line(a, b) and apart):
+                bands.add((a.page, a.column_id))
+    return {id(c) for c in cells if (c.page, c.column_id) in bands}
+
+
+def _top_within_reach(depth: float, box: Any, unit: str, grid: Any) -> bool:
+    """Is a sample's first marked row near enough the top of ``box`` for
+    the box's top edge to be the sample's top (RI-131)? The edge may stand
+    at most :data:`_DRAWN_TOP_REACH_M` above the row: the most a driven
+    sample's rows run below its top. A box whose top stands farther above
+    is not the sample's own drawn edge: planlens can return the gap above a
+    sample drawn together with the sample's box as one box (a line it did
+    not find), and that box's top is the previous sample's bottom.
+
+    A log of no known unit is read in the unit the floor already groups its
+    samples by (:func:`_span_in_unit`: feet where the rulers step by 2 or
+    more, else metres), the same working assumption (RI-47)."""
+    if unit not in ("ft", "m"):
+        unit = "ft" if _span_in_unit(unit, grid) > 1.0 else "m"
+    reach = _metres(depth - float(box.top), unit)
+    return reach is not None and reach <= _DRAWN_TOP_REACH_M + _INCREMENT_TOL_M
+
+
+def _drawn_top(group: _Group, grid: Any, boxes: Sequence[Any],
+               by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
+               unit: str = "") -> Any:
+    """The sample box whose drawn lines take this group's TOP row but not
+    every row, or None (RI-131).
+
+    A box drawn over the sampler's drive can be shorter than the rows that
+    name its sample: the sample's number printed in a bracket under a short
+    box, or a refusal's few inches. :func:`_drawn_box` refuses such a box,
+    and the sample's top was then the depth of the row its first cell
+    stands on, a line's height off the drawn edge. The box's top edge is
+    still where the sample starts. It is read here only for a box no group
+    took whole (the caller offers the boxes left over), on the sheet of the
+    group's top row, holding that row's depth within the box's own
+    uncertainty and within reach of its top (:func:`_top_within_reach`);
+    the nearest box top above the row wins.
+    """
+    marked = [c for c in group.cells
+              if _marks_a_sample(_text(c), _names(grid, c, by_column))]
+    first = min(marked or group.cells, key=lambda c: float(c.depth))
+    depth = float(first.depth)
+    best, best_gap = None, None
+    for box in boxes:
+        pages = set(getattr(box, "pages", ()) or ()) | {getattr(box, "page", None)}
+        tol = float(getattr(box, "plus_minus", None) or 0.05)
+        if first.page not in pages or not (
+                float(box.top) - tol <= depth <= float(box.bottom) + tol):
+            continue
+        if not _top_within_reach(depth, box, unit, grid):
+            continue
+        gap = abs(depth - float(box.top))
+        if best is None or gap < best_gap:
+            best, best_gap = box, gap
+    return best
+
+
 def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                  by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
                  template_note: str = "", drawn: Any = None,
                  printed_row: Optional[PrintedRow] = None,
                  printed_bottom: Optional[float] = None,
-                 notes: Optional["_FloorNotes"] = None
+                 notes: Optional["_FloorNotes"] = None,
+                 drawn_top_only: bool = False,
+                 box_pages: Optional[set] = None
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
+    # ``drawn`` is the sample box drawn round the group's rows; with
+    # ``drawn_top_only`` it takes the group's top row but not every row
+    # (:func:`_drawn_top`), so only its top edge is read. ``box_pages`` are
+    # the pages the grid read drawn sample boxes on: a sample on one of
+    # them with no box of its own says so in its note (RI-131). A page with
+    # none read says nothing about this sample.
     # The sample's depth is where its own cells -- id, sampler, drives,
     # recovery -- stand; a value printed a line above them is the sample's
     # but does not move it (RI-04). A group with none of those is placed by
@@ -1422,9 +1514,59 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             units[key] = _unit_of_column(
                 grid, cell, "pcf" if name == "dry_unit_weight"
                 and "pcf" in header.lower() else "")
+    #: What the drive column printed that is not this record (RI-130), for
+    #: the sample's note: counts on another sheet, or a whole refused record.
+    blow_remarks: List[str] = []
     if not blows and len(stacked) >= 2:
-        stacked.sort(key=lambda row: row[0])
-        blows = [number for _key, number in stacked]
+        rows = sorted(zip(stacked, stacked_cells), key=lambda rc: rc[0][0])
+        several = _side_by_side(grid, [c for _r, c in rows], by_column)
+        if several:
+            # Numbers side by side on one line, each its own cell, in one
+            # column the header names for several quantities (RI-130): the
+            # grid drew one column where the sheet prints several -- a
+            # sheet with no ruled column edges -- so the row is the drives,
+            # the N and the recovery side by side, not drives one to a line,
+            # and which number is which cannot be told from its position.
+            # Nor can any other number of the sample in that column (an N
+            # on the last drive's line, a recovery on the next): every one
+            # is kept in the sample's note, as a number under a heading of
+            # several quantities is (RI-04), and none makes a part record.
+            unassigned.extend((_text(c), _header(grid, c)) for _r, c in rows
+                              if id(c) in several)
+            rows = [rc for rc in rows if id(rc[1]) not in several]
+        sheets = sorted({int(c.page) for _row, c in rows}) or [0]
+        first = [rc for rc in rows if int(rc[1].page) == sheets[0]]
+        if (len(rows) > SPT_MAX_DRIVES and len(sheets) > 1
+                and 2 <= len(first) <= SPT_MAX_DRIVES):
+            # The sample's rows are gathered by depth over every sheet (a
+            # continuation sheet restates the sample it broke on: _Group),
+            # so counts printed at this depth on other sheets -- the same
+            # record restated, or another hole's sheet printed at the same
+            # depths -- joined this record's: on several borings' sheets
+            # read as one item, twenty and more counts in one record
+            # (RI-130). A driven record is printed on one sheet: the first
+            # sheet's counts are it. Only where the sheets together give
+            # more counts than a record has drives, so drives a page break
+            # splits stay whole.
+            others = [(int(c.page), number) for (_key, number), c in rows
+                      if int(c.page) != sheets[0]]
+            by_sheet = {p: [v for q, v in others if q == p]
+                        for p in sorted({p for p, _v in others})}
+            blow_remarks.append(
+                "counts printed one to a cell at this depth on another "
+                "sheet are not this record's drives: "
+                + "; ".join(f"page {p} {_counts_text(counts)}"
+                            for p, counts in by_sheet.items()))
+            if notes is not None:
+                notes.add(int(sheets[0]), "other_sheet",
+                          f"{len(first)} counts on page {sheets[0]}, "
+                          f"{len(others)} on other sheets, at "
+                          f"{float(first[0][1].depth):g}")
+            rows = first
+        # A lone number left is as likely an N as a drive: left out, as
+        # where only one was printed.
+        blows = ([number for (_key, number), _c in rows] if len(rows) >= 2
+                 else [])
     elif (blows and blow_cell is not None and len(blows) < SPT_DRIVES
           and not group.doubt):
         # A record printed in one cell with fewer than three drives takes the
@@ -1454,6 +1596,25 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if len(blows) + len(extra) <= SPT_DRIVES:
             blows = ([w for key, w in extra if key < at] + list(blows)
                      + [w for key, w in extra if key >= at])
+    if len(blows) > SPT_MAX_DRIVES:
+        # More counts than one driven record has drives (RI-130): several
+        # records, or a column, read as one. Not a blow record: no SPT is
+        # seeded from it, so it is neither the record's drives nor kept
+        # beside a model's as an alternative; the counts stay in the
+        # sample's note and the QA section lists it.
+        refused = list(blows)
+        blow_remarks.append(
+            f"{len(refused)} counts read as one blow record at this depth "
+            f"({_counts_text(refused)}), more than a driven record's drives "
+            f"(three increments and the occasional fourth, "
+            f"{FOURTH_INCREMENT_SOURCE}); refused as a blow record, no N "
+            f"from them")
+        if notes is not None:
+            cell = blow_cell or (stacked_cells[0] if stacked_cells
+                                 else group.cells[0])
+            notes.add(int(cell.page), "blows_count",
+                      f"{len(refused)} counts at {top:g} {unit}".strip())
+        blows, refusal = [], False
     if n_printed:
         # A refusal printed where the N goes is the log's own word: the
         # record is a refusal whatever its drives say (RI-48).
@@ -1472,17 +1633,35 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     if drawn is not None:
         # The sample's box, drawn against the depth scale (planlens
         # log_grid, PL-24). An interval the log PRINTS as numbers stays; the
-        # drawn box seats the rows that print none.
+        # drawn box seats the rows that print none. A box whose lines do not
+        # take every row of the sample (a short box with the sample's number
+        # printed under it) still draws the sample's TOP: its top edge is
+        # read, its bottom is not (RI-131).
         if bottom is None:
-            top, bottom = float(drawn.top), float(drawn.bottom)
             pm = getattr(drawn, "plus_minus", None)
-            drawn_note = ("; interval from the sample box drawn on the log"
-                          + (f" (+/- {float(pm):.3g} {unit})".rstrip()
-                             if pm else ""))
+            within = (f" (+/- {float(pm):.3g} {unit})".rstrip() if pm
+                      else "")
+            if drawn_top_only:
+                top = float(drawn.top)
+                drawn_note = ("; top from the top edge of the sample box "
+                              "drawn on the log" + within + "; the box's "
+                              "lines do not take every row of the sample, "
+                              "so its bottom is not read as the sample's")
+            else:
+                top, bottom = float(drawn.top), float(drawn.bottom)
+                drawn_note = ("; interval from the sample box drawn on the "
+                              "log" + within)
         label = str(getattr(drawn, "label", "") or "").strip()
         if label and not sample_id:
             sample_id = label
             drawn_note += "; sample id from the drawn box"
+    elif (box_pages and printed_row is None and bottom is None
+          and {int(c.page) for c in group.cells} & box_pages):
+        # The grid read drawn sample boxes on the sample's own sheet and
+        # none is this sample's: its top stays where its first row stands
+        # on the depth scale, as before, and the note says so (RI-131).
+        drawn_note = ("; top at the depth its first row stands at on the "
+                      "depth scale: no sample box drawn for it was found")
     printed_note = ""
     if printed_row is not None:
         # A page with no ruler (RI-18): these cells stand on the line of a
@@ -1501,7 +1680,7 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
     # THE CHECKS (RI-04): a value the grid may have put in the wrong row or
     # column keeps a lower confidence and a note, and goes to QA. Nothing
     # is dropped; a percentage the record cannot hold stays in the note.
-    remarks: List[str] = []
+    remarks: List[str] = list(blow_remarks)
     if unassigned:
         remarks.append("printed with it but not assigned to a quantity: "
                        + ", ".join(f"{t} (column '{h[:60]}')"
@@ -1738,10 +1917,21 @@ SPT_HALT_TOTAL = 100
 #: (RI-70). The figure prints one such increment, so a record of five or more
 #: drives is not this case.
 FOURTH_INCREMENT_SOURCE = "Fig. 3-20, FHWA NHI-06-088 Vol. I, p. 3-52"
+#: The most drives one driven record holds, whatever drive lengths it gives:
+#: the three increments and the occasional fourth
+#: (:data:`FOURTH_INCREMENT_SOURCE`). A blow "record" of more counts is not
+#: one driven record (RI-130): where it was seen, it was every sheet's counts
+#: at one depth, or a row of several printed columns, read as one record.
+SPT_MAX_DRIVES = SPT_DRIVES + 1
 #: The standard increment, and how far a printed or measured one may sit from
 #: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
 SPT_INCREMENT_M = 0.1524
 _INCREMENT_TOL_M = 0.006
+#: How far above a sample's first marked row a drawn box's top edge may
+#: stand and still be the sample's top (RI-131): 24 in (0.61 m), the three
+#: 6 in increments and the occasional fourth (:data:`FOURTH_INCREMENT_SOURCE`),
+#: the most a driven sample's rows run below its top.
+_DRAWN_TOP_REACH_M = SPT_MAX_DRIVES * SPT_INCREMENT_M
 #: A sample's drawn or printed interval over its three drives may be off the
 #: standard by this much a drive (a box is drawn to a line's width).
 _INTERVAL_TOL_M = 0.012
@@ -1977,6 +2167,25 @@ def _whole_lengths(record: Any) -> bool:
         for v in three)
 
 
+def too_many_counts(record: Any) -> bool:
+    """Does this record print more counts than a driven record has drives,
+    the three increments and the occasional fourth (:data:`SPT_MAX_DRIVES`)?
+    Such a record is refused as a blow record (RI-130): it is several
+    records, or a column, read as one. The limit is four whatever drive
+    lengths the record gives: twenty lengths beside twenty counts are no
+    more one record than the counts alone, and a record whose lengths are
+    fewer than its counts is read as RI-50 reads it (:func:`_halted`)."""
+    return len(getattr(record, "blows", None) or []) > SPT_MAX_DRIVES
+
+
+def _counts_text(blows: Sequence[Any], most: int = 12) -> str:
+    """A refused record's counts for a note: the first ``most``, then how
+    many more."""
+    shown = "-".join(show(b) for b in list(blows)[:most])
+    more = len(blows) - most
+    return shown + (f"-... ({more} more)" if more > 0 else "")
+
+
 def _a_count(entry: Any) -> Optional[int]:
     """A drive printed as a whole number of blows, else None."""
     if isinstance(entry, bool):
@@ -2147,6 +2356,19 @@ class _FloorNotes:
                        "number and its drives) or what they are (a column "
                        "that also names a recovery or values); each is "
                        "kept in the nearest sample's note, not as its N"),
+        "other_sheet": ("samples whose counts, printed one to a cell, stand "
+                        "at the sample's depth on more than one sheet and "
+                        "together are more than a driven record's drives "
+                        "(three increments and the occasional fourth, "
+                        "Fig. 3-20, FHWA NHI-06-088 Vol. I, p. 3-52); a "
+                        "driven record is printed on one sheet, so the "
+                        "first sheet's counts are the record and the other "
+                        "sheets' are kept in the sample's note"),
+        "blows_count": ("blow records of more counts than a driven record "
+                        "has drives (three increments and the occasional "
+                        "fourth, Fig. 3-20, FHWA NHI-06-088 Vol. I, "
+                        "p. 3-52); refused as blow records, with no N from "
+                        "them, and the counts kept in the sample's note"),
     }
 
     def __init__(self) -> None:
@@ -3236,13 +3458,35 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         span = _span_in_unit(unit, grid)
         groups = _sample_groups(grid, pages, span, by_column, notes)
         boxes = list(getattr(grid, "samples", None) or [])
-        for group in groups:
+        box_pages = {int(p) for box in boxes
+                     for p in (set(getattr(box, "pages", ()) or ())
+                               | {getattr(box, "page", None)})
+                     if p is not None}
+        # A box drawn round every row of a group is that group's; then a box
+        # left over whose lines take a group's top row draws that group's
+        # top (RI-131: a short box over the drive, the sample's number
+        # printed under it).
+        whole: Dict[int, Any] = {}
+        for k, group in enumerate(groups):
             drawn = _drawn_box(group, boxes)
             if drawn is not None:
                 boxes.remove(drawn)
+                whole[k] = drawn
+        tops: Dict[int, Any] = {}
+        for k, group in enumerate(groups):
+            if k in whole:
+                continue
+            drawn = _drawn_top(group, grid, boxes, by_column, unit=unit)
+            if drawn is not None:
+                boxes.remove(drawn)
+                tops[k] = drawn
+        for k, group in enumerate(groups):
             sample, drive = _seed_sample(group, grid, unit, confidence_floor,
-                                         by_column, template_note, drawn,
-                                         notes=notes)
+                                         by_column, template_note,
+                                         whole.get(k, tops.get(k)),
+                                         notes=notes,
+                                         drawn_top_only=k in tops,
+                                         box_pages=box_pages)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:
@@ -3436,6 +3680,47 @@ def _same_blows(a: Sequence[Any], b: Sequence[Any]) -> Optional[bool]:
     return all(abs(x - y) <= 1e-9 for x, y in zip(left, right))
 
 
+#: The most decimals a log prints a depth to: 13.5 ft, 1.45 m. A depth with
+#: more is one the floor worked out off the depth scale (interpolated
+#: between its ticks), never one printed (RI-131).
+_PRINTED_DECIMALS = 2
+
+
+def _decimals(value: float, most: int = 8) -> int:
+    """How many decimals ``value`` is written to, up to ``most``."""
+    for d in range(most + 1):
+        if abs(value - round(value, d)) <= 1e-9 * max(1.0, abs(value)):
+            return d
+    return most
+
+
+def echoes_floor(floor_value: Any, model_value: Any) -> bool:
+    """Is the model's depth the floor's own, copied off the starting record
+    rather than read off the log (RI-131)?
+
+    The floor's depths are worked out off the depth scale and carry
+    decimals no log prints (4.137852); the starting record shows them to
+    six figures (``show``: 4.13785). A model depth written to more decimals
+    than a log prints (:data:`_PRINTED_DECIMALS`) that equals the floor's
+    value to the model's own decimals is that copy: the model read the
+    record, not the page. A model depth written as a log prints it (4.1,
+    4.15) is a reading, and may agree with the floor as before.
+    """
+    if not (isinstance(floor_value, Quantity)
+            and isinstance(model_value, Quantity)):
+        return False
+    if fold(floor_value.unit) != fold(model_value.unit):
+        return False
+    try:
+        f, m = float(floor_value.value), float(model_value.value)
+    except (TypeError, ValueError):
+        return False
+    places = _decimals(m)
+    if places <= _PRINTED_DECIMALS or _decimals(f) < places:
+        return False
+    return abs(round(f, places) - m) <= 1e-9 * max(1.0, abs(m))
+
+
 def _same_drives(a: Sequence[Any], b: Sequence[Any]) -> Optional[bool]:
     """Per-drive lengths agree: same count, each within 4 mm."""
     if not a or not b:
@@ -3517,8 +3802,31 @@ class _Merger:
         alternatives = []
         methods: List[str] = []
         confidences: List[float] = []
+        echoed: List[str] = []
         for name, kind in specs:
             fv, mv = getattr(f, name), getattr(m, name)
+            if (kind in ("depth", "layer_depth")
+                    and echoes_floor(fv, mv)):
+                # The model returned the floor's own worked-out depth: one
+                # reading, the floor's (RI-131). It keeps the floor's value,
+                # method and confidence, with no boost for two voters
+                # agreeing, and is not counted as reconciled.
+                s = Settled(fv, (floor_prov.method if floor_prov is not None
+                                 else "grid"),
+                            _conf(floor_prov, 0.5), verdict="echo")
+                self.log.echo(where, f"{what}: {name}", page, fv)
+                echoed.append(name)
+                value = fv.model_copy(deep=True)
+                if value.prov is None:
+                    value.prov = (prov.model_copy(deep=True) if prov
+                                  else None)
+                if value.prov is not None:
+                    value.prov.method = s.method  # type: ignore[assignment]
+                    value.prov.confidence = max(0.0, min(1.0, s.confidence))
+                setattr(merged, name, value)
+                methods.append(s.method)
+                confidences.append(s.confidence)
+                continue
             if kind == "depth":
                 same = same_depth(fv, mv)
             elif kind == "layer_depth":
@@ -3616,8 +3924,50 @@ class _Merger:
                 prov.note = (f"{model_prov.note}; " if model_prov.note
                              else "") + "matched to the grid's row" \
                     + (f" ({floor_prov.note[:60]})" if floor_prov.note else "")
+            if echoed:
+                prov.note = ((prov.note + "; ") if prov.note else "") + (
+                    f"the reader returned the floor's own {', '.join(echoed)} "
+                    f"(worked out off the depth scale, to more decimals than "
+                    f"a log prints), so it is one reading, the floor's: its "
+                    f"method and confidence, not two voters agreeing")
         merged.prov = prov
         return merged
+
+    def fit_blows(self, voter: str, record: SPT) -> SPT:
+        """One voter's driven record, ready to merge: where its blow record
+        is more counts than a driven record has drives (:func:`too_many_counts`,
+        RI-130) -- several records, or a column, read as one -- a copy with
+        no blows, the refusal logged and said in its note. Refused, the
+        counts are neither the slot's value nor kept beside the other
+        voter's as an alternative, and no N is had from them."""
+        if not (record.blows and too_many_counts(record)):
+            return record
+        where = (f"investigations[{self.inv_id}].spt"
+                 f"[{show(record.depth_top)}]")
+        what = f"driven record at {show(record.depth_top)}"
+        page = record.prov.page if record.prov is not None else None
+        self.log.refuse(
+            where, f"{what}: blows", voter, list(record.blows),
+            why=(f"{len(record.blows)} counts in one blow record, more than "
+                 f"the {SPT_MAX_DRIVES} drives a driven record has "
+                 f"(three increments and the occasional fourth, "
+                 f"{FOURTH_INCREMENT_SOURCE}); refused as a blow record, "
+                 f"not kept as an alternative"),
+            page=page)
+        out = record.model_copy(deep=True)
+        counts = _counts_text(out.blows)
+        out.blows = []
+        out.increments = []
+        if out.n_basis:
+            # An N computed from the refused counts goes with them; an N the
+            # voter read as printed stays.
+            out.n, out.n_basis = None, ""
+        if out.prov is not None:
+            out.prov.note = ((out.prov.note + "; ") if out.prov.note
+                             else "") + (
+                f"its blow record ({counts}) was refused: more counts than "
+                f"a driven record has drives")
+        return out
 
     @staticmethod
     def _with_floor_note(f: Sample, merged: Sample) -> Sample:
@@ -4104,8 +4454,9 @@ class _Merger:
     def spt(self) -> List[SPT]:
         base = f"investigations[{self.inv_id}].spt"
         pairs, floor_only, model_only = _pair(
-            self.floor.spt, self.model.spt, lambda r: r.depth_top,
-            DEPTH_TOL_M)
+            [self.fit_blows("floor", r) for r in self.floor.spt],
+            [self.fit_blows("model", r) for r in self.model.spt],
+            lambda r: r.depth_top, DEPTH_TOL_M)
         out: List[SPT] = []
         for f, m in pairs:
             what = f"driven record at {show(f.depth_top)}"
