@@ -1,5 +1,12 @@
 {
  "_about": "What each page's agent is handed with default switches (BACKLOG INF-30). Re-record only for a deliberate change, in its own commit with the reason; a split step never re-records (plan step 12 is the one exception): python -m webapp.tests.page_builds record (see test_page_fingerprints.py)",
+ "app_environment": {
+  "reference_chart_lines": [
+   "aashto_plasticity",
+   "uscs_particle_sizes",
+   "uscs_plasticity"
+  ]
+ },
  "builds": {
   "geotech_default": {
    "app": {
