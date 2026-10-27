@@ -176,6 +176,18 @@ class TestTheSummaryTable:
         assert conflict.values == ["summary table 7.63",
                                    "chemical sheet 6.27"]
 
+    def test_a_row_placed_from_its_label_names_its_linked_hole(self):
+        # RI-141: the row prints no boring; the conflict says which hole the
+        # reconciler placed it in, marked as linked, not '?'.
+        sheet = _chem("TH-7 1.65-2.1 m", ph=6.27)
+        row = SummaryRow(investigation_id="", sample_id="TH-7 1.65-2.1 m",
+                         depth_top=_m(DEPTH), pH=7.63)
+        record = reconcile(_record(sheet, _summary(row)))
+
+        assert row.investigation_id == "" and lab_hole(row) == "TH-7"
+        (conflict,) = [e for e in record.qa if e.kind == "conflict"]
+        assert conflict.where.startswith("lab_tests.pH at TH-7 (linked)")
+
     def test_a_row_does_not_meet_a_sheet_nothing_linked(self):
         sheet = _chem("QX-3 1.65 m")
         row = _row("TH-7", ph=7.63)
@@ -191,3 +203,20 @@ class TestTheSummaryTable:
 
         assert sh["status"] == "pass", sh
         assert "no sheet" not in sh["detail"]
+
+
+class TestTheLibraryPage:
+
+    def test_the_exploration_column_shows_printed_then_linked(self):
+        # RI-141
+        from report_ingest.writers import library_page
+
+        linked = _chem("TH-7 1.65-2.1 m")
+        printed = _chem("P-17", boring="TH-12", page=31)
+        bare = _chem("QX-3 9.9 m", page=32)
+        record = reconcile(_record(linked, printed, bare))
+        page = library_page(record, "abc123")
+
+        assert "| chemical | TH-7 (linked) |" in page
+        assert "| chemical | TH-12 |" in page
+        assert "| chemical | - |" in page
