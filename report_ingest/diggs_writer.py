@@ -168,8 +168,8 @@ from report_ingest.model import (
     ConsolidationResult, DCPData, GradationResult, Investigation, LabTest,
     Layer, MoistureDensityResult, OtherResult, Project, Quantity,
     ReportRecord, Sample, SPT, StrengthResult, SummaryRow,
-    SummaryTableResult, WaterLevel, G, is_mass_density, read_as_stress,
-    si_numbers,
+    SummaryTableResult, WaterLevel, G, is_mass_density, lab_hole,
+    read_as_stress, si_numbers,
     unit_printed,
 )
 # The remark a pit's "groundwater not encountered" is written as (a TrialPit
@@ -648,9 +648,11 @@ def _lab_hole(test: LabTest, aliases: Optional[Dict[str, str]] = None) -> str:
     placed as before. The writer, its synthesised holes and the round-trip
     gate all ask this one function, so the gate looks where the writer
     wrote. ``aliases`` (:func:`_hole_aliases`) turns a printed spelling into
-    the log's own id.
+    the log's own id. The hole itself is :func:`report_ingest.model.lab_hole`,
+    the one field the lab scorer and the reconciler's cross-check read too
+    (RI-115).
     """
-    name = test.linked_investigation_id or test.investigation_id or ""
+    name = lab_hole(test)
     return (aliases or {}).get(name.strip(), name)
 
 
@@ -666,7 +668,7 @@ def _row_hole(row: SummaryRow, aliases: Optional[Dict[str, str]] = None
     no boring has no hole. The writer, its synthesised holes and the
     round-trip gate all ask this one function.
     """
-    name = row.linked_investigation_id or row.investigation_id or ""
+    name = lab_hole(row)
     return (aliases or {}).get(name.strip(), name)
 
 

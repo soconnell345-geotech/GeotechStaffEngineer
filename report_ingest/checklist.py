@@ -356,11 +356,18 @@ def _sheet_kinds_on(rows: Sequence[Any], sheet: Any) -> bool:
 
 
 def _printed(test: Any) -> Tuple[str, Optional[float], str]:
-    """The boring, depth (m) and sample a test prints, folded for matching;
-    empty or ``None`` where it prints none."""
+    """The hole a test is placed in, and the depth (m) and sample it prints,
+    folded for matching; empty or ``None`` where there is none.
+
+    The hole is :func:`~report_ingest.model.lab_hole` (the reconciler's
+    link, else the boring as printed), the one the summary-row match
+    (``reconciler._sheets_for``) reads, so a sheet that printed its hole
+    only in the specimen label is not taken for a specimen of no hole
+    (RI-115)."""
+    from report_ingest.model import lab_hole
     from report_ingest.reconciler import depth_m, fold_id, hole_key
 
-    return (hole_key(test.investigation_id), depth_m(test.depth_top),
+    return (hole_key(lab_hole(test)), depth_m(test.depth_top),
             fold_id(test.sample_id))
 
 

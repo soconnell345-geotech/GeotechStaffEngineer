@@ -20,7 +20,9 @@ THE METRICS, and the tolerance each is judged at:
 ``kind``      the sheet's test kind, from the sheet's own title. Right or wrong.
 ``link``      the boring identifier AND the depth printed on the sheet, the
               depth within 0.15 m, compared in metres whatever the sheet
-              prints.
+              prints. The boring is the hole the record places the test
+              in: the reconciler's link where there is one, else the
+              boring as printed (``model.lab_hole``, RI-115).
 ``index``     every scalar the sheet printed -- limits, water content,
               densities, fractions, strengths, pH, resistivity -- EXACT, to
               within a rounding of the last printed digit.
@@ -46,7 +48,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, get_args
 
-from report_ingest.model import Quantity, si_numbers, to_si
+from report_ingest.model import Quantity, lab_hole, si_numbers, to_si
 
 __all__ = [
     "UNIT_SUFFIX", "SIEVE_MM", "DEPTH_TOL_M", "EXACT_TOL", "PASSING_TOL",
@@ -749,11 +751,20 @@ def _hole(text: Any) -> str:
 
 
 def _tests_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
-    """The records that belong to this specimen: same boring, same depth."""
+    """The records that belong to this specimen: same boring, same depth.
+
+    The boring is the hole the record PLACES the test in
+    (:func:`~report_ingest.model.lab_hole`): the reconciler's link, else the
+    boring the sheet printed -- the hole the DIGGS file writes it under. A
+    sheet that printed its hole only in the specimen label, linked by the
+    reconciler, scored on Foundry run 5 as if unlinked, every value missed,
+    while its file held them in the right hole (BACKLOG RI-115). A reader's
+    own answer, which nothing has linked yet, is scored on the printed
+    boring as before."""
     out = []
     for test in tests:
         if expect.investigation_id and \
-                _hole(test.investigation_id) != _hole(expect.investigation_id):
+                _hole(lab_hole(test)) != _hole(expect.investigation_id):
             continue
         if expect.depth_m is not None:
             got = test.depth_top.si_value if test.depth_top else None
@@ -764,7 +775,8 @@ def _tests_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
 
 
 def _rows_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
-    """The summary-table rows that belong to this specimen."""
+    """The summary-table rows that belong to this specimen, each by the hole
+    it is placed in, as a sheet is (:func:`_tests_near`)."""
     from report_ingest.model import SummaryTableResult
 
     out = []
@@ -773,7 +785,7 @@ def _rows_near(tests: Sequence[Any], expect: Expectation) -> List[Any]:
             continue
         for row in test.result.rows:
             if expect.investigation_id and \
-                    _hole(row.investigation_id) != \
+                    _hole(lab_hole(row)) != \
                     _hole(expect.investigation_id):
                 continue
             if expect.depth_m is not None:
