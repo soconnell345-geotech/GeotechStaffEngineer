@@ -536,6 +536,11 @@ class DiggsWriteNotes:
     #: apart by ``gml:id``; a reader that keys holes by NAME -- the app's own
     #: ``parse_diggs`` among them -- reads each such name as one hole.
     shared_names: List[str] = field(default_factory=list)
+    #: Every depth above the ground surface the writer refused to write
+    #: (RI-123; :func:`_on_the_ground`), one dict each: ``investigation_id``,
+    #: ``what``, ``page``, ``value`` and ``why``. Said here only, not in
+    #: :attr:`skipped`. The round-trip gate does not look for them.
+    above_ground: List[Dict[str, Any]] = field(default_factory=list)
     investigations: int = 0
     layers: int = 0
     samples: int = 0
@@ -557,6 +562,7 @@ class DiggsWriteNotes:
                 "position_unknown": list(self.position_unknown),
                 "normalised": list(self.normalised),
                 "shared_names": list(self.shared_names),
+                "above_ground": [dict(row) for row in self.above_ground],
                 "investigations": self.investigations, "layers": self.layers,
                 "samples": self.samples, "spt": self.spt, "water": self.water,
                 "tests": self.tests, "lab_tests": self.lab_tests,
@@ -573,6 +579,134 @@ def _unwritable(inv: Investigation) -> bool:
     """
     return not inv.units_known and any(
         (inv.layers, inv.samples, inv.spt, inv.water))
+
+
+#: What the last gate says of a depth above the ground surface (RI-123).
+_ABOVE_LEFT_OUT = ("left out of the DIGGS file, which writes no depth above "
+                   "the ground surface; kept in the record")
+
+
+def _on_the_ground(investigations: Sequence[Investigation],
+                   lab: Sequence[LabTest]
+                   ) -> Tuple[List[Investigation], List[LabTest],
+                              List[Dict[str, Any]], List[str], List[str]]:
+    """The writer's last gate (RI-123): no depth above the ground surface
+    goes into a DIGGS file, whatever path it came by.
+
+    Every depth below the ground surface is checked
+    (:func:`report_ingest.checks.surface`). One above it by no more than
+    ``checks.SURFACE_TOL_M`` is written as 0, the surface, and said in
+    :attr:`DiggsWriteNotes.normalised`. One further above is LEFT OUT of the
+    file and said once, in :attr:`DiggsWriteNotes.above_ground`: a layer,
+    sample, driven record, sounding point, laboratory test or summary row
+    whose top it is goes whole (DIGGS places each by its depth, and a place
+    above the ground is none); a base or a water, casing or caved depth is
+    left out and its object written. Elevations are not depths and are
+    written as given.
+
+    A hole whose water READING is left out this way and whose log also has
+    a "not encountered" row loses that row from the file too, said in
+    :attr:`DiggsWriteNotes.skipped`: with the reading gone the row would be
+    all the file holds, and it would say no water was found where the log
+    gave a reading (RI-123 review).
+
+    The inputs are never changed: an investigation or a test that holds such
+    a depth is copied. The round-trip gate asks this same function, so it
+    does not look for what was left out. Returns the investigations and the
+    tests to write, the rows left out, the lines for the values set to 0 and
+    the lines for what else was left out.
+    """
+    from report_ingest.checks import (
+        ABOVE, SNAPPED, ground_investigation, surface,
+    )
+
+    grounded: List[Investigation] = []
+    above: List[Dict[str, Any]] = []
+    snapped: List[str] = []
+    skipped: List[str] = []
+    for inv in investigations:
+        copy = inv.model_copy(deep=True)
+        rows, n = ground_investigation(copy, refused=_ABOVE_LEFT_OUT)
+        if not rows and not n:
+            grounded.append(inv)
+            continue
+        grounded.append(copy)
+        name = inv.investigation_id or "(no identifier)"
+        for row in rows:
+            above.append({"investigation_id": inv.investigation_id,
+                          "what": row["what"], "page": row.get("page"),
+                          "value": row["value"], "why": row["why"]})
+        # The gate empties a slot and keeps its object, so the copy's water
+        # rows stand where the log's do.
+        reading_gone = any(
+            mine.when != "not_encountered" and mine.depth is None
+            and given.depth is not None
+            for mine, given in zip(copy.water, inv.water))
+        if reading_gone and any(w.when == "not_encountered"
+                                for w in copy.water):
+            copy.water = [w for w in copy.water
+                          if w.when != "not_encountered"]
+            skipped.append(
+                f"{name}: a water reading above the ground surface was left "
+                f"out of the file, and with it the log's 'not encountered' "
+                f"row, so the file says nothing of this hole's water rather "
+                f"than that none was found")
+        if n:
+            snapped.append(
+                f"{name}: {n} depth(s) above the ground surface by no more "
+                f"than the tolerance written as 0, the surface")
+    kept_lab: List[LabTest] = []
+    for n, test in enumerate(lab):
+        where = (f"lab test {n + 1} ({test.kind}"
+                 + (f", {test.investigation_id}" if test.investigation_id
+                    else "") + ")")
+        changed = False
+        copy = test.model_copy(deep=True)
+
+        def ground(obj: Any, slot: str, what: str) -> str:
+            """The verdict on ``obj``'s ``slot``; a value near 0 set to 0."""
+            nonlocal changed
+            q = getattr(obj, slot, None)
+            if q is None or q.value is None:
+                return ""
+            value, verdict = surface(float(q.value), q.unit or "")
+            if verdict == SNAPPED:
+                snapped.append(f"{what}: depth {q.value:g} {q.unit} written "
+                               f"as 0, the ground surface".replace("  ", " "))
+                q.value = value
+                changed = True
+            elif verdict == ABOVE:
+                above.append({"investigation_id": test.investigation_id,
+                              "what": what, "page": _first_page(test),
+                              "value": float(q.value),
+                              "why": f"depth {q.value:g} is negative: above "
+                                     f"the ground surface; "
+                                     f"{_ABOVE_LEFT_OUT}"})
+                changed = True
+            return verdict
+
+        if isinstance(copy.result, SummaryTableResult):
+            rows = []
+            for i, row in enumerate(copy.result.rows):
+                if ground(row, "depth_top", f"{where} row {i + 1}") == ABOVE:
+                    continue
+                if ground(row, "depth_bottom",
+                          f"{where} row {i + 1} base") == ABOVE:
+                    row.depth_bottom = None
+                rows.append(row)
+            copy.result.rows = rows
+        else:
+            if ground(copy, "depth_top", where) == ABOVE:
+                continue
+            if ground(copy, "depth_bottom", f"{where} base") == ABOVE:
+                copy.depth_bottom = None
+        kept_lab.append(copy if changed else test)
+    return grounded, kept_lab, above, snapped, skipped
+
+
+def _first_page(test: LabTest) -> Optional[int]:
+    pages = list(getattr(test, "pages", None) or [])
+    return int(pages[0]) if pages else None
 
 
 def _hole_key(name: str) -> str:
@@ -2986,9 +3120,18 @@ def write_diggs(record_or_investigations: Any,
             f"uom on every measure, so writing one would mean inventing "
             f"a unit. Fix the unit or write no DIGGS for this log.")
     investigations = [inv for inv in investigations if not _unwritable(inv)]
+    # The last gate (RI-123): no depth above the ground surface is written.
+    investigations, lab, above, snapped, also = _on_the_ground(
+        investigations, lab)
     writer = _Writer(investigations, project, document_id, lab,
                      left_out=left_out)
     xml = writer.build()
+    # Each value left out as above the ground is said once, in above_ground
+    # (the record's QA gives it an entry of its own); what went with one is
+    # in skipped.
+    writer.notes.above_ground.extend(above)
+    writer.notes.skipped.extend(also)
+    writer.notes.normalised.extend(snapped)
     _say_gravity(writer.notes, list(investigations) + list(lab))
     if notes is not None:
         notes.append(writer.notes)
@@ -3087,7 +3230,9 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
     file gives it separately. That a name is shared is the writer's
     :attr:`DiggsWriteNotes.shared_names`, for the QA, not a diff here.
 
-    A log the writer LEFT OUT (depths in an unknown unit) is not looked for.
+    A log the writer LEFT OUT (depths in an unknown unit) is not looked for,
+    nor is a depth above the ground surface it refused to write; one it
+    wrote as 0 is looked for at 0 (RI-123, :func:`_on_the_ground`).
     """
     from subsurface_characterization import parse_diggs
 
@@ -3107,6 +3252,10 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
     if lab_tests is not None:
         lab = list(lab_tests)
     investigations = [inv for inv in investigations if not _unwritable(inv)]
+    # What the writer left out as above the ground surface is not looked for
+    # (RI-123): the same last gate, over the same inputs.
+    investigations, lab, _above, _snapped, _also = _on_the_ground(
+        investigations, lab)
     if notes is None:
         notes = _notes_for(investigations, lab, project)
 

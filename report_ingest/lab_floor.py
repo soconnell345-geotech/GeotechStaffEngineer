@@ -788,6 +788,15 @@ def _series_from(rows: List[List[str]], header: List[str],
     return out
 
 
+def _an_elevation(head: str) -> bool:
+    """A column heading that names an elevation and no depth (RI-123):
+    :data:`LABEL_FIELDS` files both under ``depth_top`` as a link, but an
+    elevation is on a datum, not below the ground surface."""
+    text = str(head or "").lower()
+    return bool(re.search(r"\belev(?:ation)?\b", text)) and not re.search(
+        r"depth|prof(?:ondeur|undidad)?\b", text)
+
+
 def _summary_rows(rows: List[List[str]], header: List[str],
                   columns: Dict[int, str], unit: str, conf: float,
                   prov: Provenance,
@@ -825,7 +834,16 @@ def _summary_rows(rows: List[List[str]], header: List[str],
                 continue
             if name == "depth_top":
                 number = _num(text)
-                if number is not None:
+                if number is not None and _an_elevation(head):
+                    # An elevation column is not a depth below the ground
+                    # (RI-123): the row has a slot of its own for it.
+                    kwargs["elevation_top"] = Quantity(
+                        value=number, unit=_unit_in(head) or unit)
+                elif number is not None and number < 0.0:
+                    # No depth below the ground is negative (RI-123): kept
+                    # as printed under its heading, not as the row's depth.
+                    other.append((head, text))
+                elif number is not None:
                     kwargs["depth_top"] = Quantity(value=number,
                                                    unit=unit or _unit_in(head))
                 continue

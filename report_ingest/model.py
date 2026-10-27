@@ -2822,6 +2822,14 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     # A value kept in the record at a lowered confidence because the page
     # does not show it: kept, and in question.
     (("out_of_range", "partial"), "kept at confidence", "open"),
+    # A depth ruler that runs above the ground surface (RI-123,
+    # report_ingest.log_floor.RULER_IN_DOUBT): every depth read through it
+    # is in question.
+    (("partial",), "so the fit or the column it was fitted to is in doubt",
+     "open"),
+    # Depths read just above the ground surface set to 0 by the record's own
+    # rule (RI-123, report_ingest.checks.surface).
+    (("partial",), "were recorded as 0", "changed"),
     # A value no real sheet prints, kept out of its slot by the builders'
     # flag mode and listed with the values as read (RI-87, report_ingest.
     # checks.IMPOSSIBLE): which reading is right is for a person to say.
