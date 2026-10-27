@@ -177,12 +177,10 @@ def run(args: argparse.Namespace) -> int:
     arms = Path(args.saved_dir) if args.saved_dir else main / rcl.OUT_REL
     root = Path(args.out_dir) if args.out_dir else \
         main / rcl.OUT_REL / "dry_run_model_first"
-    for checkout in {main, rcl.REPO}:
-        if rcl._inside(root, checkout) and \
-                rcl.git_ignored(root, checkout) is False:
-            print(f"refused: {root} is inside the repo and git does not "
-                  f"ignore it; run files hold private content")
-            return rcl.REFUSED
+    refusal = rcl.out_dir_refusal(root, {main, rcl.REPO})
+    if refusal:
+        print(refusal)
+        return rcl.REFUSED
     readings = _saved_readings(arms)
     stages = tuple(s for s in STAGES if not args.stages
                    or s in args.stages.split(","))

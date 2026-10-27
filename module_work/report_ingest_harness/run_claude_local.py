@@ -161,21 +161,64 @@ def main_checkout(start: Path = REPO) -> Path:
     return start
 
 
-def git_ignored(path: Path, root: Path) -> Optional[bool]:
-    """Whether the checkout at ``root`` ignores ``path`` (which need not
-    exist yet); None without git."""
+#: Setting this to 1 allows a run whose out_dir git cannot judge, but only
+#: for a folder path with a ``raw`` segment (the private folders' own name,
+#: gitignored in the main checkout). It never overrides "git says tracked".
+PRIVATE_OUT_ENV = "GEOTECH_HARNESS_PRIVATE_OUT"
+
+
+def git_ignored_why(path: Path, root: Path) -> tuple:
+    """(ignored, why): whether the checkout at ``root`` ignores ``path``
+    (which need not exist yet), None when git cannot answer, and why."""
     try:
         out = subprocess.run(
             ["git", "-C", str(root), "check-ignore", "-q",
              str(path.resolve())],
             capture_output=True, text=True, timeout=30)
-    except Exception:                                   # noqa: BLE001
-        return None
+    except Exception as exc:                            # noqa: BLE001
+        return None, f"git could not be run ({exc})"
     if out.returncode == 0:
-        return True
+        return True, ""
     if out.returncode == 1:
-        return False
-    return None                                          # not a checkout
+        return False, ""
+    why = (out.stderr or "").strip().splitlines()
+    return None, (why[0] if why else f"git exited {out.returncode}")
+
+
+def git_ignored(path: Path, root: Path) -> Optional[bool]:
+    """Whether the checkout at ``root`` ignores ``path`` (which need not
+    exist yet); None when git cannot answer."""
+    return git_ignored_why(path, root)[0]
+
+
+def has_raw_segment(path: Path) -> bool:
+    return "raw" in path.resolve().parts
+
+
+def out_dir_refusal(out: Path, roots: Iterable[Path],
+                    what: str = "run files hold private content"
+                    ) -> Optional[str]:
+    """Why a run must not write ``out``, or None. A folder inside a checkout
+    git would track is refused; so is one git cannot judge (INF-57: a
+    worktree's Windows gitdir seen from WSL answers "not a git repository"),
+    unless ``PRIVATE_OUT_ENV`` is 1 and the path has a ``raw`` segment."""
+    for root in roots:
+        if not _inside(out, root):
+            continue
+        state, why = git_ignored_why(out, root)
+        if state is True:
+            continue
+        if state is False:
+            return (f"refused: {out} is inside the repo and git does not "
+                    f"ignore it; {what}")
+        if (os.environ.get(PRIVATE_OUT_ENV) == "1"
+                and has_raw_segment(out)):
+            continue
+        return (f"refused: {out} is inside {root} and git could not say "
+                f"whether it ignores it ({why}); {what}. Run from the main "
+                f"checkout (where git answers), or set {PRIVATE_OUT_ENV}=1 "
+                f"if the folder is a gitignored raw/ folder")
+    return None
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -1214,11 +1257,10 @@ def run(args: argparse.Namespace,
     arm = args.arm or default_arm(stage, model, vision, switches)
     out = (Path(args.out_dir) if args.out_dir
            else paths["main"] / OUT_REL / arm)
-    for root in {paths["main"], REPO}:
-        if _inside(out, root) and git_ignored(out, root) is False:
-            print(f"refused: {out} is inside the repo and git does not "
-                  f"ignore it; run files hold private content")
-            return REFUSED
+    refusal = out_dir_refusal(out, {paths["main"], REPO})
+    if refusal:
+        print(refusal)
+        return REFUSED
     out.mkdir(parents=True, exist_ok=True)
 
     settings = {"stage": stage, "model": model, "vision_model": vision,
