@@ -180,7 +180,14 @@ def test_the_pdf_reaches_the_api_as_one_document_block(made_up):
                          output_format=CalcReading)
 
     assert reply.parsed is not None and reply.parsed.kind == "settlement"
-    _system, formatted = _format_messages(seen[0])
+    # _format_messages is private and its signature moved (newer
+    # langchain_anthropic requires a keyword-only ``model``); pass it only
+    # when this version takes it.
+    import inspect
+    kwargs = ({"model": MODEL}
+              if "model" in inspect.signature(_format_messages).parameters
+              else {})
+    _system, formatted = _format_messages(seen[0], **kwargs)
     blocks = formatted[0]["content"]
     docs = [b for b in blocks if b.get("type") == "document"]
     assert len(docs) == 1 and blocks[0] is docs[0]
@@ -298,17 +305,35 @@ def test_no_item_starts_past_the_time_limit(made_up):
     assert not list((made_up / "out" / "calc").glob("*.json"))
 
 
-def test_an_out_dir_git_would_track_is_refused(made_up):
-    tracked = rcl.REPO / "module_work" / "report_ingest_harness" / "_plain_t"
+def test_an_out_dir_git_would_track_is_refused(made_up, tmp_path,
+                                               monkeypatch):
+    # The test builds its own repo: it must not depend on where the code
+    # is checked out (a worktree's ``.git`` file can point at a path the
+    # running git cannot read, e.g. Windows paths seen from WSL, and then
+    # git says nothing and nothing is refused).
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    if subprocess.run(["git", "init", "-q", str(repo)],
+                      capture_output=True).returncode != 0:
+        pytest.skip("git init failed")
+    (repo / ".gitignore").write_text("raw/\n", encoding="utf-8")
+    monkeypatch.setattr(rcl, "REPO", repo)
+    monkeypatch.setattr(rcl, "main_checkout", lambda start=repo: repo)
+
     args = _args(made_up)
-    args.out_dir = str(tracked)
-    try:
-        assert rpb.run(args, chat_builder=_builder([], [])) == rcl.REFUSED
-    finally:
-        if tracked.exists():
-            import shutil
-            shutil.rmtree(tracked)
+    args.out_dir = str(repo / "module_work" / "_plain_t")
+    assert rpb.run(args, chat_builder=_builder([], [])) == rcl.REFUSED
     assert not (made_up / "ledger.json").exists()
+    assert not (repo / "module_work" / "_plain_t").exists()
+
+    # An ignored folder inside the same repo is allowed.
+    args = _args(made_up)
+    args.out_dir = str(repo / "raw" / "plain_t")
+    assert rpb.run(args, chat_builder=_builder([], [])) == rcl.OK
 
 
 def test_an_arm_is_not_resumed_under_another_instruction(made_up, monkeypatch):

@@ -59,7 +59,8 @@ __all__ = [
     "Provenance", "Alternative", "Quantity", "Project", "DrillingDetails",
     "Layer", "Sample",
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
-    "SPT", "WaterLevel", "LabTest", "Investigation", "NarrativeFacts",
+    "SPT", "WaterLevel", "LabTest", "lab_hole", "Investigation",
+    "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
     "QARank", "QA_RANKS", "qa_rank", "QA_BY_RANK_ENV", "qa_by_rank_enabled",
     "use_qa_by_rank",
@@ -2104,6 +2105,34 @@ class LabTest(BaseModel):
                 f"{RESULT_CLASS.get(self.kind, OtherResult).__name__}. To "
                 f"keep this result, give the test kind {self.result.kind!r}")
         return self
+
+
+def lab_hole(test: Any) -> str:
+    """The hole a laboratory test or a summary row is PLACED in: the one the
+    reconciler linked it to, else the boring it printed; empty for neither.
+
+    THE ONE FIELD every reader that places or matches a test by its hole
+    reads (BACKLOG RI-115): the DIGGS writer and its round-trip gate, the
+    lab scorer, and the reconciler's summary-table cross-check and the
+    checklist that shares it. A sheet that prints its hole only inside the
+    specimen label leaves ``investigation_id`` blank and is still linked
+    (``linked_investigation_id``); a reader of the printed field alone lost
+    it -- the scorer counted every value on such a sheet as missed while
+    the DIGGS file held them under the linked hole.
+
+    Why a reader asks this rather than the reconciler copying the link
+    into ``investigation_id``: that field is the sheet's own words and
+    never changes, so a reader can always tell a printed boring from a
+    derived link, and a record reconciled twice cannot take its own link
+    for print. Readers that want the words as printed -- placing a value
+    by its words on the page (``locate``), the readers' merge before any
+    link exists, and the labels the summary page, library and answer
+    sheets show -- read ``investigation_id`` itself (a link is only ever
+    made from printed words, so those words name the hole); the library
+    shows the link beside them.
+    """
+    return (getattr(test, "linked_investigation_id", "")
+            or getattr(test, "investigation_id", "") or "")
 
 
 class Investigation(BaseModel):

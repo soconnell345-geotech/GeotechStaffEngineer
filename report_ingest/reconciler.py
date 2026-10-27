@@ -67,7 +67,7 @@ from pydantic import BaseModel, Field
 
 from report_ingest.model import (
     UNITLESS_FIELDS, Investigation, LabTest, QAEntry, Quantity, ReportRecord,
-    Sample, si_numbers, unit_printed,
+    Sample, lab_hole, si_numbers, unit_printed,
 )
 from report_ingest.scoring import KEY_CONTENT
 
@@ -1528,12 +1528,19 @@ def _cross_check_summary_table(record: ReportRecord,
 
 
 def _sheets_for(row: Any, sheets: Sequence[LabTest]) -> List[LabTest]:
-    """The sheets that report on the same specimen as this row."""
+    """The sheets that report on the same specimen as this row.
+
+    Row and sheet are each taken in the hole they are placed in
+    (:func:`~report_ingest.model.lab_hole`: the link this pass made, else
+    the boring as printed), so a sheet that printed its hole only in the
+    specimen label meets the row that names that hole (RI-115). A record
+    nobody linked compares the printed borings, as before.
+    """
     out: List[LabTest] = []
-    printed = hole_key(row.investigation_id)
+    hole = hole_key(lab_hole(row))
     depth = depth_m(row.depth_top)
     for sheet in sheets:
-        if printed and hole_key(sheet.investigation_id) != printed:
+        if hole and hole_key(lab_hole(sheet)) != hole:
             continue
         if depth is not None:
             got = depth_m(sheet.depth_top)
