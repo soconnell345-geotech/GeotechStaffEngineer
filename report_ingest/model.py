@@ -2862,6 +2862,10 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     # record carries (RI-117, report_ingest.log_holes.missing_holes_qa): a
     # hole may be missing.
     (("partial",), "no log in the record carries", "open"),
+    # A model-first log's rows read off a page whose header names another
+    # hole, moved to that hole's log (RI-145, report_ingest.log_holes.
+    # sort_rows_by_hole): the record changed by its own rule.
+    (("note",), "that hole's: moved to log", "changed"),
     # Two parts of the narrative answer differently and the first is kept
     # by its place in the report, not by any evidence: as open as a page
     # label the voters split on.
