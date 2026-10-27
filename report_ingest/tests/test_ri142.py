@@ -6,7 +6,8 @@ its sheet. Now each test the row's columns name (``reconciler.COLUMN_KINDS``
 and the ``other`` headings' keywords) needs a joined sheet that reports it:
 one of the kinds the column names, or one carrying the column's value. A row
 naming no test keeps the old rule (any joined sheet); a test only a tied
-sheet reports is the tie's, not a gap.
+sheet reports is the tie's, not a gap; a water content or a density no sheet
+reports is a note (labs often report these on the summary table only).
 
 Made-up values only: no hole, sample, depth or number here is from a report.
 """
@@ -140,16 +141,21 @@ class TestEachTestNeedsItsSheet:
 
     def test_a_value_the_sheet_carries_reports_its_column(self):
         # A shear sheet printing the specimen's water content reports the
-        # row's; a limits sheet printing none does not.
+        # row's, and so does a limits sheet printing one; one printing none
+        # leaves it to the note.
         shear = _sheet("direct_shear", StrengthResult(
             kind="direct_shear", phi_deg=29.0, wc=17.4))
-        assert _check(shear, _summary(_row(wc=17.4, phi_deg=29.0))
-                      )["status"] == "pass"
+        sh = _check(shear, _summary(_row(wc=17.4, phi_deg=29.0)))
+        assert sh["status"] == "pass", sh
+        assert "water content" not in sh["detail"]
+        sh = _check(_atterberg(ll=44.0, water_content=17.4),
+                    _summary(_row(ll=44.0, wc=17.4)))
+        assert sh["status"] == "pass", sh
+        assert "water content" not in sh["detail"]
         sh = _check(_atterberg(), _summary(_row(ll=44.0, wc=17.4)))
-        assert "QB-4 T-3 at 2.4 m (no moisture_content sheet)" in \
+        assert sh["status"] == "pass", sh
+        assert "1 summary row(s) tabulate water content with no sheet" in \
             sh["detail"]
-        assert _check(_atterberg(ll=44.0, water_content=17.4),
-                      _summary(_row(ll=44.0, wc=17.4)))["status"] == "pass"
 
     def test_an_other_heading_names_its_test(self):
         sh = _check(_atterberg(),
@@ -158,6 +164,46 @@ class TestEachTestNeedsItsSheet:
         cbr = _sheet("cbr", CBRResult(cbr_percent=9.0), page=33)
         assert _check(_atterberg(), cbr, _summary(
             _row(ll=44.0, other=[("CBR (%)", "9")])))["status"] == "pass"
+
+
+class TestWaterContentAndDensity:
+    """Labs often report a water content and a density (unit weight) on the
+    summary table only: one no sheet reports is a note, never a gap."""
+
+    def test_neither_fails_nor_is_unsure(self):
+        kn = Quantity(value=17.9, unit="kN/m3")
+        sh = _check(_atterberg(), _summary(_row(ll=44.0, wc=16.2,
+                                                dry_density=kn)))
+        assert sh["status"] == "pass", sh
+        assert sh["detail"].startswith(
+            "all 1 summary rows have a sheet for each test they tabulate "
+            "other than water content and density")
+        assert ("1 summary row(s) tabulate water content or density with no "
+                "sheet reporting it (water content 1, density 1): labs often "
+                "report these on the summary table only, so they are not "
+                "counted as missing") in sh["detail"]
+        assert "have no sheet for a test" not in sh["detail"]
+
+    def test_a_row_tabulating_only_them_with_no_sheet_passes(self):
+        kn = Quantity(value=18.6, unit="kN/m3")
+        sh = _check(_summary(_row(wc=21.0), _row(sample="T-4", top=3.10,
+                                                 wet_density=kn)))
+        assert sh["status"] == "pass", sh
+        assert ("2 summary row(s) tabulate water content or density with no "
+                "sheet reporting it (water content 1, density 1)") in \
+            sh["detail"]
+
+    def test_a_gap_beside_them_counts_alone(self):
+        sh = _check(_atterberg(), _summary(_row(wc=16.2,
+                                                **LIMITS_AND_GRADING)))
+        assert sh["status"] == "fail", sh
+        assert sh["detail"].startswith(
+            "1 summary row(s) have no sheet for a test they tabulate (0 of "
+            "them with no sheet joined at all): 1 with no gradation sheet;")
+        assert "QB-4 T-3 at 2.4 m (no gradation sheet)" in sh["detail"]
+        assert "moisture_content" not in sh["detail"]
+        assert "1 summary row(s) tabulate water content with no sheet" in \
+            sh["detail"]
 
 
 class TestARowNamingNoTest:

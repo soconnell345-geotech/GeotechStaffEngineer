@@ -355,9 +355,10 @@ def test_one_test_over_three_pages_is_one_sheet_on_the_summary(read_as):
 
 
 def test_a_real_gap_beside_runs_and_continuations_is_still_found():
-    """What the summary leaves out is still found: a summary sample with no
-    sheet, a run on the same sheet naming another sample, and a sheet the
-    summary does not carry, listed once with its continuation page."""
+    """What the summary leaves out is still found: a run on the same sheet
+    naming another sample, and a sheet the summary does not carry, listed
+    once with its continuation page; a summary sample whose water content
+    no sheet reports is said in the note (RI-142)."""
     from report_ingest.model import MoistureDensityResult, LabTest, SummaryRow
     from report_ingest.tests.record_fixtures import q
     missing = SummaryRow(investigation_id="B-1", sample_id="S-5",
@@ -373,9 +374,12 @@ def test_a_real_gap_beside_runs_and_continuations_is_still_found():
     sh = _by_id(CL.run_checklist(rec))["completeness.summary_and_sheets"]
 
     assert sh["status"] == "fail", sh
-    # RI-142: the row tabulates a water content, and no sheet reports it.
-    assert ("summary rows short of a sheet: B-1 S-5 at 20 ft (no "
-            "moisture_content sheet)") in sh["detail"]
+    # RI-142: the row tabulates only a water content, which no sheet
+    # reports: a note (labs often report it on the summary only), not a gap.
+    assert "short of a sheet" not in sh["detail"]
+    assert ("1 summary row(s) tabulate water content with no sheet reporting "
+            "it: labs often report these on the summary table only, so they "
+            "are not counted as missing") in sh["detail"]
     assert "B-1 S-2 at 7 ft (gradation, PDF page 14)" in sh["detail"]
     assert "B-9 S-1 at 5 ft (moisture_content, PDF pages 16-17)" in \
         sh["detail"]

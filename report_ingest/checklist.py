@@ -388,6 +388,15 @@ def _tests_short(row: Any, got: Sequence[Any], tied: Sequence[Any]
             if not any(set(other) < set(kinds) for other in short)]
 
 
+#: Kinds of test whose results labs often report on the summary table only,
+#: with no sheet of their own -- a water content, a density or unit weight
+#: (the ``wc``, ``wet_density`` and ``dry_density`` columns) -- and what the
+#: note calls them. A summary row tabulating one that no sheet reports is
+#: said in the check's note, not counted as missing (RI-142).
+SUMMARY_ONLY_KINDS: Dict[str, str] = {"moisture_content": "water content",
+                                      "density": "density"}
+
+
 def _kinds_said(kinds: Sequence[str]) -> str:
     """``("atterberg",)`` as ``atterberg``, ``("unconfined", "triaxial")``
     as ``unconfined or triaxial``."""
@@ -476,7 +485,10 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
     of a kind the column names, or carrying its value), and a row
     tabulating limits and a grading whose sample has only a chemistry
     sheet is listed as having no Atterberg and no gradation sheet (BACKLOG
-    RI-142). A row naming no test has a sheet where any joins it. A row or
+    RI-142). A water content or a density (:data:`SUMMARY_ONLY_KINDS`) no
+    sheet reports is said in the note and not counted as missing: labs
+    often report them on the summary table only. A row naming no test has
+    a sheet where any joins it. A row or
     a sheet the match could not tell from another specimen is listed once,
     as a tie, and makes the check ``unsure`` when nothing else is wrong; a
     test only such a sheet reports is the tie's, not a gap. Rows printing
@@ -556,6 +568,9 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
     short: List[str] = []
     short_of_all: List[str] = []
     by_kinds: Dict[Tuple[str, ...], int] = {}
+    # A water content or density no sheet reports is a note, not a gap.
+    summary_only: Dict[str, int] = {}
+    summary_only_rows = 0
     for r, got in zip(rows, joined):
         if _names_no_specimen(r):
             continue
@@ -566,6 +581,12 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         with_theirs = [t for s in got
                        for t in family.get(index.get(id(s), -1), [s])]
         missing = _tests_short(r, with_theirs, tied_with.get(id(r), []))
+        aside = [kinds for kinds in missing
+                 if set(kinds) <= set(SUMMARY_ONLY_KINDS)]
+        summary_only_rows += bool(aside)
+        for kind in {kind for kinds in aside for kind in kinds}:
+            summary_only[kind] = summary_only.get(kind, 0) + 1
+        missing = [kinds for kinds in missing if kinds not in aside]
         if not missing:
             continue
         (short if got else short_of_all).append(
@@ -626,8 +647,21 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         problems.append(f"sheets not on the summary: {', '.join(not_on[:20])}")
     entries = [_entry_line(e) for e in ctx.qa(("partial",),
                                                "lab_tests.summary_table")]
-    note = (f"; sheets of kinds the summary does not tabulate, not counted: "
-            f"{', '.join(other_kinds)}" if other_kinds else "")
+    note = ""
+    aside_words = [SUMMARY_ONLY_KINDS[k] for k in SUMMARY_ONLY_KINDS
+                   if k in summary_only]
+    if summary_only_rows:
+        each = (" (" + ", ".join(f"{SUMMARY_ONLY_KINDS[k]} {summary_only[k]}"
+                                 for k in SUMMARY_ONLY_KINDS
+                                 if k in summary_only) + ")"
+                if len(aside_words) > 1 else "")
+        note += (f"; {summary_only_rows} summary row(s) tabulate "
+                 f"{' or '.join(aside_words)} with no sheet reporting it"
+                 f"{each}: labs often report these on the summary table "
+                 f"only, so they are not counted as missing")
+    if other_kinds:
+        note += (f"; sheets of kinds the summary does not tabulate, not "
+                 f"counted: {', '.join(other_kinds)}")
     if counted_with:
         note += (f"; {counted_with} more test(s) on a summary sample's sheet "
                  "or the page after it, naming no other specimen, counted "
@@ -660,14 +694,16 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         if entries:
             out["entries"] = entries[:5]
         return out
+    but = (f" other than {' and '.join(aside_words)}" if aside_words
+           else "")
     if ties:
         return {"status": "unsure",
                 "detail": f"every other summary row has a sheet for each "
-                          f"test it tabulates and every sheet of a kind the "
-                          f"summary tabulates is on it{note}"}
+                          f"test it tabulates{but} and every sheet of a kind "
+                          f"the summary tabulates is on it{note}"}
     return {"status": "pass",
             "detail": f"all {len(rows) - nameless} summary rows have a sheet "
-                      f"for each test they tabulate and every "
+                      f"for each test they tabulate{but} and every "
                       f"sheet of a kind the summary tabulates is on it{note}"}
 
 
