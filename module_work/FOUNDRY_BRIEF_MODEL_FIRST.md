@@ -1,4 +1,4 @@
-# Foundry brief, model-first waves (RI-87): DRAFT
+# Foundry brief, model-first waves (RI-87), build e (2026-10-27)
 
 **Cost, in tokens first.** MF-1 is about 4.5 to 5 M tokens in and 0.9 M
 out (about $30 to $33 at the API rates of the local ledger, §7). MF-2 is
@@ -8,16 +8,16 @@ Foundry's meter reads $0 for these models: a Foundry model name has no
 price, so `max_total_dollars` never stops a run. The per-report token check
 in §5 is the only brake on spend.
 
-A draft of the model-first section of the INF-40 brief (plan §8.7.1 and
-§8.8). It covers what to run, the settings, the calls and tokens to expect,
-where to stop and what comes back. Packaging is the run package's job and is
-not covered here. Reports are named by id only. The estimates come from the
+The model-first brief for build e (INF-40; plan §8.7.1 and §8.8), app
+`5.33.0+foundry.20261027.1`. It covers what to run, the settings, the calls
+and tokens to expect, where to stop and what comes back. The wheels, their
+versions and the install check are in the delivery's `BUILD_NOTES.md`. Reports are named by id only. The estimates come from the
 saved measurements listed in §7, and the wave's own token counts replace
 them.
 
 MF-2 runs on wave 2's six reports so the two waves line up, but it does
-not rely on wave 2's results: wave 2 may stop early on the 10-23 build, and
-the off arm run on the new build in this wave is the baseline. The models,
+not rely on wave 2's results: wave 2 ran on the 10-23 build, and the off
+arm run on build e in this wave is the baseline. The models,
 decisions D1 to D3, are in §2.
 
 ## 1. Before the wave
@@ -294,13 +294,14 @@ log). Report counts only, as for every blind set.
       item is not done (RI-110).
    4. **One `review_dir` for both arms**, and compare each report's
       `bound_together` between the arms.
-   5. **The off arm waits for RI-117 and RI-123.** RI-108, RI-109 and
-      RI-110 are merged (2026-10-26). Wave 2's second hand-back showed
-      today's log reader reads several holes' pages as one hole (R28 lacks
-      18 of the 77 holes it prints) and lets depths above the ground
-      surface through; model-first groups log pages by hole, so it would
-      win on grouping alone. If the wave cannot wait, score hole recall
-      (holes printed against holes in the record) as its own line.
+   5. **The off arm has the hole fixes.** Wave 2's second hand-back showed
+      today's log reader read several holes' pages as one hole (R28 lacked
+      18 of the 77 holes it prints) and let depths above the ground surface
+      through; build e cuts log items by hole (RI-117), refuses depths
+      above the ground surface (RI-123), keeps two holes under one printed
+      name apart (RI-135) and takes another hole's rows out of a log
+      (RI-145). Still score hole recall (holes printed against holes in
+      the record) as its own line for both arms.
    6. **Token brake.** Set `max_report_tokens_in` and `max_total_tokens`
       (RI-120 (1)); the dollar meter reads $0 on Foundry. Set them to the
       stop lines above, and the wave's ceiling to the lead's number.
@@ -311,8 +312,10 @@ log). Report counts only, as for every blind set.
       published app, and it knows of no per-request cap apart from the
       context window. Its probe found the proxy sends no rate-limit headers.
       Because the pool is shared, do not use the published app's chat while
-      a wave runs. The proxy does return `proxy-upstream-request-attempts`,
-      so it may retry a request itself before answering (RI-167 records it).
+      a wave runs. The workspace's proxy returns
+      `proxy-upstream-request-attempts`, so it may retry a request itself
+      before answering; transforms do not go through that proxy, and the
+      package does not record the header (RI-167, parked).
       Run 5's lost log item was stopped by the per-minute limit: a
       126,558-token request passed after 4 retries, and the next small call
       waited 72 s. The proxy sometimes reports a rate limit as 400 Bad
@@ -368,7 +371,9 @@ Private content stays in the workspace, as in wave 1.
 
 At home, the two arms are compared at $0:
 
-- `rescore_saved` brings both arms to the current scorers.
+- Each scorer's `rescore_saved` (log, lab, calc, narrative and sounding
+  scoring, as the harness's measure scripts call them) brings both arms to
+  the current scorers.
 - `run_plain_baseline report --model-first --pipeline-arm <arm>` sets the
   local model-first arm beside any saved arm.
 
