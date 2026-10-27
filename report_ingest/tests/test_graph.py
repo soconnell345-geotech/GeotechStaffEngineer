@@ -1597,6 +1597,68 @@ class TestTriageEngine:
         assert main.n_calls == len(full_script())
 
 
+class TestOneLogItemPerHole:
+    """RI-117: three holes' logs on five pages, which planlens' rules make
+    one work item (their title blocks all print one form number first;
+    :mod:`report_ingest.tests.multi_hole_fixtures`, made-up holes)."""
+
+    @pytest.fixture(scope="class")
+    def multi(self):
+        from report_ingest.tests.multi_hole_fixtures import (
+            build_multi_hole_log)
+        return build_multi_hole_log(with_text=True)
+
+    @staticmethod
+    def _turn(name, page):
+        prov = LogProv(page=page, bbox=(60.0, 220.0, 300.0, 240.0))
+        return {"final": LogReading(
+            investigation_id=name, kind="boring", depth_unit="ft",
+            units_known=True,
+            layers=[ReadLayer(top=0.0, bottom=9.0, uscs="CL",
+                              description="SANDY LEAN CLAY (CL), brown",
+                              prov=prov)],
+            pages_read=[page])}
+
+    @staticmethod
+    def _ingest(multi, engine, tmp_path):
+        return ingest_report(multi.pdf, engine, out_dir=tmp_path,
+                             report_id="SYN", label_policy="rules",
+                             budgets=Budgets(triage=False, review=False))
+
+    def test_three_holes_are_three_logs(self, multi, tmp_path):
+        engine = FakeEngine([self._turn(hole, pages[0])
+                             for hole, pages in multi.holes.items()])
+        record = self._ingest(multi, engine, tmp_path)
+        assert engine.n_calls == 3
+        # Each call was given its own hole's pages: the continuation that
+        # prints the name with a leading zero, and the one that prints no
+        # name, each with their hole.
+        for call, pages in zip(engine.calls, multi.holes.values()):
+            assert _brief_text(call).startswith(
+                f"ONE EXPLORATION LOG, on page(s) "
+                f"{', '.join(str(p) for p in pages)} of report SYN.")
+        assert {inv.investigation_id: sorted(inv.pages)
+                for inv in record.investigations} == multi.holes
+        assert not [e for e in record.qa
+                    if "no log in the record carries" in e.detail]
+
+    def test_a_printed_hole_the_record_lacks_is_a_qa_entry(self, multi,
+                                                           tmp_path):
+        holes = list(multi.holes.items())
+        engine = FakeEngine([
+            self._turn(*[holes[0][0], holes[0][1][0]]),
+            {"raise": RuntimeError("the reader gave up")},
+            self._turn(*[holes[2][0], holes[2][1][0]])])
+        record = self._ingest(multi, engine, tmp_path)
+        assert sorted(inv.investigation_id
+                      for inv in record.investigations) == ["HX-3", "HX-5"]
+        (entry,) = [e for e in record.qa
+                    if "no log in the record carries" in e.detail]
+        assert entry.kind == "partial" and entry.rank == "open"
+        assert entry.detail.startswith("page ") and "HX-4" in entry.detail
+        assert entry.pages == multi.holes["HX-4"]
+
+
 class TestTheMinuteBudget:
     """``Budgets.tokens_per_minute`` (BACKLOG RI-127) puts the process's
     pacer for it on the run's engines for the length of the run, and unset

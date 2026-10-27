@@ -2681,3 +2681,76 @@ class TestTheHaltsQALine:
         (row,) = [r for r in log.disagreements if r["what"].endswith(": n")]
         assert ("its third increment is short: its own drive lengths are "
                 "6 in, 6 in, 3 in") in row["why"]
+
+
+# ---------------------------------------------------------------------------
+# a page whose header names another hole (RI-117)
+# ---------------------------------------------------------------------------
+
+class TestAnotherHolesPage:
+    """The floor over a log item that runs on into another hole's log: the
+    synthetic report of :mod:`report_ingest.tests.multi_hole_fixtures`
+    (made-up holes), read by planlens' own grid."""
+
+    @pytest.fixture(scope="class")
+    def multi(self, tmp_path_factory):
+        from planlens.document import open_document
+        from report_ingest.tests.multi_hole_fixtures import (
+            build_multi_hole_log)
+        gt = build_multi_hole_log()
+        path = tmp_path_factory.mktemp("multi") / "multi.pdf"
+        path.write_bytes(gt.pdf)
+        doc = open_document(str(path))
+        yield doc, gt
+        doc.close()
+
+    @staticmethod
+    def _rows(inv):
+        return ([(round(s.top.value, 1), s.prov.page) for s in inv.samples],
+                [(round(s.depth_top.value, 1), s.n, s.prov.page)
+                 for s in inv.spt])
+
+    def test_without_the_guard_another_hole_stands_in(self, multi):
+        """What the floor did before: the other hole's samples, at the same
+        depths as this hole's, are kept in their place."""
+        from planlens.document.loggrid import log_grid
+        doc, gt = multi
+        hx3, hx4 = gt.holes["HX-3"], gt.holes["HX-4"]
+        pages = hx3 + hx4
+        inv = seed_from_grid(log_grid(doc, pages), pages, "SYN")
+        samples, _spt = self._rows(inv)
+        assert any(page in hx4 for _top, page in samples)
+
+    def test_nothing_from_the_other_hole_s_page(self, multi):
+        from planlens.document.loggrid import log_grid
+        doc, gt = multi
+        hx3, hx4 = gt.holes["HX-3"], gt.holes["HX-4"]
+        pages = hx3 + hx4
+        qa = []
+        inv = seed_from_grid(log_grid(doc, pages), pages, "SYN", qa=qa,
+                             other_holes={hx4[0]: "HX-4"})
+        samples, spt = self._rows(inv)
+        assert samples and spt
+        assert all(page in hx3 for _top, page in samples)
+        assert all(page in hx3 for _top, _n, page in spt)
+        assert all(ly.prov.page in hx3 for ly in inv.layers)
+        # This hole's own samples are all there, at the depths its two
+        # sheets print, the first sheet's included.
+        mine = [d for d, _blows, _n in gt.pages[0][4]] + \
+            [d for d, _blows, _n in gt.pages[1][4]]
+        assert [top for top, _page in samples] == pytest.approx(
+            mine, abs=0.2)
+        assert [n for _top, n, _page in spt] == [11, 13, 17, 16, 20, 22, 19]
+        assert inv.investigation_id == "HX-3"
+        assert inv.pages == hx3
+        (row,) = [r for r in qa if r["flag"] == "floor_other_hole"]
+        assert row["page"] == hx4[0] and row["value"] == "HX-4"
+
+    def test_no_other_hole_changes_nothing(self, multi):
+        from planlens.document.loggrid import log_grid
+        doc, gt = multi
+        pages = gt.holes["HX-3"]
+        grid = log_grid(doc, pages)
+        plain = seed_from_grid(grid, pages, "SYN")
+        guarded = seed_from_grid(grid, pages, "SYN", other_holes={})
+        assert plain.model_dump() == guarded.model_dump()

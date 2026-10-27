@@ -106,6 +106,7 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
 from report_ingest.engine import LARGE_REQUEST_FRACTION, CallCeilingReached
+from report_ingest.log_holes import missing_holes_qa, split_log_items
 from report_ingest.label_vote import (
     DEFAULT_POLICY, POLICIES, PageChoice, Voter, combine, load_trust_table,
     neighbourhood, split_pages,
@@ -275,7 +276,9 @@ class Budgets:
     triage: bool = True
     review: bool = True
     #: A ceiling on how many work items are read, for a smoke run over a big
-    #: report. None reads them all.
+    #: report. None reads them all. Counted after a log item is cut into
+    #: one item per hole (RI-117) and a calculation item into its parts:
+    #: each part is an item.
     max_items: Optional[int] = None
     #: A per-request input-token limit (BACKLOG RI-110, RI-121): set, a
     #: log's conversation drops earlier pictures, or its page window is
@@ -1120,7 +1123,11 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
           _labels_blob(choices, split, changed, labelling, doc.n_pages))
 
     roles = _relabel(roles, labels, confidence)
-    items = split_calc_items(doc, build_items(facts, roles))
+    # One log item per hole (RI-117): planlens' items run on over pages whose
+    # headers name another hole where its title-block code is not the
+    # hole's name.
+    items = split_log_items(doc, split_calc_items(doc, build_items(facts,
+                                                                   roles)))
 
     # -- 0e. the reports bound inside this one ------------------------------
     # Decided BEFORE the readers, because the parent's narrative reader is
@@ -1177,6 +1184,11 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
               no_text_pages=[p for p in no_text if p not in bound],
               di_pages=[p for p in di_pages if p not in bound],
               reader_unresolved=unresolved)
+    if model_first is None:
+        # The holes the log items' page headers print in a field or a title
+        # that no log in the record carries (RI-117): today's log reader
+        # returns one hole per item.
+        qa.extend(missing_holes_qa(doc, items, record))
     _counts_from_logs(record, qa, counts_from_logs, every, read)
     record.project = _project_from(record)
 
@@ -2058,9 +2070,9 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                      {at[c.page]: c.confidence for c in choices})
     # The split runs on the PARENT file's numbering, because that is where
     # the pages the signature is read off actually live.
-    items = split_calc_items(
+    items = split_log_items(doc, split_calc_items(
         doc, [_rebase_item(item, window)
-              for item in build_items(voted, roles)])
+              for item in build_items(voted, roles)]))
     every = list(items)
     if budgets.max_items:
         # The same ceiling as the parent's, applied to this document: a
@@ -2182,6 +2194,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
               no_text_pages=[p for p in no_text if p in at],
               di_pages=[p for p in di_pages if p in at],
               reader_unresolved=unresolved)
+    if model_first is None:
+        qa.extend(missing_holes_qa(doc, items, child))      # RI-117
     _counts_from_logs(child, qa, counts_from_logs, every, done)
     child.project = _project_from(child)
     child.qa.extend(qa)

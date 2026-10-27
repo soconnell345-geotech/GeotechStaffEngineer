@@ -742,7 +742,9 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
            item_title: str, report_id: str,
            seed: Optional[Investigation] = None,
            no_ruler: bool = False,
-           printed: Optional[PrintedDepths] = None) -> str:
+           printed: Optional[PrintedDepths] = None,
+           other_holes: Optional[Dict[int, str]] = None,
+           own_hole: str = "") -> str:
     layers = [
         {"top": ly.top, "bottom": ly.bottom,
          "description": _clip(ly.description, 300),
@@ -754,6 +756,15 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
     ]
     if item_title:
         parts.append(f"The document titles it: {item_title}")
+    if other_holes:
+        # RI-117: only when a page of the item names another hole.
+        parts.append(
+            f"The headers name this log {own_hole}, but "
+            + "; ".join(f"page {page} names {name}"
+                        for page, name in sorted(other_holes.items()))
+            + ". Those pages are another hole's log: read only the pages "
+              f"of {own_hole}, and put nothing from the others in this "
+              "record.")
     parts += [
         "",
         "WHAT THE PAGE LEDGER SAYS ABOUT THESE PAGES",
@@ -1728,12 +1739,32 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # go with it, because a PIT states its plan size in words the grid's
     # borehole header vocabulary has no term for.
     page_lines: Dict[int, List[Any]] = {}
+    page_heights: Dict[int, float] = {}
     for page in pages:
         try:
-            page_lines[page] = list(doc.page(page).lines)
+            content = doc.page(page)
+            page_lines[page] = list(content.lines)
+            page_heights[page] = float(getattr(content, "height", 0.0)
+                                       or 0.0)
         except Exception:                        # a page that will not read
             continue                             # simply contributes nothing
-    header_lines = [ln for page in pages for ln in page_lines.get(page, ())]
+    # THE HOLE EACH PAGE NAMES (RI-117). A page whose header names a hole
+    # other than the one the log's pages name first is not this hole's: the
+    # floor seeds nothing from it, the brief says so, and a warning names it.
+    # The graph cuts such items apart first (log_holes.split_log_items), so
+    # this matters for an item handed in whole.
+    from report_ingest.log_holes import item_holes, other_hole_pages
+
+    own_hole, foreign = other_hole_pages(pages, item_holes(
+        doc, pages, lines={p: (page_lines[p], page_heights.get(p, 0.0))
+                           for p in page_lines}))
+    other_holes = {page: hole.text for page, hole in foreign.items()}
+    hole_notes = [
+        f"page {page} names the hole {name} in its header, not "
+        f"{own_hole.text}; the floor seeded nothing from it"
+        for page, name in sorted(other_holes.items())]
+    header_lines = [ln for page in pages for ln in page_lines.get(page, ())
+                    if page not in other_holes]
     # A page whose depth ruler could not be fitted still PRINTS its depths,
     # often: in a depth column, as a sample's interval, at the head of a
     # description (RI-18). They are read once, here, and are the only depths
@@ -1744,7 +1775,8 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # sample, numbers it could not assign, values it doubts.
     floor_qa: List[Dict[str, Any]] = []
     floor = seed_from_grid(grid, pages, report_id, template=template,
-                           lines=header_lines, printed=printed, qa=floor_qa)
+                           lines=header_lines, printed=printed, qa=floor_qa,
+                           other_holes=other_holes)
     no_ruler = not bool(getattr(grid, "rulers", None))
     system = (LOG_READER_SYSTEM_PRINTED if no_ruler and printed
               else LOG_READER_SYSTEM)
@@ -1753,7 +1785,9 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         # prompt and the answer schema, which go with every request.
         limit -= request_overhead(system)
     brief = _brief(grid, pages, ledger, item_title, report_id, seed=floor,
-                   no_ruler=no_ruler, printed=printed)
+                   no_ruler=no_ruler, printed=printed,
+                   other_holes=other_holes,
+                   own_hole=own_hole.text if own_hole is not None else "")
     first_pages, unsent = pages, []
     if limit is not None:
         first_pages, _trial = _images_fit(
@@ -1905,7 +1939,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),
-        warnings=list(grid.warnings) + size_notes,
+        warnings=list(grid.warnings) + size_notes + hole_notes,
         pages=pages,
         floor=floor,
         model_investigation=model_investigation,

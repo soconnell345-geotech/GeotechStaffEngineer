@@ -1555,3 +1555,58 @@ class TestSplitAcrossCalls:
         result = read_log(doc, [0], engine, max_request_tokens_in=10)
         assert result.model_calls == 1
         assert any("over its size limit" in w for w in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# an item handed in whole that runs on into another hole's log (RI-117)
+# ---------------------------------------------------------------------------
+
+class TestAnotherHolesPage:
+
+    @pytest.fixture(scope="class")
+    def multi(self, tmp_path_factory):
+        from planlens.document import open_document
+        from report_ingest.tests.multi_hole_fixtures import (
+            build_multi_hole_log)
+        gt = build_multi_hole_log()
+        path = tmp_path_factory.mktemp("multi") / "multi.pdf"
+        path.write_bytes(gt.pdf)
+        doc = open_document(str(path))
+        yield doc, gt
+        doc.close()
+
+    @staticmethod
+    def _reading(page: int) -> LogReading:
+        prov = ReadProv(page=page, bbox=(60.0, 220.0, 300.0, 240.0))
+        return LogReading(
+            investigation_id="HX-3", kind="boring", depth_unit="ft",
+            units_known=True,
+            layers=[ReadLayer(top=0.0, bottom=9.0, uscs="CL",
+                              description="SANDY LEAN CLAY (CL), brown, "
+                                          "stiff", prov=prov)],
+            pages_read=[page])
+
+    def test_the_floor_and_the_brief_leave_the_other_hole_out(self, multi):
+        doc, gt = multi
+        hx3, hx4 = gt.holes["HX-3"], gt.holes["HX-4"]
+        engine = FakeEngine([{"final": self._reading(hx3[0])}])
+        result = read_log(doc, hx3 + hx4, engine, item_title="QZ-7")
+        assert result.floor.samples
+        assert all(s.prov.page in hx3 for s in result.floor.samples)
+        assert all(s.prov.page in hx3 for s in result.floor.spt)
+        assert any(f"page {hx4[0]} names the hole HX-4" in w
+                   for w in result.warnings)
+        assert any(row.get("flag") == "floor_other_hole"
+                   for row in result.unresolved)
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert (f"The headers name this log HX-3, but page {hx4[0]} names "
+                f"HX-4.") in brief
+
+    def test_one_hole_s_pages_are_read_as_before(self, multi):
+        doc, gt = multi
+        hx3 = gt.holes["HX-3"]
+        engine = FakeEngine([{"final": self._reading(hx3[0])}])
+        result = read_log(doc, hx3, engine)
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "The headers name this log" not in brief
+        assert not any("names the hole" in w for w in result.warnings)

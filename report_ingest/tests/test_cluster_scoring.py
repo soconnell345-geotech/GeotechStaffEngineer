@@ -2862,6 +2862,69 @@ class TestCallsByStep:
         assert "superseded_item_files" not in got
         assert got["calls_by_step"]["report"]["lab items"] == 1
 
+    def test_a_log_item_read_whole_beside_its_parts_is_counted_apart(
+            self, tmp_path):
+        # A folder reused from a run before RI-117: the log item read whole
+        # (item_4) beside the two parts it is now cut into, one per hole.
+        folder = tmp_path / "R94"
+        self._write(folder / "items" / "item_4.json",
+                    {"investigation": {}, "cost": {"calls": 3}})
+        self._write(folder / "items" / "item_4a.json",
+                    {"investigation": {}, "cost": {"calls": 2}})
+        self._write(folder / "items" / "item_4b.json",
+                    {"investigation": {}, "cost": {"calls": 1}})
+        self._write(folder / "items" / "item_5.json",
+                    {"investigation": {}, "cost": {"calls": 1}})
+        got = cs._ingest_steps(folder)
+        row = got["calls_by_step"]["report"]
+        assert row["log"] == 4 and row["log items"] == 3
+        assert got["superseded_item_files"]["report"]["log"] == {
+            "files": 1, "calls": 3, "chosen_by": "split_parts"}
+        text = "\n".join(cs._step_lines([{"id": "R94", "cost": {"calls": 4},
+                                          **got}]))
+        assert "1 log item file(s) read whole before the item was cut" in text
+        assert "(3 calls)" in text
+
+    def test_a_log_item_with_its_bound_pages_handed_over_is_cut_alike(
+            self, tmp_path):
+        # graph.py keys an item whose bound pages were handed over "-own",
+        # the whole item and its parts alike: item_7-own beside item_7a-own
+        # and item_7b-own is the same reuse as item_7 beside its parts.
+        folder = tmp_path / "R96"
+        self._write(folder / "items" / "item_7-own.json",
+                    {"investigation": {}, "cost": {"calls": 3}})
+        self._write(folder / "items" / "item_7a-own.json",
+                    {"investigation": {}, "cost": {"calls": 2}})
+        self._write(folder / "items" / "item_7b-own.json",
+                    {"investigation": {}, "cost": {"calls": 1}})
+        got = cs._ingest_steps(folder)
+        row = got["calls_by_step"]["report"]
+        assert row["log"] == 3 and row["log items"] == 2
+        assert got["superseded_item_files"]["report"]["log"] == {
+            "files": 1, "calls": 3, "chosen_by": "split_parts"}
+
+    def test_a_part_without_the_wholes_suffix_is_not_its_part(
+            self, tmp_path):
+        # item_8a-own is not a part of item_8 (a reading before the bound
+        # pages were handed over): the suffix must match.
+        folder = tmp_path / "R97"
+        self._write(folder / "items" / "item_8.json",
+                    {"investigation": {}, "cost": {"calls": 3}})
+        self._write(folder / "items" / "item_8a-own.json",
+                    {"investigation": {}, "cost": {"calls": 2}})
+        got = cs._ingest_steps(folder)
+        assert "superseded_item_files" not in got
+        assert got["calls_by_step"]["report"]["log items"] == 2
+
+    def test_a_calc_item_beside_its_parts_is_not_a_log(self, tmp_path):
+        folder = tmp_path / "R95"
+        self._write(folder / "items" / "item_6.json",
+                    {"calculation": {}, "cost": {"calls": 1}})
+        self._write(folder / "items" / "item_6a.json",
+                    {"investigation": {}, "cost": {"calls": 1}})
+        got = cs._ingest_steps(folder)
+        assert "superseded_item_files" not in got
+
     def test_the_ingest_stage_writes_them_into_its_run_file(
             self, ingest_cluster):
         from report_ingest.tests import test_graph as tg
