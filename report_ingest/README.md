@@ -391,6 +391,20 @@ where there were up to 17. Two of the four print a new boring at the even
 split; in the other two the floor reads no boring heading, so each carries the
 boundary line.
 
+**Sheets per call (RI-116), off by default.** Foundry run 5 read a run of
+eleven look-alike Atterberg sheets in one call and got every sheet's limits and
+no flow curve on any of them; the same sheet read alone gave its curve.
+`read_lab_sheet(..., sheets_per_call=N)` (`Budgets.lab_sheets_per_call`,
+`score_on_cluster(lab_sheets_per_call=N)` for the `ingest` stage) reads an item
+of more than N pages in windows of at most N, cut, briefed and joined exactly as
+the windows above, each with the whole budget. The item file records
+`sheets_per_call` and `windows`, and its name carries `-per<N>` so a resumed
+run never takes an unsplit reading for a split one. A window that answers
+without looking costs one call, so an item of n sheets costs about ceil(n / N)
+calls (four for eleven sheets at N = 3), with `budget` per window as the
+ceiling. None reads every item as before, request for request; N of 12 or more
+changes nothing.
+
 **The floor.** The page's detected tables and its title are the first voter.
 Before any call, `lab_floor.floor_from_tables` reads them into typed `LabTest`
 records: the kind the title names (seventeen title patterns, in three

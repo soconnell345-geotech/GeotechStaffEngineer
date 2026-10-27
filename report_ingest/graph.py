@@ -284,6 +284,16 @@ class Budgets:
     #: sent (:mod:`report_ingest.model_first_read`). None, the default, sets
     #: none.
     max_request_tokens_in: Optional[int] = None
+    #: The lab reader's sheets per call (BACKLOG RI-116): set to N, a lab
+    #: item of more than N pages is read in calls of at most N pages, as a
+    #: long run's windows are (``lab_reader.read_lab_sheet``), with ``lab``
+    #: the ceiling per call's window. None, the default, changes nothing.
+    lab_sheets_per_call: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.lab_sheets_per_call is not None:  # refused before any call
+            from report_ingest.lab_reader import split_size
+            split_size(1, self.lab_sheets_per_call)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -2210,6 +2220,11 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
             # Its pages inside a bound document were handed over; a reading
             # saved before that, of the whole item, is not this one.
             key += "-own"
+        if reader == "lab" and budgets.lab_sheets_per_call is not None:
+            # A reading split by sheets per call (RI-116) is not the whole
+            # item's, and a resumed run must not take one for the other.
+            from report_ingest.lab_reader import split_key
+            key += split_key(len(pages), budgets.lab_sheets_per_call)
         path = os.path.join(out, "items", f"{key}.json")
         cached = _cached(path, resume)
         mark = spend.mark()
@@ -2519,7 +2534,8 @@ def _read_log(doc, pages, engine, budgets, item, report_id) -> Dict[str, Any]:
 def _read_lab(doc, pages, engine, budgets, item, report_id) -> Dict[str, Any]:
     from report_ingest.lab_reader import read_lab_sheet
     result = read_lab_sheet(doc, pages, engine, budget=budgets.lab,
-                            item_title=item.title or "", report_id=report_id)
+                            item_title=item.title or "", report_id=report_id,
+                            sheets_per_call=budgets.lab_sheets_per_call)
     return result.to_dict()
 
 
