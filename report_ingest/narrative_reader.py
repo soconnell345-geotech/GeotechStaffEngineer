@@ -78,7 +78,7 @@ __all__ = [
     "RETRIEVAL_PHRASES", "DEFAULT_CONFIDENCE", "UNVERIFIED_CONFIDENCE",
     "reading_pages", "explorations_found", "retrieval_passages",
     "picture_pages", "check_quotes", "DETERMINISTIC_FIELDS",
-    "settled_explorations",
+    "settled_explorations", "TWIN_FIELDS",
 ]
 
 #: The ceiling in the brief: eight model calls for one narrative. A narrative
@@ -566,6 +566,37 @@ class NarrativeReading(BaseModel):
         default_factory=list,
         description="one entry for EVERY field you answered")
     unsettled: List[Unsettled] = Field(default_factory=list)
+
+
+def _twin_parents() -> Dict[str, str]:
+    """Each typed twin the answer schema carries, and the field it twins.
+
+    The twins are the fields of :class:`NarrativeReading` that are not one
+    of the owner's two schemas: ``strataList`` beside ``strata``,
+    ``bearingCapacityValues`` beside ``bearingCapacity``, ``reportDateISO``
+    beside ``reportDate``. Each is named for its parent with a suffix, which
+    is how it is paired here, so a twin added to the answer schema later is
+    paired without a list to keep. The record's own schema says the same
+    pairs in words ("the twin is strataList"), and a test holds the two
+    together. The reading's bookkeeping (``citations``, ``extra_answers``,
+    ``unsettled``) begins with no owner's field name and is not a twin.
+    """
+    owners = GENERAL_FIELDS + NATURAL_HAZARD_FIELDS
+    out: Dict[str, str] = {}
+    for name in NarrativeReading.model_fields:
+        if name in owners:
+            continue
+        parents = [o for o in owners if name.startswith(o)]
+        if parents:
+            out[name] = max(parents, key=len)
+    return out
+
+
+#: Typed twin in the answer schema -> the owner's field it is the twin of.
+#: A citation to a twin supports its parent's answer and is kept under the
+#: parent's name (RI-114): the record's citations are keyed by the owner's
+#: field names, and the twin and its parent are one answer read twice.
+TWIN_FIELDS: Dict[str, str] = _twin_parents()
 
 
 class SummaryReading(BaseModel):
@@ -1550,6 +1581,10 @@ class _Builder:
 
     def _citation(self, cite: ReadCitation) -> None:
         name = (cite.field or "").strip()
+        # A twin's citation is evidence for its parent's answer and is kept
+        # under the parent's name (TWIN_FIELDS); a name in neither schema
+        # and no twin is still refused.
+        name = TWIN_FIELDS.get(name, name)
         if name not in GENERAL_FIELDS and name not in NATURAL_HAZARD_FIELDS:
             self.refuse("citation",
                         f"cites a field that does not exist: {name!r}",

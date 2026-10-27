@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import pytest
 
-from report_ingest.model import GENERAL_FIELDS, NATURAL_HAZARD_FIELDS
+from report_ingest.model import (
+    GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, GeneralFacts, NaturalHazardFacts,
+)
 from report_ingest.narrative_reader import (
-    MAX_QUOTE_WORDS, NarrativeReading, ReadBearing, ReadCitation, ReadStratum,
-    Unsettled, count_captions, iso_date, normalise_asce_version,
-    normalise_site_class, read_narrative,
+    DEFAULT_CONFIDENCE, MAX_QUOTE_WORDS, TWIN_FIELDS, NarrativeReading,
+    ReadBearing, ReadCitation, ReadStratum, Unsettled, count_captions,
+    iso_date, normalise_asce_version, normalise_site_class, read_narrative,
 )
 from report_ingest.tests.fake_engine import FakeEngine
 from report_ingest.tests.narrative_fixtures import (
@@ -238,6 +240,37 @@ class TestTheTypedTwins:
         assert result.natural_hazards.reportDateISO == "2026-03-14"
 
 
+class TestTheTwinsTheCitationCheckKnows:
+    """RI-114: which twin names a citation may carry, read off the schema."""
+
+    def test_every_twin_of_the_answer_schema_and_its_parent(self):
+        assert TWIN_FIELDS == {"bearingCapacityValues": "bearingCapacity",
+                               "strataList": "strata",
+                               "reportDateISO": "reportDate"}
+
+    def test_every_answer_field_is_an_owners_field_a_twin_or_bookkeeping(
+            self):
+        # A twin added to the answer schema under a name that does not
+        # extend its parent's would be refused again; this says so here.
+        owners = set(GENERAL_FIELDS) | set(NATURAL_HAZARD_FIELDS)
+        bookkeeping = {"citations", "extra_answers", "unsettled"}
+        for name in NarrativeReading.model_fields:
+            assert (name in owners or name in TWIN_FIELDS
+                    or name in bookkeeping), name
+
+    def test_the_pairs_are_the_ones_the_record_schema_states(self):
+        # The record's schema names each twin in its parent's description
+        # ("the twin is strataList"); the pairing by name must agree.
+        stated = {}
+        for schema in (GeneralFacts, NaturalHazardFacts):
+            for parent, info in schema.model_fields.items():
+                text = info.description or ""
+                if "the twin is " in text:
+                    twin = text.split("the twin is ", 1)[1].split()[0]
+                    stated[twin.strip(".,;")] = parent
+        assert stated == TWIN_FIELDS
+
+
 class TestWhatIsRefused:
 
     def test_a_value_outside_a_CLOSED_vocabulary_is_not_stored(self, doc):
@@ -312,6 +345,64 @@ class TestWhatIsRefused:
         result = read(doc, FakeEngine([{"final": reading}]))
 
         assert any("does not exist" in u["why"] for u in result.unresolved)
+        assert "soilColour" not in result.citations
+
+    def test_a_citation_to_a_twin_is_kept_under_its_parent(self, doc):
+        # RI-114: the model cites the typed twins it answered (strataList,
+        # bearingCapacityValues, reportDateISO). Each is evidence for its
+        # parent's answer, so it is kept under the parent's name.
+        reading = full_reading(
+            strata="dense residual soil to 6 m",
+            citations=[
+                ReadCitation(field="strataList", page=4,
+                             quote="bearing on the dense residual soil"),
+                ReadCitation(field="bearingCapacityValues", page=4,
+                             quote="An allowable bearing pressure of 3,000 "
+                                   "psf is recommended"),
+                ReadCitation(field="bearingCapacity", page=4,
+                             quote="An allowable bearing pressure of 3,000 "
+                                   "psf is recommended"),
+                ReadCitation(field="reportDateISO", page=4,
+                             quote="This report is dated 14 March 2026"),
+            ])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert not any("does not exist" in u["why"]
+                       for u in result.unresolved)
+        assert [c.page for c in result.general.citations["strata"]] == [4]
+        assert [c.page for c in
+                result.natural_hazards.citations["reportDate"]] == [4]
+        # The twin and its parent citing the same words are one citation.
+        assert len(result.general.citations["bearingCapacity"]) == 1
+        for twin in TWIN_FIELDS:
+            assert twin not in result.citations
+        for parent in ("strata", "bearingCapacity", "reportDate"):
+            assert not any(u["what"] == parent and
+                           u["why"] == "answered with no citation"
+                           for u in result.unresolved)
+            assert result.confidence[parent] == DEFAULT_CONFIDENCE
+
+    def test_a_twin_on_another_page_is_still_thrown_away(self, doc):
+        reading = full_reading(citations=[
+            ReadCitation(field="strataList", page=7, quote="BORING LOG")])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert "strata" not in result.citations
+        assert any(u.get("page") == 7 and "not in this narrative" in u["why"]
+                   for u in result.unresolved)
+
+    def test_a_name_built_on_a_field_but_no_twin_is_still_refused(self, doc):
+        # Only the twins the answer schema defines are kept: a made-up name
+        # that merely begins with an owner's field name is not one.
+        reading = full_reading(citations=[
+            ReadCitation(field="bearingCapacityTable", page=4,
+                         quote="An allowable bearing pressure of 3,000 psf")])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert any(u["what"] == "citation" and "does not exist" in u["why"]
+                   and "bearingCapacityTable" in u["why"]
+                   for u in result.unresolved)
+        assert "bearingCapacity" not in result.citations
 
     def test_an_answer_with_no_citation_is_recorded(self, doc):
         result = read(doc, FakeEngine([{"final": full_reading()}]))
