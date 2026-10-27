@@ -94,8 +94,11 @@ The reply is Anthropic's shape: ``content`` items carrying ``text``,
 ``stop_reason`` and ``usage``. A tool call goes back as a ``tool_use`` block
 and its result as a ``tool_result`` block (``tool_use_id``, ``content``,
 ``is_error``), the field names the public ``langchain-palantir`` adapter
-(Apache-2.0) uses; those two, the thinking blocks and the cache marks (the
-system block's and the last message's) are not yet seen on Foundry. A Claude model takes this leg only
+(Apache-2.0) uses. Foundry build e (2026-10-27) found ``is_error`` REQUIRED:
+a result built without it is refused by the class before anything is sent,
+so it is always given, ``False`` for an ordinary result. The thinking blocks
+are not yet seen on Foundry; the cache marks (the system block's and the
+last message's) were, on build e's usage probe. A Claude model takes this leg only
 when ``GEOTECH_FOUNDRY_CLAUDE_SDK`` is on (``webapp.engine_config``); the
 LLM proxy stays Claude's route by default.
 
@@ -1218,15 +1221,16 @@ def _claude_assistant(message: AIMessage, v3, keep_thinking: bool) -> list:
 
 def _claude_tool_result(message: ToolMessage, v3):
     """A tool result: its words, then a line for each block this route
-    cannot send (:func:`_left_out`)."""
+    cannot send (:func:`_left_out`). ``is_error`` is always given: Foundry's
+    class requires it, and a result built without it failed every reader
+    turn after a tool call before it was sent (Foundry build e, MF-1)."""
     text = "\n".join(t for t in [_text_content(message.content)]
                      + _left_out(message.content) if t)
-    kwargs = {"tool_use_id": message.tool_call_id or "",
-              "content": text or "(no output)"}
-    if getattr(message, "status", None) == "error":
-        kwargs["is_error"] = True
     return v3.ClaudeChatMessageContent(
-        tool_result=v3.ClaudeChatToolResultContent(**kwargs))
+        tool_result=v3.ClaudeChatToolResultContent(
+            tool_use_id=message.tool_call_id or "",
+            content=text or "(no output)",
+            is_error=getattr(message, "status", None) == "error"))
 
 
 def _lc_messages_to_claude(messages: Sequence[BaseMessage], v3):
@@ -1330,12 +1334,11 @@ def _marked_block(block, v3, mark):
                 text=text.text, cache_control=mark))
         result = getattr(block, "tool_result", None)
         if result is not None:
-            kwargs = {"tool_use_id": result.tool_use_id,
-                      "content": result.content, "cache_control": mark}
-            if getattr(result, "is_error", None):
-                kwargs["is_error"] = True
             return v3.ClaudeChatMessageContent(
-                tool_result=v3.ClaudeChatToolResultContent(**kwargs))
+                tool_result=v3.ClaudeChatToolResultContent(
+                    tool_use_id=result.tool_use_id, content=result.content,
+                    is_error=bool(getattr(result, "is_error", False)),
+                    cache_control=mark))
         image = getattr(block, "image", None)
         if image is not None:
             return v3.ClaudeChatMessageContent(image=v3.ClaudeChatImageContent(

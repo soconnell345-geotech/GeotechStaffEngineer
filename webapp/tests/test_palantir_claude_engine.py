@@ -85,8 +85,11 @@ class _ToolUse:
 
 
 class _ToolResult:
-    def __init__(self, content, tool_use_id, is_error=None,
-                 cache_control=None):
+    """``is_error`` is required, as Foundry's class requires it: a result
+    built without it failed every reader turn after a tool call on Foundry
+    build e, and a default here is why no test caught it."""
+
+    def __init__(self, content, tool_use_id, is_error, cache_control=None):
         self.content, self.tool_use_id = content, tool_use_id
         self.is_error, self.cache_control = is_error, cache_control
 
@@ -212,7 +215,7 @@ def _install_fake_sdk(monkeypatch, cache_types=True, block_marks=True):
         v3.ClaudeChatTextContent = lambda text: _Text(text)
         v3.ClaudeChatImageContent = lambda source: _Image(source)
         v3.ClaudeChatToolResultContent = (
-            lambda content, tool_use_id, is_error=None:
+            lambda content, tool_use_id, is_error:
             _ToolResult(content, tool_use_id, is_error))
     lms.languagemodelservice_api_completion_v3 = v3
     monkeypatch.setitem(sys.modules, "palantir_models", pm)
@@ -513,7 +516,32 @@ def test_tool_loop_round_trip(monkeypatch):
                                  ("toolu_2", "get_kp", {"phi_deg": 30})]
     results = [c.tool_result for c in sent[2].content]
     assert [(r.tool_use_id, r.content, r.is_error) for r in results] == [
-        ("toolu_1", "0.333", None), ("toolu_2", "no such tool", True)]
+        ("toolu_1", "0.333", False), ("toolu_2", "no such tool", True)]
+
+
+@pytest.mark.parametrize("block_marks", [True, False])
+def test_a_tool_round_trip_call_ok_result_next_call(monkeypatch,
+                                                    block_marks):
+    """A call, its ordinary result, then the next call: the turn after a
+    tool call goes out with ``is_error=False`` on the result, whether the
+    result is rebuilt with the cache mark or sent as it was built (Foundry
+    build e: every such turn failed before it was sent)."""
+    _install_fake_sdk(monkeypatch, block_marks=block_marks)
+    _FakeClaude.queue = [
+        _reply(_use("get_ka", {"phi_deg": 30}, "toolu_1"), stop="tool_use"),
+        _reply(_use("get_ka", {"phi_deg": 34}, "toolu_2"), stop="tool_use")]
+    model = _model().bind_tools([_TOOL])
+    history = [HumanMessage(content="Ka at phi 30, then at 34?")]
+    first = model.invoke(history)
+    history += [first, ToolMessage(content="0.333", tool_call_id="toolu_1")]
+    second = model.invoke(history)
+    assert len(_FakeClaude.requests) == 2
+    assert second.tool_calls[0]["id"] == "toolu_2"
+    [result] = [c.tool_result for c in _FakeClaude.requests[1].messages[-1]
+                .content if c.tool_result is not None]
+    assert (result.tool_use_id, result.content) == ("toolu_1", "0.333")
+    assert result.is_error is False
+    assert (result.cache_control is not None) is block_marks
 
 
 def test_a_pure_tool_call_turn_sends_no_empty_text(monkeypatch):
