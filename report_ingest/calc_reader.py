@@ -264,7 +264,8 @@ _NUMBER_RE = re.compile(
 #: A unit token as a printout spells one. Short, starts with a letter or a
 #: sign, and made of the characters a unit is made of. Anything longer is
 #: prose.
-_UNIT_TOKEN = r"[A-Za-z%°'\"][A-Za-z0-9%°'\"./^·\-]{0,11}"
+_UNIT_TOKEN = (r"[A-Za-z%°'\"][A-Za-z0-9%°'\"./^·\-"
+               "‐‑‒–−]{0,11}")
 _UNIT_LIKE = re.compile(r"^" + _UNIT_TOKEN + r"$")
 #: Words that trail a number and are NOT units. Short, because the loose
 #: rule above only has to keep out what a printed line actually ends with.

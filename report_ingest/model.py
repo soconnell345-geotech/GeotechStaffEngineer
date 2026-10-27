@@ -455,6 +455,13 @@ def read_as_stress(unit: Any, kind: Optional[str]) -> bool:
     return kind == "stress" and _kind_reading(unit, kind) is not None
 
 
+#: The look-alikes of the ASCII hyphen-minus a PDF or a model puts in a unit
+#: (``kN‐m``): U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure
+#: dash, U+2013 en dash, U+2212 minus sign (RI-111). Read as ``-`` before
+#: any lookup.
+_DASH_TO_HYPHEN = {ord(c): "-" for c in "‐‑‒–−"}
+
+
 def _spellings(unit: str) -> List[str]:
     """The forms of one printed unit worth looking up, most literal first.
 
@@ -463,7 +470,7 @@ def _spellings(unit: str) -> List[str]:
     trailing full stop let go (``M.``, ``DEG.``, ``mv.``), which is how an
     older program prints every unit it heads a column with.
     """
-    text = str(unit or "").strip().lower()
+    text = str(unit or "").strip().lower().translate(_DASH_TO_HYPHEN)
     text = text.replace("²", "2").replace("³", "3").replace("^", "")
     text = _SQUARE_CUBE.sub(
         lambda m: (("in" if m.group(2) == "inch" else m.group(2))
