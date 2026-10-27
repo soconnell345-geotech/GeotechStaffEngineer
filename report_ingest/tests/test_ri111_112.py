@@ -59,21 +59,21 @@ class TestEveryNValueColumn:
         ok, diffs = diggs_roundtrip_gate(write_diggs([hole]),
                                          [_changed(hole, n=26)])
         assert not ok
-        assert any("'N-Value'" in d for d in diffs)
+        assert len(diffs) == 1 and "'N-Value'" in diffs[0]
 
     def test_a_changed_text_column_is_named(self):
         hole = _hole(blows=[11, 12, 13], n=25, n_printed="N=25")
         ok, diffs = diggs_roundtrip_gate(
             write_diggs([hole]), [_changed(hole, n_printed="N=26")])
         assert not ok
-        assert any("'N-Value (as printed)'" in d for d in diffs)
+        assert len(diffs) == 1 and "'N-Value (as printed)'" in diffs[0]
 
     def test_a_changed_blow_count_column_is_named(self):
         hole = _hole(blows=[11, 12, 13])
         ok, diffs = diggs_roundtrip_gate(
             write_diggs([hole]), [_changed(hole, blows=[11, 14, 13])])
         assert not ok
-        assert any("Blow count 2" in d for d in diffs)
+        assert len(diffs) == 1 and "Blow count 2" in diffs[0]
 
     def test_a_refusal_text_beside_a_number_is_compared(self):
         hole = _hole(blows=[50], n=60, n_printed=">50", refusal=True)
@@ -81,4 +81,14 @@ class TestEveryNValueColumn:
         assert diggs_roundtrip_gate(xml, [hole])[0]
         ok, diffs = diggs_roundtrip_gate(xml, [_changed(hole, n_printed="R")])
         assert not ok
-        assert any("N printed as 'R'" in d for d in diffs)
+        assert len(diffs) == 1 and "N printed as 'R'" in diffs[0]
+
+
+class TestCalcReaderReadsADashInAUnit:
+    @pytest.mark.parametrize("dash", ["‐", "‑", "‒",
+                                      "–", "−"])
+    def test_a_pair_line_with_a_unicode_dash_unit_matches(self, dash):
+        from report_ingest.calc_reader import _PAIR_RE
+        match = _PAIR_RE.match(f"M = 125.5 kN{dash}m")
+        assert match is not None
+        assert match.group("unit") == f"kN{dash}m"

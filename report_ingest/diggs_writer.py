@@ -1821,7 +1821,7 @@ class _Writer:
         # a refusal row with no countable drive is still in the file.
         printed = (record.n_printed or "").strip()
         if printed:
-            values.append(("N-Value (as printed)", "n_value", printed))
+            values.append((_PRINTED_N_COLUMN, "n_value", printed))
         if not values:
             self.notes.skipped.append(
                 f"{inv.investigation_id}: driven record at {top[0]:.3f} m "
@@ -3446,71 +3446,41 @@ def _compare_water(name: str, want: Investigation, got: Any,
                      f"back")
 
 
-def _spt_columns(record: SPT) -> List[Tuple[str, str, Any]]:
-    """``(column name, property class, value)`` for every N-value column
-    :meth:`_Writer.spt_test` writes for this record: the printed N, or the
-    drives when none was printed, and the printed text of an N that is not a
-    number. Kept beside the writer's own rule so the two cannot drift.
-    """
-    out: List[Tuple[str, str, Any]] = []
-    if record.n is not None and not record.n_basis:
-        out.append(("N-Value", "n_value", float(record.n)))
-    else:
-        for i, (count, _pen) in enumerate(_drive_sets(record)):
-            out.append((f"Blow count {i + 1}", "blow_count", float(count)))
-    raw = (record.n_printed or "").strip()
-    if raw:
-        out.append(("N-Value (as printed)", "n_value", _cell(raw)))
-    return out
+_PRINTED_N_COLUMN = "N-Value (as printed)"
 
 
 def _compare_refusals(name: str, want: Investigation, gid: str,
                       result_sets: Sequence[Any], diffs: List[str],
                       dt: float) -> None:
-    """Every N-value column of every driven test, one by one (RI-112).
+    """The printed text of every N that is not a whole number (RI-112).
 
-    ``parse_diggs`` keeps numbers, so a ``>50`` written as text is invisible
-    to it; the result-set reader returns the table as written. The writer
-    can put several columns under one property class (the N and its printed
-    text, or one blow-count column per drive), so each is looked for by its
-    own name and class, and a difference names the column that differs.
+    The writer puts the N and its printed text (``>50``, ``N=60``) in two
+    columns under one property class. ``parse_diggs`` keeps numbers, so the
+    number column and the drives are compared in
+    :func:`_compare_measurements` (each named by its column there); this
+    compares the text column, which ``parse_diggs`` cannot see, by reading
+    the table as written and looking in the column named
+    ``"N-Value (as printed)"`` and in no other, so each column is checked
+    once.
     """
     for record in want.spt:
+        raw = (record.n_printed or "").strip()
         top = _si_value(record.depth_top)
-        if top is None:
+        if not raw or top is None:
             continue
-        tests = [rs for rs in result_sets
-                 if rs.sampling_feature == gid
-                 and rs.procedure == "DrivenPenetrationTest"
-                 and rs.depth_m is not None and _close(rs.depth_m, top, dt)]
-        for column, klass, value in _spt_columns(record):
-            if klass == "n_value" and not _is_number(value):
-                found = False
-                for rs in tests:
-                    for i in rs.columns_of(klass):
-                        if rs.columns[i]["name"] != column:
-                            continue
-                        found = found or value in [
-                            str(v) for v in rs.column_values(i)
-                            if v is not None]
-                if not found:
-                    diffs.append(
-                        f"{name}: N printed as {value!r} at {top:.3f} m "
-                        f"did not come back (column {column!r})")
-                continue
-            found = False
-            for rs in tests:
-                for i in rs.columns_of(klass):
-                    if rs.columns[i]["name"] != column:
-                        continue
-                    found = found or any(
-                        _is_number(v) and _close(
-                            v, value, TOLERANCE["n_value"])
-                        for v in rs.column_values(i))
-            if not found:
-                diffs.append(
-                    f"{name}: {column} {value:g} at {top:.3f} m did not "
-                    f"come back in the {klass} column {column!r}")
+        printed = _cell(raw)          # as the writer writes a text cell
+        found = any(
+            rs.sampling_feature == gid
+            and rs.procedure == "DrivenPenetrationTest"
+            and rs.depth_m is not None and _close(rs.depth_m, top, dt)
+            and printed in [
+                str(v) for i in rs.columns_of("n_value")
+                if rs.columns[i]["name"] == _PRINTED_N_COLUMN
+                for v in rs.column_values(i) if v is not None]
+            for rs in result_sets)
+        if not found:
+            diffs.append(f"{name}: N printed as {printed!r} at {top:.3f} m "
+                         f"did not come back (column {_PRINTED_N_COLUMN!r})")
 
 
 #: What each channel of a sounding must come back as, and how close. The
@@ -3597,15 +3567,15 @@ def _compare_measurements(name: str, want: Investigation, got: Any,
             if not _nearest(by_parameter.get("N_spt", []), top,
                             float(record.n), dt, TOLERANCE["n_value"]):
                 diffs.append(f"{name}: N={record.n} at {top:.3f} m did not "
-                             f"come back")
+                             f"come back (column 'N-Value')")
         else:
             drives = _drive_sets(record)
             back = by_parameter.get("blow_count", [])
-            for count, _pen in drives:
+            for i, (count, _pen) in enumerate(drives, start=1):
                 if not _nearest(back, top, float(count), dt,
                                 TOLERANCE["n_value"]):
                     diffs.append(f"{name}: drive {count} at {top:.3f} m did "
-                                 f"not come back")
+                                 f"not come back (column 'Blow count {i}')")
 
     checks = (
         ("recovery_percent", "recovery_pct", None, TOLERANCE["percent"]),
