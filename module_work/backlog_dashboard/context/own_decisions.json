@@ -2287,18 +2287,19 @@
   },
   "OWN-100": {
     "kind": "ask",
-    "ask_who": "Foundry admin (or the Palantir contact), and the AI FDE",
-    "question": "What are GPT_5_4's, Claude Opus 5.5's and Claude Sonnet 5.5's tokens-per-minute and requests-per-minute limits on our Foundry instance, and are they shared?",
-    "why": "The AI FDE answered on 2026-10-27: it cannot see the limits; Foundry's admins set them in the Resource Management app (AIP usage and limits), per model, probably as one pool shared across the instance. It also thought Haiku 5.5 was not available; it is (you found its RID, ri.language-model-service..language-model.anthropic-claude-5-5-haiku), so it only needs adding to the wave's transform as a model input.",
-    "background": "Until the numbers come, the brief runs at the FDE's own throttle (22.5 GPT-5.4 calls a minute, which gave no give-ups) with a 100,000-token cap on a single request. The FDE also offered two things: a probe transform that records any rate-limit headers the proxy returns (a few small calls), and a table of run 5's rate-limit events against request sizes (no model calls).",
+    "ask_who": "Foundry admin (or the Palantir contact); then your own Foundry workspace",
+    "question": "What are GPT_5_4's and Claude Opus, Sonnet and Haiku 5.5's tokens-per-minute and requests-per-minute limits on our Foundry instance, and are they shared?",
+    "why": "The AI FDE checked on 2026-10-27: Haiku 5.5 answers from the workspace (one plain text call to each Claude model, all fine), but the Foundry proxy sends no rate-limit headers, so the limits cannot be read from our side. Only the Foundry admins can see them, in the Resource Management app (AIP usage and limits).",
+    "background": "Until the numbers come, the brief runs at the FDE's own throttle (22.5 GPT-5.4 calls a minute, which gave no give-ups) with a 100,000-token cap on a single request. Separately, for Haiku to show in the app's model list: the committed .lms-models.yml still lists only Opus, Sonnet and Sol, and the published app is built from committed files.",
     "options": [],
-    "recommendation": "Send the first message to the Foundry admin, and the second to the AI FDE (Haiku's RID, and yes to both offers).",
+    "recommendation": "Send the message below to the Foundry admin. In the Foundry workspace, commit the Haiku import and add Haiku to GEOTECH_FOUNDRY_MODELS with the anthropic: prefix like the Opus and Sonnet entries, then republish (the report-ingest runs do not need this step; the app's model list does).",
     "if_no_answer": "The brief goes out with the FDE's throttle and the 100,000-token cap. That works; it is slower than it needs to be.",
-    "message_to_send": "To the Foundry admin: Could you tell us the AIP rate limits on our Foundry instance for GPT_5_4, Claude Opus 5.5, Claude Sonnet 5.5 and Claude Haiku 5.5: tokens per minute (input and output separately, if they are counted apart) and requests per minute? Are they shared with other projects or the published app, or set per project? -- To the AI FDE: Thank you. Haiku 5.5 is available as ri.language-model-service..language-model.anthropic-claude-5-5-haiku; please add it to the transform as a model input beside Opus and Sonnet. And yes please to both: the probe transform recording any rate-limit headers, and the table of run 5's rate-limit events against request sizes.",
+    "message_to_send": "To the Foundry admin: Could you tell us the AIP rate limits on our Foundry instance for GPT_5_4, Claude Opus 5.5, Claude Sonnet 5.5 and Claude Haiku 5.5: tokens per minute (input and output separately, if they are counted apart) and requests per minute? Are they shared with other projects or the published app, or set per project?",
     "sources": [
       "BACKLOG.md OWN-100",
       "BACKLOG.md OWN-99 (Done)",
-      "module_work/FOUNDRY_BRIEF_MODEL_FIRST.md stop point 7, D2"
+      "module_work/FOUNDRY_BRIEF_MODEL_FIRST.md stop point 7, D2",
+      "AI FDE probe setup/probe_haiku_ratelimits.py (workspace e50d8bf)"
     ]
   }
 }
