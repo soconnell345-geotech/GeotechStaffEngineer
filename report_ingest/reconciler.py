@@ -1512,7 +1512,7 @@ def _cross_check_summary_table(record: ReportRecord,
                     ours = getattr(row, column, None)
                     theirs = _result_value(sheet, names)
                     if _same(ours, theirs) is False:
-                        where = (f"{row.investigation_id or '?'} "
+                        where = (f"{row.investigation_id or (lab_hole(row) + ' (linked)' if lab_hole(row) else '?')} "
                                  f"{_show(row.depth_top) if row.depth_top else ''}"
                                  ).strip()
                         qa.append(QAEntry(

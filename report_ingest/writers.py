@@ -58,7 +58,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from report_ingest.model import (
     GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, QA_RANKS, QAEntry, Quantity,
-    ReportRecord, qa_by_rank_enabled,
+    ReportRecord, lab_hole, qa_by_rank_enabled,
 )
 
 __all__ = [
@@ -580,6 +580,16 @@ def calculations_section(record: ReportRecord) -> List[str]:
     return out
 
 
+def _lab_exploration(test: Any) -> str:
+    """The Exploration cell of the laboratory table: the printed boring, else
+    the hole the reconciler linked the sheet to, marked "(linked)" so it is
+    not taken for print (BACKLOG RI-141); '-' for neither."""
+    if test.investigation_id:
+        return test.investigation_id
+    hole = lab_hole(test)
+    return f"{hole} (linked)" if hole else "-"
+
+
 def summary_markdown(record: ReportRecord) -> str:
     """The two schemas answered in prose, then the counts and the QA list."""
     general, hazards = record.general, record.natural_hazards
@@ -830,7 +840,7 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
 
     rows = _table(
         ["Test", "Exploration", "Depth", "Standard", "Linked sample", "Pages"],
-        [[test.kind, test.investigation_id or "-", test.depth_top,
+        [[test.kind, _lab_exploration(test), test.depth_top,
           test.standard, test.linked_sample_id or "-",
           ", ".join(str(p) for p in test.pages)]
          for test in record.lab_tests])
