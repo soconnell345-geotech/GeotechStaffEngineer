@@ -16,6 +16,13 @@ from gstools_agent.gstools_utils import has_gstools
 pytestmark = pytest.mark.skipif(not has_gstools(),
                                 reason="gstools not installed")
 
+
+@pytest.fixture(autouse=True)
+def _outputs_in_tmp_path(tmp_path, monkeypatch):
+    """INF-55: the adapter writes its CSVs and figures into the working
+    folder; point it at this test's tmp_path so nothing lands in the repo."""
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+
 from gstools_agent.tests.test_conditional_simulation import (  # noqa: E402
     BX, BY, BZ, FOOT, NAMES,
 )
