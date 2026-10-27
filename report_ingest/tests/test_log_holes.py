@@ -567,3 +567,45 @@ class TestOnASyntheticReport:
         first = gt.first_log_page
         assert [first, first + 1] in [list(i.pages) for i in logs]
         assert [first + 3, first + 4] in [list(i.pages) for i in logs]
+
+
+class TestATelephoneLineIsNotAHole:
+    """RI-156: a letterhead's telephone or fax line is never a hole name."""
+
+    @pytest.mark.parametrize("value", [
+        "Tel 555-0100", "TEL. 555-0100", "Tel: 555 0100", "Telephone 555-0100",
+        "Phone: 555-0100", "Ph. 555-0100", "Ph: 555-0100", "fax 555-0100",
+        "Mobile 555-0100", "Cell: 555-0100", "CELL 555 0100",
+        "(555) 010-0199", "+44 20 7946 0000", "+1 555 0100", "555.010.0199",
+        "555-010-0199", "555 010 0199"])
+    def test_a_field_value_that_is_a_phone_names_no_hole(self, value):
+        assert _hole([_at(f"Boring No.: {value}", 40, 40, 200)]) is None
+
+    @pytest.mark.parametrize("text", [
+        "TEL-0199", "TEL0199", "FAX-0199", "FAX 0199", "Tel. 0199",
+        "Tel: 0199", "PHONE-0199", "MOBILE-0199", "PH.0199", "CELL:0199"])
+    def test_a_phone_standing_alone_is_not_a_hole(self, text):
+        assert _hole([_at(text, 300, 100, 60)]) is None
+
+    @pytest.mark.parametrize("value", [
+        "BH-1", "B-12", "TP-3", "BH 01", "QX-01", "QX # 01", "14", "TP-M",
+        "PH-1", "CELL-1", "B-1 (continued)"])
+    def test_hole_names_still_pass_beside_the_refusals(self, value):
+        found = _hole([_at(f"Boring No.: {value}", 40, 40, 200)])
+        assert found is not None
+
+    @pytest.mark.parametrize("text", ["BH-1", "B-12", "TP-3", "QX-6A", "QX12"])
+    def test_names_standing_alone_still_pass(self, text):
+        assert _hole([_at(text, 300, 150, 20)]).text == text
+
+    def test_the_letterhead_phone_on_alternate_pages_does_not_cut(self):
+        def page(n):
+            head = [_at("QX-1", 300, 30, 20)]
+            if n % 2:
+                head = [_at("TEL-0199", 300, 12, 40)] + head
+            return head
+        doc = _Doc({n: page(n) for n in range(8)})
+        item = _Item("item_1", "boring_log", list(range(8)), "QX-1")
+        assert split_log_items(doc, [item]) == [item]
+        assert all(h.text == "QX-1"
+                   for h in item_holes(doc, range(8)).values())
