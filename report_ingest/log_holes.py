@@ -52,6 +52,7 @@ to the right of its label; a hole name sits in the top fifth of the page.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -61,7 +62,7 @@ __all__ = [
     "LOG_ITEM_KINDS", "HEADER_BAND", "FOOTER_BAND", "VALUE_GAP_PT",
     "HoleName", "page_hole", "lines_hole", "item_holes", "hole_parts",
     "split_log_items", "other_hole_pages", "names_match",
-    "missing_holes_qa",
+    "missing_holes_qa", "is_phone_line",
 ]
 
 #: The work-item kinds the log reader reads. A sounding is a series and is
@@ -228,10 +229,49 @@ def _key(code: Any) -> str:
     return hole_key(_JOIN_WORD.sub("", str(code or "").upper()))
 
 
+#: A word that heads a telephone line, with what may follow it ("Tel.",
+#: "Tel:", "Phone", "Fax", "Mobile"). "Ph" and "Cell" are also hole-like
+#: ("PH-1", "CELL-1"), so they head a telephone line only with a colon or a
+#: full stop, or with a number of five digits or more after them.
+_PHONE_WORD = re.compile(
+    r"^\s*(TEL(?:EPHONE)?|PHONE|FAX|MOBILE|PH|CELL)(?=[\s.:\-–_\d]|$)"
+    r"(?P<rest>.*)$")
+#: A number shaped like a telephone number: a leading "+" and a country code,
+#: or three digit groups or more set apart by spaces, dots, dashes or
+#: brackets ("(555) 010-0199", "555.010.0199"). LAYOUT JUDGMENT.
+_PHONE_SHAPE = re.compile(
+    r"^\s*(?:\+\s?\d{1,3}[\s.\-()]*\d"
+    r"|\(?\d{2,4}\)?(?:[\s.\-]\s?\(?\d{2,4}\)?){2,}(?![\d]))")
+
+
+def _is_phone(text: str) -> bool:
+    """Is ``text`` a telephone or fax line: it follows a word that heads one
+    ("Tel", "Phone", "Fax", "Mobile", "Cell", "Ph.") or it is shaped like a
+    telephone number? Neither is a hole's name."""
+    upper = "".join(c for c in unicodedata.normalize("NFD", _flat(text))
+                    if not unicodedata.combining(c)).upper()
+    if _PHONE_SHAPE.match(upper):
+        return True
+    found = _PHONE_WORD.match(upper)
+    if not found:
+        return False
+    word, rest = found.group(1), found.group("rest")
+    if word not in ("PH", "CELL"):
+        return True
+    return rest[:1] in (".", ":") or len(re.findall(r"\d", rest)) >= 5
+
+
+#: Public name for :func:`_is_phone`: a title planlens took from a letterhead's
+#: telephone line ("TEL-55") is no hole's name and no title to quote.
+is_phone_line = _is_phone
+
+
 def _code_at_start(text: str) -> Optional[str]:
     """The hole code a field's value starts with: not a page part ("SHEET
     1", "ELEV 125", :data:`_NOT_A_HOLE`), and not a bare number that is a
     measure or a count ("4 in", "1 of 2")."""
+    if _is_phone(text):
+        return None
     upper = _CARRIED.sub("", text.upper())
     found = _CODE_AT_START.match(upper)
     if not found:
@@ -251,6 +291,8 @@ def _code_alone(text: str) -> Optional[str]:
     :data:`ALONE_DIGITS` digits, and is not written closed up with letters
     after its number ("QRS6TU", a logo's or a machine's name read as text;
     "QX-6A" is kept)."""
+    if _is_phone(text):
+        return None
     found = _CODE_ALONE.match(_CARRIED.sub("", text.upper()))
     if not found:
         return None
@@ -514,6 +556,12 @@ def hole_parts(pages: Sequence[int],
     return parts
 
 
+def _title_unless_phone(item: Any) -> Any:
+    """The item's own title, unless it is a telephone line (RI-156)."""
+    title = getattr(item, "title", None)
+    return None if title and _is_phone(str(title)) else title
+
+
 def split_log_items(doc: Any, items: Sequence[Any]) -> List[Any]:
     """Every work item, with each log item cut into one item per hole.
 
@@ -539,7 +587,7 @@ def split_log_items(doc: Any, items: Sequence[Any]) -> List[Any]:
             out.append(item.__class__(
                 id=f"{item.id}{suffix}", kind=item.kind, pages=list(run),
                 title=(hole.text if hole is not None
-                       else getattr(item, "title", None)),
+                       else _title_unless_phone(item)),
                 evidence={**evidence, "first_page": run[0],
                           "split_from": item.id,
                           "hole": hole.text if hole is not None else None,
