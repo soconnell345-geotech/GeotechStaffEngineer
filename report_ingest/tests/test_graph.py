@@ -1603,7 +1603,8 @@ class TestOneLogItemPerHole:
     :mod:`report_ingest.tests.multi_hole_fixtures`, made-up holes)."""
 
     @pytest.fixture(scope="class")
-    def multi(self):
+    @classmethod
+    def multi(cls):
         from report_ingest.tests.multi_hole_fixtures import (
             build_multi_hole_log)
         return build_multi_hole_log(with_text=True)

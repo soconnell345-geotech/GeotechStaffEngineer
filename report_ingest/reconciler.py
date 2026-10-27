@@ -72,11 +72,12 @@ from report_ingest.model import (
     UNITLESS_FIELDS, Investigation, LabTest, QAEntry, Quantity, ReportRecord,
     Sample, lab_hole, si_numbers, unit_printed,
 )
+from report_ingest.printed_depths import _WHOLE_RANGE, _range, _sample_cell
 from report_ingest.scoring import KEY_CONTENT
 
 __all__ = [
     "reconcile", "si_view", "DEPTH_TOL_M", "CROSS_CHECKS", "ITEM_ROLES",
-    "fold_id", "hole_key", "depth_m",
+    "fold_id", "hole_key", "depth_m", "depth_unit",
 ]
 
 #: A laboratory specimen belongs to a sample when its depth lands within this,
@@ -162,6 +163,18 @@ def hole_key(text: Any) -> str:
 #: Two numbers with only a separator between them: "1 2.0", "1-2", "1, 2".
 #: Folding would run them into one number, "B-1 2.0 ft" into B-12.
 _JOINED_NUMBERS = re.compile(r"\d[^0-9A-Za-z]+\d")
+#: A mark or word joining a second hole's number to a hole's name
+#: ("BH-47/48", "TP-47, 48", "BH-47 & 48", "BH-47 to 50"). A hyphen run on
+#: to the name with no space before it is left out: "B-1-2" is as often
+#: B-1's sample 2 as two holes.
+_KEY_JOIN = re.compile(r"\s*(?:/|&|\+|,|;|\band\b|\bto\b|–)\s*|\s+-\s*",
+                       re.I)
+#: A whole number at the head of a label's text: a hole's number, not a
+#: depth ("2.0", "2 m", "2'", "2-2.45") a label prints after its hole, nor
+#: a number a letter runs on to ("3A").
+_JOINED_WHOLE = re.compile(
+    r"\d+(?![\d.,A-Za-z]|\s*(?:m|ft|cm|mm|in)\b|\s*['\"’]|\s*[-–]\s*\d)",
+    re.I)
 
 
 def _leading_hole(label: Any, keys: Any) -> Tuple[str, str]:
@@ -180,22 +193,32 @@ def _leading_hole(label: Any, keys: Any) -> Tuple[str, str]:
     another across a separator, so ``"B-1 2.0 ft"`` and ``"B-1-2"`` are
     B-1 and never B-12, whose folded spelling they share.
 
-    A label naming a second logged hole of the same series further on --
-    ``"B-1/B-2"``, ``"B-1 to B-4 composite"`` -- names no one hole, and
-    nothing is returned for it.
+    A label naming a second logged hole further on names no one hole, and
+    nothing is returned for it (RI-143): another hole by name, of this
+    series or another -- ``"B-1/B-2"``, ``"B-1 to B-4 composite"``,
+    ``"BH-47 / TP-71 composite"`` -- or a whole number joined straight after
+    the first that is a logged hole's number in its series -- ``"BH-47/48"``
+    and ``"BH-47 & 48"`` beside a logged BH-48. A joined number no logged
+    hole of the series carries is the sample's (``"BH-47, 3"``).
     """
     text = str(label or "")
     best, end = _head_hole(text, keys)
     if not best:
         return "", ""
-    series = re.match(r"[A-Z]*", best).group(0)
+    rest = text[end:]
+    joined = _KEY_JOIN.match(rest)
+    number = _JOINED_WHOLE.match(rest[joined.end():]) if joined else None
+    if number is not None:
+        series = re.match(r"[A-Z]*", best).group(0)
+        other = hole_key(series + number.group(0))
+        if other != best and other in keys:
+            return "", ""
     for start in range(end, len(text)):
         if text[start].isalnum() and not text[start - 1].isalnum():
             other, _end = _head_hole(text[start:], keys)
-            if other and other != best and \
-                    re.match(r"[A-Z]*", other).group(0) == series:
+            if other and other != best:
                 return "", ""
-    return best, text[end:]
+    return best, rest
 
 
 def _head_hole(text: str, keys: Any) -> Tuple[str, int]:
@@ -219,6 +242,145 @@ def depth_m(value: Optional[Quantity]) -> Optional[float]:
         return None
     converted = value.to_si()
     return None if converted is None else converted.value
+
+
+def _unit_named(value: Optional[Quantity]) -> str:
+    """``"m"`` or ``"ft"`` for a depth printed in metres or in feet (any
+    spelling the record converts), the printed unit for one in anything
+    else, ``""`` for none or no unit."""
+    if value is None or not unit_printed(value.unit):
+        return ""
+    per = depth_m(Quantity(value=1.0, unit=value.unit))
+    if per is None:
+        return str(value.unit).strip()
+    for name, metres in (("m", 1.0), ("ft", 0.3048)):
+        if abs(per - metres) < 1e-9:
+            return name
+    return str(value.unit).strip()
+
+
+def depth_unit(record: ReportRecord) -> str:
+    """The one unit the record's depths are printed in: ``"m"`` or ``"ft"``
+    when every depth that prints a unit -- the logs' samples, layers and
+    total depths, the laboratory sheets' and the summary rows' depths --
+    prints that one; ``""`` when they print two, or none (BACKLOG RI-143).
+
+    A lab sheet that prints its depths with no unit (``0``, ``1.7``, a
+    legend ``0-1.7``) is read in it for linking and matching only
+    (:func:`_depth_view`); a report that mixes feet and metres gives none,
+    and such a depth stays unread, as RI-20 has it."""
+    units: Set[str] = set()
+
+    def add(*values: Optional[Quantity]) -> None:
+        for value in values:
+            unit = _unit_named(value)
+            if unit:
+                units.add(unit)
+
+    for inv in record.investigations:
+        add(getattr(inv, "total_depth", None))
+        for sample in inv.samples:
+            add(sample.top, sample.bottom)
+        for layer in getattr(inv, "layers", None) or ():
+            add(layer.top, layer.bottom)
+    for test in record.lab_tests:
+        add(test.depth_top, test.depth_bottom)
+        if test.kind == "summary_table":
+            for row in getattr(test.result, "rows", None) or ():
+                add(row.depth_top, row.depth_bottom)
+    return units.pop() if len(units) == 1 and \
+        next(iter(units)) in ("m", "ft") else ""
+
+
+def _label_depth(text: str, unit: str
+                 ) -> Optional[Tuple[float, Optional[float], str, str]]:
+    """``(top, bottom, unit, the label before it)`` for a label that ends
+    with its depth -- ``"QX-2, U9, 3.10-3.55m"``, ``"S-3 @ 4.5 ft"`` --
+    read as a log's sample column reads one (``printed_depths._sample_cell``:
+    with a unit printed), or for a label that is only an interval with a
+    decimal in it (``"0-1.7"``: a sample's name is never one), in ``unit``
+    where it prints none. None when neither, or when no unit is known."""
+    text = str(text or "").strip()
+    if not text:
+        return None
+    found = _sample_cell(text)
+    if found is not None:
+        top, bottom, printed, label = found
+        return top, bottom, printed, label
+    whole = _WHOLE_RANGE.match(text)
+    if whole and ("." in whole.group(1) or "." in whole.group(3)):
+        found_range = _range(whole)
+        if found_range is not None:
+            top, bottom, printed = found_range
+            if printed or unit:
+                return top, bottom, printed or unit, ""
+    return None
+
+
+def _is_the_interval(label: str, top: Optional[Quantity],
+                     bottom: Optional[Quantity]) -> bool:
+    """Whether a sample label prints nothing but the depth interval the
+    test prints (``"0-1.7"`` beside 0 and 1.7): a depth, not a name."""
+    whole = _WHOLE_RANGE.match(str(label or ""))
+    if not whole or top is None:
+        return False
+    found = _range(whole)
+    if found is None:
+        return False
+    low, high, _unit = found
+    return abs(low - float(top.value)) < 1e-6 and (
+        bottom is None or abs(high - float(bottom.value)) < 1e-6)
+
+
+def _depth_view(test: Any, unit: str, need_hole: bool = True
+                ) -> Tuple[Any, str]:
+    """``(the test as linking and matching read its depth, how)`` (BACKLOG
+    RI-143): the test itself and ``""`` where its depth converts, or there
+    is nothing to read. Otherwise a copy, with ``how``:
+
+    - ``"unit"``: the test prints its depths with no unit, and they are
+      read in ``unit``, the one the record prints its depths in
+      (:func:`depth_unit`);
+    - ``"label"``: it prints no depth, and the sample label (else the
+      boring as printed) ends with one (:func:`_label_depth`), read with
+      the unit the label prints, else ``unit``. ``need_hole``: only for a
+      test placed in a hole (:func:`~report_ingest.model.lab_hole`), since
+      a depth with no hole places nothing (a summary table's second line,
+      ``0.00 - 1.70``, under no boring).
+
+    In the copy, a sample label that prints only the interval names no
+    sample (:func:`_is_the_interval`), and one the depth was read from
+    keeps the words before it. The record's own fields never change."""
+    top, bottom = test.depth_top, test.depth_bottom
+    if depth_m(top) is not None:
+        return test, ""
+    update: Dict[str, Any] = {}
+    how = ""
+    if top is not None and unit and not unit_printed(top.unit):
+        update["depth_top"] = Quantity(value=float(top.value), unit=unit)
+        if bottom is not None and not unit_printed(bottom.unit):
+            update["depth_bottom"] = Quantity(value=float(bottom.value),
+                                              unit=unit)
+        how = "unit"
+    elif top is None and (not need_hole or hole_key(lab_hole(test))):
+        for field in ("sample_id", "investigation_id"):
+            found = _label_depth(getattr(test, field, ""), unit)
+            if found is None:
+                continue
+            low, high, printed, label = found
+            update["depth_top"] = Quantity(value=low, unit=printed)
+            update["depth_bottom"] = (Quantity(value=high, unit=printed)
+                                      if high is not None else None)
+            if field == "sample_id":
+                update["sample_id"] = label
+            how = "label"
+            break
+    if not how:
+        return test, ""
+    sample = update.get("sample_id", test.sample_id)
+    if _is_the_interval(sample, test.depth_top, test.depth_bottom):
+        update["sample_id"] = ""
+    return test.model_copy(update=update), how
 
 
 def _same(a: Any, b: Any) -> Optional[bool]:
@@ -637,6 +799,179 @@ def _fold_continuations(record: ReportRecord, qa: List[QAEntry]) -> None:
 #: monitoring well is drilled as a boring.
 _SAMPLED_KINDS = ("boring", "test_pit", "hand_auger", "well")
 
+#: The words a label or a log names an exploration by before its own name,
+#: and the kinds of investigation each may name (BACKLOG RI-143): a pit
+#: word a pit, a cone word a cone, a boring word a hole drilled or augered,
+#: a general word ("hole", "location") any.
+_PIT_WORDS = r"t\s*/\s*p|tp|test\s*pit|pit|trench"
+_BORING_WORDS = r"b\s*/\s*h|b\.\s*h\.?|bh|bore\s*hole|boring|forage|sondeo"
+_EXPLORATION_HEAD = re.compile(
+    rf"^\s*[(\[]?\s*(?P<word>{_PIT_WORDS}|{_BORING_WORDS}|cpt|well|hole|"
+    rf"location|exploration|sondage)(?![A-Za-z])\.?\s*"
+    rf"(?:(?:no|nr|n[°º]|num|number)(?![A-Za-z])\.?\s*|#\s*)?"
+    rf"[-#.:]?\s*[(\[]?\s*", re.I)
+#: A number at the head of what follows such a word: a hole's number, not
+#: a decimal, a range or a number a letter runs on to ("Pit 4Q").
+_HEAD_NUMBER = re.compile(
+    r"(\d+)(?![\d]|[.,+]\d|\s*(?:-|–|to)\s*\d|[A-Za-z])")
+#: A mark or word joining a second hole to the first in a label naming
+#: several ("KW-12 / KW-13", "Boring 47 & 48", "BH 47 to BH 52").
+_JOIN = r"\s*(?:/|&|\+|,|;|\band\b|\bto\b|–|-)\s*"
+
+
+def _word_kinds(word: str) -> Optional[Tuple[str, ...]]:
+    """The kinds of investigation an exploration word may name; None for
+    a general word, which may name any."""
+    word = str(word or "")
+    if re.fullmatch(_PIT_WORDS, word, re.I):
+        return ("test_pit",)
+    if re.fullmatch(_BORING_WORDS, word, re.I):
+        return ("boring", "hand_auger", "well", "other")
+    if word.lower() == "cpt":
+        return ("cpt",)
+    if word.lower() == "well":
+        return ("well", "boring")
+    return None
+
+
+def _another_hole_after(rest: str, by_id: Dict[str, Investigation],
+                        word: str = "") -> bool:
+    """Whether what follows a hole's name or number in a label names a
+    second hole: a logged hole at the head of any word of it, or, after a
+    joining mark or word, a word for an exploration and a number ("/ BH
+    48"), or a whole number the logs give a hole of a kind ``word`` may name
+    (``"& 48"`` beside a logged 48, :func:`_numbered`). A sample ("U9", the
+    "3" of "BH 47, 3" where no hole 3 is logged) or a depth is no hole."""
+    joined = re.match(_JOIN, rest)
+    if joined:
+        after = rest[joined.end():]
+        number = _JOINED_WHOLE.match(after)
+        if number and _numbered(hole_key(number.group(0)), word,
+                                by_id.values()):
+            return True
+        head = _EXPLORATION_HEAD.match(after)
+        if head and head.end() and _HEAD_NUMBER.match(after[head.end():]):
+            return True
+    return any(_head_hole(rest[i:], by_id)[0]
+               for i in range(len(rest)) if rest[i].isalnum()
+               and (i == 0 or not rest[i - 1].isalnum()))
+
+
+def _numbered(number: str, word: str, invs: Iterable[Investigation]
+              ) -> List[Investigation]:
+    """The holes the logs name by ``number`` alone (``"4"``) or by an
+    exploration word and that number (``"BH No. 61"``), of a kind ``word``
+    may name. ``number`` is folded as :func:`hole_key` folds it."""
+    kinds = _word_kinds(word)
+    out: List[Investigation] = []
+    for inv in invs:
+        name = str(inv.investigation_id or "")
+        key = hole_key(name)
+        if not key.isdigit():
+            head = _EXPLORATION_HEAD.match(name)
+            rest = name[head.end():] if head else ""
+            key = hole_key(rest) if re.fullmatch(r"\s*\d+\s*\)?\s*",
+                                                 rest) else ""
+        if key != number or (kinds and inv.kind not in kinds):
+            continue
+        if not any(inv is other for other in out):
+            out.append(inv)
+    return out
+
+
+def _hole_after_word(label: Any, by_id: Dict[str, Investigation]
+                     ) -> Optional[Investigation]:
+    """The hole a label names after a word for an exploration (BACKLOG
+    RI-143): ``"BORE HOLE NO. (KW-12)"`` and ``"BH. KW - 12"`` are KW-12,
+    the word, its "No." and the bracket dropped; ``"BH47, U9"``,
+    ``"B/H 83 U4"`` and ``"BH 61, U17"`` are the hole the logs name 47, 83
+    or "BH No. 61" -- a number the logs give one hole of a kind the word
+    may name, by itself or after a word of their own. A word twice over
+    ("Location: BH 47") is read through. None where nothing is named, or
+    where the label names a second hole after the first ("BH 47 / BH 48
+    composite", "Boring 47 & 48", :func:`_another_hole_after`)."""
+    text = str(label or "")
+    for _ in range(2):
+        head = _EXPLORATION_HEAD.match(text)
+        if not head or not head.end():
+            return None
+        word, text = head.group("word"), text[head.end():]
+        key, rest = _leading_hole(text, by_id)
+        if key:
+            return None if _another_hole_after(rest, by_id, word) \
+                else by_id[key]
+        if _head_hole(text, by_id)[0]:
+            return None                  # a label naming two holes
+        number = _HEAD_NUMBER.match(text)
+        if number:
+            if _another_hole_after(text[number.end():], by_id, word):
+                return None
+            found = _numbered(hole_key(number.group(1)), word,
+                              by_id.values())
+            return found[0] if len(found) == 1 else None
+    return None
+
+
+def _bare_number_hole(number: str, by_id: Dict[str, Investigation]
+                      ) -> Optional[Investigation]:
+    """The hole a boring printed as a bare number names (RI-143): the one
+    the logs name by an exploration word and that number (``"61"`` for
+    ``"BH No. 61"``, :func:`_numbered`), where no other logged hole carries
+    the number in a series of its own -- beside KW-038 and BH-38, a bare
+    ``"38"`` names neither."""
+    key = hole_key(number)
+    found = _numbered(key, "", by_id.values())
+    if len(found) != 1:
+        return None
+    for other in by_id.values():
+        tail = re.search(r"(\d+)$", hole_key(other.investigation_id))
+        if other is not found[0] and tail and tail.group(1) == key:
+            return None
+    return found[0]
+
+
+#: A summary-table column heading that names the exploration, where the
+#: row has no boring column of its own (BACKLOG RI-143): "Boring",
+#: "Borehole", "Test pit", "Location", "Site ref."; not one that names
+#: the sample, a depth or another property of the hole.
+_HOLE_HEADING = re.compile(
+    r"\b(?:bore\s*holes?|boreholes?|borings?|holes?|test\s*pits?|pits?|"
+    r"trench(?:es)?|locations?|explorations?|site\s+(?:mark|ref)\w*|"
+    r"sondages?|"
+    r"sondeos?|forages?|bh|b/h|tp)\b", re.I)
+_NOT_HOLE_HEADING = re.compile(
+    r"\b(?:samples?|specimens?|depths?|elev\w*|dates?|diam\w*|dia|sizes?|"
+    r"types?|logged|muestras?|[ée]chantillons?|prof\w*)\b", re.I)
+
+
+def _hole_heading(heading: Any) -> bool:
+    text = str(heading or "")
+    return bool(_HOLE_HEADING.search(text)) and \
+        not _NOT_HOLE_HEADING.search(text)
+
+
+def _hole_in_column(row: Any, by_id: Dict[str, Investigation],
+                    samples: Dict[str, List[Tuple[Investigation, Sample]]],
+                    by_fold: Dict[str, Investigation]
+                    ) -> Tuple[Optional[Investigation], str, str, bool]:
+    """``(the hole, the heading, the cell, whether the row prints a cell
+    under such a heading)`` for a summary row that prints no boring of its
+    own and names its hole in a column of its ``other`` headed for one
+    (:func:`_hole_heading`) -- a hole the logs hold, read as a boring
+    column's cell is (:func:`_hole_for`; ``"61"`` for "BH No. 61",
+    :func:`_bare_number_hole`)."""
+    printed = False
+    for heading, cell in getattr(row, "other", None) or ():
+        cell = str(cell or "").strip()
+        if not cell or not _hole_heading(heading):
+            continue
+        printed = True
+        view = row.model_copy(update={"investigation_id": cell})
+        inv, _through = _hole_for(view, by_id, samples, by_fold)
+        if inv is not None:
+            return inv, str(heading), cell, True
+    return None, "", "", printed
+
 
 def _hole_for(test: Any, by_id: Dict[str, Investigation],
               samples: Optional[Dict[str, List[Tuple[Investigation,
@@ -654,7 +989,14 @@ def _hole_for(test: Any, by_id: Dict[str, Investigation],
     the sheet printed no boring at all, a hole at the head of the sample
     label (``"BH-03 S-2 1.5-1.95 m"``), which is how many sheets name a
     specimen. The second string says which, for the QA note: empty for a
-    whole match.
+    whole match. Where no logged hole heads the label, one named after a
+    word for an exploration (``"BORE HOLE NO. (KW-12)"``, ``"BH47, U9"``
+    for the log's ``47``; :func:`_hole_after_word`, RI-143), and for a
+    boring printed as a bare number, the one hole the logs give that number
+    after a word of their own (``"61"`` for the log's ``"BH No. 61"``). A
+    label headed by a logged hole that names a second logged hole
+    (``"KW-12 / KW-13 composite"``, ``"KW-12/13"``, :func:`_leading_hole`)
+    names no one hole, and no word is read through it.
 
     A SAMPLE NUMBER NAMES NO HOLE, so a hole is not taken from a label
     that could equally be a sample's name:
@@ -678,7 +1020,17 @@ def _hole_for(test: Any, by_id: Dict[str, Investigation],
                       if printed else (test.sample_id, "the sample label"))
     key, _rest = _leading_hole(label, by_id)
     if not key:
-        return None, ""
+        if _head_hole(str(label or ""), by_id)[0]:
+            return None, ""              # a label naming two holes
+        # The word names the label a hole's, so no sample's name is feared.
+        inv = _hole_after_word(label, by_id)
+        if inv is None and printed and \
+                re.fullmatch(r"\s*\d{1,4}\s*", str(label or "")):
+            inv = _bare_number_hole(str(label), by_id)
+        if inv is None or (through == "the sample label"
+                           and inv.kind not in _SAMPLED_KINDS):
+            return None, ""
+        return inv, through
     inv = by_id[key]
     named = (samples or {}).get(key, [])
     if named:
@@ -713,14 +1065,20 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
     # (the label it was read from, the hole, the pages, a summary row?)
     from_labels: List[Tuple[str, Investigation, List[int], bool]] = []
     clashes: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
-    for test in record.lab_tests:
-        if test.kind == "summary_table":
-            _link_summary_rows(test, by_id, sample_names, by_fold,
-                               from_labels, clashes, qa)
+    # A depth printed with no unit, or only in the sample label, is read
+    # for the link in the record's one depth unit, or the label's (RI-143);
+    # (how, a summary row?, the pages) for one note.
+    unit = depth_unit(record)
+    read_depths: List[Tuple[str, bool, List[int]]] = []
+    for original in record.lab_tests:
+        if original.kind == "summary_table":
+            _link_summary_rows(original, by_id, sample_names, by_fold,
+                               from_labels, clashes, qa, unit, read_depths)
             continue
+        test, how = _depth_view(original, unit, need_hole=False)
         inv, through = _hole_for(test, by_id, sample_names, by_fold)
         if inv is not None and through:
-            from_labels.append((_label_read(test, through), inv,
+            from_labels.append((_label_read(original, through), inv,
                                 list(test.pages), False))
         printed = fold_id(test.investigation_id)
         if not printed and inv is None:
@@ -738,7 +1096,9 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
                 values=[test.investigation_id],
                 pages=list(test.pages)))
             continue
-        test.linked_investigation_id = inv.investigation_id
+        original.linked_investigation_id = inv.investigation_id
+        if how:
+            read_depths.append((how, False, list(original.pages)))
         sample, delta, clash = _sample_for(inv, test, by_fold)
         if clash is not None:
             _gather(clashes, clash, test.kind, test.pages)
@@ -753,11 +1113,13 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
                         f"depth" if wanted is not None else
                         f"linked to {inv.investigation_id}; the sheet prints "
                         f"no depth, so no sample could be matched"),
-                values=[_show(test.depth_top)] if test.depth_top else [],
+                values=([_show(original.depth_top)] if original.depth_top
+                        else []),
                 pages=list(test.pages)))
             continue
-        test.linked_sample_id = sample.sample_id
-        test.linked_depth_delta_m = None if delta is None else round(delta, 3)
+        original.linked_sample_id = sample.sample_id
+        original.linked_depth_delta_m = (None if delta is None
+                                         else round(delta, 3))
 
     if from_labels:
         # One note for the report, not one a test: a reviewer wants to know
@@ -779,12 +1141,46 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
                     f"longer label -- the boring as printed (a hole, sample "
                     f"and depth run together), or the sample label where "
                     f"the sheet printed no boring; only holes read from this "
-                    f"report's logs were looked for"),
+                    f"report's logs were looked for. A hole named after a "
+                    f"word for an exploration (\"BH No.\", \"Bore hole\") "
+                    f"by its own name, or by a number the logs give one "
+                    f"hole, is linked so too"),
             values=shown[:12] + ([f"... {len(shown) - 12} more"]
                                  if len(shown) > 12 else []),
             pages=sorted({int(p) for _l, _i, pages, _r in from_labels
                           for p in pages})))
+    if read_depths:
+        qa.append(_read_depths_entry(read_depths, unit))
     qa.extend(_label_depth_entry(group) for group in clashes.values())
+
+
+def _read_depths_entry(read_depths: Sequence[Tuple[str, bool, List[int]]],
+                       unit: str) -> QAEntry:
+    """One note for the tests and rows linked by a depth read as
+    :func:`_depth_view` reads it (RI-143): how many printed their depths
+    with no unit and were read in the record's one unit, and how many
+    printed theirs only in the sample label."""
+    def counted(how: str) -> str:
+        tests = sum(1 for h, row, _p in read_depths if h == how and not row)
+        rows = sum(1 for h, row, _p in read_depths if h == how and row)
+        return " and ".join(part for part in (
+            f"{tests} lab test(s)" if tests else "",
+            f"{rows} summary row(s)" if rows else "") if part)
+    parts: List[str] = []
+    if any(h == "unit" for h, _r, _p in read_depths):
+        parts.append(f"{counted('unit')} print their depths with no unit; "
+                     f"they were read in {unit}, the one unit every other "
+                     f"depth in this record is printed in")
+    if any(h == "label" for h, _r, _p in read_depths):
+        parts.append(f"{counted('label')} print a depth only in the sample "
+                     f"label, or the boring as printed; it was read from "
+                     f"there")
+    return QAEntry(
+        kind="note", where="lab_tests",
+        detail="; ".join(parts) + " to link them to the logs. The printed "
+                                  "values are kept as printed",
+        pages=sorted({int(p) for _h, _r, pages in read_depths
+                      for p in pages}))
 
 
 def _label_read(test: Any, through: str) -> str:
@@ -1223,7 +1619,10 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
                        from_labels: List[Tuple[str, Investigation, List[int],
                                                bool]],
                        clashes: Dict[Tuple[Any, ...], Dict[str, Any]],
-                       qa: List[QAEntry]) -> None:
+                       qa: List[QAEntry], unit: str = "",
+                       read_depths: Optional[List[Tuple[str, bool,
+                                                        List[int]]]] = None
+                       ) -> None:
     """Each row of a summary table linked as a sheet is, from its own columns.
 
     A row prints its own boring, sample and depth, and is linked by the
@@ -1231,32 +1630,121 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
     fields (RI-56); the printed columns never change. The holes the table
     names that no log holds are one entry for the table; the DIGGS writer
     gives each such name the hole a sheet printing it would get.
+
+    A row that prints no boring of its own may name its hole in another
+    column, headed for one ("Site ref.", "Location"; kept in ``other``):
+    that cell is read as a boring column's would be (:func:`_hole_in_column`,
+    RI-143). A table printing such a column once for a run of rows (a
+    merged cell) leaves the rows below it blank there: a row printing no
+    hole cell at all, under a row holed so, deeper than it, takes its hole
+    where that hole's log has a sample at the row's depth -- unless the run
+    of such rows ends at a row naming another hole, deeper still, with no
+    return to a shallower depth between, whose log has a sample at the
+    row's depth too: the cell may be printed on the middle row of the group
+    it spans, so such rows (those after the last that hole's log has no
+    sample at) may as well be that hole's, and are left unplaced. All are
+    said in one note for the table. A depth printed with no unit, or only
+    in the sample label, is read as a sheet's is (:func:`_depth_view`).
     """
     result = test.result
     rows = list(getattr(result, "rows", ()) or ())
     missing: List[str] = []
-    for row in rows:
+    # (the hole, the top in metres) of the row above, holed by a column of
+    # its own or carried down from one.
+    above: Optional[Tuple[Investigation, float]] = None
+    by_column: List[str] = []
+    # Each row as decided: [the row, its view, how its depth was read, its
+    # hole, where the hole was read, whether it was carried down, its top].
+    decided: List[List[Any]] = []
+    run: List[int] = []                  # rows carried down since a holed one
+    left = 0
+    for original in rows:
+        row, how = _depth_view(original, unit, need_hole=False)
         inv, through = _hole_for(row, by_id, samples, by_fold)
+        top = depth_m(row.depth_top)
+        names = inv is not None or bool(fold_id(row.investigation_id))
+        down = False
+        if inv is None and not fold_id(row.investigation_id):
+            inv, heading, cell, printed = _hole_in_column(
+                row, by_id, samples, by_fold)
+            names = printed
+            if inv is not None:
+                by_column.append(f"{heading!r} {cell!r} -> "
+                                 f"{inv.investigation_id}")
+            elif above is not None and not printed and top is not None \
+                    and top > above[1] and \
+                    _sample_at_depth(above[0], row)[0] is not None:
+                inv, down = above[0], True
+            above = (inv, top) if inv is not None and top is not None \
+                else None
+        else:
+            above = None
+        if run and not down:
+            last = decided[run[-1]]
+            if names and inv is not last[3] and top is not None \
+                    and top > last[6]:
+                # The cell may be this row's group's, printed on its middle
+                # row: the carried rows this row's hole has a sample at too,
+                # after the last it has none at (a group is one run of rows),
+                # may as well be its own.
+                either: List[int] = []
+                for i in run:
+                    if inv is not None and \
+                            _sample_at_depth(inv, decided[i][1])[0] \
+                            is not None:
+                        either.append(i)
+                    else:
+                        either = []
+                for i in either:
+                    decided[i][3] = None
+                left += len(either)
+            run = []
+        if down:
+            run.append(len(decided))
+        decided.append([original, row, how, inv, through, down, top])
+    carried = sum(1 for d in decided if d[5] and d[3] is not None)
+    for original, row, how, inv, through, _down, _top in decided:
         if inv is None:
             if fold_id(row.investigation_id) and \
                     row.investigation_id not in missing:
                 missing.append(row.investigation_id)
             continue
         if through:
-            from_labels.append((_label_read(row, through), inv,
+            from_labels.append((_label_read(original, through), inv,
                                 list(test.pages), True))
-        row.linked_investigation_id = inv.investigation_id
+        original.linked_investigation_id = inv.investigation_id
+        if how and read_depths is not None:
+            read_depths.append((how, True, list(test.pages)))
         sample, _delta_m, clash = _sample_for(inv, row, by_fold)
         if clash is not None:
             _gather(clashes, clash, test.kind, test.pages)
         if sample is not None:
-            row.linked_sample_id = sample.sample_id
+            original.linked_sample_id = sample.sample_id
     if missing:
         qa.append(QAEntry(
             kind="partial", where="lab_tests.summary_table",
             detail=f"{len(missing)} exploration(s) named in the summary "
                    f"table are not among those read from this report",
             values=missing, pages=list(test.pages)))
+    if by_column:
+        shown = list(dict.fromkeys(by_column))
+        qa.append(QAEntry(
+            kind="note", where="lab_tests.summary_table",
+            detail=(f"{len(by_column)} summary row(s) print no boring of "
+                    f"their own and name their hole in another column; "
+                    f"linked to the hole that column names"
+                    + (f", and {carried} row(s) below them that print that "
+                       f"column blank (a cell spanning the rows) to the hole "
+                       f"of the row above, where its log has a sample at the "
+                       f"row's depth" if carried else "")
+                    + (f"; {left} row(s) printing it blank above a row of "
+                       f"another hole deeper down, whose log has a sample at "
+                       f"their depths too, are left unplaced (a spanning "
+                       f"cell may be printed on the middle row of its group)"
+                       if left else "")),
+            values=shown[:12] + ([f"... {len(shown) - 12} more"]
+                                 if len(shown) > 12 else []),
+            pages=list(test.pages)))
 
 
 # -- the counts -------------------------------------------------------------
@@ -1511,9 +1999,10 @@ def _cross_check_summary_table(record: ReportRecord,
     sheets = [t for t in record.lab_tests if t.kind != "summary_table"]
     if not tables or not sheets:
         return
+    unit = depth_unit(record)
     for table in tables:
         rows = list(getattr(table.result, "rows", ()) or ())
-        joined, ties = _summary_matches(rows, sheets)
+        joined, ties = _summary_matches(rows, sheets, unit=unit)
         for row, got in zip(rows, joined):
             for sheet in got:
                 for column, names in CROSS_CHECKS.items():
@@ -1626,9 +2115,70 @@ def _reading(value: Any) -> bool:
     return True
 
 
+#: A bracket in a heading: ``(k, m/s)``, ``[CBR %]``, ``(kΩ - cm)``.
+_BRACKET = re.compile(r"[(\[]([^()\[\]]*)[)\]]")
+#: Unit words a bracket prints beside a test's symbol, folded to lower
+#: case: lengths, times, forces, pressures, masses and the like. A letter
+#: alone that is a symbol (``k``, ``Gs``, ``Cc``) is no unit.
+_UNIT_WORDS = frozenset(
+    "m mm cm km s sec secs min mins h hr hrs d day days yr ft in yd n kn "
+    "pa kpa mpa psi psf ksf tsf pcf g kg mg lb lbs kip kips t ohm ohms ppm "
+    "ppb ml l percent pct meq".split())
+#: A concentration (``mg/kg``, ``mg/L``, ``ppm``): the bracket names an
+#: analyte (``Potassium (K, mg/L)``), not a test's symbol.
+_CONCENTRATION = re.compile(
+    r"\b(?:mg|µg|ug|g)\s*/\s*(?:kg|l|dm3)\b|\bpp[mb]\b|\bmeq\b", re.I)
+#: An electrical resistance with its prefix (``kΩ``, ``k ohm``, ``k-ohm``,
+#: ``MΩ``): a ``k`` there is kilo, not a permeability.
+_PREFIXED_OHM = re.compile(
+    r"(?<![A-Za-z])[kKmMµu]?[\s\-–.·]*(?:Ω|ohms?\b)", re.I)
+#: ``element -> its chemical symbol``, for the elements and the ions named
+#: after them that a soil or water chemistry sheet reports. A heading
+#: naming one prints its symbol as the element's, not a test's
+#: ("Potassium (K)" is no permeability, "Chromium (Cr)" no recompression
+#: index).
+_ELEMENT_SYMBOLS: Dict[str, str] = {
+    "aluminium": "Al", "aluminum": "Al", "antimony": "Sb", "arsenic": "As",
+    "barium": "Ba", "beryllium": "Be", "boron": "B", "cadmium": "Cd",
+    "calcium": "Ca", "carbon": "C", "chlorine": "Cl", "chloride": "Cl",
+    "chromium": "Cr", "cobalt": "Co", "copper": "Cu", "iron": "Fe",
+    "lead": "Pb", "lithium": "Li", "magnesium": "Mg", "manganese": "Mn",
+    "mercury": "Hg", "molybdenum": "Mo", "nickel": "Ni", "nitrogen": "N",
+    "phosphorus": "P", "potassium": "K", "selenium": "Se",
+    "silicon": "Si", "silver": "Ag", "sodium": "Na", "strontium": "Sr",
+    "sulfur": "S", "sulphur": "S", "thallium": "Tl", "tin": "Sn",
+    "titanium": "Ti", "uranium": "U", "vanadium": "V", "zinc": "Zn",
+}
+
+
+def _bracket_names(match: Any) -> str:
+    """What a heading's bracket names (RI-143): its letter-only tokens that
+    are no unit -- ``(k, m/s)`` is ``k``, ``(CBR, %)`` is ``CBR``,
+    ``(Gs, Mg/m3)`` is ``Gs`` -- and nothing from a bracket of units
+    alone (``(kN/m2)``, ``(%)``, ``(kΩ - cm)``) or of a concentration."""
+    inner = match.group(1)
+    if _CONCENTRATION.search(inner):
+        return " "
+    inner = _PREFIXED_OHM.sub(" ", inner)
+    kept = [token.rstrip(".") for token in re.split(r"[\s,;:/·*^=+\-–]+",
+                                                    inner)
+            if re.fullmatch(r"[A-Za-z]+\.?", token)
+            and token.rstrip(".").lower() not in _UNIT_WORDS]
+    return " " + " ".join(kept) + " "
+
+
 def _heading_kinds(heading: Any) -> Set[str]:
-    """The kinds of sheet a column heading names (:data:`_HEADING_KINDS`)."""
-    text = re.sub(r"['’′]", "", str(heading or ""))
+    """The kinds of sheet a column heading names (:data:`_HEADING_KINDS`),
+    its brackets read for the symbols they print and their units left out
+    (:func:`_bracket_names`), and the symbol of an element it names left
+    out with the element (:data:`_ELEMENT_SYMBOLS`)."""
+    text = str(heading or "")
+    for element, symbol in _ELEMENT_SYMBOLS.items():
+        if re.search(rf"(?<![A-Za-z]){element}(?![A-Za-z])", text, re.I):
+            text = re.sub(rf"(?<![A-Za-z]){symbol}(?![A-Za-z])", " ", text,
+                          flags=re.I)
+    text = _BRACKET.sub(_bracket_names, text)
+    text = re.sub(r"['’′]", "", text)
     text = re.sub(r"(?<![A-Za-z])(?:[A-Za-z]\.){2,}",
                   lambda m: m.group(0).replace(".", ""), text)
     words = [fold_id(w) for w in re.split(r"[^0-9A-Za-z]+", text) if w]
@@ -1705,6 +2255,68 @@ def _sample_keys(test: Any) -> Set[str]:
         if hole_key(text):
             out.add(hole_key(text))
     return out
+
+
+def _sample_number(test: Any) -> Optional[int]:
+    """The sample a row or a sheet prints, where it prints a bare number
+    ("8812", "07"; its hole at the head dropped, "QX-2 8812"); else None. A
+    name with a letter or a separator in it ("S-5", "0-1.7") is not one."""
+    text = str(getattr(test, "sample_id", "") or "")
+    hole = hole_key(lab_hole(test))
+    if hole:
+        head, rest = _leading_hole(text, {hole})
+        if head and hole_key(rest):
+            text = rest
+    text = text.strip(" ,;:")
+    return int(text) if re.fullmatch(r"\d{1,9}", text) else None
+
+
+def _one_numbering(rows: Sequence[Any], sheets: Sequence[Any]) -> bool:
+    """Whether a table's rows and the sheets number their samples alike:
+    a row and a sheet of one hole, at one depth, print the same bare number
+    as their sample (:func:`_sample_number`); no row prints a number a
+    sheet of another hole, or of its own hole at another depth, prints --
+    the same number on another specimen is the other numbering's; and the
+    sheets' numbers run on through the report -- no number is printed by
+    two holes' sheets. A table numbering its specimens 1 to 6 down two
+    holes, beside sheets numbering each hole's 1 to 3, is two numberings,
+    though the first hole's agree: the sheets start again in each hole. So
+    is one whose rows and sheets agree once and print each other's numbers
+    on other specimens elsewhere: the one pair agrees by chance."""
+    holes_of: Dict[int, Set[str]] = {}
+    for sheet in sheets:
+        number, hole = _sample_number(sheet), hole_key(lab_hole(sheet))
+        if number is not None and hole:
+            holes_of.setdefault(number, set()).add(hole)
+    if any(len(holes) > 1 for holes in holes_of.values()):
+        return False
+    agree = False
+    for row in rows:
+        number, depth = _sample_number(row), depth_m(row.depth_top)
+        hole = hole_key(lab_hole(row))
+        if number is None or depth is None or not hole:
+            continue
+        for sheet in sheets:
+            got = depth_m(getattr(sheet, "depth_top", None))
+            other = hole_key(lab_hole(sheet))
+            if got is None or not other or _sample_number(sheet) != number:
+                continue
+            if other != hole or abs(got - depth) > DEPTH_TOL_M:
+                return False             # the number on another specimen
+            agree = True
+    return agree
+
+
+def _numbers_apart(a: Any, b: Any) -> bool:
+    """Whether a row and a sheet print two different bare numbers as their
+    samples (BACKLOG RI-143). Where the table and the sheets number their
+    samples alike (:func:`_one_numbering`), two numbers ("8812" and
+    "8805") are two specimens, though both lie at one depth of one hole and
+    so were linked to one sample of its log -- a bulk bag and a tube taken
+    beside it. A name with a letter in it ("S-5" beside "5") is another
+    spelling, which the links settle."""
+    na, nb = _sample_number(a), _sample_number(b)
+    return na is not None and nb is not None and na != nb
 
 
 def _names_another(a: Any, b: Any) -> bool:
@@ -1855,18 +2467,74 @@ def _placed(row: Any, mine: List[LabTest]
     return mine, []
 
 
-def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
+def _name_after_word(printed: Any) -> str:
+    """The hole's own name a printed boring gives after a word for an
+    exploration (RI-143): ``"BORE HOLE NO. (KW-12)"`` and ``"BH. KW - 12"``
+    print KW-12. ``""`` where no such word heads it, or what follows is not
+    one name with letters and a number (``"BH 83"``: a number alone may be
+    any kind of hole's; ``"BH47, U9"``: a hole and a sample)."""
+    text = str(printed or "")
+    head = _EXPLORATION_HEAD.match(text)
+    if not head or not head.end():
+        return ""
+    rest = text[head.end():].strip().rstrip(")]").strip()
+    return rest if re.fullmatch(r"[A-Za-z]{1,4}\s*[-_.]?\s*\d{1,4}[A-Za-z]?",
+                                rest) else ""
+
+
+def _match_view(test: Any, unit: str) -> Any:
+    """A row or a sheet as :func:`_summary_matches` matches it: its depth
+    as :func:`_depth_view` reads it, and, where no hole of the logs is
+    linked to it, the boring it prints by the hole's own name
+    (:func:`_name_after_word`), so a summary row's ``KW - 12`` finds the
+    sheets of ``BORE HOLE NO. (KW-12)`` though no log of KW-12 was read."""
+    view, _how = _depth_view(test, unit)
+    if getattr(view, "linked_investigation_id", ""):
+        return view
+    name = _name_after_word(getattr(view, "investigation_id", ""))
+    return view.model_copy(update={"investigation_id": name}) if name \
+        else view
+
+
+def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest],
+                     unit: str = ""
                      ) -> Tuple[List[List[LabTest]],
                                 List[Tuple[List[Any], List[LabTest]]]]:
     """Which sheets each row of ONE summary table reports on (BACKLOG
     RI-140), and the ties: ``(joined, ties)``, ``joined[i]`` the sheets of
     ``rows[i]``, each tie ``(rows, sheets)`` that could not be told apart.
 
+    Each row and sheet is matched by its depth as :func:`_depth_view`
+    reads it (RI-143): one printed with no unit in ``unit``, the record's
+    one depth unit (:func:`depth_unit`; none given, it stays unread), and
+    one printed only in the sample label read from there, for a row or
+    sheet placed in a hole; and a hole no log holds by its own name after
+    a word for an exploration (:func:`_match_view`). What comes back are
+    the rows and sheets themselves.
+    """
+    views = [_match_view(x, unit) for x in list(rows) + list(sheets)]
+    back = {id(v): x for v, x in zip(views, list(rows) + list(sheets))}
+    joined, ties = _matches(views[:len(rows)], views[len(rows):])
+    return ([[back[id(s)] for s in got] for got in joined],
+            [([back[id(r)] for r in t_rows], [back[id(s)] for s in t_sheets])
+             for t_rows, t_sheets in ties])
+
+
+def _matches(rows: Sequence[Any], sheets: Sequence[LabTest]
+             ) -> Tuple[List[List[LabTest]],
+                        List[Tuple[List[Any], List[LabTest]]]]:
+    """:func:`_summary_matches` over rows and sheets as their depths are
+    read.
+
     A row printing no hole, sample or depth joins nothing
     (:func:`_names_no_specimen`). A row may join a sheet that
     :func:`_may_join` it; where some of those
     name the row's own sample, those naming another sample drop out
-    (:func:`_its_sample_first`). Of the sheets of one kind left, the row
+    (:func:`_its_sample_first`); where the table and the sheets number
+    their samples alike (:func:`_one_numbering`), a sheet printing another
+    number than a placed row's never joins it (:func:`_numbers_apart`).
+    Of the sheets of one
+    kind left, the row
     takes the closest (:func:`_closeness`: an exact interval before a
     window match, then the nearer top); a row is one specimen and reports
     each test once, so a second specimen's sheet of the same kind a few
@@ -1889,6 +2557,7 @@ def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
     """
     picked: List[List[LabTest]] = []
     ties: List[Tuple[List[Any], List[LabTest]]] = []
+    numbered = _one_numbering(rows, sheets)
     for row in rows:
         if _names_no_specimen(row):
             picked.append([])
@@ -1899,6 +2568,10 @@ def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
             ties.append(([row], unplaced))
             picked.append([])
             continue
+        if numbered:
+            # Only once the row is placed: a row printing no hole is not
+            # placed by the sheets its number rules out (RI-143).
+            mine = [s for s in mine if not _numbers_apart(row, s)]
         if depth_m(row.depth_top) is None and not _sample_keys(row):
             picked.append(mine)                 # one specimen (_placed)
             continue
@@ -1928,14 +2601,14 @@ def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
 
 
 def _sheets_for(row: Any, sheets: Sequence[LabTest],
-                rows: Sequence[Any] = ()) -> List[LabTest]:
+                rows: Sequence[Any] = (), unit: str = "") -> List[LabTest]:
     """The sheets that report on the same specimen as this row: the row's
     share of :func:`_summary_matches` over ``rows``, the other rows of its
     table (none given: the row alone)."""
     table = list(rows)
     if not any(r is row for r in table):
         table.append(row)
-    joined, _ties = _summary_matches(table, sheets)
+    joined, _ties = _summary_matches(table, sheets, unit=unit)
     return next(got for r, got in zip(table, joined) if r is row)
 
 

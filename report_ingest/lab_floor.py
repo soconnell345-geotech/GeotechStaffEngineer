@@ -139,11 +139,70 @@ _PARTICLE_DENSITY = r"particle density"
 _OTHER_DENSITY = (r"\b(?:bulk|dry|wet|moist|total|field|in[- ]?situ|"
                   r"in[- ]place)\b")
 
+#: A heading for the share of a specimen that is dry solids -- percent
+#: solids (SM 2540 G), total solids, dry matter -- which a chemistry lab
+#: prints beside its results and which is no water content: a specimen of
+#: 85 % solids holds about 18 % water by dry weight (RI-143). Not the
+#: specific gravity, density or mass of the solids, nor dissolved,
+#: suspended, volatile, fixed or settleable solids (a water analysis's
+#: concentrations and fractions).
+SOLIDS_HEADING = (r"(?:%|\bpercent|\bper cent|\bpct\.?) ?(?:total )?solids\b|"
+                  r"\btotal solids\b|"
+                  r"(?<!dissolved )(?<!suspended )(?<!volatile )(?<!fixed )"
+                  r"(?<!settleable )"
+                  r"\bsolids,? ?(?:content|\( ?% ?\)|%|\[ ?% ?\])|"
+                  r"^solids$|\bdry matter\b|\bdry residue\b|"
+                  r"\bmati[eè]re s[eè]che\b|\bresiduo seco\b")
+#: A water content a test was run AT, not the specimen's own: the one a
+#: resistivity test reached its minimum at (a heading naming minimum,
+#: resistivity and water content, in any order) (RI-143).
+_TEST_WATER_CONTENT = (r"(?=.*\bmin(?:imum|\.)?\b)(?=.*resistivit)"
+                       r"(?=.*(?:water|moisture) content)")
+#: The percent solids S at which a specimen's own water content w, in
+#: percent, is the same number as S. With water mass Mw, solids mass Ms and
+#: total mass M = Mw + Ms, percent solids is S = 100 Ms / M; a water content
+#: on a wet basis is 100 Mw / M = 100 - S, equal to S only at S = 50; on a
+#: dry basis it is 100 Mw / Ms = 100 (100 - S) / S, equal to S only where
+#: S^2 + 100 S - 10000 = 0, at S = 50 (sqrt 5 - 1) = 61.80.
+SOLIDS_EQUAL_TO_WATER = (50.0, 50.0 * (5.0 ** 0.5 - 1.0))
+
+
+def names_solids(label: Any) -> bool:
+    """Whether a printed heading names a share of dry solids
+    (:data:`SOLIDS_HEADING`), folded as :func:`_field_of` folds one."""
+    return bool(re.search(SOLIDS_HEADING, _fold_label(label)))
+
+
+def solids_can_equal_water(printed: Any) -> bool:
+    """Whether a percent solids, as printed, can be the same number as the
+    same specimen's water content (RI-143).
+
+    It can only near the two values of :data:`SOLIDS_EQUAL_TO_WATER`: 50 on
+    a wet basis, 61.80 on a dry basis. A printed number stands for any value
+    within half its last digit, and both water contents fall as S rises
+    while S itself rises, so the two print alike only where one of those
+    values lies within half a last digit of the number: "50" or "61.8" may
+    be both, "73.7" may not -- a specimen of 73.7 % solids holds 26.3 %
+    water on a wet basis and 35.7 % on a dry one."""
+    raw = str(printed or "").strip()
+    value = _num(raw)
+    if value is None:
+        return False
+    digits = _NUMBER.search(raw.replace(" ", ""))
+    decimals = re.split(r"[.,]", digits.group(0))[1:] if digits else []
+    half = 0.5 * 10.0 ** -(len(decimals[0]) if decimals else 0)
+    return any(abs(value - equal) <= half + 1e-9
+               for equal in SOLIDS_EQUAL_TO_WATER)
+
+
 #: A printed label -> the record's own name for the value. Applied to a
 #: row's first cell in a property/value table and to a column head in a
 #: header-row table, after folding to lower case and one space. The first
-#: pattern that matches wins, so the longer names come first.
+#: pattern that matches wins, so the longer names come first. A share of
+#: dry solids and the water content a resistivity test ran at are kept as
+#: printed (:data:`_AS_PRINTED`), never read as the water content.
 LABEL_FIELDS: Tuple[Tuple[str, str], ...] = (
+    (SOLIDS_HEADING + "|" + _TEST_WATER_CONTENT, "as_printed"),
     (r"max(?:imum)?\.? dry (?:density|unit weight)|mdd", "max_dry_density"),
     (r"optimum (?:moisture|water)|omc|opt\.? (?:w|m)", "optimum_wc"),
     (r"liquid limit|\bll\b|limite liquide|limite liquido|\bwl\b", "ll"),
@@ -269,10 +328,16 @@ def _num(text: Any) -> Optional[float]:
     return float(match.group(0).replace(",", "."))
 
 
-def _field_of(label: str) -> str:
+def _fold_label(label: Any) -> str:
+    """A printed label folded as :data:`LABEL_FIELDS` is matched against:
+    lower case, one space, a space before a bracket and round a percent."""
     text = " ".join(str(label or "").lower().replace("_", " ").split())
     text = text.replace("(", " (").replace("%", " % ")
-    text = " ".join(text.split())
+    return " ".join(text.split())
+
+
+def _field_of(label: str) -> str:
+    text = _fold_label(label)
     for pattern, name in LABEL_FIELDS:
         if re.search(pattern, text):
             return name
@@ -665,7 +730,8 @@ def _read_property_table(rows: List[List[str]], values: _Values,
         name = _field_of(label)
         if not name or name in ("investigation_id", "sample_id", "depth_top",
                                 "uscs", "description", "sample_type",
-                                "sieve", "size", "percent_passing", "date"):
+                                "sieve", "size", "percent_passing", "date",
+                                _AS_PRINTED):
             continue
         if strict and _not_the_specimens(name, label,
                                          _row_numbers(cells[1:])):
@@ -722,6 +788,15 @@ def _series_from(rows: List[List[str]], header: List[str],
     return out
 
 
+def _an_elevation(head: str) -> bool:
+    """A column heading that names an elevation and no depth (RI-123):
+    :data:`LABEL_FIELDS` files both under ``depth_top`` as a link, but an
+    elevation is on a datum, not below the ground surface."""
+    text = str(head or "").lower()
+    return bool(re.search(r"\belev(?:ation)?\b", text)) and not re.search(
+        r"depth|prof(?:ondeur|undidad)?\b", text)
+
+
 def _summary_rows(rows: List[List[str]], header: List[str],
                   columns: Dict[int, str], unit: str, conf: float,
                   prov: Provenance,
@@ -759,7 +834,16 @@ def _summary_rows(rows: List[List[str]], header: List[str],
                 continue
             if name == "depth_top":
                 number = _num(text)
-                if number is not None:
+                if number is not None and _an_elevation(head):
+                    # An elevation column is not a depth below the ground
+                    # (RI-123): the row has a slot of its own for it.
+                    kwargs["elevation_top"] = Quantity(
+                        value=number, unit=_unit_in(head) or unit)
+                elif number is not None and number < 0.0:
+                    # No depth below the ground is negative (RI-123): kept
+                    # as printed under its heading, not as the row's depth.
+                    other.append((head, text))
+                elif number is not None:
                     kwargs["depth_top"] = Quantity(value=number,
                                                    unit=unit or _unit_in(head))
                 continue

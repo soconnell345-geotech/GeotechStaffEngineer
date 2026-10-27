@@ -49,7 +49,7 @@ __all__ = ["seed_from_grid", "serialise_seed", "merge_investigations",
            "GROUP_SPAN_M", "pit_dimensions", "bucket_width", "header_pairs",
            "PIT_METHOD_KEYS", "n_from_drives", "header_increment",
            "N_RULE_SOURCE", "N_HALT_RULE", "ends_in_halt", "halts_before_n",
-           "shows_halt"]
+           "shows_halt", "ruler_above_ground", "RULER_IN_DOUBT"]
 
 #: How far apart two placed cells may be and still belong to one sample: a
 #: driven sample is three 6 in (150 mm) drives, 18 in (0.4572 m), long (FHWA
@@ -3052,6 +3052,88 @@ def _check_order(samples: List[Sample], spt: List[SPT], unit: str,
                           why)
 
 
+#: The words that rank :func:`ruler_above_ground`'s entry open
+#: (``report_ingest.model``): every depth read through that ruler is in
+#: question, and a person has to look at the page.
+RULER_IN_DOUBT = "so the fit or the column it was fitted to is in doubt"
+
+
+def ruler_above_ground(grid: Any, pages: Sequence[int], unit: str = ""
+                       ) -> List[Dict[str, Any]]:
+    """One QA row per page whose depth ruler runs above the ground surface
+    (RI-123): it prints a tick, or reads at the top of the log's body, more
+    than ``checks.SURFACE_TOL_M`` above 0.
+
+    A depth scale reads down from the ground surface, so a fitted ruler that
+    gives a negative depth where the log begins is fitted wrong, or fitted
+    to a column that is not the depth scale; every depth read through it is
+    as doubtful, and the row says so. The top of the body is the depth
+    planlens gives the stratum that opens the page (a layer whose ``source``
+    is ``page_top``). An elevation scale is fitted as a separate ruler
+    (``grid.elevation_rulers``) and is not looked at here.
+    """
+    from report_ingest.checks import ABOVE, SURFACE_TOL_M, surface
+
+    rows: List[Dict[str, Any]] = []
+    rulers = getattr(grid, "rulers", None) or {}
+    for page in pages:
+        ruler = rulers.get(page)
+        if ruler is None:
+            continue
+        r_unit = (getattr(ruler, "unit", None) or unit or "").strip()
+        said: List[str] = []
+        lowest: List[float] = []
+        ticks = [float(v) for _y, v in (getattr(ruler, "ticks", None) or ())]
+        if ticks and surface(min(ticks), r_unit)[1] == ABOVE:
+            said.append(f"prints a tick of {min(ticks):g} {r_unit}".rstrip())
+            lowest.append(min(ticks))
+        tops = [float(ly.top) for ly in getattr(grid, "layers", None) or ()
+                if getattr(ly, "source", "") == "page_top"
+                and getattr(ly, "top", None) is not None
+                and int((getattr(ly, "pages", None) or (page,))[0]) == page]
+        if tops and surface(min(tops), r_unit)[1] == ABOVE:
+            said.append(f"reads {min(tops):.2f} {r_unit} at the top of the "
+                        f"log's body".replace("  ", " "))
+            lowest.append(min(tops))
+        if not said:
+            continue
+        rows.append({
+            "what": f"depth ruler, page {page}", "page": page,
+            "value": round(min(lowest), 3),
+            "why": (f"the depth ruler fitted on page {page} "
+                    + " and ".join(said)
+                    + f", above the ground surface by more than "
+                      f"{SURFACE_TOL_M:g} m; a depth scale reads down from "
+                      f"the surface, {RULER_IN_DOUBT}, and so is every depth "
+                      f"read through it on this page"),
+            "flag": "ruler_above_ground"})
+    return rows
+
+
+def _on_the_ground(inv: Investigation, grid: Any, pages: Sequence[int],
+                   unit: str, qa: Optional[List[Dict[str, Any]]]) -> None:
+    """The floor's depths against the ground surface (RI-123), in place,
+    and what that did into ``qa``: the ruler's own doubt first
+    (:func:`ruler_above_ground`), then each depth refused, then one note for
+    the depths set to 0."""
+    from report_ingest.checks import SURFACE_TOL_M, ground_investigation
+
+    refused, snapped = ground_investigation(inv)
+    if qa is None:
+        return
+    qa.extend(ruler_above_ground(grid, pages, unit))
+    qa.extend(refused)
+    if snapped:
+        qa.append({
+            "what": "depths at the ground surface",
+            "page": pages[0] if pages else None,
+            "why": f"{snapped} depth(s) the grid read above the ground "
+                   f"surface by no more than {SURFACE_TOL_M:g} m, as a "
+                   f"ruler's fit reads the surface at the top of a log, were "
+                   f"recorded as 0",
+            "flag": "surface_snap"})
+
+
 def _grid_without(grid: Any, foreign: Mapping[int, str]) -> Any:
     """A shallow copy of ``grid`` holding nothing read off the ``foreign``
     pages (RI-117): their cells, columns, rulers and drawn samples, the
@@ -3171,6 +3253,13 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     settled -- and each such page is one ``floor_other_hole`` row in ``qa``.
     The record's ``pages`` are this hole's. Left empty, or naming every
     page, nothing changes.
+
+    Last, every depth is checked against the ground surface (RI-123,
+    :func:`report_ingest.checks.ground_investigation`): one read just above
+    it is set to 0, one further above is refused with a row, and a page
+    whose ruler itself runs above the surface gets a row of its own
+    (:func:`ruler_above_ground`). The depths are checked whether or not
+    ``qa`` is given; the rows go into it when it is.
     """
     pages = [int(p) for p in pages]
     foreign = {int(p): str(name) for p, name in (other_holes or {}).items()
@@ -3424,7 +3513,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
 
     extra = {k: str(v) for k, v in fields.items()
              if k not in used and str(v or "").strip()}
-    return Investigation(
+    seeded = Investigation(
         investigation_id=investigation_id,
         kind=kind,  # type: ignore[arg-type]
         depth_unit=unit, units_known=bool(unit),
@@ -3435,6 +3524,8 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         water=water, pit=pit, sheet=text("sheet"),
         pages=pages, source_report=report_id, fields=extra,
         prov=header_prov)
+    _on_the_ground(seeded, grid, pages, unit, qa)
+    return seeded
 
 
 # ---------------------------------------------------------------------------

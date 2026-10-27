@@ -56,8 +56,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from report_ingest.checks import (
-    FLAG_CONFIDENCE, IMPOSSIBLE, LISTED, as_read, check_mode, doubtful,
-    pdf_local,
+    ABOVE, FLAG_CONFIDENCE, IMPOSSIBLE, LISTED, SNAPPED, SURFACE_TOL_M,
+    above_words, as_read, check_mode, doubtful, ground_investigation,
+    pdf_local, snapped_words, surface,
 )
 from report_ingest.engine import (  # noqa: F401 -- the sizing, re-exported
     CHARS_PER_TOKEN_EST, IMAGE_TOKENS_EST, Engine, _blocks_of,
@@ -891,6 +892,11 @@ class _Builder:
     an entry, never clamped (:meth:`_percent`; RI-89): a recovery over 100 %
     is listed with words saying a log may print one.
 
+    In both modes a depth is checked against the ground surface (RI-123,
+    :func:`report_ingest.checks.surface`): one read just above it is
+    recorded as 0 with a change saying so (and one note for the log), one
+    further above is refused, or under ``flag`` kept out as impossible.
+
     ``checks`` (:mod:`report_ingest.checks`): ``"refuse"``, the default, is
     the gate above. ``"flag"`` is model-first ingest's (RI-87): a depth
     outside the ruler's window is kept at
@@ -926,6 +932,9 @@ class _Builder:
         #: Under ``flag``: how many water, casing or caved depths were kept
         #: with no total depth to check them against.
         self._unbounded = 0
+        #: How many depths read just above the ground surface were recorded
+        #: as 0 (RI-123): one change each, and one note for the log.
+        self._snapped = 0
         #: Under ``flag``: how this answer's page numbers are read, decided
         #: once for the whole answer. None under ``refuse``.
         self._numbers = (pdf_local(_cited_pages(reading), pages)
@@ -971,6 +980,39 @@ class _Builder:
         value = float(value)
         if self.flag:
             return self._flagged_depth(value, what, page, kind, whole)
+        return self._on_the_ground(self._ruled_depth(value, what, page, kind),
+                                   what, page, kind)
+
+    def _on_the_ground(self, depth: Optional[Quantity], what: str,
+                       page: Optional[int], kind: str = ""
+                       ) -> Optional[Quantity]:
+        """A depth the gate accepted, against the ground surface (RI-123;
+        :func:`report_ingest.checks.surface`): one read just above it is
+        recorded as 0 with a change saying so; one further above is refused.
+        The ruler's window cannot catch it, because the window runs from the
+        top edge of the paper, above the surface on a log's first sheet."""
+        if depth is None:
+            return None
+        value, verdict = surface(depth.value, self.unit)
+        if verdict == SNAPPED:
+            self._snapped += 1
+            self.changes.append({"what": what, "page": page,
+                                 "why": snapped_words(depth.value,
+                                                      self.unit)})
+            return depth.model_copy(update={"value": value})
+        if verdict == ABOVE:
+            self.unresolved.append({
+                "what": what, "page": page, "value": depth.value,
+                "why": f"{above_words(depth.value, self.unit, kind == 'water')}"
+                       f"; refused rather than accepted",
+                "refused_by": "python"})
+            return None
+        return depth
+
+    def _ruled_depth(self, value: float, what: str, page: Optional[int],
+                     kind: str) -> Optional[Quantity]:
+        """:meth:`_depth` under ``refuse``, before the ground surface: the
+        ruler's window, a page's printed depths, a pit with no scale."""
         if self.window is None and self.no_scale_pit:
             if value < 0.0 or not self.unit:
                 self.unresolved.append({
@@ -1015,13 +1057,14 @@ class _Builder:
         return Quantity(value=value, unit=self.unit)
 
     # -- the flag mode (RI-87) ---------------------------------------------
-    def _past_bound(self, value: float) -> str:
+    def _past_bound(self, value: float, kind: str = "") -> str:
         """Why ``value`` cannot be a depth, or "" when it can: negative, or
         past the lab reader's ``MAX_DEPTH_M`` (read as feet when no unit is
         printed, as the lab reader reads it). A depth in a unit the record
-        cannot convert is not bounded."""
+        cannot convert is not bounded. A depth just above the ground surface
+        is set to 0 before this is asked (:meth:`_flagged_depth`)."""
         if value < 0.0:
-            return f"depth {value:g} is negative"
+            return above_words(value, self.unit, kind == "water")
         metres = Quantity(value=value, unit=self.unit).si_value
         if metres is None and not unit_printed(self.unit):
             if value > MAX_DEPTH_M / 0.3048:
@@ -1076,8 +1119,16 @@ class _Builder:
 
     def _flagged_depth(self, value: float, what: str, page: Optional[int],
                        kind: str, whole: Any = None) -> Optional[Quantity]:
-        """:meth:`_depth` under ``checks="flag"``."""
-        why = self._past_bound(value)
+        """:meth:`_depth` under ``checks="flag"``. A depth just above the
+        ground surface is recorded as 0 with a change saying so (RI-123); one
+        further above is impossible (:meth:`_past_bound`)."""
+        given = value
+        value, verdict = surface(value, self.unit)
+        if verdict == SNAPPED:
+            self._snapped += 1
+            self.changes.append({"what": what, "page": page,
+                                 "why": snapped_words(given, self.unit)})
+        why = self._past_bound(value, kind)
         if why:
             read = None
             if whole is not None:
@@ -1419,6 +1470,17 @@ class _Builder:
             self.unresolved.append({"what": "page numbers",
                                     "why": self._numbers.mixed,
                                     "flag": "page_numbers"})
+        if self._snapped:
+            # One note for the log, so the record's QA says it (the changes
+            # list each one); RI-123.
+            self.unresolved.append({
+                "what": "depths at the ground surface",
+                "page": self.pages[0] if self.pages else None,
+                "why": f"{self._snapped} depth(s) the reader gave above the "
+                       f"ground surface by no more than {SURFACE_TOL_M:g} m, "
+                       f"as a ruler's fit reads the surface at the top of a "
+                       f"log, were recorded as 0",
+                "flag": "surface_snap"})
         return investigation
 
     def pit(self) -> Optional[PitDimensions]:
@@ -1926,6 +1988,17 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # placed is lost; every contradiction is on the record.
     merged, merge_log = merge_investigations(floor, model_investigation,
                                              MergeLog())
+    # The merge's last gate (RI-123): the floor and the builder have each
+    # checked their own depths against the ground surface, so this finds
+    # nothing unless a value reached the merge some other way; what it does
+    # find is refused here, never written.
+    merge_refused, merge_snapped = ground_investigation(merged)
+    if merge_snapped:
+        merge_refused.append({
+            "what": "depths at the ground surface", "page": pages[0],
+            "why": f"{merge_snapped} merged depth(s) above the ground surface "
+                   f"by no more than {SURFACE_TOL_M:g} m were recorded as 0",
+            "flag": "surface_snap"})
     # VISUAL SCALES (off by default): every layer top measured from the
     # scan's stratum lines votes on the record's tops. Where the scan has
     # text those tops are in the floor already; where it has none they are
@@ -1945,7 +2018,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         # First, one row per page with no ruler: that it was not fitted, why,
         # what was read from print instead and what still has no depth.
         unresolved=(printed.qa_rows(grid, _SAMPLE_FAMILY) + floor_qa
-                    + builder.unresolved),
+                    + builder.unresolved + merge_refused),
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),
