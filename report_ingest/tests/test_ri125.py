@@ -5,8 +5,11 @@ the steps it took from the folder.
 only when a step came off disk) names those steps, counts the item readings
 that came off disk, and gives the whole report's cost. A record read from
 scratch is written as it always was. In ``run.json``, ``triage_reused`` and
-``review_reused`` mean "taken from the folder", and ``resumed`` names the
-steps. Scripted engines on the synthetic report; every number is made up.
+``review_reused`` mean "taken from the folder", ``resumed`` names the steps,
+and ``label_run_engine`` is named only off a label run file on disk. RESULTS
+keeps a label run's seeded calls out of ``unattributed``, and a folder run's
+index gives a resumed report's whole cost. Scripted engines on the synthetic
+report; every number is made up.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from report_ingest.tests.fake_engine import FakeEngine  # noqa: E402
 from report_ingest.tests.narrative_fixtures import (  # noqa: E402
     build_narrative_report)
 from report_ingest.tests.test_cluster_scoring import (  # noqa: E402,F401
-    _ingest_run, _metered, _run_blob, ingest_cluster)
+    _ingest_run, _metered, _run_blob, chat_cluster, ingest_cluster)
 
 
 @pytest.fixture(scope="module")
@@ -292,6 +295,14 @@ class TestTheRunFile:
         assert took["saved_calls"] == 1 + 3
         assert took["saved_input_tokens"] == 2100 + 9300
         assert took["report_calls"] == run["cost"]["calls"] + 4
+        # RESULTS: the seeded calls stay in their cells, out of
+        # unattributed, and are named on a line of their own.
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert ("R36: triage, review seeded from a label run (4 calls), "
+                "not this ingest's") in text
+        cells = _report_row(text)
+        assert cells[2] == "1" and cells[4] == "3"     # triage, review
+        assert cells[-1] == "+0"                        # every call has a file
 
         # The run file moved aside: the next call reads the folder again,
         # pays nothing, and still says which steps a label run seeded.
@@ -308,3 +319,172 @@ class TestTheRunFile:
         later = _json(record_file)["document"]
         assert later["model_calls"] == 0
         assert later["resumed"]["report_calls"] == took["report_calls"]
+        # Every file is now an earlier attempt's, the seeded ones aside.
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert _report_row(text)[-1] == f"{-run['cost']['calls']:+d}"
+
+    def test_a_first_attempt_with_no_seed_has_no_seeded_line(
+            self, ingest_cluster, monkeypatch):
+        _reports, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        _ingest_run(ingest_cluster)
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "seeded from a label run" not in text
+        assert _report_row(text)[-1] == "+0"
+
+    def test_a_copied_folder_names_no_engine_it_cannot_read(
+            self, chat_cluster, monkeypatch):
+        pytest.importorskip("langchain_core")
+        from report_ingest import cluster_scoring as cs
+        from report_ingest.tests.chat_fixtures import (ScriptedChatModel,
+                                                       from_turns)
+
+        def chat(name, turns):
+            return ScriptedChatModel(replies=from_turns(list(turns)),
+                                     model_name=name)
+
+        def run():
+            return _ingest_run(
+                chat_cluster, prompter=None,
+                chat_model=chat("made-up-reader", tg.main_script()),
+                vision_chat_model=chat("made-up-looker", tg.vision_turns()))
+
+        # The scripted chat answers do not all fit the readers' schemas;
+        # unread items are not what this test is about.
+        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
+        _reports, out, _scripts = chat_cluster
+        runs = out / "runs"
+        runs.mkdir(parents=True)
+        seed = _run_blob("R36", 22, {3: "plan"}, {3: "plan"})
+        seed["engine"] = "chat_model"               # this run's engine
+        (runs / "R36.json").write_text(json.dumps(seed), encoding="utf-8")
+        run()
+        _folder, run_file, _record = _files(out)
+        first = _json(run_file)
+        assert first["resumed"]["from_label_run"]
+        assert "label_run_engine" not in first
+
+        # The folder as it stands after a copy: no run file and no label
+        # run beside it. The stamps still say a label run seeded it, but no
+        # file on disk says on what engine, so none is named.
+        run_file.unlink()
+        (runs / "R36.json").unlink()
+        run()
+        again = _json(run_file)
+        assert again["resumed"]["from_label_run"] == (
+            first["resumed"]["from_label_run"])
+        assert "label_run_engine" not in again
+        text = (out / "RESULTS.md").read_text(encoding="utf-8")
+        assert "other engine" not in text
+
+
+class TestTheLabelRunEngine:
+
+    def _folder(self, tmp_path, stamp):
+        folder = tmp_path / "ingest" / "R00"
+        folder.mkdir(parents=True)
+        (folder / "triage.json").write_text(json.dumps(
+            {"workflow": "standard", "reused_from": str(stamp)}),
+            encoding="utf-8")
+        return folder
+
+    def test_read_off_the_file_the_stamp_names(self, tmp_path):
+        from report_ingest.cluster_scoring import _label_run_engine
+
+        elsewhere = tmp_path / "another_out" / "runs"
+        elsewhere.mkdir(parents=True)
+        (elsewhere / "R00.json").write_text(json.dumps(
+            {"id": "R00", "engine": "chat_model"}), encoding="utf-8")
+        folder = self._folder(tmp_path, elsewhere / "R00.json")
+        assert _label_run_engine(folder, ["triage"]) == "chat_model"
+        # A step the record did not take from the folder is not asked.
+        assert _label_run_engine(folder, ["review"]) == ""
+
+    def test_a_file_from_before_the_engine_was_recorded_is_the_prompters(
+            self, tmp_path):
+        from report_ingest.cluster_scoring import _label_run_engine
+
+        (tmp_path / "R00.json").write_text(json.dumps({"id": "R00"}),
+                                           encoding="utf-8")
+        folder = self._folder(tmp_path, tmp_path / "R00.json")
+        assert _label_run_engine(folder, ["triage"]) == "prompter"
+
+    def test_no_file_on_disk_names_no_engine(self, tmp_path):
+        from report_ingest.cluster_scoring import _label_run_engine
+
+        folder = self._folder(tmp_path, tmp_path / "gone" / "R00.json")
+        assert _label_run_engine(folder, ["triage"]) == ""
+
+
+def _report_row(text, rid="R36"):
+    """The report's own row of RESULTS' calls-by-step table, as cells."""
+    block = text.split("## Calls by step", 1)[1].split("```")[1]
+    (row,) = [line.split() for line in block.splitlines()
+              if line.split()[:2] == [rid, "report"]]
+    return row
+
+
+# ---------------------------------------------------------------------------
+# a folder run's index
+# ---------------------------------------------------------------------------
+
+class TestTheFolderIndex:
+
+    @pytest.fixture()
+    def folder(self, pdf, tmp_path):
+        reports = tmp_path / "reports"
+        reports.mkdir()
+        (reports / "R01.pdf").write_bytes(pdf.read_bytes())
+        return reports
+
+    def _run(self, folder, out, turns, lines=None):
+        from report_ingest.run_folder import run_folder
+
+        return run_folder(folder, lambda: FakeEngine(turns), out_dir=out,
+                          log=(lines.append if lines is not None
+                               else (lambda *_a: None)))
+
+    def test_a_fresh_run_writes_what_it_always_wrote(self, folder, tmp_path):
+        out = tmp_path / "out"
+        run = self._run(folder, out, tg.full_script())
+        (row,) = run.reports
+        assert row.model_calls == len(tg.full_script())
+        assert row.calls_this_run is None
+        text = (out / "INDEX.md").read_text(encoding="utf-8")
+        assert text.splitlines()[6].endswith(f"| {row.model_calls} |")
+        assert "this run" not in text
+        (saved,) = _json(out / "index.json")["reports"]
+        assert "calls_this_run" not in saved
+        assert "dollars_this_run" not in saved
+        assert saved["model_calls"] == row.model_calls
+
+    def test_a_resumed_report_shows_the_whole_reports_calls(self, folder,
+                                                           tmp_path):
+        out = tmp_path / "out"
+        (first,) = self._run(folder, out, tg.full_script()).reports
+        # The record went missing; its step and item files did not.
+        (out / "R01" / "report.record.json").unlink()
+        lines: list = []
+        (row,) = self._run(folder, out, [], lines).reports
+
+        assert not row.skipped
+        assert row.calls_this_run == 0 and row.dollars_this_run == 0.0
+        assert row.model_calls == first.model_calls
+        assert row.dollars == pytest.approx(first.dollars)
+        text = (out / "INDEX.md").read_text(encoding="utf-8")
+        assert f"| {first.model_calls} (0 this run) |" in text
+        assert "`Model calls` is what each report cost over every run" in text
+        (saved,) = _json(out / "index.json")["reports"]
+        assert saved["model_calls"] == first.model_calls
+        assert saved["calls_this_run"] == 0
+        assert any(f"0 model call(s) this run (triage, vision, identity, "
+                   f"items taken from its folder; {first.model_calls} over "
+                   f"the report)" in line for line in lines)
+
+        # Asked again, the report is skipped as done, and its row is read
+        # off the record: the whole report's calls, no "this run".
+        (skipped,) = self._run(folder, out, []).reports
+        assert skipped.skipped
+        assert skipped.model_calls == first.model_calls
+        assert skipped.calls_this_run is None

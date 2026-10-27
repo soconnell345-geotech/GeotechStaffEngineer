@@ -1411,7 +1411,12 @@ resumes, one bad report cannot stop it, and two files with the same bytes are
 one document sharing one library row — which it says out loud, so a folder of
 300 files that makes 297 rows is not a mystery. It can also make MORE rows
 than files, because a report bound inside a report is a row of its own; the
-index counts them in a `Bound in` column.
+index counts them in a `Bound in` column. Its `Model calls` column is what
+each report cost over every run that read it: a report resumed from its
+folder shows the whole report's calls (its record's
+`document.resumed.report_calls`) with this run's own in brackets, and
+`index.json` adds `calls_this_run` and `dollars_this_run` for it (BACKLOG
+RI-125).
 
 ## The engines (`engine.py`)
 
@@ -3085,9 +3090,43 @@ The report's row adds `unattributed`: its calls in the cost less every
 document's total. Above zero, those are calls no file holds — a reading
 that failed, or was cut short by the call ceiling, keeps no file (saved run
 1 has R12, R13 and R15 four calls short each). Below zero, step files kept
-from an earlier attempt count calls this attempt did not make (R21). Counting
+from an earlier attempt count calls this attempt did not make (R21). The
+triage and review a label run seeded keep their calls in their cells but are
+left out of `unattributed`, since no ingest attempt made them; a line under
+the table names them and their calls (BACKLOG RI-125). Counting
 never stops a run: a file that will not read is passed over and counted in
 `step_files_unreadable`.
+
+**What a resumed report took from its folder** (BACKLOG RI-125). The
+record's `document.model_calls`, tokens and dollars are THIS run's calls: a
+step taken from the report's folder (a saved triage, vision pass, review,
+identity call, page descriptions, sections or item reading) made none. When
+the run took any step from the folder, `document.resumed` names those steps,
+says how many of the record's item readings came off disk (`items` of
+`items_of`), and gives what the kept files say those steps cost (`saved_*`)
+and the whole report's cost (`report_*`, this run's plus theirs); a record
+read from scratch has no `resumed` and is written as it always was. In
+`run.json`, `triage_reused` and `review_reused` are true when the graph took
+that step from the folder, whatever put the file there, and `resumed` names
+the steps, the items N of M, and `from_label_run` (the steps a label run
+seeded, by the `reused_from` stamp on their files, so a later attempt still
+says so). `label_run_engine` names the other engine only when the label run
+file the stamp names is on disk. The record's `model_calls` and the run file's
+`cost` count the same requests, this attempt's (the record also counts a
+send that failed, which `cost` keeps under `failed`). The two whole-report
+figures, `all_attempts` (RI-124) and `resumed.report_calls`, are different
+sums and need not agree. `all_attempts` is higher by calls whose file the
+record did not use: a reading that kept no file (a give-up, a step cut short
+or refused by the ceiling), or one superseded or re-keyed (a narrative read
+again under the other `narrative_skips_bound`, a lab item read whole and in
+windows, an item read again once a bound document took some of its pages
+(`-own`), log items grouped again, a model-first unit read again over its own
+file, a ranges file refused as another describer's or labeller's).
+`report_calls` is higher by calls no run file metered: the steps a label run
+seeded (paid in the `labels` stage), an attempt killed or interrupted after
+it kept files but before it wrote its run file, a folder copied in or a run
+file moved aside, and this attempt's failed sends; and lower by kept files
+that record no cost.
 
 Bring back **`RESULTS.md`** from whatever `out_dir` was. That is the whole report,
 and it carries IDs, labels, counts and rates only. The per-report runs and the
