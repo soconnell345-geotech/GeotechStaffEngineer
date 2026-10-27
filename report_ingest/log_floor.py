@@ -1122,14 +1122,15 @@ def _side_by_side(grid: Any, cells: Sequence[Any],
                   by_column: Optional[Dict[str, Tuple[str, ...]]] = None
                   ) -> set:
     """The cells, of those a sample's drives were gathered from one to a
-    cell, that stand side by side with another on one printed line in the
-    same column, where the column's header names other quantities beside
-    the blows (:data:`_BESIDE_DRIVES`). Such a column is several printed
-    columns the grid drew as one (a sheet with no ruled column edges), and
-    the row's numbers are different quantities, not drives one to a line
-    (RI-130). A column named for the blows alone keeps its side-by-side
-    numbers as drives, in the order printed."""
-    out: set = set()
+    cell, in a column that prints two of them side by side on one line,
+    where the column's header names other quantities beside the blows
+    (:data:`_BESIDE_DRIVES`). Such a column is several printed columns the
+    grid drew as one (a sheet with no ruled column edges): the row's
+    numbers are different quantities, not drives one to a line, and so is
+    every other number of the sample in that column, whose place among
+    them cannot be told either (RI-130). A column named for the blows alone
+    keeps its side-by-side numbers as drives, in the order printed."""
+    bands: set = set()
     for i, a in enumerate(cells):
         if not set(_names(grid, a, by_column)) & _BESIDE_DRIVES:
             continue
@@ -1138,12 +1139,26 @@ def _side_by_side(grid: Any, cells: Sequence[Any],
                      or float(b.bbox[2]) <= float(a.bbox[0]))
             if (b.page == a.page and b.column_id == a.column_id
                     and _same_line(a, b) and apart):
-                out.update((id(a), id(b)))
-    return out
+                bands.add((a.page, a.column_id))
+    return {id(c) for c in cells if (c.page, c.column_id) in bands}
+
+
+def _top_within_reach(depth: float, box: Any, unit: str) -> bool:
+    """Is a sample's first marked row near enough the top of ``box`` for
+    the box's top edge to be the sample's top (RI-131)? The edge may stand
+    at most :data:`_DRAWN_TOP_REACH_M` above the row: the most a driven
+    sample's rows run below its top. A box whose top stands farther above
+    is not the sample's own drawn edge: planlens can return the gap above a
+    sample drawn together with the sample's box as one box (a line it did
+    not find), and that box's top is the previous sample's bottom. A log of
+    no known unit cannot say how far that is, and keeps its reading."""
+    reach = _metres(depth - float(box.top), unit)
+    return reach is not None and reach <= _DRAWN_TOP_REACH_M + _INCREMENT_TOL_M
 
 
 def _drawn_top(group: _Group, grid: Any, boxes: Sequence[Any],
-               by_column: Optional[Dict[str, Tuple[str, ...]]] = None) -> Any:
+               by_column: Optional[Dict[str, Tuple[str, ...]]] = None,
+               unit: str = "") -> Any:
     """The sample box whose drawn lines take this group's TOP row but not
     every row, or None (RI-131).
 
@@ -1155,7 +1170,8 @@ def _drawn_top(group: _Group, grid: Any, boxes: Sequence[Any],
     still where the sample starts. It is read here only for a box no group
     took whole (the caller offers the boxes left over), on the sheet of the
     group's top row, holding that row's depth within the box's own
-    uncertainty; the nearest box top above the row wins.
+    uncertainty and within reach of its top (:func:`_top_within_reach`);
+    the nearest box top above the row wins.
     """
     marked = [c for c in group.cells
               if _marks_a_sample(_text(c), _names(grid, c, by_column))]
@@ -1167,6 +1183,8 @@ def _drawn_top(group: _Group, grid: Any, boxes: Sequence[Any],
         tol = float(getattr(box, "plus_minus", None) or 0.05)
         if first.page not in pages or not (
                 float(box.top) - tol <= depth <= float(box.bottom) + tol):
+            continue
+        if not _top_within_reach(depth, box, unit):
             continue
         gap = abs(depth - float(box.top))
         if best is None or gap < best_gap:
@@ -1181,13 +1199,14 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
                  printed_bottom: Optional[float] = None,
                  notes: Optional["_FloorNotes"] = None,
                  drawn_top_only: bool = False,
-                 boxes_read: bool = False
+                 box_pages: Optional[set] = None
                  ) -> Tuple[Optional[Sample], Optional[SPT]]:
     # ``drawn`` is the sample box drawn round the group's rows; with
     # ``drawn_top_only`` it takes the group's top row but not every row
-    # (:func:`_drawn_top`), so only its top edge is read. ``boxes_read``
-    # says the grid read the page's drawn sample boxes at all, so a sample
-    # with none says so in its note (RI-131).
+    # (:func:`_drawn_top`), so only its top edge is read. ``box_pages`` are
+    # the pages the grid read drawn sample boxes on: a sample on one of
+    # them with no box of its own says so in its note (RI-131). A page with
+    # none read says nothing about this sample.
     # The sample's depth is where its own cells -- id, sampler, drives,
     # recovery -- stand; a value printed a line above them is the sample's
     # but does not move it (RI-04). A group with none of those is placed by
@@ -1503,8 +1522,10 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
             # sheet with no ruled column edges -- so the row is the drives,
             # the N and the recovery side by side, not drives one to a line,
             # and which number is which cannot be told from its position.
-            # Each is kept in the sample's note, as a number under a
-            # heading of several quantities is (RI-04).
+            # Nor can any other number of the sample in that column (an N
+            # on the last drive's line, a recovery on the next): every one
+            # is kept in the sample's note, as a number under a heading of
+            # several quantities is (RI-04), and none makes a part record.
             unassigned.extend((_text(c), _header(grid, c)) for _r, c in rows
                               if id(c) in several)
             rows = [rc for rc in rows if id(rc[1]) not in several]
@@ -1629,10 +1650,11 @@ def _seed_sample(group: _Group, grid: Any, unit: str, confidence_floor: float,
         if label and not sample_id:
             sample_id = label
             drawn_note += "; sample id from the drawn box"
-    elif boxes_read and printed_row is None and bottom is None:
-        # The grid read the page's drawn sample boxes and none is this
-        # sample's: its top stays where its first row stands on the depth
-        # scale, as before, and the note says so (RI-131).
+    elif (box_pages and printed_row is None and bottom is None
+          and {int(c.page) for c in group.cells} & box_pages):
+        # The grid read drawn sample boxes on the sample's own sheet and
+        # none is this sample's: its top stays where its first row stands
+        # on the depth scale, as before, and the note says so (RI-131).
         drawn_note = ("; top at the depth its first row stands at on the "
                       "depth scale: no sample box drawn for it was found")
     printed_note = ""
@@ -1890,8 +1912,8 @@ SPT_HALT_TOTAL = 100
 #: (RI-70). The figure prints one such increment, so a record of five or more
 #: drives is not this case.
 FOURTH_INCREMENT_SOURCE = "Fig. 3-20, FHWA NHI-06-088 Vol. I, p. 3-52"
-#: The most drives one driven record holds where it gives no drive lengths of
-#: its own: the three increments and the occasional fourth
+#: The most drives one driven record holds, whatever drive lengths it gives:
+#: the three increments and the occasional fourth
 #: (:data:`FOURTH_INCREMENT_SOURCE`). A blow "record" of more counts is not
 #: one driven record (RI-130): where it was seen, it was every sheet's counts
 #: at one depth, or a row of several printed columns, read as one record.
@@ -1900,6 +1922,11 @@ SPT_MAX_DRIVES = SPT_DRIVES + 1
 #: it and still be it (6 in is 0.1524 m; a metric log prints 150 mm).
 SPT_INCREMENT_M = 0.1524
 _INCREMENT_TOL_M = 0.006
+#: How far above a sample's first marked row a drawn box's top edge may
+#: stand and still be the sample's top (RI-131): 24 in (0.61 m), the three
+#: 6 in increments and the occasional fourth (:data:`FOURTH_INCREMENT_SOURCE`),
+#: the most a driven sample's rows run below its top.
+_DRAWN_TOP_REACH_M = SPT_MAX_DRIVES * SPT_INCREMENT_M
 #: A sample's drawn or printed interval over its three drives may be off the
 #: standard by this much a drive (a box is drawn to a line's width).
 _INTERVAL_TOL_M = 0.012
@@ -2135,25 +2162,15 @@ def _whole_lengths(record: Any) -> bool:
         for v in three)
 
 
-def drive_count(record: Any) -> int:
-    """How many drives this driven record can hold (RI-130): one per drive
-    length the record gives where its lengths line up with its counts (as
-    RI-50 reads them, :func:`_halted`), and never more than the three
-    increments and the occasional fourth (:data:`SPT_MAX_DRIVES`); lengths
-    that do not line up say nothing, so the limit is then four. A record's
-    own lengths cannot raise it: twenty lengths beside twenty counts are no
-    more one drive than the counts alone."""
-    lengths = _lengths_m(record)
-    if lengths and len(lengths) == len(getattr(record, "blows", None) or []):
-        return min(len(lengths), SPT_MAX_DRIVES)
-    return SPT_MAX_DRIVES
-
-
 def too_many_counts(record: Any) -> bool:
-    """Does this record print more counts than it has drives
-    (:func:`drive_count`)? Such a record is refused as a blow record
-    (RI-130): it is several records, or a column, read as one."""
-    return len(getattr(record, "blows", None) or []) > drive_count(record)
+    """Does this record print more counts than a driven record has drives,
+    the three increments and the occasional fourth (:data:`SPT_MAX_DRIVES`)?
+    Such a record is refused as a blow record (RI-130): it is several
+    records, or a column, read as one. The limit is four whatever drive
+    lengths the record gives: twenty lengths beside twenty counts are no
+    more one record than the counts alone, and a record whose lengths are
+    fewer than its counts is read as RI-50 reads it (:func:`_halted`)."""
+    return len(getattr(record, "blows", None) or []) > SPT_MAX_DRIVES
 
 
 def _counts_text(blows: Sequence[Any], most: int = 12) -> str:
@@ -3346,8 +3363,11 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
     if unit or grid.rulers:
         span = _span_in_unit(unit, grid)
         groups = _sample_groups(grid, pages, span, by_column, notes)
-        read_boxes = getattr(grid, "samples", None)
-        boxes = list(read_boxes or [])
+        boxes = list(getattr(grid, "samples", None) or [])
+        box_pages = {int(p) for box in boxes
+                     for p in (set(getattr(box, "pages", ()) or ())
+                               | {getattr(box, "page", None)})
+                     if p is not None}
         # A box drawn round every row of a group is that group's; then a box
         # left over whose lines take a group's top row draws that group's
         # top (RI-131: a short box over the drive, the sample's number
@@ -3362,7 +3382,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         for k, group in enumerate(groups):
             if k in whole:
                 continue
-            drawn = _drawn_top(group, grid, boxes, by_column)
+            drawn = _drawn_top(group, grid, boxes, by_column, unit=unit)
             if drawn is not None:
                 boxes.remove(drawn)
                 tops[k] = drawn
@@ -3372,7 +3392,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                                          whole.get(k, tops.get(k)),
                                          notes=notes,
                                          drawn_top_only=k in tops,
-                                         boxes_read=read_boxes is not None)
+                                         box_pages=box_pages)
             if sample is not None:
                 samples.append(sample)
             if drive is not None:
@@ -3819,7 +3839,7 @@ class _Merger:
 
     def fit_blows(self, voter: str, record: SPT) -> SPT:
         """One voter's driven record, ready to merge: where its blow record
-        is more counts than the record has drives (:func:`too_many_counts`,
+        is more counts than a driven record has drives (:func:`too_many_counts`,
         RI-130) -- several records, or a column, read as one -- a copy with
         no blows, the refusal logged and said in its note. Refused, the
         counts are neither the slot's value nor kept beside the other
@@ -3833,7 +3853,7 @@ class _Merger:
         self.log.refuse(
             where, f"{what}: blows", voter, list(record.blows),
             why=(f"{len(record.blows)} counts in one blow record, more than "
-                 f"the {drive_count(record)} drives a driven record has "
+                 f"the {SPT_MAX_DRIVES} drives a driven record has "
                  f"(three increments and the occasional fourth, "
                  f"{FOURTH_INCREMENT_SOURCE}); refused as a blow record, "
                  f"not kept as an alternative"),

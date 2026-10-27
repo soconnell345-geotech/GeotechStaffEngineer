@@ -14,8 +14,8 @@ from types import SimpleNamespace
 import pytest
 
 from report_ingest.log_floor import (
-    SPT_MAX_DRIVES, drive_count, echoes_floor, merge_investigations,
-    seed_from_grid, too_many_counts,
+    SPT_MAX_DRIVES, echoes_floor, merge_investigations, seed_from_grid,
+    too_many_counts,
 )
 from report_ingest.model import (
     SPT, Investigation, Provenance, Quantity, Sample,
@@ -91,18 +91,18 @@ class TestTooManyCounts:
         assert SPT_MAX_DRIVES == 4
         record = SPT(depth_top=Quantity(value=1.0, unit="m"),
                      blows=[2, 3, 4, 5, 6])
-        assert drive_count(record) == 4 and too_many_counts(record)
+        assert too_many_counts(record)
         record.blows = [2, 3, 4, 5]
         assert not too_many_counts(record)
 
-    def test_the_records_own_lengths_are_its_drives_up_to_four(self):
+    def test_the_records_own_lengths_do_not_move_the_limit(self):
         six = Quantity(value=6, unit="in")
         record = SPT(depth_top=Quantity(value=1.0, unit="m"),
                      blows=[2, 3, 4], increments=[six, six, six])
-        assert drive_count(record) == 3
+        assert not too_many_counts(record)
         record = SPT(depth_top=Quantity(value=1.0, unit="m"),
                      blows=[2, 3, 4, 5, 6], increments=[six] * 5)
-        assert drive_count(record) == 4 and too_many_counts(record)
+        assert too_many_counts(record)
 
     def test_one_cell_of_many_counts_is_refused_as_a_blow_record(self):
         cells = [_cell("id", "S-1", 2.0), _cell("blows", "3-4-5-6-7-8-9", 2.0)]
@@ -173,6 +173,35 @@ class TestTooManyCounts:
     def test_a_row_under_the_blows_alone_is_its_drives(self):
         inv, _qa = self._row(BLOWS, ["3", "4", "6"])
         assert [r.blows for r in inv.spt] == [[3, 4, 6]]
+
+    @staticmethod
+    def _at(text, depth, x):
+        c = _cell("blows", text, depth)
+        c.bbox = (x, c.bbox[1], x + 6.0, c.bbox[3])
+        return c
+
+    def test_an_n_beside_the_last_drive_leaves_no_part_record(self):
+        # Drives one to a line and the N printed on the last drive's line:
+        # the band is two printed columns, so none of its numbers is read
+        # as a drive -- not the two lines above the pair either.
+        band = _column("blows", "BLOWS / N", "blows", "n_value")
+        cells = [_cell("id", "S-6", 3.0), self._at("5", 3.0, 140.0),
+                 self._at("7", 3.15, 140.0), self._at("9", 3.3, 140.0),
+                 self._at("16", 3.3, 160.0)]
+        inv, qa = _seed(cells, [ID, band])
+        assert [r.blows for r in inv.spt if r.blows] == []
+        assert "not assigned to a quantity" in inv.samples[0].note
+        assert "floor_unassigned" in _flags(qa)
+
+    def test_lines_after_a_row_of_several_quantities_are_not_drives(self):
+        band = _column("blows", "REC (cm) N N1 N2", "recovery", "n_value",
+                       "blows")
+        cells = [_cell("id", "S-8", 5.0), self._at("4", 5.0, 140.0),
+                 self._at("5", 5.0, 150.0), self._at("9", 5.0, 160.0),
+                 self._at("33", 5.15, 140.0), self._at("2", 5.3, 140.0)]
+        inv, qa = _seed(cells, [ID, band])
+        assert [r.blows for r in inv.spt if r.blows] == []
+        assert "floor_unassigned" in _flags(qa)
 
     def test_drives_a_page_break_splits_stay_whole(self):
         # Two drives at the foot of one sheet and the third at the head of
@@ -352,6 +381,51 @@ class TestTheDrawnTop:
         assert sample.top.value == pytest.approx(6.2)
         assert "sample box" not in sample.prov.note
 
+    @staticmethod
+    def _first_row_in(box, row, stray, unit="ft"):
+        # The sample's first row, and a cell of the same sample printed just
+        # under the box, so that no box takes the group whole. A log in feet
+        # printed a line every 0.5 ft.
+        pitch = 0.5 if unit == "ft" else 0.15
+        cells = [_cell("blows", "6-8-11", row, pitch=pitch),
+                 _cell("id", "S-9", stray, pitch=pitch)]
+        grid = _Grid(cells, [ID, BLOWS], unit=unit, boxes=[box])
+        return seed_from_grid(grid, [0], "SYNTH", qa=[])
+
+    def test_a_gap_drawn_with_the_next_box_does_not_move_the_top(self):
+        # A box 4 ft tall that is the gap above a sample drawn together with
+        # the sample's own box (a line planlens did not find): the sample's
+        # first row lies near its bottom, its top edge more than 24 in above.
+        inv = self._first_row_in(_box(20.0, 24.0), row=23.6, stray=24.3)
+        sample = inv.samples[0]
+        assert sample.top.value == pytest.approx(23.6)
+        assert "no sample box drawn for it was found" in sample.prov.note
+
+    def test_a_drive_box_with_the_row_a_line_below_its_top_is_taken(self):
+        inv = self._first_row_in(_box(30.0, 32.0), row=30.6, stray=32.05)
+        sample = inv.samples[0]
+        assert sample.top.value == pytest.approx(30.0)
+        assert "top from the top edge" in sample.prov.note
+
+    def test_a_short_box_with_the_row_at_its_bottom_is_taken(self):
+        inv = self._first_row_in(_box(40.0, 40.4), row=40.4, stray=40.9)
+        assert inv.samples[0].top.value == pytest.approx(40.0)
+
+    def test_the_reach_is_24_in_in_metres_too(self):
+        inv = self._first_row_in(_box(5.0, 5.7), row=5.55, stray=5.8,
+                                 unit="m")
+        assert inv.samples[0].top.value == pytest.approx(5.0)
+        inv = self._first_row_in(_box(5.0, 5.9), row=5.7, stray=6.0,
+                                 unit="m")
+        assert inv.samples[0].top.value == pytest.approx(5.7)
+
+    def test_boxes_read_only_on_another_sheet_say_nothing_here(self):
+        # The grid read boxes on page 1 alone; the sample is on page 0.
+        inv, _qa = self._short_box([_box(9.0, 9.4, page=1)])
+        assert "sample box" not in inv.samples[0].prov.note
+        inv, _qa = self._short_box([])
+        assert "sample box" not in inv.samples[0].prov.note
+
     def test_a_box_another_sample_takes_whole_is_not_borrowed(self):
         # The first sample's box takes its every row; the second sample
         # has no box of its own and keeps its row.
@@ -360,3 +434,30 @@ class TestTheDrawnTop:
         inv, _qa = _seed(cells, [ID, BLOWS], boxes=[_box(0.9, 1.4)])
         tops = sorted(s.top.value for s in inv.samples)
         assert tops == [pytest.approx(0.9), pytest.approx(2.5)]
+
+
+# ---------------------------------------------------------------------------
+# the scorecard: echoes and refusals beside the reconciled count
+# ---------------------------------------------------------------------------
+
+def test_the_scorecard_counts_echoes_and_refusals_beside_reconciled(
+        monkeypatch):
+    import report_ingest.log_reader as reader
+    import report_ingest.log_scoring as scoring
+    import report_ingest.visual_scales as visual
+
+    truth = {"id": "SYNTH_p1", "pages": [1]}
+    monkeypatch.setattr(visual, "log_grid_for",
+                        lambda *a, **k: (object(), {}))
+    monkeypatch.setattr(scoring, "score_grid", lambda truth, grid:
+                        scoring.LogScore(log_id=truth["id"], report="SYNTH",
+                                         stage="grid"))
+    monkeypatch.setattr(reader, "read_log", lambda *a, **k: SimpleNamespace(
+        investigation=_inv(), cost={}, model_calls=1, unresolved=[],
+        changes=[], warnings=[], reconciled=5,
+        echoed=[{"what": "a sample: top"}] * 3,
+        refused=[{"what": "a driven record: blows"}]))
+    _before, after = scoring.score_one_log(truth, object(), None,
+                                           report_id="SYNTH")
+    blob = after.to_dict()
+    assert (blob["reconciled"], blob["echoed"], blob["refused"]) == (5, 3, 1)
