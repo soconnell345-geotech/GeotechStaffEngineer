@@ -408,6 +408,34 @@ def planlens_surface() -> str:
     return _h(json.dumps(specs, sort_keys=True, default=str))
 
 
+#: The app's tools whose text follows the installed reference library
+#: (BACKLOG INF-58, GM-153): ``plot_data`` offers ``reference_chart``, and
+#: ``plot_code``'s description names the standard charts, only where
+#: ``geotech_references`` has ``chart_lines`` (the submodule CI installs
+#: has it; geotech-references 1.4.1 from PyPI does not).
+LIBRARY_TOOLS = ("plot_code", "plot_data")
+
+
+def app_environment() -> dict:
+    """What the app's own tool texts read from the installed packages: the
+    standard charts the reference library draws, in the order
+    ``plot_code``'s description names them (None: no ``chart_lines``)."""
+    try:
+        from geotech_references.chart_lines import chart_names
+        charts = [str(n) for n in chart_names()]
+    except Exception:                                    # noqa: BLE001
+        charts = None
+    return {"reference_chart_lines": charts}
+
+
+def split_library_differences(diff: List[str]):
+    """``diff`` (from :func:`differences`) as (the differences in the
+    :data:`LIBRARY_TOOLS`' text, the rest)."""
+    marks = tuple(f"/tools/{n}/" for n in LIBRARY_TOOLS)
+    library = [d for d in diff if any(m in d for m in marks)]
+    return library, [d for d in diff if not any(m in d for m in marks)]
+
+
 def fingerprint(name: str) -> dict:
     """What build ``name`` hands the agent framework, as names, numbers and
     hashes. ``app``: the app's own tools, prompts, helpers, middleware and
@@ -415,7 +443,8 @@ def fingerprint(name: str) -> dict:
     3.14, deepagents 0.6 and planlens main, and on Linux with Pythons 3.12
     and 3.13, deepagents 0.7 and planlens 0.13 from PyPI), given the
     reference library CI installs (the submodule: ``plot_data`` offers
-    ``reference_chart`` only where it has ``chart_lines``). ``planlens``:
+    ``reference_chart`` only where it has ``chart_lines``; what the
+    :data:`LIBRARY_TOOLS` read is :func:`app_environment`). ``planlens``:
     the planlens-served document tools. What deepagents itself adds (its
     own tools and prompt text) is not ours and is left out."""
     agent, calls, files_dir = build(name, capture=True)
@@ -439,6 +468,7 @@ def fingerprint(name: str) -> dict:
 def all_fingerprints() -> dict:
     return {"planlens_surface": planlens_surface(),
             "planlens_version": planlens_version(),
+            "app_environment": app_environment(),
             "builds": {name: fingerprint(name) for name in BUILDS}}
 
 
@@ -459,6 +489,7 @@ def golden_from(current: dict, old: Optional[dict] = None) -> dict:
                    "step never re-records (plan step 12 is the one "
                    "exception): python -m webapp.tests.page_builds record "
                    "(see test_page_fingerprints.py)"),
+        "app_environment": current.get("app_environment"),
         "builds": {n: {"app": b["app"]}
                    for n, b in current["builds"].items()},
         "planlens": planlens,

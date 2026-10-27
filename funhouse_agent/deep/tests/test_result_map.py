@@ -38,6 +38,8 @@ def test_the_map_is_in_deepagents_own_preview():
         _create_content_preview
     preview = _create_content_preview(mapped_text(json.dumps(
         _kriging_like())))
+    # A str up to deepagents 0.7.13; a ContentPreview with .text by 0.7.24.
+    preview = getattr(preview, "text", preview)
     assert "krige_variance (line" in preview
     assert "read_file" in preview
 

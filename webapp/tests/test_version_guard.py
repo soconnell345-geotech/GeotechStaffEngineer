@@ -24,8 +24,8 @@ def test_newer_than_tested_warns():
 
 
 def test_openai_major_bump_warns():
-    warnings = vg.check_versions(overrides={**OK, "openai": "3.6.0"})
-    assert len(warnings) == 1 and "openai 3.6.0" in warnings[0]
+    warnings = vg.check_versions(overrides={**OK, "openai": "4.0.0"})
+    assert len(warnings) == 1 and "openai 4.0.0" in warnings[0]
 
 
 def test_older_than_floor_warns():

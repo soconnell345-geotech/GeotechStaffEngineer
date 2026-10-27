@@ -37,10 +37,15 @@ FAILS rather than skips (a new planlens release on PyPI: record it, in a
 venv with that release, or with planlens main at its tag); elsewhere it
 skips.
 
-**The app part** assumes the reference library CI installs (the
-submodule): ``plot_data`` offers ``reference_chart`` only where the library
-has ``chart_lines``, so a venv with geotech-references 1.4.1 from PyPI
-sees ``plot_data`` and ``plot_code`` change.
+**The app part** is the same on every install but for two tools:
+``plot_data`` offers ``reference_chart``, and ``plot_code``'s description
+names the standard charts, only where the reference library has
+``chart_lines`` (BACKLOG INF-58). What they read is recorded beside the
+fingerprints (``app_environment``: the charts of the submodule CI
+installs). Where the installed library differs (geotech-references 1.4.1
+from PyPI has no ``chart_lines``), the differences in those two tools are
+named and the test skips, and any other difference still fails; on CI it
+fails rather than skips.
 
 **Cost.** One child interpreter builds all four agents (about 14 s on the
 Windows laptop); the check that the test has teeth builds one more in
@@ -91,9 +96,25 @@ _REFRESH = (
 def test_app_fingerprint_unchanged(name, golden, current):
     diff = page_builds.differences(golden["builds"][name]["app"],
                                    current["builds"][name]["app"])
+    recorded_env = golden.get("app_environment")
+    env = current.get("app_environment")
+    library = []
+    if env != recorded_env:
+        library, diff = page_builds.split_library_differences(diff)
     assert not diff, (
         f"The {name} build changed ({len(diff)} differences):\n  "
         + "\n  ".join(diff[:40]) + _REFRESH)
+    if library:
+        message = (
+            f"The {name} build's {' and '.join(page_builds.LIBRARY_TOOLS)} "
+            f"follow the installed reference library, which differs from "
+            f"the one recorded (recorded {recorded_env}, installed {env}): "
+            f"{len(library)} differences there, none elsewhere. Install "
+            "the reference library CI installs (pip install -e "
+            "geotech-references/) to compare them.")
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail(message)
+        pytest.skip(message)
 
 
 @pytest.mark.parametrize("name", sorted(page_builds.BUILDS))
@@ -144,6 +165,27 @@ def test_a_swapped_tool_order_fails():
     diff = page_builds.differences(old, new)
     assert diff and all("tool_order" in d for d in diff), diff
     assert not page_builds.differences(old, dict(old))
+
+
+def test_only_the_library_tools_are_set_apart():
+    """Under another reference library only plot_code's and plot_data's
+    changed texts are set apart; a tool gone, or a difference anywhere
+    else, still fails."""
+    diff = ["/calls[0]/tools/plot_data/args: 'a' -> 'b'",
+            "/calls[0]/subagents[1]/tools/plot_code/description: 'a' -> 'b'",
+            "/calls[0]/tools/plot_code: gone",
+            "/calls[0]/tools/plot_data_extra/args: 'a' -> 'b'",
+            "/calls[0]/system_prompt: 'a' -> 'b'"]
+    library, rest = page_builds.split_library_differences(diff)
+    assert library == diff[:2]
+    assert rest == diff[2:]
+
+
+def test_the_recorded_environment_is_the_ci_one(golden):
+    """The recorded charts are the ones a reference library with
+    chart_lines names, so CI, which installs the submodule, compares."""
+    charts = golden["app_environment"]["reference_chart_lines"]
+    assert charts and all(isinstance(c, str) for c in charts)
 
 
 def test_every_recorded_call_has_its_tool_order(golden):
