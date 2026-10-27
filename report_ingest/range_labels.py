@@ -416,6 +416,10 @@ class PageDescriptions:
     reused: int = 0
     stopped: str = ""
     model: str = ""
+    #: What the :attr:`reused` descriptions, read back from disk, cost when
+    #: they were made (BACKLOG RI-125: a resumed record's whole-report
+    #: cost). Not written: :attr:`saved_cost` already counts them.
+    reused_cost: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"n_described": len(self.pages), "reused": self.reused,
@@ -598,7 +602,7 @@ def describe_pages(doc: Any, engine: Engine, *,
     wanted = list(range(doc.n_pages)) if pages is None \
         else sorted({int(p) for p in pages})
     out = PageDescriptions(cost=_cost_row(), saved_cost=_cost_row(),
-                           model=name)
+                           model=name, reused_cost=_cost_row())
     saved = load_descriptions(folder) if folder and not redo else {}
     for page, blob in saved.items():
         if blob.get("model") != name or \
@@ -613,6 +617,7 @@ def describe_pages(doc: Any, engine: Engine, *,
         if page in saved and _described(saved[page]):
             out.pages[page] = saved[page]
             _add_costs(out.saved_cost, saved[page].get("cost") or {})
+            _add_costs(out.reused_cost, saved[page].get("cost") or {})
             out.reused += 1
         else:
             todo.append(page)

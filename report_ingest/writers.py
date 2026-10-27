@@ -693,9 +693,24 @@ def summary_markdown(record: ReportRecord) -> str:
             f"{document.workflow or 'standard'} workflow; "
             f"{document.model_calls} model call(s), "
             f"{document.input_tokens:,} input and "
-            f"{document.output_tokens:,} output tokens. Record schema "
+            f"{document.output_tokens:,} output tokens"
+            f"{_resumed_text(document.resumed)}. Record schema "
             f"{record.schema_version}."]
     return "\n".join(out) + "\n"
+
+
+def _resumed_text(resumed: Any) -> str:
+    """What a resumed run's cost covers, for the summary's last line
+    (BACKLOG RI-125); nothing for a run that read everything itself, whose
+    line is the one it always was."""
+    if resumed is None:
+        return ""
+    steps = [f"items {resumed.items} of {resumed.items_of}"
+             if step == "items" else step for step in resumed.steps]
+    return (f" this run (taken from the folder: {', '.join(steps)}); the "
+            f"whole report came to {resumed.report_calls} model call(s), "
+            f"{resumed.report_input_tokens:,} input and "
+            f"{resumed.report_output_tokens:,} output tokens")
 
 
 # ---------------------------------------------------------------------------

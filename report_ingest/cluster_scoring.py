@@ -5153,6 +5153,14 @@ def _reuse_label_run(folder: Path, runs_dir: Path, rid: str,
     into the other is what stops the ingest paying for ~$0.50 of review a
     second time. Nothing already in the folder is overwritten.
     ``review=False`` seeds the triage alone: model first runs no review.
+
+    Each seeded file is stamped ``reused_from``, which is how a later
+    attempt's run file still says the step came from a label run
+    (:func:`_resumed_fields`), and the review's carries the label run's own
+    record of what the review cost, as the seeded profile carries the
+    triage's: a resumed record's whole-report cost counts both (BACKLOG
+    RI-125). Returns what was seeded now; whether the graph used it is the
+    record's to say.
     """
     blob = _run_blob_on_disk(runs_dir, rid)
     if not blob:
@@ -5179,9 +5187,52 @@ def _reuse_label_run(folder: Path, runs_dir: Path, rid: str,
             # rule applies to them when this review is read back
             saved["changes"] = [dict(c) for c in earlier
                                 if isinstance(c, dict)]
+        spent = (blob.get("review") or {}).get("cost")
+        if isinstance(spent, dict) and spent:
+            # what the label run's review cost, as its run file says
+            saved["cost"] = dict(spent)
         review_file.write_text(json.dumps(saved, indent=2), encoding="utf-8")
         review_reused = True
     return triage_reused, review_reused
+
+
+def _resumed_fields(record: Any, folder: Path) -> Dict[str, Any]:
+    """A report's run-file account of the steps it took from its folder
+    (BACKLOG RI-125), off the record's ``document.resumed``.
+
+    ``triage_reused`` and ``review_reused`` are true when that step was
+    taken from the folder and made no call, whatever put its file there: a
+    saved label run seeding it (:func:`_reuse_label_run`), an earlier
+    attempt, or a folder copied in. When the run took any step from the
+    folder, ``resumed`` names them as the record does (``steps``), says how
+    many of the record's item readings came off disk (``items`` of
+    ``items_of``), and lists the steps whose file a label run seeded, now
+    or on an earlier attempt (``from_label_run``, by the file's
+    ``reused_from`` stamp; only when there are any). A run that took
+    nothing from the folder writes both flags false and no ``resumed``, as
+    a first attempt always did.
+    """
+    resumed = getattr(record.document, "resumed", None)
+    steps = [str(step) for step in resumed.steps] if resumed else []
+    out: Dict[str, Any] = {"triage_reused": "triage" in steps,
+                           "review_reused": "review" in steps}
+    if resumed is None:
+        return out
+    seeded = []
+    for step in ("triage", "review"):
+        if step not in steps:
+            continue
+        try:
+            blob = json.loads((folder / f"{step}.json").read_text(
+                encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(blob, dict) and blob.get("reused_from"):
+            seeded.append(step)
+    out["resumed"] = {"steps": steps, "items": int(resumed.items),
+                      "items_of": int(resumed.items_of),
+                      **({"from_label_run": seeded} if seeded else {})}
+    return out
 
 
 def _truth_files_for(rid: str, truth: Sequence[Optional[Path]]
@@ -5558,6 +5609,24 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     limit), by this call or an earlier one, is listed among the failures,
     and what it spent over every attempt is a Cost line of its own
     (``cost_unfinished``), beside the total for every report.
+
+    A RESUMED REPORT SAYS WHAT IT TOOK FROM ITS FOLDER (BACKLOG RI-125).
+    ``triage_reused`` and ``review_reused`` are true when the graph took
+    that step's saved file and made no call for it, whatever left the file
+    there; ``resumed`` names every such step, the item readings that came
+    off disk of those in the record, and the steps a label run seeded
+    (:func:`_resumed_fields`). The record's own cost is this run's, and
+    its ``document.resumed`` adds the whole report's. How the counts
+    agree: the record's ``model_calls`` and this file's ``cost`` count the
+    same requests, this attempt's (the record also counts a call that
+    ended in an error, which ``cost`` keeps under ``failed``), and on a
+    resumed attempt they no longer differ by the saved items' calls. The
+    two whole-report figures are different sums, each named for what it
+    adds: ``all_attempts`` adds every earlier attempt's meter, the calls of
+    a reading that kept no file included (a give-up, a step cut short);
+    the record's ``resumed.report_calls`` adds what the kept files say
+    their steps cost, a label run's triage and review included, which no
+    ingest attempt paid (``from_label_run``), as is a folder copied in.
     """
     from report_ingest.calc_reader import page_images_enabled
     from report_ingest.engine import CostMeter
@@ -5646,17 +5715,9 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             break
         folder.mkdir(parents=True, exist_ok=True)
         _stamp_arm(folder, first)
-        triage_reused, review_reused = _reuse_label_run(
-            folder, runs_dir, rid, review=not first.on)
-        # A reused review made on the other engine is named in the run file
-        # and RESULTS; the key exists only then, so a run whose label run
-        # shares its engine writes what it always wrote.
-        other_engine = ""
-        if triage_reused or review_reused:
-            saved_engine = _saved_label_engine(runs_dir, rid)
-            now_engine = "prompter" if engines.on_prompter() else "chat_model"
-            if saved_engine != now_engine:
-                other_engine = saved_engine
+        # Seeds the folder; what the graph then took from it is the
+        # record's to say (``_resumed_fields``, BACKLOG RI-125).
+        _reuse_label_run(folder, runs_dir, rid, review=not first.on)
         meter = CostMeter()
         engine = engines.build(model, meter)
         vision_engine = engines.build(vision_model, meter, vision=True)
@@ -5750,6 +5811,18 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             if triage_engine is not None:
                 engine_fields["triage"] = engines.record(triage_model,
                                                          triage_engine)
+        reuse_fields = _resumed_fields(record, folder)
+        # A reused review made on the other engine is named in the run file
+        # and RESULTS; the key exists only then, so a run whose label run
+        # shares its engine writes what it always wrote. "Reused" is what
+        # the record says this run took from the folder that a label run
+        # seeded, on this attempt or an earlier one.
+        other_engine = ""
+        if (reuse_fields.get("resumed") or {}).get("from_label_run"):
+            saved_engine = _saved_label_engine(runs_dir, rid)
+            now_engine = "prompter" if engines.on_prompter() else "chat_model"
+            if saved_engine != now_engine:
+                other_engine = saved_engine
         blob = {
             "id": rid,
             "run_date": date.today().isoformat(),
@@ -5757,8 +5830,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "served_by": engine.served_by,
             "n_pages": n_pages,
             "workflow": record.document.workflow,
-            "triage_reused": triage_reused,
-            "review_reused": review_reused,
+            **reuse_fields,
             **({"label_run_engine": other_engine} if other_engine else {}),
             **({"di_withheld": True} if corpus.di_withheld else {}),
             "labels": _ingest_labels(folder, record, rid, corpus,
@@ -5818,6 +5890,12 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         counts = blob["counts"]
         diggs = blob["diggs"]
         every = blob.get("all_attempts")
+        took = blob.get("resumed")
+        if took:
+            print(f"  [{n}/{len(report_ids)}] {rid}: taken from the folder: "
+                  + ", ".join(f"items {took['items']} of {took['items_of']}"
+                              if step == "items" else step
+                              for step in took["steps"]))
         print(f"  [{n}/{len(report_ids)}] {rid}: {n_pages} pp, "
               f"{blob['workflow']}, {counts['investigations']} "
               f"investigation(s), {counts['samples']} sample(s), "
