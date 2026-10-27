@@ -1,0 +1,1778 @@
+[
+ {
+  "id": "GM-04",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "An uncited beta = 0.3 default and a beta shaft far below Nordlund are engineering-provenance issues, not edge cases."
+ },
+ {
+  "id": "GM-73",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Heave check is not Terzaghi's prism, permeability is isotropic only, and the simplified seepage check is open: engineering basis, though a long bundle."
+ },
+ {
+  "id": "GM-74",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Preloaded struts and inclined anchors are common practice the excavation model lacks; a general capability gap, no user ask yet."
+ },
+ {
+  "id": "GM-75",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Hardening Soil in staged excavation is unverified; a validation gap in a general capability."
+ },
+ {
+  "id": "GM-82",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Slope support leftovers deferred to GM-140 by the owner; the integral review reads parked items."
+ },
+ {
+  "id": "GM-89",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Slope search leftovers deferred to GM-140 by the owner."
+ },
+ {
+  "id": "GM-93",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "SRM FOS about 3 % low when trials hit the iteration ceiling: a wrong number, though conservative, one example, and already warned on nu."
+ },
+ {
+  "id": "GM-64",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Mesh quality in thin base layers and unvalidated optional solver modes; no measured wrong result. Revisit if a result moves."
+ },
+ {
+  "id": "GM-10",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "fem2d wishlist of general capabilities (Q8, tunnels, cavity, validations); no user ask yet, but not narrow fixes."
+ },
+ {
+  "id": "GM-11",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Footing capacity silently ignores embedment and side surcharge, which most real footings have; misleads in normal use."
+ },
+ {
+  "id": "GM-12",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Runtime optimisation with no measured need; deferred to GM-140 by the owner."
+ },
+ {
+  "id": "GM-56",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Slope case-driven fix deferred to GM-140."
+ },
+ {
+  "id": "GM-15",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "One failed drawdown case at phi' 45; deferred to GM-140."
+ },
+ {
+  "id": "GM-17",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Adds one citation to an existing screening caveat; documentation only, results already carry the range and the warning."
+ },
+ {
+  "id": "GM-18",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Slope residuals from single validation cases; deferred to GM-140."
+ },
+ {
+  "id": "GM-19",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Slope methods never built; deferred to GM-140, which decides scope as a whole."
+ },
+ {
+  "id": "GM-126",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Search-efficiency refinement deferred to GM-140."
+ },
+ {
+  "id": "GM-130",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "m_alpha switch and screening leftovers deferred to GM-140."
+ },
+ {
+  "id": "GM-132",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Metadata wording leftovers in choices/defaults_used; no computed value changes; the slope part waits for GM-140."
+ },
+ {
+  "id": "GM-135",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Rapid drawdown slicing leftovers (at most 0.25 %); deferred to GM-140."
+ },
+ {
+  "id": "GM-136",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "One validation case 5 % high, likely an input difference; deferred to GM-140."
+ },
+ {
+  "id": "GM-137",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Solver speed and 0.1 % agreement on phi = 0 circles; deferred to GM-140."
+ },
+ {
+  "id": "GM-139",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "False Spencer FOS on odd single surfaces searches never reach; deferred to GM-140 by the owner."
+ },
+ {
+  "id": "GM-140",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The owner's own integral slope review; every parked slope item feeds it."
+ },
+ {
+  "id": "GM-156",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Excavation tool hides its soil model and K0, seen in three waves; the owner wants modules to state their choices."
+ },
+ {
+  "id": "GM-162",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Two versions of a rebuilt PDF reach the user; clutter from model behaviour, no effect on numbers."
+ },
+ {
+  "id": "GM-163",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Rare path (restore from SharePoint, then redraw); redraw from a look still works."
+ },
+ {
+  "id": "GM-193",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Multi-anchor walls are common and get no embedment; at least say plainly none is computed. Engineering output."
+ },
+ {
+  "id": "GM-196",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Call budget and prompt-cache cost of an ON-by-default switch is cost control; the note-conflict parts are narrow."
+ },
+ {
+  "id": "GM-222",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Reported seepage total flow is not a flow through any section and scales with thickness: a wrong number."
+ },
+ {
+  "id": "GM-223",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Citation guard coverage and a wrong equation citation in calc text engineers read; provenance infrastructure."
+ },
+ {
+  "id": "GM-225",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Prompt claims a check the tool does not make; a one-line fix that could fold into GM-230."
+ },
+ {
+  "id": "GM-233",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Missing GEC-10 Table 10-3 and the qu <= f'c cap the print requires: engineering correctness against the reference."
+ },
+ {
+  "id": "GM-234",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "MSE sliding adds cohesion to friction, unlike the printed method: a wrong engineering basis."
+ },
+ {
+  "id": "GM-235",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Passive cohesion omitted against GEC-6 Eq. 5-41 and an undrained sliding limit not applied: engineering correctness."
+ },
+ {
+  "id": "GM-236",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Note wording and a stale stored value in one worked example; printed answer and tests unaffected."
+ },
+ {
+  "id": "GM-237",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Alpha above 1.0 for a firm clay needs checking against the chart; site-specific alpha is a general input."
+ },
+ {
+  "id": "GM-239",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Switch semantics and a judgment check that doubled a run's cost: cost control on an ON-by-default switch."
+ },
+ {
+  "id": "GM-254",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Optional toe method only 'if a case needs it'; current toe follows both references. Result-length growth is noise."
+ },
+ {
+  "id": "GM-258",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Extra chart option only 'if a case needs it'; the default follows UFC and the other option warns."
+ },
+ {
+  "id": "GM-270",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Prompt invites unsourced ranges that reached a live answer; against the owner's 'from the print only' rule. General."
+ },
+ {
+  "id": "GM-65",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Embedment deeper than 6H is impractical and the result already says none was found; a special option."
+ },
+ {
+  "id": "GM-23",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "SOE wishlist of general capabilities (SSI, lagging, secant walls); no user ask yet but not narrow fixes."
+ },
+ {
+  "id": "GM-24",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Owner-tagged SOE and sheet-pile modes (soldier piles, OWN-21); the owner's call."
+ },
+ {
+  "id": "GM-26",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "A mainly offshore pile method raised by one textbook example; the app follows GEC-12's methods."
+ },
+ {
+  "id": "GM-27",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Uncited drilled-shaft caps and a rock-socket exclusion rule are provenance and correctness; may be partly done by the 2018 update."
+ },
+ {
+  "id": "GM-28",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Extrapolated k-table and uncorroborated group multipliers: values not traced to print, plus a benchmark gap."
+ },
+ {
+  "id": "GM-29",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Blow count 60 % off on a validation case and defaults unchecked against GEC-12 Table 12-3: wrong numbers."
+ },
+ {
+  "id": "GM-31",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Mostly textbook-example ergonomics; its provenance parts (vibro spacing, GEC-6 Fig 5-19) are also in REF-18."
+ },
+ {
+  "id": "GM-32",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "A descending backfill silently treated as level is a silent wrong result; display omits passive resistance."
+ },
+ {
+  "id": "GM-34",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Reliability validation and COV provenance; the owner's prime interest."
+ },
+ {
+  "id": "GM-35",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Chart reads off by 20-40 % against the printed figures: reference accuracy."
+ },
+ {
+  "id": "GM-36",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Structural engine extensions outside geotech; nominal capacities are stated by design; no user ask."
+ },
+ {
+  "id": "GM-37",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Owner-tagged geo_project item (OWN-22); the owner's call."
+ },
+ {
+  "id": "GM-38",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "A widely used N-to-phi correlation is unverified (also in REF-18); the other parts are features."
+ },
+ {
+  "id": "GM-111",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Redraw-cap counting and scratch-file cleanup edge cases in the figure harness."
+ },
+ {
+  "id": "GM-113",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Inputs silently ignored (kh, N1_60, OCR) mislead an engineer; the did-you-mean hint parts are narrow."
+ },
+ {
+  "id": "GM-114",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "No MSE calc package, battered faces and a missing LRFD check: general capability and a missing check."
+ },
+ {
+  "id": "GM-117",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Noncircular slope search leftovers deferred to GM-140 by the owner."
+ },
+ {
+  "id": "GM-66",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Download-card grouping is cosmetic; no effect on results."
+ },
+ {
+  "id": "GM-43",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "A sub-agent unused in 106 eval questions needs a remove-or-wire decision, in line with 'simple is better'."
+ },
+ {
+  "id": "GM-45",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Millions of tokens per document session is cost control and measurement."
+ },
+ {
+  "id": "GM-46",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Old unclear wave-1 leftovers with no current evidence."
+ },
+ {
+  "id": "GM-47",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Validation gaps are measurement; the slope cases belong to GM-140's full validation set."
+ },
+ {
+  "id": "GM-279",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "A coined symbol the manual never prints, against the owner's 'use the references' terms' rule; wording only."
+ },
+ {
+  "id": "REF-06",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Section summaries need a paid model; REF-38 says add them only if retrieval measures worse without them (REF-07)."
+ },
+ {
+  "id": "REF-07",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Held-out retrieval measurement; the measurement the enrichment items wait on."
+ },
+ {
+  "id": "REF-37",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Synonyms that pull in the wrong quantity misdirect retrieval; small curation, but a lexical heuristic."
+ },
+ {
+  "id": "REF-38",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Equation formulas the app cites are missing from the manual text; reference-library completeness against print."
+ },
+ {
+  "id": "REF-08",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "GEC-13 figure catalog 14 % complete; reference-library completeness."
+ },
+ {
+  "id": "REF-09",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Figure descriptions need a paid enrichment pass; wait for REF-07 to show retrieval misses them."
+ },
+ {
+  "id": "REF-10",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Printed tables as lookups are general reference capability; no module is known to need them yet."
+ },
+ {
+  "id": "REF-11",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Data-shape hygiene with no known effect on results."
+ },
+ {
+  "id": "REF-12",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "A committed reference 'PDF' that is an HTML page is a broken file; quick repo hygiene."
+ },
+ {
+  "id": "REF-15",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Seen once on GPT three months ago, never reproduced; the app moves to Claude on Foundry."
+ },
+ {
+  "id": "REF-16",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Measuring the librarian call budget is cost control and measurement."
+ },
+ {
+  "id": "REF-18",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Provenance of values the modules use; the owner's 'from the print only' rule."
+ },
+ {
+  "id": "REF-21",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Printed-table misprints need an erratum note, and a transcribed table needs checking against its source."
+ },
+ {
+  "id": "REF-22",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Seven catalog functions the agent cannot call; hiding them is a small simplification of the tool surface."
+ },
+ {
+  "id": "REF-30",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Section rows flagged against the printed manuals; reference-library accuracy."
+ },
+ {
+  "id": "REF-31",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Cited designations and editions differ from the PDF covers; reference-library accuracy."
+ },
+ {
+  "id": "REF-32",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "A metadata-field decision with no effect on numbers."
+ },
+ {
+  "id": "REF-33",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Shared search caches let one checkout read another branch's data; test infrastructure correctness."
+ },
+ {
+  "id": "REF-34",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "DM 7.2's printed tables are core reference data; the misleading not-found text is general."
+ },
+ {
+  "id": "REF-35",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "GEC-3 fills a gap: no library manual prints an SPT post-liquefaction strain method. General reference capability."
+ },
+ {
+  "id": "REF-36",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Printed numbers the calc text cites are missing from the library; completeness against print."
+ },
+ {
+  "id": "REF-44",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "A figure label and citation that disagree with the printed manual; reference-library error."
+ },
+ {
+  "id": "LT-01",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The owner's prime interest: the reliability program."
+ },
+ {
+  "id": "LT-05",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "A measurement program that found four real defects; general capability."
+ },
+ {
+  "id": "RI-46",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Log floor check for one blow-record spelling; no wrong value written, only an unchecked printed N. Floor work waits on model-first."
+ },
+ {
+  "id": "RI-49",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Stack reader residuals found in fuzz trials (a few in 5,000); floor hardening the model-first route likely makes moot."
+ },
+ {
+  "id": "RI-51",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "N60 stored as the field N is a wrong value on any log printing N60; the schema wording applies to model-first too."
+ },
+ {
+  "id": "RI-52",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Rare recovery and N spellings in stacked columns; floor parsing of uncommon forms, predates RI-48."
+ },
+ {
+  "id": "RI-53",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Bundle of small bound-pass follow-ups (off-by-one triage ranges, flags, a count, a warning, grammar); each narrow."
+ },
+ {
+  "id": "RI-58",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Calc splitter cuts on named single items (R16, R28, R30, R23); layout heuristics model-first reading should supersede."
+ },
+ {
+  "id": "RI-59",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Calc floor/reader merge details on a few saved items; the page-print check is conditional on a live run."
+ },
+ {
+  "id": "RI-60",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Cost record gaps: the app and sub-agent paths keep no cost record, error-body tokens unpriced. Cost control on Foundry."
+ },
+ {
+  "id": "RI-61",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Mostly QA ranking and single-report folds (R09, R11). Part (8), the older-wheel release note, belongs in the release notes."
+ },
+ {
+  "id": "RI-62",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Label review prompt tuning behind OFF switches on few reports; the simpler range labeller and model-first may replace it."
+ },
+ {
+  "id": "RI-66",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Narrative scorer pairing and lenient rules: a scorer that measures the model-first accuracy must be right."
+ },
+ {
+  "id": "RI-69",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Measurement plumbing: run records should say which switches and engine produced each result; small but keeps comparisons honest."
+ },
+ {
+  "id": "RI-70",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "SPT halt rule leftovers on today's reader and floor; four-drive records rare (2 of 343 items changed)."
+ },
+ {
+  "id": "RI-71",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Long list of lab floor cases on single reports (R13, R18, R23, R28) and other languages; floor hardening."
+ },
+ {
+  "id": "RI-122",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Wording and call counting in today's lab and sounding briefs; model-first readers use one call per page group."
+ },
+ {
+  "id": "RI-132",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Model-first already has the header fields (RI-87); adding them to today's reader is moot under the new route."
+ },
+ {
+  "id": "RI-134",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Spend of killed or interrupted attempts goes unrecorded; cost control on Foundry runs, cheap to fix or document."
+ },
+ {
+  "id": "RI-146",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Atterberg limits printed on grain-size sheets are a common form; the result type drops them, so data is silently lost."
+ },
+ {
+  "id": "RI-147",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "A checklist count direction; changes no value in the record."
+ },
+ {
+  "id": "RI-148",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Hole-name forms found only on made-up probe pages, no regression; model-first groups pages by the describer's exploration field."
+ },
+ {
+  "id": "RI-151",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "One wrong join on one saved report (R28); owner already called it an edge case."
+ },
+ {
+  "id": "RI-152",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Log floor depth details on one page (R37 p26) plus a truth-entry check; floor work."
+ },
+ {
+  "id": "RI-153",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Owner-labelled edge case, nothing in the saved runs between 0.10 and 0.30 m; RI-160 covers the measured first-stratum losses."
+ },
+ {
+  "id": "RI-154",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Duplicate rows only on elevation-only summary tables without sample ids, plus repeated QA notes (cosmetic)."
+ },
+ {
+  "id": "RI-155",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "One record on one saved report (R03); floor rule."
+ },
+ {
+  "id": "RI-157",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Owner-labelled edge case: three single-report fold misses (R19, R22, R28); lab links already handled as master did."
+ },
+ {
+  "id": "RI-158",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Owner-labelled edge case on one sideways summary page (R13), which RI-149's upright turn may already fix."
+ },
+ {
+  "id": "RI-160",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "The depth gate refuses the first stratum on logs in 13 of 38 saved reports; data silently lost across many reports."
+ },
+ {
+  "id": "RI-161",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "One misread record on one saved report (R12); floor box heuristic."
+ },
+ {
+  "id": "RI-162",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Hypothetical risk; all 41 firings on saved sheets were real swaps."
+ },
+ {
+  "id": "RI-163",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "No corpus legend prints a code before its depth today; never seen in the 38 reports."
+ },
+ {
+  "id": "RI-164",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "2 of 135 turned pages on one report (R11); orientation edge case."
+ },
+ {
+  "id": "RI-165",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Model-first lab route lacks the carried hole and sample link today's route has; results lose their hole there."
+ },
+ {
+  "id": "RI-166",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Splitter treats a combined grading-and-limits title as a summary; the continuation keeps its carried link, so little value changes."
+ },
+ {
+  "id": "RI-167",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Recording Foundry proxy retries explains cost and waits; first check the transform route returns the header at all."
+ },
+ {
+  "id": "RI-118",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "One sheet family (R28 DCP headers), three header misses from a text-layer character."
+ },
+ {
+  "id": "RI-119",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Floor noise on one report (R13): QA disagreements only, no value lost."
+ },
+ {
+  "id": "RI-100",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Ambiguous or garbled unit spellings left unconverted on purpose; a picture-reading model likely returns the printed units."
+ },
+ {
+  "id": "RI-43",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Depth-gate hardening that needs the model to misread first; floor safeguard for a rare case."
+ },
+ {
+  "id": "RI-40",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "DIGGS output: write the printed vertical datum once a DIGGS coordinate-system list is in hand."
+ },
+ {
+  "id": "RI-41",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "CI/install: pydiggs 1.x lacks the 2.5.a schema; decide whether that validation option stays."
+ },
+ {
+  "id": "INF-52",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Private-data safety in a public repo: unsalted hash prefixes let anyone confirm a guessed guarded word."
+ },
+ {
+  "id": "INF-01",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Repo and workspace hygiene (stray files, old worktrees and branches); no effect on results but cheap owner housekeeping."
+ },
+ {
+  "id": "INF-02",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Install check against the Nexus list at production time, as the owner set."
+ },
+ {
+  "id": "INF-59",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Wrong import error shown only after a side-effecting failed import, demonstrated with a made-up package; not seen in practice."
+ },
+ {
+  "id": "INF-55",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "CI/test infrastructure: the references suite errors under pytest-xdist."
+ },
+ {
+  "id": "INF-58",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "CI/gate reliability: the fingerprint test depends on the installed environment and fails local gates."
+ },
+ {
+  "id": "INF-05",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Retiring the old agent loop removes legacy code with known truncation faults; infrastructure cleanup."
+ },
+ {
+  "id": "INF-06",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Deleting the retired foundry wrappers is the last consolidation step; frozen code with known wrong defaults."
+ },
+ {
+  "id": "INF-16",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Security layer for model-written code; measure on the hosts first, given the security-monitoring concern."
+ },
+ {
+  "id": "INF-18",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "The item itself says keep the PyMuPDF cap unless something needs 2.x; a note until then."
+ },
+ {
+  "id": "INF-21",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Harmless console noise on one reference page; log noise with no effect on results."
+ },
+ {
+  "id": "INF-26",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The owner's app split, in their own words; the umbrella for INF-30 to INF-35."
+ },
+ {
+  "id": "INF-30",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Its own line says complete; move it to Done rather than Parked, the relabel note riding with INF-31."
+ },
+ {
+  "id": "INF-31",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "App split steps 6-8, owner-directed infrastructure."
+ },
+ {
+  "id": "INF-32",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "App split core package, owner-directed (OWN-74)."
+ },
+ {
+  "id": "INF-33",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "App split core release and Document Review's private home, owner-directed."
+ },
+ {
+  "id": "INF-34",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "App split Tiny Apps wrapper, owner-directed deployment step."
+ },
+ {
+  "id": "INF-35",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "App split close-out and notes, owner-directed."
+ },
+ {
+  "id": "PL-29",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Split step 9 the owner decided (OWN-74): the document-tool wrappers move into planlens."
+ },
+ {
+  "id": "PL-01",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Rectangle convention in the log grid; a floor change to measure only after model-first numbers are in."
+ },
+ {
+  "id": "PL-03",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Chart-reading heuristics for particular scale styles; better vision models likely make these moot."
+ },
+ {
+  "id": "PL-04",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Log grid heuristics for particular forms; floor work."
+ },
+ {
+  "id": "PL-05",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Narrow measuring-tool case across a second zoom."
+ },
+ {
+  "id": "PL-22",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Release planlens and raise the app's pin; release infrastructure paired with the held app release."
+ },
+ {
+  "id": "PL-23",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Speed optimisation (about 0.1 s a look) with no measured need."
+ },
+ {
+  "id": "PL-24",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Remaining log grid heuristics for particular forms; floor work."
+ },
+ {
+  "id": "PL-27",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Wires built general planlens tools into the app; Document Review is last priority but the capability is general."
+ },
+ {
+  "id": "PL-28",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Label pattern and segment-title loose ends; layout heuristics."
+ },
+ {
+  "id": "PL-08",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Log grid gaps on the blind set; floor accuracy the model-first route is replacing."
+ },
+ {
+  "id": "PL-09",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Reading order and tables spanning pages are general document-reading gaps across many reports."
+ },
+ {
+  "id": "PL-10",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Page roles for rare test types and one scan class; the vision vote labels pages now."
+ },
+ {
+  "id": "PL-11",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "A general 'Label (unit): value' pattern behind all 15 real-corpus misses of a general tool; cheap fix."
+ },
+ {
+  "id": "PL-12",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Data-gated on owner data (OWN-38); nothing to build until real pages arrive."
+ },
+ {
+  "id": "PL-13",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Porting old drawing tools; no current demand since the reframe to document review."
+ },
+ {
+  "id": "PL-14",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Package hygiene move with a deprecation path; no effect on results."
+ },
+ {
+  "id": "PL-15",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "MCP server not deployed anywhere; matters only if it is, waits on OWN-54."
+ },
+ {
+  "id": "PL-16",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Install safety: bound OpenCV below 6 so a new major version cannot arrive unannounced."
+ },
+ {
+  "id": "PL-17",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Drawing extractor geometry needing a re-baseline; drawing IR is off the main path."
+ },
+ {
+  "id": "PL-19",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Process gaps in old docs-claims checks; no effect on results."
+ },
+ {
+  "id": "PL-20",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Raster vectorization is frozen; listed limits are notes."
+ },
+ {
+  "id": "PL-26",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Small silent argument handling, 'nothing urgent'; could ride a planlens release if convenient."
+ },
+ {
+  "id": "PL-30",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Report ingest already folds continuation sheets (RI-08); model-first groups pages by hole."
+ },
+ {
+  "id": "PL-31",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Owner-labelled edge case: unruled log form on one report (R28)."
+ },
+ {
+  "id": "PL-32",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Sampler symbols on one saved report (R13); floor heuristic."
+ },
+ {
+  "id": "PL-33",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Merged sample boxes on one saved form (R02), already guarded by RI-131."
+ },
+ {
+  "id": "PL-34",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Generic title-block words on 3 sheets of one report (R19); title heuristic."
+ },
+ {
+  "id": "OWN-94",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Cheap owner action that makes the public blind set measurable for report ingest, the first priority."
+ },
+ {
+  "id": "OWN-12",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Pending licensing decision for reference content; public routes are listed, the owner still has to choose."
+ },
+ {
+  "id": "OWN-14",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Plan-of-record decisions for Document Review's architecture (shapes, disciplines, deliverables, test sets) still pending."
+ },
+ {
+  "id": "OWN-16",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Small scoring question on one suite task; the owner likes these, and the answer changes that task's score."
+ },
+ {
+  "id": "OWN-17",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Calc default that changes a result; owner was checking notes. May fold into the slope integral review (GM-140)."
+ },
+ {
+  "id": "OWN-18",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Real infrastructure decision on an optional dependency; affects installs on the cluster and on Foundry."
+ },
+ {
+  "id": "OWN-19",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Cracked-section EI is a standard lateral-pile capability and a known validation residual; decide build or drop."
+ },
+ {
+  "id": "OWN-21",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Scope decisions for modules and references still pending with the owner."
+ },
+ {
+  "id": "OWN-22",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Owner decision pending: test the model-setup agent or park it formally."
+ },
+ {
+  "id": "OWN-25",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Private-data question about owner wording in a public file; the public repo needs an answer."
+ },
+ {
+  "id": "OWN-26",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Repo-visibility decision about place names in tracked folder names; private-data safety on public repos."
+ },
+ {
+  "id": "OWN-27",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Pending housekeeping approval; deleting files and branches needs the owner's yes."
+ },
+ {
+  "id": "OWN-29",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Install round needed on the Tiny Apps path; owner deferred it until reworked for the app split."
+ },
+ {
+  "id": "OWN-30",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The first-hour tester check is part of the Tiny Apps tester deploy plan."
+ },
+ {
+  "id": "OWN-34",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Tester-supplied suite inputs are the measurement route the owner chose for the testing period."
+ },
+ {
+  "id": "OWN-36",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Metering compliance on Funhouse is still unverified; Funhouse is only the backup host now, and the DXF part is narrow."
+ },
+ {
+  "id": "OWN-38",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Real documents are general test data for Document Review measurement, not one-case fixes."
+ },
+ {
+  "id": "OWN-40",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Small pending owner action so a reference PDF reaches the app."
+ },
+ {
+  "id": "OWN-41",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "General worked-example capability from the owner's own reports; owner action pending."
+ },
+ {
+  "id": "OWN-68",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Small technical default question with a printed basis; the answer changes lateral pile results for mid-stiffness clays."
+ },
+ {
+  "id": "OWN-56",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Security decision on Department addresses in public git history: purge or accept."
+ },
+ {
+  "id": "OWN-43",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Needed for the Tiny Apps tester deploy; waiting on CfA."
+ },
+ {
+  "id": "OWN-44",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Needed for the Tiny Apps tester deploy (SharePoint and reference PDFs); waiting on CfA."
+ },
+ {
+  "id": "OWN-45",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Needed for the Tiny Apps production deploy."
+ },
+ {
+  "id": "OWN-46",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Needed for the Tiny Apps production deploy (user identity)."
+ },
+ {
+  "id": "OWN-47",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Make-or-break for Tiny Apps: the rollout deployment must accept images."
+ },
+ {
+  "id": "OWN-49",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Open CfA questions (streaming, Nexus versus vendoring, fleet pins) on the Tiny Apps path."
+ },
+ {
+  "id": "OWN-50",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Budget and rate-limit answers needed for tester cost control and the busy-ladder settings."
+ },
+ {
+  "id": "OWN-52",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Process and data-boundary questions on the Tiny Apps approval path."
+ },
+ {
+  "id": "OWN-53",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Asks for Tiny Apps egress for a geotech feature; the geotech page left Tiny Apps on 2026-10-20."
+ },
+ {
+  "id": "OWN-54",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Funhouse is the backup host; an in-enclave MCP host and vendored weights are speculative, with no measured need."
+ },
+ {
+  "id": "OWN-72",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "App-split plan of record: the shared core's name and CfA's yes gate later INF items."
+ },
+ {
+  "id": "OWN-79",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Small technical question with a recommendation; the answer changes passive coefficients near vertical, level walls."
+ },
+ {
+  "id": "OWN-85",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Small technical question; refusing or computing changes MSE results where the manual requires tests."
+ },
+ {
+  "id": "OWN-86",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Pending outward-facing decision (post upstream or not); small, and only the owner can make it."
+ },
+ {
+  "id": "DR-35",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Owner chose this option (OWN-77): general examples for Document Review after the split, measured on the suite."
+ },
+ {
+  "id": "DR-29",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "General prompt clean-up for every review, behind a switch and measured; fits 'simple is better'."
+ },
+ {
+  "id": "DR-05",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Measurement that decides which review build is the default."
+ },
+ {
+  "id": "DR-06",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Simplifies the review prompt around the review method and drops incident rules; general and simple-first."
+ },
+ {
+  "id": "DR-07",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Revision compare is a general review capability, but the item is conditional on earning a suite task."
+ },
+ {
+  "id": "DR-08",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Plan-of-record milestone M2 for large reviews; a general capability."
+ },
+ {
+  "id": "DR-09",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Plan-of-record milestone M3 (mega-reviews); a general capability."
+ },
+ {
+  "id": "DR-10",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Plan-of-record milestone M4 (cross-document coordination); a general capability."
+ },
+ {
+  "id": "DR-11",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The owner's own 'killer app': recompute a report's claims through the modules; general."
+ },
+ {
+  "id": "DR-12",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Owner-approved driving example for spatial measurement on plans; general, but blocked on owner documents and a missing plan."
+ },
+ {
+  "id": "DR-13",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Standards conformance is core review work; a general capability, with the owner supplying the standards."
+ },
+ {
+  "id": "DR-30",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Hardens the markup check for more look types and a case seen once (F03); better models likely make it moot."
+ },
+ {
+  "id": "DR-31",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Two tools word a markup count differently, seen once; no effect on results."
+ },
+ {
+  "id": "DR-33",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Matters only if strict tool mode is ever turned on; speculative."
+ },
+ {
+  "id": "DR-34",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Geotech wording in the general review page's tool text; small, but affects every review with SharePoint on."
+ },
+ {
+  "id": "DR-18",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Label direction on rotated sheets is markup cosmetics and heuristic hardening; a better model likely makes it moot."
+ },
+ {
+  "id": "DR-19",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Lets vision look at a supported file type (DXF); general, though DXF uploads for review are uncommon."
+ },
+ {
+  "id": "DR-20",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Fix for one checklist task's behaviour on one model; the checklist has moved to report ingest."
+ },
+ {
+  "id": "DR-21",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "False fails on two checklist items seen once; the checklist now reads the record in report ingest."
+ },
+ {
+  "id": "DR-23",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Prerequisites for a coverage switch that is off and unmeasured; the parts are edge cases."
+ },
+ {
+  "id": "DR-24",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Owner found no colleague to write it; the testing period stands in, tracked by OWN-34."
+ },
+ {
+  "id": "DR-25",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "General suite coverage gaps (spec sections, long drawing sets, the orientation turn); measurement."
+ },
+ {
+  "id": "DR-26",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Judging run-to-run variable tasks over repeats is general measurement method."
+ },
+ {
+  "id": "DR-27",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Measures a plan-of-record switch (findings) on the suite."
+ },
+ {
+  "id": "DR-28",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Inline images let the reasoning model see the page; a general architecture candidate to probe on the rollout model."
+ },
+ {
+  "id": "VIS-02",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Vision heuristic tuning (region versus text line by aspect); a better model likely makes it moot."
+ },
+ {
+  "id": "VIS-03",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "False alarms and noise in vision notes; log-noise level, no measured effect on results."
+ },
+ {
+  "id": "VIS-06",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Flagging chart inputs outside the fitted axis guards against extrapolated values generally, though seen once."
+ },
+ {
+  "id": "VIS-07",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Latency optimisation; owner put efficiency after robustness, latency depends on the model, and TA-03 measures it live."
+ },
+ {
+  "id": "VIS-08",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Prompt wording tuned to one model's habit; the rollout model differs and log reading moved to report ingest."
+ },
+ {
+  "id": "VIS-10",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Scale finding failed on every reference figure in one wave; per-figure boxes are a general fix to chart reading."
+ },
+ {
+  "id": "VIS-11",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Text for scanned pages is general, but vision and Foundry OCR may cover it; owner-tagged and needs approvals."
+ },
+ {
+  "id": "VIS-23",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Loose ends of turned-look handling and one misleading report (F39); heuristic hardening a better model likely moots."
+ },
+ {
+  "id": "VIS-22",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "A zoom-reuse edge and a sub-second cost; speculative optimisation."
+ },
+ {
+  "id": "VIS-24",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Extends the measured pixel-box fix to agent-requested coordinates; location accuracy matters for every markup."
+ },
+ {
+  "id": "VIS-25",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "One field session's misread thumbnails; a caution line in one tool result, seen once."
+ },
+ {
+  "id": "VIS-26",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Image uploads are a general input; a few parts (page count error, 300 px refusal) break normal use, the rest are edges."
+ },
+ {
+  "id": "VIS-29",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Seen once: a user asked to see a worked example's source page; nice to have, not core."
+ },
+ {
+  "id": "VIS-12",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Token-saving optimisation (about 930 tokens a call) with no measured need."
+ },
+ {
+  "id": "VIS-14",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Hardens the optional find_like tool for wide views; special-purpose tool."
+ },
+ {
+  "id": "VIS-16",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Tuning thresholds (view limit, image cap) that depend on the model; heuristic calls a better model moots."
+ },
+ {
+  "id": "VIS-17",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Chart truth sets are general measurement for chart reading."
+ },
+ {
+  "id": "VIS-19",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Speculative set-of-marks technique that needs a ported harness; no measured need."
+ },
+ {
+  "id": "VIS-21",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Drawing truth sets are general measurement; text-gated behaviour is unmeasured today."
+ },
+ {
+  "id": "EV-02",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Owner wants brief 6 run after the tester week, full scope; the main measurement round."
+ },
+ {
+  "id": "EV-03",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Case-specific confirmation re-runs on Claude credit; the default-page measurement is EV-13, and an rc smoke goes with the release."
+ },
+ {
+  "id": "EV-04",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Smoke-harness polish bundle; several parts moot since the workspace left OneDrive; no effect on product results."
+ },
+ {
+  "id": "EV-09",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Answer keys and physical-bound checks for the geotech eval; general measurement."
+ },
+ {
+  "id": "EV-10",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "A CI mock-eval subset is measurement infrastructure."
+ },
+ {
+  "id": "EV-11",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "General open measurement questions about the references sub-agent and citations."
+ },
+ {
+  "id": "EV-15",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Turning field-session failures into suite tasks is the owner's rule; the report-reading parts may now belong to the ingest corpus."
+ },
+ {
+  "id": "EV-16",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Minor record gaps, mostly on the backup host; log-level, no question left unanswered by them."
+ },
+ {
+  "id": "EV-17",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The owner's own idea ('worth exploring'): show what agents took in and where they looked."
+ },
+ {
+  "id": "EV-18",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Measure the built cited-pages check before it goes on; a general guard against made-up page lists."
+ },
+ {
+  "id": "EV-23",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Measure the built cited-documents check before it goes on; a general guard."
+ },
+ {
+  "id": "EV-27",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Re-running a wave overwrote paid results; keeping each attempt is cost control. Labelling knock-on findings is noise."
+ },
+ {
+  "id": "EV-29",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Logic gap in a check that is off by default, seen once; fold into EV-23 if that measurement runs."
+ },
+ {
+  "id": "EV-31",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Research check that a cited equation matches the printed one; fits the owner's formulas-from-the-print rule."
+ },
+ {
+  "id": "EV-32",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Refines a false flag in the answer-number check for one hand-worked case; narrow heuristic."
+ },
+ {
+  "id": "EV-20",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The record must say why (owner's standing trace-review rule); model text between tool calls is still missing."
+ },
+ {
+  "id": "EV-13",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The next suite run, measuring the default-page changes; core measurement."
+ },
+ {
+  "id": "TA-03",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Live checks on the rollout model are needed before testers use Document Review on Tiny Apps."
+ },
+ {
+  "id": "TA-23",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "A limit of parallel tool calls seen in one session; a fix would add complexity without a measured need."
+ },
+ {
+  "id": "TA-24",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Rate-limit settings for the one shared rollout deployment are needed for the tester deploy."
+ },
+ {
+  "id": "TA-28",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Confirmation checks of a built feature plus unbuilt efficiency ideas; the checks belong on the live test queue."
+ },
+ {
+  "id": "TA-27",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Live checks of the Funhouse launcher, now the backup host; edge details (syscalls, poll threads)."
+ },
+ {
+  "id": "TA-18",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Conditional on a refusal surviving the retry live, which has not been seen; speculative."
+ },
+ {
+  "id": "TA-04",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Multi-tester and restore behaviours are unverified live; needed for the Tiny Apps tester deploy."
+ },
+ {
+  "id": "TA-05",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Spend visibility for testers on budgeted keys; cost control for the deploy."
+ },
+ {
+  "id": "TA-06",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Small test pinning the budget-spent response once OWN-50 is answered; deploy readiness."
+ },
+ {
+  "id": "TA-07",
+  "verdict": "KEEP",
+  "borderline": true,
+  "reason": "Large drawing sets need a way in past upload caps; depends on SharePoint (OWN-44)."
+ },
+ {
+  "id": "TA-08",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Works around a Databricks proxy limit; Tiny Apps has no driver proxy, so the need there is unmeasured."
+ },
+ {
+  "id": "TA-10",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "A re-imported chart sidecar degrades to a static card; cosmetic edge."
+ },
+ {
+  "id": "TA-11",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Blocked by the tenant's broken static export; a geotech-page nicety."
+ },
+ {
+  "id": "TA-13",
+  "verdict": "PARK",
+  "borderline": true,
+  "reason": "Metering residue on the backup host; mostly log labels, though the budget decorator never running touches cost."
+ },
+ {
+  "id": "TA-14",
+  "verdict": "PARK",
+  "borderline": false,
+  "reason": "Adopting a Funhouse SDK feature whose status is unclear; speculative."
+ },
+ {
+  "id": "DOC-09",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Wrong counts and install lines in docs engineers read."
+ },
+ {
+  "id": "DOC-10",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The user manual is 30 releases behind; engineers rely on it."
+ },
+ {
+  "id": "DOC-11",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Wrong statements in module design docs."
+ },
+ {
+  "id": "DOC-12",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Stale statuses in validation ledgers the owner relies on."
+ },
+ {
+  "id": "DOC-22",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Stale counts and titles on published pages; wrong statements."
+ },
+ {
+  "id": "DOC-13",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Public planlens docs carry a wrong OCR recipe and stale maps."
+ },
+ {
+  "id": "DOC-16",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The report ingest README is stale, and report ingest is the first priority."
+ },
+ {
+  "id": "DOC-20",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "The owner's Harness Map shows stale summaries; a cheap offline refresh."
+ },
+ {
+  "id": "DOC-17",
+  "verdict": "KEEP",
+  "borderline": false,
+  "reason": "Stale pointers in docs; wrong statements."
+ }
+]
