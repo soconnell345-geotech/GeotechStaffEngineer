@@ -373,7 +373,9 @@ def test_a_real_gap_beside_runs_and_continuations_is_still_found():
     sh = _by_id(CL.run_checklist(rec))["completeness.summary_and_sheets"]
 
     assert sh["status"] == "fail", sh
-    assert "summary rows with no sheet: B-1 S-5 at 20 ft" in sh["detail"]
+    # RI-142: the row tabulates a water content, and no sheet reports it.
+    assert ("summary rows short of a sheet: B-1 S-5 at 20 ft (no "
+            "moisture_content sheet)") in sh["detail"]
     assert "B-1 S-2 at 7 ft (gradation, PDF page 14)" in sh["detail"]
     assert "B-9 S-1 at 5 ft (moisture_content, PDF pages 16-17)" in \
         sh["detail"]

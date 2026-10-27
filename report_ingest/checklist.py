@@ -349,6 +349,56 @@ def _sheet_kinds_on(rows: Sequence[Any], sheet: Any) -> bool:
     return any(sheet.kind in _kinds_named(r) for r in rows)
 
 
+def _reports(sheet: Any, column: str, kinds: Sequence[str]) -> bool:
+    """Whether ``sheet`` reports the test a summary row's ``column`` names:
+    the sheet is of one of its ``kinds``, or its result carries a reading
+    for the column (``reconciler.SHARED_VALUES``: the water content an
+    Atterberg or shear sheet prints, a consolidation sheet's dry unit
+    weight beside the row's dry density). The notion the summary-row match
+    joins by (RI-140)."""
+    from report_ingest.reconciler import SHARED_VALUES, _reading
+
+    if sheet.kind in kinds:
+        return True
+    result = getattr(sheet, "result", None)
+    return result is not None and any(
+        _reading(getattr(result, name, None))
+        for name in SHARED_VALUES.get(column, ()))
+
+
+def _tests_short(row: Any, got: Sequence[Any], tied: Sequence[Any]
+                 ) -> List[Tuple[str, ...]]:
+    """The tests a summary row tabulates that none of its sheets reports
+    (BACKLOG RI-142): each as the kinds of sheet that would, for every test
+    the row's columns name (``reconciler._tests_named``) that no sheet
+    joined to it (``got``) reports (:func:`_reports`). A test a sheet the
+    match could not place reports (``tied``: it is as close to another
+    specimen) is the tie's, not a gap. A test that a sheet of a kind already
+    short would settle is not said again (a USCS symbol, Atterberg or
+    gradation, beside limits that have no Atterberg sheet)."""
+    from report_ingest.reconciler import _tests_named
+
+    short: List[Tuple[str, ...]] = []
+    for column, kinds in _tests_named(row):
+        if any(_reports(s, column, kinds) for s in list(got) + list(tied)):
+            continue
+        if kinds not in short:
+            short.append(kinds)
+    return [kinds for kinds in short
+            if not any(set(other) < set(kinds) for other in short)]
+
+
+def _kinds_said(kinds: Sequence[str]) -> str:
+    """``("atterberg",)`` as ``atterberg``, ``("unconfined", "triaxial")``
+    as ``unconfined or triaxial``."""
+    return " or ".join(kinds)
+
+
+def _listed(names: Sequence[str], cap: int = 20) -> str:
+    more = f" (and {len(names) - cap} more)" if len(names) > cap else ""
+    return ", ".join(names[:cap]) + more
+
+
 def _printed(test: Any) -> Tuple[str, Optional[float], str]:
     """The hole a test is placed in, and the depth (m) and sample it prints,
     folded for matching; empty or ``None`` where there is none.
@@ -402,8 +452,8 @@ def _on_its_sheet(pages: Sequence[int], sheet_pages: Sequence[int]) -> bool:
 
 def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
                              ) -> Dict[str, Any]:
-    """Each summary-table row has a sheet, and each sheet of a kind the
-    summary tabulates is on it.
+    """Each summary-table row has a sheet for each test it tabulates, and
+    each sheet of a kind the summary tabulates is on it.
 
     A sheet may report one test run several times (a sieve analysis repeated
     on one sample) and one test may run over several pages; the record may
@@ -419,13 +469,21 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
     reconciler's summary-row match joins them (``reconciler.
     _summary_matches``, table by table: a test in common, the closest of
     each kind; RI-140), so a row is not taken for checked by another
-    sample's sheet of another test nearby. A row or a sheet the match
-    could not tell from another specimen is listed once, as a tie, and
-    makes the check ``unsure`` when nothing else is wrong. Rows printing
+    sample's sheet of another test nearby. A row is one specimen's results
+    gathered from several tests, and the match lets a sheet of its own
+    sample join it whatever the test; so a row whose columns name tests
+    needs, for each, a joined sheet that reports it (:func:`_tests_short`:
+    of a kind the column names, or carrying its value), and a row
+    tabulating limits and a grading whose sample has only a chemistry
+    sheet is listed as having no Atterberg and no gradation sheet (BACKLOG
+    RI-142). A row naming no test has a sheet where any joins it. A row or
+    a sheet the match could not tell from another specimen is listed once,
+    as a tie, and makes the check ``unsure`` when nothing else is wrong; a
+    test only such a sheet reports is the tie's, not a gap. Rows printing
     no hole, sample or depth are counted in the note, not listed.
     """
     from report_ingest.reconciler import (_names_no_specimen,
-                                          _summary_matches)
+                                          _summary_matches, _tests_named)
 
     rec = ctx.record
     if rec is None:
@@ -452,18 +510,21 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
 
     tied_rows = {id(r) for t_rows, _s in ties for r in t_rows}
     tied_sheets = {id(s) for _r, t_sheets in ties for s in t_sheets}
+    tied_with: Dict[int, List[Any]] = {}
+    for t_rows, t_sheets in ties:
+        for r in t_rows:
+            tied_with.setdefault(id(r), []).extend(t_sheets)
     nameless = sum(1 for r in rows if _names_no_specimen(r))
-    no_sheet = [name(r) for r, got in zip(rows, joined)
-                if not got and id(r) not in tied_rows
-                and not _names_no_specimen(r)]
     on_summary = {id(s) for got in joined for s in got}
     named = [id(s) in on_summary for s in sheets]
     pages = [_pages_of(s) for s in sheets]
     printed = [_printed(s) for s in sheets]
 
-    # The tests the summary names, and those counted with them.
+    # The tests the summary names, and those counted with them (each with
+    # the joined test it is counted with).
     on: Dict[int, Tuple[str, Optional[float], str]] = {
         i: printed[i] for i, yes in enumerate(named) if yes}
+    root: Dict[int, int] = {i: i for i in on}
     counted_with = 0
     grew = True
     while grew:
@@ -476,9 +537,42 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
                         and _on_its_sheet(pages[i], pages[j]) \
                         and _nothing_differs(printed[i], specimen):
                     on[i] = _fill(specimen, printed[i])
+                    root[i] = root[j]
                     counted_with += 1
                     grew = True
                     break
+    index = {id(s): i for i, s in enumerate(sheets)}
+    family: Dict[int, List[Any]] = {}
+    for i, j in root.items():
+        family.setdefault(j, []).append(sheets[i])
+
+    # A row naming no test has a sheet where any joins it; a row naming
+    # tests needs one reporting each (RI-142), among the tests joined to it
+    # and those counted with them (a shear test's water contents on the
+    # page after its results).
+    no_sheet: List[str] = []
+    # One line per row short of a sheet: rows some sheet joined first (a
+    # test of theirs has its sheet, another has none), then rows none did.
+    short: List[str] = []
+    short_of_all: List[str] = []
+    by_kinds: Dict[Tuple[str, ...], int] = {}
+    for r, got in zip(rows, joined):
+        if _names_no_specimen(r):
+            continue
+        if not _tests_named(r):
+            if not got and id(r) not in tied_rows:
+                no_sheet.append(name(r))
+            continue
+        with_theirs = [t for s in got
+                       for t in family.get(index.get(id(s), -1), [s])]
+        missing = _tests_short(r, with_theirs, tied_with.get(id(r), []))
+        if not missing:
+            continue
+        (short if got else short_of_all).append(
+            f"{name(r)} (" + ", ".join(f"no {_kinds_said(kinds)} sheet"
+                                       for kinds in missing) + ")")
+        for kinds in missing:
+            by_kinds[kinds] = by_kinds.get(kinds, 0) + 1
 
     # The rest, one line per specimen on a sheet, however many tests or
     # pages it was read as.
@@ -515,9 +609,19 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
     other_kinds = sorted({g["kind"] for g, yes in zip(off, tabulated)
                           if not yes})
     problems: List[str] = []
+    if by_kinds:
+        counts = ", ".join(
+            f"{n} with no {_kinds_said(kinds)} sheet" for kinds, n in
+            sorted(by_kinds.items(), key=lambda kv: (-kv[1], kv[0])))
+        problems.append(
+            f"{len(short) + len(short_of_all)} summary row(s) have no sheet "
+            f"for a test they tabulate ({len(short_of_all)} of them with no "
+            f"sheet joined at all): {counts}")
+        problems.append(f"summary rows short of a sheet: "
+                        f"{_listed(short + short_of_all, 15)}")
     if no_sheet:
-        problems.append(f"summary rows with no sheet: "
-                        f"{', '.join(no_sheet[:20])}")
+        problems.append(f"summary rows naming no test, with no sheet: "
+                        f"{_listed(no_sheet)}")
     if not_on:
         problems.append(f"sheets not on the summary: {', '.join(not_on[:20])}")
     entries = [_entry_line(e) for e in ctx.qa(("partial",),
@@ -558,12 +662,12 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         return out
     if ties:
         return {"status": "unsure",
-                "detail": f"every other summary row has a sheet and every "
-                          f"sheet of a kind the summary tabulates is on it"
-                          f"{note}"}
+                "detail": f"every other summary row has a sheet for each "
+                          f"test it tabulates and every sheet of a kind the "
+                          f"summary tabulates is on it{note}"}
     return {"status": "pass",
             "detail": f"all {len(rows) - nameless} summary rows have a sheet "
-                      f"and every "
+                      f"for each test they tabulate and every "
                       f"sheet of a kind the summary tabulates is on it{note}"}
 
 

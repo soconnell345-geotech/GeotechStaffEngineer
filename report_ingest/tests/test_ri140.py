@@ -120,7 +120,9 @@ class TestASharedTest:
         sh = _check(record)
 
         assert sh["status"] == "fail", sh
-        assert "summary rows with no sheet: QB-4 at 2.4 m" in sh["detail"]
+        # RI-142: said by the tests the row tabulates.
+        assert ("summary rows short of a sheet: QB-4 at 2.4 m (no atterberg "
+                "sheet, no moisture_content sheet)") in sh["detail"]
         assert not [e for e in record.qa if e.kind == "conflict"]
 
     def test_a_row_joins_its_atterberg_sheet_and_not_the_chemistry(self):
@@ -250,10 +252,12 @@ class TestATie:
         assert sorted(note.pages) == [19, 21, 22]
 
     def test_the_checklist_is_unsure_on_a_tie_alone(self):
+        # The row tabulates the limits only: a water content neither tied
+        # sheet prints would be a gap of its own (RI-142).
         record = reconcile(_record(
             _atterberg(sample="T-3", top=2.30, page=21),
             _atterberg(sample="T-4", top=2.50, page=22),
-            _summary(_index_row(top=2.40))))
+            _summary(_index_row(top=2.40, cells={"wc": None}))))
         sh = _check(record)
 
         assert sh["status"] == "unsure", sh
@@ -297,8 +301,9 @@ class TestARowNamingNoSpecimen:
             ([[]], [])
 
     def test_the_checklist_counts_it_apart(self):
+        # The sheet prints the row's water content too (RI-142).
         record = reconcile(_record(
-            _atterberg(),
+            _atterberg(ll=47.0, pl=22.0, pi=25.0, water_content=18.3),
             _summary(_index_row(), _row(hole="", top=None, ll=47.0))))
         sh = _check(record)
 
@@ -430,7 +435,8 @@ class TestAValueAlone:
         assert _match([row], [chem]) == ([[]], [])
         record = reconcile(_record(chem, _summary(row)))
         assert not [e for e in record.qa if e.kind == "conflict"]
-        assert "summary rows with no sheet: QB-4 T-3 at 2.4 m" in \
+        assert ("summary rows short of a sheet: QB-4 T-3 at 2.4 m (no "
+                "atterberg sheet, no moisture_content sheet)") in \
             _check(record)["detail"]
 
     def test_a_shared_value_joins_where_a_side_prints_no_sample(self):
