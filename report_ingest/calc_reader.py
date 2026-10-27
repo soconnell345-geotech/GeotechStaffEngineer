@@ -264,8 +264,10 @@ _NUMBER_RE = re.compile(
 #: A unit token as a printout spells one. Short, starts with a letter or a
 #: sign, and made of the characters a unit is made of. Anything longer is
 #: prose.
-_UNIT_TOKEN = (r"[A-Za-z%°'\"][A-Za-z0-9%°'\"./^·\-"
-               "‐‑‒–−]{0,11}")
+#: Superscript 2 and 3 (U+00B2, U+00B3) and both mu characters (micro sign
+#: U+00B5, Greek mu U+03BC) are unit characters; mu may open a unit (um/s).
+_UNIT_TOKEN = (r"[A-Za-z%°'\"µμ][A-Za-z0-9%°'\"./^·\-"
+               "‐‑‒–−²³µμ]{0,11}")
 _UNIT_LIKE = re.compile(r"^" + _UNIT_TOKEN + r"$")
 #: Words that trail a number and are NOT units. Short, because the loose
 #: rule above only has to keep out what a printed line actually ends with.
