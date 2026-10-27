@@ -120,7 +120,10 @@ class TestASharedTest:
         sh = _check(record)
 
         assert sh["status"] == "fail", sh
-        assert "summary rows with no sheet: QB-4 at 2.4 m" in sh["detail"]
+        # RI-142: said by the tests the row tabulates (its water content is
+        # a note: labs often report it on the summary only).
+        assert ("summary rows short of a sheet: QB-4 at 2.4 m (no atterberg "
+                "sheet)") in sh["detail"]
         assert not [e for e in record.qa if e.kind == "conflict"]
 
     def test_a_row_joins_its_atterberg_sheet_and_not_the_chemistry(self):
@@ -257,7 +260,12 @@ class TestATie:
         sh = _check(record)
 
         assert sh["status"] == "unsure", sh
-        assert "no sheet" not in sh["detail"]
+        # No row is listed as missing a sheet; the row's water content, on
+        # no sheet, is a note (RI-142).
+        assert "short of a sheet" not in sh["detail"]
+        assert "naming no test, with no sheet" not in sh["detail"]
+        assert "1 summary row(s) tabulate water content with no sheet" in \
+            sh["detail"]
         assert "not on the summary" not in sh["detail"]
         assert ("as close to more than one specimen, not matched (look at "
                 "the pages): QB-4 at 2.4 m (2 sheets: atterberg)"
@@ -430,8 +438,8 @@ class TestAValueAlone:
         assert _match([row], [chem]) == ([[]], [])
         record = reconcile(_record(chem, _summary(row)))
         assert not [e for e in record.qa if e.kind == "conflict"]
-        assert "summary rows with no sheet: QB-4 T-3 at 2.4 m" in \
-            _check(record)["detail"]
+        assert ("summary rows short of a sheet: QB-4 T-3 at 2.4 m (no "
+                "atterberg sheet)") in _check(record)["detail"]
 
     def test_a_shared_value_joins_where_a_side_prints_no_sample(self):
         row = _index_row()

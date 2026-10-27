@@ -1639,18 +1639,31 @@ def _heading_kinds(heading: Any) -> Set[str]:
     return out
 
 
+def _tests_named(row: Any) -> List[Tuple[str, Tuple[str, ...]]]:
+    """The tests a summary row reports, one per column holding a reading:
+    ``(column, the kinds of sheet that run its test)`` for every column of
+    :data:`COLUMN_KINDS`, and ``(heading, kinds)`` for every heading in
+    ``other`` whose cell holds one and names a test
+    (:data:`_HEADING_KINDS`). A column naming several kinds is one test any
+    of them runs (a qu off an unconfined test or a UU triaxial). The
+    checklist asks each of these for a sheet (RI-142)."""
+    tests: List[Tuple[str, Tuple[str, ...]]] = []
+    for column, of in COLUMN_KINDS.items():
+        if _reading(getattr(row, column, None)):
+            tests.append((column, of))
+    for heading, cell in getattr(row, "other", None) or ():
+        if _reading(cell):
+            kinds = _heading_kinds(heading)
+            if kinds:
+                tests.append((str(heading), tuple(sorted(kinds))))
+    return tests
+
+
 def _kinds_named(row: Any) -> Set[str]:
     """The kinds of sheet a summary row's columns name: those of every
     column holding a reading (:data:`COLUMN_KINDS`), and of every heading
-    in ``other`` whose cell holds one."""
-    kinds: Set[str] = set()
-    for column, of in COLUMN_KINDS.items():
-        if _reading(getattr(row, column, None)):
-            kinds.update(of)
-    for heading, cell in getattr(row, "other", None) or ():
-        if _reading(cell):
-            kinds |= _heading_kinds(heading)
-    return kinds
+    in ``other`` whose cell holds one (:func:`_tests_named`)."""
+    return {kind for _column, of in _tests_named(row) for kind in of}
 
 
 def _shares_a_value(row: Any, sheet: LabTest) -> bool:
