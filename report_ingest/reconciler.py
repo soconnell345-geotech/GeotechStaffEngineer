@@ -36,7 +36,10 @@ against the investigations the appendix actually yielded.
 
 **Cross-checks the summary table.** Most reports print a "Summary of
 Laboratory Tests" table; every value in it that also appears on a sheet is
-compared, and only the disagreements are recorded.
+compared, and only the disagreements are recorded. A row is set beside a
+sheet of its hole and depth only when the two share a test, and of several
+such sheets of one kind the closest is taken; two that cannot be told apart
+are both left out and said in a note (RI-140).
 
 **Checks each log against itself.** A driven record's drives must add up to
 its interval (read the way the DIGGS writer will write them), its number of
@@ -1500,14 +1503,19 @@ def _cross_check_summary_table(record: ReportRecord,
     A disagreement is recorded with BOTH values and BOTH pages and is never
     resolved: the table is a transcription and the sheet is the measurement,
     but which of the two was mis-transcribed is a question for the pages.
+    A row and a sheet are compared only where :func:`_summary_matches`
+    joins them; where it cannot tell two specimens apart it joins neither
+    and says so in a note (RI-140).
     """
     tables = [t for t in record.lab_tests if t.kind == "summary_table"]
     sheets = [t for t in record.lab_tests if t.kind != "summary_table"]
     if not tables or not sheets:
         return
     for table in tables:
-        for row in list(getattr(table.result, "rows", ()) or ()):
-            for sheet in _sheets_for(row, sheets):
+        rows = list(getattr(table.result, "rows", ()) or ())
+        joined, ties = _summary_matches(rows, sheets)
+        for row, got in zip(rows, joined):
+            for sheet in got:
                 for column, names in CROSS_CHECKS.items():
                     ours = getattr(row, column, None)
                     theirs = _result_value(sheet, names)
@@ -1525,31 +1533,361 @@ def _cross_check_summary_table(record: ReportRecord,
                                     f"{sheet.kind} sheet {_show(theirs)}"],
                             pages=sorted(set(list(table.pages)
                                              + list(sheet.pages)))))
+        _note_ties(table, ties, qa)
 
 
-def _sheets_for(row: Any, sheets: Sequence[LabTest]) -> List[LabTest]:
-    """The sheets that report on the same specimen as this row.
+# -- which sheet a summary row is (RI-140) -----------------------------------
+#
+# A summary row is one specimen's results gathered from several tests, and a
+# sheet is one test on one specimen. Matching them by hole and depth window
+# alone joined an index-test row to another sample's chemistry sheet in the
+# same hole a few centimetres off (RI-115's review, on a saved record): the
+# cross-check then compared nothing, and the checklist took the row's
+# missing Atterberg sheet for found. So a row and a sheet are joined only
+# when they share a test, and each picks the closest of its rivals.
 
-    Row and sheet are each taken in the hole they are placed in
-    (:func:`~report_ingest.model.lab_hole`: the link this pass made, else
-    the boring as printed), so a sheet that printed its hole only in the
-    specimen label meets the row that names that hole (RI-115). A record
-    nobody linked compares the printed borings, as before.
-    """
-    out: List[LabTest] = []
+#: Two depths this close, in metres, are one depth: a depth printed in feet
+#: on one side and in metres to the centimetre on the other, or 1.5 ft
+#: beside 0.45 m. An interval matches EXACTLY when its top does and its
+#: bottom does too (or neither side prints a bottom); anything else inside
+#: :data:`DEPTH_TOL_M` is a window match.
+EXACT_TOL_M = 0.01
+
+#: ``summary-table column -> the kinds of sheet that run that test``. A
+#: column names the test: a row reporting a liquid limit came off an
+#: Atterberg sheet, whatever that sheet's own result came back holding (a
+#: non-plastic soil prints no limits). A value both sides carry
+#: (:data:`CROSS_CHECKS`) joins them as well: the water content an
+#: Atterberg or a chemistry sheet prints beside its own results.
+COLUMN_KINDS: Dict[str, Tuple[str, ...]] = {
+    "ll": ("atterberg",), "pl": ("atterberg",), "pi": ("atterberg",),
+    "wc": ("moisture_content",),
+    "percent_passing": ("gradation",), "fines_percent": ("gradation",),
+    "sand_percent": ("gradation",), "gravel_percent": ("gradation",),
+    "silt_clay_percent": ("gradation",),
+    "wet_density": ("density",), "dry_density": ("density",),
+    "max_dry_density": ("compaction",), "optimum_wc": ("compaction",),
+    "qu": ("unconfined", "unconfined_rock"),
+    "su": ("unconfined", "triaxial"),
+    "c": ("triaxial", "direct_shear"),
+    "phi_deg": ("triaxial", "direct_shear"),
+    "swell_percent": ("swell_consolidation",),
+    "organic_percent": ("organic_content",),
+    "pH": ("chemical",), "resistivity": ("chemical",),
+    "sulfate": ("chemical",), "chloride": ("chemical",),
+    "sulfides": ("chemical",), "redox": ("chemical",),
+}
+
+#: Words a cell prints for "nothing here", folded (:func:`fold_id`): a
+#: dash folds to nothing; these are "n/a" and "not tested". "NP" and "<10"
+#: are results and stay readings.
+_EMPTY_CELL_WORDS: Tuple[str, ...] = ("NA", "NT")
+
+
+def _reading(value: Any) -> bool:
+    """Whether a cell holds a reading: a number, a quantity, a list of
+    points, or words such as ``NP`` or ``<10`` -- not a dash or n/a."""
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple)):
+        return bool(value)
+    if isinstance(value, str):
+        folded = fold_id(value)
+        return bool(folded) and folded not in _EMPTY_CELL_WORDS
+    return True
+
+
+def _shares_a_test(row: Any, sheet: LabTest) -> bool:
+    """A test this row reports and this sheet runs: the sheet's kind is one
+    the row's columns name, or both carry a value for one column."""
+    for column, kinds in COLUMN_KINDS.items():
+        if sheet.kind in kinds and _reading(getattr(row, column, None)):
+            return True
+    result = sheet.result
+    if result is None:
+        return False
+    for column, names in CROSS_CHECKS.items():
+        if _reading(getattr(row, column, None)) and any(
+                _reading(getattr(result, name, None)) for name in names):
+            return True
+    return False
+
+
+def _sample_keys(test: Any) -> Set[str]:
+    """The names a row or a sheet gives its sample, folded for matching:
+    the one the reconciler linked it to and the one it printed (a sheet
+    linked to the log's ``5`` still printed ``S-5``), each with a hole
+    printed at the head of the label dropped (``"SB-1, S-2"`` in SB-1 is
+    S-2) and leading zeros folded (S-02 is S-2). Empty when it names none.
+    Two samples agree when they share a name."""
+    hole = hole_key(lab_hole(test))
+    out: Set[str] = set()
+    for text in (getattr(test, "linked_sample_id", ""),
+                 getattr(test, "sample_id", "")):
+        text = str(text or "")
+        if hole:
+            head, rest = _leading_hole(text, {hole})
+            if head and hole_key(rest):
+                text = rest
+        if hole_key(text):
+            out.add(hole_key(text))
+    return out
+
+
+def _names_another(a: Any, b: Any) -> bool:
+    """Whether two rows or two sheets name different specimens: each prints
+    a hole, a sample, a top or a bottom, and they differ."""
+    ha, hb = hole_key(lab_hole(a)), hole_key(lab_hole(b))
+    if ha and hb and ha != hb:
+        return True
+    sa, sb = _sample_keys(a), _sample_keys(b)
+    if sa and sb and not sa & sb:
+        return True
+    for field in ("depth_top", "depth_bottom"):
+        da = depth_m(getattr(a, field, None))
+        db = depth_m(getattr(b, field, None))
+        if da is not None and db is not None and abs(da - db) > EXACT_TOL_M:
+            return True
+    return False
+
+
+def _closeness(a: Any, b: Any) -> Tuple[float, int]:
+    """How far a row's interval is from a sheet's: the gap between their
+    tops in metres (0 within :data:`EXACT_TOL_M`), then 0 where their
+    bottoms agree or neither prints one, 1 otherwise. ``(0, 0)`` is an
+    exact interval match; where either prints no top nothing is known,
+    ``(inf, 0)`` for every rival alike."""
+    top_a, top_b = depth_m(a.depth_top), depth_m(b.depth_top)
+    if top_a is None or top_b is None:
+        return math.inf, 0
+    gap = abs(top_a - top_b)
+    if gap <= EXACT_TOL_M:
+        gap = 0.0
+    bot_a, bot_b = depth_m(a.depth_bottom), depth_m(b.depth_bottom)
+    if bot_a is None and bot_b is None:
+        same_bottom = True
+    else:
+        same_bottom = (bot_a is not None and bot_b is not None
+                       and abs(bot_a - bot_b) <= EXACT_TOL_M)
+    return gap, 0 if same_bottom else 1
+
+
+def _as_close(key: Tuple[float, int], best: Tuple[float, int]) -> bool:
+    if key[1] != best[1]:
+        return False
+    if math.isinf(best[0]):
+        return math.isinf(key[0])
+    return key[0] - best[0] <= EXACT_TOL_M
+
+
+def _closest(to: Any, rivals: Sequence[Any]) -> Tuple[List[Any], List[Any]]:
+    """``(won, tied)``: the rivals closest to ``to`` (:func:`_closeness`),
+    or, where those name different specimens and a sample both print does
+    not pick one out, none -- and those rivals as the tie."""
+    if not rivals:
+        return [], []
+    keyed = [(_closeness(to, r), r) for r in rivals]
+    best = min(key for key, _r in keyed)
+    near = [r for key, r in keyed if _as_close(key, best)]
+    if not _apart(near):
+        return near, []
+    mine = _sample_keys(to)
+    agree = [r for r in near if mine & _sample_keys(r)]
+    if agree and not _apart(agree):
+        return agree, []
+    return [], near
+
+
+def _apart(group: Sequence[Any]) -> bool:
+    return any(_names_another(a, b)
+               for i, a in enumerate(group) for b in group[i + 1:])
+
+
+def _may_join(row: Any, sheet: LabTest) -> bool:
+    """Whether ``sheet`` may report on ``row``'s specimen: in the same hole
+    (:func:`~report_ingest.model.lab_hole` on both: the link this pass
+    made, else the boring as printed, RI-115), its top within
+    :data:`DEPTH_TOL_M` of the row's (or, for a row with no depth, the same
+    sample where the row prints one), and a test in common
+    (:func:`_shares_a_test`) or a sample both name alike."""
     hole = hole_key(lab_hole(row))
+    if hole and hole_key(lab_hole(sheet)) != hole:
+        return False
+    sample = _sample_keys(row)
     depth = depth_m(row.depth_top)
+    if depth is not None:
+        got = depth_m(sheet.depth_top)
+        if got is None or abs(got - depth) > DEPTH_TOL_M:
+            return False
+    elif sample and not sample & _sample_keys(sheet):
+        return False
+    return _shares_a_test(row, sheet) or bool(sample & _sample_keys(sheet))
+
+
+def _its_sample_first(row: Any, mine: List[LabTest]) -> List[LabTest]:
+    """``mine`` less the sheets naming another sample, where some name the
+    row's own: a row printing ``S-3`` whose grading sheet says S-3 is S-3,
+    and an Atterberg sheet of S-4 at that depth is another specimen. Where
+    none names the row's sample (the sheets number samples their own way),
+    all stay."""
+    keys = _sample_keys(row)
+    if not keys or not any(keys & _sample_keys(s) for s in mine):
+        return mine
+    return [s for s in mine
+            if not _sample_keys(s) or keys & _sample_keys(s)]
+
+
+def _names_no_specimen(row: Any) -> bool:
+    """Whether a summary row prints no hole, no sample and no depth: a
+    line of the table as read (a heading, a note, a row's second line),
+    with nothing to find its sheet by. It is matched to none."""
+    return (not hole_key(lab_hole(row)) and depth_m(row.depth_top) is None
+            and not _sample_keys(row))
+
+
+def _placed(row: Any, mine: List[LabTest]
+            ) -> Tuple[List[LabTest], List[LabTest]]:
+    """``(mine, [])``, or ``([], mine)`` where the row names too little of
+    its specimen to choose among them. A row printing no hole is looked
+    for in every hole, so where its sheets lie in more than one, only those
+    naming its own sample are its own (none: it cannot choose). A row
+    printing neither a depth nor a sample is placed by its hole alone, so
+    its sheets must name one specimen."""
+    keys = _sample_keys(row)
+    if not hole_key(lab_hole(row)):
+        holes = {hole_key(lab_hole(s)) for s in mine} - {""}
+        if len(holes) > 1:
+            agree = [s for s in mine if keys & _sample_keys(s)]
+            if not agree:
+                return [], mine
+            mine = agree
+    if depth_m(row.depth_top) is None and not keys and _apart(mine):
+        return [], mine
+    return mine, []
+
+
+def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
+                     ) -> Tuple[List[List[LabTest]],
+                                List[Tuple[List[Any], List[LabTest]]]]:
+    """Which sheets each row of ONE summary table reports on (BACKLOG
+    RI-140), and the ties: ``(joined, ties)``, ``joined[i]`` the sheets of
+    ``rows[i]``, each tie ``(rows, sheets)`` that could not be told apart.
+
+    A row printing no hole, sample or depth joins nothing
+    (:func:`_names_no_specimen`). A row may join a sheet that
+    :func:`_may_join` it; where some of those
+    name the row's own sample, those naming another sample drop out
+    (:func:`_its_sample_first`). Of the sheets of one kind left, the row
+    takes the closest (:func:`_closeness`: an exact interval before a
+    window match, then the nearer top); a row is one specimen and reports
+    each test once, so a second specimen's sheet of the same kind a few
+    centimetres off is not its own. Sheets of other kinds -- its Atterberg
+    and its grading sheet -- each join it on their own. A row that names
+    too little of its specimen to choose (:func:`_placed`: no hole and
+    sheets in several holes none of which names its sample; neither a
+    depth nor a sample and sheets naming several specimens) joins none of
+    them, a tie. A sheet taken by several rows of the table stays with the
+    closest of them: the table prints each specimen once. Where the
+    closest rivals name different
+    specimens (a hole, a sample or a depth that differs) and no sample
+    both name picks one out, nothing is joined: the tie is returned to be
+    said, not guessed. Rivals that name no different specimen -- one test
+    run three times on a sheet, a test read as one per page -- all join.
+    """
+    picked: List[List[LabTest]] = []
+    ties: List[Tuple[List[Any], List[LabTest]]] = []
+    for row in rows:
+        if _names_no_specimen(row):
+            picked.append([])
+            continue
+        mine, unplaced = _placed(row, _its_sample_first(
+            row, [s for s in sheets if _may_join(row, s)]))
+        if unplaced:
+            ties.append(([row], unplaced))
+            picked.append([])
+            continue
+        if depth_m(row.depth_top) is None and not _sample_keys(row):
+            picked.append(mine)                 # one specimen (_placed)
+            continue
+        chosen: List[LabTest] = []
+        for kind in dict.fromkeys(s.kind for s in mine):
+            won, tied = _closest(row, [s for s in mine if s.kind == kind])
+            chosen.extend(won)
+            if tied:
+                ties.append(([row], list(tied)))
+        picked.append(chosen)
+    joined: List[List[LabTest]] = [[] for _ in rows]
     for sheet in sheets:
-        if hole and hole_key(lab_hole(sheet)) != hole:
+        takers = [i for i, chosen in enumerate(picked)
+                  if any(s is sheet for s in chosen)]
+        if not takers:
             continue
-        if depth is not None:
-            got = depth_m(sheet.depth_top)
-            if got is None or abs(got - depth) > DEPTH_TOL_M:
-                continue
-        elif fold_id(row.sample_id) and \
-                fold_id(sheet.sample_id) != fold_id(row.sample_id):
+        won, tied = _closest(sheet, [rows[i] for i in takers])
+        if tied:
+            ties.append((list(tied), [sheet]))
             continue
-        out.append(sheet)
+        for i in takers:
+            if any(r is rows[i] for r in won):
+                joined[i].append(sheet)
+    return joined, ties
+
+
+def _sheets_for(row: Any, sheets: Sequence[LabTest],
+                rows: Sequence[Any] = ()) -> List[LabTest]:
+    """The sheets that report on the same specimen as this row: the row's
+    share of :func:`_summary_matches` over ``rows``, the other rows of its
+    table (none given: the row alone)."""
+    table = list(rows)
+    if not any(r is row for r in table):
+        table.append(row)
+    joined, _ties = _summary_matches(table, sheets)
+    return next(got for r, got in zip(table, joined) if r is row)
+
+
+def _specimen(test: Any) -> str:
+    """A row or a sheet as a reviewer finds it: hole, sample, depth."""
+    at = f" at {_show(test.depth_top)}" if test.depth_top else ""
+    return (f"{lab_hole(test) or '?'} {test.sample_id or ''}".strip()
+            + at)
+
+
+def _note_ties(table: LabTest, ties: Sequence[Tuple[List[Any],
+                                                    List[LabTest]]],
+               qa: List[QAEntry]) -> None:
+    """One note per row that could not tell its sheets apart, and one per
+    sheet that could not tell its rows apart, ranked open."""
+    by_row: Dict[int, Tuple[Any, List[LabTest]]] = {}
+    for rows, sheets in ties:
+        if len(rows) == 1:
+            by_row.setdefault(id(rows[0]), (rows[0], []))[1].extend(sheets)
+            continue
+        (sheet,) = sheets
+        qa.append(QAEntry(
+            kind="note", rank="open",
+            where=f"lab_tests.summary_table at {_specimen(sheet)}",
+            detail=f"the {sheet.kind} sheet is as close to {len(rows)} rows "
+                   f"of the summary table that name different specimens; "
+                   f"it is cross-checked against none of them",
+            values=[f"summary row {_specimen(r)}" for r in rows[:8]],
+            pages=sorted(set(list(table.pages) + list(sheet.pages)))))
+    for row, sheets in by_row.values():
+        kinds = ", ".join(f"{n} {kind}" for kind, n in
+                          _count_kinds(sheets).items())
+        qa.append(QAEntry(
+            kind="note", rank="open",
+            where=f"lab_tests.summary_table at {_specimen(row)}",
+            detail=f"the summary row is as close to sheets that name "
+                   f"different specimens ({kinds}); it is cross-checked "
+                   f"against none of them",
+            values=[f"{s.kind} sheet {_specimen(s)}" for s in sheets[:8]],
+            pages=sorted(set(list(table.pages)
+                             + [p for s in sheets for p in s.pages]))))
+
+
+def _count_kinds(sheets: Sequence[LabTest]) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for sheet in sheets:
+        out[sheet.kind] = out.get(sheet.kind, 0) + 1
     return out
 
 

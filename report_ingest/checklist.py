@@ -361,7 +361,7 @@ def _printed(test: Any) -> Tuple[str, Optional[float], str]:
 
     The hole is :func:`~report_ingest.model.lab_hole` (the reconciler's
     link, else the boring as printed), the one the summary-row match
-    (``reconciler._sheets_for``) reads, so a sheet that printed its hole
+    (``reconciler._summary_matches``) reads, so a sheet that printed its hole
     only in the specimen label is not taken for a specimen of no hole
     (RI-115)."""
     from report_ingest.model import lab_hole
@@ -420,8 +420,18 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
     takes as the same specimen (``lab_reader._specimen_starts``: a page that
     prints none is a continuation of the one before it). A test that names
     another sample or depth is still a sheet the summary leaves out.
+
+    A row has a sheet, and a sheet is on the summary, where the
+    reconciler's summary-row match joins them (``reconciler.
+    _summary_matches``, table by table: a test in common, the closest of
+    each kind; RI-140), so a row is not taken for checked by another
+    sample's sheet of another test nearby. A row or a sheet the match
+    could not tell from another specimen is listed once, as a tie, and
+    makes the check ``unsure`` when nothing else is wrong. Rows printing
+    no hole, sample or depth are counted in the note, not listed.
     """
-    from report_ingest.reconciler import _sheets_for
+    from report_ingest.reconciler import (_names_no_specimen,
+                                          _summary_matches)
 
     rec = ctx.record
     if rec is None:
@@ -430,16 +440,30 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
     if not tables:
         return {"status": "not_run",
                 "detail": "the record holds no laboratory summary table"}
-    rows = [r for t in tables for r in (getattr(t.result, "rows", None) or [])]
     sheets = ctx.sheets()
+    rows: List[Any] = []
+    joined: List[List[Any]] = []
+    ties: List[Tuple[List[Any], List[Any]]] = []
+    for table in tables:
+        table_rows = list(getattr(table.result, "rows", None) or [])
+        got, tied = _summary_matches(table_rows, sheets)
+        rows += table_rows
+        joined += got
+        ties += tied
 
     def name(x: Any) -> str:
         depth = getattr(x, "depth_top", None)
         at = f" at {depth.value:g} {depth.unit}".rstrip() if depth else ""
         return f"{x.investigation_id or '?'} {x.sample_id or ''}".strip() + at
 
-    no_sheet = [name(r) for r in rows if not _sheets_for(r, sheets)]
-    named = [any(_sheets_for(r, [s]) for r in rows) for s in sheets]
+    tied_rows = {id(r) for t_rows, _s in ties for r in t_rows}
+    tied_sheets = {id(s) for _r, t_sheets in ties for s in t_sheets}
+    nameless = sum(1 for r in rows if _names_no_specimen(r))
+    no_sheet = [name(r) for r, got in zip(rows, joined)
+                if not got and id(r) not in tied_rows
+                and not _names_no_specimen(r)]
+    on_summary = {id(s) for got in joined for s in got}
+    named = [id(s) in on_summary for s in sheets]
     pages = [_pages_of(s) for s in sheets]
     printed = [_printed(s) for s in sheets]
 
@@ -487,6 +511,10 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
               f"{_pdf(group['pages'])}" if group["pages"] else "")
         return f"{name(first)} ({group['kind']}{at})"
 
+    # A sheet the match could not tell between two rows is said with the
+    # tie, not again as a sheet left off.
+    off = [g for g in off if not any(id(t) in tied_sheets
+                                     for t in g["tests"])]
     tabulated = [any(_sheet_kinds_on(rows, t) for t in g["tests"])
                  for g in off]
     not_on = [where(g) for g, yes in zip(off, tabulated) if yes]
@@ -506,6 +534,26 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         note += (f"; {counted_with} more test(s) on a summary sample's sheet "
                  "or the page after it, naming no other specimen, counted "
                  "with it (a test run again, or one over several pages)")
+    if nameless:
+        note += (f"; {nameless} summary row(s) print no hole, sample or "
+                 f"depth and are matched to no sheet")
+    if ties:
+        # One line per tied row (its ties of every kind) and per tied sheet.
+        lines: Dict[Any, Tuple[Any, List[Any]]] = {}
+        for t_rows, t_sheets in ties:
+            if len(t_rows) == 1:
+                key: Any = ("row", id(t_rows[0]))
+                lines.setdefault(key, (t_rows[0], []))[1].extend(t_sheets)
+            else:
+                lines[("sheet", id(t_sheets[0]))] = (t_sheets[0], t_rows)
+        said = [f"{name(x)} ({len(rivals)} sheets: "
+                f"{', '.join(sorted({s.kind for s in rivals}))})"
+                if side == "row" else
+                f"{name(x)} ({x.kind}, {len(rivals)} summary rows)"
+                for (side, _i), (x, rivals) in lines.items()]
+        note += (f"; summary rows and sheets as close to more than one "
+                 f"specimen, not matched (look at the pages): "
+                 f"{', '.join(said[:20])}")
     if problems or entries:
         out = {"status": "fail",
                "detail": "; ".join(problems or ["the summary names "
@@ -514,8 +562,14 @@ def check_summary_and_sheets(ctx: CheckContext, item: Dict[str, Any]
         if entries:
             out["entries"] = entries[:5]
         return out
+    if ties:
+        return {"status": "unsure",
+                "detail": f"every other summary row has a sheet and every "
+                          f"sheet of a kind the summary tabulates is on it"
+                          f"{note}"}
     return {"status": "pass",
-            "detail": f"all {len(rows)} summary rows have a sheet and every "
+            "detail": f"all {len(rows) - nameless} summary rows have a sheet "
+                      f"and every "
                       f"sheet of a kind the summary tabulates is on it{note}"}
 
 
