@@ -2768,6 +2768,61 @@ class TestCallsByStep:
                           if line.startswith("R36     bound1"))
         assert bound_line.split()[-1] == "5", "no unattributed cell"
 
+    def _two_narratives(self, tmp_path, newer_is_plain):
+        import os
+        folder = tmp_path / "R90"
+        self._write(folder / "items" / "n1.json",
+                    {"general": {}, "cost": {"calls": 4}})
+        self._write(folder / "items" / "n1-skips-bound.json",
+                    {"general": {}, "cost": {"calls": 2}})
+        self._write(folder / "items" / "c.json",
+                    {"calculation": {}, "cost": {"calls": 1}})
+        newer, older = (("n1", "n1-skips-bound") if newer_is_plain
+                        else ("n1-skips-bound", "n1"))
+        os.utime(folder / "items" / f"{older}.json", (1_000_000, 1_000_000))
+        os.utime(folder / "items" / f"{newer}.json", (2_000_000, 2_000_000))
+        return folder
+
+    def test_a_reread_narrative_is_counted_once_by_the_recorded_key(
+            self, tmp_path):
+        # The newer file is the plain one, but the run says the bound
+        # window was skipped: the key, not the file time, picks the file.
+        folder = self._two_narratives(tmp_path, newer_is_plain=True)
+        got = cs._ingest_steps(folder, True)
+        row = got["calls_by_step"]["report"]
+        assert row["narrative"] == 2 and row["narrative items"] == 1
+        assert got["superseded_item_files"] == {"report": {"narrative": {
+            "files": 1, "calls": 4, "chosen_by": "key"}}}
+        text = "\n".join(cs._step_lines([{"id": "R90", "cost": {"calls": 3},
+                                          **got}]))
+        assert "1 older narrative item file(s)" in text
+        assert "(4 calls)" in text
+        assert "picked by the run's recorded narrative_skips_bound" in text
+
+    def test_the_switch_off_picks_the_plain_file(self, tmp_path):
+        folder = self._two_narratives(tmp_path, newer_is_plain=False)
+        row = cs._ingest_steps(folder, False)["calls_by_step"]["report"]
+        assert row["narrative"] == 4
+
+    def test_no_recorded_switch_falls_back_to_file_time_and_says_so(
+            self, tmp_path):
+        folder = self._two_narratives(tmp_path, newer_is_plain=True)
+        got = cs._ingest_steps(folder)
+        assert got["calls_by_step"]["report"]["narrative"] == 4
+        assert got["superseded_item_files"]["report"]["narrative"][
+            "chosen_by"] == "mtime"
+        text = "\n".join(cs._step_lines([{"id": "R90", "cost": {"calls": 5},
+                                          **got}]))
+        assert "newest by file time" in text
+
+    def test_one_narrative_file_has_nothing_superseded(self, tmp_path):
+        folder = tmp_path / "R91"
+        self._write(folder / "items" / "n.json",
+                    {"general": {}, "cost": {"calls": 3}})
+        got = cs._ingest_steps(folder, True)
+        assert "superseded_item_files" not in got
+        assert got["calls_by_step"]["report"]["narrative items"] == 1
+
     def test_the_ingest_stage_writes_them_into_its_run_file(
             self, ingest_cluster):
         from report_ingest.tests import test_graph as tg
@@ -4742,3 +4797,30 @@ class TestUnfinishedReportsInTheCost:
             scored = cs._score_ingest(done, {}, "m", unfinished)
             assert "cost_unfinished" not in scored
             assert "cost_every_report" not in scored
+
+
+class TestIngestSwitchLinesRI128:
+
+    @staticmethod
+    def _row(rid, **switches):
+        return {"id": rid, "cost": {}, "switches": switches}
+
+    def test_differing_switches_say_mixed_with_counts(self):
+        rows = [self._row("R90", ingest_bound=True, counts_from_logs="off",
+                          narrative_skips_bound=False),
+                self._row("R91", ingest_bound=True,
+                          counts_from_logs="fill",
+                          narrative_skips_bound=False)]
+        text = "\n".join(cs._switch_lines(rows))
+        assert ("`counts_from_logs`): fill for 1 report and off for 1 "
+                "report -- MIXED") in text
+        assert "`narrative_skips_bound`): off for 2 reports." in text
+        assert "`ingest_bound`): on for 2 reports." in text
+
+    def test_an_old_run_file_says_not_recorded_and_the_block_renders(self):
+        text = "\n".join(cs._render_ingest(cs._score_ingest(
+            {"R90": {"id": "R90", "cost": {}},
+             "R91": {"id": "R91", "cost": {},
+                     "switches": {"counts_from_logs": "off"}}}, {}, "m")))
+        assert ("`counts_from_logs`): off for 1 report and not recorded "
+                "for 1 report -- MIXED") in text
