@@ -141,6 +141,21 @@ class TestWhatTheModelIsShown:
         assert "WHAT THE FORM READER WARNS ABOUT THESE PAGES" in brief
         assert "SANDY LEAN CLAY" in brief
 
+    def test_a_phone_shaped_item_title_is_not_quoted(self, imperial):
+        # RI-156: planlens read a letterhead's telephone line as an id.
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        read_log(doc, [0], engine, item_title="TÉL-55")
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "The document titles it" not in brief
+
+    def test_a_hole_item_title_is_still_quoted(self, imperial):
+        doc, _gt = imperial
+        engine = FakeEngine([{"final": _good_imperial_reading()}])
+        read_log(doc, [0], engine, item_title="BH-12")
+        brief = engine.calls[0]["messages"][0]["content"][0]["text"]
+        assert "The document titles it: BH-12" in brief
+
     def test_the_brief_states_the_unit_the_grid_settled_on(self, imperial):
         doc, _gt = imperial
         engine = FakeEngine([{"final": _good_imperial_reading()}])

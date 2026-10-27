@@ -609,3 +609,17 @@ class TestATelephoneLineIsNotAHole:
         assert split_log_items(doc, [item]) == [item]
         assert all(h.text == "QX-1"
                    for h in item_holes(doc, range(8)).values())
+
+    @pytest.mark.parametrize("title, phone", [
+        ("TEL-55", True), ("TÉL-55", True), ("FAX-55", True),
+        ("BH-1", False), ("PH-1", False), ("TP-3", False)])
+    def test_a_title_that_is_a_phone_line(self, title, phone):
+        from report_ingest.log_holes import is_phone_line
+        assert is_phone_line(title) is phone
+
+    def test_a_part_with_no_hole_does_not_keep_a_phone_title(self):
+        doc = _Doc({0: _header("QX-1"), 1: _header("QX-2"),
+                    2: [_at("Sheet 2 of 2", 440, 52, 60)]})
+        item = _Item("item_9", "boring_log", [0, 1, 2], "TÉL-55")
+        out = split_log_items(doc, [item])
+        assert len(out) == 2 and all(i.title != "TÉL-55" for i in out)

@@ -66,6 +66,7 @@ from report_ingest.engine import (  # noqa: F401 -- the sizing, re-exported
 )
 from report_ingest.floor import MergeLog
 from report_ingest.lab_reader import MAX_DEPTH_M
+from report_ingest.log_holes import is_phone_line
 from report_ingest.log_floor import (
     _SAMPLE_FAMILY, merge_investigations, seed_from_grid, serialise_seed,
 )
@@ -755,7 +756,9 @@ def _brief(grid: Any, pages: Sequence[int], ledger: Sequence[str],
         f"ONE EXPLORATION LOG, on page(s) {', '.join(str(p) for p in pages)}"
         + (f" of report {report_id}" if report_id else "") + ".",
     ]
-    if item_title:
+    if item_title and not is_phone_line(item_title):
+        # RI-156: planlens < the fix reads a letterhead's telephone line as
+        # an exploration id; it is no title.
         parts.append(f"The document titles it: {item_title}")
     if other_holes:
         # RI-117: only when a page of the item names another hole.
