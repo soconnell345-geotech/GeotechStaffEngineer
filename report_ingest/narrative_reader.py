@@ -1053,25 +1053,28 @@ def explorations_found(investigations: Sequence[Any]) -> Dict[str, Any]:
     once. Names are matched the way the reconciler matches them (``B-1``,
     ``B 1``, ``b1`` and ``B-01`` are one hole), the first spelling is kept, and a log
     that printed no name is one hole of its own, since there is nothing to
-    tell it from another.
+    tell it from another. Two holes the report prints under one name, kept
+    apart by the reconciler (a qualifier beside each, RI-135), are two
+    holes, and the name is listed for each.
     """
-    from report_ingest.reconciler import hole_key
+    from report_ingest.shared_names import hole_identity
 
-    by_kind: Dict[str, List[str]] = {}
+    by_kind: Dict[str, List[Tuple[str, str]]] = {}
     for inv in investigations or ():
         kind = str(getattr(inv, "kind", "") or "")
         name = str(getattr(inv, "investigation_id", "") or "").strip()
-        by_kind.setdefault(kind, []).append(name)
+        by_kind.setdefault(kind, []).append((name, hole_identity(inv)))
     if not by_kind:
         return {}
 
-    def holes(names: Sequence[str]) -> Tuple[List[str], int]:
-        """(the distinct names, in order, and how many logs had none)."""
+    def holes(names: Sequence[Tuple[str, str]]) -> Tuple[List[str], int]:
+        """(the distinct holes' names, in order, and how many logs had
+        none)."""
         seen: Dict[str, str] = {}
-        for name in names:
-            if name and hole_key(name) not in seen:
-                seen[hole_key(name)] = name
-        return list(seen.values()), sum(1 for name in names if not name)
+        for name, identity in names:
+            if name and identity not in seen:
+                seen[identity] = name
+        return list(seen.values()), sum(1 for name, _i in names if not name)
 
     out: Dict[str, Any] = {}
     for name, kinds in _EXPLORATION_KINDS.items():

@@ -495,7 +495,8 @@ def reconcile(record: ReportRecord, *,
               no_text_pages: Optional[Sequence[int]] = None,
               di_pages: Optional[Sequence[int]] = None,
               reader_unresolved: Optional[Sequence[Dict[str, Any]]] = None,
-              engine: Any = None) -> ReportRecord:
+              engine: Any = None, doc: Any = None,
+              outline: Any = None) -> ReportRecord:
     """Join the record up and record everything that does not join.
 
     Pure Python. ``labels`` and ``items`` are the final page labels and the
@@ -505,12 +506,31 @@ def reconcile(record: ReportRecord, *,
     and ``why``. ``engine`` is optional and buys ONE call, which comments on
     the conflicts and changes nothing.
 
+    Holes printed under one name that are not one hole's continuation
+    sheets (a second series of logs numbered from 1 again) are kept apart
+    by what their pages print, each given a ``qualifier`` beside its
+    printed name, and a laboratory sheet naming such a name is linked to
+    one of them only where it prints what tells them apart
+    (:mod:`report_ingest.shared_names`, RI-135). Logs of one name that read
+    as one hole's sheets the fold did not join (a later sheet a page
+    further on, a sounding carried on to the next page) are kept as read,
+    counted as one hole, and said; a sheet naming them goes to the log
+    holding its sample, else the first, named by its pages in
+    ``linked_log_pages``. ``doc`` (the planlens document) and
+    ``outline`` (its outline) give the report sections and the logs' titles
+    for that; the graph passes both, and without them only what the record
+    holds is used.
+
     The record is modified in place and returned.
     """
+    from report_ingest.shared_names import tell_apart
+
     qa: List[QAEntry] = []
 
     _fold_continuations(record, qa)
-    _link_lab_tests(record, qa)
+    twins, said = tell_apart(record, doc=doc, outline=outline)
+    qa.extend(said)
+    _link_lab_tests(record, qa, twins)
     _link_calculations(record, qa)
     _check_calculations(record, qa)
     _check_counts(record, qa)
@@ -1044,7 +1064,144 @@ def _hole_for(test: Any, by_id: Dict[str, Investigation],
     return inv, through
 
 
-def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
+def _link_lab_tests(record: ReportRecord, qa: List[QAEntry],
+                    twins: Any = None) -> None:
+    """Each laboratory sheet, and each row of a summary table, linked to
+    the hole and the sample it names (:func:`_hole_for`,
+    :func:`_sample_for`). A name two or more holes are printed under is
+    linked to one of them only where the sheet prints what tells them apart
+    (``twins``, :class:`report_ingest.shared_names.Twins`); otherwise to
+    neither, and one QA entry for the name says so (RI-135). Where a hole is
+    read as several logs of its name, the sheet goes to the log holding its
+    sample (:func:`_part_for`), and ``linked_log_pages`` names that log by
+    its pages, so the DIGGS file writes the result in that log's feature."""
+    from report_ingest.shared_names import pages_span
+
+    # name -> [(what, pages, why, chosen hole or None)]
+    shared: Dict[str, List[Tuple[str, List[int], List[str], Any]]] = {}
+    names = [inv.investigation_id for inv in record.investigations]
+    # id(log) -> its pages, for each log of a hole read as several logs.
+    several: Dict[int, str] = {
+        id(log): pages_span(log.pages)
+        for holes in (twins.holes.values() if twins else ())
+        for hole in holes if len(hole) > 1 for log in hole}
+    for original in record.lab_tests:
+        original.linked_log_pages = ""
+        for row in getattr(original.result, "rows", None) or ():
+            row.linked_log_pages = ""
+
+    def among_twins(inv: Investigation, original: Any, pages: List[int],
+                    what: str, view: Any = None) -> Optional[Investigation]:
+        """``inv``, or the log of its name the sheet says, or None.
+        ``view`` is the sheet or the row with its depth read for the link
+        (:func:`_depth_view`)."""
+        if not twins or not twins.group(inv):
+            original.linked_qualifier = ""
+            return inv
+        head, why = twins.pick(inv, original, pages)
+        if len(twins.holes_of(inv)) > 1:
+            shared.setdefault(inv.investigation_id, []).append(
+                (what, list(pages), why, head))
+        if head is None:
+            original.linked_investigation_id = ""
+            original.linked_sample_id = ""
+            original.linked_qualifier = ""
+            if hasattr(original, "linked_depth_delta_m"):
+                original.linked_depth_delta_m = None
+            return None
+        part = _part_for(twins.parts(head), view, names)
+        original.linked_qualifier = part.qualifier
+        return part
+
+    _link_all(record, qa, among_twins, lambda inv: several.get(id(inv), ""))
+    for name, placed in shared.items():
+        qa.extend(_shared_name_links(name, placed, twins))
+
+
+def _part_for(parts: Sequence[Investigation], view: Any,
+              names: Sequence[str]) -> Investigation:
+    """The log, of one hole read as several logs of its name
+    (:func:`report_ingest.shared_names.hole_parts`), a sheet or a row is
+    linked to: the one holding the sample it names or a sample at its depth
+    (:func:`_sample_for`), where one log does. Where several do (a sample
+    name printed on two of the hole's sheets), the one whose sample's
+    interval also meets the depth the sheet prints, the nearest where more
+    than one does; else the first, as when the logs were not told apart."""
+    if len(parts) < 2 or view is None:
+        return parts[0]
+    holding = [(p, _sample_for(p, view, names)) for p in parts]
+    holding = [(p, found) for p, found in holding if found[0] is not None]
+    if len(holding) == 1:
+        return holding[0][0]
+    agree: List[Tuple[float, int]] = []      # (how far off, which)
+    for n, (_log, (sample, _delta, clash)) in enumerate(holding):
+        gap = _interval_gap(sample, view) if clash is None else None
+        if gap is not None:
+            agree.append((gap, n))
+    return holding[min(agree)[1]][0] if agree else parts[0]
+
+
+def _capped(values: Sequence[str], n: int = 12) -> List[str]:
+    """The first ``n`` values, and how many more there are."""
+    values = list(values)
+    if len(values) <= n:
+        return values
+    return values[:n] + [f"... {len(values) - n} more"]
+
+
+def _shared_name_links(name: str,
+                       placed: Sequence[Tuple[str, List[int], List[str], Any]],
+                       twins: Any) -> List[QAEntry]:
+    """The QA for the laboratory results naming ``name``, a name two or
+    more holes are printed under: those linked to neither (``partial``,
+    open), and those linked to one by what they print (a note)."""
+    from report_ingest.shared_names import pages_span
+
+    holes = len(twins.holes.get(fold_id(name), ())) if twins else 2
+    count = {2: "two", 3: "three", 4: "four"}.get(holes, str(holes))
+    out: List[QAEntry] = []
+    refused = [p for p in placed if p[3] is None]
+    kept = [p for p in placed if p[3] is not None]
+    if refused:
+        out.append(QAEntry(
+            kind="partial", where=f"lab_tests.{name}", rank="open",
+            detail=(f"{_counted(refused)} name {name!r}, which {count} holes "
+                    f"of this report are printed under, and print nothing "
+                    f"that tells which of them they are from (no report "
+                    f"section, project, firm, date or place that is one "
+                    f"hole's): they are linked to neither, and the hole is "
+                    f"for a person to say"),
+            values=_capped([f"{what}: {pages_span(pages)}"
+                            for what, pages, _why, _hole in refused]),
+            pages=sorted({int(p) for _w, pages, _y, _h in refused
+                          for p in pages})))
+    if kept:
+        out.append(QAEntry(
+            kind="note", where=f"lab_tests.{name}",
+            detail=(f"{_counted(kept)} name {name!r}, which {count} holes of "
+                    f"this report are printed under, and were linked to one "
+                    f"of them by what they print"),
+            values=_capped(list(dict.fromkeys(
+                f"{what} -> {name} ({hole.qualifier}): {'; '.join(why)}"
+                for what, _pages_, why, hole in kept))),
+            pages=sorted({int(p) for _w, pages, _y, _h in kept
+                          for p in pages})))
+    return out
+
+
+def _counted(placed: Sequence[Tuple[str, List[int], List[str], Any]]) -> str:
+    rows = sum(1 for what, *_rest in placed if what.startswith("summary row"))
+    tests = len(placed) - rows
+    return " and ".join(part for part in (
+        f"{tests} laboratory test(s)" if tests else "",
+        f"{rows} summary row(s)" if rows else "") if part)
+
+
+def _link_all(record: ReportRecord, qa: List[QAEntry],
+              among_twins: Any, log_pages: Any = None) -> None:
+    """Link every sheet and summary row (:func:`_link_lab_tests`).
+    ``log_pages(log)`` gives the pages of a log of a hole read as several
+    logs, empty for any other, for ``linked_log_pages``."""
     by_fold: Dict[str, Investigation] = {}
     by_key: Dict[str, List[Investigation]] = {}
     for inv in record.investigations:
@@ -1073,10 +1230,16 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
     for original in record.lab_tests:
         if original.kind == "summary_table":
             _link_summary_rows(original, by_id, sample_names, by_fold,
-                               from_labels, clashes, qa, unit, read_depths)
+                               from_labels, clashes, qa, unit, read_depths,
+                               among_twins, log_pages)
             continue
         test, how = _depth_view(original, unit, need_hole=False)
         inv, through = _hole_for(test, by_id, sample_names, by_fold)
+        if inv is not None:
+            inv = among_twins(inv, original, list(test.pages), test.kind,
+                              test)
+            if inv is None:
+                continue                  # its shared-name entry says why
         if inv is not None and through:
             from_labels.append((_label_read(original, through), inv,
                                 list(test.pages), False))
@@ -1097,6 +1260,8 @@ def _link_lab_tests(record: ReportRecord, qa: List[QAEntry]) -> None:
                 pages=list(test.pages)))
             continue
         original.linked_investigation_id = inv.investigation_id
+        original.linked_qualifier = inv.qualifier
+        original.linked_log_pages = log_pages(inv) if log_pages else ""
         if how:
             read_depths.append((how, False, list(original.pages)))
         sample, delta, clash = _sample_for(inv, test, by_fold)
@@ -1621,8 +1786,9 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
                        clashes: Dict[Tuple[Any, ...], Dict[str, Any]],
                        qa: List[QAEntry], unit: str = "",
                        read_depths: Optional[List[Tuple[str, bool,
-                                                        List[int]]]] = None
-                       ) -> None:
+                                                        List[int]]]] = None,
+                       among_twins: Any = None,
+                       log_pages: Any = None) -> None:
     """Each row of a summary table linked as a sheet is, from its own columns.
 
     A row prints its own boring, sample and depth, and is linked by the
@@ -1645,9 +1811,26 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
     sample at) may as well be that hole's, and are left unplaced. All are
     said in one note for the table. A depth printed with no unit, or only
     in the sample label, is read as a sheet's is (:func:`_depth_view`).
+
+    A row naming a name two or more holes are printed under is linked to
+    one of them only where it prints what tells them apart
+    (``among_twins``, RI-135); a row below it that prints its hole cell
+    blank takes the hole that row was linked to.
     """
     result = test.result
     rows = list(getattr(result, "rows", ()) or ())
+    refused: Set[int] = set()            # id() of rows linked to neither twin
+
+    def twin(inv: Optional[Investigation], original: Any, number: int,
+             view: Any) -> Optional[Investigation]:
+        if inv is None or among_twins is None:
+            return inv
+        got = among_twins(inv, original, list(test.pages),
+                          f"summary row {number}", view)
+        if got is None:
+            refused.add(id(original))
+        return got
+
     missing: List[str] = []
     # (the hole, the top in metres) of the row above, holed by a column of
     # its own or carried down from one.
@@ -1658,15 +1841,19 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
     decided: List[List[Any]] = []
     run: List[int] = []                  # rows carried down since a holed one
     left = 0
-    for original in rows:
+    for number, original in enumerate(rows, 1):
         row, how = _depth_view(original, unit, need_hole=False)
         inv, through = _hole_for(row, by_id, samples, by_fold)
         top = depth_m(row.depth_top)
-        names = inv is not None or bool(fold_id(row.investigation_id))
+        inv = twin(inv, original, number, row)
+        names = inv is not None or bool(fold_id(row.investigation_id)) \
+            or id(original) in refused
         down = False
-        if inv is None and not fold_id(row.investigation_id):
+        if inv is None and not fold_id(row.investigation_id) \
+                and id(original) not in refused:
             inv, heading, cell, printed = _hole_in_column(
                 row, by_id, samples, by_fold)
+            inv = twin(inv, original, number, row)
             names = printed
             if inv is not None:
                 by_column.append(f"{heading!r} {cell!r} -> "
@@ -1706,6 +1893,7 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
     for original, row, how, inv, through, _down, _top in decided:
         if inv is None:
             if fold_id(row.investigation_id) and \
+                    id(original) not in refused and \
                     row.investigation_id not in missing:
                 missing.append(row.investigation_id)
             continue
@@ -1713,6 +1901,8 @@ def _link_summary_rows(test: LabTest, by_id: Dict[str, Investigation],
             from_labels.append((_label_read(original, through), inv,
                                 list(test.pages), True))
         original.linked_investigation_id = inv.investigation_id
+        original.linked_qualifier = inv.qualifier
+        original.linked_log_pages = log_pages(inv) if log_pages else ""
         if how and read_depths is not None:
             read_depths.append((how, True, list(test.pages)))
         sample, _delta_m, clash = _sample_for(inv, row, by_fold)
@@ -2408,6 +2598,13 @@ def _may_join(row: Any, sheet: LabTest) -> bool:
     """
     hole = hole_key(lab_hole(row))
     if hole and hole_key(lab_hole(sheet)) != hole:
+        return False
+    # Two holes printed under one name are two holes (RI-135): a sheet
+    # linked to one of them reports on no row linked to the other, nor on a
+    # row linked to neither (and the other way round).
+    ours, yours = (getattr(row, "linked_qualifier", ""),
+                   getattr(sheet, "linked_qualifier", ""))
+    if (ours or yours) and ours != yours:
         return False
     sample, theirs = _sample_keys(row), _sample_keys(sheet)
     depth = depth_m(row.depth_top)

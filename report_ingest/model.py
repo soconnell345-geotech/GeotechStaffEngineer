@@ -60,7 +60,7 @@ __all__ = [
     "Layer", "Sample",
     "PitDimensions", "CPTPoint", "CPTData", "DCPPoint", "DCPData",
     "SPT", "WaterLevel", "LabTest", "lab_hole", "Investigation",
-    "NarrativeFacts",
+    "hole_label", "NarrativeFacts",
     "GeneralFacts", "NaturalHazardFacts", "CalcEntry", "QAEntry",
     "QARank", "QA_RANKS", "qa_rank", "QA_BY_RANK_ENV", "qa_by_rank_enabled",
     "use_qa_by_rank",
@@ -124,6 +124,18 @@ __all__ = [
 #: run's own; a resumed run used to add the saved reader items' calls to
 #: them (and not the saved triage, vision or review), which is the defect
 #: the field fixes, not a new meaning.
+#:
+#: ``Investigation.qualifier``, ``LabTest.linked_qualifier`` and
+#: ``SummaryRow.linked_qualifier`` (BACKLOG RI-135, two holes under one
+#: printed name) are NOT a bump either: all three are optional, set only
+#: where the reconciler kept two holes of one name apart, and left out of
+#: the written record otherwise, so a record with no such name is written as
+#: it always was. No existing field changed meaning: the printed
+#: ``investigation_id`` and ``linked_investigation_id`` stay the names as
+#: printed. ``LabTest.linked_log_pages`` and ``SummaryRow.linked_log_pages``
+#: (the same item: which log of a hole read as several logs of its name a
+#: result was linked to) are optional the same way, set only on such a
+#: result and left out of the written record otherwise.
 SCHEMA_VERSION = "4.0"
 
 
@@ -1961,6 +1973,29 @@ class SummaryRow(BaseModel):
         description="the investigation this row was matched to, or empty")
     linked_sample_id: str = Field(
         default="", description="the sample it was matched to, or empty")
+    #: Which of the holes printed under ``linked_investigation_id``'s name
+    #: the row was matched to, by that hole's ``Investigation.qualifier``
+    #: (RI-135); empty where the name is one hole's, and written only when
+    #: set.
+    linked_qualifier: str = Field(
+        default="",
+        description="the qualifier of the hole matched to, where holes share "
+                    "its printed name; empty otherwise")
+    #: Which log the row was matched to, by that log's pages as text
+    #: ("pages 30-31"), where its hole is read as several logs of its name
+    #: (RI-135); empty otherwise, and written only when set. Text, as above.
+    linked_log_pages: str = Field(
+        default="",
+        description="the pages of the log matched to, where the hole is read "
+                    "as several logs; empty otherwise")
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_qualifier(self, handler):  # type: ignore[no-untyped-def]
+        """``linked_qualifier`` and ``linked_log_pages`` are written only
+        when they are set: a record with no name printed on several logs is
+        written as before the fields."""
+        out = _without_empty(handler(self), "linked_qualifier")
+        return _without_empty(out, "linked_log_pages")
 
 
 class SummaryTableResult(BaseModel):
@@ -2084,7 +2119,30 @@ class LabTest(BaseModel):
         default=None,
         description="how far the sheet's depth sat from the sample's, in "
                     "metres; None when no sample matched")
+    #: Which of the holes printed under ``linked_investigation_id``'s name
+    #: the sheet was matched to, by that hole's ``Investigation.qualifier``
+    #: (RI-135); empty where the name is one hole's, and written only when
+    #: set.
+    linked_qualifier: str = Field(
+        default="",
+        description="the qualifier of the hole matched to, where holes share "
+                    "its printed name; empty otherwise")
+    #: Which log the sheet was matched to, by that log's pages as text
+    #: ("pages 30-31"), where its hole is read as several logs of its name
+    #: (RI-135); empty otherwise, and written only when set.
+    linked_log_pages: str = Field(
+        default="",
+        description="the pages of the log matched to, where the hole is read "
+                    "as several logs; empty otherwise")
     prov: List[Provenance] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_qualifier(self, handler):  # type: ignore[no-untyped-def]
+        """``linked_qualifier`` and ``linked_log_pages`` are written only
+        when they are set: a record with no name printed on several logs is
+        written as before the fields."""
+        out = _without_empty(handler(self), "linked_qualifier")
+        return _without_empty(out, "linked_log_pages")
 
     @model_validator(mode="after")
     def _result_matches_kind(self) -> "LabTest":
@@ -2204,7 +2262,44 @@ class Investigation(BaseModel):
         description="every other key-value the log's header printed, as "
                     "printed; nothing is dropped because the model has no "
                     "field for it")
+    #: Where the report prints two or more holes under this hole's name (a
+    #: second series of logs numbered from 1 again, an earlier firm's
+    #: investigation bound in), what tells this one from the others, read
+    #: off its pages by the reconciler (RI-135,
+    #: :mod:`report_ingest.shared_names`): "under 'Appendix C ...'",
+    #: "titled 'Log of Boring QX-1'", "ground elevation 12.3 m". The printed
+    #: ``investigation_id`` never changes; this is kept BESIDE it, empty for
+    #: a hole whose name is its own, and written only when set.
+    qualifier: str = Field(
+        default="",
+        description="what tells this hole from another printed under the "
+                    "same name, as its pages print it; empty when its name "
+                    "is its own")
     prov: List[Provenance] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_qualifier(self, handler):  # type: ignore[no-untyped-def]
+        """``qualifier`` is written only when it is set: a record with no
+        two holes under one name is written byte for byte as before the
+        field."""
+        return _without_empty(handler(self), "qualifier")
+
+
+def _without_empty(out: Any, name: str) -> Any:
+    """A model's dumped ``out`` with the field ``name`` left out when it is
+    empty (the fields written only when set)."""
+    if isinstance(out, dict) and not out.get(name):
+        out.pop(name, None)
+    return out
+
+
+def hole_label(inv: Any) -> str:
+    """A hole's printed name, with its qualifier beside it in brackets where
+    the report prints another hole under the same name (RI-135):
+    ``"QX-1 (titled 'Log of Boring QX-1')"``; the name alone otherwise."""
+    name = str(getattr(inv, "investigation_id", "") or "")
+    qualifier = str(getattr(inv, "qualifier", "") or "")
+    return f"{name} ({qualifier})" if qualifier else name
 
 
 # ---------------------------------------------------------------------------
@@ -2862,6 +2957,15 @@ _SAID_RANK: Tuple[Tuple[Tuple[str, ...], str, str], ...] = (
     # record carries (RI-117, report_ingest.log_holes.missing_holes_qa): a
     # hole may be missing.
     (("partial",), "no log in the record carries", "open"),
+    # Two or more holes printed under one name, kept apart by what their
+    # pages print (RI-135, report_ingest.shared_names): which is which is
+    # for a person to confirm; and the lab sheets naming such a name that
+    # print nothing telling which, linked to neither. Logs of one name that
+    # read as one hole's sheets the fold did not join: a person should
+    # confirm they are one hole.
+    (("note",), "holes under one printed name", "open"),
+    (("partial",), "nothing that tells which", "open"),
+    (("note",), "sheets the fold did not join", "open"),
     # Two parts of the narrative answer differently and the first is kept
     # by its place in the report, not by any evidence: as open as a page
     # label the voters split on.

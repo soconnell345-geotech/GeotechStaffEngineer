@@ -1185,7 +1185,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     reconcile(record, labels=own, items=items,
               no_text_pages=[p for p in no_text if p not in bound],
               di_pages=[p for p in di_pages if p not in bound],
-              reader_unresolved=unresolved)
+              reader_unresolved=unresolved, doc=doc, outline=outline)
     if model_first is None:
         # The holes the log items' page headers print in a field or a title
         # that no log in the record carries (RI-117): today's log reader
@@ -2195,7 +2195,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     reconcile(child, labels=labels, items=items,
               no_text_pages=[p for p in no_text if p in at],
               di_pages=[p for p in di_pages if p in at],
-              reader_unresolved=unresolved)
+              reader_unresolved=unresolved, doc=doc, outline=outline)
     if model_first is None:
         qa.extend(missing_holes_qa(doc, items, child))      # RI-117
     _counts_from_logs(child, qa, counts_from_logs, every, done)

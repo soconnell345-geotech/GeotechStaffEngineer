@@ -58,7 +58,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from report_ingest.model import (
     GENERAL_FIELDS, NATURAL_HAZARD_FIELDS, QA_RANKS, QAEntry, Quantity,
-    ReportRecord, lab_hole, qa_by_rank_enabled,
+    ReportRecord, hole_label, lab_hole, qa_by_rank_enabled,
 )
 
 __all__ = [
@@ -583,11 +583,15 @@ def calculations_section(record: ReportRecord) -> List[str]:
 def _lab_exploration(test: Any) -> str:
     """The Exploration cell of the laboratory table: the printed boring, else
     the hole the reconciler linked the sheet to, marked "(linked)" so it is
-    not taken for print (BACKLOG RI-141); '-' for neither."""
+    not taken for print (BACKLOG RI-141); '-' for neither. Where the report
+    prints two holes under that name, the one linked to is named by its
+    qualifier beside the name (RI-135)."""
+    qualifier = getattr(test, "linked_qualifier", "") or ""
+    shown = f" ({qualifier})" if qualifier else ""
     if test.investigation_id:
-        return test.investigation_id
+        return test.investigation_id + shown
     hole = lab_hole(test)
-    return f"{hole} (linked)" if hole else "-"
+    return f"{hole}{shown} (linked)" if hole else "-"
 
 
 def summary_markdown(record: ReportRecord) -> str:
@@ -830,7 +834,7 @@ def library_page(record: ReportRecord, key: str, source: str = "") -> str:
     rows = _table(
         ["Exploration", "Kind", "Total depth", "Ground elevation", "Layers",
          "Samples", "N values", "Water"],
-        [[inv.investigation_id, inv.kind, inv.total_depth, inv.elevation,
+        [[hole_label(inv), inv.kind, inv.total_depth, inv.elevation,
           len(inv.layers), len(inv.samples),
           ", ".join(str(s.n) for s in inv.spt if s.n is not None) or "",
           ", ".join(_show(w.depth) for w in inv.water if w.depth)]
