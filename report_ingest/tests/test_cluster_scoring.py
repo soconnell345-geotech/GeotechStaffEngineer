@@ -302,7 +302,7 @@ def test_tokens_are_totalled_and_reported_instead_of_dollars(cluster):
     assert results["totals"]["input_tokens"] == 80000
     assert results["totals"]["output_tokens"] == 6000
     text = (out / "RESULTS.md").read_text(encoding="utf-8")
-    assert "80,000 input tokens" in text
+    assert "80,000 tokens in" in text
     assert "no per-token price" in text
 
 
@@ -1582,7 +1582,7 @@ class TestDollarsInTheResults:
         _vision_run(vision_cluster)
         block = (out / "RESULTS.md").read_text(
             encoding="utf-8").split("## Cost")[-1]
-        assert "26,000 input tokens" in block
+        assert "26,000 tokens in" in block
         assert "$" not in block
         assert "no per-token price" in block
 
@@ -4167,6 +4167,60 @@ class TestTokenBrake:
             brake.wrap(_Counted()).complete([])
         assert brake.fields()["token_brake"]["limit"] == "max_total_tokens"
 
+    def test_cache_writes_and_reads_count_as_tokens_in(self):
+        """BACKLOG RI-171: a route that reports nearly all its input as
+        cache writes and reads (Foundry's Claude) still trips both limits.
+        The numbers are made up."""
+        from report_ingest.engine import CallCeilingReached, CostMeter, Usage
+
+        meter = CostMeter()
+        meter.add("made-up-model", Usage(input_tokens=4,
+                                         cache_write_tokens=700,
+                                         cache_read_tokens=300,
+                                         output_tokens=50), 0.1)
+        assert meter.tokens_in == 1004
+        assert meter.to_dict()["tokens_in"] == 1004
+        report = cs._TokenBrake(meter, 1000, None)
+        with pytest.raises(CallCeilingReached, match="1,004 tokens in"):
+            report.wrap(_Counted()).complete([])
+        entry = report.fields()["token_brake"]
+        assert (entry["tokens_in"], entry["input_tokens"],
+                entry["cache_write_tokens"], entry["cache_read_tokens"],
+                entry["output_tokens"]) == (1004, 4, 700, 300, 50)
+        total = cs._TokenBrake(meter, None, 1054)
+        with pytest.raises(CallCeilingReached):
+            total.wrap(_Counted()).complete([])
+        assert cs._TokenBrake(meter, None, 1055).wrap(
+            _Counted()).complete([]) == "reply"
+
+    def test_a_run_files_cost_counts_its_cache_tokens(self):
+        cost = {"input_tokens": 4, "cache_write_tokens": 700,
+                "cache_read_tokens": 300, "output_tokens": 50}
+        assert cs._tokens_of(cost) == 1054
+        assert cs._attempts_in([{"cost": cost},
+                                {"cost": {"input_tokens": 10}}]) == 1014
+        # A stage's total keeps the cache writes too.
+        total = cs._cost_totals()
+        cs._add_cost(total, cost)
+        assert (total["cache_write_tokens"], cs._tokens_of(total)) == (
+            700, 1054)
+
+    def test_the_cost_line_shows_the_three_parts(self):
+        from report_ingest.engine import CostMeter, Usage, tokens_in_words
+
+        assert tokens_in_words({"input_tokens": 60,
+                                "cache_write_tokens": 1700,
+                                "cache_read_tokens": 500}) == (
+            "2,260 tokens in (60 input, 1,700 cache write, 500 cache read)")
+        assert tokens_in_words({"input_tokens": 900}) == "900 tokens in"
+        meter = CostMeter()
+        meter.add("made-up-model", Usage(input_tokens=60,
+                                         cache_write_tokens=1700,
+                                         cache_read_tokens=500,
+                                         output_tokens=40), 2.0)
+        assert ("1 calls, 2,260 tokens in (60 input, 1,700 cache write, "
+                "500 cache read), 40 out") in meter.summary()
+
     def test_a_brake_that_never_fired_adds_nothing_to_the_run_file(self):
         brake = cs._TokenBrake(_meter(10), 1000, 1000)
         brake.wrap(_Counted()).complete([])
@@ -4494,8 +4548,10 @@ class TestTheBrakeCountsEveryAttempt:
             engine.complete([])
         assert inner.calls == 1
         assert brake.fields()["token_brake"] == {
-            "limit": "max_report_tokens_in", "input_tokens": 370,
-            "output_tokens": 0, "earlier_input_tokens": 650}
+            "limit": "max_report_tokens_in", "tokens_in": 370,
+            "input_tokens": 370, "cache_write_tokens": 0,
+            "cache_read_tokens": 0, "output_tokens": 0,
+            "earlier_tokens_in": 650}
 
     def test_the_same_meter_alone_would_have_gone_on(self):
         meter, inner = _meter(370), _Counted()
@@ -4592,13 +4648,13 @@ class TestTheResultsCountEveryAttempt:
         assert scored["reports_with_earlier_attempts"] == {"R7": 1}
         assert "every attempt" in scored["cost_covers"]
         text = "\n".join(cs._render_ingest(scored))
-        assert ("13 model calls over every attempt, 13,000 input tokens "
-                "(+100 the provider cached), 1,200 output, 8 s") in text
+        assert ("13 model calls over every attempt, 13,100 tokens in "
+                "(13,000 input, 0 cache write, 100 cache read), 1,200 "
+                "output, 8 s") in text
         assert ("failed requests, not among the calls above: 7 (7 rate "
                 "limited), 6 of them sent again") in text
         assert ("each report's last attempt alone: 5 model calls, 4,000 "
-                "input tokens (+0 cached), 400 output, 3 s, 0 failed "
-                "requests") in text
+                "tokens in, 400 output, 3 s, 0 failed requests") in text
         assert "read in more than one attempt: R7 (2 attempts)" in text
         assert "count EVERY attempt" in text
 
@@ -4610,8 +4666,7 @@ class TestTheResultsCountEveryAttempt:
             assert key not in scored
         assert scored["cost"]["calls"] == 2
         text = "\n".join(cs._render_ingest(scored))
-        assert ("2 model calls, 1,000 input tokens (+0 the provider "
-                "cached), 100 output, 1 s") in text
+        assert "2 model calls, 1,000 tokens in, 100 output, 1 s" in text
         assert "every attempt" not in text
         assert "last attempt alone" not in text
 
@@ -4631,7 +4686,7 @@ class TestEveryAttemptInARun:
         assert first["token_brake"]["limit"] == "max_report_tokens_in"
         for key in ("earlier_attempts", "all_attempts"):
             assert key not in first                     # a first attempt
-        assert "earlier_input_tokens" not in first["token_brake"]
+        assert "earlier_tokens_in" not in first["token_brake"]
         sent = first["cost"]["input_tokens"]
         assert sent == 1000 * first["cost"]["calls"] and sent >= 2500
         capsys.readouterr()
@@ -4643,7 +4698,7 @@ class TestEveryAttemptInARun:
                     max_report_tokens_in=sent + 1500)
         second = json.loads(run_file.read_text("utf-8"))
         assert second["cost"]["calls"] == 2
-        assert second["token_brake"]["earlier_input_tokens"] == sent
+        assert second["token_brake"]["earlier_tokens_in"] == sent
         (entry,) = second["earlier_attempts"]
         assert entry["ended"] == "token_brake"
         assert entry["cost"]["calls"] == first["cost"]["calls"]
@@ -4653,7 +4708,7 @@ class TestEveryAttemptInARun:
         assert both["calls"] == first["cost"]["calls"] + 2
         assert both["input_tokens"] == sent + 2000
         printed = capsys.readouterr().out
-        assert (f"stopping after R36: {sent + 2000:,} input tokens over its "
+        assert (f"stopping after R36: {sent + 2000:,} tokens in over its "
                 f"attempts") in printed
 
         # A third call with no limit finishes the report: RESULTS counts

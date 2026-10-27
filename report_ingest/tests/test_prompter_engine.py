@@ -468,10 +468,14 @@ def test_tokens_are_read_from_the_openai_usage_shape():
                                   usage=_Usage(2000, 300, cached=1500)))
     reply = engine.complete([user(text_block("go"))], tools=[{
         "name": "t", "description": "d", "input_schema": {}}])
-    assert reply.usage.input_tokens == 2000
-    assert reply.usage.output_tokens == 300
+    # OpenAI's prompt count includes the cached tokens; the parts are kept
+    # apart, so tokens in counts them once (BACKLOG RI-171).
+    assert reply.usage.input_tokens == 500
     assert reply.usage.cache_read_tokens == 1500
+    assert reply.usage.tokens_in == 2000
+    assert reply.usage.output_tokens == 300
     assert engine.meter.calls == 1
+    assert engine.meter.tokens_in == 2000
 
 
 def test_tool_calls_come_back_with_their_arguments_parsed():

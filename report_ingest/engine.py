@@ -497,9 +497,51 @@ class ToolCall:
     arguments: Dict[str, Any] = field(default_factory=dict)
 
 
+#: The three input counts, kept apart on every engine (BACKLOG RI-171):
+#: the plain input, the cache writes and the cache reads.
+TOKENS_IN_PARTS: Tuple[str, ...] = ("input_tokens", "cache_write_tokens",
+                                    "cache_read_tokens")
+
+
+def _part(spent: Any, key: str) -> int:
+    """One count off a :class:`Usage`, a :class:`CostMeter` or a cost block;
+    0 where it has none or it is not a count."""
+    value = (spent.get(key) if isinstance(spent, dict)
+             else getattr(spent, key, 0))
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def tokens_in(spent: Any) -> int:
+    """Every input token in ``spent`` (a :class:`Usage`, a :class:`CostMeter`
+    or a run file's cost block): plain input plus cache writes plus cache
+    reads (BACKLOG RI-171). What every token brake and check counts as
+    tokens in."""
+    return sum(_part(spent, key) for key in TOKENS_IN_PARTS)
+
+
+def tokens_in_words(spent: Any) -> str:
+    """``"2,260 tokens in (60 input, 1,700 cache write, 500 cache read)"``;
+    the three parts only where the provider cached any."""
+    plain, write, read = (_part(spent, key) for key in TOKENS_IN_PARTS)
+    words = f"{plain + write + read:,} tokens in"
+    if write or read:
+        words += (f" ({plain:,} input, {write:,} cache write, {read:,} cache "
+                  f"read)")
+    return words
+
+
 @dataclass(frozen=True)
 class Usage:
-    """Tokens one call spent."""
+    """Tokens one call spent.
+
+    The three input counts are APART, on every engine: ``input_tokens`` is
+    the input the provider neither wrote to its cache nor read from it, and
+    :attr:`tokens_in` is all three (BACKLOG RI-171). On Foundry's Claude
+    route nearly all input arrives as cache writes and reads, and the plain
+    count is about 4 a call."""
 
     input_tokens: int = 0
     output_tokens: int = 0
@@ -511,6 +553,12 @@ class Usage:
     #: API counts thinking in the output and reports no split), which is not
     #: the same as a reported 0.
     reasoning_tokens: Optional[int] = None
+
+    @property
+    def tokens_in(self) -> int:
+        """Every input token the call sent: plain, cache write and cache
+        read (BACKLOG RI-171)."""
+        return tokens_in(self)
 
     def dollars(self, model: str) -> float:
         """What this call cost at list price, or 0.0 for an unpriced model.
@@ -1076,6 +1124,12 @@ class CostMeter:
         """Whether every call this meter saw had a price."""
         return self.calls > 0 and self.unpriced_calls == 0
 
+    @property
+    def tokens_in(self) -> int:
+        """Every input token so far: plain, cache write and cache read
+        (BACKLOG RI-171), each also kept as its own count."""
+        return tokens_in(self)
+
     def _rows(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """:attr:`per_call` as a run file keeps it: the model and the
         deployment that answered most of the replies once, in
@@ -1111,6 +1165,7 @@ class CostMeter:
             "failed": self.failed,
             "retried": self.retried,
             "failed_by_kind": dict(self.failed_by_kind),
+            "tokens_in": self.tokens_in,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "reasoning_tokens": self.reasoning_tokens,
@@ -1136,8 +1191,7 @@ class CostMeter:
                  else " (no priced deployment: tokens, not dollars)")
         failed = (f"; {self.failed} request(s) failed, {self.retried} sent "
                   f"again" if self.failed else "")
-        return (f"{self.calls} calls, {self.input_tokens:,} in "
-                f"(+{self.cache_read_tokens:,} cached), "
+        return (f"{self.calls} calls, {tokens_in_words(self)}, "
                 f"{self.output_tokens:,} out, {self.seconds:.0f} s{money}"
                 f"{failed}")
 
@@ -2255,10 +2309,15 @@ class PrompterEngine:
         usage_raw = getattr(raw, "usage", None)
         details = getattr(usage_raw, "prompt_tokens_details", None)
         thought = getattr(usage_raw, "completion_tokens_details", None)
+        # OpenAI's prompt count INCLUDES the cached tokens; here they are
+        # apart, as every engine keeps them, so tokens in counts them once
+        # (BACKLOG RI-171).
+        prompt = int(getattr(usage_raw, "prompt_tokens", 0) or 0)
+        cached = int(getattr(details, "cached_tokens", 0) or 0)
         usage = Usage(
-            input_tokens=int(getattr(usage_raw, "prompt_tokens", 0) or 0),
+            input_tokens=max(0, prompt - cached),
             output_tokens=int(getattr(usage_raw, "completion_tokens", 0) or 0),
-            cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
+            cache_read_tokens=cached,
             reasoning_tokens=_count(getattr(thought, "reasoning_tokens",
                                             None)),
         )

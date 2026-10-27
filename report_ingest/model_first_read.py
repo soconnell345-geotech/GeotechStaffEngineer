@@ -47,8 +47,9 @@ answers are joined into the one log as a long log's parts are. A single
 page still over the limit is sent as it is. Each cut, and each page sent
 over the limit, is one line in the result's ``warnings`` and one row in its
 ``over_limit`` (the graph makes each row a QA note), and each call in
-``calls`` carries its ``estimated_tokens_in`` beside the tokens the reply
-says it took, so the estimate can be checked against a run. With no limit
+``calls`` carries its ``estimated_tokens_in`` beside the tokens in the reply
+says it took (``tokens_in``: plain, cache write and cache read, BACKLOG
+RI-171), so the estimate can be checked against a run. With no limit
 the result has no ``over_limit`` and is what it was.
 
 BUILD. Each answer is turned into record objects by its stage's own
@@ -206,7 +207,7 @@ class _Spent:
             # Only under a request limit (RI-121): the estimate the call was
             # sized by, beside what the reply says the request took.
             row.update(estimated_tokens_in=int(estimated),
-                       input_tokens=int(reply.usage.input_tokens))
+                       tokens_in=int(reply.usage.tokens_in))
         self.calls.append(row)
 
     def rounded(self) -> Dict[str, Any]:

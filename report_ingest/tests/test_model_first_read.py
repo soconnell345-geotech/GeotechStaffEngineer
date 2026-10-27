@@ -815,7 +815,7 @@ def test_a_log_over_the_limit_is_split_by_its_pages_before_it_is_sent(doc):
                     f"input tokens, over the limit of {limit:,} a request; "
                     f"split before it was sent, into pages 3-4 and pages "
                     f"5-6")
-    assert [(c["pages"], c["estimated_tokens_in"], c["input_tokens"])
+    assert [(c["pages"], c["estimated_tokens_in"], c["tokens_in"])
             for c in blob["calls"]] == [([3, 4], first, 1000),
                                         ([5, 6], second, 1000)]
     assert blob["over_limit"] == [{"pages": [3, 4, 5, 6],
@@ -925,4 +925,4 @@ def test_no_limit_changes_nothing(doc):
               "answered": True}]
     assert rows[0] == rows[1] == plain
     assert set(rows[2][0]) == set(plain[0]) | {"estimated_tokens_in",
-                                               "input_tokens"}
+                                               "tokens_in"}
