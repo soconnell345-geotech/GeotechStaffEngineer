@@ -14,13 +14,14 @@ from __future__ import annotations
 
 from report_ingest import checklist as CL
 from report_ingest.model import (
-    AtterbergResult, ChemicalResult, DocumentFacts, Investigation, LabTest,
-    Layer, Project, Quantity, ReportRecord, Sample, SummaryRow,
-    SummaryTableResult,
+    AtterbergResult, CBRResult, ChemicalResult, ConsolidationResult,
+    DocumentFacts, GradationResult, Investigation, LabTest, Layer,
+    MoistureDensityResult, OtherResult, Project, Quantity, ReportRecord,
+    Sample, StrengthResult, SummaryRow, SummaryTableResult,
 )
 from report_ingest.reconciler import (
-    _names_no_specimen, _sample_keys, _sheets_for, _summary_matches,
-    reconcile,
+    _heading_kinds, _names_no_specimen, _reading, _sample_keys, _sheets_for,
+    _summary_matches, reconcile,
 )
 
 
@@ -242,7 +243,8 @@ class TestATie:
         assert not [e for e in record.qa if e.kind == "conflict"]
         (note,) = _table_notes(record)
         assert (note.kind, note.rank) == ("note", "open")
-        assert note.where == "lab_tests.summary_table at QB-4 at 2.4 m"
+        assert note.where == "lab_tests.summary_table at QB-4 2.4 m"
+        assert note.values[0] == "atterberg sheet QB-4 T-3 at 2.3 m"
         assert "2 atterberg" in note.detail
         assert "cross-checked against none of them" in note.detail
         assert sorted(note.pages) == [19, 21, 22]
@@ -317,3 +319,165 @@ class TestSampleNames:
 
     def test_the_hole_at_the_head_of_a_label_is_dropped(self):
         assert _sample_keys(_atterberg(sample="QB-4, T-03")) == {"T3"}
+
+
+def _sheet(kind, result, sample="", top=2.40, bottom=None, page=40):
+    return LabTest(kind=kind, investigation_id="QB-4", sample_id=sample,
+                   depth_top=_m(top),
+                   depth_bottom=_m(bottom) if bottom is not None else None,
+                   pages=[page], source_report="SYN", result=result)
+
+
+def _kpa(value):
+    return Quantity(value=value, unit="kPa")
+
+
+def _kn(value):
+    return Quantity(value=value, unit="kN/m3")
+
+
+class TestTheTestsAColumnNames:
+
+    def test_a_qu_names_a_uu_triaxial_sheet_that_reports_su(self):
+        row = _row(qu=_kpa(164.0))
+        uu = _sheet("triaxial", StrengthResult(kind="triaxial",
+                                               test_type="UU", su=_kpa(82.0)))
+        assert _match([row], [uu]) == ([[uu]], [])
+
+    def test_a_uscs_symbol_names_the_limits_and_the_grading(self):
+        row = _row(uscs="CL")
+        att = _atterberg()
+        grad = _sheet("gradation", GradationResult(fines_percent=58.0),
+                      page=41)
+        chem = _chemical()
+        joined, _ties = _match([row], [chem, att, grad])
+        assert [s.kind for s in joined[0]] == ["atterberg", "gradation"]
+
+    def test_headings_kept_in_other_name_their_tests(self):
+        assert _heading_kinds("CBR (%)") == {"cbr"}
+        assert _heading_kinds("Gs") == {"specific_gravity"}
+        assert _heading_kinds("Specific Gravity") == {"specific_gravity"}
+        assert _heading_kinds("k (cm/s)") == {"permeability"}
+        assert _heading_kinds("Permeability") == {"permeability"}
+        assert _heading_kinds("p'c (kPa)") == {"swell_consolidation"}
+        assert _heading_kinds("Cc") == {"swell_consolidation"}
+        assert _heading_kinds("Cr") == {"swell_consolidation"}
+        assert _heading_kinds("Swell pressure") == {"swell_consolidation",
+                                                    "cbr"}
+        assert _heading_kinds("C.B.R. % 4 day soak") == {"cbr"}
+        assert _heading_kinds("kPa") == set()
+        assert _heading_kinds("Remarks") == set()
+
+    def test_an_other_column_joins_its_sheet(self):
+        cases = [
+            ("CBR", "11", _sheet("cbr", CBRResult(cbr_percent=11.0))),
+            ("Gs", "2.68", _sheet("specific_gravity", OtherResult(
+                kind="specific_gravity", fields={"Gs": 2.68}))),
+            ("k (cm/s)", "3E-6", _sheet("permeability", OtherResult(
+                kind="permeability", fields={"k": "3E-6"}))),
+            ("Cc", "0.27", _sheet("swell_consolidation", ConsolidationResult(
+                test_type="consolidation", cc=0.27))),
+        ]
+        for heading, cell, sheet in cases:
+            row = _row(other=[(heading, cell)])
+            assert _match([row], [sheet]) == ([[sheet]], []), heading
+            blank = _row(other=[(heading, "--")])
+            assert _match([blank], [_sheet(sheet.kind, sheet.result,
+                                           top=2.48)]) == ([[]], []), heading
+
+    def test_a_dry_density_meets_a_consolidation_sheets_dry_unit_weight(self):
+        row = _row(dry_density=_kn(15.9))
+        oed = _sheet("swell_consolidation", ConsolidationResult(
+            test_type="consolidation", cc=0.27, dry_unit_weight=_kn(15.9)))
+        assert _match([row], [oed]) == ([[oed]], [])
+
+    def test_a_row_naming_no_test_keeps_its_exact_interval_sheet(self):
+        row = _row(top=2.40, bottom=2.85, description="Grey silty CLAY")
+        exact = _atterberg(top=2.40, bottom=2.85, page=21)
+        window = _chemical(top=2.48, page=30)
+        joined, ties = _match([row], [window, exact])
+        assert joined == [[exact]] and ties == []
+
+
+class TestOneSampleSeveralSheets:
+
+    def test_a_hydrometer_sheet_printing_the_top_only_joins_its_sieve(self):
+        row = _row(sample="T-3", top=2.40, bottom=2.85, fines_percent=58.0)
+        sieve = _sheet("gradation", GradationResult(fines_percent=58.0),
+                       sample="T-3", top=2.40, bottom=2.85, page=50)
+        hydro = _sheet("gradation", GradationResult(hydrometer=True,
+                                                    clay_percent=21.0),
+                       sample="T-3", top=2.40, page=58)
+        joined, ties = _match([row], [sieve, hydro])
+        assert joined == [[sieve, hydro]] and ties == []
+
+    def test_a_sheet_of_another_interval_stays_out(self):
+        row = _row(sample="T-3", top=2.40, bottom=2.85, fines_percent=58.0)
+        sieve = _sheet("gradation", GradationResult(fines_percent=58.0),
+                       sample="T-3", top=2.40, bottom=2.85, page=50)
+        other = _sheet("gradation", GradationResult(fines_percent=40.0),
+                       sample="T-3", top=2.50, page=58)
+        assert _match([row], [sieve, other]) == ([[sieve]], [])
+
+
+class TestAValueAlone:
+
+    def test_another_samples_sheet_printing_a_shared_value_stays_apart(self):
+        # The row's own sheets are missing; a chemistry sheet of the next
+        # sample, a few centimetres off, prints a water content too.
+        row = _index_row(sample="T-3")
+        chem = _chemical(sample="T-4", top=2.49, pH=6.9, wc=24.0)
+        assert _match([row], [chem]) == ([[]], [])
+        record = reconcile(_record(chem, _summary(row)))
+        assert not [e for e in record.qa if e.kind == "conflict"]
+        assert "summary rows with no sheet: QB-4 T-3 at 2.4 m" in \
+            _check(record)["detail"]
+
+    def test_a_shared_value_joins_where_a_side_prints_no_sample(self):
+        row = _index_row()
+        chem = _chemical(sample="T-4", top=2.49, pH=6.9, wc=24.0)
+        assert _match([row], [chem]) == ([[chem]], [])
+
+
+class TestTheRowThatSharesATest:
+
+    def test_a_sheet_goes_to_the_row_that_tabulates_its_test(self):
+        # The limits row names the sample; the grading row, the interval.
+        limits = _row(sample="T-3", top=2.40, ll=47.0)
+        grading = _row(top=2.40, bottom=2.85, fines_percent=58.0)
+        att = _atterberg(sample="T-3", page=21)
+        grad = _sheet("gradation", GradationResult(fines_percent=61.0),
+                      sample="T-3", top=2.40, page=50)
+        joined, ties = _match([limits, grading], [att, grad])
+        assert joined == [[att], [grad]] and ties == []
+
+
+class TestTheChecklistsTabulatedKinds:
+
+    def test_a_chemistry_sheet_beside_an_index_table_is_not_missing(self):
+        record = reconcile(_record(
+            _atterberg(sample="T-3"),
+            _sheet("moisture_content", MoistureDensityResult(wc=18.3),
+                   sample="T-3", page=22),
+            _chemical(sample="T-4", top=2.49, pH=6.9, wc=24.0),
+            _summary(_index_row(sample="T-3"))))
+        sh = _check(record)
+
+        assert sh["status"] == "pass", sh
+        assert "not on the summary" not in sh["detail"]
+        assert ("sheets of kinds the summary does not tabulate, not counted: "
+                "chemical") in sh["detail"]
+
+
+class TestEmptyCells:
+
+    def test_spelled_out_not_tested_is_no_reading(self):
+        for cell in ("not tested", "Not Tested", "n.t.", "N/T", "not run",
+                     "n/a", "--"):
+            assert not _reading(cell), cell
+        for cell in ("NP", "ND", "<10", "Nil", 0.0):
+            assert _reading(cell), cell
+
+    def test_a_not_tested_cell_names_no_test(self):
+        row = _index_row(cells={"pH": "Not tested", "sulfate": "not run"})
+        assert _match([row], [_chemical()]) == ([[]], [])

@@ -1556,18 +1556,20 @@ EXACT_TOL_M = 0.01
 #: ``summary-table column -> the kinds of sheet that run that test``. A
 #: column names the test: a row reporting a liquid limit came off an
 #: Atterberg sheet, whatever that sheet's own result came back holding (a
-#: non-plastic soil prints no limits). A value both sides carry
-#: (:data:`CROSS_CHECKS`) joins them as well: the water content an
-#: Atterberg or a chemistry sheet prints beside its own results.
+#: non-plastic soil prints no limits); a qu may be a UU triaxial's, which
+#: reports su; a USCS symbol is read off the limits and the grading. A
+#: value both sides carry (:data:`SHARED_VALUES`) joins them as well: the
+#: water content an Atterberg sheet prints beside its own results.
 COLUMN_KINDS: Dict[str, Tuple[str, ...]] = {
     "ll": ("atterberg",), "pl": ("atterberg",), "pi": ("atterberg",),
     "wc": ("moisture_content",),
+    "uscs": ("atterberg", "gradation"),
     "percent_passing": ("gradation",), "fines_percent": ("gradation",),
     "sand_percent": ("gradation",), "gravel_percent": ("gradation",),
     "silt_clay_percent": ("gradation",),
     "wet_density": ("density",), "dry_density": ("density",),
     "max_dry_density": ("compaction",), "optimum_wc": ("compaction",),
-    "qu": ("unconfined", "unconfined_rock"),
+    "qu": ("unconfined", "unconfined_rock", "triaxial"),
     "su": ("unconfined", "triaxial"),
     "c": ("triaxial", "direct_shear"),
     "phi_deg": ("triaxial", "direct_shear"),
@@ -1578,10 +1580,37 @@ COLUMN_KINDS: Dict[str, Tuple[str, ...]] = {
     "sulfides": ("chemical",), "redox": ("chemical",),
 }
 
+#: ``a word of a column heading the row keeps in "other" -> the kinds of
+#: sheet that run that test``: the columns a summary table carries that the
+#: row has no field for. Words are folded (:func:`fold_id`, primes dropped,
+#: so ``p'c`` is PC, and the dots of an initialism, so ``C.B.R.`` is CBR); a
+#: run of words is matched as one ("specific gravity"). A swell is a
+#: consolidometer's or a CBR's (the swell over the soak).
+_HEADING_KINDS: Dict[str, Tuple[str, ...]] = {
+    "CBR": ("cbr",),
+    "GS": ("specific_gravity",), "SPECIFICGRAVITY": ("specific_gravity",),
+    "PERMEABILITY": ("permeability",), "K": ("permeability",),
+    "CC": ("swell_consolidation",), "CR": ("swell_consolidation",),
+    "PC": ("swell_consolidation",),
+    "CONSOLIDATION": ("swell_consolidation",),
+    "SWELL": ("swell_consolidation", "cbr"),
+}
+
+#: ``summary-table column -> the fields a sheet's result may call it``, for
+#: JOINING a row to a sheet: :data:`CROSS_CHECKS`, plus the names a result
+#: gives a value that are not compared (a consolidation sheet's dry unit
+#: weight beside the row's dry density).
+SHARED_VALUES: Dict[str, Tuple[str, ...]] = {
+    column: names + (("dry_unit_weight",) if column == "dry_density" else ())
+    for column, names in CROSS_CHECKS.items()}
+
 #: Words a cell prints for "nothing here", folded (:func:`fold_id`): a
-#: dash folds to nothing; these are "n/a" and "not tested". "NP" and "<10"
-#: are results and stay readings.
-_EMPTY_CELL_WORDS: Tuple[str, ...] = ("NA", "NT")
+#: dash folds to nothing; these are "n/a", "not tested" and the like,
+#: abbreviated and spelled out. "NP", "ND" and "<10" are results and stay
+#: readings.
+_EMPTY_CELL_WORDS: Tuple[str, ...] = (
+    "NA", "NT", "NOTTESTED", "NOTRUN", "NOTPERFORMED", "NOTDONE",
+    "NOTMEASURED", "NOTAPPLICABLE", "NOTAVAILABLE")
 
 
 def _reading(value: Any) -> bool:
@@ -1597,20 +1626,51 @@ def _reading(value: Any) -> bool:
     return True
 
 
-def _shares_a_test(row: Any, sheet: LabTest) -> bool:
-    """A test this row reports and this sheet runs: the sheet's kind is one
-    the row's columns name, or both carry a value for one column."""
-    for column, kinds in COLUMN_KINDS.items():
-        if sheet.kind in kinds and _reading(getattr(row, column, None)):
-            return True
+def _heading_kinds(heading: Any) -> Set[str]:
+    """The kinds of sheet a column heading names (:data:`_HEADING_KINDS`)."""
+    text = re.sub(r"['’′]", "", str(heading or ""))
+    text = re.sub(r"(?<![A-Za-z])(?:[A-Za-z]\.){2,}",
+                  lambda m: m.group(0).replace(".", ""), text)
+    words = [fold_id(w) for w in re.split(r"[^0-9A-Za-z]+", text) if w]
+    out: Set[str] = set()
+    for key, kinds in _HEADING_KINDS.items():
+        if key in words or (len(key) > 3 and key in "".join(words)):
+            out.update(kinds)
+    return out
+
+
+def _kinds_named(row: Any) -> Set[str]:
+    """The kinds of sheet a summary row's columns name: those of every
+    column holding a reading (:data:`COLUMN_KINDS`), and of every heading
+    in ``other`` whose cell holds one."""
+    kinds: Set[str] = set()
+    for column, of in COLUMN_KINDS.items():
+        if _reading(getattr(row, column, None)):
+            kinds.update(of)
+    for heading, cell in getattr(row, "other", None) or ():
+        if _reading(cell):
+            kinds |= _heading_kinds(heading)
+    return kinds
+
+
+def _shares_a_value(row: Any, sheet: LabTest) -> bool:
+    """Whether the row and the sheet both carry a value for one column
+    (:data:`SHARED_VALUES`)."""
     result = sheet.result
     if result is None:
         return False
-    for column, names in CROSS_CHECKS.items():
+    for column, names in SHARED_VALUES.items():
         if _reading(getattr(row, column, None)) and any(
                 _reading(getattr(result, name, None)) for name in names):
             return True
     return False
+
+
+def _shares_a_test(row: Any, sheet: LabTest) -> bool:
+    """A test this row reports and this sheet runs: the sheet's kind is one
+    the row's columns name (:func:`_kinds_named`), or both carry a value
+    for one column."""
+    return sheet.kind in _kinds_named(row) or _shares_a_value(row, sheet)
 
 
 def _sample_keys(test: Any) -> Set[str]:
@@ -1682,20 +1742,23 @@ def _as_close(key: Tuple[float, int], best: Tuple[float, int]) -> bool:
 
 def _closest(to: Any, rivals: Sequence[Any]) -> Tuple[List[Any], List[Any]]:
     """``(won, tied)``: the rivals closest to ``to`` (:func:`_closeness`),
-    or, where those name different specimens and a sample both print does
-    not pick one out, none -- and those rivals as the tie."""
+    with every other rival that names no other specimen than they do (a
+    sample's sieve sheet printing 12.0-13.5 ft and its hydrometer sheet
+    printing 12.0 ft only); or, where the closest name different specimens
+    and a sample both name does not pick one out, none -- and those rivals
+    as the tie."""
     if not rivals:
         return [], []
     keyed = [(_closeness(to, r), r) for r in rivals]
     best = min(key for key, _r in keyed)
     near = [r for key, r in keyed if _as_close(key, best)]
-    if not _apart(near):
-        return near, []
-    mine = _sample_keys(to)
-    agree = [r for r in near if mine & _sample_keys(r)]
-    if agree and not _apart(agree):
-        return agree, []
-    return [], near
+    if _apart(near):
+        mine = _sample_keys(to)
+        near = [r for r in near if mine & _sample_keys(r)]
+        if not near or _apart(near):
+            return [], [r for key, r in keyed if _as_close(key, best)]
+    return [r for r in rivals
+            if not any(_names_another(r, w) for w in near)], []
 
 
 def _apart(group: Sequence[Any]) -> bool:
@@ -1708,20 +1771,33 @@ def _may_join(row: Any, sheet: LabTest) -> bool:
     (:func:`~report_ingest.model.lab_hole` on both: the link this pass
     made, else the boring as printed, RI-115), its top within
     :data:`DEPTH_TOL_M` of the row's (or, for a row with no depth, the same
-    sample where the row prints one), and a test in common
-    (:func:`_shares_a_test`) or a sample both name alike."""
+    sample where the row prints one), and one of:
+
+    - the sheet's kind is one the row's columns name (:func:`_kinds_named`);
+    - a sample both name alike;
+    - a value both carry (:data:`SHARED_VALUES`), unless both print samples
+      and they differ: then the value is another sample's, printed beside
+      that sample's own test (a chemistry sheet's water content);
+    - for a row whose columns name no test at all, the sheet's interval is
+      exactly the row's.
+    """
     hole = hole_key(lab_hole(row))
     if hole and hole_key(lab_hole(sheet)) != hole:
         return False
-    sample = _sample_keys(row)
+    sample, theirs = _sample_keys(row), _sample_keys(sheet)
     depth = depth_m(row.depth_top)
     if depth is not None:
         got = depth_m(sheet.depth_top)
         if got is None or abs(got - depth) > DEPTH_TOL_M:
             return False
-    elif sample and not sample & _sample_keys(sheet):
+    elif sample and not sample & theirs:
         return False
-    return _shares_a_test(row, sheet) or bool(sample & _sample_keys(sheet))
+    kinds = _kinds_named(row)
+    if sheet.kind in kinds or sample & theirs:
+        return True
+    if _shares_a_value(row, sheet):
+        return not (sample and theirs)
+    return not kinds and _closeness(row, sheet) == (0.0, 0)
 
 
 def _its_sample_first(row: Any, mine: List[LabTest]) -> List[LabTest]:
@@ -1787,12 +1863,16 @@ def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
     sheets in several holes none of which names its sample; neither a
     depth nor a sample and sheets naming several specimens) joins none of
     them, a tie. A sheet taken by several rows of the table stays with the
-    closest of them: the table prints each specimen once. Where the
-    closest rivals name different
+    rows that share a test with it, if any do, and of those with the
+    closest: the table prints each specimen once, and a row that took it
+    only by its sample (its limits row, beside the row tabulating the
+    grading) is not its row. Where the closest rivals name different
     specimens (a hole, a sample or a depth that differs) and no sample
     both name picks one out, nothing is joined: the tie is returned to be
-    said, not guessed. Rivals that name no different specimen -- one test
-    run three times on a sheet, a test read as one per page -- all join.
+    said, not guessed. Rivals that name no other specimen than the closest
+    -- one test run three times on a sheet, a test read as one per page, a
+    hydrometer sheet printing only the top of its sieve sheet's interval --
+    join with it.
     """
     picked: List[List[LabTest]] = []
     ties: List[Tuple[List[Any], List[LabTest]]] = []
@@ -1822,6 +1902,8 @@ def _summary_matches(rows: Sequence[Any], sheets: Sequence[LabTest]
                   if any(s is sheet for s in chosen)]
         if not takers:
             continue
+        testing = [i for i in takers if _shares_a_test(rows[i], sheet)]
+        takers = testing or takers
         won, tied = _closest(sheet, [rows[i] for i in takers])
         if tied:
             ties.append((list(tied), [sheet]))
@@ -1844,11 +1926,12 @@ def _sheets_for(row: Any, sheets: Sequence[LabTest],
     return next(got for r, got in zip(table, joined) if r is row)
 
 
-def _specimen(test: Any) -> str:
-    """A row or a sheet as a reviewer finds it: hole, sample, depth."""
-    at = f" at {_show(test.depth_top)}" if test.depth_top else ""
+def _specimen(test: Any, at: str = " at ") -> str:
+    """A row or a sheet as a reviewer finds it: hole, sample, depth (after
+    ``at``; a QA ``where`` has its own "at", so it passes a space)."""
+    depth = f"{at}{_show(test.depth_top)}" if test.depth_top else ""
     return (f"{lab_hole(test) or '?'} {test.sample_id or ''}".strip()
-            + at)
+            + depth)
 
 
 def _note_ties(table: LabTest, ties: Sequence[Tuple[List[Any],
@@ -1864,7 +1947,7 @@ def _note_ties(table: LabTest, ties: Sequence[Tuple[List[Any],
         (sheet,) = sheets
         qa.append(QAEntry(
             kind="note", rank="open",
-            where=f"lab_tests.summary_table at {_specimen(sheet)}",
+            where=f"lab_tests.summary_table at {_specimen(sheet, ' ')}",
             detail=f"the {sheet.kind} sheet is as close to {len(rows)} rows "
                    f"of the summary table that name different specimens; "
                    f"it is cross-checked against none of them",
@@ -1875,7 +1958,7 @@ def _note_ties(table: LabTest, ties: Sequence[Tuple[List[Any],
                           _count_kinds(sheets).items())
         qa.append(QAEntry(
             kind="note", rank="open",
-            where=f"lab_tests.summary_table at {_specimen(row)}",
+            where=f"lab_tests.summary_table at {_specimen(row, ' ')}",
             detail=f"the summary row is as close to sheets that name "
                    f"different specimens ({kinds}); it is cross-checked "
                    f"against none of them",

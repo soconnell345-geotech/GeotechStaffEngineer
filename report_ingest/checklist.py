@@ -338,21 +338,15 @@ def check_lab_ids_vs_logs(ctx: CheckContext, item: Dict[str, Any]
 
 
 def _sheet_kinds_on(rows: Sequence[Any], sheet: Any) -> bool:
-    """Whether the summary table carries any value this sheet reports: a
-    sheet whose kind the summary does not tabulate at all (chemistry on a
-    table of index tests) is not missing from it (BACKLOG DR-21)."""
-    from report_ingest.reconciler import CROSS_CHECKS
+    """Whether the summary table tabulates this sheet's test: a column the
+    table carries names the sheet's kind (``reconciler._kinds_named``, the
+    notion the summary-row match joins by; RI-140). A sheet whose kind the
+    summary does not tabulate (chemistry beside a table of index tests,
+    though the chemistry sheet prints a water content too) is not missing
+    from it (BACKLOG DR-21)."""
+    from report_ingest.reconciler import _kinds_named
 
-    carried = {col for col in CROSS_CHECKS
-               if any(getattr(r, col, None) is not None for r in rows)}
-    result = getattr(sheet, "result", None)
-    if result is None:
-        return False
-    for col in carried:
-        if any(getattr(result, name, None) is not None
-               for name in CROSS_CHECKS[col]):
-            return True
-    return False
+    return any(sheet.kind in _kinds_named(r) for r in rows)
 
 
 def _printed(test: Any) -> Tuple[str, Optional[float], str]:
