@@ -132,8 +132,9 @@ from typing import (Any, Callable, Dict, List, Mapping, Optional, Sequence,
 
 from pydantic import BaseModel
 
-from report_ingest.checks import (LISTED, _noted, _on_call_pages, _span,
-                                  as_read, pdf_local)
+from report_ingest.checks import (IMPOSSIBLE, LISTED, SURFACE_TOL_M, _noted,
+                                  _on_call_pages, _span, as_read,
+                                  ground_investigation, pdf_local)
 from report_ingest.engine import (estimate_tokens, pdf_block,
                                   picture_tokens_est, schema_tokens_est,
                                   text_block, user)
@@ -609,6 +610,17 @@ def read_logs(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         if len(built) > 1:
             investigation, joined = _join_logs(built)
             unresolved.extend(joined)
+        # The log's last gate (RI-123): each builder checked its own depths
+        # against the ground surface, so this finds what the additions or
+        # the join brought, which is nothing today.
+        above, near = ground_investigation(investigation, refused=IMPOSSIBLE)
+        unresolved.extend(above)
+        if near:
+            unresolved.append({
+                "what": "depths at the ground surface", "page": pages[0],
+                "why": f"{near} joined depth(s) above the ground surface by "
+                       f"no more than {SURFACE_TOL_M:g} m were recorded as 0",
+                "flag": "surface_snap"})
         result = LogReadResult(
             investigation=investigation, changes=changes,
             unresolved=unresolved + skipped, pages=pages,

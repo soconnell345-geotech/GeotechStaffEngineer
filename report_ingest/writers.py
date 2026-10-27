@@ -1213,6 +1213,22 @@ def _diggs_notes_to_qa(record: ReportRecord, notes: Any) -> None:
             kind="skipped", where=f"diggs.investigations[{name}]",
             detail=f"{name} is not in the DIGGS file: {row.get('why', '')}",
             pages=[int(p) for p in row.get("pages") or []]))
+    above = list(getattr(notes, "above_ground", []) or [])
+    if above:
+        # RI-123: the record still holds a depth above the ground surface
+        # that every reader's own check should have stopped; the file does
+        # not, and the reviewer is told where each one is.
+        pages = sorted({int(row["page"]) for row in above
+                        if row.get("page") is not None})
+        record.qa.append(QAEntry(
+            kind="out_of_range", where="diggs.above_ground",
+            detail=f"{len(above)} depth(s) in the record are above the "
+                   f"ground surface, which no depth below it can be; each "
+                   f"was left out of the DIGGS file and kept in the record "
+                   f"(the first five here)",
+            values=[f"{row.get('what')}: {row.get('value'):g}"
+                    for row in above[:5]],
+            pages=pages))
     if notes.shared_names:
         record.qa.append(QAEntry(
             kind="note", where="diggs.shared_names",
