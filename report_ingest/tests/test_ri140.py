@@ -116,7 +116,11 @@ class TestASharedTest:
         assert _match([row], [_chemical()]) == ([[]], [])
 
     def test_the_checklist_lists_the_row_whose_sheet_is_missing(self):
-        record = reconcile(_record(_chemical(), _summary(_index_row())))
+        # QB-9's limits sheet: the report prints Atterberg sheets, so the
+        # row's missing one is a gap, not a note (RI-143).
+        record = reconcile(_record(_chemical(), _atterberg(hole="QB-9",
+                                                           top=6.0),
+                                   _summary(_index_row())))
         sh = _check(record)
 
         assert sh["status"] == "fail", sh
@@ -436,7 +440,9 @@ class TestAValueAlone:
         row = _index_row(sample="T-3")
         chem = _chemical(sample="T-4", top=2.49, pH=6.9, wc=24.0)
         assert _match([row], [chem]) == ([[]], [])
-        record = reconcile(_record(chem, _summary(row)))
+        # QB-9's limits sheet: the report prints Atterberg sheets (RI-143).
+        record = reconcile(_record(chem, _atterberg(hole="QB-9", top=6.0),
+                                   _summary(row)))
         assert not [e for e in record.qa if e.kind == "conflict"]
         assert ("summary rows short of a sheet: QB-4 T-3 at 2.4 m (no "
                 "atterberg sheet)") in _check(record)["detail"]

@@ -63,6 +63,21 @@ def _summary(*rows):
                    result=SummaryTableResult(rows=list(rows)))
 
 
+def _elsewhere(*kinds):
+    """A sheet of each kind for QB-9, deep down and on no summary row: the
+    record holds sheets of these kinds, so a row with none of its own has
+    a gap, not a note (RI-143: a kind the record holds no sheet of at all
+    is a note)."""
+    results = {
+        "atterberg": AtterbergResult(ll=38.0, pl=19.0, pi=19.0),
+        "gradation": GradationResult(fines_percent=41.0),
+        "cbr": CBRResult(cbr_percent=6.0),
+        "unconfined": StrengthResult(kind="unconfined",
+                                     qu=Quantity(value=95.0, unit="kPa"))}
+    return [_sheet(kind, results[kind], sample="T-9", top=9.0, page=36 + i,
+                   hole="QB-9") for i, kind in enumerate(kinds)]
+
+
 def _record(*lab):
     """QB-4 and QB-9 logged, their one sample each far below the depths
     tested here, so nothing links a sheet to a log sample."""
@@ -98,7 +113,8 @@ class TestEachTestNeedsItsSheet:
         # The join is RI-140's, unchanged: the same sample joins them.
         assert _summary_matches([row], [chem]) == ([[chem]], [])
 
-        sh = _check(chem, _summary(row))
+        sh = _check(chem, *_elsewhere("atterberg", "gradation"),
+                    _summary(row))
         assert sh["status"] == "fail", sh
         assert sh["detail"].startswith(
             "1 summary row(s) have no sheet for a test they tabulate (0 of "
@@ -108,7 +124,8 @@ class TestEachTestNeedsItsSheet:
                 "atterberg sheet, no gradation sheet)") in sh["detail"]
 
     def test_a_row_with_its_limits_sheet_lacks_only_its_grading(self):
-        sh = _check(_atterberg(), _summary(_row(**LIMITS_AND_GRADING)))
+        sh = _check(_atterberg(), *_elsewhere("gradation"),
+                    _summary(_row(**LIMITS_AND_GRADING)))
         assert sh["status"] == "fail", sh
         assert "QB-4 T-3 at 2.4 m (no gradation sheet)" in sh["detail"]
         assert "no atterberg sheet" not in sh["detail"]
@@ -126,16 +143,19 @@ class TestEachTestNeedsItsSheet:
         uu = _sheet("triaxial", StrengthResult(kind="triaxial",
                                                test_type="UU", su=kpa))
         assert _check(uu, _summary(_row(qu=kpa)))["status"] == "pass"
-        sh = _check(_atterberg(), _summary(_row(ll=44.0, qu=kpa)))
+        sh = _check(_atterberg(), *_elsewhere("unconfined"),
+                    _summary(_row(ll=44.0, qu=kpa)))
         assert ("QB-4 T-3 at 2.4 m (no unconfined or unconfined_rock or "
                 "triaxial sheet)") in sh["detail"]
 
     def test_a_uscs_symbol_is_not_said_again_beside_missing_limits(self):
         # USCS is read off the limits or the grading: the grading sheet
         # reports it; with neither, the missing limits say it.
-        sh = _check(_grading(), _summary(_row(ll=44.0, uscs="CL")))
+        sh = _check(_grading(), *_elsewhere("atterberg"),
+                    _summary(_row(ll=44.0, uscs="CL")))
         assert "QB-4 T-3 at 2.4 m (no atterberg sheet)" in sh["detail"]
-        sh = _check(_chemistry(), _summary(_row(ll=44.0, uscs="CL")))
+        sh = _check(_chemistry(), *_elsewhere("atterberg"),
+                    _summary(_row(ll=44.0, uscs="CL")))
         assert "QB-4 T-3 at 2.4 m (no atterberg sheet)" in sh["detail"]
         assert "gradation" not in sh["detail"]
 
@@ -158,7 +178,7 @@ class TestEachTestNeedsItsSheet:
             sh["detail"]
 
     def test_an_other_heading_names_its_test(self):
-        sh = _check(_atterberg(),
+        sh = _check(_atterberg(), *_elsewhere("cbr"),
                     _summary(_row(ll=44.0, other=[("CBR (%)", "9")])))
         assert "QB-4 T-3 at 2.4 m (no cbr sheet)" in sh["detail"]
         cbr = _sheet("cbr", CBRResult(cbr_percent=9.0), page=33)
@@ -194,8 +214,8 @@ class TestWaterContentAndDensity:
             sh["detail"]
 
     def test_a_gap_beside_them_counts_alone(self):
-        sh = _check(_atterberg(), _summary(_row(wc=16.2,
-                                                **LIMITS_AND_GRADING)))
+        sh = _check(_atterberg(), *_elsewhere("gradation"),
+                    _summary(_row(wc=16.2, **LIMITS_AND_GRADING)))
         assert sh["status"] == "fail", sh
         assert sh["detail"].startswith(
             "1 summary row(s) have no sheet for a test they tabulate (0 of "
@@ -241,7 +261,7 @@ class TestTies:
         sh = _check(_grading(sample=""),
                     _atterberg(sample="T-5", top=2.30),
                     _atterberg(sample="T-6", top=2.50, page=22),
-                    _summary(row))
+                    *_elsewhere("cbr"), _summary(row))
         assert sh["status"] == "fail", sh
         assert "QB-4 at 2.4 m (no cbr sheet)" in sh["detail"]
         assert "no atterberg sheet" not in sh["detail"]
@@ -256,7 +276,8 @@ class TestTheNote:
         bare = [_row(sample=f"T-{n}", top=1.0 + n, ll=40.0 + n)
                 for n in range(30, 48)]
         partial = _row(sample="T-3", **LIMITS_AND_GRADING)
-        sh = _check(_atterberg(), _summary(*bare, partial))
+        sh = _check(_atterberg(), *_elsewhere("gradation"),
+                    _summary(*bare, partial))
 
         assert sh["status"] == "fail", sh
         assert sh["detail"].startswith(
