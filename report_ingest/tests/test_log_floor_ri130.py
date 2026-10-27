@@ -396,11 +396,14 @@ class TestTheDrawnTop:
         return seed_from_grid(grid, [0], "SYNTH", qa=[])
 
     @pytest.mark.parametrize("step, box, row, stray, top", [
-        (5.0, (20.0, 24.0), 23.6, 24.3, 23.6),      # read as feet: refused
-        (5.0, (30.0, 32.0), 30.6, 32.05, 30.0),     # read as feet: taken
-        (1.0, (5.0, 5.9), 5.7, 6.0, 5.7),           # read as metres: refused
-        (1.0, (5.0, 5.7), 5.55, 5.8, 5.0)])         # read as metres: taken
-    def test_a_log_of_no_known_unit_reads_the_reach_as_it_groups(
+        (5.0, (20.0, 24.0), 23.6, 24.3, 23.6),      # 3.6 units: refused
+        (5.0, (30.0, 32.0), 30.6, 32.05, 30.0),     # 0.6 units: taken
+        (1.0, (5.0, 5.9), 5.7, 6.0, 5.7),           # 0.7 units: refused
+        (1.0, (5.0, 5.7), 5.55, 5.8, 5.0),          # 0.55 units: taken
+        # Rulers stepping by 2 do not make it feet: were this log metric, a
+        # 24 in reach read as 2 ft would let the top move 1.2 m up.
+        (2.0, (10.0, 11.5), 11.2, 11.62, 11.2)])
+    def test_a_log_of_no_known_unit_reads_the_reach_in_its_own_unit(
             self, step, box, row, stray, top):
         inv = self._first_row_in(_box(*box), row=row, stray=stray, unit="",
                                  step=step)
