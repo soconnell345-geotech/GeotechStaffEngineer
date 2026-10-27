@@ -88,6 +88,7 @@ the cluster unless the owner moves them deliberately.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import traceback
@@ -5752,6 +5753,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                                      oos or {}, mapped),
             "bound": _ingest_bound_rows(record),
             "switches": {"ingest_bound": ingest_bound,
+                         "lab_sheets_per_call": lab_sheets_per_call,
                          "counts_from_logs": counts_from_logs,
                          "narrative_skips_bound": narrative_skips_bound},
             **_ingest_arm_fields(first, engines, arm_kwargs, arm_models,
@@ -5779,7 +5781,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "calc_page_images": page_images_enabled(),
             "lab_link_from_label": link_from_label_enabled(),
             "lab_floor_per_page": floor_per_page_enabled(),
-            **_ingest_steps(folder, narrative_skips_bound),
+            **_ingest_steps(folder, narrative_skips_bound,
+                            lab_sheets_per_call),
             **brake.fields(),
             **_item_error_fields(record),
         }
@@ -6305,6 +6308,8 @@ _SWITCH_NAMES = (
     ("counts_from_logs", "Counts from the logs (RI-14, `counts_from_logs`)"),
     ("narrative_skips_bound", "Narrative skips bound pages (RI-14, "
                               "`narrative_skips_bound`)"),
+    ("lab_sheets_per_call", "Lab sheets per call (RI-116, "
+                            "`lab_sheets_per_call`)"),
 )
 
 
@@ -6322,7 +6327,8 @@ def _switch_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
                 value = "not recorded"
             else:
                 value = got[key]
-                value = ("on" if value is True else "off" if value is False
+                value = ("on" if value is True else
+                         "off" if value is False or value is None
                          else str(value))
             counts[value] = counts.get(value, 0) + 1
         order = sorted(counts, key=lambda v: (v == "not recorded", v))
@@ -6961,7 +6967,8 @@ def _item_step(blob: Dict[str, Any]) -> str:
 
 
 def _ingest_steps(folder: Path,
-                  narrative_skips_bound: Optional[bool] = None
+                  narrative_skips_bound: Optional[bool] = None,
+                  lab_sheets_per_call: Optional[int] = None
                   ) -> Dict[str, Any]:
     """Model calls by step for the report and for each report bound inside
     it, and what the visual-scales voters did, read off the step and item
@@ -7038,7 +7045,38 @@ def _ingest_steps(folder: Path,
                 old = {"files": len(kept_old), "chosen_by": chosen_by,
                        "calls": sum(calls(blob) for path, blob in narrative
                                     if path in kept_old)}
-                superseded[name] = {"narrative": old}
+                superseded.setdefault(name, {})["narrative"] = old
+            # A lab item read whole is ``item_N.json`` and read in windows
+            # ``item_N-perK.json`` (lab_reader.split_key); a reused folder
+            # can hold both. The run's recorded ``lab_sheets_per_call`` K
+            # says which it used: the ``-perK`` file when there is one,
+            # else the whole one (an item of K pages or fewer is not split)
+            # (BACKLOG RI-138).
+            lab_groups: Dict[str, List[Path]] = {}
+            for path in paths:
+                if path in kept_old:
+                    continue
+                base = re.sub(r"-per\d+$", "", path.stem)
+                if base != path.stem or "tests" in load(path):
+                    lab_groups.setdefault(base, []).append(path)
+            lab_old: set = set()
+            for base, files in lab_groups.items():
+                if len(files) < 2:
+                    continue
+                want = (f"{base}-per{int(lab_sheets_per_call)}"
+                        if lab_sheets_per_call is not None else base)
+                used = [f for f in files if f.stem == want] or \
+                    [f for f in files if f.stem == base]
+                if not used:
+                    continue
+                lab_old |= {f for f in files if f != used[0]}
+            if lab_old:
+                got = superseded.setdefault(name, {}).setdefault(
+                    "lab", {"files": 0, "calls": 0,
+                            "chosen_by": "lab_sheets_per_call"})
+                got["files"] += len(lab_old)
+                got["calls"] += sum(calls(load(f)) for f in lab_old)
+                kept_old |= lab_old
             for path in paths:
                 if path in kept_old:
                     continue
@@ -7116,8 +7154,18 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
     for r in rows:
         kept = r.get("superseded_item_files")
         for doc, steps in (kept.items() if isinstance(kept, dict) else ()):
-            got = steps.get("narrative") if isinstance(steps, dict) else None
-            if isinstance(got, dict) and got.get("files"):
+            for step, got in (steps.items() if isinstance(steps, dict)
+                              else ()):
+                if not (isinstance(got, dict) and got.get("files")):
+                    continue
+                if step == "lab":
+                    out += [f"{r.get('id', '')} {doc}: {got['files']} lab "
+                            f"item file(s) of the other reading (whole or "
+                            f"in windows) kept from an earlier run "
+                            f"({_n(got.get('calls'))} calls), not counted "
+                            f"above; the file used was the one matching "
+                            f"the run's recorded lab_sheets_per_call.", ""]
+                    continue
                 out += [f"{r.get('id', '')} {doc}: {got['files']} older "
                         f"narrative item file(s) kept from a re-read "
                         f"({_n(got.get('calls'))} calls), not counted "
@@ -7127,8 +7175,7 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
                            if got.get("chosen_by") == "key" else
                            "taken as the newest by file time, the switch "
                            "not being recorded (or no file carrying its "
-                           "key).")
-                        , ""]
+                           "key)."), ""]
     return out
 
 
