@@ -64,6 +64,7 @@ __all__ = [
     "DEFAULT_MAX_TOKENS", "CallCeilingReached",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
     "price_for", "strict_schema", "error_kind", "FAILURE_KINDS",
+    "is_rate_limit", "RATE_LIMIT_WORDS",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
     "image_media_type", "IMAGE_SIGNATURES",
@@ -591,17 +592,51 @@ def _count(value: Any) -> Optional[int]:
     return None
 
 
-def error_kind(error: Any) -> str:
-    """Which of :data:`FAILURE_KINDS` an error is, read off its class name
-    and its text the way :meth:`PrompterEngine.is_rate_limit` reads a rate
-    limit. A prompt past the model's context is ``too_large`` (Claude says
-    "prompt is too long", OpenAI "maximum context length")."""
+#: What a rate limit says of itself, in an error's message or its body,
+#: lower case. Read off the WORDS, never the status alone (BACKLOG RI-139):
+#: Foundry's proxy sends a rate limit as a 400, and a 400 that says none of
+#: these is a refused request like any other.
+RATE_LIMIT_WORDS: Tuple[str, ...] = ("too many requests", "rate limit",
+                                     "rate_limit", "throttl")
+
+
+def _body_text(error: Any) -> str:
+    """An error response's body as text (an SDK error keeps it on
+    ``body``), lower case; ``""`` when it has none or it will not read."""
+    try:
+        body = getattr(error, "body", None)
+        if body is None:
+            return ""
+        if not isinstance(body, str):
+            body = json.dumps(body, default=str)
+        return body.lower()
+    except Exception:                       # noqa: BLE001 - never raise here
+        return ""
+
+
+def is_rate_limit(error: Any) -> bool:
+    """Whether an error is the provider saying 'too many requests': its
+    class name (``RateLimitError``, a host's ``RateLimitGaveUp``), a 429 in
+    its message, or :data:`RATE_LIMIT_WORDS` in its message or its body,
+    whatever the status. Never raises."""
     name = type(error).__name__.lower() if isinstance(error, BaseException) \
         else ""
     text = _message_of(error).lower()
-    if ("ratelimit" in name or "too many requests" in text
-            or "rate limit" in text or "rate_limit" in text
-            or "error code: 429" in text):
+    if "ratelimit" in name or "error code: 429" in text:
+        return True
+    said = text + " " + _body_text(error)
+    return any(word in said for word in RATE_LIMIT_WORDS)
+
+
+def error_kind(error: Any) -> str:
+    """Which of :data:`FAILURE_KINDS` an error is, read off its class name
+    and its text; a rate limit as :func:`is_rate_limit` reads one. A prompt
+    past the model's context is ``too_large`` (Claude says "prompt is too
+    long", OpenAI "maximum context length")."""
+    name = type(error).__name__.lower() if isinstance(error, BaseException) \
+        else ""
+    text = _message_of(error).lower()
+    if is_rate_limit(error):
         return "rate_limit"
     if ("too large" in text or "error code: 413" in text
             or "toolarge" in name or "prompt is too long" in text
@@ -701,7 +736,16 @@ class CostMeter:
     estimate is never added to the totals. A request held back by a
     :class:`RequestPacer` (BACKLOG RI-127) carries the seconds it was held,
     ``paced``, and :attr:`paced_seconds` adds them up (in :meth:`to_dict`
-    only when there were any); they are in the call's ``seconds`` too.
+    only when there were any); they are in the call's ``seconds`` too. A
+    call that was held and whose request the route then refused to send
+    (BACKLOG RI-139) is no request: it is not in ``calls`` or ``failed``,
+    but its hold is a row of its own (:meth:`unsent`) and in
+    :attr:`paced_seconds`.
+
+    CALLS ON SEVERAL THREADS AT ONCE (BACKLOG RI-139): an engine that sends
+    a call's request again passes the call's number (``call_no``) with each
+    later attempt, so the attempt is filed under its own call even when
+    another call's rows were recorded in between.
 
     Recording never stands in the way of the call it records: an error
     whose text or body will not read is recorded with what can be read, and
@@ -755,14 +799,21 @@ class CostMeter:
                usage: Optional[Usage], seconds: float,
                adapted: Sequence[str], *, started: Optional[float] = None,
                duration: Optional[float] = None,
-               paced: float = 0.0) -> Dict[str, Any]:
+               paced: float = 0.0,
+               call_no: Optional[int] = None) -> Dict[str, Any]:
         """One :attr:`per_call` row; attempt 1 starts a new call. ``started``
         is the epoch time the request went out and ``duration`` its own
         seconds (BACKLOG RI-126); without them the row is dated by
-        :attr:`_clock`, less ``seconds``."""
-        if int(attempt) <= 1 or not self._call_no:
-            self._call_no += 1
-        entry: Dict[str, Any] = {"call": self._call_no,
+        :attr:`_clock`, less ``seconds``. ``call_no``: the call a later
+        attempt belongs to, as its first row was numbered (BACKLOG RI-139);
+        without it a later attempt belongs to the call begun last."""
+        if call_no is not None:
+            number = int(call_no)
+        else:
+            if int(attempt) <= 1 or not self._call_no:
+                self._call_no += 1
+            number = self._call_no
+        entry: Dict[str, Any] = {"call": number,
                                  "attempt": max(1, int(attempt)),
                                  "model": model}
         if served_by:
@@ -799,23 +850,25 @@ class CostMeter:
             stop: str = "", adapted: Sequence[str] = (),
             started: Optional[float] = None,
             duration: Optional[float] = None,
-            paced: float = 0.0) -> Dict[str, Any]:
+            paced: float = 0.0,
+            call_no: Optional[int] = None) -> Dict[str, Any]:
         """A reply. Returns its :attr:`per_call` row, for a note the engine
         has only after reading the reply. Safe from several threads at once
-        (:data:`_METER_LOCK`). ``started``, ``duration``, ``paced``: see
-        :meth:`_entry`."""
+        (:data:`_METER_LOCK`). ``started``, ``duration``, ``paced``,
+        ``call_no``: see :meth:`_entry`."""
         with _METER_LOCK:
             return self._add(model, usage, seconds, served_by,
                              attempt=attempt, stop=stop, adapted=adapted,
                              started=started, duration=duration,
-                             paced=paced)
+                             paced=paced, call_no=call_no)
 
     def _add(self, model: str, usage: Usage, seconds: float,
              served_by: Optional[str] = None, *, attempt: int = 1,
              stop: str = "", adapted: Sequence[str] = (),
              started: Optional[float] = None,
              duration: Optional[float] = None,
-             paced: float = 0.0) -> Dict[str, Any]:
+             paced: float = 0.0,
+             call_no: Optional[int] = None) -> Dict[str, Any]:
         self.calls += 1
         self.seconds += float(seconds)
         priced_as = served_by if price_for(served_by or "") else model
@@ -835,7 +888,8 @@ class CostMeter:
         try:
             entry = self._entry(model, served_by or model, attempt, usage,
                                 seconds, adapted, started=started,
-                                duration=duration, paced=paced)
+                                duration=duration, paced=paced,
+                                call_no=call_no)
             entry["outcome"] = "reply"
             if stop:
                 entry["stop"] = _reason(stop)
@@ -854,7 +908,8 @@ class CostMeter:
              estimated_in: Optional[int] = None,
              started: Optional[float] = None,
              duration: Optional[float] = None,
-             paced: float = 0.0) -> Dict[str, Any]:
+             paced: float = 0.0,
+             call_no: Optional[int] = None) -> Dict[str, Any]:
         """A request that came back with an error: :meth:`_fail`, under
         :data:`_METER_LOCK`."""
         with _METER_LOCK:
@@ -863,7 +918,8 @@ class CostMeter:
                               waited=waited, adapted=adapted,
                               served_by=served_by, usage=usage,
                               estimated_in=estimated_in, started=started,
-                              duration=duration, paced=paced)
+                              duration=duration, paced=paced,
+                              call_no=call_no)
 
     def _fail(self, model: str, error: Any, *, kind: Optional[str] = None,
               seconds: float = 0.0, attempt: int = 1, retried: bool = False,
@@ -873,7 +929,8 @@ class CostMeter:
               estimated_in: Optional[int] = None,
               started: Optional[float] = None,
               duration: Optional[float] = None,
-              paced: float = 0.0) -> Dict[str, Any]:
+              paced: float = 0.0,
+              call_no: Optional[int] = None) -> Dict[str, Any]:
         """A request that came back with an error instead of a reply.
 
         ``retried``: the engine sent it again (``waited`` seconds first);
@@ -884,9 +941,9 @@ class CostMeter:
         engine's estimate of the request's input tokens (BACKLOG RI-126),
         written on the row, marked as an estimate, where the error said no
         input count; never added to the totals. ``started``, ``duration``,
-        ``paced``: see :meth:`_entry`. Never raises: the caller is about to
-        raise the provider's error, and a failure here must not take its
-        place.
+        ``paced``, ``call_no``: see :meth:`_entry`. Never raises: the caller
+        is about to raise the provider's error, and a failure here must not
+        take its place.
         """
         try:
             kind = kind if kind in FAILURE_KINDS else error_kind(error)
@@ -906,7 +963,7 @@ class CostMeter:
                 self._tokens(row, usage)
             entry = self._entry(model, served_by, attempt, usage, seconds,
                                 adapted, started=started, duration=duration,
-                                paced=paced)
+                                paced=paced, call_no=call_no)
             if "input_tokens" not in entry and estimated_in is not None:
                 entry["input_tokens"] = int(estimated_in)
                 entry["input_tokens_estimated"] = True
@@ -920,6 +977,35 @@ class CostMeter:
         except Exception:                   # noqa: BLE001 - see the docstring
             logging.getLogger(__name__).warning(
                 "the cost record could not record a failed request to %s",
+                model, exc_info=True)
+            return {}
+
+    def unsent(self, model: str, error: Any, *, paced: float,
+               started: Optional[float] = None) -> Dict[str, Any]:
+        """A call a :class:`RequestPacer` held whose request the route then
+        refused to send (BACKLOG RI-139): a PDF block a route cannot send,
+        a backend with no client for a tool loop.
+
+        No request went out, so it is no call and no failed request:
+        ``calls``, ``failed``, the tokens and the seconds are untouched. The
+        hold was spent all the same, so it is recorded as a sent call's is:
+        a row of its own (``outcome: "not_sent"``, its ``paced``, ``started``
+        when the hold ended, and the refusal's first line) and the seconds
+        in :attr:`paced_seconds`. A call nothing held records nothing, as
+        before. Never raises."""
+        if not paced:
+            return {}
+        try:
+            with _METER_LOCK:
+                entry = self._entry(model, None, 1, None, 0.0, (),
+                                    started=started, duration=0.0,
+                                    paced=paced)
+                entry.update({"outcome": "not_sent",
+                              "error": _first_line(error)})
+                return entry
+        except Exception:                   # noqa: BLE001 - see the docstring
+            logging.getLogger(__name__).warning(
+                "the cost record could not record a held request to %s",
                 model, exc_info=True)
             return {}
 
@@ -1006,16 +1092,27 @@ PACER_WINDOW_SECONDS = 60.0
 
 def _retry_after_of(exc: Any) -> Optional[float]:
     """The provider's own wait, when its error response carried a
-    ``retry-after`` header; None when it did not or it will not read."""
+    ``retry-after`` header in seconds; None when it did not, or it will not
+    read as a number of seconds of 0 or more (a date, a negative, an
+    infinity). A ``0`` reads as 0.0 -- "no wait" -- not as None
+    (BACKLOG RI-139)."""
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None)
     if not headers:
         return None
     try:
-        value = headers.get("retry-after") or headers.get("Retry-After")
-        return float(value) if value is not None else None
+        value = headers.get("retry-after")
+        if value is None:
+            value = headers.get("Retry-After")
+        if value is None:
+            return None
+        seconds = float(value)
     except (TypeError, ValueError, AttributeError):
         return None
+    if seconds != seconds or seconds in (float("inf"), float("-inf")) \
+            or seconds < 0.0:
+        return None
+    return seconds
 
 
 class RequestPacer:
@@ -1039,7 +1136,9 @@ class RequestPacer:
       (:meth:`backoff`), so a retry is not spent inside the window that
       refused it; and the next request to that model waits too
       (:meth:`hold`). A ``retry-after`` the provider sends is honoured as
-      it is.
+      it is, a ``0`` as no wait (BACKLOG RI-139): the window is the
+      engine's guess for when the provider says nothing, not a floor
+      under what it says.
 
     Each model has its own window: a large request on one model does not
     hold a request on another. One pacer serves every engine it is given,
@@ -1113,10 +1212,11 @@ class RequestPacer:
     def backoff(self, retry_after: Optional[float],
                 ladder: float = 0.0) -> float:
         """The wait before a rate-limited request is sent again: the
-        provider's ``retry-after`` when it sent one, else the engine's own
-        step (``ladder``) and never less than a whole window."""
-        if retry_after:
-            return float(retry_after)
+        provider's ``retry-after`` when it sent one, a ``0`` included (no
+        wait; BACKLOG RI-139), else the engine's own step (``ladder``) and
+        never less than a whole window."""
+        if retry_after is not None:
+            return max(0.0, float(retry_after))
         return max(float(ladder or 0.0), self.window)
 
     def hold(self, model: str, seconds: float) -> None:
@@ -1185,7 +1285,17 @@ class _Request:
     waits included), ``sent`` when the request under way went out (an
     engine that sends again calls :meth:`send`), ``paced`` the seconds the
     pacer held it. The size is estimated once, and only when asked: on a
-    failure, or for a pacer -- with neither, nothing is estimated."""
+    failure, or for a pacer -- with neither, nothing is estimated.
+
+    For an engine that sends a call's request again (:class:`PrompterEngine`)
+    it is also the call's own record (BACKLOG RI-139): ``attempt``, the
+    attempt the call is on; ``out``, whether any of its requests has gone
+    out (:meth:`send`); and ``number``, the call number its first cost row
+    was filed under (:meth:`keep`), which its later attempts are filed
+    under. It is made for one call and handed down that call's path, never
+    kept on the engine, because calls on several threads at once share one
+    engine (``range_workers`` above 1) and one call's clock, size or attempt
+    must not land on another's row."""
 
     def __init__(self, engine: Any, model: str, size: Any) -> None:
         self.pacer: Optional[RequestPacer] = getattr(engine, "pacer", None)
@@ -1194,10 +1304,19 @@ class _Request:
         self._sizer = size
         self._sized = False
         self._size: Optional[int] = None
+        self.attempt = 1
+        self.out = False
+        self.number: Optional[int] = None
         self.began = float(self.clock())
         self.paced = self.pacer.wait(self.model) if self.pacer else 0.0
         self.sent = float(self.clock()) if self.paced else self.began
         self._paced_told = False
+
+    def keep(self, entry: Optional[Dict[str, Any]]) -> None:
+        """The call's number off its first cost row (an empty row, from a
+        record that failed, leaves it unset)."""
+        if self.number is None and entry and entry.get("call") is not None:
+            self.number = int(entry["call"])
 
     def take_paced(self) -> float:
         """:attr:`paced` the first time, 0.0 after: the hold is on the row
@@ -1218,6 +1337,7 @@ class _Request:
 
     def send(self) -> None:
         """Another request of this call goes out now."""
+        self.out = True
         self.sent = float(self.clock())
 
     def took(self) -> float:
@@ -1667,10 +1787,10 @@ class PrompterEngine:
         #: None, the default, sends each request as it comes and waits on
         #: :attr:`RATE_LIMIT_WAITS` alone.
         self.pacer: Optional[RequestPacer] = pacer
-        #: The clock a call is timed by; a test replaces it.
+        #: The clock a call is timed by; a test replaces it. A call's own
+        #: clock, size, attempt and number live on its :class:`_Request`,
+        #: handed down the call's path and never kept here (BACKLOG RI-139).
         self._clock = time.time
-        #: The call under way's clock and size (:class:`_Request`).
-        self._call: Optional[_Request] = None
         #: The deployment that actually served the last call. Funhouse tiers
         #: are aliases and the model behind one changes without notice, so a
         #: run records what answered as well as what it asked for.
@@ -1684,21 +1804,17 @@ class PrompterEngine:
         self.adaptations: List[str] = []
         #: How a rate-limited call waits; a test replaces it.
         self._sleep = time.sleep
-        #: The attempt the call under way is on, and whether any request of
-        #: it has gone out yet: the cost record's (BACKLOG RI-21).
-        self._attempt = 1
-        self._sent = False
 
-    def _sent_again(self, error: Any, kind: str, *, waited: float = 0.0,
-                    lesson: str = "") -> None:
-        """Record a request that came back with an error and is about to be
-        sent again; the next request is the call's next attempt."""
-        call = self._call
-        self.meter.fail(self.model, error, kind=kind, attempt=self._attempt,
-                        retried=True, waited=waited,
-                        adapted=[lesson] if lesson else (),
-                        **(self._timing(call) if call else {}))
-        self._attempt += 1
+    def _sent_again(self, call: _Request, error: Any, kind: str, *,
+                    waited: float = 0.0, lesson: str = "") -> None:
+        """Record a request of ``call`` that came back with an error and is
+        about to be sent again; the next request is the call's next
+        attempt, filed under the same call (BACKLOG RI-21, RI-139)."""
+        call.keep(self.meter.fail(
+            self.model, error, kind=kind, attempt=call.attempt,
+            retried=True, waited=waited, adapted=[lesson] if lesson else (),
+            call_no=call.number, **self._timing(call)))
+        call.attempt += 1
 
     @staticmethod
     def _timing(call: "_Request") -> Dict[str, Any]:
@@ -1735,19 +1851,18 @@ class PrompterEngine:
 
     @staticmethod
     def is_rate_limit(exc: BaseException) -> bool:
-        """Whether an exception is the provider saying 'too many requests'."""
-        name = type(exc).__name__.lower()
-        text = str(exc).lower()
-        return ("ratelimit" in name or "too many requests" in text
-                or "rate limit" in text or "rate_limit" in text
-                or "error code: 429" in text)
+        """Whether an exception is the provider saying 'too many requests'
+        (:func:`is_rate_limit`: its name, a 429, or the words in its message
+        or its body, whatever the status; BACKLOG RI-139)."""
+        return is_rate_limit(exc)
 
     @staticmethod
     def _retry_after(exc: BaseException) -> Optional[float]:
         """The provider's own wait, when its response carried one."""
         return _retry_after_of(exc)
 
-    def _create_adaptive(self, client: Any, kwargs: Dict[str, Any]) -> Any:
+    def _create_adaptive(self, client: Any, kwargs: Dict[str, Any],
+                         call: _Request) -> Any:
         """One call on the raw client, retried with each refused parameter
         fixed in turn -- the backend reports one refusal at a time -- and
         every fix remembered for every later call. A rate-limited call
@@ -1756,19 +1871,23 @@ class PrompterEngine:
         other second the call took. With a :attr:`pacer`, a wait the
         provider did not name is never shorter than the pacer's window
         (:meth:`RequestPacer.backoff`), and the model's next request is
-        held as long (BACKLOG RI-127)."""
+        held as long (BACKLOG RI-127); a retry-after of 0 is no wait
+        (BACKLOG RI-139). ``call`` is this call's own record, which every
+        request of it is timed and filed by."""
         create = client.chat.completions.create
         request = dict(kwargs)
         waits = list(self.RATE_LIMIT_WAITS)
         for _ in range(3 + len(waits)):
             try:
-                self._sent = True
-                if self._call is not None:
-                    self._call.send()
+                call.send()
                 return create(**request)
             except Exception as exc:                # noqa: BLE001 - inspected
                 if self.is_rate_limit(exc) and waits:
                     named = self._retry_after(exc)
+                    # Without a pacer, as before: a named wait of 0 takes
+                    # the ladder's step. Either way a 0 spends a step, so
+                    # a provider that keeps saying 0 gets the ladder's
+                    # tries and no more.
                     wait = named or waits.pop(0)
                     if self.pacer is not None:
                         wait = self.pacer.backoff(named, wait)
@@ -1778,7 +1897,7 @@ class PrompterEngine:
                     logging.getLogger(__name__).info(
                         "prompter engine rate limited on %s; waiting %.0f s",
                         self.model, wait)
-                    self._sent_again(exc, "rate_limit", waited=wait)
+                    self._sent_again(call, exc, "rate_limit", waited=wait)
                     self._sleep(wait)
                     continue
                 adjusted = self.adjust_for_param_error(request, str(exc))
@@ -1795,11 +1914,9 @@ class PrompterEngine:
                 self.adaptations.append(lesson)
                 logging.getLogger(__name__).info(
                     "prompter engine adapted a request: %s", lesson)
-                self._sent_again(exc, "parameter", lesson=lesson)
+                self._sent_again(call, exc, "parameter", lesson=lesson)
                 request = adjusted
-        self._sent = True
-        if self._call is not None:
-            self._call.send()
+        call.send()
         return create(**request)
 
     @property
@@ -1940,12 +2057,13 @@ class PrompterEngine:
                   and len(openai_messages) <= (2 if system else 1)
                   and all(m["role"] in ("system", "user")
                           for m in openai_messages))
-        call = self._call = _Request(self, self.model, lambda: estimate_request(
+        # This call's own record, handed down its path: calls on several
+        # threads at once share this engine (BACKLOG RI-139).
+        call = _Request(self, self.model, lambda: estimate_request(
             msgs, system=system, tools=tools, output_format=output_format))
         cap = int(max_tokens or self.max_tokens)
         raw = None
         tried_chat = False
-        self._attempt, self._sent = 1, False
         #: How the call ended, where this engine knows better than the
         #: error's text: nothing back is ``no_reply`` with or without a client.
         ended_kind: Optional[str] = None
@@ -1954,7 +2072,7 @@ class PrompterEngine:
                 # Keeps the SDK's budget guard and logging on every call
                 # that does not need a tool loop -- triage, above all.
                 last = openai_messages[-1]
-                tried_chat = self._sent = True
+                tried_chat = True
                 call.send()
                 raw = self._prompter.chat(
                     user=last["content"], system=system or
@@ -1980,7 +2098,7 @@ class PrompterEngine:
                               f"({_message_of(reason)[:160]!r}); retried on "
                               f"the raw client")
                     self.adaptations.append(lesson)
-                    self._sent_again(reason if reason is not None
+                    self._sent_again(call, reason if reason is not None
                                      else "chat() returned nothing",
                                      "no_reply", lesson=lesson)
             if raw is None:
@@ -2004,7 +2122,7 @@ class PrompterEngine:
                     kwargs["tool_choice"] = "auto"
                 if response_format:
                     kwargs["response_format"] = response_format
-                raw = self._create_adaptive(client, kwargs)
+                raw = self._create_adaptive(client, kwargs, call)
                 if tried_chat:
                     # chat() failed where the raw client did not, and chat()
                     # always sends its own temperature, so it is not offered
@@ -2018,29 +2136,38 @@ class PrompterEngine:
                     "object)")
         except Exception as exc:
             # The request that ended the call, recorded before it is raised
-            # as it always was. Nothing is recorded when nothing went out (a
-            # backend with no client for a tool loop).
-            if self._sent:
+            # as it always was. Nothing went out (a backend with no client
+            # for a tool loop): no request is recorded, only a pacer's hold
+            # before it (BACKLOG RI-139).
+            if call.out:
                 self.meter.fail(self.model, exc, kind=ended_kind,
-                                attempt=self._attempt,
+                                attempt=call.attempt, call_no=call.number,
                                 seconds=self._clock() - call.began,
                                 **self._timing(call))
                 call.came_back(exc)
+            else:
+                self.meter.unsent(self.model, exc, paced=call.take_paced(),
+                                  started=call.sent)
             raise
         seconds = self._clock() - call.began
         took = call.took()
         call.came_back()
         return self._reply(raw, output_format, seconds,
                            timing={"started": call.sent, "duration": took,
-                                   "paced": call.take_paced()})
+                                   "paced": call.take_paced()},
+                           call=call)
 
     def _reply(self, raw: Any, output_format: Any, seconds: float,
-               timing: Optional[Dict[str, Any]] = None) -> Reply:
+               timing: Optional[Dict[str, Any]] = None,
+               call: Optional[_Request] = None) -> Reply:
         if raw is None:
             raise RuntimeError(
                 "Prompter returned nothing; the call failed or was refused "
                 "(the SDK stashes the reason on the prompter object)")
-        self.served_by = getattr(raw, "model", None) or self.model
+        # Read into a local: another thread's call may set the engine's
+        # attribute before this one is metered (BACKLOG RI-139).
+        served = getattr(raw, "model", None) or self.model
+        self.served_by = served
         usage_raw = getattr(raw, "usage", None)
         details = getattr(usage_raw, "prompt_tokens_details", None)
         thought = getattr(usage_raw, "completion_tokens_details", None)
@@ -2055,8 +2182,9 @@ class PrompterEngine:
         # Metered by what ANSWERED, not by the tier that was asked for: the
         # tier is an alias with no price and the deployment behind it has
         # one (:data:`PROMPTER_PRICES`).
-        self.meter.add(self.model, usage, seconds, served_by=self.served_by,
-                       attempt=self._attempt,
+        self.meter.add(self.model, usage, seconds, served_by=served,
+                       attempt=call.attempt if call is not None else 1,
+                       call_no=call.number if call is not None else None,
                        stop=str(getattr(choice, "finish_reason", "") or ""),
                        **(timing or {}))
 
@@ -2066,14 +2194,14 @@ class PrompterEngine:
         if text:
             blocks.append(text_block(text))
         calls: List[ToolCall] = []
-        for call in (getattr(message, "tool_calls", None) or []):
-            function = getattr(call, "function", None)
+        for asked in (getattr(message, "tool_calls", None) or []):
+            function = getattr(asked, "function", None)
             try:
                 arguments = json.loads(getattr(function, "arguments", "") or "{}")
             except json.JSONDecodeError:
                 arguments = {}
-            calls.append(ToolCall(call.id, function.name, arguments))
-            blocks.append(tool_use_block(call.id, function.name, arguments))
+            calls.append(ToolCall(asked.id, function.name, arguments))
+            blocks.append(tool_use_block(asked.id, function.name, arguments))
 
         parsed = None
         if output_format is not None and text:
@@ -2090,7 +2218,7 @@ class PrompterEngine:
             parsed=parsed,
             stop_reason=str(getattr(choice, "finish_reason", "") or ""),
             usage=usage,
-            model=self.served_by or self.model,
+            model=served,
             seconds=seconds,
             content=blocks,
         )
@@ -2499,7 +2627,9 @@ class ChatModelEngine:
             # Recorded, then raised as before: a failed call is a call
             # (BACKLOG RI-21). The model's own retries happen inside it.
             # A refusal that says nothing went out (``nothing_sent``: the
-            # palantir_models Claude class refusing a PDF) is no request.
+            # palantir_models Claude class refusing a PDF) is no request;
+            # a pacer's hold before it is recorded all the same (BACKLOG
+            # RI-139).
             if not getattr(exc, "nothing_sent", False):
                 self.meter.fail(self.name, exc,
                                 seconds=self._clock() - call.began,
@@ -2507,6 +2637,9 @@ class ChatModelEngine:
                                 estimated_in=call.size(), started=call.sent,
                                 duration=call.took(), paced=call.paced)
                 call.came_back(exc)
+            else:
+                self.meter.unsent(self.name, exc, paced=call.paced,
+                                  started=call.sent)
             raise
         seconds = self._clock() - call.began
         took = call.took()
@@ -2520,8 +2653,11 @@ class ChatModelEngine:
                seconds: float, adapted: Sequence[str] = (),
                timing: Optional[Dict[str, Any]] = None) -> Reply:
         meta = getattr(message, "response_metadata", None) or {}
-        self.served_by = str(meta.get("model_name") or meta.get("model")
-                             or "") or self.name
+        # A local first: calls on several threads share the engine
+        # (BACKLOG RI-139).
+        served = str(meta.get("model_name") or meta.get("model")
+                     or "") or self.name
+        self.served_by = served
         usage = _usage_of(message)
         incomplete = meta.get("incomplete_details")
         stop = _reason(meta.get("finish_reason") or meta.get("stop_reason")
@@ -2529,7 +2665,7 @@ class ChatModelEngine:
                            if isinstance(incomplete, dict) else "")
                        or meta.get("status"))
         entry = self.meter.add(self.name, usage, seconds,
-                               served_by=self.served_by, stop=stop,
+                               served_by=served, stop=stop,
                                adapted=adapted, **(timing or {}))
 
         # A call whose arguments did not parse (a reply cut mid-call) is kept
@@ -2618,7 +2754,7 @@ class ChatModelEngine:
             parsed=parsed,
             stop_reason=stop,
             usage=usage,
-            model=self.served_by,
+            model=served,
             seconds=seconds,
             content=blocks,
             notes=notes,

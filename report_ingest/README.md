@@ -2333,7 +2333,17 @@ request to that model waits until a minute has passed; a rate limit that
 names no retry-after waits a whole minute before it is sent again, and holds
 the model's next request as long. A held request's row carries `paced`
 (seconds), and the cost block `paced_seconds`. None, the default, paces
-nothing and the cost block is what it was.
+nothing and the cost block is what it was. Since BACKLOG RI-139: a
+`retry-after: 0` is honoured as no wait (the minute is for a rate limit that
+names no wait); a rate limit is known by its words in the error's message
+or body (`rate limit`, `too many requests`, `throttl...`), whatever the
+status, so a 400 that says so is paced and a 400 that does not is not; a
+hold before a request the route then refused to send is a row of its own
+(`outcome: "not_sent"`, with its `paced`) and in `paced_seconds`, though no
+call; `paced_seconds` is carried into `earlier_attempts` / `all_attempts`,
+`results.json`'s cost totals and the RESULTS failed-requests line, each only
+where something was held. A running count of the tokens sent over the last
+minute, which would also catch a run of medium-sized requests, is not built.
 
 Bring home **`RESULTS.md` only**, from whichever `out_dir` the cell used. It
 carries IDs, labels, counts and rates. The per-report runs and the triage
