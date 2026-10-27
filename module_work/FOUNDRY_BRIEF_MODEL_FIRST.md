@@ -24,9 +24,10 @@ decisions D1 to D3, are in §2.
 
 - **MF-0, the probe:** `report_ingest.model_first.probe_pdf_route(chat_model)`,
   two calls each, about 8 calls in all:
-  - Opus 5.5 on the proxy class and on the `palantir_models` class, for the
-    PDF route. Set `GEOTECH_FOUNDRY_CLAUDE_PDF=1` only if the proxy brought
-    back the code word from the PDF. Without it, the model-first arms send
+  - Opus 5.5 on the `palantir_models` class, for the PDF route. The AI FDE
+    says transforms cannot reach the workspace's Anthropic proxy
+    (2026-10-27), so the proxy class is not probed and
+    `GEOTECH_FOUNDRY_CLAUDE_PDF` stays unset: the model-first arms send
     pictures with each page's text (`page_route="auto"` resolves to
     `pictures`).
   - Sonnet 5.5 and Haiku 5.5 on the class the wave uses. A pictures call
@@ -42,9 +43,15 @@ decisions D1 to D3, are in §2.
     class. If Sonnet does not pass, stop and send the probe back: Sonnet
     reads the logs and printouts and is the off arm's vision voter (D1,
     D3).
-- **Ask the AI FDE how to bypass the response cache.** Wave 1 served 12
-  repeat calls from it. MF-2's off arm sends wave 2's calls again on wave
-  2's reports, so the cache could answer them with wave 2's replies.
+- **The response cache: no switch to set.** Wave 1's trace review found 12
+  repeat calls in its "b" arms back in 0.1-0.5 s with exactly the first
+  arm's output. The package keeps no store of model answers (it reuses
+  only page descriptions and label runs inside the same output folder),
+  and the AI FDE found no response cache on 2026-10-27, so it sits on
+  Foundry's side if anywhere. MF-2's off arm may get wave 2's replies back
+  for identical requests. Read the call times: a call under 0.5 s with
+  the same output tokens as wave 2's is a cached answer, not a new read;
+  say how many there were.
 - **Do not set `GEOTECH_INGEST_MODEL_FIRST`** in the environment. Each cell
   passes `model_first="off"` or `"on"`, the run resolves it once, and every
   run file records it.
