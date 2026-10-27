@@ -2497,6 +2497,7 @@ class TestTheIngestStage:
                               ingest_narrative_skips_bound=True)
         (row,) = results["ingest"]["per_report"]
         assert row["switches"] == {"ingest_bound": True,
+                                   "lab_sheets_per_call": None,
                                    "counts_from_logs": "zeros",
                                    "narrative_skips_bound": True}
         folder = out / "ingest" / "R36"
@@ -2822,6 +2823,44 @@ class TestCallsByStep:
         got = cs._ingest_steps(folder, True)
         assert "superseded_item_files" not in got
         assert got["calls_by_step"]["report"]["narrative items"] == 1
+
+    def _lab_folder(self, tmp_path):
+        folder = tmp_path / "R92"
+        self._write(folder / "items" / "item_7.json",
+                    {"tests": [], "cost": {"calls": 2}})
+        self._write(folder / "items" / "item_7-per3.json",
+                    {"tests": [], "cost": {"calls": 5}})
+        self._write(folder / "items" / "item_8.json",
+                    {"tests": [], "cost": {"calls": 1}})
+        return folder
+
+    def test_a_lab_item_saved_whole_and_split_is_counted_once(
+            self, tmp_path):
+        folder = self._lab_folder(tmp_path)
+        got = cs._ingest_steps(folder, None, 3)
+        row = got["calls_by_step"]["report"]
+        assert row["lab"] == 6 and row["lab items"] == 2
+        assert got["superseded_item_files"]["report"]["lab"] == {
+            "files": 1, "calls": 2, "chosen_by": "lab_sheets_per_call"}
+        text = "\n".join(cs._step_lines([{"id": "R92", "cost": {"calls": 6},
+                                          **got}]))
+        assert "1 lab item file(s) of the other reading" in text
+        assert "(2 calls)" in text
+
+    def test_with_the_setting_off_the_whole_lab_file_is_the_one(
+            self, tmp_path):
+        folder = self._lab_folder(tmp_path)
+        got = cs._ingest_steps(folder)
+        assert got["calls_by_step"]["report"]["lab"] == 3
+        assert got["superseded_item_files"]["report"]["lab"]["calls"] == 5
+
+    def test_a_lone_whole_lab_file_is_never_superseded(self, tmp_path):
+        folder = tmp_path / "R93"
+        self._write(folder / "items" / "item_8.json",
+                    {"tests": [], "cost": {"calls": 1}})
+        got = cs._ingest_steps(folder, None, 3)
+        assert "superseded_item_files" not in got
+        assert got["calls_by_step"]["report"]["lab items"] == 1
 
     def test_the_ingest_stage_writes_them_into_its_run_file(
             self, ingest_cluster):
@@ -4824,3 +4863,11 @@ class TestIngestSwitchLinesRI128:
                      "switches": {"counts_from_logs": "off"}}}, {}, "m")))
         assert ("`counts_from_logs`): off for 1 report and not recorded "
                 "for 1 report -- MIXED") in text
+
+
+    def test_lab_sheets_per_call_is_a_switch_line_and_none_is_off(self):
+        rows = [self._row("R90", lab_sheets_per_call=None),
+                self._row("R91", lab_sheets_per_call=3)]
+        text = "\n".join(cs._switch_lines(rows))
+        assert ("`lab_sheets_per_call`): 3 for 1 report and off for 1 "
+                "report -- MIXED") in text
