@@ -462,6 +462,19 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _printed_n_text(record: Any) -> str:
+    """The printed N that is a statement (">50", "R"), else "".
+
+    A dash (or blank) printed in the N column means no test and no count --
+    there is no printed fact to keep, and the DIGGS reader reads "-" back as
+    no value. So it is neither written nor looked for.
+    """
+    text = (getattr(record, "n_printed", None) or "").strip()
+    if not text.strip("-‐‑‒–—− "):
+        return ""
+    return text
+
+
 def _cell(value: Any) -> str:
     """One cell of a data table.
 
@@ -1819,7 +1832,7 @@ class _Writer:
         # own statement of a refusal. It is written AS PRINTED, as text under
         # the N value's own property -- the way a lab sheet's "<10" is -- so
         # a refusal row with no countable drive is still in the file.
-        printed = (record.n_printed or "").strip()
+        printed = _printed_n_text(record)
         if printed:
             values.append((_PRINTED_N_COLUMN, "n_value", printed))
         if not values:
@@ -3464,7 +3477,7 @@ def _compare_refusals(name: str, want: Investigation, gid: str,
     once.
     """
     for record in want.spt:
-        raw = (record.n_printed or "").strip()
+        raw = _printed_n_text(record)
         top = _si_value(record.depth_top)
         if not raw or top is None:
             continue
