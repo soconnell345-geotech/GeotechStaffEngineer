@@ -5533,9 +5533,15 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     ``run.json`` names those models.
 
     TOKEN LIMITS (BACKLOG RI-120) work where the dollar meter reads 0.
-    ``max_total_tokens`` stops the run before a report once the reports so
-    far have spent that many (input plus output) and refuses a model call
-    inside a report that would start past what is left;
+    ``max_total_tokens`` stops the run before a report once the arm's
+    folder has spent that many (input plus output, every attempt of every
+    report in it, as the run files record them) and refuses a model call
+    inside a report that would start past what is left. The folder's spend
+    before the call (BACKLOG RI-133) is counted with the call's own, so
+    several builds on one folder share one ceiling; a report finished by an
+    earlier build is counted once. The stop is listed among the failures
+    under ``(token ceiling)`` with what the folder had spent when the call
+    started;
     ``max_report_tokens_in`` refuses a call once the report has sent that
     many input tokens and stops the run after the report. A refused call
     is a ``CallCeilingReached``: the step is cut short and not saved, and
@@ -5582,6 +5588,14 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     failures: Dict[str, str] = {}
     spent = 0.0
     spent_tokens = 0
+    # What this arm's folder had spent before the call started (BACKLOG
+    # RI-133): the ceiling counts it with the call's own spending.
+    folder_tokens = _folder_tokens(out, first) if (
+        max_total_tokens is not None) else 0
+    if max_total_tokens is not None:
+        print(f"  token ceiling {max_total_tokens:,}: the folder had spent "
+              f"{folder_tokens:,} tokens (input plus output, every attempt) "
+              "before this call")
     for n, rid in enumerate(report_ids, 1):
         folder = out / "ingest" / rid
         run_file = folder / "run.json"
@@ -5640,9 +5654,15 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             print(f"  stopping before {rid}: spent ${spent:.2f}, past the "
                   f"${max_total_dollars:.2f} ceiling")
             break
-        if max_total_tokens is not None and spent_tokens >= max_total_tokens:
-            print(f"  stopping before {rid}: {spent_tokens:,} tokens spent, "
-                  f"past the {max_total_tokens:,} ceiling")
+        if (max_total_tokens is not None
+                and folder_tokens + spent_tokens >= max_total_tokens):
+            print(f"  stopping before {rid}: {spent_tokens:,} tokens spent "
+                  f"by this call and {folder_tokens:,} by the folder before "
+                  f"it, past the {max_total_tokens:,} ceiling")
+            failures["(token ceiling)"] = (
+                f"max_total_tokens {max_total_tokens:,} reached before "
+                f"{rid}: the folder had spent {folder_tokens:,} tokens "
+                f"when this call started and this call {spent_tokens:,}")
             break
         folder.mkdir(parents=True, exist_ok=True)
         _stamp_arm(folder, first)
@@ -5672,7 +5692,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                           tokens_per_minute=tokens_per_minute)
         brake = _TokenBrake(meter, max_report_tokens_in,
                             None if max_total_tokens is None
-                            else max_total_tokens - spent_tokens,
+                            else max_total_tokens - folder_tokens
+                            - spent_tokens,
                             earlier_in=_attempts_in(earlier))
         started = time.time()
         doc = None
@@ -5858,6 +5879,39 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         fields.update({f"vision_{k}": v for k, v in seen.items()})
     return {**_score_ingest(done, failures, stage_model, unfinished),
             **fields, **_first_results(done.values())}
+
+
+def _folder_tokens(out: Path, first: "_FirstArm") -> int:
+    """Input plus output tokens every report in ``out/ingest/*/`` of this
+    arm has spent, over every attempt (BACKLOG RI-133), read before a call
+    starts so the call's token ceiling counts the arm folder's earlier
+    builds. A run file counts once: its ``all_attempts`` where it has one,
+    else its own ``cost`` plus its ``earlier_attempts`` (the helpers of
+    RI-124). A report finished earlier and skipped as done is counted here
+    and not again by the call."""
+    root = out / "ingest"
+    total = 0
+    if not root.is_dir():
+        return total
+    for run_file in sorted(root.glob("*/run.json")):
+        if _arm_clash(run_file, first):
+            continue
+        try:
+            blob = json.loads(run_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(blob, dict) or blob.get("id") != run_file.parent.name:
+            continue
+        every = blob.get("all_attempts")
+        if isinstance(every, dict):
+            total += _tokens_of(every)
+            continue
+        cost = blob.get("cost") if isinstance(blob.get("cost"), dict) else {}
+        total += _tokens_of(cost)
+        for row in _attempt_rows(blob):
+            if isinstance(row.get("cost"), dict):
+                total += _tokens_of(row["cost"])
+    return total
 
 
 def _unfinished_reason(blob: Dict[str, Any]) -> str:

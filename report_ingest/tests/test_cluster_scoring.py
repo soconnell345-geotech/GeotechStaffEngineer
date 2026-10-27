@@ -4901,3 +4901,88 @@ class TestIngestSwitchLinesRI128:
         text = "\n".join(cs._switch_lines(rows))
         assert ("`lab_sheets_per_call`): 3 for 1 report and off for 1 "
                 "report -- MIXED") in text
+
+
+# -- a token ceiling across builds (BACKLOG RI-133) ----------------------------
+#
+# Every number below is made up for the test.
+
+def _folder_run(out, rid, **blob):
+    folder = out / "ingest" / rid
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "run.json").write_text(
+        json.dumps({"id": rid, **blob}), encoding="utf-8")
+
+
+class TestTheCeilingCountsTheFolder:
+    def test_the_folder_spend_counts_each_run_file_once(self, tmp_path):
+        first = cs._FirstArm()
+        # Finished, with the sum over its attempts.
+        _folder_run(tmp_path, "R90", counts={"qa": 0},
+                    cost=_attempt_cost(1, 700, 70),
+                    all_attempts={"input_tokens": 3000, "output_tokens": 300})
+        # Unfinished, no sum: its own cost plus the earlier attempts.
+        _folder_run(tmp_path, "R91", error="made-up",
+                    cost=_attempt_cost(1, 200, 20),
+                    earlier_attempts=[{"cost": {"input_tokens": 50,
+                                                "output_tokens": 5}}])
+        # Finished, a first attempt.
+        _folder_run(tmp_path, "R92", counts={"qa": 0},
+                    cost=_attempt_cost(1, 400, 40))
+        assert cs._folder_tokens(tmp_path, first) == (
+            3300 + 220 + 55 + 440)
+        assert cs._folder_tokens(tmp_path / "none", first) == 0
+
+    def test_a_second_call_stops_at_the_ceiling_counting_the_first(
+            self, ingest_cluster, monkeypatch, capsys):
+        from report_ingest.tests import test_graph as tg
+
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        _ingest_run(ingest_cluster, model="fake-main")
+        spent = cs._folder_tokens(out, cs._FirstArm())
+        assert spent > 0
+        (reports_dir / "R37.pdf").write_bytes(
+            (reports_dir / "R36.pdf").read_bytes())
+        monkeypatch.setattr(
+            cs, "_set_ids",
+            lambda name, corpus: ("R36", "R37") if name == "oos_open" else ())
+        capsys.readouterr()
+        # The done report is skipped (counted once, by the folder); the
+        # second call has spent nothing itself yet is already at the ceiling.
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              max_total_tokens=spent)
+        printed = capsys.readouterr().out
+        assert "R36: already done, skipping" in printed
+        assert "stopping before R37" in printed
+        assert f"the folder had spent {spent:,} tokens" in printed
+        why = results["ingest"]["failures"]["(token ceiling)"]
+        assert f"the folder had spent {spent:,} tokens" in why
+        assert not (out / "ingest" / "R37" / "arm.json").exists()
+
+    def test_a_ceiling_above_the_folder_spend_lets_the_call_run(
+            self, ingest_cluster, monkeypatch):
+        from report_ingest.tests import test_graph as tg
+
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        results = _ingest_run(ingest_cluster, model="fake-main",
+                              max_total_tokens=10 ** 9)
+        assert "(token ceiling)" not in results["ingest"]["failures"]
+        assert (out / "ingest" / "R36" / "arm.json").exists()
+
+    def test_none_changes_nothing(self, ingest_cluster, monkeypatch, capsys):
+        from report_ingest.tests import test_graph as tg
+
+        reports_dir, out, scripts = ingest_cluster
+        scripts["turns"] = tg.main_script()
+        _metered(monkeypatch, scripts)
+        _folder_run(out, "R90", counts={"qa": 0},
+                    cost=_attempt_cost(1, 10 ** 9, 0))
+        results = _ingest_run(ingest_cluster, model="fake-main")
+        printed = capsys.readouterr().out
+        assert "token ceiling" not in printed
+        assert "(token ceiling)" not in results["ingest"]["failures"]
+        assert (out / "ingest" / "R36" / "arm.json").exists()
