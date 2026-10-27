@@ -6289,6 +6289,43 @@ def _render_ingest_labels(ingest: Dict[str, Any]) -> List[str]:
     return out
 
 
+_SWITCH_NAMES = (
+    ("ingest_bound", "Bound documents read as their own records "
+                     "(`ingest_bound`)"),
+    ("counts_from_logs", "Counts from the logs (RI-14, `counts_from_logs`)"),
+    ("narrative_skips_bound", "Narrative skips bound pages (RI-14, "
+                              "`narrative_skips_bound`)"),
+)
+
+
+def _switch_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
+    """One line per ingest option a run file records under ``switches``:
+    how many reports ran under each value, and MIXED when they differ, as
+    the lab stage's arm lines do (BACKLOG RI-128). ``not recorded`` is a run
+    file written before the option was recorded."""
+    out: List[str] = []
+    for key, what in _SWITCH_NAMES:
+        counts: Dict[str, int] = {}
+        for r in rows:
+            got = r.get("switches")
+            if not isinstance(got, dict) or key not in got:
+                value = "not recorded"
+            else:
+                value = got[key]
+                value = ("on" if value is True else "off" if value is False
+                         else str(value))
+            counts[value] = counts.get(value, 0) + 1
+        order = sorted(counts, key=lambda v: (v == "not recorded", v))
+        line = f"{what}: " + " and ".join(
+            f"{v} for {counts[v]} report" + ("" if counts[v] == 1 else "s")
+            for v in order)
+        if len(order) > 1:
+            line += (" -- MIXED: these reports were not all read in one "
+                     "recorded arm")
+        out.append(line + ".")
+    return out
+
+
 def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
     """The ingest stage: what each record holds, what its exports passed,
     and the record scored against the hand truth where there is any.
@@ -6337,6 +6374,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             "Per-page lab floor in the brief (RI-56, "
             "GEOTECH_INGEST_LAB_FLOOR_PER_PAGE)",
             _arms(r.get("lab_floor_per_page") for r in rows), "reports"))
+    out += _switch_lines(rows)
     if ingest.get("failures"):
         out += ["", "**Reports that failed and are NOT in any number below:**"]
         out += [f"- {rid}: {why}" for rid, why in ingest["failures"].items()]
@@ -6919,7 +6957,10 @@ def _ingest_steps(folder: Path) -> Dict[str, Any]:
 
     A step file kept from an earlier attempt counts the calls it took
     then, so on a resumed run these can add up to more than the run
-    file's own ``cost``, which counts this attempt only. Never fails a
+    file's own ``cost``, which counts this attempt only. A narrative item
+    file left behind by a re-read (the newest one is the reading the record
+    used) is not counted in the step cells; it is listed apart under
+    ``superseded_item_files`` (BACKLOG RI-129). Never fails a
     run: it is called after the run's model calls are paid for, and an
     item file it cannot read is counted as unreadable and passed over.
     """
@@ -6937,6 +6978,7 @@ def _ingest_steps(folder: Path) -> Dict[str, Any]:
     steps: Dict[str, Dict[str, int]] = {}
     visual = _visual_counts()
     unreadable = 0
+    superseded: Dict[str, Dict[str, Dict[str, int]]] = {}
     try:
         places = [("report", folder)]
         if (folder / "bound").is_dir():
@@ -6949,7 +6991,30 @@ def _ingest_steps(folder: Path) -> Dict[str, Any]:
                 n = calls(load(where / f"{step}.json"))
                 if n:
                     row[step] = n
-            for path in sorted((where / "items").glob("*.json")):
+            paths = sorted((where / "items").glob("*.json"))
+            # The narrative is read once per document, but a re-read under
+            # another switch or item range keeps the earlier file beside
+            # the new one (graph.py names it by that key). Only the newest
+            # is the reading the record used; older ones are counted apart
+            # (BACKLOG RI-129).
+            narrative = [(path, blob) for path in paths
+                         for blob in (load(path),) if "general" in blob]
+            kept_old: set = set()
+            if len(narrative) > 1:
+                def age(pair: Any) -> Tuple[float, str]:
+                    try:
+                        return (pair[0].stat().st_mtime, pair[0].name)
+                    except OSError:
+                        return (0.0, pair[0].name)
+                narrative.sort(key=age)
+                kept_old = {pair[0] for pair in narrative[:-1]}
+                old = {"files": len(kept_old),
+                       "calls": sum(calls(blob) for path, blob in narrative
+                                    if path in kept_old)}
+                superseded[name] = {"narrative": old}
+            for path in paths:
+                if path in kept_old:
+                    continue
                 blob = load(path)
                 if not blob:
                     unreadable += 1
@@ -6967,6 +7032,8 @@ def _ingest_steps(folder: Path) -> Dict[str, Any]:
     out: Dict[str, Any] = {"calls_by_step": steps, "visual_scales": visual}
     if unreadable:
         out["step_files_unreadable"] = unreadable
+    if superseded:
+        out["superseded_item_files"] = superseded
     return out
 
 
@@ -7017,6 +7084,17 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
             cells += f"{cell:>10}"
         out.append(f"{rid:<8}{name:<10}{cells}{total:>8}{left:>14}")
     out += ["```", ""]
+    # A narrative file left by a re-read is kept apart, not in the cells
+    # above (BACKLOG RI-129).
+    for r in rows:
+        kept = r.get("superseded_item_files")
+        for doc, steps in (kept.items() if isinstance(kept, dict) else ()):
+            got = steps.get("narrative") if isinstance(steps, dict) else None
+            if isinstance(got, dict) and got.get("files"):
+                out += [f"{r.get('id', '')} {doc}: {got['files']} older "
+                        f"narrative item file(s) kept from a re-read "
+                        f"({_n(got.get('calls'))} calls), not counted "
+                        f"above.", ""]
     return out
 
 
