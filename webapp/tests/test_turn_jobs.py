@@ -136,7 +136,7 @@ class TestFollowSemantics:
 
 class TestRegistry:
     def test_one_active_job_per_conversation(self, monkeypatch):
-        def never_ends(agent, messages, thread_id, recursion_limit=None):
+        def never_ends(agent, messages, thread_id, recursion_limit=None, **_kw):
             for _ in range(50):
                 time.sleep(0.05)
                 yield {"kind": "token", "text": "."}
