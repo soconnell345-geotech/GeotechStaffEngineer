@@ -5769,7 +5769,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "calc_page_images": page_images_enabled(),
             "lab_link_from_label": link_from_label_enabled(),
             "lab_floor_per_page": floor_per_page_enabled(),
-            **_ingest_steps(folder),
+            **_ingest_steps(folder, narrative_skips_bound),
             **brake.fields(),
             **_item_error_fields(record),
         }
@@ -6950,7 +6950,9 @@ def _item_step(blob: Dict[str, Any]) -> str:
     return "log"
 
 
-def _ingest_steps(folder: Path) -> Dict[str, Any]:
+def _ingest_steps(folder: Path,
+                  narrative_skips_bound: Optional[bool] = None
+                  ) -> Dict[str, Any]:
     """Model calls by step for the report and for each report bound inside
     it, and what the visual-scales voters did, read off the step and item
     files under ``folder`` (BACKLOG RI-21, RI-05).
@@ -7001,14 +7003,29 @@ def _ingest_steps(folder: Path) -> Dict[str, Any]:
                          for blob in (load(path),) if "general" in blob]
             kept_old: set = set()
             if len(narrative) > 1:
+                # Exact: graph.py puts ``narrative_key`` ("-skips-bound")
+                # on the file name exactly when the run's
+                # ``narrative_skips_bound`` was on. Only when the switch is
+                # not recorded, or no file carries its key, is the newest
+                # by mtime taken (a download or unzip resets mtimes).
+                chosen_by = "mtime"
+                pool = narrative
+                if narrative_skips_bound is not None:
+                    match = [pair for pair in narrative
+                             if pair[0].stem.endswith("-skips-bound")
+                             == bool(narrative_skips_bound)]
+                    if match:
+                        pool, chosen_by = match, "key"
+
                 def age(pair: Any) -> Tuple[float, str]:
                     try:
                         return (pair[0].stat().st_mtime, pair[0].name)
                     except OSError:
                         return (0.0, pair[0].name)
-                narrative.sort(key=age)
-                kept_old = {pair[0] for pair in narrative[:-1]}
-                old = {"files": len(kept_old),
+                used = max(pool, key=age)[0]
+                kept_old = {pair[0] for pair in narrative
+                            if pair[0] != used}
+                old = {"files": len(kept_old), "chosen_by": chosen_by,
                        "calls": sum(calls(blob) for path, blob in narrative
                                     if path in kept_old)}
                 superseded[name] = {"narrative": old}
@@ -7094,7 +7111,14 @@ def _step_lines(rows: Sequence[Dict[str, Any]]) -> List[str]:
                 out += [f"{r.get('id', '')} {doc}: {got['files']} older "
                         f"narrative item file(s) kept from a re-read "
                         f"({_n(got.get('calls'))} calls), not counted "
-                        f"above.", ""]
+                        f"above; the file used was "
+                        + ("picked by the run's recorded "
+                           "narrative_skips_bound switch."
+                           if got.get("chosen_by") == "key" else
+                           "taken as the newest by file time, the switch "
+                           "not being recorded (or no file carrying its "
+                           "key).")
+                        , ""]
     return out
 
 
