@@ -382,15 +382,30 @@ class TestTheDrawnTop:
         assert "sample box" not in sample.prov.note
 
     @staticmethod
-    def _first_row_in(box, row, stray, unit="ft"):
+    def _first_row_in(box, row, stray, unit="ft", step=None):
         # The sample's first row, and a cell of the same sample printed just
         # under the box, so that no box takes the group whole. A log in feet
-        # printed a line every 0.5 ft.
-        pitch = 0.5 if unit == "ft" else 0.15
+        # printed a line every 0.5 ft. ``step`` is the rulers' step, for a
+        # log of no known unit.
+        pitch = 0.5 if unit == "ft" or (step or 0) >= 2 else 0.15
         cells = [_cell("blows", "6-8-11", row, pitch=pitch),
                  _cell("id", "S-9", stray, pitch=pitch)]
         grid = _Grid(cells, [ID, BLOWS], unit=unit, boxes=[box])
+        if step is not None:
+            grid.rulers = {p: SimpleNamespace(step=step) for p in (0, 1)}
         return seed_from_grid(grid, [0], "SYNTH", qa=[])
+
+    @pytest.mark.parametrize("step, box, row, stray, top", [
+        (5.0, (20.0, 24.0), 23.6, 24.3, 23.6),      # read as feet: refused
+        (5.0, (30.0, 32.0), 30.6, 32.05, 30.0),     # read as feet: taken
+        (1.0, (5.0, 5.9), 5.7, 6.0, 5.7),           # read as metres: refused
+        (1.0, (5.0, 5.7), 5.55, 5.8, 5.0)])         # read as metres: taken
+    def test_a_log_of_no_known_unit_reads_the_reach_as_it_groups(
+            self, step, box, row, stray, top):
+        inv = self._first_row_in(_box(*box), row=row, stray=stray, unit="",
+                                 step=step)
+        assert inv.depth_unit in ("", None)
+        assert inv.samples[0].top.value == pytest.approx(top)
 
     def test_a_gap_drawn_with_the_next_box_does_not_move_the_top(self):
         # A box 4 ft tall that is the gap above a sample drawn together with

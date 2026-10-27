@@ -1143,15 +1143,20 @@ def _side_by_side(grid: Any, cells: Sequence[Any],
     return {id(c) for c in cells if (c.page, c.column_id) in bands}
 
 
-def _top_within_reach(depth: float, box: Any, unit: str) -> bool:
+def _top_within_reach(depth: float, box: Any, unit: str, grid: Any) -> bool:
     """Is a sample's first marked row near enough the top of ``box`` for
     the box's top edge to be the sample's top (RI-131)? The edge may stand
     at most :data:`_DRAWN_TOP_REACH_M` above the row: the most a driven
     sample's rows run below its top. A box whose top stands farther above
     is not the sample's own drawn edge: planlens can return the gap above a
     sample drawn together with the sample's box as one box (a line it did
-    not find), and that box's top is the previous sample's bottom. A log of
-    no known unit cannot say how far that is, and keeps its reading."""
+    not find), and that box's top is the previous sample's bottom.
+
+    A log of no known unit is read in the unit the floor already groups its
+    samples by (:func:`_span_in_unit`: feet where the rulers step by 2 or
+    more, else metres), the same working assumption (RI-47)."""
+    if unit not in ("ft", "m"):
+        unit = "ft" if _span_in_unit(unit, grid) > 1.0 else "m"
     reach = _metres(depth - float(box.top), unit)
     return reach is not None and reach <= _DRAWN_TOP_REACH_M + _INCREMENT_TOL_M
 
@@ -1184,7 +1189,7 @@ def _drawn_top(group: _Group, grid: Any, boxes: Sequence[Any],
         if first.page not in pages or not (
                 float(box.top) - tol <= depth <= float(box.bottom) + tol):
             continue
-        if not _top_within_reach(depth, box, unit):
+        if not _top_within_reach(depth, box, unit, grid):
             continue
         gap = abs(depth - float(box.top))
         if best is None or gap < best_gap:
