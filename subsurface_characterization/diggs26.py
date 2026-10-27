@@ -568,6 +568,21 @@ class ResultSetRead:
                 return i
         return None
 
+    def columns_of(self, property_class: str) -> List[int]:
+        """The indices of EVERY column with that ``propertyClass``.
+
+        :meth:`column` answers with the first only; a table that carries
+        the number and the printed text of one property (an N value and its
+        ``>50``) has two, and a check that reads one misses the other.
+        """
+        return [i for i, column in enumerate(self.columns)
+                if column["class"] == property_class]
+
+    def column_values(self, index: int) -> List[Any]:
+        """Every cell of the column at ``index``, in row order."""
+        return [row[index] if index < len(row) else None
+                for row in self.rows]
+
     def values(self, property_class: str) -> List[Any]:
         """Every cell of that column, in row order."""
         i = self.column(property_class)

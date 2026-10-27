@@ -1821,7 +1821,7 @@ class _Writer:
         # a refusal row with no countable drive is still in the file.
         printed = (record.n_printed or "").strip()
         if printed:
-            values.append(("N-Value (as printed)", "n_value", printed))
+            values.append((_PRINTED_N_COLUMN, "n_value", printed))
         if not values:
             self.notes.skipped.append(
                 f"{inv.investigation_id}: driven record at {top[0]:.3f} m "
@@ -3107,8 +3107,7 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
     unwritten = list(notes.unwritten)
     dt = TOLERANCE["depth_m"]
     result_sets: List[Any] = []
-    if any((r.n_printed or "").strip()
-           for inv in investigations for r in inv.spt):
+    if any(inv.spt for inv in investigations):
         from subsurface_characterization.diggs26 import (
             parse_diggs26_result_sets,
         )
@@ -3447,14 +3446,22 @@ def _compare_water(name: str, want: Investigation, got: Any,
                      f"back")
 
 
+_PRINTED_N_COLUMN = "N-Value (as printed)"
+
+
 def _compare_refusals(name: str, want: Investigation, gid: str,
                       result_sets: Sequence[Any], diffs: List[str],
                       dt: float) -> None:
-    """Every printed N that is not a whole number, as the text it is.
+    """The printed text of every N that is not a whole number (RI-112).
 
-    ``parse_diggs`` keeps numbers, so a ``>50`` written as text is invisible
-    to it; the result-set reader returns the table as written, and the
-    printed text must be in the driven test at that hole and depth.
+    The writer puts the N and its printed text (``>50``, ``N=60``) in two
+    columns under one property class. ``parse_diggs`` keeps numbers, so the
+    number column and the drives are compared in
+    :func:`_compare_measurements` (each named by its column there); this
+    compares the text column, which ``parse_diggs`` cannot see, by reading
+    the table as written and looking in the column named
+    ``"N-Value (as printed)"`` and in no other, so each column is checked
+    once.
     """
     for record in want.spt:
         raw = (record.n_printed or "").strip()
@@ -3466,12 +3473,14 @@ def _compare_refusals(name: str, want: Investigation, gid: str,
             rs.sampling_feature == gid
             and rs.procedure == "DrivenPenetrationTest"
             and rs.depth_m is not None and _close(rs.depth_m, top, dt)
-            and printed in [str(v) for v in rs.values("n_value")
-                            if v is not None]
+            and printed in [
+                str(v) for i in rs.columns_of("n_value")
+                if rs.columns[i]["name"] == _PRINTED_N_COLUMN
+                for v in rs.column_values(i) if v is not None]
             for rs in result_sets)
         if not found:
             diffs.append(f"{name}: N printed as {printed!r} at {top:.3f} m "
-                         f"did not come back")
+                         f"did not come back (column {_PRINTED_N_COLUMN!r})")
 
 
 #: What each channel of a sounding must come back as, and how close. The
@@ -3558,15 +3567,15 @@ def _compare_measurements(name: str, want: Investigation, got: Any,
             if not _nearest(by_parameter.get("N_spt", []), top,
                             float(record.n), dt, TOLERANCE["n_value"]):
                 diffs.append(f"{name}: N={record.n} at {top:.3f} m did not "
-                             f"come back")
+                             f"come back (column 'N-Value')")
         else:
             drives = _drive_sets(record)
             back = by_parameter.get("blow_count", [])
-            for count, _pen in drives:
+            for i, (count, _pen) in enumerate(drives, start=1):
                 if not _nearest(back, top, float(count), dt,
                                 TOLERANCE["n_value"]):
                     diffs.append(f"{name}: drive {count} at {top:.3f} m did "
-                                 f"not come back")
+                                 f"not come back (column 'Blow count {i}')")
 
     checks = (
         ("recovery_percent", "recovery_pct", None, TOLERANCE["percent"]),
