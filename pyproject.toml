@@ -352,8 +352,11 @@ testpaths = [
     "funhouse_agent",
     # The report-ingest package (5.19.0). Its suite is offline and free: no
     # credential, no network, no corpus. The WP0/WP1 harness under
-    # module_work/ is dev-only and deliberately NOT here.
+    # module_work/ is dev-only and NOT here, except the report-ingest
+    # harness's tests (INF-56): offline, no credential, and every test that
+    # needs the private corpora under gitignored raw/ skips cleanly.
     "report_ingest",
+    "module_work/report_ingest_harness/tests",
     "foundry_test_harness",
     "webapp/tests",
     "geotech-references/tests",
