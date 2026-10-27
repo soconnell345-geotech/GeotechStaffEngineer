@@ -32,7 +32,12 @@ decisions D1 to D3, are in §2.
   - Sonnet 5.5 and Haiku 5.5 on the class the wave uses. A pictures call
     that brings back the picture word shows the model is offered and reads
     pictures. If Haiku passes, it describes the pages; if not, Sonnet does
-    (D2). If Sonnet does not pass, stop and send the probe back: Sonnet
+    (D2). Haiku 5.5 is on Foundry as
+    `ri.language-model-service..language-model.anthropic-claude-5-5-haiku`; add it to the
+    transform as a model input beside Opus and Sonnet (the AI FDE did not
+    have it on 2026-10-27). Probe it on the Claude class the wave uses,
+    which carries page pictures, not the text-only generic completion
+    class. If Sonnet does not pass, stop and send the probe back: Sonnet
     reads the logs and printouts and is the off arm's vision voter (D1,
     D3).
 - **Ask the AI FDE how to bypass the response cache.** Wave 1 served 12
@@ -64,7 +69,8 @@ decisions D1 to D3, are in §2.
   - **D1:** the off arm's vision voter (`vision_chat_model`) is Sonnet 5.5,
     unless MF-0 shows Sonnet is not offered.
   - **D2:** `describe_model` is Haiku 5.5 if MF-0 shows Foundry offers it
-    (RI-73: as good as Sonnet at describing), else Sonnet 5.5.
+    (RI-73: as good as Sonnet at describing), else Sonnet 5.5 (about $27
+    more for the describer and about 0.7 h longer on the six reports).
   - `range_model="<Opus 5.5>"`.
 - `GEOTECH_INGEST_LAB_LINK_FROM_LABEL=1` in both arms (RI-55's winner). It
   changes only today's lab reader's prompt, so under `on` it does nothing.
@@ -202,8 +208,8 @@ How the rows are built:
   Foundry's rate limit does.
 
 **Both arms together:** about 30 to 52 M tokens in and 5 to 10 M out,
-about $120 to $230 at API rates with Haiku describing. MF-2 is most of the
-wave.
+about $120 to $230 at API rates with Haiku describing, or about $145 to
+$255 if Sonnet has to describe. MF-2 is most of the wave.
 
 ### 4a. MF-3: held-out reports, counts only
 
@@ -280,14 +286,20 @@ log). Report counts only, as for every blind set.
    6. **Token brake.** Set `max_report_tokens_in` and `max_total_tokens`
       (RI-120 (1)); the dollar meter reads $0 on Foundry. Set them to the
       stop lines above, and the wave's ceiling to the lead's number.
-   7. **Rate limits (OWN-99).** Before the wave, ask the AI FDE for each
-      model's tokens-per-minute and requests-per-minute limits on the
-      route, any per-request input cap, and whether they are shared with
-      other Foundry work. Run 5's lost log item was stopped by the
-      per-minute limit, not a per-request one: a 126,558-token request
-      passed after 4 retries, and the next small call waited 72 s. Set
-      `max_request_tokens_in` (RI-110) and the page groups' split (RI-121)
-      from the answer, and expect slow minutes after any large request.
+   7. **Rate limits (OWN-99 answered, OWN-100 open).** The AI FDE cannot
+      read the limits: Foundry's admins set them per model in tokens and
+      requests per minute, likely as one pool shared across the instance,
+      and it knows of no per-request cap apart from the context window.
+      Run 5's lost log item was stopped by the per-minute limit: a
+      126,558-token request passed after 4 retries, and the next small call
+      waited 72 s. The proxy sometimes reports a rate limit as 400 Bad
+      Request; the engine already reads those as rate limits. Until the
+      admin's numbers come (OWN-100): keep the FDE's throttle at 22.5
+      GPT-5.4 calls a minute (the resume run then had 16 retries and no
+      give-ups, against 45 a minute before), set
+      `max_request_tokens_in=100000` on both arms, and expect slow minutes
+      after any large request. With the numbers, set RI-127's
+      `tokens_per_minute` and size the limit from them.
    8. **Cost from every attempt.** RESULTS' Cost block counts every
       attempt of every report (RI-124): the finished reports, then a line
       for the reports not finished (braked, given up or failed, all listed
