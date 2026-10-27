@@ -10,7 +10,7 @@ from typing import Optional
 
 from pystra_agent.results import FormResult, SormResult, MonteCarloResult
 from pystra_agent.pystra_utils import (
-    has_pystra,
+    pystra_import_error,
     _apply_numpy2_patches,
     _compile_limit_state,
     _build_stochastic_model,
@@ -62,10 +62,9 @@ def analyze_form(
         >>> result = analyze_form(variables, "R - S")
         >>> print(f"Beta = {result.beta:.2f}, Pf = {result.pf:.2e}")
     """
-    if not has_pystra():
-        raise ImportError(
-            "pystra is required for FORM analysis. Install via: pip install pystra"
-        )
+    error = pystra_import_error()
+    if error:
+        raise ImportError(f"pystra is required for FORM analysis. {error}")
 
     # Apply numpy 2.x compatibility patches
     _apply_numpy2_patches()
@@ -188,10 +187,9 @@ def analyze_sorm(
         >>> print(f"FORM beta = {result.beta_form:.2f}")
         >>> print(f"SORM beta = {result.beta_breitung:.2f}")
     """
-    if not has_pystra():
-        raise ImportError(
-            "pystra is required for SORM analysis. Install via: pip install pystra"
-        )
+    error = pystra_import_error()
+    if error:
+        raise ImportError(f"pystra is required for SORM analysis. {error}")
 
     # Apply numpy 2.x compatibility patches
     _apply_numpy2_patches()
@@ -319,10 +317,9 @@ def analyze_monte_carlo(
         >>> print(f"Beta = {result.beta:.2f}, Pf = {result.pf:.2e}")
         >>> print(f"COV = {result.cov_pf:.3f}")
     """
-    if not has_pystra():
-        raise ImportError(
-            "pystra is required for Monte Carlo analysis. Install via: pip install pystra"
-        )
+    error = pystra_import_error()
+    if error:
+        raise ImportError(f"pystra is required for Monte Carlo analysis. {error}")
 
     # Apply numpy 2.x compatibility patches
     _apply_numpy2_patches()

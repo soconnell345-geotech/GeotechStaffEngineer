@@ -159,7 +159,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import (Any, Dict, Iterable, List, Optional, Sequence, Set,
+                    Tuple)
 from xml.sax.saxutils import escape, quoteattr
 
 from report_ingest.reconciler import _JOINED_NUMBERS, hole_key
@@ -172,6 +173,7 @@ from report_ingest.model import (
     read_as_stress, si_numbers,
     unit_printed,
 )
+from report_ingest.shared_names import pages_span
 # The remark a pit's "groundwater not encountered" is written as (a TrialPit
 # has no waterStrike in 2.6). ONE definition, the reader's, so the writer and
 # subsurface_characterization.diggs26 cannot drift apart.
@@ -181,8 +183,13 @@ __all__ = [
     "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
     "DiggsWriteNotes", "NS", "PROPERTY_CLASS", "TOLERANCE",
     "LAB_PROCEDURE", "DICTIONARY_CODESPACE", "APP_CODESPACE",
-    "UOM_IN_FILE", "NOT_ENCOUNTERED_REMARK",
+    "UOM_IN_FILE", "NOT_ENCOUNTERED_REMARK", "QUALIFIER_PARAMETER",
 ]
+
+#: The parameter a sampling feature carries where the report prints another
+#: hole under the same name (RI-135): its value is the hole's qualifier, what
+#: tells it apart as its pages print it. The printed name stays the name.
+QUALIFIER_PARAMETER = "kept apart from another hole of this name by"
 
 #: The namespaces a DIGGS 2.6 instance declares. ``diggs_geo`` is the one that
 #: trips people up: every test PROCEDURE is in it.
@@ -806,6 +813,29 @@ def _row_hole(row: SummaryRow, aliases: Optional[Dict[str, str]] = None
     return (aliases or {}).get(name.strip(), name)
 
 
+def _told_apart(investigations: Iterable[Investigation]) -> Set[str]:
+    """The names two or more explorations are printed under that the
+    reconciler told apart, each given a qualifier (RI-135,
+    :mod:`report_ingest.shared_names`). A result naming one is written in
+    the one its ``linked_qualifier`` names, and in none where it names none
+    or names one left out of the file: the writer and its round-trip gate
+    both ask this, each over the holes written AND those left out (depths in
+    an unknown unit), so a name whose other hole is left out is still told
+    apart. Two logs of one name nobody reconciled (no qualifier on either),
+    and one hole's logs the fold did not join, are not among them: a result
+    linked to one of a hole's logs (``linked_log_pages``) is written in
+    that log, any other in the name's last log, the old placing."""
+    count: Dict[str, int] = {}
+    qualified: Set[str] = set()
+    for inv in investigations:
+        name = (inv.investigation_id or "").strip()
+        if name:
+            count[name] = count.get(name, 0) + 1
+            if getattr(inv, "qualifier", ""):
+                qualified.add(name)
+    return {name for name in qualified if count[name] > 1}
+
+
 def _unique(stem: str, issued: set, counts: Dict[str, int]) -> str:
     """``stem``, or ``stem_2``, ``stem_3`` ... -- the first not yet issued."""
     n = counts.get(stem, 0)
@@ -865,6 +895,23 @@ class _Writer:
                               for inv in left_out if inv.investigation_id}
         self._left_out_aliases = _hole_aliases(
             self._left_out_ids, _lab_names(self.lab))
+        #: The names two or more holes are printed under, told apart by the
+        #: reconciler (RI-135), over the holes written AND those left out: a
+        #: name whose other hole is left out is still that hole's too.
+        self._told = _told_apart(list(self.investigations) + list(left_out))
+        #: How many holes each such name is printed under, written or not.
+        self._told_count = {
+            name: len({inv.qualifier for inv in
+                       list(self.investigations) + list(left_out)
+                       if inv.investigation_id.strip() == name})
+            for name in self._told}
+        #: ``(name, qualifier)`` of each such hole left out of the file.
+        self._left_out_twins = {(inv.investigation_id.strip(), inv.qualifier)
+                                for inv in left_out
+                                if inv.investigation_id.strip() in self._told}
+        #: ``(name, qualifier, a log's pages) -> its feature``, for the logs
+        #: of a name printed on several (set in :meth:`build`).
+        self._logs: Dict[Tuple[str, str, str], str] = {}
         #: The holes a lab sheet named and no log describes, by object id:
         #: their unknown position is said in ``synthesised``, not again in
         #: ``assumed``.
@@ -904,7 +951,11 @@ class _Writer:
             name = name.strip()
             if name and not row:
                 by_sheet.add(name)
-            if not name or name in known or name in wanted:
+            if not name or name in known or name in wanted or \
+                    name in self._told:
+                # A name the reconciler told two holes apart under is placed
+                # in one of them or in none (``_place``), never in a hole
+                # made for it.
                 continue
             wanted[name] = depth.unit if depth is not None else ""
         for name, unit in wanted.items():
@@ -999,8 +1050,21 @@ class _Writer:
             self.lithology(inv, gml_id)
         for inv, gml_id in plans:
             self.measurements(inv, gml_id)
-        self.lab_measurements({inv.investigation_id.strip(): gml_id
-                               for inv, gml_id in plans})
+        holes: Dict[str, Any] = {name: {} for name in self._told}
+        for inv, gml_id in plans:
+            name = inv.investigation_id.strip()
+            if name in self._told:
+                holes[name][inv.qualifier] = gml_id
+            else:
+                holes[name] = gml_id
+        # A result linked to one log of a hole read as several logs of its
+        # name (``linked_log_pages``, RI-135) is written in that log's
+        # feature.
+        self._logs = {(inv.investigation_id.strip(), inv.qualifier,
+                       pages_span(inv.pages)): gml_id
+                      for inv, gml_id in plans
+                      if names.get(inv.investigation_id.strip(), 0) > 1}
+        self.lab_measurements(holes)
         self.out("</Diggs>")
         return "\n".join(self.lines) + "\n"
 
@@ -1081,6 +1145,16 @@ class _Writer:
                      f'{quoteattr(self.uid(gml_id + "_p_" + key))}>', 4)
             self.text_element("parameterName", key, 5)
             self.text_element("parameterValue", value, 5)
+            self.out("</Parameter>", 4)
+            self.out("</otherSamplingFeatureProperty>", 3)
+        if getattr(inv, "qualifier", ""):
+            # Two or more holes printed under this name (RI-135): the file
+            # keeps the printed name and says what tells this one apart.
+            self.out("<otherSamplingFeatureProperty>", 3)
+            self.out(f'<Parameter gml:id='
+                     f'{quoteattr(self.uid(gml_id + "_p_qualifier"))}>', 4)
+            self.text_element("parameterName", QUALIFIER_PARAMETER, 5)
+            self.text_element("parameterValue", inv.qualifier, 5)
             self.out("</Parameter>", 4)
             self.out("</otherSamplingFeatureProperty>", 3)
         if inv.station.strip() or inv.offset.strip():
@@ -2088,7 +2162,7 @@ class _Writer:
 
 
     # -- laboratory tests --------------------------------------------------
-    def lab_measurements(self, holes: Dict[str, str]) -> None:
+    def lab_measurements(self, holes: Dict[str, Any]) -> None:
         """Every laboratory test in the record, positioned in its own hole."""
         for n, test in enumerate(self.lab):
             if isinstance(test.result, SummaryTableResult):
@@ -2096,15 +2170,23 @@ class _Writer:
             else:
                 self.lab_test(test, n, holes)
 
-    def _place(self, holes: Dict[str, str], name: str,
+    def _place(self, holes: Dict[str, Any], name: str,
                depth: Optional[Quantity], bottom: Optional[Quantity],
-               where: str) -> Optional[Tuple[str, float, Optional[float]]]:
+               where: str, qualifier: str = "", log_pages: str = ""
+               ) -> Optional[Tuple[str, float, Optional[float]]]:
         """``(hole id, top in m, base in m)``, or None with the reason noted.
 
         A result in DIGGS is a position along a hole. No hole and no depth
         means no position, and no position means the file has nowhere to put
         the result -- so it is left out and SAID, rather than written at a
-        depth nobody measured.
+        depth nobody measured. A name two or more holes are printed under
+        (:func:`_told_apart`) places a result in the one its
+        ``qualifier`` (the reconciler's ``linked_qualifier``) names, and in
+        none where it names none, or names one left out of the file
+        (RI-135). Where the hole is read as several logs of its name, the
+        result goes in the log its ``log_pages`` (the reconciler's
+        ``linked_log_pages``) names; with none named, or that log not in the
+        file, in the name's last log, as before.
         """
         name = (name or "").strip()
         if not name:
@@ -2113,10 +2195,30 @@ class _Writer:
                 f"position along one; kept in the record, not written here")
             return None
         gml_id = holes.get(name)
+        if isinstance(gml_id, dict):
+            twins = gml_id
+            gml_id = twins.get(qualifier) if qualifier else None
+            if gml_id is None and qualifier and \
+                    (name, qualifier) in self._left_out_twins:
+                self.notes.skipped.append(
+                    f"{where}: linked to {name} ({qualifier}), one of the "
+                    f"holes printed under the name {name!r}, and that hole "
+                    f"is left out of this file (its depths are in an unknown "
+                    f"unit); kept in the record, not written here")
+                return None
+            if gml_id is None:
+                self.notes.skipped.append(
+                    f"{where}: {self._told_count.get(name, len(twins))} "
+                    f"holes are printed under the name {name!r}, and "
+                    f"nothing the sheet prints says which this result is "
+                    f"from; kept in the record, not written here")
+                return None
         if gml_id is None:
             self.notes.skipped.append(
                 f"{where}: boring {name!r} is not in this file")
             return None
+        if log_pages:
+            gml_id = self._logs.get((name, qualifier, log_pages), gml_id)
         if depth is None:
             self.notes.skipped.append(
                 f"{where}: boring {name!r} is named but no depth is printed, "
@@ -2132,14 +2234,15 @@ class _Writer:
         return gml_id, top[0], (base[0] if base else None)
 
     def lab_test(self, test: LabTest, n: int,
-                 holes: Dict[str, str]) -> None:
+                 holes: Dict[str, Any]) -> None:
         """One laboratory test: its scalars, then a Test per curve it holds."""
         where = (f"lab test {n + 1} ({test.kind}"
                  + (f", {test.investigation_id}" if test.investigation_id
                     else "") + ")")
         hole = _lab_hole(test, self._aliases)
         placed = self._place(holes, hole, test.depth_top,
-                             test.depth_bottom, where)
+                             test.depth_bottom, where, test.linked_qualifier,
+                             test.linked_log_pages)
         if placed is None:
             return
         gml_id, top, bottom = placed
@@ -2717,7 +2820,7 @@ class _Writer:
 
     # -- the summary table -------------------------------------------------
     def summary_rows(self, test: LabTest, n: int,
-                     holes: Dict[str, str]) -> None:
+                     holes: Dict[str, Any]) -> None:
         """A summary table, one Test per row.
 
         Its rows belong to different holes at different depths, so the table
@@ -2736,7 +2839,8 @@ class _Writer:
                      f"({row.investigation_id or 'no boring named'})")
             hole = _row_hole(row, self._aliases).strip()
             placed = self._place(holes, hole, row.depth_top,
-                                 row.depth_bottom, where)
+                                 row.depth_bottom, where,
+                                 row.linked_qualifier, row.linked_log_pages)
             if placed is None:
                 continue
             gml_id, top, bottom = placed
@@ -3251,6 +3355,7 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
         investigations = [i for i in items if isinstance(i, Investigation)]
     if lab_tests is not None:
         lab = list(lab_tests)
+    left_out = [inv for inv in investigations if _unwritable(inv)]
     investigations = [inv for inv in investigations if not _unwritable(inv)]
     # What the writer left out as above the ground surface is not looked for
     # (RI-123): the same last gate, over the same inputs.
@@ -3301,10 +3406,27 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
         _compare_refusals(label, want, gid, result_sets, diffs, dt)
         _compare_soundings(label, want, got, diffs, dt)
     if lab:
+        # Told apart over the holes written and those left out, as the
+        # writer decides it: a result linked to a left-out hole of a shared
+        # name, or to none, is not looked for.
+        told = _told_apart(list(investigations) + left_out)
+        planned = list(zip(investigations, _hole_ids(investigations)))
+        count: Dict[str, int] = {}
+        for inv in investigations:
+            name = inv.investigation_id.strip()
+            count[name] = count.get(name, 0) + 1
         _compare_lab(xml, lab, diffs, unwritten=unwritten,
                      aliases=_hole_aliases(
                          (i.investigation_id for i in investigations
-                          if not _unwritable(i)), _lab_names(lab)))
+                          if not _unwritable(i)), _lab_names(lab)),
+                     twins={(inv.investigation_id.strip(), inv.qualifier): gid
+                            for inv, gid in planned
+                            if inv.investigation_id.strip() in told},
+                     shared=told,
+                     logs={(inv.investigation_id.strip(), inv.qualifier,
+                            pages_span(inv.pages)): gid
+                           for inv, gid in planned
+                           if count[inv.investigation_id.strip()] > 1})
     return (not diffs), diffs
 
 
@@ -3401,8 +3523,10 @@ def _numbers_under(element) -> List[float]:
     return out
 
 
-def _file_tests(xml: str) -> List[Tuple[str, Optional[float], List[float]]]:
-    """``(hole name, depth in m, every number in it)`` for each Test."""
+def _file_tests(xml: str
+                ) -> List[Tuple[str, Optional[float], List[float], str]]:
+    """``(hole name, depth in m, every number in it, the hole's gml:id)``
+    for each Test."""
     import xml.etree.ElementTree as ET
 
     root = ET.fromstring(xml)
@@ -3416,13 +3540,13 @@ def _file_tests(xml: str) -> List[Tuple[str, Optional[float], List[float]]]:
             label = element.find(f"{gml}name")
             names[element.get(f"{gml}id", "")] = (
                 (label.text or "").strip() if label is not None else "")
-    out: List[Tuple[str, Optional[float], List[float]]] = []
+    out: List[Tuple[str, Optional[float], List[float], str]] = []
     for test in root.iter(f"{d}Test"):
         ref = test.find(f"{d}samplingFeatureRef")
-        hole = ""
+        hole, gid = "", ""
         if ref is not None:
-            hole = names.get(
-                (ref.get(f"{xlink}href", "") or "").lstrip("#"), "")
+            gid = (ref.get(f"{xlink}href", "") or "").lstrip("#")
+            hole = names.get(gid, "")
         depth: Optional[float] = None
         position = test.find(f".//{d}location//{gml}posList")
         if position is None:
@@ -3434,13 +3558,17 @@ def _file_tests(xml: str) -> List[Tuple[str, Optional[float], List[float]]]:
                     depth = float(tokens[0])
                 except ValueError:
                     depth = None
-        out.append((hole, depth, _numbers_under(test)))
+        out.append((hole, depth, _numbers_under(test), gid))
     return out
 
 
 def _lab_targets(test: LabTest, aliases: Optional[Dict[str, str]] = None
-                 ) -> List[Tuple[str, str, Optional[Quantity], Any]]:
-    """What to look for: one entry per positioned result this test becomes.
+                 ) -> List[Tuple[str, str, Optional[Quantity], Any, str,
+                                 str]]:
+    """What to look for: one entry per positioned result this test becomes,
+    with the qualifier of the hole it was linked to (RI-135; empty where its
+    hole's name is its own) and the pages of the log it was linked to
+    (empty unless its hole is read as several logs of its name).
 
     One for an ordinary test. One PER ROW for a summary table, because its
     rows sit in different holes at different depths and are written as
@@ -3449,9 +3577,11 @@ def _lab_targets(test: LabTest, aliases: Optional[Dict[str, str]] = None
     result = test.result
     if isinstance(result, SummaryTableResult):
         return [(f"{test.kind} row {i + 1}", _row_hole(row, aliases),
-                 row.depth_top, row)
+                 row.depth_top, row, row.linked_qualifier,
+                 row.linked_log_pages)
                 for i, row in enumerate(result.rows)]
-    return [(test.kind, _lab_hole(test, aliases), test.depth_top, result)]
+    return [(test.kind, _lab_hole(test, aliases), test.depth_top, result,
+             test.linked_qualifier, test.linked_log_pages)]
 
 
 def _found(pool: Sequence[float], value: float, unit: str) -> bool:
@@ -3471,25 +3601,52 @@ def _found(pool: Sequence[float], value: float, unit: str) -> bool:
 def _compare_lab(xml: str, lab: Sequence[LabTest],
                  diffs: List[str],
                  unwritten: Sequence[Tuple[str, Optional[float], float]] = (),
-                 aliases: Optional[Dict[str, str]] = None) -> None:
+                 aliases: Optional[Dict[str, str]] = None,
+                 twins: Optional[Dict[Tuple[str, str], str]] = None,
+                 shared: Optional[Iterable[str]] = None,
+                 logs: Optional[Dict[Tuple[str, str, str], str]] = None
+                 ) -> None:
     """Every laboratory value, against what the file gives back.
 
     A value the writer named in :attr:`DiggsWriteNotes.unwritten` -- a
     cohesion in a unit that is not a stress -- is not looked for; the
-    writer's notes say why.
+    writer's notes say why. ``twins`` is ``(name, qualifier) -> gml:id`` for
+    the written holes printed under one name, and ``shared`` those names
+    (:func:`_told_apart`, over the holes written and left out; by default
+    the names ``twins`` holds): a result naming such a name is looked for in
+    the one hole it was linked to, and not at all where it was linked to
+    none or to one left out of the file (the writer left it out and said
+    so). ``logs`` is ``(name, qualifier, the log's pages) -> gml:id`` for
+    the written logs of a name printed on several: a result linked to one
+    of them by ``linked_log_pages`` is looked for in that log's feature
+    only, as the writer placed it.
     """
     in_file = _file_tests(xml)
     dt = TOLERANCE["depth_m"]
+    twins = twins or {}
+    logs = logs or {}
+    shared = set(shared) if shared is not None else \
+        {name for name, _qualifier in twins}
     for test in lab:
-        for label, hole, depth, payload in _lab_targets(test, aliases):
+        for label, hole, depth, payload, qualifier, log_pages in \
+                _lab_targets(test, aliases):
             hole = (hole or "").strip()
             want_depth = _si_value(depth)
             if not hole or want_depth is None:
                 continue     # the writer said why; nothing to look for
+            want_gid = ""
+            if hole in shared:
+                want_gid = twins.get((hole, qualifier), "")
+                if not want_gid:
+                    continue  # placed in neither hole; the writer said why
+            if log_pages:
+                want_gid = logs.get((hole, qualifier, log_pages), want_gid)
             pool: List[float] = []
             found = False
-            for name, at, numbers in in_file:
+            for name, at, numbers, gid in in_file:
                 if name != hole or at is None:
+                    continue
+                if want_gid and gid != want_gid:
                     continue
                 if abs(at - want_depth) > dt:
                     continue

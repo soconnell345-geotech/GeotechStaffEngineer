@@ -106,7 +106,9 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
 from report_ingest.engine import LARGE_REQUEST_FRACTION, CallCeilingReached
-from report_ingest.log_holes import missing_holes_qa, split_log_items
+from report_ingest.lab_reader import split_lab_items
+from report_ingest.log_holes import (missing_holes_qa, sort_rows_by_hole,
+                                     split_log_items)
 from report_ingest.label_vote import (
     DEFAULT_POLICY, POLICIES, PageChoice, Voter, combine, load_trust_table,
     neighbourhood, split_pages,
@@ -1125,9 +1127,10 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     roles = _relabel(roles, labels, confidence)
     # One log item per hole (RI-117): planlens' items run on over pages whose
     # headers name another hole where its title-block code is not the
-    # hole's name.
-    items = split_log_items(doc, split_calc_items(doc, build_items(facts,
-                                                                   roles)))
+    # hole's name. One lab item per sheet (RI-150): a summary table and the
+    # grading sheets after it are cut apart where their titles differ.
+    items = split_lab_items(doc, split_log_items(doc, split_calc_items(
+        doc, build_items(facts, roles))))
 
     # -- 0e. the reports bound inside this one ------------------------------
     # Decided BEFORE the readers, because the parent's narrative reader is
@@ -1183,12 +1186,13 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     reconcile(record, labels=own, items=items,
               no_text_pages=[p for p in no_text if p not in bound],
               di_pages=[p for p in di_pages if p not in bound],
-              reader_unresolved=unresolved)
-    if model_first is None:
-        # The holes the log items' page headers print in a field or a title
-        # that no log in the record carries (RI-117): today's log reader
-        # returns one hole per item.
-        qa.extend(missing_holes_qa(doc, items, record))
+              reader_unresolved=unresolved, doc=doc, outline=outline)
+    # The holes the log items' page headers print in a field or a title
+    # that no log in the record carries (RI-117): today's log reader returns
+    # one hole per item, and model first one per log group, whose groups
+    # are drawn from the page descriptions, not cut by the headers (RI-144).
+    qa.extend(missing_holes_qa(doc, items, record,
+                               prefix="" if model_first is None else "mf-"))
     _counts_from_logs(record, qa, counts_from_logs, every, read)
     record.project = _project_from(record)
 
@@ -2070,9 +2074,9 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                      {at[c.page]: c.confidence for c in choices})
     # The split runs on the PARENT file's numbering, because that is where
     # the pages the signature is read off actually live.
-    items = split_log_items(doc, split_calc_items(
+    items = split_lab_items(doc, split_log_items(doc, split_calc_items(
         doc, [_rebase_item(item, window)
-              for item in build_items(voted, roles)]))
+              for item in build_items(voted, roles)])))
     every = list(items)
     if budgets.max_items:
         # The same ceiling as the parent's, applied to this document: a
@@ -2193,9 +2197,9 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     reconcile(child, labels=labels, items=items,
               no_text_pages=[p for p in no_text if p in at],
               di_pages=[p for p in di_pages if p in at],
-              reader_unresolved=unresolved)
-    if model_first is None:
-        qa.extend(missing_holes_qa(doc, items, child))      # RI-117
+              reader_unresolved=unresolved, doc=doc, outline=outline)
+    qa.extend(missing_holes_qa(                         # RI-117, RI-144
+        doc, items, child, prefix="" if model_first is None else "mf-"))
     _counts_from_logs(child, qa, counts_from_logs, every, done)
     child.project = _project_from(child)
     child.qa.extend(qa)
@@ -2698,9 +2702,14 @@ def _read_log(doc, pages, engine, budgets, item, report_id) -> Dict[str, Any]:
 
 def _read_lab(doc, pages, engine, budgets, item, report_id) -> Dict[str, Any]:
     from report_ingest.lab_reader import read_lab_sheet
+    # A part cut from a lab item carries the boring its first part prints
+    # where its own pages print none (RI-150, split_lab_items).
+    carried = (getattr(item, "evidence", None) or {}).get("carried_link")
+    extra = {"carried_link": carried} if carried else {}
     result = read_lab_sheet(doc, pages, engine, budget=budgets.lab,
                             item_title=item.title or "", report_id=report_id,
-                            sheets_per_call=budgets.lab_sheets_per_call)
+                            sheets_per_call=budgets.lab_sheets_per_call,
+                            **extra)
     return result.to_dict()
 
 
@@ -2970,7 +2979,11 @@ def _still_current(blob: Dict[str, Any], parts: Sequence[Any],
                    route: str) -> bool:
     """Is a saved model-first result one this run would ask for: the same
     pages, the same instruction and schema (``READ_PROMPT_VERSION``) and
-    the same route? Any other is read again."""
+    the same route? Any other is read again, and is new spend on resume: a
+    result saved under mf-1, before a sheet scanned sideways was sent
+    upright (RI-149), and one whose pages are no longer one unit's (a lab
+    item cut by :func:`report_ingest.lab_reader.split_lab_items`, RI-150,
+    may change a unit's pages)."""
     from report_ingest.model_first import READ_PROMPT_VERSION
 
     return (sorted(int(p) for p in blob.get("pages") or [])
@@ -3006,8 +3019,11 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
     QA note per answer, and so is each request a reader found over the
     request limit (:func:`_over_limit_qa`), the run's note counting the
     groups cut (:func:`_note_cuts`). One hole's logs read in more than one
-    place are joined (:func:`_join_by_hole`). On an ``appendix_only`` file
-    the narrative is not read, as today.
+    place are joined (:func:`_join_by_hole`), and then the rows a log read
+    off a page whose header names another hole are moved to that hole's log
+    or dropped, each page one QA entry
+    (:func:`report_ingest.log_holes.sort_rows_by_hole`, RI-145). On an
+    ``appendix_only`` file the narrative is not read, as today.
 
     Returns the units read to the end.
     """
@@ -3074,6 +3090,11 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             spend.settle(mark)
     _write_placement(out, placed)
     _join_by_hole(record, first_log, unresolved, qa, _ruler_slack(doc, qa))
+    # A group drawn round two holes' pages (RI-145): the rows read off a
+    # page whose header names another hole go to that hole's log where the
+    # record has one, and are dropped where it has none. From the record and
+    # the pages, so a result taken off disk is sorted as a fresh one is.
+    qa.extend(sort_rows_by_hole(doc, record.investigations, first_log))
     return done
 
 

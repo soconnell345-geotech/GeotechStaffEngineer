@@ -4,11 +4,12 @@ from funhouse_agent.adapters import mark_required, clean_result
 
 
 def _check_eqsig():
-    """Raise ValueError if eqsig is not installed."""
-    from seismic_signals_agent import has_eqsig
+    """Raise ValueError if eqsig is not installed or fails to import."""
+    from seismic_signals_agent import has_eqsig, eqsig_import_error
     if not has_eqsig():
         raise ValueError(
-            "eqsig is not installed. Install with: pip install eqsig"
+            eqsig_import_error()
+            or "eqsig is not installed. Install with: pip install eqsig"
         )
 
 

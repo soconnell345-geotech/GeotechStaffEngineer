@@ -222,7 +222,10 @@ class TestPyniteOptional:
         assert run.returncode == 0, run.stderr[-2000:]
         out = json.loads(run.stdout.strip().splitlines()[-1])
         assert out["absent"] == {} and out["listed"]
-        assert out["beam"]["error"].startswith("AttributeError"), out["beam"]
+        # The import's own error, named as such (INF-54), not "not installed".
+        assert ("PyNiteFEA is installed but cannot be imported: "
+                "AttributeError: module 'numpy' has no attribute 'broken'"
+                in out["beam"]["error"]), out["beam"]
         assert "error" not in out["other"], out["other"]
         assert out["other"]["q_ultimate_kPa"] > 0
 

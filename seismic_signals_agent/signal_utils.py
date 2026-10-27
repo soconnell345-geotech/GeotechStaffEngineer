@@ -5,17 +5,21 @@ Provides runtime dependency checking and import helpers for eqsig (pyrotd is che
 following the same pattern as pystrata_agent/pystrata_utils.py.
 """
 
+from geotech_common.optional_packages import import_error
+
 # Gravitational acceleration constant for unit conversion (m/s² ↔ g)
 _G = 9.81
 
 
+def eqsig_import_error():
+    """Why eqsig cannot be imported (not installed, or its import's own
+    error), or None when it can (BACKLOG INF-54)."""
+    return import_error("eqsig")
+
+
 def has_eqsig() -> bool:
     """Return True if eqsig is importable."""
-    try:
-        import eqsig  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return eqsig_import_error() is None
 
 
 def has_pyrotd() -> bool:
@@ -69,13 +73,13 @@ def import_eqsig():
     Raises
     ------
     ImportError
-        If eqsig is not installed.
+        If eqsig is not installed or its import fails.
     """
-    try:
-        import eqsig
-        return eqsig
-    except ImportError:
+    error = eqsig_import_error()
+    if error:
         raise ImportError(
             "eqsig is required for response spectrum and intensity measures. "
-            "Install with: pip install eqsig"
+            f"{error}"
         )
+    import eqsig
+    return eqsig

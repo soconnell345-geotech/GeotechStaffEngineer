@@ -36,6 +36,13 @@ _NOT_INSTALLED = {"error": "gstools is not installed. Install with: pip "
                            "install gstools"}
 
 
+def _unavailable() -> dict:
+    """The error a call returns when gstools cannot be imported: the
+    import's own error when gstools is installed (BACKLOG INF-54)."""
+    from gstools_agent import gstools_import_error
+    return {"error": gstools_import_error() or _NOT_INSTALLED["error"]}
+
+
 def _stamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -143,7 +150,7 @@ def _kriging_grid_csv(result) -> str:
 def _run_kriging(params: dict) -> dict:
     from gstools_agent import analyze_kriging, has_gstools
     if not has_gstools():
-        return dict(_NOT_INSTALLED)
+        return _unavailable()
 
     reject_unknown_params(params, _KRIGING_VALID, method="kriging")
     require_params(params, ["x", "y", "values"], method="kriging")
@@ -256,7 +263,7 @@ def _kriging_figures(params: dict, result, prefix: str, d: dict) -> None:
 def _run_variogram(params: dict) -> dict:
     from gstools_agent import analyze_variogram, has_gstools
     if not has_gstools():
-        return dict(_NOT_INSTALLED)
+        return _unavailable()
 
     reject_unknown_params(
         params, ("x", "y", "values", "model_type", "n_bins", "nugget"),
@@ -276,7 +283,7 @@ def _run_variogram(params: dict) -> dict:
 def _run_random_field(params: dict) -> dict:
     from gstools_agent import generate_random_field, has_gstools
     if not has_gstools():
-        return dict(_NOT_INSTALLED)
+        return _unavailable()
 
     reject_unknown_params(
         params,
@@ -325,7 +332,7 @@ _COND_ALIASES = {"cond_err": "measurement_error",
 def _run_conditional_simulation(params: dict) -> dict:
     from gstools_agent import analyze_conditional_simulation, has_gstools
     if not has_gstools():
-        return dict(_NOT_INSTALLED)
+        return _unavailable()
 
     params = apply_aliases(params, _COND_ALIASES)
     reject_unknown_params(params, _COND_VALID,

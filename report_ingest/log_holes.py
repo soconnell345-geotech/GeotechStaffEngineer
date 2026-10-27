@@ -39,9 +39,44 @@ names a hole other than the current part's. A continuation sheet that prints
 the same hole, written with or without its leading zeros ("B-1", "B-01",
 :func:`report_ingest.reconciler.hole_key`) or with "#" before its number
 ("B # 1"), or no hole at all, stays with its hole. Nothing here calls a
-model, and nothing here is model first: today's reader and the floor use it
-(``report_ingest.log_reader``), and the graph lists the holes a record lacks
-that a field or a title prints (:func:`missing_holes_qa`).
+model. Today's reader and the floor use it (``report_ingest.log_reader``),
+and the graph lists the holes a record lacks that a field or a title prints
+(:func:`missing_holes_qa`), over today's work items and the model-first log
+groups alike (RI-144).
+
+ANOTHER HOLE'S ROWS (RI-145). A reader handed pages of more than one hole
+can still put the other hole's layers, samples, driven records or water
+readings in the log it returns: today's reader when an item is handed to it
+whole (the graph cuts items first, so only a caller that does not), and the
+model-first reader on a group its page descriptions drew round two holes
+(:func:`report_ingest.model_first_pages.log_groups`). A row read off a page
+whose header names another hole (:func:`other_hole_pages`, the pages the
+floor already leaves out) is taken out of the log (:func:`take_rows`), and
+each such page is one QA entry that keeps its rows as read:
+
+* today's reader DROPS them (:func:`drop_other_hole_rows`). On the graph's
+  path that hole's pages are an item of their own, read in a call of their
+  own over their own floor, so a second copy of their rows is never added;
+  handed an item whole, the reader returns one log and has no other to put
+  them in.
+* model first MOVES them to that hole's log where the record holds exactly
+  one log that carries its name, its depths in the same unit, and drops
+  them where it holds none, or more than one, or that log is in another
+  unit (:func:`sort_rows_by_hole`). A page of a group is in no
+  other group, so this group's call is the run's only reading of that page:
+  dropped, its rows would be lost from a hole the record has. No new log is
+  made from rows whose header fields the model read for another log.
+
+A page that names no hole stays the log's, as the floor keeps it: its
+header gives no other hole to give its rows to. RESUMING: a run resumed
+over a folder written before the cut (RI-117) finds no file under a part's
+id (``item_Na``), so each part is read again, and paid for again, and its
+rows checked; the whole item's file is not used
+(``cluster_scoring._ingest_steps`` lists it apart). A part's own saved file
+is used as saved: its pages name one hole by the cut's own reading, so the
+reader would drop nothing there. A model-first result is saved before its
+rows are sorted, so a resumed run sorts a saved result as it would a fresh
+one, with no call.
 
 LAYOUT JUDGMENT: the header and footer bands, the label-to-value gap and the
 words that are never a hole's prefix below are read off log forms, not taken
@@ -54,7 +89,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (Any, Collection, Dict, Iterable, List, Mapping, Optional,
+                    Sequence, Tuple)
 
 from report_ingest.reconciler import hole_key
 
@@ -62,7 +98,8 @@ __all__ = [
     "LOG_ITEM_KINDS", "HEADER_BAND", "FOOTER_BAND", "VALUE_GAP_PT",
     "HoleName", "page_hole", "lines_hole", "item_holes", "hole_parts",
     "split_log_items", "other_hole_pages", "names_match",
-    "missing_holes_qa", "is_phone_line",
+    "missing_holes_qa", "is_phone_line", "ROW_LISTS", "take_rows",
+    "drop_other_hole_rows", "sort_rows_by_hole",
 ]
 
 #: The work-item kinds the log reader reads. A sounding is a series and is
@@ -598,13 +635,17 @@ def split_log_items(doc: Any, items: Sequence[Any]) -> List[Any]:
 
 
 def other_hole_pages(pages: Sequence[int],
-                     names: Mapping[int, Optional[HoleName]]
+                     names: Mapping[int, Optional[HoleName]],
+                     prefer: str = ""
                      ) -> Tuple[Optional[HoleName], Dict[int, HoleName]]:
     """The hole an item's pages name first, and every page whose header
     names another one (by :func:`names_match`, as :func:`hole_parts`
-    cuts)."""
-    own = next((names.get(int(p)) for p in pages
-                if names.get(int(p)) is not None), None)
+    cuts). ``prefer``, a log's recorded name (RI-145): where a page names
+    that hole, it is the log's own, wherever it falls among the pages."""
+    named = [names[int(p)] for p in pages if names.get(int(p)) is not None]
+    own = next((hole for hole in named
+                if prefer and names_match(hole.text, prefer)),
+               named[0] if named else None)
     if own is None:
         return None, {}
     return own, {int(p): names[int(p)] for p in pages
@@ -659,11 +700,19 @@ def _pages(pages: Sequence[int]) -> str:
     return ("pages " if len(pages) > 1 else "page ") + ", ".join(runs)
 
 
-def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any) -> list:
+def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any,
+                     prefix: str = "") -> list:
     """A ``partial`` QA entry for each log item whose page headers print,
     in a field or a title, hole names no log in the record carries: the
     reader may have read them under other names, or not read them. One
     entry per item, naming each hole and the pages that print it.
+
+    Both paths call it after the readers (RI-144): today's with its work
+    items, model first with its log groups (``graph._Unit``, whose pages
+    are a group's and whose kind is its first page's label), each set
+    against the investigations the readers returned. ``prefix`` goes before
+    an item's id in ``where``, so an entry names the file the item was
+    saved under (``mf-`` for a model-first group).
 
     A name that stands alone in a header (no field or title gives it) is
     not listed: it is as often a sample's or a plate's number as a hole's.
@@ -691,7 +740,7 @@ def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any) -> list:
         many = len(lacking) > 1
         span = _pages(where)
         out.append(QAEntry(
-            kind="partial", where=f"items.{item.kind}.{item.id}",
+            kind="partial", where=f"items.{item.kind}.{prefix}{item.id}",
             detail=(f"{span} {'print' if len(where) > 1 else 'prints'} the "
                     f"hole name{'s' if many else ''} "
                     f"{', '.join(text for text, _at in lacking)}; no log in "
@@ -702,4 +751,183 @@ def missing_holes_qa(doc: Any, items: Sequence[Any], record: Any) -> list:
                     f", or not read {'them' if many else 'it'})"),
             values=[f"{text}: {_pages(at)}" for text, at in lacking],
             pages=where))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# another hole's rows (RI-145)
+# ---------------------------------------------------------------------------
+
+#: The lists of a log whose rows each name the page they were read off
+#: (``prov.page``): in a model's answer (``log_reader.LogReading``) and in a
+#: record's log (``model.Investigation``) alike.
+ROW_LISTS: Tuple[str, ...] = ("layers", "samples", "spt", "water")
+
+#: How a row of each list is named in a QA entry: one, and more than one.
+_ROW_WORDS: Dict[str, Tuple[str, str]] = {
+    "layers": ("layer", "layers"), "samples": ("sample", "samples"),
+    "spt": ("driven record", "driven records"),
+    "water": ("water reading", "water readings")}
+
+
+def _row_page(row: Any) -> Optional[int]:
+    """The page a row says it was read off, or None."""
+    page = getattr(getattr(row, "prov", None), "page", None)
+    try:
+        return None if page is None else int(page)
+    except (TypeError, ValueError):
+        return None
+
+
+def take_rows(log: Any, pages: Collection[int]
+              ) -> Tuple[Any, Dict[int, Dict[str, List[Any]]]]:
+    """``log`` without its rows read off ``pages``, and those rows by page
+    and by list (:data:`ROW_LISTS`), in their order.
+
+    ``log`` is a model's answer or a record's log; it is never changed. With
+    no row on those pages it is returned as it is, else a copy without them.
+    A row that names no page stays."""
+    wanted = {int(p) for p in pages}
+    taken: Dict[int, Dict[str, List[Any]]] = {}
+    kept: Dict[str, List[Any]] = {}
+    for slot in ROW_LISTS:
+        kept[slot] = []
+        for row in getattr(log, slot, None) or ():
+            page = _row_page(row)
+            if page is not None and page in wanted:
+                taken.setdefault(page, {}).setdefault(slot, []).append(row)
+            else:
+                kept[slot].append(row)
+    if not taken:
+        return log, {}
+    return log.model_copy(update=kept), taken
+
+
+def _rows_said(rows: Mapping[str, Sequence[Any]]) -> Tuple[str, int]:
+    """``("2 layers and 1 sample", 3)``: the rows in words, and how many."""
+    parts = [f"{len(found)} {_ROW_WORDS[slot][len(found) != 1]}"
+             for slot, found in rows.items() if found]
+    said = (parts[0] if len(parts) == 1
+            else ", ".join(parts[:-1]) + " and " + parts[-1])
+    return said, sum(len(found) for found in rows.values())
+
+
+def _as_read(rows: Mapping[str, Sequence[Any]]) -> str:
+    """The rows as the model gave them (their boxes left out), for the
+    values of a QA entry."""
+    from report_ingest.checks import as_read
+
+    return "; ".join(f"{_ROW_WORDS[slot][0]} {as_read(row)}"
+                     for slot, found in rows.items() for row in found)
+
+
+def drop_other_hole_rows(reading: Any, own: Optional[HoleName],
+                         foreign: Mapping[int, HoleName]
+                         ) -> Tuple[Any, List[Dict[str, Any]]]:
+    """Today's log reader (RI-145): the model's answer without its rows read
+    off a page whose header names another hole (``foreign``, from
+    :func:`other_hole_pages`; ``own`` the log's hole), and one unresolved
+    row per such page that keeps its rows as read. ``refused_by: python``:
+    the reconciler makes it an ``out_of_range`` entry, a value read and
+    thrown out. Dropped, not moved: the module says why. With no such page,
+    or no row on one, the answer is returned as it is and no row."""
+    if own is None or not foreign:
+        return reading, []
+    kept, taken = take_rows(reading, foreign)
+    rows: List[Dict[str, Any]] = []
+    for page in sorted(taken):
+        said, n = _rows_said(taken[page])
+        rows.append({
+            "what": f"log reader, page {page}", "page": page,
+            "why": (f"the header of page {page} names the hole "
+                    f"{foreign[page].text}, not this log's ({own.text}): "
+                    f"the {said} the model read off that page "
+                    f"{'is' if n == 1 else 'are'} that hole's and "
+                    f"{'was' if n == 1 else 'were'} dropped from this log"),
+            "value": foreign[page].text, "read": _as_read(taken[page]),
+            "refused_by": "python", "flag": "reader_other_hole"})
+    return kept, rows
+
+
+def _in_page_order(rows: Sequence[Any]) -> List[Any]:
+    """``rows`` by the page each was read off, in their order on a page; a
+    row that names no page last."""
+    return sorted(rows, key=lambda row: (_row_page(row) is None,
+                                         _row_page(row) or 0))
+
+
+def sort_rows_by_hole(doc: Any, logs: List[Any], start: int = 0) -> list:
+    """Model first (RI-145): the rows each log from ``start`` on read off a
+    page whose header names another hole (:func:`other_hole_pages`, the
+    log's recorded name taken as its own where a page names it), MOVED to
+    that hole's log where exactly one other log from ``start`` on carries
+    its name (:func:`names_match`), else DROPPED; the module says why.
+
+    The page goes with its rows: off the log's ``pages`` and, moved, onto
+    the other log's, whose lists are put back in page order. Rows are moved
+    only to a log whose depths are in the same unit, as their depths are
+    the unit of the log they were read for; to one in another unit they
+    are dropped. ``logs`` is changed in place (each log changed is replaced
+    by a changed copy). One QA entry per page: a ``note`` where the rows
+    were moved, an ``out_of_range`` entry keeping them as read where they
+    were dropped."""
+    from report_ingest.model import QAEntry
+
+    out: List[Any] = []
+    run = range(int(start), len(logs))
+    for n in run:
+        log = logs[n]
+        pages = sorted({int(p) for p in (log.pages or ())})
+        if len(pages) < 2:
+            continue
+        own, foreign = other_hole_pages(pages, item_holes(doc, pages),
+                                        prefer=log.investigation_id or "")
+        kept, taken = take_rows(log, foreign)
+        if own is None or not taken:
+            continue
+        name = log.investigation_id or ""
+        called = f"log {name}" if name else "the log with no name"
+        where = f"investigations.{name}" if name else "investigations"
+        unit = (log.depth_unit or "").strip()
+        kept.pages = [p for p in log.pages if int(p) not in taken]
+        logs[n] = kept
+        for page in sorted(taken):
+            hole = foreign[page]
+            rows = taken[page]
+            said, count = _rows_said(rows)
+            are = "is" if count == 1 else "are"
+            head = (f"page {page} names the hole {hole.text} in its header, "
+                    f"not {own.text}: the {said} the model read off it for "
+                    f"{called} {are} that hole's")
+            to = [m for m in run if m != n and logs[m].investigation_id
+                  and names_match(hole.text, logs[m].investigation_id)]
+            other = logs[to[0]] if len(to) == 1 else None
+            if other is not None and (other.depth_unit or "").strip() == unit:
+                moved = other.model_copy(update={
+                    slot: _in_page_order(list(getattr(other, slot))
+                                         + rows[slot])
+                    for slot in ROW_LISTS if rows.get(slot)})
+                moved.pages = sorted({int(p) for p in other.pages} | {page})
+                logs[to[0]] = moved
+                out.append(QAEntry(
+                    kind="note", where=where,
+                    detail=(f"{head}: moved to log "
+                            f"{other.investigation_id}, where that hole is "
+                            f"logged"),
+                    pages=[page]))
+                continue
+            if other is not None:
+                whom = (f"log {other.investigation_id}, which carries it, "
+                        f"gives its depths in "
+                        f"{(other.depth_unit or '').strip() or 'no unit'} and "
+                        f"{called} in {unit or 'no unit'}")
+            elif to:
+                whom = f"{len(to)} logs in the record carry names like it"
+            else:
+                whom = "no other log in the record carries that name"
+            out.append(QAEntry(
+                kind="out_of_range", where=where,
+                detail=(f"{head}, and {whom}; dropped from {called} (the "
+                        f"rows as the model read them are in the values)"),
+                values=[_as_read(rows)], pages=[page]))
     return out

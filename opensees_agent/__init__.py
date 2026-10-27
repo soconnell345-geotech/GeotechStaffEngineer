@@ -20,7 +20,7 @@ from opensees_agent.results import (
 from opensees_agent.pm4sand_dss import analyze_pm4sand_dss
 from opensees_agent.site_response import analyze_site_response
 from opensees_agent.ground_motions import get_motion, list_motions
-from opensees_agent.opensees_utils import has_opensees
+from opensees_agent.opensees_utils import has_opensees, opensees_import_error
 
 __all__ = [
     'analyze_pm4sand_dss',
@@ -30,4 +30,5 @@ __all__ = [
     'get_motion',
     'list_motions',
     'has_opensees',
+    'opensees_import_error',
 ]

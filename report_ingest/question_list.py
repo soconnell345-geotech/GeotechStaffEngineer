@@ -846,12 +846,14 @@ def _bound_of(src: _Source, kinds: Sequence[str]
 def _holes(logs: Sequence[Any]) -> Tuple[int, List[int]]:
     """``(how many holes, the first PDF page of each)`` over these logs.
     One hole is one key (:func:`report_ingest.reconciler.hole_key`): a well
-    logged in a boring is that boring; a log with no id counts alone."""
-    from report_ingest.reconciler import hole_key
+    logged in a boring is that boring; a log with no id counts alone; two
+    holes printed under one name and kept apart by the reconciler (RI-135)
+    are two."""
+    from report_ingest.shared_names import hole_identity
 
     keys, pages = set(), []
     for i, inv in enumerate(logs):
-        key = hole_key(inv.investigation_id) or f"#{i}"
+        key = hole_identity(inv) or f"#{i}"
         if key not in keys and inv.pages:
             pages.append(inv.pages[0] + 1)
         keys.add(key)

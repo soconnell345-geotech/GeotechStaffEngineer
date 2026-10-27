@@ -1758,6 +1758,14 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     dropped from the conversation first, then its middle turns, and a
     request whose own pages are too many carries the first of them and
     leaves the rest for the next call.
+
+    Pages whose header names a hole other than the one the pages name first
+    (:func:`report_ingest.log_holes.other_hole_pages`; the graph cuts such
+    items apart first, so this is an item handed in whole): the floor seeds
+    nothing from them and the brief says so (RI-117), and every row the
+    model still returns from one is dropped with an unresolved row that
+    keeps it as read (RI-145, :func:`report_ingest.log_holes.
+    drop_other_hole_rows`).
     """
     pages = [int(p) for p in item_pages]
     limit = (int(max_request_tokens_in)
@@ -1984,9 +1992,21 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         if reply.parsed is not None:
             reading = reply.parsed
 
+    # ANOTHER HOLE'S ROWS (RI-145). Told to leave a page whose header names
+    # another hole alone, the model can still return rows read off it: they
+    # are dropped here, before the build, each page one unresolved row with
+    # its rows as read (log_holes.drop_other_hole_rows, which says why they
+    # are not moved), and the page leaves the log's pages with them.
+    from report_ingest.log_holes import drop_other_hole_rows
+
+    reading, other_rows = drop_other_hole_rows(reading, own_hole, foreign)
     builder = _Builder(reading, _depth_window(doc, grid, pages), pages,
                        report_id, no_ruler=no_ruler, printed=printed)
     model_investigation = builder.build()
+    if other_rows:
+        gone = {int(row["page"]) for row in other_rows}
+        model_investigation.pages = [p for p in model_investigation.pages
+                                     if p not in gone]
     # THE MERGE: the model's answer folded onto the floor. Nothing the grid
     # placed is lost; every contradiction is on the record.
     merged, merge_log = merge_investigations(floor, model_investigation,
@@ -2021,7 +2041,7 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         # First, one row per page with no ruler: that it was not fitted, why,
         # what was read from print instead and what still has no depth.
         unresolved=(printed.qa_rows(grid, _SAMPLE_FAMILY) + floor_qa
-                    + builder.unresolved + merge_refused),
+                    + other_rows + builder.unresolved + merge_refused),
         cost=spent,
         model_calls=model_calls,
         model=reply.model or getattr(engine, "name", ""),

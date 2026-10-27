@@ -43,11 +43,12 @@ def _check_layers(layers, *, method):
 
 
 def _check_pystrata():
-    """Raise ValueError if pystrata is not installed."""
-    from pystrata_agent import has_pystrata
+    """Raise ValueError if pystrata is not installed or fails to import."""
+    from pystrata_agent import has_pystrata, pystrata_import_error
     if not has_pystrata():
         raise ValueError(
-            "pystrata is not installed. Install with: pip install pystrata"
+            pystrata_import_error()
+            or "pystrata is not installed. Install with: pip install pystrata"
         )
 
 

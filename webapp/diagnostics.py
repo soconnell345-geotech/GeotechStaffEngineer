@@ -89,6 +89,68 @@ def _drift_check() -> dict:
     return _check("version drift", WARN, " || ".join(warnings))
 
 
+#: The optional packages behind the analysis tools: (package, the tools that
+#: need it, the module and function its tools ask whether it imports).
+OPTIONAL_PACKAGES = (
+    ("PyNiteFEA", "pynite", "pynite_agent.pynite_utils", "pynite_import_error"),
+    ("gstools", "gstools", "gstools_agent.gstools_utils", "gstools_import_error"),
+    ("SALib", "salib", "salib_agent.salib_utils", "salib_import_error"),
+    ("pystra", "pystra", "pystra_agent.pystra_utils", "pystra_import_error"),
+    ("liquepy", "liquepy, liquefaction", "liquepy_agent.liquepy_utils",
+     "liquepy_import_error"),
+    ("pystrata", "pystrata", "pystrata_agent.pystrata_utils",
+     "pystrata_import_error"),
+    ("openseespy", "opensees", "opensees_agent.opensees_utils",
+     "opensees_import_error"),
+    ("eqsig", "seismic_signals", "seismic_signals_agent.signal_utils",
+     "eqsig_import_error"),
+    ("pygef", "subsurface", "subsurface_characterization.formats.gef",
+     "pygef_import_error"),
+    ("python-ags4", "subsurface", "subsurface_characterization.formats.ags4",
+     "ags4_import_error"),
+    ("pydiggs", "subsurface",
+     "subsurface_characterization.formats.diggs_validation",
+     "pydiggs_import_error"),
+)
+
+
+def _optional_packages_check() -> dict:
+    """The optional packages behind the analysis tools, by the check the
+    tools themselves run: which import, which are not installed, and for one
+    installed that will not import, its import's own error (BACKLOG INF-54:
+    pandas 3 failing on numpy 1.26 once read as "SALib is not installed").
+
+    WARN when an installed package cannot be imported. A package that is
+    not installed is listed and not warned about: some hosts leave packages
+    out on purpose (PyNiteFEA cannot install on Foundry's numpy 1.26)."""
+    import importlib
+    import importlib.metadata as md
+    from geotech_common.optional_packages import CANNOT_IMPORT
+    imports, missing, broken = [], [], []
+    for package, tools, module, func in OPTIONAL_PACKAGES:
+        try:
+            error = getattr(importlib.import_module(module), func)()
+        except Exception as exc:
+            error = (f"{package}: the check itself failed: "
+                     f"{type(exc).__name__}: {exc}")
+        if error is None:
+            try:
+                imports.append(f"{package} {md.version(package)}")
+            except Exception:
+                imports.append(package)
+        elif CANNOT_IMPORT in error or "the check itself failed" in error:
+            broken.append(f"{error} (tools: {tools})")
+        else:
+            missing.append(f"{package} ({tools})")
+    parts = [f"import: {', '.join(imports) or 'none'}"]
+    if missing:
+        parts.append(f"not installed: {', '.join(missing)}")
+    summary = " | ".join(parts)
+    if broken:
+        return _check("optional packages", WARN, "\n".join(broken + [summary]))
+    return _check("optional packages", PASS, summary)
+
+
 def _env_check() -> dict:
     """Which engine-relevant env vars are set (values masked).
 
@@ -549,8 +611,8 @@ def run_diagnostics(model_id: Optional[str] = None,
     the model each agent runs on and tries each helper model with two more
     tiny requests (:mod:`webapp.helper_models`)."""
     from webapp import engine_config
-    checks = [_versions_check(), _drift_check(), _env_check(),
-              _upload_probe_check(), _reference_docs_check()]
+    checks = [_versions_check(), _drift_check(), _optional_packages_check(),
+              _env_check(), _upload_probe_check(), _reference_docs_check()]
     if engine_config.is_tinyapps_deployment():
         checks.append(_prompter_key_check(identity))
     if engine_config.is_foundry_deployment():

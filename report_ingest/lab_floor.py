@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from report_ingest.floor import (
     EXACT_TOL, MergeLog, fold, has_evidence, same_depth, same_number,
@@ -45,10 +45,15 @@ from report_ingest.model import (
     StrengthResult, SummaryRow, SummaryTableResult, UNIT_TO_SI,
     _canonical_unit,
 )
+from report_ingest.turned import (
+    ROW_TOL, Turn, line_thickness as _row_thickness, page_turn,
+    reading_order, top_band, upright_box,
+)
 
 __all__ = ["FloorSheet", "floor_from_tables", "serialise_floor",
            "merge_lab_tests", "kind_from_title", "TITLE_KINDS",
-           "PASSING_TOL"]
+           "PASSING_TOL", "title_kinds", "page_title_kinds",
+           "legend_specimens", "LEGEND_NOTE"]
 
 #: A grading's percent-passing values agree within one percentage point
 #: (``lab_scoring.PASSING_TOL``).
@@ -59,6 +64,12 @@ CONF_TABLE = 0.85
 CONF_TABLE_OCR = 0.6
 CONF_TITLE = 0.75
 CONF_LINK = 0.7
+#: A value read off a legend row (:func:`legend_specimens`): printed beside
+#: its label on one line, read from the text layer or the optical text.
+CONF_LEGEND = 0.75
+#: The top share of a page, as it reads, where the floor looks for the
+#: sheet's title.
+TITLE_BAND = 0.22
 
 #: What a sheet's title says it is. Tested in this order, so the specific
 #: names win: a SUMMARY OF LABORATORY TESTS names every test kind on it and
@@ -299,9 +310,11 @@ _MOISTURE_KINDS = ("moisture_content", "density", "organic_content")
 
 _NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
 _PAREN = re.compile(r"\(([^)]{1,14})\)")
+#: A hole named beside its field, the name bare or in brackets ("BORE HOLE
+#: NO. (B-2)", RI-149).
 _LINK_BORING = re.compile(
     r"(?:boring|borehole|bore ?hole|test ?pit|sondage|sondeo|exploration|"
-    r"hole|location)\s*(?:no\.?|number|#|id)?\s*[:.\-]?\s*"
+    r"hole|location)\s*(?:no\.?|number|#|id)?\s*[:.\-]?\s*\(?\s*"
     r"([A-Za-z]{1,4}[- ]?\d+[A-Za-z]?)\b", re.I)
 _LINK_SAMPLE = re.compile(
     r"(?:sample|specimen|muestra|echantillon)\s*(?:no\.?|number|#|id)?\s*"
@@ -310,6 +323,50 @@ _LINK_DEPTH = re.compile(
     r"(?:depth|profondeur|profundidad|prof\.?)\s*[:.\-]?\s*"
     r"(\d+(?:[.,]\d+)?)\s*(?:(?:-|–|to|a)\s*(\d+(?:[.,]\d+)?))?\s*"
     r"(ft|feet|foot|m|metres|meters|'|\")?", re.I)
+
+#: THE LEGEND OF SEVERAL SPECIMENS (RI-149). A grading chart that plots
+#: several samples prints a legend or key with one row per sample: the
+#: sample's label (its depth, sometimes with its hole), its description and
+#: its percentages ("SAND = 53%, Gravel = 18%"), along one printed row.
+#: Which numbers belong to which sample is which row they are printed on,
+#: and nothing else says so. The floor reads such a legend in the text's
+#: own frame (:mod:`report_ingest.turned`, de-skewed on a page scanned
+#: sideways) and binds each row's values to that row's label and no other
+#: (:func:`legend_specimens`); the model's answer is merged onto them
+#: (:func:`merge_lab_tests` lets a legend value be overruled only by a
+#: reading boxed on the line that prints it). Read only where at least
+#: :data:`LEGEND_MIN_ROWS` entries each print a label and at least two
+#: labelled values: a sheet of one specimen is left as it was.
+#:
+#: The note every legend value's provenance carries; the merge knows a
+#: legend test by it.
+LEGEND_NOTE = ("read off a legend row: the specimen's label and its values "
+               "printed on one line")
+LEGEND_MIN_ROWS = 2
+#: A grading share named and printed with its percent: "SAND = 53%",
+#: "Gravel: 18 %", "Silt 39%".
+_LEGEND_SHARE = re.compile(
+    r"\b(cobbles?|gravel|sand|silt\s*(?:&|and|/|\+)\s*clay|fines|silt|clay)"
+    r"\s*[=:]?\s*(\d+(?:[.,]\d+)?)\s*%", re.I)
+#: A diameter or a coefficient printed with its sign: "D60 = 0.42 mm",
+#: "Cu = 12", "Cc: 1.1".
+_LEGEND_SIZE = re.compile(
+    r"\b(d\s?(?:10|30|50|60|85|90|100)|cu|cc)\s*[=:]\s*(\d+(?:[.,]\d+)?)"
+    r"\s*(mm|in)?\b", re.I)
+#: A legend row's label, at the row's start: an optional hole or sample
+#: code, then a depth range ("4.2-5.7", "13.-14.5", "2.3 to 3.8 m") or one
+#: depth with its unit or after an at sign ("@ 9 ft", "13.85 m"). A bare
+#: number is a symbol's or a sample's number, not a depth, and is no label.
+_LEGEND_LABEL = re.compile(
+    r"^[^\w@]*(?:(?P<code>[A-Za-z]{1,4}[- ]?\d+[A-Za-z]?)[\s,;:/]+)?"
+    r"(?P<at>@\s*)?(?P<top>\d+(?:[.,]\d*)?)\s*"
+    r"(?P<unit1>m|ft|feet|metres|meters|')?"
+    r"(?:\s*(?:-|–|—|to)\s*(?P<bottom>\d+(?:[.,]\d*)?)\s*"
+    r"(?P<unit2>m|ft|feet|metres|meters|')?)?(?![\w.])", re.I)
+_LEGEND_FIELD = {"cobble": "cobbles_percent", "cobbles": "cobbles_percent",
+                 "gravel": "gravel_percent", "sand": "sand_percent",
+                 "silt": "silt_percent", "clay": "clay_percent",
+                 "fines": "fines_percent", "cu": "cu", "cc": "cc"}
 
 
 # ---------------------------------------------------------------------------
@@ -438,12 +495,28 @@ class FloorSheet:
 
 
 def _lines_of(doc: Any, page: int) -> List[Any]:
+    """A page's lines in the order it reads: top to bottom and left to
+    right as displayed, or, on a page whose text runs a quarter turn (a
+    sheet scanned sideways), row by row in the turned page's own frame
+    (:func:`report_ingest.turned.reading_order`, RI-149)."""
     try:
         content = doc.page(page)
     except Exception:
         return []
-    return sorted(content.lines, key=lambda ln: (round(ln.bbox[1], 1),
-                                                 ln.bbox[0]))
+    return reading_order(content.lines, _turn_of_content(content))
+
+
+def _turn_of_content(content: Any) -> Turn:
+    return page_turn(content.lines,
+                     float(getattr(content, "width", 612.0) or 612.0),
+                     float(getattr(content, "height", 792.0) or 792.0))
+
+
+def _page_turn(doc: Any, page: int) -> Turn:
+    try:
+        return _turn_of_content(doc.page(page))
+    except Exception:
+        return Turn()
 
 
 def _tables_of(doc: Any, page: int) -> List[Any]:
@@ -477,6 +550,381 @@ def _link_from_lines(lines: Sequence[Any], page: int) -> _Link:
                              else "m" if unit in ("m", "metres", "meters")
                              else "")
     return link
+
+
+def _depth_unit(text: str) -> str:
+    text = str(text or "").lower()
+    return ("ft" if text in ("ft", "feet", "foot", "'")
+            else "m" if text in ("m", "metres", "meters") else "")
+
+
+def _legend_field(name: str) -> str:
+    folded = " ".join(str(name or "").lower().split())
+    if re.match(r"silt\s*(?:&|and|/|\+)\s*clay", folded):
+        return "fines_percent"
+    folded = folded.replace(" ", "")
+    if re.fullmatch(r"d(?:10|30|50|60|85|90|100)", folded):
+        return folded
+    return _LEGEND_FIELD.get(folded, "")
+
+
+def _union(boxes: Sequence[Sequence[float]]) -> Tuple[float, float, float,
+                                                       float]:
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+@dataclass
+class _LegendRow:
+    """One legend entry read: the specimen's link and its labelled values,
+    with the label's box and the box of the line(s) printing the values."""
+
+    link: _Link
+    values: Dict[str, Tuple[Any, str]]
+    label_bbox: Tuple[float, float, float, float]
+    values_bbox: Tuple[float, float, float, float]
+
+
+def _label_of(text: str, page: int, sheet: _Link
+              ) -> Optional[Tuple[_Link, int]]:
+    """A specimen label at the start of a line, and where it ends, or None:
+    a depth range, or one depth with its unit or after an at sign, with an
+    optional hole or sample code before it (:data:`_LEGEND_LABEL`)."""
+    label = _LEGEND_LABEL.match(str(text or ""))
+    if label is None:
+        return None
+    if not (label.group("bottom") or label.group("at")
+            or label.group("unit1") or label.group("unit2")):
+        return None
+    top = _num(label.group("top").rstrip(".,"))
+    if top is None:
+        return None
+    unit = (_depth_unit(label.group("unit2") or label.group("unit1") or "")
+            or sheet.unit)
+    link = _Link(investigation_id=sheet.investigation_id, unit=unit,
+                 page=page, depth_top=top,
+                 depth_bottom=(_num(label.group("bottom").rstrip(".,"))
+                               if label.group("bottom") else None))
+    code = (label.group("code") or "").strip()
+    if code:
+        # A code before the depth: the sheet's own hole printed again on the
+        # row says nothing more; a sample's series (S-1, ST-2) names the
+        # row's sample; any other names the row's own hole, which may be
+        # another than the one the sheet's header prints.
+        series = re.match(r"[A-Za-z]+", code)
+        if link.investigation_id and \
+                _hole_fold(code) == _hole_fold(link.investigation_id):
+            pass
+        elif series is not None and series.group(0).upper() in \
+                _SAMPLE_SERIES:
+            link.sample_id = code
+        else:
+            link.investigation_id = code.replace(" ", "-")
+    return link, label.end()
+
+
+#: The series letters that name a sample, not a hole, where a legend row
+#: prints a code before its depth: split spoon (S, SS, SPT), tube (ST, SH,
+#: TW, U, UD), disturbed (D, DS), core (C, CS, R, RC, RUN), grab, bag and
+#: block samples (G, GS, BAG, BLK). LAYOUT JUDGMENT, as
+#: :data:`report_ingest.log_holes._NOT_ALONE` keeps them from naming a
+#: hole.
+_SAMPLE_SERIES = frozenset((
+    "S", "SS", "SPT", "ST", "SH", "TW", "U", "UD", "D", "DS", "C", "CS",
+    "R", "RC", "RUN", "G", "GS", "BAG", "BLK"))
+
+
+def _hole_fold(text: Any) -> str:
+    """A hole's code folded for comparison: lower case, letters and digits
+    only, a number's leading zeros dropped ("QX-04" is "qx4")."""
+    folded = re.sub(r"[^0-9a-z]+", "", str(text or "").lower())
+    return re.sub(r"(?<![0-9])0+(?=[0-9])", "", folded)
+
+
+def _values_in(text: str) -> Optional[Dict[str, Tuple[Any, str]]]:
+    """The labelled grading values a piece of text prints ("SAND = 53%",
+    "D60 = 0.42 mm"), or None where one is named twice (two entries'
+    values run together)."""
+    values: Dict[str, Tuple[Any, str]] = {}
+    for match in _LEGEND_SHARE.finditer(text):
+        name = _legend_field(match.group(1))
+        if not name:
+            continue
+        if name in values:
+            return None
+        values[name] = (_num(match.group(2)), "%")
+    for match in _LEGEND_SIZE.finditer(text):
+        name = _legend_field(match.group(1))
+        if not name:
+            continue
+        if name in values:
+            return None
+        unit = "" if name in ("cu", "cc") else (match.group(3) or "mm")
+        values[name] = (_num(match.group(2)), unit)
+    return {k: v for k, v in values.items() if v[0] is not None}
+
+
+#: How far apart, as a share of the legend's row pitch, a label and the
+#: values bound to it by nearness may lie, and by how much a second label
+#: must be further off for the binding to be called unambiguous.
+LEGEND_NEAR = 0.3
+
+
+def _bind_by_rank(labels: Sequence[float], values: Sequence[float],
+                  pitch: float) -> Optional[List[int]]:
+    """Each value row's label by order, where there are as many value rows
+    as labels and every pair sits the same way off its label: the rows of
+    one legend are parallel, so a scan's skew moves every row's values the
+    same distance off its label, and that distance may be half a row."""
+    if len(labels) != len(values) or len(labels) < LEGEND_MIN_ROWS:
+        return None
+    offsets = [v - lab for lab, v in zip(labels, values)]
+    if max(offsets) - min(offsets) >= 0.5 * pitch:
+        return None
+    # Off by most of a row, the order could as well be one row out (a stray
+    # label above the column and one missing below it).
+    if max(abs(o) for o in offsets) >= 0.75 * pitch:
+        return None
+    return list(range(len(values)))
+
+
+def _bind_by_nearness(labels: Sequence[float], values: Sequence[float],
+                      pitch: float) -> Optional[List[Optional[int]]]:
+    """Each value row's label by nearness across the rows: the nearest
+    label where it lies within :data:`LEGEND_NEAR` of the pitch and every
+    other is further off by as much again; None for a value row with no
+    label that near (its label was not read: it makes no entry). The whole
+    answer is None where a value row lies near two labels alike."""
+    out: List[Optional[int]] = []
+    for v in values:
+        ranked = sorted(range(len(labels)), key=lambda i: abs(labels[i] - v))
+        d1 = abs(labels[ranked[0]] - v)
+        d2 = abs(labels[ranked[1]] - v) if len(ranked) > 1 else float("inf")
+        if d1 > LEGEND_NEAR * pitch:
+            out.append(None)
+            continue
+        if d2 - d1 < LEGEND_NEAR * pitch:
+            return None
+        out.append(ranked[0])
+    return out
+
+
+def _label_column(labels: List[Tuple[float, _Link, Any]], turn: Turn,
+                  tol: float) -> List[Tuple[float, _Link, Any]]:
+    """The labels that stand in the legend's column of labels.
+
+    A legend prints its labels one under another, starting (or ending) at
+    one place along the row; a line of the key's symbols read optically
+    ("-6-9-" for a dashed line with its markers) also opens with something
+    shaped like a depth range, but it stands in another column. Where at
+    least :data:`LEGEND_MIN_ROWS` labels share a start (or an end) within
+    four times ``tol``, only those are labels."""
+    if len(labels) <= LEGEND_MIN_ROWS:
+        return labels
+    best: List[Tuple[float, _Link, Any]] = labels
+    best_n = 0
+    for side in (0, 2):
+        at = [turn.frame(item[2].bbox)[side] for item in labels]
+        for here in at:
+            kept = [item for item, there in zip(labels, at)
+                    if abs(there - here) <= 4.0 * tol]
+            if len(kept) > best_n:
+                best, best_n = kept, len(kept)
+    return best if best_n >= LEGEND_MIN_ROWS else labels
+
+
+def legend_specimens(doc: Any, page: int, sheet: Optional[_Link] = None
+                     ) -> List[_LegendRow]:
+    """The specimens a page's legend prints, each with its own values
+    (RI-149), or an empty list.
+
+    A legend row is a specimen's label at the start of a line (its depth,
+    perhaps with its hole) and, on that row, its labelled grading values,
+    printed on the same line or on others further along the row. Rows are
+    taken in the text's own frame (:mod:`report_ingest.turned`, de-skewed),
+    and each value row is bound to a label:
+
+    * on one line with its label: to that label;
+    * else by ORDER, where the legend has as many value rows as labels and
+      every value row sits the same way off its label (a skew moves all of
+      them alike);
+    * else by NEARNESS, where each value row is clearly nearer one label
+      than any other (:data:`LEGEND_NEAR`).
+
+    Where neither binds every value row the page's legend is not read at
+    all: the floor then says nothing about it rather than guess, and the
+    model's reading stands. A label with no values, and values with no
+    label, make no entry. Empty unless at least :data:`LEGEND_MIN_ROWS`
+    entries are read. ``sheet`` is the page's own link: its hole and depth
+    unit go to entries that print none."""
+    try:
+        content = doc.page(page)
+    except Exception:
+        return []
+    if sheet is None:
+        sheet = _link_from_lines(_lines_of(doc, page), page)
+    turn = _turn_of_content(content)
+    whole: List[_LegendRow] = []
+    labels: List[Tuple[float, _Link, Any]] = []
+    loose: List[Tuple[float, Dict[str, Tuple[Any, str]], Any]] = []
+    for line in content.lines:
+        text = str(getattr(line, "text", "") or "")
+        if not text.strip() or not getattr(line, "bbox", None):
+            continue
+        got = _label_of(text, page, sheet)
+        rest = text[got[1]:] if got else text
+        values = _values_in(rest)
+        if values is None:
+            return []                       # two entries run together
+        v = turn.centre_v(line.bbox)
+        if got is not None and len(values) >= 2:
+            link = got[0]
+            link.bbox = tuple(line.bbox)
+            whole.append(_LegendRow(link=link, values=values,
+                                    label_bbox=tuple(line.bbox),
+                                    values_bbox=tuple(line.bbox)))
+        elif got is not None:
+            labels.append((v, got[0], line))
+        elif values:
+            loose.append((v, values, line))
+    # The values a row prints over more than one line, one value row.
+    tol = ROW_TOL * _row_thickness(content.lines, turn)
+    rows: List[List[Tuple[float, Dict[str, Tuple[Any, str]], Any]]] = []
+    for item in sorted(loose, key=lambda it: it[0]):
+        if rows and abs(item[0] - rows[-1][-1][0]) <= tol and not (
+                set(item[1]) & {n for _v, vals, _l in rows[-1] for n in vals}):
+            rows[-1].append(item)
+        else:
+            rows.append([item])
+    rows = [row for row in rows
+            if sum(len(vals) for _v, vals, _l in row) >= 2]
+    labels = _label_column(labels, turn, tol)
+    labels.sort(key=lambda it: it[0])
+    out = list(whole)
+    if rows and labels:
+        lv = [it[0] for it in labels]
+        rv = [sum(v for v, _vals, _l in row) / len(row) for row in rows]
+        gaps = sorted(b - a for a, b in zip(lv, lv[1:]) if b - a > tol)
+        pitch = gaps[len(gaps) // 2] if gaps else 4.0 * tol
+        bound: Optional[List[Optional[int]]] = _bind_by_rank(lv, rv, pitch)
+        if bound is None:
+            bound = _bind_by_nearness(lv, rv, pitch)
+        named = [i for i in bound or () if i is not None]
+        if bound is None or len(set(named)) != len(named):
+            return []
+        for row, i in zip(rows, bound):
+            if i is None:
+                continue
+            link = labels[i][1]
+            link.bbox = tuple(labels[i][2].bbox)
+            values: Dict[str, Tuple[Any, str]] = {}
+            for _v, vals, _l in row:
+                values.update(vals)
+            out.append(_LegendRow(
+                link=link, values=values,
+                label_bbox=tuple(labels[i][2].bbox),
+                values_bbox=_union([tuple(l.bbox) for _v, _vals, l in row])))
+    return out if len(out) >= LEGEND_MIN_ROWS else []
+
+
+#: The note a legend test's label carries.
+LEGEND_LABEL_NOTE = "the specimen's label printed at the start of its legend row"
+
+
+def _legend_test(row: _LegendRow, report_id: str) -> LabTest:
+    """One legend entry as a grading test: the values its row prints, under
+    the label that row prints, nothing computed (no fines from silt and
+    clay, no Cu from the diameters)."""
+    link = row.link
+    fields: Dict[str, Any] = {}
+    for name, (value, unit) in row.values.items():
+        if name.startswith("d"):
+            fields[name] = Quantity(value=float(value), unit=unit or "mm")
+        else:
+            fields[name] = float(value)
+    return LabTest(
+        kind="gradation", investigation_id=link.investigation_id,
+        sample_id=link.sample_id,
+        depth_top=Quantity(value=link.depth_top, unit=link.unit),
+        depth_bottom=(Quantity(value=link.depth_bottom, unit=link.unit)
+                      if link.depth_bottom is not None else None),
+        pages=[link.page], source_report=report_id,
+        result=GradationResult(**fields),
+        prov=[Provenance(page=link.page, bbox=row.label_bbox, method="text",
+                         confidence=CONF_LINK, note=LEGEND_LABEL_NOTE),
+              Provenance(page=link.page, bbox=row.values_bbox, method="text",
+                         confidence=CONF_LEGEND, note=LEGEND_NOTE)])
+
+
+def _legend_box(test: LabTest) -> Optional[Tuple[int, Tuple[float, ...]]]:
+    """``(page, box)`` of the line(s) a legend test's values are printed on,
+    or None for a test not read off a legend."""
+    for p in test.prov:
+        if p.note == LEGEND_NOTE and p.bbox is not None:
+            return int(p.page), tuple(float(v) for v in p.bbox)
+    return None
+
+
+def _legend_boxes(test: LabTest
+                  ) -> Optional[Tuple[int, Optional[Tuple[float, ...]],
+                                      Tuple[float, ...]]]:
+    """``(page, label box, values box)`` of a legend test's row: the line
+    printing its label and the line(s) printing its values (one line where
+    the row prints both), or None for a test not read off a legend."""
+    values = _legend_box(test)
+    if values is None:
+        return None
+    label = next((tuple(float(v) for v in p.bbox) for p in test.prov
+                  if p.note == LEGEND_LABEL_NOTE and p.bbox is not None
+                  and int(p.page) == values[0]), None)
+    return values[0], label, values[1]
+
+
+#: How much of the smaller of two boxes must lie in the other for a reading
+#: boxed there to be ON a legend row's line: the displayed boxes of a skewed
+#: sheet's neighbouring rows overlap at their edges.
+ON_LINE_SHARE = 0.5
+
+
+def _on_line(box: Sequence[float], line: Sequence[float]) -> bool:
+    """Whether ``box`` lies on ``line``: at least :data:`ON_LINE_SHARE` of
+    the smaller of the two inside the other."""
+    w = min(box[2], line[2]) - max(box[0], line[0])
+    h = min(box[3], line[3]) - max(box[1], line[1])
+    if w <= 0 or h <= 0:
+        return False
+    smaller = min((box[2] - box[0]) * (box[3] - box[1]),
+                  (line[2] - line[0]) * (line[3] - line[1]))
+    return smaller > 0 and w * h >= ON_LINE_SHARE * smaller
+
+
+def title_kinds(lines: Sequence[str]) -> Tuple[str, ...]:
+    """Every kind :data:`TITLE_KINDS` names in the first of ``lines`` that
+    names any (the line :func:`kind_from_title` takes as the title), in the
+    table's order; empty when none does. A title naming two tests ("GRAIN
+    SIZE DISTRIBUTION & ATTERBERG LIMITS TEST RESULTS", a table of both)
+    names another sheet than one naming one of them."""
+    for line in lines:
+        text = " ".join(str(line or "").lower().split())
+        named = tuple(name for pattern, name in TITLE_KINDS
+                      if re.search(pattern, text))
+        if named:
+            return tuple(dict.fromkeys(named))
+    return ()
+
+
+def page_title_kinds(doc: Any, page: int) -> Tuple[str, ...]:
+    """:func:`title_kinds` of a page's title band, the floor's band (the
+    top :data:`TITLE_BAND` of the page as it reads, turned or not)."""
+    try:
+        content = doc.page(page)
+    except Exception:
+        return ()
+    turn = _turn_of_content(content)
+    band = top_band(content.lines, turn, TITLE_BAND)
+    texts = [ln.text for ln in band] or [
+        ln.text for ln in reading_order(content.lines, turn)[:6]]
+    return title_kinds(texts)
 
 
 def _table_rows(table: Any) -> List[List[str]]:
@@ -1203,12 +1651,19 @@ def _floor(doc: Any, pages: Sequence[int], report_id: str,
     if not pages:
         return sheet
     first = _lines_of(doc, pages[0])
-    try:
-        height = float(doc.summary(pages[0]).height)
-    except Exception:
-        height = 792.0
-    top = [ln.text for ln in first if ln.bbox[1] <= 0.22 * height] \
-        or [ln.text for ln in first[:6]]
+    turn = _page_turn(doc, pages[0])
+    if turn.turned:
+        # A sheet scanned sideways: its title is at the top of the page as
+        # it reads, which is a side of the page as displayed (RI-149).
+        top = [ln.text for ln in top_band(first, turn, TITLE_BAND)] \
+            or [ln.text for ln in first[:6]]
+    else:
+        try:
+            height = float(doc.summary(pages[0]).height)
+        except Exception:
+            height = 792.0
+        top = [ln.text for ln in first if ln.bbox[1] <= TITLE_BAND * height] \
+            or [ln.text for ln in first[:6]]
     sheet.kind, sheet.title = kind_from_title(top, corrected=per_page)
     sheet.link = _link_from_lines(first, pages[0])
     links: Dict[int, _Link] = {pages[0]: sheet.link}
@@ -1263,6 +1718,21 @@ def _floor(doc: Any, pages: Sequence[int], report_id: str,
                 keyed[page] = keyed.get(page, 0) + n
         if key in values_by_key:
             link_of.setdefault(key, link)
+
+    # The legend of a sheet plotting several specimens, read row by row on
+    # each page whose tables gave no value (RI-149): one grading test per
+    # specimen, each with the values its own row prints. Each page's hole is
+    # that page's own, on either floor.
+    for page in pages:
+        if keyed.get(page):
+            continue
+        kinds = page_title_kinds(doc, page)
+        if kinds and "gradation" not in kinds:
+            continue
+        own = _page_link(_link_from_lines(_lines_of(doc, page), page),
+                         sheet.link)
+        sheet.tests.extend(_legend_test(row, report_id)
+                           for row in legend_specimens(doc, page, own))
 
     if per_page and linked:
         sheet.unbound = [{"page": p, "values": keyed[p], "linked": linked}
@@ -1405,7 +1875,8 @@ def _test_link_words(test: LabTest) -> str:
                        (top.unit if top is not None else "") or "")
 
 
-def serialise_floor(sheet: FloorSheet, per_page: bool = False) -> str:
+def serialise_floor(sheet: FloorSheet, per_page: bool = False,
+                    turns: Optional[Mapping[int, Turn]] = None) -> str:
     """The floor as compact lines the model builds on.
 
     By default the floor as the brief showed it before RI-56
@@ -1414,7 +1885,19 @@ def serialise_floor(sheet: FloorSheet, per_page: bool = False) -> str:
     the corrected kind, and, where a test's page prints a link other than
     the first page's, each test under the link its own page prints. A sheet
     whose floor is the same either way reads the same either way.
+
+    ``turns``: a page's turn where the reader lists that page and shows its
+    picture in the upright frame (RI-149); a box on such a page is shown in
+    that frame too (:func:`report_ingest.turned.upright_box`). Every other
+    page's boxes are shown as they always were.
     """
+    turned = {int(p): t for p, t in (turns or {}).items()
+              if t is not None and t.turned}
+
+    def box_on(page: int, bbox: Sequence[float]) -> Sequence[float]:
+        turn = turned.get(int(page))
+        return upright_box(bbox, turn) if turn is not None else bbox
+
     if not per_page:
         sheet = sheet.as_before or sheet
     out: List[str] = []
@@ -1430,8 +1913,8 @@ def serialise_floor(sheet: FloorSheet, per_page: bool = False) -> str:
                 "link printed on the sheet: ") + (words or "none read"))
     for test in sheet.tests:
         where = ", ".join(
-            f"page {p.page}" + (" box " + ",".join(f"{v:.0f}" for v in p.bbox)
-                                if p.bbox else "")
+            f"page {p.page}" + (" box " + ",".join(
+                f"{v:.0f}" for v in box_on(p.page, p.bbox)) if p.bbox else "")
             for p in test.prov if p.method == "tables") or \
             f"page {test.pages[0] if test.pages else '?'}"
         conf = max((p.confidence for p in test.prov), default=0.5)
@@ -1439,6 +1922,13 @@ def serialise_floor(sheet: FloorSheet, per_page: bool = False) -> str:
         if per_test and id(test) in own:
             out.append("  link printed on its page: " + (
                 own[id(test)] or "none (its values are left unbound)"))
+        legend = _legend_box(test)
+        if legend is not None:
+            out.append("  read off one legend row, the label and these "
+                       "values printed on that row (values box "
+                       + ",".join(f"{v:.0f}"
+                                  for v in box_on(legend[0], legend[1]))
+                       + "): " + (_test_link_words(test) or "no label read"))
         out.extend(_result_lines(test))
         if per_page and test.fields:
             out.append("  also printed: " + ", ".join(
@@ -1450,11 +1940,36 @@ def serialise_floor(sheet: FloorSheet, per_page: bool = False) -> str:
 # the merge
 # ---------------------------------------------------------------------------
 
+def _hole_named(text: Any) -> str:
+    """A hole's name folded, read out of a printed field where the text is
+    one ("BORE HOLE NO. (B-2)" is B-2, as the floor reads it off the
+    sheet), else the text folded."""
+    match = _LINK_BORING.search(str(text or ""))
+    return fold(match.group(1) if match else text)
+
+
+def _is_legend(test: LabTest) -> bool:
+    return any(p.note == LEGEND_NOTE for p in test.prov)
+
+
+def _depths_meet(a: LabTest, b: LabTest) -> Optional[bool]:
+    """:func:`same_depth` of two tests' tops; but a legend label that prints
+    no unit, on a sheet that prints none, is set against the other's
+    printed number as printed: its unit is the other's (RI-149), where
+    converting the other's alone would set feet against bare numbers."""
+    da, db = a.depth_top, b.depth_top
+    if da is not None and db is not None and \
+            (_is_legend(a) or _is_legend(b)) and \
+            bool(str(da.unit or "").strip()) != bool(str(db.unit or "").strip()):
+        return same_number(da.value, db.value, 0.05)
+    return same_depth(da, db)
+
+
 def _same_specimen(a: LabTest, b: LabTest) -> bool:
-    ida, idb = fold(a.investigation_id), fold(b.investigation_id)
+    ida, idb = _hole_named(a.investigation_id), _hole_named(b.investigation_id)
     if ida and idb and ida != idb:
         return False
-    same = same_depth(a.depth_top, b.depth_top)
+    same = _depths_meet(a, b)
     if same is False:
         return False
     if not (ida and idb) and same is None:
@@ -1515,6 +2030,50 @@ _UNPINNED_WHY = ("the table's value comes from a page whose boring and "
                  "stands and the table's is kept beside it")
 _UNPINNED_NOTE = ("the table's value; its page's boring and depth do not "
                   "pin one specimen, so it did not overrule the model")
+#: Why a legend row's value stood against the model's (RI-149).
+_LEGEND_WHY = ("the legend prints this value on the specimen's own row and "
+               "the model's box is on neither the line printing its label "
+               "nor the line printing its values; the legend's stands and "
+               "the model's is kept beside it")
+#: Why a legend row's value stood against a model's value that another
+#: specimen's row prints (RI-149).
+_SWAP_WHY = ("the model's value is the one another specimen's legend row "
+             "prints on this sheet, so it was read off that row; the "
+             "legend's own row stands and the model's is kept beside it")
+#: Why a model's value its legend row does not print was set aside (RI-149).
+_LEGEND_ASIDE_WHY = ("the model read this specimen off another specimen's "
+                     "legend row (its values there overruled), and this "
+                     "value, which the specimen's own row does not print, is "
+                     "the one that other row prints; it is set beside the "
+                     "record")
+#: The link fields: a legend row prints them on its label's line.
+_LINK_FIELDS = ("investigation_id", "sample_id", "depth_top", "depth_bottom")
+#: The legend values one row prints in one family: a reader that took
+#: another row's values may have taken them under another name too (each
+#: row prints its shares in its own order), so a value is another row's
+#: where that row prints it under any name of the family.
+_LEGEND_FAMILY: Dict[str, Tuple[str, ...]] = {
+    name: family
+    for family in (("cobbles_percent", "gravel_percent", "sand_percent",
+                    "silt_percent", "clay_percent", "fines_percent"),
+                   ("d10", "d30", "d50", "d60", "d85", "d90", "d100"),
+                   ("cu", "cc"))
+    for name in family}
+
+
+def _row_prints(test: LabTest, name: str, value: Any) -> bool:
+    """Whether a legend test's row prints ``value`` under ``name`` or any
+    other name of its family (:data:`_LEGEND_FAMILY`)."""
+    if test.result is None or value is None:
+        return False
+    return any(_same_value(other, getattr(test.result, other, None),
+                           value) is True
+               for other in _LEGEND_FAMILY.get(name, (name,)))
+#: The grading values a legend row prints, and a model's reading of a
+#: specimen off another row carries: the shares, the diameters, Cu and Cc.
+LEGEND_FIELDS = ("cobbles_percent", "gravel_percent", "sand_percent",
+                 "silt_percent", "clay_percent", "fines_percent", "d10", "d30",
+                 "d50", "d60", "d85", "d90", "d100", "cu", "cc")
 #: Why a floor value carried into a test's fields lost (RI-56).
 _FIELD_WHY = ("the model's test already holds another value here; the "
               "model's stands and the table's is kept beside it")
@@ -1528,6 +2087,30 @@ class _LabMerger:
         self.log = log
         self.paired: set = set()
         self.title_kind = title_kind
+        #: The other specimens' legend rows the pair being merged took
+        #: values from (RI-149): a model value its own row overruled because
+        #: another row prints it (the swap signature), by that row's test.
+        self._swap_from: List[LabTest] = []
+
+    def _swap_rows(self, floor_test: LabTest, name: str, mv: Any
+                   ) -> List[LabTest]:
+        """The other specimens' legend rows on ``floor_test``'s page that
+        print ``mv`` (under ``name`` or another name of its family,
+        :func:`_row_prints`): where the model's value is one of them, the
+        model read this specimen off that row."""
+        legend = _legend_box(floor_test)
+        if legend is None or mv is None or name not in LEGEND_FIELDS:
+            return []
+        out: List[LabTest] = []
+        for other in self.floor:
+            if other is floor_test or other.result is None:
+                continue
+            there = _legend_box(other)
+            if there is None or there[0] != legend[0]:
+                continue
+            if _row_prints(other, name, mv):
+                out.append(other)
+        return out
 
     def _pinned(self, f: LabTest, kind: str) -> bool:
         """Whether a floor test's link pins ONE of the model's ``kind``
@@ -1576,6 +2159,29 @@ class _LabMerger:
         mprov = self._prov0(target)
         page = mprov.page
         evidence = has_evidence(mprov, None)
+        # A value read off a legend row is that row's (RI-149). The model
+        # overrules it only with a box on that row: on the line printing
+        # the specimen's label (the box the reader is asked for) or, for a
+        # value, on the line printing its values. A value read off the
+        # picture with a note keeps the evidence it has. And a value that
+        # ANOTHER specimen's row prints on the sheet (the swap signature) is
+        # how a reader that paired the rows wrongly gives one specimen
+        # another's values: the row's own stands against it.
+        legend = _legend_boxes(floor_test)
+        off_line = False
+        swapped_from: List[LabTest] = []
+        if legend is not None:
+            l_page, label_box, values_box = legend
+            if evidence and mprov.bbox is not None and len(mprov.bbox) == 4:
+                lines = [label_box] if name in _LINK_FIELDS else \
+                    [label_box, values_box]
+                off_line = not (int(mprov.page) == l_page and any(
+                    b is not None and _on_line(mprov.bbox, b)
+                    for b in lines))
+            if same is False:
+                swapped_from = self._swap_rows(floor_test, name, mv)
+            if off_line or swapped_from:
+                evidence = False
         unpinned = not pinned and not evidence
         s = settle(name, fv, mv, same,
                    floor_method="tables",
@@ -1590,6 +2196,8 @@ class _LabMerger:
         if unpinned and s.alternative is not None:
             s.alternative = s.alternative.model_copy(update={
                 "note": _UNPINNED_NOTE})
+        if swapped_from and s.verdict == "floor_wins":
+            self._swap_from.extend(swapped_from)
         if s.verdict == "reconciled":
             self.log.reconciled += 1
         elif s.verdict == "floor_only":
@@ -1599,6 +2207,10 @@ class _LabMerger:
                 where, f"{what}: {name}", fv, mv,
                 kept="model" if s.verdict == "model_wins" else "floor",
                 why=(_UNPINNED_WHY if unpinned else
+                     _SWAP_WHY if swapped_from and s.verdict == "floor_wins"
+                     else
+                     _LEGEND_WHY if off_line and s.verdict == "floor_wins"
+                     else
                      "the model named a box and a note, so its reading "
                      "replaces the table's; the table's is kept beside it"
                      if s.verdict == "model_wins" else
@@ -1755,6 +2367,43 @@ class _LabMerger:
                     field=name, value=value, method="tables",
                     confidence=conf, note="the table's value"))
 
+    def _set_aside(self, m: LabTest, f: LabTest, where: str, what: str,
+                   sources: Sequence[LabTest]) -> None:
+        """The model's grading values its specimen's legend row does not
+        print and the row it read the specimen off does, set beside the
+        record rather than in it (RI-149). ``sources`` are the other
+        specimens' rows whose values overruled the model's on this one (the
+        swap signature, :meth:`_swap_rows`). A value no such row prints
+        stays the model's: the sheet may print it elsewhere (a diameter off
+        the curve, the fines in a box of their own), where the floor did
+        not read it."""
+        mprov = self._prov0(m)
+        for name in LEGEND_FIELDS:
+            if getattr(f.result, name, None) is not None:
+                continue
+            mv = getattr(m.result, name, None)
+            if mv is None:
+                continue
+            if not any(_row_prints(src, name, mv) for src in sources):
+                continue
+            setattr(m.result, name, None)
+            mprov.alternatives.append(Alternative(
+                field=name, value=show(mv),
+                unit=mv.unit if isinstance(mv, Quantity) else "",
+                method=mprov.method if mprov.method in (
+                    "model", "model_from_picture", "vision") else "model",
+                confidence=float(mprov.confidence),
+                note="the model's reading, set aside: its legend row "
+                     "prints no such value, and the row the model read "
+                     "this specimen off prints this one"))
+            self.log.disagree(
+                where, f"{what}: {name}", "not printed on the legend row",
+                mv, kept="floor", why=_LEGEND_ASIDE_WHY, page=mprov.page,
+                floor_method="text",
+                floor_confidence=self._floor_conf(f),
+                model_confidence=float(mprov.confidence),
+                model_method=mprov.method)
+
     def merge_pair(self, f: LabTest, m: LabTest) -> None:
         where = self._label(m)
         what = f.kind
@@ -1778,6 +2427,7 @@ class _LabMerger:
                 isinstance(m.result, SummaryTableResult):
             self._merge_rows(m, m.result, f.result.rows, f, where)
         else:
+            self._swap_from = []
             for name in _scalar_fields(f.result):
                 fv = getattr(f.result, name, None)
                 if fv in (None, "", False):
@@ -1788,6 +2438,9 @@ class _LabMerger:
                     continue
                 self._settle_into(m, m.result, name, fv, f, where, what,
                                   pinned)
+            if self._swap_from:
+                self._set_aside(m, f, where, what, self._swap_from)
+            self._swap_from = []
             if isinstance(f.result, GradationResult) and \
                     isinstance(m.result, GradationResult):
                 self._merge_series(m, m.result, f.result.percent_passing,
@@ -1809,7 +2462,8 @@ class _LabMerger:
         before it (a sheet runs down its pages), else the rest in the
         model's order.
         """
-        pages = sorted({p.page for p in f.prov if p.method == "tables"})
+        pages = sorted({p.page for p in f.prov if p.method == "tables"
+                        or p.note == LEGEND_NOTE})
         if not pages:
             return None
 

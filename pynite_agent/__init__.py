@@ -19,7 +19,7 @@ has_pynite : Check if PyNiteFEA is installed.
 from pynite_agent.frame import analyze_frame
 from pynite_agent.continuous_beam import analyze_continuous_beam
 from pynite_agent.results import FrameResult, ContinuousBeamResult, MemberResult
-from pynite_agent.pynite_utils import has_pynite
+from pynite_agent.pynite_utils import has_pynite, pynite_import_error
 
 __all__ = [
     "analyze_frame",
@@ -28,4 +28,5 @@ __all__ = [
     "ContinuousBeamResult",
     "MemberResult",
     "has_pynite",
+    "pynite_import_error",
 ]

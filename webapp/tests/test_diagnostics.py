@@ -277,3 +277,71 @@ def test_reference_docs_unlistable_sharepoint_folder_is_reported(monkeypatch,
     monkeypatch.setattr(reference_fetch, "available_names", lambda: None)
     c = diag._reference_docs_check()
     assert c["status"] == diag.FAIL and "could not list" in c["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Optional analysis packages (BACKLOG INF-54): one that is installed but will
+# not import is reported with its import's error, not as "not installed".
+# The failures are faked (root conftest ``fail_import``); the texts are made up.
+# ---------------------------------------------------------------------------
+
+def _only(monkeypatch, *packages):
+    monkeypatch.setattr(diag, "OPTIONAL_PACKAGES", tuple(
+        e for e in diag.OPTIONAL_PACKAGES if e[0] in packages))
+
+
+@pytest.mark.parametrize("entry", diag.OPTIONAL_PACKAGES,
+                         ids=[e[0] for e in diag.OPTIONAL_PACKAGES])
+def test_every_optional_package_names_a_real_check(entry):
+    import importlib
+    _package, _tools, module, func = entry
+    assert callable(getattr(importlib.import_module(module), func))
+
+
+def test_an_installed_package_that_will_not_import_warns(monkeypatch,
+                                                         fail_import):
+    import salib_agent.salib_utils  # noqa: F401
+    import sys
+    _only(monkeypatch, "SALib", "PyNiteFEA")
+    fail_import("SALib", ImportError(
+        "inf54 made-up: C extension built against another numpy"))
+    monkeypatch.setitem(sys.modules, "Pynite", None)
+    c = diag._optional_packages_check()
+    assert c["status"] == diag.WARN
+    lines = c["detail"].splitlines()
+    assert lines[0] == ("SALib is installed but cannot be imported: "
+                        "ImportError: inf54 made-up: C extension built "
+                        "against another numpy (tools: salib)")
+    assert lines[-1] == "import: none | not installed: PyNiteFEA (pynite)"
+    assert "SALib is not installed" not in c["detail"]
+    text = diag.format_report([c])
+    assert "optional packages: WARN" in text and "inf54 made-up" in text
+
+
+def test_missing_packages_are_listed_without_a_warning(monkeypatch):
+    import sys
+    import types
+    _only(monkeypatch, "SALib", "PyNiteFEA")
+    monkeypatch.setitem(sys.modules, "SALib", types.ModuleType("SALib"))
+    monkeypatch.setitem(sys.modules, "Pynite", None)
+    c = diag._optional_packages_check()
+    assert c["status"] == diag.PASS
+    imports, missing = c["detail"].split(" | ")
+    assert imports.startswith("import: SALib")
+    assert missing == "not installed: PyNiteFEA (pynite)"
+
+
+def test_a_check_that_fails_itself_warns(monkeypatch):
+    monkeypatch.setattr(diag, "OPTIONAL_PACKAGES", (
+        ("inf54-madeup", "madeup", "inf54_madeup_module", "madeup_error"),))
+    c = diag._optional_packages_check()
+    assert c["status"] == diag.WARN
+    assert c["detail"].startswith("inf54-madeup: the check itself failed: "
+                                  "ModuleNotFoundError")
+
+
+def test_run_diagnostics_includes_the_optional_packages(monkeypatch):
+    _patch_engine(monkeypatch, _GoodModel())
+    _only(monkeypatch, "SALib")
+    names = [c["name"] for c in diag.run_diagnostics("ri.fake")]
+    assert names.index("optional packages") == names.index("version drift") + 1

@@ -599,6 +599,30 @@ class TestARateLimitByItsWords:
         assert not is_rate_limit(error)
         assert error_kind(error) == "other"
 
+    def test_foundry_s_own_rate_limit_name_is_one(self):
+        """Foundry's model service sends a rate limit as a 400 that names
+        itself, raised as it came once the app's Foundry layer stops
+        retrying (the AI FDE's table, 2026-10-27); made-up URL and ids."""
+        class _ConjureLike(Exception):
+            pass
+        said = _ConjureLike(
+            "400 Client Error: Bad Request for url: https://made-up.example/"
+            "api/llm/v3/completion/MADE_UP. ErrorCode: 'CUSTOM_CLIENT'. "
+            "ErrorName: 'LanguageModelService:RateLimitsExceeded'. "
+            "ErrorInstanceId: 'made-up'")
+        named = _ConjureLike("400 Client Error: Bad Request (made up)")
+        named.error_name = "LanguageModelService:RateLimitsExceeded"
+        qos = _ConjureLike("400 Client Error (made up)")
+        qos.error_name = "MadeUp:HubQosException"
+        for error in (said, named, qos):
+            assert is_rate_limit(error)
+            assert error_kind(error) == "rate_limit"
+        other = _ConjureLike("400 Client Error: Bad Request (made up). "
+                             "ErrorName: 'LanguageModelService:InvalidArgument'")
+        other.error_name = "LanguageModelService:InvalidArgument"
+        assert not is_rate_limit(other)
+        assert error_kind(other) == "other"
+
     def test_an_sdk_message_with_the_body_in_it_reads_the_body_s_fields(
             self):
         body = {"error": {"message": "Rate limit reached (made up)",

@@ -22,11 +22,21 @@ decisions D1 to D3, are in §2.
 
 ## 1. Before the wave
 
+- **Where the last session left off.** The AI FDE's handoff note is
+  `setup/HANDOFF_brief1023.md` in the Jupyter workspace repo (master
+  99ba2fb): where the branch, wheels and glue are, which datasets hold each
+  wave's results, waves 1 and 2 done, wave 3 never started. The transforms
+  work is on the branch named in that note,
+  not merged: review it fully before any merge, and keep the crash dump
+  `transforms-python/src/core.10847` out of every commit. Builds can sit in
+  the queue for hours, and a build can show "Failed to fetch" while it is
+  still running: check the build's own page before starting it again.
 - **MF-0, the probe:** `report_ingest.model_first.probe_pdf_route(chat_model)`,
   two calls each, about 8 calls in all:
-  - Opus 5.5 on the proxy class and on the `palantir_models` class, for the
-    PDF route. Set `GEOTECH_FOUNDRY_CLAUDE_PDF=1` only if the proxy brought
-    back the code word from the PDF. Without it, the model-first arms send
+  - Opus 5.5 on the `palantir_models` class, for the PDF route. The AI FDE
+    says transforms cannot reach the workspace's Anthropic proxy
+    (2026-10-27), so the proxy class is not probed and
+    `GEOTECH_FOUNDRY_CLAUDE_PDF` stays unset: the model-first arms send
     pictures with each page's text (`page_route="auto"` resolves to
     `pictures`).
   - Sonnet 5.5 and Haiku 5.5 on the class the wave uses. A pictures call
@@ -34,15 +44,23 @@ decisions D1 to D3, are in §2.
     pictures. If Haiku passes, it describes the pages; if not, Sonnet does
     (D2). Haiku 5.5 is on Foundry as
     `ri.language-model-service..language-model.anthropic-claude-5-5-haiku`; add it to the
-    transform as a model input beside Opus and Sonnet (the AI FDE did not
-    have it on 2026-10-27). Probe it on the Claude class the wave uses,
+    transform as a model input beside Opus and Sonnet (the owner imported
+    it into the FDE's workspace on 2026-10-27, and the FDE's own probe,
+    `setup/probe_haiku_ratelimits.py`, had it answer one plain text call;
+    pictures and tools were not tried). Probe it on the Claude class the wave uses,
     which carries page pictures, not the text-only generic completion
     class. If Sonnet does not pass, stop and send the probe back: Sonnet
     reads the logs and printouts and is the off arm's vision voter (D1,
     D3).
-- **Ask the AI FDE how to bypass the response cache.** Wave 1 served 12
-  repeat calls from it. MF-2's off arm sends wave 2's calls again on wave
-  2's reports, so the cache could answer them with wave 2's replies.
+- **The response cache: no switch to set.** Wave 1's trace review found 12
+  repeat calls in its "b" arms back in 0.1-0.5 s with exactly the first
+  arm's output. The package keeps no store of model answers (it reuses
+  only page descriptions and label runs inside the same output folder),
+  and the AI FDE found no response cache on 2026-10-27, so it sits on
+  Foundry's side if anywhere. MF-2's off arm may get wave 2's replies back
+  for identical requests. Read the call times: a call under 0.5 s with
+  the same output tokens as wave 2's is a cached answer, not a new read;
+  say how many there were.
 - **Do not set `GEOTECH_INGEST_MODEL_FIRST`** in the environment. Each cell
   passes `model_first="off"` or `"on"`, the run resolves it once, and every
   run file records it.
@@ -286,20 +304,34 @@ log). Report counts only, as for every blind set.
    6. **Token brake.** Set `max_report_tokens_in` and `max_total_tokens`
       (RI-120 (1)); the dollar meter reads $0 on Foundry. Set them to the
       stop lines above, and the wave's ceiling to the lead's number.
-   7. **Rate limits (OWN-99 answered, OWN-100 open).** The AI FDE cannot
+   7. **Rate limits (settled 2026-10-27, OWN-99, OWN-100).** The AI FDE cannot
       read the limits: Foundry's admins set them per model in tokens and
-      requests per minute, likely as one pool shared across the instance,
-      and it knows of no per-request cap apart from the context window.
+      requests per minute (Resource Management, AIP usage and limits),
+      likely as one pool shared across the instance, possibly with the
+      published app, and it knows of no per-request cap apart from the
+      context window. Its probe found the proxy sends no rate-limit headers.
+      Because the pool is shared, do not use the published app's chat while
+      a wave runs. The proxy does return `proxy-upstream-request-attempts`,
+      so it may retry a request itself before answering (RI-167 records it).
       Run 5's lost log item was stopped by the per-minute limit: a
       126,558-token request passed after 4 retries, and the next small call
       waited 72 s. The proxy sometimes reports a rate limit as 400 Bad
-      Request; the engine already reads those as rate limits. Until the
-      admin's numbers come (OWN-100): keep the FDE's throttle at 22.5
+      Request; the engine already reads those as rate limits. The owner
+      accepted running without the admin's numbers: keep the FDE's throttle at 22.5
       GPT-5.4 calls a minute (the resume run then had 16 retries and no
-      give-ups, against 45 a minute before), set
+      give-ups, against 45 a minute before; the FDE's table of wave 2's
+      221 rate limits: every one a 400 named
+      `LanguageModelService:RateLimitsExceeded`, none a 429, all 7 give-ups
+      in one run's bursts; the package reads that name as a rate limit
+      since RI-169), set
       `max_request_tokens_in=100000` on both arms, and expect slow minutes
-      after any large request. With the numbers, set RI-127's
-      `tokens_per_minute` and size the limit from them.
+      after any large request. If the numbers ever come (asking is optional),
+      set RI-127's `tokens_per_minute` and size the limit from them; the
+      FDE's table of rate-limit events may give an effective ceiling first:
+      it could not match events to request sizes on wave 2, because the
+      10-23 wheel's call records had no start times; this build's cost rows
+      carry `started` (RI-126), so ask for the table again after the run,
+      matched on those times.
    8. **Cost from every attempt.** RESULTS' Cost block counts every
       attempt of every report (RI-124): the finished reports, then a line
       for the reports not finished (braked, given up or failed, all listed

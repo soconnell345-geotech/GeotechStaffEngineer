@@ -7,11 +7,12 @@ from funhouse_agent.adapters import (
 
 
 def _check_liquepy():
-    """Raise ValueError if liquepy is not installed."""
-    from liquepy_agent import has_liquepy
+    """Raise ValueError if liquepy is not installed or fails to import."""
+    from liquepy_agent import has_liquepy, liquepy_import_error
     if not has_liquepy():
         raise ValueError(
-            "liquepy is not installed. Install with: pip install liquepy"
+            liquepy_import_error()
+            or "liquepy is not installed. Install with: pip install liquepy"
         )
 
 

@@ -353,6 +353,21 @@ def test_check_optional_deps_never_raises_and_sorts():
     assert [d["import"] for d in missing] == ["aaa_missing_a", "zzz_missing_b"]
 
 
+def test_check_optional_deps_gives_an_import_error_not_missing(fail_import):
+    """An installed backend whose import fails carries its error, not a
+    "missing" entry (BACKLOG INF-54; the failure and its text are made up)."""
+    fail_import("inf54_madeup_backend",
+                ImportError("inf54 made-up: built against another numpy"))
+    missing = eh.check_optional_deps({"inf54_madeup_backend": "full",
+                                      "totally_missing_pkg_zzz_9x": "full"})
+    assert missing == [
+        {"import": "inf54_madeup_backend", "extra": "full",
+         "error": "inf54_madeup_backend is installed but cannot be imported: "
+                  "ImportError: inf54 made-up: built against another numpy"},
+        {"import": "totally_missing_pkg_zzz_9x", "extra": "full"},
+    ]
+
+
 def test_optional_deps_map_covers_eval_named_backends():
     """The 10 backends that failed on the 2026-07-05 cluster run are all mapped."""
     eval_named = {"gstools", "pygef", "python_ags4", "pydiggs", "ezdxf",

@@ -57,7 +57,11 @@ words on a scan (``Document.page(p, words=True)``).
    count, unless an anchor stands between them: on a log, the row the ruler
    puts at the object's depth, or the depth printed on the label's row. A
    page's rows are read after turning its words by the page's measured
-   skew (:func:`page_skew`), so a scan's tilted line stays one row.
+   skew (:func:`page_skew`), so a scan's tilted line stays one row. A
+   sheet scanned sideways (RI-149) is read in its upright frame, so its
+   printed rows are rows here too, and the box found is given back in the
+   page's frame as displayed (:class:`PageText`); a depth ruler is not
+   asked on it.
 3. **The call's other pages.** An object found by its own words (its
    label, description, name or quote; never by a number alone, a sheet's
    title or a boring's label) on exactly one other page of the call moves
@@ -89,6 +93,7 @@ from report_ingest.lab_floor import TITLE_KINDS
 from report_ingest.narrative_reader import (
     DEFAULT_CONFIDENCE, QUOTE_RATIO, _fold, _partial_ratio, check_quotes,
 )
+from report_ingest.turned import displayed_box, page_turn, upright_box
 
 BBox = Tuple[float, float, float, float]
 
@@ -274,13 +279,20 @@ class Row:
 @dataclass
 class PageText:
     """One page's words and rows, where its text came from, and the skew its
-    rows were read at (dy/dx, :func:`page_skew`)."""
+    rows were read at (dy/dx, :func:`page_skew`).
+
+    ``turn``: on a sheet scanned sideways (:func:`report_ingest.turned.
+    page_turn`, RI-149), its turn, and every word's box is in the upright
+    frame (:func:`report_ingest.turned.upright_box`), so its rows run across
+    the page as the sheet prints them; :meth:`PageWords.displayed` takes a
+    box back to the frame the record keeps. None on an upright page."""
 
     page: int
     source: str = ""
     words: List[Word] = field(default_factory=list)
     rows: List[Row] = field(default_factory=list)
     skew: float = 0.0
+    turn: Any = None
 
     @property
     def has_text(self) -> bool:
@@ -468,6 +480,7 @@ class PageWords:
             content = self.doc.page(page, words=True, tables=False)
         except Exception:                        # a page that will not read
             return PageText(page)
+        turn = _turn_of(content)
         words: List[Word] = []
         sources: List[str] = []
         for line in content.lines:
@@ -479,8 +492,10 @@ class PageWords:
                 text = str(text or "").strip()
                 if not text or bbox is None:
                     continue
-                words.append(Word(text=text,
-                                  bbox=tuple(float(v) for v in bbox),
+                box = tuple(float(v) for v in bbox)
+                if turn is not None:
+                    box = upright_box(box, turn)
+                words.append(Word(text=text, bbox=box,
                                   fold=_fold_token(text),
                                   numbers=() if _NOT_A_VALUE.match(text)
                                   else numbers_in(text)))
@@ -493,12 +508,22 @@ class PageWords:
             for row in rows:
                 row.words = [plain.get(id(w), w) for w in row.words]
         return PageText(page, sources[0] if sources else "", words, rows,
-                        skew)
+                        skew, turn)
+
+    def displayed(self, page: int, bbox: Optional[BBox]) -> Optional[BBox]:
+        """A box found on ``page`` in the frame the record keeps: the page's
+        as displayed (a sheet scanned sideways is searched in its upright
+        frame, :class:`PageText`)."""
+        turn = self(page).turn
+        if bbox is None or turn is None:
+            return bbox
+        return displayed_box(bbox, turn)
 
     def search(self, phrase: str, page: int,
                min_score: float = TEXT_MIN_SCORE) -> List[Dict[str, Any]]:
         """planlens' fuzzy search for ``phrase`` on one page: one hit per
-        text block or line it matches, best first, each with its box."""
+        text block or line it matches, best first, each with its box (in the
+        page's words' frame, :class:`PageText`)."""
         if not str(phrase or "").strip():
             return []
         try:
@@ -508,7 +533,24 @@ class PageWords:
                                   context_chars=0)
         except Exception:                        # a page that will not read
             return []
-        return [h for h in got.get("hits") or [] if h.get("bbox")]
+        hits = [h for h in got.get("hits") or [] if h.get("bbox")]
+        turn = self(page).turn
+        if turn is None:
+            return hits
+        return [{**h, "bbox": list(upright_box(h["bbox"], turn))}
+                for h in hits]
+
+
+def _turn_of(content: Any) -> Any:
+    """A page's turn where its text runs a quarter turn from the page
+    (:func:`report_ingest.turned.page_turn`), else None."""
+    try:
+        turn = page_turn(list(content.lines),
+                         float(getattr(content, "width", 612.0) or 612.0),
+                         float(getattr(content, "height", 792.0) or 792.0))
+    except Exception:                            # lines that will not read
+        return None
+    return turn if turn.turned else None
 
 
 # ---------------------------------------------------------------------------
@@ -679,8 +721,14 @@ def _unit(unit: Any) -> str:
 
 
 def ruler_for(rulers: Optional[Dict[int, Any]], page: int,
-              unit: str) -> Optional[Any]:
-    """The page's depth ruler, when its unit is the log's (or unknown)."""
+              unit: str, words: Optional["PageWords"] = None
+              ) -> Optional[Any]:
+    """The page's depth ruler, when its unit is the log's (or unknown).
+    None on a sheet scanned sideways (``words``' page has a turn): its
+    ruler was read in the displayed frame, its words are searched in the
+    upright one (:class:`PageText`)."""
+    if words is not None and words(page).turn is not None:
+        return None
     ruler = (rulers or {}).get(int(page))
     if ruler is None or not getattr(ruler, "slope", 0.0):
         return None
@@ -863,7 +911,8 @@ def place(what: str, kind: str, cited: int, pages: Sequence[int],
     here = words(cited)
     got = _on_page(words, cited, anchors)
     if got is not None and got[0] == PLACED:
-        return Placement(what, kind, cited, cited, PLACED, got[1].bbox,
+        return Placement(what, kind, cited, cited, PLACED,
+                         words.displayed(cited, got[1].bbox),
                          got[2], here.source, 1,
                          _found_note(got[1], got[2], here.source),
                          got[2] in PAGE_ANCHORS)
@@ -886,8 +935,8 @@ def place(what: str, kind: str, cited: int, pages: Sequence[int],
                              words(int(page)).source))
     if len(found_on) == 1:
         page, cand, name, source = found_on[0]
-        return Placement(what, kind, cited, page, MOVED, cand.bbox, name,
-                         source, 1,
+        return Placement(what, kind, cited, page, MOVED,
+                         words.displayed(page, cand.bbox), name, source, 1,
                          f"not found printed on page {cited}; found on page "
                          f"{page} of the same call and moved there; "
                          f"{_found_note(cand, name, source)}",
@@ -976,7 +1025,7 @@ def _printed_depth(value: Optional[float], unit: str,
     top of ``7.5-9.0``, not the last count of ``4-7-9``."""
     def find(words: PageWords, page: int) -> List[Candidate]:
         return on_ruler_row(number_hits(words(page), value, first=True),
-                            ruler_for(rulers, page, unit), value)
+                            ruler_for(rulers, page, unit, words), value)
     return "printed depth", find
 
 
@@ -1002,7 +1051,7 @@ def _labelled(label: str, top: Optional[float], bottom: Optional[float],
         hits = label_hits(text, label)
         if len(hits) == 1:
             return [hits[0][1]]
-        ruler = ruler_for(rulers, page, unit)
+        ruler = ruler_for(rulers, page, unit, words)
         if not hits:
             if split is None or ruler is None:
                 return []
@@ -1043,7 +1092,7 @@ def _described(description: str, top: Optional[float],
     ruler's rows between its top and its bottom, nearest the top."""
     def find(words: PageWords, page: int) -> List[Candidate]:
         cands = text_hits(words, page, description)
-        ruler = ruler_for(rulers, page, unit)
+        ruler = ruler_for(rulers, page, unit, words)
         if len(cands) <= 1 or ruler is None or top is None:
             return cands
         # A description is printed from its top down: one ending just above
@@ -1079,7 +1128,8 @@ def _blow_record(blows: Sequence[Any], top: Optional[float],
                          for i in range(run[0][0], run[-1][0] + 1)])))
         if len(cands) <= 1:
             return cands
-        return on_ruler_row(cands, ruler_for(rulers, page, unit), top, bottom)
+        return on_ruler_row(cands, ruler_for(rulers, page, unit, words), top,
+                            bottom)
     return "blow record", find
 
 
@@ -1124,7 +1174,7 @@ def _water(depth: Optional[float], note: str, unit: str,
         if len(rows) == 1:
             return [Candidate(next(iter(rows.values())).bbox)]
         cands = [Candidate(w.bbox) for _, w in (on_named or hits)]
-        return on_ruler_row(cands, ruler_for(rulers, page, unit),
+        return on_ruler_row(cands, ruler_for(rulers, page, unit, words),
                             depth) or cands
     return "printed depth", find
 

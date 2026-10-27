@@ -13,9 +13,12 @@ from typing import Any, Dict, List, Sequence, Tuple
 import pytest
 
 from report_ingest.log_holes import (
-    HoleName, hole_parts, item_holes, lines_hole, missing_holes_qa,
-    names_match, other_hole_pages, split_log_items)
-from report_ingest.model import Investigation, QAEntry, ReportRecord
+    HoleName, drop_other_hole_rows, hole_parts, item_holes, lines_hole,
+    missing_holes_qa, names_match, other_hole_pages, sort_rows_by_hole,
+    split_log_items, take_rows)
+from report_ingest.model import (
+    Investigation, Layer, Provenance, QAEntry, Quantity, ReportRecord,
+    Sample, WaterLevel)
 
 HEIGHT = 792.0
 
@@ -523,6 +526,219 @@ class TestMissingHoles:
             "page 4 prints the hole name QX-2; no log in the record carries "
             "that name (the reader may have read it under another name, or "
             "not read it)")
+
+    def test_a_model_first_group_is_named_by_its_saved_file(self):
+        """RI-144: the model-first path hands in its log groups, whose ids
+        are their keys; the entry names the file the group was saved
+        under."""
+        doc = _Doc({4: _header("QX-1"), 5: _header("QX-2")})
+        (entry,) = missing_holes_qa(
+            doc, [_Item("log-4", "boring_log", [4, 5])],
+            self._record("QX-1"), prefix="mf-")
+        assert entry.where == "items.boring_log.mf-log-4"
+        assert entry.values == ["QX-2: page 5"] and entry.rank == "open"
+
+
+# ---------------------------------------------------------------------------
+# another hole's rows (RI-145)
+# ---------------------------------------------------------------------------
+
+def _m(value: float) -> Quantity:
+    return Quantity(value=value, unit="m")
+
+
+def _layer(page: int, top: float, bottom: float, words: str) -> Layer:
+    return Layer(top=_m(top), bottom=_m(bottom), description=words,
+                 prov=Provenance(page=page, method="model"))
+
+
+def _sample(page: int, name: str, top: float) -> Sample:
+    return Sample(sample_id=name, top=_m(top), kind="spt",
+                  prov=Provenance(page=page, method="model"))
+
+
+def _log(name: str, pages: List[int], layers=(), samples=(), water=(),
+         unit: str = "m") -> Investigation:
+    return Investigation(investigation_id=name, kind="boring",
+                         depth_unit=unit, pages=list(pages),
+                         layers=list(layers), samples=list(samples),
+                         water=list(water))
+
+
+class TestOtherHolePagesPrefer:
+
+    def test_the_log_s_own_name_is_its_own_wherever_it_falls(self):
+        names = {0: HoleName("QX-1", "QX1", 0, "label"),
+                 1: HoleName("QX-2", "QX2", 1, "label")}
+        own, foreign = other_hole_pages([0, 1], names, prefer="QX-2")
+        assert own.text == "QX-2" and list(foreign) == [0]
+
+    def test_a_name_no_page_prints_leaves_the_first_named(self):
+        names = {0: None, 1: HoleName("QX-1", "QX1", 1, "label"),
+                 2: HoleName("QX-2", "QX2", 2, "label")}
+        own, foreign = other_hole_pages([0, 1, 2], names, prefer="QX-9")
+        assert own.text == "QX-1" and list(foreign) == [2]
+
+
+class TestTakeRows:
+
+    def test_the_rows_of_the_pages_are_taken_by_page_and_list(self):
+        log = _log("QX-1", [0, 1], layers=[_layer(0, 0.0, 2.0, "Made-up A"),
+                                           _layer(1, 2.0, 5.0, "Made-up B")],
+                   samples=[_sample(1, "Q-4", 2.5)],
+                   water=[WaterLevel(depth=_m(1.5), when="while_drilling",
+                                     prov=Provenance(page=0))])
+        kept, taken = take_rows(log, {1})
+        assert [r.description for r in kept.layers] == ["Made-up A"]
+        assert kept.samples == [] and len(kept.water) == 1
+        assert set(taken) == {1}
+        assert [r.description for r in taken[1]["layers"]] == ["Made-up B"]
+        assert [s.sample_id for s in taken[1]["samples"]] == ["Q-4"]
+        # the log handed in is never changed
+        assert len(log.layers) == 2 and len(log.samples) == 1
+
+    def test_nothing_on_the_pages_returns_the_log_itself(self):
+        log = _log("QX-1", [0, 1], layers=[_layer(0, 0.0, 2.0, "Made-up A")])
+        kept, taken = take_rows(log, {1})
+        assert kept is log and taken == {}
+
+    def test_a_row_that_names_no_page_stays(self):
+        log = _log("QX-1", [0, 1], layers=[
+            Layer(top=_m(0.0), bottom=_m(1.0), description="Made-up C")])
+        kept, taken = take_rows(log, {0, 1})
+        assert kept is log and taken == {}
+
+
+class TestDropOtherHoleRows:
+    """Today's reader: a whole item's answer, before the build."""
+
+    @staticmethod
+    def _reading():
+        from report_ingest.log_reader import LogReading, ReadLayer, ReadProv
+
+        return LogReading(
+            investigation_id="QX-1", kind="boring", depth_unit="m",
+            layers=[ReadLayer(top=0.0, bottom=2.0, description="Made-up A",
+                              prov=ReadProv(page=3)),
+                    ReadLayer(top=0.0, bottom=4.0, description="Made-up D",
+                              prov=ReadProv(page=4)),
+                    ReadLayer(top=4.0, bottom=6.0, description="Made-up E",
+                              prov=ReadProv(page=4))])
+
+    def test_rows_off_another_hole_s_page_are_dropped_and_listed(self):
+        own = HoleName("QX-1", "QX1", 3, "label")
+        foreign = {4: HoleName("QX-2", "QX2", 4, "label")}
+        kept, rows = drop_other_hole_rows(self._reading(), own, foreign)
+        assert [r.description for r in kept.layers] == ["Made-up A"]
+        (row,) = rows
+        assert row["page"] == 4 and row["value"] == "QX-2"
+        assert row["refused_by"] == "python"
+        assert row["flag"] == "reader_other_hole"
+        assert row["why"] == (
+            "the header of page 4 names the hole QX-2, not this log's "
+            "(QX-1): the 2 layers the model read off that page are that "
+            "hole's and were dropped from this log")
+        assert "Made-up D" in row["read"] and "Made-up E" in row["read"]
+
+    def test_with_no_other_hole_the_answer_is_kept_whole(self):
+        reading = self._reading()
+        own = HoleName("QX-1", "QX1", 3, "label")
+        assert drop_other_hole_rows(reading, own, {}) == (reading, [])
+        assert drop_other_hole_rows(reading, None, {}) == (reading, [])
+
+
+class TestSortRowsByHole:
+    """Model first: a log group drawn round two holes' pages."""
+
+    def test_rows_go_to_the_log_of_the_hole_the_page_names(self):
+        doc = _Doc({0: _header("QX-1"), 1: _header("QX-2"),
+                    2: _header("QX-2")})
+        first = _log("QX-1", [0, 1], layers=[
+            _layer(0, 0.0, 2.0, "Made-up A"), _layer(1, 0.0, 1.0, "Made-up B")],
+            samples=[_sample(1, "Q-4", 0.5)])
+        second = _log("QX-2", [2], layers=[_layer(2, 1.0, 3.0, "Made-up C")])
+        logs = [first, second]
+        (entry,) = sort_rows_by_hole(doc, logs)
+        assert [r.description for r in logs[0].layers] == ["Made-up A"]
+        assert logs[0].samples == [] and logs[0].pages == [0]
+        assert [r.description for r in logs[1].layers] == [
+            "Made-up B", "Made-up C"]                  # in page order
+        assert [s.sample_id for s in logs[1].samples] == ["Q-4"]
+        assert logs[1].pages == [1, 2]
+        assert entry.kind == "note" and entry.rank == "changed"
+        assert entry.where == "investigations.QX-1" and entry.pages == [1]
+        assert entry.detail == (
+            "page 1 names the hole QX-2 in its header, not QX-1: the 1 layer "
+            "and 1 sample the model read off it for log QX-1 are that "
+            "hole's: moved to log QX-2, where that hole is logged")
+        # the logs handed in are not changed: each changed one is a copy
+        assert len(first.layers) == 2 and len(second.layers) == 1
+
+    def test_with_no_log_of_that_hole_they_are_dropped_and_kept_as_read(
+            self):
+        doc = _Doc({0: _header("QX-1"), 1: _header("QX-2")})
+        logs = [_log("QX-1", [0, 1], layers=[
+            _layer(0, 0.0, 2.0, "Made-up A"),
+            _layer(1, 0.0, 1.0, "Made-up B")])]
+        (entry,) = sort_rows_by_hole(doc, logs)
+        assert [r.description for r in logs[0].layers] == ["Made-up A"]
+        assert logs[0].pages == [0]
+        assert entry.kind == "out_of_range" and entry.rank == "changed"
+        assert entry.pages == [1]
+        assert "no other log in the record carries that name" in entry.detail
+        assert "dropped from log QX-1" in entry.detail
+        assert "Made-up B" in entry.values[0]
+
+    def test_two_logs_carrying_the_name_or_another_unit_drop_them(self):
+        doc = _Doc({0: _header("QX-1"), 1: _header("QX-2"),
+                    2: _header("QX-2"), 3: _header("QX-02")})
+        rows = [_layer(0, 0.0, 2.0, "Made-up A"),
+                _layer(1, 0.0, 1.0, "Made-up B")]
+        two = [_log("QX-1", [0, 1], layers=rows), _log("QX-2", [2]),
+               _log("QX-02", [3])]
+        (entry,) = sort_rows_by_hole(doc, two)
+        assert entry.kind == "out_of_range"
+        assert "2 logs in the record carry names like it" in entry.detail
+        assert two[1].layers == [] and two[2].layers == []
+        feet = [_log("QX-1", [0, 1], layers=rows),
+                _log("QX-2", [2], unit="ft")]
+        (entry,) = sort_rows_by_hole(doc, feet)
+        assert entry.kind == "out_of_range" and feet[1].layers == []
+        assert "gives its depths in ft and log QX-1 in m" in entry.detail
+
+    def test_the_log_s_own_name_decides_which_pages_are_another_s(self):
+        """A group whose first page is another hole's: the log the model
+        named QX-2 keeps its own page and gives page 0's rows to QX-1."""
+        doc = _Doc({0: _header("QX-1"), 1: _header("QX-2"),
+                    5: _header("QX-1")})
+        logs = [_log("QX-1", [5], layers=[_layer(5, 3.0, 4.0, "Made-up F")]),
+                _log("QX-2", [0, 1], layers=[
+                    _layer(0, 0.0, 3.0, "Made-up G"),
+                    _layer(1, 0.0, 2.0, "Made-up H")])]
+        (entry,) = sort_rows_by_hole(doc, logs)
+        assert [r.description for r in logs[1].layers] == ["Made-up H"]
+        assert [r.description for r in logs[0].layers] == [
+            "Made-up G", "Made-up F"]
+        assert entry.pages == [0] and "moved to log QX-1" in entry.detail
+
+    def test_a_page_naming_no_hole_and_logs_before_start_stay(self):
+        doc = _Doc({0: _header("QX-1"), 1: [_at("N=14", 360, 400, 20)],
+                    2: _header("QX-2")})
+        earlier = _log("QX-2", [7])
+        log = _log("QX-1", [0, 1, 2], layers=[
+            _layer(1, 2.0, 4.0, "Made-up J"), _layer(2, 0.0, 1.0, "Made-up K")])
+        logs = [earlier, log]
+        (entry,) = sort_rows_by_hole(doc, logs, start=1)
+        assert [r.description for r in logs[1].layers] == ["Made-up J"]
+        assert logs[1].pages == [0, 1]
+        assert logs[0] is earlier and earlier.layers == []
+        assert entry.kind == "out_of_range"
+
+    def test_a_log_of_one_hole_is_left_alone(self):
+        doc = _Doc({0: _header("QX-1"), 1: _header("QX-01")})
+        log = _log("QX-1", [0, 1], layers=[_layer(1, 0.0, 2.0, "Made-up A")])
+        logs = [log]
+        assert sort_rows_by_hole(doc, logs) == [] and logs[0] is log
 
 
 # ---------------------------------------------------------------------------

@@ -48,6 +48,46 @@ def _shared_host_flag_reset():
     _fileio._REQUIRE_BINDING = saved
 
 
+@_pytest.fixture
+def fail_import(monkeypatch):
+    """``fail_import(name, exc)``: ``name`` is found, as an installed package
+    is, and its import raises ``exc`` (BACKLOG INF-54). ``name`` and its
+    submodules leave ``sys.modules`` for the test, and a finder at the front
+    of ``sys.meta_path`` serves the failure; both are restored after."""
+    import importlib.abc
+    import importlib.util
+    import sys
+
+    class _Loader(importlib.abc.Loader):
+        def __init__(self, exc):
+            self.exc = exc
+
+        def create_module(self, spec):
+            return None
+
+        def exec_module(self, module):
+            raise self.exc
+
+    class _Finder(importlib.abc.MetaPathFinder):
+        def __init__(self, name, exc):
+            self.name, self.exc = name, exc
+
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname != self.name:
+                return None
+            return importlib.util.spec_from_loader(
+                fullname, _Loader(self.exc), is_package=True)
+
+    def fail(name, exc):
+        for mod in [m for m in sys.modules
+                    if m == name or m.startswith(name + ".")]:
+            monkeypatch.delitem(sys.modules, mod)
+        monkeypatch.setattr(sys, "meta_path",
+                            [_Finder(name, exc)] + sys.meta_path)
+
+    return fail
+
+
 _MISSING_DEP = _re.compile(
     r"not installed|not importable|No module named|could not import|DLL",
     _re.IGNORECASE)

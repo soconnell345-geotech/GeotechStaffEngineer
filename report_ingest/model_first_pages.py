@@ -175,7 +175,8 @@ def max_pages_per_call(route: str) -> int:
 # piece 2: the pages as a PDF
 # ---------------------------------------------------------------------------
 
-def cut_pdf(source: Union[str, Path, bytes], pages: Optional[Sequence[int]]
+def cut_pdf(source: Union[str, Path, bytes], pages: Optional[Sequence[int]],
+            turns: Optional[Mapping[int, int]] = None
             ) -> Tuple[bytes, int, bool]:
     """``(the PDF's bytes, its page count, sanitized)``: ``pages`` (0-based,
     in order) copied out of ``source`` (a path, or a PDF's bytes) with their
@@ -192,7 +193,13 @@ def cut_pdf(source: Union[str, Path, bytes], pages: Optional[Sequence[int]]
     sanitized -- so a cut that fits is sent as copied.
 
     The limits are the caller's to check (:func:`pdf_problem`), because a
-    cut too large to send is still worth recording."""
+    cut too large to send is still worth recording.
+
+    ``turns`` maps a page (0-based, of ``source``) whose text runs a quarter
+    turn from the page (:func:`report_ingest.turned.page_turn`: a sheet
+    scanned sideways) to that turn; its copy is rotated by the same turn
+    clockwise, so it displays upright (RI-149). Only a copied page turns:
+    the whole file (``pages`` None) is sent as it is."""
     import pymupdf
 
     def opened() -> Any:
@@ -216,6 +223,10 @@ def cut_pdf(source: Union[str, Path, bytes], pages: Optional[Sequence[int]]
                     raise ValueError(f"page {page} is not in {name} "
                                      f"({src.page_count} pages)")
                 out.insert_pdf(src, from_page=page, to_page=page)
+                quarter = int((turns or {}).get(page, 0)) % 360
+                if quarter:
+                    copied = out[out.page_count - 1]
+                    copied.set_rotation((copied.rotation + quarter) % 360)
             data = out.tobytes(garbage=3, deflate=True)
             if len(data) <= SANITIZE_ABOVE:
                 return data, out.page_count, False
@@ -318,6 +329,7 @@ def picture_blocks(doc: Any, pages: Sequence[int], *,
     longer text with a note (None: the whole text). Whether the blocks can
     go in one call is :func:`pictures_problem`'s to say."""
     from report_ingest.engine import image_block, text_block
+    from report_ingest.turned import page_turn, reading_order, upright_png
 
     if budget is None:
         budget = _budget_for(model)
@@ -328,10 +340,26 @@ def picture_blocks(doc: Any, pages: Sequence[int], *,
         text = content.text() or ""
         sources = sorted(set(getattr(content, "text_sources", []) or []))
         optical = any(s in ("ocr", "azure_di") for s in sources)
-        out.append(text_block(f"Page {page} (picture {n + 1} of "
-                              f"{len(pages)}):"))
+        # A sheet scanned sideways (RI-149): its picture upright, and its
+        # text row by row as the sheet reads.
+        try:
+            turn = page_turn(list(content.lines),
+                             float(getattr(content, "width", 612.0) or 612.0),
+                             float(getattr(content, "height", 792.0)
+                                   or 792.0))
+        except Exception:                        # a page whose lines will not
+            turn = None                          # read is sent as it is
+        turned = turn is not None and turn.turned
+        if turned:
+            text = "\n".join(str(ln.text or "") for ln in
+                             reading_order(list(content.lines), turn))
+        out.append(text_block(
+            f"Page {page} (picture {n + 1} of {len(pages)}"
+            + (f"; its text runs a quarter turn from the page, so the "
+               f"picture is shown turned upright" if turned else "")
+            + "):"))
         png, _info = doc.render(page, budget=budget, fmt="auto")
-        out.append(image_block(png))
+        out.append(image_block(upright_png(png, turn) if turned else png))
         if not text.strip():
             out.append(text_block(f"Page {page} carries no text: read it "
                                   f"from the picture."))

@@ -2,12 +2,16 @@
 
 from funhouse_agent.adapters import clean_result, require_params
 
+#: What a call says when pystra is missing; a pystra that is installed but
+#: fails to import says its import's own error instead (BACKLOG INF-54).
+_PYSTRA_MISSING = "pystra is not installed. Install via: pip install pystra"
+
 
 def _run_form_reliability(params: dict) -> dict:
-    from pystra_agent import analyze_form, has_pystra
+    from pystra_agent import analyze_form, has_pystra, pystra_import_error
 
     if not has_pystra():
-        return {"error": "pystra is not installed. Install via: pip install pystra"}
+        return {"error": pystra_import_error() or _PYSTRA_MISSING}
 
     require_params(params, ["variables", "limit_state"], method="form_analysis")
     result = analyze_form(
@@ -19,10 +23,10 @@ def _run_form_reliability(params: dict) -> dict:
 
 
 def _run_sorm_reliability(params: dict) -> dict:
-    from pystra_agent import analyze_sorm, has_pystra
+    from pystra_agent import analyze_sorm, has_pystra, pystra_import_error
 
     if not has_pystra():
-        return {"error": "pystra is not installed. Install via: pip install pystra"}
+        return {"error": pystra_import_error() or _PYSTRA_MISSING}
 
     require_params(params, ["variables", "limit_state"], method="sorm_analysis")
     result = analyze_sorm(
@@ -34,10 +38,10 @@ def _run_sorm_reliability(params: dict) -> dict:
 
 
 def _run_monte_carlo_reliability(params: dict) -> dict:
-    from pystra_agent import analyze_monte_carlo, has_pystra
+    from pystra_agent import analyze_monte_carlo, has_pystra, pystra_import_error
 
     if not has_pystra():
-        return {"error": "pystra is not installed. Install via: pip install pystra"}
+        return {"error": pystra_import_error() or _PYSTRA_MISSING}
 
     require_params(params, ["variables", "limit_state"],
                    method="monte_carlo_analysis")
