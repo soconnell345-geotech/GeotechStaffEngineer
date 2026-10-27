@@ -159,11 +159,13 @@ OPTIONAL_DEPS: dict[str, str] = {
 
 
 def check_optional_deps(deps: Optional[dict] = None) -> list[dict]:
-    """Try-import each optional backend; return the MISSING ones.
+    """Try-import each optional backend; return the ones that cannot import.
 
     A graceful preflight for :func:`run_suite`. Never raises — any import
-    failure (missing package, broken install, import-time error) is treated as
-    "missing" so the preflight itself can never abort a run.
+    failure (missing package, broken install, import-time error) is listed so
+    the preflight itself can never abort a run. A backend that is installed
+    but fails to import carries ``"error"``, its import's own error, so it
+    is not reported as missing (BACKLOG INF-54).
 
     Parameters
     ----------
@@ -174,17 +176,24 @@ def check_optional_deps(deps: Optional[dict] = None) -> list[dict]:
     -------
     list of dict
         ``[{"import": <name>, "extra": <extra>}, ...]`` for each dep that is NOT
-        importable, sorted by import name. Empty when all are present.
+        importable, plus ``"error"`` for one installed whose import fails,
+        sorted by import name. Empty when all are present.
     """
-    import importlib
+    from geotech_common.optional_packages import CANNOT_IMPORT, import_error
 
     deps = OPTIONAL_DEPS if deps is None else deps
     missing: list[dict] = []
     for name, extra in deps.items():
         try:
-            importlib.import_module(name)
-        except BaseException:  # noqa: BLE001 - a broken backend must not abort
-            missing.append({"import": name, "extra": extra})
+            error = import_error(name)
+        except BaseException as exc:  # noqa: BLE001 - a broken backend must not abort
+            error = f"{name} {CANNOT_IMPORT}: {type(exc).__name__}: {exc}"
+        if error is None:
+            continue
+        entry = {"import": name, "extra": extra}
+        if CANNOT_IMPORT in error:
+            entry["error"] = error
+        missing.append(entry)
     return sorted(missing, key=lambda d: d["import"])
 
 
@@ -1165,14 +1174,19 @@ def run_suite(
     # questions that exercise those modules fail honestly, so surface them up
     # front (and record them on the metrics for the markdown header).
     missing_optional_deps = check_optional_deps()
-    if verbose and missing_optional_deps:
-        pkgs = ", ".join(d["import"] for d in missing_optional_deps)
+    absent = [d["import"] for d in missing_optional_deps if not d.get("error")]
+    if verbose and absent:
         print(
-            f"WARNING: {len(missing_optional_deps)} optional package(s) not "
-            f"installed: {pkgs}. Questions exercising these modules will fail "
-            f"honestly. Install geotech-staff-engineer[deep,full] for full "
-            f"coverage."
+            f"WARNING: {len(absent)} optional package(s) not "
+            f"installed: {', '.join(absent)}. Questions exercising these "
+            f"modules will fail honestly. Install "
+            f"geotech-staff-engineer[deep,full] for full coverage."
         )
+    if verbose:
+        for d in missing_optional_deps:
+            if d.get("error"):
+                print(f"WARNING: {d['error']} (questions exercising it will "
+                      f"fail with this error)")
 
     # Build the v2 agent ONCE — the owner's model drives both text and (via the
     # default LangChainVisionEngine wrap inside build_deep_agent) vision.
@@ -1490,15 +1504,23 @@ def render_suite_markdown(suite_result: dict) -> str:
 
     # Prominent missing-optional-dependency banner (from run_suite's preflight).
     missing = m.get("missing_optional_deps") or []
+    absent = [d for d in missing if not d.get("error")]
     warn_lines: list[str] = []
-    if missing:
-        pkgs = ", ".join(d.get("import", "?") for d in missing)
+    if absent:
+        pkgs = ", ".join(d.get("import", "?") for d in absent)
         warn_lines = ["", (
             f"> ⚠ **Missing optional packages:** {pkgs} — questions that "
             f"exercise these modules will fail honestly with \"not installed\" "
             f"errors. Install `geotech-staff-engineer[deep,full]` for full "
             f"coverage."
         )]
+    for d in missing:
+        if d.get("error"):
+            # Installed but failing to import (BACKLOG INF-54): its error,
+            # which the questions exercising it will fail with, on one line
+            # so the quote holds.
+            warn_lines += ["", f"> ⚠ **Installed but will not import:** "
+                               f"{' '.join(d['error'].split())}"]
 
     # P1 line, with the additive recovered-after-error split when present.
     p1_line = (

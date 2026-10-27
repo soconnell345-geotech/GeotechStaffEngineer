@@ -303,11 +303,21 @@ def _run_plot_cross_section(params: dict) -> dict:
 # (folded in from the former pygef_agent / ags4_agent / pydiggs_agent modules)
 # ---------------------------------------------------------------------------
 
+#: What a call says when its package is missing; a package that is installed
+#: but fails to import says its import's own error instead (BACKLOG INF-54).
+_PYGEF_MISSING = "pygef is not installed. Install with: pip install pygef"
+_AGS4_MISSING = ("python-ags4 is not installed. "
+                 "Install with: pip install python-ags4")
+_PYDIGGS_MISSING = "pydiggs is not installed. Install with: pip install pydiggs"
+
+
 def _run_parse_cpt(params: dict) -> dict:
-    from subsurface_characterization.formats.gef import has_pygef, parse_cpt_file
+    from subsurface_characterization.formats.gef import (
+        has_pygef, pygef_import_error, parse_cpt_file,
+    )
 
     if not has_pygef():
-        return {"error": "pygef is not installed. Install with: pip install pygef"}
+        return {"error": pygef_import_error() or _PYGEF_MISSING}
 
     require_params(params, ["file_path"], method="parse_cpt")
     result = parse_cpt_file(
@@ -319,10 +329,12 @@ def _run_parse_cpt(params: dict) -> dict:
 
 
 def _run_parse_borehole(params: dict) -> dict:
-    from subsurface_characterization.formats.gef import has_pygef, parse_bore_file
+    from subsurface_characterization.formats.gef import (
+        has_pygef, pygef_import_error, parse_bore_file,
+    )
 
     if not has_pygef():
-        return {"error": "pygef is not installed. Install with: pip install pygef"}
+        return {"error": pygef_import_error() or _PYGEF_MISSING}
 
     require_params(params, ["file_path"], method="parse_bore")
     result = parse_bore_file(
@@ -334,10 +346,12 @@ def _run_parse_borehole(params: dict) -> dict:
 
 
 def _run_read_ags4(params: dict) -> dict:
-    from subsurface_characterization.formats.ags4 import has_ags4, read_ags4
+    from subsurface_characterization.formats.ags4 import (
+        ags4_import_error, has_ags4, read_ags4,
+    )
 
     if not has_ags4():
-        return {"error": "python-ags4 is not installed. Install with: pip install python-ags4"}
+        return {"error": ags4_import_error() or _AGS4_MISSING}
 
     _require_file_or_content(params, method="read_ags4")
     result = read_ags4(
@@ -351,10 +365,12 @@ def _run_read_ags4(params: dict) -> dict:
 
 
 def _run_validate_ags4(params: dict) -> dict:
-    from subsurface_characterization.formats.ags4 import has_ags4, validate_ags4
+    from subsurface_characterization.formats.ags4 import (
+        ags4_import_error, has_ags4, validate_ags4,
+    )
 
     if not has_ags4():
-        return {"error": "python-ags4 is not installed. Install with: pip install python-ags4"}
+        return {"error": ags4_import_error() or _AGS4_MISSING}
 
     _require_file_or_content(params, method="validate_ags4")
     result = validate_ags4(
@@ -367,12 +383,20 @@ def _run_validate_ags4(params: dict) -> dict:
 
 def _run_validate_diggs_schema(params: dict) -> dict:
     from subsurface_characterization.formats.diggs_validation import (
-        has_schema_check, validate_diggs_schema,
+        BUNDLED_SCHEMA_VERSION, has_schema_check, pydiggs_import_error,
+        validate_diggs_schema,
     )
 
     version = params.get("schema_version", "2.6")
     if not has_schema_check(version):
-        # DIGGS 2.6 is bundled and needs nothing extra; 2.5.a needs pydiggs.
+        # DIGGS 2.6 is bundled and needs nothing extra; 2.5.a needs pydiggs,
+        # and a pydiggs that is installed but fails to import says why.
+        reason = (pydiggs_import_error()
+                  if version != BUNDLED_SCHEMA_VERSION else None)
+        if reason:
+            return {"error": f"The DIGGS {version} schema check needs "
+                             f"pydiggs: {reason}. DIGGS 2.6 is always "
+                             "available."}
         return {"error": f"The DIGGS {version} schema check is not installed "
                          "here (2.5.a needs pydiggs: pip install pydiggs). "
                          "DIGGS 2.6 is always available."}
@@ -388,11 +412,11 @@ def _run_validate_diggs_schema(params: dict) -> dict:
 
 def _run_validate_diggs_dictionary(params: dict) -> dict:
     from subsurface_characterization.formats.diggs_validation import (
-        has_pydiggs, validate_diggs_dictionary,
+        has_pydiggs, pydiggs_import_error, validate_diggs_dictionary,
     )
 
     if not has_pydiggs():
-        return {"error": "pydiggs is not installed. Install with: pip install pydiggs"}
+        return {"error": pydiggs_import_error() or _PYDIGGS_MISSING}
 
     _require_file_or_content(params, method="validate_diggs_dictionary")
     result = validate_diggs_dictionary(

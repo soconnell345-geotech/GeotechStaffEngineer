@@ -19,7 +19,7 @@ analyze_field_correlations : Vs, Dr, su/σv', permeability from CPT
 has_liquepy : Check if liquepy is installed
 """
 
-from liquepy_agent.liquepy_utils import has_liquepy
+from liquepy_agent.liquepy_utils import has_liquepy, liquepy_import_error
 from liquepy_agent.cpt_liquefaction import (
     analyze_cpt_liquefaction,
     depth_profile,
@@ -44,6 +44,7 @@ __all__ = [
     "bi2014_spt_msf",
     "analyze_field_correlations",
     "has_liquepy",
+    "liquepy_import_error",
     "CPTLiquefactionResult",
     "SPTLiquefactionResult",
     "FieldCorrelationsResult",

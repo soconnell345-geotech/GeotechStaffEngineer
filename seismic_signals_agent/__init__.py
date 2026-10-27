@@ -28,7 +28,7 @@ from seismic_signals_agent.intensity_measures import analyze_intensity_measures
 from seismic_signals_agent.rotd_spectrum import analyze_rotd_spectrum
 from seismic_signals_agent.signal_processing import analyze_signal_processing
 from seismic_signals_agent.signal_utils import (
-    has_eqsig, has_pyrotd, pyrotd_import_error,
+    has_eqsig, eqsig_import_error, has_pyrotd, pyrotd_import_error,
 )
 
 __all__ = [
@@ -42,5 +42,6 @@ __all__ = [
     'RotDSpectrumResult',
     'SignalProcessingResult',
     'has_eqsig',
+    'eqsig_import_error',
     'has_pyrotd',
 ]

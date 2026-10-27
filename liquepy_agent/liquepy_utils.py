@@ -5,25 +5,28 @@ Provides optional-dependency guards and import helpers following
 the same pattern as opensees_agent and pystrata_agent.
 """
 
+from geotech_common.optional_packages import import_error
+
+
+def liquepy_import_error():
+    """Why liquepy cannot be imported (not installed, or its import's own
+    error), or None when it can (BACKLOG INF-54)."""
+    return import_error("liquepy")
+
 
 def has_liquepy():
     """Return True if liquepy is installed and importable."""
-    try:
-        import liquepy  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return liquepy_import_error() is None
 
 
 def import_liquepy():
-    """Import and return the liquepy package, raising RuntimeError if missing."""
-    try:
-        import liquepy
-        return liquepy
-    except ImportError:
-        raise RuntimeError(
-            "liquepy is not installed. Install with: pip install liquepy"
-        )
+    """Import and return the liquepy package, raising RuntimeError if it is
+    missing or its import fails."""
+    error = liquepy_import_error()
+    if error:
+        raise RuntimeError(error)
+    import liquepy
+    return liquepy
 
 
 def import_liquepy_trigger():

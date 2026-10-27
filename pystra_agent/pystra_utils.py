@@ -6,6 +6,14 @@ import sys
 
 import numpy as np
 
+from geotech_common.optional_packages import import_error
+
+
+def pystra_import_error():
+    """Why pystra cannot be imported (not installed, or its import's own
+    error), or None when it can (BACKLOG INF-54)."""
+    return import_error("pystra")
+
 
 def has_pystra() -> bool:
     """
@@ -14,11 +22,7 @@ def has_pystra() -> bool:
     Returns:
         True if pystra can be imported, False otherwise
     """
-    try:
-        import pystra
-        return True
-    except ImportError:
-        return False
+    return pystra_import_error() is None
 
 
 _patches_applied = False

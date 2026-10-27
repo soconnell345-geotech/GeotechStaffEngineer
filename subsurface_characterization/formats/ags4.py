@@ -17,6 +17,7 @@ has_ags4 : Check if python-ags4 is installed.
 
 import io
 
+from geotech_common.optional_packages import import_error
 from subsurface_characterization.formats.ags4_results import (
     AGS4ReadResult,
     AGS4ValidationResult,
@@ -27,24 +28,24 @@ from subsurface_characterization.formats.ags4_results import (
 # Optional-dependency guards
 # ---------------------------------------------------------------------------
 
+def ags4_import_error():
+    """Why python-ags4 cannot be imported (not installed, or its import's own
+    error), or None when it can (BACKLOG INF-54)."""
+    return import_error("python_ags4", "python-ags4")
+
+
 def has_ags4():
     """Check if python-ags4 is installed and importable."""
-    try:
-        import python_ags4  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    return ags4_import_error() is None
 
 
 def import_ags4():
     """Import and return the AGS4 class from python-ags4."""
-    try:
-        from python_ags4 import AGS4
-        return AGS4
-    except ImportError:
-        raise ImportError(
-            "python-ags4 is not installed. Install with: pip install python-ags4"
-        )
+    error = ags4_import_error()
+    if error:
+        raise ImportError(error)
+    from python_ags4 import AGS4
+    return AGS4
 
 
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ from salib_agent.sensitivity import (
 )
 from salib_agent.expression import compile_expression
 from salib_agent.results import SobolResult, MorrisResult
-from salib_agent.salib_utils import has_salib
+from salib_agent.salib_utils import has_salib, salib_import_error
 
 __all__ = [
     "sobol_analysis",
@@ -40,4 +40,5 @@ __all__ = [
     "SobolResult",
     "MorrisResult",
     "has_salib",
+    "salib_import_error",
 ]
