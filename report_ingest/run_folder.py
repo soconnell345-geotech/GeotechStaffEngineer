@@ -67,12 +67,24 @@ class ReportRun:
     bound: int = 0
     qa: int = 0
     answered: int = 0
+    #: What the report cost over every run that read it: a record that took
+    #: steps from its folder says so in ``document.resumed``, and its
+    #: ``report_calls`` and ``report_dollars`` are used here; a record read
+    #: from scratch has only its own (BACKLOG RI-125).
     model_calls: int = 0
     dollars: float = 0.0
     seconds: float = 0.0
+    #: This run's own calls and dollars, set only for a report this run
+    #: resumed from its folder (left out of ``index.json`` otherwise).
+    calls_this_run: Optional[int] = None
+    dollars_this_run: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return dict(self.__dict__)
+        out = dict(self.__dict__)
+        for key in ("calls_this_run", "dollars_this_run"):
+            if out[key] is None:
+                del out[key]
+        return out
 
 
 @dataclass
@@ -247,6 +259,12 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
             model_calls=record.document.model_calls,
             dollars=record.document.dollars,
             seconds=round(time.time() - started, 1))
+        took = record.document.resumed
+        if took is not None:
+            row.calls_this_run, row.dollars_this_run = row.model_calls, \
+                row.dollars
+            row.model_calls, row.dollars = took.report_calls, \
+                took.report_dollars
         keys.setdefault(key, stem)
         run.reports.append(row)
         if row.duplicate_of:
@@ -255,7 +273,12 @@ def run_folder(folder: Any, engine_factory: Callable[[], Any], *,
         log(f"  [{index}/{len(stems)}] {stem}: {row.n_pages} pp, "
             f"{row.investigations} exploration(s), {row.lab_tests} lab "
             f"test(s), {row.answered} question(s) answered, "
-            f"{row.model_calls} model call(s), {row.seconds:.0f} s")
+            + (f"{row.model_calls} model call(s)"
+               if took is None else
+               f"{row.calls_this_run} model call(s) this run "
+               f"({', '.join(took.steps)} taken from its folder; "
+               f"{row.model_calls} over the report)")
+            + f", {row.seconds:.0f} s")
 
     _write_index(run, out)
     log(f"\nwrote {os.path.join(out, 'INDEX.md')} and the library at {db}")
@@ -277,8 +300,14 @@ def _row_from_record(stem: str, path: str, out_dir: str,
     document = blob.get("document") or {}
     row.n_pages = int(document.get("n_pages") or 0)
     row.workflow = str(document.get("workflow") or "")
-    row.model_calls = int(document.get("model_calls") or 0)
-    row.dollars = float(document.get("dollars") or 0.0)
+    took = document.get("resumed")
+    if isinstance(took, dict):
+        # The record's run took steps from its folder: the whole report's.
+        row.model_calls = int(took.get("report_calls") or 0)
+        row.dollars = float(took.get("report_dollars") or 0.0)
+    else:
+        row.model_calls = int(document.get("model_calls") or 0)
+        row.dollars = float(document.get("dollars") or 0.0)
     row.investigations = len(blob.get("investigations") or [])
     row.lab_tests = len(blob.get("lab_tests") or [])
     row.bound = len(blob.get("bound_documents") or [])
@@ -303,10 +332,20 @@ def _write_index(run: FolderRun, out: str) -> None:
         if not row.ok:
             lines.append(f"| {row.report_id} | | FAILED | | | | | | |")
             continue
+        calls = (str(row.model_calls) if row.calls_this_run is None
+                 else f"{row.model_calls} ({row.calls_this_run} this run)")
         lines.append(
             f"| {row.report_id} | {row.n_pages} | {row.workflow} | "
             f"{row.investigations} | {row.lab_tests} | {row.bound or ''} | "
-            f"{row.answered} | {row.qa} | {row.model_calls} |")
+            f"{row.answered} | {row.qa} | {calls} |")
+    if any(row.calls_this_run is not None for row in run.reports):
+        lines += ["", "`Model calls` is what each report cost over every run "
+                      "that read it. A report this run resumed from its "
+                      "folder took some steps from the files an earlier run "
+                      "saved, and made no call for them: its cell counts "
+                      "what those steps cost then beside this run's own "
+                      "calls, in brackets (the record's `document.resumed` "
+                      "names the steps)."]
     if any(row.bound for row in run.reports):
         lines += ["", "`Bound in` counts reports bound inside that one. Each "
                       "is its own record under `<report>/bound/<id>/` and "

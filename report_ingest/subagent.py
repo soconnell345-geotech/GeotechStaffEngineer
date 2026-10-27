@@ -196,9 +196,12 @@ class IngestSummary(BaseModel):
         description="how many of the standing questions this report answered")
     model_calls: int = Field(
         default=0,
-        description="the model calls the record cost: this run's, a step "
-                    "cut short included, and those of results saved by an "
-                    "earlier run of the same report and reused")
+        description="the model calls this delegation made for the record, "
+                    "a step cut short and a send that failed included; a "
+                    "step taken from results an earlier run of the same "
+                    "report saved made none, and the record's "
+                    "document.resumed names those steps and gives the whole "
+                    "report's calls")
     model_call_ceiling: Optional[int] = Field(
         default=None,
         description="the most model calls this delegation could spend; null "

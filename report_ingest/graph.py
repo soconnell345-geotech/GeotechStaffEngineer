@@ -111,8 +111,8 @@ from report_ingest.label_vote import (
     neighbourhood, split_pages,
 )
 from report_ingest.model import (
-    BoundReport, DocumentFacts, LabelVote, PageLabel, ParentReport, Project,
-    QAEntry, ReportRecord,
+    RESUMED_STEPS, BoundReport, DocumentFacts, LabelVote, PageLabel,
+    ParentReport, Project, QAEntry, ReportRecord, ResumedSteps,
 )
 
 __all__ = [
@@ -330,6 +330,12 @@ class _Spend:
     never does, so :meth:`settle` reads what it spent off the run's
     :class:`_Tally` instead: every call made is counted (BACKLOG RI-02's
     review).
+
+    A step taken from the folder made no call, so it hands in nothing:
+    :meth:`reuse` names it and keeps what its saved file says it cost apart
+    (BACKLOG RI-125). The counts above are this run's; :meth:`resumed` is
+    the record's account of the steps that came off disk and of the whole
+    report's cost.
     """
 
     def __init__(self, tally: Optional["_Tally"] = None) -> None:
@@ -339,6 +345,15 @@ class _Spend:
         self.dollars = 0.0
         self.seconds = 0.0
         self.tally = tally
+        #: The steps taken from the folder (:data:`RESUMED_STEPS` names).
+        self.reused: List[str] = []
+        #: What those steps cost when they were made, as their files say.
+        self.saved: Dict[str, Any] = {"calls": 0, "input_tokens": 0,
+                                      "output_tokens": 0, "dollars": 0.0}
+        #: Readers' items with a reading in the record, and those of them
+        #: whose reading came off disk.
+        self.readings = 0
+        self.readings_reused = 0
 
     def add(self, cost: Optional[Dict[str, Any]]) -> None:
         if not cost:
@@ -348,6 +363,64 @@ class _Spend:
         self.output_tokens += int(cost.get("output_tokens") or 0)
         self.dollars += float(cost.get("dollars") or 0.0)
         self.seconds += float(cost.get("seconds") or 0.0)
+
+    def reuse(self, step: str, cost: Optional[Dict[str, Any]]) -> None:
+        """A step taken from the folder: no call of this run. Its saved
+        file's cost is kept apart, for the whole report's."""
+        if step not in self.reused:
+            self.reused.append(step)
+        cost = cost if isinstance(cost, dict) else {}
+        for key in ("calls", "input_tokens", "output_tokens"):
+            self.saved[key] += int(cost.get(key) or 0)
+        self.saved["dollars"] += float(cost.get("dollars") or 0.0)
+
+    def hand_in(self, step: str, blob: Dict[str, Any],
+                cached: Optional[Dict[str, Any]]) -> None:
+        """A step's cost: this run's when it made the calls, the folder's
+        when ``blob`` is the saved file it read (``cached``)."""
+        if cached is not None and blob is cached:
+            self.reuse(step, blob.get("cost"))
+        else:
+            self.add(blob.get("cost"))
+
+    def reading(self, reused: bool) -> None:
+        """One reader's item with a reading in the record."""
+        self.readings += 1
+        self.readings_reused += 1 if reused else 0
+
+    def absorb(self, inner: "_Spend") -> None:
+        """A bound document's run, into its parent's: its calls are this
+        run's, and the steps it took from its folder are counted too."""
+        self.add({"calls": inner.calls,
+                  "input_tokens": inner.input_tokens,
+                  "output_tokens": inner.output_tokens,
+                  "dollars": inner.dollars,
+                  "seconds": inner.seconds})
+        for step in inner.reused:
+            self.reuse(step, None)
+        for key in self.saved:
+            self.saved[key] += inner.saved[key]
+        self.readings += inner.readings
+        self.readings_reused += inner.readings_reused
+
+    def resumed(self) -> Optional[ResumedSteps]:
+        """The record's account of what came off disk, or None for a run
+        that read everything itself (its record is then written as one
+        always was)."""
+        if not self.reused:
+            return None
+        saved = self.saved
+        return ResumedSteps(
+            steps=[step for step in RESUMED_STEPS if step in self.reused],
+            items=self.readings_reused, items_of=self.readings,
+            saved_calls=saved["calls"],
+            saved_input_tokens=saved["input_tokens"],
+            saved_output_tokens=saved["output_tokens"],
+            saved_dollars=round(saved["dollars"], 5),
+            report_calls=self.calls + saved["calls"],
+            report_input_tokens=self.input_tokens + saved["input_tokens"],
+            report_output_tokens=self.output_tokens + saved["output_tokens"],
+            report_dollars=round(self.dollars + saved["dollars"], 5))
 
     def mark(self) -> Tuple[int, Optional[Dict[str, Any]]]:
         """Where a step starts, for :meth:`settle` and :meth:`cut_short`."""
@@ -747,7 +820,13 @@ def ingest_report(source: Any, engine: Any, *,
         engines. ``page_route`` is ignored when off.
 
     The cost on ``record.document`` is the WHOLE run's, the children
-    included; each child's own block says what that child cost.
+    included; each child's own block says what that child cost. It is THIS
+    run's calls only: a step taken from the folder (a saved triage, vision
+    pass, review, identity call or item reading) made none, and
+    ``record.document.resumed`` names those steps, says how many items came
+    off disk of how many read, and gives the whole report's cost -- this
+    run's plus what the saved files say their steps cost (BACKLOG RI-125).
+    A run that read everything itself leaves it unset.
     """
     from report_ingest.writers import record_key, write_outputs
 
@@ -820,6 +899,7 @@ def ingest_report(source: Any, engine: Any, *,
     record.document.output_tokens = spend.output_tokens
     record.document.dollars = round(spend.dollars, 5)
     record.document.seconds = round(time.time() - started, 1)
+    record.document.resumed = spend.resumed()
 
     if write:
         if _is_document(source):
@@ -966,6 +1046,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                 cached.get("workflow", "standard"))
             workflow_note = cached.get("workflow_note") or workflow_note
             profile = _Profile(cached)
+            spend.reuse("triage", cached.get("cost"))
         else:
             # Triage is one call over a ledger: a cheaper tier is usually
             # enough, and the scoring stage names one. Until 5.32 the graph
@@ -1232,6 +1313,12 @@ def _range_labels(doc: Any, engine: Any, out: str, resume: bool,
             detail="the saved sections came from another describer or "
                    "labeller (or set of instructions) and were not used"))
         blob = None
+    if blob is not None:
+        # The sections and every page description they were drawn from
+        # came off disk (``saved_cost`` is every description's own).
+        spend.reuse("ranges", blob.get("cost"))
+        spend.reuse("descriptions",
+                    (blob.get("describe") or {}).get("saved_cost"))
     if blob is None:
         from report_ingest.triage import outline_text
 
@@ -1243,6 +1330,8 @@ def _range_labels(doc: Any, engine: Any, out: str, resume: bool,
                 max_calls=(budgets.range_describe_calls if budgets
                            else None))
             spend.add(described.cost)
+            if described.reused:
+                spend.reuse("descriptions", described.reused_cost)
             if described.stopped:
                 spend.settle(mark)
                 left = doc.n_pages - len(described.pages)
@@ -1304,7 +1393,9 @@ def _vision_labels(doc: Any, engine: Any, budgets: Budgets, out: str,
         return {}
     path = os.path.join(out, "vision.json")
     blob = _cached(path, resume)
-    if blob is None:
+    if blob is not None:
+        spend.reuse("vision", blob.get("cost"))
+    else:
         from report_ingest.vision_labels import classify_pages_by_vision
         mark = spend.mark()
         try:
@@ -1397,6 +1488,9 @@ def _review(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
 
     blob = None if mode == "none" else _cached(
         os.path.join(out, "review.json"), resume)
+    if blob is not None:
+        # Kept by an earlier attempt, or seeded from a separate label run.
+        spend.reuse("review", blob.get("cost"))
     if blob is None and mode != "none" \
             and not (mode == "disagreements" and not split):
         budget = budgets.review_tool_calls
@@ -1724,7 +1818,9 @@ def _identify_bound(doc: Any, engine: Any, out: str, resume: bool,
     for row in ranges:
         path = os.path.join(out, BOUND_DIR, row.bound_id, "identity.json")
         blob = _cached(path, resume)
-        if blob is None:
+        if blob is not None:
+            spend.reuse("identity", blob.get("cost"))
+        else:
             mark = spend.mark()
             result = identify_bound(doc, row.pages, engine,
                                     title_hint=row.title)
@@ -2094,11 +2190,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     child.document.output_tokens = inner_spend.output_tokens
     child.document.dollars = round(inner_spend.dollars, 5)
     child.document.seconds = round(time.time() - started, 1)
-    spend.add({"calls": inner_spend.calls,
-               "input_tokens": inner_spend.input_tokens,
-               "output_tokens": inner_spend.output_tokens,
-               "dollars": inner_spend.dollars,
-               "seconds": inner_spend.seconds})
+    child.document.resumed = inner_spend.resumed()
+    spend.absorb(inner_spend)
     return child, done
 
 
@@ -2271,7 +2364,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     questions, bound_told, window)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
-                spend.add(blob.get("cost"))
+                spend.hand_in("items", blob, cached)
                 record.general = GeneralFacts.model_validate(blob["general"])
                 record.natural_hazards = NaturalHazardFacts.model_validate(
                     blob["natural_hazards"])
@@ -2283,7 +2376,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                                            item, report_id)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
-                spend.add(blob.get("cost"))
+                spend.hand_in("items", blob, cached)
                 record.investigations.append(
                     Investigation.model_validate(blob["investigation"]))
                 unresolved.extend(blob.get("unresolved") or [])
@@ -2301,7 +2394,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                                                 item, report_id, reader)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
-                spend.add(blob.get("cost"))
+                spend.hand_in("items", blob, cached)
                 if blob.get("investigation"):
                     record.investigations.append(
                         Investigation.model_validate(blob["investigation"]))
@@ -2315,7 +2408,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                                             item, report_id)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
-                spend.add(blob.get("cost"))
+                spend.hand_in("items", blob, cached)
                 if blob.get("calculation"):
                     record.calculations.append(
                         Calculation.model_validate(blob["calculation"]))
@@ -2326,7 +2419,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                                            item, report_id)
                 if cached is None:
                     _keep(path, blob, spend, mark, qa, where, pages)
-                spend.add(blob.get("cost"))
+                spend.hand_in("items", blob, cached)
                 for test in blob.get("tests") or []:
                     record.lab_tests.append(LabTest.model_validate(test))
                 unresolved.extend(blob.get("unresolved") or [])
@@ -2334,6 +2427,7 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                 if blob.get("plot_check"):
                     from report_ingest.visual_scales import plot_check_qa
                     qa.extend(plot_check_qa(blob["plot_check"], pages))
+            spend.reading(cached is not None and blob is cached)
             done.extend(prose if reader == "narrative" else [item])
         except Exception as exc:                 # one item must not stop the run
             qa.append(QAEntry(
@@ -2914,7 +3008,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
         try:
             blob = cached or _read_unit(doc, model_first, stage, parts,
                                         report_id, outline, body)
-            spend.add(blob.get("cost"))
+            spend.hand_in("items", blob, cached)
             # Each request found over the request limit (RI-121; none
             # without one), before anything else, so a cut is listed even
             # when the groups it was cut into came back with no answer.
@@ -2931,6 +3025,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
             _into_record(stage, blob, record)
             placed[key] = list(blob.get("placement") or [])
             qa.extend(_placement_qa(blob, where, unit.pages))
+            spend.reading(cached is not None and blob is cached)
             done.append(unit)
         except Exception as exc:                 # one item must not stop the run
             qa.append(QAEntry(
@@ -3206,6 +3301,8 @@ def _bound_range_labels(engine: Any, folder: str, resume: bool,
     if blob is not None and any(blob.get(key) != value
                                 for key, value in made_by.items()):
         blob = None
+    if blob is not None:
+        spend.reuse("ranges", blob.get("cost"))
     if blob is None:
         local = {n: descriptions[p] for n, p in enumerate(window)
                  if p in descriptions}

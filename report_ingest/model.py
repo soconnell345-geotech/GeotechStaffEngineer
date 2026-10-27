@@ -48,7 +48,9 @@ from typing import (
     get_args,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, model_serializer, model_validator,
+)
 
 __all__ = [
     "SCHEMA_VERSION", "SI_UNITS", "UNIT_TO_SI", "UNITLESS_KINDS",
@@ -64,6 +66,7 @@ __all__ = [
     "use_qa_by_rank",
     "CALC_KINDS", "CalcKind", "NamedQuantity", "Calculation",
     "DocumentFacts", "Workflow", "WORKFLOW_VALUES",
+    "ResumedStep", "RESUMED_STEPS", "ResumedSteps",
     "LabelVote", "PageLabel", "ParentReport", "BoundReport",
     "ReportRecord", "to_si", "si_numbers", "calc_si",
     "record_json_schema",
@@ -112,6 +115,15 @@ __all__ = [
 #: existing field changed meaning, and a record written before them loads as
 #: one whose explorations carry none. What changed is that three kinds
 #: ``InvestigationKind`` could always NAME can now be HELD.
+#:
+#: ``DocumentFacts.resumed`` (BACKLOG RI-125) is NOT a bump either: it is
+#: optional, set only on a record whose run took a step from its folder,
+#: and left out of the written record otherwise, so a record read from
+#: scratch is written as it always was. ``DocumentFacts.model_calls`` and
+#: the token and dollar counts beside it were always documented as the
+#: run's own; a resumed run used to add the saved reader items' calls to
+#: them (and not the saved triage, vision or review), which is the defect
+#: the field fixes, not a new meaning.
 SCHEMA_VERSION = "4.0"
 
 
@@ -757,8 +769,81 @@ Workflow = Literal["", "standard", "appendix_only", "partial",
 WORKFLOW_VALUES: Tuple[str, ...] = tuple(v for v in get_args(Workflow) if v)
 
 
+#: A step of the ingest a resumed run can take from its folder instead of
+#: asking a model again (BACKLOG RI-125), in the order a run takes them:
+#: the document triage, the vision voter, the range voter's page
+#: descriptions and its sections, the label review, a bound document's
+#: identity call, and the readers' items (logs, laboratory sheets,
+#: printouts, soundings, the narrative).
+ResumedStep = Literal["triage", "vision", "descriptions", "ranges", "review",
+                      "identity", "items"]
+RESUMED_STEPS: Tuple[str, ...] = get_args(ResumedStep)
+
+
+class ResumedSteps(BaseModel):
+    """What a run took from its folder, and the whole report's cost with it
+    (BACKLOG RI-125).
+
+    A run that finds a step's saved file in its folder -- left by an earlier
+    attempt, copied in, or seeded from a separate label run -- uses it and
+    makes no call for it. The cost on :class:`DocumentFacts` is THIS run's
+    calls only; this says which steps came off disk, what their saved files
+    say they cost when they were made (``saved_*``), and the whole report's
+    cost, the two added up (``report_*``). Counted over this report and the
+    reports bound inside it, as the cost beside it is.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    steps: List[ResumedStep] = Field(
+        default_factory=list,
+        description="the steps taken from the folder, in the order a run "
+                    "takes them: triage, vision, descriptions and ranges "
+                    "(the range voter), review, identity (a bound "
+                    "document's), items (the readers')")
+    items: int = Field(
+        default=0, ge=0,
+        description="readers' items whose reading was taken from the folder")
+    items_of: int = Field(
+        default=0, ge=0,
+        description="readers' items with a reading in this record, read by "
+                    "this run or taken from the folder")
+    saved_calls: int = Field(
+        default=0, ge=0,
+        description="the model calls the steps taken from the folder made "
+                    "when they were made, as their saved files say; none of "
+                    "them was made by this run")
+    saved_input_tokens: int = Field(
+        default=0, ge=0, description="their input tokens, likewise")
+    saved_output_tokens: int = Field(
+        default=0, ge=0, description="their output tokens, likewise")
+    saved_dollars: float = Field(
+        default=0.0, ge=0.0, description="their dollars, likewise")
+    report_calls: int = Field(
+        default=0, ge=0,
+        description="the whole report's model calls: this run's "
+                    "(DocumentFacts.model_calls) plus saved_calls")
+    report_input_tokens: int = Field(
+        default=0, ge=0,
+        description="the whole report's input tokens, likewise")
+    report_output_tokens: int = Field(
+        default=0, ge=0,
+        description="the whole report's output tokens, likewise")
+    report_dollars: float = Field(
+        default=0.0, ge=0.0,
+        description="the whole report's dollars, likewise")
+
+
 class DocumentFacts(BaseModel):
-    """What the FILE is: filled deterministically, never by a model."""
+    """What the FILE is: filled deterministically, never by a model.
+
+    The cost (``model_calls``, the tokens, ``dollars``, ``seconds``) is
+    THIS run's: every request this run's engines sent, the reports bound
+    inside it included. A step the run took from its folder is in none of
+    them; ``resumed`` names those steps and gives the whole report's cost
+    (BACKLOG RI-125). With no ``resumed``, the run read everything itself
+    and its cost is the whole report's.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -783,11 +868,19 @@ class DocumentFacts(BaseModel):
         description="the workflow triage chose: standard, appendix_only, "
                     "partial, multi_document, scanned, needs_person; empty "
                     "when no triage ran")
-    model_calls: int = Field(default=0, ge=0)
-    input_tokens: int = Field(default=0, ge=0)
-    output_tokens: int = Field(default=0, ge=0)
-    dollars: float = Field(default=0.0, ge=0.0)
-    seconds: float = Field(default=0.0, ge=0.0)
+    model_calls: int = Field(
+        default=0, ge=0,
+        description="the model calls THIS run made, a call that ended in an "
+                    "error included; a step taken from the folder is not "
+                    "in it (see resumed)")
+    input_tokens: int = Field(
+        default=0, ge=0, description="this run's input tokens")
+    output_tokens: int = Field(
+        default=0, ge=0, description="this run's output tokens")
+    dollars: float = Field(
+        default=0.0, ge=0.0, description="this run's dollars")
+    seconds: float = Field(
+        default=0.0, ge=0.0, description="this run's wall clock")
     #: How the page labels were settled. See :mod:`report_ingest.label_vote`
     #: for the policies and :attr:`ReportRecord.page_labels` for the pages.
     label_policy: str = Field(
@@ -804,6 +897,21 @@ class DocumentFacts(BaseModel):
     review_changed: int = Field(
         default=0, ge=0,
         description="pages the label review moved")
+    resumed: Optional[ResumedSteps] = Field(
+        default=None,
+        description="set when this run took a step from its folder: which "
+                    "steps, and the whole report's cost with them; unset, "
+                    "the run read everything itself and the cost above is "
+                    "the whole report's (BACKLOG RI-125)")
+
+    @model_serializer(mode="wrap")
+    def _leave_out_unset_resume(self, handler):  # type: ignore[no-untyped-def]
+        """``resumed`` is written only when it is set: a record read from
+        scratch is written byte for byte as it was before the field."""
+        out = handler(self)
+        if self.resumed is None and isinstance(out, dict):
+            out.pop("resumed", None)
+        return out
 
 
 # ---------------------------------------------------------------------------
