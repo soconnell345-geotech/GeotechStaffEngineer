@@ -34,8 +34,10 @@ decisions D1 to D3, are in §2.
     pictures. If Haiku passes, it describes the pages; if not, Sonnet does
     (D2). Haiku 5.5 is on Foundry as
     `ri.language-model-service..language-model.anthropic-claude-5-5-haiku`; add it to the
-    transform as a model input beside Opus and Sonnet (the AI FDE did not
-    have it on 2026-10-27). Probe it on the Claude class the wave uses,
+    transform as a model input beside Opus and Sonnet (the owner imported
+    it into the FDE's workspace on 2026-10-27, and the FDE's own probe,
+    `setup/probe_haiku_ratelimits.py`, had it answer one plain text call;
+    pictures and tools were not tried). Probe it on the Claude class the wave uses,
     which carries page pictures, not the text-only generic completion
     class. If Sonnet does not pass, stop and send the probe back: Sonnet
     reads the logs and printouts and is the off arm's vision voter (D1,
@@ -286,20 +288,27 @@ log). Report counts only, as for every blind set.
    6. **Token brake.** Set `max_report_tokens_in` and `max_total_tokens`
       (RI-120 (1)); the dollar meter reads $0 on Foundry. Set them to the
       stop lines above, and the wave's ceiling to the lead's number.
-   7. **Rate limits (OWN-99 answered, OWN-100 open).** The AI FDE cannot
+   7. **Rate limits (settled 2026-10-27, OWN-99, OWN-100).** The AI FDE cannot
       read the limits: Foundry's admins set them per model in tokens and
-      requests per minute, likely as one pool shared across the instance,
-      and it knows of no per-request cap apart from the context window.
+      requests per minute (Resource Management, AIP usage and limits),
+      likely as one pool shared across the instance, possibly with the
+      published app, and it knows of no per-request cap apart from the
+      context window. Its probe found the proxy sends no rate-limit headers.
+      Because the pool is shared, do not use the published app's chat while
+      a wave runs. The proxy does return `proxy-upstream-request-attempts`,
+      so it may retry a request itself before answering (RI-167 records it).
       Run 5's lost log item was stopped by the per-minute limit: a
       126,558-token request passed after 4 retries, and the next small call
       waited 72 s. The proxy sometimes reports a rate limit as 400 Bad
-      Request; the engine already reads those as rate limits. Until the
-      admin's numbers come (OWN-100): keep the FDE's throttle at 22.5
+      Request; the engine already reads those as rate limits. The owner
+      accepted running without the admin's numbers: keep the FDE's throttle at 22.5
       GPT-5.4 calls a minute (the resume run then had 16 retries and no
       give-ups, against 45 a minute before), set
       `max_request_tokens_in=100000` on both arms, and expect slow minutes
-      after any large request. With the numbers, set RI-127's
-      `tokens_per_minute` and size the limit from them.
+      after any large request. If the numbers ever come (asking is optional),
+      set RI-127's `tokens_per_minute` and size the limit from them; the
+      FDE's table of run 5's rate-limit events against request sizes may
+      give an effective ceiling first.
    8. **Cost from every attempt.** RESULTS' Cost block counts every
       attempt of every report (RI-124): the finished reports, then a line
       for the reports not finished (braked, given up or failed, all listed
