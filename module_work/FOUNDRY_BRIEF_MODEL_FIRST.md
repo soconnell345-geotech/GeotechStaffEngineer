@@ -304,8 +304,10 @@ log). Report counts only, as for every blind set.
       attempt of every report (RI-124): the finished reports, then a line
       for the reports not finished (braked, given up or failed, all listed
       under failures), then the total for every report. Read the arm's
-      spend off that total line. `max_total_tokens` counts one build only,
-      so the lead adds the builds' totals for the wave's ceiling (RI-133).
+      spend off that total line. `max_total_tokens` counts the arm folder's
+      spend (every report's attempts, read before each build starts) with
+      the build's own, so builds on one folder share the wave's ceiling
+      (RI-133); the run says what the folder had spent when it started.
       Return one summary row per build (the glue's table listed only some).
    9. **Narrative repeats.** The same narrative read twice differed by one
       field in 28. Compare the arms' narratives only on differences larger
