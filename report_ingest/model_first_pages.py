@@ -1022,13 +1022,28 @@ def _kind(record: Optional[Mapping[str, Any]]) -> str:
     return str(_described(record).get("kind") or "")
 
 
+#: Words that say the describer guessed a program rather than read one off
+#: the page: "likely", "a STABL-type output", "program not named".
+_HEDGED = re.compile(
+    r"\b(?:likely|probably|possibly|perhaps|presumably|apparently|"
+    r"appears?|seems?|unnamed|unknown|not\s+(?:named|stated|printed|shown))"
+    r"\b|-(?:type|style|like)\b", re.I)
+
+
 def _program_named(record: Optional[Mapping[str, Any]]) -> Optional[str]:
     """The program the page's description names (its ``names`` field), by
-    the calculation reader's program patterns; None when it names none."""
+    the calculation reader's program patterns; None when it names none.
+
+    A piece of the field that hedges (:data:`_HEDGED`) names nothing: a
+    guess at a program's family ("STABL-type output") is not the program a
+    page prints, and read as one it cut a printout of the program it guessed
+    at in two."""
     from report_ingest.calc_reader import _program_in
 
     for piece in re.split(r"[;|]", str(_described(record).get("names")
                                        or "")):
+        if _HEDGED.search(piece):
+            continue
         got = _program_in(piece)
         if got is not None:
             return got[0].lower()

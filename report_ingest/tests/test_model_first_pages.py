@@ -611,6 +611,18 @@ def test_printouts_back_to_back_without_sheet_numbers_are_cut_apart():
               532: page("MADE-UP LOAD AGAINST SETTLEMENT", kind="chart page")}
     assert mfp.calc_starts(sorted(charts), charts) == []
 
+    # A guess at the program's family is not a program: it cuts nothing
+    # between two pages that name the program outright.
+    hedged = {540: page("MADE-UP INPUT", names="STABL6H; a made-up method"),
+              541: page("MADE-UP OUTPUT",
+                        names="made-up circle search (STABL-type output)"),
+              542: page("MADE-UP OUTPUT",
+                        names="made-up output file, likely a STABL program"),
+              543: page("MADE-UP INPUT", names="STABL6H")}
+    assert [mfp._program_named(hedged[p]) for p in sorted(hedged)] == [
+        "stabl6h", None, None, "stabl6h"]
+    assert mfp.calc_starts(sorted(hedged), hedged) == []
+
     every = {**by_hole, **by_program}
     groups = mfp.calc_groups(sorted(every), None, every)
     assert [g.pages for g in groups] == [[500, 501, 502], [503, 504],
