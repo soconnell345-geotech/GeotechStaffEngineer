@@ -227,3 +227,70 @@ On narrative first the brakes saw about 0.10 M of the 1.76 M the arm spent (in +
 
 - Recommendations 1, 3, 4 and 5 (2 is RI-171).
 - The `outsideProject` vocabulary/`Literal` mismatch is a defect on today's path as well (section 3.4, cause 7). It changes a saved report's output: R28's narrative is lost whole.
+
+---
+
+## 10. MF-2 partial (R05, R36)
+
+**What ran:** build e, the `ingest` stage over R05 (15 pages) and R36 (94 pages), off and on, 22:40 to 23:12 UTC. Both arms stopped after R36 at the plan's stop point (two items failed with the same `is_error` error) and wrote `STOP.json`. This time the glue stopped where it should: it now reads `run.json`'s `item_errors` and `qa.json`'s "could not be read" entries.
+
+**What was read:** the updated hand-back note, the three results tables, both arms' `RESULTS.md`, `results.json`, build and stop records, and for each report `run.json`, `triage.json`, `labels.json`, `qa.json`, the record, every item file, and on the on arm every page description (109), `ranges-plain.json` and `placement.json`. Both arms' records were re-scored with today's scorers (`_score_ingest_record`, $0). The scores matched the saved ones.
+
+### The off arm
+
+The off arm is void where `is_error` struck: 14 items on R36 (logs, CPT, lab, calc). **Its label review also failed on `is_error`, on both reports.** That shows only as a `partial` QA entry ("the label review did not finish"), not as an item error. So the glue counts R05's off run as finished, and a resume will not ask for its review again. Build f's off arm should start R05 and R36 afresh.
+
+### The on arm, whole report
+
+| | R05 | R36 |
+|---|---|---|
+| describer (Haiku) | 15/15 pages, 0 failed | 94/94 pages, 0 failed |
+| range labels vs hand labels | 5/5 | 5/5 |
+| pages split with the rules | 1 | 25 (no review on this arm; each is a QA entry, confidence 0.0) |
+| triage `bound_together` | none | none |
+| units read | narrative 1 (one call) | narrative 1 (3 picture parts + a joining call), logs 11 (one per hole), lab 2, calc 2; CPT 2 by today's sounding reader |
+| holes printed / in the record | none | borings 11/11; CPT 0/2 (`is_error`) |
+| placed | 17/17 | 291/309, of which 288 at a spot of the 308 on pages with text (93.5 %); placed by stage: narrative 58/62, logs 183/185, lab 16/17, calc 34/45 |
+| logs vs truth | | R36_p38 44/44 |
+| lab vs truth | | 5 sheets 46/48 |
+| narrative recall / precision | 24/27, 22/27 (off 24/27, 24/27) | 18/28, 18/26 (off 24/28, 24/27) |
+| could not be read | 0 | 2 (the CPT items, `is_error`) |
+
+- **Where truth exists, the whole-report path reproduces MF-1's item-level scores exactly** (logs 44/44, lab 46/48, narrative R36 18/28). The describer's exploration names put every log page on its hole, and the labeller's sections found the same pages the hand-truthed items use.
+- **Narrative R36 is MF-1's split again**: 20 `partial` entries say "part N and part M answer this differently; the first answer is kept", and parts report the document as "truncated" or "sections not among the pages provided". RI-175 (one call, text pages as text) is the fix.
+- **Calc page groups ignore printout boundaries.** R36's calculation pages hold four printouts (a seismic design-maps printout of six sheets, two liquefaction analyses, one per CPT, and shaft capacity charts) with two appendix dividers between them. `calc_groups` saw no sheet-number start and no text-layer head change, so it made a balanced 14/13 cut. That gave two records, each a mix: one is recorded as site response, the other as an axial pile (a liquefaction analysis plus the shaft charts). The reader flagged the mix itself in its own `partial` entries. The describer's titles and kinds show every boundary (`model_first_pages.py`: `calc_starts` about line 898 reads sheet numbers only; `calc_groups` about line 930).
+- **Appendix dividers are read as content.** The labelling conventions give a divider its section's label (`range_labels.py` line 146), and `model_first_pages` never sets one aside. So R36's lab divider was read alone, at one Opus call, and put an empty `other` lab test in the record. Its two calc dividers sit inside the calc groups.
+- Soundings are not model-first: CPT items go to today's sounding reader on the main model (Opus), after the other readers (`graph.py` line 2965). With `is_error` fixed they will run.
+
+### Spend against the lines (the FDE's meter: plain + cache write + cache read)
+
+| arm | report | calls | tokens in | out | line | share of line |
+|---|---|---:|---:|---:|---:|---:|
+| off | R05 | 6 | 42,207 | 7,105 | 0.6 M | 7 % |
+| off | R36 | 45 | 600,797 | 89,596 | 3.8 M | 16 % (14 items not read) |
+| on | R05 | 18 | 197,648 | 14,030 | 0.33 M | 60 % |
+| on | R36 | 119 | 1,372,835 | 144,810 | 2.1 M | 65 % |
+
+R36's on-arm input by step:
+
+| step | calls | tokens in | share |
+|---|---:|---:|---:|
+| describer | 94 | 649,366 | 47 % |
+| narrative | 4 | 263,774 | 19 % |
+| calc | 4 | 164,913 | 12 % |
+| logs | 11 | 138,496 | 10 % |
+| lab | 2 | 82,534 | 6 % |
+| labeller | 1 | 37,634 | 3 % |
+| CPT, first turns | 2 | 18,902 | 1 % |
+| triage | 1 | 17,216 | 1 % |
+
+- Per page that is 13.2k (R05) and 14.6k (R36), against the plan's estimate of about 15k a page. At R36's rate R37, R13, R16 and R28 would land at about 65 % of their lines.
+- The describer alone is about 6.9k tokens in a page, so about 7.4 M of input over R13, R16 and R28.
+- Largest request 90,381 tokens (a narrative part). No rate limits, 1 connection retry. R36 took 15.5 min, 4.8 of them describing.
+
+### Noted, not fixed
+
+- The run's `calls_by_step` leaves the describer's and labeller's calls "unattributed" (+16 on R05).
+- Each arm ran its own triage. The shared review folder came back empty because the off arm's review never finished.
+- The narrative's front 50 pages include the logs and CPT plots as pictures. RI-175's one-call narrative changes this.
+- **For RI-175 on R13 (every page scanned):** the "text pages as text" rule has to count Document Intelligence text as a text layer, or R13's narrative still goes as picture parts.
