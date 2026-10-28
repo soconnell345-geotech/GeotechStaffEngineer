@@ -294,3 +294,45 @@ R36's on-arm input by step:
 - Each arm ran its own triage. The shared review folder came back empty because the off arm's review never finished.
 - The narrative's front 50 pages include the logs and CPT plots as pictures. RI-175's one-call narrative changes this.
 - **For RI-175 on R13 (every page scanned):** the "text pages as text" rule has to count Document Intelligence text as a text layer, or R13's narrative still goes as picture parts.
+
+## 11. Narrative misses by verdict (MF-1 and MF-2, re-scored at $0)
+
+Every miss under the current strict scorer was read against its pages and given a verdict. The row-by-row file, with page evidence and a blank column for the owner, is private under `raw/`. Five more rows fail strictly but an alternate on the sheet accepts them, so they are not counted here. The lenient view passes 2 of the 68.
+
+Runs:
+- **A:** MF-1 today, Opus, 8 reports.
+- **B:** MF-1 model-first, R05.
+- **C:** MF-2 model-first, R05 and R36.
+
+Build e's model-first instruction did not carry the house rules; build f adds them (RI-175).
+
+| verdict | A (48) | B (4) | C (16) | all (68) |
+|---|---:|---:|---:|---:|
+| ours wrong | 16 | 2 | 7 | 25 |
+| convention (a house rule decides) | 17 | 1 | 8 | 26 |
+| sheet wrong | 6 | 0 | 0 | 6 |
+| wording (same substance) | 8 | 1 | 1 | 10 |
+| either fine | 1 | 0 | 0 | 1 |
+
+| question | rows | ours wrong | convention | sheet wrong | wording | either fine |
+|---|---:|---:|---:|---:|---:|---:|
+| structures (count and list) | 13 | 4 | 9 | | | |
+| recommended foundation types | 9 | 3 | | | 6 | |
+| summaries over 100 words | 7 | 7 | | | | |
+| earth hazards | 6 | 2 | 2 | 2 | | |
+| allowable bearing pressure | 5 | 1 | | 1 | 3 | |
+| figure count | 4 | 2 | 2 | | | |
+| seismic hazard analysis done | 3 | 1 | 2 | | | |
+| soil corrosivity | 3 | 2 | | 1 | | |
+| project phase | 3 | | 3 | | | |
+| test pit count | 2 | | 2 | | | |
+| earlier investigations count | 2 | | 2 | | | |
+| boring identifiers | 2 | 1 | 1 | | | |
+| outside the estate | 2 | | 2 | | | |
+| boring count | 1 | | 1 | | | |
+| table count | 1 | 1 | | | | |
+| test pit identifiers | 1 | | | 1 | | |
+| kind of document | 1 | 1 | | | | |
+| soil profile | 1 | | | | 1 | |
+| ASCE 7 edition | 1 | | | 1 | | |
+| seismic code used | 1 | | | | | 1 |
