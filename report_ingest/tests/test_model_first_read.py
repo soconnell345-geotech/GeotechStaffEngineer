@@ -926,3 +926,194 @@ def test_no_limit_changes_nothing(doc):
     assert rows[0] == rows[1] == plain
     assert set(rows[2][0]) == set(plain[0]) | {"estimated_tokens_in",
                                                "tokens_in"}
+
+
+# ---------------------------------------------------------------------------
+# the narrative in one call, sent text first (BACKLOG RI-175)
+# ---------------------------------------------------------------------------
+
+#: A made-up prose line; three of them are more than today's narrative
+#: reader's 120 characters a page.
+PROSE = "The made-up site is underlain by made-up silty sand over made-up clay."
+
+
+@pytest.fixture(scope="module")
+def prose_pdf():
+    """Pages 0 to 5 prose, 6 and 8 one short line each, 7 nothing."""
+    doc = pymupdf.open()
+    for n in range(9):
+        page = doc.new_page()
+        lines = ([f"MADE-UP PROSE {n}", PROSE, PROSE, PROSE] if n < 6
+                 else [] if n == 7 else [f"MADE-UP FIGURE {n}"])
+        for k, line in enumerate(lines):
+            page.insert_text((72, 72 + 18 * k), line, fontsize=9)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+@pytest.fixture()
+def prose(prose_pdf):
+    from planlens.document import open_document
+
+    opened = open_document(prose_pdf, name="made_up_prose")
+    yield opened
+    opened.close()
+
+
+def _ranked(pages, ranked=None, n_front=0):
+    return PageGroup("narrative", list(pages), key="narrative",
+                     ranked=list(ranked if ranked is not None else pages),
+                     n_front=n_front)
+
+
+def _shown(call) -> dict:
+    """``page -> its block kinds`` in a text-first call, in order."""
+    out: dict = {}
+    page = None
+    for block in _blocks(call)[:-1]:
+        if block["type"] == "text":
+            words = block["text"].split()
+            if words[0] == "Page" and (words[1].endswith("'s")
+                                       or words[2].startswith("(")):
+                page = int(words[1].rstrip("'s"))
+        out.setdefault(page, []).append(block["type"])
+    return out
+
+
+def test_the_narrative_on_the_pictures_route_is_one_call_sent_text_first(
+        prose):
+    """Every page with a usable text layer goes as its text alone, the
+    others as a picture with their text: nine pages, one call, two
+    pictures, where 20 pictures a call would have been the cap."""
+    group = _ranked(range(9), n_front=2)
+    engine = _engine([{"final": _narrative("Made-up Bridge", 0)}],
+                     pdf=False)
+    blob = mfr.read_narrative(prose, [group], engine, report_id=REPORT)
+    assert engine.n_calls == 1
+    shown = _shown(engine.calls[0])
+    assert list(shown) == list(range(9))
+    assert all(shown[p] == ["text"] for p in range(6))
+    assert all(shown[p] == ["text", "image", "text"] for p in (6, 7, 8))
+    assert _blocks(engine.calls[0])[-1]["text"] == mf.instruction(
+        "narrative", REPORT, list(range(9)), route="pictures",
+        text_first=True)
+    assert blob["route"] == "pictures" and blob["left_out"] == []
+    assert blob["pages"] == list(range(9))
+    assert blob["general"]["projectName"] == "Made-up Bridge"
+    # On the PDF route the same group is one PDF of all its pages.
+    pdf = _engine([{"final": _narrative("Made-up Bridge", 0)}])
+    blob = mfr.read_narrative(prose, [group], pdf, report_id=REPORT)
+    assert [b["type"] for b in _blocks(pdf.calls[0])] == ["pdf", "text"]
+    with pymupdf.open(stream=_blocks(pdf.calls[0])[0]["data"],
+                      filetype="pdf") as cut:
+        assert cut.page_count == 9
+    assert blob["left_out"] == []
+
+
+def test_pages_past_the_limit_are_left_out_last_ranked_first(prose):
+    """The front is kept, then the ranked pages while they fit: with room
+    for three pages, 0, 1 and 4 go and 2, 3 and 5 are named left out."""
+    (fits,) = mfr.narrative_plan(prose, [_ranked([0, 1, 4], n_front=3)],
+                                 _engine([], pdf=False), report_id=REPORT)
+    limit = fits["estimated_tokens_in"] + 5
+    engine = _engine([{"final": _narrative("Made-up Bridge", 0)}],
+                     pdf=False)
+    blob = mfr.read_narrative(
+        prose, [_ranked(range(6), [0, 1, 4, 5, 2, 3], n_front=1)], engine,
+        report_id=REPORT, max_request_tokens_in=limit)
+    assert engine.n_calls == 1
+    assert list(_shown(engine.calls[0])) == [0, 1, 4]
+    assert blob["left_out"] == [2, 3, 5]
+    assert blob["pages"] == list(range(6))
+    (said,) = [w for w in blob["warnings"] if "left out" in w]
+    assert said.startswith("pages 2, 3, 5 were left out of the narrative's "
+                           "request")
+    assert f"{limit:,} input tokens" in said
+    assert blob["over_limit"] == []
+    assert blob["calls"][0]["estimated_tokens_in"] <= limit
+
+
+def test_a_front_too_large_for_one_request_is_split_and_says_so(prose):
+    """Only the front is kept whatever its size; over the limit, it is cut
+    before it is sent, as any group over the limit is, and summarised."""
+    from report_ingest.narrative_reader import SummaryReading
+
+    first, second = _sizes("narrative", prose, [[0, 1, 2], [3, 4, 5]],
+                           pdf=False)
+    engine = _engine([
+        {"final": _narrative("Made-up Project", 0)},
+        {"final": _narrative("Made-up Project", 3)},
+        {"final": SummaryReading(quickSummary="The made-up report.")}],
+        pdf=False)
+    blob = mfr.read_narrative(prose, [_ranked(range(6), n_front=6)], engine,
+                              report_id=REPORT,
+                              max_request_tokens_in=max(first, second))
+    assert engine.n_calls == 3
+    assert [list(_shown(c)) for c in engine.calls[:2]] == [[0, 1, 2],
+                                                          [3, 4, 5]]
+    assert blob["left_out"] == []
+    assert any("split before it was sent" in w for w in blob["warnings"])
+    assert [row["cut_into"] for row in blob["over_limit"]] == \
+        [[[0, 1, 2], [3, 4, 5]]]
+
+
+def test_past_the_picture_cap_a_page_goes_as_its_text_or_is_left_out(
+        prose, monkeypatch):
+    """With room for one picture: page 6 is that picture, page 8 goes as
+    the little text it has, and page 7, with none, is left out."""
+    monkeypatch.setattr(mfr, "MAX_PICTURES_PER_CALL", 1)
+    engine = _engine([{"final": _narrative("Made-up Bridge", 0)}],
+                     pdf=False)
+    blob = mfr.read_narrative(prose, [_ranked([0, 6, 7, 8], n_front=1)],
+                              engine, report_id=REPORT)
+    shown = _shown(engine.calls[0])
+    assert shown == {0: ["text"], 6: ["text", "image", "text"],
+                     8: ["text"]}
+    assert "MADE-UP FIGURE 8" in [b["text"] for b in _blocks(
+        engine.calls[0]) if b["type"] == "text"][-2]
+    assert blob["left_out"] == [7]
+
+
+def test_the_words_go_first_and_a_picture_only_where_there_is_room(
+        prose, monkeypatch):
+    """With room for the words of pages 0, 1 and 6 and no more, page 6, a
+    front page with too little text, goes as its words, not its picture;
+    nothing is left out and nothing is split. With room, its picture."""
+    group = _ranked([0, 1, 6], n_front=3)
+    monkeypatch.setattr(mfr, "MAX_PICTURES_PER_CALL", 0)
+    (words,) = mfr.narrative_plan(prose, [group], _engine([], pdf=False),
+                                  report_id=REPORT)
+    monkeypatch.undo()
+    assert words["pictures"] == 0 and words["pages"] == [0, 1, 6]
+    limit = words["estimated_tokens_in"] + 50
+    tight = _engine([{"final": _narrative("Made-up Bridge", 0)}], pdf=False)
+    blob = mfr.read_narrative(prose, [group], tight, report_id=REPORT,
+                              max_request_tokens_in=limit)
+    assert tight.n_calls == 1
+    assert _shown(tight.calls[0]) == {0: ["text"], 1: ["text"], 6: ["text"]}
+    assert blob["left_out"] == [] and blob["over_limit"] == []
+    roomy = _engine([{"final": _narrative("Made-up Bridge", 0)}], pdf=False)
+    mfr.read_narrative(prose, [group], roomy, report_id=REPORT,
+                       max_request_tokens_in=10 * limit)
+    assert _shown(roomy.calls[0])[6] == ["text", "image", "text"]
+
+
+def test_the_narrative_plan_sizes_the_call_without_making_it(prose):
+    from report_ingest.narrative_reader import INPUT_TOKEN_BUDGET
+
+    engine = _engine([], pdf=False)
+    (row,) = mfr.narrative_plan(prose, [_ranked(range(9), n_front=2)],
+                                engine, report_id=REPORT)
+    assert engine.n_calls == 0
+    assert (row["pages"], row["left_out"], row["text_pages"],
+            row["pictures"], row["route"]) == (list(range(9)), [], 6, 3,
+                                               "pictures")
+    assert row["limit"] == INPUT_TOKEN_BUDGET and not row["over_limit"]
+    assert row["problem"] == ""
+    (whole,) = _sizes("narrative", prose, [list(range(9))], pdf=False)
+    assert row["estimated_tokens_in"] == whole
+    (small,) = mfr.narrative_plan(prose, [_ranked(range(9), n_front=2)],
+                                  engine, report_id=REPORT,
+                                  max_request_tokens_in=10)
+    assert small["pages"] == [0, 1] and small["over_limit"]

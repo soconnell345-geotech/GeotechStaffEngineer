@@ -2894,7 +2894,8 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
 
     The pages are grouped from the labels and the page descriptions
     (:func:`report_ingest.model_first_pages.group_pages`, the narrative's
-    parts cut to its route's page limit and its text budget), within
+    parts cut to the PDF page limit and its text budget on the pdf route,
+    one part sent text first on the pictures route, RI-175), within
     ``window`` when one is given. A unit's pages are every page its calls
     carry, but the narrative's: its pages are those labelled its own
     (cover, letter, contents, narrative and figures), and the front pages

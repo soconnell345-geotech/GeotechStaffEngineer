@@ -22,7 +22,9 @@ sample gains recovery printed as a length, with its unit
 THE INSTRUCTIONS (:data:`INSTRUCTIONS`, :func:`instruction`). RI-86's plain
 instructions, which matched the pipeline with one short paragraph a stage
 (:data:`PLAIN_INSTRUCTIONS`, kept as measured for the plain baseline), with
-the logs' paragraph naming what the log schema adds. Versioned by
+the logs' paragraph naming what the log schema adds, the lab's asking for
+Atterberg limits on a gradation sheet as an entry of their own, and the
+narrative's carrying today's house conventions (RI-175). Versioned by
 :data:`READ_PROMPT_VERSION`.
 
 WHERE THE NEW FIELDS GO (:func:`apply_log_additions`,
@@ -283,8 +285,10 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: shown, so a saved answer from another wording is never reused as if it
 #: were this one. mf-2 (RI-149): a sheet scanned sideways is sent upright,
 #: its text row by row as the sheet reads; the wording is mf-1's. mf-3
-#: (RI-174): the narrative's outsideProject is offered yes, no or unclear,
-#: no longer mixed.
+#: (build f): the narrative's outsideProject is offered yes, no or unclear,
+#: no longer mixed (RI-174); the narrative is sent text first in one call
+#: and carries today's house conventions, and the lab instruction asks for
+#: Atterberg limits on a gradation sheet as an entry of their own (RI-175).
 READ_PROMPT_VERSION = "mf-3"
 
 
@@ -459,11 +463,34 @@ PLAIN_INSTRUCTIONS: Dict[str, str] = {
 #: What each stage's model-first call is asked: the plain instruction, with
 #: the logs' header and sample lists naming what the log schema adds (the
 #: project name and number, the client, any other header field, recovery).
-#: Lab, calc and narrative are asked as the plain baseline was: a summary
-#: row's bottom elevation is asked by its field's own description. A change
-#: here changes :data:`READ_PROMPT_VERSION`.
+#: Calc is asked as the plain baseline was, and lab too but for one
+#: sentence (RI-175): two tests on one sample are two entries, Atterberg
+#: limits on a grading sheet among them, as today's lab reader asks. The
+#: narrative carries today's house conventions as well
+#: (``narrative_glossary.glossary_block``, RI-175: a count of explorations
+#: not done is 0, null is "the report does not say", the mention
+#: questions, the list items). A summary row's bottom elevation is asked by
+#: its field's own description. A change here changes
+#: :data:`READ_PROMPT_VERSION`.
+#: The sentence the model-first lab instruction adds to the plain one
+#: (RI-175): build e's lab reading left out the Atterberg limits printed on
+#: gradation sheets, which today's lab reader records as entries of their
+#: own (its prompt's "TWO entries, one per kind").
+LAB_TWO_TESTS = (
+    "A sheet that reports two tests on one sample is two entries, one per "
+    "kind, both with the same boring and depth: Atterberg limits printed on "
+    "a gradation sheet are an atterberg entry of their own, beside the "
+    "gradation entry.")
+
 INSTRUCTIONS: Dict[str, str] = {
     **PLAIN_INSTRUCTIONS,
+    "lab": PLAIN_INSTRUCTIONS["lab"].replace(
+        " Give depths in the sheet's own unit",
+        f" {LAB_TWO_TESTS} Give depths in the sheet's own unit"),
+    # Today's house conventions, filled in by instruction() from
+    # narrative_glossary.glossary_block, the text today's reader is given.
+    "narrative": PLAIN_INSTRUCTIONS["narrative"].replace(
+        "{vocabulary}\n\n", "{vocabulary}\n\n{glossary}\n\n"),
     "logs": (
         "These pages are from a geotechnical report ({where}). Extract the "
         "exploration log on them (a boring, test pit or similar log): its "
@@ -484,14 +511,17 @@ def _kinds_text(definitions: Dict[str, str]) -> str:
 
 def instruction(stage: str, report: str, pages: Sequence[int], *,
                 whole: bool = False, route: str = "pdf",
-                texts: Optional[Dict[str, str]] = None) -> str:
+                texts: Optional[Dict[str, str]] = None,
+                text_first: bool = False) -> str:
     """The instruction for one call: ``texts[stage]`` (by default
     :data:`INSTRUCTIONS`) filled in for its report and pages.
 
     ``pages`` are the report's 0-based pages the call carries, in order;
     ``whole`` says they are the whole report. ``route`` is how they are sent
     (``pdf`` or ``pictures``), which sets the sentence saying which report
-    page each PDF page or picture is (:func:`page_map_sentence`)."""
+    page each PDF page or picture is (:func:`page_map_sentence`);
+    ``text_first`` says the pages with a usable text layer go as their text
+    alone (the narrative on the pictures route, RI-175)."""
     texts = INSTRUCTIONS if texts is None else texts
     pages = [int(p) for p in pages]
     if whole:
@@ -499,7 +529,8 @@ def instruction(stage: str, report: str, pages: Sequence[int], *,
     else:
         where = (f"report {report}, page{'s' if len(pages) > 1 else ''} "
                  + ", ".join(str(p) for p in pages))
-    note = page_map_sentence(pages, route=route, whole=whole)
+    note = page_map_sentence(pages, route=route, whole=whole,
+                             text_first=text_first)
     fill: Dict[str, str] = {"where": where, "pages_note": note}
     if stage == "lab":
         fill.update(kinds=_kinds_text(_lab.KIND_DEFINITIONS),
@@ -508,8 +539,9 @@ def instruction(stage: str, report: str, pages: Sequence[int], *,
         from report_ingest.calc_reader import CALC_KIND_DEFINITIONS
         fill.update(kinds=_kinds_text(CALC_KIND_DEFINITIONS))
     elif stage == "narrative":
+        from report_ingest.narrative_glossary import glossary_block
         from report_ingest.narrative_reader import _vocabulary_block
-        fill.update(vocabulary=_vocabulary_block())
+        fill.update(vocabulary=_vocabulary_block(), glossary=glossary_block())
     return texts[stage].format(**fill)
 
 

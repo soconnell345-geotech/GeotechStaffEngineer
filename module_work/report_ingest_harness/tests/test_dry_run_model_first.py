@@ -94,3 +94,28 @@ def test_a_call_with_no_saved_reading_gets_no_answer():
     reply = engine.complete([{"role": "user", "content": "made up"}],
                             output_format=CalcReading)
     assert reply.parsed is None and len(engine.calls) == 1
+
+
+def test_every_report_s_narrative_call_is_sized_without_a_call(made_up,
+                                                               capsys):
+    """RI-175: ``--size-narratives`` sizes the model-first narrative call
+    of every report in the corpus folder, sent text first, and writes the
+    counts; no engine is called (there is none)."""
+    pytest.importorskip("planlens.document.roles")
+    out = made_up / "out"
+    code = dry.main(["--size-narratives", "--max-request-tokens-in",
+                     "100000", "--raw-dir", str(made_up / "raw"),
+                     "--out-dir", str(out)])
+    assert code == rcl.OK
+    sizes = json.loads((out / "narrative_sizes.json").read_text(
+        encoding="utf-8"))
+    assert (sizes["route"], sizes["limit"]) == ("pictures", 100000)
+    (row,) = sizes["reports"]
+    assert row["id"] == "R01" and row["calls"] == 1
+    assert row["sent"] == row["chosen"] == 3 and row["left_out"] == 0
+    assert row["text_pages"] + row["pictures"] == 3
+    assert 0 < row["estimated_tokens_in"][0] <= 100000
+    assert not row["over_limit"] and row["problem"] == []
+    printed = capsys.readouterr().out
+    assert "1 of 1 report(s) in one call within the limit" in printed
+    assert not (out / "on").exists()

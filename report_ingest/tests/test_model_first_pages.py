@@ -203,6 +203,93 @@ def test_the_pictures_route_sends_each_page_s_picture_then_its_text(
     assert mfp.pictures_problem(blocks) == ""
 
 
+#: A made-up prose line; three of them are more than today's narrative
+#: reader's 120 characters a page.
+PROSE = "The made-up site is underlain by made-up silty sand over made-up clay."
+
+
+@pytest.fixture()
+def prose_pdf(tmp_path):
+    """Page 0 three lines of prose, page 1 one short line, page 2 none,
+    page 3 prose again."""
+    doc = pymupdf.open()
+    for lines in ((f"MADE-UP PROSE 0 {PROSE}", PROSE, PROSE),
+                  ("MADE-UP FIGURE 1",), (),
+                  (f"MADE-UP PROSE 3 {PROSE}", PROSE, PROSE)):
+        page = doc.new_page()
+        for n, line in enumerate(lines):
+            page.insert_text((72, 72 + 18 * n), line, fontsize=9)
+    path = tmp_path / "prose.pdf"
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+def test_a_page_with_a_usable_text_layer_goes_as_its_text_alone(prose_pdf):
+    """RI-175: a page of today's narrative reader's 120 characters or more
+    is sent as its text, under its page index, with no picture; one with
+    less is sent as a picture with whatever text it has."""
+    from planlens.document import open_document
+
+    from report_ingest.narrative_reader import MIN_TEXT_CHARS
+
+    doc = open_document(str(prose_pdf), name="prose")
+    try:
+        assert len(PROSE) * 3 > MIN_TEXT_CHARS > len("MADE-UP FIGURE 1")
+        assert mfp.text_pages(doc, [0, 1, 2, 3]) == [0, 3]
+        prose = mfp.page_blocks(doc, 3, as_text=True)
+        figure = mfp.page_blocks(doc, 1, as_text=False)
+        blank = mfp.page_blocks(doc, 2, as_text=True)
+        forced = mfp.page_blocks(doc, 1, as_text=True)
+    finally:
+        doc.close()
+    assert [b["type"] for b in prose] == ["text"]
+    start, end = mfp.TEXT_MARKERS
+    body = prose[0]["text"]
+    assert body.startswith("Page 3's text, as the PDF's own text layer")
+    assert body.index(start) < body.index("MADE-UP PROSE 3") < \
+        body.index(end)
+    assert [b["type"] for b in figure] == ["text", "image", "text"]
+    assert figure[0]["text"].startswith("Page 1 (as a picture: it has too "
+                                        "little text")
+    assert "MADE-UP FIGURE 1" in figure[2]["text"]
+    # A page with no text has nothing to send as text, so goes as a picture.
+    assert [b["type"] for b in blank] == ["text", "image", "text"]
+    assert "carries no text" in blank[2]["text"]
+    assert [b["type"] for b in forced] == ["text"]
+
+
+def test_picture_blocks_are_as_they_were_after_the_split_into_helpers(
+        prose_pdf):
+    """The pictures route of every other stage is unchanged: a header, the
+    picture and the page's text, the same words as before RI-175."""
+    from planlens.document import open_document
+
+    doc = open_document(str(prose_pdf), name="prose")
+    try:
+        blocks = mfp.picture_blocks(doc, [0, 2])
+    finally:
+        doc.close()
+    assert [b["type"] for b in blocks] == ["text", "image", "text"] * 2
+    assert blocks[0]["text"] == "Page 0 (picture 1 of 2):"
+    assert blocks[2]["text"].startswith(
+        "Page 0's text, as the PDF's own text layer carries it, between the "
+        "markers:\n" + mfp.TEXT_MARKERS[0] + "\nMADE-UP PROSE 0")
+    assert blocks[2]["text"].endswith(mfp.TEXT_MARKERS[1])
+    assert blocks[5]["text"] == ("Page 2 carries no text: read it from the "
+                                 "picture.")
+
+
+def test_the_text_first_map_sentence_says_how_each_page_is_given():
+    said = mfp.page_map_sentence([0, 3], route="pictures", text_first=True)
+    assert "its text alone" in said and "as a picture" in said
+    assert "0-based" in said
+    assert mfp.page_map_sentence([0, 3], route="pictures") != said
+    # On the PDF route the PDF wording stands.
+    assert mfp.page_map_sentence([0, 3], text_first=True) == \
+        mfp.page_map_sentence([0, 3])
+
+
 # ---------------------------------------------------------------------------
 # piece 3: which exploration a page logs
 # ---------------------------------------------------------------------------
@@ -510,6 +597,42 @@ def test_the_narrative_is_its_pages_the_front_and_the_figures_in_parts():
                                               62: 10, 70: 10},
                                   max_chars=100)
     assert [g.pages for g in budget] == [[0, 3], [60, 61, 62, 70]]
+
+
+def test_the_narrative_s_pages_are_ranked_front_then_its_own_then_figures():
+    """RI-175: what the reader keeps first when not all fit one request."""
+    labels = {0: "cover", 1: "letter", 4: "figure", 6: "narrative",
+              7: "plan", 9: "narrative", 12: "boring_log"}
+    (group,) = mfp.narrative_groups(labels, 20, front_pages=2)
+    assert group.pages == [0, 1, 4, 6, 7, 9]
+    assert group.ranked == [0, 1, 6, 9, 4, 7]
+    assert group.n_front == 2
+    (bound,) = mfp.narrative_groups(labels, 20, front_pages=1,
+                                    window=range(3, 12))
+    assert bound.ranked == [3, 6, 9, 4, 7] and bound.n_front == 1
+    # The ranking is the narrative's alone; no other group has one.
+    assert mfp.PageGroup("logs", [3]).ranked == []
+
+
+def test_on_the_pictures_route_the_narrative_is_one_part():
+    """RI-175: sent text first, it is one call whatever the page count and
+    the text budget; the request's own limit decides what goes."""
+    chars = {3: 50, 60: 60, 61: 10, 62: 10, 70: 10}
+    one = mfp.narrative_groups(LABELS, 100, front_pages=5, max_pages=4,
+                               page_chars=chars, max_chars=100,
+                               route="pictures")
+    assert [g.pages for g in one] == [[0, 1, 2, 3, 4, 60, 61, 62, 70]]
+    assert one[0].part is None
+    split = mfp.narrative_groups(LABELS, 100, front_pages=5, max_pages=4,
+                                 route="pdf")
+    assert len(split) == 3
+    by_route = {route: mfp.group_pages(LABELS, {}, n_pages=100,
+                                       route=route, front_pages=5,
+                                       page_chars=chars, max_chars=100)
+                for route in ("pdf", "pictures")}
+    assert len(by_route["pdf"]["narrative"]) == 2
+    assert [g.pages for g in by_route["pictures"]["narrative"]] == \
+        [[0, 1, 2, 3, 4, 60, 61, 62, 70]]
 
 
 def test_a_bound_report_s_front_is_its_own_first_pages():

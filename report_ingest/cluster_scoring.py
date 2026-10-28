@@ -1086,7 +1086,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         RI-121), each page group's request is estimated before it is sent
         (a picture by its pixels, a PDF page as its text and one picture of
         up to 4,784 tokens, the answer schema) and a group over the limit
-        is cut into smaller groups. None, the default, changes nothing.
+        is cut into smaller groups. The ``narrative`` stage's model-first
+        reader takes it too (BACKLOG RI-175): its one call sends text first
+        and leaves out the last-ranked pages that would take it over (with
+        no limit, today's reader's 150,000-token budget). None, the
+        default, changes nothing on today's path.
     lab_sheets_per_call
         The ``ingest`` stage's lab reader reads an item of more than this
         many pages in calls of at most this many (BACKLOG RI-116), each told
@@ -1649,7 +1653,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             corpus, source, first.model("narrative", model), out,
             narrative_truth, budget=narrative_budget, redo=redo,
             max_reports=max_reports, open_reports=open_narrative_reports,
-            sync=sync, front_pages=narrative_front_pages, first=first)
+            sync=sync, front_pages=narrative_front_pages, first=first,
+            max_request_tokens_in=max_request_tokens_in)
         results["narrative"] = narrative
         lines += _render_narrative(narrative)
 
@@ -3297,7 +3302,9 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                    open_reports: Optional[Sequence[str]],
                    sync: Optional[Any] = None,
                    front_pages: int = 50,
-                   first: Optional[_FirstArm] = None) -> Dict[str, Any]:
+                   first: Optional[_FirstArm] = None,
+                   max_request_tokens_in: Optional[int] = None
+                   ) -> Dict[str, Any]:
     """The narrative reader over every report that has a hand answer.
 
     The stage reads the truth files that are PRESENT and skips every report
@@ -3369,7 +3376,8 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                 from report_ingest.model_first_scoring import first_narrative
                 score, arm = first_narrative(
                     truth, doc, engine, report=rid,
-                    page_route=first.page_route, front_pages=front_pages)
+                    page_route=first.page_route, front_pages=front_pages,
+                    max_request_tokens_in=max_request_tokens_in)
             else:
                 score = score_one_report(truth, doc, engine, budget=budget,
                                          report=rid, front_pages=front_pages)

@@ -289,13 +289,14 @@ def narrative_groups_for(doc: Any, route: str,
                          front_pages: Optional[int] = None
                          ) -> Tuple[List[Any], List[int]]:
     """``(the narrative's groups, the body pages)``: the graph's grouping
-    (:func:`report_ingest.model_first_pages.narrative_groups`, cut to the
-    route's page limit and the narrative's text budget) over the rules'
-    page labels, and the pages whose captions are counted, as the graph
-    picks them from its labels."""
+    (:func:`report_ingest.model_first_pages.narrative_groups`: on the pdf
+    route cut to its page limit and the narrative's text budget, on the
+    pictures route one part, RI-175) over the rules' page labels, and the
+    pages whose captions are counted, as the graph picks them from its
+    labels."""
     from planlens.document.roles import page_roles
 
-    from report_ingest.model_first_pages import (max_pages_per_call,
+    from report_ingest.model_first_pages import (MAX_NARRATIVE_PAGES,
                                                  narrative_groups)
     from report_ingest.narrative_reader import (CHARS_PER_TOKEN,
                                                 INPUT_TOKEN_BUDGET)
@@ -303,9 +304,10 @@ def narrative_groups_for(doc: Any, route: str,
     labels = {int(r.page): str(r.role) for r in page_roles(doc)}
     page_chars = {int(s.page): int(s.n_text_chars) for s in doc.page_map()}
     groups = narrative_groups(labels, doc.n_pages, front_pages=front_pages,
-                              max_pages=max_pages_per_call(route),
+                              max_pages=MAX_NARRATIVE_PAGES,
                               page_chars=page_chars,
-                              max_chars=INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN)
+                              max_chars=INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN,
+                              route=route)
     body = [page for page, role in sorted(labels.items())
             if role in ("narrative", "figure", "plan", "profile", "toc")]
     return groups, body
@@ -313,10 +315,12 @@ def narrative_groups_for(doc: Any, route: str,
 
 def first_narrative(truth: Dict[str, Any], doc: Any, engine: Any, *,
                     report: str = "", page_route: Optional[str] = None,
-                    front_pages: Optional[int] = None
+                    front_pages: Optional[int] = None,
+                    max_request_tokens_in: Optional[int] = None
                     ) -> Tuple[Any, Dict[str, Any]]:
     """``(score, arm)`` for one report's narrative: the model-first reader
-    over the narrative's pages (:func:`narrative_groups_for`)."""
+    over the narrative's pages (:func:`narrative_groups_for`), its request
+    kept under ``max_request_tokens_in`` (RI-175)."""
     from planlens.document.roles import document_outline
 
     from report_ingest.model import GeneralFacts, NaturalHazardFacts
@@ -331,11 +335,14 @@ def first_narrative(truth: Dict[str, Any], doc: Any, engine: Any, *,
         groups, body = narrative_groups_for(doc, route, front_pages)
         blob = read_narrative(doc, groups, engine, report_id=report,
                               route=route, outline=document_outline(doc),
-                              body_pages=body or None, place=_placer(doc))
+                              body_pages=body or None, place=_placer(doc),
+                              max_request_tokens_in=max_request_tokens_in)
     except Exception as exc:                        # score what can be scored
         return NarrativeScore(report=report,
                               error=f"{type(exc).__name__}: {exc}"), arm
     arm = _arm([blob], route)
+    arm["left_out"] = [int(p) for p in blob.get("left_out") or []]
+    arm["warnings"] = list(blob.get("warnings") or ())
     carried = {"pages": [int(p) for p in blob.get("pages") or []],
                "unresolved": len(blob.get("unresolved") or ()),
                "model_calls": int(blob.get("model_calls") or 0),
