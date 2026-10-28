@@ -235,6 +235,9 @@ class TestTheTypedTwins:
         assert result.natural_hazards.siteResponseMention is None
         assert any(u["what"] == "siteResponseMention" and "yes, no, mixed"
                    in u["why"] for u in result.unresolved)
+        assert result.natural_hazards.siteClassNormalized == "D"
+        assert result.natural_hazards.asceSevenVersionNormalized == "7-16"
+        assert result.natural_hazards.reportDateISO == "2026-03-14"
 
     def test_outside_project_is_offered_exactly_what_the_schema_takes(self):
         """BACKLOG RI-174: the owner asks it as a yes-or-no question, so the
@@ -266,9 +269,6 @@ class TestTheTypedTwins:
         assert result.natural_hazards.soilCorrosion == "yes"
         assert any(u["what"] == "outsideProject" and "not one of" in u["why"]
                    for u in result.unresolved)
-        assert result.natural_hazards.siteClassNormalized == "D"
-        assert result.natural_hazards.asceSevenVersionNormalized == "7-16"
-        assert result.natural_hazards.reportDateISO == "2026-03-14"
 
 
 class TestTheTwinsTheCitationCheckKnows:
