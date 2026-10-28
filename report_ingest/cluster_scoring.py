@@ -6215,11 +6215,21 @@ def _item_error_fields(record: Any) -> Dict[str, Any]:
     These are the entries a rate-limit give-up, a refused request or a
     token-brake refusal leave behind: the exception is caught per item so
     the report goes on, and the item has no saved file, so a resume reads
-    it again. Without this field the run file carried no sign of them."""
+    it again. Without this field the run file carried no sign of them.
+
+    A label review that did not finish is one too (BACKLOG RI-173): its
+    ``partial`` entry under ``labels.review``. The vote's labels stand in
+    the record, but nothing was saved, so the report is not finished and a
+    resume asks for the review again; on build e's MF-2 it showed only as
+    that entry, and the report counted as done."""
     rows = []
     for entry in getattr(record, "qa", None) or []:
-        if entry.kind != "skipped" or "could not be read" not in (
-                entry.detail or ""):
+        review_failed = (entry.kind == "partial"
+                         and entry.where == "labels.review"
+                         and "did not finish" in (entry.detail or ""))
+        if not review_failed and (entry.kind != "skipped"
+                                  or "could not be read" not in (
+                                      entry.detail or "")):
             continue
         rows.append({"where": entry.where,
                      "pages": [int(p) for p in (entry.pages or [])],

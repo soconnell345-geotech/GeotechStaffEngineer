@@ -4607,6 +4607,39 @@ class TestAGiveUpIsRetried:
         again = json.loads(run_file.read_text("utf-8"))
         assert "item_errors" not in again
 
+    def test_a_label_review_that_did_not_finish_leaves_the_report_unfinished(
+            self, ingest_cluster, monkeypatch, capsys):
+        """BACKLOG RI-173: a failed label review is a failed item of the
+        ingest stage, in the totals too, and a resume asks for it again --
+        not a report counted as done with only a partial QA entry."""
+        from report_ingest import label_review
+        from report_ingest.tests import test_graph as tg
+
+        _reports, out, scripts = ingest_cluster
+        asked = []
+
+        def fails(*args, **kwargs):
+            asked.append(1)
+            raise RuntimeError("made-up review failure")
+
+        monkeypatch.setattr(label_review, "review_labels", fails)
+        scripts["turns"] = tg.main_script()
+        results = _ingest_run(ingest_cluster, review_mode="all")
+        saved = json.loads((out / "ingest" / "R36" / "run.json")
+                           .read_text("utf-8"))
+        (row,) = saved["item_errors"]
+        assert row["where"] == "labels.review"
+        assert "made-up review failure" in row["detail"]
+        assert "R36" in results["ingest"]["failures"]
+        assert results["ingest"]["per_report"] == []
+        assert results["totals"]["failed_items_by_stage"]["ingest"] == ["R36"]
+        assert not (out / "ingest" / "R36" / "review.json").exists()
+
+        scripts["turns"] = tg.main_script()
+        _ingest_run(ingest_cluster, review_mode="all")
+        assert "already done" not in capsys.readouterr().out
+        assert len(asked) == 2
+
     def test_results_cover_every_finished_report_in_the_folder(
             self, ingest_cluster, monkeypatch):
         from report_ingest.tests import test_graph as tg
