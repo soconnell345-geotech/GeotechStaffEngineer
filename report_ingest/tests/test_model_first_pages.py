@@ -259,6 +259,48 @@ def test_a_page_with_a_usable_text_layer_goes_as_its_text_alone(prose_pdf):
     assert [b["type"] for b in forced] == ["text"]
 
 
+def test_a_scanned_page_with_document_intelligence_text_goes_as_text(
+        prose_pdf):
+    """RI-175 on a scanned report: a page with no text layer whose Azure
+    Document Intelligence text the document carries counts as a text page
+    for the narrative's one call, and that text is what is sent, said to be
+    an optical reading -- so a report scanned throughout is not sent as
+    pictures in parts. A made-up result in DI's documented shape."""
+    from planlens.document import open_document
+    from planlens.document.azure_di import AzureLayout
+
+    lines = [f"MADE-UP SCANNED PAGE {PROSE}", PROSE, PROSE]
+    spans, at = [], 0
+    for text in lines:
+        spans.append({"offset": at, "length": len(text)})
+        at += len(text) + 1
+    result = {"content": "\n".join(lines), "pages": [{
+        "pageNumber": 3, "width": 595 / 72, "height": 842 / 72,
+        "unit": "inch", "words": [],
+        "lines": [{"content": text,
+                   "polygon": [1.0, 1.0 + 0.3 * n, 7.0, 1.0 + 0.3 * n,
+                               7.0, 1.2 + 0.3 * n, 1.0, 1.2 + 0.3 * n],
+                   "spans": [span]}
+                  for n, (text, span) in enumerate(zip(lines, spans))]}]}
+
+    plain = open_document(str(prose_pdf), name="prose")
+    try:
+        assert mfp.text_pages(plain, [0, 1, 2, 3]) == [0, 3]
+    finally:
+        plain.close()
+    doc = open_document(str(prose_pdf), name="prose",
+                        text_source=AzureLayout(result))
+    try:
+        assert mfp.text_pages(doc, [0, 1, 2, 3]) == [0, 2, 3]
+        blocks = mfp.page_blocks(doc, 2, as_text=True)
+    finally:
+        doc.close()
+    assert [b["type"] for b in blocks] == ["text"]
+    body = blocks[0]["text"]
+    assert body.startswith("Page 2's text, as an optical reader read it")
+    assert "MADE-UP SCANNED PAGE" in body and "UNRELIABLE" not in body
+
+
 def test_picture_blocks_are_as_they_were_after_the_split_into_helpers(
         prose_pdf):
     """The pictures route of every other stage is unchanged: a header, the
