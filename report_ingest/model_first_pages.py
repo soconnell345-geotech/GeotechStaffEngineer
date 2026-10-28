@@ -1013,22 +1013,73 @@ def lab_groups(pages: Sequence[int],
     return out
 
 
+#: A kind that says the page is a title page or a cover sheet ("title page
+#: of a calculation").
+_TITLE_PAGE = re.compile(r"\b(?:title|cover)\s+(?:page|sheet)\b", re.I)
+
+
+def _kind(record: Optional[Mapping[str, Any]]) -> str:
+    return str(_described(record).get("kind") or "")
+
+
+def _program_named(record: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """The program the page's description names (its ``names`` field), by
+    the calculation reader's program patterns; None when it names none."""
+    from report_ingest.calc_reader import _program_in
+
+    for piece in re.split(r"[;|]", str(_described(record).get("names")
+                                       or "")):
+        got = _program_in(piece)
+        if got is not None:
+            return got[0].lower()
+    return None
+
+
 def calc_starts(pages: Sequence[int],
                 descriptions: Mapping[int, Mapping[str, Any]]) -> List[int]:
     """The pages of a run on which a description says a new printout
-    begins: the first sheet of a set of two or more ("sheet 1 of 7"), or a
-    one-sheet set ("page 1 of 1") whose title differs from the page
-    before's -- a program that prints "page 1 of 1" on every page of one
-    printout keeps its title. A page with no sheet number begins nothing."""
+    begins (BACKLOG RI-176):
+
+    * the first sheet of a set of two or more ("sheet 1 of 7"), or a
+      one-sheet set ("page 1 of 1") whose title differs from the page
+      before's -- a program that prints "page 1 of 1" on every page of one
+      printout keeps its title;
+    * a page whose description's ``exploration`` field names an
+      exploration (:func:`exploration_id`) other than the one the printout
+      so far names -- a program run once for each boring or sounding,
+      printed back to back (a description saved before the field existed
+      says nothing here: the codes a calculation page lists are figures,
+      tables and exhibits as often as explorations);
+    * a page that names a program other than the one the printout so far
+      names;
+    * a title page or cover sheet, by its kind, after a page that is not
+      one.
+
+    A page that says it is continued from the page before begins nothing.
+    A changed title alone begins nothing: a printout's tables and charts
+    carry titles of their own ("allowable capacity", "load against
+    settlement"), and cutting on them would read one printout as many."""
     out: List[int] = []
     before: Optional[Mapping[str, Any]] = None
-    for n, page in enumerate(pages):
-        record = descriptions.get(int(page))
+    hole: Optional[str] = None
+    program: Optional[str] = None
+    for n, page in enumerate(int(p) for p in pages):
+        record = descriptions.get(page)
         sheet = sheet_of(record)
-        if n and sheet and sheet[0] == 1 and not carries_on(record) \
-                and (sheet[1] > 1 or _title_key(record)
-                     != _title_key(before)):
-            out.append(int(page))
+        here = exploration_id(_described(record).get("exploration"))
+        made_by = _program_named(record)
+        if n and not carries_on(record) and (
+                (sheet and sheet[0] == 1
+                 and (sheet[1] > 1
+                      or _title_key(record) != _title_key(before)))
+                or (here and hole and here != hole)
+                or (made_by and program and made_by != program)
+                or (_TITLE_PAGE.search(_kind(record))
+                    and not _TITLE_PAGE.search(_kind(before)))):
+            out.append(page)
+            hole = program = None
+        hole = here or hole
+        program = made_by or program
         before = record
     return out
 
@@ -1052,8 +1103,9 @@ def calc_groups(pages: Sequence[int], doc: Any = None,
 
     Two signals, and a new printout begins where EITHER says so:
 
-    * the descriptions' sheet numbers (:func:`calc_starts`), which see a
-      printout's "sheet 1 of n" even where two printouts carry one title;
+    * the descriptions (:func:`calc_starts`): a printout's "sheet 1 of n",
+      seen even where two printouts carry one title, another exploration
+      or program, a title page;
     * today's page heads (``calc_reader.split_calc_runs``, when the document
       is at hand): a title naming a different calculation, a different
       program or a fresh banner, which see a program's output that numbers
@@ -1077,7 +1129,7 @@ def calc_groups(pages: Sequence[int], doc: Any = None,
                      for part in _balanced(piece, MAX_RUN_PAGES)]
         for part in parts:
             why = ("a run of calculation pages" if part[0] == run[0]
-                   else "the first sheet of a set, by its description"
+                   else "a new printout, by its description"
                    if part[0] in starts else
                    "a new printout by its head, or a balanced cut")
             out.append(PageGroup("calc", list(part), why=why,

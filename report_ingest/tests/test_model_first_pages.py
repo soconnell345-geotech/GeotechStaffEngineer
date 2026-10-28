@@ -534,7 +534,46 @@ def test_calc_printouts_start_at_a_described_first_sheet():
     groups = mfp.calc_groups(sorted(descriptions), None, descriptions)
     assert [g.pages for g in groups] == [[200, 201, 202], [203, 204],
                                          [205, 206], [207]]
-    assert groups[3].why == "the first sheet of a set, by its description"
+    assert groups[3].why == "a new printout, by its description"
+
+
+def test_printouts_back_to_back_without_sheet_numbers_are_cut_apart():
+    """RI-176: two printouts back to back with no sheet numbers are read
+    apart by what their pages' descriptions say -- another exploration,
+    another program, a title page -- and a printout's own charts, each
+    with a title of its own, stay one printout. Made-up pages."""
+    def page(title="", kind="calculation printout from a program",
+             exploration="", names=""):
+        return _e(exploration, title=title, kind=kind, names=names)
+
+    by_hole = {500: page("MADE-UP ANALYSIS", exploration="QX-1"),
+               501: page(kind="data listing page"),
+               502: page("MADE-UP SUMMARY", exploration="none printed"),
+               503: page("MADE-UP ANALYSIS", exploration="QX-2"),
+               504: page(kind="data listing page")}
+    assert mfp.calc_starts(sorted(by_hole), by_hole) == [503]
+    by_program = {510: page("MADE-UP INPUT", names="LPILE"),
+                  511: page("MADE-UP OUTPUT"),
+                  512: page("MADE-UP INPUT", names="Slide2; a made-up rule"),
+                  513: page("MADE-UP OUTPUT")}
+    assert mfp.calc_starts(sorted(by_program), by_program) == [512]
+    title_pages = {520: page("MADE-UP CALCULATION",
+                             kind="title page of a calculation"),
+                   521: page("MADE-UP TABLE"),
+                   522: page("MADE-UP CALCULATION",
+                             kind="title page of a calculation"),
+                   523: page("MADE-UP TABLE")}
+    assert mfp.calc_starts(sorted(title_pages), title_pages) == [522]
+    charts = {530: page("MADE-UP PILE CAPACITY", kind="chart page"),
+              531: page("MADE-UP SKIN FRICTION CAPACITY", kind="chart page"),
+              532: page("MADE-UP LOAD AGAINST SETTLEMENT", kind="chart page")}
+    assert mfp.calc_starts(sorted(charts), charts) == []
+
+    every = {**by_hole, **by_program}
+    groups = mfp.calc_groups(sorted(every), None, every)
+    assert [g.pages for g in groups] == [[500, 501, 502], [503, 504],
+                                         [510, 511], [512, 513]]
+    assert groups[1].why == "a new printout, by its description"
 
 
 def test_calc_heads_run_over_the_whole_run_then_the_descriptions_cut(
@@ -556,7 +595,7 @@ def test_calc_heads_run_over_the_whole_run_then_the_descriptions_cut(
                                          [304, 305, 306, 307]]
     assert [g.why for g in groups] == [
         "a run of calculation pages",
-        "the first sheet of a set, by its description",
+        "a new printout, by its description",
         "a new printout by its head, or a balanced cut"]
 
 
