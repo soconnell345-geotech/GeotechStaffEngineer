@@ -673,6 +673,9 @@ def _attempts_fields(earlier: Sequence[Dict[str, Any]],
     total: Dict[str, Any] = {"attempts": len(costs)}
     for key in _ATTEMPT_SUMS:
         total[key] = sum(_n(c.get(key)) for c in costs)
+    # The one number a stop check reads: plain input, cache writes and
+    # cache reads together (BACKLOG RI-171).
+    total["tokens_in"] = tokens_in(total)
     kinds: Dict[str, int] = {}
     for c in costs:
         by_kind = c.get("failed_by_kind")

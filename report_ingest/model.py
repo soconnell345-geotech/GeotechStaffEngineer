@@ -827,7 +827,9 @@ class ResumedSteps(BaseModel):
                     "when they were made, as their saved files say; none of "
                     "them was made by this run")
     saved_input_tokens: int = Field(
-        default=0, ge=0, description="their input tokens, likewise")
+        default=0, ge=0,
+        description="their input tokens, likewise: every input part their "
+                    "files carry, plain, cache writes and cache reads")
     saved_output_tokens: int = Field(
         default=0, ge=0, description="their output tokens, likewise")
     saved_dollars: float = Field(
@@ -887,7 +889,9 @@ class DocumentFacts(BaseModel):
                     "error included; a step taken from the folder is not "
                     "in it (see resumed)")
     input_tokens: int = Field(
-        default=0, ge=0, description="this run's input tokens")
+        default=0, ge=0,
+        description="this run's input tokens: the plain input, the cache "
+                    "writes and the cache reads (BACKLOG RI-171)")
     output_tokens: int = Field(
         default=0, ge=0, description="this run's output tokens")
     dollars: float = Field(

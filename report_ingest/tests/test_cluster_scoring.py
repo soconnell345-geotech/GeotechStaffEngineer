@@ -4290,6 +4290,25 @@ class TestTokenBrake:
         assert (total["cache_write_tokens"], cs._tokens_of(total)) == (
             700, 1054)
 
+    def test_all_attempts_carries_one_tokens_in_number(self):
+        """BACKLOG RI-171: a run file's stop check reads one number off
+        ``all_attempts``, every attempt's plain input, cache writes and
+        cache reads together. Made-up counts."""
+        earlier = [{"run_date": "2027-01-15", "ended": "error",
+                    "seconds": 3.0,
+                    "cost": {"calls": 2, "input_tokens": 6,
+                             "cache_write_tokens": 1500,
+                             "cache_read_tokens": 200}},
+                   {"run_date": "2027-01-16", "ended": "token_brake",
+                    "seconds": 2.0, "cost": {"calls": 1, "input_tokens": 90}}]
+        now = {"calls": 3, "input_tokens": 4, "cache_write_tokens": 700,
+               "cache_read_tokens": 300, "output_tokens": 50}
+        total = cs._attempts_fields(earlier, now, 4.0)["all_attempts"]
+        assert total["tokens_in"] == 6 + 1500 + 200 + 90 + 4 + 700 + 300
+        assert total["tokens_in"] == cs._attempts_in(earlier) + 1004
+        assert (total["input_tokens"], total["cache_write_tokens"],
+                total["cache_read_tokens"]) == (100, 2200, 500)
+
     def test_the_cost_line_shows_the_three_parts(self):
         from report_ingest.engine import CostMeter, Usage, tokens_in_words
 
