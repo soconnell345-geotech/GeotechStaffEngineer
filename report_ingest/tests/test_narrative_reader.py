@@ -239,6 +239,37 @@ class TestTheTypedTwins:
         assert result.natural_hazards.asceSevenVersionNormalized == "7-16"
         assert result.natural_hazards.reportDateISO == "2026-03-14"
 
+    def test_outside_project_is_offered_exactly_what_the_schema_takes(self):
+        """BACKLOG RI-174: the owner asks it as a yes-or-no question, so the
+        prompt offers no "mixed", and every word it offers GeneralFacts
+        takes."""
+        from typing import get_args
+
+        from report_ingest.narrative_reader import (
+            VOCABULARIES, _vocabulary_block,
+        )
+
+        offered = VOCABULARIES["outsideProject"]
+        assert "mixed" not in offered
+        literal = next(arg for arg in get_args(
+            GeneralFacts.model_fields["outsideProject"].annotation)
+            if arg is not type(None))
+        assert set(get_args(literal)) == set(offered)
+        assert "  outsideProject: yes | no | unclear" in _vocabulary_block()
+
+    def test_a_mixed_outside_project_is_refused_and_the_rest_kept(self, doc):
+        # Build e lost a whole narrative here: "mixed" passed the prompt's
+        # list and then failed GeneralFacts.
+        reading = full_reading(outsideProject="mixed", soilCorrosion="yes")
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert result.general.outsideProject is None
+        assert result.general.outsideProjectAnswer is None
+        assert result.general.projectName == "Rosewood Terrace Development"
+        assert result.natural_hazards.soilCorrosion == "yes"
+        assert any(u["what"] == "outsideProject" and "not one of" in u["why"]
+                   for u in result.unresolved)
+
 
 class TestTheTwinsTheCitationCheckKnows:
     """RI-114: which twin names a citation may carry, read off the schema."""

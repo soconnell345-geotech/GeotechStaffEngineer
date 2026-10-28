@@ -105,7 +105,8 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
-from report_ingest.engine import LARGE_REQUEST_FRACTION, CallCeilingReached
+from report_ingest.engine import (LARGE_REQUEST_FRACTION, TOKENS_IN_PARTS,
+                                  CallCeilingReached, tokens_in)
 from report_ingest.lab_reader import split_lab_items
 from report_ingest.log_holes import (missing_holes_qa, sort_rows_by_hole,
                                      split_log_items)
@@ -341,11 +342,20 @@ class _Spend:
     (BACKLOG RI-125). The counts above are this run's; :meth:`resumed` is
     the record's account of the steps that came off disk and of the whole
     report's cost.
+
+    TOKENS IN are all three input counts (BACKLOG RI-171): the plain input,
+    the cache writes and the cache reads, kept apart here and summed by
+    :attr:`tokens_in`, which is what the record's ``input_tokens`` says. A
+    step's own cost may leave a part out (a reader's leaves out the cache
+    writes), so :meth:`settle` tops each part up from the tally, which saw
+    every reply's usage whole.
     """
 
     def __init__(self, tally: Optional["_Tally"] = None) -> None:
         self.calls = 0
         self.input_tokens = 0
+        self.cache_write_tokens = 0
+        self.cache_read_tokens = 0
         self.output_tokens = 0
         self.dollars = 0.0
         self.seconds = 0.0
@@ -360,23 +370,32 @@ class _Spend:
         self.readings = 0
         self.readings_reused = 0
 
+    @property
+    def tokens_in(self) -> int:
+        """This run's input tokens: plain, cache writes and cache reads."""
+        return tokens_in(self)
+
     def add(self, cost: Optional[Dict[str, Any]]) -> None:
         if not cost:
             return
         self.calls += int(cost.get("calls") or 0)
-        self.input_tokens += int(cost.get("input_tokens") or 0)
+        for part in TOKENS_IN_PARTS:
+            setattr(self, part, getattr(self, part) + int(cost.get(part)
+                                                          or 0))
         self.output_tokens += int(cost.get("output_tokens") or 0)
         self.dollars += float(cost.get("dollars") or 0.0)
         self.seconds += float(cost.get("seconds") or 0.0)
 
     def reuse(self, step: str, cost: Optional[Dict[str, Any]]) -> None:
         """A step taken from the folder: no call of this run. Its saved
-        file's cost is kept apart, for the whole report's."""
+        file's cost is kept apart, for the whole report's; its input is its
+        tokens in, every part the file carries."""
         if step not in self.reused:
             self.reused.append(step)
         cost = cost if isinstance(cost, dict) else {}
-        for key in ("calls", "input_tokens", "output_tokens"):
+        for key in ("calls", "output_tokens"):
             self.saved[key] += int(cost.get(key) or 0)
+        self.saved["input_tokens"] += tokens_in(cost)
         self.saved["dollars"] += float(cost.get("dollars") or 0.0)
 
     def hand_in(self, step: str, blob: Dict[str, Any],
@@ -397,7 +416,7 @@ class _Spend:
         """A bound document's run, into its parent's: its calls are this
         run's, and the steps it took from its folder are counted too."""
         self.add({"calls": inner.calls,
-                  "input_tokens": inner.input_tokens,
+                  **{part: getattr(inner, part) for part in TOKENS_IN_PARTS},
                   "output_tokens": inner.output_tokens,
                   "dollars": inner.dollars,
                   "seconds": inner.seconds})
@@ -423,24 +442,27 @@ class _Spend:
             saved_output_tokens=saved["output_tokens"],
             saved_dollars=round(saved["dollars"], 5),
             report_calls=self.calls + saved["calls"],
-            report_input_tokens=self.input_tokens + saved["input_tokens"],
+            report_input_tokens=self.tokens_in + saved["input_tokens"],
             report_output_tokens=self.output_tokens + saved["output_tokens"],
             report_dollars=round(self.dollars + saved["dollars"], 5))
 
-    def mark(self) -> Tuple[int, Optional[Dict[str, Any]]]:
+    def mark(self) -> Tuple[int, Optional[Dict[str, Any]], Dict[str, int]]:
         """Where a step starts, for :meth:`settle` and :meth:`cut_short`."""
         return (self.calls,
-                self.tally.mark() if self.tally is not None else None)
+                self.tally.mark() if self.tally is not None else None,
+                {part: getattr(self, part) for part in TOKENS_IN_PARTS})
 
-    def settle(self, mark: Tuple[int, Optional[Dict[str, Any]]]) -> None:
+    def settle(self, mark: Tuple[int, Optional[Dict[str, Any]],
+                                 Dict[str, int]]) -> None:
         """Count what a step spent that it did not hand in itself.
 
         A step that did not finish handed nothing in: all it spent is
         counted. One that did is topped up with the calls it left out --
-        sent and failed, which have no reply to count -- so no call is
-        counted twice and none is missed.
+        sent and failed, which have no reply to count -- and with each
+        input part its own cost left out (a reader's leaves out the cache
+        writes), so nothing is counted twice and nothing is missed.
         """
-        before, tallied = mark
+        before, tallied, parts = mark
         if tallied is None or self.tally is None:
             return
         spent = self.tally.since(tallied)
@@ -450,6 +472,10 @@ class _Spend:
         missed = int(spent["calls"]) - (self.calls - before)
         if missed > 0:
             self.calls += missed
+        for part in TOKENS_IN_PARTS:
+            left = int(spent[part]) - (getattr(self, part) - parts[part])
+            if left > 0:
+                setattr(self, part, getattr(self, part) + left)
 
     def cut_short(self, mark: Tuple[int, Optional[Dict[str, Any]]]) -> bool:
         """Did the ceiling refuse a call since ``mark``? A voter inside a
@@ -469,11 +495,14 @@ class _Tally:
     failed is a call, as the ceiling counts it; a refused one never went out.
     """
 
-    FIELDS = ("calls", "input_tokens", "output_tokens", "dollars", "seconds")
+    FIELDS = ("calls", "input_tokens", "cache_write_tokens",
+              "cache_read_tokens", "output_tokens", "dollars", "seconds")
 
     def __init__(self) -> None:
         self.calls = 0
         self.input_tokens = 0
+        self.cache_write_tokens = 0
+        self.cache_read_tokens = 0
         self.output_tokens = 0
         self.dollars = 0.0
         self.seconds = 0.0
@@ -486,7 +515,9 @@ class _Tally:
         self.calls += 1
         usage = getattr(reply, "usage", None)
         if usage is not None:
-            self.input_tokens += int(usage.input_tokens or 0)
+            for part in TOKENS_IN_PARTS:
+                setattr(self, part, getattr(self, part)
+                        + int(getattr(usage, part, 0) or 0))
             self.output_tokens += int(usage.output_tokens or 0)
             self.dollars += float(usage.dollars(getattr(reply, "model", "")
                                                 or ""))
@@ -900,7 +931,7 @@ def ingest_report(source: Any, engine: Any, *,
         _note_cuts(first_run, qa)      # the bound reports' cuts counted too
     record.qa.extend(qa)
     record.document.model_calls = spend.calls
-    record.document.input_tokens = spend.input_tokens
+    record.document.input_tokens = spend.tokens_in          # RI-171
     record.document.output_tokens = spend.output_tokens
     record.document.dollars = round(spend.dollars, 5)
     record.document.seconds = round(time.time() - started, 1)
@@ -2204,7 +2235,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     child.project = _project_from(child)
     child.qa.extend(qa)
     child.document.model_calls = inner_spend.calls
-    child.document.input_tokens = inner_spend.input_tokens
+    child.document.input_tokens = inner_spend.tokens_in    # RI-171
     child.document.output_tokens = inner_spend.output_tokens
     child.document.dollars = round(inner_spend.dollars, 5)
     child.document.seconds = round(time.time() - started, 1)
@@ -2894,7 +2925,8 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
 
     The pages are grouped from the labels and the page descriptions
     (:func:`report_ingest.model_first_pages.group_pages`, the narrative's
-    parts cut to its route's page limit and its text budget), within
+    parts cut to the PDF page limit and its text budget on the pdf route,
+    one part sent text first on the pictures route, RI-175), within
     ``window`` when one is given. A unit's pages are every page its calls
     carry, but the narrative's: its pages are those labelled its own
     (cover, letter, contents, narrative and figures), and the front pages

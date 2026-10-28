@@ -138,6 +138,87 @@ class TestAStepCutShort:
         assert path.is_file()
 
 
+class TestTheRecordCountsEveryInputToken:
+    """BACKLOG RI-171: the record's input_tokens is plain input, cache
+    writes and cache reads, whichever of them a step's own cost left out.
+    Made-up counts."""
+
+    @staticmethod
+    def _cached():
+        from report_ingest.engine import Usage
+
+        return FakeEngine([{"text": "a"}], usage=Usage(
+            input_tokens=4, output_tokens=50, cache_write_tokens=1700,
+            cache_read_tokens=300))
+
+    def test_a_step_that_handed_in_no_cost_is_counted_whole(self):
+        from report_ingest.graph import _Spend, _Tally
+
+        tally = _Tally()
+        engine = tally.wrap(self._cached())
+        spend = _Spend(tally)
+        mark = spend.mark()
+        _ask(engine)
+        spend.settle(mark)
+        assert (spend.input_tokens, spend.cache_write_tokens,
+                spend.cache_read_tokens) == (4, 1700, 300)
+        assert spend.tokens_in == 2004
+
+    def test_a_cache_write_the_step_s_cost_left_out_is_topped_up(self):
+        """A reader's own cost carries plain input and cache reads only."""
+        from report_ingest.graph import _Spend, _Tally
+
+        tally = _Tally()
+        engine = tally.wrap(self._cached())
+        spend = _Spend(tally)
+        mark = spend.mark()
+        _ask(engine)
+        spend.add({"calls": 1, "input_tokens": 4, "cache_read_tokens": 300,
+                   "output_tokens": 50})
+        spend.settle(mark)
+        assert spend.calls == 1 and spend.tokens_in == 2004
+        # Handed in whole, nothing is counted twice.
+        again = _Spend(tally)
+        mark = again.mark()
+        _ask(tally.wrap(self._cached()))
+        again.add({"calls": 1, "input_tokens": 4, "cache_write_tokens": 1700,
+                   "cache_read_tokens": 300, "output_tokens": 50})
+        again.settle(mark)
+        assert again.tokens_in == 2004
+
+    def test_a_bound_run_and_a_saved_step_count_their_tokens_in(self):
+        from report_ingest.graph import _Spend
+
+        inner = _Spend()
+        inner.add({"calls": 1, "input_tokens": 5, "cache_write_tokens": 900,
+                   "cache_read_tokens": 100})
+        outer = _Spend()
+        outer.absorb(inner)
+        assert outer.tokens_in == 1005
+        outer.reuse("triage", {"calls": 2, "input_tokens": 8,
+                               "cache_write_tokens": 600,
+                               "cache_read_tokens": 40})
+        resumed = outer.resumed()
+        assert resumed.saved_input_tokens == 648
+        assert resumed.report_input_tokens == 1005 + 648
+
+    def test_the_record_says_the_run_s_tokens_in(self, pdf, tmp_path):
+        from report_ingest.engine import Usage
+        from report_ingest.graph import ingest_report
+        from report_ingest.tests.test_graph import full_script
+
+        engine = FakeEngine(full_script(), usage=Usage(
+            input_tokens=4, output_tokens=50, cache_write_tokens=1700,
+            cache_read_tokens=300))
+        ingest_report(str(pdf), engine, out_dir=str(tmp_path),
+                      report_id="SYN")
+        record = json.loads((tmp_path / "report.record.json")
+                            .read_text(encoding="utf-8"))
+        document = record["document"]
+        assert document["model_calls"] == engine.n_calls
+        assert document["input_tokens"] == 2004 * engine.n_calls
+
+
 @pytest.fixture(scope="module")
 def pdf(tmp_path_factory):
     pytest.importorskip("planlens.document.roles")

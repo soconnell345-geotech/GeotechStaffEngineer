@@ -75,7 +75,9 @@ WHAT IT WRITES into ``out_dir``::
                           file, qa.json, and run.json with the counts
                           and the cost of every attempt at the report
     ingest/reports.db     the library index over every report ingested
-    results.json          every summary table as data
+    results.json          every summary table as data; its ``totals`` add
+                          up every stage, with each stage's failed items
+                          and failed requests (BACKLOG RI-173)
     RESULTS.md            the same tables to read, and to bring back
 
 ``RESULTS.md`` is the file to bring home. It carries IDs, labels, counts and
@@ -97,7 +99,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.corpus import Corpus
-from report_ingest.engine import CallCeilingReached
+from report_ingest.engine import (
+    CallCeilingReached, tokens_in, tokens_in_words,
+)
 from report_ingest.mirror import DEFAULT_FOLDER, Mirror
 from report_ingest.scoring import (
     CHECKPOINT, GATE, KEY_CONTENT, OOS_BLIND, OOS_OPEN, Scores,
@@ -571,9 +575,9 @@ def _stamp_arm(folder: Path, first: _FirstArm) -> None:
 
 
 def _tokens_of(cost: Dict[str, Any]) -> int:
-    """Input plus output tokens of a run file's ``cost``."""
-    return (int(cost.get("input_tokens") or 0)
-            + int(cost.get("output_tokens") or 0))
+    """Tokens in (plain, cache write and cache read, BACKLOG RI-171) plus
+    output tokens of a run file's ``cost``."""
+    return tokens_in(cost) + _n(cost.get("output_tokens"))
 
 
 #: What an earlier attempt's entry in a report's ``run.json`` keeps of the
@@ -637,12 +641,13 @@ def _earlier_attempts(blob: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _attempts_in(earlier: Sequence[Dict[str, Any]]) -> int:
-    """The input tokens the earlier attempts at a report sent."""
+    """The tokens in (plain, cache write and cache read, BACKLOG RI-171)
+    the earlier attempts at a report sent."""
     total = 0
     for row in earlier:
         cost = row.get("cost")
         if isinstance(cost, dict):
-            total += _n(cost.get("input_tokens"))
+            total += tokens_in(cost)
     return total
 
 
@@ -668,6 +673,9 @@ def _attempts_fields(earlier: Sequence[Dict[str, Any]],
     total: Dict[str, Any] = {"attempts": len(costs)}
     for key in _ATTEMPT_SUMS:
         total[key] = sum(_n(c.get(key)) for c in costs)
+    # The one number a stop check reads: plain input, cache writes and
+    # cache reads together (BACKLOG RI-171).
+    total["tokens_in"] = tokens_in(total)
     kinds: Dict[str, int] = {}
     for c in costs:
         by_kind = c.get("failed_by_kind")
@@ -693,11 +701,13 @@ class _TokenBrake:
     meter reads 0 (BACKLOG RI-120).
 
     :meth:`wrap` puts an engine behind it: a call that would start once the
-    report's meter shows ``report_in`` input tokens, or ``total_left``
-    tokens (input plus output) spent, is refused with
+    report's meter shows ``report_in`` tokens in, or ``total_left`` tokens
+    (in plus output) spent, is refused with
     :class:`~report_ingest.engine.CallCeilingReached` before anything is
     sent. The graph already treats that as a step cut short, not failed.
-    Both None wraps nothing.
+    Both None wraps nothing. Tokens in are plain input plus cache writes
+    plus cache reads (BACKLOG RI-171): on Foundry's Claude route nearly all
+    input arrives as the two cache counts.
 
     ``earlier_in`` is what the report's earlier attempts sent (BACKLOG
     RI-124): the report limit counts it with this attempt's meter, so a
@@ -732,12 +742,12 @@ class _TokenBrake:
         return out
 
     def check(self) -> None:
-        used_in = int(self.meter.input_tokens)
+        used_in = tokens_in(self.meter)
         report_used = used_in + self.earlier_in
         if self.report_in is not None and report_used >= self.report_in:
             self.tripped = "max_report_tokens_in"
             raise CallCeilingReached(
-                f"the report has sent {report_used:,} input tokens"
+                f"the report has sent {report_used:,} tokens in"
                 + (" over this and its earlier attempts" if self.earlier_in
                    else "")
                 + f", at its {self.report_in:,} ceiling")
@@ -749,16 +759,19 @@ class _TokenBrake:
 
     def fields(self) -> Dict[str, Any]:
         """The run file's entry; empty unless a call was refused. Its
-        ``input_tokens`` and ``output_tokens`` are this attempt's; on a
-        report with earlier attempts ``earlier_input_tokens`` says what
-        they sent, which the report limit counted too (BACKLOG RI-124)."""
+        counts are this attempt's: ``tokens_in`` (what the limits count)
+        and its three parts, and ``output_tokens`` (BACKLOG RI-171); on a
+        report with earlier attempts ``earlier_tokens_in`` says what they
+        sent, which the report limit counted too (BACKLOG RI-124)."""
         if self.tripped is None:
             return {}
-        entry = {"limit": self.tripped,
-                 "input_tokens": int(self.meter.input_tokens),
-                 "output_tokens": int(self.meter.output_tokens)}
+        entry: Dict[str, Any] = {"limit": self.tripped,
+                                 "tokens_in": tokens_in(self.meter)}
+        for key in ("input_tokens", "cache_write_tokens",
+                    "cache_read_tokens", "output_tokens"):
+            entry[key] = _n(getattr(self.meter, key, 0))
         if self.earlier_in:
-            entry["earlier_input_tokens"] = self.earlier_in
+            entry["earlier_tokens_in"] = self.earlier_in
         return {"token_brake": entry}
 
 
@@ -1051,12 +1064,15 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         much. Funhouse publishes no per-token price for a tier, so this only
         bites if a price is known; ``max_reports`` is the reliable cap.
     max_total_tokens
-        The same stop in tokens (input plus output), for a route whose
+        The same stop in tokens (in plus output), for a route whose
         dollar meter reads 0 (Foundry, BACKLOG RI-120). Checked before each
         report, and inside the ``ingest`` stage before each model call.
-        None, the default, sets no limit.
+        None, the default, sets no limit. Tokens IN, here and in every
+        limit below, are plain input plus cache writes plus cache reads
+        (BACKLOG RI-171): on Foundry's Claude route nearly all input
+        arrives as the two cache counts.
     max_report_tokens_in
-        The ``ingest`` stage's limit on one report's input tokens. A model
+        The ``ingest`` stage's limit on one report's tokens in. A model
         call that would start past it is refused (``CallCeilingReached``,
         so the step it belonged to is cut short and not saved), and the
         run stops after that report. It counts EVERY attempt at the report
@@ -1073,7 +1089,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         RI-121), each page group's request is estimated before it is sent
         (a picture by its pixels, a PDF page as its text and one picture of
         up to 4,784 tokens, the answer schema) and a group over the limit
-        is cut into smaller groups. None, the default, changes nothing.
+        is cut into smaller groups. The ``narrative`` stage's model-first
+        reader takes it too (BACKLOG RI-175): its one call sends text first
+        and leaves out the last-ranked pages that would take it over (with
+        no limit, today's reader's 150,000-token budget). None, the
+        default, changes nothing on today's path.
     lab_sheets_per_call
         The ``ingest`` stage's lab reader reads an item of more than this
         many pages in calls of at most this many (BACKLOG RI-116), each told
@@ -1579,7 +1599,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
               f"{len(review['changes'])} change(s), "
               f"{review['tool_calls']}/{review['budget']} tool calls, "
               f"{blob['cost']['calls']} model calls, "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
 
@@ -1636,7 +1656,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             corpus, source, first.model("narrative", model), out,
             narrative_truth, budget=narrative_budget, redo=redo,
             max_reports=max_reports, open_reports=open_narrative_reports,
-            sync=sync, front_pages=narrative_front_pages, first=first)
+            sync=sync, front_pages=narrative_front_pages, first=first,
+            max_request_tokens_in=max_request_tokens_in)
         results["narrative"] = narrative
         lines += _render_narrative(narrative)
 
@@ -1706,6 +1727,9 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         results["range_labels"] = scored_ranges
         lines += _render_ranges(scored_ranges)
 
+    # The run's totals over every stage, with each stage's failed items and
+    # requests (BACKLOG RI-173): what reads the run reads these.
+    _fold_totals(results)
     (out / "results.json").write_text(json.dumps(_plain(results), indent=2),
                                       encoding="utf-8")
     (out / "RESULTS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -1733,7 +1757,107 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         print(f"per-report descriptions and section labels in "
               f"{out / 'ranges'}")
     sync.report()
+    print(_failures_line(results["totals"]))
     return results
+
+
+#: Each stage's per-item rows in ``results.json`` and the key naming the
+#: item (BACKLOG RI-173). The labels stage's rows are its ``triage`` list.
+_STAGE_ITEMS: Dict[str, Tuple[str, str]] = {
+    "labels": ("triage", "id"), "logs": ("per_log", "log_id"),
+    "lab": ("per_sheet", "sheet_id"), "calc": ("per_calc", "calc_id"),
+    "soundings": ("per_sounding", "sounding_id"),
+    "narrative": ("per_report", "id"), "vision_labels": ("per_report", "id"),
+    "vote": ("per_report", "id"), "ingest": ("per_report", "id"),
+    "range_labels": ("per_report", "id"),
+}
+
+
+def _stage_costs(stage: str,
+                 scored: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The cost totals one stage's results carry: the labels stage's
+    ``totals``, the ingest's over every report finished or not, the range
+    labels' describer and labeller apart; none for the vote."""
+    if stage == "labels":
+        return [scored["totals"]]
+    cost = scored.get("cost_every_report") or scored.get("cost")
+    if not isinstance(cost, dict):
+        return []
+    if stage == "range_labels":
+        return [part for part in cost.values() if isinstance(part, dict)]
+    return [cost]
+
+
+def _stage_failures(stage: str,
+                    scored: Dict[str, Any]) -> Tuple[List[str], int]:
+    """The items one stage could not read, sorted, and how many it tried:
+    every entry of its ``failures`` and every row carrying an ``error``."""
+    failed = {str(key) for key in (scored.get("failures") or {})}
+    tried = set(failed)
+    rows, id_key = _STAGE_ITEMS.get(stage, ("per_report", "id"))
+    for row in scored.get(rows) or ():
+        if not isinstance(row, dict):
+            continue
+        item = str(row.get(id_key))
+        tried.add(item)
+        if row.get("error"):
+            failed.add(item)
+    return sorted(failed), len(tried)
+
+
+def _fold_totals(results: Dict[str, Any]) -> None:
+    """``results["totals"]`` over EVERY stage that ran (BACKLOG RI-173).
+
+    The totals were the labels stage's alone, so a run whose other stages
+    failed requests and lost items still read 0 failed there, and what reads
+    the totals reported every arm ok. They now add every stage's cost totals
+    and carry each stage's failed items (``failed_items_by_stage``, out of
+    ``items_by_stage``) and failed requests (``failed_requests_by_stage``),
+    with ``failed_items`` their sum. The labels stage's own totals stay in
+    ``labels_cost`` when other stages ran beside it."""
+    stages = [stage for stage in results.get("stages") or ()
+              if stage == "labels" or isinstance(results.get(stage), dict)]
+    parts: List[Dict[str, Any]] = []
+    failed_items: Dict[str, List[str]] = {}
+    tried: Dict[str, int] = {}
+    requests: Dict[str, int] = {}
+    for stage in stages:
+        scored = results if stage == "labels" else results[stage]
+        costs = _stage_costs(stage, scored)
+        parts += costs
+        failed_items[stage], tried[stage] = _stage_failures(stage, scored)
+        requests[stage] = sum(_n(cost.get("failed")) for cost in costs)
+    if "labels" in stages and len(stages) > 1:
+        results["labels_cost"] = results["totals"]
+    totals = _sum_costs(parts)
+    totals.update({
+        "stages": stages,
+        "failed_items": sum(len(ids) for ids in failed_items.values()),
+        "failed_items_by_stage": failed_items,
+        "items_by_stage": tried,
+        "failed_requests_by_stage": requests,
+    })
+    results["totals"] = totals
+
+
+def _failures_line(totals: Dict[str, Any]) -> str:
+    """The run's last printed line (BACKLOG RI-173): each stage, with the
+    items it could not read and its failed requests, or "none"."""
+    cells = []
+    for stage in totals.get("stages") or ():
+        failed = totals["failed_items_by_stage"].get(stage) or []
+        requests = totals["failed_requests_by_stage"].get(stage) or 0
+        said = []
+        if failed:
+            named = ", ".join(failed[:8]) + (
+                f" and {len(failed) - 8} more" if len(failed) > 8 else "")
+            said.append(f"{len(failed)} of "
+                        f"{totals['items_by_stage'].get(stage, 0)} item(s) "
+                        f"not read ({named})")
+        if requests:
+            said.append(f"{requests} failed request(s)")
+        cells.append(f"{stage} " + (", ".join(said) if said else "none"))
+    return "failures by stage: " + ("; ".join(cells) or "no stage ran")
 
 
 def _score(done: Dict[str, dict], corpus: Corpus,
@@ -1813,7 +1937,7 @@ def _score(done: Dict[str, dict], corpus: Corpus,
                 "tool_calls": blob["review"]["tool_calls"],
                 "budget": blob["review"]["budget"],
                 "calls": blob["cost"]["calls"],
-                "input_tokens": blob["cost"]["input_tokens"],
+                "tokens_in": tokens_in(blob["cost"]),
                 "output_tokens": blob["cost"]["output_tokens"],
                 "seconds": blob["seconds"],
             })
@@ -2022,7 +2146,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{before.total.found}/{before.total.total} -> "
               f"{after.total.found}/{after.total.total} "
               f"({gain:+d}), {after.model_calls} model call(s), "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
 
@@ -2171,7 +2295,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{before.total.found}/{before.total.total} -> "
               f"{after.total.found}/{after.total.total} "
               f"({gain:+d}), {after.model_calls} model call(s), "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
@@ -2264,7 +2388,7 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "unresolved": r["after"].get("unresolved", 0),
             "changes": r["after"].get("changes", 0),
             "error": r["after"].get("error"),
-            "input_tokens": r["cost"].get("input_tokens", 0),
+            "tokens_in": tokens_in(r["cost"]),
             "output_tokens": r["cost"].get("output_tokens", 0),
             "dollars": r["cost"].get("dollars", 0.0),
             "seconds": r.get("seconds", 0.0),
@@ -2394,7 +2518,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
             f"{_opt_rate(r.get('model_alone')):>12}{_rate(r['after']):>12}"
             f"{_opt_rate(r.get('unlinked')):>12}"
             f"{r['model_calls']:>7}{r['tool_calls']:>6}{r['unresolved']:>7}"
-            f"{r['changes']:>6}{r['input_tokens']:>10,}"
+            f"{r['changes']:>6}{r['tokens_in']:>10,}"
             f"{r['output_tokens']:>8}{r['seconds']:>7.0f}")
     out.append("```")
     out += ["", "`zoom` is how many times the reader magnified a plot. "
@@ -2407,13 +2531,12 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
     cost = lab["cost"]
     n = max(1, lab["n_sheets"])
     out += ["## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls, {tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per sheet: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
@@ -2591,7 +2714,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{before.total.found}/{before.total.total} -> "
               f"{after.total.found}/{after.total.total} "
               f"({gain:+d}), {after.model_calls} model call(s), "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
@@ -2671,7 +2794,7 @@ def _score_calc(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "reconciled": r["after"].get("reconciled", 0),
             "page_images": r.get("page_images"),
             "error": r["after"].get("error"),
-            "input_tokens": r["cost"].get("input_tokens", 0),
+            "tokens_in": tokens_in(r["cost"]),
             "output_tokens": r["cost"].get("output_tokens", 0),
             "dollars": r["cost"].get("dollars", 0.0),
             "seconds": r.get("seconds", 0.0),
@@ -2782,7 +2905,7 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
             f"{read_as:<28}{r['floor_values']:>6}{r['model_calls']:>6}"
             f"{r['tool_calls']:>5}{r['unresolved']:>6}{r['misplaced']:>5}"
             f"{r['disagreements']:>4}{r['kept']:>5}{r['added']:>4}"
-            f"{r['reconciled']:>4}{r['input_tokens']:>9,}"
+            f"{r['reconciled']:>4}{r['tokens_in']:>9,}"
             f"{r['output_tokens']:>7}{r['seconds']:>6.0f}")
     out.append("```")
     out += ["", "`read as` is the kind the reader chose where it differs "
@@ -2800,13 +2923,12 @@ def _render_calc(calc: Dict[str, Any]) -> List[str]:
     cost = calc["cost"]
     n = max(1, calc["n_calcs"])
     out += ["## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls, {tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per calculation: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
@@ -2936,7 +3058,7 @@ def _run_soundings(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{before.total.found}/{before.total.total} -> "
               f"{after.total.found}/{after.total.total} ({gain:+d}), "
               f"{after.model_calls} model call(s), "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
@@ -3028,7 +3150,7 @@ def _score_soundings(done: Dict[str, dict], failures: Dict[str, str],
             "added": r["after"].get("added", 0),
             "reconciled": r["after"].get("reconciled", 0),
             "error": r["after"].get("error"),
-            "input_tokens": r["cost"].get("input_tokens", 0),
+            "tokens_in": tokens_in(r["cost"]),
             "output_tokens": r["cost"].get("output_tokens", 0),
             "dollars": r["cost"].get("dollars", 0.0),
             "seconds": r.get("seconds", 0.0),
@@ -3132,7 +3254,7 @@ def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
             f"{r['floor_points']:>7}{r['model_calls']:>6}"
             f"{r['tool_calls']:>5}{r['unresolved']:>6}"
             f"{r['disagreements']:>4}{r['kept']:>5}{r['added']:>4}"
-            f"{r['reconciled']:>4}{r['input_tokens']:>9,}"
+            f"{r['reconciled']:>4}{r['tokens_in']:>9,}"
             f"{r['output_tokens']:>7}{r['seconds']:>6.0f}")
     out.append("```")
     out += ["", "`floor` is how many points the deterministic pass placed "
@@ -3147,13 +3269,12 @@ def _render_soundings(soundings: Dict[str, Any]) -> List[str]:
     cost = soundings["cost"]
     n = max(1, soundings["n_sheets"])
     out += ["## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls, {tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per sheet: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
@@ -3184,7 +3305,9 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                    open_reports: Optional[Sequence[str]],
                    sync: Optional[Any] = None,
                    front_pages: int = 50,
-                   first: Optional[_FirstArm] = None) -> Dict[str, Any]:
+                   first: Optional[_FirstArm] = None,
+                   max_request_tokens_in: Optional[int] = None
+                   ) -> Dict[str, Any]:
     """The narrative reader over every report that has a hand answer.
 
     The stage reads the truth files that are PRESENT and skips every report
@@ -3256,7 +3379,8 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
                 from report_ingest.model_first_scoring import first_narrative
                 score, arm = first_narrative(
                     truth, doc, engine, report=rid,
-                    page_route=first.page_route, front_pages=front_pages)
+                    page_route=first.page_route, front_pages=front_pages,
+                    max_request_tokens_in=max_request_tokens_in)
             else:
                 score = score_one_report(truth, doc, engine, budget=budget,
                                          report=rid, front_pages=front_pages)
@@ -3292,7 +3416,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{recall.found}/{recall.total}, precision "
               f"{score.precision.found}/{score.precision.total}, "
               f"{score.model_calls} model call(s), "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
     stage_model, fields = engines.stage(model)
@@ -3403,7 +3527,7 @@ def _score_narrative(done: Dict[str, dict], failures: Dict[str, str],
             "model_calls": r["score"].get("model_calls", 0),
             "unresolved": r["score"].get("unresolved", 0),
             "error": r["score"].get("error"),
-            "input_tokens": r["cost"].get("input_tokens", 0),
+            "tokens_in": tokens_in(r["cost"]),
             "output_tokens": r["cost"].get("output_tokens", 0),
             "seconds": r.get("seconds", 0.0),
         } for r in rows],
@@ -3494,20 +3618,19 @@ def _render_narrative(narrative: Dict[str, Any]) -> List[str]:
         out.append(
             f"{r['id']:<8}{r['set']:<7}{_rate(r['recall']):>14}"
             f"{_rate(r['precision']):>14}{r['model_calls']:>7}"
-            f"{r['unresolved']:>7}{r['input_tokens']:>10,}"
+            f"{r['unresolved']:>7}{r['tokens_in']:>10,}"
             f"{r['output_tokens']:>8,}{r['seconds']:>7.0f}")
     out.append("```")
 
     cost = narrative["cost"]
     n = max(1, narrative["n_reports"])
     out += ["", "## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls, {tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per report: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
@@ -3601,7 +3724,7 @@ def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "unresolved": r["after"].get("unresolved", 0),
             "changes": r["after"].get("changes", 0),
             "error": r["after"].get("error"),
-            "input_tokens": r["cost"].get("input_tokens", 0),
+            "tokens_in": tokens_in(r["cost"]),
             "output_tokens": r["cost"].get("output_tokens", 0),
             "dollars": r["cost"].get("dollars", 0.0),
             "seconds": r.get("seconds", 0.0),
@@ -3693,7 +3816,7 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
             f"{_rate(r['before']):>12}{_opt_rate(r.get('floor_alone')):>12}"
             f"{_opt_rate(r.get('model_alone')):>12}{_rate(r['after']):>12}"
             f"{r['model_calls']:>7}{r['unresolved']:>7}{r['changes']:>6}"
-            f"{r['input_tokens']:>10,}{r['output_tokens']:>8,}"
+            f"{r['tokens_in']:>10,}{r['output_tokens']:>8,}"
             f"{r['seconds']:>7.0f}")
     out.append("```")
     out += ["", "`unres` is what the reader could not settle plus what "
@@ -3703,13 +3826,12 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
     cost = logs["cost"]
     n = max(1, logs["n_logs"])
     out += ["## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls, {tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per log: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
@@ -3857,7 +3979,7 @@ def _run_vision(corpus: Corpus, prompter: Any, model: str, out: Path,
               + (f", {splits} split(s) on request size" if splits else "")
               + (f", {rescued} page(s) rescued by the fallback"
                  if rescued else "") + ", "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s")
     return {"runs": done, "failures": failures, "settings": settings}
@@ -3962,7 +4084,7 @@ def _score_vision(done: Dict[str, dict], corpus: Corpus,
                     "splits": (seen.get("cost") or {}).get("splits") or 0,
                     "fallback_pages": ((seen.get("cost") or {})
                                        .get("fallback_pages") or 0),
-                    "input_tokens": blob["cost"].get("input_tokens", 0),
+                    "tokens_in": tokens_in(blob["cost"]),
                     "output_tokens": blob["cost"].get("output_tokens", 0),
                     "dollars": blob["cost"].get("dollars", 0.0),
                     "seconds": blob.get("seconds", 0.0),
@@ -4152,7 +4274,7 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
                        f"{cell(r['rules'])}{cell(r['review'])}"
                        f"{cell(r['vision'])}{r['unresolved']:>7}{r['qa']:>5}"
                        f"{r['calls']:>7}{windows}{splits}"
-                       f"{r['input_tokens']:>10,}"
+                       f"{r['tokens_in']:>10,}"
                        f"{r['output_tokens']:>9,}{r['seconds']:>7.0f}")
         out.append("```")
         out += ["", "`calls` is model calls and `wins` the windows they "
@@ -4166,13 +4288,12 @@ def _render_vision(vision: Dict[str, Any]) -> List[str]:
     cost = vision["cost"]
     n = max(1, vision["n_reports"])
     out += ["", "## Cost", "", "```",
-            f"{cost['calls']} model calls, {cost['input_tokens']:,} input "
-            f"tokens (+{cost['cache_read_tokens']:,} the provider cached), "
+            f"{cost['calls']} model calls, {tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per report: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}",
@@ -5615,8 +5736,10 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
 
     TOKEN LIMITS (BACKLOG RI-120) work where the dollar meter reads 0.
     ``max_total_tokens`` stops the run before a report once the arm's
-    folder has spent that many (input plus output, every attempt of every
-    report in it, as the run files record them) and refuses a model call
+    folder has spent that many (tokens in plus output, every attempt of
+    every report in it, as the run files record them; tokens in are plain
+    input plus cache writes plus cache reads, BACKLOG RI-171) and refuses
+    a model call
     inside a report that would start past what is left. The folder's spend
     before the call (BACKLOG RI-133) is counted with the call's own, so
     several builds on one folder share one ceiling; a report finished by an
@@ -5624,7 +5747,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     under ``(token ceiling)`` with what the folder had spent when the call
     started;
     ``max_report_tokens_in`` refuses a call once the report has sent that
-    many input tokens and stops the run after the report. A refused call
+    many tokens in and stops the run after the report. A refused call
     is a ``CallCeilingReached``: the step is cut short and not saved, and
     ``run.json`` gains a ``token_brake`` entry saying which limit it was.
 
@@ -5634,7 +5757,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
     (each earlier attempt's date, how it ended, its wall clock and its cost
     totals, read off the file it replaces) and ``all_attempts`` (their sum
     with this attempt), while ``cost`` and ``seconds`` stay this attempt's
-    own. ``max_report_tokens_in`` counts every attempt's input tokens: a
+    own. ``max_report_tokens_in`` counts every attempt's tokens in: a
     retried report starts with its earlier attempts' input counted, and one
     whose earlier attempts already reached the limit is not read again
     (it is listed among the failures). A report's first attempt, and any
@@ -5711,7 +5834,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         max_total_tokens is not None) else 0
     if max_total_tokens is not None:
         print(f"  token ceiling {max_total_tokens:,}: the folder had spent "
-              f"{folder_tokens:,} tokens (input plus output, every attempt) "
+              f"{folder_tokens:,} tokens (in plus output, every attempt) "
               "before this call")
     for n, rid in enumerate(report_ids, 1):
         folder = out / "ingest" / rid
@@ -5745,7 +5868,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
                 # this call spends nothing on it.
                 failures[rid] = (
                     f"its {len(earlier)} earlier attempt(s) sent {sent:,} "
-                    f"input tokens, at the {max_report_tokens_in:,} "
+                    f"tokens in, at the {max_report_tokens_in:,} "
                     f"per-report ceiling (max_report_tokens_in); raise it "
                     f"to read the rest")
                 print(f"  [{n}/{len(report_ids)}] {rid}: not retried -- "
@@ -5975,20 +6098,20 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
               f"{answered}/{asked} narrative fields, {counts['qa']} QA; "
               f"DIGGS {diggs['written']}/{diggs['schema']}/"
               f"{diggs['roundtrip']}; {blob['cost']['calls']} calls, "
-              f"{blob['cost']['input_tokens']:,} in / "
+              f"{tokens_in(blob['cost']):,} in / "
               f"{blob['cost']['output_tokens']:,} out, "
               f"{blob['seconds']:.0f} s"
               + (f" (this attempt; over its {every['attempts']} attempts "
-                 f"{every['calls']} calls, {every['input_tokens']:,} in / "
+                 f"{every['calls']} calls, {tokens_in(every):,} in / "
                  f"{every['output_tokens']:,} out, {every['failed']} failed)"
                  if every else ""))
-        # The per-report limit counts every attempt's input (RI-124).
-        report_in = (int(blob["cost"].get("input_tokens") or 0)
-                     + _attempts_in(earlier))
+        # The per-report limit counts every attempt's tokens in (RI-124,
+        # RI-171).
+        report_in = tokens_in(blob["cost"]) + _attempts_in(earlier)
         if (max_report_tokens_in is not None
                 and report_in >= max_report_tokens_in):
             print(f"  stopping after {rid}: {report_in:,}"
-                  f" input tokens"
+                  f" tokens in"
                   + (" over its attempts" if earlier else "")
                   + f", at the {max_report_tokens_in:,} "
                   f"per-report ceiling")
@@ -6011,7 +6134,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
 
 
 def _folder_tokens(out: Path, first: "_FirstArm") -> int:
-    """Input plus output tokens every report in ``out/ingest/*/`` of this
+    """Tokens in plus output tokens every report in ``out/ingest/*/`` of this
     arm has spent, over every attempt (BACKLOG RI-133), read before a call
     starts so the call's token ceiling counts the arm folder's earlier
     builds. A run file counts once: its ``all_attempts`` where it has one,
@@ -6092,11 +6215,21 @@ def _item_error_fields(record: Any) -> Dict[str, Any]:
     These are the entries a rate-limit give-up, a refused request or a
     token-brake refusal leave behind: the exception is caught per item so
     the report goes on, and the item has no saved file, so a resume reads
-    it again. Without this field the run file carried no sign of them."""
+    it again. Without this field the run file carried no sign of them.
+
+    A label review that did not finish is one too (BACKLOG RI-173): its
+    ``partial`` entry under ``labels.review``. The vote's labels stand in
+    the record, but nothing was saved, so the report is not finished and a
+    resume asks for the review again; on build e's MF-2 it showed only as
+    that entry, and the report counted as done."""
     rows = []
     for entry in getattr(record, "qa", None) or []:
-        if entry.kind != "skipped" or "could not be read" not in (
-                entry.detail or ""):
+        review_failed = (entry.kind == "partial"
+                         and entry.where == "labels.review"
+                         and "did not finish" in (entry.detail or ""))
+        if not review_failed and (entry.kind != "skipped"
+                                  or "could not be read" not in (
+                                      entry.detail or "")):
             continue
         rows.append({"where": entry.where,
                      "pages": [int(p) for p in (entry.pages or [])],
@@ -6394,8 +6527,16 @@ def _unfinished_cost(cost: Dict[str, Any],
         for entry in _earlier_attempts(unfinished[rid]):
             _add_cost(spent, entry.get("cost"))
             spent["seconds"] += _float(entry.get("seconds"))
+    every = _sum_costs((cost, spent))
+    spent["reports"] = sorted(unfinished)
+    return {"cost_unfinished": spent, "cost_every_report": every}
+
+
+def _sum_costs(parts: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Stage cost totals added together: every count, the dollars, the wall
+    clock and waits, and each kind of failed request."""
     every = _cost_totals()
-    for part in (cost, spent):
+    for part in parts:
         for key in _COST_SUMS + ("files", "files_counting_failures"):
             every[key] += _n(part.get(key))
         for key in ("dollars", "waited_seconds", "seconds"):
@@ -6409,8 +6550,7 @@ def _unfinished_cost(cost: Dict[str, Any],
     every["waited_seconds"] = round(every["waited_seconds"], 1)
     if "paced_seconds" in every:
         every["paced_seconds"] = round(every["paced_seconds"], 1)
-    spent["reports"] = sorted(unfinished)
-    return {"cost_unfinished": spent, "cost_every_report": every}
+    return every
 
 
 def _kinds_cell(counts: Dict[str, int]) -> str:
@@ -6625,7 +6765,7 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
             f"{narr_cell:>7}{(len(bound_rows) or '-'):>7}  "
             f"{qa_cell:<17}{diggs_cell:<32}"
             f"{r['cost'].get('calls', 0):>6}"
-            f"{r['cost'].get('input_tokens', 0):>10,}"
+            f"{tokens_in(r['cost']):>10,}"
             f"{r['cost'].get('output_tokens', 0):>8,}"
             f"{(f'{money:.2f}' if money else '-'):>7}"
             f"{r.get('seconds', 0.0):>6.0f}")
@@ -6770,21 +6910,19 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
     retried = ingest.get("reports_with_earlier_attempts") or {}
     over = " over every attempt" if own else ""
     out += ["", "## Cost", "", "```",
-            f"{cost['calls']} model calls{over}, {cost['input_tokens']:,} "
-            f"input tokens (+{cost['cache_read_tokens']:,} the provider "
-            f"cached), "
+            f"{cost['calls']} model calls{over}, "
+            f"{tokens_in_words(cost)}, "
             f"{cost['output_tokens']:,} output, {cost['seconds']:.0f} s"
             f"{_money(cost)}",
             _failure_line(cost),
             f"per report: {cost['calls'] / n:.1f} calls, "
-            f"{cost['input_tokens'] / n:,.0f} in, "
+            f"{tokens_in(cost) / n:,.0f} in, "
             f"{cost['output_tokens'] / n:,.0f} out, "
             f"{cost['seconds'] / n:.0f} s"
             f"{_money(cost, n)}"]
     if own:
         out += [f"each report's last attempt alone: {own['calls']} model "
-                f"calls, {own['input_tokens']:,} input tokens "
-                f"(+{own['cache_read_tokens']:,} cached), "
+                f"calls, {tokens_in_words(own)}, "
                 f"{own['output_tokens']:,} output, {own['seconds']:.0f} s"
                 f"{_money(own)}, {own['failed']} failed requests",
                 "read in more than one attempt: " + ", ".join(
@@ -6798,12 +6936,12 @@ def _render_ingest(ingest: Dict[str, Any]) -> List[str]:
         kinds = _failed_kinds(left)
         out += [f"reports not finished (listed under failures): "
                 f"{len(left.get('reports') or ())}, {left['calls']} calls, "
-                f"{left['input_tokens']:,} in / {left['output_tokens']:,} "
+                f"{tokens_in(left):,} in / {left['output_tokens']:,} "
                 f"out, {left['failed']} failed requests"
                 + (f" ({kinds})" if kinds else "")
                 + f", over every attempt{_money(left)}",
                 f"every report, finished or not: {every['calls']} calls, "
-                f"{every['input_tokens']:,} in / {every['output_tokens']:,} "
+                f"{tokens_in(every):,} in / {every['output_tokens']:,} "
                 f"out, {every['failed']} failed requests, "
                 f"{every['seconds']:.0f} s{_money(every)}"]
     out += ["```", "",
@@ -6868,9 +7006,11 @@ def _price_note(cost: Dict[str, Any],
 #: ``retried``, ``reasoning_tokens`` and ``reasoning_reported`` (the replies
 #: that said how much of their output was reasoning) came with BACKLOG
 #: RI-21: a run file written before then has none of them and adds nothing.
+#: ``cache_write_tokens`` with RI-171, so a stage's tokens in count it.
 _COST_SUMS: Tuple[str, ...] = ("calls", "failed", "retried", "input_tokens",
                                "output_tokens", "cache_read_tokens",
-                               "reasoning_tokens", "reasoning_reported")
+                               "cache_write_tokens", "reasoning_tokens",
+                               "reasoning_reported")
 
 
 def _dumps(blob: Dict[str, Any]) -> str:
@@ -7524,7 +7664,7 @@ def _render(results: Dict[str, Any]) -> List[str]:
             out.append(f"{r['id']:<8}{r['pages']:>7}{r['scored']:>8}"
                        f"{before_txt}{after_txt}{r['changes']:>5}"
                        f"{r['tool_calls']:>5}/{r['budget']:<2}"
-                       f"{r['calls']:>7}{r['input_tokens']:>10,}"
+                       f"{r['calls']:>7}{r['tokens_in']:>10,}"
                        f"{r['output_tokens']:>9,}{r['seconds']:>7.0f}")
         out.append("```")
 
@@ -7565,8 +7705,7 @@ def _render(results: Dict[str, Any]) -> List[str]:
     totals = results["totals"]
     out += ["", "## Cost", "", "```",
             f"{totals['calls']} model calls, "
-            f"{totals['input_tokens']:,} input tokens "
-            f"(+{totals['cache_read_tokens']:,} the provider cached), "
+            f"{tokens_in_words(totals)}, "
             f"{totals['output_tokens']:,} output, "
             f"{totals['seconds']:.0f} s"
             f"{_money(totals)}",

@@ -18,6 +18,20 @@ tool: the call the plain baseline measured (RI-86). Every word the model
 reads comes from piece 4's instructions and schemas and piece 2's page
 blocks; this module adds none.
 
+THE NARRATIVE IN ONE CALL (BACKLOG RI-175). On the pictures route the
+narrative's call sends TEXT FIRST: each page with a usable text layer as its
+text alone, and only the others as pictures
+(:func:`~report_ingest.model_first_pages.page_blocks`), so a report's
+narrative is one call where 20 pictures a call made three or four. As
+today's reader keeps its words first and its pictures to a cap, the call
+takes the pages' words in the order today's reader keeps them (the front
+whatever its size, then the pages labelled its own, then the figures) while
+the request stays within the limit, then the pictures of the pages with too
+little text while there is room and fewer than 20; the rest are left out,
+named in the result's ``left_out`` and in one warning (:meth:`_Caller.fit`).
+Only a front whose words pass the limit is split, by the cut below, and that
+says so too. :func:`narrative_plan` sizes the call without making it.
+
 A CALL THAT DOES NOT FIT. A reply that stopped at its output cap
 (:attr:`~report_ingest.engine.Reply.cut_off`) gives no answer, and pages too
 large for one request (:func:`~report_ingest.model_first_pages.pdf_problem`,
@@ -47,8 +61,9 @@ answers are joined into the one log as a long log's parts are. A single
 page still over the limit is sent as it is. Each cut, and each page sent
 over the limit, is one line in the result's ``warnings`` and one row in its
 ``over_limit`` (the graph makes each row a QA note), and each call in
-``calls`` carries its ``estimated_tokens_in`` beside the tokens the reply
-says it took, so the estimate can be checked against a run. With no limit
+``calls`` carries its ``estimated_tokens_in`` beside the tokens in the reply
+says it took (``tokens_in``: plain, cache write and cache read, BACKLOG
+RI-171), so the estimate can be checked against a run. With no limit
 the result has no ``over_limit`` and is what it was.
 
 BUILD. Each answer is turned into record objects by its stage's own
@@ -141,13 +156,15 @@ from report_ingest.engine import (estimate_tokens, pdf_block,
 from report_ingest.model_first import (READ_PROMPT_VERSION, _put_field,
                                        answer_schema, apply_lab_additions,
                                        apply_log_additions, instruction)
-from report_ingest.model_first_pages import (PageGroup, calc_calls, cut_pdf,
-                                             lab_starts, pdf_problem,
-                                             picture_blocks, pictures_problem,
-                                             resolve_route)
+from report_ingest.model_first_pages import (MAX_PICTURES_PER_CALL,
+                                             PageGroup, calc_calls, cut_pdf,
+                                             lab_starts, page_blocks,
+                                             pdf_problem, picture_blocks,
+                                             pictures_problem, resolve_route,
+                                             text_pages)
 
 __all__ = ["STAGE_MODELS", "Place", "read_logs", "read_lab", "read_calcs",
-           "read_narrative"]
+           "read_narrative", "narrative_plan"]
 
 #: The model each stage reads on by default (plan section 8.1): laboratory
 #: sheets and the narrative on Opus 5.5, logs and calculations on Sonnet 5.5
@@ -206,7 +223,7 @@ class _Spent:
             # Only under a request limit (RI-121): the estimate the call was
             # sized by, beside what the reply says the request took.
             row.update(estimated_tokens_in=int(estimated),
-                       input_tokens=int(reply.usage.input_tokens))
+                       tokens_in=int(reply.usage.tokens_in))
         self.calls.append(row)
 
     def rounded(self) -> Dict[str, Any]:
@@ -261,6 +278,13 @@ class _Caller:
         #: The per-request input-token limit (RI-121), or None.
         self.limit: Optional[int] = int(limit) if limit else None
         self._schema_tokens: Optional[int] = None
+        #: The narrative on the pictures route sends TEXT FIRST (RI-175): a
+        #: page with a usable text layer as its text alone, any other as a
+        #: picture with its text; each page's blocks are made once, and
+        #: :meth:`fit` may send a picture page as its words instead.
+        self.text_first = stage == "narrative" and self.route == "pictures"
+        self._pages: Dict[int, List[Dict[str, Any]]] = {}
+        self._chosen: Dict[int, List[Dict[str, Any]]] = {}
 
     def size(self, blocks: Sequence[Dict[str, Any]]) -> int:
         """One call's request, estimated in input tokens: its blocks (each
@@ -283,7 +307,8 @@ class _Caller:
         """The user turn's blocks for one call, and why they cannot be sent
         ("" when they can): the pages first, then the instruction."""
         said = text_block(instruction(self.stage, self.report_id, pages,
-                                      route=self.route))
+                                      route=self.route,
+                                      text_first=self.text_first))
         if self.route == "pdf":
             # A sheet scanned sideways is sent rotated upright (RI-149).
             from report_ingest.turned import turn_of
@@ -292,10 +317,92 @@ class _Caller:
                 self._source(), pages,
                 turns={p: q for p, q in turns.items() if q})
             return [pdf_block(data), said], pdf_problem(n_pages, len(data))
-        shown = picture_blocks(self.doc, pages,
-                               model=getattr(self.engine, "name", None))
+        if self.text_first:
+            shown = [block for page in pages for block in self._page(page)]
+        else:
+            shown = picture_blocks(self.doc, pages,
+                                   model=getattr(self.engine, "name", None))
         blocks = shown + [said]
         return blocks, pictures_problem(blocks)
+
+    def _page(self, page: int) -> List[Dict[str, Any]]:
+        """One page's blocks when the call sends text first: as :meth:`fit`
+        chose them, else as :meth:`_natural`."""
+        page = int(page)
+        return self._chosen.get(page) or self._natural(page)
+
+    def _natural(self, page: int) -> List[Dict[str, Any]]:
+        """A page as its text, or as a picture when it has too little text
+        to read as text (:func:`~report_ingest.model_first_pages.
+        text_pages`), made once."""
+        page = int(page)
+        if page not in self._pages:
+            self._pages[page] = page_blocks(
+                self.doc, page, as_text=bool(text_pages(self.doc, [page])),
+                model=getattr(self.engine, "name", None))
+        return self._pages[page]
+
+    def _words(self, page: int) -> List[Dict[str, Any]]:
+        """A page with too little text to read as text, as the text it has
+        (as today's reader sends one past its picture cap); none when it
+        has none."""
+        blocks = page_blocks(self.doc, int(page), as_text=True)
+        return [] if any(b.get("type") == "image" for b in blocks) \
+            else blocks
+
+    def fit(self, group: PageGroup) -> Tuple[List[int], List[int]]:
+        """``(the pages to send, the pages left out)`` for one narrative
+        part sent text first (RI-175), within the limit (:attr:`limit`,
+        else today's reader's ``INPUT_TOKEN_BUDGET``), as today's reader
+        keeps its words first and its pictures to a cap.
+
+        THE WORDS FIRST, in the order the part ranks its pages
+        (:attr:`~report_ingest.model_first_pages.PageGroup.ranked`): the
+        front's whatever their size, then each other page's while they fit
+        (a page with too little text to read as text counts as the text it
+        has). THEN THE PICTURES, in the same order: a page with too little
+        text goes as its picture instead while the request stays within the
+        limit and :data:`~report_ingest.model_first_pages.
+        MAX_PICTURES_PER_CALL` pictures, else as its text, and one with no
+        text at all is left out. A front whose words alone pass the limit is
+        split by :meth:`read`, which says so. Any other call sends all its
+        pages."""
+        from report_ingest.narrative_reader import INPUT_TOKEN_BUDGET
+
+        pages = [int(p) for p in group.pages]
+        if not self.text_first or not group.ranked:
+            return pages, []
+        limit = self.limit or INPUT_TOKEN_BUDGET
+
+        def cost(blocks: Sequence[Dict[str, Any]]) -> int:
+            return estimate_tokens([user(*blocks)], picture=picture_tokens_est)
+
+        def is_picture(blocks: Sequence[Dict[str, Any]]) -> bool:
+            return any(b.get("type") == "image" for b in blocks)
+
+        used = self.size([text_block(instruction(
+            self.stage, self.report_id, pages, route=self.route,
+            text_first=True))])
+        chosen: Dict[int, List[Dict[str, Any]]] = {}
+        for n, page in enumerate(group.ranked):
+            blocks = self._natural(page)
+            words = self._words(page) if is_picture(blocks) else blocks
+            if n < group.n_front or used + cost(words) <= limit:
+                chosen[int(page)] = words
+                used += cost(words)
+        pictures = 0
+        for page in group.ranked:
+            blocks = self._natural(page)
+            if int(page) not in chosen or not is_picture(blocks):
+                continue
+            extra = cost(blocks) - cost(chosen[int(page)])
+            if pictures < MAX_PICTURES_PER_CALL and used + extra <= limit:
+                chosen[int(page)] = blocks
+                used += extra
+                pictures += 1
+        kept = sorted(p for p, blocks in chosen.items() if blocks)
+        self._chosen.update({p: chosen[p] for p in kept})
+        return kept, sorted({int(p) for p in group.ranked} - set(kept))
 
     def read(self, pages: Sequence[int], spent: _Spent,
              starts: Sequence[int] = (), split: bool = True
@@ -824,7 +931,17 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     body, as the graph gives today's reader; default: the narrative's own
     pages); ``outline`` gives the summary call its section headings. The
     rest as :func:`read_logs`. A narrative no answer came back for has
-    ``general``, ``natural_hazards`` and ``facts`` None and an ``error``."""
+    ``general``, ``natural_hazards`` and ``facts`` None and an ``error``.
+
+    On the pictures route the call sends TEXT FIRST (RI-175): each page with
+    a usable text layer as its text alone, the others as pictures, so a
+    report's narrative is one call, held within the limit
+    (``max_request_tokens_in``, else today's reader's token budget): the
+    words first, the front's whatever their size, then the pictures of the
+    pages with too little text while there is room (:meth:`_Caller.fit`).
+    What does not fit is left out, the last-ranked first; the result's
+    ``left_out`` names it and one warning says why. ``pages`` stays every
+    page of the groups, which is what a resumed run compares."""
     from report_ingest.narrative_reader import (NarrativeReadResult,
                                                 _apply_summaries, _Builder,
                                                 _headings_text, _summarise,
@@ -838,11 +955,25 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     spent = _Spent()
     pages = sorted({int(p) for g in groups for p in g.pages})
     notes = [n for g in groups for n in g.notes]
-    builder = _Builder(pages, checks="flag")
+    fitted = [caller.fit(group) for group in groups]
+    left_out = sorted({int(p) for _sent, left in fitted for p in left})
+    sent_pages = sorted({int(p) for sent, _left in fitted for p in sent})
+    if left_out:
+        from report_ingest.narrative_reader import INPUT_TOKEN_BUDGET
+        notes.append(
+            f"{_span(left_out)} {'were' if len(left_out) > 1 else 'was'} "
+            f"left out of the narrative's request, which took the front of "
+            f"the report and the pages labelled its own first: with "
+            f"{'them' if len(left_out) > 1 else 'it'} it would have been "
+            f"estimated over {caller.limit or INPUT_TOKEN_BUDGET:,} input "
+            f"tokens (or, for a page with no text, past "
+            f"{MAX_PICTURES_PER_CALL} pictures)")
+    # A page left out was never shown, so the answer cannot cite it.
+    builder = _Builder(sent_pages, checks="flag")
     skipped: List[Dict[str, Any]] = []
     answered = 0
-    for group in groups:
-        got, rows = caller.read(group.pages, spent)
+    for sent, _left in fitted:
+        got, rows = caller.read(sent, spent)
         skipped.extend(rows)
         for call_pages, reading in got:
             answered += 1
@@ -855,7 +986,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         blob = _result("narrative", "narrative", caller, spent, pages,
                        skipped, [], notes, _nothing_read(skipped))
         blob.update(general=None, natural_hazards=None, facts=None,
-                    answered=[], n_answered=0, confidence={})
+                    answered=[], n_answered=0, confidence={},
+                    left_out=left_out)
         return blob
     counted = count_captions(doc, list(body_pages) if body_pages else pages)
     general, hazards, facts = builder.build(pages, counted, None)
@@ -886,4 +1018,40 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     blob.update(_result("narrative", "narrative", caller, spent, pages,
                         [dict(u) for u in builder.unresolved], placement,
                         notes))
+    blob["left_out"] = left_out
     return blob
+
+
+def narrative_plan(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
+                   report_id: str = "", route: Optional[str] = None,
+                   max_request_tokens_in: Optional[int] = None
+                   ) -> List[Dict[str, Any]]:
+    """What :func:`read_narrative` would send, one row per group, with no
+    call made (RI-175): its ``pages`` sent and ``left_out``, how many go as
+    ``text_pages`` and as ``pictures``, the request's
+    ``estimated_tokens_in`` and the ``limit`` it is held to, whether it is
+    ``over_limit`` (so would be split before it was sent) and any
+    ``problem`` that would refuse it. Sized as the reader sizes it, on
+    ``engine``'s picture size (its ``name``)."""
+    from report_ingest.narrative_reader import INPUT_TOKEN_BUDGET
+
+    caller = _Caller("narrative", doc, engine, report_id, route, None,
+                     max_request_tokens_in)
+    out: List[Dict[str, Any]] = []
+    for group in groups:
+        if not group.pages:
+            continue
+        sent, left = caller.fit(group)
+        blocks, problem = caller.blocks(sent)
+        size = caller.size(blocks)
+        pictures = sum(1 for b in blocks if b.get("type") == "image")
+        out.append({"pages": sent, "left_out": left,
+                    "text_pages": (len(sent) - pictures
+                                   if caller.text_first else 0),
+                    "pictures": pictures, "route": caller.route,
+                    "estimated_tokens_in": size,
+                    "limit": caller.limit or INPUT_TOKEN_BUDGET,
+                    "over_limit": (caller.limit is not None
+                                   and size > caller.limit),
+                    "problem": problem})
+    return out

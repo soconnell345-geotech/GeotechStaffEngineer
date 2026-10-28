@@ -226,8 +226,9 @@ class TestPacedSecondsAcrossAttempts:
         assert set(fields["all_attempts"]) == {
             "attempts", "calls", "failed", "retried", "input_tokens",
             "output_tokens", "cache_read_tokens", "cache_write_tokens",
-            "reasoning_tokens", "reasoning_reported", "unpriced_calls",
-            "failed_by_kind", "dollars", "waited_seconds", "seconds"}
+            "tokens_in", "reasoning_tokens", "reasoning_reported",
+            "unpriced_calls", "failed_by_kind", "dollars", "waited_seconds",
+            "seconds"}
 
 
 class TestPacedSecondsInTheResults:

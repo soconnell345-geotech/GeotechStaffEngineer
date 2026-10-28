@@ -36,14 +36,21 @@ MASTER_SCHEMAS = {
 }
 
 #: sha256 of what the model-first readers ask (each stage's instruction as
-#: sent, its vocabulary lists filled in, and the logs' and lab's answer
-#: schemas), by READ_PROMPT_VERSION.
+#: sent, its vocabulary lists filled in, from mf-3 the narrative's sent text
+#: first too, and the logs' and lab's answer schemas), by
+#: READ_PROMPT_VERSION.
 MODEL_FIRST_ASKS = {
     "mf-1": "99aafd0dbd196bf8961ea25054e9c8646f15c40c711de3788de477f1c151246d",
     # mf-2 (RI-149): the same instruction and schemas; what the readers are
     # SHOWN changed (a sheet scanned sideways is sent upright, its text row
     # by row), so an answer saved under mf-1 is read again.
     "mf-2": "99aafd0dbd196bf8961ea25054e9c8646f15c40c711de3788de477f1c151246d",
+    # mf-3 (build f): the narrative's vocabulary offers outsideProject yes,
+    # no or unclear, no longer mixed (RI-174); the narrative carries today's
+    # house conventions and the lab asks for Atterberg limits on a gradation
+    # sheet as an entry of their own; the narrative is sent text first in
+    # one call on the pictures route (RI-175).
+    "mf-3": "2ab3280d29ff6082016b0ab5acfa9e7321d821af1187acbb29afa78d5ce600a8",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,
@@ -61,6 +68,10 @@ def _digest(value):
 def _asks():
     return _digest({"instructions": {stage: mf.instruction(stage, "R00", [0])
                                      for stage in mf.INSTRUCTIONS},
+                    # The narrative sent text first (RI-175, from mf-3).
+                    "narrative_text_first": mf.instruction(
+                        "narrative", "R00", [0], route="pictures",
+                        text_first=True),
                     "logs": strict_schema(mf.LogReading),
                     "lab": strict_schema(mf.LabSheetReading)})
 
@@ -181,10 +192,19 @@ def test_each_stage_has_its_answer_schema():
 # the instructions
 # ---------------------------------------------------------------------------
 
-def test_only_the_logs_instruction_differs_from_the_plain_one():
+def test_the_model_first_instructions_add_to_the_plain_ones():
+    """Calc is asked as the plain baseline was; lab adds one sentence and
+    the narrative today's conventions (RI-175); logs name what the log
+    schema adds."""
     assert set(mf.INSTRUCTIONS) == set(mf.PLAIN_INSTRUCTIONS)
-    for stage in ("lab", "calc", "narrative"):
-        assert mf.INSTRUCTIONS[stage] == mf.PLAIN_INSTRUCTIONS[stage]
+    assert mf.INSTRUCTIONS["calc"] == mf.PLAIN_INSTRUCTIONS["calc"]
+    lab = mf.INSTRUCTIONS["lab"]
+    assert lab.count(mf.LAB_TWO_TESTS) == 1
+    assert lab.replace(f" {mf.LAB_TWO_TESTS}", "") == \
+        mf.PLAIN_INSTRUCTIONS["lab"]
+    narrative = mf.INSTRUCTIONS["narrative"]
+    assert narrative.replace("{glossary}\n\n", "") == \
+        mf.PLAIN_INSTRUCTIONS["narrative"]
     logs = mf.INSTRUCTIONS["logs"]
     assert logs != mf.PLAIN_INSTRUCTIONS["logs"]
     for asked in ("the project name and number", "the client",
@@ -192,6 +212,27 @@ def test_only_the_logs_instruction_differs_from_the_plain_one():
         assert asked in logs
     assert not any("exact" in text.lower()
                    for text in mf.INSTRUCTIONS.values())
+
+
+def test_the_narrative_carries_today_s_conventions_and_lab_its_rule():
+    """The narrative's call is given the house conventions today's reader
+    is given (narrative_glossary), as one block; the lab's names Atterberg
+    limits on a gradation sheet as an entry of their own."""
+    from report_ingest.narrative_glossary import glossary_block
+    from report_ingest.narrative_reader import _vocabulary_block
+
+    said = mf.instruction("narrative", "R00", [0, 1])
+    assert said.count(glossary_block()) == 1
+    assert said.index(_vocabulary_block()) < said.index(glossary_block())
+    assert "{" not in said.replace(_vocabulary_block(), "").replace(
+        glossary_block(), "")
+    plain = mf.instruction("narrative", "R00", [0, 1],
+                           texts=mf.PLAIN_INSTRUCTIONS)
+    assert glossary_block() not in plain
+    lab = mf.instruction("lab", "R00", [4])
+    assert "Atterberg limits printed on a gradation sheet are an atterberg " \
+           "entry of their own" in lab
+    assert "atterberg" in lab_reader.KIND_DEFINITIONS
 
 
 def test_what_the_readers_ask_is_versioned():

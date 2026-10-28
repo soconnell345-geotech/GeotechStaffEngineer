@@ -1203,7 +1203,7 @@ def test_the_request_limit_reaches_every_reader(synthetic_pdf, tmp_path):
     for path, rows in calls.items():
         for row in rows:
             assert 0 < row["estimated_tokens_in"] <= 10 ** 7, path
-            assert row["input_tokens"] == 1000, path
+            assert row["tokens_in"] == 1000, path
     (note,) = [q for q in record.qa if q.where == "model_first"]
     assert ("each request was sized against a limit of 10,000,000 input "
             "tokens before it was sent") in note.detail

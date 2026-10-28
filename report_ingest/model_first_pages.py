@@ -19,6 +19,10 @@ by ``GEOTECH_INGEST_MODEL_FIRST_PAGES`` (:func:`page_route`):
   :data:`MAX_PICTURES_PER_CALL` pictures, each and all together within the
   request limits (:func:`pictures_problem`). Both Foundry routes take
   pictures; whether they take a PDF is what the probe of piece 1 settles.
+  The narrative's call sends TEXT FIRST (RI-175): a page with a usable
+  text layer (:func:`text_pages`) goes as its text alone, and only the
+  others as pictures (:func:`page_blocks`), so a report's narrative fits
+  one call; on 20 pictures a page it was read in three or four parts.
 * ``auto`` (the default): a PDF where the engine can send one, pictures
   otherwise (:func:`resolve_route`).
 
@@ -50,8 +54,11 @@ the range labels and RI-73's page descriptions alone (:func:`group_pages`):
 * **narrative** (:func:`narrative_groups`): the pages
   ``narrative_reader.reading_pages`` gives (cover, letter, contents,
   narrative and the front of the report), plus the report's own figure,
-  plan and profile pages, in consecutive parts of at most a call's pages;
-  for a report bound inside another, within that report's own pages.
+  plan and profile pages, in consecutive parts of at most
+  :data:`MAX_NARRATIVE_PAGES` pages (one part on the pictures route),
+  ranked for the reader to keep the front first when they do not all fit
+  one request; for a report bound inside another, within that report's own
+  pages.
 
 Every group says why it starts where it does (:attr:`PageGroup.why`), so a
 QA note or a trace review can name the rule that drew it. The rules are
@@ -76,9 +83,11 @@ __all__ = [
     "STAGE_LABELS", "NARRATIVE_LABELS", "FIGURE_LABELS", "TEXT_MARKERS",
     "PageGroup", "page_route", "resolve_route", "max_pages_per_call",
     "cut_pdf", "pdf_problem", "page_map_sentence", "picture_blocks",
+    "text_pages", "page_blocks",
     "pictures_problem", "exploration_id", "page_identifiers",
     "page_identifier", "SHARED_ACROSS", "sheet_of",
-    "carries_on", "stage_pages", "runs", "log_groups", "lab_starts",
+    "carries_on", "is_divider", "divider_pages", "stage_pages", "runs",
+    "log_groups", "lab_starts",
     "lab_groups", "calc_starts", "calc_groups", "calc_calls",
     "narrative_groups", "group_pages",
 ]
@@ -114,7 +123,8 @@ MAX_REQUEST_BYTES = 32 * 1024 * 1024
 
 #: The most sheets one log call carries; a longer log is cut into parts.
 MAX_LOG_PAGES = 12
-#: The most pages one narrative call carries.
+#: The most pages one narrative call carries, on either route: on the
+#: pictures route its pages with text go as text (RI-175).
 MAX_NARRATIVE_PAGES = MAX_PDF_PAGES
 
 #: Which labels each reader's groups are drawn from: the graph's own table
@@ -248,14 +258,22 @@ def pdf_problem(n_pages: int, n_bytes: int) -> str:
 
 
 def page_map_sentence(pages: Sequence[int], route: str = "pdf",
-                      whole: bool = False) -> str:
+                      whole: bool = False, text_first: bool = False) -> str:
     """The sentence that tells the model which report page each PDF page or
     picture is, so every page it cites is the report's 0-based index.
 
     The PDF wording is RI-86's, which the plain baseline measured: a page
     list ``[7, 8]`` gives "PDF page 1 is page 7, PDF page 2 is page 8".
-    ``whole`` is a PDF of the whole report, whose pages need no map."""
+    ``whole`` is a PDF of the whole report, whose pages need no map.
+    ``text_first`` is a pictures-route call whose pages with a usable text
+    layer go as their text alone (:func:`page_blocks`, RI-175)."""
     pages = [int(p) for p in pages]
+    if route == "pictures" and text_first:
+        return ("Each page is given under its page index: a page with a "
+                "usable text layer as its text alone, and any other page as "
+                "a picture followed by whatever text it has; wherever a page "
+                "is asked for, give that page index (the report's 0-based "
+                "page index).")
     if route == "pictures":
         return ("Each page is given as a picture headed by its page index, "
                 "followed by the page's text; wherever a page is asked for, "
@@ -329,30 +347,15 @@ def picture_blocks(doc: Any, pages: Sequence[int], *,
     longer text with a note (None: the whole text). Whether the blocks can
     go in one call is :func:`pictures_problem`'s to say."""
     from report_ingest.engine import image_block, text_block
-    from report_ingest.turned import page_turn, reading_order, upright_png
+    from report_ingest.turned import upright_png
 
     if budget is None:
         budget = _budget_for(model)
     pages = [int(p) for p in pages]
     out: List[Dict[str, Any]] = []
     for n, page in enumerate(pages):
-        content = doc.page(page, tables=False)
-        text = content.text() or ""
-        sources = sorted(set(getattr(content, "text_sources", []) or []))
-        optical = any(s in ("ocr", "azure_di") for s in sources)
-        # A sheet scanned sideways (RI-149): its picture upright, and its
-        # text row by row as the sheet reads.
-        try:
-            turn = page_turn(list(content.lines),
-                             float(getattr(content, "width", 612.0) or 612.0),
-                             float(getattr(content, "height", 792.0)
-                                   or 792.0))
-        except Exception:                        # a page whose lines will not
-            turn = None                          # read is sent as it is
+        text, turn, optical = _page_text(doc, page)
         turned = turn is not None and turn.turned
-        if turned:
-            text = "\n".join(str(ln.text or "") for ln in
-                             reading_order(list(content.lines), turn))
         out.append(text_block(
             f"Page {page} (picture {n + 1} of {len(pages)}"
             + (f"; its text runs a quarter turn from the page, so the "
@@ -360,28 +363,110 @@ def picture_blocks(doc: Any, pages: Sequence[int], *,
             + "):"))
         png, _info = doc.render(page, budget=budget, fmt="auto")
         out.append(image_block(upright_png(png, turn) if turned else png))
-        if not text.strip():
-            out.append(text_block(f"Page {page} carries no text: read it "
-                                  f"from the picture."))
-            continue
-        cut = max_text_chars is not None and len(text) > int(max_text_chars)
-        shown = text[:int(max_text_chars)] if cut else text
-        where = ("as an optical reader read it from the picture" if optical
-                 else "as the PDF's own text layer carries it")
-        try:
-            reliable = getattr(doc.summary(page), "text_reliable", True)
-        except Exception:                        # a summary is a nicety
-            reliable = True
-        if not reliable:
-            where += (" -- this text layer is UNRELIABLE (a font with no "
-                      "character map): trust the picture over it")
-        lines = [f"Page {page}'s text, {where}, between the markers:",
-                 TEXT_MARKERS[0], shown, TEXT_MARKERS[1]]
-        if cut:
-            lines.append(f"[the text is cut at {int(max_text_chars)} "
-                         f"characters; the picture shows the whole page]")
-        out.append(text_block("\n".join(lines)))
+        out.append(text_block(_text_words(doc, page, text, optical,
+                                          max_text_chars)))
     return out
+
+
+def _page_text(doc: Any, page: int) -> Tuple[str, Any, bool]:
+    """``(the page's text, its quarter turn or None, read optically)``: the
+    text layer, or the Azure DI text on a page that has none; a sheet
+    scanned sideways (RI-149) has its text row by row as the sheet reads."""
+    from report_ingest.turned import page_turn, reading_order
+
+    content = doc.page(int(page), tables=False)
+    text = content.text() or ""
+    sources = sorted(set(getattr(content, "text_sources", []) or []))
+    optical = any(s in ("ocr", "azure_di") for s in sources)
+    try:
+        turn = page_turn(list(content.lines),
+                         float(getattr(content, "width", 612.0) or 612.0),
+                         float(getattr(content, "height", 792.0) or 792.0))
+    except Exception:                            # a page whose lines will not
+        turn = None                              # read is sent as it is
+    if turn is not None and turn.turned:
+        text = "\n".join(str(ln.text or "") for ln in
+                         reading_order(list(content.lines), turn))
+    return text, turn, optical
+
+
+def _reliable(doc: Any, page: int) -> bool:
+    """Whether a page's text layer can be trusted (planlens' summary; a page
+    whose summary will not read is taken at its word)."""
+    try:
+        return bool(getattr(doc.summary(int(page)), "text_reliable", True))
+    except Exception:                            # a summary is a nicety
+        return True
+
+
+def _text_words(doc: Any, page: int, text: str, optical: bool,
+                max_text_chars: Optional[int] = None) -> str:
+    """A page's text between :data:`TEXT_MARKERS`, saying where it came
+    from, or that the page carries none."""
+    if not text.strip():
+        return f"Page {page} carries no text: read it from the picture."
+    cut = max_text_chars is not None and len(text) > int(max_text_chars)
+    shown = text[:int(max_text_chars)] if cut else text
+    where = ("as an optical reader read it from the picture" if optical
+             else "as the PDF's own text layer carries it")
+    if not _reliable(doc, page):
+        where += (" -- this text layer is UNRELIABLE (a font with no "
+                  "character map): trust the picture over it")
+    lines = [f"Page {page}'s text, {where}, between the markers:",
+             TEXT_MARKERS[0], shown, TEXT_MARKERS[1]]
+    if cut:
+        lines.append(f"[the text is cut at {int(max_text_chars)} "
+                     f"characters; the picture shows the whole page]")
+    return "\n".join(lines)
+
+
+def text_pages(doc: Any, pages: Sequence[int]) -> List[int]:
+    """The pages that go as their text alone in a call that sends text
+    first (the narrative on the pictures route, RI-175): a reliable text
+    layer of at least today's narrative reader's
+    ``narrative_reader.MIN_TEXT_CHARS`` characters (a page with less goes
+    as a picture there too). A page that will not read is not one."""
+    from report_ingest.narrative_reader import MIN_TEXT_CHARS
+
+    out: List[int] = []
+    for page in pages:
+        try:
+            content = doc.page(int(page), tables=False)
+        except Exception:                        # a page that will not read
+            continue                             # goes as a picture
+        chars = sum(len(str(line.text or "")) for line in content.lines)
+        if chars >= MIN_TEXT_CHARS and _reliable(doc, page):
+            out.append(int(page))
+    return out
+
+
+def page_blocks(doc: Any, page: int, *, as_text: bool,
+                model: Optional[str] = None, budget: Any = None
+                ) -> List[Dict[str, Any]]:
+    """One page's blocks in a call that sends text first (RI-175): a page
+    ``as_text`` (:func:`text_pages`) as its text alone, between
+    :data:`TEXT_MARKERS` and naming its page index; any other as
+    :func:`picture_blocks` sends it, a line naming it, the picture, then
+    whatever text it has."""
+    from report_ingest.engine import image_block, text_block
+    from report_ingest.turned import upright_png
+
+    page = int(page)
+    text, turn, optical = _page_text(doc, page)
+    if as_text and text.strip():
+        return [text_block(_text_words(doc, page, text, optical))]
+    if budget is None:
+        budget = _budget_for(model)
+    turned = turn is not None and turn.turned
+    png, _info = doc.render(page, budget=budget, fmt="auto")
+    return [text_block(
+                f"Page {page} (as a picture: it has too little text to read "
+                f"as text"
+                + ("; its text runs a quarter turn from the page, so the "
+                   "picture is shown turned upright" if turned else "")
+                + "):"),
+            image_block(upright_png(png, turn) if turned else png),
+            text_block(_text_words(doc, page, text, optical))]
 
 
 # ---------------------------------------------------------------------------
@@ -710,6 +795,27 @@ def carries_on(record: Optional[Mapping[str, Any]]) -> bool:
     return bool(_CARRIES_ON.search(said))
 
 
+#: A kind that says the page is a divider ("appendix divider page"), not a
+#: drawing's divider lines.
+_DIVIDER = re.compile(r"\bdivider\b(?!\s+lines?\b)", re.I)
+
+
+def is_divider(record: Optional[Mapping[str, Any]]) -> bool:
+    """Whether the page's description says it is a divider: a tab page
+    that opens an appendix or a part of the report and names it
+    (BACKLOG RI-177). The labels give a divider its section's label
+    (``range_labels``' conventions), so a reader would be sent it with the
+    section's pages, or alone, and it holds nothing to read."""
+    return bool(_DIVIDER.search(str(_described(record).get("kind") or "")))
+
+
+def divider_pages(descriptions: Mapping[int, Mapping[str, Any]]
+                  ) -> List[int]:
+    """The pages the descriptions call dividers (:func:`is_divider`)."""
+    return sorted(int(p) for p, record in descriptions.items()
+                  if is_divider(record))
+
+
 def _title_key(record: Optional[Mapping[str, Any]]) -> str:
     """A title folded for comparison: lower case, no digits, no
     punctuation."""
@@ -737,6 +843,13 @@ class PageGroup:
     part: Optional[Tuple[int, int]] = None
     key: str = ""
     notes: List[str] = field(default_factory=list)
+    #: The narrative's (RI-175): its pages in the order they are kept when
+    #: they do not all fit one request -- the front of the report, then the
+    #: pages labelled cover, letter, contents or narrative, then the figures
+    #: -- and how many of them, the front, are kept whatever the request's
+    #: size. Empty for every other group, whose pages all go.
+    ranked: List[int] = field(default_factory=list)
+    n_front: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {"stage": self.stage, "pages": list(self.pages),
@@ -780,15 +893,17 @@ def _balanced(pages: List[int], cap: int) -> List[List[int]]:
 
 def log_groups(pages: Sequence[int],
                descriptions: Mapping[int, Mapping[str, Any]],
-               max_pages: int = MAX_LOG_PAGES) -> List[PageGroup]:
+               max_pages: int = MAX_LOG_PAGES,
+               breaks: Iterable[int] = ()) -> List[PageGroup]:
     """The log pages, one log per group, from their descriptions.
 
-    Walking the pages in order, a page OPENS a new log when its
-    description says it is the first sheet of a set ("sheet 1 of 2"), or
-    when it logs an exploration (:func:`page_identifiers`) other than the
-    current log's and does not say in words that it is continued from the
-    page before -- after pages that name none, too, unless it is a later
-    sheet of their set. Every other page joins the current log: a later
+    Walking the pages in order, a page OPENS a new log when a page of
+    ``breaks`` (a divider, RI-177) lies between it and the log page before,
+    when its description says it is the first sheet of a set ("sheet 1 of
+    2"), or when it logs an exploration (:func:`page_identifiers`) other
+    than the current log's and does not say in words that it is continued
+    from the page before -- after pages that name none, too, unless it is a
+    later sheet of their set. Every other page joins the current log: a later
     sheet, a page of the current log's exploration, a page that names
     none. With no
     text layer every scanned log page used to share one planlens key; the
@@ -804,6 +919,7 @@ def log_groups(pages: Sequence[int],
     current: Optional[PageGroup] = None
     holes: List[str] = []
     pages = sorted(int(p) for p in pages)
+    cuts = sorted({int(p) for p in breaks})
     named = page_identifiers(pages, descriptions)
     for page in pages:
         record = descriptions.get(page)
@@ -813,6 +929,8 @@ def log_groups(pages: Sequence[int],
         why = ""
         if current is None:
             why = "the first log page"
+        elif any(current.pages[-1] < cut < page for cut in cuts):
+            why = "the first log page after a divider"
         elif sheet and sheet[0] == 1:
             why = f"the first sheet of {sheet[1]}"
         elif hole and not known and not carries_on(record) \
@@ -895,22 +1013,88 @@ def lab_groups(pages: Sequence[int],
     return out
 
 
+#: A kind that says the page is a title page or a cover sheet ("title page
+#: of a calculation").
+_TITLE_PAGE = re.compile(r"\b(?:title|cover)\s+(?:page|sheet)\b", re.I)
+
+
+def _kind(record: Optional[Mapping[str, Any]]) -> str:
+    return str(_described(record).get("kind") or "")
+
+
+#: Words that say the describer guessed a program rather than read one off
+#: the page: "likely", "a STABL-type output", "program not named".
+_HEDGED = re.compile(
+    r"\b(?:likely|probably|possibly|perhaps|presumably|apparently|"
+    r"appears?|seems?|unnamed|unknown|not\s+(?:named|stated|printed|shown))"
+    r"\b|-(?:type|style|like)\b", re.I)
+
+
+def _program_named(record: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """The program the page's description names (its ``names`` field), by
+    the calculation reader's program patterns; None when it names none.
+
+    A piece of the field that hedges (:data:`_HEDGED`) names nothing: a
+    guess at a program's family ("STABL-type output") is not the program a
+    page prints, and read as one it cut a printout of the program it guessed
+    at in two."""
+    from report_ingest.calc_reader import _program_in
+
+    for piece in re.split(r"[;|]", str(_described(record).get("names")
+                                       or "")):
+        if _HEDGED.search(piece):
+            continue
+        got = _program_in(piece)
+        if got is not None:
+            return got[0].lower()
+    return None
+
+
 def calc_starts(pages: Sequence[int],
                 descriptions: Mapping[int, Mapping[str, Any]]) -> List[int]:
     """The pages of a run on which a description says a new printout
-    begins: the first sheet of a set of two or more ("sheet 1 of 7"), or a
-    one-sheet set ("page 1 of 1") whose title differs from the page
-    before's -- a program that prints "page 1 of 1" on every page of one
-    printout keeps its title. A page with no sheet number begins nothing."""
+    begins (BACKLOG RI-176):
+
+    * the first sheet of a set of two or more ("sheet 1 of 7"), or a
+      one-sheet set ("page 1 of 1") whose title differs from the page
+      before's -- a program that prints "page 1 of 1" on every page of one
+      printout keeps its title;
+    * a page whose description's ``exploration`` field names an
+      exploration (:func:`exploration_id`) other than the one the printout
+      so far names -- a program run once for each boring or sounding,
+      printed back to back (a description saved before the field existed
+      says nothing here: the codes a calculation page lists are figures,
+      tables and exhibits as often as explorations);
+    * a page that names a program other than the one the printout so far
+      names;
+    * a title page or cover sheet, by its kind, after a page that is not
+      one.
+
+    A page that says it is continued from the page before begins nothing.
+    A changed title alone begins nothing: a printout's tables and charts
+    carry titles of their own ("allowable capacity", "load against
+    settlement"), and cutting on them would read one printout as many."""
     out: List[int] = []
     before: Optional[Mapping[str, Any]] = None
-    for n, page in enumerate(pages):
-        record = descriptions.get(int(page))
+    hole: Optional[str] = None
+    program: Optional[str] = None
+    for n, page in enumerate(int(p) for p in pages):
+        record = descriptions.get(page)
         sheet = sheet_of(record)
-        if n and sheet and sheet[0] == 1 and not carries_on(record) \
-                and (sheet[1] > 1 or _title_key(record)
-                     != _title_key(before)):
-            out.append(int(page))
+        here = exploration_id(_described(record).get("exploration"))
+        made_by = _program_named(record)
+        if n and not carries_on(record) and (
+                (sheet and sheet[0] == 1
+                 and (sheet[1] > 1
+                      or _title_key(record) != _title_key(before)))
+                or (here and hole and here != hole)
+                or (made_by and program and made_by != program)
+                or (_TITLE_PAGE.search(_kind(record))
+                    and not _TITLE_PAGE.search(_kind(before)))):
+            out.append(page)
+            hole = program = None
+        hole = here or hole
+        program = made_by or program
         before = record
     return out
 
@@ -934,8 +1118,9 @@ def calc_groups(pages: Sequence[int], doc: Any = None,
 
     Two signals, and a new printout begins where EITHER says so:
 
-    * the descriptions' sheet numbers (:func:`calc_starts`), which see a
-      printout's "sheet 1 of n" even where two printouts carry one title;
+    * the descriptions (:func:`calc_starts`): a printout's "sheet 1 of n",
+      seen even where two printouts carry one title, another exploration
+      or program, a title page;
     * today's page heads (``calc_reader.split_calc_runs``, when the document
       is at hand): a title naming a different calculation, a different
       program or a fresh banner, which see a program's output that numbers
@@ -959,7 +1144,7 @@ def calc_groups(pages: Sequence[int], doc: Any = None,
                      for part in _balanced(piece, MAX_RUN_PAGES)]
         for part in parts:
             why = ("a run of calculation pages" if part[0] == run[0]
-                   else "the first sheet of a set, by its description"
+                   else "a new printout, by its description"
                    if part[0] in starts else
                    "a new printout by its head, or a balanced cut")
             out.append(PageGroup("calc", list(part), why=why,
@@ -986,21 +1171,36 @@ def narrative_groups(labels: Mapping[int, str], n_pages: int, *,
                      max_pages: int = MAX_NARRATIVE_PAGES,
                      page_chars: Optional[Mapping[int, int]] = None,
                      max_chars: Optional[int] = None,
-                     window: Optional[Sequence[int]] = None
+                     window: Optional[Sequence[int]] = None,
+                     route: str = "pdf",
+                     set_aside: Iterable[int] = ()
                      ) -> List[PageGroup]:
     """The narrative's pages in consecutive parts.
 
     The pages are ``narrative_reader.reading_pages``' rule with the range
     labels as its roles -- every page labelled cover, letter, contents or
     narrative, plus the first ``front_pages`` pages whatever their label --
-    and the report's own figure, plan and profile pages. Up to
+    and the report's own figure, plan and profile pages, less the pages
+    ``set_aside`` (the dividers, RI-177). Up to
     ``max_pages`` of them go in one call; more are read in consecutive
     parts of near one size. With ``page_chars`` and ``max_chars`` a part is
     also cut where its pages' text would pass the budget.
 
     ``window`` is a report BOUND INSIDE another, as ``reading_pages`` takes
     it: only the window's pages are read, and its front is the first
-    ``front_pages`` pages OF IT, not of the file."""
+    ``front_pages`` pages OF IT, not of the file.
+
+    Each part ranks its pages (:attr:`PageGroup.ranked`, RI-175) the way
+    today's reader keeps them inside its budget: the front first, kept
+    whatever the request's size, then the pages labelled cover, letter,
+    contents or narrative, then the figures, each in page order. The reader
+    leaves out the last-ranked pages that do not fit one request.
+
+    On the ``pictures`` route the narrative is ONE part, whatever
+    ``max_pages`` and ``max_chars`` say (RI-175): its call sends text
+    first, so the request's own limit decides what goes
+    (``model_first_read._Caller.fit``), leaving out rather than splitting;
+    a front too large for one request is the only split, and it says so."""
     from report_ingest.narrative_reader import FRONT_PAGES
 
     front = FRONT_PAGES if front_pages is None else int(front_pages)
@@ -1008,13 +1208,16 @@ def narrative_groups(labels: Mapping[int, str], n_pages: int, *,
     span = (sorted({int(p) for p in window if 0 <= int(p) < total})
             if window is not None else list(range(total)))
     inside = set(span)
-    wanted = {int(p) for p, label in labels.items()
-              if label in NARRATIVE_LABELS or label in FIGURE_LABELS}
-    wanted = {p for p in wanted if p in inside}
-    wanted.update(span[:max(0, front)])
-    pages = sorted(wanted)
+    prose = {int(p) for p, label in labels.items()
+             if label in NARRATIVE_LABELS and int(p) in inside}
+    figures = {int(p) for p, label in labels.items()
+               if label in FIGURE_LABELS and int(p) in inside}
+    first = set(span[:max(0, front)])
+    pages = sorted((prose | figures | first) - {int(p) for p in set_aside})
     if not pages:
         return []
+    if route == "pictures":
+        max_pages, max_chars = len(pages), None
     parts = _balanced(pages, max(1, int(max_pages)))
     if page_chars is not None and max_chars:
         cut: List[List[int]] = []
@@ -1029,11 +1232,23 @@ def narrative_groups(labels: Mapping[int, str], n_pages: int, *,
                 cut[-1].append(page)
                 used += size
         parts = cut
-    return [PageGroup("narrative", part, key="narrative",
-                      why=("the narrative and the front of the report"
-                           if n == 0 else "the narrative, continued"),
-                      part=(n + 1, len(parts)) if len(parts) > 1 else None)
-            for n, part in enumerate(parts)]
+
+    def ranked(part: List[int]) -> Tuple[List[int], int]:
+        tiers = ([p for p in part if p in first],
+                 [p for p in part if p not in first and p in prose],
+                 [p for p in part if p not in first and p not in prose])
+        return [p for tier in tiers for p in tier], len(tiers[0])
+
+    out: List[PageGroup] = []
+    for n, part in enumerate(parts):
+        order, n_front = ranked(part)
+        out.append(PageGroup(
+            "narrative", part, key="narrative",
+            why=("the narrative and the front of the report" if n == 0
+                 else "the narrative, continued"),
+            part=(n + 1, len(parts)) if len(parts) > 1 else None,
+            ranked=order, n_front=n_front))
+    return out
 
 
 def group_pages(labels: Mapping[int, str],
@@ -1047,17 +1262,33 @@ def group_pages(labels: Mapping[int, str],
     """Every reader's groups for one report: ``logs``, ``lab``, ``calc``
     and ``narrative``. ``window`` narrows all of them to a report bound
     inside another (:func:`narrative_groups`); ``front_pages``,
-    ``page_chars`` and ``max_chars`` are the narrative's."""
-    labels = {int(p): str(label) for p, label in labels.items() if label}
+    ``page_chars`` and ``max_chars`` are the narrative's.
+
+    A page the descriptions call a divider (:func:`divider_pages`,
+    RI-177) is in no group, whatever its label, and a group never runs
+    across one: the laboratory and calculation runs end at it, a log
+    begins after it, and the narrative leaves it out.
+
+    On the pdf ``route`` the narrative's parts are
+    :data:`MAX_NARRATIVE_PAGES` long and cut on the text budget; on the
+    pictures route it is one part (RI-175): a narrative page with a usable
+    text layer goes as its text alone (:func:`page_blocks`), so the request
+    limit and the picture cap are the request's to keep (the reader leaves
+    out the last-ranked pages), not the part's."""
+    aside = divider_pages(descriptions)
+    labels = {int(p): str(label) for p, label in labels.items()
+              if label and int(p) not in aside}
     if window is not None:
         inside = {int(p) for p in window}
         labels = {p: label for p, label in labels.items() if p in inside}
     return {
-        "logs": log_groups(stage_pages(labels, "logs"), descriptions),
+        "logs": log_groups(stage_pages(labels, "logs"), descriptions,
+                           breaks=aside),
         "lab": lab_groups(stage_pages(labels, "lab"), descriptions),
         "calc": calc_groups(stage_pages(labels, "calc"), doc, descriptions),
         "narrative": narrative_groups(
             labels, n_pages, front_pages=front_pages,
-            max_pages=max_pages_per_call(route), page_chars=page_chars,
-            max_chars=max_chars, window=window),
+            max_pages=MAX_NARRATIVE_PAGES, page_chars=page_chars,
+            max_chars=max_chars, window=window, route=route,
+            set_aside=aside),
     }

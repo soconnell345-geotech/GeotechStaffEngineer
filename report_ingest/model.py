@@ -74,6 +74,7 @@ __all__ = [
     "Citation", "Mention", "BearingValue", "Stratum",
     "DOCUMENT_TYPE_VALUES", "PROPERTY_TYPE_VALUES", "PROJECT_PHASE_VALUES",
     "LIQUEFACTION_VALUES", "EARTH_HAZARD_VALUES", "YES_NO_UNCLEAR",
+    "OUTSIDE_PROJECT_VALUES",
     "GENERAL_FIELDS", "NATURAL_HAZARD_FIELDS", "SUMMARY_FIELDS",
     "SUMMARY_WORD_LIMITS",
     # the typed laboratory results (WP3)
@@ -826,7 +827,9 @@ class ResumedSteps(BaseModel):
                     "when they were made, as their saved files say; none of "
                     "them was made by this run")
     saved_input_tokens: int = Field(
-        default=0, ge=0, description="their input tokens, likewise")
+        default=0, ge=0,
+        description="their input tokens, likewise: every input part their "
+                    "files carry, plain, cache writes and cache reads")
     saved_output_tokens: int = Field(
         default=0, ge=0, description="their output tokens, likewise")
     saved_dollars: float = Field(
@@ -886,7 +889,9 @@ class DocumentFacts(BaseModel):
                     "error included; a step taken from the folder is not "
                     "in it (see resumed)")
     input_tokens: int = Field(
-        default=0, ge=0, description="this run's input tokens")
+        default=0, ge=0,
+        description="this run's input tokens: the plain input, the cache "
+                    "writes and the cache reads (BACKLOG RI-171)")
     output_tokens: int = Field(
         default=0, ge=0, description="this run's output tokens")
     dollars: float = Field(
@@ -2357,6 +2362,14 @@ EARTH_HAZARD_VALUES: Tuple[str, ...] = (
 #: hand's own: soil that is not corrosive to one thing and is to another is
 #: neither a yes nor a no, and flattening it either way loses the finding.
 YES_NO_UNCLEAR: Tuple[str, ...] = ("yes", "no", "mixed", "unclear")
+#: What ``outsideProject`` is answered with (BACKLOG RI-174). The owner's
+#: schema asks it as a yes-or-no question and the owner's question list of
+#: 2026-10-26 types it a boolean that may be left empty ("unclear" here), so
+#: "mixed" is not one of its answers. The prompt offers exactly these words
+#: and :class:`GeneralFacts` takes exactly these: Foundry build e lost one
+#: report's whole narrative to a "mixed" the prompt had offered and this
+#: class then refused.
+OUTSIDE_PROJECT_VALUES: Tuple[str, ...] = ("yes", "no", "unclear")
 
 
 class Citation(BaseModel):

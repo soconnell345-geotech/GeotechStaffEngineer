@@ -203,6 +203,135 @@ def test_the_pictures_route_sends_each_page_s_picture_then_its_text(
     assert mfp.pictures_problem(blocks) == ""
 
 
+#: A made-up prose line; three of them are more than today's narrative
+#: reader's 120 characters a page.
+PROSE = "The made-up site is underlain by made-up silty sand over made-up clay."
+
+
+@pytest.fixture()
+def prose_pdf(tmp_path):
+    """Page 0 three lines of prose, page 1 one short line, page 2 none,
+    page 3 prose again."""
+    doc = pymupdf.open()
+    for lines in ((f"MADE-UP PROSE 0 {PROSE}", PROSE, PROSE),
+                  ("MADE-UP FIGURE 1",), (),
+                  (f"MADE-UP PROSE 3 {PROSE}", PROSE, PROSE)):
+        page = doc.new_page()
+        for n, line in enumerate(lines):
+            page.insert_text((72, 72 + 18 * n), line, fontsize=9)
+    path = tmp_path / "prose.pdf"
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+def test_a_page_with_a_usable_text_layer_goes_as_its_text_alone(prose_pdf):
+    """RI-175: a page of today's narrative reader's 120 characters or more
+    is sent as its text, under its page index, with no picture; one with
+    less is sent as a picture with whatever text it has."""
+    from planlens.document import open_document
+
+    from report_ingest.narrative_reader import MIN_TEXT_CHARS
+
+    doc = open_document(str(prose_pdf), name="prose")
+    try:
+        assert len(PROSE) * 3 > MIN_TEXT_CHARS > len("MADE-UP FIGURE 1")
+        assert mfp.text_pages(doc, [0, 1, 2, 3]) == [0, 3]
+        prose = mfp.page_blocks(doc, 3, as_text=True)
+        figure = mfp.page_blocks(doc, 1, as_text=False)
+        blank = mfp.page_blocks(doc, 2, as_text=True)
+        forced = mfp.page_blocks(doc, 1, as_text=True)
+    finally:
+        doc.close()
+    assert [b["type"] for b in prose] == ["text"]
+    start, end = mfp.TEXT_MARKERS
+    body = prose[0]["text"]
+    assert body.startswith("Page 3's text, as the PDF's own text layer")
+    assert body.index(start) < body.index("MADE-UP PROSE 3") < \
+        body.index(end)
+    assert [b["type"] for b in figure] == ["text", "image", "text"]
+    assert figure[0]["text"].startswith("Page 1 (as a picture: it has too "
+                                        "little text")
+    assert "MADE-UP FIGURE 1" in figure[2]["text"]
+    # A page with no text has nothing to send as text, so goes as a picture.
+    assert [b["type"] for b in blank] == ["text", "image", "text"]
+    assert "carries no text" in blank[2]["text"]
+    assert [b["type"] for b in forced] == ["text"]
+
+
+def test_a_scanned_page_with_document_intelligence_text_goes_as_text(
+        prose_pdf):
+    """RI-175 on a scanned report: a page with no text layer whose Azure
+    Document Intelligence text the document carries counts as a text page
+    for the narrative's one call, and that text is what is sent, said to be
+    an optical reading -- so a report scanned throughout is not sent as
+    pictures in parts. A made-up result in DI's documented shape."""
+    from planlens.document import open_document
+    from planlens.document.azure_di import AzureLayout
+
+    lines = [f"MADE-UP SCANNED PAGE {PROSE}", PROSE, PROSE]
+    spans, at = [], 0
+    for text in lines:
+        spans.append({"offset": at, "length": len(text)})
+        at += len(text) + 1
+    result = {"content": "\n".join(lines), "pages": [{
+        "pageNumber": 3, "width": 595 / 72, "height": 842 / 72,
+        "unit": "inch", "words": [],
+        "lines": [{"content": text,
+                   "polygon": [1.0, 1.0 + 0.3 * n, 7.0, 1.0 + 0.3 * n,
+                               7.0, 1.2 + 0.3 * n, 1.0, 1.2 + 0.3 * n],
+                   "spans": [span]}
+                  for n, (text, span) in enumerate(zip(lines, spans))]}]}
+
+    plain = open_document(str(prose_pdf), name="prose")
+    try:
+        assert mfp.text_pages(plain, [0, 1, 2, 3]) == [0, 3]
+    finally:
+        plain.close()
+    doc = open_document(str(prose_pdf), name="prose",
+                        text_source=AzureLayout(result))
+    try:
+        assert mfp.text_pages(doc, [0, 1, 2, 3]) == [0, 2, 3]
+        blocks = mfp.page_blocks(doc, 2, as_text=True)
+    finally:
+        doc.close()
+    assert [b["type"] for b in blocks] == ["text"]
+    body = blocks[0]["text"]
+    assert body.startswith("Page 2's text, as an optical reader read it")
+    assert "MADE-UP SCANNED PAGE" in body and "UNRELIABLE" not in body
+
+
+def test_picture_blocks_are_as_they_were_after_the_split_into_helpers(
+        prose_pdf):
+    """The pictures route of every other stage is unchanged: a header, the
+    picture and the page's text, the same words as before RI-175."""
+    from planlens.document import open_document
+
+    doc = open_document(str(prose_pdf), name="prose")
+    try:
+        blocks = mfp.picture_blocks(doc, [0, 2])
+    finally:
+        doc.close()
+    assert [b["type"] for b in blocks] == ["text", "image", "text"] * 2
+    assert blocks[0]["text"] == "Page 0 (picture 1 of 2):"
+    assert blocks[2]["text"].startswith(
+        "Page 0's text, as the PDF's own text layer carries it, between the "
+        "markers:\n" + mfp.TEXT_MARKERS[0] + "\nMADE-UP PROSE 0")
+    assert blocks[2]["text"].endswith(mfp.TEXT_MARKERS[1])
+    assert blocks[5]["text"] == ("Page 2 carries no text: read it from the "
+                                 "picture.")
+
+
+def test_the_text_first_map_sentence_says_how_each_page_is_given():
+    said = mfp.page_map_sentence([0, 3], route="pictures", text_first=True)
+    assert "its text alone" in said and "as a picture" in said
+    assert "0-based" in said
+    assert mfp.page_map_sentence([0, 3], route="pictures") != said
+    # On the PDF route the PDF wording stands.
+    assert mfp.page_map_sentence([0, 3], text_first=True) == \
+        mfp.page_map_sentence([0, 3])
+
+
 # ---------------------------------------------------------------------------
 # piece 3: which exploration a page logs
 # ---------------------------------------------------------------------------
@@ -447,7 +576,58 @@ def test_calc_printouts_start_at_a_described_first_sheet():
     groups = mfp.calc_groups(sorted(descriptions), None, descriptions)
     assert [g.pages for g in groups] == [[200, 201, 202], [203, 204],
                                          [205, 206], [207]]
-    assert groups[3].why == "the first sheet of a set, by its description"
+    assert groups[3].why == "a new printout, by its description"
+
+
+def test_printouts_back_to_back_without_sheet_numbers_are_cut_apart():
+    """RI-176: two printouts back to back with no sheet numbers are read
+    apart by what their pages' descriptions say -- another exploration,
+    another program, a title page -- and a printout's own charts, each
+    with a title of its own, stay one printout. Made-up pages."""
+    def page(title="", kind="calculation printout from a program",
+             exploration="", names=""):
+        return _e(exploration, title=title, kind=kind, names=names)
+
+    by_hole = {500: page("MADE-UP ANALYSIS", exploration="QX-1"),
+               501: page(kind="data listing page"),
+               502: page("MADE-UP SUMMARY", exploration="none printed"),
+               503: page("MADE-UP ANALYSIS", exploration="QX-2"),
+               504: page(kind="data listing page")}
+    assert mfp.calc_starts(sorted(by_hole), by_hole) == [503]
+    by_program = {510: page("MADE-UP INPUT", names="LPILE"),
+                  511: page("MADE-UP OUTPUT"),
+                  512: page("MADE-UP INPUT", names="Slide2; a made-up rule"),
+                  513: page("MADE-UP OUTPUT")}
+    assert mfp.calc_starts(sorted(by_program), by_program) == [512]
+    title_pages = {520: page("MADE-UP CALCULATION",
+                             kind="title page of a calculation"),
+                   521: page("MADE-UP TABLE"),
+                   522: page("MADE-UP CALCULATION",
+                             kind="title page of a calculation"),
+                   523: page("MADE-UP TABLE")}
+    assert mfp.calc_starts(sorted(title_pages), title_pages) == [522]
+    charts = {530: page("MADE-UP PILE CAPACITY", kind="chart page"),
+              531: page("MADE-UP SKIN FRICTION CAPACITY", kind="chart page"),
+              532: page("MADE-UP LOAD AGAINST SETTLEMENT", kind="chart page")}
+    assert mfp.calc_starts(sorted(charts), charts) == []
+
+    # A guess at the program's family is not a program: it cuts nothing
+    # between two pages that name the program outright.
+    hedged = {540: page("MADE-UP INPUT", names="STABL6H; a made-up method"),
+              541: page("MADE-UP OUTPUT",
+                        names="made-up circle search (STABL-type output)"),
+              542: page("MADE-UP OUTPUT",
+                        names="made-up output file, likely a STABL program"),
+              543: page("MADE-UP INPUT", names="STABL6H")}
+    assert [mfp._program_named(hedged[p]) for p in sorted(hedged)] == [
+        "stabl6h", None, None, "stabl6h"]
+    assert mfp.calc_starts(sorted(hedged), hedged) == []
+
+    every = {**by_hole, **by_program}
+    groups = mfp.calc_groups(sorted(every), None, every)
+    assert [g.pages for g in groups] == [[500, 501, 502], [503, 504],
+                                         [510, 511], [512, 513]]
+    assert groups[1].why == "a new printout, by its description"
 
 
 def test_calc_heads_run_over_the_whole_run_then_the_descriptions_cut(
@@ -469,7 +649,7 @@ def test_calc_heads_run_over_the_whole_run_then_the_descriptions_cut(
                                          [304, 305, 306, 307]]
     assert [g.why for g in groups] == [
         "a run of calculation pages",
-        "the first sheet of a set, by its description",
+        "a new printout, by its description",
         "a new printout by its head, or a balanced cut"]
 
 
@@ -494,6 +674,38 @@ def test_a_long_printout_is_two_calls_with_its_first_and_last_page_in_both():
     assert set(calls[0]) | set(calls[1]) == set(range(20))
 
 
+def test_a_divider_is_in_no_group_and_no_group_runs_across_it():
+    """RI-177: a page the describer calls a divider takes its section's
+    label, but holds nothing to read: no reader is sent it, alone or with
+    the section's pages, and no group runs across it. Made-up pages."""
+    divider = "appendix divider page"
+    labels = {0: "cover", 1: "narrative", 2: "narrative", 3: "boring_log",
+              4: "boring_log", 5: "boring_log", 6: "lab_test",
+              7: "lab_test", 8: "lab_test", 9: "calculation",
+              10: "calculation", 11: "calculation", 12: "calculation",
+              13: "calculation"}
+    descriptions = {p: _e("", title="MADE-UP PAGE") for p in labels}
+    descriptions[3] = _e("QX-1", title="MADE-UP LOG")
+    descriptions[4] = _e("", kind=divider, title="APPENDIX Q")
+    # Names no exploration: without the divider it would join QX-1's log.
+    descriptions[5] = _e("", title="MADE-UP LOG")
+    descriptions[6] = _e("", kind=divider, title="APPENDIX R")
+    descriptions[11] = _e("", kind=divider, title="APPENDIX S")
+    assert mfp.divider_pages(descriptions) == [4, 6, 11]
+    assert not mfp.is_divider(_d(kind="section drawn with divider lines"))
+
+    groups = mfp.group_pages(labels, descriptions, n_pages=14,
+                             front_pages=5)
+    assert [g.pages for g in groups["logs"]] == [[3], [5]]
+    assert groups["logs"][1].why == "the first log page after a divider"
+    assert [g.pages for g in groups["lab"]] == [[7, 8]]
+    assert [g.pages for g in groups["calc"]] == [[9, 10], [12, 13]]
+    # The front is the first five pages, the divider among them left out.
+    assert [g.pages for g in groups["narrative"]] == [[0, 1, 2, 3]]
+    every = {p for stage in groups.values() for g in stage for p in g.pages}
+    assert not every & {4, 6, 11}
+
+
 LABELS = {0: "cover", 3: "narrative", 60: "narrative", 61: "figure",
           62: "plan", 63: "boring_log", 70: "profile", 90: "lab_test",
           95: "appendix_unknown"}
@@ -510,6 +722,42 @@ def test_the_narrative_is_its_pages_the_front_and_the_figures_in_parts():
                                               62: 10, 70: 10},
                                   max_chars=100)
     assert [g.pages for g in budget] == [[0, 3], [60, 61, 62, 70]]
+
+
+def test_the_narrative_s_pages_are_ranked_front_then_its_own_then_figures():
+    """RI-175: what the reader keeps first when not all fit one request."""
+    labels = {0: "cover", 1: "letter", 4: "figure", 6: "narrative",
+              7: "plan", 9: "narrative", 12: "boring_log"}
+    (group,) = mfp.narrative_groups(labels, 20, front_pages=2)
+    assert group.pages == [0, 1, 4, 6, 7, 9]
+    assert group.ranked == [0, 1, 6, 9, 4, 7]
+    assert group.n_front == 2
+    (bound,) = mfp.narrative_groups(labels, 20, front_pages=1,
+                                    window=range(3, 12))
+    assert bound.ranked == [3, 6, 9, 4, 7] and bound.n_front == 1
+    # The ranking is the narrative's alone; no other group has one.
+    assert mfp.PageGroup("logs", [3]).ranked == []
+
+
+def test_on_the_pictures_route_the_narrative_is_one_part():
+    """RI-175: sent text first, it is one call whatever the page count and
+    the text budget; the request's own limit decides what goes."""
+    chars = {3: 50, 60: 60, 61: 10, 62: 10, 70: 10}
+    one = mfp.narrative_groups(LABELS, 100, front_pages=5, max_pages=4,
+                               page_chars=chars, max_chars=100,
+                               route="pictures")
+    assert [g.pages for g in one] == [[0, 1, 2, 3, 4, 60, 61, 62, 70]]
+    assert one[0].part is None
+    split = mfp.narrative_groups(LABELS, 100, front_pages=5, max_pages=4,
+                                 route="pdf")
+    assert len(split) == 3
+    by_route = {route: mfp.group_pages(LABELS, {}, n_pages=100,
+                                       route=route, front_pages=5,
+                                       page_chars=chars, max_chars=100)
+                for route in ("pdf", "pictures")}
+    assert len(by_route["pdf"]["narrative"]) == 2
+    assert [g.pages for g in by_route["pictures"]["narrative"]] == \
+        [[0, 1, 2, 3, 4, 60, 61, 62, 70]]
 
 
 def test_a_bound_report_s_front_is_its_own_first_pages():

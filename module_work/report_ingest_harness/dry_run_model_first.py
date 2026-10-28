@@ -15,6 +15,12 @@ Run it from the repo root (or a worktree) with the app venv::
 
     .venv/Scripts/python -m module_work.report_ingest_harness.dry_run_model_first --items 2
 
+``--page-route pictures --max-request-tokens-in 100000`` runs the
+model-first arm as Foundry's Claude route sends pages, under the limit
+build f sets; ``--size-narratives`` sizes EVERY corpus report's model-first
+narrative call (text first, BACKLOG RI-175) without making it: calls, pages
+sent as text and as pictures, estimated input tokens, pages left out.
+
 PRIVACY. The corpus, the truth and the saved readings are read in place;
 both arms write under the gitignored ``raw/`` folder
 (``<main checkout>/module_work/field_feedback/2026-10-24_claude_local/raw/
@@ -168,6 +174,90 @@ def _summary(out: Path, stage: str) -> Dict[str, Any]:
                         for p in sorted((out / stage).glob("*.json"))}}
 
 
+class _SizingEngine:
+    """Stands in for the narrative's model when its call is sized (no call
+    is made): its name sets the picture size, as the real engine's does."""
+
+    def __init__(self, name: str, accepts_pdf: bool) -> None:
+        self.name = self.model = name
+        self.accepts_pdf = accepts_pdf
+
+
+def size_narratives(raw: Path, root: Path, *, route: str,
+                    limit: Optional[int]) -> List[Dict[str, Any]]:
+    """The model-first narrative call of EVERY corpus report, sized and not
+    made (BACKLOG RI-175): the narrative stage's own grouping
+    (``model_first_scoring.narrative_groups_for``, over the rules' page
+    labels) and the reader's own fit and estimate
+    (``model_first_read.narrative_plan``), on the narrative model's picture
+    size. Prints one line a report and writes ``narrative_sizes.json``
+    (ids and counts only) under ``root``."""
+    from report_ingest.corpus import Corpus
+    from report_ingest.model_first_read import STAGE_MODELS, narrative_plan
+    from report_ingest.model_first_scoring import narrative_groups_for
+
+    corpus = Corpus(raw / "corpus", di_dir=raw / "di", cache_dir=root)
+    engine = _SizingEngine(STAGE_MODELS["narrative"],
+                           accepts_pdf=route != "pictures")
+    rows: List[Dict[str, Any]] = []
+    print(f"\nnarrative calls sized, route {route}, limit "
+          f"{limit or 'none (the 150,000-token budget)'}, pictures sized "
+          f"for {engine.name}:")
+    for rid in corpus.present_ids():
+        doc = corpus.open_report(rid, di="auto", warn=False)
+        try:
+            groups, _body = narrative_groups_for(doc, route)
+            plan = narrative_plan(doc, groups, engine, report_id=rid,
+                                  route=route, max_request_tokens_in=limit)
+            n_pages = int(doc.n_pages)
+        finally:
+            doc.close()
+        chosen = sorted({p for g in groups for p in g.pages})
+        row = {"id": rid, "pages": n_pages, "chosen": len(chosen),
+               "calls": len(plan),
+               "sent": sum(len(r["pages"]) for r in plan),
+               "text_pages": sum(r["text_pages"] for r in plan),
+               "pictures": sum(r["pictures"] for r in plan),
+               "estimated_tokens_in": [r["estimated_tokens_in"]
+                                       for r in plan],
+               "left_out": sum(len(r["left_out"]) for r in plan),
+               "over_limit": any(r["over_limit"] for r in plan),
+               "problem": [r["problem"] for r in plan if r["problem"]]}
+        rows.append(row)
+        print(f"  {rid}: {row['pages']} pp, {row['chosen']} chosen, "
+              f"{row['calls']} call(s), {row['sent']} sent "
+              f"({row['text_pages']} as text, {row['pictures']} pictures), "
+              f"~{', '.join(f'{t:,}' for t in row['estimated_tokens_in'])} "
+              f"tokens in, {row['left_out']} left out"
+              + (", OVER THE LIMIT" if row["over_limit"] else "")
+              + (f", refused: {row['problem']}" if row["problem"] else ""))
+    one = [r for r in rows if r["calls"] == 1 and not r["over_limit"]
+           and not r["problem"]]
+    print(f"  {len(one)} of {len(rows)} report(s) in one call within the "
+          f"limit; {sum(1 for r in rows if r['left_out'])} leave pages out")
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "narrative_sizes.json").write_text(
+        json.dumps({"route": route, "limit": limit, "model": engine.name,
+                    "reports": rows}, indent=1), encoding="utf-8")
+    return rows
+
+
+def _narrative_calls(out: Path) -> List[str]:
+    """One line a report from the narrative stage's run files: its calls'
+    pages and estimated input tokens, and the pages it left out."""
+    lines = []
+    for path in sorted((out / "narrative").glob("*.json")):
+        row = rcl._load(path) or {}
+        calls = row.get("calls") or []
+        sizes = ", ".join(f"{int(c['estimated_tokens_in']):,}"
+                          for c in calls if c.get("estimated_tokens_in"))
+        lines.append(f"    {path.stem}: {len(calls)} call(s) over "
+                     f"{', '.join(str(len(c.get('pages') or [])) for c in calls)}"
+                     f" page(s), ~{sizes or '?'} tokens in, "
+                     f"{len(row.get('left_out') or [])} left out")
+    return lines
+
+
 def run(args: argparse.Namespace) -> int:
     import report_ingest.engine as engine_module
     from report_ingest.cluster_scoring import score_on_cluster
@@ -181,6 +271,11 @@ def run(args: argparse.Namespace) -> int:
     if refusal:
         print(refusal)
         return rcl.REFUSED
+    if args.size_narratives:
+        size_narratives(raw, root, route=args.page_route or "pictures",
+                        limit=args.max_request_tokens_in)
+        if not args.stages:
+            return rcl.OK
     readings = _saved_readings(arms)
     stages = tuple(s for s in STAGES if not args.stages
                    or s in args.stages.split(","))
@@ -210,7 +305,8 @@ def run(args: argparse.Namespace) -> int:
                 truth_dir=raw / "truth", sets=(), redo=False,
                 max_reports=args.items, model_first=arm,
                 stage_models={s: REPLAY for s in stages} if arm == "on"
-                else None)
+                else None, page_route=args.page_route,
+                max_request_tokens_in=args.max_request_tokens_in)
             by_arm[arm] = pointed[start:]
     finally:
         engine_module.PrompterEngine = saved_engine
@@ -239,6 +335,8 @@ def run(args: argparse.Namespace) -> int:
         if stage != "narrative":
             same = off["befores"] == on["befores"]
             print(f"    before column the same in both arms: {same}")
+        else:
+            print("\n".join(_narrative_calls(root / "on")))
     print(f"  replayed calls: {sum(len(e.calls) for e in pointed)} "
           f"(no model called)")
     print(f"\noutputs (gitignored): {root}")
@@ -260,6 +358,19 @@ def build_parser() -> argparse.ArgumentParser:
                          "(default: the 2026-10-24 claude_local raw folder)")
     ap.add_argument("--redo", action="store_true",
                     help="clear both arms' folders first")
+    ap.add_argument("--page-route", default=None,
+                    choices=("auto", "pdf", "pictures"),
+                    help="how the model-first arm sends pages (default: "
+                         "the variable, else auto; the replaying engine "
+                         "takes a PDF, so pictures is Foundry's Claude "
+                         "route)")
+    ap.add_argument("--max-request-tokens-in", type=int, default=None,
+                    help="the per-request input-token limit (RI-121, "
+                         "RI-175)")
+    ap.add_argument("--size-narratives", action="store_true",
+                    help="size every corpus report's model-first narrative "
+                         "call (no call made) on --page-route (default "
+                         "pictures); with no --stages, only that")
     return ap
 
 
