@@ -1,15 +1,18 @@
-# Foundry brief, model-first waves (RI-87), build e (2026-10-27)
+# Foundry brief, model-first waves (RI-87), build f (2026-10-28)
 
-**Cost, in tokens first.** MF-1 is about 4.5 to 5 M tokens in and 0.9 M
-out (about $30 to $33 at the API rates of the local ledger, §7). MF-2 is
-about 30 to 52 M in and 5 to 10 M out (about $120 to $230). MF-3 runs only
-on the owner's word: about 28 to 48 M in more (about $120 to $220).
-Foundry's meter reads $0 for these models: a Foundry model name has no
-price, so `max_total_dollars` never stops a run. The per-report token check
-in §5 is the only brake on spend.
+**Cost, in tokens first.** Build f's MF-1b (§0) is about 2.5 to 3.5 M
+tokens in (build e's MF-1 measured 4.7 M in and 0.65 M out for all twelve
+arms). MF-2 is about 30 to 52 M in and 5 to 10 M out (about $120 to $230 at
+the API rates of the local ledger, §7); build e's partial on arm ran at
+about 65 % of its lines. MF-3 runs only on the owner's word: about 28 to 48
+M in more (about $120 to $220). Foundry's meter reads $0 for these models:
+a Foundry model name has no price, so `max_total_dollars` never stops a
+run. The token brakes (`max_total_tokens`, `max_report_tokens_in`) and the
+per-report token check in §5 are the brakes on spend; in build f they count
+cache tokens.
 
-The model-first brief for build e (INF-40; plan §8.7.1 and §8.8), app
-`5.33.0+foundry.20261027.1`. It covers what to run, the settings, the calls
+The model-first brief for build f (INF-40; plan §8.7.1 and §8.8), app
+`5.33.0+foundry.20261028.1`. It covers what to run, the settings, the calls
 and tokens to expect, where to stop and what comes back. The wheels, their
 versions and the install check are in the delivery's `BUILD_NOTES.md`. Reports are named by id only. The estimates come from the
 saved measurements listed in §7, and the wave's own token counts replace
@@ -17,8 +20,52 @@ them.
 
 MF-2 runs on wave 2's six reports so the two waves line up, but it does
 not rely on wave 2's results: wave 2 ran on the 10-23 build, and the off
-arm run on build e in this wave is the baseline. The models,
+arm run on build f in this wave is the baseline. The models,
 decisions D1 to D3, are in §2.
+
+## 0. Build f: what changed, and what to run
+
+Build e's MF-0 stands (pictures route; D1 Sonnet the vision voter, D2 Haiku
+the describer). Its MF-1 and MF-2 were read in full
+(`module_work/field_feedback/2026-10-27_foundry_build_e/TRACE_REVIEW.md`).
+Build f fixes what they found:
+
+- Foundry's Claude classes now get `is_error` on every tool result (RI-172).
+  Build e's "today" arms lost 47 MF-1 items and MF-2 stopped on it.
+- Tokens in counts plain input, cache writes and cache reads everywhere
+  (RI-171): every brake, the per-report token checks, the record and
+  `all_attempts.tokens_in`. Keep your own meter as a cross-check; the two
+  should agree.
+- `results.json` totals carry every stage's failed items and requests, and
+  a run ends with one line naming failures by stage (RI-173). An unfinished
+  label review is a failed item, and the report is not marked done.
+- The narrative's `outsideProject` takes yes, no or unclear; an answer
+  outside them is refused alone, not the whole narrative (RI-174).
+- Model-first: the narrative goes in one call per report, pages with a text
+  layer or Document Intelligence text sent as text, pictures only for
+  low-text pages; today's conventions are in its instruction; the lab
+  instruction asks for Atterberg limits printed on a gradation sheet as
+  their own entry (RI-175). Calc page groups cut where a printout changes
+  (RI-176), and divider pages are left out of every group (RI-177).
+- The model-first prompt version is `mf-3`, so model-first answers saved by
+  build e would be asked again on a resume. Use fresh folders for every arm
+  below; resume nothing from build e.
+
+**Run, in order, each arm in its own new `out_dir` and `durable_dir`:**
+
+1. **MF-1b, the arms build e lost or build f changed** (§3's settings and
+   items): logs today on Sonnet and on Opus, lab today, calc today on
+   Sonnet and on Opus, lab first, narrative today and narrative first.
+   Eight arms; about 2.5 to 3.5 M tokens in. Build e's logs first and calc
+   first arms stand (their instructions did not change) and are not re-run.
+   Run `max_reports=2` first and check each arm's totals show 0 failed
+   items before the full run.
+2. **MF-2, fresh**, all six reports, both arms (§4, §5). Run R05 and R36
+   first and apply §5's checks (tokens in from `all_attempts.tokens_in`,
+   the failures line, `arm.json`), then go on to R37, R13, R16 and R28
+   without waiting for a hand-back, stopping only where §5 says. Build e's
+   partial on arm measured R05 at 60 % and R36 at 65 % of their lines.
+3. **MF-3** only on the owner's word.
 
 ## 1. Before the wave
 
@@ -257,8 +304,8 @@ log). Report counts only, as for every blind set.
    in the same `out_dir` (it resumes).
 3. **Each MF-2 arm, the token check:** run R05 and R36 first. Check each
    `run.json` (arm, models, routes, placement counts) and its tokens in
-   (`all_attempts.input_tokens` where the file has it: `cost` is the last
-   attempt alone).
+   (`all_attempts.tokens_in` in build f, plain input plus cache writes
+   plus cache reads: `cost` is the last attempt alone).
    Stop and send the report back if its tokens in pass the line below: 1.5
    times the high estimate per page (off about 27 k a page, on about 15 k).
    Then run R37, R13, R16 and R28 with `max_reports`, and check each report
@@ -297,7 +344,7 @@ log). Report counts only, as for every blind set.
    5. **The off arm has the hole fixes.** Wave 2's second hand-back showed
       today's log reader read several holes' pages as one hole (R28 lacked
       18 of the 77 holes it prints) and let depths above the ground surface
-      through; build e cuts log items by hole (RI-117), refuses depths
+      through; build f cuts log items by hole (RI-117), refuses depths
       above the ground surface (RI-123), keeps two holes under one printed
       name apart (RI-135) and takes another hole's rows out of a log
       (RI-145). Still score hole recall (holes printed against holes in
@@ -364,8 +411,10 @@ For each arm folder, the same as wave 1:
 
 Also send back:
 
-- the probe's printed outcome for each route and model;
-- each cell's printed log.
+- each cell's printed log, with its closing failures-by-stage line;
+- your meter's per-call table (arm, report, model, started, seconds, plain
+  input, cache write, cache read, output, refused, error), as build e's
+  `mf1_calls.csv` and `mf2_calls.csv`.
 
 Private content stays in the workspace, as in wave 1.
 
