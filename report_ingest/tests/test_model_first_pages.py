@@ -581,6 +581,38 @@ def test_a_long_printout_is_two_calls_with_its_first_and_last_page_in_both():
     assert set(calls[0]) | set(calls[1]) == set(range(20))
 
 
+def test_a_divider_is_in_no_group_and_no_group_runs_across_it():
+    """RI-177: a page the describer calls a divider takes its section's
+    label, but holds nothing to read: no reader is sent it, alone or with
+    the section's pages, and no group runs across it. Made-up pages."""
+    divider = "appendix divider page"
+    labels = {0: "cover", 1: "narrative", 2: "narrative", 3: "boring_log",
+              4: "boring_log", 5: "boring_log", 6: "lab_test",
+              7: "lab_test", 8: "lab_test", 9: "calculation",
+              10: "calculation", 11: "calculation", 12: "calculation",
+              13: "calculation"}
+    descriptions = {p: _e("", title="MADE-UP PAGE") for p in labels}
+    descriptions[3] = _e("QX-1", title="MADE-UP LOG")
+    descriptions[4] = _e("", kind=divider, title="APPENDIX Q")
+    # Names no exploration: without the divider it would join QX-1's log.
+    descriptions[5] = _e("", title="MADE-UP LOG")
+    descriptions[6] = _e("", kind=divider, title="APPENDIX R")
+    descriptions[11] = _e("", kind=divider, title="APPENDIX S")
+    assert mfp.divider_pages(descriptions) == [4, 6, 11]
+    assert not mfp.is_divider(_d(kind="section drawn with divider lines"))
+
+    groups = mfp.group_pages(labels, descriptions, n_pages=14,
+                             front_pages=5)
+    assert [g.pages for g in groups["logs"]] == [[3], [5]]
+    assert groups["logs"][1].why == "the first log page after a divider"
+    assert [g.pages for g in groups["lab"]] == [[7, 8]]
+    assert [g.pages for g in groups["calc"]] == [[9, 10], [12, 13]]
+    # The front is the first five pages, the divider among them left out.
+    assert [g.pages for g in groups["narrative"]] == [[0, 1, 2, 3]]
+    every = {p for stage in groups.values() for g in stage for p in g.pages}
+    assert not every & {4, 6, 11}
+
+
 LABELS = {0: "cover", 3: "narrative", 60: "narrative", 61: "figure",
           62: "plan", 63: "boring_log", 70: "profile", 90: "lab_test",
           95: "appendix_unknown"}

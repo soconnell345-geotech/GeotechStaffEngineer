@@ -86,7 +86,8 @@ __all__ = [
     "text_pages", "page_blocks",
     "pictures_problem", "exploration_id", "page_identifiers",
     "page_identifier", "SHARED_ACROSS", "sheet_of",
-    "carries_on", "stage_pages", "runs", "log_groups", "lab_starts",
+    "carries_on", "is_divider", "divider_pages", "stage_pages", "runs",
+    "log_groups", "lab_starts",
     "lab_groups", "calc_starts", "calc_groups", "calc_calls",
     "narrative_groups", "group_pages",
 ]
@@ -794,6 +795,27 @@ def carries_on(record: Optional[Mapping[str, Any]]) -> bool:
     return bool(_CARRIES_ON.search(said))
 
 
+#: A kind that says the page is a divider ("appendix divider page"), not a
+#: drawing's divider lines.
+_DIVIDER = re.compile(r"\bdivider\b(?!\s+lines?\b)", re.I)
+
+
+def is_divider(record: Optional[Mapping[str, Any]]) -> bool:
+    """Whether the page's description says it is a divider: a tab page
+    that opens an appendix or a part of the report and names it
+    (BACKLOG RI-177). The labels give a divider its section's label
+    (``range_labels``' conventions), so a reader would be sent it with the
+    section's pages, or alone, and it holds nothing to read."""
+    return bool(_DIVIDER.search(str(_described(record).get("kind") or "")))
+
+
+def divider_pages(descriptions: Mapping[int, Mapping[str, Any]]
+                  ) -> List[int]:
+    """The pages the descriptions call dividers (:func:`is_divider`)."""
+    return sorted(int(p) for p, record in descriptions.items()
+                  if is_divider(record))
+
+
 def _title_key(record: Optional[Mapping[str, Any]]) -> str:
     """A title folded for comparison: lower case, no digits, no
     punctuation."""
@@ -871,15 +893,17 @@ def _balanced(pages: List[int], cap: int) -> List[List[int]]:
 
 def log_groups(pages: Sequence[int],
                descriptions: Mapping[int, Mapping[str, Any]],
-               max_pages: int = MAX_LOG_PAGES) -> List[PageGroup]:
+               max_pages: int = MAX_LOG_PAGES,
+               breaks: Iterable[int] = ()) -> List[PageGroup]:
     """The log pages, one log per group, from their descriptions.
 
-    Walking the pages in order, a page OPENS a new log when its
-    description says it is the first sheet of a set ("sheet 1 of 2"), or
-    when it logs an exploration (:func:`page_identifiers`) other than the
-    current log's and does not say in words that it is continued from the
-    page before -- after pages that name none, too, unless it is a later
-    sheet of their set. Every other page joins the current log: a later
+    Walking the pages in order, a page OPENS a new log when a page of
+    ``breaks`` (a divider, RI-177) lies between it and the log page before,
+    when its description says it is the first sheet of a set ("sheet 1 of
+    2"), or when it logs an exploration (:func:`page_identifiers`) other
+    than the current log's and does not say in words that it is continued
+    from the page before -- after pages that name none, too, unless it is a
+    later sheet of their set. Every other page joins the current log: a later
     sheet, a page of the current log's exploration, a page that names
     none. With no
     text layer every scanned log page used to share one planlens key; the
@@ -895,6 +919,7 @@ def log_groups(pages: Sequence[int],
     current: Optional[PageGroup] = None
     holes: List[str] = []
     pages = sorted(int(p) for p in pages)
+    cuts = sorted({int(p) for p in breaks})
     named = page_identifiers(pages, descriptions)
     for page in pages:
         record = descriptions.get(page)
@@ -904,6 +929,8 @@ def log_groups(pages: Sequence[int],
         why = ""
         if current is None:
             why = "the first log page"
+        elif any(current.pages[-1] < cut < page for cut in cuts):
+            why = "the first log page after a divider"
         elif sheet and sheet[0] == 1:
             why = f"the first sheet of {sheet[1]}"
         elif hole and not known and not carries_on(record) \
@@ -1078,14 +1105,16 @@ def narrative_groups(labels: Mapping[int, str], n_pages: int, *,
                      page_chars: Optional[Mapping[int, int]] = None,
                      max_chars: Optional[int] = None,
                      window: Optional[Sequence[int]] = None,
-                     route: str = "pdf"
+                     route: str = "pdf",
+                     set_aside: Iterable[int] = ()
                      ) -> List[PageGroup]:
     """The narrative's pages in consecutive parts.
 
     The pages are ``narrative_reader.reading_pages``' rule with the range
     labels as its roles -- every page labelled cover, letter, contents or
     narrative, plus the first ``front_pages`` pages whatever their label --
-    and the report's own figure, plan and profile pages. Up to
+    and the report's own figure, plan and profile pages, less the pages
+    ``set_aside`` (the dividers, RI-177). Up to
     ``max_pages`` of them go in one call; more are read in consecutive
     parts of near one size. With ``page_chars`` and ``max_chars`` a part is
     also cut where its pages' text would pass the budget.
@@ -1117,7 +1146,7 @@ def narrative_groups(labels: Mapping[int, str], n_pages: int, *,
     figures = {int(p) for p, label in labels.items()
                if label in FIGURE_LABELS and int(p) in inside}
     first = set(span[:max(0, front)])
-    pages = sorted(prose | figures | first)
+    pages = sorted((prose | figures | first) - {int(p) for p in set_aside})
     if not pages:
         return []
     if route == "pictures":
@@ -1168,22 +1197,31 @@ def group_pages(labels: Mapping[int, str],
     inside another (:func:`narrative_groups`); ``front_pages``,
     ``page_chars`` and ``max_chars`` are the narrative's.
 
+    A page the descriptions call a divider (:func:`divider_pages`,
+    RI-177) is in no group, whatever its label, and a group never runs
+    across one: the laboratory and calculation runs end at it, a log
+    begins after it, and the narrative leaves it out.
+
     On the pdf ``route`` the narrative's parts are
     :data:`MAX_NARRATIVE_PAGES` long and cut on the text budget; on the
     pictures route it is one part (RI-175): a narrative page with a usable
     text layer goes as its text alone (:func:`page_blocks`), so the request
     limit and the picture cap are the request's to keep (the reader leaves
     out the last-ranked pages), not the part's."""
-    labels = {int(p): str(label) for p, label in labels.items() if label}
+    aside = divider_pages(descriptions)
+    labels = {int(p): str(label) for p, label in labels.items()
+              if label and int(p) not in aside}
     if window is not None:
         inside = {int(p) for p in window}
         labels = {p: label for p, label in labels.items() if p in inside}
     return {
-        "logs": log_groups(stage_pages(labels, "logs"), descriptions),
+        "logs": log_groups(stage_pages(labels, "logs"), descriptions,
+                           breaks=aside),
         "lab": lab_groups(stage_pages(labels, "lab"), descriptions),
         "calc": calc_groups(stage_pages(labels, "calc"), doc, descriptions),
         "narrative": narrative_groups(
             labels, n_pages, front_pages=front_pages,
             max_pages=MAX_NARRATIVE_PAGES, page_chars=page_chars,
-            max_chars=max_chars, window=window, route=route),
+            max_chars=max_chars, window=window, route=route,
+            set_aside=aside),
     }
