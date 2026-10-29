@@ -172,7 +172,8 @@ VOCABULARIES: Dict[str, Tuple[str, ...]] = {
 }
 
 #: The two vocabularies that are CLOSED: the owner's own list is known for
-#: these, so a value outside one is a misreading and is refused. Everywhere
+#: these, so a value outside one is a misreading and is refused. The earth
+#: hazards' phrases are closed too, as a list (``_Builder._enum``). Everywhere
 #: else the list is the values seen so far and an answer outside it is kept in
 #: the report's own words -- a guessed vocabulary that refuses the true answer
 #: costs more than an unfamiliar answer a person can read.
@@ -707,10 +708,14 @@ THE FOUR RULES.
    the natural-hazards list, and that is the expected shape of an answer.
 
 3. THE FIELDS WITH SET WORDS TAKE THEM EXACTLY AS SPELLED, and the block
-   below says how binding each list is. Two are CLOSED and an answer outside
-   them is thrown away. The rest are the words seen so far: use one where it
-   fits, and where none does, answer in the report's own words rather than
-   forcing a bad fit. Four of them want a verdict and then the reason.
+   below says how binding each list is. Three are CLOSED and an answer outside
+   them is thrown away: documentType, outsideProject and the earth-hazard
+   phrases (a hazard the report names that is not listed goes in
+   naturalHazardSummary). projectPhase takes one of its words, or "other"
+   with the report's own phase in projectPhaseOther. The rest are the words
+   seen so far: use one where it fits, and where none does, answer in the
+   report's own words rather than forcing a bad fit. Four of them want a
+   verdict and then the reason.
 
 4. A REPORT ABOUT SOMEBODY ELSE'S PROJECT NAMES NO POST. postName and
    propertyType are questions about one estate of government property. If
@@ -728,12 +733,14 @@ that lists the section.
 
 COUNTS. boringCount, testPitCount and cptCount are what the NARRATIVE SAYS
 was done -- the sentence that says "four borings were advanced" -- not what
-you can infer from anything else. tableCount and figureCount have already
-been counted from the captions and are given to you as facts below; answer
-them anyway, from the report's own lists of tables and figures, and a
-disagreement will be recorded rather than argued. figureCount is the figures
-of the main body only; appendix figures are left out. structureCount is the
-number of items in structureList.
+you can infer from anything else. tableCount and figureCount are the tables
+and figures THIS FILE holds: they have already been counted from the
+captions and are given to you as facts below; answer them anyway, from the
+tables and figures on the pages, and a disagreement will be recorded rather
+than argued. One the text cites or a contents page lists that is not in the
+file is not counted. figureCount is the figures of the main body only;
+appendix figures are left out. structureCount is the number of items in
+structureList.
 
 VALUES WITH UNITS. bearingCapacity keeps the report's own sentences, one per
 bearing value. bearingCapacityValues is the same recommendations as numbers:

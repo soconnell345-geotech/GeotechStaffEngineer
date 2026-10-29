@@ -227,6 +227,22 @@ class TestTheGlossaryReachesThePrompt:
         assert "examples, not a closed list" not in block
         assert "no others" in block
 
+    def test_the_system_rules_say_what_the_rulings_say(self):
+        # Ruling 4: the hazard phrases are closed too. Ruling 6: the counts
+        # are what the file holds, not what its lists name.
+        from report_ingest.narrative_reader import NARRATIVE_SYSTEM
+
+        text = " ".join(NARRATIVE_SYSTEM.split())
+        assert "Two are CLOSED" not in text
+        assert ("Three are CLOSED and an answer outside them is thrown away: "
+                "documentType, outsideProject and the earth-hazard phrases"
+                in text)
+        assert "own lists of tables and figures" not in text
+        assert ("tableCount and figureCount are the tables and figures THIS "
+                "FILE holds" in text)
+        assert "a contents page lists that is not in the file is not counted" \
+            in text
+
     def test_the_glossary_names_no_real_firm_or_site(self):
         from report_ingest import narrative_glossary
         from report_ingest.tests.test_log_templates import privacy_offences
