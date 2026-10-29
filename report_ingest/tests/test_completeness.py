@@ -86,21 +86,34 @@ class TestCitedNotHeld:
         texts = ["The made-up site is shown on Figures 1 through 3; the "
                  "logs are in Appendix A and the laboratory results in "
                  "Appendices B and C.",
-                 "FIGURE 2\nMADE-UP BORING LOCATION PLAN",
-                 "APPENDIX B\nMADE-UP LABORATORY RESULTS"]
+                 "TABLE 1\nMADE-UP SUMMARY OF RESULTS"]
         missing = cited_not_held(texts)
 
-        assert missing == {"figure": {"1": [0], "3": [0]},
-                           "appendix": {"A": [0], "C": [0]}}
+        assert missing == {"figure": {"1": [0], "2": [0], "3": [0]},
+                           "appendix": {"A": [0], "B": [0], "C": [0]}}
+
+    def test_one_held_figure_means_the_others_may_be_uncaptioned(self):
+        # Figures 2 and 3 and B4 sit on pages labelled a calculation and a
+        # laboratory sheet, whose text prints no caption.
+        texts = ["See Figures 1 through 3 and Figure B4 for the made-up "
+                 "walls; the logs are in Appendix A.",
+                 "FIGURE 1\nMADE-UP SITE PLAN",
+                 "Made-up wall pressure diagram, 12 kPa per metre",
+                 "Made-up gradation curve, sample S-9",
+                 "APPENDIX A\nMADE-UP LOGS"]
+        labels = {0: "narrative", 1: "figure", 2: "calculation",
+                  3: "lab_test", 4: "divider"}
+        assert cited_not_held(texts, labels) == {}
+        assert cited_not_held(texts) == {}
 
     def test_a_contents_page_holds_nothing(self):
         contents = "Figure 3 Made-up Profile\nFigure 4 Made-up Section"
-        texts = ["See Figure 4 for the made-up section.", contents,
-                 "FIGURE 3\nMADE-UP PROFILE"]
+        texts = ["See Figure 4 for the made-up section.", contents]
         # Unlabelled, two titles on a page may be the figures' own captions.
         assert cited_not_held(texts) == {}
-        labels = {0: "narrative", 1: "toc", 2: "figure"}
-        assert cited_not_held(texts, labels) == {"figure": {"4": [0, 1]}}
+        labels = {0: "narrative", 1: "toc"}
+        assert cited_not_held(texts, labels) == {
+            "figure": {"3": [1], "4": [0, 1]}}
 
     def test_a_page_leading_with_many_captions_is_a_list_of_them(self):
         listed = "\n".join(f"Figure {n} Made-up Sheet {n}" for n in range(1, 5))

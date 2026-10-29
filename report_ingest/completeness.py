@@ -20,8 +20,12 @@ things the pages themselves give away:
    7") is another document's and is left out. One is held where a line
    leads with its caption or title on a page that is not a list (a contents
    page names many; a caption page few, :data:`MAX_CAPTIONS_ON_A_PAGE`).
-   A figure page with no text to read is a figure the code cannot name, so
-   figures are flagged missing only past the number of such pages.
+   A kind is flagged only when the file holds none of the cited ones: a
+   figure may sit on a page labelled a calculation or a laboratory sheet
+   whose text prints no caption (build f), so one held figure means the
+   others may be there too. A figure page whose text names no figure is
+   one the code cannot name, so figures are flagged missing only past the
+   number of such pages.
 
 :func:`completeness_qa` makes one ``partial`` QA entry, ranked ``open``,
 for each document whose numbering is short and one for what the text cites
@@ -262,11 +266,14 @@ def cited_not_held(texts: Sequence[str],
                    labels: Optional[Mapping[int, str]] = None
                    ) -> Dict[str, Dict[str, List[int]]]:
     """``kind -> label -> the pages citing it`` for each figure, table and
-    appendix the text cites that no page holds. ``labels`` are the page
-    labels, when there are any: the report's own citations are on its
-    :data:`CITING_LABELS` pages, a ``toc`` page holds nothing, and a picture
-    page (:data:`PICTURE_LABELS`) whose figure the text does not name may
-    hold any one figure. Without labels every page is read for both."""
+    appendix the text cites that no page holds, of a kind the file holds
+    none of: where it holds some, the rest may be on pages whose text
+    prints no caption (a figure on a page labelled a calculation or a
+    laboratory sheet). ``labels`` are the page labels, when there are any:
+    the report's own citations are on its :data:`CITING_LABELS` pages, a
+    ``toc`` page holds nothing, and a picture page (:data:`PICTURE_LABELS`)
+    whose figure the text does not name may hold any one figure. Without
+    labels every page is read for both."""
     labels = labels or {}
     cited: Dict[Tuple[str, str], List[int]] = {}
     held: set = set()
@@ -299,6 +306,9 @@ def cited_not_held(texts: Sequence[str],
     for (kind, label), pages in cited.items():
         if (kind, label) not in held:
             out.setdefault(kind, {})[label] = sorted(pages)
+    for kind in list(out):
+        if any(key in held for key in cited if key[0] == kind):
+            out.pop(kind)       # the file holds some: the rest may be uncaptioned
     figures = out.get("figure", {})
     if figures and len(figures) <= pictures:
         out.pop("figure")                        # they may be those pages
