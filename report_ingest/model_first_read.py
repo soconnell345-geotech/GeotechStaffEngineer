@@ -36,13 +36,15 @@ A CALL THAT DOES NOT FIT. A reply that stopped at its output cap
 (:attr:`~report_ingest.engine.Reply.cut_off`) gives no answer, and pages too
 large for one request (:func:`~report_ingest.model_first_pages.pdf_problem`,
 :func:`~report_ingest.model_first_pages.pictures_problem`) are never sent.
-Either way the group is asked once more as two halves, cut at the sheet
+Either way the group is asked again as two halves, cut at the sheet
 boundary nearest its middle (for laboratory pages, where a description says
 a new sheet begins, if one does in the middle half of the pages; else at
-the middle page). A half that still does not fit, a single page that
-does not, and a call that gives no structured answer each become a
-``skipped`` entry naming the pages (``refused_by: "budget"``, which the
-reconciler files as ``skipped``). Nothing is asked a third time.
+the middle page), and a half that still does not fit is halved again, down
+to one page (BACKLOG RI-191: halved only once, a cut-off laboratory group
+left 17 pages unread). A single page that still does not fit, and a call
+that gives no structured answer, each become a ``skipped`` entry naming
+the pages (``refused_by: "budget"``, which the reconciler files as
+``skipped``).
 
 A REQUEST OVER THE LIMIT (BACKLOG RI-121). Each reader takes
 ``max_request_tokens_in``, a per-request input-token limit (the graph's
@@ -55,7 +57,7 @@ layer and one page picture
 schema offered as its tool. A group over the limit is cut in two by
 :func:`_halves` before anything is sent, and each half again while it is
 still over, at no cost: the pieces are then read as groups of their own
-(each asked once more as two halves if its reply is cut off). A log's
+(each asked again as two halves if its reply is cut off). A log's
 pieces are its own pages, so a piece never holds another hole's, and its
 answers are joined into the one log as a long log's parts are. A single
 page still over the limit is sent as it is. Each cut, and each page sent
@@ -427,9 +429,11 @@ class _Caller:
         """``([(the call's pages, its answer), ...], skipped entries)``.
 
         One call over ``pages``. A reply cut off at its output cap, or pages
-        too large to send, are asked once more as two halves (:func:`_halves`
-        at ``starts``); a half that still does not fit, and a call with no
-        structured answer, are skipped entries.
+        too large to send, are asked again as two halves (:func:`_halves`
+        at ``starts``), and each half that still does not fit is halved
+        again, down to one page (BACKLOG RI-191); a single page that still
+        does not fit, and a call with no structured answer, are skipped
+        entries. ``split`` False asks the pages once, halving nothing.
 
         Under a request limit (:attr:`limit`, RI-121) a request estimated
         over it is cut in two before it is sent, each half read as
@@ -489,14 +493,12 @@ class _Caller:
             got: List[Tuple[List[int], Any]] = []
             skipped: List[Dict[str, Any]] = []
             for half in halves:
-                answers, rows = self.read(half, spent, starts, split=False)
+                # Halved again while a half does not fit (RI-191).
+                answers, rows = self.read(half, spent, starts, split=True)
                 got.extend(answers)
                 skipped.extend(rows)
             return got, skipped
-        if not split:
-            why += (" when these pages were asked as one half of pages that "
-                    "did not fit in one call")
-        elif len(pages) == 1:
+        if len(pages) == 1:
             why += ", and one page cannot be split"
         return [], [_skipped(self.stage, pages, why)]
 
