@@ -2692,11 +2692,13 @@ class _Writer:
 
         elif isinstance(result, ChemicalResult):
             values.reported("pH", "pH", result.pH, kind="ratio")
+            # kind: a laboratory's "Mohm/cm" is megohm-cm on a resistivity
+            # (KIND_FIELDS), as the round-trip gate reads it (RI-194).
             values.reported("Resistivity", "resistivity", result.resistivity,
-                            "ohm.m")
+                            "ohm.m", kind="resistivity")
             values.reported("Minimum resistivity", "resistivity_minimum",
                             result.resistivity_minimum, "ohm.m",
-                            dictionary=False)
+                            dictionary=False, kind="resistivity")
             values.reported("Sulfate", "sulfate_content", result.sulfate)
             values.reported("Chloride", "chloride_content", result.chloride)
             values.reported("Sulfide", "sulfide_content", result.sulfides,
@@ -2919,7 +2921,7 @@ class _Writer:
         values.number("Loss on ignition", "LOI", row.organic_percent, "%")
         values.reported("pH", "pH", row.pH, kind="ratio")
         values.reported("Resistivity", "resistivity", row.resistivity,
-                        "ohm.m")
+                        "ohm.m", kind="resistivity")
         values.reported("Sulfate", "sulfate_content", row.sulfate)
         values.reported("Chloride", "chloride_content", row.chloride)
         values.reported("Sulfide", "sulfide_content", row.sulfides,

@@ -667,3 +667,23 @@ def test_n_per_mm_on_a_strength_is_written_as_a_stress_and_said():
                for s in notes[0].assumed)
     ok, diffs = diggs_roundtrip_gate(xml, [log, test])
     assert ok, diffs
+
+
+@pytest.mark.parametrize("make", ["summary", "sheet"])
+def test_a_resistivity_in_the_laboratory_s_mohm_per_cm_is_written(make):
+    """RI-194: "Mohm/cm" is megohm-cm on a resistivity; the writer reads it
+    as the round-trip gate does, on a summary row and on a sheet."""
+    log = Investigation(investigation_id="B-1", depth_unit="ft")
+    value = q(0.03, "Mohm/cm")
+    if make == "summary":
+        test = LabTest(kind="summary_table", result=SummaryTableResult(
+            rows=[SummaryRow(investigation_id="B-1", depth_top=q(5.0, "ft"),
+                             resistivity=value)]))
+    else:
+        test = _one("chemical", ChemicalResult(resistivity=value,
+                                               resistivity_minimum=value))
+    notes = []
+    xml = write_diggs([log, test], Project(name="R"), notes=notes)
+    assert not notes[0].unwritten and not notes[0].skipped
+    ok, diffs = diggs_roundtrip_gate(xml, [log, test])
+    assert ok, diffs
