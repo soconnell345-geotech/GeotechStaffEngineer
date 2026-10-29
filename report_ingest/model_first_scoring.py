@@ -86,14 +86,30 @@ def placement_counts(placements: Sequence[Dict[str, Any]]
 
 
 def _arm(blobs: Sequence[Dict[str, Any]], route: str) -> Dict[str, Any]:
-    """The arm's facts for one item's run file."""
+    """The arm's facts for one item's run file, with each of the reader's
+    ``unresolved`` rows -- what a builder refused and why, pages no answer
+    came back for -- where the scores keep only their count (BACKLOG
+    RI-192: build f's run file could not say why a sheet's grading series
+    was refused)."""
     from report_ingest.model_first import READ_PROMPT_VERSION
 
     return {"model_first": "on", "route": route,
             "prompt_version": READ_PROMPT_VERSION,
             "calls": [dict(c) for b in blobs for c in b.get("calls") or []],
             "placement": placement_counts(
-                [p for b in blobs for p in b.get("placement") or []])}
+                [p for b in blobs for p in b.get("placement") or []]),
+            "unresolved": [_unresolved_row(row) for b in blobs
+                           for row in b.get("unresolved") or ()
+                           if isinstance(row, dict)]}
+
+
+def _unresolved_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """One ``unresolved`` row as a run file keeps it: what, where and why
+    (the why cut to 500 characters), and which gate refused it."""
+    out = {key: row[key] for key in ("what", "page", "pages", "refused_by")
+           if row.get(key) is not None}
+    out["why"] = str(row.get("why") or "")[:500]
+    return out
 
 
 def _route(engine: Any, page_route: Optional[str]) -> str:

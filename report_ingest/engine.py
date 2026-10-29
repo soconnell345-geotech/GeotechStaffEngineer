@@ -597,6 +597,11 @@ class Reply:
     #: run may want to know: unknown keys it dropped, an answer it did not
     #: take and why. Empty on the ordinary call.
     notes: List[str] = field(default_factory=list)
+    #: The arguments of each answer the engine changed or did not take, as
+    #: they came (cut to ``RAW_ANSWER_CHARS``), so a reader that records
+    #: why a call gave no answer can keep what it said (BACKLOG RI-192).
+    #: Empty on the ordinary call, and on an engine that keeps none.
+    raw_answers: List[str] = field(default_factory=list)
 
     @property
     def wants_tools(self) -> bool:
@@ -2569,12 +2574,15 @@ class ChatModelEngine:
     :attr:`Reply.notes`, and the answer is validated again; if what is left
     once they are dropped is empty or has every field at its default, there
     is no answer. An answer sent as the only key, one the schema does not
-    have, is unwrapped and the wrapper named (:func:`_validate`). An unknown
+    have, is unwrapped and the wrapper named (:func:`_validate`); a list or
+    an object sent as JSON text is read as the JSON it holds, and named
+    (BACKLOG RI-192). An unknown
     key BESIDE fields of the answer is a stray, however much it looks like
     the answer: dropped, never merged in, and named when it held an object
     naming fields of the answer. When the engine changed an answer, did not
     take it, or set such an object aside, the call's cost row keeps the raw
-    arguments (``answer_args``).
+    arguments (``answer_args``), and so does the reply
+    (:attr:`Reply.raw_answers`).
 
     ONE CALL, ONE MODEL REQUEST, but for a server error. A request that
     comes back with an HTTP 5xx (:func:`is_server_error`; build f lost a
@@ -2951,14 +2959,15 @@ class ChatModelEngine:
             for call_id, args in offered:
                 strays: List[Tuple[str, List[str]]] = []
                 if cut:
-                    answer, dropped, why, wrappers = None, [], _CUT_ANSWER, []
+                    answer, dropped, why, wrappers, decoded = (
+                        None, [], _CUT_ANSWER, [], [])
                 else:
-                    answer, dropped, why, wrappers = _validate(output_format,
-                                                               args)
+                    answer, dropped, why, wrappers, decoded = _validate(
+                        output_format, args)
                     strays = _stray_objects(output_format, args)
                 notes.extend(_answer_notes(answer, dropped, why, wrappers,
-                                           strays))
-                if wrappers or dropped or strays or answer is None:
+                                           strays, decoded))
+                if wrappers or dropped or strays or decoded or answer is None:
                     raw.append(_raw_args(args))
                 if answer is not None and parsed is None:
                     parsed = answer
@@ -2966,8 +2975,8 @@ class ChatModelEngine:
                     verdicts[call_id] = "" if answer is not None else why
             if parsed is None and text and not cut:
                 found = _json_in(text)
-                answer, dropped, why, wrappers = _validate(output_format,
-                                                           found)
+                answer, dropped, why, wrappers, decoded = _validate(
+                    output_format, found)
                 # Text that is no answer at all is a reply, not a refusal;
                 # an answer written out as text is noted like a call's. JSON
                 # in the words of a turn that asked to look ({"page": 4}) is
@@ -2977,8 +2986,9 @@ class ChatModelEngine:
                 if tried and (answer is not None or not wanted or named):
                     strays = _stray_objects(output_format, found)
                     notes.extend(_answer_notes(answer, dropped, why,
-                                               wrappers, strays))
-                    if wrappers or dropped or strays or answer is None:
+                                               wrappers, strays, decoded))
+                    if (wrappers or dropped or strays or decoded
+                            or answer is None):
                         raw.append(_raw_args(found))
                     parsed = answer
         if notes:
@@ -3012,6 +3022,7 @@ class ChatModelEngine:
             seconds=seconds,
             content=blocks,
             notes=notes,
+            raw_answers=list(raw),
         )
         if reply.cut_off:
             logging.getLogger(__name__).warning(
@@ -3213,9 +3224,10 @@ def _without_nulls(value: Any) -> Any:
 
 
 def _validate(output_format: Any, args: Any
-              ) -> Tuple[Any, List[str], str, List[str]]:
+              ) -> Tuple[Any, List[str], str, List[str], List[str]]:
     """``args`` as an ``output_format``: ``(answer, keys dropped, why not,
-    wrappers taken off)``, the answer None when there is none.
+    wrappers taken off, fields read from JSON text)``, the answer None when
+    there is none.
 
     * Empty arguments are no answer. Foundry's classes hand back ``{}`` for
       a call cut mid-arguments, and many reading schemas accept ``{}``.
@@ -3234,7 +3246,11 @@ def _validate(output_format: Any, args: Any
       out, letting the defaults stand.
     * Foundry sends tools without strict mode, so a model may add a key the
       schema forbids: the unknown keys are dropped and named, and the
-      answer validated again. Any other error stands.
+      answer validated again.
+    * A list or an object sent as JSON TEXT (BACKLOG RI-192: build f's
+      model-first calc calls sent ``"inputs": "[{...}]"``) is read as the
+      JSON it holds (:func:`_json_text`), named, and the answer validated
+      again. Any other error stands.
     * What is left once unknown keys are dropped -- or passed over, on a
       schema that ignores them -- must still say something. Left empty, or
       with every field at its default, it is no answer: the keys dropped
@@ -3252,16 +3268,17 @@ def _validate(output_format: Any, args: Any
         try:
             args = json.loads(args)
         except (json.JSONDecodeError, ValueError):
-            return None, [], "its arguments are not JSON", []
+            return None, [], "its arguments are not JSON", [], []
     if not isinstance(args, dict):
-        return None, [], "it is not a JSON object", []
+        return None, [], "it is not a JSON object", [], []
     if not args:
-        return None, [], "it arrived empty", []
+        return None, [], "it arrived empty", [], []
     args, wrappers = _unwrapped(output_format, args)
     why = ""
     for candidate in (args, _without_nulls(args)):
         dropped: List[str] = []
-        for _ in range(4):
+        decoded: List[str] = []
+        for _ in range(6):
             try:
                 answer = output_format.model_validate(candidate)
             except Exception as exc:                     # noqa: BLE001
@@ -3270,21 +3287,102 @@ def _validate(output_format: Any, args: Any
                        + _error_text(exc, errors) + ")")
                 extra = [tuple(e.get("loc") or ()) for e in errors
                          if e.get("type") == "extra_forbidden"]
-                if not extra:
-                    break
-                candidate, removed = _drop_keys(candidate, extra)
-                if not removed:
-                    break
-                dropped.extend(removed)
-                if not candidate:
-                    return None, dropped, _emptied(dropped), wrappers
+                texts = [tuple(e.get("loc") or ()) for e in errors
+                         if e.get("type") in _JSON_TEXT_ERRORS
+                         and isinstance(e.get("input"), str)]
+                if extra:
+                    candidate, removed = _drop_keys(candidate, extra)
+                    if removed:
+                        dropped.extend(removed)
+                        if not candidate:
+                            return (None, dropped, _emptied(dropped),
+                                    wrappers, decoded)
+                        continue
+                if texts:
+                    candidate, read = _read_json_text(candidate, texts)
+                    if read:
+                        decoded.extend(read)
+                        continue
+                break
+            else:
+                passed = _passed_over(output_format, candidate)
+                if (dropped or passed) and _says_nothing(output_format,
+                                                         candidate, answer):
+                    return (None, dropped, _emptied(dropped, passed),
+                            wrappers, decoded)
+                return answer, dropped, "", wrappers, decoded
+    return None, [], why, wrappers, []
+
+
+#: The validation errors of a field that wants a list or an object, which a
+#: model may have sent as JSON text (BACKLOG RI-192).
+_JSON_TEXT_ERRORS = ("list_type", "dict_type", "model_type")
+
+#: How many stray closing braces :func:`_json_text` drops from one text.
+_STRAY_BRACES = 500
+
+
+def _json_text(text: str) -> Tuple[Any, int]:
+    """``(the list or object a JSON text holds, the stray closing braces
+    dropped to read it)``; ``(None, 0)`` when it holds neither.
+
+    A stray brace is a ``}`` where the parser wanted a comma: build f's
+    model-first calc answers closed each item of a list sent as text with
+    one brace too many (``...}}},{...``). Each is dropped in turn, at most
+    :data:`_STRAY_BRACES`; nothing else in the text is changed."""
+    body = str(text or "").strip()
+    if not body or body[0] not in "[{":
+        return None, 0
+    for dropped in range(_STRAY_BRACES + 1):
+        try:
+            value = json.loads(body)
+        except json.JSONDecodeError as exc:
+            if (exc.msg.startswith("Expecting ',' delimiter")
+                    and 0 <= exc.pos < len(body) and body[exc.pos] == "}"):
+                body = body[:exc.pos] + body[exc.pos + 1:]
                 continue
-            passed = _passed_over(output_format, candidate)
-            if (dropped or passed) and _says_nothing(output_format,
-                                                     candidate, answer):
-                return None, dropped, _emptied(dropped, passed), wrappers
-            return answer, dropped, "", wrappers
-    return None, [], why, wrappers
+            return None, 0
+        except ValueError:
+            return None, 0
+        return (value, dropped) if isinstance(value, (list, dict)) \
+            else (None, 0)
+    return None, 0
+
+
+def _read_json_text(value: Dict[str, Any],
+                    locations: Sequence[Tuple[Any, ...]]
+                    ) -> Tuple[Dict[str, Any], List[str]]:
+    """A copy of ``value`` with the JSON text at each location read as the
+    list or object it holds (:func:`_json_text`), and what was read, as
+    notes name it; a text that holds neither is left as it is."""
+    import copy
+
+    out = copy.deepcopy(value)
+    read: List[str] = []
+    for loc in locations:
+        if not loc:
+            continue
+        node: Any = out
+        for step in loc[:-1]:
+            try:
+                node = node[step]
+            except (KeyError, IndexError, TypeError):
+                node = None
+                break
+        key = loc[-1]
+        try:
+            held = node[key] if isinstance(node, (dict, list)) else None
+        except (KeyError, IndexError, TypeError):
+            held = None
+        if not isinstance(held, str):
+            continue
+        got, braces = _json_text(held)
+        if got is None:
+            continue
+        node[key] = got
+        read.append(".".join(str(p) for p in loc) + (
+            f" ({braces} stray closing brace(s) dropped)" if braces else ""))
+    return out, read
 
 
 def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
@@ -3301,13 +3399,17 @@ def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
 
 def _answer_notes(answer: Any, dropped: Sequence[str], why: str,
                   wrappers: Sequence[str],
-                  strays: Sequence[Tuple[str, Sequence[str]]] = ()
-                  ) -> List[str]:
+                  strays: Sequence[Tuple[str, Sequence[str]]] = (),
+                  decoded: Sequence[str] = ()) -> List[str]:
     """What the engine did with one answer, for :attr:`Reply.notes`: one
     note for its wrappers however deep, one for each stray key that held an
-    object naming fields of the answer, one for the keys dropped, one if it
-    was not taken."""
+    object naming fields of the answer, one for the fields read from JSON
+    text (BACKLOG RI-192), one for the keys dropped, one if it was not
+    taken."""
     notes = []
+    if decoded:
+        notes.append("fields sent as JSON text were read as the JSON they "
+                     "hold: " + ", ".join(decoded))
     if wrappers:
         notes.append("the answer arrived wrapped in "
                      + ", then ".join(repr(w) for w in wrappers)

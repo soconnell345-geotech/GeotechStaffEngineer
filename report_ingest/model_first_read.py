@@ -191,10 +191,16 @@ Source = Union[str, Path, bytes, None]
 # the calls
 # ---------------------------------------------------------------------------
 
+#: How much of a reply's words a call row keeps when no answer came back
+#: and the engine kept no arguments (an answer in prose; BACKLOG RI-192).
+_KEPT_TEXT = 2000
+
+
 @dataclass
 class _Spent:
     """What one result's calls cost, in today's readers' ``cost`` shape, and
-    how each call ended."""
+    how each call ended: a call that gave no answer keeps the engine's notes
+    and what came back (BACKLOG RI-192)."""
 
     cost: Dict[str, Any] = field(default_factory=lambda: {
         "calls": 0, "input_tokens": 0, "output_tokens": 0,
@@ -219,6 +225,17 @@ class _Spent:
         row = {"pages": list(pages), "stop_reason": reply.stop_reason,
                "cut_off": bool(reply.cut_off),
                "answered": reply.parsed is not None and not reply.cut_off}
+        # What the engine did with the answer, and, where it took none,
+        # what came back, so the run file says why (BACKLOG RI-192).
+        notes = list(getattr(reply, "notes", None) or [])
+        if notes:
+            row["notes"] = notes
+        if not row["answered"] and not row["cut_off"]:
+            raw = list(getattr(reply, "raw_answers", None) or [])
+            if raw:
+                row["raw_answer"] = raw
+            elif str(getattr(reply, "text", "") or "").strip():
+                row["text"] = str(reply.text)[:_KEPT_TEXT]
         if estimated is not None:
             # Only under a request limit (RI-121): the estimate the call was
             # sized by, beside what the reply says the request took.
