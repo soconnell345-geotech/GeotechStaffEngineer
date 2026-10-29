@@ -4091,8 +4091,11 @@ class TestModelFirstAsASecondArm:
         """The describer, the labeller and each reader on its own model;
         the triage alone seeded from a label run; ``run.json`` names the
         arm, the routes, the models, the versions and what placement found;
-        the labels are scored for pages sent to the wrong reader."""
-        from report_ingest.model_first import READ_PROMPT_VERSION
+        the labels are scored for pages sent to the wrong reader. The
+        laboratory window is answered here: a group no answer came back for
+        is a failed item, and the report no result (RI-187)."""
+        from report_ingest.model_first import (READ_PROMPT_VERSION,
+                                               LabSheetReading)
         from report_ingest.range_labels import DESCRIBE_PROMPT_VERSION
         from report_ingest.tests import test_graph_model_first as tgm
         from report_ingest.tests.fake_engine import FakeEngine
@@ -4101,6 +4104,11 @@ class TestModelFirstAsASecondArm:
         pytest.importorskip("report_ingest.locate")
         reports_dir, out, _scripts = ingest_cluster
         main, describer, labeller, stages = tgm._engines()
+        stages["lab"].turns = [{"final": LabSheetReading.model_validate({
+            "depth_unit": "m",
+            "tests": [{"kind": "atterberg", "investigation_id": "B-1",
+                       "sample_id": "S-1", "depth_top": 1.5, "ll": 41.0,
+                       "pl": 19.0, "pi": 22.0, "prov": {"page": 12}}]})}]
         by_name = {"fake-main": main, "fake-describer": describer,
                    "fake-labeller": labeller,
                    **{FIRST_MODELS[s]: e for s, e in stages.items()}}
