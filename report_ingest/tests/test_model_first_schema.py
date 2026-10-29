@@ -19,7 +19,7 @@ from report_ingest import lab_reader, log_reader
 from report_ingest import model_first as mf
 from report_ingest.calc_reader import CalcReading
 from report_ingest.engine import strict_schema
-from report_ingest.narrative_reader import NarrativeReading
+from report_ingest.narrative_reader import NARRATIVE_SYSTEM, NarrativeReading
 
 #: sha256 of ``json.dumps(strict_schema(cls), ensure_ascii=False)`` for each
 #: of today's reading classes, taken on master 32b9645 (2026-10-25). The same
@@ -54,8 +54,9 @@ MODEL_FIRST_ASKS = {
     # one call on the pictures route (RI-175).
     "mf-3": "2ab3280d29ff6082016b0ab5acfa9e7321d821af1187acbb29afa78d5ce600a8",
     # mf-4 (build g): the narrative carries the owner's house rules of
-    # 2026-10-29 (RI-182) and asks projectPhaseOther.
-    "mf-4": "b2a42015e73839becb609c283978cad0debf5c6bfd90043638f091c0014e0c6c",
+    # 2026-10-29 (RI-182) and asks projectPhaseOther, and today's rule for
+    # another client's report (RI-189).
+    "mf-4": "3b6b2a779828a8e9b63c7d796a3b20934e752c5e7e4fd4222dee5ec424325095",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,
@@ -208,7 +209,9 @@ def test_the_model_first_instructions_add_to_the_plain_ones():
     assert lab.replace(f" {mf.LAB_TWO_TESTS}", "") == \
         mf.PLAIN_INSTRUCTIONS["lab"]
     narrative = mf.INSTRUCTIONS["narrative"]
-    assert narrative.replace("{glossary}\n\n", "") == \
+    assert narrative.count(mf.NARRATIVE_OTHER_CLIENT) == 1
+    assert narrative.replace("{glossary}\n\n", "").replace(
+        mf.NARRATIVE_OTHER_CLIENT + "\n\n", "") == \
         mf.PLAIN_INSTRUCTIONS["narrative"]
     logs = mf.INSTRUCTIONS["logs"]
     assert logs != mf.PLAIN_INSTRUCTIONS["logs"]
@@ -234,6 +237,14 @@ def test_the_narrative_carries_today_s_conventions_and_lab_its_rule():
     plain = mf.instruction("narrative", "R00", [0, 1],
                            texts=mf.PLAIN_INSTRUCTIONS)
     assert glossary_block() not in plain
+    # Today's rule for another client's report (RI-189), after the
+    # conventions, with the words today's reader is given.
+    assert said.index(glossary_block()) < said.index(mf.NARRATIVE_OTHER_CLIENT)
+    today = " ".join(NARRATIVE_SYSTEM.split())
+    for words in ('set outsideProject to "yes"', "leave postName null",
+                  'answer propertyType "other"'):
+        assert words in said
+        assert words in today
     lab = mf.instruction("lab", "R00", [4])
     assert "Atterberg limits printed on a gradation sheet are an atterberg " \
            "entry of their own" in lab
