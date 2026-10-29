@@ -19,6 +19,8 @@ comparison is the proof that the default path did not move. RI-89 rewrote
 it on purpose, and only where that item moves the default: a water content
 and a liquid limit past 100 are kept (lab ``positions``), and a recovery
 past 100 and an RQD below 0 are listed instead of clamped (log ``window``).
+RI-182 added the general schema's ``projectPhaseOther``, null in both
+narrative cases.
 
 Every value here is invented.
 """

@@ -198,6 +198,27 @@ class TestTheGlossaryReachesThePrompt:
         # The general null rule governs every field.
         assert conventions_for("projectName")
 
+    def test_the_owners_rulings_of_2026_10_29_are_rules_in_force(self):
+        # RI-182: each ruling is a CONFIRMED rule that cites it, on the
+        # fields it governs.
+        from report_ingest.narrative_glossary import CONVENTIONS
+
+        ruled = [row for row in CONVENTIONS
+                 if "of 2026-10-29 (BACKLOG RI-182, ruling" in row.why]
+        governed = {name for row in ruled for name in row.fields}
+        assert all(row.status == "CONFIRMED" for row in ruled)
+        for name in ("structureList", "projectPhase", "projectPhaseOther",
+                     "boringDictionary", "previousInvestigationCount",
+                     "earthHazardsExposed", "figureCount"):
+            assert name in governed
+
+    def test_the_hazard_list_is_offered_as_the_only_phrases(self):
+        from report_ingest.narrative_reader import _vocabulary_block
+
+        block = _vocabulary_block()
+        assert "examples, not a closed list" not in block
+        assert "no others" in block
+
     def test_the_glossary_names_no_real_firm_or_site(self):
         from report_ingest import narrative_glossary
         from report_ingest.tests.test_log_templates import privacy_offences

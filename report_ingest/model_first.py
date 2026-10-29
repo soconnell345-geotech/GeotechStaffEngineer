@@ -289,7 +289,11 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: no longer mixed (RI-174); the narrative is sent text first in one call
 #: and carries today's house conventions, and the lab instruction asks for
 #: Atterberg limits on a gradation sheet as an entry of their own (RI-175).
-READ_PROMPT_VERSION = "mf-3"
+#: mf-4 (build g): the narrative carries the owner's house rules of
+#: 2026-10-29 (RI-182: structures are buildings, the phase and its new
+#: companion question projectPhaseOther, this investigation's holes only,
+#: the listed hazard phrases only, the file's own figures and tables).
+READ_PROMPT_VERSION = "mf-4"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:

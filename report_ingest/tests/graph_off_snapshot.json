@@ -3,15 +3,15 @@
  "rules": {
   "files": {
    "bound/bound1/identity.json": "b2b3cbe4a4f75566",
-   "bound/bound1/items/item_2.json": "bffdb4fffa422f9c",
+   "bound/bound1/items/item_2.json": "fbacaaee6b6346eb",
    "bound/bound1/items/item_3.json": "3d66b8665e9f280d",
    "bound/bound1/labels.json": "5bc9434ff12697a3",
    "bound/bound1/report.diggs.xml": "12bdf7cb6a2a86a1",
    "bound/bound1/report.page.md": "d28207c9b2caec7f",
-   "bound/bound1/report.record.json": "211a53f0bb73519b",
+   "bound/bound1/report.record.json": "d9772996ca7111f5",
    "bound/bound1/report.summary.md": "2d2cc31b93ef0250",
    "items/item_10.json": "83286cf63c278357",
-   "items/item_2.json": "66c96d0793bce11f",
+   "items/item_2.json": "922eb63fe866bb29",
    "items/item_4.json": "ddf7e6fee9efc5bb",
    "items/item_5.json": "bda2c6428c9cd5a2",
    "items/item_7.json": "ddd2d51f6e861186",
@@ -19,7 +19,7 @@
    "labels.json": "305170b7ced63ba5",
    "report.diggs.xml": "55b428a61afa7d6c",
    "report.page.md": "30e60d276f349495",
-   "report.record.json": "90cb0f5da7f2e630",
+   "report.record.json": "575208d079894892",
    "report.summary.md": "163f27a9623feb1c",
    "reports.db": "4866ceb71b4564dd",
    "review.json": "afd9f2950610067f",
@@ -52,7 +52,7 @@
     "tools": []
    },
    {
-    "digest": "5b4bae340d7e4fbb",
+    "digest": "16356eae9a52f736",
     "system": "You are reading the narrative of ONE geotechnical report and",
     "tools": []
    },
@@ -88,7 +88,7 @@
     ]
    },
    {
-    "digest": "adca4b6e4329f423",
+    "digest": "0df8916d4e8ef44a",
     "system": "You are reading the narrative of ONE geotechnical report and",
     "tools": []
    },
@@ -102,15 +102,15 @@
  "standard": {
   "files": {
    "bound/bound1/identity.json": "b2b3cbe4a4f75566",
-   "bound/bound1/items/item_2.json": "bffdb4fffa422f9c",
+   "bound/bound1/items/item_2.json": "fbacaaee6b6346eb",
    "bound/bound1/items/item_3.json": "3d66b8665e9f280d",
    "bound/bound1/labels.json": "30ed5b7ea95d029a",
    "bound/bound1/report.diggs.xml": "12bdf7cb6a2a86a1",
    "bound/bound1/report.page.md": "d28207c9b2caec7f",
-   "bound/bound1/report.record.json": "37466e49e11ad483",
+   "bound/bound1/report.record.json": "5d8c47bb47799001",
    "bound/bound1/report.summary.md": "2d2cc31b93ef0250",
    "items/item_10.json": "83286cf63c278357",
-   "items/item_2.json": "66c96d0793bce11f",
+   "items/item_2.json": "922eb63fe866bb29",
    "items/item_4.json": "ddf7e6fee9efc5bb",
    "items/item_5.json": "bda2c6428c9cd5a2",
    "items/item_7.json": "ddd2d51f6e861186",
@@ -118,7 +118,7 @@
    "labels.json": "c14c78af34a5c544",
    "report.diggs.xml": "55b428a61afa7d6c",
    "report.page.md": "30e60d276f349495",
-   "report.record.json": "d987c970b68b327a",
+   "report.record.json": "bbf8d79a202e5636",
    "report.summary.md": "df3ca691a4fe5f2b",
    "reports.db": "4866ceb71b4564dd",
    "triage.json": "55d6c093cfb5fde0",
@@ -156,7 +156,7 @@
     "tools": []
    },
    {
-    "digest": "5b4bae340d7e4fbb",
+    "digest": "16356eae9a52f736",
     "system": "You are reading the narrative of ONE geotechnical report and",
     "tools": []
    },
@@ -192,7 +192,7 @@
     ]
    },
    {
-    "digest": "adca4b6e4329f423",
+    "digest": "0df8916d4e8ef44a",
     "system": "You are reading the narrative of ONE geotechnical report and",
     "tools": []
    },
@@ -204,11 +204,11 @@
   ]
  },
  "taken_with": {
-  "PyMuPDF": "1.28.2",
+  "PyMuPDF": "1.27.2.3",
   "planlens": "0.13.0",
-  "platform": "Linux",
-  "pydantic": "2.14.1",
-  "pydantic-core": "2.50.1",
-  "python": "3.13.16"
+  "platform": "Windows",
+  "pydantic": "2.13.4",
+  "pydantic-core": "2.46.4",
+  "python": "3.14.5"
  }
 }

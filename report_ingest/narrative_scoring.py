@@ -150,6 +150,11 @@ _LIST_FIELDS = frozenset((
     "structureList", "boringDictionary", "testPitDictionary",
     "recommendedFoundations", "bearingCapacity", "earthHazardsExposed",
 ))
+#: Fields the schema gained after the hand's sheets were written, scored only
+#: on a sheet that carries the field: an answer to a question the sheet never
+#: asked is neither right nor invented. ``projectPhaseOther`` is the owner's
+#: companion question of 2026-10-29 (RI-182 ruling 2).
+SCORED_WHERE_ASKED = frozenset(("projectPhaseOther",))
 #: The two list fields whose items are IDENTIFIERS rather than prose, and are
 #: therefore compared exactly (folded) rather than by resemblance. B-1 and
 #: B-12 are two holes, however alike they look to a fuzzy matcher.
@@ -717,6 +722,8 @@ def score_narrative(truth: Dict[str, Any], general: Any, hazards: Any,
     for section, names, answers in sections:
         hand_section = truth.get(section) or {}
         for name in names:
+            if name in SCORED_WHERE_ASKED and name not in hand_section:
+                continue
             hand = _value(hand_section, name)
             got = _normalise(getattr(answers, name, None))
             kind = kind_of(name)

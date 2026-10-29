@@ -517,6 +517,7 @@ class NarrativeReading(BaseModel):
     projectNumber: Optional[str] = None
     projectName: Optional[str] = None
     projectPhase: Optional[str] = None
+    projectPhaseOther: Optional[str] = None
     primeContractor: Optional[str] = None
     primeAe: Optional[str] = None
     geotechnicalEngineerFirm: Optional[str] = None
@@ -792,9 +793,15 @@ def _vocabulary_block() -> str:
                     "found: \"yes - six seismic refraction lines across the "
                     "site\". A bare \"no\" is fine.)")
         elif name == "earthHazardsExposed":
-            note = ("  (a list; give every one that applies, one short "
-                    "phrase each IN THE REPORT'S OWN TERMS -- these are "
-                    "examples, not a closed list. Empty when it names none.)")
+            note = ("  (a list; give every one that applies, using these "
+                    "phrases EXACTLY and no others -- a hazard the report "
+                    "names that is not one of them goes in "
+                    "naturalHazardSummary instead. Empty when it names "
+                    "none.)")
+        elif name == "projectPhase":
+            note = ("  (use one of these EXACTLY; where the report names "
+                    "none of the first three, answer \"other\" and describe "
+                    "its phase in projectPhaseOther)")
         else:
             note = ("  (use one of these where it fits; where none does, "
                     "answer in the report's own words rather than forcing "
@@ -1375,6 +1382,9 @@ class _Builder:
         self.strata: List[Stratum] = []
         self.extra: List[Dict[str, Any]] = []
         self._from_chunk: Dict[str, int] = {}
+        #: A projectPhase answer outside the list, kept for
+        #: projectPhaseOther (:meth:`_enum`).
+        self._phase_said = ""
 
     # -- refusals ----------------------------------------------------------
     def refuse(self, what: str, why: str, value: Any = None,
@@ -1485,12 +1495,21 @@ class _Builder:
         words = VOCABULARIES[name]
         folded = {_fold(w): w for w in words}
         if name == "earthHazardsExposed":
+            # The listed phrases and no others (owner's ruling of
+            # 2026-10-29, RI-182): an unlisted phrase is refused, and the
+            # hazard summary is where the report's other hazards go. A
+            # plural ("expansive soils") is its listed singular.
             out: List[str] = []
             for item in (value or []):
                 text = " ".join(str(item).split())
                 if not text:
                     continue
-                got = folded.get(_fold(text), text)
+                got = (folded.get(_fold(text))
+                       or folded.get(re.sub(r"s\b", "", _fold(text))))
+                if got is None:
+                    self.refuse(name, "not one of the listed phrases; the "
+                                      "hazard summary carries it", text)
+                    continue
                 if got not in out:
                     out.append(got)
             return out or None
@@ -1504,6 +1523,13 @@ class _Builder:
         got = folded.get(_fold(value))
         if got is not None:
             return got
+        if name == "projectPhase":
+            # A phase the list does not name is "other", and the report's
+            # own word for it goes to projectPhaseOther where the reading
+            # left that empty (owner's ruling of 2026-10-29, RI-182).
+            self._phase_said = self._phase_said or " ".join(
+                str(value).split())
+            return "other"
         if name in CLOSED_FIELDS:
             self.refuse(name, f"not one of {', '.join(words)}", value)
             return None
@@ -1607,6 +1633,8 @@ class _Builder:
               found: Optional[Dict[str, Any]] = None
               ) -> Tuple[GeneralFacts, NaturalHazardFacts, NarrativeFacts]:
         values = dict(self.values)
+        if self._phase_said and not values.get("projectPhaseOther"):
+            values["projectPhaseOther"] = self._phase_said
 
         # THE FIVE EXPLORATION ANSWERS THE APPENDIX SETTLES. The logs the
         # labeller found and the log reader read are a count of holes; the

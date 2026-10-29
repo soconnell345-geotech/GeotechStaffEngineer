@@ -31,8 +31,10 @@ MASTER_SCHEMAS = {
         "6857fd4e7c8052efeb5099ee7137394cbb748e50f131d5d4ac3cd5c1c536f8b7",
     "CalcReading":
         "b9fd730d9dc880832b692852fb998394d918e03121d74d59b88a19ea827d29c6",
+    # RI-182 (2026-10-29): the owner's companion question projectPhaseOther,
+    # after projectPhase; measured with the rulings it came with.
     "NarrativeReading":
-        "aa12cef0562e3ccc60e83bbee64b033b228539b94b343255006bcdbc9557dd43",
+        "082c518697f28a289b6da2dfad4505f43be215a144c6f7b1af7e47f2e2e74881",
 }
 
 #: sha256 of what the model-first readers ask (each stage's instruction as
@@ -51,6 +53,9 @@ MODEL_FIRST_ASKS = {
     # sheet as an entry of their own; the narrative is sent text first in
     # one call on the pictures route (RI-175).
     "mf-3": "2ab3280d29ff6082016b0ab5acfa9e7321d821af1187acbb29afa78d5ce600a8",
+    # mf-4 (build g): the narrative carries the owner's house rules of
+    # 2026-10-29 (RI-182) and asks projectPhaseOther.
+    "mf-4": "b2a42015e73839becb609c283978cad0debf5c6bfd90043638f091c0014e0c6c",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

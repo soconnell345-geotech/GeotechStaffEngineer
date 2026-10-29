@@ -2342,16 +2342,21 @@ PROPERTY_TYPE_VALUES: Tuple[str, ...] = (
     "Existing embassy or consulate compound",
     "other",
 )
+#: The phases, which the owner's question list gives as its pick list. A
+#: report naming none of the first three answers "other" and describes its
+#: phase in ``projectPhaseOther`` (owner's ruling of 2026-10-29, BACKLOG
+#: RI-182 ruling 2); the narrative reader folds any other answer onto "other".
 PROJECT_PHASE_VALUES: Tuple[str, ...] = (
     "Technical due diligence", "Bridging", "Design-build", "other",
 )
 LIQUEFACTION_VALUES: Tuple[str, ...] = (
     "not liquefiable", "potentially liquefiable",
 )
-#: Hazards as the hand names them: a short phrase for what the report says the
-#: site is exposed to, in the report's own terms ("liquefaction-induced
-#: settlement" rather than "liquefaction"). Examples for the reader, never a
-#: filter on the answer.
+#: The listed phrases for the hazards the report says the site is exposed
+#: to ("liquefaction-induced settlement" rather than "liquefaction"). An
+#: answer takes these and no others; a hazard the report names that is not
+#: one of them goes in ``naturalHazardSummary`` (owner's ruling of
+#: 2026-10-29, BACKLOG RI-182 ruling 4).
 EARTH_HAZARD_VALUES: Tuple[str, ...] = (
     "seismic shaking", "liquefaction", "liquefaction-induced settlement",
     "fault rupture", "landslide", "rockfall", "subsidence",
@@ -2442,7 +2447,8 @@ class Stratum(BaseModel):
 #: writer, a scorer and a prompt can walk the same list rather than three.
 GENERAL_FIELDS: Tuple[str, ...] = (
     "documentType", "quickSummary", "postName", "propertyType",
-    "projectNumber", "projectName", "projectPhase", "primeContractor",
+    "projectNumber", "projectName", "projectPhase", "projectPhaseOther",
+    "primeContractor",
     "primeAe", "geotechnicalEngineerFirm", "testingProgramSummary",
     "boringCount", "testPitCount", "cptCount", "tableCount", "figureCount",
     "previousInvestigationCount", "strata", "structureCount", "structureList",
@@ -2523,6 +2529,11 @@ class GeneralFacts(BaseModel):
         default=None,
         description="the phase the work was done for, in the owner's own "
                     "words; PROJECT_PHASE_VALUES lists the ones seen so far")
+    projectPhaseOther: Optional[str] = Field(
+        default=None,
+        description="when projectPhase is 'other', the phase as the report "
+                    "discusses it; None when the report does not discuss "
+                    "one")
     primeContractor: Optional[str] = Field(default=None)
     primeAe: Optional[str] = Field(
         default=None, description="the prime architect-engineer")
