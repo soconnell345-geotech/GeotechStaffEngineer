@@ -11,7 +11,9 @@ the rest:
 * a short name that is another item's bracketed abbreviation ("NOB" beside
   "New Office Building (NOB)");
 * a bearing sentence that gives the same pressures, number and unit, as an
-  earlier one;
+  earlier one for the same foundation (footings, a mat, piles, shafts, a
+  slab), or that names no foundation: a mat and its footings may be given
+  one pressure and are two items;
 * in the two hole lists, a hole already listed under another spelling
   (LB1 and LB-1, :func:`report_ingest.reconciler.hole_key`), and a hole
   name with text after it ("B-1 (offset)") when that hole is listed on its
@@ -56,6 +58,16 @@ _RE_PRESSURE = re.compile(
     r"(\d[\d,]*(?:\.\d+)?)\s*(psf|ksf|tsf|kpa|mpa|kn/m2|kn/m²|"
     r"kips?\s*/\s*(?:ft2|ft²|sq\.?\s*ft)|pounds?[-\s]per[-\s]square[-\s]"
     r"foot)\b", re.IGNORECASE)
+#: The foundation a bearing sentence is for, by the words that name it: a
+#: mat and a footing given the same pressure are two items.
+_FOUNDATION_WORDS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = tuple(
+    (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
+        ("footing", r"\bfootings?\b|\bshallow\s+foundations?\b"),
+        ("mat", r"\bmats?\b|\brafts?\b"),
+        ("pile", r"\bpil(?:e|es|ing|ings)\b"),
+        ("shaft", r"\bshafts?\b|\bcaissons?\b|\bpiers?\b"),
+        ("slab", r"\bslabs?\b"),
+    ))
 #: Words naming one unit of pressure, folded onto its short name.
 _UNIT_NAMES = {"poundspersquarefoot": "psf", "poundpersquarefoot": "psf",
                "kipft2": "ksf", "kipsft2": "ksf", "kipft²": "ksf",
@@ -82,6 +94,11 @@ def _pressures(text: str) -> frozenset:
     return frozenset(out)
 
 
+def _foundations(text: str) -> frozenset:
+    return frozenset(name for name, pattern in _FOUNDATION_WORDS
+                     if pattern.search(str(text or "")))
+
+
 def _abbreviations(text: str) -> List[str]:
     return [_fold(part) for part in _RE_BRACKET.findall(str(text or ""))
             if _fold(part)]
@@ -99,9 +116,10 @@ def _prose_repeat(name: str, items: Sequence[str], index: int
         if at != index and folded in _abbreviations(other):
             return f"the abbreviation '{other}' gives"
     if name == "bearingCapacity":
-        mine = _pressures(item)
+        mine, for_ = _pressures(item), _foundations(item)
         for other in earlier:
-            if mine and _pressures(other) == mine:
+            if (mine and _pressures(other) == mine
+                    and (not for_ or _foundations(other) == for_)):
                 return f"the same pressures as '{other}'"
     return None
 

@@ -63,6 +63,21 @@ class TestDropRepeats:
         assert len(out["bearingCapacity"]) == 3
         assert rows[0]["value"].startswith("Footings: allowable")
 
+    def test_a_mat_and_footings_given_one_pressure_are_two_items(self):
+        items = ["Spread footings may use an allowable bearing pressure of "
+                 "85 kPa.",
+                 "The made-up mat may use an average contact pressure of "
+                 "85 kPa.",
+                 "An allowable bearing pressure of 85 kPa (from the made-up "
+                 "settlement sheet).",
+                 "Column footings: 85 kPa allowable."]
+        out, rows = drop_repeats({"bearingCapacity": items})
+
+        # The sentence naming no foundation restates the first; the second
+        # footing sentence is the same foundation; the mat is another.
+        assert out["bearingCapacity"] == items[:2]
+        assert [row["value"] for row in rows] == items[2:]
+
     def test_a_sentence_with_no_pressure_is_never_a_repeat_by_pressure(self):
         items = ["Footings bear on the dense sand.",
                  "Mats bear on the stiff clay."]
