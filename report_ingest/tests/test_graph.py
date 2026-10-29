@@ -36,6 +36,15 @@ from report_ingest.vision_labels import (
 pytest.importorskip("planlens.document.roles")
 
 
+@pytest.fixture(autouse=True)
+def todays_readers(monkeypatch):
+    """These runs script today's readers: model first, on for every stage
+    when the setting is unset since BACKLOG RI-186, is set off for them."""
+    from report_ingest.graph import MODEL_FIRST_ENV
+
+    monkeypatch.setenv(MODEL_FIRST_ENV, "off")
+
+
 @pytest.fixture(scope="module")
 def pdf(tmp_path_factory):
     path = tmp_path_factory.mktemp("corpus") / "SYN.pdf"

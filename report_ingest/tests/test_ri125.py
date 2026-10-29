@@ -30,6 +30,9 @@ from report_ingest.tests.narrative_fixtures import (  # noqa: E402
     build_narrative_report)
 from report_ingest.tests.test_cluster_scoring import (  # noqa: E402,F401
     _ingest_run, _metered, _run_blob, chat_cluster, ingest_cluster)
+# Today's readers are scripted: model first is set off (RI-186).
+from report_ingest.tests.test_graph import (  # noqa: E402,F401
+    todays_readers)
 
 
 @pytest.fixture(scope="module")

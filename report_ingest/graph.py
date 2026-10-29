@@ -76,22 +76,28 @@ WHAT IS STILL NOT READ. ``figures``, ``photos``, ``plan``, ``profile`` and
 ``front_matter`` items: the narrative reader is shown those pages, and
 nothing reads them as items of their own.
 
-MODEL-FIRST INGEST IS A SWITCH, OFF BY DEFAULT (BACKLOG RI-87,
+MODEL-FIRST INGEST IS THE DEFAULT, STAGE BY STAGE (BACKLOG RI-87, RI-186;
 ``module_work/REPORT_INGEST_PLAN.md`` section 8).
-``GEOTECH_INGEST_MODEL_FIRST`` (or ``ingest_report(model_first=...)``) is
-``off``, and the graph is the one described above, byte for byte; no
-model-first module is imported. ``on``
-reads each section's pages in one call and makes the model's answer the
-record: every page is described and the report labelled by sections (the
-range voter, RI-73), and those labels replace the vision voter and the label
-review, which do not run; the logs, laboratory sheets, printouts and
-narrative are grouped from the labels and the descriptions and read by
+``GEOTECH_INGEST_MODEL_FIRST`` (or ``ingest_report(model_first=...)``) sets
+each of five stages on or off (:func:`model_first_stages`): the page
+labels, the logs, the laboratory sheets, the printouts and the narrative.
+Unset, every stage is on (the owner, 2026-10-29); ``off`` for every stage is
+the graph described above, byte for byte, and no model-first module is
+imported. A stage on reads each group of its pages in one call and makes
+the model's answer the record. The labels on, every page is described and
+the report labelled by sections (the range voter, RI-73), and those labels
+replace the vision voter and the label review, which do not run; off, the
+vote and the review label the pages as above. The logs, laboratory sheets,
+printouts and narrative on are grouped from the labels and the descriptions
+(the labels on) or from today's work items (off), and read by
 :mod:`report_ingest.model_first_read`, with no floor; each value is placed
 on its page by the words printed there (:mod:`report_ingest.locate`). A
-bound document labels its own pages by sections and reads them in its own
-window, and this report's narrative is given none of them. Cone soundings
-and dynamic probes keep the sounding reader. Each stage's result is saved
-as ``items/mf-<key>.json``; one no answer came back for is not saved, so a
+reader stage off is today's reader, on today's work items. A bound document
+labels its own pages by sections (the labels on) and reads them in its own
+window; this report's narrative is given its pages as
+``narrative_skips_bound`` says (RI-188). Cone soundings and dynamic probes
+keep the sounding reader. Each model-first result is saved as
+``items/mf-<key>.json``; one no answer came back for is not saved, so a
 resumed run asks again.
 """
 
@@ -122,7 +128,7 @@ from report_ingest.model import (
 __all__ = [
     "ingest_report", "Budgets", "output_paths", "ITEM_READERS",
     "OUTPUT_NAMES", "REVIEW_MODES", "BOUND_DIR", "MODEL_FIRST_ENV",
-    "model_first_setting",
+    "MODEL_FIRST_SETTING_STAGES", "model_first_setting", "model_first_stages",
 ]
 
 #: Where a bound document's own folder goes, under the parent's ``out_dir``.
@@ -211,29 +217,88 @@ OUTPUT_NAMES: Tuple[str, ...] = (
     "report.diggs.xml", "reports.db",
 )
 
-#: The model-first switch (BACKLOG RI-87): ``off``, the default (unset or
-#: ``0``), or ``on`` (``1``). See :func:`model_first_setting`.
+#: The model-first setting (BACKLOG RI-87, RI-186): each stage of
+#: :data:`MODEL_FIRST_SETTING_STAGES` on or off, every one on when unset.
+#: See :func:`model_first_stages`.
 MODEL_FIRST_ENV = "GEOTECH_INGEST_MODEL_FIRST"
+
+#: The stages model first can read (BACKLOG RI-186): the page labels and
+#: the four readers, in the order a setting names them.
+MODEL_FIRST_SETTING_STAGES: Tuple[str, ...] = (
+    "labels", "logs", "lab", "calc", "narrative")
 
 #: The readers model-first ingest replaces (``ITEM_READERS``' names), and
 #: the stage of :mod:`report_ingest.model_first_read` each becomes.
 _MODEL_FIRST_STAGES: Dict[str, str] = {
     "log": "logs", "lab": "lab", "calc": "calc", "narrative": "narrative"}
 
+_ON_WORDS = ("1", "on", "true", "yes")
+_OFF_WORDS = ("0", "off", "false", "no")
 
-def model_first_setting(value: Any = None) -> str:
-    """``off`` or ``on``: ``value``, or :data:`MODEL_FIRST_ENV` when
-    ``value`` is None. Unset or empty is ``off``; a typo is refused."""
-    if value is None:
-        value = os.environ.get(MODEL_FIRST_ENV)
+
+def _on_or_off(value: Any, what: str) -> str:
     if isinstance(value, bool):
         return "on" if value else "off"
-    text = str(value or "").strip().lower()
-    if text in ("", "0", "off", "false", "no"):
-        return "off"
-    if text in ("1", "on", "true", "yes"):
+    text = str(value).strip().lower()
+    if text in _ON_WORDS:
         return "on"
-    raise ValueError(f"{MODEL_FIRST_ENV}={value!r}: use off or on")
+    if text in _OFF_WORDS:
+        return "off"
+    raise ValueError(f"{MODEL_FIRST_ENV}: {what}={value!r}: use off or on")
+
+
+def model_first_stages(value: Any = None) -> Dict[str, str]:
+    """Each stage's model-first setting, ``stage -> on | off`` over
+    :data:`MODEL_FIRST_SETTING_STAGES` (BACKLOG RI-186): ``value``, or
+    :data:`MODEL_FIRST_ENV` when ``value`` is None.
+
+    Every stage is ``on`` unless the setting says otherwise: unset or
+    empty is on for every stage (the owner, 2026-10-29). ``on`` or ``off``
+    (a bool, ``1`` or ``0``) sets every stage; a mapping from stages to
+    those words sets the stages it names; a text sets them left to right,
+    a word alone every stage and ``stage=word`` one, so ``logs=off,lab=off``
+    reads the laboratory sheets and the logs with today's readers and
+    ``off,narrative=on`` reads only the narrative model first. A word or a
+    stage it does not know is refused."""
+    if value is None:
+        value = os.environ.get(MODEL_FIRST_ENV)
+    stages = {stage: "on" for stage in MODEL_FIRST_SETTING_STAGES}
+    if isinstance(value, dict):
+        tokens: List[Tuple[Optional[str], Any]] = list(value.items())
+    elif isinstance(value, bool):
+        tokens = [(None, value)]
+    else:
+        tokens = []
+        for token in str(value or "").replace(";", ",").split(","):
+            token = token.strip()
+            if not token:
+                continue
+            stage, sep, word = token.partition("=")
+            tokens.append((stage.strip().lower(), word) if sep
+                          else (None, token))
+    for stage, word in tokens:
+        if stage is None:
+            stages = dict.fromkeys(stages, _on_or_off(word, "all"))
+            continue
+        stage = str(stage).strip().lower()
+        if stage not in stages:
+            raise ValueError(
+                f"{MODEL_FIRST_ENV}: no stage {stage!r}; the stages are "
+                f"{list(MODEL_FIRST_SETTING_STAGES)}")
+        stages[stage] = _on_or_off(word, stage)
+    return stages
+
+
+def model_first_setting(value: Any = None) -> str:
+    """The setting in one word (:func:`model_first_stages`): ``on`` when
+    every stage is on, ``off`` when every stage is off, and otherwise each
+    stage named, ``labels=on,logs=off,lab=off,calc=off,narrative=on``. It
+    is what a run file, ``arm.json`` and ``labels.json`` record."""
+    stages = model_first_stages(value)
+    words = set(stages.values())
+    if len(words) == 1:
+        return words.pop()
+    return ",".join(f"{stage}={word}" for stage, word in stages.items())
 
 
 @dataclass
@@ -658,8 +723,13 @@ class _Labelling:
     range_cost: Dict[str, Any] = field(default_factory=dict)
     range_paid: bool = False
     #: Model-first ingest (BACKLOG RI-87): the range labels replace the
-    #: vision voter and the label review, which do not run.
+    #: vision voter and the label review, which do not run. The labels
+    #: stage's own setting (RI-186).
     model_first: bool = False
+    #: The run's model-first setting in one word
+    #: (:func:`model_first_setting`) when any stage is on, for
+    #: ``labels.json``; empty with every stage off.
+    first_setting: str = ""
 
     def resolve(self) -> Dict[str, Any]:
         """The trust table, with the fallback the ``trust`` policy needs."""
@@ -701,6 +771,13 @@ class _ModelFirst:
     #: included, and the run's QA note, which says so (:func:`_note_cuts`).
     cut: int = 0
     note: Any = None
+    #: The reader stages read model first (BACKLOG RI-186); a stage not
+    #: here is today's reader, on today's work items.
+    stages: Tuple[str, ...] = ("logs", "lab", "calc", "narrative")
+    #: Whether the pages are labelled model first. Off, the vote and the
+    #: label review label them as today, and the model-first stages' groups
+    #: are drawn from today's work items.
+    labels: bool = True
 
     def source(self, doc: Any) -> Any:
         if self.pdf is None:
@@ -832,28 +909,36 @@ def ingest_report(source: Any, engine: Any, *,
         ``label_policy="rules"`` does not run it. See
         :mod:`report_ingest.range_labels`.
     model_first, stage_engines, page_route
-        Model-first ingest (BACKLOG RI-87), OFF by default: ``model_first``
-        is ``off`` or ``on``, or ``None`` to follow
-        ``GEOTECH_INGEST_MODEL_FIRST`` (:func:`model_first_setting`). On,
-        the range voter runs (``plain`` unless ``range_labels`` names an
-        arm), the vision voter and the label review do not, and the logs,
-        laboratory sheets, printouts and narrative are read model first.
-        ``stage_engines`` gives each stage's engine: a mapping from
-        ``logs``, ``lab``, ``calc`` and ``narrative`` to an engine (a stage
-        not in it reads on ``engine``), or a callable that takes a model
-        name and returns an engine, called with each stage's model in
+        Model-first ingest (BACKLOG RI-87), ON BY DEFAULT for every stage
+        (RI-186): ``model_first`` sets the page labels, the logs, the
+        laboratory sheets, the printouts and the narrative each on or off
+        (:func:`model_first_stages`: ``on``, ``off``, a mapping, or a text
+        such as ``logs=off,lab=off``), or is ``None`` to follow
+        ``GEOTECH_INGEST_MODEL_FIRST``, every stage on when it is unset.
+        The labels on, the range voter runs (``plain`` unless
+        ``range_labels`` names an arm) and the vision voter and the label
+        review do not; off, they label the pages as today. A reader stage
+        on is read model first, its groups drawn from the range labels and
+        the descriptions or, the labels off, from today's work items; off,
+        it is today's reader. ``stage_engines`` gives each stage's engine:
+        a mapping from ``logs``, ``lab``, ``calc`` and ``narrative`` to an
+        engine (a stage not in it reads on ``engine``), or a callable that
+        takes a model name and returns an engine, called with each
+        model-first stage's model in
         :data:`report_ingest.model_first_read.STAGE_MODELS`; ``None`` reads
         every stage on ``engine``. ``page_route`` says how the pages are
         sent: ``auto``, ``pdf`` or ``pictures``, or ``None`` to follow
-        ``GEOTECH_INGEST_MODEL_FIRST_PAGES``. ``label_policy="rules"`` is
-        refused: the groups are drawn from the range labels.
-        ``Budgets.max_request_tokens_in`` sizes each group's request before
-        it is sent (BACKLOG RI-121). Off,
+        ``GEOTECH_INGEST_MODEL_FIRST_PAGES``. ``label_policy="rules"`` takes
+        the rules alone: it is refused when the labels were asked model
+        first, and with the setting left to its default it turns the labels
+        off. ``Budgets.max_request_tokens_in`` sizes each group's request
+        before it is sent (BACKLOG RI-121). With every stage off,
         ``stage_engines`` may still be a mapping: today's reader of each
         stage it names (:data:`TODAY_READERS`) reads on that engine, so the
-        two arms can be measured on the same models; the soundings, the
-        triage, the vision voter and the label review stay on their own
-        engines. ``page_route`` is ignored when off.
+        two arms can be measured on the same models, as a reader stage off
+        in a mapping does beside stages on; the soundings, the triage, the
+        vision voter and the label review stay on their own engines.
+        ``page_route`` is ignored with every reader stage off.
 
     The cost on ``record.document`` is the WHOLE run's, the children
     included; each child's own block says what that child cost. It is THIS
@@ -876,10 +961,13 @@ def ingest_report(source: Any, engine: Any, *,
     if counts_from_logs not in COUNT_MODES:
         raise ValueError(f"unknown counts_from_logs {counts_from_logs!r}; "
                          f"the modes are {list(COUNT_MODES)}")
-    first = model_first_setting(model_first) == "on"
-    if first and label_policy == "rules":
-        raise ValueError("model-first ingest draws its groups from the range "
-                         "labels; label_policy='rules' takes the rules alone")
+    stages = model_first_stages(model_first)
+    if stages["labels"] == "on" and label_policy == "rules":
+        if model_first is not None or os.environ.get(MODEL_FIRST_ENV):
+            raise ValueError("model-first labels are the range labels; "
+                             "label_policy='rules' takes the rules alone")
+        stages["labels"] = "off"     # the default gives way to the rules
+    first = any(word == "on" for word in stages.values())
     from report_ingest.range_labels import range_arm_of, range_labels_arm
 
     labelling = _Labelling(
@@ -907,9 +995,18 @@ def ingest_report(source: Any, engine: Any, *,
     first_run = (_model_first_run(
         source, engine, tally, labelling, stage_engines, page_route,
         questions, qa,
-        max_request_tokens_in=budgets.max_request_tokens_in)
+        max_request_tokens_in=budgets.max_request_tokens_in, stages=stages)
         if first else None)
-    readers = None if first else _today_readers(stage_engines, tally, qa)
+    if first_run is None:
+        readers = _today_readers(stage_engines, tally, qa)
+    else:
+        # Today's reader of a stage off, beside stages on, on the engine a
+        # mapping names for it (RI-186); a callable names models for the
+        # model-first stages only.
+        readers = _today_readers(
+            {stage: given for stage, given in stage_engines.items()
+             if stage not in first_run.stages}
+            if isinstance(stage_engines, dict) else None, tally, qa)
 
     doc = _open(source, di_result, report_id)
     paced: List[Any] = []
@@ -1209,10 +1306,14 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
         read = _read_model_first(
             doc, model_first, out, resume, report_id, told_labels, outline,
             record, spend, qa, unresolved, workflow, mine, window)
+        # The soundings, and the items of a reader stage off (RI-186), as
+        # today's path reads them.
         read += _read_items(doc, engine, budgets, out, resume, questions,
-                            report_id, rest, own, outline, record, spend, qa,
-                            unresolved, workflow, no_text, di_pages, told,
-                            bound, window)
+                            report_id, rest, told_labels, outline, record,
+                            spend, qa, unresolved, workflow, no_text,
+                            di_pages, told, bound, window,
+                            narrative_key="-skips-bound" if window else "",
+                            readers=readers)
 
     # -- 3. the reconciler --------------------------------------------------
     # Over this report's own pages: the bound documents' are checked in
@@ -1227,7 +1328,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     # one hole per item, and model first one per log group, whose groups
     # are drawn from the page descriptions, not cut by the headers (RI-144).
     qa.extend(missing_holes_qa(doc, items, record,
-                               prefix="" if model_first is None else "mf-"))
+                               prefix=_log_prefix(model_first)))
     _counts_from_logs(record, qa, counts_from_logs, every, read)
     record.project = _project_from(record)
 
@@ -1703,7 +1804,9 @@ def _labels_blob(choices: Sequence[PageChoice], split: Sequence[int],
                         if labelling.policy != "rules"
                         and not labelling.model_first else ""),
         "note": labelling.note,
-        **({"model_first": "on"} if labelling.model_first else {}),
+        # The run's setting (RI-186): ``on``, or each stage named.
+        **({"model_first": labelling.first_setting}
+           if labelling.first_setting else {}),
         **({"range_arm": labelling.range_arm} if labelling.range_arm
            else {}),
         "n_pages": int(n_pages),
@@ -2055,7 +2158,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
     inner_spend = _Spend(spend.tally)
     qa_labels: List[QAEntry] = []
     ranged: Dict[int, str] = {}
-    if model_first is not None:
+    if model_first is not None and model_first.labels:
         ranged = _bound_range_labels(
             engine, folder, resume, window, rules,
             outline_from([f for f in facts if f.page in at],
@@ -2156,7 +2259,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                 f"of that same file. The page labels are the vote's "
                 + ("(its own pages labelled by sections, and planlens' rules "
                    "re-run over these pages alone where the sections left a "
-                   "page unsettled)" if model_first is not None else
+                   "page unsettled)"
+                   if model_first is not None and model_first.labels else
                    "(planlens' rules re-run over these pages alone, with the "
                    "whole file's vision pass reused)")
                 + ", except that a page the whole file's pass gave a reader "
@@ -2222,7 +2326,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                             child.document.workflow,
                             [p for p in no_text if p in at],
                             [p for p in di_pages if p in at],
-                            window=window)
+                            window=window, readers=readers)
     _save(os.path.join(folder, "labels.json"),
           _labels_blob(choices, split, {},
                        dataclasses.replace(labelling, review_mode="none"),
@@ -2235,7 +2339,7 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
               di_pages=[p for p in di_pages if p in at],
               reader_unresolved=unresolved, doc=doc, outline=outline)
     qa.extend(missing_holes_qa(                         # RI-117, RI-144
-        doc, items, child, prefix="" if model_first is None else "mf-"))
+        doc, items, child, prefix=_log_prefix(model_first)))
     _counts_from_logs(child, qa, counts_from_logs, every, done)
     child.project = _project_from(child)
     child.qa.extend(qa)
@@ -2776,27 +2880,40 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
                      page_route: Optional[str],
                      questions: Optional[Sequence[str]],
                      qa: List[QAEntry],
-                     max_request_tokens_in: Optional[int] = None
+                     max_request_tokens_in: Optional[int] = None,
+                     stages: Optional[Dict[str, str]] = None
                      ) -> _ModelFirst:
     """The run's model-first settings, and the one QA note that names them.
 
-    The range voter is switched on (``plain`` unless an arm was named), and
-    the vision voter and the label review off. Each stage's engine is the
-    one ``stage_engines`` gives (:func:`ingest_report`), counted on the
-    run's tally; its route is resolved here, so a ``pdf`` route an engine
-    cannot send is refused before anything is read. A per-request limit
-    (``Budgets.max_request_tokens_in``, RI-121) goes to every reader."""
+    ``stages`` is the run's setting (:func:`model_first_stages`; every
+    stage on when None). The labels on, the range voter is switched on
+    (``plain`` unless an arm was named), and the vision voter and the label
+    review off. Each model-first reader stage's engine is the one
+    ``stage_engines`` gives (:func:`ingest_report`), counted on the run's
+    tally; its route is resolved here, so a ``pdf`` route an engine cannot
+    send is refused before anything is read. A per-request limit
+    (``Budgets.max_request_tokens_in``, RI-121) goes to every model-first
+    reader."""
     from report_ingest.model_first_pages import page_route as route_setting
     from report_ingest.model_first_pages import resolve_route
     from report_ingest.model_first_read import STAGE_MODELS
 
+    stages = stages or model_first_stages("on")
+    setting = model_first_setting(stages)
+    labels = stages["labels"] == "on"
+    reading = tuple(stage for stage in STAGE_MODELS if stages[stage] == "on")
+    today = [stage for stage in STAGE_MODELS if stage not in reading]
     asked = route_setting(page_route)
-    labelling.model_first = True
-    labelling.review_mode = "none"
-    labelling.range_arm = labelling.range_arm or "plain"
+    labelling.first_setting = setting
+    if labels:
+        labelling.model_first = True
+        labelling.review_mode = "none"
+        labelling.range_arm = labelling.range_arm or "plain"
     engines: Dict[str, Any] = {}
     routes: Dict[str, str] = {}
     for stage, model in STAGE_MODELS.items():
+        if stage not in reading:
+            continue
         if callable(stage_engines):
             given = stage_engines(model)
         else:
@@ -2811,23 +2928,38 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
     else:
         pdf = str(source)
     limit = int(max_request_tokens_in) if max_request_tokens_in else None
+    if reading:
+        read = ("each group of pages was read in one call and the model's "
+                "answer is the record"
+                + (f" ({', '.join(reading)}; {', '.join(today)} by today's "
+                   f"readers)" if today else ""))
+    else:
+        read = "every reader is today's"
+    if labels:
+        labelled = (f"the pages were labelled by sections (the range voter, "
+                    f"arm {labelling.range_arm!r}), and the vision voter, the "
+                    f"label review"
+                    + (" and the floors" if reading else "") + " did not run")
+    else:
+        labelled = ("the pages were labelled as today, by the vote and the "
+                    "label review"
+                    + ("; the floors did not run" if reading else ""))
     note = QAEntry(
         kind="note", where="model_first",
-        detail=(f"read model first ({MODEL_FIRST_ENV}=on): each group of "
-                f"pages was read in one call and the model's answer is the "
-                f"record; the pages were labelled by sections (the range "
-                f"voter, arm {labelling.range_arm!r}), and the vision voter, "
-                f"the label review and the floors did not run"
+        detail=(f"read model first ({MODEL_FIRST_ENV}={setting}): {read}; "
+                f"{labelled}"
                 + ("; the caller's own questions were not asked: the "
                    "narrative's call carries its stage's instruction only"
-                   if questions else "")
+                   if questions and "narrative" in reading else "")
                 + (f"; each request was sized against a limit of {limit:,} "
-                   f"input tokens before it was sent" if limit else "")),
+                   f"input tokens before it was sent"
+                   if limit and reading else "")),
         values=[f"{stage}: {getattr(engines[stage], 'name', '') or 'engine'}"
-                f", pages as {routes[stage]}" for stage in STAGE_MODELS])
+                f", pages as {routes[stage]}" for stage in reading])
     qa.append(note)
     return _ModelFirst(engines=engines, routes=routes, asked=asked, pdf=pdf,
-                       max_request_tokens_in=limit, note=note)
+                       max_request_tokens_in=limit, note=note,
+                       stages=reading, labels=labels)
 
 
 def _note_cuts(model_first: _ModelFirst, qa: List[QAEntry]) -> None:
@@ -2924,7 +3056,8 @@ def _placer(doc: Any) -> Any:
 def _model_first_units(doc: Any, model_first: _ModelFirst,
                        labels: Dict[int, str],
                        window: Optional[Sequence[int]] = None,
-                       narrative_labels: Optional[Dict[int, str]] = None
+                       narrative_labels: Optional[Dict[int, str]] = None,
+                       items: Sequence[Any] = ()
                        ) -> List[Tuple[_Unit, List[Any]]]:
     """The logs, laboratory windows, printouts and narrative to read model
     first, each with the groups of pages its calls carry, in page order.
@@ -2940,10 +3073,17 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
 
     ``narrative_labels``: the labels the narrative's groups are drawn from
     where they are not ``labels`` -- every page's, a bound document's
-    included, when ``narrative_skips_bound`` is off (BACKLOG RI-188)."""
+    included, when ``narrative_skips_bound`` is off (BACKLOG RI-188).
+
+    Only the stages read model first (``model_first.stages``, RI-186). With
+    the labels not model first the descriptions do not draw the logs',
+    laboratory sheets' and printouts' groups: each of today's work items
+    (``items``) is one log, sheet or printout, a long one cut as the
+    descriptions' groups are; the narrative is grouped from the labels."""
     from report_ingest.model_first_pages import (FIGURE_LABELS,
                                                  NARRATIVE_LABELS,
-                                                 group_pages)
+                                                 calc_groups, group_pages,
+                                                 lab_groups, log_groups)
     from report_ingest.narrative_reader import (CHARS_PER_TOKEN,
                                                 INPUT_TOKEN_BUDGET)
 
@@ -2953,14 +3093,34 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
     def grouped(by: Dict[int, str]) -> Dict[str, List[Any]]:
         return group_pages(by, model_first.descriptions,
                            n_pages=doc.n_pages, doc=doc,
-                           route=model_first.routes["narrative"],
+                           route=model_first.routes.get("narrative", "pdf"),
                            window=window, page_chars=page_chars,
                            max_chars=INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN)
 
-    groups = grouped(labels)
     told = labels if narrative_labels is None else narrative_labels
-    if told != labels:
-        groups["narrative"] = grouped(told)["narrative"]
+    if model_first.labels:
+        groups = grouped(labels)
+        if told != labels:
+            groups["narrative"] = grouped(told)["narrative"]
+    else:
+        groups = {"logs": [], "lab": [], "calc": [],
+                  "narrative": grouped(told)["narrative"]}
+        kinds: Dict[int, str] = {}
+        for item in items:
+            reader = ITEM_READERS.get(item.kind)
+            pages = sorted(int(p) for p in item.pages)
+            if not pages:
+                continue
+            if reader == "log":
+                groups["logs"] += log_groups(pages, {})
+                kinds[pages[0]] = item.kind
+            elif reader == "lab":
+                groups["lab"] += lab_groups(pages, {})
+            elif reader == "calc":
+                groups["calc"] += calc_groups(pages, doc, None)
+    for stage in list(groups):
+        if stage not in model_first.stages:
+            groups[stage] = []
     units: List[Tuple[_Unit, List[Any]]] = []
     if groups["narrative"]:
         shown = _group_pages(groups["narrative"])
@@ -2973,8 +3133,9 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
         logs.setdefault(group.key, []).append(group)
     for key, parts in logs.items():
         pages = _group_pages(parts)
-        units.append((_Unit(labels.get(pages[0], "boring_log"), key, pages),
-                      parts))
+        kind = (labels.get(pages[0], "boring_log") if model_first.labels
+                else kinds.get(pages[0], "boring_log"))
+        units.append((_Unit(kind, key, pages), parts))
     for group in groups["lab"]:
         key = group.key + (f"-{group.part[0]}" if group.part else "")
         units.append((_Unit("lab_test", key, _group_pages([group])),
@@ -3000,29 +3161,31 @@ def _model_first_plan(doc: Any, model_first: _ModelFirst,
                                  List[Any], List[Any]]:
     """What a model-first pass reads: the model-first units
     (:func:`_model_first_units`) in place of the work items of their
-    stages, beside today's items of the other readers (the soundings), and
-    the item ceiling applied once over all of them in page order. The
-    items no reader reads (figures, the ``appended_report`` run) stay
-    listed and do not count against it.
+    stages, beside today's items of the other readers (the soundings, and
+    a reader stage not read model first, RI-186), and the item ceiling
+    applied once over all of them in page order. The items no reader reads
+    (figures, the ``appended_report`` run) stay listed and do not count
+    against it.
 
     Returns the units to read, every item, the items given a reader (what
     the reconciler counts as read) and today's items to read."""
     def first(item: Any) -> int:
         return min(item.pages) if item.pages else 0
 
+    on = getattr(model_first, "stages", tuple(_MODEL_FIRST_STAGES.values()))
     units = _model_first_units(doc, model_first, labels, window,
-                               narrative_labels)
-    soundings = [item for item in every if ITEM_READERS.get(item.kind)
-                 not in (None, *_MODEL_FIRST_STAGES)]
+                               narrative_labels, items=every)
+    today = [item for item in every
+             if ITEM_READERS.get(item.kind) is not None
+             and _MODEL_FIRST_STAGES.get(ITEM_READERS[item.kind]) not in on]
     listed = [item for item in every if ITEM_READERS.get(item.kind) is None]
-    combined = sorted([unit for unit, _parts in units] + soundings,
-                      key=first)
+    combined = sorted([unit for unit, _parts in units] + today, key=first)
     read = combined[:int(max_items)] if max_items else combined
     kept = {id(item) for item in read}
     return ([(unit, parts) for unit, parts in units if id(unit) in kept],
             sorted(combined + listed, key=first),
             sorted(read + listed, key=first),
-            [item for item in soundings if id(item) in kept])
+            [item for item in today if id(item) in kept])
 
 
 def _still_current(blob: Dict[str, Any], parts: Sequence[Any],
@@ -3040,6 +3203,14 @@ def _still_current(blob: Dict[str, Any], parts: Sequence[Any],
             == _group_pages(parts)
             and blob.get("prompt_version") == READ_PROMPT_VERSION
             and blob.get("route") == route)
+
+
+def _log_prefix(model_first: Optional[_ModelFirst]) -> str:
+    """What goes before a log item's id in a QA entry's ``where``: ``mf-``
+    when the logs are read model first, the file the item is saved under."""
+    if model_first is not None and "logs" in model_first.stages:
+        return "mf-"
+    return ""
 
 
 def _without_dividers(labels: Dict[int, str],

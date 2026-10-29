@@ -36,6 +36,9 @@ from report_ingest.tests.narrative_fixtures import (  # noqa: E402
     build_narrative_report,
 )
 from report_ingest.tests.test_graph import full_script  # noqa: E402
+# Today's readers are scripted: model first is set off (RI-186).
+from report_ingest.tests.test_graph import (  # noqa: E402,F401
+    todays_readers)
 
 KEY = "SYN.pdf"
 

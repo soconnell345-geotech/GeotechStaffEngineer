@@ -17,6 +17,16 @@ import pytest
 from report_ingest import cluster_scoring as cs
 
 
+@pytest.fixture(autouse=True)
+def todays_readers(monkeypatch):
+    """These runs script today's readers: model first, on for every stage
+    when the setting is unset since BACKLOG RI-186, is set off for them; a
+    test of model first asks for it."""
+    from report_ingest.graph import MODEL_FIRST_ENV
+
+    monkeypatch.setenv(MODEL_FIRST_ENV, "off")
+
+
 def _run_blob(rid, n_pages, rules, final, changes=(), cost=None):
     return {
         "id": rid, "run_date": "2026-09-17", "n_pages": n_pages,

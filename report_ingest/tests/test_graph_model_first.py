@@ -1,11 +1,12 @@
 """The model-first switch in the ingest graph (BACKLOG RI-87, piece 8).
 
-``module_work/REPORT_INGEST_PLAN.md`` section 8.2.2: with the switch off,
-which is the default, the graph is today's. Two tests hold it there: every
-request the scripted run sends and every file it writes are the same as a
-run of master's graph (a snapshot of master's run, :data:`SNAPSHOT`), and no
-model-first module is imported. The rest run one made-up report through the
-graph with the switch on and scripted engines.
+``module_work/REPORT_INGEST_PLAN.md`` section 8.2.2: with the switch off
+the graph is today's. Two tests hold it there: every request the scripted
+run sends and every file it writes are the same as a run of master's graph
+(a snapshot of master's run, :data:`SNAPSHOT`), and no model-first module is
+imported. Unset, the switch is on for every stage since BACKLOG RI-186, so
+those runs set it off. The rest run one made-up report through the graph
+with the switch on and scripted engines.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import pytest
 
 pytest.importorskip("planlens.document.roles")
 
-#: Master's run of the synthetic report, with the switch unset: one digest
+#: Master's run of the synthetic report, with the switch off: one digest
 #: per request and per output file (:func:`off_snapshot`), and the digest of
 #: what planlens reads off the report (:func:`planlens_reading`), taken with
 #: it, and the platform and library versions it was taken with
@@ -69,8 +70,10 @@ class _Clock:
 def _off_run(name: str, folder: Path
              ) -> Tuple[List[Dict[str, Any]], Dict[str, bytes],
                         Dict[bytes, str]]:
-    """One scripted run of the synthetic report with the switch unset: the
-    requests the engine was sent, every file under the run's folder, and
+    """One scripted run of the synthetic report with the switch set off (it
+    was off unset until RI-186), every other ``GEOTECH_INGEST_`` variable
+    unset: the requests the engine was sent, every file under the run's
+    folder, and
     the render call that drew each picture planlens drew for it (by the
     picture's digest): its arguments, the budget object left out."""
     from planlens.document import Document
@@ -111,7 +114,7 @@ def _off_run(name: str, folder: Path
             mock.patch.object(Document, "render", render), \
             mock.patch.dict(os.environ, env, clear=True):
         graph.ingest_report(pdf, engine, out_dir=out, report_id="SYN",
-                            **kwargs)
+                            model_first="off", **kwargs)
     files: Dict[str, bytes] = {}
     for root, _dirs, names in os.walk(out):
         for leaf in names:
@@ -265,7 +268,7 @@ def write_off_snapshot(root: Path) -> Dict[str, Any]:
 class TestOffIsToday:
 
     def test_every_request_and_file_is_masters(self, tmp_path):
-        """The switch unset: the scripted runs send master's requests and
+        """The switch off: the scripted runs send master's requests and
         write master's files, byte for byte once the run's folder, the
         library keys and the library's clock are taken out."""
         saved = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
@@ -310,7 +313,7 @@ class TestOffIsToday:
         assert second == first
 
     def test_no_model_first_module_is_imported(self, tmp_path):
-        """A standard run with the switch unset imports none of the
+        """A standard run with the switch off imports none of the
         model-first modules (checked in a fresh interpreter)."""
         script = (
             "import os, sys\n"
@@ -407,8 +410,10 @@ class TestTodaysReadersOnTheirOwnEngines:
 
 class TestTheSwitch:
 
+    # Unset or empty is on for every stage since RI-186 (the owner,
+    # 2026-10-29); the stage-by-stage settings are in test_ri186.py.
     @pytest.mark.parametrize("value, setting", [
-        (None, "off"), ("", "off"), ("0", "off"), ("off", "off"),
+        (None, "on"), ("", "on"), ("0", "off"), ("off", "off"),
         ("1", "on"), ("on", "on"), ("ON", "on"), (True, "on"),
         (False, "off")])
     def test_the_settings(self, monkeypatch, value, setting):

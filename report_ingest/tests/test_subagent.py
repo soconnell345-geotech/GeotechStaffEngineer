@@ -18,6 +18,15 @@ from report_ingest.subagent import (
 from report_ingest.tests.fake_engine import FakeEngine
 
 
+@pytest.fixture(autouse=True)
+def todays_readers(monkeypatch):
+    """These runs script today's readers: model first, on for every stage
+    when the setting is unset since BACKLOG RI-186, is set off for them."""
+    from report_ingest.graph import MODEL_FIRST_ENV
+
+    monkeypatch.setenv(MODEL_FIRST_ENV, "off")
+
+
 def _ask(engine):
     return engine.complete([{"role": "user", "content": "hello"}])
 
