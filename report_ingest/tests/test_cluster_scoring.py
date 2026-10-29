@@ -17,6 +17,16 @@ import pytest
 from report_ingest import cluster_scoring as cs
 
 
+@pytest.fixture(autouse=True)
+def todays_readers(monkeypatch):
+    """These runs script today's readers: model first, on for every stage
+    when the setting is unset since BACKLOG RI-186, is set off for them; a
+    test of model first asks for it."""
+    from report_ingest.graph import MODEL_FIRST_ENV
+
+    monkeypatch.setenv(MODEL_FIRST_ENV, "off")
+
+
 def _run_blob(rid, n_pages, rules, final, changes=(), cost=None):
     return {
         "id": rid, "run_date": "2026-09-17", "n_pages": n_pages,
@@ -2663,7 +2673,7 @@ class TestFailedRequestsInTheCost:
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert ("failed requests, not among the calls above: 6 (4 rate "
                 "limited, 2 timed out), 4 of them sent again by the engine, "
-                "90 s waiting on rate limits; reasoning: 2,400 of the output "
+                "90 s waiting to send again; reasoning: 2,400 of the output "
                 "tokens") in text
 
     def test_a_mix_of_old_and_new_run_files_says_how_many_counted(self):
@@ -3666,7 +3676,8 @@ class TestMeasurementPlumbingRI69:
         # The scripted chat answers do not all fit the readers' schemas, so
         # some items go unread; this test is about the label run's engine,
         # not about unread items (RI-110 keeps such a report out of the rows).
-        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
+        monkeypatch.setattr(cs, "_item_error_fields",
+                            lambda record, bound=(): {})
         reports_dir, out, scripts = chat_cluster
         runs = out / "runs"
         runs.mkdir(parents=True)
@@ -4090,8 +4101,11 @@ class TestModelFirstAsASecondArm:
         """The describer, the labeller and each reader on its own model;
         the triage alone seeded from a label run; ``run.json`` names the
         arm, the routes, the models, the versions and what placement found;
-        the labels are scored for pages sent to the wrong reader."""
-        from report_ingest.model_first import READ_PROMPT_VERSION
+        the labels are scored for pages sent to the wrong reader. The
+        laboratory window is answered here: a group no answer came back for
+        is a failed item, and the report no result (RI-187)."""
+        from report_ingest.model_first import (READ_PROMPT_VERSION,
+                                               LabSheetReading)
         from report_ingest.range_labels import DESCRIBE_PROMPT_VERSION
         from report_ingest.tests import test_graph_model_first as tgm
         from report_ingest.tests.fake_engine import FakeEngine
@@ -4100,6 +4114,11 @@ class TestModelFirstAsASecondArm:
         pytest.importorskip("report_ingest.locate")
         reports_dir, out, _scripts = ingest_cluster
         main, describer, labeller, stages = tgm._engines()
+        stages["lab"].turns = [{"final": LabSheetReading.model_validate({
+            "depth_unit": "m",
+            "tests": [{"kind": "atterberg", "investigation_id": "B-1",
+                       "sample_id": "S-1", "depth_top": 1.5, "ll": 41.0,
+                       "pl": 19.0, "pi": 22.0, "prov": {"page": 12}}]})}]
         by_name = {"fake-main": main, "fake-describer": describer,
                    "fake-labeller": labeller,
                    **{FIRST_MODELS[s]: e for s, e in stages.items()}}

@@ -50,6 +50,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import Counter
@@ -64,7 +65,8 @@ __all__ = [
     "DEFAULT_MAX_TOKENS", "CallCeilingReached",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
     "price_for", "strict_schema", "error_kind", "FAILURE_KINDS",
-    "is_rate_limit", "RATE_LIMIT_WORDS",
+    "is_rate_limit", "RATE_LIMIT_WORDS", "is_server_error",
+    "SERVER_ERROR_LADDER",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
     "image_media_type", "IMAGE_SIGNATURES",
@@ -595,6 +597,11 @@ class Reply:
     #: run may want to know: unknown keys it dropped, an answer it did not
     #: take and why. Empty on the ordinary call.
     notes: List[str] = field(default_factory=list)
+    #: The arguments of each answer the engine changed or did not take, as
+    #: they came (cut to ``RAW_ANSWER_CHARS``), so a reader that records
+    #: why a call gave no answer can keep what it said (BACKLOG RI-192).
+    #: Empty on the ordinary call, and on an engine that keeps none.
+    raw_answers: List[str] = field(default_factory=list)
 
     @property
     def wants_tools(self) -> bool:
@@ -611,10 +618,12 @@ class Reply:
 #: the provider's "too many requests"; a parameter the deployment refused;
 #: a request too large for the gateway or the model's context; no answer
 #: in time;
-#: nothing back at all (Prompter's ``chat()`` hands back None); anything
-#: else.
+#: nothing back at all (Prompter's ``chat()`` hands back None); the
+#: service's own failure, an HTTP 5xx (:func:`is_server_error`, BACKLOG
+#: RI-190); anything else.
 FAILURE_KINDS: Tuple[str, ...] = ("rate_limit", "parameter", "too_large",
-                                  "timeout", "no_reply", "other")
+                                  "timeout", "no_reply", "server_error",
+                                  "other")
 
 
 def _message_of(error: Any) -> str:
@@ -738,6 +747,34 @@ def is_rate_limit(error: Any) -> bool:
     return any(word in said for word in RATE_LIMIT_WORDS)
 
 
+#: What a server error says of itself, in its own words (:func:`_own_words`):
+#: an SDK's "Error code: 502", the "500 Server Error" requests and Foundry's
+#: model service raise (build f's MF-1b lost a log item to one), and the
+#: names of the statuses.
+_SERVER_ERROR_TEXT = re.compile(
+    r"error code: 5\d\d\b|\b5\d\d server error\b|internal server error"
+    r"|bad gateway|service unavailable|gateway timeout|overloaded")
+
+
+def is_server_error(error: Any) -> bool:
+    """Whether an error is the service's own failure, an HTTP 5xx (BACKLOG
+    RI-190): a 5xx status on the error, its response or the error it was
+    raised from, or :data:`_SERVER_ERROR_TEXT` in its own words. A rate
+    limit is never one (:func:`is_rate_limit`), whatever its status. Never
+    raises."""
+    if is_rate_limit(error):
+        return False
+    for held in (error, getattr(error, "__cause__", None)):
+        if held is None:
+            continue
+        status = _status_of(held)
+        if status is not None and 500 <= status <= 599:
+            return True
+        if _SERVER_ERROR_TEXT.search(_own_words(held)):
+            return True
+    return False
+
+
 def error_kind(error: Any) -> str:
     """Which of :data:`FAILURE_KINDS` an error is, read off its class name
     and its text; a rate limit as :func:`is_rate_limit` reads one. A prompt
@@ -759,6 +796,8 @@ def error_kind(error: Any) -> str:
         return "parameter"
     if "returned nothing" in text or "no reply" in text:
         return "no_reply"
+    if is_server_error(error):
+        return "server_error"
     return "other"
 
 
@@ -1210,6 +1249,12 @@ PACER_WINDOW_SECONDS = 60.0
 #: ``retry-after: 0`` takes (:meth:`RequestPacer.backoff`).
 RATE_LIMIT_LADDER: Tuple[float, ...] = (15.0, 30.0, 60.0, 120.0, 120.0,
                                         120.0)
+
+#: Seconds to wait before each re-send of a request that came back with a
+#: server error (:func:`is_server_error`, BACKLOG RI-190), in order; then
+#: the error is raised. Shorter than the rate limit's: a 5xx is the
+#: service's own trouble, not a per-minute limit that a minute clears.
+SERVER_ERROR_LADDER: Tuple[float, ...] = (5.0, 15.0, 30.0)
 
 
 def _retry_after_of(exc: Any) -> Optional[float]:
@@ -1898,7 +1943,8 @@ class PrompterEngine:
     run once it has failed. :attr:`adaptations` lists what was learned.
 
     EVERY ATTEMPT IS IN THE COST RECORD (BACKLOG RI-21): each refusal, each
-    rate-limited request and each empty ``chat()`` is a failed request on
+    rate-limited request, each server error sent again (BACKLOG RI-190) and
+    each empty ``chat()`` is a failed request on
     :attr:`meter`, with its kind, its attempt number within the call, the
     wait before it was sent again and the lesson it taught; the reply that
     follows carries the attempt it came on and its reasoning tokens.
@@ -1983,6 +2029,10 @@ class PrompterEngine:
     #: header, when the provider sends one, is honoured instead.
     RATE_LIMIT_WAITS: Tuple[float, ...] = RATE_LIMIT_LADDER
 
+    #: Seconds to wait before each re-send of a call that came back with a
+    #: server error, in order (BACKLOG RI-190).
+    SERVER_ERROR_WAITS: Tuple[float, ...] = SERVER_ERROR_LADDER
+
     @staticmethod
     def is_rate_limit(exc: BaseException) -> bool:
         """Whether an exception is the provider saying 'too many requests'
@@ -2007,16 +2057,29 @@ class PrompterEngine:
         (:meth:`RequestPacer.backoff`), and the model's next request is
         held as long (BACKLOG RI-127); a retry-after of 0 takes the
         ladder's step, without the window's minimum (BACKLOG RI-139).
-        ``call`` is this call's own record, which every request of it is
-        timed and filed by."""
+        A server error (:func:`is_server_error`) waits on
+        :attr:`SERVER_ERROR_WAITS` and is sent again the same way (BACKLOG
+        RI-190). ``call`` is this call's own record, which every request of
+        it is timed and filed by."""
         create = client.chat.completions.create
         request = dict(kwargs)
         waits = list(self.RATE_LIMIT_WAITS)
-        for _ in range(3 + len(waits)):
+        server_waits = list(self.SERVER_ERROR_WAITS)
+        for _ in range(3 + len(waits) + len(server_waits)):
             try:
                 call.send()
                 return create(**request)
             except Exception as exc:                # noqa: BLE001 - inspected
+                if is_server_error(exc) and server_waits:
+                    wait = server_waits.pop(0)
+                    self.adaptations.append(
+                        f"{self.model}: server error; waited {wait:.0f} s")
+                    logging.getLogger(__name__).info(
+                        "prompter engine got a server error on %s; waiting "
+                        "%.0f s", self.model, wait)
+                    self._sent_again(call, exc, "server_error", waited=wait)
+                    self._sleep(wait)
+                    continue
                 if self.is_rate_limit(exc) and waits:
                     named = self._retry_after(exc)
                     # A named wait of 0 takes the ladder's step, paced or
@@ -2511,19 +2574,27 @@ class ChatModelEngine:
     :attr:`Reply.notes`, and the answer is validated again; if what is left
     once they are dropped is empty or has every field at its default, there
     is no answer. An answer sent as the only key, one the schema does not
-    have, is unwrapped and the wrapper named (:func:`_validate`). An unknown
+    have, is unwrapped and the wrapper named (:func:`_validate`); a list or
+    an object sent as JSON text is read as the JSON it holds, and named
+    (BACKLOG RI-192). An unknown
     key BESIDE fields of the answer is a stray, however much it looks like
     the answer: dropped, never merged in, and named when it held an object
     naming fields of the answer. When the engine changed an answer, did not
     take it, or set such an object aside, the call's cost row keeps the raw
-    arguments (``answer_args``).
+    arguments (``answer_args``), and so does the reply
+    (:attr:`Reply.raw_answers`).
 
-    ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
+    ONE CALL, ONE MODEL REQUEST, but for a server error. A request that
+    comes back with an HTTP 5xx (:func:`is_server_error`; build f lost a
+    log item to a Foundry 500 that nothing sent again) is sent again after
+    each wait of :attr:`SERVER_ERROR_WAITS`, then raised (BACKLOG RI-190);
+    nothing else is retried in here. So the ingest's
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
-    :attr:`meter` all see the same number (the meter's replies and failed
-    requests together: a request that raised is recorded as failed before
-    it is raised). A call refused before anything went out (a PDF on a
-    route that takes none) is no request, and the meter does not count it.
+    :attr:`meter` all see the same number: the meter's replies and failed
+    requests together, less those it marks ``retried`` (a request that
+    raised is recorded as failed before it is raised). A call refused
+    before anything went out (a PDF on a route that takes none) is no
+    request, and the meter does not count it.
     Usage is read off the reply's ``usage_metadata``, the cached input
     apart from the rest and the reasoning tokens counted.
 
@@ -2570,6 +2641,13 @@ class ChatModelEngine:
         #: not set on a copy of the model. Each lesson also rides on the
         #: cost record of the call it was learned on (BACKLOG RI-21).
         self.adaptations: List[str] = []
+        #: How a call waits before a server error is sent again (BACKLOG
+        #: RI-190); a test replaces it.
+        self._sleep = time.sleep
+
+    #: Seconds to wait before each re-send of a request that came back with
+    #: a server error, in order (BACKLOG RI-190); then it is raised.
+    SERVER_ERROR_WAITS: Tuple[float, ...] = SERVER_ERROR_LADDER
 
     # -- the cap -----------------------------------------------------------
     def _cap_for(self, asked: Optional[int]) -> Optional[int]:
@@ -2772,33 +2850,66 @@ class ChatModelEngine:
         request = self._to_langchain(msgs, system)
         call = _Request(self, self.name, lambda: estimate_request(
             msgs, system=system, tools=offered))
-        try:
-            message = runnable.invoke(request)
-        except Exception as exc:
-            # Recorded, then raised as before: a failed call is a call
-            # (BACKLOG RI-21). The model's own retries happen inside it.
-            # A refusal that says nothing went out (``nothing_sent``: the
-            # palantir_models Claude class refusing a PDF) is no request;
-            # a pacer's hold before it is recorded all the same (BACKLOG
-            # RI-139).
-            if not getattr(exc, "nothing_sent", False):
+        server_waits = list(self.SERVER_ERROR_WAITS)
+        while True:
+            # The call's lessons ride on its first row only.
+            lessons = list(learned) if call.attempt == 1 else []
+            try:
+                message = runnable.invoke(request)
+                break
+            except Exception as exc:
+                # Recorded, then raised as before: a failed call is a call
+                # (BACKLOG RI-21). The model's own retries happen inside it.
+                # A refusal that says nothing went out (``nothing_sent``: the
+                # palantir_models Claude class refusing a PDF) is no request;
+                # a pacer's hold before it is recorded all the same (BACKLOG
+                # RI-139).
+                if getattr(exc, "nothing_sent", False):
+                    self.meter.unsent(self.name, exc, paced=call.paced,
+                                      started=call.sent)
+                    raise
+                if is_server_error(exc) and server_waits:
+                    # A 5xx is sent again on a short ladder (BACKLOG
+                    # RI-190), each request its own row of the call.
+                    wait = server_waits.pop(0)
+                    logging.getLogger(__name__).info(
+                        "chat model engine got a server error on %s; "
+                        "waiting %.0f s", self.name, wait)
+                    call.keep(self.meter.fail(
+                        self.name, exc, kind="server_error",
+                        attempt=call.attempt, retried=True, waited=wait,
+                        adapted=lessons, call_no=call.number,
+                        estimated_in=call.size(), started=call.sent,
+                        duration=call.took(), paced=call.take_paced()))
+                    call.attempt += 1
+                    self._sleep(wait)
+                    call.send()
+                    continue
                 self.meter.fail(self.name, exc,
                                 seconds=self._clock() - call.began,
-                                adapted=list(learned),
+                                adapted=lessons, **self._again(call),
                                 estimated_in=call.size(), started=call.sent,
-                                duration=call.took(), paced=call.paced)
+                                duration=call.took(),
+                                paced=call.take_paced())
                 call.came_back(exc)
-            else:
-                self.meter.unsent(self.name, exc, paced=call.paced,
-                                  started=call.sent)
-            raise
+                raise
         seconds = self._clock() - call.began
         took = call.took()
         call.came_back()
         return self._reply(message, output_format, seconds,
-                           adapted=list(learned),
+                           adapted=lessons,
                            timing={"started": call.sent, "duration": took,
-                                   "paced": call.paced})
+                                   "paced": call.take_paced(),
+                                   **self._again(call)})
+
+    @staticmethod
+    def _again(call: _Request) -> Dict[str, Any]:
+        """The attempt and call number of a call's last request, for its
+        row, when a server error sent it again (BACKLOG RI-190); nothing
+        for a call's only request, whose row is as it always was."""
+        if call.attempt <= 1:
+            return {}
+        return {"attempt": call.attempt, "call_no": call.number}
 
     def _reply(self, message: Any, output_format: Any,
                seconds: float, adapted: Sequence[str] = (),
@@ -2848,14 +2959,15 @@ class ChatModelEngine:
             for call_id, args in offered:
                 strays: List[Tuple[str, List[str]]] = []
                 if cut:
-                    answer, dropped, why, wrappers = None, [], _CUT_ANSWER, []
+                    answer, dropped, why, wrappers, decoded = (
+                        None, [], _CUT_ANSWER, [], [])
                 else:
-                    answer, dropped, why, wrappers = _validate(output_format,
-                                                               args)
+                    answer, dropped, why, wrappers, decoded = _validate(
+                        output_format, args)
                     strays = _stray_objects(output_format, args)
                 notes.extend(_answer_notes(answer, dropped, why, wrappers,
-                                           strays))
-                if wrappers or dropped or strays or answer is None:
+                                           strays, decoded))
+                if wrappers or dropped or strays or decoded or answer is None:
                     raw.append(_raw_args(args))
                 if answer is not None and parsed is None:
                     parsed = answer
@@ -2863,8 +2975,8 @@ class ChatModelEngine:
                     verdicts[call_id] = "" if answer is not None else why
             if parsed is None and text and not cut:
                 found = _json_in(text)
-                answer, dropped, why, wrappers = _validate(output_format,
-                                                           found)
+                answer, dropped, why, wrappers, decoded = _validate(
+                    output_format, found)
                 # Text that is no answer at all is a reply, not a refusal;
                 # an answer written out as text is noted like a call's. JSON
                 # in the words of a turn that asked to look ({"page": 4}) is
@@ -2874,8 +2986,9 @@ class ChatModelEngine:
                 if tried and (answer is not None or not wanted or named):
                     strays = _stray_objects(output_format, found)
                     notes.extend(_answer_notes(answer, dropped, why,
-                                               wrappers, strays))
-                    if wrappers or dropped or strays or answer is None:
+                                               wrappers, strays, decoded))
+                    if (wrappers or dropped or strays or decoded
+                            or answer is None):
                         raw.append(_raw_args(found))
                     parsed = answer
         if notes:
@@ -2909,6 +3022,7 @@ class ChatModelEngine:
             seconds=seconds,
             content=blocks,
             notes=notes,
+            raw_answers=list(raw),
         )
         if reply.cut_off:
             logging.getLogger(__name__).warning(
@@ -3110,9 +3224,10 @@ def _without_nulls(value: Any) -> Any:
 
 
 def _validate(output_format: Any, args: Any
-              ) -> Tuple[Any, List[str], str, List[str]]:
+              ) -> Tuple[Any, List[str], str, List[str], List[str]]:
     """``args`` as an ``output_format``: ``(answer, keys dropped, why not,
-    wrappers taken off)``, the answer None when there is none.
+    wrappers taken off, fields read from JSON text)``, the answer None when
+    there is none.
 
     * Empty arguments are no answer. Foundry's classes hand back ``{}`` for
       a call cut mid-arguments, and many reading schemas accept ``{}``.
@@ -3131,7 +3246,11 @@ def _validate(output_format: Any, args: Any
       out, letting the defaults stand.
     * Foundry sends tools without strict mode, so a model may add a key the
       schema forbids: the unknown keys are dropped and named, and the
-      answer validated again. Any other error stands.
+      answer validated again.
+    * A list or an object sent as JSON TEXT (BACKLOG RI-192: build f's
+      model-first calc calls sent ``"inputs": "[{...}]"``) is read as the
+      JSON it holds (:func:`_json_text`), named, and the answer validated
+      again. Any other error stands.
     * What is left once unknown keys are dropped -- or passed over, on a
       schema that ignores them -- must still say something. Left empty, or
       with every field at its default, it is no answer: the keys dropped
@@ -3149,16 +3268,17 @@ def _validate(output_format: Any, args: Any
         try:
             args = json.loads(args)
         except (json.JSONDecodeError, ValueError):
-            return None, [], "its arguments are not JSON", []
+            return None, [], "its arguments are not JSON", [], []
     if not isinstance(args, dict):
-        return None, [], "it is not a JSON object", []
+        return None, [], "it is not a JSON object", [], []
     if not args:
-        return None, [], "it arrived empty", []
+        return None, [], "it arrived empty", [], []
     args, wrappers = _unwrapped(output_format, args)
     why = ""
     for candidate in (args, _without_nulls(args)):
         dropped: List[str] = []
-        for _ in range(4):
+        decoded: List[str] = []
+        for _ in range(6):
             try:
                 answer = output_format.model_validate(candidate)
             except Exception as exc:                     # noqa: BLE001
@@ -3167,21 +3287,102 @@ def _validate(output_format: Any, args: Any
                        + _error_text(exc, errors) + ")")
                 extra = [tuple(e.get("loc") or ()) for e in errors
                          if e.get("type") == "extra_forbidden"]
-                if not extra:
-                    break
-                candidate, removed = _drop_keys(candidate, extra)
-                if not removed:
-                    break
-                dropped.extend(removed)
-                if not candidate:
-                    return None, dropped, _emptied(dropped), wrappers
+                texts = [tuple(e.get("loc") or ()) for e in errors
+                         if e.get("type") in _JSON_TEXT_ERRORS
+                         and isinstance(e.get("input"), str)]
+                if extra:
+                    candidate, removed = _drop_keys(candidate, extra)
+                    if removed:
+                        dropped.extend(removed)
+                        if not candidate:
+                            return (None, dropped, _emptied(dropped),
+                                    wrappers, decoded)
+                        continue
+                if texts:
+                    candidate, read = _read_json_text(candidate, texts)
+                    if read:
+                        decoded.extend(read)
+                        continue
+                break
+            else:
+                passed = _passed_over(output_format, candidate)
+                if (dropped or passed) and _says_nothing(output_format,
+                                                         candidate, answer):
+                    return (None, dropped, _emptied(dropped, passed),
+                            wrappers, decoded)
+                return answer, dropped, "", wrappers, decoded
+    return None, [], why, wrappers, []
+
+
+#: The validation errors of a field that wants a list or an object, which a
+#: model may have sent as JSON text (BACKLOG RI-192).
+_JSON_TEXT_ERRORS = ("list_type", "dict_type", "model_type")
+
+#: How many stray closing braces :func:`_json_text` drops from one text.
+_STRAY_BRACES = 500
+
+
+def _json_text(text: str) -> Tuple[Any, int]:
+    """``(the list or object a JSON text holds, the stray closing braces
+    dropped to read it)``; ``(None, 0)`` when it holds neither.
+
+    A stray brace is a ``}`` where the parser wanted a comma: build f's
+    model-first calc answers closed each item of a list sent as text with
+    one brace too many (``...}}},{...``). Each is dropped in turn, at most
+    :data:`_STRAY_BRACES`; nothing else in the text is changed."""
+    body = str(text or "").strip()
+    if not body or body[0] not in "[{":
+        return None, 0
+    for dropped in range(_STRAY_BRACES + 1):
+        try:
+            value = json.loads(body)
+        except json.JSONDecodeError as exc:
+            if (exc.msg.startswith("Expecting ',' delimiter")
+                    and 0 <= exc.pos < len(body) and body[exc.pos] == "}"):
+                body = body[:exc.pos] + body[exc.pos + 1:]
                 continue
-            passed = _passed_over(output_format, candidate)
-            if (dropped or passed) and _says_nothing(output_format,
-                                                     candidate, answer):
-                return None, dropped, _emptied(dropped, passed), wrappers
-            return answer, dropped, "", wrappers
-    return None, [], why, wrappers
+            return None, 0
+        except ValueError:
+            return None, 0
+        return (value, dropped) if isinstance(value, (list, dict)) \
+            else (None, 0)
+    return None, 0
+
+
+def _read_json_text(value: Dict[str, Any],
+                    locations: Sequence[Tuple[Any, ...]]
+                    ) -> Tuple[Dict[str, Any], List[str]]:
+    """A copy of ``value`` with the JSON text at each location read as the
+    list or object it holds (:func:`_json_text`), and what was read, as
+    notes name it; a text that holds neither is left as it is."""
+    import copy
+
+    out = copy.deepcopy(value)
+    read: List[str] = []
+    for loc in locations:
+        if not loc:
+            continue
+        node: Any = out
+        for step in loc[:-1]:
+            try:
+                node = node[step]
+            except (KeyError, IndexError, TypeError):
+                node = None
+                break
+        key = loc[-1]
+        try:
+            held = node[key] if isinstance(node, (dict, list)) else None
+        except (KeyError, IndexError, TypeError):
+            held = None
+        if not isinstance(held, str):
+            continue
+        got, braces = _json_text(held)
+        if got is None:
+            continue
+        node[key] = got
+        read.append(".".join(str(p) for p in loc) + (
+            f" ({braces} stray closing brace(s) dropped)" if braces else ""))
+    return out, read
 
 
 def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
@@ -3198,13 +3399,17 @@ def _emptied(dropped: Sequence[str], passed: Sequence[str] = ()) -> str:
 
 def _answer_notes(answer: Any, dropped: Sequence[str], why: str,
                   wrappers: Sequence[str],
-                  strays: Sequence[Tuple[str, Sequence[str]]] = ()
-                  ) -> List[str]:
+                  strays: Sequence[Tuple[str, Sequence[str]]] = (),
+                  decoded: Sequence[str] = ()) -> List[str]:
     """What the engine did with one answer, for :attr:`Reply.notes`: one
     note for its wrappers however deep, one for each stray key that held an
-    object naming fields of the answer, one for the keys dropped, one if it
-    was not taken."""
+    object naming fields of the answer, one for the fields read from JSON
+    text (BACKLOG RI-192), one for the keys dropped, one if it was not
+    taken."""
     notes = []
+    if decoded:
+        notes.append("fields sent as JSON text were read as the JSON they "
+                     "hold: " + ", ".join(decoded))
     if wrappers:
         notes.append("the answer arrived wrapped in "
                      + ", then ".join(repr(w) for w in wrappers)

@@ -16,6 +16,8 @@ from report_ingest.run_folder import load_di_result, run_folder
 from report_ingest.tests.fake_engine import FakeEngine
 from report_ingest.tests.narrative_fixtures import build_narrative_report
 from report_ingest.tests.test_graph import full_script
+# Today's readers are scripted: model first is set off (RI-186).
+from report_ingest.tests.test_graph import todays_readers  # noqa: F401
 
 pytest.importorskip("planlens.document.roles")
 

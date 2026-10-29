@@ -30,6 +30,9 @@ from report_ingest.tests.narrative_fixtures import (  # noqa: E402
     build_narrative_report)
 from report_ingest.tests.test_cluster_scoring import (  # noqa: E402,F401
     _ingest_run, _metered, _run_blob, chat_cluster, ingest_cluster)
+# Today's readers are scripted: model first is set off (RI-186).
+from report_ingest.tests.test_graph import (  # noqa: E402,F401
+    todays_readers)
 
 
 @pytest.fixture(scope="module")
@@ -352,7 +355,8 @@ class TestTheRunFile:
 
         # The scripted chat answers do not all fit the readers' schemas;
         # unread items are not what this test is about.
-        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
+        monkeypatch.setattr(cs, "_item_error_fields",
+                            lambda record, bound=(): {})
         _reports, out, _scripts = chat_cluster
         runs = out / "runs"
         runs.mkdir(parents=True)

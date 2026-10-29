@@ -645,10 +645,10 @@ def test_an_error_that_is_not_about_a_parameter_is_not_retried():
     engine, prompter = _fussy_engine(refuse=())
 
     def boom(**kwargs):
-        raise RuntimeError("Error code: 500 - the server had an error")
+        raise RuntimeError("Error code: 400 - made-up bad request")
 
     prompter.client.chat.completions.create = boom
-    with pytest.raises(RuntimeError, match="server had an error"):
+    with pytest.raises(RuntimeError, match="made-up bad request"):
         engine.complete([user(text_block("go"))], tools=_TOOL)
     assert not engine.adaptations
 
@@ -934,10 +934,10 @@ def test_an_error_that_ends_the_call_is_recorded_and_still_raised():
     engine, prompter = _fussy_engine(refuse=())
 
     def boom(**kwargs):
-        raise RuntimeError("Error code: 500 - the server had an error")
+        raise RuntimeError("Error code: 400 - made-up bad request")
 
     prompter.client.chat.completions.create = boom
-    with pytest.raises(RuntimeError, match="server had an error"):
+    with pytest.raises(RuntimeError, match="made-up bad request"):
         engine.complete([user(text_block("go"))], tools=_TOOL)
     meter = engine.meter
     assert (meter.calls, meter.failed, meter.retried) == (0, 1, 0)

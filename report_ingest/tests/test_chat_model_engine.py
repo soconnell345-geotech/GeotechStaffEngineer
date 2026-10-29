@@ -362,10 +362,15 @@ class TestTheBudgetCounting:
         assert len(model.requests) == 2 == engine.meter.calls == ceiling.used
         assert ceiling.reached
 
-    def test_a_whole_ingest_runs_on_it_and_counts_alike(self, tmp_path):
+    def test_a_whole_ingest_runs_on_it_and_counts_alike(self, tmp_path,
+                                                        monkeypatch):
         pytest.importorskip("planlens.document.roles")
         pytest.importorskip("pymupdf")
+        from report_ingest.graph import MODEL_FIRST_ENV
         from report_ingest.subagent import run_ingest
+        # The script is today's readers': model first, on for every stage
+        # when unset since BACKLOG RI-186, is set off.
+        monkeypatch.setenv(MODEL_FIRST_ENV, "off")
         from report_ingest.tests.narrative_fixtures import (
             build_narrative_report,
         )

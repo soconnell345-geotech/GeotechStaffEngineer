@@ -34,13 +34,15 @@ puts the app's own engine in the Prompter's place: on Foundry, Claude
 through the workspace's ``palantir_models`` classes, built and
 authenticated by the caller. See :func:`score_on_cluster`.
 
-MODEL FIRST, AS A SECOND ARM (BACKLOG RI-87). ``model_first="on"`` reads
-each hand-truthed item with the model-first reader of its stage
-(:mod:`report_ingest.model_first_scoring`) and each whole report with
-``graph.ingest_report(model_first="on")``, scored by the same scorers as
-today's arm. Every run file and RESULTS block names the arm it ran in, and
-under ``on`` the page route, the models and the instruction version. One
-``out_dir`` holds one arm. See :func:`score_on_cluster`.
+MODEL FIRST, ARM BY ARM (BACKLOG RI-87, RI-186). ``model_first="on"``, the
+default since RI-186, reads each hand-truthed item with the model-first
+reader of its stage (:mod:`report_ingest.model_first_scoring`) and each
+whole report with ``graph.ingest_report(model_first="on")``, scored by the
+same scorers as today's arm, ``model_first="off"``; a setting may name
+stages (``logs=off,lab=off``). Every run file and RESULTS block names the
+arm it ran in, and under ``on`` the page route, the models and the
+instruction version. One ``out_dir`` holds one arm. See
+:func:`score_on_cluster`.
 
 WHERE THE OUTPUT GOES. ``out_dir`` is the working folder and local disk is
 the sensible place for it: a run writes one small file per report per stage.
@@ -510,23 +512,31 @@ FIRST_STAGES: Tuple[str, ...] = ("logs", "lab", "calc", "narrative")
 
 
 class _FirstArm:
-    """The run's model-first arm (BACKLOG RI-87). ``off`` reads as today.
-    ``on`` reads the four reader stages' items and the whole reports model
-    first, its pages sent by ``page_route``. In either arm each stage reads
-    on its model in ``stage_models`` (``model`` for a stage not named), so
-    the two arms are compared on the same models (plan section 8.8).
+    """The run's model-first arm (BACKLOG RI-87), stage by stage (RI-186):
+    the page labels and each of the four reader stages on or off
+    (``graph.model_first_stages``). ``off`` for every stage reads as today.
+    A reader stage on reads its items model first, and the ``ingest`` stage
+    reads the whole reports with the run's setting, its pages sent by
+    ``page_route``. In either arm each stage reads on its model in
+    ``stage_models`` (``model`` for a stage not named), so the two arms are
+    compared on the same models (plan section 8.8).
 
     The setting is resolved once, here, and handed on, so every run file
     names the arm it ran in and a variable changed during a run cannot put
-    part of it in the other arm.
+    part of it in the other arm. ``setting`` is the whole run's in one word
+    (``graph.model_first_setting``: ``on``, ``off``, or each stage named),
+    what an ``ingest`` run file and ``arm.json`` record; a reader stage's
+    own run files record that stage's ``on`` or ``off`` (:meth:`arm`).
     """
 
     def __init__(self, model_first: Any = "off",
                  stage_models: Optional[Dict[str, str]] = None,
                  page_route: Optional[str] = None) -> None:
-        from report_ingest.graph import model_first_setting
+        from report_ingest.graph import (model_first_setting,
+                                         model_first_stages)
 
-        self.setting = model_first_setting(model_first)
+        self.stages = model_first_stages(model_first)
+        self.setting = model_first_setting(self.stages)
         unknown = sorted(set(stage_models or {}) - set(FIRST_STAGES))
         if unknown:
             raise ValueError(f"stage_models names {unknown}; the stages "
@@ -534,13 +544,29 @@ class _FirstArm:
         self.stage_models = {str(k): str(v)
                              for k, v in (stage_models or {}).items()}
         self.page_route = page_route
-        if self.on:
+        if self.reading:
             from report_ingest.model_first_pages import page_route as route
             route(page_route)               # a typo is refused before a call
 
     @property
     def on(self) -> bool:
-        return self.setting == "on"
+        """Whether any stage is read model first."""
+        return self.setting != "off"
+
+    @property
+    def reading(self) -> Tuple[str, ...]:
+        """The reader stages read model first."""
+        return tuple(stage for stage in FIRST_STAGES
+                     if self.stages[stage] == "on")
+
+    def stage_on(self, stage: str) -> bool:
+        """Whether ``stage`` (``labels`` or a reader stage) is model first."""
+        return self.stages[stage] == "on"
+
+    def arm(self, stage: Optional[str] = None) -> str:
+        """What a run file of ``stage`` records (``on`` or ``off``), or with
+        no stage the whole run's setting, as an ``ingest`` file records."""
+        return self.setting if stage is None else self.stages[stage]
 
     def model(self, stage: str, model: str) -> str:
         """The model ``stage`` reads on, in either arm."""
@@ -553,7 +579,7 @@ class _FirstArm:
         if not self.on:
             return ("model first: off (today's readers)"
                     + (models if self.stage_models else ""))
-        return ("model first: on (BACKLOG RI-87); pages "
+        return (f"model first: {self.setting} (BACKLOG RI-87, RI-186); pages "
                 + (self.page_route or "as GEOTECH_INGEST_MODEL_FIRST_PAGES "
                                       "says (auto when unset)")
                 + models)
@@ -793,23 +819,27 @@ class _BrakedEngine:
         return self._inner.complete(messages, **kwargs)
 
 
-def _arm_clash(run_file: Path, first: _FirstArm) -> Optional[str]:
+def _arm_clash(run_file: Path, first: _FirstArm,
+               stage: Optional[str] = None) -> Optional[str]:
     """Why this run may neither use nor replace ``run_file``: it was read
     in the other model-first arm. None when there is no such file. A run
     file written before the arm was recorded was read with it off. The
     folder's ``arm.json`` (:func:`_stamp_arm`) is checked first, so a folder
     with no run file yet, one a run was interrupted in, is held to its arm
-    too."""
+    too. ``stage``: the reader stage whose item ``run_file`` is, held to
+    that stage's own setting (RI-186); None for an ``ingest`` report, held
+    to the whole run's."""
+    arm = first.arm(stage)
     stamp = run_file.parent / "arm.json"
     if stamp.is_file():
         try:
             saved = str(json.loads(stamp.read_text(encoding="utf-8")
                                    ).get("model_first") or "off")
         except (json.JSONDecodeError, OSError, AttributeError):
-            saved = first.setting
-        if saved != first.setting:
+            saved = arm
+        if saved != arm:
             return (f"its folder was started with model first {saved} and "
-                    f"this run is {first.setting}; one out_dir holds one "
+                    f"this run is {arm}; one out_dir holds one "
                     f"arm, so start a fresh out_dir for the other")
     if not run_file.is_file():
         return None
@@ -818,10 +848,10 @@ def _arm_clash(run_file: Path, first: _FirstArm) -> Optional[str]:
     except (json.JSONDecodeError, OSError):
         return None
     saved = str(blob.get("model_first") or "off")
-    if saved == first.setting:
+    if saved == arm:
         return None
     return (f"its run file was read with model first {saved} and this run "
-            f"is {first.setting}; one out_dir holds one arm, so start a "
+            f"is {arm}; one out_dir holds one arm, so start a "
             f"fresh out_dir for the other")
 
 
@@ -833,7 +863,8 @@ def _first_results(rows: Iterable[dict]) -> Dict[str, Any]:
     rows = list(rows)
     out: Dict[str, Any] = {"model_first": sorted(
         {str(r.get("model_first") or "off") for r in rows})}
-    on = [r for r in rows if r.get("model_first") == "on"]
+    # ``on``, or an ingest run's stage-by-stage setting (RI-186).
+    on = [r for r in rows if str(r.get("model_first") or "off") != "off"]
     if not on:
         return out
     routes: Set[str] = set()
@@ -866,7 +897,7 @@ def _first_lines(results: Dict[str, Any]) -> List[str]:
             + " and ".join(f"`{arm}`" for arm in arms))
     if len(arms) > 1:
         line += " -- MIXED: these run files were not all read in one arm"
-    if "on" not in arms:
+    if all(arm == "off" for arm in arms):
         return [line + "."]
     out = [line + f"; pages sent as "
            f"{', '.join(results.get('routes') or ['?'])}; instructions "
@@ -1313,8 +1344,13 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         ``describe_model`` and labelled by sections on ``range_model``, in
         place of the vision voter and the label review. Both arms are
         scored by the same scorers. ``None`` follows
-        ``GEOTECH_INGEST_MODEL_FIRST``; the setting is resolved once and
-        handed on. ``stage_models`` maps each of those four stages to the
+        ``GEOTECH_INGEST_MODEL_FIRST``, on for every stage when it is unset
+        (BACKLOG RI-186); the setting is resolved once and handed on. It
+        may set each stage on or off (``graph.model_first_stages``: the
+        labels and the four reader stages, ``logs=off,lab=off`` say): a
+        reader stage's items are read in its own setting, and the
+        ``ingest`` stage reads the whole reports with the run's.
+        ``stage_models`` maps each of those four stages to the
         model it reads on, in either arm, so the two are compared on the
         same models (the name the Prompter or ``chat_model``'s factory
         takes; a stage not named reads on ``model``). Off, a named stage is
@@ -1413,11 +1449,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
             asked_for.append(("describer", describe_model, True))
             if range_model != model:
                 asked_for.append(("range labeller", range_model, False))
-        asked_for += [(f"{stage}, model first" if first.on
+        asked_for += [(f"{stage}, model first" if first.stage_on(stage)
                        else f"{stage} reader", name, False)
                       for stage, name in first.stage_models.items()
                       if stage in stages or "ingest" in stages]
-        if first.on:
+        if first.stage_on("labels"):
             if "ingest" in stages:
                 asked_for.append(("describer, model first", describe_model,
                                   True))
@@ -2063,7 +2099,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
         log_id = str(truth.get("id") or f"log{n}")
         report = log_id.split("_")[0]
         run_file = out / "logs" / f"{log_id}.json"
-        clash = _arm_clash(run_file, first)
+        clash = _arm_clash(run_file, first, "logs")
         if clash:
             failures[log_id] = clash
             print(f"  [{n}/{len(truths)}] {log_id}: skipped -- {clash}")
@@ -2096,7 +2132,7 @@ def _run_logs(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(report, di="auto", warn=False)
-            if first.on:
+            if first.stage_on("logs"):
                 from report_ingest.model_first_scoring import first_log
                 before, after, arm = first_log(
                     truth, doc, engine, report_id=report,
@@ -2202,7 +2238,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
         sheet_id = str(truth.get("id") or f"sheet{n}")
         report = report_of(truth)
         run_file = out / "lab" / f"{sheet_id}.json"
-        clash = _arm_clash(run_file, first)
+        clash = _arm_clash(run_file, first, "lab")
         if clash:
             failures[sheet_id] = clash
             print(f"  [{n}/{len(truths)}] {sheet_id}: skipped -- {clash}")
@@ -2235,7 +2271,7 @@ def _run_lab(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(report, di="auto", warn=False)
-            if first.on:
+            if first.stage_on("lab"):
                 from report_ingest.model_first_scoring import first_sheet
                 before, after, arm = first_sheet(
                     truth, doc, engine, report_id=report,
@@ -2628,7 +2664,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
         calc_id = str(truth.get("id") or f"calc{n}")
         report = report_of(truth)
         run_file = out / "calc" / f"{calc_id}.json"
-        clash = _arm_clash(run_file, first)
+        clash = _arm_clash(run_file, first, "calc")
         if clash:
             failures[calc_id] = clash
             print(f"  [{n}/{len(truths)}] {calc_id}: skipped -- {clash}")
@@ -2659,7 +2695,7 @@ def _run_calc(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(report, di="auto", warn=False)
-            if first.on:
+            if first.stage_on("calc"):
                 from report_ingest.model_first_scoring import first_calc
                 before, after, arm = first_calc(
                     truth, doc, engine, report_id=report,
@@ -3346,7 +3382,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
     failures: Dict[str, str] = {}
     for n, (rid, truth) in enumerate(truths, 1):
         run_file = out / "narrative" / f"{rid}.json"
-        clash = _arm_clash(run_file, first)
+        clash = _arm_clash(run_file, first, "narrative")
         if clash:
             failures[rid] = clash
             print(f"  [{n}/{len(truths)}] {rid}: skipped -- {clash}")
@@ -3375,7 +3411,7 @@ def _run_narrative(corpus: Corpus, prompter: Any, model: str, out: Path,
         doc = None
         try:
             doc = corpus.open_report(rid, di="auto", warn=False)
-            if first.on:
+            if first.stage_on("narrative"):
                 from report_ingest.model_first_scoring import first_narrative
                 score, arm = first_narrative(
                     truth, doc, engine, report=rid,
@@ -5908,7 +5944,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
         _stamp_arm(folder, first)
         # Seeds the folder; what the graph then took from it is the
         # record's to say (``_resumed_fields``, BACKLOG RI-125).
-        _reuse_label_run(folder, runs_dir, rid, review=not first.on)
+        _reuse_label_run(folder, runs_dir, rid,
+                         review=not first.stage_on("labels"))
         meter = CostMeter()
         engine = engines.build(model, meter)
         vision_engine = engines.build(vision_model, meter, vision=True)
@@ -6018,6 +6055,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             now_engine = "prompter" if engines.on_prompter() else "chat_model"
             if saved_engine and saved_engine != now_engine:
                 other_engine = saved_engine
+        # Scored, and looked through for items not read (RI-187).
+        bound = _bound_records(record, folder)
         blob = {
             "id": rid,
             "run_date": date.today().isoformat(),
@@ -6044,8 +6083,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "qa_by_kind": qa_by_kind,
             "diggs": _diggs_verdicts(record, outputs),
             "outputs": {k: str(v) for k, v in outputs.items()},
-            "scores": _score_ingest_record(
-                record, rid, truth, _bound_records(record, folder)),
+            "scores": _score_ingest_record(record, rid, truth, bound),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
             # Calls by step for the report and each report bound inside it
@@ -6063,7 +6101,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             **_ingest_steps(folder, narrative_skips_bound,
                             lab_sheets_per_call),
             **brake.fields(),
-            **_item_error_fields(record),
+            **_item_error_fields(record, bound),
         }
         # Every attempt's cost (BACKLOG RI-124): ``cost`` and ``seconds``
         # stay this attempt's own; a report read before carries its earlier
@@ -6207,7 +6245,8 @@ def _unfinished_in(out: Path, first: "_FirstArm",
     return found
 
 
-def _item_error_fields(record: Any) -> Dict[str, Any]:
+def _item_error_fields(record: Any,
+                       bound: Sequence[Any] = ()) -> Dict[str, Any]:
     """``{"item_errors": [...]}`` for the work items (or bound documents)
     the graph could not read, from the record's ``skipped`` QA entries that
     say "could not be read" (BACKLOG RI-110); empty when there are none.
@@ -6215,25 +6254,37 @@ def _item_error_fields(record: Any) -> Dict[str, Any]:
     These are the entries a rate-limit give-up, a refused request or a
     token-brake refusal leave behind: the exception is caught per item so
     the report goes on, and the item has no saved file, so a resume reads
-    it again. Without this field the run file carried no sign of them.
+    it again. Without this field the run file carried no sign of them. A
+    model-first page group no answer came back for -- cut off down to one
+    page, or no structured answer -- is one too (BACKLOG RI-187): its group
+    is not saved either, so a resume asks for it again.
 
     A label review that did not finish is one too (BACKLOG RI-173): its
     ``partial`` entry under ``labels.review``. The vote's labels stand in
     the record, but nothing was saved, so the report is not finished and a
     resume asks for the review again; on build e's MF-2 it showed only as
-    that entry, and the report counted as done."""
+    that entry, and the report counted as done.
+
+    ``bound``: the records of the reports bound inside this one
+    (:func:`_bound_records`), whose entries count too, named by the bound
+    document (BACKLOG RI-187: on build f's MF-2 most of one report's
+    unread groups were in its bound document's record)."""
     rows = []
-    for entry in getattr(record, "qa", None) or []:
-        review_failed = (entry.kind == "partial"
-                         and entry.where == "labels.review"
-                         and "did not finish" in (entry.detail or ""))
-        if not review_failed and (entry.kind != "skipped"
-                                  or "could not be read" not in (
-                                      entry.detail or "")):
-            continue
-        rows.append({"where": entry.where,
-                     "pages": [int(p) for p in (entry.pages or [])],
-                     "detail": str(entry.detail)[:300]})
+    sources = [("", record)] + [
+        (f"{getattr(getattr(child, 'parent', None), 'bound_id', '') or 'bound'}"
+         f": ", child) for child in bound or ()]
+    for named, held in sources:
+        for entry in getattr(held, "qa", None) or []:
+            review_failed = (entry.kind == "partial"
+                             and entry.where == "labels.review"
+                             and "did not finish" in (entry.detail or ""))
+            if not review_failed and (entry.kind != "skipped"
+                                      or "could not be read" not in (
+                                          entry.detail or "")):
+                continue
+            rows.append({"where": named + entry.where,
+                         "pages": [int(p) for p in (entry.pages or [])],
+                         "detail": str(entry.detail)[:300]})
     return {"item_errors": rows} if rows else {}
 
 
@@ -6267,9 +6318,11 @@ def _ingest_arm(first: _FirstArm, engines: "_Engines", meter: Any,
                 ) -> Tuple[Dict[str, Any], Dict[str, str]]:
     """``(ingest_report's arguments for the arm, the model each engine was
     built for)``. Off names the arm and builds an engine for each stage
-    ``first.stage_models`` names (today's reader of that stage); on builds
-    the describer, the range labeller and each reader's engine. All are on
-    the report's meter."""
+    ``first.stage_models`` names (today's reader of that stage). Otherwise
+    each model-first reader stage's engine, today's reader's of a stage off
+    that ``first.stage_models`` names, and, the labels model first, the
+    describer and the range labeller (RI-186). All are on the report's
+    meter."""
     if not first.on:
         if not first.stage_models:
             return {"model_first": "off"}, {}
@@ -6278,14 +6331,18 @@ def _ingest_arm(first: _FirstArm, engines: "_Engines", meter: Any,
                  "stage_engines": {stage: engines.build(name, meter)
                                    for stage, name in names.items()}},
                 names)
-    names = {stage: first.model(stage, model) for stage in FIRST_STAGES}
-    names.update(describer=describe_model, labeller=range_model)
-    return ({"model_first": "on", "page_route": first.page_route,
-             "stage_engines": {stage: engines.build(names[stage], meter)
-                               for stage in FIRST_STAGES},
-             "describe_engine": engines.build(describe_model, meter,
-                                              vision=True),
-             "range_engine": engines.build(range_model, meter)}, names)
+    names = {stage: first.model(stage, model) for stage in FIRST_STAGES
+             if first.stage_on(stage) or stage in first.stage_models}
+    kwargs: Dict[str, Any] = {
+        "model_first": first.setting, "page_route": first.page_route,
+        "stage_engines": {stage: engines.build(name, meter)
+                          for stage, name in names.items()}}
+    if first.stage_on("labels"):
+        names.update(describer=describe_model, labeller=range_model)
+        kwargs.update(describe_engine=engines.build(describe_model, meter,
+                                                    vision=True),
+                      range_engine=engines.build(range_model, meter))
+    return kwargs, names
 
 
 def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
@@ -6297,7 +6354,10 @@ def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
     version, the describer's and labeller's versions as the saved sections
     record them, and the placement counts over the report's model-first
     items (its bound reports' included). Off, the models of the stages
-    named in ``stage_models``, when any are."""
+    named in ``stage_models``, when any are. With some stages off (RI-186)
+    ``model_first`` is the run's setting with each stage named, the routes
+    are the model-first reader stages', and the describer and labeller are
+    named only with the labels model first."""
     if not first.on:
         if not names:
             return {"model_first": "off"}
@@ -6310,9 +6370,10 @@ def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
     from report_ingest.model_first_pages import page_route, resolve_route
     from report_ingest.model_first_scoring import placement_counts
 
-    built = dict(kwargs["stage_engines"],
-                 describer=kwargs["describe_engine"],
-                 labeller=kwargs["range_engine"])
+    built = dict(kwargs["stage_engines"])
+    if "describe_engine" in kwargs:
+        built.update(describer=kwargs["describe_engine"],
+                     labeller=kwargs["range_engine"])
     models = {what: engines.record(names[what], engine)["model"]
               for what, engine in built.items()}
     ranges: Dict[str, Any] = {}
@@ -6330,12 +6391,12 @@ def _ingest_arm_fields(first: _FirstArm, engines: "_Engines",
     for path in sorted(folder.rglob("placement.json")):
         for found in _run_blob_on_disk(path.parent, "placement").values():
             placements.extend(found or [])
-    return {"model_first": "on",
+    return {"model_first": first.setting,
             "page_route": page_route(first.page_route),
             "routes": {stage: resolve_route(
                 first.page_route,
                 bool(getattr(kwargs["stage_engines"][stage], "accepts_pdf",
-                             False))) for stage in FIRST_STAGES},
+                             False))) for stage in first.reading},
             "models": models,
             "prompt_version": READ_PROMPT_VERSION,
             "ranges": ranges,
@@ -7078,7 +7139,8 @@ def _n(value: Any) -> int:
 _FAILURE_WORDS: Dict[str, str] = {
     "rate_limit": "rate limited", "parameter": "a parameter refused",
     "too_large": "request too large", "timeout": "timed out",
-    "no_reply": "nothing back", "other": "other errors"}
+    "no_reply": "nothing back", "server_error": "server errors",
+    "other": "other errors"}
 
 
 def _failed_kinds(cost: Dict[str, Any]) -> str:
@@ -7107,7 +7169,8 @@ def _failure_line(cost: Dict[str, Any]) -> str:
               f"engine")
     waited = float(cost.get("waited_seconds") or 0.0)
     if waited:
-        line += f", {waited:.0f} s waiting on rate limits"
+        # Rate limits and, since BACKLOG RI-190, server errors.
+        line += f", {waited:.0f} s waiting to send again"
     # The pacer's holds (BACKLOG RI-127, RI-139): only when it held any.
     paced = _float(cost.get("paced_seconds"))
     if paced:

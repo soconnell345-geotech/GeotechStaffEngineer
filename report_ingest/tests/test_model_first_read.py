@@ -283,19 +283,24 @@ def test_a_cut_off_log_is_asked_again_as_two_halves_and_joined(doc):
     assert [c["cut_off"] for c in blob["calls"]] == [True, False, False]
 
 
-def test_a_half_still_cut_off_is_a_skipped_entry_naming_its_pages(doc):
-    engine = _engine([_cut_off(), {"final": _lab([7, 8])}, _cut_off()])
+def test_a_half_still_cut_off_is_halved_again_down_to_one_page(doc):
+    """RI-191: a half still cut off is halved again; only a single page
+    still cut off is a skipped entry."""
+    engine = _engine([_cut_off(), {"final": _lab([7, 8])}, _cut_off(),
+                      {"final": _lab([9])}, _cut_off()])
     got = mfr.read_lab(doc, [PageGroup("lab", [7, 8, 9, 10], key="lab-7")],
                        engine, report_id=REPORT)
-    assert engine.n_calls == 3
+    assert engine.n_calls == 5
+    assert [_pdf_pages(_blocks(c)[0]) for c in engine.calls] == \
+        [[7, 8, 9, 10], [7, 8], [9, 10], [9], [10]]
     blob = got[0]
     skipped = [r for r in blob["unresolved"] if r.get("refused_by")
                == "budget"]
     assert len(skipped) == 1
-    assert skipped[0]["pages"] == [9, 10] and skipped[0]["page"] == 9
+    assert skipped[0]["pages"] == [10] and skipped[0]["page"] == 10
     assert "output cap" in skipped[0]["why"]
-    assert "pages 9-10 were not read" in skipped[0]["why"]
-    assert blob["error"] == "" and blob["tests"]
+    assert "one page cannot be split" in skipped[0]["why"]
+    assert blob["error"] == "" and len(blob["tests"]) == 4
 
 
 def test_a_lab_window_is_halved_where_a_new_sheet_begins(doc):
