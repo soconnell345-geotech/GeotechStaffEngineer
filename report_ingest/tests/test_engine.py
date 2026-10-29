@@ -234,7 +234,8 @@ def test_a_claude_reply_records_its_stop_reason():
     ("Error code: 400 - prompt is too long: 215000 tokens > 200000 maximum",
      "too_large"),
     ("This model's maximum context length is 128000 tokens", "too_large"),
-    ("Error code: 500 - the server had an error", "other"),
+    ("Error code: 500 - the server had an error", "server_error"),
+    ("Error code: 400 - the image could not be read", "other"),
 ])
 def test_an_error_is_sorted_by_what_it_says(text, kind):
     from report_ingest.engine import FAILURE_KINDS, error_kind

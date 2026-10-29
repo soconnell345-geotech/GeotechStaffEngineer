@@ -7078,7 +7078,8 @@ def _n(value: Any) -> int:
 _FAILURE_WORDS: Dict[str, str] = {
     "rate_limit": "rate limited", "parameter": "a parameter refused",
     "too_large": "request too large", "timeout": "timed out",
-    "no_reply": "nothing back", "other": "other errors"}
+    "no_reply": "nothing back", "server_error": "server errors",
+    "other": "other errors"}
 
 
 def _failed_kinds(cost: Dict[str, Any]) -> str:
@@ -7107,7 +7108,8 @@ def _failure_line(cost: Dict[str, Any]) -> str:
               f"engine")
     waited = float(cost.get("waited_seconds") or 0.0)
     if waited:
-        line += f", {waited:.0f} s waiting on rate limits"
+        # Rate limits and, since BACKLOG RI-190, server errors.
+        line += f", {waited:.0f} s waiting to send again"
     # The pacer's holds (BACKLOG RI-127, RI-139): only when it held any.
     paced = _float(cost.get("paced_seconds"))
     if paced:

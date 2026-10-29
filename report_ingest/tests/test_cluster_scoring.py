@@ -2663,7 +2663,7 @@ class TestFailedRequestsInTheCost:
         text = (out / "RESULTS.md").read_text(encoding="utf-8")
         assert ("failed requests, not among the calls above: 6 (4 rate "
                 "limited, 2 timed out), 4 of them sent again by the engine, "
-                "90 s waiting on rate limits; reasoning: 2,400 of the output "
+                "90 s waiting to send again; reasoning: 2,400 of the output "
                 "tokens") in text
 
     def test_a_mix_of_old_and_new_run_files_says_how_many_counted(self):

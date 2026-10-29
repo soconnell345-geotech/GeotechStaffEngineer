@@ -50,6 +50,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import Counter
@@ -64,7 +65,8 @@ __all__ = [
     "DEFAULT_MAX_TOKENS", "CallCeilingReached",
     "PrompterEngine", "MODEL_PRICES", "PROMPTER_MODELS", "PROMPTER_PRICES",
     "price_for", "strict_schema", "error_kind", "FAILURE_KINDS",
-    "is_rate_limit", "RATE_LIMIT_WORDS",
+    "is_rate_limit", "RATE_LIMIT_WORDS", "is_server_error",
+    "SERVER_ERROR_LADDER",
     "text_block", "image_block", "tool_use_block", "tool_result_block",
     "opaque_block", "user", "assistant",
     "image_media_type", "IMAGE_SIGNATURES",
@@ -611,10 +613,12 @@ class Reply:
 #: the provider's "too many requests"; a parameter the deployment refused;
 #: a request too large for the gateway or the model's context; no answer
 #: in time;
-#: nothing back at all (Prompter's ``chat()`` hands back None); anything
-#: else.
+#: nothing back at all (Prompter's ``chat()`` hands back None); the
+#: service's own failure, an HTTP 5xx (:func:`is_server_error`, BACKLOG
+#: RI-190); anything else.
 FAILURE_KINDS: Tuple[str, ...] = ("rate_limit", "parameter", "too_large",
-                                  "timeout", "no_reply", "other")
+                                  "timeout", "no_reply", "server_error",
+                                  "other")
 
 
 def _message_of(error: Any) -> str:
@@ -738,6 +742,34 @@ def is_rate_limit(error: Any) -> bool:
     return any(word in said for word in RATE_LIMIT_WORDS)
 
 
+#: What a server error says of itself, in its own words (:func:`_own_words`):
+#: an SDK's "Error code: 502", the "500 Server Error" requests and Foundry's
+#: model service raise (build f's MF-1b lost a log item to one), and the
+#: names of the statuses.
+_SERVER_ERROR_TEXT = re.compile(
+    r"error code: 5\d\d\b|\b5\d\d server error\b|internal server error"
+    r"|bad gateway|service unavailable|gateway timeout|overloaded")
+
+
+def is_server_error(error: Any) -> bool:
+    """Whether an error is the service's own failure, an HTTP 5xx (BACKLOG
+    RI-190): a 5xx status on the error, its response or the error it was
+    raised from, or :data:`_SERVER_ERROR_TEXT` in its own words. A rate
+    limit is never one (:func:`is_rate_limit`), whatever its status. Never
+    raises."""
+    if is_rate_limit(error):
+        return False
+    for held in (error, getattr(error, "__cause__", None)):
+        if held is None:
+            continue
+        status = _status_of(held)
+        if status is not None and 500 <= status <= 599:
+            return True
+        if _SERVER_ERROR_TEXT.search(_own_words(held)):
+            return True
+    return False
+
+
 def error_kind(error: Any) -> str:
     """Which of :data:`FAILURE_KINDS` an error is, read off its class name
     and its text; a rate limit as :func:`is_rate_limit` reads one. A prompt
@@ -759,6 +791,8 @@ def error_kind(error: Any) -> str:
         return "parameter"
     if "returned nothing" in text or "no reply" in text:
         return "no_reply"
+    if is_server_error(error):
+        return "server_error"
     return "other"
 
 
@@ -1210,6 +1244,12 @@ PACER_WINDOW_SECONDS = 60.0
 #: ``retry-after: 0`` takes (:meth:`RequestPacer.backoff`).
 RATE_LIMIT_LADDER: Tuple[float, ...] = (15.0, 30.0, 60.0, 120.0, 120.0,
                                         120.0)
+
+#: Seconds to wait before each re-send of a request that came back with a
+#: server error (:func:`is_server_error`, BACKLOG RI-190), in order; then
+#: the error is raised. Shorter than the rate limit's: a 5xx is the
+#: service's own trouble, not a per-minute limit that a minute clears.
+SERVER_ERROR_LADDER: Tuple[float, ...] = (5.0, 15.0, 30.0)
 
 
 def _retry_after_of(exc: Any) -> Optional[float]:
@@ -1898,7 +1938,8 @@ class PrompterEngine:
     run once it has failed. :attr:`adaptations` lists what was learned.
 
     EVERY ATTEMPT IS IN THE COST RECORD (BACKLOG RI-21): each refusal, each
-    rate-limited request and each empty ``chat()`` is a failed request on
+    rate-limited request, each server error sent again (BACKLOG RI-190) and
+    each empty ``chat()`` is a failed request on
     :attr:`meter`, with its kind, its attempt number within the call, the
     wait before it was sent again and the lesson it taught; the reply that
     follows carries the attempt it came on and its reasoning tokens.
@@ -1983,6 +2024,10 @@ class PrompterEngine:
     #: header, when the provider sends one, is honoured instead.
     RATE_LIMIT_WAITS: Tuple[float, ...] = RATE_LIMIT_LADDER
 
+    #: Seconds to wait before each re-send of a call that came back with a
+    #: server error, in order (BACKLOG RI-190).
+    SERVER_ERROR_WAITS: Tuple[float, ...] = SERVER_ERROR_LADDER
+
     @staticmethod
     def is_rate_limit(exc: BaseException) -> bool:
         """Whether an exception is the provider saying 'too many requests'
@@ -2007,16 +2052,29 @@ class PrompterEngine:
         (:meth:`RequestPacer.backoff`), and the model's next request is
         held as long (BACKLOG RI-127); a retry-after of 0 takes the
         ladder's step, without the window's minimum (BACKLOG RI-139).
-        ``call`` is this call's own record, which every request of it is
-        timed and filed by."""
+        A server error (:func:`is_server_error`) waits on
+        :attr:`SERVER_ERROR_WAITS` and is sent again the same way (BACKLOG
+        RI-190). ``call`` is this call's own record, which every request of
+        it is timed and filed by."""
         create = client.chat.completions.create
         request = dict(kwargs)
         waits = list(self.RATE_LIMIT_WAITS)
-        for _ in range(3 + len(waits)):
+        server_waits = list(self.SERVER_ERROR_WAITS)
+        for _ in range(3 + len(waits) + len(server_waits)):
             try:
                 call.send()
                 return create(**request)
             except Exception as exc:                # noqa: BLE001 - inspected
+                if is_server_error(exc) and server_waits:
+                    wait = server_waits.pop(0)
+                    self.adaptations.append(
+                        f"{self.model}: server error; waited {wait:.0f} s")
+                    logging.getLogger(__name__).info(
+                        "prompter engine got a server error on %s; waiting "
+                        "%.0f s", self.model, wait)
+                    self._sent_again(call, exc, "server_error", waited=wait)
+                    self._sleep(wait)
+                    continue
                 if self.is_rate_limit(exc) and waits:
                     named = self._retry_after(exc)
                     # A named wait of 0 takes the ladder's step, paced or
@@ -2518,12 +2576,17 @@ class ChatModelEngine:
     take it, or set such an object aside, the call's cost row keeps the raw
     arguments (``answer_args``).
 
-    ONE CALL, ONE MODEL REQUEST. No retry happens in here, so the ingest's
+    ONE CALL, ONE MODEL REQUEST, but for a server error. A request that
+    comes back with an HTTP 5xx (:func:`is_server_error`; build f lost a
+    log item to a Foundry 500 that nothing sent again) is sent again after
+    each wait of :attr:`SERVER_ERROR_WAITS`, then raised (BACKLOG RI-190);
+    nothing else is retried in here. So the ingest's
     :class:`~report_ingest.subagent.CallCeiling`, the pass's own count and
-    :attr:`meter` all see the same number (the meter's replies and failed
-    requests together: a request that raised is recorded as failed before
-    it is raised). A call refused before anything went out (a PDF on a
-    route that takes none) is no request, and the meter does not count it.
+    :attr:`meter` all see the same number: the meter's replies and failed
+    requests together, less those it marks ``retried`` (a request that
+    raised is recorded as failed before it is raised). A call refused
+    before anything went out (a PDF on a route that takes none) is no
+    request, and the meter does not count it.
     Usage is read off the reply's ``usage_metadata``, the cached input
     apart from the rest and the reasoning tokens counted.
 
@@ -2570,6 +2633,13 @@ class ChatModelEngine:
         #: not set on a copy of the model. Each lesson also rides on the
         #: cost record of the call it was learned on (BACKLOG RI-21).
         self.adaptations: List[str] = []
+        #: How a call waits before a server error is sent again (BACKLOG
+        #: RI-190); a test replaces it.
+        self._sleep = time.sleep
+
+    #: Seconds to wait before each re-send of a request that came back with
+    #: a server error, in order (BACKLOG RI-190); then it is raised.
+    SERVER_ERROR_WAITS: Tuple[float, ...] = SERVER_ERROR_LADDER
 
     # -- the cap -----------------------------------------------------------
     def _cap_for(self, asked: Optional[int]) -> Optional[int]:
@@ -2772,33 +2842,66 @@ class ChatModelEngine:
         request = self._to_langchain(msgs, system)
         call = _Request(self, self.name, lambda: estimate_request(
             msgs, system=system, tools=offered))
-        try:
-            message = runnable.invoke(request)
-        except Exception as exc:
-            # Recorded, then raised as before: a failed call is a call
-            # (BACKLOG RI-21). The model's own retries happen inside it.
-            # A refusal that says nothing went out (``nothing_sent``: the
-            # palantir_models Claude class refusing a PDF) is no request;
-            # a pacer's hold before it is recorded all the same (BACKLOG
-            # RI-139).
-            if not getattr(exc, "nothing_sent", False):
+        server_waits = list(self.SERVER_ERROR_WAITS)
+        while True:
+            # The call's lessons ride on its first row only.
+            lessons = list(learned) if call.attempt == 1 else []
+            try:
+                message = runnable.invoke(request)
+                break
+            except Exception as exc:
+                # Recorded, then raised as before: a failed call is a call
+                # (BACKLOG RI-21). The model's own retries happen inside it.
+                # A refusal that says nothing went out (``nothing_sent``: the
+                # palantir_models Claude class refusing a PDF) is no request;
+                # a pacer's hold before it is recorded all the same (BACKLOG
+                # RI-139).
+                if getattr(exc, "nothing_sent", False):
+                    self.meter.unsent(self.name, exc, paced=call.paced,
+                                      started=call.sent)
+                    raise
+                if is_server_error(exc) and server_waits:
+                    # A 5xx is sent again on a short ladder (BACKLOG
+                    # RI-190), each request its own row of the call.
+                    wait = server_waits.pop(0)
+                    logging.getLogger(__name__).info(
+                        "chat model engine got a server error on %s; "
+                        "waiting %.0f s", self.name, wait)
+                    call.keep(self.meter.fail(
+                        self.name, exc, kind="server_error",
+                        attempt=call.attempt, retried=True, waited=wait,
+                        adapted=lessons, call_no=call.number,
+                        estimated_in=call.size(), started=call.sent,
+                        duration=call.took(), paced=call.take_paced()))
+                    call.attempt += 1
+                    self._sleep(wait)
+                    call.send()
+                    continue
                 self.meter.fail(self.name, exc,
                                 seconds=self._clock() - call.began,
-                                adapted=list(learned),
+                                adapted=lessons, **self._again(call),
                                 estimated_in=call.size(), started=call.sent,
-                                duration=call.took(), paced=call.paced)
+                                duration=call.took(),
+                                paced=call.take_paced())
                 call.came_back(exc)
-            else:
-                self.meter.unsent(self.name, exc, paced=call.paced,
-                                  started=call.sent)
-            raise
+                raise
         seconds = self._clock() - call.began
         took = call.took()
         call.came_back()
         return self._reply(message, output_format, seconds,
-                           adapted=list(learned),
+                           adapted=lessons,
                            timing={"started": call.sent, "duration": took,
-                                   "paced": call.paced})
+                                   "paced": call.take_paced(),
+                                   **self._again(call)})
+
+    @staticmethod
+    def _again(call: _Request) -> Dict[str, Any]:
+        """The attempt and call number of a call's last request, for its
+        row, when a server error sent it again (BACKLOG RI-190); nothing
+        for a call's only request, whose row is as it always was."""
+        if call.attempt <= 1:
+            return {}
+        return {"attempt": call.attempt, "call_no": call.number}
 
     def _reply(self, message: Any, output_format: Any,
                seconds: float, adapted: Sequence[str] = (),
