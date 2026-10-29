@@ -277,3 +277,71 @@ class TestTheClusterArm:
                          "calc": "made-up-main", "narrative": "made-up-main"}
         assert sorted(kwargs["stage_engines"]) == ["calc", "lab", "logs",
                                                    "narrative"]
+
+
+# ---------------------------------------------------------------------------
+# the default, end to end
+# ---------------------------------------------------------------------------
+
+def test_left_unset_every_stage_is_read_model_first(synthetic_pdf, tmp_path,
+                                                     monkeypatch):
+    """The default itself (RI-186): ``model_first`` not passed and the
+    variable unset, the made-up report is read model first for every stage,
+    as the model-first tests' own run with ``model_first="on"`` is."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest.graph import ingest_report
+    from report_ingest.tests import test_graph_model_first as tgm
+
+    monkeypatch.delenv(MODEL_FIRST_ENV, raising=False)
+    main, describer, labeller, stages = tgm._engines()
+    out = tmp_path / "out"
+    record = ingest_report(synthetic_pdf, main, out_dir=out, report_id="SYN",
+                           describe_engine=describer, range_engine=labeller,
+                           stage_engines=stages)
+    assert main.n_calls == 2
+    assert describer.n_calls == 22 and labeller.n_calls == 2
+    assert {stage: e.n_calls for stage, e in stages.items()} == {
+        "narrative": 2, "logs": 3, "lab": 1, "calc": 1}
+    assert _items(out) == ["mf-calc-20.json", "mf-log-7.json",
+                           "mf-log-9.json", "mf-narrative.json"]
+    assert not (out / "vision.json").exists()
+    labels = json.loads((out / "labels.json").read_text("utf-8"))
+    assert labels["model_first"] == "on"
+    (note,) = [q for q in record.qa if q.where == "model_first"]
+    assert f"{MODEL_FIRST_ENV}=on" in note.detail
+
+
+def _stopped_at_the_model_first_run(monkeypatch):
+    """What each run's stages were when it reached the model-first run,
+    which stops it there (no model is called)."""
+    from report_ingest import graph
+
+    seen = []
+
+    def first_run(*args, stages=None, **kwargs):
+        seen.append(dict(stages))
+        raise RuntimeError("made up: stop here")
+
+    monkeypatch.delenv(MODEL_FIRST_ENV, raising=False)
+    monkeypatch.setattr(graph, "_model_first_run", first_run)
+    return seen
+
+
+def test_the_folder_run_and_the_tool_take_the_default(monkeypatch, tmp_path):
+    """``run_folder`` and the sub-agent tool's ``run_ingest`` (the app's
+    report-ingest page reads through it) name no setting, so the default
+    reaches the graph: every stage on."""
+    from report_ingest.run_folder import run_folder
+    from report_ingest.subagent import run_ingest
+    from report_ingest.tests.fake_engine import FakeEngine
+
+    seen = _stopped_at_the_model_first_run(monkeypatch)
+    folder = tmp_path / "in"
+    folder.mkdir()
+    (folder / "SYN.pdf").write_bytes(b"%PDF")
+    run = run_folder(folder, lambda: FakeEngine([]), out_dir=tmp_path / "out")
+    assert [row.ok for row in run.reports] == [False]
+    with pytest.raises(RuntimeError, match="stop here"):
+        run_ingest(str(folder / "SYN.pdf"), [], engine=FakeEngine([]),
+                   out_dir=str(tmp_path / "tool"))
+    assert seen == [ALL_ON, ALL_ON]
