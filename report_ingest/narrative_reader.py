@@ -1632,9 +1632,15 @@ class _Builder:
     def build(self, pages: Sequence[int], counted: Dict[str, Any],
               found: Optional[Dict[str, Any]] = None
               ) -> Tuple[GeneralFacts, NaturalHazardFacts, NarrativeFacts]:
+        from report_ingest.narrative_checks import drop_repeats
+
         values = dict(self.values)
         if self._phase_said and not values.get("projectPhaseOther"):
             values["projectPhaseOther"] = self._phase_said
+        # A list item that repeats another goes (RI-178), before the
+        # structures are recounted below.
+        values, dropped = drop_repeats(values)
+        self.unresolved.extend(dropped)
 
         # THE FIVE EXPLORATION ANSWERS THE APPENDIX SETTLES. The logs the
         # labeller found and the log reader read are a count of holes; the
@@ -1832,6 +1838,8 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
     reader being shown the cover, the letter and the recommendations of the
     report it is bound inside and answering with them.
     """
+    from report_ingest.narrative_checks import shorten_summaries
+
     pages = [int(p) for p in narrative_pages]
     if not pages:
         raise ValueError("read_narrative needs at least one page")
@@ -1943,6 +1951,11 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
         else:
             warnings.append("the summary call returned no structured answer; "
                             "the per-part summaries stand")
+
+    # A summary over its limit goes back once to be shortened (RI-179).
+    if model_calls < budget:
+        model_calls += shorten_summaries(general, hazards, engine,
+                                         builder.unresolved, charge)
 
     # LEVER 5: the quote gate, last, so it sees the answers as stored.
     confidence = check_quotes(doc, builder.citations,

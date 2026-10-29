@@ -946,6 +946,7 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                                                 _apply_summaries, _Builder,
                                                 _headings_text, _summarise,
                                                 check_quotes, count_captions)
+    from report_ingest.narrative_checks import shorten_summaries
 
     groups = [g for g in groups if g.pages]
     if not groups:
@@ -1002,6 +1003,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         else:
             spent.warnings.append("the summary call returned no structured "
                                   "answer; the per-part summaries stand")
+    shorten_summaries(general, hazards, engine, builder.unresolved,
+                      lambda reply: spent.charge(reply, []))      # RI-179
     confidence = check_quotes(doc, builder.citations,
                               general.answered() + hazards.answered(),
                               builder)
