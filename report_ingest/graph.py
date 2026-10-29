@@ -1214,7 +1214,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     # -- 3. the reconciler --------------------------------------------------
     # Over this report's own pages: the bound documents' are checked in
     # their own records.
-    reconcile(record, labels=own, items=items,
+    reconcile(record, labels=_without_dividers(own, model_first),
+              items=items,
               no_text_pages=[p for p in no_text if p not in bound],
               di_pages=[p for p in di_pages if p not in bound],
               reader_unresolved=unresolved, doc=doc, outline=outline)
@@ -2225,7 +2226,8 @@ def _one_bound(doc: Any, engine: Any, budgets: Budgets, folder: str,
                        len(window)))
     _seed_from_identity(child, identity, qa, row)
 
-    reconcile(child, labels=labels, items=items,
+    reconcile(child, labels=_without_dividers(labels, model_first),
+              items=items,
               no_text_pages=[p for p in no_text if p in at],
               di_pages=[p for p in di_pages if p in at],
               reader_unresolved=unresolved, doc=doc, outline=outline)
@@ -3022,6 +3024,22 @@ def _still_current(blob: Dict[str, Any], parts: Sequence[Any],
             == _group_pages(parts)
             and blob.get("prompt_version") == READ_PROMPT_VERSION
             and blob.get("route") == route)
+
+
+def _without_dividers(labels: Dict[int, str],
+                      model_first: Optional[_ModelFirst]) -> Dict[int, str]:
+    """``labels`` less the pages the descriptions call dividers, for the
+    reconciler's check of pages no work item read: model first sets a
+    divider aside on purpose (RI-177), so it is not listed as unread
+    (BACKLOG RI-193; 19 such entries on build f's MF-2). Today's path, and
+    a run with no descriptions, keep every label."""
+    if model_first is None or not model_first.descriptions:
+        return labels
+    from report_ingest.model_first_pages import divider_pages
+
+    aside = set(divider_pages(model_first.descriptions))
+    return {page: label for page, label in labels.items()
+            if int(page) not in aside}
 
 
 def _part_skipped(blob: Dict[str, Any]) -> bool:
