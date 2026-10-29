@@ -736,7 +736,7 @@ of the main body only; appendix figures are left out. structureCount is the
 number of items in structureList.
 
 VALUES WITH UNITS. bearingCapacity keeps the report's own sentences, one per
-recommendation. bearingCapacityValues is the same recommendations as numbers:
+bearing value. bearingCapacityValues is the same recommendations as numbers:
 the number as printed, the unit as printed (psf, ksf, tsf, kPa), what
 foundation it is for and under what condition. Never convert a unit, and
 never give a value whose unit the report does not print.

@@ -249,6 +249,20 @@ CONVENTIONS: Tuple[Convention, ...] = (
         status="DRAFT",
         why="run 7: 3 wrong and 5 invented, almost all of them seismic "
             "shaking added to a list the hand left without it"),
+    Convention(
+        rule="recommendedFoundations has one item per foundation TYPE, "
+             "naming the structures it is for: the options of one type "
+             "(driven piles or drilled piers, of two diameters) are one "
+             "item, and a floor slab or a section heading is not an item. "
+             "bearingCapacity has one item per bearing value, saying what "
+             "it is for; an allowed increase (per foot of embedment or of "
+             "width) stays in its value's item.",
+        fields=("recommendedFoundations", "bearingCapacity"),
+        status="DRAFT",
+        why="build e trace review section 11 (BACKLOG RI-181): nine misses "
+            "on the grain of these two lists, the readers splitting one "
+            "type's options and one value's increase into items of their "
+            "own"),
 )
 
 #: A one-line gloss for a field whose name does not say what it wants. Keyed
@@ -272,7 +286,7 @@ FIELD_NOTES: Dict[str, str] = {
     "recommendedFoundations": "one item per foundation type recommended, in "
                               "the report's own words",
     "bearingCapacity": "the report's own sentences about allowable or net "
-                       "bearing pressure, one per recommendation",
+                       "bearing pressure, one per value",
     "strata": "the soil and rock profile in one string, as the report words "
               "it",
     "siteClass": "the seismic site class letter the report assigns",

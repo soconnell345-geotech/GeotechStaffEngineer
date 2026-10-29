@@ -55,8 +55,9 @@ MODEL_FIRST_ASKS = {
     "mf-3": "2ab3280d29ff6082016b0ab5acfa9e7321d821af1187acbb29afa78d5ce600a8",
     # mf-4 (build g): the narrative carries the owner's house rules of
     # 2026-10-29 (RI-182) and asks projectPhaseOther, and today's rule for
-    # another client's report (RI-189).
-    "mf-4": "3b6b2a779828a8e9b63c7d796a3b20934e752c5e7e4fd4222dee5ec424325095",
+    # another client's report (RI-189), and one list item per foundation
+    # type and per bearing value (RI-181).
+    "mf-4": "f5c30a2096d7cde1837168e1d8195cebfc85a3ee1f9cc99cf1a2feea22511549",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

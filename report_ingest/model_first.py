@@ -292,8 +292,9 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: mf-4 (build g): the narrative carries the owner's house rules of
 #: 2026-10-29 (RI-182: structures are buildings, the phase and its new
 #: companion question projectPhaseOther, this investigation's holes only,
-#: the listed hazard phrases only, the file's own figures and tables) and
-#: today's rule for another client's report (RI-189).
+#: the listed hazard phrases only, the file's own figures and tables),
+#: today's rule for another client's report (RI-189), and one list item per
+#: foundation type and per bearing value (RI-181).
 READ_PROMPT_VERSION = "mf-4"
 
 

@@ -212,6 +212,14 @@ class TestTheGlossaryReachesThePrompt:
                      "earthHazardsExposed", "figureCount"):
             assert name in governed
 
+    def test_the_list_grain_rule_governs_both_prose_lists(self):
+        # RI-181: one item per foundation type, one per bearing value.
+        from report_ingest.narrative_glossary import conventions_for
+
+        for name in ("recommendedFoundations", "bearingCapacity"):
+            assert any("one item per" in row.rule
+                       for row in conventions_for(name))
+
     def test_the_hazard_list_is_offered_as_the_only_phrases(self):
         from report_ingest.narrative_reader import _vocabulary_block
 
