@@ -1177,11 +1177,12 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     # They are HANDED to the bound document's pass, which keeps these
     # labels (:func:`_one_bound`), and what it does not read is said below.
     bound = {int(page) for row in ranges for page in row.pages}
-    # Model first, the narrative is given none of a bound document's pages
-    # (``narrative_skips_bound`` always on): its groups are drawn from the
-    # labels, and a range triage drew round pages labelled narrative would
-    # otherwise be read as this report's.
-    skips_bound = narrative_skips_bound or model_first is not None
+    # Model first honours ``narrative_skips_bound`` as today's narrative
+    # does (BACKLOG RI-188): off, its groups are drawn from every label and
+    # it reads across a bound document's pages; on, from this report's own.
+    # Build f's R16 parent, read model first over its own 3 pages, answered
+    # 12 of 29 general questions against 25 read across.
+    skips_bound = narrative_skips_bound
     items, handed = _outside_bound(items, bound, qa, skips_bound)
     every = list(items)
     if budgets.max_items:
@@ -1201,11 +1202,13 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
                            narrative_key="-skips-bound" if window else "",
                            readers=readers)
     else:
+        told_labels = own if narrative_skips_bound else labels
         mine, every, items, rest = _model_first_plan(
-            doc, model_first, own, window, every, budgets.max_items)
+            doc, model_first, own, window, every, budgets.max_items,
+            narrative_labels=told_labels)
         read = _read_model_first(
-            doc, model_first, out, resume, report_id, own, outline, record,
-            spend, qa, unresolved, workflow, mine, window)
+            doc, model_first, out, resume, report_id, told_labels, outline,
+            record, spend, qa, unresolved, workflow, mine, window)
         read += _read_items(doc, engine, budgets, out, resume, questions,
                             report_id, rest, own, outline, record, spend, qa,
                             unresolved, workflow, no_text, di_pages, told,
@@ -2920,7 +2923,8 @@ def _placer(doc: Any) -> Any:
 
 def _model_first_units(doc: Any, model_first: _ModelFirst,
                        labels: Dict[int, str],
-                       window: Optional[Sequence[int]] = None
+                       window: Optional[Sequence[int]] = None,
+                       narrative_labels: Optional[Dict[int, str]] = None
                        ) -> List[Tuple[_Unit, List[Any]]]:
     """The logs, laboratory windows, printouts and narrative to read model
     first, each with the groups of pages its calls carry, in page order.
@@ -2932,7 +2936,11 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
     ``window`` when one is given. A unit's pages are every page its calls
     carry, but the narrative's: its pages are those labelled its own
     (cover, letter, contents, narrative and figures), and the front pages
-    it is also shown, whatever their label, are its ``shown``."""
+    it is also shown, whatever their label, are its ``shown``.
+
+    ``narrative_labels``: the labels the narrative's groups are drawn from
+    where they are not ``labels`` -- every page's, a bound document's
+    included, when ``narrative_skips_bound`` is off (BACKLOG RI-188)."""
     from report_ingest.model_first_pages import (FIGURE_LABELS,
                                                  NARRATIVE_LABELS,
                                                  group_pages)
@@ -2942,16 +2950,22 @@ def _model_first_units(doc: Any, model_first: _ModelFirst,
     inside = None if window is None else {int(p) for p in window}
     page_chars = {int(s.page): int(s.n_text_chars) for s in doc.page_map()
                   if inside is None or int(s.page) in inside}
-    groups = group_pages(labels, model_first.descriptions,
-                         n_pages=doc.n_pages, doc=doc,
-                         route=model_first.routes["narrative"],
-                         window=window, page_chars=page_chars,
-                         max_chars=INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN)
+    def grouped(by: Dict[int, str]) -> Dict[str, List[Any]]:
+        return group_pages(by, model_first.descriptions,
+                           n_pages=doc.n_pages, doc=doc,
+                           route=model_first.routes["narrative"],
+                           window=window, page_chars=page_chars,
+                           max_chars=INPUT_TOKEN_BUDGET * CHARS_PER_TOKEN)
+
+    groups = grouped(labels)
+    told = labels if narrative_labels is None else narrative_labels
+    if told != labels:
+        groups["narrative"] = grouped(told)["narrative"]
     units: List[Tuple[_Unit, List[Any]]] = []
     if groups["narrative"]:
         shown = _group_pages(groups["narrative"])
         own = [p for p in shown
-               if labels.get(p) in NARRATIVE_LABELS + FIGURE_LABELS]
+               if told.get(p) in NARRATIVE_LABELS + FIGURE_LABELS]
         units.append((_Unit("narrative", "narrative", own or shown,
                             shown=shown), groups["narrative"]))
     logs: Dict[str, List[Any]] = {}
@@ -2980,7 +2994,8 @@ def _group_pages(parts: Sequence[Any]) -> List[int]:
 def _model_first_plan(doc: Any, model_first: _ModelFirst,
                       labels: Dict[int, str],
                       window: Optional[Sequence[int]], every: Sequence[Any],
-                      max_items: Optional[int]
+                      max_items: Optional[int],
+                      narrative_labels: Optional[Dict[int, str]] = None
                       ) -> Tuple[List[Tuple[_Unit, List[Any]]], List[Any],
                                  List[Any], List[Any]]:
     """What a model-first pass reads: the model-first units
@@ -2995,7 +3010,8 @@ def _model_first_plan(doc: Any, model_first: _ModelFirst,
     def first(item: Any) -> int:
         return min(item.pages) if item.pages else 0
 
-    units = _model_first_units(doc, model_first, labels, window)
+    units = _model_first_units(doc, model_first, labels, window,
+                               narrative_labels)
     soundings = [item for item in every if ITEM_READERS.get(item.kind)
                  not in (None, *_MODEL_FIRST_STAGES)]
     listed = [item for item in every if ITEM_READERS.get(item.kind) is None]

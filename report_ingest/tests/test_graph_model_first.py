@@ -622,7 +622,10 @@ class TestOn:
             "Rosewood Terrace Preliminary Study"
         narrative = json.loads((out / "items" / "mf-narrative.json")
                                .read_text("utf-8"))
-        assert not set(narrative["pages"]) & {15, 16, 17, 18}
+        # ``narrative_skips_bound`` off, the default: the report's narrative
+        # reads across them, as today's does (RI-188; both settings in
+        # test_the_narrative_honours_narrative_skips_bound).
+        assert set(narrative["pages"]) & {15, 16, 17, 18}
         child_narrative = json.loads(
             (out / "bound" / "bound1" / "items" / "mf-narrative.json")
             .read_text("utf-8"))
@@ -1146,6 +1149,33 @@ def test_a_bound_range_the_labels_call_narrative_is_not_listed_as_skipped(
     record = _run_on(synthetic_pdf, tmp_path / "out", engines)
     assert [b.bound_id for b in record.bound_documents] == ["bound1"]
     assert [q for q in record.qa if q.where == "pages.narrative"] == []
+
+
+@pytest.mark.parametrize("skips", [False, True])
+def test_the_narrative_honours_narrative_skips_bound(synthetic_pdf, tmp_path,
+                                                     skips):
+    """BACKLOG RI-188: with ``narrative_skips_bound`` off (the default) the
+    report's narrative reads across the pages of a report bound inside it,
+    as today's reader does; on, it is given none of them. The bound
+    report's own narrative is shown them either way."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest.tests import test_graph as tg
+
+    sections = [row for row in SECTIONS if row[2] != "appended_report"] + [
+        (15, 18, "narrative")]
+    engines = _engines(sorted(sections))
+    engines[0].turns[0] = tg.triage_turn(
+        "multi_document",
+        bound_together=[{"kind": "appended_prior_report", "pages": "15-18",
+                         "title": "Made-up Prior Study"}])
+    out = tmp_path / "out"
+    _run_on(synthetic_pdf, out, engines, narrative_skips_bound=skips)
+    shown = json.loads((out / "items" / "mf-narrative.json").read_text(
+        "utf-8"))["pages"]
+    assert bool(set(shown) & {15, 16, 17, 18}) is not skips
+    child = json.loads((out / "bound" / "bound1" / "items"
+                        / "mf-narrative.json").read_text("utf-8"))["pages"]
+    assert {15, 16, 17, 18} <= set(child)
 
 
 def test_the_item_ceiling_counts_the_soundings_with_the_rest(monkeypatch):
