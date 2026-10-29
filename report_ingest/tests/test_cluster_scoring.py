@@ -3666,7 +3666,8 @@ class TestMeasurementPlumbingRI69:
         # The scripted chat answers do not all fit the readers' schemas, so
         # some items go unread; this test is about the label run's engine,
         # not about unread items (RI-110 keeps such a report out of the rows).
-        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
+        monkeypatch.setattr(cs, "_item_error_fields",
+                            lambda record, bound=(): {})
         reports_dir, out, scripts = chat_cluster
         runs = out / "runs"
         runs.mkdir(parents=True)

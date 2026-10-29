@@ -253,12 +253,17 @@ class _Spent:
 
 
 def _skipped(stage: str, pages: Sequence[int], why: str) -> Dict[str, Any]:
-    """The entry for pages no answer came back for: ``skipped`` in QA."""
+    """The entry for pages no answer came back for: ``skipped`` in QA.
+
+    It says the pages "could not be read", the words the run file's
+    ``item_errors`` are read by (BACKLOG RI-110), so such a group is a
+    failed item: in the totals and the closing failures line, and asked
+    again by a resume (BACKLOG RI-187; build f's MF-2 left 45 pages unread
+    while its failures line said none)."""
     pages = [int(p) for p in pages]
     return {"what": f"{stage} {_span(pages)}", "page": pages[0],
             "pages": pages,
-            "why": f"{why}; {_span(pages)} were not read" if len(pages) > 1
-            else f"{why}; {_span(pages)} was not read",
+            "why": f"{why}; {_span(pages)} could not be read",
             "refused_by": "budget"}
 
 

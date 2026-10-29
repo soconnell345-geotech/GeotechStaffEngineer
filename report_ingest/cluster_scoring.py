@@ -6018,6 +6018,8 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             now_engine = "prompter" if engines.on_prompter() else "chat_model"
             if saved_engine and saved_engine != now_engine:
                 other_engine = saved_engine
+        # Scored, and looked through for items not read (RI-187).
+        bound = _bound_records(record, folder)
         blob = {
             "id": rid,
             "run_date": date.today().isoformat(),
@@ -6044,8 +6046,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             "qa_by_kind": qa_by_kind,
             "diggs": _diggs_verdicts(record, outputs),
             "outputs": {k: str(v) for k, v in outputs.items()},
-            "scores": _score_ingest_record(
-                record, rid, truth, _bound_records(record, folder)),
+            "scores": _score_ingest_record(record, rid, truth, bound),
             "cost": meter.to_dict(),
             "seconds": round(time.time() - started, 1),
             # Calls by step for the report and each report bound inside it
@@ -6063,7 +6064,7 @@ def _run_ingest(corpus: Corpus, prompter: Any, model: str, out: Path,
             **_ingest_steps(folder, narrative_skips_bound,
                             lab_sheets_per_call),
             **brake.fields(),
-            **_item_error_fields(record),
+            **_item_error_fields(record, bound),
         }
         # Every attempt's cost (BACKLOG RI-124): ``cost`` and ``seconds``
         # stay this attempt's own; a report read before carries its earlier
@@ -6207,7 +6208,8 @@ def _unfinished_in(out: Path, first: "_FirstArm",
     return found
 
 
-def _item_error_fields(record: Any) -> Dict[str, Any]:
+def _item_error_fields(record: Any,
+                       bound: Sequence[Any] = ()) -> Dict[str, Any]:
     """``{"item_errors": [...]}`` for the work items (or bound documents)
     the graph could not read, from the record's ``skipped`` QA entries that
     say "could not be read" (BACKLOG RI-110); empty when there are none.
@@ -6215,25 +6217,37 @@ def _item_error_fields(record: Any) -> Dict[str, Any]:
     These are the entries a rate-limit give-up, a refused request or a
     token-brake refusal leave behind: the exception is caught per item so
     the report goes on, and the item has no saved file, so a resume reads
-    it again. Without this field the run file carried no sign of them.
+    it again. Without this field the run file carried no sign of them. A
+    model-first page group no answer came back for -- cut off down to one
+    page, or no structured answer -- is one too (BACKLOG RI-187): its group
+    is not saved either, so a resume asks for it again.
 
     A label review that did not finish is one too (BACKLOG RI-173): its
     ``partial`` entry under ``labels.review``. The vote's labels stand in
     the record, but nothing was saved, so the report is not finished and a
     resume asks for the review again; on build e's MF-2 it showed only as
-    that entry, and the report counted as done."""
+    that entry, and the report counted as done.
+
+    ``bound``: the records of the reports bound inside this one
+    (:func:`_bound_records`), whose entries count too, named by the bound
+    document (BACKLOG RI-187: on build f's MF-2 most of one report's
+    unread groups were in its bound document's record)."""
     rows = []
-    for entry in getattr(record, "qa", None) or []:
-        review_failed = (entry.kind == "partial"
-                         and entry.where == "labels.review"
-                         and "did not finish" in (entry.detail or ""))
-        if not review_failed and (entry.kind != "skipped"
-                                  or "could not be read" not in (
-                                      entry.detail or "")):
-            continue
-        rows.append({"where": entry.where,
-                     "pages": [int(p) for p in (entry.pages or [])],
-                     "detail": str(entry.detail)[:300]})
+    sources = [("", record)] + [
+        (f"{getattr(getattr(child, 'parent', None), 'bound_id', '') or 'bound'}"
+         f": ", child) for child in bound or ()]
+    for named, held in sources:
+        for entry in getattr(held, "qa", None) or []:
+            review_failed = (entry.kind == "partial"
+                             and entry.where == "labels.review"
+                             and "did not finish" in (entry.detail or ""))
+            if not review_failed and (entry.kind != "skipped"
+                                      or "could not be read" not in (
+                                          entry.detail or "")):
+                continue
+            rows.append({"where": named + entry.where,
+                         "pages": [int(p) for p in (entry.pages or [])],
+                         "detail": str(entry.detail)[:300]})
     return {"item_errors": rows} if rows else {}
 
 

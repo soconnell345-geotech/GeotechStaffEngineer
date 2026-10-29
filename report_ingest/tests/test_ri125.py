@@ -352,7 +352,8 @@ class TestTheRunFile:
 
         # The scripted chat answers do not all fit the readers' schemas;
         # unread items are not what this test is about.
-        monkeypatch.setattr(cs, "_item_error_fields", lambda record: {})
+        monkeypatch.setattr(cs, "_item_error_fields",
+                            lambda record, bound=(): {})
         _reports, out, _scripts = chat_cluster
         runs = out / "runs"
         runs.mkdir(parents=True)
