@@ -21,6 +21,7 @@ skips it where that is not installed.
 Each method either has a probe or is in :data:`EXCLUDED` with the reason.
 """
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -47,6 +48,33 @@ def _with_samples(x):
 PROBES = _with_samples(json.loads(
     (Path(__file__).with_name("method_probes.json")).read_text(
         encoding="utf-8")))
+
+
+#: Import name -> the package to install, for a probe's ``"needs"``.
+_PACKAGE_OF = {"python_ags4": "python-ags4", "pydiggs": "pydiggs"}
+
+
+def skip_reason(key: str):
+    """Why this probe cannot run here, naming the package, or None
+    (BACKLOG INF-61, as INF-13 names a missing dependency): its module is
+    left out of the registry because its package is not installed (Pynite
+    on numpy 1.26), or its method needs an optional backend that is not."""
+    from funhouse_agent.adapters import ABSENT_MODULES
+    agent = key.split("#")[0].split("|")[0]
+    if agent in ABSENT_MODULES:
+        return (f"{ABSENT_MODULES[agent]} is not installed, so the "
+                f"{agent} tool is not listed")
+    needs = (PROBES.get(key) or {}).get("needs")
+    if needs and importlib.util.find_spec(needs) is None:
+        return f"{_PACKAGE_OF.get(needs, needs)} is not installed"
+    return None
+
+
+def listed(keys):
+    """The keys whose module is in the registry here."""
+    from funhouse_agent.adapters import ABSENT_MODULES
+    return [k for k in keys if k.split("#")[0].split("|")[0]
+            not in ABSENT_MODULES]
 
 _FILE = "reads a file the call names; no file fixture here"
 _HANDLE = "works on a handle an earlier file read returned"

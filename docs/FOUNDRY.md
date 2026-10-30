@@ -69,6 +69,16 @@ Everything lives in the pip package; the Foundry side is one workspace, a
       declares numpy >= 2.0; planlens runs on 1.26.4 (its suite passes
       there), and the warning goes away with the next planlens release,
       which declares numpy >= 1.26.
+   4. to keep the `pynite` tool (frame and continuous-beam analysis),
+      install PyNiteFEA without its dependencies, then its one pure-Python
+      requirement under the constraints:
+      `pip install --no-deps PyNiteFEA==3.2.0`, then
+      `pip install prettytable -c constraints/foundry-numpy126.txt`
+      (PyNiteFEA declares numpy >= 2.4 but runs on 1.26.4, and its suites
+      pass there). Check that the tool is listed:
+      `python -c "from funhouse_agent.adapters import MODULE_REGISTRY as R; assert 'pynite' in R"`
+      exits 0 (it exits 1 and the registry's `ABSENT_MODULES` names the
+      missing package when the step was left out).
 
    PyNiteFEA declares numpy >= 2.4 from release 2.1, so no release the app
    accepts installs there; the app then leaves its `pynite` tool (frame and
