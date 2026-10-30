@@ -1043,6 +1043,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
                      range_model: Optional[str] = None,
                      range_arms: Sequence[str] = ("plain", "hinted"),
                      range_workers: int = 1,
+                     range_conventions: str = "B",
                      model_first: Any = None,
                      stage_models: Optional[Dict[str, str]] = None,
                      page_route: Optional[str] = None
@@ -1320,7 +1321,7 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         ``run.json`` records them, and a report already done under other
         settings is NOT redone unless ``redo`` -- start a fresh ``out_dir``
         to compare two settings.
-    describe_model, range_model, range_arms, range_workers
+    describe_model, range_model, range_arms, range_workers, range_conventions
         The ``range_labels`` stage (BACKLOG RI-73). ``describe_model``
         describes the pages, one vision call a page, on the vision engine
         (``vision_chat_model`` when one is given); it defaults to
@@ -1330,9 +1331,11 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
         the printed outline) and ``hinted`` (the rules' label on every
         line as well) to run; both by default, over the same descriptions.
         ``range_workers`` is how many pages are described at once.
-        Descriptions are saved one file a page under
+        ``range_conventions`` names the labeller's conventions: ``B``, the
+        owner's and the graph's (BACKLOG RI-104), by default, or ``A``, kept
+        to measure against. Descriptions are saved one file a page under
         ``out_dir/ranges/descriptions/<ID>/`` and each arm's labels to
-        ``out_dir/ranges/<arm>/<ID>.json``.
+        ``out_dir/ranges/<arm>_B/<ID>.json`` (``<arm>/`` under ``A``).
     model_first, stage_models, page_route
         Model-first ingest as a second arm on the same items (BACKLOG
         RI-87; plan section 8.8). ``off`` reads as today. ``on`` reads each
@@ -1576,7 +1579,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
               or (out / "runs" / f"{rid}.json").is_file()
               or (out / "vision" / f"{rid}.json").is_file()
               or (out / "ingest" / rid / "run.json").is_file()
-              or any((out / "ranges" / arm / f"{rid}.json").is_file()
+              or any((out / "ranges" / _range_column(arm, range_conventions)
+                      / f"{rid}.json").is_file()
                      for arm in range_arms)]
     absent = [rid for rid in asked if rid not in wanted]
     if max_reports:
@@ -1755,7 +1759,8 @@ def score_on_cluster(reports_dir: Any = None, labels_xlsx: Any = None,
     if "range_labels" in stages:
         ranged = _run_ranges(corpus, source, describe_model, range_model,
                              out, wanted, arms=tuple(range_arms),
-                             workers=range_workers, redo=redo, sync=sync)
+                             workers=range_workers, redo=redo, sync=sync,
+                             conventions=range_conventions)
         scored_ranges = _score_ranges(ranged, corpus, oos, mapped, sets)
         scored_ranges["describer"] = engines.describe(describe_model,
                                                       vision=True)

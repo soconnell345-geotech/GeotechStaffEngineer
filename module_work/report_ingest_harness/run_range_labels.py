@@ -428,10 +428,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--redo", action="store_true")
         if name == "run":
             p.add_argument("--conventions", choices=("A", "B"),
-                           default="A",
-                           help="the labeller's conventions: A (OWN-92's "
-                                "default) or B (what the hand labels mostly "
-                                "do); B's runs go in ranges/<arm>_B/")
+                           default="B",
+                           help="the labeller's conventions: B (the "
+                                "owner's, OWN-92, and the graph's) or A (the "
+                                "text OWN-92 recommended, kept to measure "
+                                "against); B's runs go in ranges/<arm>_B/")
             p.add_argument("--max-minutes", type=float, default=7.0,
                            help="stop sending pages to the describer after "
                                 "this long; the same command again goes on")
