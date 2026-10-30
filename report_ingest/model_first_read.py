@@ -284,17 +284,26 @@ def _halves(pages: Sequence[int], starts: Sequence[int] = ()
     return [pages[:cut], pages[cut:]]
 
 
+#: The sentence every stage's instruction ends with; an addendum goes
+#: before it.
+_LAST_SENTENCE = "Return it with the answer tool."
+
+
 class _Caller:
     """One stage's calls on one engine: what each call carries and what
     comes back."""
 
     def __init__(self, stage: str, doc: Any, engine: Any, report_id: str,
                  route: Optional[str], pdf: Source,
-                 limit: Optional[int] = None) -> None:
+                 limit: Optional[int] = None, addendum: str = "") -> None:
         self.stage = stage
         self.doc = doc
         self.engine = engine
         self.report_id = str(report_id or "")
+        #: Paragraphs the stage's instruction carries before its last
+        #: sentence (the narrative's: the documents bound inside the report,
+        #: RI-188, and the caller's own questions); "" for none.
+        self.addendum = str(addendum or "").strip()
         self.route = resolve_route(
             route, bool(getattr(engine, "accepts_pdf", False)))
         self.schema = answer_schema(stage)
@@ -326,13 +335,23 @@ class _Caller:
             self._pdf = self.doc.tobytes()
         return self._pdf
 
+    def said(self, pages: Sequence[int], text_first: bool) -> str:
+        """The instruction for one call over ``pages``, with
+        :attr:`addendum` before its last sentence."""
+        said = instruction(self.stage, self.report_id, pages,
+                           route=self.route, text_first=text_first)
+        if not self.addendum:
+            return said
+        head, last, tail = said.rpartition(_LAST_SENTENCE)
+        if not last:
+            return f"{said}\n\n{self.addendum}"
+        return f"{head}{self.addendum}\n\n{last}{tail}"
+
     def blocks(self, pages: Sequence[int]
                ) -> Tuple[List[Dict[str, Any]], str]:
         """The user turn's blocks for one call, and why they cannot be sent
         ("" when they can): the pages first, then the instruction."""
-        said = text_block(instruction(self.stage, self.report_id, pages,
-                                      route=self.route,
-                                      text_first=self.text_first))
+        said = text_block(self.said(pages, self.text_first))
         if self.route == "pdf":
             # A sheet scanned sideways is sent rotated upright (RI-149).
             from report_ingest.turned import turn_of
@@ -404,9 +423,7 @@ class _Caller:
         def is_picture(blocks: Sequence[Dict[str, Any]]) -> bool:
             return any(b.get("type") == "image" for b in blocks)
 
-        used = self.size([text_block(instruction(
-            self.stage, self.report_id, pages, route=self.route,
-            text_first=True))])
+        used = self.size([text_block(self.said(pages, True))])
         chosen: Dict[int, List[Dict[str, Any]]] = {}
         for n, page in enumerate(group.ranked):
             blocks = self._natural(page)
@@ -849,11 +866,13 @@ def _calc_on_report_pages(reading: Any, pages: Sequence[int]
 
 def _narrative_on_report_pages(reading: Any, pages: Sequence[int]
                                ) -> Tuple[Any, List[Dict[str, Any]], str]:
-    """A narrative answer with the pages its citations and unsettled rows
-    cite read against the pages of its own call (:func:`_on_call_pages`): a
-    copy, the entries and the warning."""
+    """A narrative answer with the pages its citations, unsettled rows and
+    answers to the caller's questions cite read against the pages of its
+    own call (:func:`_on_call_pages`): a copy, the entries and the
+    warning."""
     out = reading.model_copy(deep=True)
-    rows, said = _on_call_pages([*out.citations, *out.unsettled], pages)
+    rows, said = _on_call_pages(
+        [*out.citations, *out.unsettled, *out.extra_answers], pages)
     return out, rows, said
 
 
@@ -945,7 +964,9 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                    pdf: Source = None, outline: Any = None,
                    body_pages: Optional[Sequence[int]] = None,
                    place: Optional[Place] = None,
-                   max_request_tokens_in: Optional[int] = None
+                   max_request_tokens_in: Optional[int] = None,
+                   bound_documents: Optional[Sequence[Dict[str, Any]]] = None,
+                   questions: Optional[Sequence[str]] = None
                    ) -> Dict[str, Any]:
     """The narrative (``group_pages(...)["narrative"]``: its consecutive
     parts), one call per part: one result in
@@ -956,6 +977,15 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     pages); ``outline`` gives the summary call its section headings. The
     rest as :func:`read_logs`. A narrative no answer came back for has
     ``general``, ``natural_hazards`` and ``facts`` None and an ``error``.
+
+    ``bound_documents`` are the reports bound inside this file, as today's
+    reader takes them (:func:`report_ingest.bound.narrative_block`): each
+    call's instruction says which page ranges are another report's, so
+    their borings are not this report's and each counts as a previous
+    investigation (BACKLOG RI-188), whether or not their pages are sent.
+    ``questions`` are the caller's own, asked after them in today's words
+    (:func:`report_ingest.narrative_reader.questions_block`) and answered in
+    ``facts["extra_answers"]``, the shape today's reader returns them in.
 
     On the pictures route the call sends TEXT FIRST (RI-175): each page with
     a usable text layer as its text alone, the others as pictures, so a
@@ -970,12 +1000,18 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                                                 _apply_summaries, _Builder,
                                                 _headings_text, _summarise,
                                                 check_quotes, count_captions)
+    from report_ingest.narrative_checks import shorten_summaries
+
+    from report_ingest.bound import narrative_block
+    from report_ingest.narrative_reader import questions_block
 
     groups = [g for g in groups if g.pages]
     if not groups:
         raise ValueError("read_narrative needs at least one group of pages")
+    told = [narrative_block(bound_documents or ()), questions_block(questions)]
     caller = _Caller("narrative", doc, engine, report_id, route, pdf,
-                     max_request_tokens_in)
+                     max_request_tokens_in,
+                     addendum="\n\n".join(block for block in told if block))
     spent = _Spent()
     pages = sorted({int(p) for g in groups for p in g.pages})
     notes = [n for g in groups for n in g.notes]
@@ -1026,6 +1062,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
         else:
             spent.warnings.append("the summary call returned no structured "
                                   "answer; the per-part summaries stand")
+    shorten_summaries(general, hazards, engine, builder.unresolved,
+                      lambda reply: spent.charge(reply, []))      # RI-179
     confidence = check_quotes(doc, builder.citations,
                               general.answered() + hazards.answered(),
                               builder)

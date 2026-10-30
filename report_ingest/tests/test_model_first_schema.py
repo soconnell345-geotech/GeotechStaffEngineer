@@ -19,7 +19,7 @@ from report_ingest import lab_reader, log_reader
 from report_ingest import model_first as mf
 from report_ingest.calc_reader import CalcReading
 from report_ingest.engine import strict_schema
-from report_ingest.narrative_reader import NarrativeReading
+from report_ingest.narrative_reader import NARRATIVE_SYSTEM, NarrativeReading
 
 #: sha256 of ``json.dumps(strict_schema(cls), ensure_ascii=False)`` for each
 #: of today's reading classes, taken on master 32b9645 (2026-10-25). The same
@@ -31,8 +31,10 @@ MASTER_SCHEMAS = {
         "6857fd4e7c8052efeb5099ee7137394cbb748e50f131d5d4ac3cd5c1c536f8b7",
     "CalcReading":
         "b9fd730d9dc880832b692852fb998394d918e03121d74d59b88a19ea827d29c6",
+    # RI-182 (2026-10-29): the owner's companion question projectPhaseOther,
+    # after projectPhase; measured with the rulings it came with.
     "NarrativeReading":
-        "aa12cef0562e3ccc60e83bbee64b033b228539b94b343255006bcdbc9557dd43",
+        "082c518697f28a289b6da2dfad4505f43be215a144c6f7b1af7e47f2e2e74881",
 }
 
 #: sha256 of what the model-first readers ask (each stage's instruction as
@@ -51,6 +53,15 @@ MODEL_FIRST_ASKS = {
     # sheet as an entry of their own; the narrative is sent text first in
     # one call on the pictures route (RI-175).
     "mf-3": "2ab3280d29ff6082016b0ab5acfa9e7321d821af1187acbb29afa78d5ce600a8",
+    # mf-4 (build g): the narrative carries the owner's house rules of
+    # 2026-10-29 (RI-182) and asks projectPhaseOther, and today's rule for
+    # another client's report (RI-189), and one list item per foundation
+    # type and per bearing value (RI-181).
+    "mf-4": "f5c30a2096d7cde1837168e1d8195cebfc85a3ee1f9cc99cf1a2feea22511549",
+    # mf-5 (build g): the same instruction; a report's narrative is TOLD
+    # the documents bound inside it, after the instruction (RI-188), so a
+    # narrative saved under mf-4 is read again.
+    "mf-5": "f5c30a2096d7cde1837168e1d8195cebfc85a3ee1f9cc99cf1a2feea22511549",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,
@@ -203,7 +214,9 @@ def test_the_model_first_instructions_add_to_the_plain_ones():
     assert lab.replace(f" {mf.LAB_TWO_TESTS}", "") == \
         mf.PLAIN_INSTRUCTIONS["lab"]
     narrative = mf.INSTRUCTIONS["narrative"]
-    assert narrative.replace("{glossary}\n\n", "") == \
+    assert narrative.count(mf.NARRATIVE_OTHER_CLIENT) == 1
+    assert narrative.replace("{glossary}\n\n", "").replace(
+        mf.NARRATIVE_OTHER_CLIENT + "\n\n", "") == \
         mf.PLAIN_INSTRUCTIONS["narrative"]
     logs = mf.INSTRUCTIONS["logs"]
     assert logs != mf.PLAIN_INSTRUCTIONS["logs"]
@@ -229,6 +242,14 @@ def test_the_narrative_carries_today_s_conventions_and_lab_its_rule():
     plain = mf.instruction("narrative", "R00", [0, 1],
                            texts=mf.PLAIN_INSTRUCTIONS)
     assert glossary_block() not in plain
+    # Today's rule for another client's report (RI-189), after the
+    # conventions, with the words today's reader is given.
+    assert said.index(glossary_block()) < said.index(mf.NARRATIVE_OTHER_CLIENT)
+    today = " ".join(NARRATIVE_SYSTEM.split())
+    for words in ('set outsideProject to "yes"', "leave postName null",
+                  'answer propertyType "other"'):
+        assert words in said
+        assert words in today
     lab = mf.instruction("lab", "R00", [4])
     assert "Atterberg limits printed on a gradation sheet are an atterberg " \
            "entry of their own" in lab

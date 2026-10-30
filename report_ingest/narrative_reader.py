@@ -78,7 +78,7 @@ __all__ = [
     "RETRIEVAL_PHRASES", "DEFAULT_CONFIDENCE", "UNVERIFIED_CONFIDENCE",
     "reading_pages", "explorations_found", "retrieval_passages",
     "picture_pages", "check_quotes", "DETERMINISTIC_FIELDS",
-    "settled_explorations", "TWIN_FIELDS",
+    "settled_explorations", "TWIN_FIELDS", "questions_block",
 ]
 
 #: The ceiling in the brief: eight model calls for one narrative. A narrative
@@ -172,7 +172,10 @@ VOCABULARIES: Dict[str, Tuple[str, ...]] = {
 }
 
 #: The two vocabularies that are CLOSED: the owner's own list is known for
-#: these, so a value outside one is a misreading and is refused. Everywhere
+#: these, so a value outside one is a misreading and is refused. The earth
+#: hazards' phrases and the project phases are closed too, each handled in
+#: its own way (``_Builder._enum``): an unlisted hazard is refused, an
+#: unlisted phase becomes "other". Everywhere
 #: else the list is the values seen so far and an answer outside it is kept in
 #: the report's own words -- a guessed vocabulary that refuses the true answer
 #: costs more than an unfamiliar answer a person can read.
@@ -517,6 +520,7 @@ class NarrativeReading(BaseModel):
     projectNumber: Optional[str] = None
     projectName: Optional[str] = None
     projectPhase: Optional[str] = None
+    projectPhaseOther: Optional[str] = None
     primeContractor: Optional[str] = None
     primeAe: Optional[str] = None
     geotechnicalEngineerFirm: Optional[str] = None
@@ -706,10 +710,15 @@ THE FOUR RULES.
    the natural-hazards list, and that is the expected shape of an answer.
 
 3. THE FIELDS WITH SET WORDS TAKE THEM EXACTLY AS SPELLED, and the block
-   below says how binding each list is. Two are CLOSED and an answer outside
-   them is thrown away. The rest are the words seen so far: use one where it
-   fits, and where none does, answer in the report's own words rather than
-   forcing a bad fit. Four of them want a verdict and then the reason.
+   below says how binding each list is. Four are CLOSED: documentType,
+   outsideProject, projectPhase and the earth-hazard phrases. An answer
+   outside documentType or outsideProject is thrown away; a hazard the
+   report names that is not listed goes in naturalHazardSummary; a phase
+   that is none of projectPhase's named phases is "other", with the
+   report's own phase in projectPhaseOther. The rest are the words seen so
+   far: use one where it fits, and where none does, answer in the report's
+   own words rather than forcing a bad fit. Four of them want a verdict and
+   then the reason.
 
 4. A REPORT ABOUT SOMEBODY ELSE'S PROJECT NAMES NO POST. postName and
    propertyType are questions about one estate of government property. If
@@ -727,15 +736,17 @@ that lists the section.
 
 COUNTS. boringCount, testPitCount and cptCount are what the NARRATIVE SAYS
 was done -- the sentence that says "four borings were advanced" -- not what
-you can infer from anything else. tableCount and figureCount have already
-been counted from the captions and are given to you as facts below; answer
-them anyway, from the report's own lists of tables and figures, and a
-disagreement will be recorded rather than argued. figureCount is the figures
-of the main body only; appendix figures are left out. structureCount is the
-number of items in structureList.
+you can infer from anything else. tableCount and figureCount are the tables
+and figures THIS FILE holds: they have already been counted from the
+captions and are given to you as facts below; answer them anyway, from the
+tables and figures on the pages, and a disagreement will be recorded rather
+than argued. One the text cites or a contents page lists that is not in the
+file is not counted. figureCount is the figures of the main body only;
+appendix figures are left out. structureCount is the number of items in
+structureList.
 
 VALUES WITH UNITS. bearingCapacity keeps the report's own sentences, one per
-recommendation. bearingCapacityValues is the same recommendations as numbers:
+bearing value. bearingCapacityValues is the same recommendations as numbers:
 the number as printed, the unit as printed (psf, ksf, tsf, kPa), what
 foundation it is for and under what condition. Never convert a unit, and
 never give a value whose unit the report does not print.
@@ -792,9 +803,15 @@ def _vocabulary_block() -> str:
                     "found: \"yes - six seismic refraction lines across the "
                     "site\". A bare \"no\" is fine.)")
         elif name == "earthHazardsExposed":
-            note = ("  (a list; give every one that applies, one short "
-                    "phrase each IN THE REPORT'S OWN TERMS -- these are "
-                    "examples, not a closed list. Empty when it names none.)")
+            note = ("  (a list; give every one that applies, using these "
+                    "phrases EXACTLY and no others -- a hazard the report "
+                    "names that is not one of them goes in "
+                    "naturalHazardSummary instead. Empty when it names "
+                    "none.)")
+        elif name == "projectPhase":
+            note = ("  (use one of these EXACTLY; where the report names "
+                    "none of the first three, answer \"other\" and describe "
+                    "its phase in projectPhaseOther)")
         else:
             note = ("  (use one of these where it fits; where none does, "
                     "answer in the report's own words rather than forcing "
@@ -1187,6 +1204,22 @@ def _retrieval_block(passages: Sequence[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def questions_block(questions: Optional[Sequence[str]]) -> str:
+    """The caller's own questions as the reader is asked them, answered in
+    ``extra_answers``; "" when there are none. Both narrative readers send
+    it, today's in its brief and the model-first one after its
+    instruction."""
+    asked = [" ".join(str(q).split()) for q in (questions or [])
+             if str(q).strip()]
+    if not asked:
+        return ""
+    return "\n".join(
+        ["THE CALLER'S OWN QUESTIONS. Answer each of these as well, in "
+         "extra_answers, under the same rules: only from the text, with a "
+         "citation, and an EMPTY answer where the narrative does not say."]
+        + [f"  {n}. {q}" for n, q in enumerate(asked, start=1)])
+
+
 def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
            counted: Dict[str, Any], outline_counts: Dict[str, int],
            headings: str, report_id: str, chunk: int, n_chunks: int,
@@ -1233,15 +1266,9 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
         block = narrative_block(bound)
         if block:
             parts += ["", block]
-    asked = [" ".join(str(q).split()) for q in (questions or [])
-             if str(q).strip()]
+    asked = questions_block(questions)
     if asked:
-        parts += ["",
-                  "THE CALLER'S OWN QUESTIONS. Answer each of these as well, "
-                  "in extra_answers, under the same rules: only from the "
-                  "text, with a citation, and an EMPTY answer where the "
-                  "narrative does not say."]
-        parts += [f"  {n}. {q}" for n, q in enumerate(asked, start=1)]
+        parts += ["", asked]
     retrieval = _retrieval_block(passages)
     if retrieval:
         parts += ["", retrieval]
@@ -1375,6 +1402,9 @@ class _Builder:
         self.strata: List[Stratum] = []
         self.extra: List[Dict[str, Any]] = []
         self._from_chunk: Dict[str, int] = {}
+        #: A projectPhase answer outside the list, kept for
+        #: projectPhaseOther (:meth:`_enum`).
+        self._phase_said = ""
 
     # -- refusals ----------------------------------------------------------
     def refuse(self, what: str, why: str, value: Any = None,
@@ -1485,12 +1515,21 @@ class _Builder:
         words = VOCABULARIES[name]
         folded = {_fold(w): w for w in words}
         if name == "earthHazardsExposed":
+            # The listed phrases and no others (owner's ruling of
+            # 2026-10-29, RI-182): an unlisted phrase is refused, and the
+            # hazard summary is where the report's other hazards go. A
+            # plural ("expansive soils") is its listed singular.
             out: List[str] = []
             for item in (value or []):
                 text = " ".join(str(item).split())
                 if not text:
                     continue
-                got = folded.get(_fold(text), text)
+                got = (folded.get(_fold(text))
+                       or folded.get(re.sub(r"s\b", "", _fold(text))))
+                if got is None:
+                    self.refuse(name, "not one of the listed phrases; the "
+                                      "hazard summary carries it", text)
+                    continue
                 if got not in out:
                     out.append(got)
             return out or None
@@ -1504,6 +1543,13 @@ class _Builder:
         got = folded.get(_fold(value))
         if got is not None:
             return got
+        if name == "projectPhase":
+            # A phase the list does not name is "other", and the report's
+            # own word for it goes to projectPhaseOther where the reading
+            # left that empty (owner's ruling of 2026-10-29, RI-182).
+            self._phase_said = self._phase_said or " ".join(
+                str(value).split())
+            return "other"
         if name in CLOSED_FIELDS:
             self.refuse(name, f"not one of {', '.join(words)}", value)
             return None
@@ -1606,7 +1652,15 @@ class _Builder:
     def build(self, pages: Sequence[int], counted: Dict[str, Any],
               found: Optional[Dict[str, Any]] = None
               ) -> Tuple[GeneralFacts, NaturalHazardFacts, NarrativeFacts]:
+        from report_ingest.narrative_checks import drop_repeats
+
         values = dict(self.values)
+        if self._phase_said and not values.get("projectPhaseOther"):
+            values["projectPhaseOther"] = self._phase_said
+        # A list item that repeats another goes (RI-178), before the
+        # structures are recounted below.
+        values, dropped = drop_repeats(values)
+        self.unresolved.extend(dropped)
 
         # THE FIVE EXPLORATION ANSWERS THE APPENDIX SETTLES. The logs the
         # labeller found and the log reader read are a count of holes; the
@@ -1804,6 +1858,8 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
     reader being shown the cover, the letter and the recommendations of the
     report it is bound inside and answering with them.
     """
+    from report_ingest.narrative_checks import shorten_summaries
+
     pages = [int(p) for p in narrative_pages]
     if not pages:
         raise ValueError("read_narrative needs at least one page")
@@ -1915,6 +1971,11 @@ def read_narrative(doc: Any, narrative_pages: Sequence[int], engine: Engine,
         else:
             warnings.append("the summary call returned no structured answer; "
                             "the per-part summaries stand")
+
+    # A summary over its limit goes back once to be shortened (RI-179).
+    if model_calls < budget:
+        model_calls += shorten_summaries(general, hazards, engine,
+                                         builder.unresolved, charge)
 
     # LEVER 5: the quote gate, last, so it sees the answers as stored.
     confidence = check_quotes(doc, builder.citations,

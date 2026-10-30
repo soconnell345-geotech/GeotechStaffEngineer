@@ -750,7 +750,7 @@ class Library:
 
     def facts(self, report_id: str,
               fields: Optional[Sequence[str]] = None) -> Dict[str, Any]:
-        """What one report answered, for any of the 37 narrative fields.
+        """What one report answered, for any of the narrative fields.
 
         ``fields`` names the ones wanted; with none it returns every field
         the report actually answered. A field the report did not answer is
@@ -816,8 +816,9 @@ class Library:
         """
         name = str(field or "").strip()
         if name not in NARRATIVE_FIELDS:
-            return {"error": f"{name!r} is not one of the 37 narrative "
-                             f"fields", "fields": list(NARRATIVE_FIELDS)}
+            return {"error": f"{name!r} is not one of the "
+                             f"{len(NARRATIVE_FIELDS)} narrative fields",
+                    "fields": list(NARRATIVE_FIELDS)}
         keys: List[str] = []
         unknown: List[str] = []
         for wanted in (report_ids or ()):

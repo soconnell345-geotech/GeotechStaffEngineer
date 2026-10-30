@@ -289,7 +289,15 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: no longer mixed (RI-174); the narrative is sent text first in one call
 #: and carries today's house conventions, and the lab instruction asks for
 #: Atterberg limits on a gradation sheet as an entry of their own (RI-175).
-READ_PROMPT_VERSION = "mf-3"
+#: mf-4 (build g): the narrative carries the owner's house rules of
+#: 2026-10-29 (RI-182: structures are buildings, the phase and its new
+#: companion question projectPhaseOther, this investigation's holes only,
+#: the listed hazard phrases only, the file's own figures and tables),
+#: today's rule for another client's report (RI-189), and one list item per
+#: foundation type and per bearing value (RI-181). mf-5 (build g): the
+#: narrative of a report with documents bound inside it is told their page
+#: ranges, as today's narrative is (RI-188); the instruction is mf-4's.
+READ_PROMPT_VERSION = "mf-5"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:
@@ -469,7 +477,8 @@ PLAIN_INSTRUCTIONS: Dict[str, str] = {
 #: narrative carries today's house conventions as well
 #: (``narrative_glossary.glossary_block``, RI-175: a count of explorations
 #: not done is 0, null is "the report does not say", the mention
-#: questions, the list items). A summary row's bottom elevation is asked by
+#: questions, the list items) and today's rule for another client's report
+#: (RI-189). A summary row's bottom elevation is asked by
 #: its field's own description. A change here changes
 #: :data:`READ_PROMPT_VERSION`.
 #: The sentence the model-first lab instruction adds to the plain one
@@ -482,15 +491,29 @@ LAB_TWO_TESTS = (
     "a gradation sheet are an atterberg entry of their own, beside the "
     "gradation entry.")
 
+#: The paragraph the model-first narrative instruction adds after the house
+#: conventions (RI-189): today's reader's rule 4 (``NARRATIVE_SYSTEM``),
+#: which build f's model-first reading lacked and answered a property type
+#: on reports written for other clients.
+NARRATIVE_OTHER_CLIENT = (
+    "A report about somebody else's project names no post: postName and "
+    "propertyType are questions about one estate of government property. "
+    "If this report was written for another client -- a private developer, "
+    "a municipality, another agency -- set outsideProject to \"yes\", leave "
+    "postName null and answer propertyType \"other\". Never infer a post "
+    "from a city, a country or a project name.")
+
 INSTRUCTIONS: Dict[str, str] = {
     **PLAIN_INSTRUCTIONS,
     "lab": PLAIN_INSTRUCTIONS["lab"].replace(
         " Give depths in the sheet's own unit",
         f" {LAB_TWO_TESTS} Give depths in the sheet's own unit"),
     # Today's house conventions, filled in by instruction() from
-    # narrative_glossary.glossary_block, the text today's reader is given.
+    # narrative_glossary.glossary_block, the text today's reader is given,
+    # and today's rule for another client's report.
     "narrative": PLAIN_INSTRUCTIONS["narrative"].replace(
-        "{vocabulary}\n\n", "{vocabulary}\n\n{glossary}\n\n"),
+        "{vocabulary}\n\n",
+        "{vocabulary}\n\n{glossary}\n\n" + NARRATIVE_OTHER_CLIENT + "\n\n"),
     "logs": (
         "These pages are from a geotechnical report ({where}). Extract the "
         "exploration log on them (a boring, test pit or similar log): its "

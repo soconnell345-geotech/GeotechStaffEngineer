@@ -66,9 +66,11 @@ class Convention:
         return f"{self.rule}{where}{mark}"
 
 
-#: The rules, in the order the prompt prints them. The six marked DRAFT are
-#: the lead's reading of the per-question table of the eight-report run
-#: (2026-09-18) and the owner is to confirm or overrule each one.
+#: The rules, in the order the prompt prints them. Those marked DRAFT are
+#: the lead's reading of the evidence -- the per-question table of the
+#: eight-report run (2026-09-18) and the build e trace review -- and the
+#: owner is to confirm or overrule each one; those marked CONFIRMED are the
+#: owner's own rulings.
 CONVENTIONS: Tuple[Convention, ...] = (
     Convention(
         rule="A count of explorations the report says it did NOT do is 0, "
@@ -88,12 +90,70 @@ CONVENTIONS: Tuple[Convention, ...] = (
         status="CONFIRMED",
         why="owner 2026-10-20 (OWN-08, desk)"),
     Convention(
+        rule="A structure is a BUILDING, a parking garage included. Site "
+             "works are not structures: parking lots, pavements, taxiways, "
+             "retaining and perimeter walls, vaults, tanks, ponds, light "
+             "poles, bollards and landscaping are left out of structureList. "
+             "A report about no building has an empty structureList and "
+             "structureCount 0.",
+        fields=("structureList", "structureCount"),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-10-29 (BACKLOG RI-182, ruling 1): "
+            "structures are buildings only; the readers had listed lots, "
+            "walls, vaults and poles"),
+    Convention(
         rule="figureCount counts the figures in the main body of the report "
              "only; figures in the appendices are left out.",
         fields=("figureCount",),
         status="CONFIRMED",
         why="owner 2026-10-20 (OWN-08, desk): 'there could be lots of "
             "random figures from appendices'"),
+    Convention(
+        rule="The report is the file you are given. tableCount and "
+             "figureCount count the tables and figures THIS FILE holds; a "
+             "table or figure the text cites that is not in the file is not "
+             "counted.",
+        fields=("tableCount", "figureCount"),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-10-29 (BACKLOG RI-182, ruling 6): 'the "
+            "report is the file'; a copy whose text cites what the file "
+            "lacks is flagged by report_ingest.completeness (RI-184)"),
+    Convention(
+        rule="projectPhase is the phase the report names -- Technical due "
+             "diligence, Bridging or Design-build -- whoever the client is: "
+             "a project off the estate has these phases too. Where the "
+             "report names none of them, or leaves it ambiguous, answer "
+             "\"other\" and describe the phase as the report discusses it in "
+             "projectPhaseOther; leave projectPhaseOther null when the "
+             "report does not discuss a phase.",
+        fields=("projectPhase", "projectPhaseOther"),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-10-29 (BACKLOG RI-182, ruling 2): the "
+            "phase does not depend on the estate; 'other' where none is "
+            "named, with the new companion question"),
+    Convention(
+        rule="boringCount, testPitCount, cptCount, boringDictionary and "
+             "testPitDictionary cover THIS report's own investigation only. "
+             "Holes from an earlier investigation -- an earlier phase, "
+             "another firm's, or a neighbouring site's whose borings this "
+             "report uses -- are left out of them; each such investigation "
+             "counts in previousInvestigationCount.",
+        fields=("boringCount", "testPitCount", "cptCount",
+                "boringDictionary", "testPitDictionary",
+                "previousInvestigationCount"),
+        status="CONFIRMED",
+        why="owner's rulings of 2026-10-29 (BACKLOG RI-182, rulings 3 and "
+            "5); the owner accepts a count or list that also takes in the "
+            "earlier holes ('the question is subjective'), and the sheets "
+            "carry that as an alternate"),
+    Convention(
+        rule="boringDictionary and testPitDictionary take each hole's name "
+             "from any page that prints it -- the narrative, a location "
+             "plan, a log -- and list each hole once: spelling variants of "
+             "one name (LB1 and LB-1) are one hole.",
+        fields=("boringDictionary", "testPitDictionary"),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-10-29 (BACKLOG RI-182, ruling 7)"),
     Convention(
         rule="null means THE REPORT DOES NOT SAY. It never means zero, "
              "never means not applicable, and is never written as a word: "
@@ -140,16 +200,18 @@ CONVENTIONS: Tuple[Convention, ...] = (
         rule="soilCorrosion is the FINDING about corrosivity: yes when the "
              "report finds the soils corrosive, no when it tested or "
              "assessed them and found them not corrosive, mixed when "
-             "corrosive to some materials and not others; then ' - ' and "
+             "corrosive to some materials and not others (corrosive to "
+             "buried metal but not to concrete is mixed); then ' - ' and "
              "the basis (the test values or the sentence). null when the "
              "report does not address corrosivity.",
         fields=("soilCorrosion",),
         status="DRAFT",
-        why="the owner's answer keys (checked 2026-10-04): 'no - low "
-            "corrosion impact (sulfate, chloride, pH ...)' on reports that "
-            "discuss corrosion at length; 'mixed - non-corrosive to "
-            "ductile-iron pipe, but high chloride'; null where silent. "
-            "Wrong on 4 of 6 in the Foundry run of 2026-10-02"),
+        why="the owner's answer keys (checked 2026-10-04): 'mixed - "
+            "non-corrosive to ductile-iron pipe, but high chloride'; null "
+            "where silent. Wrong on 4 of 6 in the Foundry run of "
+            "2026-10-02. The owner's ruling of 2026-10-29 (BACKLOG RI-182): "
+            "corrosive to metal and not to concrete is mixed; the draft "
+            "rule stands"),
     Convention(
         rule="postName is the CITY of the diplomatic post, in the city's "
              "own name and nothing else: not the country, not the compound, "
@@ -169,16 +231,38 @@ CONVENTIONS: Tuple[Convention, ...] = (
         why="run 7: primeAe missed on 3 of 5; the three names sit together "
             "on the letter and the cover and were being confused"),
     Convention(
-        rule="earthHazardsExposed uses the listed phrases and no others, "
-             "and NEVER includes seismic shaking. Ground shaking is on "
-             "every site in a seismic region and listing it says nothing; "
-             "this field is for what the report says THIS site is exposed "
-             "to beyond it. An empty answer is right for a report that "
-             "names no hazard.",
+        rule="earthHazardsExposed takes the listed phrases and no others. A "
+             "hazard the report names that is not one of them is described "
+             "in naturalHazardSummary instead.",
+        fields=("earthHazardsExposed",),
+        status="CONFIRMED",
+        why="owner's ruling of 2026-10-29 (BACKLOG RI-182, ruling 4): the "
+            "listed phrases only, the hazard summary carries anything "
+            "else"),
+    Convention(
+        rule="earthHazardsExposed NEVER includes seismic shaking. Ground "
+             "shaking is on every site in a seismic region and listing it "
+             "says nothing; this field is for what the report says THIS "
+             "site is exposed to beyond it. An empty answer is right for a "
+             "report that names no hazard.",
         fields=("earthHazardsExposed",),
         status="DRAFT",
         why="run 7: 3 wrong and 5 invented, almost all of them seismic "
             "shaking added to a list the hand left without it"),
+    Convention(
+        rule="recommendedFoundations has one item per foundation TYPE, "
+             "naming the structures it is for: the options of one type "
+             "(driven piles or drilled piers, of two diameters) are one "
+             "item, and a floor slab or a section heading is not an item. "
+             "bearingCapacity has one item per bearing value, saying what "
+             "it is for; an allowed increase (per foot of embedment or of "
+             "width) stays in its value's item.",
+        fields=("recommendedFoundations", "bearingCapacity"),
+        status="DRAFT",
+        why="build e trace review section 11 (BACKLOG RI-181): nine misses "
+            "on the grain of these two lists, the readers splitting one "
+            "type's options and one value's increase into items of their "
+            "own"),
 )
 
 #: A one-line gloss for a field whose name does not say what it wants. Keyed
@@ -189,9 +273,11 @@ FIELD_NOTES: Dict[str, str] = {
     "projectNumber": "the number the report itself prints for the project, "
                      "whoever assigned it",
     "projectPhase": "the stage of the project this report was written for",
+    "projectPhaseOther": "when projectPhase is \"other\", the phase as the "
+                         "report discusses it, in a few words",
     "outsideProject": "yes when this report was written for a client other "
                       "than the owner of the estate the library is about",
-    "structureList": "the structures the report is about, one short name "
+    "structureList": "the buildings the report is about, one short name "
                      "each, as the report names them",
     "boringDictionary": "the identifiers of the borings, exactly as printed "
                         "-- B-1, SB-04, LB-05 -- and nothing else",
@@ -200,7 +286,7 @@ FIELD_NOTES: Dict[str, str] = {
     "recommendedFoundations": "one item per foundation type recommended, in "
                               "the report's own words",
     "bearingCapacity": "the report's own sentences about allowable or net "
-                       "bearing pressure, one per recommendation",
+                       "bearing pressure, one per value",
     "strata": "the soil and rock profile in one string, as the report words "
               "it",
     "siteClass": "the seismic site class letter the report assigns",

@@ -339,18 +339,50 @@ class TestWhatIsRefused:
         assert result.general.propertyType == \
             "New embassy or consulate compound"
 
-    def test_a_hazard_in_the_reports_own_terms_is_kept(self, doc):
+    def test_a_listed_hazard_is_kept(self, doc):
         reading = full_reading(earthHazardsExposed=[
-            "liquefaction-induced settlement", "flooding"])
+            "liquefaction-induced settlement", "Flooding",
+            "expansive soils"])
         result = read(doc, FakeEngine([{"final": reading}]))
 
+        # Folded onto the listed spelling, a plural onto its singular.
         assert result.natural_hazards.earthHazardsExposed == [
-            "liquefaction-induced settlement", "flooding"]
-        # Nothing was thrown away for being unfamiliar. (The field still
-        # earns the standing "answered with no citation" note, which is a
-        # different complaint about a different thing.)
+            "liquefaction-induced settlement", "flooding", "expansive soil"]
+        # Nothing was thrown away. (The field still earns the standing
+        # "answered with no citation" note, which is a different complaint
+        # about a different thing.)
         assert not any(u.get("value") for u in result.unresolved
                        if u["what"] == "earthHazardsExposed")
+
+    def test_a_hazard_outside_the_listed_phrases_is_refused(self, doc):
+        # The listed phrases and no others (owner's ruling of 2026-10-29,
+        # RI-182): the hazard summary is where any other one goes.
+        reading = full_reading(earthHazardsExposed=[
+            "flooding", "seismically-induced slumping"])
+        result = read(doc, FakeEngine([{"final": reading}]))
+
+        assert result.natural_hazards.earthHazardsExposed == ["flooding"]
+        assert any(u["what"] == "earthHazardsExposed" and
+                   u.get("value") == "seismically-induced slumping"
+                   for u in result.unresolved)
+
+    def test_a_phase_off_the_list_is_other_and_says_which(self, doc):
+        # Owner's ruling of 2026-10-29 (RI-182): the phase the report names,
+        # else "other", with the report's own word in projectPhaseOther.
+        result = read(doc, FakeEngine([{"final": full_reading(
+            projectPhase="concept design")}]))
+
+        assert result.general.projectPhase == "other"
+        assert result.general.projectPhaseOther == "concept design"
+
+    def test_a_phase_other_keeps_the_readings_own_description(self, doc):
+        result = read(doc, FakeEngine([{"final": full_reading(
+            projectPhase="final design",
+            projectPhaseOther="final design of the made-up annex")}]))
+
+        assert result.general.projectPhase == "other"
+        assert result.general.projectPhaseOther == \
+            "final design of the made-up annex"
 
     def test_a_not_stated_string_is_stored_as_null(self, doc):
         reading = full_reading(primeContractor="N/A", postName="not stated")
@@ -767,7 +799,10 @@ def test_the_field_lists_are_the_owners_two_schemas():
     assert GENERAL_FIELDS[0] == "documentType"
     assert "geotechnicalEngineerFirm" in GENERAL_FIELDS
     assert "boringDictionary" in GENERAL_FIELDS
-    assert len(GENERAL_FIELDS) == 25
+    # 26 since the owner's companion question of 2026-10-29 (RI-182).
+    assert len(GENERAL_FIELDS) == 26
+    assert GENERAL_FIELDS[GENERAL_FIELDS.index("projectPhase") + 1] == \
+        "projectPhaseOther"
     assert NATURAL_HAZARD_FIELDS[0] == "liquefactionPotential"
     assert "hazardAnalysisMention" in NATURAL_HAZARD_FIELDS
     assert len(NATURAL_HAZARD_FIELDS) == 12

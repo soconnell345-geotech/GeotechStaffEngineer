@@ -1058,7 +1058,8 @@ the four prose summaries, which are the one thing a merge cannot do.
 **The caller's own questions** ride along: pass `questions=[...]` and each is
 answered in the same call under the same rules, with an empty answer where the
 narrative does not say. They come back in `record.narrative.extra_answers` and
-in the summary page.
+in the summary page. The model-first narrative, the default since RI-186, is
+asked them too, in today's words after its instruction.
 
 ### The accuracy levers (5.24.0)
 
