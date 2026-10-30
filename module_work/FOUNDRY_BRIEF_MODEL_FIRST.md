@@ -74,9 +74,8 @@ Build f fixes what they found:
 
 ## 1. Before the wave
 
-- **Where the last session left off.** The AI FDE's handoff note is
-  `setup/HANDOFF_brief1023.md` in the Jupyter workspace repo (master
-  99ba2fb): where the branch, wheels and glue are, which datasets hold each
+- **Where the last session left off.** The AI FDE's own handoff note, in its
+  workspace repo, says where the branch, wheels and glue are, which datasets hold each
   wave's results, waves 1 and 2 done, wave 3 never started. The transforms
   work is on the branch named in that note,
   not merged: review it fully before any merge, and keep the crash dump
@@ -97,8 +96,7 @@ Build f fixes what they found:
     (D2). Haiku 5.5 is on Foundry as
     `ri.language-model-service..language-model.anthropic-claude-5-5-haiku`; add it to the
     transform as a model input beside Opus and Sonnet (the owner imported
-    it into the FDE's workspace on 2026-10-27, and the FDE's own probe,
-    `setup/probe_haiku_ratelimits.py`, had it answer one plain text call;
+    it into the FDE's workspace on 2026-10-27, and the FDE's own probe had it answer one plain text call;
     pictures and tools were not tried). Probe it on the Claude class the wave uses,
     which carries page pictures, not the text-only generic completion
     class. If Sonnet does not pass, stop and send the probe back: Sonnet
