@@ -78,7 +78,7 @@ __all__ = [
     "RETRIEVAL_PHRASES", "DEFAULT_CONFIDENCE", "UNVERIFIED_CONFIDENCE",
     "reading_pages", "explorations_found", "retrieval_passages",
     "picture_pages", "check_quotes", "DETERMINISTIC_FIELDS",
-    "settled_explorations", "TWIN_FIELDS",
+    "settled_explorations", "TWIN_FIELDS", "questions_block",
 ]
 
 #: The ceiling in the brief: eight model calls for one narrative. A narrative
@@ -1204,6 +1204,22 @@ def _retrieval_block(passages: Sequence[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def questions_block(questions: Optional[Sequence[str]]) -> str:
+    """The caller's own questions as the reader is asked them, answered in
+    ``extra_answers``; "" when there are none. Both narrative readers send
+    it, today's in its brief and the model-first one after its
+    instruction."""
+    asked = [" ".join(str(q).split()) for q in (questions or [])
+             if str(q).strip()]
+    if not asked:
+        return ""
+    return "\n".join(
+        ["THE CALLER'S OWN QUESTIONS. Answer each of these as well, in "
+         "extra_answers, under the same rules: only from the text, with a "
+         "citation, and an EMPTY answer where the narrative does not say."]
+        + [f"  {n}. {q}" for n, q in enumerate(asked, start=1)])
+
+
 def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
            counted: Dict[str, Any], outline_counts: Dict[str, int],
            headings: str, report_id: str, chunk: int, n_chunks: int,
@@ -1250,15 +1266,9 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
         block = narrative_block(bound)
         if block:
             parts += ["", block]
-    asked = [" ".join(str(q).split()) for q in (questions or [])
-             if str(q).strip()]
+    asked = questions_block(questions)
     if asked:
-        parts += ["",
-                  "THE CALLER'S OWN QUESTIONS. Answer each of these as well, "
-                  "in extra_answers, under the same rules: only from the "
-                  "text, with a citation, and an EMPTY answer where the "
-                  "narrative does not say."]
-        parts += [f"  {n}. {q}" for n, q in enumerate(asked, start=1)]
+        parts += ["", asked]
     retrieval = _retrieval_block(passages)
     if retrieval:
         parts += ["", retrieval]

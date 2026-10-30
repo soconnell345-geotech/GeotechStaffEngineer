@@ -952,10 +952,11 @@ class TestTheRunsSettings:
         with pytest.raises(ValueError, match="cannot send a PDF"):
             self._settings(None, page_route="pdf")
 
-    def test_the_callers_own_questions_are_said_not_asked(self):
+    def test_the_callers_own_questions_are_not_said_to_go_unasked(self):
+        # They are asked of the model-first narrative now.
         _made, _labelling, qa = self._settings(
             None, questions=["Made-up question?"])
-        assert "the caller's own questions were not asked" in qa[0].detail
+        assert "questions" not in qa[0].detail
 
 
 def test_an_appendix_file_and_the_item_ceiling_are_kept_as_today(
@@ -1194,6 +1195,45 @@ def test_the_narrative_honours_narrative_skips_bound(synthetic_pdf, tmp_path,
 def _said(call):
     """The text a model-first call's last block carries: its instruction."""
     return call["messages"][-1]["content"][-1]["text"]
+
+
+def test_the_callers_questions_are_answered_under_the_default(
+        synthetic_pdf, tmp_path, monkeypatch):
+    """With nothing set every stage is read model first (RI-186), and the
+    caller's own questions are asked of that narrative and answered in the
+    record as today's reader answers them (``narrative.extra_answers``),
+    the one the report does not answer kept with an empty answer."""
+    pytest.importorskip("report_ingest.locate")
+    from report_ingest.graph import MODEL_FIRST_ENV, ingest_report
+    from report_ingest.narrative_reader import ReadExtra
+
+    monkeypatch.delenv(MODEL_FIRST_ENV, raising=False)
+    main, describer, labeller, stages = _engines()
+    reading = stages["narrative"].turns[0]["final"]
+    stages["narrative"].turns[0] = {"final": reading.model_copy(update={
+        "extra_answers": [
+            ReadExtra(question="Made-up question about the drilling?",
+                      answer="Made-up answer: four holes.", page=4,
+                      quote="Four borings and three test pits"),
+            ReadExtra(question="Made-up question nobody answers?",
+                      answer="")]})}
+    asked = ["Made-up question about the drilling?",
+             "Made-up question nobody answers?"]
+    record = ingest_report(synthetic_pdf, main, out_dir=tmp_path / "out",
+                           report_id="SYN", describe_engine=describer,
+                           range_engine=labeller, stage_engines=stages,
+                           questions=asked)
+
+    said = _said(stages["narrative"].calls[0])
+    block = said.index("THE CALLER'S OWN QUESTIONS")
+    assert "1. Made-up question about the drilling?" in said[block:]
+    assert "2. Made-up question nobody answers?" in said[block:]
+    assert block < said.rindex("Return it with the answer tool.")
+    got = {row["question"]: row["answer"]
+           for row in record.narrative.extra_answers}
+    assert got == {"Made-up question about the drilling?":
+                   "Made-up answer: four holes.",
+                   "Made-up question nobody answers?": ""}
 
 
 def test_the_item_ceiling_counts_the_soundings_with_the_rest(monkeypatch):

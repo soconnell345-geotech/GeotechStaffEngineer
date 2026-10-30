@@ -1306,7 +1306,8 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             narrative_labels=told_labels)
         read = _read_model_first(
             doc, model_first, out, resume, report_id, told_labels, outline,
-            record, spend, qa, unresolved, workflow, mine, window, told)
+            record, spend, qa, unresolved, workflow, mine, window, told,
+            questions)
         # The soundings, and the items of a reader stage off (RI-186), as
         # today's path reads them.
         read += _read_items(doc, engine, budgets, out, resume, questions,
@@ -2950,9 +2951,6 @@ def _model_first_run(source: Any, engine: Any, tally: _Tally,
         kind="note", where="model_first",
         detail=(f"read model first ({MODEL_FIRST_ENV}={setting}): {read}; "
                 f"{labelled}"
-                + ("; the caller's own questions were not asked: the "
-                   "narrative's call carries its stage's instruction only"
-                   if questions and "narrative" in reading else "")
                 + (f"; each request was sized against a limit of {limit:,} "
                    f"input tokens before it was sent"
                    if limit and reading else "")),
@@ -3245,12 +3243,14 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
                       workflow: str,
                       units: Sequence[Tuple[_Unit, List[Any]]],
                       window: Optional[Sequence[int]] = None,
-                      told: Sequence[Dict[str, Any]] = ()) -> List[_Unit]:
+                      told: Sequence[Dict[str, Any]] = (),
+                      questions: Sequence[str] = ()) -> List[_Unit]:
     """The logs, laboratory sheets, printouts and narrative, model first:
     each of ``units`` (:func:`_model_first_plan`) read in its own calls and
     saved as ``items/mf-<key>.json``. The narrative is told the documents
     bound inside the report (``told``, :func:`_identify_bound`), as today's
-    narrative is, under either ``narrative_skips_bound``.
+    narrative is, under either ``narrative_skips_bound``, and asked the
+    caller's own ``questions``, as today's narrative is.
 
     A saved result is used again only while it is still current
     (:func:`_still_current`). A result no answer came back for (``error``
@@ -3302,7 +3302,8 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
         where = f"items.{unit.kind}.{key}"
         try:
             blob = cached or _read_unit(doc, model_first, stage, parts,
-                                        report_id, outline, body, told)
+                                        report_id, outline, body, told,
+                                        questions)
             spend.hand_in("items", blob, cached)
             # Each request found over the request limit (RI-121; none
             # without one), before anything else, so a cut is listed even
@@ -3500,9 +3501,11 @@ def _log_depths(inv: Any) -> List[float]:
 def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
                groups: Sequence[Any], report_id: str, outline: Any,
                body: Sequence[int],
-               told: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
+               told: Sequence[Dict[str, Any]] = (),
+               questions: Sequence[str] = ()) -> Dict[str, Any]:
     """One model-first result: a log (its parts), a laboratory window, a
-    printout or the narrative (its parts, told the bound documents)."""
+    printout or the narrative (its parts, told the bound documents and
+    asked the caller's questions)."""
     from report_ingest import model_first_read as readers
 
     engine = model_first.engines[stage]
@@ -3523,7 +3526,8 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
         return readers.read_calcs(doc, groups, engine, **common)[0]
     return readers.read_narrative(doc, groups, engine, outline=outline,
                                   body_pages=list(body) or None,
-                                  bound_documents=list(told), **common)
+                                  bound_documents=list(told),
+                                  questions=list(questions), **common)
 
 
 def _into_record(stage: str, blob: Dict[str, Any],

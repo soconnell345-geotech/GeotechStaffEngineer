@@ -302,7 +302,7 @@ class _Caller:
         self.report_id = str(report_id or "")
         #: Paragraphs the stage's instruction carries before its last
         #: sentence (the narrative's: the documents bound inside the report,
-        #: RI-188); "" for none.
+        #: RI-188, and the caller's own questions); "" for none.
         self.addendum = str(addendum or "").strip()
         self.route = resolve_route(
             route, bool(getattr(engine, "accepts_pdf", False)))
@@ -866,11 +866,13 @@ def _calc_on_report_pages(reading: Any, pages: Sequence[int]
 
 def _narrative_on_report_pages(reading: Any, pages: Sequence[int]
                                ) -> Tuple[Any, List[Dict[str, Any]], str]:
-    """A narrative answer with the pages its citations and unsettled rows
-    cite read against the pages of its own call (:func:`_on_call_pages`): a
-    copy, the entries and the warning."""
+    """A narrative answer with the pages its citations, unsettled rows and
+    answers to the caller's questions cite read against the pages of its
+    own call (:func:`_on_call_pages`): a copy, the entries and the
+    warning."""
     out = reading.model_copy(deep=True)
-    rows, said = _on_call_pages([*out.citations, *out.unsettled], pages)
+    rows, said = _on_call_pages(
+        [*out.citations, *out.unsettled, *out.extra_answers], pages)
     return out, rows, said
 
 
@@ -963,7 +965,8 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
                    body_pages: Optional[Sequence[int]] = None,
                    place: Optional[Place] = None,
                    max_request_tokens_in: Optional[int] = None,
-                   bound_documents: Optional[Sequence[Dict[str, Any]]] = None
+                   bound_documents: Optional[Sequence[Dict[str, Any]]] = None,
+                   questions: Optional[Sequence[str]] = None
                    ) -> Dict[str, Any]:
     """The narrative (``group_pages(...)["narrative"]``: its consecutive
     parts), one call per part: one result in
@@ -980,6 +983,9 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     call's instruction says which page ranges are another report's, so
     their borings are not this report's and each counts as a previous
     investigation (BACKLOG RI-188), whether or not their pages are sent.
+    ``questions`` are the caller's own, asked after them in today's words
+    (:func:`report_ingest.narrative_reader.questions_block`) and answered in
+    ``facts["extra_answers"]``, the shape today's reader returns them in.
 
     On the pictures route the call sends TEXT FIRST (RI-175): each page with
     a usable text layer as its text alone, the others as pictures, so a
@@ -997,13 +1003,15 @@ def read_narrative(doc: Any, groups: Sequence[PageGroup], engine: Any, *,
     from report_ingest.narrative_checks import shorten_summaries
 
     from report_ingest.bound import narrative_block
+    from report_ingest.narrative_reader import questions_block
 
     groups = [g for g in groups if g.pages]
     if not groups:
         raise ValueError("read_narrative needs at least one group of pages")
+    told = [narrative_block(bound_documents or ()), questions_block(questions)]
     caller = _Caller("narrative", doc, engine, report_id, route, pdf,
                      max_request_tokens_in,
-                     addendum=narrative_block(bound_documents or ()))
+                     addendum="\n\n".join(block for block in told if block))
     spent = _Spent()
     pages = sorted({int(p) for g in groups for p in g.pages})
     notes = [n for g in groups for n in g.notes]
