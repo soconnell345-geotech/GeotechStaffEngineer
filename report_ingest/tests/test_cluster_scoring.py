@@ -3704,8 +3704,10 @@ class TestMeasurementPlumbingRI69:
 
 def _range_blob(rid, n_pages, arm, rules, labels, dollars=0.0):
     """One report's saved range run for one arm, as the stage writes it,
-    made by the stage's default models from today's instructions."""
+    made by the stage's default models from today's instructions under
+    conventions A (:func:`_range_run` asks for A)."""
     from report_ingest.range_labels import (DESCRIBE_PROMPT_VERSION,
+                                            conventions_named,
                                             labeller_fingerprint)
 
     return {
@@ -3713,7 +3715,8 @@ def _range_blob(rid, n_pages, arm, rules, labels, dollars=0.0):
         "describe_model": "funhouse-gpt-low",
         "range_model": "funhouse-gpt-high",
         "describe_prompt": DESCRIBE_PROMPT_VERSION,
-        "labeller_prompt": labeller_fingerprint(arm == "hinted"),
+        "labeller_prompt": labeller_fingerprint(arm == "hinted",
+                                                *conventions_named("A")),
         "conventions": "made-up", "describer": {"model": "made-up-eyes"},
         "labeller": {"model": "made-up-reader"}, "served_by": [],
         "rules_labels": {str(k): v for k, v in rules.items()},
@@ -3753,7 +3756,7 @@ def _range_run(range_cluster, **over):
     reports_dir, out, oos = range_cluster
     kwargs = dict(reports_dir=reports_dir, out_dir=out, prompter=object(),
                   oos_labels=oos, sets=("oos_blind",),
-                  stages=("range_labels",))
+                  stages=("range_labels",), range_conventions="A")
     kwargs.update(over)
     return cs.score_on_cluster(**kwargs)
 
@@ -3786,6 +3789,18 @@ class TestTheRangeStage:
         assert cost["describe"]["calls"] == 200
         assert cost["label"]["calls"] == 4
         assert cost["label"]["dollars"] == pytest.approx(1.0)
+
+    def test_the_stage_labels_under_the_owners_conventions_by_default(
+            self, range_cluster, capsys):
+        # The saved runs are conventions A's; the graph labels under B
+        # (RI-104), so the stage measures B unless told A.
+        reports_dir, out, oos = range_cluster
+        results = cs.score_on_cluster(
+            reports_dir=reports_dir, out_dir=out, prompter=object(),
+            oos_labels=oos, sets=("oos_blind",), stages=("range_labels",))
+        printed = capsys.readouterr().out
+        assert "conventions B" in printed and "already done" not in printed
+        assert set(results["range_labels"]["failures"]) == {"R31", "R36"}
 
     def test_an_unknown_arm_is_refused(self, range_cluster):
         with pytest.raises(ValueError, match="range_arms"):
