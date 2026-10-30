@@ -104,12 +104,85 @@ def test_the_labeller_is_told_every_label_and_the_conventions():
 
 
 def test_the_labeller_is_not_offered_a_label_the_conventions_never_give():
-    assert "divider" in rl.LABELS_NOT_USED
+    assert "divider" in rl.LABELS_NOT_USED_A
     for hinted in (False, True):
-        system = rl.labeller_system(hinted=hinted)
+        system = rl.labeller_system(hinted, rl.LABEL_CONVENTIONS_A,
+                                    rl.LABELS_NOT_USED_A)
         assert "  divider: " not in system
         assert "divider label" in system          # convention 3 says why
     assert "  divider: " in rl.labeller_system(not_used=())
+
+
+# -- the owner's conventions (OWN-92, the 2026-10-29 ruling; RI-104) ----------
+
+def _rule(number):
+    """One numbered rule of the default conventions, in one line."""
+    text = " ".join(rl.LABEL_CONVENTIONS.split())
+    start = text.index(f" {number}. ")
+    end = text.find(f" {number + 1}. ", start)
+    return text[start:end if end > 0 else None]
+
+
+def test_the_default_conventions_are_the_owners_and_offer_every_label():
+    assert rl.LABELS_NOT_USED == ()
+    assert rl.conventions_named("B") == (rl.LABEL_CONVENTIONS,
+                                         rl.LABELS_NOT_USED)
+    assert rl.LABEL_CONVENTIONS != rl.LABEL_CONVENTIONS_A
+    for hinted in (False, True):
+        system = rl.labeller_system(hinted)
+        assert " ".join(rl.LABEL_CONVENTIONS.split()) in " ".join(
+            system.split())
+        for name in LABEL_DEFINITIONS:
+            assert f"  {name}: " in system
+
+
+def test_a_photo_log_is_a_section_of_its_own():
+    assert "photo log is a section of its own, labelled photos" in _rule(2)
+    assert "is that log: test_pit_log or boring_log" in _rule(1)
+
+
+def test_prose_inside_an_appendix_is_other():
+    assert "Prose inside an appendix is 'other', not 'narrative'" in _rule(4)
+
+
+def test_tab_and_divider_pages_are_divider():
+    assert "A tab or divider page that opens an appendix" in _rule(5)
+    assert "is divider" in _rule(5)
+
+
+def test_a_slip_sheet_in_a_laboratory_appendix_is_other():
+    rule = _rule(6)
+    assert "slip-sheet in a laboratory appendix" in rule
+    assert "is other" in rule
+
+
+def test_a_calculation_appendixs_sub_dividers_are_calculation():
+    rule = _rule(7)
+    assert rule.startswith(" 7. In a calculation appendix, the sub-divider")
+    assert "is calculation" in rule
+
+
+def test_foundation_sketches_in_a_test_pit_appendix_are_test_pit_log():
+    rule = _rule(3)
+    assert "In a test pit appendix" in rule
+    assert "a foundation sketch" in rule and "is test_pit_log" in rule
+    assert "even among photograph pages" in rule
+    assert "a page of photographs is photos" in rule
+
+
+def test_a_labelling_saved_under_conventions_a_is_not_this_ones():
+    for hinted in (False, True):
+        assert rl.labeller_fingerprint(hinted) != rl.labeller_fingerprint(
+            hinted, *rl.conventions_named("A"))
+    assert rl.conventions_version() != rl.conventions_version(
+        rl.LABEL_CONVENTIONS_A)
+
+
+def test_the_label_review_has_no_conventions_of_its_own_to_disagree():
+    from report_ingest.label_review import REVIEW_SYSTEM
+
+    assert "HOW THESE REPORTS ARE LABELLED" not in REVIEW_SYSTEM
+    assert "no divider label" not in REVIEW_SYSTEM
 
 
 def test_the_hint_note_does_not_say_the_rules_miss_photographs_and_plots():
@@ -839,25 +912,26 @@ def test_a_saved_description_with_no_kind_and_no_summary_is_asked_again(
     assert again.pages[1]["description"]["kind"] == "report text"
 
 
-# -- conventions B ---------------------------------------------------------------
+# -- conventions A and B -------------------------------------------------------
 
 def test_conventions_are_chosen_by_name_and_a_typo_is_refused():
-    assert rl.conventions_named("a") == (rl.LABEL_CONVENTIONS,
-                                         rl.LABELS_NOT_USED)
+    assert rl.conventions_named("a") == (rl.LABEL_CONVENTIONS_A,
+                                         rl.LABELS_NOT_USED_A)
     assert rl.conventions_named("B") == (rl.LABEL_CONVENTIONS_B,
                                          rl.LABELS_NOT_USED_B)
     with pytest.raises(ValueError, match="conventions must be one of"):
         rl.conventions_named("C")
 
 
-def test_conventions_b_offers_the_divider_and_has_its_own_fingerprint():
-    text, not_used = rl.conventions_named("B")
+def test_conventions_a_hides_the_divider_and_has_its_own_fingerprint():
+    text, not_used = rl.conventions_named("A")
     for hinted in (False, True):
         system = rl.labeller_system(hinted, text, not_used)
-        assert "  divider: " in system and text.strip() in system
+        assert "  divider: " not in system and text.strip() in system
         assert rl.labeller_fingerprint(hinted, text, not_used) != \
             rl.labeller_fingerprint(hinted)
-    assert "labelled photos" in text and "is divider" in text
+    b_text, _b = rl.conventions_named("B")
+    assert "labelled photos" in b_text and "is divider" in b_text
     assert rl.conventions_version(text) != rl.conventions_version()
 
 
@@ -880,7 +954,7 @@ def test_a_labelling_under_conventions_b_records_them():
 def test_a_label_the_conventions_do_not_offer_is_a_fault_and_a_note():
     answer = _answer([(0, 2, "divider")])
     claims, _e, problems, qa = rl.check_sections(
-        answer, [0, 1, 2], rl.LABELS_NOT_USED)
+        answer, [0, 1, 2], rl.LABELS_NOT_USED_A)
     assert any("divider" in p for p in problems)
     assert any("divider" in q["note"] for q in qa)
     assert {l for said in claims.values() for l, _r in said} == {"other"}

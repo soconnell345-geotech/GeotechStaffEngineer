@@ -3704,8 +3704,10 @@ class TestMeasurementPlumbingRI69:
 
 def _range_blob(rid, n_pages, arm, rules, labels, dollars=0.0):
     """One report's saved range run for one arm, as the stage writes it,
-    made by the stage's default models from today's instructions."""
+    made by the stage's default models from today's instructions under
+    the stage's default conventions (A)."""
     from report_ingest.range_labels import (DESCRIBE_PROMPT_VERSION,
+                                            conventions_named,
                                             labeller_fingerprint)
 
     return {
@@ -3713,7 +3715,8 @@ def _range_blob(rid, n_pages, arm, rules, labels, dollars=0.0):
         "describe_model": "funhouse-gpt-low",
         "range_model": "funhouse-gpt-high",
         "describe_prompt": DESCRIBE_PROMPT_VERSION,
-        "labeller_prompt": labeller_fingerprint(arm == "hinted"),
+        "labeller_prompt": labeller_fingerprint(arm == "hinted",
+                                                *conventions_named("A")),
         "conventions": "made-up", "describer": {"model": "made-up-eyes"},
         "labeller": {"model": "made-up-reader"}, "served_by": [],
         "rules_labels": {str(k): v for k, v in rules.items()},

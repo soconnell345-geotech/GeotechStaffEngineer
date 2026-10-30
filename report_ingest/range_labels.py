@@ -35,19 +35,21 @@ adds the rules' label on every line as a hint. Which is better is a
 measurement (the ``range_labels`` stage of :mod:`report_ingest.
 cluster_scoring`, scored by the reader each page is sent to).
 
-THE CONVENTIONS ARE ONE REPLACEABLE TEXT. :data:`LABEL_CONVENTIONS` is the
-recommended default of BACKLOG OWN-92, which asks the owner to settle them;
-until the owner answers, this is what the labeller is told, and a run records
-which text it was given (:func:`conventions_version`). A second text,
-:data:`LABEL_CONVENTIONS_B`, is what the hand labels mostly do; it is there
-to measure whether the labeller follows the conventions it is given, so that
-OWN-92 can be answered on numbers. :data:`CONVENTIONS` names both.
+THE CONVENTIONS ARE ONE REPLACEABLE TEXT. :data:`LABEL_CONVENTIONS` is what
+the labeller is told, and a run records which text it was given
+(:func:`conventions_version`). It is the owner's answer to BACKLOG OWN-92
+(2026-10-26: the hand labels' own conventions, called B while it was
+measured) with the owner's ruling of 2026-10-29 on test pit appendices
+(RI-168), written in by RI-104. The text OWN-92 recommended and the owner
+did not choose, :data:`LABEL_CONVENTIONS_A`, is kept to measure against.
+:data:`CONVENTIONS` names both, ``A`` and ``B``, as the saved runs do.
 
-BEHIND A SWITCH, OFF. In the graph the pass runs only when
+WHEN IT RUNS. Reading model first (the default since BACKLOG RI-186) the
+graph runs the pass as the page labeller; otherwise only when
 ``GEOTECH_INGEST_RANGE_LABELS`` (or ``ingest_report(range_labels=...)``)
-names an arm; then its label settles every page it labelled
-(:func:`report_ingest.label_vote.combine`). Off, no call is made and
-the vote is what it was.
+names an arm. Its label settles every page it labelled
+(:func:`report_ingest.label_vote.combine`). Off, no call is made and the
+vote is what it was.
 
 WHAT PYTHON REFUSES, rather than passes on: a label outside the vocabulary
 becomes ``other`` with a QA note; a page no section covers, or two sections
@@ -89,6 +91,7 @@ __all__ = [
     "conventions_version", "load_descriptions", "LABELS_NOT_USED",
     "labeller_fingerprint", "labeller_vocabulary", "LABEL_CONVENTIONS_B",
     "LABELS_NOT_USED_B", "CONVENTIONS", "conventions_named",
+    "LABEL_CONVENTIONS_A", "LABELS_NOT_USED_A",
 ]
 
 #: The labeller's two arms: the descriptions alone, or with the rules' label
@@ -122,13 +125,65 @@ DESCRIBE_PROMPT_VERSION = "ri73-3"
 
 
 # ---------------------------------------------------------------------------
-# the conventions (BACKLOG OWN-92's recommended default)
+# the conventions (the owner's answer to BACKLOG OWN-92, written in by RI-104)
 # ---------------------------------------------------------------------------
 
-#: How a page is labelled when its look and its section disagree. ONE
-#: replaceable text: the owner's answer to OWN-92 replaces it, and a run
-#: records which text it had (:func:`conventions_version`).
+#: How a page is labelled when its look and its section disagree: the
+#: owner's answer to OWN-92 (2026-10-26), the hand labels' own conventions,
+#: with the calculation appendix's sub-dividers as ``calculation`` (OWN-92
+#: (5)) and the owner's ruling of 2026-10-29 on foundation sketches in a
+#: test pit appendix (RI-168). ONE replaceable text, and a run records
+#: which text it had (:func:`conventions_version`), so a saved labelling
+#: made under any other wording is made again on resume.
 LABEL_CONVENTIONS = """\
+HOW THESE REPORTS ARE LABELLED. Label a page by the SECTION it belongs to,
+not by how the page looks on its own, except where these rules say
+otherwise. In particular:
+
+1. A photograph page, plot, chart, title page or certificate that sits
+   inside a section takes that section's label. A calculation's title or
+   header page, its plotted output, and the code or reference tables
+   printed with it are calculation. A laboratory report's cover page,
+   plots, certificates and test notes inside the laboratory results are
+   lab_test. A photograph page filed with one exploration's log, among its
+   log sheets, is that log: test_pit_log or boring_log.
+2. A photo log is a section of its own, labelled photos, wherever it sits:
+   a set of photograph pages the report files as one part -- site
+   photographs, test pit photographs, core box photographs -- often behind
+   its own divider or under a photo log heading.
+3. In a test pit appendix, or a photo log of test pits, a page that draws a
+   test pit -- a foundation sketch, or a section or sketch of the pit with
+   its layers -- is test_pit_log, even among photograph pages: test pit
+   logs often include a couple of pages of foundation sketches. In a photo
+   log, a page of photographs is photos whatever its captions say.
+4. Prose inside an appendix is 'other', not 'narrative': test procedures,
+   general notes, key and legend sheets, soil classification criteria and
+   an appendix's own contents page. 'narrative' is the report's own main
+   text, including the tables printed inside it.
+5. A tab or divider page that opens an appendix or a main part of the
+   report is divider, and so is a sheet that carries only the title of the
+   figures, or of the one figure or table, behind it.
+6. A sub-divider or slip-sheet inside an appendix -- a page that only names
+   the part, the test, the sample or the supplier whose pages follow, such
+   as a slip-sheet in a laboratory appendix -- is other, except in a
+   calculation appendix (rule 7).
+7. In a calculation appendix, the sub-divider page in front of each
+   calculation, the page that names it, is calculation: a title or input
+   printed there belongs to that calculation.
+8. Every page of a separate, complete report bound inside this one -- its
+   own cover, letter, contents, text, figures and appendices -- is
+   appended_report.
+"""
+
+#: The vocabulary's labels :data:`LABEL_CONVENTIONS` never gives: none, the
+#: divider included. Replaced together with :data:`LABEL_CONVENTIONS`.
+LABELS_NOT_USED: Tuple[str, ...] = ()
+
+
+#: The conventions OWN-92 recommended and the owner did not choose (A):
+#: every page takes its section's label, a divider too, and prose inside an
+#: appendix is ``other``. Kept to measure against; the graph never uses it.
+LABEL_CONVENTIONS_A = """\
 HOW THESE REPORTS ARE LABELLED. Label a page by the SECTION it belongs to,
 not by how the page looks on its own. In particular:
 
@@ -153,50 +208,18 @@ not by how the page looks on its own. In particular:
 """
 
 
-#: The vocabulary's labels the conventions above never give (a divider
-#: page takes its section's label), so the labeller is not offered them.
-#: Replaced together with :data:`LABEL_CONVENTIONS`.
-LABELS_NOT_USED: Tuple[str, ...] = ("divider",)
+#: The labels conventions A never gives (a divider page takes its section's
+#: label), so a labeller under A is not offered them.
+LABELS_NOT_USED_A: Tuple[str, ...] = ("divider",)
 
-
-#: The conventions the hand labels mostly follow: a run of photographs is
-#: its own section, a divider is a divider, and a sub-divider or slip-sheet
-#: inside an appendix is ``other``.
-LABEL_CONVENTIONS_B = """\
-HOW THESE REPORTS ARE LABELLED. Label a page by the SECTION it belongs to,
-not by how the page looks on its own, except where these rules say
-otherwise. In particular:
-
-1. A SINGLE photograph page, plot, chart, title page, cover sheet or
-   certificate that sits inside a section takes that section's label. A
-   calculation's title or header page, its plotted output, and the code or
-   reference tables printed with it are calculation. A laboratory report's
-   cover page, plots, certificates and test notes inside the laboratory
-   results are lab_test. One photograph page among test pit logs is
-   test_pit_log. But a RUN of two or more photograph pages -- a photo log,
-   core box photographs, a set of site or test pit photographs -- is a
-   section of its own, labelled photos, wherever it sits.
-2. Prose inside an appendix is 'other', not 'narrative': test procedures,
-   general notes, key and legend sheets, soil classification criteria and
-   an appendix's own contents page. 'narrative' is the report's own main
-   text, including the tables printed inside it.
-3. A tab or divider page that opens an appendix or a main part of the
-   report is divider.
-4. A sub-divider or slip-sheet inside an appendix -- a page that only names
-   the part, the test, the sample or the supplier whose pages follow -- is
-   other.
-5. Every page of a separate, complete report bound inside this one -- its
-   own cover, letter, contents, text, figures and appendices -- is
-   appended_report.
-"""
-
-#: Conventions B gives every label, the divider included.
-LABELS_NOT_USED_B: Tuple[str, ...] = ()
+#: Conventions B is the owner's, the one the labeller is told by default.
+LABEL_CONVENTIONS_B = LABEL_CONVENTIONS
+LABELS_NOT_USED_B: Tuple[str, ...] = LABELS_NOT_USED
 
 #: The conventions a run can be given, by name: the text and the labels it
 #: never gives.
 CONVENTIONS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
-    "A": (LABEL_CONVENTIONS, LABELS_NOT_USED),
+    "A": (LABEL_CONVENTIONS_A, LABELS_NOT_USED_A),
     "B": (LABEL_CONVENTIONS_B, LABELS_NOT_USED_B),
 }
 
