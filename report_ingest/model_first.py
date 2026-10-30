@@ -294,8 +294,10 @@ def probe_pdf_route(model: Any, *, words: Optional[Tuple[str, str]] = None
 #: companion question projectPhaseOther, this investigation's holes only,
 #: the listed hazard phrases only, the file's own figures and tables),
 #: today's rule for another client's report (RI-189), and one list item per
-#: foundation type and per bearing value (RI-181).
-READ_PROMPT_VERSION = "mf-4"
+#: foundation type and per bearing value (RI-181). mf-5 (build g): the
+#: narrative of a report with documents bound inside it is told their page
+#: ranges, as today's narrative is (RI-188); the instruction is mf-4's.
+READ_PROMPT_VERSION = "mf-5"
 
 
 def _described(cls: Any, name: str) -> Optional[str]:

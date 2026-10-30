@@ -58,6 +58,10 @@ MODEL_FIRST_ASKS = {
     # another client's report (RI-189), and one list item per foundation
     # type and per bearing value (RI-181).
     "mf-4": "f5c30a2096d7cde1837168e1d8195cebfc85a3ee1f9cc99cf1a2feea22511549",
+    # mf-5 (build g): the same instruction; a report's narrative is TOLD
+    # the documents bound inside it, after the instruction (RI-188), so a
+    # narrative saved under mf-4 is read again.
+    "mf-5": "f5c30a2096d7cde1837168e1d8195cebfc85a3ee1f9cc99cf1a2feea22511549",
 }
 
 TODAY = {"LogReading": log_reader.LogReading,

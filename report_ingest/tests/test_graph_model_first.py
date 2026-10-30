@@ -1181,6 +1181,19 @@ def test_the_narrative_honours_narrative_skips_bound(synthetic_pdf, tmp_path,
     child = json.loads((out / "bound" / "bound1" / "items"
                         / "mf-narrative.json").read_text("utf-8"))["pages"]
     assert {15, 16, 17, 18} <= set(child)
+    # Either way the report's narrative is TOLD the bound document's pages,
+    # before its instruction's last sentence, as today's is; the bound
+    # report's own narrative is told nothing of the kind.
+    parent, bound = [_said(call) for call in engines[3]["narrative"].calls]
+    told = parent.index("REPORTS BOUND INSIDE THIS ONE")
+    assert "pages 15-18: " in parent[told:]
+    assert told < parent.rindex("Return it with the answer tool.")
+    assert "REPORTS BOUND INSIDE THIS ONE" not in bound
+
+
+def _said(call):
+    """The text a model-first call's last block carries: its instruction."""
+    return call["messages"][-1]["content"][-1]["text"]
 
 
 def test_the_item_ceiling_counts_the_soundings_with_the_rest(monkeypatch):

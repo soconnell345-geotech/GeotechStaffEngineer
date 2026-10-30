@@ -1306,7 +1306,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
             narrative_labels=told_labels)
         read = _read_model_first(
             doc, model_first, out, resume, report_id, told_labels, outline,
-            record, spend, qa, unresolved, workflow, mine, window)
+            record, spend, qa, unresolved, workflow, mine, window, told)
         # The soundings, and the items of a reader stage off (RI-186), as
         # today's path reads them.
         read += _read_items(doc, engine, budgets, out, resume, questions,
@@ -3244,10 +3244,13 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
                       qa: List[QAEntry], unresolved: List[Dict[str, Any]],
                       workflow: str,
                       units: Sequence[Tuple[_Unit, List[Any]]],
-                      window: Optional[Sequence[int]] = None) -> List[_Unit]:
+                      window: Optional[Sequence[int]] = None,
+                      told: Sequence[Dict[str, Any]] = ()) -> List[_Unit]:
     """The logs, laboratory sheets, printouts and narrative, model first:
     each of ``units`` (:func:`_model_first_plan`) read in its own calls and
-    saved as ``items/mf-<key>.json``.
+    saved as ``items/mf-<key>.json``. The narrative is told the documents
+    bound inside the report (``told``, :func:`_identify_bound`), as today's
+    narrative is, under either ``narrative_skips_bound``.
 
     A saved result is used again only while it is still current
     (:func:`_still_current`). A result no answer came back for (``error``
@@ -3299,7 +3302,7 @@ def _read_model_first(doc: Any, model_first: _ModelFirst, out: str,
         where = f"items.{unit.kind}.{key}"
         try:
             blob = cached or _read_unit(doc, model_first, stage, parts,
-                                        report_id, outline, body)
+                                        report_id, outline, body, told)
             spend.hand_in("items", blob, cached)
             # Each request found over the request limit (RI-121; none
             # without one), before anything else, so a cut is listed even
@@ -3496,9 +3499,10 @@ def _log_depths(inv: Any) -> List[float]:
 
 def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
                groups: Sequence[Any], report_id: str, outline: Any,
-               body: Sequence[int]) -> Dict[str, Any]:
+               body: Sequence[int],
+               told: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
     """One model-first result: a log (its parts), a laboratory window, a
-    printout or the narrative (its parts)."""
+    printout or the narrative (its parts, told the bound documents)."""
     from report_ingest import model_first_read as readers
 
     engine = model_first.engines[stage]
@@ -3518,7 +3522,8 @@ def _read_unit(doc: Any, model_first: _ModelFirst, stage: str,
     if stage == "calc":
         return readers.read_calcs(doc, groups, engine, **common)[0]
     return readers.read_narrative(doc, groups, engine, outline=outline,
-                                  body_pages=list(body) or None, **common)
+                                  body_pages=list(body) or None,
+                                  bound_documents=list(told), **common)
 
 
 def _into_record(stage: str, blob: Dict[str, Any],
