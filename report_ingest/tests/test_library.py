@@ -415,8 +415,8 @@ class TestCompare:
                                                                 library):
         answer = library.compare("soilColour")
 
-        assert "not one of the 37" in answer["error"]
-        assert len(answer["fields"]) == 37
+        assert "not one of the 38" in answer["error"]
+        assert len(answer["fields"]) == 38
 
 
 class TestExplorations:

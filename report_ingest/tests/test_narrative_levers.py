@@ -198,6 +198,53 @@ class TestTheGlossaryReachesThePrompt:
         # The general null rule governs every field.
         assert conventions_for("projectName")
 
+    def test_the_owners_rulings_of_2026_10_29_are_rules_in_force(self):
+        # RI-182: each ruling is a CONFIRMED rule that cites it, on the
+        # fields it governs.
+        from report_ingest.narrative_glossary import CONVENTIONS
+
+        ruled = [row for row in CONVENTIONS
+                 if "of 2026-10-29 (BACKLOG RI-182, ruling" in row.why]
+        governed = {name for row in ruled for name in row.fields}
+        assert all(row.status == "CONFIRMED" for row in ruled)
+        for name in ("structureList", "projectPhase", "projectPhaseOther",
+                     "boringDictionary", "previousInvestigationCount",
+                     "earthHazardsExposed", "figureCount"):
+            assert name in governed
+
+    def test_the_list_grain_rule_governs_both_prose_lists(self):
+        # RI-181: one item per foundation type, one per bearing value.
+        from report_ingest.narrative_glossary import conventions_for
+
+        for name in ("recommendedFoundations", "bearingCapacity"):
+            assert any("one item per" in row.rule
+                       for row in conventions_for(name))
+
+    def test_the_hazard_list_is_offered_as_the_only_phrases(self):
+        from report_ingest.narrative_reader import _vocabulary_block
+
+        block = _vocabulary_block()
+        assert "examples, not a closed list" not in block
+        assert "no others" in block
+
+    def test_the_system_rules_say_what_the_rulings_say(self):
+        # Rule 3 names every closed list: ruling 4 closes the hazard
+        # phrases, and the phase list is closed onto "other". Ruling 6: the
+        # counts are what the file holds, not what its lists name.
+        from report_ingest.narrative_reader import NARRATIVE_SYSTEM
+
+        text = " ".join(NARRATIVE_SYSTEM.split())
+        assert "Two are CLOSED" not in text
+        assert ("Four are CLOSED: documentType, outsideProject, projectPhase "
+                "and the earth-hazard phrases." in text)
+        assert '"other", with the report\'s own phase in projectPhaseOther' \
+            in text
+        assert "own lists of tables and figures" not in text
+        assert ("tableCount and figureCount are the tables and figures THIS "
+                "FILE holds" in text)
+        assert "a contents page lists that is not in the file is not counted" \
+            in text
+
     def test_the_glossary_names_no_real_firm_or_site(self):
         from report_ingest import narrative_glossary
         from report_ingest.tests.test_log_templates import privacy_offences

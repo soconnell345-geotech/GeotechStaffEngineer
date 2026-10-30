@@ -111,6 +111,7 @@ from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 from report_ingest.bound import APPENDED_LABEL, compact_pages
 from report_ingest.calc_reader import split_calc_items
+from report_ingest.completeness import completeness_qa, page_texts
 from report_ingest.engine import (LARGE_REQUEST_FRACTION, TOKENS_IN_PARTS,
                                   CallCeilingReached, tokens_in)
 from report_ingest.lab_reader import split_lab_items
@@ -1329,6 +1330,7 @@ def _run(doc: Any, engine: Any, budgets: Budgets, out: str, resume: bool,
     # are drawn from the page descriptions, not cut by the headers (RI-144).
     qa.extend(missing_holes_qa(doc, items, record,
                                prefix=_log_prefix(model_first)))
+    qa.extend(completeness_qa(page_texts(doc), labels))     # RI-184
     _counts_from_logs(record, qa, counts_from_logs, every, read)
     record.project = _project_from(record)
 
