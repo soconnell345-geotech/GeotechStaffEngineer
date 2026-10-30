@@ -1,5 +1,10 @@
 # Foundry brief, model-first waves (RI-87), build f (2026-10-28)
 
+**Since build g (merge 45712b7, 2026-10-29) model first is the default for
+every stage;** today's readers are one setting away, stage by stage (for
+example `logs=off,lab=off`). The arms below still pass `model_first="off"` or
+`"on"` explicitly, so this brief reads the same.
+
 **Cost, in tokens first.** Build f's MF-1b (§0) is about 2.5 to 3.5 M
 tokens in (build e's MF-1 measured 4.7 M in and 0.65 M out for all twelve
 arms). MF-2 is about 30 to 52 M in and 5 to 10 M out (about $120 to $230 at

@@ -961,8 +961,11 @@ decides.
 
 ### 8.2 The flow
 
-The switch is **`GEOTECH_INGEST_MODEL_FIRST`**: `off` (the default; unset or
-`0`) is today's pipeline, byte-identical (§8.2.2); `on` (or `1`) makes the
+The switch is **`GEOTECH_INGEST_MODEL_FIRST`**: since build g (merge 45712b7,
+RI-186) model first is the DEFAULT for every stage (page labels and grouping,
+logs, lab, calc, narrative), unset means on, and it is set stage by stage
+(for example `logs=off,lab=off` sends those two stages back to today's
+readers). `off` (or `0`) for every stage is today's pipeline, byte-identical (§8.2.2); `on` (or `1`) makes the
 model's answer the record. `ingest_report(..., model_first=None)` follows the
 variable; a string names the setting directly. A second variable says how
 pages reach the model: **`GEOTECH_INGEST_MODEL_FIRST_PAGES`** = `auto` (the
