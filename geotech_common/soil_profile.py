@@ -26,7 +26,9 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Literal, Dict, Any
 
 from geotech_common.water import GAMMA_W, pore_pressure, effective_unit_weight
-from geotech_common.soil_properties import spt_to_phi, spt_to_cu
+from geotech_common.soil_properties import (
+    spt_overburden_correction, spt_to_cu, spt_to_phi,
+)
 from geotech_common.validation import (
     check_positive, check_non_negative, check_range, check_unit_weight,
 )
@@ -510,6 +512,19 @@ class SoilProfile:
             h_total = z_bot - z_top
             return (gamma_dry * h_above + gamma_wet * h_below) / h_total
 
+    def _n1_60_at_mid(self, layer: SoilLayer, N60: float):
+        """(N1,60, sigma'v in kPa) at the layer's mid-depth, C_N by
+        spt_overburden_correction's default (Liao & Whitman); (None, None)
+        when the effective stress there cannot be worked out (a unit
+        weight missing) or is not positive."""
+        try:
+            sv = self.effective_stress_at_depth(layer.mid_depth)
+        except ValueError:
+            return None, None
+        if sv <= 0:
+            return None, None
+        return spt_overburden_correction(N60, sv)["N1"], sv
+
     # ── Validation ────────────────────────────────────────────────────
 
     def validate(self) -> List[str]:
@@ -616,7 +631,7 @@ class SoilProfile:
 
             if layer.N_spt is not None and layer.cu is not None:
                 # Check N_spt vs cu consistency
-                expected_cu = 6.25 * layer.N_spt
+                expected_cu = spt_to_cu(layer.N_spt)
                 if layer.cu > 0 and abs(layer.cu - expected_cu) / layer.cu > 1.0:
                     warnings_list.append(
                         f"INFO: {prefix}: cu={layer.cu} kPa vs N_spt={layer.N_spt} "
@@ -625,11 +640,16 @@ class SoilProfile:
                     )
 
             if layer.N_spt is not None and layer.phi is not None:
-                expected_phi = spt_to_phi(layer.N_spt)
-                if abs(layer.phi - expected_phi) > 8:
+                # Peck et al. (1974) is drawn on N1,60, so the check needs
+                # the effective stress at mid-depth (skipped without it).
+                N60 = layer.N60 if layer.N60 is not None else layer.N_spt
+                N1_60, _ = self._n1_60_at_mid(layer, N60)
+                expected_phi = None if N1_60 is None else spt_to_phi(N1_60)
+                if expected_phi is not None and abs(layer.phi - expected_phi) > 8:
                     warnings_list.append(
                         f"INFO: {prefix}: phi={layer.phi}deg vs N_spt={layer.N_spt} "
-                        f"(Peck would give ~{expected_phi:.0f}deg) — verify"
+                        f"(Peck et al. 1974 would give ~{expected_phi:.0f}deg "
+                        f"at N1,60 = {N1_60:.0f}) — verify"
                     )
 
             # Void ratio
@@ -697,18 +717,6 @@ class SoilProfile:
                 layer.PI = layer.LL - layer.PL
                 layer.mark_estimated("PI", f"PI = LL - PL = {layer.LL} - {layer.PL}")
                 log.append(f"{prefix}: computed PI = {layer.PI:.0f}%")
-
-            # --- phi from N60 (granular soils) ---
-            if (layer.phi is None and layer.N60 is not None
-                    and not layer.is_rock
-                    and (layer.is_cohesive is False or layer.is_cohesive is None)):
-                # Only for granular soils or unknown soil type with no cu
-                if layer.cu is None:
-                    phi_est = spt_to_phi(layer.N60)
-                    layer.phi = phi_est
-                    corr = f"Peck (1974) from N60={layer.N60}"
-                    layer.mark_estimated("phi", corr)
-                    log.append(f"{prefix}: estimated phi={phi_est:.1f}deg ({corr})")
 
             # --- cu from N60 (cohesive soils) ---
             if (layer.cu is None and layer.N60 is not None
@@ -793,6 +801,31 @@ class SoilProfile:
                 layer.eps50 = eps50_est
                 layer.mark_estimated("eps50", f"Typical value for cu={layer.cu:.0f} kPa")
                 log.append(f"{prefix}: estimated eps50={eps50_est:.4f}")
+
+        # --- phi from N1,60 (granular soils, or unknown type with no cu),
+        # once every unit weight is in: Peck et al. (1974) is drawn on
+        # N1,60 (UFC 3-220-10 Fig 8-4), so N60 is corrected for the
+        # effective stress at mid-depth first (Liao & Whitman, the
+        # spt_overburden_correction default) ---
+        for i, layer in enumerate(self.layers):
+            if (layer.phi is not None or layer.N60 is None or layer.is_rock
+                    or layer.is_cohesive is True or layer.cu is not None):
+                continue
+            prefix = f"Layer {i} '{layer.description}'"
+            N1_60, sv = self._n1_60_at_mid(layer, layer.N60)
+            if N1_60 is None:
+                log.append(
+                    f"{prefix}: phi not estimated: N1,60 needs the effective "
+                    "stress at mid-depth, and a layer down to it has no unit "
+                    "weight")
+                continue
+            phi_est = spt_to_phi(N1_60)
+            layer.phi = phi_est
+            corr = (f"Peck et al. (1974) from N1,60 = {N1_60:.1f} (N60 = "
+                    f"{layer.N60:g}, C_N by Liao & Whitman at sigma'v = "
+                    f"{sv:.0f} kPa)")
+            layer.mark_estimated("phi", corr)
+            log.append(f"{prefix}: estimated phi={phi_est:.1f}deg ({corr})")
 
         return log
 

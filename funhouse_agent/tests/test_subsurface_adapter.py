@@ -558,3 +558,32 @@ class TestAttachmentKey:
             {"attachment_key": "site.xml"},
         )
         assert "error" in result
+
+
+# ============================================================================
+# spt_correction: the overburden correction offered and stated (GM-295)
+# ============================================================================
+
+class TestSptCorrectionChoices:
+    def _cn_choice(self, r):
+        return {c["what"]: c for c in r["choices"]}["overburden correction"]
+
+    def test_default_is_liao_whitman_and_says_so(self):
+        r = call_agent("subsurface", "spt_correction",
+                       {"N_field": 15, "sigma_vo_eff": 50.0})
+        assert r["CN"] == pytest.approx(2 ** 0.5, abs=1e-4)
+        c = self._cn_choice(r)
+        assert c["how"] == "default" and "Liao" in c["chosen"]
+        assert any("Peck" in a for a in c["alternatives"])
+        assert "AASHTO" in c["basis"]
+
+    def test_peck_as_nhi_eq_3_3(self):
+        # NHI-06-088 Eq 3-3: 0.77 log10(20/p_o), p_o in tsf
+        import math
+        r = call_agent("subsurface", "spt_correction",
+                       {"N_field": 15, "sigma_vo_eff": 50.0,
+                        "overburden_method": "peck"})
+        cn = 0.77 * math.log10(20 * 95.76052 / 50.0)
+        assert r["CN"] == pytest.approx(cn, abs=1e-4)
+        assert r["N1_60"] == pytest.approx(15 * cn, abs=1e-3)
+        assert self._cn_choice(r)["how"] == "given"
