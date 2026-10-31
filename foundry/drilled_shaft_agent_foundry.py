@@ -68,7 +68,7 @@ def _build_shaft(params: dict) -> DrillShaft:
         socket_length=params.get("socket_length", 0.0),
         bell_diameter=params.get("bell_diameter"),
         casing_depth=params.get("casing_depth", 0.0),
-        concrete_fc=params.get("concrete_fc", 28000.0),
+        concrete_fc=params.get("concrete_fc"),
     )
 
 
@@ -185,7 +185,7 @@ METHOD_INFO = {
             "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
             "bell_diameter": {"type": "float", "required": False, "description": "Bell diameter at base (m). Omit if no bell."},
             "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m). Excluded from side resistance."},
-            "concrete_fc": {"type": "float", "required": False, "default": 28000, "description": "Concrete f'c (kPa). Default 28 MPa."},
+            "concrete_fc": {"type": "float", "required": False, "description": "Concrete f'c (kPa); limits qu in the rock side resistance (GEC-10 p. 10-21). Omit: not checked."},
             "layers": {"type": "array", "required": True, "description": (
                 "Array of soil layers from top to bottom. Each layer: "
                 "thickness (m), soil_type ('cohesive', 'cohesionless', or 'rock'), "

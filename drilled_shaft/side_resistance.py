@@ -442,6 +442,43 @@ def side_resistance_cohesionless(sigma_v: float, beta: float,
     return fs * shaft_perimeter * segment_thickness
 
 
+#: GEC-10 (FHWA-NHI-18-024) Table 10-3 (p. 10-21), 'Side resistance
+#: reduction factor for caving rock': (RQD %, alpha_E with closed joints,
+#: alpha_E with open or gouge-filled joints), as printed.
+TABLE_10_3 = ((100.0, 1.00, 0.85), (70.0, 0.85, 0.55), (50.0, 0.60, 0.55),
+              (30.0, 0.50, 0.50), (20.0, 0.45, 0.45))
+
+#: The joint conditions of Table 10-3: closed joints, and open or
+#: gouge-filled joints.
+ROCK_JOINTS = ("closed", "open")
+
+#: The coefficient of GEC-10 Eq. 10-22, f_SN = 0.65 alpha_E pa sqrt(qu /
+#: pa) (O'Neill and Reese 1999; p. 10-21).
+CAVING_C = 0.65
+
+
+def alpha_E_table_10_3(RQD: float, joints: str = "closed") -> float:
+    """alpha_E of GEC-10 (2018) Table 10-3 (p. 10-21) at ``RQD`` (%), with
+    ``joints`` "closed" or "open" (open or gouge-filled), for Eq. 10-22.
+
+    GEC-10 prints the rows at RQD 100, 70, 50, 30 and 20 and says nothing
+    of the values between them: here linear between the printed rows, and
+    held at the RQD 20 row below it, where GEC-10 gives no value (the
+    result's choices say so).
+    """
+    if joints not in ROCK_JOINTS:
+        raise ValueError(
+            f"rock_joints must be one of {list(ROCK_JOINTS)}, got {joints!r}")
+    col = 1 if joints == "closed" else 2
+    if RQD >= TABLE_10_3[0][0]:
+        return TABLE_10_3[0][col]
+    for hi, lo in zip(TABLE_10_3, TABLE_10_3[1:]):
+        if RQD >= lo[0]:
+            return lo[col] + (hi[col] - lo[col]) * (RQD - lo[0]) / (
+                hi[0] - lo[0])
+    return TABLE_10_3[-1][col]
+
+
 def side_resistance_rock(qu: float, shaft_perimeter: float,
                          segment_thickness: float,
                          C: float = 1.0, alpha_E: float = 1.0) -> float:
@@ -470,7 +507,12 @@ def side_resistance_rock(qu: float, shaft_perimeter: float,
         verified by load tests or local experience (p. 10-22).
     alpha_E : float, optional
         Joint modification factor of GEC-10 Eq. 10-22 (Table 10-3, by RQD
-        and joint condition), with C = 0.65. Default 1.0.
+        and joint condition, :func:`alpha_E_table_10_3`), with C = 0.65.
+        Default 1.0.
+
+    ``qu`` is the value the side resistance takes: GEC-10 p. 10-21, 'the
+    value of qu used in Equation 10-21 should not exceed the compressive
+    strength of the drilled shaft concrete' (the analysis limits it).
 
     Returns
     -------

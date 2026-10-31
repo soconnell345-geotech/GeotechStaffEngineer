@@ -328,7 +328,7 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
         socket_length=params.get("socket_length", 0.0),
         bell_diameter=params.get("bell_diameter"),
         casing_depth=params.get("casing_depth", 0.0),
-        concrete_fc=params.get("concrete_fc", 28000.0),
+        concrete_fc=params.get("concrete_fc"),
     )
 
     layers = []

@@ -39,19 +39,23 @@ class DrillShaft:
         Depth of permanent casing (m). Excludes cased zone from
         side resistance. Default 0.
     concrete_fc : float, optional
-        Concrete compressive strength f'c (kPa). Default 28000 (28 MPa).
-        Carried for the caller's own structural checks; the GEC-10
-        capacity in this module does not use it (GM-160).
+        Concrete compressive strength f'c (kPa). Default None, not
+        given. The rock side resistance takes qu no higher than it: 'For
+        design, the value of qu used in Equation 10-21 should not exceed
+        the compressive strength of the drilled shaft concrete' (GEC-10
+        p. 10-21; GM-284). Not given, that limit is not checked, and the
+        result's choices say so. Not less than 1,000 kPa: the input is in
+        kPa (28 MPa = 28000).
     rebar_area : float, optional
-        Total longitudinal reinforcement area (m²). Default 0. Likewise
-        not used by the capacity.
+        Total longitudinal reinforcement area (m²). Default 0. Not used
+        by the capacity.
     fractured_rock_thickness : float, optional
         Thickness (m) of decomposed or fractured rock below the top of
         rock (the top of the profile's first rock layer) that is "not
         considered part of the socket for design purposes" (GEC-10 p.
         8-15): no rock side resistance over it, while the soil above
         keeps its own (``casing_depth`` takes both away). Default 0: all
-        rock below the top 1.5 m and the casing is socket (GM-220).
+        rock below the casing is socket (GM-220).
 
     Properties
     ----------
@@ -70,7 +74,7 @@ class DrillShaft:
     socket_length: float = 0.0
     bell_diameter: Optional[float] = None
     casing_depth: float = 0.0
-    concrete_fc: float = 28000.0
+    concrete_fc: Optional[float] = None
     rebar_area: float = 0.0
     fractured_rock_thickness: float = 0.0
 
@@ -86,6 +90,10 @@ class DrillShaft:
             raise ValueError(f"Socket length must be non-negative, got {self.socket_length}")
         if self.casing_depth < 0:
             raise ValueError(f"Casing depth must be non-negative, got {self.casing_depth}")
+        if self.concrete_fc is not None and not self.concrete_fc >= 1000:
+            raise ValueError(
+                f"concrete_fc is f'c in kPa (28 MPa = 28000), got "
+                f"{self.concrete_fc}: no concrete is that weak")
         if self.fractured_rock_thickness < 0:
             raise ValueError(
                 "fractured_rock_thickness must be non-negative, got "

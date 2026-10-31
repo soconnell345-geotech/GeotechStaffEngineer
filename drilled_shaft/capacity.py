@@ -33,6 +33,7 @@ from drilled_shaft.side_resistance import (
     alpha_cohesive_rational, su_to_ciuc,
     beta_gec10, phi_prime_from_N1_60, preconsolidation_stress_gec10,
     SIGMA_P_CORRELATIONS, DEPTH_BETA_FS_MAX,
+    alpha_E_table_10_3, CAVING_C, ROCK_JOINTS, TABLE_10_3,
 )
 from drilled_shaft.end_bearing import (
     CLAY_BASE_METHODS, LARGE_BASE_DIAMETER, LARGE_BASE_DIAMETER_SAND,
@@ -240,6 +241,56 @@ def _zone_steps(zone: dict) -> dict:
     return out
 
 
+def _n60_zone_steps(zone: dict) -> dict:
+    """The result's record of the mean N60 over 2B below the base in
+    cohesionless soil (GM-284): the mean, the tip layer's, the zone, each
+    layer's part of it with its N60 (None where it gives none) and, where
+    the profile ends inside the zone, its last depth."""
+    out = {"N60_mean": round(zone["N60"], 3),
+           "N60_tip": zone["N60_tip"],
+           "N60_zone_m": [round(zone["top_m"], 3), round(zone["bottom_m"], 3)],
+           "N60_layers": [
+               {"top_m": round(r["top_m"], 3),
+                "bottom_m": round(r["bottom_m"], 3),
+                "soil_type": r["soil_type"], "N60": r["N60"]}
+               for r in zone["rows"]]}
+    if zone["profile_bottom_m"] < zone["bottom_m"] - 1e-9:
+        out["N60_profile_ends_m"] = zone["profile_bottom_m"]
+    return out
+
+
+def _n60_zone_words(steps: dict) -> str:
+    """The N60 of the sand base in words (GM-284), from the base steps of
+    :func:`_n60_zone_steps`."""
+    z1, z2 = steps["N60_zone_m"]
+    rows = steps["N60_layers"]
+    used = [r for r in rows if r["N60"] is not None]
+    other = [r for r in rows if r["N60"] is None]
+    end = steps.get("N60_profile_ends_m", z2)
+    if not used:
+        words = (f"the tip layer's N60 {steps['N60_tip']:g}, as the profile "
+                 + (f"ends at {end:g} m" if not rows else
+                    f"gives no cohesionless N60 within 2B below the base "
+                    f"({z1:g}-{z2:g} m)"))
+    elif len(used) == 1 and used[0]["N60"] == steps["N60_tip"]:
+        words = (f"the mean over 2B = {z2 - z1:g} m below the base "
+                 f"({z1:g}-{z2:g} m), all at the tip layer's "
+                 f"{steps['N60_tip']:g}")
+    else:
+        words = (f"the mean over 2B = {z2 - z1:g} m below the base "
+                 f"({z1:g}-{z2:g} m), by thickness: " + "; ".join(
+                     f"{r['top_m']:g}-{r['bottom_m']:g} m N60 {r['N60']:g}"
+                     for r in used))
+    if other:
+        words += "; " + ", ".join(
+            f"{r['soil_type']} at {r['top_m']:g}-{r['bottom_m']:g} m"
+            for r in other) + " left out (no N60)"
+    if rows and end < z2 - 1e-9:
+        words += (f"; the profile ends at {end:g} m, {z2 - end:g} m short "
+                  "of 2B below the base: the mean is over the soil given")
+    return words
+
+
 def _su_zone_words(steps: dict, tip_words: str) -> str:
     """The su of the clay base in words (GM-252), from the base steps of
     :func:`_zone_steps`: the mean over 2B below the base, the layers it
@@ -354,6 +405,31 @@ CLAY_BASE_BASIS = (
     "UC or UU strength. A cohesionless or rock layer within 2B has no su "
     "and is left out of the mean; where the profile ends less than 2B "
     "below the base, the mean is over the soil the profile gives")
+
+#: GEC-10 (FHWA-NHI-18-024) pp. 10-14, 10-15 on base resistance in
+#: cohesionless soil, as printed (GM-284).
+SAND_BASE_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, pp. 10-14, 10-15: q_BN (tsf) = "
+    "0.60 N60 < 30 tsf (Eq. 10-14, Reese and O'Neill 1989, 'recommended "
+    "for routine design'), taken as 57.5 kPa a blow (0.60 tsf = 57.46 "
+    "kPa), 'N60 is the average "
+    "value between the base and two diameters beneath the base'; 'the "
+    "N-value to be used in Equation 10-14 is the field value, with no "
+    "correction for overburden stress, although it is recommended that "
+    "N-values correspond to 60 percent hammer efficiency' (so q_BN does "
+    "not depend on sigma'v); 'limited to cohesionless soils with SPT "
+    "N-values of 50 blows per foot or less. In cohesionless soils with "
+    "N-values exceeding 50, load testing is recommended; otherwise unit "
+    "base resistance is limited to the upper-bound value' of 30 tsf. It is "
+    "the base resistance 'at settlements equal to five percent of the base "
+    "diameter'; bearing capacity theory is an alternative GEC-10 does not "
+    "recommend for routine design. Resistance factor 0.50 (p. 10-15; Table "
+    "8-4, p. 8-14). N60 is taken as the mean, by thickness, of the "
+    "cohesionless layers' N60 between the base and 2B below it, B the "
+    "base's diameter, and limited to 50; a layer within 2B with no N60, "
+    "or of cohesive soil or rock, is left out of the mean; where the "
+    "profile ends less than 2B below the base, the mean is over what it "
+    "gives")
 
 #: The older base in clay, as FHWA NHI-06-089 prints it (GM-244).
 ONEILL_REESE_CLAY_BASE_BASIS = (
@@ -505,13 +581,10 @@ ROCK_SIDE_C_BASIS = (
     "caving is anticipated', Eq. 10-22 (O'Neill and Reese 1999): f_SN = "
     "0.65 alpha_E pa sqrt(qu / pa), alpha_E from Table 10-3 by RQD and "
     "joint condition (1.0 at RQD 100 with closed joints, down to 0.45 at "
-    "RQD 20; p. 10-21, not built here). For roughened sockets a mean C = "
-    "1.9 (Kulhawy and Prakoso 2007, p. 10-22); 'load tests or local "
-    "experience' should verify C greater than 1.0. 'For design, the value "
-    "of qu used in Equation 10-21 should not exceed the compressive "
-    "strength of the drilled shaft concrete' (p. 10-21): this tool takes "
-    "qu as given and does not check it. Whether a socket is "
-    "normal is the engineer's judgment. Resistance factor: Table 8-4 (p. "
+    "RQD 20; p. 10-21): rock_side_method 'caving'. For roughened sockets "
+    "a mean C = 1.9 (Kulhawy and Prakoso 2007, p. 10-22); 'load tests or "
+    "local experience' should verify C greater than 1.0. Whether a socket "
+    "is normal is the engineer's judgment. Resistance factor: Table 8-4 (p. "
     "8-14) prints 0.50 for side resistance in rock by Eq. 10-21 (0.40 in "
     "uplift), which lrfd_capacity takes")
 
@@ -519,20 +592,64 @@ ROCK_SIDE_C_BASIS = (
 _ROCK_SIDE_C_NAMED = {
     1.0: "Eq. 10-21, a 'normal' socket, recommended for routine design "
          "(pp. 10-20, 10-21)",
-    0.65: "Eq. 10-22, where caving or instability of the socket is "
-          "anticipated (O'Neill and Reese 1999), with alpha_E = 1.0, the "
-          "most Table 10-3 gives (RQD 100, closed joints); lower RQD or "
-          "open joints give a lower alpha_E (p. 10-21)",
+    0.65: "the value of Eq. 10-22 (O'Neill and Reese 1999, where caving or "
+          "instability of the socket is anticipated) with alpha_E = 1.0, "
+          "the most Table 10-3 gives (RQD 100, closed joints); "
+          "rock_side_method 'caving' takes alpha_E from Table 10-3 by each "
+          "rock layer's RQD (p. 10-21)",
     1.9: "roughened sockets, verified by load tests or local experience "
          "(p. 10-22)",
 }
+
+#: The rock side resistance methods: GEC-10 Eq. 10-21 for a 'normal'
+#: socket (the default) and Eq. 10-22 with Table 10-3 where caving is
+#: anticipated (GM-284).
+ROCK_SIDE_METHODS = ("normal", "caving")
+
+#: GEC-10 (FHWA-NHI-18-024) p. 10-21 on Eq. 10-22, as printed (GM-284).
+CAVING_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) p. 10-21: 'Rock mass that does not allow "
+    "excavation of an unsupported socket without caving is also outside "
+    "the \"normal\" category and may exhibit lower side resistance than "
+    "given by Equation 10-21 with C = 1.0'; 'For calculating side "
+    "resistance in cases where caving or instability of the socket "
+    "excavation is anticipated', Eq. 10-22 (O'Neill and Reese 1999): f_SN "
+    "/ pa = 0.65 alpha_E sqrt(qu / pa), 'where the coefficient alpha_E is "
+    "estimated from the RQD and condition of the discontinuity surfaces "
+    "of the rock mass', Table 10-3: closed joints 1.00, 0.85, 0.60, 0.50, "
+    "0.45 and open or gouge-filled joints 0.85, 0.55, 0.55, 0.50, 0.45 at "
+    "RQD 100, 70, 50, 30, 20 %. 'For highly fractured or weathered rock "
+    "that cannot be drilled without some type of artificial support, such "
+    "as casing or by the \"plug ahead\" method, or where caving is "
+    "anticipated, Equation 10-22 with the reduction factors given in "
+    "Table 10-3 based on RQD are recommended.' GEC-10 says nothing of "
+    "values between the printed rows: taken linear between them, and held "
+    "at the RQD 20 row below it. The joint condition is the engineer's, "
+    "from the cores (rock_joints). Resistance factor: Table 8-4 (p. 8-14) "
+    "prints 0.50 for side resistance in rock by Eq. 10-21 and no row for "
+    "Eq. 10-22; p. 10-21's text gives 0.55 for both; lrfd_capacity takes "
+    "the table's 0.50 for both")
+
+#: GEC-10 (FHWA-NHI-18-024) p. 10-21 on qu and the concrete strength, as
+#: printed (GM-284).
+CONCRETE_FC_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) p. 10-21: 'For design, the value of qu used "
+    "in Equation 10-21 should not exceed the compressive strength of the "
+    "drilled shaft concrete. If, however, load testing can be used to "
+    "demonstrate side resistances greater than would be calculated using "
+    "the concrete design strength, the load test-validated values should "
+    "be allowed'. Example 10-4 (pp. 10-27, 10-28) gives both: qu 360 ksf "
+    "and f'c 4,000 psi = 576 ksf. FHWA NHI-06-089 Eq. 9-47 (p. 9-140) "
+    "limits Eq. 10-22's form the same way, by 0.65 pa (f'c / pa)^0.5. "
+    "Taken in Eq. 10-22 as in Eq. 10-21")
 
 
 def rock_side_choice(C: float, values=None) -> dict:
     """The choice made for the rock side resistance coefficient C (GM-221):
     1.0, GEC-10 Eq. 10-21 for a normal socket, by default (GM-244); the
-    other values GEC-10 names are the alternatives. ``values``, where
-    given, maps a C to the run's values with it, in words."""
+    other values GEC-10 names are the alternatives.
+    ``values``, where given, maps a C to the run's values with it, in
+    words."""
     from geotech_common.choices import choice, how_given
     named = _ROCK_SIDE_C_NAMED.get(C)
     alternatives = [
@@ -541,7 +658,8 @@ def rock_side_choice(C: float, values=None) -> dict:
     return choice("rock side resistance coefficient C",
                   f"{float(C)!r}: {named}" if named else f"{C:g}",
                   how_given(C, ROCK_SIDE_C, name="rock_side_C"),
-                  basis=ROCK_SIDE_C_BASIS, alternatives=alternatives)
+                  basis=ROCK_SIDE_C_BASIS,
+                  alternatives=alternatives)
 
 
 def top_of_rock(soil: ShaftSoilProfile) -> Optional[float]:
@@ -697,7 +815,21 @@ class DrillShaftAnalysis:
         10-21). Default 1.0, recommended for a normal socket (pp. 10-20,
         10-21; GM-244); 0.65 is Eq. 10-22 with alpha_E = 1.0, where caving
         is anticipated (the default until GM-244). See
-        :data:`ROCK_SIDE_C_BASIS` (GM-221).
+        :data:`ROCK_SIDE_C_BASIS` (GM-221). For rock_side_method "normal".
+    rock_side_method : str, optional
+        "normal" (default): GEC-10 Eq. 10-21 with ``rock_side_C``, for a
+        'normal' socket. "caving": Eq. 10-22, f_s = 0.65 alpha_E pa
+        sqrt(qu / pa), alpha_E from Table 10-3 by each rock layer's RQD and
+        ``rock_joints``, 'where caving or instability of the socket
+        excavation is anticipated' (p. 10-21; :data:`CAVING_BASIS`,
+        GM-284).
+    rock_joints : str, optional
+        For rock_side_method "caving": the joint condition of Table 10-3,
+        "closed" (default) or "open" (open or gouge-filled joints).
+
+    The rock side resistance takes qu no higher than the shaft's
+    ``concrete_fc`` where it is given (GEC-10 p. 10-21,
+    :data:`CONCRETE_FC_BASIS`).
 
     Examples
     --------
@@ -725,6 +857,8 @@ class DrillShaftAnalysis:
     rock_base_method: str = "gec10"
     rock_base_conditions_met: Optional[bool] = None
     large_base_reduction: bool = False
+    rock_side_method: str = "normal"
+    rock_joints: str = "closed"
 
     def __post_init__(self):
         if self.shaft is None:
@@ -732,6 +866,29 @@ class DrillShaftAnalysis:
         if not self.rock_side_C > 0:
             raise ValueError(
                 f"rock_side_C must be positive, got {self.rock_side_C}")
+        if self.rock_side_method not in ROCK_SIDE_METHODS:
+            raise ValueError(
+                f"rock_side_method must be one of {list(ROCK_SIDE_METHODS)}, "
+                f"got {self.rock_side_method!r}")
+        if self.rock_joints not in ROCK_JOINTS:
+            raise ValueError(
+                f"rock_joints must be one of {list(ROCK_JOINTS)}, got "
+                f"{self.rock_joints!r}")
+        if self.rock_side_method == "caving" and \
+                self.rock_side_C != ROCK_SIDE_C:
+            raise ValueError(
+                f"rock_side_C = {self.rock_side_C:g} is the C of GEC-10 Eq. "
+                "10-21; rock_side_method 'caving' is Eq. 10-22, f_s = 0.65 "
+                "alpha_E pa sqrt(qu / pa) with alpha_E from Table 10-3 (p. "
+                "10-21), which takes no C. Leave rock_side_C out, or name "
+                "rock_side_method 'normal'")
+        if self.rock_side_method == "normal" and self.rock_joints != "closed":
+            raise ValueError(
+                f"rock_joints = {self.rock_joints!r} is the joint condition of "
+                "GEC-10 Table 10-3, which gives alpha_E in Eq. 10-22 "
+                "(rock_side_method 'caving', p. 10-21); rock_side_method "
+                "'normal' is Eq. 10-21, which takes no joint condition. Leave "
+                "rock_joints out, or name rock_side_method 'caving'")
         if not 0 < self.K_over_Ko <= 1:
             raise ValueError(
                 f"K_over_Ko must be more than 0 and at most 1, got "
@@ -1063,12 +1220,14 @@ class DrillShaftAnalysis:
                 Qs_sand += Qs_layer
 
             else:  # rock
-                perimeter = shaft.socket_perimeter
+                # Eq. 10-21 or 10-22, qu no higher than f'c (GM-284)
+                rock_steps = self._rock_side_steps(layer)
                 Qs_layer = side_resistance_rock(
-                    layer.qu, perimeter, effective_thickness,
-                    C=self.rock_side_C,
-                )
-                fs = self.rock_side_C * (layer.qu * PA) ** 0.5
+                    rock_steps["qu_used_kPa"], shaft.socket_perimeter,
+                    effective_thickness, C=rock_steps["C"],
+                    alpha_E=rock_steps["alpha_E"])
+                fs = rock_steps["C"] * rock_steps["alpha_E"] * (
+                    rock_steps["qu_used_kPa"] * PA) ** 0.5
                 Qs_rock += Qs_layer
                 method_used = "rock socket"
 
@@ -1089,6 +1248,8 @@ class DrillShaftAnalysis:
                 row["beta_steps"] = _rounded(steps)
             if layer.soil_type == "cohesive":
                 row["alpha_steps"] = _rounded(alpha_steps)
+            elif layer.soil_type == "rock":
+                row["rock_steps"] = _rounded(rock_steps)
             layer_results.append(row)
 
         # End bearing. Large-base reductions are governed by the bearing
@@ -1111,8 +1272,9 @@ class DrillShaftAnalysis:
                 shaft_length=L, method=self.clay_base_method,
                 large_base_reduction=self.large_base_reduction)
         elif tip_layer.soil_type == "cohesionless":
-            N60 = require_tip_N60(tip_layer, L)
-            u = unit_end_bearing_cohesionless(N60, base_D,
+            # N60 the mean over 2B below the base (p. 10-15, GM-284)
+            n_zone = self._n60_zone(tip_layer, base_D)
+            u = unit_end_bearing_cohesionless(n_zone["N60"], base_D,
                                               self.large_base_reduction)
         else:  # rock
             u = self._rock_base(tip_layer, L, base_D)
@@ -1122,6 +1284,8 @@ class DrillShaftAnalysis:
             base_steps.update(su_kPa=su_b, su_from=su_from)
             if zone is not None:
                 base_steps.update(_zone_steps(zone))
+        elif tip_layer.soil_type == "cohesionless":
+            base_steps.update(_n60_zone_steps(n_zone))
         Qt = u["qb"] * base_area
 
         Q_ultimate = total_Qs + Qt
@@ -1136,9 +1300,7 @@ class DrillShaftAnalysis:
                 + ([side_n60_choice(no_n60)] if no_n60 else [])
                 + ([fractured_rock_choice(shaft, self.soil)]
                    if in_rock or shaft.fractured_rock_thickness else [])
-                + ([rock_side_choice(
-                    self.rock_side_C,
-                    lambda c: self._alternative(rock_side_C=c, part="rock"))]
+                + (self._rock_side_choices(layer_results, Qs_rock, Q_ultimate)
                    if in_rock else [])
                 + self._base_choices(tip_layer, base_steps, Qt, Q_ultimate))
 
@@ -1258,6 +1420,136 @@ class DrillShaftAnalysis:
         return {**out, "equation": eq, **hoek_brown_base(
             tip_layer.qu, tip_layer.GSI, tip_layer.m_i,
             self.soil.effective_stress_at_depth(L))}
+
+    def _rock_side_steps(self, layer) -> dict:
+        """Each step of a rock layer's unit side resistance (GM-284): qu as
+        given and as used, no higher than the shaft's concrete_fc where it
+        is given (GEC-10 p. 10-21); the equation, C and alpha_E: Eq. 10-21
+        with rock_side_C and alpha_E 1, or Eq. 10-22 with 0.65 and alpha_E
+        from Table 10-3 at the layer's RQD and rock_joints."""
+        fc = self.shaft.concrete_fc
+        qu = layer.qu if fc is None else min(layer.qu, fc)
+        out = {"qu_kPa": layer.qu, "qu_used_kPa": qu,
+               "qu_limited": qu < layer.qu}
+        if self.rock_side_method == "caving":
+            out.update(equation="10-22", C=CAVING_C, RQD=layer.RQD,
+                       rock_joints=self.rock_joints,
+                       alpha_E=alpha_E_table_10_3(layer.RQD,
+                                                  self.rock_joints),
+                       below_table=layer.RQD < TABLE_10_3[-1][0])
+        else:
+            out.update(equation="10-21", C=self.rock_side_C, alpha_E=1.0)
+        return out
+
+    def _rock_side_choices(self, layer_results, Qs_rock: float,
+                           Q_ultimate: float) -> List[dict]:
+        """The choices made for side resistance in rock (GM-221, GM-284):
+        the method (Eq. 10-21 for a normal socket, or Eq. 10-22 where
+        caving is anticipated), then Eq. 10-21's C or Eq. 10-22's joint
+        condition, then qu against the concrete strength."""
+        from geotech_common.choices import choice, how_given
+        rows = [lb for lb in layer_results if "rock_steps" in lb]
+        here = f"Q_s in rock {Qs_rock:,.0f} kN, Q_ult {Q_ultimate:,.0f} kN"
+        out = []
+        how = how_given(self.rock_side_method, "normal",
+                        name="rock_side_method")
+        if self.rock_side_method == "normal":
+            out.append(choice(
+                "rock side resistance method",
+                "Eq. 10-21, f_s = C pa sqrt(qu / pa), for a 'normal' socket: "
+                + here, how,
+                basis=ROCK_SIDE_C_BASIS,
+                alternatives=[
+                    "rock_side_method 'caving', Eq. 10-22, f_s = 0.65 "
+                    "alpha_E pa sqrt(qu / pa), alpha_E from Table 10-3 by "
+                    "each rock layer's RQD, closed joints, where caving or "
+                    "instability of the socket is anticipated: "
+                    + self._alternative(rock_side_method="caving",
+                                        rock_side_C=ROCK_SIDE_C,
+                                        part="rock")]))
+            out.append(rock_side_choice(
+                self.rock_side_C,
+                lambda c: self._alternative(rock_side_C=c, part="rock")))
+        else:
+            spans = "; ".join(
+                f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g} m RQD "
+                f"{lb['rock_steps']['RQD']:g} %: alpha_E "
+                f"{lb['rock_steps']['alpha_E']:.3f}" for lb in rows)
+            basis = CAVING_BASIS
+            low = [lb for lb in rows if lb["rock_steps"]["below_table"]]
+            if low:
+                basis += (". RQD below 20 % (" + _spans(low) + ") is below "
+                          "Table 10-3: alpha_E is held at 0.45, the RQD 20 "
+                          "row; GEC-10 gives no value there, the engineer's "
+                          "judgment")
+            out.append(choice(
+                "rock side resistance method",
+                "Eq. 10-22, f_s = 0.65 alpha_E pa sqrt(qu / pa), where "
+                "caving or instability of the socket is anticipated, "
+                f"alpha_E from Table 10-3 with {self.rock_joints} joints"
+                + (f" ({spans})" if spans else "") + ": " + here, how,
+                basis=basis,
+                alternatives=[
+                    "rock_side_method 'normal', Eq. 10-21 with C = 1.0, a "
+                    "'normal' socket, recommended for routine design (pp. "
+                    "10-20, 10-21): "
+                    + self._alternative(rock_side_method="normal",
+                                        part="rock")]))
+            other = "open" if self.rock_joints == "closed" else "closed"
+            words = {"closed": "closed joints",
+                     "open": "open or gouge-filled joints"}
+            out.append(choice(
+                "joint condition in Table 10-3", words[self.rock_joints],
+                how_given(self.rock_joints, "closed", name="rock_joints"),
+                basis=("GEC-10 (FHWA-NHI-18-024) Table 10-3 (p. 10-21) "
+                       "gives alpha_E by RQD for closed joints and for open "
+                       "or gouge-filled joints; 'the coefficient alpha_E is "
+                       "estimated from the RQD and condition of the "
+                       "discontinuity surfaces of the rock mass'. Which "
+                       "applies is the engineer's, from the cores"),
+                alternatives=[
+                    f"rock_joints '{other}', {words[other]}: "
+                    + self._alternative(rock_joints=other, part="rock")]))
+        out.append(self._concrete_fc_choice(rows, here))
+        return out
+
+    def _concrete_fc_choice(self, rows, here: str) -> dict:
+        """The choice made for qu in the rock side resistance against the
+        concrete strength (GEC-10 p. 10-21, GM-284); ``rows`` the rock
+        layers' results."""
+        from geotech_common.choices import choice, how_given
+        fc = self.shaft.concrete_fc
+        how = how_given(fc, None, name="concrete_fc")
+        top = max((lb["rock_steps"]["qu_kPa"] for lb in rows), default=0.0)
+        if fc is None:
+            return choice(
+                "qu in the rock side resistance, against the concrete "
+                "strength", "not checked, as the call gives no concrete_fc: "
+                f"qu as given (up to {top:,.0f} kPa)", how,
+                basis=CONCRETE_FC_BASIS,
+                alternatives=["concrete_fc, the shaft concrete's f'c (kPa): "
+                              "qu no higher than it in the rock side "
+                              "resistance"])
+        limited = [lb for lb in rows if lb["rock_steps"]["qu_limited"]]
+        if limited:
+            chosen = (f"qu limited to f'c = {fc:,.0f} kPa in "
+                      + "; ".join(
+                          f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g} m "
+                          f"(qu {lb['rock_steps']['qu_kPa']:,.0f} kPa)"
+                          for lb in limited) + ": " + here)
+            alternatives = [
+                "qu as given, a load test showing the higher side "
+                "resistance (p. 10-21): "
+                + self._alternative(
+                    shaft=replace(self.shaft, concrete_fc=None),
+                    part="rock")]
+        else:
+            chosen = (f"no limit binds: f'c = {fc:,.0f} kPa is not below "
+                      f"the rock's qu (up to {top:,.0f} kPa)")
+            alternatives = []
+        return choice("qu in the rock side resistance, against the "
+                      "concrete strength", chosen, how,
+                      basis=CONCRETE_FC_BASIS, alternatives=alternatives)
 
     def _rock_conditions_choice(self, B: float, equation: str) -> dict:
         """The choice made for the conditions of Eq. 10-23 (GEC-10 p.
@@ -1723,6 +2015,37 @@ class DrillShaftAnalysis:
                 "profile_bottom_m": self.soil.total_thickness,
                 "rows": rows, "su_kPa": su, "su_tip_kPa": su_tip}
 
+    def _n60_zone(self, tip_layer, B: float) -> dict:
+        """N60 of Eq. 10-14 with the base in cohesionless soil (GM-284):
+        'the average value between the base and two diameters beneath the
+        base' (GEC-10 p. 10-15), the mean by thickness of the cohesionless
+        layers' N60 between the base and 2B below it. A layer there that
+        gives no N60, or is cohesive soil or rock, is left out; the
+        profile is not carried on below its last layer, so where it ends
+        less than 2B below the base the mean is over what it gives, and
+        where it gives nothing there N60 is the tip layer's. Eq. 10-14
+        limits the mean to 50 (:func:`unit_end_bearing_cohesionless`)."""
+        L = self.shaft.length
+        z2 = L + 2 * B
+        rows, top = [], 0.0
+        for layer in self.soil.layers:
+            bottom = top + layer.thickness
+            a, b = max(top, L), min(bottom, z2)
+            top = bottom
+            if b <= a + 1e-9:
+                continue
+            n = (layer.N60 if layer.soil_type == "cohesionless"
+                 and layer.N60 > 0 else None)
+            rows.append({"top_m": a, "bottom_m": b,
+                         "soil_type": layer.soil_type, "N60": n})
+        used = [r for r in rows if r["N60"] is not None]
+        t = sum(r["bottom_m"] - r["top_m"] for r in used)
+        N60 = (sum(r["N60"] * (r["bottom_m"] - r["top_m"]) for r in used)
+               / t if t > 0 else tip_layer.N60)
+        return {"top_m": L, "bottom_m": z2,
+                "profile_bottom_m": self.soil.total_thickness,
+                "rows": rows, "N60": N60, "N60_tip": tip_layer.N60}
+
     def _tip_su(self, tip_layer, layer_results):
         """su (kPa) of the layer the base is in and where it came from:
         under GEC-10's base and alpha with cu a UC or UU strength, its
@@ -2040,6 +2363,9 @@ class DrillShaftAnalysis:
                               basis=basis, alternatives=alternatives))
             if conditions:
                 out.append(conditions)
+        elif kind == "cohesionless":
+            out.append(self._sand_base_choice(base_steps, Qt, Q_ultimate,
+                                              here))
         limit = {"cohesive": LARGE_BASE_DIAMETER,
                  "cohesionless": LARGE_BASE_DIAMETER_SAND}.get(kind)
         if limit is not None and B > limit:
@@ -2068,6 +2394,35 @@ class DrillShaftAnalysis:
                               "base", chosen, how, basis=LARGE_BASE_BASIS,
                               alternatives=alternatives))
         return out
+
+    def _sand_base_choice(self, base_steps: dict, Qt: float,
+                          Q_ultimate: float, here: str) -> dict:
+        """The choice made for the base in cohesionless soil (GM-284): Eq.
+        10-14 on N60 the mean over 2B below the base (GEC-10 p. 10-15),
+        limited to 50; the tip layer's N60 alone the alternative where it
+        differs."""
+        from geotech_common.choices import MODULE, choice
+        mean, tip = base_steps["N60_mean"], base_steps["N60_tip"]
+        capped = mean > 50.0
+        chosen = (f"GEC-10 (2018) Eq. 10-14, q_BN = 57.5 N60 kPa (0.60 N60 "
+                  f"tsf), N60 = {mean:.1f} ({_n60_zone_words(base_steps)})"
+                  + (", limited to 50 (30 tsf)" if capped else "")
+                  + ": " + here)
+        basis = SAND_BASE_BASIS
+        if capped:
+            basis += (f". The mean N60 {mean:.1f} is above 50: GEC-10 "
+                      "recommends load testing, 'otherwise unit base "
+                      "resistance is limited to the upper-bound value' (p. "
+                      "10-15)")
+        alternatives = []
+        if abs(min(mean, 50.0) - min(tip, 50.0)) > 1e-6:
+            Qb = Qt * min(tip, 50.0) / min(mean, 50.0)
+            alternatives.append(
+                f"N60 = the tip layer's alone, {tip:g}, the layer the base "
+                f"is in: Q_b {Qb:,.0f} kN, Q_ult "
+                f"{Q_ultimate - Qt + Qb:,.0f} kN")
+        return choice("base resistance in cohesionless soil", chosen, MODULE,
+                      basis=basis, alternatives=alternatives)
 
     def capacity_vs_depth(self, depth_min: float = 3.0,
                           depth_max: float = None,

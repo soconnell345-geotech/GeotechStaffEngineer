@@ -100,19 +100,23 @@ def test_the_base_was_on_the_shaft_diameter_before():
     assert _run(socket_diameter=None).Q_tip == pytest.approx(before)
 
 
+_C = "rock side resistance coefficient C"
+
+
 def test_the_default_c_is_1_and_said():
     """C = 1.0 by default since GM-244 (pp. 10-20, 10-21); 0.65, Eq.
     10-22's, the default before, is a named option with its numbers."""
     r = _run()
     assert r.Q_side_rock / KIP == pytest.approx(5202.75, abs=1)
-    (c,) = [c for c in r.choices if c["what"].startswith("rock side")]
+    (c,) = [c for c in r.choices if c["what"] == _C]
     assert c["how"] == "default" and c["chosen"].startswith("1.0: Eq. 10-21")
     assert "recommended for design" in c["basis"]
-    (old,) = [a for a in c["alternatives"] if a.startswith("0.65: Eq. 10-22")]
+    (old,) = [a for a in c["alternatives"]
+              if a.startswith("0.65: the value of Eq. 10-22")]
     assert "Q_s in rock 15,043 kN" in old      # 0.65 x 5,202.7 kips
-    c0 = [c for c in _run(C=0.65).choices
-          if c["what"].startswith("rock side")][0]
-    assert c0["how"] == "given" and c0["chosen"].startswith("0.65: Eq. 10-22")
+    (c0,) = [c for c in _run(C=0.65).choices if c["what"] == _C]
+    assert c0["how"] == "given" and c0["chosen"].startswith(
+        "0.65: the value of Eq. 10-22")
     assert _run(C=0.65).Q_side_rock / KIP == pytest.approx(
         0.65 * 5202.75, abs=1)
 

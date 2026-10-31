@@ -90,14 +90,23 @@ def test_a_side_layer_with_no_n60_states_its_beta():
     assert [c for c in r.choices if c["what"] == what] == []
 
 
-def test_the_tools_refuse_the_concrete_strength_and_say_why():
-    """GM-160: concrete_fc changed nothing in the GEC-10 capacity."""
+def test_the_tools_take_the_concrete_strength_for_the_rock_side(
+        tmp_path, monkeypatch):
+    """GM-160 refused concrete_fc, which changed nothing; since GM-284 the
+    rock side resistance takes qu no higher than it (GEC-10 p. 10-21).
+    Made-up values: qu 40 MPa against f'c 30 MPa."""
+    import math
     from funhouse_agent import dispatch as D
-    call = {"diameter": 1.0, "shaft_length": 15.0, "concrete_fc": 35000,
-            "layers": [{"thickness": 30, "soil_type": "cohesive",
-                        "unit_weight": 18, "cu": 100}]}
+    monkeypatch.chdir(tmp_path)      # the package writes its files here
+    call = {"diameter": 1.0, "shaft_length": 8.0, "concrete_fc": 30000,
+            "layers": [{"thickness": 3, "soil_type": "cohesive",
+                        "unit_weight": 18, "cu": 100},
+                       {"thickness": 10, "soil_type": "rock",
+                        "unit_weight": 23, "qu": 40000}]}
     for method in ("drilled_shaft_capacity", "lrfd_capacity"):
         r = D.call_agent("drilled_shaft", method, dict(call))
-        assert "does not use the concrete strength" in r["error"], method
+        assert "error" not in r, r.get("error")
+        assert r["Q_side_rock_kN"] == pytest.approx(
+            math.sqrt(30000 * 101.325) * math.pi * 5.0, rel=1e-3), method
     r = D.call_agent("calc_package", "drilled_shaft_package", dict(call))
-    assert "does not use the concrete strength" in r["error"]
+    assert "error" not in r, r.get("error")
