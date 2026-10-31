@@ -113,6 +113,15 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         items.append(InputItem("D", "Pile diameter/width", f"{pile_diameter:.3f}", "m"))
     if pile_length is not None:
         items.append(InputItem("L", "Pile embedment length", f"{pile_length:.2f}", "m"))
+    # the group uplift block's (GM-289), given for a group in net tension
+    unit_weight = _get(analysis, 'unit_weight', None)
+    cap_weight = _get(analysis, 'cap_weight', None)
+    if unit_weight is not None:
+        items.append(InputItem("γ'", "Soil effective unit weight (uplift "
+                               "block)", f"{unit_weight:.2f}", "kN/m³"))
+    if cap_weight is not None:
+        items.append(InputItem("W_cap", "Pile cap effective weight (uplift "
+                               "block)", f"{cap_weight:,.1f}", "kN"))
 
     # Pile stiffness (from first pile or analysis-level)
     piles = _get_piles(analysis)
@@ -536,7 +545,174 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         title="Individual Pile Forces & Utilization", items=force_items,
     ))
 
+    # =================================================================
+    # Section 5: Group Uplift (GM-289; GEC-12 Sec. 7.2.3.2), a group in
+    # net tension only
+    # =================================================================
+    Vz = _get(load, 'Vz', 0.0) if load else 0.0
+    if Vz < 0:
+        sections.append(CalcSection(
+            title="Group Uplift",
+            items=_group_uplift_items(analysis, -Vz, n_piles)))
+
     return sections
+
+
+def _group_uplift_items(analysis, uplift: float, n_piles: int) -> list:
+    """The group uplift check as the run worked it (the group_uplift
+    tool's ``group_uplift_check``, in ``analysis['group_uplift']``), or
+    what it needs."""
+    u = _get(analysis, 'group_uplift', None)
+    if u is None:
+        missing = _get(analysis, 'group_uplift_missing', None) or []
+        return [
+            f"The group carries a net uplift of {uplift:,.1f} kN. GEC-12 "
+            "Sec. 7.2.3.2 (p. 291) limits a group's uplift resistance to "
+            "the lesser of the sum of the piles' tension resistances and "
+            "the group's as a block; the block is not checked here: it "
+            "needs " + ", ".join(missing) + "."]
+    items = []
+    sand = 'block_top_width_m' in u
+    B, Z = u['block_width_m'], u['block_length_m']
+    D = _get(analysis, 'pile_length', None)
+    pile_d = _get(analysis, 'pile_diameter', None)
+    items.append(CalcStep(
+        title="Block at the Pile Toes",
+        equation="B, Z = plan extent of the piles + b (to the outer faces "
+                 "of the outer piles)",
+        substitution=f"b = {pile_d:.3f} m, D = {D:.2f} m",
+        result_name="B × Z",
+        result_value=f"{B:.3f} × {Z:.3f}",
+        result_unit="m",
+        reference=("FHWA GEC-12 Figs. 7-33, 7-34; Vol. III pp. 52-53 "
+                   "('from exterior pile edge to exterior pile edge')"),
+    ))
+    cap = u['block_cap_weight_kN']
+    layers = u.get('block_layers')
+    if sand:
+        if layers:
+            sub = "\n".join(
+                f"{s['top_m']:.2f} to {s['bottom_m']:.2f} m: V = "
+                f"{s['volume_m3']:,.2f} m³ × γ' = "
+                f"{s['unit_weight_kN_m3']:.2f} kN/m³: {s['weight_kN']:,.1f}"
+                f" kN" for s in layers)
+            eq = ("V = Σ h/6 [Z_b·B_t + Z_t·B_b + 2(Z_t·B_t + Z_b·B_b)] by "
+                  "layer, sides at 1H:4V from the toes; W = Σ V·γ'")
+            ref = ("FHWA GEC-12 p. 291, Fig. 7-33; Vol. III Eq. D-1; UFC "
+                   "3-220-20 p. 436")
+        else:
+            gamma = _get(analysis, 'unit_weight', None)
+            sub = (f"V = {B:.3f}×{Z:.3f}×{D:.2f} + {D:.2f}²({B:.3f} + "
+                   f"{Z:.3f})/4 + {D:.2f}³/12 = {u['block_volume_m3']:,.2f} "
+                   f"m³; W = {u['block_volume_m3']:,.2f} × {gamma:.2f}")
+            eq = ("V = B·Z·D + D²(B + Z)/4 + D³/12 (sides at 1H:4V from "
+                  "the toes); W = V·γ'")
+            ref = ("FHWA GEC-12 p. 291, Fig. 7-33; UFC 3-220-20 Eq. 6-41 "
+                   "(its L the group length, Z the depth)")
+        items.append(CalcStep(
+            title="Weight of the Soil Block",
+            equation=eq, substitution=sub,
+            result_name="W_soil",
+            result_value=f"{u['block_soil_weight_kN']:,.1f}",
+            result_unit="kN", reference=ref,
+            notes=(f"Top of the block {u['block_top_width_m']:.3f} × "
+                   f"{u['block_top_length_m']:.3f} m. The piles are taken "
+                   "as soil (GEC-12 p. 291)."),
+        ))
+        items.append(CalcStep(
+            title="Nominal Uplift Resistance of the Block",
+            equation="R_ug = W_soil + W_cap",
+            substitution=f"R_ug = {u['block_soil_weight_kN']:,.1f} + "
+                         f"{cap:,.1f}",
+            result_name="R_ug",
+            result_value=f"{u['group_uplift_block_kN']:,.1f}",
+            result_unit="kN",
+            reference="FHWA GEC-12 p. 291, Fig. 7-33; UFC 3-220-20 p. 436",
+        ))
+    else:
+        su = _get(analysis, 'cu', None)
+        if layers:
+            sub = (f"W_g = {B:.3f} × {Z:.3f} × ("
+                   + " + ".join(f"{s['unit_weight_kN_m3']:.2f}×"
+                                f"{s['bottom_m'] - s['top_m']:.2f}"
+                                for s in layers)
+                   + f") + {cap:,.1f}")
+        else:
+            gamma = _get(analysis, 'unit_weight', None)
+            sub = (f"W_g = {B:.3f} × {Z:.3f} × {D:.2f} × {gamma:.2f} + "
+                   f"{cap:,.1f}")
+        items.append(CalcStep(
+            title="Effective Weight of the Pile/Soil Block",
+            equation="W_g = B·Z·Σγ'·h + W_cap",
+            substitution=sub,
+            result_name="W_g",
+            result_value=f"{u['block_soil_weight_kN'] + cap:,.1f}",
+            result_unit="kN",
+            reference="FHWA GEC-12 Eq. 7-41, Fig. 7-34; UFC 3-220-20 Eq. "
+                      "6-42",
+            notes="The piles are taken as soil (UFC 3-220-20 p. 435).",
+        ))
+        items.append(CalcStep(
+            title="Nominal Uplift Resistance of the Block",
+            equation="R_ug = 2D(B + Z)s_u + W_g",
+            substitution=(f"R_ug = 2×{D:.2f}×({B:.3f} + {Z:.3f})×{su:g} + "
+                          f"{u['block_soil_weight_kN'] + cap:,.1f}"),
+            result_name="R_ug",
+            result_value=f"{u['group_uplift_block_kN']:,.1f}",
+            result_unit="kN",
+            reference="FHWA GEC-12 Eq. 7-41 (p. 292); UFC 3-220-20 Eq. "
+                      "6-43",
+        ))
+    phi = u['group_uplift_phi']
+    if phi is None:
+        items.append(u.get('group_uplift_note', ''))
+        return items
+    items.append(CalcStep(
+        title="Factored Uplift Resistance of the Block",
+        equation="R_r = φ_ug·R_ug",
+        substitution=f"R_r = {phi:.2f} × {u['group_uplift_block_kN']:,.1f}",
+        result_name="R_r,block",
+        result_value=f"{u['group_uplift_block_factored_kN']:,.1f}",
+        result_unit="kN",
+        reference="FHWA GEC-12 Eq. 7-39, Table 7-1; UFC 3-220-20 Table 6-28",
+    ))
+    piles_sum = u['piles_tension_resistance_kN']
+    governing = u['group_uplift_resistance_kN']
+    if piles_sum is None:
+        items.append(u.get('group_uplift_note', ''))
+        return items
+    caps = {_get(p, 'axial_capacity_tension', None)
+            for p in _get_piles(analysis)}
+    items.append(CalcStep(
+        title="Sum of the Piles' Tension Resistances",
+        equation="R_r = Σ φ_up·R_s (each pile's tension capacity as given)",
+        substitution=(f"R_r = {n_piles} × {next(iter(caps)):,.1f}"
+                      if len(caps) == 1 else
+                      f"the sum over the {n_piles} piles"),
+        result_name="R_r,piles",
+        result_value=f"{piles_sum:,.1f}",
+        result_unit="kN",
+        reference="FHWA GEC-12 Eqs. 7-38, 7-40",
+    ))
+    items.append(CalcStep(
+        title="Group Uplift Resistance",
+        equation="R_r,group = min(R_r,piles, R_r,block)",
+        substitution=(f"min({piles_sum:,.1f}, "
+                      f"{u['group_uplift_block_factored_kN']:,.1f})"),
+        result_name="R_r,group",
+        result_value=f"{governing:,.1f}",
+        result_unit="kN",
+        reference="FHWA GEC-12 p. 291 (AASHTO 2014); UFC 3-220-20 Eq. 6-40",
+        notes=f"The {u['group_uplift_governs']} govern"
+              + ("s." if u['group_uplift_governs'] == "block" else "."),
+    ))
+    items.append(CheckItem(
+        description="Net uplift on the group ≤ group uplift resistance",
+        demand=uplift, demand_label="Uplift",
+        capacity=governing, capacity_label="R_r,group",
+        unit="kN", passes=uplift <= governing,
+    ))
+    return items
 
 
 def get_figures(result, analysis) -> List[FigureData]:

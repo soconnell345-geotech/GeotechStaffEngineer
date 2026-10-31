@@ -698,7 +698,12 @@ _PACKAGE_TOOLS = {
                            "group efficiency factor eta_g, as the "
                            "group_efficiency tool reads it (GEC-12 Sec. "
                            "7.2.2; UFC 3-220-20 Table 6-26). The plan view "
-                           "draws the piles to scale at it.",
+                           "draws the piles to scale at it. A group in net "
+                           "tension (Vz < 0) is checked as a block as well, "
+                           "as the group_uplift tool checks it, with "
+                           "pile_length, soil_type and unit_weight (or "
+                           "layers; cu in clay): the block at the toes to "
+                           "the outer faces of the outer piles.",
             "when_absent": {
                 "case": "no diameter",
                 "basis": "the plan view draws the piles as symbols, not "
@@ -710,7 +715,10 @@ _PACKAGE_TOOLS = {
                            "pile_diameter and the spacing: the stratum "
                            "giving most of the resistance, as the "
                            "group_efficiency tool takes it. Not given: no "
-                           "eta_g, and the package says what it needs.",
+                           "eta_g, and the package says what it needs. For "
+                           "a group in net tension, also the group uplift "
+                           "block's soil, as the group_uplift tool takes "
+                           "it.",
             "when_absent": {
                 "case": "no group efficiency",
                 "basis": "eta_g depends on the soil (GEC-12 Sec. 7.2.2; "
@@ -726,14 +734,20 @@ _PACKAGE_TOOLS = {
             "type": "float", "required": False,
             "description": "For eta_g with soil_type 'cohesive': the clay's "
                            "undrained shear strength (kPa), set against 2 "
-                           "ksf, as the group_efficiency tool takes it."},
+                           "ksf, as the group_efficiency tool takes it; for "
+                           "a group in net tension in clay, the weighted "
+                           "average along the group's perimeter over the "
+                           "embedded length, as the group_uplift tool takes "
+                           "it."},
                 "pile_type": {
             "type": "str", "required": False, "default": "driven",
             "allowed_values": ["driven", "drilled_shaft", "cfa", "ddp",
                                "micropile"],
             "description": "For eta_g: the column of UFC 3-220-20 Table "
                            "6-26, as the group_efficiency tool takes it "
-                           "(driven piles when not given).",
+                           "(driven piles when not given); for a group in "
+                           "net tension, the block's resistance factor "
+                           "phi_ug, as the group_uplift tool takes it.",
             "applies_when": {"soil_type": "set", "pile_diameter": "set"}},
                 "north_deg": {
             "type": "float", "required": False,
@@ -2161,6 +2175,56 @@ def _plan_points(value, name: str, least: int) -> list:
     return points
 
 
+def _package_group_uplift(run, used, result, analysis, extra, d) -> None:
+    """A group in net tension, checked as a block as well (GM-289; GEC-12
+    Sec. 7.2.3.2), as the group_uplift tool checks it, on the piles the
+    run took: the block at the toes to the outer faces of the outer piles
+    (their plan extent plus the diameter), the piles' sum from their
+    axial_capacity_tension (each pile's factored tension resistance, as
+    the utilization takes it). Without what it needs, the package says
+    what that is."""
+    from funhouse_agent.adapters.pile_group import (
+        UPLIFT_BLOCK_PARAMS, group_uplift_check, uplift_note)
+    Vz = used["load"].Vz
+    inputs = {k: run.own[k] for k in UPLIFT_BLOCK_PARAMS
+              if run.own.get(k) is not None}
+    analysis.update({k: inputs[k] for k in ("pile_length", "unit_weight",
+                                            "layers") if k in inputs})
+    missing = [name for name, ok in (
+        ("pile_diameter", d is not None),
+        ("pile_length", "pile_length" in inputs),
+        ("soil_type", "soil_type" in inputs),
+        ("unit_weight (or layers)",
+         "unit_weight" in inputs or "layers" in inputs)) if not ok]
+    if inputs.get("soil_type") == "cohesive" and "cu" not in inputs:
+        missing.append("cu")
+    if missing:
+        analysis["group_uplift_missing"] = missing
+        extra["group_uplift_note"] = (
+            uplift_note(Vz) + " The package checks it with pile_diameter, "
+            "pile_length, soil_type and unit_weight (or layers), cu in "
+            "clay; not given: " + ", ".join(missing) + ".")
+        return
+    # the cap weight in force, given or not, for the input summary
+    analysis["cap_weight"] = inputs.get("cap_weight") or 0.0
+    piles = used["piles"]
+    xs, ys = [p.x for p in piles], [p.y for p in piles]
+    caps = [p.axial_capacity_tension for p in piles]
+    out, choices = group_uplift_check(
+        max(xs) - min(xs) + d, max(ys) - min(ys) + d, len(piles), inputs,
+        piles_resistance=sum(caps) if all(caps) else None,
+        uplift_load=-Vz, method="pile_group_package")
+    analysis["group_uplift"] = out
+    extra.update({k: out[k] for k in (
+        "group_uplift_block_kN", "group_uplift_phi",
+        "group_uplift_block_factored_kN", "piles_tension_resistance_kN",
+        "group_uplift_resistance_kN", "group_uplift_governs",
+        "uplift_load_kN", "group_uplift_utilization", "group_uplift_note")
+        if k in out})
+    # the package's Method Choices section reads result.choices
+    result.choices = list(getattr(result, "choices", None) or []) + choices
+
+
 def _generate_pile_group_package(params: dict) -> dict:
     from funhouse_agent.adapters.pile_group import _run_group_efficiency
 
@@ -2208,6 +2272,14 @@ def _generate_pile_group_package(params: dict) -> dict:
                     f"eta_g takes one spacing; with spacing_x {sx:g} m and "
                     f"spacing_y {sy:g} m the smaller, {spacing:g} m, is "
                     f"used (the closer piles, the lower eta_g).")
+    if used["load"].Vz < 0:
+        _package_group_uplift(run, used, result, analysis, extra, d)
+    elif any(run.own.get(k) is not None for k in
+             ("pile_length", "unit_weight", "layers", "cap_weight")):
+        extra["group_uplift_note"] = (
+            "The group carries no net tension (Vz >= 0), so the group "
+            "uplift check does not apply and its inputs (pile_length, "
+            "unit_weight, layers, cap_weight) are not used.")
     return _build_response(
         "pile_group", result, analysis, params,
         run=run,
@@ -3275,7 +3347,7 @@ METHOD_INFO = {
     "pile_group_package": {
         "category": "Calculation Package",
         "brief": "Run rigid-cap pile group analysis (CPGA stiffness method) and generate calc package; with method_6dof, tables (CSV + printed) of the force and displacement at every pile head.",
-        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "The group efficiency factor eta_g (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26; with n_rows, n_cols, spacing, pile_diameter and soil_type), else null.", "group_efficiency_row": "The printed row eta_g was read from."},
+        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "The group efficiency factor eta_g (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26; with n_rows, n_cols, spacing, pile_diameter and soil_type), else null.", "group_efficiency_row": "The printed row eta_g was read from.", "group_uplift_resistance_kN": "Net tension only (Vz < 0): the group's factored uplift resistance, the lesser of the piles' sum and the block (GEC-12 Sec. 7.2.3.2), as the group_uplift tool returns it, with group_uplift_block_kN, group_uplift_phi, group_uplift_block_factored_kN, piles_tension_resistance_kN, group_uplift_governs, uplift_load_kN and group_uplift_utilization.", "group_uplift_note": "Net tension: what the check needs or could not do; report it."},
     },
     "sheet_pile_package": {
         "category": "Calculation Package",
@@ -3294,10 +3366,41 @@ METHOD_INFO = {
     },
 }
 
+def _group_uplift_own() -> dict:
+    """The pile group package's group uplift inputs (GM-289): the
+    group_uplift tool's own, one source, used when the group carries net
+    tension."""
+    import copy
+    from funhouse_agent.adapters.pile_group import METHOD_INFO as info
+    tool = info["group_uplift"]["parameters"]
+    own = {}
+    for name in ("pile_length", "unit_weight", "layers", "cap_weight"):
+        spec = copy.deepcopy(tool[name])
+        spec["required"] = False
+        spec["description"] = ("Required for the group uplift check of a "
+                               "group in net tension (Vz < 0; left out, the "
+                               "package says what it needs), as the "
+                               "group_uplift tool takes it: "
+                               + spec["description"])
+        own[name] = spec
+    own["cap_weight"]["applies_when"] = {"pile_length": "set"}
+    return own
+
+
+_PACKAGE_TOOLS["pile_group_package"]["own"].update(_group_uplift_own())
+
 # A package that runs an analysis tool takes the tool's parameters, aliases
 # and refusals, and its defaults apply when the tool's do (GM-141).
 for _package in _PACKAGE_TOOLS:
     METHOD_INFO[_package].update(_package_parameters(_package))
+# The tools' per-pile tension capacity, in the package also the piles' sum
+# of the group uplift check (GM-289).
+METHOD_INFO["pile_group_package"]["parameters"]["axial_capacity_tension"][
+    "description"] += (
+    " Each pile's factored tension resistance. For a group in net tension "
+    "(Vz < 0), also required for the piles' sum in the group uplift check, "
+    "as the group_uplift tool takes it; left out, the block alone, the "
+    "group's resistance no more than the block's.")
 
 # When each default applies (GM-119), as in the analysis tools: the slope
 # report's settings to its kind of search and its probabilistic annex.
