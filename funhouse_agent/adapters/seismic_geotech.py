@@ -3,7 +3,7 @@
 from funhouse_agent.adapters import (declare_applies_when,
                                      reject_unknown_params, require_params)
 from seismic_geotech.site_class import compute_vs30, compute_n_bar, compute_su_bar, classify_site, site_coefficients
-from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure, earth_pressure_choices, mo_no_solution, mo_no_solution_warning
+from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure, earth_pressure_choices, mo_no_solution, mo_no_solution_warning, passive_delta_choice, passive_delta_warning
 from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction, liquefaction_choices
 from seismic_geotech.residual_strength import post_liquefaction_strength
 from seismic_geotech.dynamic_properties import (
@@ -68,7 +68,7 @@ def _run_site_classification(params: dict) -> dict:
 
 
 _MO_VALID = ("phi", "delta", "kh", "kv", "beta", "i", "include_passive",
-             "gamma", "H", "KA")
+             "gamma", "H", "KA", "delta_passive")
 
 
 def run_seismic_earth_pressure(params: dict, *,
@@ -95,7 +95,14 @@ def run_seismic_earth_pressure(params: dict, *,
     # wall friction; GM-120)
     ka_given = params.get("KA") is not None
     KA = float(params["KA"]) if ka_given else rankine_Ka(phi)
-    KPE = (mononobe_okabe_KPE(phi, delta, kh, kv, beta, i)
+    # KPE's wall friction: as given, else phi / 2, the most NHI-06-089
+    # p. 10-17 suggests on the passive side (GM-293; it took the active
+    # delta, 2/3 phi by default)
+    delta_p = params.get("delta_passive")
+    delta_p_given = delta_p is not None
+    if not delta_p_given:
+        delta_p = phi / 2.0
+    KPE = (mononobe_okabe_KPE(phi, delta_p, kh, kv, beta, i)
            if include_passive else 0.0)
     gamma = params.get("gamma")
     H = params.get("H")
@@ -105,6 +112,17 @@ def run_seismic_earth_pressure(params: dict, *,
     forces = (seismic_earth_pressure(gamma, H, KAE, KA, kv=kv_force)
               if gamma is not None and H is not None else {})
     note = mo_no_solution_warning(phi, kh, kv, i)
+    notes = [note] if note else []
+    choices = earth_pressure_choices(
+        phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
+        i_deg=i, ka=KA if ka_given else "rankine",
+        ka_how=how_given(params.get("KA"), None, name="KA"),
+        forces=bool(forces), ka_can_be_given=True, beta_deg=beta)
+    if include_passive:
+        choices.append(passive_delta_choice(phi, delta_p, delta_p_given))
+        p_note = passive_delta_warning(phi, delta_p)
+        if p_note:
+            notes.append(p_note)
     result = SeismicEarthPressureResult(
         KAE=KAE, KPE=KPE,
         PAE_total=forces.get("PAE_total_kN_per_m", 0.0),
@@ -112,16 +130,15 @@ def run_seismic_earth_pressure(params: dict, *,
         delta_PAE=forces.get("delta_PAE_kN_per_m", 0.0),
         height_of_application=forces.get("height_of_application_m", 0.0),
         phi=phi, delta=delta, kh=kh, kv=kv,
-        choices=earth_pressure_choices(
-            phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
-            i_deg=i, ka=KA if ka_given else "rankine",
-            ka_how=how_given(params.get("KA"), None, name="KA"),
-            forces=bool(forces), ka_can_be_given=True, beta_deg=beta),
-        warnings=[note] if note else [],
+        choices=choices,
+        warnings=notes,
+        delta_passive=delta_p if include_passive else None,
     )
     used = {"phi": phi, "delta": delta, "kh": kh, "kv": kv, "beta": beta,
             "i": i, "include_passive": include_passive, "gamma": gamma,
             "H": H, "KA": KA, "KA_given": ka_given}
+    if include_passive:
+        used["delta_passive"] = delta_p
     return result, forces, used
 
 
@@ -130,6 +147,7 @@ def _run_seismic_earth_pressure(params: dict) -> dict:
     result = {"KAE": round(r.KAE, 4), "KA_static": round(used["KA"], 4)}
     if used["include_passive"]:
         result["KPE"] = round(r.KPE, 4)
+        result["delta_passive_deg"] = round(r.delta_passive, 1)
     result.update(forces)
     result.update({"phi_deg": r.phi, "delta_deg": round(r.delta, 1),
                    "kh": r.kh, "kv": r.kv})
@@ -176,11 +194,16 @@ def _run_liquefaction_evaluation(params: dict) -> dict:
 
 
 def _run_residual_strength(params: dict) -> dict:
-    _valid = ("N160cs", "sigma_v_eff", "method")
+    _valid = ("N160cs", "sigma_v_eff", "method", "void_redistribution")
     reject_unknown_params(params, _valid, method="residual_strength")
     require_params(params, ["N160cs"], method="residual_strength", valid=_valid)
-    Sr = post_liquefaction_strength(params["N160cs"], params.get("sigma_v_eff"), params.get("method", "seed_harder"))
-    result = {"Sr_kPa": round(Sr, 1), "N160cs": params["N160cs"], "method": params.get("method", "seed_harder")}
+    method = params.get("method", "seed_harder")
+    curve = params.get("void_redistribution", "significant")
+    Sr = post_liquefaction_strength(params["N160cs"], params.get("sigma_v_eff"),
+                                    method, void_redistribution=curve)
+    result = {"Sr_kPa": round(Sr, 1), "N160cs": params["N160cs"], "method": method}
+    if method == "idriss_boulanger":
+        result["void_redistribution"] = curve
     if params.get("sigma_v_eff") and params["sigma_v_eff"] > 0:
         result["Sr_ratio"] = round(Sr / params["sigma_v_eff"], 4)
     return result
@@ -225,13 +248,16 @@ def _run_gmax(params: dict) -> dict:
                        valid=_valid)
         r = gmax_cpt_sand_rix_stokoe(params["qc_MPa"], params["sigma_vo_eff"])
     elif corr == "cpt_clay":
-        require_params(params, ["qc_MPa"], method="gmax", valid=_valid)
-        r = gmax_cpt_clay_mayne_rix(params["qc_MPa"])
+        require_params(params, ["qc_MPa", "void_ratio"], method="gmax",
+                       valid=_valid)
+        r = gmax_cpt_clay_mayne_rix(params["qc_MPa"], params["void_ratio"])
     elif corr == "hardin_black":
         require_params(params, ["sigma_m_eff", "void_ratio"], method="gmax",
                        valid=_valid)
         r = gmax_hardin_black(params["sigma_m_eff"], params["void_ratio"],
-                              params.get("coefficient_B", 875.0))
+                              params.get("coefficient_B", 625.0),
+                              OCR=params.get("OCR", 1.0),
+                              PI_pct=params.get("PI"))
     elif corr == "andersen":
         require_params(params, ["PI", "OCR", "sigma_vo_eff"], method="gmax",
                        valid=_valid)
@@ -280,16 +306,16 @@ METHOD_INFO = {
         "parameters": {
             "correlation": {"type": "str", "required": True,
                             "allowed_values": ["vs", "cpt_sand", "cpt_clay", "hardin_black", "andersen"],
-                            "description": "vs: G=rho*Vs^2; cpt_sand: Rix & Stokoe (1991); cpt_clay: Mayne & Rix (1993); hardin_black: Hardin & Black (1968) from void ratio; andersen: Andersen (2015) clay from PI/OCR."},
+                            "description": "vs: G=rho*Vs^2 (GEC-5 Eq. 8.1); cpt_sand: Rix & Stokoe (1991), quartz sand, GEC-5 Table 8-7; cpt_clay: Mayne & Rix (1993), clay, Gmax = 49.4 qt^0.695 e^-1.130 (MPa), GEC-5 Table 8-7, needs void_ratio; hardin_black: Hardin (1978) for fine-grained soils, GEC-5 Eq. 8.14 (A F(e) OCR^k pa^0.5 sigma_m'^0.5, F(e) = 1/(0.3 + 0.7 e^2)); andersen: Andersen (2015) clay from PI/OCR (not in the print held)."},
             "Vs": {"type": "float", "required": False, "description": "Shear wave velocity (m/s) — for 'vs'."},
             "unit_weight": {"type": "float", "required": False, "description": "Bulk unit weight (kN/m3) — for 'vs'."},
-            "qc_MPa": {"type": "float", "required": False, "description": "CPT tip resistance (MPa) — for 'cpt_sand'/'cpt_clay'."},
+            "qc_MPa": {"type": "float", "required": False, "description": "CPT tip resistance (MPa): qc for 'cpt_sand', the corrected qt for 'cpt_clay'."},
             "sigma_vo_eff": {"type": "float", "required": False, "description": "Vertical effective stress (kPa) — for 'cpt_sand'/'andersen'."},
             "sigma_m_eff": {"type": "float", "required": False, "description": "Mean effective stress (kPa) — for 'hardin_black'."},
-            "void_ratio": {"type": "float", "required": False, "description": "Void ratio e0 — for 'hardin_black'."},
-            "coefficient_B": {"type": "float", "required": False, "default": 875.0, "description": "Hardin-Black calibration coefficient (default: PISA dense marine sand)."},
-            "PI": {"type": "float", "required": False, "description": "Plasticity index (%) — for 'andersen'."},
-            "OCR": {"type": "float", "required": False, "description": "Overconsolidation ratio — for 'andersen'."},
+            "void_ratio": {"type": "float", "required": False, "description": "Void ratio e0 — for 'hardin_black' and 'cpt_clay'."},
+            "coefficient_B": {"type": "float", "required": False, "default": 625.0, "description": "The coefficient A of Hardin (1978), GEC-5 Eq. 8.14: 625 for fine-grained soils, as GEC-5 p. 8-18 prints it."},
+            "PI": {"type": "float", "required": False, "description": "Plasticity index (%) — for 'andersen', and for 'hardin_black' when OCR is not 1 (the exponent k of OCR, GEC-5 Table 8-4)."},
+            "OCR": {"type": "float", "required": False, "description": "Overconsolidation ratio — for 'andersen' and 'hardin_black' (not given there: 1)."},
         },
         "returns": {"Gmax_kPa": "Small-strain shear modulus (kPa).", "Gmax_MPa": "Same in MPa."},
     },
@@ -305,21 +331,21 @@ METHOD_INFO = {
     },
     "site_classification": {
         "category": "Site Classification",
-        "brief": "ASCE 7 site classification and coefficients from Vs30, N-bar, or Su-bar.",
+        "brief": "AASHTO site classification and site factors from Vs30, N-bar, or su-bar (GEC-12 Vol I Tables 7-26 to 7-29, after AASHTO 2014).",
         "parameters": {
             "vs30": {"type": "float", "required": False, "description": "Time-averaged shear wave velocity (m/s)."},
             "layer_thicknesses": {"type": "array", "required": False, "description": "Layer thicknesses for Vs30/N-bar calc (m)."},
             "layer_vs": {"type": "array", "required": False, "description": "Layer shear wave velocities (m/s)."},
-            "layer_N": {"type": "array", "required": False, "description": "Layer SPT N values for N-bar calc (with layer_thicknesses)."},
-            "n_bar": {"type": "float", "required": False, "description": "Average SPT blow count (alternative to vs30)."},
+            "layer_N": {"type": "array", "required": False, "description": "Layer field SPT N values, uncorrected, for N-bar calc (with layer_thicknesses); above 100 blows/ft is taken as 100 (GEC-7 p. 93)."},
+            "n_bar": {"type": "float", "required": False, "description": "Average field SPT blow count (alternative to vs30)."},
             "su_layer_thicknesses": {"type": "array", "required": False, "description": "Cohesive layer thicknesses for su-bar calc (m)."},
             "layer_su": {"type": "array", "required": False, "description": "Layer undrained strengths (kPa) for su-bar calc."},
             "su_bar": {"type": "float", "required": False, "description": "Average undrained strength (kPa) (alternative to vs30)."},
             "Ss": {"type": "float", "required": False, "description": "Short-period spectral acceleration. If provided with S1, computes Fa/Fv."},
             "S1": {"type": "float", "required": False, "description": "1-second spectral acceleration."},
-            "pga": {"type": "float", "required": False, "description": "Mapped peak ground acceleration (g). If provided with Ss/S1, also returns Fpga and the site-adjusted PGA."},
+            "pga": {"type": "float", "required": False, "description": "Mapped peak ground acceleration (g). If provided with Ss/S1, also returns Fpga (read against PGA, GEC-12 Table 7-27) and As = Fpga PGA (GEC-12 Eq. 7-78)."},
         },
-        "returns": {"site_class": "ASCE 7 site class (A-F).", "Fa": "Short-period coefficient.", "Fv": "Long-period coefficient."},
+        "returns": {"site_class": "AASHTO site class A-E (Table 7-26: 1524 / 762 / 365.76 / 182.88 m/s, N-bar 50 / 15, su-bar 95.76 / 47.88 kPa, the printed ft/s and ksf converted exactly; Site Class F and the soft-clay rule for E are not checked).", "Fa": "Short-period coefficient.", "Fv": "Long-period coefficient.", "Fpga": "Zero-period coefficient; null without pga.", "As_g": "Fpga PGA, with pga."},
     },
     "seismic_earth_pressure": {
         "category": "Seismic Earth Pressure",
@@ -329,14 +355,15 @@ METHOD_INFO = {
             "kh": {"type": "float", "required": True, "description": "Horizontal seismic coefficient."},
             "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient (positive upward). Enters KAE through the seismic angle psi = atan(kh/(1-kv)) (UFC 3-220-20 Eq. 4-15) and, with gamma and H, the thrust PAE = (gamma H^2/2)(1-kv) KAE (Eq. 4-16)."},
             "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg). Defaults to 2/3 phi."},
-            "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees)."},
-            "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
-            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Also return KPE (passive seismic coefficient)."},
+            "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees), positive when the back face leans toward the backfill (lowers KAE). UFC 3-220-20 Eq. 4-15 and Fig. 4-8 measure their theta the other way: theta = -beta."},
+            "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees); UFC 3-220-20 Eq. 4-15's beta."},
+            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Also return KPE (passive seismic coefficient, GEC-4 Eq. 44)."},
+            "delta_passive": {"type": "float", "required": False, "description": "Wall friction angle behind KPE (deg). Not given: phi/2, the most NHI-06-089 p. 10-17 suggests on the passive side; above 0.4 phi the result warns (UFC 3-220-20 Fig. 4-8: a planar passive wedge is unconservative there)."},
             "gamma": {"type": "float", "required": False, "description": "Soil unit weight (kN/m3) for force calculation."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) for force calculation."},
             "KA": {"type": "float", "required": False, "description": "Static active coefficient behind PA and delta-PAE. Not given: Rankine Ka from phi (vertical wall, level backfill, no wall friction)."},
         },
-        "returns": {"KAE": "Active seismic coefficient.", "KA_static": "Static active coefficient.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
+        "returns": {"KAE": "Active seismic coefficient.", "KA_static": "Static active coefficient.", "KPE": "Passive seismic coefficient, with include_passive.", "delta_passive_deg": "The wall friction behind KPE.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "liquefaction_evaluation": {
         "category": "Liquefaction",
@@ -356,11 +383,12 @@ METHOD_INFO = {
         "category": "Liquefaction",
         "brief": "Post-liquefaction residual strength from corrected SPT.",
         "parameters": {
-            "N160cs": {"type": "float", "required": True, "description": "Clean-sand equivalent SPT blow count."},
-            "sigma_v_eff": {"type": "float", "required": False, "description": "Effective overburden stress (kPa)."},
-            "method": {"type": "str", "required": False, "default": "seed_harder", "allowed_values": ["seed_harder", "olson_stark"], "description": "Residual strength correlation."},
+            "N160cs": {"type": "float", "required": True, "description": "Clean-sand equivalent SPT blow count. For idriss_boulanger, (N1)60-e = (N1)60 + Ncorr (GEC-12 Vol I Eq. 7-80), Ncorr by percent passing the No. 200 sieve (Table 7-31): 0-9 %: 0; 10-24: 1; 25-49: 2; 50-74: 4; > 75: 5."},
+            "sigma_v_eff": {"type": "float", "required": False, "description": "Effective overburden stress (kPa); needed for idriss_boulanger."},
+            "method": {"type": "str", "required": False, "default": "seed_harder", "allowed_values": ["seed_harder", "idriss_boulanger"], "description": "Residual strength correlation: seed_harder, Seed & Harder (1990) lower bound (not in the print held); idriss_boulanger, Idriss & Boulanger (2007) as GEC-12 Vol I Fig. 7-78 (p. 383) prints it, read off the chart, which stops at s_r/sigma'_vo = 0.4."},
+            "void_redistribution": {"type": "str", "required": False, "default": "significant", "allowed_values": ["significant", "negligible"], "description": "For idriss_boulanger: which recommended curve of Fig. 7-78, for void redistribution effects that could be significant (the lower curve) or are expected to be negligible."},
         },
-        "returns": {"Sr_kPa": "Residual strength (kPa)."},
+        "returns": {"Sr_kPa": "Residual strength (kPa).", "Sr_ratio": "Sr / sigma_v_eff, with sigma_v_eff."},
     },
     "csr_crr_check": {
         "category": "Liquefaction",
@@ -380,7 +408,11 @@ METHOD_INFO = {
 
 # When each default applies (GM-119): B to Hardin & Black only.
 declare_applies_when(METHOD_INFO, {
-    "gmax": {"coefficient_B": {"correlation": ["hardin_black"]}}})
+    "gmax": {"coefficient_B": {"correlation": ["hardin_black"]},
+             "OCR": {"correlation": ["hardin_black", "andersen"]}},
+    "residual_strength": {
+        "void_redistribution": {"method": ["idriss_boulanger"]}},
+    "seismic_earth_pressure": {"delta_passive": {"include_passive": "set"}}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):
@@ -391,9 +423,16 @@ declare_when_absent(METHOD_INFO, {
     "site_classification": {
         "pga": ("no site-adjusted PGA",
                 "Fpga and the site-adjusted PGA need the mapped PGA")},
+    "gmax": {
+        "OCR": ("OCR = 1", "normally consolidated: Hardin (1978)'s OCR^k "
+                "is 1 (GEC-5 Eq. 8.14)")},
     "seismic_earth_pressure": {
         "delta": ("2/3 of phi", "wall friction delta = (2/3) phi; give "
                   "delta for the wall's interface"),
+        "delta_passive": ("phi / 2", "the most NHI-06-089 p. 10-17 "
+                          "suggests on the passive side; above 0.4 phi UFC "
+                          "3-220-20 Fig. 4-8 finds a planar passive wedge "
+                          "unconservative"),
         "KA": ("Rankine Ka from phi",
                "a vertical wall, level backfill and no wall friction; give "
                "KA for another case")},

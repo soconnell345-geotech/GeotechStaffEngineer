@@ -42,10 +42,13 @@ class TestGmaxCpt:
         assert r["Gmax_kPa"] == pytest.approx(91886.57, rel=1e-4)
 
     def test_mayne_rix_pins(self):
-        assert gmax_cpt_clay_mayne_rix(1.0)["Gmax_kPa"] == \
-            pytest.approx(28121.91, rel=1e-4)
-        assert gmax_cpt_clay_mayne_rix(5.0)["Gmax_kPa"] == \
-            pytest.approx(241084.76, rel=1e-4)
+        # GM-293: GEC-5 Table 8-7, Gmax = 49.4 qt^0.695 e^-1.130 (MPa):
+        # qt=1, e=1 -> 49.4 MPa; qt=5, e=1.2 -> 49.4*5^0.695*1.2^-1.13
+        assert gmax_cpt_clay_mayne_rix(1.0, 1.0)["Gmax_kPa"] == \
+            pytest.approx(49400.0, rel=1e-9)
+        assert gmax_cpt_clay_mayne_rix(5.0, 1.2)["Gmax_kPa"] == \
+            pytest.approx(49.4 * 5.0 ** 0.695 * 1.2 ** -1.130 * 1000.0,
+                          rel=1e-9)
 
     def test_negative_qc_rejected(self):
         with pytest.raises(ValueError):
@@ -54,8 +57,12 @@ class TestGmaxCpt:
 
 class TestGmaxHardinBlack:
     def test_pin(self):
-        # p'=100, e=0.7, B=875: 875*100/(0.3+0.7*0.49)*1 = 136080.9
+        # GM-293: A = 625 (Hardin 1978, GEC-5 Eq. 8.14, p. 8-18):
+        # p'=100, e=0.7: 625*100/(0.3+0.7*0.49)*1 = 97200.6
         r = gmax_hardin_black(sigma_m_eff_kPa=100.0, void_ratio=0.7)
+        assert r["Gmax_kPa"] == pytest.approx(97200.62, rel=1e-6)
+        # A given (875, Taborda et al. 2019) as before GM-293
+        r = gmax_hardin_black(100.0, 0.7, coefficient_B=875.0)
         assert r["Gmax_kPa"] == pytest.approx(136080.87, rel=1e-4)
 
     def test_stress_scaling_sqrt(self):

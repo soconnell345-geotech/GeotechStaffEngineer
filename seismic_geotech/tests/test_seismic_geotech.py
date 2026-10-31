@@ -148,11 +148,11 @@ class TestSiteCoefficients:
         # And clearly distinct from Fa(Ss=1.25) = 1.0
         assert abs(r.Fa - 1.0) < 0.01
 
-    def test_Fpga_approximation_when_pga_absent(self):
-        """SG-2: without pga, Fpga falls back to the documented
-        approximation Fpga = Fa(Ss) (pre-v5.1 behavior preserved)."""
+    def test_no_Fpga_when_pga_absent(self):
+        """GM-293: without pga there is no Fpga (GEC-12 Table 7-27 reads it
+        against PGA only); until then it was Fa(Ss) (SG-2)."""
         r = site_coefficients("D", Ss=0.375, S1=0.15)
-        assert r.Fpga == r.Fa
+        assert r.Fpga is None
 
     def test_summary_and_dict(self):
         result = site_coefficients("D", Ss=0.5, S1=0.2)

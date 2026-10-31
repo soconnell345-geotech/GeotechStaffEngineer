@@ -142,8 +142,11 @@ class TestSeismicDesignWorkflow:
         })
         assert r_site["site_class"] == "D"
 
-        # Step 2: Seismic earth pressure coefficient
-        pga = r_site.get("Fpga", 1.0) * 0.4
+        # Step 2: Seismic earth pressure coefficient. As = Fpga PGA, Fpga
+        # read against the PGA (GM-293), which this retired agent does not
+        # take: from the module, PGA 0.4.
+        from seismic_geotech import site_coefficients
+        pga = site_coefficients(r_site["site_class"], 1.0, 0.4, pga=0.4).As
         kh = 0.5 * min(pga, 0.5)
 
         r_mo = H.call(seismic_geotech_agent, "seismic_earth_pressure", {

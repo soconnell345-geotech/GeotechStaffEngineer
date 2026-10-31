@@ -8,14 +8,15 @@ from typing import Dict, Any, Optional, List
 
 @dataclass
 class SiteClassResult:
-    """AASHTO/NEHRP site classification results.
+    """AASHTO site classification results (GEC-12 Vol I Sec. 7.4.2.1).
 
     Attributes
     ----------
     site_class : str
         Site class letter (A-F).
-    Fpga : float
-        Site coefficient for PGA.
+    Fpga : float or None
+        Site coefficient for PGA (GEC-12 Table 7-27); None when the PGA
+        was not given (it is read against PGA only).
     Fa : float
         Site coefficient for short-period (0.2s).
     Fv : float
@@ -30,9 +31,11 @@ class SiteClassResult:
         Average SPT N value.
     su_bar : float, optional
         Average undrained strength (kPa).
+    pga : float, optional
+        Peak ground acceleration coefficient on rock (g), as given.
     """
     site_class: str = ""
-    Fpga: float = 0.0
+    Fpga: Optional[float] = None
     Fa: float = 0.0
     Fv: float = 0.0
     Ss: float = 0.0
@@ -40,6 +43,15 @@ class SiteClassResult:
     vs30: Optional[float] = None
     n_bar: Optional[float] = None
     su_bar: Optional[float] = None
+    pga: Optional[float] = None
+
+    @property
+    def As(self) -> Optional[float]:
+        """As = Fpga PGA (GEC-12 Vol I Eq. 7-78), the spectrum at zero
+        period; None without the PGA."""
+        if self.Fpga is None or self.pga is None:
+            return None
+        return self.Fpga * self.pga
 
     def summary(self) -> str:
         lines = [
@@ -50,13 +62,16 @@ class SiteClassResult:
             f"  Site Class: {self.site_class}",
             f"  Ss = {self.Ss:.3f} g,  S1 = {self.S1:.3f} g",
             "",
-            f"  Fpga = {self.Fpga:.3f}",
+            (f"  Fpga = {self.Fpga:.3f}" if self.Fpga is not None else
+             "  Fpga: no PGA given"),
             f"  Fa   = {self.Fa:.3f}",
             f"  Fv   = {self.Fv:.3f}",
             "",
             f"  SDS  = {self.Fa * self.Ss:.3f} g  (Fa * Ss)",
             f"  SD1  = {self.Fv * self.S1:.3f} g  (Fv * S1)",
         ]
+        if self.As is not None:
+            lines.append(f"  As   = {self.As:.3f} g  (Fpga * PGA)")
         if self.vs30 is not None:
             lines.append(f"  Vs30 = {self.vs30:.0f} m/s")
         if self.n_bar is not None:
@@ -77,6 +92,9 @@ class SiteClassResult:
             "SDS_g": round(self.Fa * self.Ss, 4),
             "SD1_g": round(self.Fv * self.S1, 4),
         }
+        if self.pga is not None:
+            d["PGA_g"] = self.pga
+            d["As_g"] = round(self.As, 4)
         if self.vs30 is not None:
             d["vs30_m_per_s"] = self.vs30
         if self.n_bar is not None:
@@ -112,6 +130,8 @@ class SeismicEarthPressureResult:
         Horizontal seismic coefficient.
     kv : float
         Vertical seismic coefficient.
+    delta_passive : float, optional
+        Wall friction angle behind KPE (degrees), when KPE was worked out.
     choices : list of dict
         What the calculation chose (GM-115, ``geotech_common.choices``;
         ``mononobe_okabe.earth_pressure_choices``).
@@ -131,6 +151,7 @@ class SeismicEarthPressureResult:
     kv: float = 0.0
     choices: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    delta_passive: Optional[float] = None
 
     def summary(self) -> str:
         lines = [
@@ -170,6 +191,8 @@ class SeismicEarthPressureResult:
             "kh": self.kh,
             "kv": self.kv,
         }
+        if self.delta_passive is not None:
+            d["delta_passive_deg"] = round(self.delta_passive, 1)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         if self.warnings:

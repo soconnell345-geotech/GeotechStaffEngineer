@@ -20,16 +20,28 @@ from the wall (reducing the available resistance) — both worst-case per
 the standard M-O treatment.
 
 Note that planar-wedge passive coefficients (Coulomb and M-O alike)
-overpredict resistance for high wall friction (delta/phi > ~0.5); a
-log-spiral solution is preferred in that range.
+overpredict resistance for high wall friction: UFC 3-220-20 Fig. 4-8
+(p. 187) finds Coulomb's Kp "satisfactory for delta/phi' <= 0.4 but
+unconservative for delta/phi' > 0.4 and, therefore, should not be used"
+there; a log-spiral solution is preferred in that range (UFC pp. 189-190).
+
+Checked against the print held (GM-293, module_work/gm293/CHECK.md):
+KAE is FHWA GEC-4 Eq. 42 (p. 114) and UFC 3-220-20 Eq. 4-15 (p. 214);
+KPE is GEC-4 Eq. 44; PAE is UFC 3-220-20 Eq. 4-16 (p. 215) and the
+fallback its Eq. 4-17.
+UFC writes psi for this module's seismic angle theta, theta for the wall
+face angle (UFC theta = -beta here: UFC Fig. 4-8 measures it positive the
+other way) and beta for the backfill slope (i here). GEC-4 writes theta
+for the seismic angle, beta for the wall face (GEC-4 beta = -beta here)
+and i for the backfill slope.
 
 All units are SI: kN, kPa, kN/m³, degrees, meters.
 
 References:
     Mononobe & Matsuo (1929); Okabe (1926)
+    UFC 3-220-20 (16 January 2025) Sec. 4-4.4.1, Eqs. 4-15 to 4-17
+    FHWA GEC-4 (FHWA-IF-99-015) Eqs. 40 to 46, p. 114
     AASHTO LRFD Section 11.6.5
-    FHWA GEC-3, Chapter 7
-    Kramer (1996), Geotechnical Earthquake Engineering, Section 11.6
 """
 
 import math
@@ -56,8 +68,10 @@ def mononobe_okabe_KAE(phi_deg: float, delta_deg: float, kh: float,
         Wall batter angle from vertical (degrees), positive when the
         wall back face leans toward the backfill (Coulomb alpha =
         90° + beta; see module docstring). Default 0 (vertical wall).
+        UFC 3-220-20 Eq. 4-15's theta is -beta.
     i_deg : float, optional
-        Backfill slope angle (degrees). Default 0 (horizontal).
+        Backfill slope angle (degrees). Default 0 (horizontal). UFC
+        3-220-20 Eq. 4-15's beta.
 
     Returns
     -------
@@ -67,7 +81,12 @@ def mononobe_okabe_KAE(phi_deg: float, delta_deg: float, kh: float,
 
     References
     ----------
-    AASHTO LRFD Eq. 11.6.5.2-1
+    UFC 3-220-20 Eq. 4-15 (p. 214); FHWA GEC-4 Eq. 42 (p. 114); AASHTO
+    LRFD Eq. 11.6.5.2-1. Where M-O has no solution, Ka + 0.75 kh: UFC
+    Eq. 4-17 (delta-PAE = (3/8) kh gamma H^2, Seed & Whitman 1970),
+    printed for a vertical wall, level backfill and no wall friction, so
+    it is used here outside its range (the result's choices and warnings
+    say so).
     """
     phi = math.radians(phi_deg)
     delta = math.radians(delta_deg)
@@ -114,7 +133,11 @@ def mononobe_okabe_KAE(phi_deg: float, delta_deg: float, kh: float,
 def mononobe_okabe_KPE(phi_deg: float, delta_deg: float, kh: float,
                        kv: float = 0.0, beta_deg: float = 0.0,
                        i_deg: float = 0.0) -> float:
-    """Mononobe-Okabe passive earth pressure coefficient (reduced).
+    """Mononobe-Okabe passive earth pressure coefficient (reduced), FHWA
+    GEC-4 Eq. 44 (p. 114; GEC-4's wall angle beta is -beta here). GEC-4
+    prints the bracket of its Eq. 45 as "1 +", which gives the active
+    coefficient at kh = 0; the static passive form of UFC 3-220-20 Fig.
+    4-8 (p. 187) has "1 -", as here.
 
     KPE = cos²(φ−θ−β) / [cosθ·cos²β·cos(δ+θ+β)
           ·(1 − √(sin(φ+δ)·sin(φ+i−θ) / (cos(δ+θ+β)·cos(i+β))))²]
@@ -225,7 +248,8 @@ def seismic_earth_pressure(gamma: float, H: float,
 
     References
     ----------
-    UFC 3-220-20 Eq. 4-16; Seed & Whitman (1970); FHWA GEC-3
+    UFC 3-220-20 Eq. 4-16 (p. 215); delta-PAE at 0.6 H, UFC pp. 215-216
+    (Seed & Whitman 1970)
     """
     PAE_total = 0.5 * gamma * H ** 2 * (1.0 - kv) * KAE
     PA_static = 0.5 * gamma * H ** 2 * KA
@@ -281,7 +305,9 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
             "the M-O equation has no solution at this kh and backfill "
             "slope (phi - theta - i < 0; GEC-11 Vol I Sec. 7.1.1): the "
             "backfill itself is not stable at this seismic coefficient; this "
-            "estimate leaves out the backfill slope i, the wall batter, kv "
+            "estimate (UFC 3-220-20 Eq. 4-17, delta-PAE = (3/8) kh gamma "
+            "H^2, printed for a vertical wall, level backfill and no wall "
+            "friction) leaves out the backfill slope i, the wall batter, kv "
             "and the wall friction delta, so it can understate KAE badly here",
             ["Coulomb's trial wedge or the Culmann method",
              "a slope stability analysis (GEC-11 Vol I Sec. 7.1.1)"]))
@@ -289,7 +315,9 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
         out.append(choice(
             "KAE", "Mononobe-Okabe", MODULE,
             "pseudo-static wedge, inertia toward the wall (UFC 3-220-20 "
-            "Eq. 4-15; GEC-11 Vol I Eq. 7-6)"))
+            "Eq. 4-15; GEC-11 Vol I Eq. 7-6); the wall batter beta is "
+            "positive leaning toward the backfill, so UFC's theta = -beta, "
+            "and the backfill slope i is UFC's beta"))
     # kh, kv and delta as the call gave them, or as a calc package's call
     # says they are assumed (GM-180)
     out.append(choice("kh", kh, how_given(kh, None, name="kh"),
@@ -308,7 +336,9 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
     if delta_deg is None:
         out.append(choice("wall friction delta",
                           f"{2.0 / 3.0 * phi_deg:.1f} deg (2/3 phi)",
-                          DEFAULT))
+                          DEFAULT,
+                          "the maximum active wall friction FHWA "
+                          "NHI-06-089 p. 10-17 suggests for design"))
     else:
         out.append(choice("wall friction delta", f"{delta_deg:g} deg",
                           how_given(delta_deg, None, name="delta")))
@@ -342,6 +372,45 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
             "backfill, walls under 20 ft)",
             ["PAE at h/2 (GEC-11 Vol I Sec. 7.1.1, MSE walls)"]))
     return out
+
+
+def passive_delta_choice(phi_deg: float, delta_p_deg: float,
+                         given: bool) -> dict:
+    """The wall friction behind KPE (GM-293), as a ``choices`` entry: the
+    passive delta given, else phi / 2, the maximum passive wall friction
+    FHWA NHI-06-089 p. 10-17 suggests for design. The basis names UFC
+    3-220-20 Fig. 4-8's limit delta/phi' <= 0.4 for a planar passive
+    wedge, with the KPE that limit gives as the alternative."""
+    from geotech_common.choices import DEFAULT, choice, how_given
+    basis = ("planar-wedge passive coefficients are unconservative above "
+             "delta/phi' = 0.4 (UFC 3-220-20 Fig. 4-8, p. 187: \"should not "
+             "be used\" there)")
+    if given:
+        return choice("wall friction delta for KPE", f"{delta_p_deg:g} deg",
+                      how_given(delta_p_deg, None, name="delta_passive"),
+                      basis)
+    return choice(
+        "wall friction delta for KPE",
+        f"{delta_p_deg:.1f} deg (phi / 2)", DEFAULT,
+        "the maximum passive wall friction FHWA NHI-06-089 p. 10-17 "
+        "suggests for design (2/3 phi is its active one); " + basis,
+        [f"delta = 0.4 phi = {0.4 * phi_deg:.1f} deg, UFC 3-220-20 Fig. "
+         f"4-8's limit for a planar passive wedge",
+         "a log-spiral passive coefficient (UFC 3-220-20 pp. 189-190)"])
+
+
+def passive_delta_warning(phi_deg: float, delta_p_deg: float):
+    """The warning a KPE carries when its wall friction exceeds 0.4 phi
+    (UFC 3-220-20 Fig. 4-8), or None."""
+    if phi_deg <= 0 or delta_p_deg / phi_deg <= 0.4 + 1e-9:
+        return None
+    return (f"KPE takes wall friction delta = {delta_p_deg:.1f} deg, "
+            f"delta/phi = {delta_p_deg / phi_deg:.2f} > 0.4: UFC 3-220-20 "
+            f"Fig. 4-8 (p. 187) finds the planar-wedge (Coulomb) passive "
+            f"coefficient unconservative above delta/phi' = 0.4 and says it "
+            f"should not be used there. Give delta_passive at most "
+            f"{0.4 * phi_deg:.1f} deg, or use a log-spiral passive "
+            f"coefficient (UFC 3-220-20 pp. 189-190).")
 
 
 def mo_no_solution(phi_deg: float, kh: float, kv: float = 0.0,

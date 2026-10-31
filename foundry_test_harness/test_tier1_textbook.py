@@ -314,11 +314,13 @@ class TestSeismic:
         assert r["site_class"] == "D"
 
     def test_site_class_coefficients(self):
-        """Site D, Ss=1.0, S1=0.4 -> Fa, Fv per ASCE 7-22 tables."""
+        """Site D, Ss=1.0, S1=0.4 -> Fa 1.1, Fv 1.6 (GEC-12 Tables 7-28 and
+        7-29); Fpga only with a PGA (Table 7-27, GM-293), which this retired
+        agent does not take."""
         r = H.call(seismic_geotech_agent, "site_classification",
                     S.SITE_CLASS_D["params"])
-        assert r["Fpga"] > 0
-        assert "Fa" in r or "Fpga" in r
+        assert r["Fa"] == 1.1 and r["Fv"] == 1.6
+        assert r["Fpga"] is None
 
     def test_mo_active_pressure(self):
         """Mononobe-Okabe: phi=30, kh=0.1, delta=20.
