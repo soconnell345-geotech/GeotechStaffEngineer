@@ -411,6 +411,7 @@ REFERENCE_GAPS = {
     ("gec_11", "eq", "4-21"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-23"): "Vol I p. 4-30",
+    ("gec_11", "eq", "4-24"): "Vol I p. 4-30 (GM-302)",
     ("gec_11", "table", "4-6"): "Vol I p. 4-29",
     ("gec_12", "table", "D-6"): "Vol III p. 28",
     ("gec_12", "table", "D-51"): "Vol III p. 100",

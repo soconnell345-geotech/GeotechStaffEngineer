@@ -75,6 +75,11 @@ def test_mse_wall_takes_the_retained_fill():
     used = level.pop("defaults_used")
     assert (used["phi_retained"], used["gamma_retained"]) == (34, 19)
     given.pop("defaults_used")
+    # GM-302: left out, a phi_retained taken above GEC-11 p. 4-10's 30 deg
+    # is warned of
+    given_warnings = given.pop("warnings")
+    left_out = [w for w in level.pop("warnings") if w not in given_warnings]
+    assert len(left_out) == 1 and left_out[0].startswith("phi_retained")
     assert given == level
 
 

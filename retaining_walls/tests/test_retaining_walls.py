@@ -1615,7 +1615,9 @@ class TestMSELRFDBearingNotChecked:
         from retaining_walls.mse import check_external_stability_lrfd
         r = check_external_stability_lrfd(self._geom(), 19.0, 34.0, 30.0,
                                           gamma_foundation=18.0)
-        (c,) = r["choices"]
+        # GM-302: then the strengths qn took (local_shear_possible)
+        c, strengths = r["choices"]
+        assert strengths["what"] == "foundation strengths in qn (Eq. 4-22)"
         assert c["how"] == "default" and "0.65" in c["chosen"]
         assert "Table 4-5" in c["basis"] and "Eq. 4-22" in c["basis"]
         assert "bearing_resistance_strength" in c["alternatives"][0]
