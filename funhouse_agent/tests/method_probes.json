@@ -26,6 +26,7 @@
 "calc_package|pile_group_package#cap": {"params": {"cap_outline": [[-2.25, -2.25], [2.25, -2.25], [2.25, 2.25], [-2.25, 2.25]], "n_cols": 3, "n_rows": 3, "property_line": [[-5.0, 3.5], [5.0, 3.5]], "spacing": 1.5}},
 "calc_package|pile_group_package#eta": {"params": {"cu": 50.0, "n_cols": 3, "n_rows": 3, "pile_diameter": 0.5, "soil_type": "cohesive", "spacing": 1.5}},
 "calc_package|pile_group_package#uplift": {"params": {"Vz": -900.0, "axial_capacity_tension": 200.0, "n_cols": 3, "n_rows": 3, "pile_diameter": 0.4, "pile_length": 12.0, "soil_type": "cohesionless", "spacing": 1.2, "unit_weight": 9.0}},
+"calc_package|pile_group_package#tension_row": {"params": {"My": 1200.0, "Vz": 900.0, "axial_capacity_tension": 200.0, "cap_weight": 450.0, "n_cols": 3, "n_rows": 3, "pile_diameter": 0.4, "pile_length": 12.0, "soil_type": "cohesionless", "spacing": 1.2, "unit_weight": 9.0}},
 "calc_package|reliability_package": {"params": {"g_expression": "R/100", "variables": {"R": {"cov": 0.15, "mean": 200.0}}}},
 "calc_package|reliability_package#form": {"params": {"engine": "form", "g_expression": "R/100", "variables": {"R": {"cov": 0.15, "mean": 200.0}}}},
 "calc_package|reliability_package#monte_carlo": {"params": {"engine": "monte_carlo", "g_expression": "R/100", "n": 500, "seed": 1, "variables": {"R": {"cov": 0.15, "mean": 200.0}}}},

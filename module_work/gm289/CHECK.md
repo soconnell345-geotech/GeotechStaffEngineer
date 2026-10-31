@@ -121,13 +121,16 @@ lesser resistance at a given depth, as the module returns it.
 ## Module now
 
 - `group_uplift_resistance(B, Z, D, n_piles, soil_type, layers, su,
-  cap_weight, pile_type, piles_resistance)` (`group_efficiency.py`): the
+  cap_weight, pile_type, piles_resistance, group_piles)`
+  (`group_efficiency.py`): the
   block by layers (prismoidal volume, exact for plan dimensions linear in
   depth; one layer is Eq. 6-41), its weight plus the cap's, plus 2D(B+Z)s_u
   in clay; phi_ug by pile type (`GROUP_UPLIFT_PHI`) with the small-group
   20 %; the lesser of phi_ug R_ug and the piles' sum, and which governs.
   Layers that stop short of the toes are refused; a layer past them is cut
-  off; fewer than two piles are refused.
+  off; fewer than two piles are refused. `group_piles`, the piles under the
+  cap, counts for the small-group rule when the block is part of the group
+  (p. 225: "per substructure unit").
 - Tool `group_uplift`: the layout (n_rows, n_cols, spacing, pile_diameter;
   B and Z to the outer faces), pile_length, soil_type, unit_weight or
   layers, cu (clay), cap_weight (0 when left out, the safe side), pile_type
@@ -136,24 +139,42 @@ lesser resistance at a given depth, as the module returns it.
   governing resistance (`group_uplift_resistance_kN`), which governs
   (`group_uplift_governs`) and the utilization. Without the piles'
   resistance it gives the block and says the group's is no more than that.
-  n_rows 1 checks one row, as Vol III does.
-- `pile_group_simple` and `pile_group_6dof`: a group in net tension (Vz <
-  0) gets `group_uplift_note`, the net uplift and the check to run.
-- `pile_group_package`: a group in net tension gets a Group Uplift section:
-  the block at the toes from the piles' plan extent plus the diameter, its
-  weight, R_ug, phi_ug R_ug, the piles' sum from their
-  `axial_capacity_tension` (as the utilization takes it, each pile's
-  factored resistance), the lesser and the check against the net uplift;
-  the result carries the same keys as the tool. Without pile_length,
-  soil_type and unit_weight (cu in clay) it says what it needs. A group not
-  in net tension gets no section.
+  n_rows 1 checks one row, as Vol III does; `piles_under_cap` gives the
+  group's count for the small-group rule.
+- `pile_group_simple` and `pile_group_6dof`: any pile in tension gets
+  `group_uplift_note`: how many, their summed tension, and the group_uplift
+  call to run over them (n_rows 1 for one row, piles_under_cap, uplift_load);
+  a group in net tension, the whole group as well.
+- `pile_group_package`, wherever a pile carries tension, a Group Uplift
+  section:
+  - over the piles in tension (fewer than all), as Vol III checks the back
+    row: the block at the toes from their plan extent plus the diameter,
+    their summed tension the load, their own `axial_capacity_tension` (each
+    pile's factored resistance, as the utilization takes it), the
+    small-group rule on all the piles under the cap, and the cap's weight in
+    their share, k/n (Vol III p. 207: "Calculate weight of the pile cap,
+    conservatively taken as the tributary are[a] over piles in tension",
+    half the 6.5 ft cap over one of two rows; the share by count is the
+    tributary area of evenly spaced piles);
+  - over the whole group when it carries net tension (Vz < 0), the net
+    uplift the load (Ch. 7);
+  - piles in tension that do not fill a rectangle (a pile in compression
+    within their extent) are not checked as a block, and the section says
+    so; one pile in tension, its own check only.
+  The result carries the tool's keys for the check with the higher
+  utilization, `group_uplift_over` (which), and `group_uplift_checks` when
+  there are two. Without pile_length, soil_type and unit_weight (cu in
+  clay) it says what it needs. A group with no pile in tension gets no
+  section.
 
 `choices` state each reading: the lesser and which governs, with UFC Eq.
 6-40's piles' sum (the weights added) as the alternative; the block as
 printed for the soil, B and Z to the outer faces (Vol III), the piles as
 soil; phi_ug with its small-group rule (below 3 driven piles, GEC-12 p. 225;
 below 5 for the others, UFC note A), and for 3 or 4 driven piles UFC's
-reading (0.40) as the alternative; the cap weight (0 unless given).
+reading (0.40) as the alternative; the cap weight (0 unless given), over
+the piles in tension its share. Over the piles in tension each choice's
+`what` ends ", piles in tension".
 
 ## Worked by hand (made-up, the package probe)
 
@@ -167,7 +188,31 @@ kN; the piles 9 × 200 = 1,800 kN, the lesser: the piles govern; 900/1,800 =
 2.3 m, W = 2.3²(12)(8) = 507.8 kN, shear 2(12)(4.6)(30) = 3,312.0 kN, R_ug =
 3,819.8 kN, factored 1,909.9 kN.
 
-## Replay: groups not in net tension
+Review fix, the piles in tension of a group in compression (made-up):
+
+- 3 × 3 at 1.2 m, 0.4 m piles, Vz 900 kN, My 1,200 kN·m: P = 100 ± 1,200 ×
+  1.2/8.64 = 100 ± 166.7, the column at x = −1.2 m in tension, 3 × 66.7 =
+  200 kN. Its block B = 0.4, Z = 2(1.2) + 0.4 = 2.8 m, D = 12 m: V = 0.4 ×
+  2.8 × 12 + 144 × 3.2/4 + 1,728/12 = 13.44 + 115.20 + 144.00 = 272.64 m3,
+  W = 2,453.8 kN, with a 450 kN cap's 3/9 2,603.8 kN; the piles 3 × 200 =
+  600 kN govern; 200.1/600 = 0.33 (the package: the same).
+- The reviewer's group: 2 × 9, spacing 1.5 m along the rows and 1.2 m
+  across, 0.3 m piles, Vz 11,000 kN, Mx 8,800 kN·m: the back row 611.1 −
+  8,800 × 0.6/(18 × 0.36) = −203.7 kN a pile, each passing alone (204 of
+  250 kN, 0.815); 1,833.3 kN on the row. Its block B = 0.3, Z = 12.3 m, 8 m
+  in sand at 9 kN/m3: V = 29.52 + 201.60 + 42.67 = 273.79 m3, R_ug =
+  2,464.1 kN, phi_ug R_ug = 1,232.0 kN < 9 × 250 = 2,250: the block
+  governs, 1,833.3/1,232.0 = 1.49, the row fails (the package: the same).
+- Vol III North Abutment, Group Configuration 1, through the package (Table
+  D-12: 2 rows of 9 at Sbx 5 ft and Sby 4 ft; Table D-11: Q 2,505 kips, Muy
+  6,625 kip-ft; 1 ft piles at 27 ft, Fig. D-26's layers; 46 kips a pile,
+  Table D-14): the rigid cap puts 2,505/2 − 6,625/4 = −403.8 kips on the
+  back row (Table D-13 prints −406 from its free body, Fig. D-25; its
+  reactions sum to 2,502); the block over the row is Table D-18's 839.6
+  kips, 419.8 factored, against the piles' 414 kips: the piles govern,
+  0.98.
+
+## Replay: groups not in net tension (as built)
 
 - The pile group tests and guards recorded on master 001526b (61 tool calls:
   pile_group_simple 10, pile_group_6dof 12, group_efficiency 10, Meyerhof 6,
@@ -179,11 +224,33 @@ kN; the piles 9 × 200 = 1,800 kN, the lesser: the piles govern; 900/1,800 =
   with piles in tension under a moment; 8 packages; 4 group_efficiency; 1
   Meyerhof): byte-identical outputs on master and the branch.
 
+## Review fix (gm287-review): the trigger
+
+- **Finding.** GEC-12 Vol III applies the block to the back row in tension
+  of a group in net compression (Table D-13: Q 2,505 kips, the back row
+  −406 kips; "only a single row of piles is providing the tension
+  resistance rather than the entire pile group", pp. 51, 203); in Table D-19
+  the block governs 10 of the 15 North Abutment lengths. The build checked
+  only Vz < 0, and the package wrote "does not apply" for such a group.
+- **Now.** As above: the rigid-cap tools note any pile in tension; the
+  package checks the block over the piles in tension (their extent, their
+  tension, their capacities, the cap's share), says so where they do not
+  fill a rectangle, keeps the whole-group check in net tension, and counts
+  all the piles under the cap for the small-group rule.
+- **Replay.** The recorded test-set calls on master 001526b against the
+  fix: 52 of 61 tool calls identical; 8 differ only by an added
+  `group_uplift_note`, each a group with piles in tension (Mx or My 0.5
+  kN·m at Vz 0: 0.1 to 0.2 kN a pile); 1 the refusal's parameter list
+  (above). Calc steps: 88 of 94 records identical, 6 identical but for an
+  added Group Uplift section (the same groups). The 157 made-up calls: 81
+  identical, none with a pile in tension; 76 differ only by added uplift
+  keys, each with piles in tension (74 rigid-cap calls and 2 packages at Vz
+  0, My 400). No group without a pile in tension moved.
+
 ## Noted, not fixed
 
-- Vol III checks the back row in tension of a group in net compression; the
-  tool does it with n_rows 1, but the rigid-cap tools and the package note
-  and check only a group in net tension (proposed to the backlog).
+- A pile in tension by a fraction of a kN (a moment on an unloaded group)
+  gets the note and the section like any other.
 - Battered piles: the package takes the block at the toes from the piles'
   positions at the cap.
 - One soil type per block: GEC-12 and UFC give the sand block and the clay

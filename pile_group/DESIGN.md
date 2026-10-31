@@ -88,10 +88,21 @@ stiffness assembly, and pile-force back-calc):
   Table 6-28 note A). For 3 or 4 driven piles the choices give UFC's 0.40.
 - UFC Eq. 6-40 adds each pile's and the cap's effective weight (x 0.9) to
   the piles' sum; offered in the choices, not taken.
-- The `group_uplift` tool runs it on a rectangular layout (n_rows 1 for a
-  row in tension, as Vol. III does); the rigid-cap tools note a group in
-  net tension (Vz < 0); the calc package checks one when given pile_length,
-  soil_type and the unit weight. A group not in net tension is unchanged.
+- Where it applies (GM-289 review): wherever a pile carries tension. GEC-12
+  Vol. III checks the back row in tension of an abutment group in
+  compression as a block ("only a single row of piles is providing the
+  tension resistance rather than the entire pile group", pp. 51, 203), and
+  Ch. 7 the whole group in net tension. The rigid-cap tools note any pile
+  in tension; the calc package checks the block over the piles in tension
+  (their extent plus the diameter, their summed tension, their own
+  capacities, the cap's weight in their share k/n, as Vol. III p. 207 takes
+  the tributary area over them) and over the whole group in net tension
+  (Vz < 0), given pile_length, soil_type and the unit weight. Piles in
+  tension that do not fill a rectangle are not checked as a block (said
+  so). The small-group rule counts all the piles under the cap ("per
+  substructure unit", p. 225; `group_piles`, the tool's `piles_under_cap`).
+  The `group_uplift` tool runs it on a rectangular layout (n_rows 1 for a
+  row in tension). A group with no pile in tension is unchanged.
 
 ## Readings where the print reads two ways (GM-286 review)
 - Block failure: B and Z to the outer pile faces (GEC-12 Fig. 7-31). UFC

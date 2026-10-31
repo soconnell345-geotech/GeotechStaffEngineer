@@ -410,8 +410,8 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
                             soil_type: str, layers, su: Optional[float] = None,
                             cap_weight: float = 0.0,
                             pile_type: Optional[str] = None,
-                            piles_resistance: Optional[float] = None
-                            ) -> dict:
+                            piles_resistance: Optional[float] = None,
+                            group_piles: Optional[int] = None) -> dict:
     """Uplift resistance of a pile group: the group as a block, and the
     lesser of the block and the sum of the piles (GEC-12 Sec. 7.2.3.2,
     pp. 290-293; UFC 3-220-20 Eqs. 6-40 to 6-43, pp. 435-436).
@@ -433,6 +433,12 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
     includes it (Eq. 7-41); UFC p. 435 includes it in the block's weight,
     in either soil.
 
+    The block may be part of a group: GEC-12 Vol. III checks the back row
+    in tension of an abutment group in compression so, "only a single row
+    of piles is providing the tension resistance rather than the entire
+    pile group" (pp. 51, 203). ``group_piles`` is then the group's count,
+    for the small-group rule.
+
     Factored (Eq. 7-39): R_r = phi_ug R_ug, phi_ug from
     :data:`GROUP_UPLIFT_PHI`, times 0.8 for a small group
     (:func:`small_group_reduction`). The group's factored uplift
@@ -453,7 +459,7 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
     D : float
         Pile embedded length (m), the block's height.
     n_piles : int
-        Piles in the group, two or more.
+        Piles in the block, two or more.
     soil_type : str
         'cohesionless' or 'cohesive'.
     layers : list of (thickness, unit_weight)
@@ -471,6 +477,9 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
     piles_resistance : float, optional
         The sum of the piles' factored tension resistances (kN), phi_up R_s
         n; with it, the governing resistance.
+    group_piles : int, optional
+        The piles under the cap, for the small-group rule (GEC-12 p. 225:
+        "per substructure unit"); default ``n_piles``.
 
     Returns
     -------
@@ -479,7 +488,8 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
         ``volume_m3``, ``slices`` (per layer: ``top_m``, ``bottom_m``,
         ``unit_weight``, plan dimensions at its bottom and top,
         ``volume_m3``, ``weight_kN``), ``B_m``, ``Z_m``, ``D_m``,
-        ``top_width_m``, ``top_length_m``; with ``pile_type``: ``phi_ug``
+        ``top_width_m``, ``top_length_m``, ``group_piles``; with
+        ``pile_type``: ``phi_ug``
         (``None`` where none is printed), ``reduction`` and ``R_r_kN``;
         with ``piles_resistance`` as well: ``piles_kN``, ``governing_kN``
         and ``governs`` ('block' or 'piles'; None where the block has no
@@ -497,6 +507,10 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
     if n_piles < 2:
         raise ValueError(f"a group uplift check needs two or more piles, "
                          f"got {n_piles}")
+    group_piles = n_piles if group_piles is None else group_piles
+    if group_piles < n_piles:
+        raise ValueError(f"group_piles ({group_piles}) is fewer than the "
+                         f"piles in the block ({n_piles})")
     if not (cap_weight >= 0 and math.isfinite(cap_weight)):
         raise ValueError(f"cap_weight must be zero or more, got {cap_weight}")
     if soil_type == "cohesive" and not (su is not None and su > 0
@@ -528,13 +542,14 @@ def group_uplift_resistance(B: float, Z: float, D: float, n_piles: int,
         "volume_m3": sum(s["volume_m3"] for s in slices),
         "slices": slices,
         "B_m": B, "Z_m": Z, "D_m": D, "n_piles": n_piles,
+        "group_piles": group_piles,
         "top_width_m": B + spread * D, "top_length_m": Z + spread * D,
         "su_kPa": su if soil_type == "cohesive" else None,
     }
     if pile_type is None:
         return out
     phi = GROUP_UPLIFT_PHI.get(pile_type)
-    reduction = small_group_reduction(n_piles, pile_type)
+    reduction = small_group_reduction(group_piles, pile_type)
     out["phi_ug"] = None if phi is None else phi * reduction
     out["phi_ug_table"] = phi
     out["reduction"] = reduction

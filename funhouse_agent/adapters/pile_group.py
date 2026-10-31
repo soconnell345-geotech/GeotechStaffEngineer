@@ -123,11 +123,13 @@ def run_pile_group_6dof(params, *, method="pile_group_6dof"):
 
 
 def _with_uplift_note(result, load):
-    """The result's dict, with the group uplift note when the group
-    carries net tension (GM-289); a group that does not is unchanged."""
+    """The result's dict, with the group uplift note when a pile carries
+    tension (GM-289 and its review); a group with no pile in tension is
+    unchanged."""
     out = result.to_dict()
-    if load.Vz < 0:
-        out["group_uplift_note"] = uplift_note(load.Vz)
+    note = tension_note(out["pile_forces"], load.Vz)
+    if note:
+        out["group_uplift_note"] = note
     return out
 
 
@@ -446,21 +448,36 @@ def _uplift_layers(params, method):
     return [(params["pile_length"], params["unit_weight"])]
 
 
+#: What a block over part of the group, the piles in tension, adds to
+#: each choice's ``what`` (GM-289 review).
+TENSION_PILES = "piles in tension"
+
+
 def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
-                       uplift_load=None, method="group_uplift"):
+                       uplift_load=None, method="group_uplift",
+                       group_piles=None, cap_share=None):
     """The group's uplift resistance (``group_uplift_resistance``) on a
     block B x Z at the toes (m, to the outer pile faces) from ``params``'
     :data:`UPLIFT_BLOCK_PARAMS`, as (results, choices): the block, its
     factored resistance, the piles' sum (``piles_resistance``, the sum of
     their factored tension resistances, kN) and the lesser, and with
-    ``uplift_load`` (kN) the load over it."""
+    ``uplift_load`` (kN) the load over it.
+
+    ``cap_share`` (GM-289 review): the block is over the piles in tension
+    of a larger group, ``group_piles`` piles under the cap (the small-group
+    rule counts them), and takes that share of ``cap_weight``, the whole
+    cap's, as GEC-12 Vol. III p. 207 takes the cap over the back row in
+    tension."""
     from geotech_common.choices import MODULE, choice, how_given
     from pile_group.group_efficiency import (
         group_uplift_resistance, small_group_reduction, GROUP_UPLIFT_PHI,
         SMALL_GROUP_PILES)
     soil_type = params["soil_type"]
     pile_type = params.get("pile_type") or "driven"
-    cap = params.get("cap_weight") or 0.0
+    cap_total = params.get("cap_weight") or 0.0
+    part = cap_share is not None
+    cap = cap_total * cap_share if part else cap_total
+    group_piles = n_piles if group_piles is None else group_piles
     layers = _uplift_layers(params, method)
     if soil_type == "cohesive" and params.get("cu") is None:
         raise ValueError(
@@ -470,7 +487,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
     r = group_uplift_resistance(
         B, Z, params["pile_length"], n_piles, soil_type, layers,
         su=params.get("cu"), cap_weight=cap, pile_type=pile_type,
-        piles_resistance=piles_resistance)
+        piles_resistance=piles_resistance, group_piles=group_piles)
     sand = soil_type == "cohesionless"
     out = {"block_width_m": round(r["B_m"], 3),
            "block_length_m": round(r["Z_m"], 3)}
@@ -482,6 +499,10 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
     out["block_cap_weight_kN"] = round(cap, 1)
     if not sand:
         out["block_side_shear_kN"] = round(r["shear_kN"], 1)
+    if part:
+        out["block_piles"] = n_piles
+        out["block_group_piles"] = group_piles
+        out["block_cap_share"] = round(cap_share, 4)
     if params.get("layers") is not None:
         out["block_layers"] = [
             {"top_m": round(s["top_m"], 3), "bottom_m": round(s["bottom_m"], 3),
@@ -572,19 +593,29 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
                  "difference between the unit weight of the foundation "
                  "material and the soil may be neglected by treating all "
                  "materials as having the unit weight of soil'")
+    if part:
+        block = f"over the {n_piles} piles in tension: " + block
     choices.append(choice(
         "group uplift block", block,
         how_given(soil_type, None, "soil_type"),
         basis=basis + ("; B and Z to the outer faces of the outer piles "
                        "(GEC-12 Vol. III pp. 52-53 and 205 take the group "
                        "length 'from exterior pile edge to exterior pile "
-                       "edge', and one row's width as the pile's)")))
+                       "edge', and one row's width as the pile's)")
+        + ("; over the piles in tension of a group in compression, as "
+           "GEC-12 Vol. III checks the back row of an abutment group: "
+           "'only a single row of piles is providing the tension "
+           "resistance rather than the entire pile group' (pp. 51, 203)"
+           if part else "")))
     if r["phi_ug"] is not None:
         driven = pile_type == "driven"
         chosen = f"phi_ug = {r['phi_ug']:.2f}"
         if r["reduction"] < 1.0:
             chosen += (f" ({r['phi_ug_table']:.2f} reduced by 20 % for a "
-                       f"small group of {n_piles} piles)")
+                       f"small group of {group_piles} piles)")
+        elif part and small_group_reduction(n_piles, pile_type) < 1.0:
+            chosen += (f" (the group's {group_piles} piles under the cap, "
+                       f"not a small group)")
         basis = ("GEC-12 Table 7-1 (p. 224): 'Group Uplift Resistance, "
                  "phi_ug | Sand and Clay | 0.50'; UFC 3-220-20 Table 6-28 "
                  "(p. 434, AASHTO 2020), 'group block uplift, all soils': "
@@ -599,7 +630,7 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
             basis += (", and for micropiles in marginal ground conditions, "
                       "not applied here")
         alternatives = []
-        if driven and small_group_reduction(n_piles, pile_type, "ufc") \
+        if driven and small_group_reduction(group_piles, pile_type, "ufc") \
                 < r["reduction"]:
             phi_ufc = GROUP_UPLIFT_PHI[pile_type] * 0.8
             alternatives.append(
@@ -610,23 +641,39 @@ def group_uplift_check(B, Z, n_piles, params, *, piles_resistance=None,
             "resistance factor for group uplift", chosen,
             how_given(params.get("pile_type"), "driven", "pile_type"),
             basis=basis, alternatives=alternatives))
+    cap_text = f"{cap:g} kN"
+    cap_basis = ("GEC-12 Eq. 7-41's W_g is 'the effective weight of the "
+                 "pile/soil block including pile cap weight'; UFC 3-220-20 "
+                 "p. 435 includes the cap's effective weight in the block in "
+                 "either soil")
+    if part and cap_total:
+        cap_text = (f"{cap:.1f} kN, {n_piles}/{group_piles} of the cap's "
+                    f"{cap_total:g} kN, the share over the piles in tension")
+        cap_basis += ("; GEC-12 Vol. III p. 207 takes the cap over the back "
+                      "row in tension only, 'conservatively taken as the "
+                      "tributary' area, half the cap's width over one of two "
+                      "rows; the module takes the share by the count of "
+                      "piles, the tributary area of evenly spaced piles")
     choices.append(choice(
-        "pile cap weight in the block", f"{cap:g} kN",
+        "pile cap weight in the block", cap_text,
         how_given(params.get("cap_weight"), 0.0, "cap_weight"),
-        basis=("GEC-12 Eq. 7-41's W_g is 'the effective weight of the "
-               "pile/soil block including pile cap weight'; UFC 3-220-20 "
-               "p. 435 includes the cap's effective weight in the block in "
-               "either soil" + ("; left out, none, the safe side"
-                                if cap == 0 else "")),
+        basis=cap_basis + ("; left out, none, the safe side"
+                           if cap_total == 0 else ""),
         alternatives=(["the cap's effective weight (cap_weight, kN), where "
                        "the load does not already carry it"]
-                      if cap == 0 else [])))
+                      if cap_total == 0 else
+                      ["the tributary area of an uneven layout, as "
+                       "cap_weight to the group_uplift tool"] if part
+                      else [])))
+    if part:
+        for c in choices:
+            c["what"] = f"{c['what']}, {TENSION_PILES}"
     return out, choices
 
 
 _UPLIFT_PARAMS = ("n_rows", "n_cols", "spacing", "spacing_x", "spacing_y",
-                  "pile_diameter", "axial_capacity_tension", "uplift_load"
-                  ) + UPLIFT_BLOCK_PARAMS
+                  "pile_diameter", "axial_capacity_tension", "uplift_load",
+                  "piles_under_cap") + UPLIFT_BLOCK_PARAMS
 
 
 def _run_group_uplift(params):
@@ -642,25 +689,52 @@ def _run_group_uplift(params):
             f"{method}: missing 'spacing' (centre-to-centre, m), or "
             f"spacing_x and spacing_y.")
     n = params["n_rows"] * params["n_cols"]
+    under_cap = params.get("piles_under_cap")
+    if under_cap is not None and not (isinstance(under_cap, int)
+                                      and under_cap >= n):
+        raise ValueError(
+            f"{method}: piles_under_cap must be a whole number, the piles "
+            f"under the cap, at least the {n} in the block; got "
+            f"{under_cap!r}.")
     B, Z = group_plan_dimensions(params["n_rows"], params["n_cols"], sx, sy,
                                  params["pile_diameter"])
     q = params.get("axial_capacity_tension")
     out, choices = group_uplift_check(
         B, Z, n, params, piles_resistance=None if q is None else n * q,
-        uplift_load=params.get("uplift_load"), method=method)
+        uplift_load=params.get("uplift_load"), method=method,
+        group_piles=under_cap)
     out["n_piles"] = n
     out["choices"] = choices
     return out
 
 
-def uplift_note(Vz: float) -> str:
-    """What a rigid-cap result says when the group carries net tension."""
-    return (f"The group carries a net uplift of {-Vz:.1f} kN. A group's "
-            f"uplift resistance is the lesser of the sum of the piles' "
-            f"tension resistances and the group's as a block (GEC-12 Sec. "
-            f"7.2.3.2, p. 291; UFC 3-220-20 Eq. 6-40); the pile-by-pile "
-            f"check does not cover the block: check it with group_uplift "
-            f"(uplift_load {-Vz:g}).")
+def tension_note(pile_forces, Vz: float):
+    """What a rigid-cap result says when a pile carries tension (GM-289
+    review: GEC-12 Vol. III checks the back row in tension of a group in
+    compression as a block, pp. 51, 203), from its ``pile_forces``
+    (``axial_kN``, compression positive); None with no pile in tension."""
+    tension = [-pf["axial_kN"] for pf in pile_forces if pf["axial_kN"] < 0]
+    if not tension:
+        return None
+    n, k, total = len(pile_forces), len(tension), sum(tension)
+    rule = ("GEC-12 Sec. 7.2.3.2 (p. 291; UFC 3-220-20 Eq. 6-40) limits the "
+            "uplift resistance of piles in tension to the lesser of the sum "
+            "of their tension resistances and their resistance as a block; "
+            "the pile-by-pile check does not cover the block")
+    if k == n:
+        return (f"Every pile carries tension; the group carries a net "
+                f"uplift of {-Vz:,.1f} kN. {rule}: check it with "
+                f"group_uplift (uplift_load {-Vz:g}).")
+    note = (f"{k} of {n} piles carry tension, {total:,.1f} kN in all (the "
+            f"most {max(tension):,.1f} kN). {rule}, and GEC-12 Vol. III "
+            f"checks the back row in tension of a group in compression so "
+            f"(pp. 51, 203): check them with group_uplift over the piles in "
+            f"tension (n_rows 1 for one row, piles_under_cap {n}, "
+            f"uplift_load {total:g}).")
+    if Vz < 0:
+        note += (f" The group carries a net uplift of {-Vz:,.1f} kN: check "
+                 f"the whole group as well (uplift_load {-Vz:g}).")
+    return note
 
 
 # Meyerhof (1976) SPT group-settlement aliases (accept a few common synonyms
@@ -739,8 +813,10 @@ METHOD_REGISTRY = {
 }
 
 _UPLIFT_NOTE_RETURN = (
-    "Only when the group carries net tension (Vz < 0): its uplift must "
-    "also be checked as a block (GEC-12 Sec. 7.2.3.2), with group_uplift.")
+    "Only when a pile carries tension: how many and their tension, to be "
+    "checked as a block as well with group_uplift (GEC-12 Sec. 7.2.3.2; "
+    "Vol. III checks the back row in tension of a group in compression), "
+    "and the whole group in net tension (Vz < 0). Report it.")
 
 METHOD_INFO = {
     "pile_group_simple": {
@@ -809,7 +885,7 @@ METHOD_INFO = {
     },
     "group_uplift": {
         "category": "Pile Group",
-        "brief": "Uplift resistance of a pile group in net tension as GEC-12 Sec. 7.2.3.2 and UFC 3-220-20 Eqs. 6-40 to 6-43 print it: the lesser of the sum of the piles' factored tension resistances and the group's as a block (cohesionless soil: the effective weight of the soil within sides at 1H:4V from the toes; cohesive soil: the block's weight plus 2D(B+Z)su on its sides), factored by phi_ug.",
+        "brief": "Uplift resistance of a pile group in net tension, or of the piles in tension of a group (GEC-12 Vol. III checks the back row in tension of an abutment group in compression), as GEC-12 Sec. 7.2.3.2 and UFC 3-220-20 Eqs. 6-40 to 6-43 print it: the lesser of the sum of the piles' factored tension resistances and the group's as a block (cohesionless soil: the effective weight of the soil within sides at 1H:4V from the toes; cohesive soil: the block's weight plus 2D(B+Z)su on its sides), factored by phi_ug.",
         "parameters": {
             "n_rows": {"type": "int", "required": True, "description": "Rows of the group, or of the piles in tension (1 for one row, as GEC-12 Vol. III checks a back row in tension)."},
             "n_cols": {"type": "int", "required": True, "description": "Columns."},
@@ -822,10 +898,11 @@ METHOD_INFO = {
             "unit_weight": {"type": "float", "required": False, "description": "The soil's effective unit weight (kN/m3; below the water table the buoyant) over the embedded length. Or give layers."},
             "layers": {"type": "array", "required": False, "description": "The soil from the top of the block down, [{thickness (m), unit_weight (effective, kN/m3)}, ...], to the toes at least, in place of one unit_weight (e.g. the water table inside the block). In cohesionless soil each layer's volume is taken between its bottom and top plan dimensions (UFC 3-220-20 p. 436; GEC-12 Vol. III Eq. D-1)."},
             "cu": {"type": "float", "required": False, "description": "soil_type 'cohesive': the weighted average undrained shear strength over the embedded length along the group's perimeter (kPa), GEC-12 Eq. 7-41's su."},
-            "cap_weight": {"type": "float", "required": False, "default": 0.0, "description": "The pile cap's effective weight (kN), part of the block (GEC-12 Eq. 7-41's W_g 'including pile cap weight'; UFC 3-220-20 p. 435). Leave it out (0, the safe side) where the uplift load already carries it."},
+            "cap_weight": {"type": "float", "required": False, "default": 0.0, "description": "The pile cap's effective weight over the block (kN), part of the block (GEC-12 Eq. 7-41's W_g 'including pile cap weight'; UFC 3-220-20 p. 435); for the piles in tension of a group, the cap over them (GEC-12 Vol. III p. 207 takes the tributary area over the back row in tension). Leave it out (0, the safe side) where the uplift load already carries it."},
             "pile_type": {"type": "str", "required": False, "default": "driven", "allowed_values": list(PILE_TYPES), "description": "The block's resistance factor phi_ug: 0.50 driven (GEC-12 Table 7-1, p. 224), 0.45 drilled shafts, 0.50 micropiles (UFC 3-220-20 Table 6-28, p. 434); none printed for 'cfa' or 'ddp' (nominal only). Reduced by 20 % for a small group: fewer than 3 driven piles (GEC-12 p. 225), fewer than 5 of the others (UFC 3-220-20 Table 6-28 note A)."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "One pile's factored tension resistance phi_up R_s (kN; GEC-12 Eq. 7-38, phi_up from Table 7-1 by the static method, 0.60 with a static load test or 0.50 dynamic testing with signal matching, Table 7-2; for a small group reduced by 20 %, GEC-12 p. 225). With it, the piles' sum n phi_up R_s (Eq. 7-40) and the governing resistance, the lesser."},
-            "uplift_load": {"type": "float", "required": False, "description": "The factored net uplift on the group (kN, positive), for the utilization: the load over the governing resistance."},
+            "uplift_load": {"type": "float", "required": False, "description": "The factored uplift on the piles in the block (kN, positive): the net uplift on a group in tension, or the summed tension of the piles in tension; for the utilization, the load over the governing resistance."},
+            "piles_under_cap": {"type": "int", "required": False, "description": "The piles under the cap when the block is part of the group (the piles in tension), for the small-group rule, which counts the piles per substructure unit (GEC-12 p. 225). At least n_rows x n_cols."},
         },
         "returns": {"block_width_m": "Block width B at the toes.", "block_length_m": "Block length Z at the toes.", "block_top_width_m": "Cohesionless: the block's width at the top.", "block_top_length_m": "Cohesionless: its length at the top.", "block_volume_m3": "The block's volume.", "block_soil_weight_kN": "The soil's effective weight in the block (piles taken as soil).", "block_cap_weight_kN": "The cap weight added.", "block_side_shear_kN": "Cohesive: 2D(B+Z)su.", "block_layers": "With layers: each layer's share.", "group_uplift_block_kN": "The block's nominal uplift resistance R_ug.", "group_uplift_phi": "phi_ug applied (null where none is printed).", "group_uplift_block_factored_kN": "phi_ug R_ug.", "piles_tension_resistance_kN": "n phi_up R_s (with axial_capacity_tension).", "group_uplift_resistance_kN": "The group's factored uplift resistance, the lesser of the two (null without axial_capacity_tension).", "group_uplift_governs": "'block' or 'individual piles'.", "group_uplift_utilization": "uplift_load over the governing resistance.", "group_uplift_adequate": "uplift_load <= the governing resistance.", "group_uplift_note": "What is missing or not printed; report it.", "choices": "Each value's basis and alternatives; report them."},
     },
@@ -896,6 +973,10 @@ declare_applies_when(METHOD_INFO, {
 })
 declare_when_absent(METHOD_INFO, {
     "group_uplift": {
+        "piles_under_cap": (
+            "n_rows x n_cols, the piles in the block", "the small-group rule "
+            "counts the piles per substructure unit (GEC-12 p. 225); give "
+            "piles_under_cap when the block is part of the group"),
         "axial_capacity_tension": (
             "the block alone", "the group's uplift resistance is the lesser "
             "of the piles' sum and the block (GEC-12 p. 291), so no more "

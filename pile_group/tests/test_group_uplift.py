@@ -107,6 +107,21 @@ def test_phi_ug_by_pile_type_and_small_group(pile_type, n, phi):
         assert r["R_r_kN"] == pytest.approx(phi * r["R_ug_kN"])
 
 
+@pytest.mark.parametrize("pile_type, n, group, phi", [
+    ("driven", 2, 18, 0.50), ("driven", 2, 2, 0.40),
+    ("drilled_shaft", 4, 8, 0.45), ("drilled_shaft", 4, 4, 0.36)])
+def test_small_group_counts_the_piles_under_the_cap(pile_type, n, group,
+                                                    phi):
+    """GM-289 review: a block over the piles in tension of a larger group
+    takes the group's count for the small-group rule (GEC-12 p. 225, 'per
+    substructure unit')."""
+    r = group_uplift_resistance(1.0, 3.0, 10.0, n, "cohesionless",
+                                [(10.0, 9.0)], pile_type=pile_type,
+                                group_piles=group)
+    assert r["phi_ug"] == pytest.approx(phi)
+    assert r["group_piles"] == group
+
+
 def test_ufc_small_group_reading():
     assert small_group_reduction(4, "driven") == 1.0
     assert small_group_reduction(4, "driven", "ufc") == 0.8
@@ -128,6 +143,7 @@ def test_the_lesser_governs():
     (dict(layers=[(4.0, 9.0)]), "toes"),
     (dict(soil_type="cohesive"), "su"),
     (dict(cap_weight=-1.0), "cap_weight"),
+    (dict(group_piles=5), "group_piles"),
 ])
 def test_refused(kwargs, match):
     args = dict(B=2.0, Z=3.0, D=10.0, n_piles=6, soil_type="cohesionless",
