@@ -200,7 +200,7 @@ def _run_analyze_slope_srm(params: dict) -> dict:
         params.get("depth"), name="depth", method="fem2d_slope_srm",
         hint=" Omit 'depth' for the 2*H default. To compare FOS across several "
              "meshes (a mesh-refinement / mesh-consistency study), use the "
-             "srm_mesh_refinement_study method instead of driving this per mesh.")
+             "fem2d_srm_mesh_refinement_study method instead of driving this per mesh.")
 
     kwargs = dict(
         surface_points=surface_points,
@@ -243,6 +243,54 @@ def _run_analyze_slope_srm(params: dict) -> dict:
             "dimensionless_displacement": [round(float(v), 4) for v in dim],
         }
     return out
+
+
+def _run_srm_mesh_refinement_study(params: dict) -> dict:
+    from fem2d import srm_mesh_refinement_study
+    method = "fem2d_srm_mesh_refinement_study"
+    _valid = ("surface_points", "soil_layers", "meshes", "published",
+              "conv_tol", "depth", "x_extend", "element_type", "srm_field",
+              "srf_tol", "n_load_steps", "t", "gamma_w", "max_iter", "tol",
+              "blowup_factor", "srf_range", "n_gp", "gwt", "layer_polylines")
+    reject_unknown_params(params, _valid, method=method)
+    require_params(params, ["surface_points", "soil_layers", "meshes"],
+                   method=method, valid=_valid)
+    _require_layer_elevations(params["soil_layers"], method=method)
+    meshes = [tuple(int(v) for v in m) for m in params["meshes"]]
+    if len(meshes) < 2 or any(len(m) != 2 or min(m) < 1 for m in meshes):
+        raise ValueError(
+            f"{method}: 'meshes' must be at least two [nx, ny] pairs of "
+            "positive integers, coarse to fine (three or more give the "
+            "Richardson estimate).")
+    element_type = params.get("element_type", "t6")
+    _require_choice(element_type, ("t6", "cst"),
+                    name="element_type", method=method)
+    srm_field = params.get("srm_field", "c_phi")
+    _require_choice(srm_field, ("c_phi", "c", "phi"),
+                    name="srm_field", method=method)
+    n_gp = params.get("n_gp")
+    if n_gp is not None:
+        _require_choice(int(n_gp), (3, 6), name="n_gp", method=method)
+    _require_positive(params.get("depth"), name="depth", method=method)
+    _require_positive(params.get("conv_tol"), name="conv_tol", method=method)
+
+    kwargs = {"element_type": element_type, "srm_field": srm_field}
+    for name in ("depth", "x_extend", "published", "conv_tol", "srf_tol",
+                 "n_load_steps", "t", "gamma_w", "max_iter", "tol",
+                 "blowup_factor", "layer_polylines"):
+        if name in params:
+            kwargs[name] = params[name]
+    if "srf_range" in params:
+        kwargs["srf_range"] = tuple(params["srf_range"])
+    if n_gp is not None:
+        kwargs["n_gp"] = int(n_gp)
+    if "gwt" in params:
+        kwargs["gwt"] = _normalize_gwt(params["gwt"])
+
+    result = srm_mesh_refinement_study(
+        [tuple(pt) for pt in params["surface_points"]],
+        params["soil_layers"], meshes, **kwargs)
+    return clean_result(result.to_dict())
 
 
 def _run_analyze_local_fos(params: dict) -> dict:
@@ -521,6 +569,7 @@ METHOD_REGISTRY = {
     "fem2d_foundation": _run_analyze_foundation,
     "fem2d_footing_capacity": _run_analyze_footing_capacity,
     "fem2d_slope_srm": _run_analyze_slope_srm,
+    "fem2d_srm_mesh_refinement_study": _run_srm_mesh_refinement_study,
     "fem2d_local_fos": _run_analyze_local_fos,
     "fem2d_excavation": _run_analyze_excavation,
     "fem2d_seepage": _run_analyze_seepage,
@@ -632,6 +681,41 @@ METHOD_INFO = {
             "warnings": "Plain-language cautions: slope covered by too few elements, search range that did not bracket failure, finer mesh that disagrees, side boundaries inside the deep circle of an undrained foundation (extend the level ground), an undrained layer with Poisson's ratio below 0.45 (use 0.49), a soil layer with no elements, a cohesionless face above tan(phi)/tan(beta). Quote them with the factor of safety.",
             "mesh_check": "With mesh_check: {mesh, FOS, finer_mesh, FOS_finer_mesh, change_pct}.",
             "notes": "What the model did by default, e.g. the level ground carried wider (and nx raised) over a deep undrained foundation.",
+        },
+    },
+    "fem2d_srm_mesh_refinement_study": {
+        "category": "FEM 2D",
+        "brief": "Slope SRM factor of safety on a sequence of meshes (coarse to fine): per-mesh table, change between meshes, Richardson estimate, convergence flag. Runs fem2d_slope_srm once per mesh.",
+        "parameters": {
+            "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,z],...] array (as fem2d_slope_srm)."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of dicts with 'name','bottom_elevation','E','nu','c','phi','psi','gamma' (as fem2d_slope_srm)."},
+            "meshes": {"type": "array", "required": True, "description": "Mesh densities [[nx, ny], ...], coarse to fine; at least two, three or more give the Richardson estimate. Each is one SRM run, so the run time is their sum."},
+            "published": {"type": "float", "required": False, "description": "Reference or published FOS, used only for the per-mesh error column."},
+            "conv_tol": {"type": "float", "required": False, "default": 0.03, "description": "Relative FOS change between the two finest meshes below which the study reads converged."},
+            "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m); held for every mesh. Default as fem2d_slope_srm."},
+            "x_extend": {"type": "float", "required": False, "description": "Horizontal margin (m); held for every mesh. Default as fem2d_slope_srm."},
+            "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element, held for every mesh (t6 recommended)."},
+            "srm_field": {"type": "str", "required": False, "default": "c_phi", "allowed_values": ["c_phi", "c", "phi"], "description": "Strengths reduced by the SRF, held for every mesh."},
+            "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance for every mesh."},
+            "gwt": {"type": "float|array", "required": False, "description": "Groundwater table: float elevation, or [[x,y],...] polyline."},
+            "blowup_factor": {"type": "float", "required": False, "default": 15.0, "description": "Dimensionless-displacement blowup threshold, as fem2d_slope_srm."},
+            "srf_range": {"type": "array", "required": False, "default": [0.5, 3.0], "description": "[min, max] SRF search range."},
+            "n_gp": {"type": "int", "required": False, "allowed_values": [3, 6], "description": "T6 Gauss rule override (default 3)."},
+            "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step."},
+            "layer_polylines": {"type": "dict", "required": False, "description": "{layer_name: [[x,y],...]} bottom-boundary polylines for non-horizontal layering."},
+        },
+        "returns": {
+            "levels": "Mesh table, coarse to fine: nx, ny, n_elements, n_nodes, FOS, fos_basis, converged (bracketing), n_srf_trials, wall_time_s, rel_change (from the previous mesh), error_vs_published.",
+            "fos_finest": "FOS on the finest mesh.",
+            "fos_coarsest": "FOS on the coarsest mesh.",
+            "fos_richardson": "Mesh-independent estimate from the three finest meshes, or null when they are not monotonic, fewer than three, or the observed order is out of range.",
+            "observed_order": "Observed order of convergence used for the extrapolation.",
+            "fos_estimate": "The Richardson value where there is one, else the finest-mesh FOS.",
+            "converged": "True when the change between the two finest meshes is below conv_tol.",
+            "conv_tol": "Tolerance used for converged.",
+            "published": "The reference FOS, if given.",
+            "element_type": "Echo of the element used for every mesh.",
+            "srm_field": "Echo of the strengths reduced for every mesh.",
         },
     },
     "fem2d_local_fos": {
@@ -843,6 +927,7 @@ _FEM_PARAM_BACKFILL = {
     "fem2d_foundation": ["t"],
     "fem2d_footing_capacity": ["domain_depth", "domain_half_width", "max_iter", "tol"],
     "fem2d_slope_srm": ["gamma_w", "n_load_steps", "t", "tol"],
+    "fem2d_srm_mesh_refinement_study": ["gamma_w", "n_load_steps", "t", "tol"],
     "fem2d_local_fos": ["blowup_factor", "gamma_w", "gwt", "layer_polylines",
                         "max_iter", "n_gp", "n_load_steps", "srf_range", "t", "tol"],
     "fem2d_excavation": ["gamma_w", "max_iter", "nx", "ny", "t", "tol"],
@@ -870,7 +955,8 @@ declare_applies_when(METHOD_INFO, {
         "interface_adhesion": {"wall_contact": ["interface"]},
         "gamma_w": _WATER, "excavation_water": _WATER},
     "fem2d_local_fos": {"gamma_w": _WATER},
-    "fem2d_slope_srm": {"gamma_w": _WATER}})
+    "fem2d_slope_srm": {"gamma_w": _WATER},
+    "fem2d_srm_mesh_refinement_study": {"gamma_w": _WATER}})
 
 # The values the handlers pass when these are left out (BACKLOG GM-165),
 # and what a left-out input with no default stands for: the load ramp,
@@ -879,6 +965,7 @@ declare_applies_when(METHOD_INFO, {
 for _m, _defaults in {
         "fem2d_footing_capacity": {"max_iter": 1000, "tol": 1e-4},
         "fem2d_slope_srm": {"n_load_steps": 2, "tol": 1e-5},
+        "fem2d_srm_mesh_refinement_study": {"n_load_steps": 2, "tol": 1e-5},
         "fem2d_local_fos": {"n_load_steps": 2, "srf_range": [0.5, 3.0],
                             "max_iter": 1000, "tol": 1e-5},
         "fem2d_excavation": {"nx": 30, "ny": 15, "tol": 1e-5},
@@ -904,6 +991,9 @@ declare_when_absent(METHOD_INFO, {
                               "to the side")},
     "fem2d_slope_srm": {"depth": _DEPTH, "x_extend": _X_EXTEND,
                         "gwt": _NO_WATER, "n_gp": _GAUSS},
+    "fem2d_srm_mesh_refinement_study": {
+        "depth": _DEPTH, "x_extend": _X_EXTEND, "gwt": _NO_WATER,
+        "n_gp": _GAUSS},
     "fem2d_local_fos": {"depth": _DEPTH, "x_extend": _X_EXTEND,
                         "gwt": _NO_WATER, "n_gp": _GAUSS},
     "fem2d_consolidation": {

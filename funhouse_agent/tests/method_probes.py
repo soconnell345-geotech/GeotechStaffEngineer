@@ -148,7 +148,8 @@ LABEL_ONLY = {
        for n in ("hammer_type", "hammer_custom_name")},
     **{(f"fem2d|{m}", "t"): _PLANE_STRAIN
        for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
-                 "fem2d_slope_srm", "fem2d_excavation", "fem2d_staged")},
+                 "fem2d_slope_srm", "fem2d_excavation", "fem2d_staged",
+                 "fem2d_srm_mesh_refinement_study")},
 }
 
 #: Declared inputs that act, but not on their probe's inputs or not in
@@ -352,6 +353,13 @@ NOT_REACHED = {
     ("fem2d|fem2d_slope_srm", "blowup_factor"): _BLOWUP,
     ("fem2d|fem2d_local_fos", "tol"): _ITERATIONS,
     ("fem2d|fem2d_staged", "tol"): _ITERATIONS,
+    **{("fem2d|fem2d_srm_mesh_refinement_study", n): (
+        "the study reports only each mesh's FOS, found to the SRF "
+        "tolerance, and the probe's FOS does not move with it")
+       for n in ("max_iter", "blowup_factor", "tol", "n_load_steps")},
+    ("fem2d|fem2d_srm_mesh_refinement_study", "conv_tol"):
+        "the probe's two meshes differ by 4.8 %, beyond both 3 % and 4.5 %, "
+        "so the converged flag reads the same",
     ("fem2d|fem2d_slope_srm", "mesh_check"):
         "it adds the result's mesh_check block, which shares the input's "
         "name, so the guard leaves it out with the echo",
