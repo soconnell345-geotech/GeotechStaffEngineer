@@ -2638,5 +2638,55 @@
       "BACKLOG.md OWN-112",
       "module_work/gm295/CHECK.md"
     ]
+  },
+  "OWN-113": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Residual strength of liquefied soil by Idriss & Boulanger: which of GEC-12 Fig. 7-78's two curves should be the default, 'void redistribution effects could be significant' (the lower) or 'negligible' (the upper)?",
+    "why": "The residual strength feeds post-liquefaction slope and flow-slide checks. At (N1)60cs 16 the two curves give s_r/sigma'vo 0.140 and 0.290, about twice as much.",
+    "background": "Since GM-293 the module reads both curves off GEC-12 Fig. 7-78 (the old curve was an unprinted fit). The default is the lower ('significant') curve; the other is offered in the result's choices.",
+    "options": [
+      {
+        "label": "'Significant' curve (as now)",
+        "effect": "Lower, safe-side residual strength; results unchanged."
+      },
+      {
+        "label": "'Negligible' curve",
+        "effect": "About twice the residual strength at mid-range blow counts; flow-slide checks less severe."
+      }
+    ],
+    "recommendation": "Keep the 'significant' curve as the default: it is the safe side, and the other stays one choice away.",
+    "if_no_answer": "The 'significant' curve stays the default.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-113",
+      "module_work/gm293/CHECK.md"
+    ]
+  },
+  "OWN-114": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Seismic passive pressure (Mononobe-Okabe KPE): when no wall friction is given, should the default be 0.4 phi (UFC 3-220-20's limit) or phi/3 (FHWA NHI-06-089's)?",
+    "why": "KPE sets the passive resistance in seismic wall and embedment checks. At phi 30 deg, kh 0.2: 3.731 at 0.4 phi against 3.500 at phi/3 (6 % lower). The old default, 2/3 phi, gave 4.975.",
+    "background": "UFC 3-220-20 Fig. 4-8 (p. 187) says a planar-wedge passive coefficient is unconservative above delta/phi 0.4 and should not be used there; NHI-06-089 p. 10-19 calls it unreliable above phi/3 and recommends log-spiral charts. GM-293 set 0.4 phi as the default and offers phi/3 and a log-spiral coefficient in the result's choices.",
+    "options": [
+      {
+        "label": "0.4 phi (UFC, as now)",
+        "effect": "Results unchanged."
+      },
+      {
+        "label": "phi/3 (NHI)",
+        "effect": "KPE about 6 % lower by default; the safe side for passive resistance."
+      }
+    ],
+    "recommendation": "phi/3: NHI-06-089 is the manual the other wall checks follow, and it is the safe side for passive resistance; 0.4 phi stays one choice away.",
+    "if_no_answer": "0.4 phi stays the default.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-114",
+      "module_work/gm293/CHECK.md"
+    ]
   }
 }
