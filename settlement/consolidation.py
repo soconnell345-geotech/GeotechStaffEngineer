@@ -8,9 +8,11 @@ All units are SI: kPa, meters.
 
 References:
     Terzaghi, K. (1925) — Theory of 1-D consolidation
-    USACE EM 1110-1-1904, Chapter 5
-    FHWA Soils & Foundations Reference Manual, Vol II, Ch 8
-    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.3 (Eqs. 5-20 to 5-23)
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.3, Eqs. 5-20 and 5-22
+        (pp. 82, 84)
+    UFS 3-220-10 (2026), Eqs. 5-12 to 5-14 (p. 241), worked in its
+        Fig. 5-13 (p. 242)
+    FHWA NHI-06-089, Example 8-3 (pp. 8-54, 8-55)
 """
 
 import math
@@ -42,7 +44,11 @@ class ConsolidationLayer:
         Initial effective vertical stress at center of layer (kPa).
     sigma_p : float, optional
         Preconsolidation pressure (kPa). If None, soil is assumed
-        normally consolidated (sigma_p = sigma_v0).
+        normally consolidated (sigma_p = sigma_v0). Below sigma_v0 the
+        layer reads as underconsolidated (:attr:`is_underconsolidated`):
+        its initial vertical effective stress must come from its measured
+        or estimated pore pressures (UFS 3-220-10 Sec. 5-2.3); the
+        analysis says so in its warnings.
     description : str, optional
         Layer description.
     """
@@ -78,16 +84,29 @@ class ConsolidationLayer:
 
     @property
     def is_normally_consolidated(self) -> bool:
-        """True if OCR ≈ 1 (NC soil)."""
-        return abs(self.OCR - 1.0) < 0.05
+        """True if sigma_p = sigma_v0 (NC soil). GM-285: no longer any
+        OCR within 5 % of 1, which the print does not give: the
+        overconsolidated form (GEC-6 Eq. 5-22, UFS Eq. 5-14) runs into the
+        normally consolidated one as sigma_p falls to sigma_v0."""
+        return math.isclose(self.sigma_p, self.sigma_v0, rel_tol=1e-9)
+
+    @property
+    def is_underconsolidated(self) -> bool:
+        """True if sigma_p is below sigma_v0: a layer still consolidating
+        under an earlier change in stress, whose initial vertical effective
+        stress comes from its measured or estimated pore pressures (UFS
+        3-220-10 Sec. 5-2.3, pp. 224, 225)."""
+        return (self.sigma_p < self.sigma_v0
+                and not self.is_normally_consolidated)
 
 
 def consolidation_settlement_layer(layer: ConsolidationLayer,
                                    delta_sigma: float) -> float:
     """Compute consolidation settlement for a single sublayer.
 
-    Three cases:
-    1. NC soil (sigma_p ≈ sigma_v0):
+    Three cases (GEC-6 Eqs. 5-20 and 5-22; UFS 3-220-10 Eqs. 5-12 to
+    5-14 in Cc / (1 + e0) and Cr / (1 + e0), its Eqs. 5-10 and 5-11):
+    1. NC soil (sigma_p = sigma_v0):
        Sc = Cc*H/(1+e0) * log10((sigma_v0 + delta_sigma)/sigma_v0)
     2. OC soil, stays in OC range (sigma_v0 + delta_sigma <= sigma_p):
        Sc = Cr*H/(1+e0) * log10((sigma_v0 + delta_sigma)/sigma_v0)
@@ -109,7 +128,8 @@ def consolidation_settlement_layer(layer: ConsolidationLayer,
 
     References
     ----------
-    FHWA GEC-6, Eqs 5-20 and 5-22 (pp. 82, 84).
+    FHWA GEC-6, Eqs 5-20 and 5-22 (pp. 82, 84); UFS 3-220-10 Eqs. 5-12
+    to 5-14 (p. 241).
     """
     return consolidation_layer_terms(layer, delta_sigma)["Sc"]
 

@@ -103,6 +103,7 @@ def _run_schmertmann_settlement(params: dict) -> dict:
         layers=layers,
         footing_shape=params.get("shape", "square"),
         time_years=params.get("time_years", 0.0),
+        gamma_soil=params.get("gamma_soil"),
     )
     return {
         "schmertmann_settlement_m": round(Se, 6),
@@ -222,6 +223,7 @@ def _run_combined_settlement(params: dict) -> dict:
         t_secondary=params.get("t_secondary", 0.0),
         stress_method=params.get("stress_method", "2:1"),
         time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
+        gamma_soil=params.get("gamma_soil"),
     )
     result = analysis.compute()
     return result.to_dict()
@@ -287,6 +289,7 @@ METHOD_INFO = {
             "shape": {"type": "str", "required": False, "default": "square", "description": "'square' or 'strip'."},
             "layers": {"type": "array", "required": True, "description": "Array of soil layers, each with: depth_top (m), depth_bottom (m), Es (kPa)."},
             "time_years": {"type": "float", "required": False, "default": 0.0, "description": "Time for creep correction (years). 0 = no creep."},
+            "gamma_soil": {"type": "float", "required": True, "description": "Effective unit weight below the base (kN/m3), for sigma'_vp at the depth of the peak strain influence factor."},
         },
         "returns": {
             "schmertmann_settlement_m": "Settlement in meters.",

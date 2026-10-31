@@ -395,7 +395,7 @@ class TestCalcPackageDisplayFixes:
 
     def test_settlement_renders_actual_influence_factor(self):
         """The elastic-settlement step must show the Iw the analysis actually
-        used (Schleicher ~1.122 for a square), not a hardcoded 1.0."""
+        used (GEC-6 Table 5-12's 1.12 for a square), not a hardcoded 1.0."""
         from settlement.analysis import SettlementAnalysis
         from settlement.calc_steps import get_calc_steps, _immediate_Iw
         analysis = SettlementAnalysis(
@@ -403,7 +403,7 @@ class TestCalcPackageDisplayFixes:
             immediate_method="elastic", Es_immediate=12000, nu=0.3)
         result = analysis.compute()
         Iw = _immediate_Iw(analysis)
-        assert Iw == pytest.approx(1.122, abs=0.01)      # square Schleicher, not 1.0
+        assert Iw == pytest.approx(1.12, abs=1e-12)      # GEC-6 Table 5-12, not 1.0
         text = _calc_step_text(get_calc_steps(result, analysis))
         assert f"{Iw:.3f}" in text                       # actual Iw rendered
         assert "× 1.0" not in text                       # old hardcoded value gone

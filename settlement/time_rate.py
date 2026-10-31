@@ -8,7 +8,8 @@ All units are SI: kPa, meters, seconds (or years where noted).
 
 References:
     Terzaghi, K. (1925) — Erdbaumechanik
-    USACE EM 1110-1-1904, Chapter 6
+    UFS 3-220-10 (2026), Eq. 5-15 and Fig. 5-16 (p. 245)
+    FHWA NHI-06-088, Eq. 7-8 and Table 7-4 (pp. 7-31, 7-32)
     FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.3.1 (no procedure; it refers to Cheney & Chassie 2000)
 """
 
@@ -41,12 +42,19 @@ def time_factor(cv: float, t: float, Hdr: float) -> float:
     return cv * t / Hdr**2
 
 
-def degree_of_consolidation(Tv: float) -> float:
-    """Compute average degree of consolidation U from time factor Tv.
+#: The time factor where UFS 3-220-10 Fig. 5-16 changes from one of its
+#: approximations to the other.
+T_SWITCH = 0.2
 
-    Uses the approximate relationships:
-        For U < 60%: Tv = (pi/4) * (U/100)²  →  U = 100*sqrt(4*Tv/pi)
-        For U >= 60%: Tv = -0.9332*log10(1-U/100) - 0.0851
+
+def degree_of_consolidation(Tv: float) -> float:
+    """Compute average degree of consolidation U from time factor Tv,
+    by the approximations UFS 3-220-10 Fig. 5-16 (p. 245) prints:
+
+        For T <= 0.2:  U = (2 / sqrt(pi)) sqrt(T)
+        For T > 0.2:   U = 1 - (8 / pi^2) exp(-pi^2 T / 4)
+
+    (FHWA NHI-06-088 Table 7-4, p. 7-32, tabulates the same relation.)
 
     Parameters
     ----------
@@ -60,25 +68,15 @@ def degree_of_consolidation(Tv: float) -> float:
 
     References
     ----------
-    FHWA GEC-6, Eq 8-15 and 8-16.
+    UFS 3-220-10 Eq. 5-15 and Fig. 5-16 (p. 245).
     """
     if Tv <= 0:
         return 0.0
-
-    # Check if in the U < 60% range
-    # At U=60%, Tv = (pi/4)*(0.6)^2 = 0.2827
-    Tv_60 = math.pi / 4.0 * 0.6**2  # ≈ 0.2827
-
-    if Tv <= Tv_60:
-        U = 100.0 * math.sqrt(4.0 * Tv / math.pi)
+    if Tv <= T_SWITCH:
+        U = 2.0 / math.sqrt(math.pi) * math.sqrt(Tv)
     else:
-        # Solve Tv = -0.9332*log10(1 - U/100) - 0.0851
-        # 1 - U/100 = 10^(-(Tv + 0.0851)/0.9332)
-        exponent = -(Tv + 0.0851) / 0.9332
-        one_minus_U = 10.0**exponent
-        U = (1.0 - one_minus_U) * 100.0
-
-    return min(U, 100.0)
+        U = 1.0 - 8.0 / math.pi**2 * math.exp(-math.pi**2 * Tv / 4.0)
+    return min(100.0 * U, 100.0)
 
 
 def time_for_consolidation(U_target: float, cv: float, Hdr: float) -> float:
@@ -97,6 +95,13 @@ def time_for_consolidation(U_target: float, cv: float, Hdr: float) -> float:
     -------
     float
         Time to reach U_target (years).
+
+    Notes
+    -----
+    The inverse of :func:`degree_of_consolidation`: T = (pi/4) U^2 up to
+    T = 0.2, then T = -(4/pi^2) ln[(pi^2/8)(1 - U)] (UFS 3-220-10
+    Fig. 5-16). The two printed approximations differ by 0.0005 in U at
+    T = 0.2; a U between them is reached at T = 0.2.
     """
     if U_target <= 0:
         return 0.0
@@ -106,11 +111,10 @@ def time_for_consolidation(U_target: float, cv: float, Hdr: float) -> float:
         raise ValueError(f"cv must be positive, got {cv}")
 
     U_frac = U_target / 100.0
-
-    if U_target < 60:
-        Tv = math.pi / 4.0 * U_frac**2
-    else:
-        Tv = -0.9332 * math.log10(1.0 - U_frac) - 0.0851
+    Tv = math.pi / 4.0 * U_frac**2
+    if Tv > T_SWITCH:
+        Tv = max(T_SWITCH, -4.0 / math.pi**2
+                 * math.log(math.pi**2 / 8.0 * (1.0 - U_frac)))
 
     return Tv * Hdr**2 / cv
 

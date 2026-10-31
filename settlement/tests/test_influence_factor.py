@@ -3,6 +3,8 @@ no printed point of a square. Not given, Iw is now GEC-6 Table 5-12's shape
 and rigidity factor C_d (p. 97, after Winterkorn & Fang 1975) for the
 footing's shape, rigidity and point, and the tool says which."""
 
+import math
+
 import pytest
 
 from settlement.immediate import (
@@ -47,13 +49,15 @@ def test_every_printed_cell_of_table_5_12(row, point, printed):
     assert _cd(row, point) == printed
 
 
-def test_between_rows_in_log_l_over_b_and_near_schleicher():
-    # L/B = 7, between the printed 5 (2.10) and 10 (2.53) rows; Schleicher's
-    # closed form for the centre gives 2.318
+def test_between_rows_in_log_l_over_b():
+    # L/B = 7, between the printed 5 (2.10) and 10 (2.53) rows,
+    # interpolated in log(L/B); the analysis's default Iw is the same
+    # table value (GM-285: it was Schleicher's closed form, 2.318 here)
     v = gec6_influence_factor("rectangular", L=14.0, B=2.0)[0]
     assert 2.10 < v < 2.53
-    assert v == pytest.approx(elastic_influence_factor("rectangular", 14.0,
-                                                       2.0), abs=0.01)
+    t = math.log(7 / 5) / math.log(10 / 5)
+    assert v == pytest.approx(2.10 + t * (2.53 - 2.10), abs=1e-12)
+    assert elastic_influence_factor("rectangular", 14.0, 2.0) == v
     # L and B either way round
     assert gec6_influence_factor("rectangular", L=2.0, B=14.0)[0] == v
 

@@ -115,7 +115,8 @@ def _run_schmertmann_settlement(params: dict) -> dict:
         params, ("q_net", "q_overburden", "B", "L", "layers", "shape",
                  "time_years", "gamma_soil"),
         method="schmertmann_settlement")
-    require_params(params, ["q_net", "B", "layers"], method="schmertmann_settlement")
+    require_params(params, ["q_net", "B", "layers", "gamma_soil"],
+                   method="schmertmann_settlement")
     check_nested_list(params["layers"], _SCHMERTMANN_KEYS,
                       method="schmertmann_settlement", label="layers",
                       hints=_SCHMERTMANN_KEY_HINTS)
@@ -230,7 +231,7 @@ def run_combined_settlement_analysis(
                  "immediate_method", "Es", "nu", "schmertmann_layers",
                  "consolidation_layers", "cv", "Hdr", "drainage", "C_alpha",
                  "e0_secondary", "t_secondary", "stress_method",
-                 "time_years_schmertmann", "Iw"),
+                 "time_years_schmertmann", "Iw", "gamma_soil"),
         method=method)
     require_params(params, ["q_applied", "B"], method=method)
     consol_layers = None
@@ -284,6 +285,7 @@ def run_combined_settlement_analysis(
         t_secondary=params.get("t_secondary", 0.0),
         stress_method=params.get("stress_method", "2:1"),
         time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
+        gamma_soil=params.get("gamma_soil"),
     )
     return analysis.compute(), analysis
 
@@ -325,12 +327,12 @@ METHOD_INFO = {
         "parameters": {
             "q_net": {"type": "float", "required": True, "description": "Net bearing pressure (kPa)."},
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
-            "L": {"type": "float", "required": False, "description": "Footing length (m). Default B."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Default B. The strain influence diagram is the axisymmetric one at L/B = 1 and the plane-strain one at L/B >= 10, linearly interpolated between (NHI-06-089 Fig. 8-21a)."},
             "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
             "time_years": {"type": "float", "required": False, "default": 0.0, "description": "Time for creep factor."},
-            "gamma_soil": {"type": "float", "required": False, "description": "Effective unit weight (kN/m3) below the base, used for sigma'_vp at the PEAK-influence depth in Izp = 0.5 + 0.1*sqrt(dq/sigma'_vp). STRONGLY recommended for embedded footings: without it sigma'_vp falls back to the base overburden q_overburden, which OVERSTATES Izp (and settlement)."},
+            "gamma_soil": {"type": "float", "required": True, "description": "Effective unit weight (kN/m3) below the base, for sigma'_vp = q_overburden + gamma_soil * z_peak, the vertical effective stress at the depth of the peak, in Izp = 0.5 + 0.1*sqrt(dq/sigma'_vp) (NHI-06-089 Fig. 8-21b)."},
         },
         "returns": {"schmertmann_settlement_mm": "Settlement in mm."},
     },
@@ -377,7 +379,8 @@ METHOD_INFO = {
             "L": {"type": "float", "required": False, "description": "Footing length (m). Not given: L = B for a square or circular footing; a strip is taken as infinitely long (plane strain), which the elastic method refuses unless Iw is given (its Iw grows with L/B without limit); a rectangular footing needs L."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip", "circular"], "description": "Footing shape."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio for immediate settlement."},
-            "Iw": {"type": "float", "required": False, "description": "Elastic influence factor for the elastic method. Not given: Schleicher's value at the centre of a flexible footing (1.12 for a square, growing with L/B; 1.0 for a circle)."},
+            "Iw": {"type": "float", "required": False, "description": "Elastic influence factor for the elastic method. Not given: GEC-6 Table 5-12's shape factor at the centre of a flexible footing (1.12 for a square, by L/B for a rectangle, interpolated in log(L/B); 1.00 for a circle)."},
+            "gamma_soil": {"type": "float", "required": False, "description": "Effective unit weight below the base (kN/m3), for Schmertmann's sigma'_vp at the depth of the peak strain influence factor (NHI-06-089 Fig. 8-21b). Required with immediate_method 'schmertmann'."},
             "C_alpha": {"type": "float", "required": False, "description": "Secondary compression index. Enables secondary settlement."},
             "e0_secondary": {"type": "float", "required": False, "description": "One void ratio for the secondary settlement of every consolidation layer. Not given: each layer's own e0, layer by layer."},
             "t_secondary": {"type": "float", "required": False, "default": 0.0, "description": "Time for secondary settlement (years)."},
@@ -430,6 +433,7 @@ declare_applies_when(METHOD_INFO, {
         "nu": {"immediate_method": ["elastic"], "Es": "set"},
         "Es": {"immediate_method": ["elastic"]},
         "time_years_schmertmann": {"immediate_method": ["schmertmann"]},
+        "gamma_soil": {"immediate_method": ["schmertmann"]},
         "stress_method": {"consolidation_layers": "set"},
         "drainage": {"cv": "set", "consolidation_layers": "set",
                      "Hdr": "unset"},
@@ -457,8 +461,9 @@ declare_when_absent(METHOD_INFO, {
         "Hdr": ("half the consolidating thickness, or all of it with single "
                 "drainage", "the drainage path for the time curve from the "
                 "drainage given"),
-        "Iw": ("Schleicher's value at the centre of a flexible footing",
-               "1.12 for a square, growing with L/B; 1.0 for a circle"),
+        "Iw": ("GEC-6 Table 5-12's C_d at the centre of a flexible footing",
+               "1.12 for a square, by L/B for a rectangle (GEC-6 Table "
+               "5-12, p. 97); 1.00 for a circle"),
         "e0_secondary": ("each layer's own e0",
                          "the secondary settlement of each consolidation "
                          "layer uses that layer's void ratio"),

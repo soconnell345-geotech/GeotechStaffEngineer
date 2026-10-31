@@ -8,7 +8,8 @@ All units are SI: kPa, meters, years.
 
 References:
     FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3
-    USACE EM 1110-1-1904
+    FHWA NHI-06-088 Ch. 7 and NHI-06-089 Ch. 8
+    UFS 3-220-10 (2026), Ch. 5
 """
 
 import math
@@ -69,6 +70,13 @@ class SettlementAnalysis:
         Sublayers for Schmertmann method.
     time_years_schmertmann : float, optional
         Time for Schmertmann creep correction (years). Default 0.
+    gamma_soil : float, optional
+        Effective unit weight below the base (kN/m3), for Schmertmann's
+        sigma'_vp at the depth of the peak; the Schmertmann method needs
+        it (GM-285).
+    Iw_immediate : float, optional
+        Elastic influence factor. Not given: GEC-6 Table 5-12's C_d at
+        the centre of a flexible footing.
 
     consolidation_layers : list of ConsolidationLayer, optional
         Compressible sublayers for consolidation analysis.
@@ -101,11 +109,12 @@ class SettlementAnalysis:
 
         .. note:: End-of-primary t1 assumption (SET-5)
             Secondary compression runs from t1 (end of primary) to
-            ``t1 + t_secondary``. If ``cv`` is provided, t1 is estimated
-            as the time to 95% consolidation (t95). If ``cv`` is None,
-            t1 defaults to **1.0 year** — an arbitrary but common
-            placeholder. The secondary settlement scales with
-            log10(t2/t1), so the choice of t1 matters; provide ``cv``
+            ``t1 + t_secondary``. If ``cv`` is provided, t1 is the time to
+            90 % consolidation, t90, as FHWA NHI-06-088 Eq. 7-10 takes it
+            (GM-285: it was t95). If ``cv`` is None, t1 defaults to
+            **1.0 year** — an arbitrary but common placeholder. The
+            secondary settlement scales with log10(t2/t1), so the choice
+            of t1 matters; provide ``cv``
             (or check t1) for time-sensitive estimates.
 
     Examples
@@ -261,25 +270,43 @@ class SettlementAnalysis:
                     "immediate settlement", f"elastic, Iw = {result.Iw:.3g}"
                     + ("" if given_iw else " (flexible footing, centre)"),
                     how, "Se = q B (1 - nu^2) Iw / Es on an elastic half "
-                    "space"
+                    "space, the form of GEC-6 Eq. 5-36 (printed for rock)"
                     + ("" if given_iw else "; Iw is the shape factor Cd at "
-                       "the centre of a flexible area (GEC-6 Table 5-12)"),
-                    ["Schmertmann (immediate_method 'schmertmann')"]))
+                       "the centre of a flexible area (GEC-6 Table 5-12, "
+                       "interpolated in log(L/B) between its rows)"),
+                    ["Schmertmann (immediate_method 'schmertmann')",
+                     "an influence factor given (Iw)"]))
         elif self.q_net > 0 and self.immediate_method == "schmertmann":
+            terms = result.schmertmann_terms
+            diagram = ""
+            if terms:
+                share = terms["plane_strain_share"]
+                diagram = (
+                    "; the plane-strain diagram" if share >= 1 else
+                    "; the axisymmetric diagram" if share <= 0 else
+                    f"; the diagram {share:.2f} of the way from the "
+                    "axisymmetric (L/B = 1) to the plane-strain one "
+                    f"(L/B >= 10), at L/B = {terms['L_over_B']:.3g}, "
+                    "interpolated linearly (NHI-06-089 Fig. 8-21a): "
+                    f"peak Iz {terms['Iz_peak']:.3f} at "
+                    f"{terms['z_peak']:.3g} m, to {terms['z_max']:.3g} m")
             out.append(choice(
                 "immediate settlement",
                 "Schmertmann (1978)" if self.schmertmann_layers else
                 "not computed: no schmertmann_layers given", how,
-                (f"creep factor C2 for {self.time_years_schmertmann:g} years"
-                 if self.time_years_schmertmann > 0 else
-                 "no creep factor (time_years_schmertmann = 0)"),
+                "NHI-06-089 Eqs. 8-16 to 8-18, UFS 3-220-10 Eqs. 5-7 to "
+                "5-9; "
+                + (f"creep factor C2 for {self.time_years_schmertmann:g} years"
+                   if self.time_years_schmertmann > 0 else
+                   "no creep factor (time_years_schmertmann = 0)")
+                + diagram,
                 ["elastic (immediate_method 'elastic')"]))
         length = self._length_choice()
         if length:
             out.append(length)
         if self.consolidation_layers and self.q_net > 0:
             out.append(stress_method_choice(self.stress_method))
-        # Hdr is used only with a cv (the time curve and t95).
+        # Hdr is used only with a cv (the time curve and t90).
         if self.cv is not None and self.consolidation_layers:
             Hdr = self._get_Hdr()
             if self.Hdr is not None:
@@ -302,13 +329,16 @@ class SettlementAnalysis:
             if self.cv is not None:
                 out.append(choice(
                     "end of primary consolidation t1",
-                    f"{terms['t1_years']:.3g} years (t95 from cv)", MODULE,
-                    "secondary settlement from t1 to t1 + t_secondary"))
+                    f"{terms['t1_years']:.3g} years (t90 from cv)", MODULE,
+                    "t1 when about 90 % of primary consolidation has "
+                    "occurred (FHWA NHI-06-088 Eq. 7-10); secondary "
+                    "settlement from t1 to t1 + t_secondary"))
             else:
                 out.append(choice(
                     "end of primary consolidation t1", "1 year (assumed)",
                     DEFAULT, "no cv given; Ss scales with log10(t2/t1)",
-                    ["t95 from a given cv (cv)"]))
+                    ["t90 from a given cv (cv), FHWA NHI-06-088 "
+                     "Eq. 7-10"]))
             out.append(self._e0_secondary_choice(terms))
         return out
 
@@ -376,7 +406,21 @@ class SettlementAnalysis:
                 "Secondary settlement starts at an assumed t1 = 1 year (the "
                 "end of primary consolidation): no cv was given, and this "
                 "placeholder is arbitrary. Ss scales with log10(t2/t1); give "
-                "cv to have t1 worked out as t95.")
+                "cv to have t1 worked out as t90 (FHWA NHI-06-088 Eq. 7-10).")
+        under = [i + 1 for i, layer in enumerate(self.consolidation_layers
+                                                 or [])
+                 if layer.is_underconsolidated]
+        if under:
+            out.append(
+                "Consolidation layer(s) "
+                + ", ".join(str(i) for i in under)
+                + ": sigma_p is below sigma_v0, which reads as an "
+                "underconsolidated layer, still consolidating under an "
+                "earlier change in stress. Its initial vertical effective "
+                "stress comes from its measured or estimated pore pressures "
+                "(UFS 3-220-10 Sec. 5-2.3); give that stress as sigma_v0. "
+                "As given, the layer settles by Cr log(sigma_p / sigma_v0) "
+                "+ Cc log(sigma_final / sigma_p) per H / (1 + e0).")
         return out
 
     def _compute_immediate(self, result: Optional[SettlementResult] = None
@@ -460,15 +504,16 @@ class SettlementAnalysis:
 
     def _secondary_terms(self) -> Optional[dict]:
         """Secondary compression settlement and its terms (GM-143):
-        ``t1_years``, ``t2_years``, ``t1_from`` ("t95" or "assumed"),
+        ``t1_years``, ``t2_years``, ``t1_from`` ("t90" or "assumed"),
         ``C_alpha``, ``H_total``, ``e0_given``, ``layers`` (per layer
         ``thickness``, ``e0``, ``Ss``) and the total ``Ss`` (m). None
         without consolidation layers.
 
         Assumptions (SET-5, GM-142)
         ---------------------------
-        * t1 (end of primary consolidation) is estimated as t95 from the
-          time-rate solution when ``cv`` is available; otherwise it falls
+        * t1 (end of primary consolidation) is t90 from the time-rate
+          solution when ``cv`` is available, as FHWA NHI-06-088 Eq. 7-10
+          takes it (GM-285: it was t95); otherwise it falls
           back to a **1.0-year default** — an assumption, not a computed
           value. Because Ss scales with log10(t2/t1), results are
           sensitive to this default when ``cv`` is omitted.
@@ -484,8 +529,8 @@ class SettlementAnalysis:
         # Estimate from time-rate if cv available
         if self.cv is not None:
             Hdr = self._get_Hdr()
-            t1 = time_for_consolidation(95.0, self.cv, Hdr)
-            t1_from = "t95"
+            t1 = time_for_consolidation(90.0, self.cv, Hdr)
+            t1_from = "t90"
         else:
             t1 = 1.0  # assumed default (see docstring, SET-5)
             t1_from = "assumed"

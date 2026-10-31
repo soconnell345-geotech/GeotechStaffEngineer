@@ -69,7 +69,7 @@ def test_no_es_says_immediate_was_not_computed():
 def test_stress_method_choice_names_the_method():
     two = stress_method_choice("2to1")
     assert two["how"] == "default"
-    assert two["basis"].startswith("FHWA NHI-06-088 Sec. 2.4.2")
+    assert two["basis"].startswith("GEC-6 Eq. 5-17")
     assert two["alternatives"] == ["Boussinesq (stress_method 'boussinesq')",
                                    "Westergaard (stress_method 'westergaard')"]
     assert stress_method_choice("westergaard")["chosen"].startswith(

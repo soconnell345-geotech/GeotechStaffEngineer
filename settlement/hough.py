@@ -5,17 +5,22 @@ Computes settlement of granular (cohesionless) soils below a shallow
 foundation using the Hough (1959) bearing-capacity-index method, as
 presented in FHWA GEC-6 (Shallow Foundations).
 
-Per granular sublayer the compression is
+Per granular sublayer the compression is (GEC-6 Eq. 5-24, p. 89)
 
     dH = (H / C') * log10[(sigma'_vo + delta_sigma) / sigma'_vo]
 
 where
     H            = layer thickness (m),
-    C'           = Hough bearing-capacity index (dimensionless), correlated
-                   to the corrected SPT blow count N' (GEC-6 Fig 5-19),
+    C'           = Hough bearing-capacity index (dimensionless), read from
+                   GEC-6 Fig. 5-19 with the SPT blow count corrected for
+                   overburden, N' (Fig. 5-18); the user reads it,
     sigma'_vo    = effective overburden at the layer mid-depth (kPa),
     delta_sigma  = vertical stress increase at the layer mid-depth (kPa),
-                   computed here with the 2:1 (2V:1H) load-spread method.
+                   computed here with the 2:1 (2V:1H) load-spread method
+                   (GEC-6 Eq. 5-17; for a strip, q B / (B + z), Fig. 5-12),
+                   as all four of GEC-6 Appendix B's Hough examples do.
+                   GEC-6 Sec. 5.3.4.1 also allows the elastic charts
+                   (Figs. 5-9 to 5-11), which this method does not offer.
 
 The total settlement is the sum of dH over all layers.
 
@@ -29,15 +34,17 @@ convenience fields on the result).
 References:
     Hough, B.K. (1959), "Compressibility as the Basis for Soil Bearing
     Value", JSMFD, ASCE, Vol. 85, No. SM4.
-    FHWA GEC-6 (FHWA-SA-02-054), "Shallow Foundations", Section 5 and
-    Appendix B, Example 1 (Tables B1-2 / B1-3).
+    FHWA GEC-6 (FHWA-SA-02-054), "Shallow Foundations", Sec. 5.3.4.1
+    (pp. 89, 90), and Appendix B, Examples 1 to 4.
 """
 
 import math
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 
-from settlement.stress_distribution import approximate_2to1
+from settlement.stress_distribution import (
+    approximate_2to1, approximate_2to1_strip,
+)
 
 
 @dataclass
@@ -200,7 +207,8 @@ def hough_settlement(layers: List[HoughLayer], q_net: float, B: float,
     L : float, optional
         Footing length (m). Defaults to B (square footing). For a square
         footing the 2:1 increase reduces to q*B^2/(B+Z)^2; for a rectangle it
-        is q*B*L/((B+Z)(L+Z)).
+        is q*B*L/((B+Z)(L+Z)); ``math.inf``, a strip, q*B/(B+Z) (GEC-6
+        Fig. 5-12, Appendix B Example 4).
 
     Returns
     -------
@@ -216,7 +224,8 @@ def hough_settlement(layers: List[HoughLayer], q_net: float, B: float,
 
     References
     ----------
-    Hough (1959); FHWA GEC-6 (FHWA-SA-02-054), Appendix B, Example 1.
+    Hough (1959); FHWA GEC-6 (FHWA-SA-02-054) Eq. 5-24, Appendix B,
+    Examples 1 to 4.
     """
     if B <= 0:
         raise ValueError(f"Footing width B must be positive, got {B}")
@@ -231,7 +240,9 @@ def hough_settlement(layers: List[HoughLayer], q_net: float, B: float,
 
     total = 0.0
     for layer in layers:
-        delta_sigma = approximate_2to1(q_net, B, L, layer.depth_to_center)
+        delta_sigma = (approximate_2to1_strip(q_net, B, layer.depth_to_center)
+                       if math.isinf(L) else
+                       approximate_2to1(q_net, B, L, layer.depth_to_center))
         dH = hough_settlement_layer(layer, delta_sigma)
         total += dH
         result.layers.append({
