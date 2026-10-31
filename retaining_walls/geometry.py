@@ -29,21 +29,44 @@ class CantileverWallGeometry:
         ``H_active``). A wall retaining 4.0 m above the top of a 0.5 m
         thick footing is H = 4.5 m.
     base_width : float, optional
-        Base slab width B (m). If None, auto-sized to ~0.6*H.
+        Base slab width B (m). If None, 0.6 H: within the typical 2/5 H to
+        2/3 H of FHWA NHI-06-089 Fig. 10-16(a) (p. 10-38, after Teng 1962)
+        and the 50 to 70 % of H of UFC 3-220-20 App. B-1.3 (p. 600).
     toe_length : float, optional
-        Toe projection from front face of stem (m). If None, ~0.1*base_width.
+        Toe projection from front face of stem (m). If None, H/10, the
+        short end of NHI-06-089 Fig. 10-16(a)'s H/10 to H/8 (GM-288).
     stem_thickness_top : float, optional
-        Stem thickness at top (m). Default 0.30.
+        Stem thickness at top (m). Default 0.30 (NHI-06-089 Fig. 10-16(a):
+        200 mm minimum, 300 mm preferable).
     stem_thickness_base : float, optional
-        Stem thickness at base of stem (m). If None, auto-sized.
+        Stem thickness at base of stem (m). If None, H/10 (NHI-06-089 Fig.
+        10-16(a): H/12 to H/10), at least the top thickness (GM-288).
     base_thickness : float, optional
-        Base slab thickness (m). Default 0.6.
+        Base slab thickness (m). If None, H/10 (NHI-06-089 Fig. 10-16(a):
+        H/12 to H/10; GM-288).
+    stem_batter : str, optional
+        Which face of a tapered stem (thicker at its base than at its top)
+        is battered: "back" (default; the front face vertical, the backfill
+        over the battered back counted as resisting weight, GM-288) or
+        "front" (the back face vertical, as UFC 3-220-20 App. B-1 Fig. B-2
+        (p. 598) and NHI-06-089 Fig. 10-16(a) and Example 10-3 (p. 10-52)
+        draw it).
+    embedment_depth : float, optional
+        Depth of the underside of the base below the ground in front of
+        the wall, Df (m). If None, the base thickness: the ground in front
+        at the top of the base, no soil over the toe. Deeper, the soil
+        over the toe, (Df - base_thickness) x toe_length, counts as
+        resisting weight (UFC 3-220-20 Fig. 4-27, p. 220: "Weight includes
+        ... weight of soil above footing"; App. B-1.3, p. 599, W_ff), and
+        the passive resistance in front of the wall acts over Df.
     has_shear_key : bool, optional
         Whether wall has a shear key. Default False.
     key_depth : float, optional
         Shear key depth below base slab (m). Default 0.
     backfill_slope : float, optional
-        Slope of backfill behind wall (degrees). Default 0.
+        Slope of backfill behind wall (degrees), rising away from the
+        wall. Default 0. A descending backfill (below 0) is refused
+        (GM-32: it was taken as level without a word).
     surcharge : float, optional
         Uniform live-load surcharge on the backfill (kPa), e.g. traffic.
         Default 0. Its thrust K q H drives every check; over the heel it is
@@ -60,16 +83,23 @@ class CantileverWallGeometry:
     toe_length: Optional[float] = None
     stem_thickness_top: float = 0.30
     stem_thickness_base: Optional[float] = None
-    base_thickness: float = 0.60
+    base_thickness: Optional[float] = None
     has_shear_key: bool = False
     key_depth: float = 0.0
     backfill_slope: float = 0.0
     surcharge: float = 0.0
     dead_load_surcharge: float = 0.0
+    stem_batter: str = "back"
+    embedment_depth: Optional[float] = None
 
     def __post_init__(self):
         if self.wall_height <= 0:
             raise ValueError(f"Wall height must be positive, got {self.wall_height}")
+        # Auto-size if not specified: the typical proportions of FHWA
+        # NHI-06-089 Fig. 10-16(a) (p. 10-38) and UFC 3-220-20 App. B-1.3
+        # (p. 600), GM-288
+        if self.base_thickness is None:
+            self.base_thickness = round(self.wall_height / 10.0, 2)
         if self.base_thickness <= 0:
             raise ValueError(f"Base thickness must be positive, got {self.base_thickness}")
         if self.has_shear_key and not self.key_depth > 0:
@@ -78,16 +108,38 @@ class CantileverWallGeometry:
                 f"key_depth > 0 (m), got {self.key_depth:g}: the passive "
                 f"resistance acts over the key's depth (UFC 3-220-20 Fig. "
                 f"4-29, p. 224). Give key_depth, or leave has_shear_key out.")
+        if self.backfill_slope < 0:
+            raise ValueError(
+                f"backfill_slope {self.backfill_slope:g} deg: a backfill "
+                "descending away from the wall is not modelled (Rankine's "
+                "sloped Ka and the backfill wedge over the heel are for a "
+                "surface rising from the top of the stem). Give 0, level "
+                "ground, whose thrust is the larger.")
+        if self.stem_batter not in ("back", "front"):
+            raise ValueError(f"stem_batter must be 'back' or 'front', got "
+                             f"{self.stem_batter!r}")
 
-        # Auto-size if not specified
         if self.base_width is None:
             self.base_width = round(0.6 * self.wall_height, 2)
         if self.toe_length is None:
-            self.toe_length = round(0.1 * self.base_width, 2)
+            self.toe_length = round(self.wall_height / 10.0, 2)
         if self.stem_thickness_base is None:
             self.stem_thickness_base = round(
-                max(0.08 * self.wall_height + 0.2, self.stem_thickness_top), 2
-            )
+                max(self.wall_height / 10.0, self.stem_thickness_top), 2)
+        if self.embedment_depth is not None and not (
+                0.0 <= self.embedment_depth <= self.wall_height):
+            raise ValueError(
+                f"embedment_depth {self.embedment_depth:g} m (the depth of "
+                "the underside of the base below the ground in front of the "
+                f"wall) must be from 0 to wall_height {self.wall_height:g} m")
+
+    @property
+    def Df(self) -> float:
+        """Depth of the underside of the base below the ground in front of
+        the wall (m): ``embedment_depth``, or the base thickness when it is
+        not given (GM-288)."""
+        return (self.base_thickness if self.embedment_depth is None
+                else self.embedment_depth)
 
     @property
     def stem_height(self) -> float:

@@ -12,8 +12,11 @@ from typing import Dict, Any, Optional, List
 
 #: Said wherever the cantilever bearing check was not run.
 BEARING_NOT_CHECKED = ("not checked (no q_allowable given); the bearing "
-                       "pressures q_toe / q_heel and the middle-third check "
+                       "pressures q_toe / q_heel and the eccentricity check "
                        "are still reported")
+
+#: The names of the bearing pressure compared with q_allowable (GM-288).
+_BEARING_Q_NAME = {"uniform": "q_eq", "linear": "q_max"}
 
 
 def _round(value, ndigits):
@@ -33,15 +36,15 @@ class CantileverWallResult:
         Factor of safety against overturning. None when there is no
         overturning moment (zero active thrust): the check passes.
     FOS_bearing : float or None
-        q_allowable / the larger of q_toe and q_heel. None when the bearing
-        check was NOT RUN (no q_allowable given).
+        q_allowable / the bearing pressure ``q_bearing``. None when the
+        bearing check was NOT RUN (no q_allowable given).
     passes_sliding : bool
         True if FOS_sliding >= required (typically 1.5).
     passes_overturning : bool
         True if FOS_overturning >= required (typically 2.0).
     passes_bearing : bool or None
-        True if the larger edge pressure is within q_allowable. None when
-        the bearing check was not run.
+        True if the bearing pressure ``q_bearing`` is within q_allowable.
+        None when the bearing check was not run.
     q_toe : float
         Bearing pressure at the toe (kPa), on the bearing check's loads.
     q_heel : float
@@ -52,8 +55,7 @@ class CantileverWallResult:
         that is not a resisting force). The eccentricity for bearing is
         ``bearing_terms["eccentricity"]``.
     in_middle_third : bool
-        True if resultant is within middle third of base (e <= B/6), the
-        module's eccentricity check.
+        True if resultant is within middle third of base (e <= B/6).
     wall_height : float
         Total wall height H (m), from the underside of the base slab to the
         top of the stem.
@@ -63,6 +65,16 @@ class CantileverWallResult:
         The required factors of safety the checks were run against.
     q_allowable : float or None
         The allowable bearing pressure given (kPa), or None.
+    founded_on_rock : bool
+        The wall is founded on rock: the eccentricity limit is B/4, not B/6
+        (GM-288, ``cantilever.ECCENTRICITY_BASIS``).
+    bearing_pressure : str or None
+        The bearing pressure compared with q_allowable (GM-288,
+        ``cantilever.BEARING_PRESSURE_BASIS``): "uniform", q_eq = V / B'
+        over B' = B - 2e, or "linear", the larger edge pressure. None on a
+        result built by hand (the larger of q_toe and q_heel).
+    q_bearing : float or None
+        That pressure (kPa); None on a result built by hand.
 
     The terms each check used, unrounded, as it used them (GM-143; the
     calc package prints these rather than working them out again; None
@@ -104,6 +116,9 @@ class CantileverWallResult:
     FOS_sliding_required: float = 1.5
     FOS_overturning_required: float = 2.0
     q_allowable: Optional[float] = None
+    founded_on_rock: bool = False
+    bearing_pressure: Optional[str] = None
+    q_bearing: Optional[float] = None
     earth_pressure: Optional[Dict[str, Any]] = None
     vertical_forces: Optional[List[Dict[str, Any]]] = None
     sliding_terms: Optional[Dict[str, Any]] = None
@@ -127,9 +142,28 @@ class CantileverWallResult:
         return self.FOS_bearing is not None
 
     @property
+    def eccentricity_limit(self) -> float:
+        """The eccentricity limit (m): B/6 on soil, B/4 on rock (GM-288)."""
+        return self.base_width / (4.0 if self.founded_on_rock else 6.0)
+
+    @property
+    def within_eccentricity_limit(self) -> bool:
+        """True when |e| is within :attr:`eccentricity_limit` (GM-288)."""
+        return abs(self.eccentricity) <= self.eccentricity_limit + 1e-12
+
+    def _q_bearing(self) -> float:
+        """The bearing pressure compared with q_allowable (kPa)."""
+        return (self.q_bearing if self.q_bearing is not None
+                else max(self.q_toe, self.q_heel))
+
+    def _q_bearing_name(self) -> str:
+        return _BEARING_Q_NAME.get(self.bearing_pressure, "q_max")
+
+    @property
     def checks_failed(self) -> List[str]:
         """The checks that were run and FAILED: 'sliding', 'overturning',
-        'bearing', 'eccentricity' (resultant outside the middle third)."""
+        'bearing', 'eccentricity' (resultant outside the middle third, or
+        the middle half on rock)."""
         failed = []
         if self.passes_sliding is False:
             failed.append("sliding")
@@ -137,7 +171,7 @@ class CantileverWallResult:
             failed.append("overturning")
         if self.bearing_checked and self.passes_bearing is False:
             failed.append("bearing")
-        if not self.in_middle_third:
+        if not self.within_eccentricity_limit:
             failed.append("eccentricity")
         return failed
 
@@ -174,21 +208,24 @@ class CantileverWallResult:
         if name == "bearing":
             if not self.bearing_checked:
                 return "bearing (no q_allowable given)"
-            q_max = max(self.q_toe, self.q_heel)
+            q_max = self._q_bearing()
             if self.q_allowable is not None and q_max > 0:
                 rel = "<=" if self.passes_bearing else ">"
-                return (f"bearing (q_max {q_max:.1f} kPa {rel} q_allowable "
-                        f"{self.q_allowable:.1f} kPa, FOS "
+                return (f"bearing ({self._q_bearing_name()} {q_max:.1f} kPa "
+                        f"{rel} q_allowable {self.q_allowable:.1f} kPa, FOS "
                         f"{self.FOS_bearing:.2f})")
             if self.q_allowable is not None:
                 return "bearing (the resultant falls outside the base)"
             return f"bearing (FOS {self.FOS_bearing:.2f})"
         # eccentricity
-        b6 = self.base_width / 6.0
-        rel = "<=" if self.in_middle_third else ">"
-        where = "within" if self.in_middle_third else "outside"
-        return (f"eccentricity (resultant {where} the middle third: "
-                f"e = {abs(self.eccentricity):.3f} m {rel} B/6 = {b6:.3f} m)")
+        ok = self.within_eccentricity_limit
+        rel = "<=" if ok else ">"
+        where = "within" if ok else "outside"
+        part, frac = (("middle half", "B/4") if self.founded_on_rock
+                      else ("middle third", "B/6"))
+        return (f"eccentricity (resultant {where} the {part}: "
+                f"e = {abs(self.eccentricity):.3f} m {rel} {frac} = "
+                f"{self.eccentricity_limit:.3f} m)")
 
     @property
     def verdict(self) -> str:
@@ -233,10 +270,10 @@ class CantileverWallResult:
         else:
             bearing = (f"FOS = {self.FOS_bearing:.2f}  "
                        f"[{_status(self.passes_bearing)}]")
-            q_max = max(self.q_toe, self.q_heel)
+            q_max = self._q_bearing()
             if self.q_allowable is not None and q_max > 0:
                 bearing += (f"  (q_allowable {self.q_allowable:.1f} kPa / "
-                            f"q_max {q_max:.1f} kPa)")
+                            f"{self._q_bearing_name()} {q_max:.1f} kPa)")
             elif self.q_allowable is not None:
                 bearing += "  (the resultant falls outside the base)"
         failed = self.checks_failed
@@ -256,7 +293,7 @@ class CantileverWallResult:
             f"  q_toe  = {self.q_toe:.1f} kPa",
             f"  q_heel = {self.q_heel:.1f} kPa",
             f"  Eccentricity = {self.eccentricity:.3f} m"
-            f"  ({'middle third' if self.in_middle_third else 'OUTSIDE middle third'})",
+            f"  ({self._ecc_words()})",
         ]
         if self.eccentricity_bearing is not None:
             lines.append(f"  Eccentricity for bearing = "
@@ -273,6 +310,10 @@ class CantileverWallResult:
             lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
+
+    def _ecc_words(self) -> str:
+        part = "middle half" if self.founded_on_rock else "middle third"
+        return part if self.within_eccentricity_limit else f"OUTSIDE {part}"
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -294,9 +335,15 @@ class CantileverWallResult:
             "q_heel_kPa": round(self.q_heel, 1),
             "eccentricity_m": round(self.eccentricity, 3),
             "in_middle_third": self.in_middle_third,
+            "eccentricity_limit_m": round(self.eccentricity_limit, 3),
             "wall_height_m": self.wall_height,
             "base_width_m": self.base_width,
         }
+        if self.founded_on_rock:
+            d["founded_on_rock"] = True
+        if self.bearing_pressure is not None:
+            d["bearing_pressure"] = self.bearing_pressure
+            d["q_bearing_kPa"] = _round(self.q_bearing, 1)
         if self.eccentricity_bearing is not None:
             d["eccentricity_bearing_m"] = self.eccentricity_bearing
         if self.choices:

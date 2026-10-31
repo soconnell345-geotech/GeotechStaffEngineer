@@ -31,8 +31,11 @@ def _passive(r):
 class TestDefaultStaysRankine:
 
     def test_the_numbers_do_not_move(self):
+        # 1.527 before GM-288 (its stem proportions, concrete 23.6 and the
+        # soil over the battered back moved it); 2.0 required with passive
         r = _wall()
-        assert r.FOS_sliding == pytest.approx(1.527, abs=5e-4)
+        assert r.FOS_sliding == pytest.approx(1.580, abs=5e-4)
+        assert r.FOS_sliding_required == 2.0
         assert r.sliding_terms["Kp"] == pytest.approx(
             math.tan(math.radians(61.0)) ** 2)
 
@@ -40,12 +43,12 @@ class TestDefaultStaysRankine:
         (c,) = _passive(_wall())
         assert c["how"] == "default"
         assert c["chosen"].startswith("rankine: Kp 3.25, Pp 11.1 kN/m, "
-                                      "FOS_sliding 1.53")
+                                      "FOS_sliding 1.58")
         assert "typically ignored" in c["basis"] and "p. 219" in c["basis"]
         spiral, none = c["alternatives"]
         assert spiral.startswith("log_spiral (passive_theory 'log_spiral')")
-        assert "FOS_sliding 1.65" in spiral
-        assert none.endswith("FOS_sliding 1.37")
+        assert "FOS_sliding 1.7" in spiral
+        assert none.endswith("FOS_sliding 1.43")
 
     def test_no_passive_no_choice(self):
         geom = CantileverWallGeometry(wall_height=5.0, base_width=3.5,
@@ -62,7 +65,7 @@ class TestLogSpiral:
         assert t["passive_delta"] == pytest.approx(0.66 * 32.0)
         assert t["Kp"] == pytest.approx(dm7_2_eq_4_12_Kp(32.0, 0.66 * 32.0))
         assert t["log_spiral_route"] == "dm7_2_eq_4_12"
-        assert r.FOS_sliding == pytest.approx(1.651, abs=5e-4)
+        assert r.FOS_sliding == pytest.approx(1.704, abs=5e-4)
         theory, source, friction = _passive(r)
         assert theory["how"] == "given"
         assert source["how"] == "default"

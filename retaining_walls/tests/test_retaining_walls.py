@@ -47,10 +47,17 @@ _GRID = dataclasses.replace(WELDED_WIRE_GRID_W11, width=0.4572,
 # ================================================================
 class TestCantileverGeometry:
     def test_auto_sizing(self):
+        # NHI-06-089 Fig. 10-16(a) (GM-288): B 2/5 H to 2/3 H, toe H/10 to
+        # H/8, stem base and base slab H/12 to H/10
         geom = CantileverWallGeometry(wall_height=6.0)
         assert abs(geom.base_width - 3.6) < 0.01  # 0.6 * 6
-        assert abs(geom.toe_length - 0.36) < 0.01  # 0.1 * 3.6
+        assert abs(geom.toe_length - 0.6) < 0.01  # H/10
+        assert abs(geom.stem_thickness_base - 0.6) < 0.01  # H/10
+        assert abs(geom.base_thickness - 0.6) < 0.01  # H/10
         assert geom.stem_thickness_base > geom.stem_thickness_top
+        # the stem never thinner at its base than at its top
+        assert CantileverWallGeometry(
+            wall_height=2.0).stem_thickness_base == 0.30
 
     def test_explicit_sizing(self):
         geom = CantileverWallGeometry(
@@ -758,9 +765,15 @@ class TestFstarAtDepth:
 # NEW TESTS: RW-1 -- inclined active thrust decomposed into Ph/Pv
 # ================================================================
 class TestThrustInclination:
-    """Regression for RW-1: Coulomb (delta=2/3*phi) and sloped-Rankine
-    (delta=beta) thrusts must be decomposed; only Ph = Pa*cos(delta)
-    drives sliding/overturning, and Pv = Pa*sin(delta) is stabilizing."""
+    """Regression for RW-1: Coulomb (delta = the wall friction on the
+    pressure plane) and sloped-Rankine (delta=beta) thrusts must be
+    decomposed; only Ph = Pa*cos(delta) drives sliding/overturning, and
+    Pv = Pa*sin(delta) is stabilizing. Coulomb's delta is the backfill
+    slope by default since GM-288 (NHI-06-089 p. 10-20), 0 on level
+    ground, so these tests give it: wall_friction_deg 20 (2/3 phi, the
+    module's default before GM-288)."""
+
+    WF = {"pressure_method": "coulomb", "wall_friction_deg": 20.0}
 
     def _geom(self, **kw):
         return CantileverWallGeometry(
@@ -776,15 +789,27 @@ class TestThrustInclination:
         assert r["Pa_vertical_kN_per_m"] == 0.0
         assert abs(r["driving_force_kN_per_m"] - r["Pa_kN_per_m"]) < 0.1
 
-    def test_coulomb_inclination_is_two_thirds_phi(self):
+    def test_coulomb_inclination_is_the_backfill_slope_by_default(self):
+        """GM-288: delta on the plane through the heel is beta by default
+        (soil on soil, NHI-06-089 p. 10-20), or wall_friction_deg."""
         phi = 30.0
         r = check_sliding(self._geom(), 18.0, phi, pressure_method="coulomb")
-        assert abs(r["thrust_inclination_deg"] - 2.0 / 3.0 * phi) < 0.01
+        assert r["thrust_inclination_deg"] == 0.0
+        r = check_sliding(self._geom(backfill_slope=10.0), 18.0, phi,
+                          pressure_method="coulomb")
+        assert abs(r["thrust_inclination_deg"] - 10.0) < 0.01
+        r = check_sliding(self._geom(), 18.0, phi, **self.WF)
+        assert abs(r["thrust_inclination_deg"] - 20.0) < 0.01
+        with pytest.raises(ValueError, match="pressure_method 'coulomb'"):
+            check_sliding(self._geom(), 18.0, phi, wall_friction_deg=20.0)
+        with pytest.raises(ValueError, match="from 0 to phi_backfill"):
+            check_sliding(self._geom(), 18.0, phi, pressure_method="coulomb",
+                          wall_friction_deg=35.0)
 
     def test_coulomb_components_consistent(self):
         """driving = Pa*cos(delta) and Pv = Pa*sin(delta)."""
         phi = 30.0
-        r = check_sliding(self._geom(), 18.0, phi, pressure_method="coulomb")
+        r = check_sliding(self._geom(), 18.0, phi, **self.WF)
         d = math.radians(r["thrust_inclination_deg"])
         Pa = r["Pa_kN_per_m"]
         assert abs(r["driving_force_kN_per_m"] - Pa * math.cos(d)) < 0.1
@@ -795,7 +820,7 @@ class TestThrustInclination:
         smaller driving (Pa*cos d < Pa) AND more V (Pv adds friction)."""
         geom = self._geom()
         phi = 30.0
-        r = check_sliding(geom, 18.0, phi, pressure_method="coulomb")
+        r = check_sliding(geom, 18.0, phi, **self.WF)
         Pa = r["Pa_kN_per_m"]
         Pv = r["Pa_vertical_kN_per_m"]
         delta_b = 2.0 / 3.0 * phi  # foundation friction (phi_f = phi here)
@@ -816,7 +841,7 @@ class TestThrustInclination:
         the value implied by the full (inclined) Pa magnitude."""
         geom = self._geom()
         phi = 30.0
-        r = check_overturning(geom, 18.0, phi, pressure_method="coulomb")
+        r = check_overturning(geom, 18.0, phi, **self.WF)
         Pa = r["Pa_kN_per_m"]
         Pv = r["Pa_vertical_kN_per_m"]
         d = math.radians(r["thrust_inclination_deg"])
@@ -834,7 +859,7 @@ class TestThrustInclination:
         eccentricity must be smaller than the horizontal-thrust assumption."""
         geom = self._geom()
         r_rankine = check_bearing(geom, 18.0, 30.0)
-        r_coulomb = check_bearing(geom, 18.0, 30.0, pressure_method="coulomb")
+        r_coulomb = check_bearing(geom, 18.0, 30.0, **self.WF)
         assert r_coulomb["Pa_vertical_kN_per_m"] > 0
         # Coulomb: smaller Ph + stabilizing Pv at x=B -> smaller eccentricity
         assert r_coulomb["eccentricity_m"] < r_rankine["eccentricity_m"]
@@ -843,8 +868,7 @@ class TestThrustInclination:
         """analyze_cantilever_wall threads the decomposition end to end."""
         geom = self._geom()
         res_r = analyze_cantilever_wall(geom, 18.0, 30.0)
-        res_c = analyze_cantilever_wall(geom, 18.0, 30.0,
-                                        pressure_method="coulomb")
+        res_c = analyze_cantilever_wall(geom, 18.0, 30.0, **self.WF)
         # Coulomb Ka < Rankine Ka and the thrust is decomposed ->
         # every FOS should improve
         assert res_c.FOS_sliding > res_r.FOS_sliding
@@ -1179,7 +1203,17 @@ class TestBaseInterfaceOverrides:
     a resisting force. By default the module now does not (FHWA NHI-06-089
     p. 10-43; UFC 3-220-20 B-1.2), so the free-body comparisons give
     ``live_load_resists=True`` and the defaults are pinned beside them.
+
+    GM-288: the free body took concrete at 24 kN/m3 and Coulomb's wall
+    friction at 2/3 phi = 22 deg (the module's defaults then: 23.6 and the
+    backfill slope, 0, now), so the comparisons give both (``_FREE_BODY``).
+    It also counted the negative active pressure c = 5 kPa gives near the
+    top (sigma_0 = Ka q - 2 c sqrt(Ka) < 0), which the module now takes as
+    zero (UFC 3-220-20 Fig. 4-5, p. 183; NHI-06-089 p. 10-15): the free
+    body's 1.42 and 1.01 are 1.383 and 0.986 without that pull.
     """
+
+    _FREE_BODY = {"gamma_concrete": 24.0, "wall_friction_deg": 22.0}
 
     def _geom(self):
         from retaining_walls.geometry import CantileverWallGeometry
@@ -1192,42 +1226,51 @@ class TestBaseInterfaceOverrides:
         from retaining_walls.cantilever import check_sliding
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=0.0,
                           phi_foundation=22.0, c_foundation=0.0,
-                          pressure_method="coulomb")
+                          pressure_method="coulomb", **self._FREE_BODY)
         assert r["delta_base_deg"] == pytest.approx(14.67, abs=0.01)
         # GM-157: 0.60 with the surcharge over the heel resisting
         assert r["FOS_sliding"] == pytest.approx(0.566, abs=0.002)
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=0.0,
                           phi_foundation=22.0, c_foundation=0.0,
-                          pressure_method="coulomb", live_load_resists=True)
+                          pressure_method="coulomb", live_load_resists=True,
+                          **self._FREE_BODY)
         assert r["FOS_sliding"] == pytest.approx(0.60, abs=0.01)
+        # GM-288 defaults: concrete 23.6, delta = beta = 0 on the plane
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=0.0,
+                          phi_foundation=22.0, c_foundation=0.0,
+                          pressure_method="coulomb")
+        assert r["FOS_sliding"] == pytest.approx(0.392, abs=0.002)
 
     def test_delta_base_override_matches_free_body_coulomb(self):
         from retaining_walls.cantilever import check_sliding
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
                           phi_foundation=33.0, c_foundation=0.0,
                           pressure_method="coulomb", delta_base=22.0,
-                          live_load_resists=True)
+                          live_load_resists=True, **self._FREE_BODY)
         assert r["delta_base_deg"] == 22.0
         assert r["base_adhesion_kPa"] == 0.0
-        assert r["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
-        # GM-157 default: the surcharge over the heel does not resist
+        # the free body's 1.42 without the tension zone's pull (GM-288)
+        assert r["FOS_sliding"] == pytest.approx(1.383, abs=0.002)
+        # GM-157 default: the surcharge over the heel does not resist; and
+        # the GM-288 defaults (delta = beta = 0: Rankine's thrust)
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
                           phi_foundation=33.0, c_foundation=0.0,
                           pressure_method="coulomb", delta_base=22.0)
-        assert r["FOS_sliding"] == pytest.approx(1.339, abs=0.002)
+        assert r["FOS_sliding"] == pytest.approx(0.945, abs=0.002)
 
     def test_delta_base_override_matches_free_body_rankine(self):
         from retaining_walls.cantilever import check_sliding
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
                           phi_foundation=33.0, c_foundation=0.0,
                           pressure_method="rankine", delta_base=22.0,
-                          live_load_resists=True)
-        assert r["FOS_sliding"] == pytest.approx(1.01, abs=0.01)
+                          live_load_resists=True, gamma_concrete=24.0)
+        # the free body's 1.01 without the tension zone's pull (GM-288)
+        assert r["FOS_sliding"] == pytest.approx(0.986, abs=0.002)
         # GM-157 default: the surcharge over the heel does not resist
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
                           phi_foundation=33.0, c_foundation=0.0,
                           pressure_method="rankine", delta_base=22.0)
-        assert r["FOS_sliding"] == pytest.approx(0.978, abs=0.002)
+        assert r["FOS_sliding"] == pytest.approx(0.945, abs=0.002)
 
     def test_defaults_unchanged_without_overrides(self):
         from retaining_walls.cantilever import check_sliding
@@ -1277,13 +1320,13 @@ class TestBaseInterfaceOverrides:
                                         pressure_method="coulomb",
                                         delta_base=22.0)
         assert r_fix.FOS_sliding > r_trap.FOS_sliding
-        # GM-157: 1.42 with the surcharge over the heel resisting
-        assert r_fix.FOS_sliding == pytest.approx(1.339, abs=0.002)
+        # GM-157 and GM-288 defaults
+        assert r_fix.FOS_sliding == pytest.approx(0.945, abs=0.002)
         r_free_body = analyze_cantilever_wall(
             self._geom(), 15.0, 33.0, c_backfill=5.0, phi_foundation=33.0,
             pressure_method="coulomb", delta_base=22.0,
-            live_load_resists=True)
-        assert r_free_body.FOS_sliding == pytest.approx(1.42, abs=0.01)
+            live_load_resists=True, **self._FREE_BODY)
+        assert r_free_body.FOS_sliding == pytest.approx(1.383, abs=0.002)
 
 
 # ================================================================
@@ -1343,7 +1386,7 @@ class TestBearingNotChecked:
     def test_summary_says_not_checked(self):
         s = analyze_cantilever_wall(_good_wall(), 18.0, 30.0).summary()
         assert ("Bearing:      not checked (no q_allowable given); the "
-                "bearing pressures q_toe / q_heel and the middle-third check "
+                "bearing pressures q_toe / q_heel and the eccentricity check "
                 "are still reported") in s
         assert "Not checked:   bearing" in s
         assert "99.9" not in s
@@ -1353,8 +1396,14 @@ class TestBearingNotChecked:
                                     phi_foundation=34.0, q_allowable=300.0)
         assert r.bearing_checked is True
         assert r.checks_not_run == []
-        assert r.FOS_bearing == pytest.approx(
-            300.0 / max(r.q_toe, r.q_heel), abs=0.01)
+        # GM-288: on soil the uniform pressure V / (B - 2e) (GEC-6 Sec.
+        # 6.4.2; NHI-06-089 Fig. 10-17; UFC 3-220-20 Sec. 4-5.1.4)
+        b = r.bearing_terms
+        assert r.bearing_pressure == "uniform"
+        assert r.q_bearing == pytest.approx(
+            b["V"] / (3.5 - 2 * abs(b["eccentricity"])), abs=0.05)
+        assert r.FOS_bearing == pytest.approx(300.0 / r.q_bearing, abs=0.01)
+        assert r.q_bearing < max(r.q_toe, r.q_heel)
         assert r.passes_bearing is True
         assert r.all_checks_pass is True
         assert "Not checked" not in r.summary()
@@ -1364,9 +1413,11 @@ class TestBearingNotChecked:
         pressure under the heel; the check compares THAT with q_allowable."""
         r = analyze_cantilever_wall(
             CantileverWallGeometry(wall_height=4.0, base_width=3.0),
-            18.0, 30.0, c_backfill=40.0, q_allowable=200.0)
+            18.0, 30.0, c_backfill=40.0, q_allowable=200.0,
+            bearing_pressure="linear")
         assert r.q_heel > r.q_toe
         assert r.FOS_bearing == pytest.approx(200.0 / r.q_heel, abs=0.01)
+        assert "q_max" in r.verdict
 
     def test_resultant_outside_base_fails_bearing(self):
         g = CantileverWallGeometry(
@@ -1441,8 +1492,14 @@ class TestCalcPackageBearingWording:
         g = _w8_wall()
         r = analyze_cantilever_wall(g, 19.0, 32.0, q_allowable=150.0)
         html = self._html(r, g, q_allowable=150.0)
-        assert "FOS_bearing = q_allowable / q_max" in html
+        # GM-288: on soil the uniform pressure over B' = B - 2e
+        assert "FOS_bearing = q_allowable / q_eq" in html
+        assert "q_eq = V / B'" in html
         assert "NOT CHECKED" not in html
+        r = analyze_cantilever_wall(g, 19.0, 32.0, q_allowable=150.0,
+                                    bearing_pressure="linear")
+        html = self._html(r, g, q_allowable=150.0, bearing_pressure="linear")
+        assert "FOS_bearing = q_allowable / q_max" in html
 
     def test_mse_package_bearing_not_checked(self):
         from calc_package import generate_calc_package
@@ -1607,7 +1664,7 @@ def test_a_resultant_beyond_the_middle_third_on_the_heel_side_bears_under_the_he
                                      stem_thickness_base=0.3,
                                      base_thickness=0.4)
     # (the checks sum the module's weight items since GM-157)
-    monkeypatch.setattr(cw, "_wall_weight_items", lambda g, gb, gc: [
+    monkeypatch.setattr(cw, "_wall_weight_items", lambda g, gb, gc, gf: [
         {"component": "weight near the heel", "W": 500.0, "x": 3.9}])
     r = cw.check_bearing(geom, gamma_backfill=18.0, phi_backfill=45.0,
                          q_allowable=2000.0)

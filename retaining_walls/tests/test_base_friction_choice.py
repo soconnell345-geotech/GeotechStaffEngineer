@@ -64,7 +64,8 @@ def test_a_foundation_phi_given_is_the_one_used():
 
 
 def test_the_alternative_runs_as_it_says():
-    # F55: 1.07 at the default, about 1.7 at delta_b = phi_f
+    # F55: 1.07 at the default, about 1.7 at delta_b = phi_f (1.72 with
+    # concrete at 24 kN/m3, 1.71 at 23.6 since GM-288)
     default = analyze_cantilever_wall(_f55_wall(), 19.0, 32.0,
                                       phi_foundation=32.0)
     cast = analyze_cantilever_wall(_f55_wall(), 19.0, 32.0,
@@ -73,7 +74,7 @@ def test_the_alternative_runs_as_it_says():
     assert cast.FOS_sliding == pytest.approx(
         default.FOS_sliding * math.tan(math.radians(32.0))
         / math.tan(math.radians(2.0 / 3.0 * 32.0)), abs=0.002)
-    assert cast.FOS_sliding == pytest.approx(1.72, abs=0.01)
+    assert cast.FOS_sliding == pytest.approx(1.71, abs=0.01)
     c = _friction(cast)
     assert c["how"] == "given"
     assert c["chosen"] == "32 deg (delta_base)"
