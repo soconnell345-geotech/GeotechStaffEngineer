@@ -16,8 +16,10 @@ The bearing check needs an allowable bearing pressure ``q_allowable``.
 Without one it is NOT RUN: ``FOS_bearing`` and ``passes_bearing`` are None
 and the result says "not checked"; the bearing pressures q_toe / q_heel and
 the middle-third check are still reported. On soil it compares the
-equivalent uniform pressure q_eq = V / (B - 2e) with q_allowable, on rock
-the larger edge pressure (``bearing_pressure``, GM-288).
+equivalent uniform pressure q_eq = V / (B - 2e) with q_allowable, so
+q_allowable is the allowable bearing pressure for the effective width B' =
+B - 2e (GEC-6 Sec. 6.4.2, p. 119: "Bf in Equation 5-14 may be replaced by
+B'f"); on rock the larger edge pressure (``bearing_pressure``, GM-288).
 
 Checked against GEC-6 Ch. 5-7, UFC 3-220-20 Sec. 4-5.1 and App. B-1, and
 FHWA NHI-06-089 Sec. 10.5 as printed (GM-288, module_work/gm288/CHECK.md):
@@ -1044,7 +1046,7 @@ def check_sliding(geom: CantileverWallGeometry,
     c_foundation : float, optional
         Foundation soil cohesion (kPa). Default 0.
     gamma_concrete : float, optional
-        Concrete unit weight (kN/m³). Default 24.
+        Concrete unit weight (kN/m³). Default 23.6 (:data:`GAMMA_CONCRETE`).
     FOS_required : float, optional
         Required FOS. Default None: 1.5, or 2.0 with include_passive
         (:func:`default_FOS_sliding`, GM-288).
@@ -1518,8 +1520,11 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         by ``sliding_cohesion``: not at all (drained), or as the undrained
         shear strength cu.
     q_allowable : float, optional
-        Allowable bearing pressure (kPa). Without it the bearing check is
-        NOT RUN: the result's FOS_bearing and passes_bearing are None, its
+        Allowable bearing pressure (kPa); on soil ("uniform"
+        ``bearing_pressure``, the default) the allowable pressure for the
+        effective width B' = B - 2e (GEC-6 Sec. 6.4.2, p. 119). Without it
+        the bearing check is NOT RUN: the result's FOS_bearing and
+        passes_bearing are None, its
         ``checks_not_run`` lists "bearing" and its summary says "not
         checked". q_toe / q_heel and the middle-third check are reported
         either way.
@@ -2037,7 +2042,7 @@ def wall_basis_choices(thrust: Dict[str, Any], s_terms: Dict[str, Any],
             "active pressure where the backfill cohesion takes it below "
             "zero (tension zone)",
             f"zero over the top {z_t:.2f} m; Pa = {thrust['Pa']:.1f} kN/m "
-            f"(the negative pressure, {-thrust['Pa_tension_zone']:.1f} kN/m "
+            f"(the negative pressure, {thrust['Pa_tension_zone']:.1f} kN/m "
             f"of pull, not counted)",
             "module",
             "UFC 3-220-20 Fig. 4-5 (p. 183), 'In no case should negative "

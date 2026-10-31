@@ -160,7 +160,7 @@ says the backfill is taken as drained.
   q_max / q_min within 0.5 %, FS bearing 6.04 (printed 6.03) with
   `bearing_pressure="linear"`.
 
-## What moved (15 fixed walls, before -> after)
+## What moved (15 fixed walls and the owner's 2026-07-14 wall, before -> after)
 
 | Wall | Change |
 |---|---|
@@ -171,3 +171,11 @@ says the backfill is taken as drained.
 | 5 m, passive, cu 60 kPa | Pp 3.4 -> 62.4 kN/m; FOS_sliding 2.846 -> 3.632 |
 | 6 m tapered, q_allowable 250 | FOS_bearing 1.99 -> 2.24 (uniform q_eq) |
 | 5 m, two surcharges | FOS_bearing 1.47 -> 1.80 (uniform q_eq) |
+| Owner wall, Coulomb, delta_b 22 | FOS_sliding 1.339 -> 0.945 (delta = beta = 0 on the plane, concrete 23.6, tension zone) |
+| Owner wall, Rankine, delta_b 22 | FOS_sliding 0.978 -> 0.945 (concrete 23.6, tension zone) |
+| Owner wall, phi_foundation 22, Coulomb | FOS_sliding 0.566 -> 0.392 (delta = beta = 0, concrete 23.6) |
+
+On soil, q_eq raises FOS_bearing over the old q_toe for the same loads by
+(1 + 6e/B)(1 - 2e/B) - 1: nothing at e = 0, a third at e = B/6 and beyond.
+q_allowable is now the allowable pressure for B' = B - 2e (GEC-6 Sec.
+6.4.2, p. 119), and the tool says so.

@@ -1459,7 +1459,9 @@ base_adhesion_kPa actually used, and the funhouse adapter returns a
 GM-157 (2026-10-18): that free body counted the 7.5 kPa surcharge over the
 heel as resisting. By default the module no longer does (section above),
 so the session numbers are reproduced with `live_load_resists=True`, and
-the defaults are 0.566 / 1.339 / 0.978.
+the defaults were 0.566 / 1.339 / 0.978. GM-288 (concrete 23.6, Coulomb's
+delta = beta = 0 on the vertical plane, the tension zone not counted) made
+them 0.392 / 0.945 / 0.945.
 
 GM-173 (2026-10-19): the result's `choices` state the base friction used,
 first in the list (`cantilever.base_friction_choice`,

@@ -1821,27 +1821,6 @@ def _mse_terms(result, analysis):
             _mse_used(analysis, "surcharge_in_bearing")))
 
 
-def _Ka_value(phi, method, geom):
-    """Compute Ka exactly as the cantilever analysis does, so the rendered calc
-    package matches the analysis.
-
-    Mirrors retaining_walls.cantilever: Coulomb uses wall friction delta = 2/3*phi
-    with the backfill slope; Rankine uses the sloped coefficient when the
-    backfill slopes and the level coefficient otherwise. (Previously this always
-    returned the level Rankine value, so the package disagreed with the analysis
-    for sloped backfills — CS-1.)
-    """
-    from retaining_walls.earth_pressure import (
-        rankine_Ka, rankine_Ka_sloped, coulomb_Ka,
-    )
-    if method == "coulomb":
-        delta = 2.0 / 3.0 * phi  # matches analysis delta_wall
-        return coulomb_Ka(phi, delta, beta_deg=geom.backfill_slope)
-    if geom.backfill_slope > 0:
-        return rankine_Ka_sloped(phi, geom.backfill_slope)
-    return rankine_Ka(phi)
-
-
 def _plot_cantilever_section(result, analysis):
     """Create a schematic cross-section of a cantilever retaining wall."""
     import matplotlib
