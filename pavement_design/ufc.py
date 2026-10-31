@@ -156,9 +156,12 @@ def design_flexible_pavement_ufc(
         subbase CBR (omit for a 2-layer surface+base section).
     frost : dict, optional
         Seasonal-frost spec (reduced-subgrade-strength method, Ch 19):
-        {'uscs_class': ..., 'finer_than_0_02mm_pct': ...}. If the soil is
-        frost-susceptible, the frost support index replaces the subgrade
-        CBR and the governing (thicker) section is reported.
+        {'uscs_class': ..., 'finer_than_0_02mm_pct': ..., 'frost_group':
+        ...}. ``frost_group`` (optional) is the group a laboratory frost
+        test set (Table 19-2 footnote ***); a soil Table 19-2 does not list
+        is refused without it. If the soil is frost-susceptible, the frost
+        support index replaces the subgrade CBR and the governing (thicker)
+        section is reported.
     thickness_increment_in : float, optional
         Round-UP increment (default 0.5 in).
 

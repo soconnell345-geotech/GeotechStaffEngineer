@@ -557,10 +557,15 @@ METHOD_INFO = {
                                            "2-layer section). A subbase "
                                            "is at least 4 in (UFC p. 20)."},
             "frost": {"type": "object", "required": False,
-                      "description": "{uscs_class, finer_than_0_02mm_pct} "
-                                     "-> Ch 19 reduced-subgrade-strength "
-                                     "frost check; governing section "
-                                     "reported."},
+                      "description": "{uscs_class, finer_than_0_02mm_pct, "
+                                     "frost_group} -> Ch 19 reduced-"
+                                     "subgrade-strength frost check; "
+                                     "governing section reported. "
+                                     "frost_group (optional): the group a "
+                                     "laboratory frost test set (Table "
+                                     "19-2 footnote ***); a soil Table "
+                                     "19-2 does not list is refused "
+                                     "without it."},
             "thickness_increment_in": {"type": "number", "required": False,
                                        "default": 0.5,
                                        "description": "Round layer "
