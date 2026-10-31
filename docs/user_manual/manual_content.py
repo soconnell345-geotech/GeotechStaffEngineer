@@ -547,8 +547,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "**Caquot&ndash;Kerisel log-spiral** passive option that avoids Coulomb&rsquo;s over-prediction "
             "at high &delta;.",
             "The cantilever by the Caltrans T&amp;S Simplified Method (moments about the pivot O give "
-            "D<sub>0</sub>; D = 1.2&nbsp;D<sub>0</sub> beside a FOS on the passive pressure, as Caltrans "
-            "7-5.02 and UFC 3-220-20 Fig.&nbsp;4-41 print it; the moment on that diagram to O); free earth "
+            "D<sub>0</sub>; D = 1.2&nbsp;D<sub>0</sub> (Caltrans 7-5.02, UFC 3-220-20 Fig.&nbsp;4-41) beside a "
+            "FOS on the passive pressure (Caltrans Ex 7-3; UFC Fig.&nbsp;4-41 step 2); the moment on that diagram to O); free earth "
             "support for the anchored wall; layered active-pressure builder with hydrostatic water.",
             "References: Rankine; Coulomb; Caquot&ndash;Kerisel; NAVFAC DM7.2; validated against Caltrans "
             "T&amp;S Ex 7-2 / 8-1 (V-025/V-013) and, for the anchored wall&rsquo;s maximum moment, the USS "

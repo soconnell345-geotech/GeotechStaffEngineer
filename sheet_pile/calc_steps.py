@@ -429,8 +429,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                            "Figure 4-41 step 6, p. 242"),
                 notes=("The Caltrans manual: 'The 20 percent increase is not "
                        "a factor of safety'; UFC: to allow for dredging, "
-                       "scour, etc. Both apply it beside the factored "
-                       "passive pressure (UFC Figure 4-43)."
+                       "scour, etc. Both apply it beside a factor of "
+                       "safety on the passive side (Caltrans Example 7-3: "
+                       "1.3 on the moments; UFC Figure 4-43: 1.5 on "
+                       "tan phi')."
                        if increase == 1.2 else
                        "Increase as given; Caltrans and UFC print 1.2."),
             ))

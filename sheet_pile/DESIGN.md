@@ -26,12 +26,16 @@ analyze_sheet_pile(wall_type, excavation_depth, layers, ...) -> SheetPileResult
 - Layers are dicts with phi, c, gamma, thickness
 
 ## Cantilever safety basis (SP-3 v5.1; GM-290)
-As printed, the factored passive pressure AND D = 1.2 D0: the Caltrans T&S
-Manual Sec. 7-5.02 (p. 7-11: "The 20 percent increase is not a factor of
-safety"), UFC 3-220-20 Fig. 4-41 step 6 (p. 242: "Increase D by 20% to allow
-for dredging, scour, etc.") and its example Fig. 4-43 (p. 245: Kp / 1.5, then
-1.2 D0). The default is `FOS_passive = 1.5`, `embedment_increase = 1.2`
-(GM-290, `module_work/gm290/CHECK.md`).
+As printed, a factor of safety on the passive side AND D = 1.2 D0: the
+Caltrans T&S Manual Sec. 7-5.02 (p. 7-11: "The 20 percent increase is not a
+factor of safety"; no FS printed there) with its Example 7-3 (p. 7-41: FS 1.3
+on the moments, then 1.2 D0), and UFC 3-220-20 Fig. 4-41 (p. 242: step 2 Kp
+from phi'allow or, alternatively, an FS on Kp; step 6 "Increase D by 20% to
+allow for dredging, scour, etc.") with its example Fig. 4-43 (p. 245:
+phi'allow = atan(tan 35°/1.5) = 25°, Kp 3.6, then 1.2 D0). The module
+divides the passive pressure by `FOS_passive` (UFC's alternative). The default
+is `FOS_passive = 1.5`, `embedment_increase = 1.2` (GM-290,
+`module_work/gm290/CHECK.md`).
 
 History: before v5.1 the function applied both, hard-coded; SP-3 (v5.1) made
 the increase a parameter defaulting to 1.0, reading the classic method as one

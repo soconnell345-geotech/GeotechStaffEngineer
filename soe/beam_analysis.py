@@ -53,8 +53,10 @@ _CANTILEVER_TYPICAL_MAX_H = 5.5
 
 #: The allowable bending stress as a fraction of Fy (GM-290): 0.60, as the
 #: Caltrans T&S Manual's examples take it (Example 7-3, p. 7-43: "Fb =
-#: 0.60Fy"; Example 8-1, p. 8-19: "42,000 psi x 0.6"), the AISC ASD value
-#: its Sec. 6-2.02 (p. 6-3) sends steel members to. GEC-4 Sec. 5.4.1 (p. 81)
+#: 0.60Fy"; Example 8-1, p. 8-19: "42,000 psi x 0.6"). Its Sec. 6-2.02 (p.
+#: 6-3) prints no value: it refers steel members to the AISC ASD
+#: requirements and says Fb depends on whether the section is compact.
+#: GEC-4 Sec. 5.4.1 (p. 81)
 #: recommends 0.55 Fy "for permanent walls and temporary walls that are
 #: considered critical"; the manual's railroad example compares with 0.66 Fy
 #: (p. 9-20). Until GM-290 the module used 0.66 Fy everywhere.
@@ -63,8 +65,9 @@ FB_RATIO = 0.60
 #: The allowable bending stress's printed alternatives, for the choice.
 _FB_BASIS = (
     "Fb = 0.60 Fy, as the Caltrans Trenching and Shoring Manual's examples "
-    "take it (Example 7-3, p. 7-43; Example 8-1, p. 8-19), the AISC ASD "
-    "value its Sec. 6-2.02 (p. 6-3) sends steel members to")
+    "take it (Example 7-3, p. 7-43; Example 8-1, p. 8-19); its Sec. 6-2.02 "
+    "(p. 6-3) refers steel members to the AISC ASD requirements and says Fb "
+    "depends on whether the section is compact")
 _FB_OTHERS = (
     (0.55, "GEC-4 Sec. 5.4.1 (p. 81), for permanent walls and temporary "
            "walls that are considered critical (20 % more allowed for "

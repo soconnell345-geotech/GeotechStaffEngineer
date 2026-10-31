@@ -566,15 +566,21 @@ def analyze_cantilever(
 
     Safety basis
     ------------
-    As printed, the factored passive pressure AND the 20 % increase: the
-    Caltrans Trenching and Shoring Manual Sec. 7-5.02 (p. 7-11) divides Kp
-    by the FS and takes D = 1.2 D0 ("The 20 percent increase is not a
-    factor of safety"; AASHTO 3.11.5.6); UFC 3-220-20 Fig. 4-41 (p. 242)
-    factors Kp (step 2) and, step 6, "Increase D by 20% to allow for
-    dredging, scour, etc." (p. 243: "to design against future dredging or
-    scour"); its example, Fig. 4-43 (p. 245), takes Kp / 1.5 and then
-    1.2 D0. The default is ``FOS_passive = 1.5`` with
-    ``embedment_increase = 1.2`` (GM-290). From v5.1 to GM-290 the default
+    As printed, a factor of safety on the passive side AND the 20 %
+    increase. The Caltrans Trenching and Shoring Manual's Simplified Method
+    (Sec. 7-5.02, p. 7-11) takes D = 1.2 D0 ("The 20 percent increase is
+    not a factor of safety"; AASHTO 3.11.5.6) and prints no FS there; its
+    Example 7-3 (p. 7-41) solves D0 with the resisting moment 1.3 times
+    the driving moment, then takes 1.2 D0. UFC 3-220-20 Fig. 4-41 (p. 242)
+    takes Kp from phi'allow (Sec. 4-7.1) or, "alternatively", applies a
+    factor of safety to Kp (step 2), and, step 6, "Increase D by 20% to
+    allow for dredging, scour, etc." (p. 243: "to design against future
+    dredging or scour"); its example, Fig. 4-43 (p. 245), factors the
+    strength, phi'allow = atan(tan 35 deg / 1.5) = 25 deg, Kp 3.6, then
+    takes 1.2 D0. The module divides the passive pressure by FOS_passive:
+    UFC's alternative, and Caltrans' moment ratio where the passive side
+    carries the whole resisting moment. The default is
+    ``FOS_passive = 1.5`` with ``embedment_increase = 1.2`` (GM-290). From v5.1 to GM-290 the default
     increase was 1.0, on the reading that the classic method applies one
     or the other (SP-3); the three references here apply both. The moment
     comes from the factored diagram to D0 (UFC Fig. 4-41 step 5, Fig.

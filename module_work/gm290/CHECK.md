@@ -41,7 +41,7 @@ change.
   above that. Both need the depth to a firm layer below the base. They are
   given in the choices only, not computed.
 
-### S5. Stiff clay envelope. Fixed. Owner question
+### S5. Stiff clay envelope. Fixed. Settled by the print
 - UFC Fig. 4-53, p. 256: 0.4 γH, or 0.2 γH "when movements are minimal and
   the construction period is short".
 - Caltrans Eq. 8-3-2, p. 8-5: 0.2 to 0.4 γH, by "best engineering
@@ -50,6 +50,9 @@ change.
 - Module: 0.2 + 0.2 N/4, which none of the three prints. Now
   `stiff_clay_coefficient`, default 0.4, with the range checked, and stated
   in the choices.
+- Settled by UFC Fig. 4-53, which prints 0.4 γH as the rule; its 0.2 γH
+  case (minimal movements, a short construction period) is a site fact the
+  agent can ask about and give as `stiff_clay_coefficient`.
 
 ### S6. Braced wall support loads and span moments. Fixed. Owner question
 - Caltrans Sec. 8-4.02, Fig. 8-7 (p. 8-10) and Example 8-2, the hinge
@@ -72,17 +75,19 @@ change.
   - `simple_spans` (UFC).
 - Pinned to Example 8-2: T1U 77,474, M1 279,729, T1L 86,093, T2 88,267,
   T3 116,240 and T4U 58,120 lb, each within 0.2 %.
-- Under `hinge`, a single support with no FS = 1 moment balance gets a load
-  of `None`, with a note; `from_above_kN_per_m` still gives the load from
-  above.
+- Under `hinge`, with no FS = 1 moment balance about the lowest support,
+  that support's load is `None` (not found), with a note, for one support
+  or several; `from_above_kN_per_m` still gives its load from above.
 
-### S7. Cantilever moment and shear. Fixed
+### S7. Cantilever moment and shear. Fixed. Owner question (with P3)
 - Caltrans Example 7-3, p. 7-41: the embedment is found at FS 1.3, then
   "Calculate embedment depth using a factor of safety (FS) equal to 1.0 for
   the purposes of calculating the shear and moments".
 - UFC Fig. 4-41 step 5 (p. 242) uses the factored diagram.
 - Module: the factored diagram. Now the FS = 1.0 body, with the factored
   value offered in the choices (`moment_body_D0_m`).
+- soe now takes the Caltrans moment and sheet_pile keeps UFC's (P3), so the
+  two cantilever tools differ: which one should both take?
 
 ### S8. Allowable bending stress. Fixed. Owner question
 - The Caltrans examples use 0.60 Fy: Example 7-3, p. 7-43, and Example 8-1.
@@ -130,7 +135,7 @@ change.
 - Module: (13/54) H1² (pe + ps) = 70.4. Now 75.7.
 - V-016's M1 row was PASS (M2,3) / CONVENTION (M1); M1 now passes too.
 
-### S13. FHWA anchored wall with two or more anchors (GM-193). Fixed. Owner question
+### S13. FHWA anchored wall with two or more anchors (GM-193). Fixed
 - The embedment below the lowest anchor now follows the Caltrans hinge
   method, Sec. 8-4.02 steps 3-4: free earth support about the lowest anchor.
   The trapezoid plus ps acts from that anchor down, with Rankine active
@@ -143,7 +148,8 @@ change.
 - GEC-4 Example 1: D 2.954 m at FS 1.3, D′ 2.358 m, load from below
   98.9 kN/m. The free earth body's moment is 107 kN-m/m at z 8.59 m,
   larger than the tributary 75.7. A note says so; `max_moment` stays the
-  tributary value.
+  tributary value. Settled by the print: GEC-4 p. A-6 takes Mmax = 76 from
+  the tributary moments.
 
 ### Noted, not changed
 - Caltrans Fig. 8-4 ramps the cohesive envelope over 2/3 of H1. Not
@@ -173,11 +179,17 @@ moved, and why:
 |---|---|---|---|
 | Braced, 8 m in sand, two supports, lowest support load (kN/m) | 137.4 | 84.7 | S6: under the hinge method its load from below is free earth support's, not the whole bottom span |
 | Braced soe package (8 m), lowest support load (kN/m) | 143.3 | 98.4 | S6 |
+| First support load, every hinge run with two or more supports (kN/m) | e.g. the manual's example 123.2 | +15 to +25 %, there 146.7 | S6: T1L = P/2 + M1/L takes the moment carried from above the first support |
+| Lowest support with no FS = 1 balance, one support or several | a tributary load | `None` (not found), the load from above beside it | S6 |
+| Braced maximum shear | – | +2.5 to +9 % in sand, up to +42 % in clay | S6 (and S3 to S5 in clay) |
+| Braced embedment in clay | – | +20 to +24 % | S3 to S5: the envelope above the base |
+| Soft clay, N 7.2 (made up), support loads (kN/m) | 192 / 320 | 134 / 248 | S3: the 0.25H ramp at the top, with S6 |
 | Soft clay H 8 m, Su 30 kPa (N 4.8), apparent pressure (kPa) | 36.0 | 57.6 | S4: the larger of 0.25 γH and 0.4 γH for 4 < N < 6 |
 | Soft clay H 6 m, Su 20 kPa (N 5.4), apparent pressure (kPa) | 28.0 | 43.2 | S4 |
 | Stiff clay H 6 m, Su 50 kPa, apparent pressure (kPa) | 33.3 | 43.2 | S5: 0.4 γH, not 0.2 + 0.2 N/4 |
 | Braced stiff clay, moment at zero shear below the base (kN-m/m) | 104.8 | 131.8 | S5 (envelope) |
-| Cantilever soe, maximum moment (kN-m/m), e.g. | 218.1, 256.8, 1,666 | 141.5, 197.2, 1,013 | S7: the FS = 1.0 body; the factored moment stays in the choices |
+| Cantilever soe, maximum moment | e.g. 218.1, 256.8, 1,666 kN-m/m | −12 to −53 % (141.5, 197.2, 1,013) | S7: the FS = 1.0 body; the factored moment stays in the choices |
+| Cantilever soe, maximum shear | – | −32 to +18 % | S7 |
 | Required section modulus (cm³), braced / cantilever workflow tests | 474.1 / 540.8 | 521.5 / 466.4 | S8: 0.60 Fy, not 0.66 Fy (× 1.10 at the same moment); in the cantilever the smaller FS = 1.0 moment (S7) more than offsets it |
 | Bjerrum-Eide FS, e.g. | 2.634, 3.148 | 3.044, 3.556 | S10: Nc from Fig. 10-15, not the unprinted table |
 | Caltrans force balance, V-014 Nc / FS (printed 7.6 / 1.54) | 7.676 / 1.553 | 7.575 / 1.533 | S11 (with a chart-read Nc given: 1.538 both) |
@@ -187,29 +199,42 @@ moved, and why:
 | FHWA two-anchor, another wall | 73.7 | 79.0 | S12 |
 | FHWA two anchors: embedment, Kp, FOS_embedment | refused or absent | computed and listed | S13 |
 
-Nothing else moved in soe. Within one function's outputs, the records also
+The ranges for the first support, the braced shear and embedment and the
+N 7.2 case are the review's, over more runs than the record holds (the
+record: first support +16 to +19 %, clay shear +7 to +24 %, clay embedment
++20 %). Nothing else moved in soe. Within one function's outputs, the records also
 showed paired-input moves from the new choice and default parameters
 (`support_load_method`, `stiff_clay_coefficient`, `Fb_ratio`). Those come
 from the tests that exercise them, not from a value change.
 
 ## sheet_pile
 
-### P1. Cantilever: D = 1.2 D0 beside the factored passive pressure. Fixed. Owner question
+### P1. Cantilever: D = 1.2 D0 beside a factor of safety on the passive side. Fixed. Settled by the print
 - Caltrans Sec. 7-5.02, pp. 7-11 to 7-12, the Simplified Method:
   - "Take moments about point O ... and determine embedment depth DO";
   - "Increase DO by 20 percent (D = 1.2 DO)";
   - "The 20 percent increase is not a factor of safety. It accounts for the
     rotation of the length of vertical wall element below point O" (AASHTO
     3.11.5.6).
+- Sec. 7-5.02 prints no factor of safety. Caltrans Example 7-3 (p. 7-41)
+  applies one: "use the safety factor of 1.3 to calculate the embedment
+  depth and then increase it by 20 percent", resisting moment / driving
+  moment = 1.3, then 1.2 D0.
 - UFC Fig. 4-41 (p. 242):
-  - step 2 factors Kp;
+  - step 2: Kp from φ'allow (Sec. 4-7.1), "Alternatively apply a factor of
+    safety to the value of Kp";
   - step 6: "Increase D by 20% to allow for dredging, scour, etc."
-- UFC Fig. 4-43 (p. 245) uses Kp / 1.5 and then 1.2 D0.
+- UFC Fig. 4-43 (p. 245) factors the strength, φ'allow = atan(tan 35° /
+  1.5) = 25°, Kp 3.6, then takes 1.2 D0.
+- The module divides the passive pressure by `FOS_passive`: UFC's
+  alternative, and Caltrans' moment ratio where the passive side carries
+  the whole resisting moment.
 - Module: SP-3 (v5.1) set the default `embedment_increase` to 1.0, reading
   the classic method as using one safety measure or the other. The module
   is the Caltrans Simplified Method: moments about O, with R standing in
   for everything below O. With 1.0, the wall stops at the pivot.
-- Now the default is 1.2, with `FOS_passive` 1.5 unchanged.
+- Now the default is 1.2, with `FOS_passive` 1.5 unchanged. The 1.2 is
+  settled by both prints.
 - Pinned to the closed forms for uniform dry sand:
   - D0 = H / ((Kp/FS·Ka)^(1/3) − 1);
   - D = 1.2 D0.
@@ -225,7 +250,7 @@ from the tests that exercise them, not from a value change.
   old default stopped at D0.
 - Pinned to the closed-form moment at zero shear.
 
-### P3. Cantilever moment basis. Kept. Owner question
+### P3. Cantilever moment basis. Kept. Owner question (with S7)
 - The moment stays on the factored diagram, as UFC Fig. 4-41 step 5 and its
   chart Fig. 4-42 take it.
 - Caltrans Example 7-3 takes it at FS = 1.0, which gives a smaller moment.
@@ -280,3 +305,19 @@ from the tests that exercise them, not from a value change.
 | Suite question SP-1 ground truth | 7.28 (alt 8.73) | 8.65 (alt 7.21) | P1 |
 
 The anchored wall did not move.
+
+## Owner questions (three)
+
+1. Braced wall support loads: the Caltrans hinge method (Fig. 8-7, the
+   default), GEC-4's with a subgrade reaction (Fig. 38) or UFC's simple
+   spans (Fig. 4-54)? (S6)
+2. Allowable bending stress: 0.60 Fy (the Caltrans examples, the default),
+   0.55 Fy (GEC-4 p. 81, permanent or critical walls) or 0.66 Fy (compared
+   on Caltrans p. 9-20)? (S8)
+3. Cantilever moment basis: FS = 1.0 (Caltrans Example 7-3, soe's default)
+   or the factored diagram (UFC Fig. 4-41 step 5, sheet_pile's)? The two
+   tools now differ. (S7, P3)
+
+Settled by a page, not asked: stiff clay 0.4 γH (UFC Fig. 4-53; S5), D =
+1.2 D0 (Caltrans 7-5.02, UFC Fig. 4-41; P1) and the FHWA wall's 76 kN-m/m
+from the tributary moments (GEC-4 p. A-6; S13).

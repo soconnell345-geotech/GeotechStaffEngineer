@@ -218,10 +218,12 @@ class TestCantileverWall:
         assert d["embedment_depth_m"] > 0
 
     def test_default_is_factored_passive_and_1_2(self):
-        """GM-290: as the Caltrans manual (7-5.02 step 3) and UFC 3-220-20
-        (Fig. 4-41 step 6, Fig. 4-43) print it, FOS_passive = 1.5 on Kp and
-        D = 1.2 D0 (SP-3 had made the default increase 1.0). The moment is
-        the factored body's to D0, whatever the increase."""
+        """GM-290: D = 1.2 D0 beside a factor of safety on the passive
+        side, as the Caltrans manual (7-5.02 step 3, Example 7-3) and UFC
+        3-220-20 (Fig. 4-41 steps 2 and 6, Fig. 4-43) print it; here
+        FOS_passive = 1.5 on the passive pressure (SP-3 had made the default
+        increase 1.0). The moment is the factored body's to D0, whatever the
+        increase."""
         layers = [WallSoilLayer(20.0, 18.0, friction_angle=30)]
         result = analyze_cantilever(excavation_depth=5.0,
                                     soil_layers=layers, FOS_passive=1.5)
