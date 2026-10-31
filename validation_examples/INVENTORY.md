@@ -1063,6 +1063,31 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   factored 8,696; Mokwa 0.82 / 0.67 / 0.58 / 0.52, weighted 0.593.
 - Verdict: **PASS** (RESULTS.md). Tests: test_published_v060_pile_group.py.
 
+## V-061 UFC 3-220-20 App. B-1 and FHWA NHI-06-089 Example 10-3 — cantilever wall external stability
+- Source: UFC 3-220-20 (16 January 2025) App. B-1, the cantilever cut
+  wall (pp. 596-606), read from `geotech-references/docs/ufc_3_220_20_2025.pdf`;
+  FHWA NHI-06-089 Vol II Example 10-3 (pp. 10-52 to 10-56), read from
+  `geotech-references/docs/FHWA NHI-06-089 Soils and Foundations Vol 2.pdf`.
+- Target: `retaining_walls.cantilever.analyze_cantilever_wall` (GM-288).
+- Inputs: UFC B-1: H 18 ft (2 ft footing), toe 2 ft, stem 1 to 1.5 ft with
+  the front face battered, ground in front 3 ft above the underside of the
+  footing, 140 pcf, Ka 0.25 (phi' set to 36.87 deg, where Rankine's Ka is
+  0.25), tan delta_b 0.55, concrete 150 pcf, 250 psf traffic surcharge not
+  over the heel for sliding and overturning (B-1.2), B 6.21 to 9.5 ft.
+  NHI 10-3: stem 18 ft, base 2.3 ft by 13.1 ft, toe 2.3 ft, stem 1.6 ft
+  with a 0.7 ft front batter, 10 deg backslope, phi 30, 115 pcf,
+  delta_b 28.5 deg, concrete 150 pcf, Coulomb with delta = beta on the
+  plane through the heel, q_ult 20,000 psf on the trapezoid's q_max.
+- Published answer: UFC Table B-1 R = 2540 B - 4560 lb/ft, Ph 6795 lb/ft;
+  B-1.5 FSL = (1397 B - 2508)/6795; B-1.8 FOT = (1270 B^2 - 4840)/44145;
+  B-1.4 middle third at B = 9.11 ft; Table B-4 x0/B 0.35 at 9.5 ft; B-1.6
+  bearing R = 2790 B - 5435, x0 1.805 ft and theta 23.686 deg at 7.5 ft.
+  NHI: Ka 0.35, Pa 9,564.2 lb/ft, W 28,112.6 lb/ft, Mw 211,881.1 ft-lb/ft,
+  FSs 1.72, d 5.55 ft, e 1.0 ft, q_max 3,318.1 and q_min 1,227.3 psf, FS
+  bearing 6.03.
+- Verdict: **PASS** (RESULTS.md). Tests:
+  test_published_v061_cantilever_wall.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

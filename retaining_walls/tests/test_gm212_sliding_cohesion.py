@@ -31,7 +31,9 @@ PSF = 0.04788026  # kPa
 
 def _wall():
     """The GM-212 wall: H = 5 m, the module's trial proportions (B = 3.0,
-    toe 0.3, base 0.6 m), backfill gamma 19, phi 32."""
+    toe 0.5, stem base 0.5, base 0.5 m since GM-288's NHI-06-089 Fig.
+    10-16 proportions; toe 0.3, stem base and base 0.6 m before), backfill
+    gamma 19, phi 32."""
     return CantileverWallGeometry(wall_height=5.0)
 
 
@@ -99,10 +101,11 @@ def test_drained_default_counts_no_cohesion():
     assert t["R_adhesion"] == 0.0 and t["ca"] == 0.0
     assert t["resisting"] == pytest.approx(
         t["V"] * math.tan(math.radians(2.0 / 3.0 * 28.0)))
-    # before GM-212: 2/3 x 10 kPa on B = 3.0 m added 20.0 kN/m, FOS 1.507
-    assert r.FOS_sliding == pytest.approx(1.233, abs=0.0005)
+    # before GM-212: 2/3 x 10 kPa on B = 3.0 m added 20.0 kN/m (FOS 1.233
+    # against 1.507 on GM-212's proportions; 1.192 and 1.466 on GM-288's)
+    assert r.FOS_sliding == pytest.approx(1.192, abs=0.0005)
     assert (t["resisting"] + 2.0 / 3.0 * 10.0 * 3.0) / t["driving"] \
-        == pytest.approx(1.507, abs=0.0005)
+        == pytest.approx(1.466, abs=0.0005)
     assert not r.passes_sliding
 
 
@@ -120,7 +123,7 @@ def test_friction_plus_adhesion_on_the_effective_width():
         3.0 - 2.0 * abs(o["eccentricity"]))
     assert t["resisting"] == pytest.approx(
         t["R_friction"] + 10.0 * t["adhesion_width"])
-    assert r.FOS_sliding == pytest.approx(1.553, abs=0.0005)
+    assert r.FOS_sliding == pytest.approx(1.523, abs=0.0005)
 
 
 def test_undrained_is_cu_on_b_alone():
@@ -161,7 +164,7 @@ def test_the_choice_names_the_rule_and_the_others_fos():
                           "strength, so c_foundation is c': "
                           + SLIDING_COHESION_BASIS["drained"])
     alt = " | ".join(c["alternatives"])
-    assert "friction_plus_adhesion (FOS_sliding 1.553)" in alt
+    assert "friction_plus_adhesion (FOS_sliding 1.523)" in alt
     assert "undrained (FOS_sliding 0.411)" in alt
     assert "c_foundation read as cu" in alt
     # no phi_foundation: phi_backfill's 32 deg, the value in force

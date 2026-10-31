@@ -15,7 +15,23 @@ wall that retains 4.0 m above the top of a 0.5 m footing is H = 4.5 m.
 The bearing check needs an allowable bearing pressure ``q_allowable``.
 Without one it is NOT RUN: ``FOS_bearing`` and ``passes_bearing`` are None
 and the result says "not checked"; the bearing pressures q_toe / q_heel and
-the middle-third check are still reported.
+the middle-third check are still reported. On soil it compares the
+equivalent uniform pressure q_eq = V / (B - 2e) with q_allowable, so
+q_allowable is the allowable bearing pressure for the effective width B' =
+B - 2e (GEC-6 Sec. 6.4.2, p. 119: "Bf in Equation 5-14 may be replaced by
+B'f"); on rock the larger edge pressure (``bearing_pressure``, GM-288).
+
+Checked against GEC-6 Ch. 5-7, UFC 3-220-20 Sec. 4-5.1 and App. B-1, and
+FHWA NHI-06-089 Sec. 10.5 as printed (GM-288, module_work/gm288/CHECK.md):
+the wall's weight counts the soil over a battered back face and over the
+toe (``embedment_depth``); no negative active pressure in a cohesive
+backfill (the tension zone); Coulomb's wall friction on the pressure plane
+through the heel is the backfill slope; the passive resistance in front
+acts over the embedment and counts cu under the undrained rule (GEC-6
+Eq. 5-41 with a key); EN 1997-1's 0.4 V limit on request; FOS_sliding 2.0
+with the passive resistance counted; the eccentricity limit B/4 and FOS
+1.5 on rock. The module has no water table: the backfill is taken as
+drained (NHI-06-089 Sec. 10.5.3; UFC 3-220-20 App. B-1.1).
 
 A surcharge over the heel (GM-157). The geometry's ``surcharge`` is a live
 load (traffic) and ``dead_load_surcharge`` a permanent one. Both thrusts
@@ -36,8 +52,12 @@ References:
     Das, B.M., Principles of Foundation Engineering, Ch 13
     AASHTO LRFD Section 11.6
     FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (2006),
-        Sec. 10.5.3 (p. 10-41) and 10.5.5 (p. 10-43)
-    UFC 3-220-20 (2025), App. B-1 (pp. 597 and 602)
+        Sec. 10.2 (pp. 10-14 to 10-20) and 10.5 (pp. 10-37 to 10-56)
+    UFC 3-220-20 (2025), Sec. 4-2 (pp. 178-190), Sec. 4-5.1 (pp. 219-224)
+        and App. B-1 (pp. 596-606)
+    FHWA GEC-6, FHWA-SA-02-054 (2002), Sec. 5.4 (pp. 99-101) and 6.4
+        (pp. 117-122)
+    EN 1997-1:2004, Sec. 6.5.3 (pp. 64-65)
     FHWA GEC-11 Vol I, FHWA-NHI-10-024 (2009), pp. 4-19, 4-22, 4-26
 """
 
@@ -208,24 +228,59 @@ def default_sliding_cohesion(phi_foundation: Optional[float]) -> str:
     return "drained"
 
 
+#: The Coulomb wall friction on the cantilever wall's pressure plane, the
+#: vertical plane through the back of the heel (GM-288), for the choice.
+COULOMB_DELTA_BASIS = (
+    "FHWA NHI-06-089 p. 10-20: for cantilever walls the interface where "
+    "the earth pressures are computed 'is within the retained soils along a "
+    "vertical plane passing through the heel of the base slab. In such "
+    "cases, there is soil-to-soil contact and the resultant may be oriented "
+    "at the angle of mobilized friction ... it is generally conservative to "
+    "assume that the earth pressure is parallel to the slope of the "
+    "backfill', delta = beta, as its Example 10-3 (p. 10-53) takes it for "
+    "Coulomb's Ka (Sec. 10.5.3, p. 10-37: Coulomb on that plane)")
+
+
 def _active_thrust_terms(geom: CantileverWallGeometry,
                          gamma_backfill: float, phi_backfill: float,
                          c_backfill: float = 0.0,
-                         pressure_method: str = "rankine") -> Dict[str, Any]:
+                         pressure_method: str = "rankine",
+                         wall_friction_deg: Optional[float] = None
+                         ) -> Dict[str, Any]:
     """The active thrust and every term of it (GM-143), as
     :func:`_active_thrust` uses them: ``method``, ``Ka``, ``H_active``,
     the components ``Pa_earth``, ``Pa_surcharge``, ``Pa_cohesion`` and
-    their total ``Pa`` (kN/m), its height ``z_Pa`` above the base (m),
-    its inclination ``delta_deg`` and its components ``Ph``, ``Pv``.
+    ``Pa_tension_zone`` (the negative pressure cohesion would give near the
+    top, left out, GM-288) with ``z_tension`` its depth, their total ``Pa``
+    (kN/m), its height ``z_Pa`` above the base (m), its inclination
+    ``delta_deg`` (and ``delta_given``) and its components ``Ph``, ``Pv``.
 
     The surcharge component is K q H with q the live and the dead-load
     surcharges together (``q_live``, ``q_dead``, kPa). ``Pa_live`` is the
     live load's share of Pa and ``Pv_live`` its vertical component, which
-    the sliding and overturning checks leave out by default (GM-157)."""
+    the sliding and overturning checks leave out by default (GM-157).
+
+    Coulomb's Ka (UFC 3-220-20 Eq. 4-10, p. 186, theta = 0) takes the wall
+    friction on the pressure plane ``wall_friction_deg``, by default the
+    backfill slope beta (:data:`COULOMB_DELTA_BASIS`, GM-288; it was
+    2/3 phi_backfill, which no reference read prints for soil on soil)."""
     H = geom.H_active
+    if wall_friction_deg is not None:
+        if pressure_method != "coulomb":
+            raise ValueError(
+                f"wall_friction_deg {wall_friction_deg:g}: the wall friction "
+                "on the pressure plane enters Coulomb's Ka (pressure_method "
+                "'coulomb'); Rankine's thrust is horizontal on level ground "
+                "and parallel to a sloping one. Give pressure_method "
+                "'coulomb', or leave it out.")
+        if not 0.0 <= wall_friction_deg <= phi_backfill:
+            raise ValueError(
+                f"wall_friction_deg must be from 0 to phi_backfill "
+                f"{phi_backfill:g} deg, got {wall_friction_deg:g}")
 
     if pressure_method == "coulomb":
-        delta_deg = 2.0 / 3.0 * phi_backfill
+        delta_deg = (geom.backfill_slope if wall_friction_deg is None
+                     else wall_friction_deg)
         Ka = coulomb_Ka(phi_backfill, delta_deg,
                         beta_deg=geom.backfill_slope)
     elif geom.backfill_slope > 0:
@@ -247,11 +302,16 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
     # take the total below it)
     Pa_live = min(Ka * q_live * H, Pa) if q_live > 0 else 0.0
     return {"method": pressure_method, "Ka": Ka, "H_active": H,
+            "backfill_slope": geom.backfill_slope,
             "q_live": q_live, "q_dead": q_dead,
             "Pa_earth": parts["Pa_earth"],
             "Pa_surcharge": parts["Pa_surcharge"],
             "Pa_cohesion": parts["Pa_cohesion"],
+            "Pa_tension_zone": parts["Pa_tension_zone"],
+            "z_tension": parts["z_tension"],
             "Pa": Pa, "z_Pa": z_Pa, "delta_deg": delta_deg,
+            "delta_given": (pressure_method == "coulomb"
+                            and wall_friction_deg is not None),
             "Ph": Ph, "Pv": Pv,
             "Pa_live": Pa_live, "Pv_live": Pa_live * math.sin(delta_rad)}
 
@@ -259,7 +319,8 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
 def _active_thrust(geom: CantileverWallGeometry,
                    gamma_backfill: float, phi_backfill: float,
                    c_backfill: float = 0.0,
-                   pressure_method: str = "rankine"):
+                   pressure_method: str = "rankine",
+                   wall_friction_deg: Optional[float] = None):
     """Active thrust magnitude, location, inclination, and components.
 
     The total active thrust ``Pa = 0.5*Ka*gamma*H^2 + Ka*q*H - 2*c*sqrt(Ka)*H``
@@ -270,9 +331,9 @@ def _active_thrust(geom: CantileverWallGeometry,
       where treating Pa as purely horizontal is exact.
     - Rankine, sloped backfill: parallel to the backfill slope
       (``delta = beta``), per Rankine theory for a sloping surface (Das Ch. 13).
-    - Coulomb: at the wall-friction angle ``delta = (2/3)*phi`` from the normal
-      to the (vertical) pressure plane, i.e. (2/3)*phi above horizontal —
-      matching the ``delta_wall`` used to compute the Coulomb Ka.
+    - Coulomb: at the wall friction ``delta`` on the (vertical) pressure
+      plane, by default the backfill slope (GM-288,
+      :data:`COULOMB_DELTA_BASIS`) — the ``delta`` its Ka is computed with.
 
     The horizontal component ``Ph = Pa*cos(delta)`` drives sliding/overturning;
     the vertical component ``Pv = Pa*sin(delta)`` acts downward on the vertical
@@ -285,16 +346,34 @@ def _active_thrust(geom: CantileverWallGeometry,
         (Ka, Pa, z_Pa, delta_deg, Ph, Pv)
     """
     t = _active_thrust_terms(geom, gamma_backfill, phi_backfill, c_backfill,
-                             pressure_method)
+                             pressure_method, wall_friction_deg)
     return t["Ka"], t["Pa"], t["z_Pa"], t["delta_deg"], t["Ph"], t["Pv"]
+
+
+#: The unit weight of concrete the checks take by default (kN/m3, GM-288):
+#: 150 pcf, as UFC 3-220-20 App. B-1.3 (p. 599) and FHWA NHI-06-089
+#: Example 10-3 (p. 10-53) assume it (GEC-6's examples take 23.5 kN/m3,
+#: e.g. App. B Example 3). It was 24, which no reference read prints.
+GAMMA_CONCRETE = 23.6
 
 
 def _wall_weight_items(geom: CantileverWallGeometry,
                        gamma_backfill: float,
-                       gamma_concrete: float = 24.0) -> List[Dict[str, Any]]:
+                       gamma_concrete: float = GAMMA_CONCRETE,
+                       gamma_front: Optional[float] = None
+                       ) -> List[Dict[str, Any]]:
     """The wall's weights as ``{"component", "W", "x"}`` (kN/m, and the
     arm from the toe in m), in the order :func:`_compute_wall_weights`
-    sums them (GM-143)."""
+    sums them (GM-143).
+
+    The weight is the wall's and the soil's above the base (UFC 3-220-20
+    Fig. 4-27, p. 220: "includes weight of soil above footing for
+    cantilever and counterfort walls"; FHWA NHI-06-089 Fig. 10-17,
+    p. 10-39): the backfill over the heel, over a battered back face of the
+    stem (GM-288; it was left out) and, with the base below the ground in
+    front (``geom.Df`` above the base thickness), the soil over the toe at
+    ``gamma_front`` (the foundation soil's, default ``gamma_backfill``; UFC
+    App. B-1.3, p. 599, W_ff)."""
     B = geom.base_width
     t_toe = geom.toe_length
     t_stem_base = geom.stem_thickness_base
@@ -302,6 +381,8 @@ def _wall_weight_items(geom: CantileverWallGeometry,
     h_stem = geom.stem_height
     t_base = geom.base_thickness
     heel = geom.heel_length
+    t_taper = max(t_stem_base - t_stem_top, 0.0)
+    front = geom.stem_batter == "front"
 
     items = []
 
@@ -310,21 +391,31 @@ def _wall_weight_items(geom: CantileverWallGeometry,
     x_base = B / 2.0
     items.append({"component": "Base slab", "W": W_base, "x": x_base})
 
-    # Stem (trapezoidal: wider at base)
-    # Rectangular part (stem_top thickness)
+    # Stem (trapezoidal: wider at base), its rectangular part (the top
+    # thickness) against the vertical face: the front one with the back
+    # battered, the back one with the front battered (UFC App. B-1.3,
+    # Table B-1: W_s1 at bt + (t1 - t2) + t2/2, W_s2 at bt + 2 (t1 - t2)/3)
     W_stem_rect = gamma_concrete * t_stem_top * h_stem
-    x_stem_rect = t_toe + t_stem_top / 2.0
+    x_stem_rect = t_toe + (t_taper if front else 0.0) + t_stem_top / 2.0
     items.append({"component": "Stem (rect)", "W": W_stem_rect,
                   "x": x_stem_rect})
 
-    # Triangular part of stem taper
-    if t_stem_base > t_stem_top:
-        t_taper = t_stem_base - t_stem_top
+    # Triangular part of stem taper, its centroid a third of the taper
+    # from its wide side (next to the rectangular part)
+    if t_taper > 0:
         W_stem_tri = gamma_concrete * 0.5 * t_taper * h_stem
-        # Centroid of triangle at 1/3 from wider base (back face)
-        x_stem_tri = t_toe + t_stem_top + t_taper / 3.0
+        x_stem_tri = (t_toe + 2.0 * t_taper / 3.0 if front
+                      else t_toe + t_stem_top + t_taper / 3.0)
         items.append({"component": "Stem (taper)", "W": W_stem_tri,
                       "x": x_stem_tri})
+        if not front:
+            # The backfill over the battered back (GM-288, GM-235): the
+            # triangle between the back face and the vertical through the
+            # back of the stem's base, its centroid 2/3 of the taper from
+            # the stem's top back corner
+            items.append({"component": "Soil over battered stem back",
+                          "W": gamma_backfill * 0.5 * t_taper * h_stem,
+                          "x": t_toe + t_stem_top + 2.0 * t_taper / 3.0})
 
     # Soil on heel (backfill above heel, behind stem)
     if heel > 0:
@@ -343,15 +434,21 @@ def _wall_weight_items(geom: CantileverWallGeometry,
             items.append({"component": "Backfill wedge (sloped)",
                           "W": W_soil_wedge, "x": x_soil_wedge})
 
-    # Soil on toe (if any, above toe in front of stem)
-    # Typically minimal for cantilever walls, skip for simplicity
+    # Soil over the toe, with the base below the ground in front (GM-288):
+    # (Df - t) bt gamma, at bt/2 (UFC App. B-1.3, p. 599, W_ff; the sliver
+    # in front of a battered face is left out, as there)
+    over_toe = geom.Df - t_base
+    if over_toe > 0 and t_toe > 0:
+        g_front = gamma_backfill if gamma_front is None else gamma_front
+        items.append({"component": "Soil over toe",
+                      "W": g_front * over_toe * t_toe, "x": t_toe / 2.0})
 
     return items
 
 
 def _compute_wall_weights(geom: CantileverWallGeometry,
                           gamma_backfill: float,
-                          gamma_concrete: float = 24.0):
+                          gamma_concrete: float = GAMMA_CONCRETE):
     """Compute wall component weights and moment arms about toe.
 
     Returns list of (weight, arm) tuples for moment calculation.
@@ -365,7 +462,8 @@ def _vertical_force_items(geom: CantileverWallGeometry,
                           thrust: Dict[str, Any],
                           live_load_resists: bool = False,
                           dead_load_resists: bool = False,
-                          surcharge_in_bearing: bool = True
+                          surcharge_in_bearing: bool = True,
+                          gamma_front: Optional[float] = None
                           ) -> List[Dict[str, Any]]:
     """Every vertical force on the base, in the order the checks sum them,
     as ``{"component", "kind", "W", "x", "M", "resists", "bearing"}``
@@ -373,10 +471,11 @@ def _vertical_force_items(geom: CantileverWallGeometry,
     component of the active thrust at the pressure plane (x = B). ``kind``
     is "weight", "surcharge" or "thrust". ``resists``: counted in the
     sliding, overturning and eccentricity checks; ``bearing``: counted in
-    the bearing pressures (GM-157, the choices in the module docstring)."""
+    the bearing pressures (GM-157, the choices in the module docstring).
+    ``gamma_front`` weighs the soil over the toe (:func:`_wall_weight_items`)."""
     items = [{**i, "kind": "weight", "resists": True, "bearing": True}
              for i in _wall_weight_items(geom, gamma_backfill,
-                                         gamma_concrete)]
+                                         gamma_concrete, gamma_front)]
     heel = geom.heel_length
     x_q = geom.toe_length + geom.stem_thickness_base + heel / 2.0
     for q, name, resists in (
@@ -463,7 +562,123 @@ TOE_PASSIVE_BASIS = (
     "depth only (Fig. 4-29, p. 224). Neither names the theory of its Kp. "
     "By default the module takes Rankine's, with no wall friction, the "
     "smaller; passive_theory 'log_spiral' takes the log-spiral Kp with "
-    "wall friction")
+    "wall friction. GEC-6 Sec. 5.4 (pp. 99-101): 'the design of most "
+    "shallow foundations conservatively ignores passive resistance', and "
+    "'keys constructed in granular soils are not very efficient in "
+    "developing passive pressures'")
+
+#: Whether the passive resistance in front of the wall counts the
+#: foundation soil's cohesion (GM-288, GM-235), by the rule the sliding
+#: check reads c_foundation with.
+TOE_PASSIVE_COHESION_BASIS = {
+    True: ("the undrained rule reads c_foundation as the undrained shear "
+           "strength cu, so the passive pressure is Kp sigma_v + 2 cu "
+           "sqrt(Kp): UFC 3-220-20 Eq. 4-7 (p. 178) and p. 181, 'The same "
+           "equations can be expressed for undrained or total stress "
+           "analyses ... total stress strength parameters (c, phi, or su) "
+           "are used'; FHWA NHI-06-089 Eq. 10-11 (p. 10-14); GEC-6 "
+           "Eq. 5-41 (p. 101) counts Pp in front of a key in cohesive soil"),
+    False: ("c_foundation not counted in the passive pressure: UFC 3-220-20 "
+            "p. 179, 'the changes to the earth pressures caused by c' are "
+            "usually neglected for fine-grained soils' (the drained rule "
+            "neglects it at the base too, EN 1997-1 6.5.3(10))"),
+}
+
+#: The required factor of safety against sliding when none is given
+#: (GM-288), without and with the passive resistance in front of the wall.
+FOS_SLIDING = {False: 1.5, True: 2.0}
+FOS_SLIDING_BASIS = {
+    False: ("GEC-6 Eq. 5-40 (p. 100) and Sec. 6.4.3 (p. 119); UFC 3-220-20 "
+            "Fig. 4-27 (p. 220) and Sec. 4-5.1.3 (p. 223); FHWA NHI-06-089 "
+            "Fig. 10-17 (p. 10-39): FS >= 1.5"),
+    True: ("UFC 3-220-20 Fig. 4-27 (p. 220), 'If passive pressure is "
+           "considered: FSL = (T + PP)/PH >= 2.0', and Sec. 4-5.1.3 "
+           "(p. 223): 'If passive resistance is included, the minimum FSL "
+           "should be increased to 2.0'"),
+}
+
+#: The required factor of safety against overturning when none is given
+#: (GM-288), for a wall on soil and on rock.
+FOS_OVERTURNING = {False: 2.0, True: 1.5}
+FOS_OVERTURNING_BASIS = {
+    False: ("FHWA NHI-06-089 Sec. 10.5.5 (p. 10-44): the eccentricity "
+            "criterion 'essentially requires that the safety factor of the "
+            "wall against overturning is approximately of 2.0 for soils'; "
+            "GEC-6 Sec. 7.3 (p. 124): 'greater than about 2.0 for permanent "
+            "dead loads'. UFC 3-220-20 Fig. 4-27 (p. 220) and Sec. 4-5.1.2 "
+            "(p. 223) ask FOT >= 1.5"),
+    True: ("FHWA NHI-06-089 Sec. 10.5.5 (p. 10-44): 'approximately ... 1.5 "
+           "for rocks'; UFC 3-220-20 Sec. 4-5.1.2 (p. 223): FOT >= 1.5"),
+}
+
+#: The eccentricity limit, as a fraction of the base width, for a wall on
+#: soil and on rock (GM-288).
+ECCENTRICITY_LIMIT = {False: 1.0 / 6.0, True: 1.0 / 4.0}
+ECCENTRICITY_BASIS = {
+    False: ("e <= B/6, the resultant in the middle third: GEC-6 Sec. 6.4.1 "
+            "(p. 119); UFC 3-220-20 Sec. 4-5.1.2 (p. 223); FHWA NHI-06-089 "
+            "Fig. 10-17 (p. 10-39)"),
+    True: ("e <= B/4, the middle half, for a wall founded on rock: GEC-6 "
+           "Sec. 6.4.1 (p. 119); UFC 3-220-20 Sec. 4-5.1.2 (p. 223); FHWA "
+           "NHI-06-089 Fig. 10-17 (p. 10-39)"),
+}
+
+#: The bearing pressure compared with q_allowable (GM-288).
+BEARING_PRESSURES = ("uniform", "linear")
+BEARING_PRESSURE_BASIS = {
+    "uniform": (
+        "the equivalent uniform pressure V / B' over the effective width "
+        "B' = B - 2e: GEC-6 Eq. 6-6 (p. 118) and Sec. 6.4.2 (p. 119), "
+        "'sizing the footing such that the applied bearing stress over the "
+        "effective footing area, A', assuming a rectangular pressure "
+        "distribution, is less than the allowable bearing pressure'; FHWA "
+        "NHI-06-089 Fig. 10-17 (p. 10-39), 'Use uniform stress, qeq, for "
+        "soils' and Sec. 10.5.4.1 (p. 10-41); UFC 3-220-20 Eq. 4-27 "
+        "(p. 221), Sec. 4-5.1.4 (p. 224), 'A uniform pressure distribution "
+        "can be used to determine qmax if the soil below the wall is "
+        "relatively ductile', and App. B-1.6 (p. 602), q = R/(2 x0)"),
+    "linear": (
+        "the larger edge pressure of the trapezoid or triangle (q_toe, "
+        "q_heel): UFC 3-220-20 Eqs. 4-23 and 4-25 (p. 221) and Sec. 4-5.1.4 "
+        "(p. 224), 'For more brittle materials, such as rock and sensitive "
+        "clays, the triangular or trapezoidal pressure distribution should "
+        "be used to find qmax'; FHWA NHI-06-089 Fig. 10-17 (p. 10-39), "
+        "'use trapezoidal distribution with qmax and qmin for rocks and "
+        "structural analysis', as its Example 10-3 (p. 10-55) divides qult "
+        "by qmax; GEC-6 Eqs. 6-9 to 6-13 (pp. 121-122) give it for "
+        "structural design"),
+}
+
+#: EN 1997-1's limit on the undrained sliding resistance (GM-288, GM-235).
+UNDRAINED_GAP_BASIS = (
+    "EN 1997-1 Sec. 6.5.3(12)P (p. 65): 'If it is possible for water or air "
+    "to reach the interface between a foundation and an undrained clay "
+    "subgrade, the following check shall be made: Rd <= 0,4 Vd' (Eq. 6.5); "
+    "(13): it 'may only be disregarded if the formation of a gap between "
+    "the foundation and the ground will be prevented by suction in areas "
+    "where there is no positive bearing pressure'. GEC-6 and UFC 3-220-20 "
+    "print no such limit")
+
+
+def default_FOS_sliding(include_passive: bool) -> float:
+    """The required factor of safety against sliding when none is given
+    (GM-288, :data:`FOS_SLIDING_BASIS`): 1.5, or 2.0 with the passive
+    resistance in front of the wall counted."""
+    return FOS_SLIDING[bool(include_passive)]
+
+
+def default_FOS_overturning(founded_on_rock: bool = False) -> float:
+    """The required factor of safety against overturning when none is
+    given (GM-288, :data:`FOS_OVERTURNING_BASIS`): 2.0 on soil, 1.5 on
+    rock."""
+    return FOS_OVERTURNING[bool(founded_on_rock)]
+
+
+def default_bearing_pressure(founded_on_rock: bool = False) -> str:
+    """The bearing pressure compared with q_allowable when none is named
+    (GM-288, :data:`BEARING_PRESSURE_BASIS`): "uniform" on soil, "linear"
+    on rock."""
+    return "linear" if founded_on_rock else "uniform"
 
 
 def toe_passive_Kp(phi_f: float, passive_theory: str = "rankine",
@@ -535,7 +750,7 @@ def _sliding_terms(geom: CantileverWallGeometry,
                    c_backfill: float = 0.0,
                    phi_foundation: float = None,
                    c_foundation: float = 0.0,
-                   gamma_concrete: float = 24.0,
+                   gamma_concrete: float = GAMMA_CONCRETE,
                    pressure_method: str = "rankine",
                    include_passive: bool = False,
                    gamma_foundation: float = None,
@@ -546,7 +761,9 @@ def _sliding_terms(geom: CantileverWallGeometry,
                    sliding_cohesion: str = None,
                    passive_theory: str = "rankine",
                    log_spiral_source: str = None,
-                   passive_wall_friction_deg: float = None
+                   passive_wall_friction_deg: float = None,
+                   wall_friction_deg: float = None,
+                   interface_gap_possible: bool = False
                    ) -> Dict[str, Any]:
     """The sliding check's terms, unrounded (GM-143): ``V`` and its parts
     (``V_weights``, ``V_surcharge`` the surcharge over the heel counted,
@@ -561,11 +778,22 @@ def _sliding_terms(geom: CantileverWallGeometry,
     "friction_plus_adhesion", with ``eccentricity``) and the two parts
     ``R_friction`` and ``R_adhesion``; ``Kp``, ``D_passive`` and ``Pp``
     (None / 0 without passive; with a shear key Pp acts over the depth of
-    the key only, from ``D_passive_top`` = the base thickness down to
+    the key only, from ``D_passive_top`` = the embedment Df down to
     ``D_passive``, GM-210; how Kp was taken, ``passive_theory``,
     ``passive_delta``, ``passive_delta_given``, ``log_spiral_source`` and
     ``log_spiral_route``, GM-242), ``resisting``, ``driving`` (= Ph) and
-    ``FOS`` (None with no driving force)."""
+    ``FOS`` (None with no driving force).
+
+    GM-288: the passive resistance acts over the embedment ``geom.Df``
+    (from the ground in front to the underside of the base; with a key,
+    from there to the bottom of the key) and counts the cohesion
+    ``Pp_cohesion`` = 2 cu sqrt(Kp) h under the undrained rule
+    (:data:`TOE_PASSIVE_COHESION_BASIS`); with a key under the undrained
+    rule GEC-6 Eq. 5-41 is ca (B - a1b) + cu a1b + Pp, a1b from the toe to
+    the key's front face, taken here as 0 (ca B + Pp: the same when ca =
+    cu, the default, and smaller when base_adhesion is below cu); with
+    ``interface_gap_possible`` the undrained base resistance is held to
+    0.4 V (EN 1997-1 Eq. 6.5, ``gap_limited``)."""
     if sliding_cohesion is None:
         sliding_cohesion = default_sliding_cohesion(phi_foundation)
     if sliding_cohesion not in SLIDING_COHESION:
@@ -574,6 +802,13 @@ def _sliding_terms(geom: CantileverWallGeometry,
                          f"{sliding_cohesion!r}")
     _refuse_unused_interface(sliding_cohesion, c_foundation, delta_base,
                              base_adhesion)
+    if interface_gap_possible and sliding_cohesion != "undrained":
+        raise ValueError(
+            "interface_gap_possible is EN 1997-1 6.5.3(12)P's limit on the "
+            "undrained sliding resistance of a clay (Rd <= 0.4 Vd, "
+            f"Eq. 6.5); the rule in force is {sliding_cohesion!r}. Give "
+            "sliding_cohesion 'undrained' (or phi_foundation 0), or leave "
+            "it out.")
     if phi_foundation is None:
         phi_foundation = phi_backfill
     if gamma_foundation is None:
@@ -586,7 +821,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
 
     # Active thrust, decomposed per the chosen method (RW-1)
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
-                                  c_backfill, pressure_method)
+                                  c_backfill, pressure_method,
+                                  wall_friction_deg)
     Pa, delta_deg, Ph = thrust["Pa"], thrust["delta_deg"], thrust["Ph"]
 
     # The vertical forces the check counts: the weights, the surcharges
@@ -594,7 +830,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
     # (stabilizing), the live load's share of it only when counted
     items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
                                   thrust, live_load_resists,
-                                  dead_load_resists)
+                                  dead_load_resists,
+                                  gamma_front=gamma_foundation)
     V = _sum(items, "W", "resists")
     V_weights = sum(i["W"] for i in items if i["kind"] == "weight")
     V_surcharge = sum(i["W"] for i in items
@@ -634,12 +871,21 @@ def _sliding_terms(geom: CantileverWallGeometry,
         width = max(B - 2.0 * abs(e), 0.0)
     R_adhesion = ca * width if width is not None else 0.0
 
+    # EN 1997-1 6.5.3(12)P (GM-288): water or air at the interface of an
+    # undrained clay holds the base resistance to 0.4 V (Eq. 6.5)
+    gap_limited = False
+    if interface_gap_possible and sliding_cohesion == "undrained" \
+            and R_adhesion > 0.4 * V:
+        R_adhesion, gap_limited = 0.4 * V, True
+
     resisting = R_friction + R_adhesion
 
-    # Passive resistance (optional), with the soil in front taken up to the
-    # top of the base
-    Pp = 0.0
+    # Passive resistance (optional), from the ground in front of the wall,
+    # Df above the underside of the base (GM-288; the top of the base when
+    # embedment_depth is not given)
+    Pp = Pp_cohesion = 0.0
     Kp = D = D_top = None
+    passive_cohesion = False
     toe = {"delta": None, "delta_given": False, "route": None}
     if include_passive:
         # Rankine's Kp by default, or the log-spiral Kp (GM-242)
@@ -653,14 +899,21 @@ def _sliding_terms(geom: CantileverWallGeometry,
             # entire burial depth of the wall"; GEC-6 Fig. 5-22 likewise.
             # Both figures draw the trapezoid on the vertical plane below
             # the toe (a-a1, the front of the soil the key carries), from
-            # the underside of the base (depth t) to the level of the bottom
-            # of the key (t + key_depth).
-            D_top = geom.base_thickness
+            # the underside of the base (depth Df) to the level of the
+            # bottom of the key (Df + key_depth).
+            D_top = geom.Df
             D = D_top + geom.key_depth
         else:
-            # On the embedment of the base (base_thickness)
-            D_top, D = 0.0, geom.base_thickness
+            # On the embedment of the base, Df
+            D_top, D = 0.0, geom.Df
         Pp = 0.5 * Kp * gamma_foundation * (D ** 2 - D_top ** 2)
+        # The cohesion, under the undrained rule (c_foundation = cu): the
+        # 2 c sqrt(Kp) of UFC 3-220-20 Eq. 4-7 over the height (GM-288,
+        # GM-235; :data:`TOE_PASSIVE_COHESION_BASIS`)
+        passive_cohesion = sliding_cohesion == "undrained"
+        if passive_cohesion and c_foundation:
+            Pp_cohesion = 2.0 * c_foundation * math.sqrt(Kp) * (D - D_top)
+            Pp += Pp_cohesion
         resisting += Pp
 
     driving = Ph
@@ -680,8 +933,11 @@ def _sliding_terms(geom: CantileverWallGeometry,
             "sliding_cohesion": sliding_cohesion,
             "c_foundation": c_foundation, "ca_from": ca_from,
             "adhesion_width": width, "eccentricity": e,
+            "interface_gap_possible": interface_gap_possible,
+            "gap_limited": gap_limited,
             "R_friction": R_friction, "R_adhesion": R_adhesion,
             "Kp": Kp, "D_passive": D, "D_passive_top": D_top,
+            "Pp_cohesion": Pp_cohesion, "passive_cohesion": passive_cohesion,
             "passive_theory": passive_theory if include_passive else None,
             "passive_delta": toe["delta"],
             "passive_delta_given": toe["delta_given"],
@@ -723,8 +979,8 @@ def check_sliding(geom: CantileverWallGeometry,
                   c_backfill: float = 0.0,
                   phi_foundation: float = None,
                   c_foundation: float = 0.0,
-                  gamma_concrete: float = 24.0,
-                  FOS_required: float = 1.5,
+                  gamma_concrete: float = GAMMA_CONCRETE,
+                  FOS_required: float = None,
                   pressure_method: str = "rankine",
                   include_passive: bool = False,
                   gamma_foundation: float = None,
@@ -735,7 +991,9 @@ def check_sliding(geom: CantileverWallGeometry,
                   sliding_cohesion: str = None,
                   passive_theory: str = "rankine",
                   log_spiral_source: str = None,
-                  passive_wall_friction_deg: float = None
+                  passive_wall_friction_deg: float = None,
+                  wall_friction_deg: float = None,
+                  interface_gap_possible: bool = False
                   ) -> Dict[str, Any]:
     """Check sliding stability.
 
@@ -788,15 +1046,17 @@ def check_sliding(geom: CantileverWallGeometry,
     c_foundation : float, optional
         Foundation soil cohesion (kPa). Default 0.
     gamma_concrete : float, optional
-        Concrete unit weight (kN/m³). Default 24.
+        Concrete unit weight (kN/m³). Default 23.6 (:data:`GAMMA_CONCRETE`).
     FOS_required : float, optional
-        Required FOS. Default 1.5.
+        Required FOS. Default None: 1.5, or 2.0 with include_passive
+        (:func:`default_FOS_sliding`, GM-288).
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
     include_passive : bool, optional
-        If True, include passive resistance Pp in front of wall.
-        If has_shear_key, passive is computed on key_depth;
-        otherwise on base_thickness. Default False.
+        If True, include passive resistance Pp in front of wall, over the
+        embedment ``geom.Df`` (with a shear key, over the key's depth
+        below it), with the cohesion under the undrained rule (GM-288).
+        Default False.
     gamma_foundation : float, optional
         Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
     passive_theory : str, optional
@@ -830,6 +1090,14 @@ def check_sliding(geom: CantileverWallGeometry,
     sliding_cohesion : str, optional
         "drained", "undrained" or "friction_plus_adhesion" (above). None
         (default): :func:`default_sliding_cohesion`.
+    wall_friction_deg : float, optional
+        With pressure_method "coulomb", the wall friction on the pressure
+        plane (deg). None: the backfill slope (GM-288,
+        :data:`COULOMB_DELTA_BASIS`).
+    interface_gap_possible : bool, optional
+        Under the undrained rule, hold the base resistance to 0.4 V where
+        water or air can reach the interface (EN 1997-1 Eq. 6.5,
+        :data:`UNDRAINED_GAP_BASIS`). Default False.
 
     Returns
     -------
@@ -847,26 +1115,36 @@ def check_sliding(geom: CantileverWallGeometry,
         c_foundation, gamma_concrete, pressure_method, include_passive,
         gamma_foundation, delta_base, base_adhesion, live_load_resists,
         dead_load_resists, sliding_cohesion, passive_theory,
-        log_spiral_source, passive_wall_friction_deg), FOS_required)
+        log_spiral_source, passive_wall_friction_deg, wall_friction_deg,
+        interface_gap_possible),
+        default_FOS_sliding(include_passive) if FOS_required is None
+        else FOS_required)
 
 
 def _overturning_terms(geom: CantileverWallGeometry,
                        gamma_backfill: float, phi_backfill: float,
                        c_backfill: float = 0.0,
-                       gamma_concrete: float = 24.0,
+                       gamma_concrete: float = GAMMA_CONCRETE,
                        pressure_method: str = "rankine",
                        live_load_resists: bool = False,
-                       dead_load_resists: bool = False) -> Dict[str, Any]:
+                       dead_load_resists: bool = False,
+                       wall_friction_deg: float = None,
+                       gamma_foundation: float = None,
+                       founded_on_rock: bool = False) -> Dict[str, Any]:
     """The overturning check's terms, unrounded (GM-143):
     ``M_stabilizing``, ``M_overturning`` (= Ph z_Pa), ``Ph``, ``z_Pa``
     and ``FOS`` (None with no overturning moment); and the eccentricity
     check on the same loads (GM-157): ``V``, ``x_resultant``,
-    ``eccentricity`` (B/2 - x_R) and ``in_middle_third``."""
+    ``eccentricity`` (B/2 - x_R), ``in_middle_third``, and (GM-288)
+    ``eccentricity_limit`` (B/6 on soil, B/4 on rock,
+    :data:`ECCENTRICITY_BASIS`) with ``within_eccentricity_limit``.
+    ``gamma_foundation`` weighs the soil over the toe."""
     B = geom.base_width
 
     # Active thrust, decomposed per the chosen method (RW-1)
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
-                                  c_backfill, pressure_method)
+                                  c_backfill, pressure_method,
+                                  wall_friction_deg)
     Ph, z_Pa = thrust["Ph"], thrust["z_Pa"]
 
     # Overturning moment about toe: horizontal component only
@@ -877,7 +1155,8 @@ def _overturning_terms(geom: CantileverWallGeometry,
     # component, down at the pressure plane (back of heel, x = B)
     items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
                                   thrust, live_load_resists,
-                                  dead_load_resists)
+                                  dead_load_resists,
+                                  gamma_front=gamma_foundation)
     M_stabilizing = _sum(items, "M", "resists")
 
     # The eccentricity check (middle third), on the loads the overturning
@@ -890,6 +1169,7 @@ def _overturning_terms(geom: CantileverWallGeometry,
     # No overturning moment: nothing tips the wall (GM-100, as for sliding).
     no_driving_force = M_overturning <= 0
     FOS = None if no_driving_force else M_stabilizing / M_overturning
+    limit = ECCENTRICITY_LIMIT[bool(founded_on_rock)] * B
     return {"M_stabilizing": M_stabilizing, "M_overturning": M_overturning,
             "Ph": Ph, "z_Pa": z_Pa, "Pa": thrust["Pa"], "Pv": thrust["Pv"],
             "delta_deg": thrust["delta_deg"],
@@ -897,6 +1177,9 @@ def _overturning_terms(geom: CantileverWallGeometry,
             "V": V, "x_resultant": x_resultant,
             "eccentricity": eccentricity,
             "in_middle_third": abs(eccentricity) <= B / 6.0,
+            "founded_on_rock": bool(founded_on_rock),
+            "eccentricity_limit": limit,
+            "within_eccentricity_limit": abs(eccentricity) <= limit + 1e-12,
             "live_load_resists": live_load_resists,
             "dead_load_resists": dead_load_resists}
 
@@ -904,11 +1187,14 @@ def _overturning_terms(geom: CantileverWallGeometry,
 def check_overturning(geom: CantileverWallGeometry,
                       gamma_backfill: float, phi_backfill: float,
                       c_backfill: float = 0.0,
-                      gamma_concrete: float = 24.0,
-                      FOS_required: float = 2.0,
+                      gamma_concrete: float = GAMMA_CONCRETE,
+                      FOS_required: float = None,
                       pressure_method: str = "rankine",
                       live_load_resists: bool = False,
-                      dead_load_resists: bool = False) -> Dict[str, Any]:
+                      dead_load_resists: bool = False,
+                      wall_friction_deg: float = None,
+                      gamma_foundation: float = None,
+                      founded_on_rock: bool = False) -> Dict[str, Any]:
     """Check overturning stability about the toe, and the eccentricity
     (middle-third) check on the same loads.
 
@@ -929,26 +1215,35 @@ def check_overturning(geom: CantileverWallGeometry,
     c_backfill : float, optional
         Backfill cohesion (kPa). Default 0.
     gamma_concrete : float, optional
-        Concrete unit weight (kN/m³). Default 24.
+        Concrete unit weight (kN/m³). Default 23.6 (:data:`GAMMA_CONCRETE`).
     FOS_required : float, optional
-        Required FOS. Default 2.0.
+        Required FOS. Default None: 2.0 on soil, 1.5 on rock
+        (:func:`default_FOS_overturning`, GM-288).
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
     live_load_resists, dead_load_resists : bool, optional
         As in :func:`check_sliding`. Default False.
+    wall_friction_deg, gamma_foundation : float, optional
+        As in :func:`check_sliding`.
+    founded_on_rock : bool, optional
+        The eccentricity limit is B/4, not B/6 (:data:`ECCENTRICITY_BASIS`),
+        and the default FOS_required 1.5. Default False.
 
     Returns
     -------
     dict
         FOS_overturning, stabilizing_moment, overturning_moment, passes,
-        and the eccentricity check: eccentricity_m, in_middle_third.
+        and the eccentricity check: eccentricity_m, in_middle_third,
+        eccentricity_limit_m, within_eccentricity_limit.
         With no overturning moment (zero active thrust) ``passes`` is True,
         ``no_driving_force`` is True and ``FOS_overturning`` is None.
     """
     return _overturning_dict(_overturning_terms(
         geom, gamma_backfill, phi_backfill, c_backfill, gamma_concrete,
-        pressure_method, live_load_resists, dead_load_resists),
-        FOS_required)
+        pressure_method, live_load_resists, dead_load_resists,
+        wall_friction_deg, gamma_foundation, founded_on_rock),
+        default_FOS_overturning(founded_on_rock) if FOS_required is None
+        else FOS_required)
 
 
 def _overturning_dict(t: Dict[str, Any],
@@ -966,6 +1261,8 @@ def _overturning_dict(t: Dict[str, Any],
         "passes": True if FOS is None else FOS >= FOS_required,
         "eccentricity_m": round(t["eccentricity"], 3),
         "in_middle_third": t["in_middle_third"],
+        "eccentricity_limit_m": round(t["eccentricity_limit"], 3),
+        "within_eccentricity_limit": t["within_eccentricity_limit"],
     }
 
 
@@ -973,16 +1270,26 @@ def _bearing_terms(geom: CantileverWallGeometry,
                    gamma_backfill: float, phi_backfill: float,
                    c_backfill: float = 0.0,
                    q_allowable: float = None,
-                   gamma_concrete: float = 24.0,
+                   gamma_concrete: float = GAMMA_CONCRETE,
                    pressure_method: str = "rankine",
-                   surcharge_in_bearing: bool = True) -> Dict[str, Any]:
+                   surcharge_in_bearing: bool = True,
+                   wall_friction_deg: float = None,
+                   gamma_foundation: float = None,
+                   bearing_pressure: str = None,
+                   founded_on_rock: bool = False) -> Dict[str, Any]:
     """The bearing check's terms, unrounded (GM-143): ``V``, ``M_stab``,
     ``M_over``, ``x_resultant``, ``eccentricity`` (the eccentricity for
     bearing, GM-157), ``in_middle_third``, ``distribution``
     ("trapezoidal", or "triangular_toe" / "triangular_heel" outside the
     middle third), ``B_eff`` (the triangle's width, None for a
-    trapezoid), ``q_toe``, ``q_heel``, ``q_max``, ``FOS`` and
-    ``passes``.
+    trapezoid), ``q_toe``, ``q_heel``, ``q_max`` (the larger edge
+    pressure), ``FOS`` and ``passes``.
+
+    GM-288: the pressure compared with q_allowable, ``q_bearing``, is by
+    ``bearing_pressure`` (:data:`BEARING_PRESSURE_BASIS`; None:
+    :func:`default_bearing_pressure`) the equivalent uniform pressure
+    ``q_eq`` = V / ``B_prime``, B' = B - 2|e| ("uniform"), or ``q_max``
+    ("linear"); FOS = q_allowable / q_bearing.
 
     The loads are the bearing check's (GM-157): the surcharges over the
     heel count as ``surcharge_in_bearing`` says (default: they do,
@@ -993,9 +1300,17 @@ def _bearing_terms(geom: CantileverWallGeometry,
     eccentricity check e)"."""
     B = geom.base_width
 
+    bearing_pressure_given = bearing_pressure is not None
+    if bearing_pressure is None:
+        bearing_pressure = default_bearing_pressure(founded_on_rock)
+    if bearing_pressure not in BEARING_PRESSURES:
+        raise ValueError(f"bearing_pressure must be one of "
+                         f"{list(BEARING_PRESSURES)}, got {bearing_pressure!r}")
+
     # Active thrust, decomposed per the chosen method (RW-1)
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
-                                  c_backfill, pressure_method)
+                                  c_backfill, pressure_method,
+                                  wall_friction_deg)
     Pa, z_Pa, delta_deg = thrust["Pa"], thrust["z_Pa"], thrust["delta_deg"]
     Ph, Pv = thrust["Ph"], thrust["Pv"]
 
@@ -1004,7 +1319,8 @@ def _bearing_terms(geom: CantileverWallGeometry,
     # moments about the toe
     items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
                                   thrust,
-                                  surcharge_in_bearing=surcharge_in_bearing)
+                                  surcharge_in_bearing=surcharge_in_bearing,
+                                  gamma_front=gamma_foundation)
     V = _sum(items, "W", "bearing")
     M_stab = _sum(items, "M", "bearing")
 
@@ -1037,16 +1353,22 @@ def _bearing_terms(geom: CantileverWallGeometry,
         q_heel = 2.0 * V / B_eff if B_eff > 0 else 0.0
         q_toe = 0.0
 
+    # The equivalent uniform pressure over B' = B - 2|e| (GEC-6 Eq. 6-6 and
+    # Sec. 6.4.2; NHI-06-089 Fig. 10-17; UFC 3-220-20 Eq. 4-27), GM-288
+    B_prime = B - 2.0 * abs(eccentricity)
+    q_eq = V / B_prime if B_prime > 0 and V > 0 else 0.0
+
     # Bearing check (GM-100). Without q_allowable it is NOT RUN: no FOS and
-    # no verdict, never a placeholder reported as a pass. The demand is the
-    # larger edge pressure (a resultant on the heel side of the centre puts
-    # it under the heel).
+    # no verdict, never a placeholder reported as a pass. The demand is
+    # q_eq ("uniform") or the larger edge pressure ("linear"; a resultant on
+    # the heel side of the centre puts it under the heel).
     q_max = max(q_toe, q_heel)
+    q_bearing = q_eq if bearing_pressure == "uniform" else q_max
     if q_allowable is None:
         FOS_bearing = None
         passes = None
-    elif q_max > 0:
-        FOS_bearing = q_allowable / q_max
+    elif q_bearing > 0:
+        FOS_bearing = q_allowable / q_bearing
         passes = FOS_bearing >= 1.0
     else:
         # The resultant falls outside the base (x_resultant <= 0): no
@@ -1058,6 +1380,11 @@ def _bearing_terms(geom: CantileverWallGeometry,
             "in_middle_third": in_middle_third,
             "distribution": distribution, "B_eff": B_eff,
             "q_toe": q_toe, "q_heel": q_heel, "q_max": q_max,
+            "B_prime": B_prime, "q_eq": q_eq,
+            "bearing_pressure": bearing_pressure,
+            "bearing_pressure_given": bearing_pressure_given,
+            "founded_on_rock": bool(founded_on_rock),
+            "q_bearing": q_bearing,
             "q_allowable": q_allowable, "FOS": FOS_bearing,
             "passes": passes, "Pa": Pa, "Pv": Pv, "delta_deg": delta_deg,
             "surcharge_in_bearing": surcharge_in_bearing}
@@ -1069,6 +1396,10 @@ def _bearing_dict(t: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "q_toe_kPa": round(t["q_toe"], 1),
         "q_heel_kPa": round(t["q_heel"], 1),
+        "q_eq_kPa": round(t["q_eq"], 1),
+        "B_prime_m": round(t["B_prime"], 3),
+        "bearing_pressure": t["bearing_pressure"],
+        "q_bearing_kPa": round(t["q_bearing"], 1),
         "eccentricity_m": round(t["eccentricity"], 3),
         "in_middle_third": t["in_middle_third"],
         "FOS_bearing": None if FOS_bearing is None else round(FOS_bearing, 3),
@@ -1084,9 +1415,13 @@ def check_bearing(geom: CantileverWallGeometry,
                   gamma_backfill: float, phi_backfill: float,
                   c_backfill: float = 0.0,
                   q_allowable: float = None,
-                  gamma_concrete: float = 24.0,
+                  gamma_concrete: float = GAMMA_CONCRETE,
                   pressure_method: str = "rankine",
-                  surcharge_in_bearing: bool = True) -> Dict[str, Any]:
+                  surcharge_in_bearing: bool = True,
+                  wall_friction_deg: float = None,
+                  gamma_foundation: float = None,
+                  bearing_pressure: str = None,
+                  founded_on_rock: bool = False) -> Dict[str, Any]:
     """Check bearing pressure, with the eccentricity for bearing.
 
     The surcharges over the heel load the base as ``surcharge_in_bearing``
@@ -1109,23 +1444,34 @@ def check_bearing(geom: CantileverWallGeometry,
         RUN (FOS_bearing and passes are None, bearing_checked is False); the
         bearing pressures and the middle-third check are still computed.
     gamma_concrete : float, optional
-        Concrete unit weight (kN/m³). Default 24.
+        Concrete unit weight (kN/m³). Default 23.6 (:data:`GAMMA_CONCRETE`).
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
     surcharge_in_bearing : bool, optional
         Count the surcharges over the heel in the bearing pressures.
         Default True (:data:`BEARING_BASIS`).
+    wall_friction_deg, gamma_foundation : float, optional
+        As in :func:`check_sliding`.
+    bearing_pressure : str, optional
+        The pressure compared with q_allowable: "uniform", q_eq = V / B'
+        over B' = B - 2e, or "linear", the larger edge pressure
+        (:data:`BEARING_PRESSURE_BASIS`). None: "uniform" on soil, "linear"
+        with founded_on_rock (GM-288).
+    founded_on_rock : bool, optional
+        Default False.
 
     Returns
     -------
     dict
-        q_toe, q_heel, eccentricity, in_middle_third, FOS_bearing
-        (= q_allowable / the larger of q_toe and q_heel), bearing_checked,
-        passes (None when not checked).
+        q_toe, q_heel, q_eq, B_prime, bearing_pressure, q_bearing,
+        eccentricity, in_middle_third, FOS_bearing (= q_allowable /
+        q_bearing), bearing_checked, passes (None when not checked).
     """
     return _bearing_dict(_bearing_terms(
         geom, gamma_backfill, phi_backfill, c_backfill, q_allowable,
-        gamma_concrete, pressure_method, surcharge_in_bearing))
+        gamma_concrete, pressure_method, surcharge_in_bearing,
+        wall_friction_deg, gamma_foundation, bearing_pressure,
+        founded_on_rock))
 
 
 def analyze_cantilever_wall(geom: CantileverWallGeometry,
@@ -1135,9 +1481,9 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             phi_foundation: float = None,
                             c_foundation: float = 0.0,
                             q_allowable: float = None,
-                            gamma_concrete: float = 24.0,
-                            FOS_sliding: float = 1.5,
-                            FOS_overturning: float = 2.0,
+                            gamma_concrete: float = GAMMA_CONCRETE,
+                            FOS_sliding: float = None,
+                            FOS_overturning: float = None,
                             pressure_method: str = "rankine",
                             include_passive: bool = False,
                             gamma_foundation: float = None,
@@ -1149,7 +1495,11 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             sliding_cohesion: str = None,
                             passive_theory: str = "rankine",
                             log_spiral_source: str = None,
-                            passive_wall_friction_deg: float = None
+                            passive_wall_friction_deg: float = None,
+                            wall_friction_deg: float = None,
+                            interface_gap_possible: bool = False,
+                            founded_on_rock: bool = False,
+                            bearing_pressure: str = None
                             ) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
@@ -1170,17 +1520,23 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         by ``sliding_cohesion``: not at all (drained), or as the undrained
         shear strength cu.
     q_allowable : float, optional
-        Allowable bearing pressure (kPa). Without it the bearing check is
-        NOT RUN: the result's FOS_bearing and passes_bearing are None, its
+        Allowable bearing pressure (kPa); on soil ("uniform"
+        ``bearing_pressure``, the default) the allowable pressure for the
+        effective width B' = B - 2e (GEC-6 Sec. 6.4.2, p. 119). Without it
+        the bearing check is NOT RUN: the result's FOS_bearing and
+        passes_bearing are None, its
         ``checks_not_run`` lists "bearing" and its summary says "not
         checked". q_toe / q_heel and the middle-third check are reported
         either way.
     gamma_concrete : float, optional
-        Concrete unit weight (kN/m³). Default 24.
+        Concrete unit weight (kN/m³). Default 23.6, 150 pcf
+        (:data:`GAMMA_CONCRETE`, GM-288).
     FOS_sliding : float, optional
-        Required FOS for sliding. Default 1.5.
+        Required FOS for sliding. Default None: 1.5, or 2.0 with
+        include_passive (:func:`default_FOS_sliding`, GM-288).
     FOS_overturning : float, optional
-        Required FOS for overturning. Default 2.0.
+        Required FOS for overturning. Default None: 2.0, or 1.5 with
+        founded_on_rock (:func:`default_FOS_overturning`, GM-288).
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
     include_passive : bool, optional
@@ -1217,6 +1573,22 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         "friction_plus_adhesion". None (default):
         :func:`default_sliding_cohesion` ("undrained" when phi_foundation
         is 0, else "drained").
+    wall_friction_deg : float, optional
+        With pressure_method "coulomb", the wall friction on the pressure
+        plane through the heel (deg). None: the backfill slope
+        (:data:`COULOMB_DELTA_BASIS`, GM-288).
+    interface_gap_possible : bool, optional
+        Under the undrained rule, hold the base resistance to 0.4 V where
+        water or air can reach the interface (EN 1997-1 Eq. 6.5,
+        :data:`UNDRAINED_GAP_BASIS`, GM-288). Default False.
+    founded_on_rock : bool, optional
+        The wall is founded on rock: the eccentricity limit is B/4
+        (:data:`ECCENTRICITY_BASIS`), FOS_overturning defaults to 1.5 and
+        bearing_pressure to "linear" (GM-288). Default False.
+    bearing_pressure : str, optional
+        "uniform" (q_eq = V / B', B' = B - 2e) or "linear" (the larger edge
+        pressure), compared with q_allowable (:data:`BEARING_PRESSURE_BASIS`,
+        GM-288). None: "uniform" on soil, "linear" on rock.
 
     Returns
     -------
@@ -1233,8 +1605,15 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         wall (GM-242, :func:`toe_passive_choices`).
     """
     rule_default = default_sliding_cohesion(phi_foundation)
+    FOS_sliding_given = FOS_sliding is not None
+    FOS_overturning_given = FOS_overturning is not None
+    if FOS_sliding is None:
+        FOS_sliding = default_FOS_sliding(include_passive)
+    if FOS_overturning is None:
+        FOS_overturning = default_FOS_overturning(founded_on_rock)
 
-    def slide(rule, delta_base=delta_base, base_adhesion=base_adhesion):
+    def slide(rule, delta_base=delta_base, base_adhesion=base_adhesion,
+              gap=interface_gap_possible):
         return _sliding_terms(
             geom, gamma_backfill, phi_backfill, c_backfill,
             phi_foundation, c_foundation, gamma_concrete,
@@ -1244,10 +1623,16 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
             dead_load_resists=dead_load_resists, sliding_cohesion=rule,
             passive_theory=passive_theory,
             log_spiral_source=log_spiral_source,
-            passive_wall_friction_deg=passive_wall_friction_deg)
+            passive_wall_friction_deg=passive_wall_friction_deg,
+            wall_friction_deg=wall_friction_deg,
+            interface_gap_possible=gap)
 
     s_terms = slide(sliding_cohesion)
     sliding = _sliding_dict(s_terms, FOS_sliding)
+    # The undrained resistance with the other reading of EN 1997-1's gap
+    # limit, for its choice
+    s_gap_other = (slide(sliding_cohesion, gap=not interface_gap_possible)
+                   if s_terms["sliding_cohesion"] == "undrained" else None)
 
     # The other printed rules on the same wall (GM-212), each without the
     # input it does not count, for the choice
@@ -1266,7 +1651,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
             t = slide(rule,
                       delta_base=None if rule == "undrained" else delta_base,
                       base_adhesion=(None if rule == "drained"
-                                     else base_adhesion))
+                                     else base_adhesion),
+                      gap=interface_gap_possible and rule == "undrained")
             others[rule] = t["FOS"]
         except ValueError as exc:
             others[rule] = str(exc)
@@ -1276,18 +1662,27 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         gamma_concrete, pressure_method,
         live_load_resists=live_load_resists,
         dead_load_resists=dead_load_resists,
+        wall_friction_deg=wall_friction_deg,
+        gamma_foundation=gamma_foundation,
+        founded_on_rock=founded_on_rock,
     )
     overturning = _overturning_dict(o_terms, FOS_overturning)
 
-    b_terms = _bearing_terms(
-        geom, gamma_backfill, phi_backfill, c_backfill,
-        q_allowable, gamma_concrete, pressure_method,
-        surcharge_in_bearing=surcharge_in_bearing,
-    )
+    def bear(pressure):
+        return _bearing_terms(
+            geom, gamma_backfill, phi_backfill, c_backfill,
+            q_allowable, gamma_concrete, pressure_method,
+            surcharge_in_bearing=surcharge_in_bearing,
+            wall_friction_deg=wall_friction_deg,
+            gamma_foundation=gamma_foundation,
+            bearing_pressure=pressure, founded_on_rock=founded_on_rock)
+
+    b_terms = bear(bearing_pressure)
     bearing = _bearing_dict(b_terms)
 
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
-                                  c_backfill, pressure_method)
+                                  c_backfill, pressure_method,
+                                  wall_friction_deg)
 
     return CantileverWallResult(
         FOS_sliding=sliding["FOS_sliding"],
@@ -1305,10 +1700,14 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         FOS_sliding_required=FOS_sliding,
         FOS_overturning_required=FOS_overturning,
         q_allowable=q_allowable,
+        founded_on_rock=bool(founded_on_rock),
+        bearing_pressure=b_terms["bearing_pressure"],
+        q_bearing=round(b_terms["q_bearing"], 1),
         earth_pressure=thrust,
         vertical_forces=_vertical_force_items(
             geom, gamma_backfill, gamma_concrete, thrust,
-            live_load_resists, dead_load_resists, surcharge_in_bearing),
+            live_load_resists, dead_load_resists, surcharge_in_bearing,
+            gamma_front=gamma_foundation),
         sliding_terms=s_terms,
         overturning_terms=o_terms,
         bearing_terms=b_terms,
@@ -1317,7 +1716,18 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
            if s_terms["delta_b"] is not None else [])
         + heel_surcharge_choices(geom, live_load_resists,
                                  dead_load_resists, surcharge_in_bearing)
-        + toe_passive_choices(s_terms),
+        + toe_passive_choices(s_terms)
+        + wall_basis_choices(
+            thrust, s_terms, b_terms,
+            other_bearing=(bear("linear" if b_terms["bearing_pressure"]
+                                == "uniform" else "uniform")
+                           if q_allowable is not None else None),
+            s_gap_other=s_gap_other, phi_backfill=phi_backfill,
+            gamma_backfill=gamma_backfill, c_backfill=c_backfill,
+            FOS_sliding=FOS_sliding, FOS_sliding_given=FOS_sliding_given,
+            FOS_overturning=FOS_overturning,
+            FOS_overturning_given=FOS_overturning_given,
+            founded_on_rock=founded_on_rock),
     )
 
 
@@ -1489,6 +1899,9 @@ def toe_passive_choices(terms: Dict[str, Any]) -> list:
 
     def with_Kp(Kp):
         Pp = 0.5 * Kp * g * (D ** 2 - D_top ** 2)
+        if terms["passive_cohesion"] and terms["c_foundation"]:
+            # with its cohesion, as the check counts it (GM-288)
+            Pp += 2.0 * terms["c_foundation"] * math.sqrt(Kp) * (D - D_top)
         return f"Kp {Kp:.3g}, Pp {Pp:.1f} kN/m, {fos(without + Pp)}"
 
     theory, Kp = terms["passive_theory"], terms["Kp"]
@@ -1536,4 +1949,228 @@ def toe_passive_choices(terms: Dict[str, Any]) -> list:
                   name="passive_wall_friction_deg", took=round(delta, 4)),
         _ls.wall_friction_note(
             log_spiral, left_out=_ls.level_front_left_out(log_spiral))))
+    return out
+
+
+#: NHI-06-089's minimum active pressure in a cohesive backfill (kPa per m
+#: of depth), for the tension-zone choice's alternative (GM-288).
+NHI_MIN_ACTIVE_PRESSURE_PER_M = 5.0
+
+
+def _thrust_with_floor(Ka: float, gamma: float, H: float, c: float,
+                       q: float, floor_per_m: float,
+                       n: int = 2000) -> float:
+    """The active thrust (kN/m) with the pressure at no depth below
+    ``floor_per_m`` z (kPa): FHWA NHI-06-089 p. 10-15's "the effective
+    pressure on the wall at any depth should not be less than ... 5z
+    kN/m2", by the midpoint rule over ``n`` slices."""
+    dz = H / n
+    root = math.sqrt(Ka)
+    total = 0.0
+    for i in range(n):
+        z = (i + 0.5) * dz
+        total += max(Ka * (q + gamma * z) - 2.0 * c * root,
+                     floor_per_m * z) * dz
+    return total
+
+
+def wall_basis_choices(thrust: Dict[str, Any], s_terms: Dict[str, Any],
+                       b_terms: Dict[str, Any],
+                       other_bearing: Optional[Dict[str, Any]] = None,
+                       s_gap_other: Optional[Dict[str, Any]] = None,
+                       phi_backfill: float = None,
+                       gamma_backfill: float = None,
+                       c_backfill: float = 0.0,
+                       FOS_sliding: float = None,
+                       FOS_sliding_given: bool = False,
+                       FOS_overturning: float = None,
+                       FOS_overturning_given: bool = False,
+                       founded_on_rock: bool = False) -> list:
+    """The readings GM-288 made stated choices, as a result's ``choices``
+    (``geotech_common.choices``), each only where it applies: Coulomb's
+    wall friction on the pressure plane; the tension zone of a cohesive
+    backfill; the foundation cohesion in the passive resistance; the
+    required FOS for sliding with the passive resistance counted, and for
+    overturning on rock; the bearing pressure compared with q_allowable;
+    EN 1997-1's limit on the undrained sliding resistance. ``thrust``,
+    ``s_terms`` and ``b_terms`` are the checks' terms; ``other_bearing``
+    the bearing terms under the other pressure and ``s_gap_other`` the
+    sliding terms under the other reading of the gap limit, for the
+    alternatives."""
+    from geotech_common.choices import choice, how_given
+    out = []
+
+    def fos(R, driving):
+        return ("no driving force" if driving <= 0
+                else f"FOS_sliding {R / driving:.3g}")
+
+    # Coulomb's wall friction on the pressure plane
+    if thrust["method"] == "coulomb":
+        delta, beta = thrust["delta_deg"], thrust["backfill_slope"]
+        given = thrust["delta_given"]
+        chosen = (f"delta = {delta:g} deg (wall_friction_deg), Ka "
+                  f"{thrust['Ka']:.3f}" if given else
+                  f"delta = the backfill slope = {delta:g} deg, Ka "
+                  f"{thrust['Ka']:.3f}")
+        if given:
+            Ka_b = coulomb_Ka(phi_backfill, beta, beta_deg=beta)
+            alts = [f"delta = the backfill slope = {beta:g} deg, the "
+                    f"module's default: Ka {Ka_b:.3f}. "
+                    + COULOMB_DELTA_BASIS]
+        else:
+            Ka_phi = coulomb_Ka(phi_backfill, phi_backfill, beta_deg=beta)
+            alts = [f"delta = phi_backfill = {phi_backfill:g} deg "
+                    f"(wall_friction_deg), the full soil-on-soil friction "
+                    f"the resultant may take on that plane (NHI-06-089 "
+                    f"p. 10-20): Ka {Ka_phi:.3f}"]
+        out.append(choice(
+            "wall friction on the pressure plane through the heel, in "
+            "Coulomb's Ka (wall_friction_deg)", chosen,
+            how_given(delta if given else None, None,
+                      name="wall_friction_deg", took=round(delta, 4)),
+            COULOMB_DELTA_BASIS, alts))
+
+    # The tension zone of a cohesive backfill
+    z_t = thrust.get("z_tension", 0.0) or 0.0
+    if z_t > 0:
+        Ka, H = thrust["Ka"], thrust["H_active"]
+        q = thrust["q_live"] + thrust["q_dead"]
+        Pa_c0 = active_force_components(gamma_backfill, H, Ka, 0.0, q)["Pa"]
+        Pa_5z = _thrust_with_floor(Ka, gamma_backfill, H, c_backfill, q,
+                                   NHI_MIN_ACTIVE_PRESSURE_PER_M)
+        out.append(choice(
+            "active pressure where the backfill cohesion takes it below "
+            "zero (tension zone)",
+            f"zero over the top {z_t:.2f} m; Pa = {thrust['Pa']:.1f} kN/m "
+            f"(the negative pressure, {thrust['Pa_tension_zone']:.1f} kN/m "
+            f"of pull, not counted)",
+            "module",
+            "UFC 3-220-20 Fig. 4-5 (p. 183), 'In no case should negative "
+            "pressure be considered'; FHWA NHI-06-089 p. 10-15, 'The active "
+            "earth pressure acting against the wall within the depth of the "
+            "tension crack is assumed to be zero. Unless positive drainage "
+            "measures are provided, water infiltration into the tension "
+            "crack may result in hydrostatic pressure on the retaining "
+            "structure' (not modelled)",
+            [f"the cohesion neglected (c_backfill 0), as UFC 3-220-20 "
+             f"Fig. 4-5 allows ('Cohesion term may be neglected'): Pa = "
+             f"{Pa_c0:.1f} kN/m",
+             f"a minimum pressure of 5z kN/m2 at depth z (NHI-06-089 "
+             f"p. 10-15, for c' above about 5 kPa; not an input here): "
+             f"Pa = {Pa_5z:.1f} kN/m"]))
+
+    # The foundation cohesion in the passive resistance
+    c_f = s_terms["c_foundation"]
+    if s_terms["passive_theory"] is not None and c_f:
+        Kp, D, D_top = (s_terms["Kp"], s_terms["D_passive"],
+                        s_terms["D_passive_top"])
+        h = D - D_top
+        Ppc = 2.0 * c_f * math.sqrt(Kp) * h
+        driving = s_terms["driving"]
+        counted = s_terms["passive_cohesion"]
+        R = s_terms["resisting"]
+        if counted:
+            chosen = (f"counted (the undrained rule): 2 cu sqrt(Kp) h = 2 x "
+                      f"{c_f:g} x sqrt({Kp:.3g}) x {h:.2f} = {Ppc:.1f} kN/m, "
+                      f"{fos(R, driving)}")
+            alt = (f"not counted: {fos(R - Ppc, driving)}. "
+                   + TOE_PASSIVE_COHESION_BASIS[False])
+        else:
+            chosen = (f"not counted (the {s_terms['sliding_cohesion']} "
+                      f"rule), {fos(R, driving)}")
+            alt = (f"2 c sqrt(Kp) h = {Ppc:.1f} kN/m counted: "
+                   f"{fos(R + Ppc, driving)}, with c_foundation as cu "
+                   "(sliding_cohesion 'undrained')")
+        out.append(choice(
+            "foundation cohesion in the passive resistance in front of the "
+            "wall", chosen, "module", TOE_PASSIVE_COHESION_BASIS[counted],
+            [alt]))
+
+    # The required factors of safety the readings set; the words depend on
+    # the value only, given or not ("how" says which)
+    if s_terms["passive_theory"] is not None:
+        printed = FOS_sliding == FOS_SLIDING[True]
+        alts = ([] if printed else
+                [f"{FOS_SLIDING[True]:g}, the default with the passive "
+                 f"resistance counted: " + FOS_SLIDING_BASIS[True]])
+        alts.append(f"{FOS_SLIDING[False]:g} without the passive "
+                    "resistance: " + FOS_SLIDING_BASIS[False])
+        out.append(choice(
+            "required factor of safety against sliding "
+            "(FOS_sliding_required)",
+            f"{FOS_sliding:g}, the passive resistance counted",
+            how_given(FOS_sliding if FOS_sliding_given else None, None,
+                      name="FOS_sliding_required", took=FOS_sliding),
+            FOS_SLIDING_BASIS[True] if printed else "the value given",
+            alts))
+    if founded_on_rock:
+        printed = FOS_overturning == FOS_OVERTURNING[True]
+        alts = ([] if printed else
+                [f"{FOS_OVERTURNING[True]:g}, the default on rock: "
+                 + FOS_OVERTURNING_BASIS[True]])
+        alts.append(f"{FOS_OVERTURNING[False]:g} on soil: "
+                    + FOS_OVERTURNING_BASIS[False])
+        out.append(choice(
+            "required factor of safety against overturning "
+            "(FOS_overturning_required)",
+            f"{FOS_overturning:g}, on rock",
+            how_given(FOS_overturning if FOS_overturning_given else None,
+                      None, name="FOS_overturning_required",
+                      took=FOS_overturning),
+            FOS_OVERTURNING_BASIS[True] if printed else "the value given",
+            alts))
+
+    # The bearing pressure compared with q_allowable
+    if b_terms["q_allowable"] is not None:
+        def bearing_words(t):
+            fs = ("the resultant outside the base" if not t["q_bearing"] > 0
+                  else f"FOS_bearing {t['q_allowable'] / t['q_bearing']:.3g}")
+            if t["bearing_pressure"] == "uniform":
+                return (f"uniform: q_eq = V / B' = {t['V']:.1f} / "
+                        f"{max(t['B_prime'], 0.0):.2f} = {t['q_eq']:.1f} kPa, "
+                        f"B' = B - 2e, {fs}")
+            return (f"linear: the larger edge pressure q_max = "
+                    f"{t['q_max']:.1f} kPa ({t['distribution']}), {fs}")
+        bp = b_terms["bearing_pressure"]
+        basis = BEARING_PRESSURE_BASIS[bp]
+        if founded_on_rock and not b_terms["bearing_pressure_given"]:
+            basis = "founded on rock: " + basis
+        alts = []
+        if other_bearing is not None:
+            alts.append(bearing_words(other_bearing) + ". "
+                        + BEARING_PRESSURE_BASIS[
+                            other_bearing["bearing_pressure"]])
+        out.append(choice(
+            "bearing pressure compared with q_allowable (bearing_pressure)",
+            bearing_words(b_terms),
+            how_given(bp if b_terms["bearing_pressure_given"] else None,
+                      None, name="bearing_pressure", took=bp),
+            basis, alts))
+
+    # EN 1997-1's limit on the undrained sliding resistance
+    if s_terms["sliding_cohesion"] == "undrained":
+        flag = s_terms["interface_gap_possible"]
+        driving = s_terms["driving"]
+        if flag:
+            chosen = ("applied (interface_gap_possible true): R_base held "
+                      f"to 0.4 V = {0.4 * s_terms['V']:.1f} kN/m"
+                      if s_terms["gap_limited"] else
+                      "applied (interface_gap_possible true), not governing: "
+                      f"R_base {s_terms['R_adhesion']:.1f} kN/m <= 0.4 V = "
+                      f"{0.4 * s_terms['V']:.1f} kN/m")
+        else:
+            chosen = ("not applied (interface_gap_possible false): no water "
+                      "or air taken to reach the base")
+        alts = []
+        if s_gap_other is not None:
+            o = s_gap_other
+            alts.append(
+                ("applied (interface_gap_possible true): "
+                 if not flag else "not applied: ")
+                + fos(o["resisting"], driving))
+        out.append(choice(
+            "EN 1997-1 limit on the undrained sliding resistance, Rd <= "
+            "0.4 Vd (interface_gap_possible)", chosen,
+            how_given(flag, False, name="interface_gap_possible"),
+            UNDRAINED_GAP_BASIS, alts))
     return out

@@ -23,7 +23,8 @@ def _wall(**kw):
 
 def test_the_default_is_drained_and_listed():
     r = _wall()
-    assert r["FOS_sliding"] == pytest.approx(1.233, abs=0.0005)
+    # 1.192 on GM-288's proportions and concrete (1.233 before)
+    assert r["FOS_sliding"] == pytest.approx(1.192, abs=0.0005)
     assert r["defaults_used"]["sliding_cohesion"] == "drained"
     assert r["sliding_basis"]["sliding_cohesion"] == "drained"
     assert r["sliding_basis"]["base_adhesion_kPa"] == 0.0
@@ -34,11 +35,11 @@ def test_the_default_is_drained_and_listed():
 
 def test_the_ufc_rule_given():
     r = _wall(sliding_cohesion="friction_plus_adhesion")
-    assert r["FOS_sliding"] == pytest.approx(1.553, abs=0.0005)
+    assert r["FOS_sliding"] == pytest.approx(1.523, abs=0.0005)
     assert "sliding_cohesion" not in r["defaults_used"]
     b = r["sliding_basis"]
     assert b["base_adhesion_kPa"] == pytest.approx(10.0)
-    assert b["adhesion_width_m"] == pytest.approx(2.335, abs=0.001)
+    assert b["adhesion_width_m"] == pytest.approx(2.419, abs=0.001)
     c = next(c for c in r["choices"] if "sliding_cohesion" in c["what"])
     assert c["how"] == "given"
 

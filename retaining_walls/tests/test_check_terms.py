@@ -83,8 +83,15 @@ def test_the_terms_add_up_to_the_results_numbers(name):
     assert ep["Pa"] == parts["Pa"] == horizontal_force_active(
         18.0, ep["H_active"], ep["Ka"], kw.get("c_backfill", 0.0),
         geom.surcharge)[0]
-    assert ep["Pa"] == pytest.approx(max(
-        ep["Pa_earth"] + ep["Pa_surcharge"] + ep["Pa_cohesion"], 0.0))
+    # GM-288: no negative pressure in the tension zone (UFC 3-220-20
+    # Fig. 4-5), so Pa is the parts plus the pull it leaves out
+    assert ep["Pa"] == pytest.approx(
+        ep["Pa_earth"] + ep["Pa_surcharge"] + ep["Pa_cohesion"]
+        + ep["Pa_tension_zone"])
+    assert ep["Pa_tension_zone"] >= 0.0
+    if ep["z_tension"] > 0:
+        assert ep["Pa"] == pytest.approx(
+            0.5 * ep["Ka"] * 18.0 * (ep["H_active"] - ep["z_tension"]) ** 2)
     # the vertical forces are what each check sums (GM-157: a surcharge
     # over the heel that is not a resisting force is summed for bearing
     # only)
@@ -125,7 +132,7 @@ def test_heel_side_resultant_prints_the_heel_triangle(monkeypatch):
     # works out q_heel = 2V / (3 (B - x_R)). (A real wall rarely gets
     # there, so the weight is placed near the heel, as in GM-103's test.)
     import retaining_walls.cantilever as cw
-    monkeypatch.setattr(cw, "_wall_weight_items", lambda g, gb, gc: [
+    monkeypatch.setattr(cw, "_wall_weight_items", lambda g, gb, gc, gf: [
         {"component": "weight near the heel", "W": 500.0, "x": 3.9}])
     geom = CantileverWallGeometry(wall_height=3.0, base_width=4.0,
                                   toe_length=0.2, stem_thickness_top=0.3,

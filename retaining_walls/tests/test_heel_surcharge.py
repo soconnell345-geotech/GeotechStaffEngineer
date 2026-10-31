@@ -33,8 +33,10 @@ from retaining_walls.geometry import CantileverWallGeometry
 
 # A simple wall: H = 4.0 m, B = 2.5 m, toe 0.5 m, stem 0.3 m (no taper),
 # base 0.5 m; level backfill, Rankine; gamma 18, phi 30 (Ka = 1/3);
-# concrete 24; q = 12 kPa.
+# concrete 23.6 (150 pcf, the module's default since GM-288; 24 before);
+# q = 12 kPa.
 GAMMA, PHI, Q = 18.0, 30.0, 12.0
+GC = 23.6
 
 
 def _wall(**kw):
@@ -51,12 +53,12 @@ PA_Q = KA * Q * 4.0                           # 16.0 kN/m at H/2
 PH = PA_EARTH + PA_Q                          # 64.0 kN/m
 M_OT = PA_EARTH * 4.0 / 3.0 + PA_Q * 2.0      # 96.0 kN.m/m
 HEEL = 2.5 - 0.5 - 0.3                        # 1.7 m
-W = [24.0 * 2.5 * 0.5,                        # base slab 30.0 at 1.25
-     24.0 * 0.3 * 3.5,                        # stem 25.2 at 0.65
+W = [GC * 2.5 * 0.5,                          # base slab 29.5 at 1.25
+     GC * 0.3 * 3.5,                          # stem 24.78 at 0.65
      GAMMA * HEEL * 3.5]                      # soil on heel 107.1 at 1.65
 X = [1.25, 0.65, 0.5 + 0.3 + HEEL / 2.0]
-V_WALL = sum(W)                               # 162.3
-M_WALL = sum(w * x for w, x in zip(W, X))     # 230.595
+V_WALL = sum(W)                               # 161.38
+M_WALL = sum(w * x for w, x in zip(W, X))     # 229.697
 W_Q = Q * HEEL                                # 20.4 at 1.65
 M_Q = W_Q * X[2]                              # 33.66
 TAN_DB = math.tan(math.radians(2.0 / 3.0 * PHI))
@@ -65,8 +67,8 @@ TAN_DB = math.tan(math.radians(2.0 / 3.0 * PHI))
 def test_the_hand_check_numbers():
     assert PH == pytest.approx(64.0)
     assert M_OT == pytest.approx(96.0)
-    assert V_WALL == pytest.approx(162.3)
-    assert M_WALL == pytest.approx(230.595)
+    assert V_WALL == pytest.approx(161.38)
+    assert M_WALL == pytest.approx(229.697)
     assert W_Q == pytest.approx(20.4)
 
 
@@ -76,18 +78,18 @@ def test_live_load_default_does_not_resist():
     assert r.sliding_terms["V"] == pytest.approx(V_WALL)
     assert r.sliding_terms["V_left_out"] == pytest.approx(W_Q)
     assert r.FOS_sliding == pytest.approx(V_WALL * TAN_DB / PH, abs=5e-4)
-    assert r.FOS_sliding == pytest.approx(0.923, abs=5e-4)
-    # overturning: 230.595 / 96 = 2.402
+    assert r.FOS_sliding == pytest.approx(0.918, abs=5e-4)
+    # overturning: 229.697 / 96 = 2.393
     assert r.FOS_overturning == pytest.approx(M_WALL / M_OT, abs=5e-4)
-    assert r.FOS_overturning == pytest.approx(2.402, abs=5e-4)
-    # the eccentricity check on the same loads: x_R = 0.8293, e = 0.4207
+    assert r.FOS_overturning == pytest.approx(2.393, abs=5e-4)
+    # the eccentricity check on the same loads: x_R = 0.8285, e = 0.4215
     # > B/6 = 0.4167, so the resultant is outside the middle third
     e = 2.5 / 2.0 - (M_WALL - M_OT) / V_WALL
     assert r.eccentricity == pytest.approx(e, abs=5e-4)
-    assert e == pytest.approx(0.4207, abs=1e-4)
+    assert e == pytest.approx(0.4215, abs=1e-4)
     assert r.in_middle_third is False
     assert "eccentricity" in r.checks_failed
-    # bearing counts the surcharge: V = 182.7, e_b = 0.3291
+    # bearing counts the surcharge: V = 181.78, e_b = 0.3293
     V_b = V_WALL + W_Q
     e_b = 1.25 - (M_WALL + M_Q - M_OT) / V_b
     assert r.bearing_terms["V"] == pytest.approx(V_b)
@@ -102,12 +104,12 @@ def test_live_load_default_does_not_resist():
 def test_live_load_resisting_is_the_other_reading():
     r = analyze_cantilever_wall(_wall(surcharge=Q), GAMMA, PHI,
                                 live_load_resists=True)
-    V = V_WALL + W_Q                              # 182.7
+    V = V_WALL + W_Q                              # 181.78
     assert r.FOS_sliding == pytest.approx(V * TAN_DB / PH, abs=5e-4)
-    assert r.FOS_sliding == pytest.approx(1.039, abs=5e-4)
+    assert r.FOS_sliding == pytest.approx(1.034, abs=5e-4)
     assert r.FOS_overturning == pytest.approx((M_WALL + M_Q) / M_OT,
                                               abs=5e-4)
-    assert r.FOS_overturning == pytest.approx(2.753, abs=5e-4)
+    assert r.FOS_overturning == pytest.approx(2.743, abs=5e-4)
     assert r.in_middle_third is True
     # the same loads for bearing: one eccentricity
     assert r.eccentricity_bearing is None
@@ -119,12 +121,12 @@ def test_bearing_without_the_surcharge():
                                 surcharge_in_bearing=False)
     b = r.bearing_terms
     assert b["V"] == pytest.approx(V_WALL)
-    # e = 0.4207 > B/6: the triangle under the toe, width 3 x_R
+    # e = 0.4215 > B/6: the triangle under the toe, width 3 x_R
     x_R = (M_WALL - M_OT) / V_WALL
     assert b["distribution"] == "triangular_toe"
     assert r.q_toe == pytest.approx(2 * V_WALL / (3 * x_R), abs=0.05)
     # sliding and overturning as by default
-    assert r.FOS_sliding == pytest.approx(0.923, abs=5e-4)
+    assert r.FOS_sliding == pytest.approx(0.918, abs=5e-4)
 
 
 def test_no_surcharge_is_unchanged_and_says_nothing():
@@ -143,17 +145,17 @@ def test_dead_load_surcharge_by_its_own_choice():
     # over the heel it is neglected by default (NHI-06-089 p. 10-41)
     d = analyze_cantilever_wall(_wall(dead_load_surcharge=Q), GAMMA, PHI)
     assert d.earth_pressure["Pa"] == pytest.approx(PH)
-    assert d.FOS_sliding == pytest.approx(0.923, abs=5e-4)
-    assert d.FOS_overturning == pytest.approx(2.402, abs=5e-4)
+    assert d.FOS_sliding == pytest.approx(0.918, abs=5e-4)
+    assert d.FOS_overturning == pytest.approx(2.393, abs=5e-4)
     # counted as a permanent load (GEC-11 p. 4-22)
     d = analyze_cantilever_wall(_wall(dead_load_surcharge=Q), GAMMA, PHI,
                                 dead_load_resists=True)
-    assert d.FOS_sliding == pytest.approx(1.039, abs=5e-4)
-    assert d.FOS_overturning == pytest.approx(2.753, abs=5e-4)
+    assert d.FOS_sliding == pytest.approx(1.034, abs=5e-4)
+    assert d.FOS_overturning == pytest.approx(2.743, abs=5e-4)
     # live_load_resists has no say over a dead load
     d2 = analyze_cantilever_wall(_wall(dead_load_surcharge=Q), GAMMA, PHI,
                                  live_load_resists=True)
-    assert d2.FOS_sliding == pytest.approx(0.923, abs=5e-4)
+    assert d2.FOS_sliding == pytest.approx(0.918, abs=5e-4)
 
 
 def test_live_and_dead_together():
@@ -205,14 +207,14 @@ def test_the_live_share_of_an_inclined_thrust_does_not_resist():
 def test_the_public_checks_take_the_same_choices():
     g = _wall(surcharge=Q)
     assert check_sliding(g, GAMMA, PHI)["FOS_sliding"] \
-        == pytest.approx(0.923, abs=5e-4)
+        == pytest.approx(0.918, abs=5e-4)
     assert check_sliding(g, GAMMA, PHI, live_load_resists=True)[
-        "FOS_sliding"] == pytest.approx(1.039, abs=5e-4)
+        "FOS_sliding"] == pytest.approx(1.034, abs=5e-4)
     o = check_overturning(g, GAMMA, PHI)
-    assert o["FOS_overturning"] == pytest.approx(2.402, abs=5e-4)
+    assert o["FOS_overturning"] == pytest.approx(2.393, abs=5e-4)
     assert o["in_middle_third"] is False
     assert check_overturning(g, GAMMA, PHI, live_load_resists=True)[
-        "FOS_overturning"] == pytest.approx(2.753, abs=5e-4)
+        "FOS_overturning"] == pytest.approx(2.743, abs=5e-4)
     b = check_bearing(g, GAMMA, PHI)
     assert b["in_middle_third"] is True        # e_b = 0.329 <= 0.417
     assert check_bearing(g, GAMMA, PHI, surcharge_in_bearing=False)[
@@ -221,14 +223,17 @@ def test_the_public_checks_take_the_same_choices():
 
 def test_the_f55_wall_before_and_after():
     # wave w12 F55: 1.17 / 3.06 with the surcharge over the heel resisting
-    # (the module before GM-157), 1.07 / 2.78 without; bearing unchanged
+    # (the module before GM-157), 1.07 / 2.78 without; bearing unchanged.
+    # Concrete at 24 kN/m3, the default then (23.6 since GM-288: 1.066 /
+    # 2.765)
     g = CantileverWallGeometry(
         wall_height=4.5, base_width=2.8, toe_length=0.7,
         stem_thickness_top=0.35, stem_thickness_base=0.35,
         base_thickness=0.5, surcharge=10.0)
-    new = analyze_cantilever_wall(g, 19.0, 32.0, phi_foundation=32.0)
+    new = analyze_cantilever_wall(g, 19.0, 32.0, phi_foundation=32.0,
+                                  gamma_concrete=24.0)
     old = analyze_cantilever_wall(g, 19.0, 32.0, phi_foundation=32.0,
-                                  live_load_resists=True)
+                                  live_load_resists=True, gamma_concrete=24.0)
     assert (new.FOS_sliding, new.FOS_overturning) == (
         pytest.approx(1.07, abs=0.005), pytest.approx(2.78, abs=0.005))
     assert (old.FOS_sliding, old.FOS_overturning) == (
@@ -265,11 +270,11 @@ def test_the_calc_steps_print_each_checks_loads():
     r = analyze_cantilever_wall(g, GAMMA, PHI)
     text = repr(get_calc_steps(r, {"geom": g, "gamma_backfill": GAMMA,
                                    "phi_backfill": PHI}))
-    assert "'TOTAL, sliding / overturning / eccentricity', '162.3'" in text
-    assert "'TOTAL, bearing', '182.7'" in text
+    assert "'TOTAL, sliding / overturning / eccentricity', '161.4'" in text
+    assert "'TOTAL, bearing', '181.8'" in text
     assert "'Live-load surcharge on heel', '20.4'" in text
     assert "'bearing only'" in text
     assert "V leaves out 20.4 kN/m of surcharge over the heel" in text
-    assert "R = 162.3 × tan(20.00°)" in text
-    assert "x_R = (230.6 - 96.0) / 162.3" in text
+    assert "R = 161.4 × tan(20.00°)" in text
+    assert "x_R = (229.7 - 96.0) / 161.4" in text
     assert "Resultant for Bearing" in text

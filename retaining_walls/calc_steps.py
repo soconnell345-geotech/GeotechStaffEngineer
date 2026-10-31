@@ -15,12 +15,15 @@ The `analysis` parameter should be a dict with:
     - "c_backfill": float (kPa, default 0)
     - "pressure_method": "rankine" or "coulomb" (cantilever only, default "rankine")
   Cantilever-specific:
-    - "gamma_concrete": float (kN/m3, default 24)
+    - "gamma_concrete": float (kN/m3, default 23.6)
     - "phi_foundation": float (degrees, optional)
     - "c_foundation": float (kPa, default 0)
     - "q_allowable": float (kPa, optional)
-    - "FOS_sliding": float (default 1.5)
-    - "FOS_overturning": float (default 2.0)
+    - "FOS_sliding": float (default 1.5, 2.0 with include_passive)
+    - "FOS_overturning": float (default 2.0, 1.5 on rock)
+    - and the other inputs of ``analyze_cantilever_wall`` (GM-288:
+      "wall_friction_deg", "interface_gap_possible", "founded_on_rock",
+      "bearing_pressure"), each at its default when left out
   MSE-specific:
     - "reinforcement": Reinforcement dataclass
     - "gamma_foundation": float (kN/m3, optional)
@@ -149,6 +152,19 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
         InputItem("t_stem_base", "Stem thickness (base)", f"{geom.stem_thickness_base:.2f}", "m"),
         InputItem("t_base", "Base slab thickness", f"{geom.base_thickness:.2f}", "m"),
     ]
+    # GM-288: the battered face, the embedment and the key
+    if geom.stem_thickness_base > geom.stem_thickness_top:
+        items.append(InputItem("batter", "Battered face of the stem",
+                               getattr(geom, "stem_batter", "back"), ""))
+    if getattr(geom, "embedment_depth", None) is not None:
+        items.append(InputItem("D_f", "Embedment (ground in front to the "
+                               "underside of the base)",
+                               f"{geom.embedment_depth:.2f}", "m"))
+    if geom.has_shear_key:
+        items.append(InputItem("d_key", "Shear key depth below the base",
+                               f"{geom.key_depth:.2f}", "m"))
+    if result.founded_on_rock:
+        items.append(InputItem("Rock", "Founded on rock", "yes", ""))
 
     if geom.backfill_slope > 0:
         items.append(InputItem("\u03b2", "Backfill slope", f"{geom.backfill_slope:.1f}", "deg"))
@@ -428,7 +444,11 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             ),
             result_name="K_a",
             result_value=f"{Ka_val:.4f}",
-            reference="Coulomb (1776)",
+            reference="UFC 3-220-20 Eq. 4-10 (vertical plane, θ = 0)",
+            notes=(f"δ on the vertical plane through the heel: "
+                   + ("wall_friction_deg as given." if ep.get("delta_given")
+                      else "the backfill slope β, soil on soil (FHWA "
+                           "NHI-06-089 p. 10-20).")),
         ))
     else:
         if geom.backfill_slope > 0:
@@ -491,14 +511,44 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_name="P_a",
         result_value=f"{Pa_total:.1f}",
         result_unit="kN/m",
-        reference="Das Ch. 13",
+        reference="UFC 3-220-20 Eq. 4-6; FHWA NHI-06-089 Eq. 10-10",
         notes=(f"q = q_live + q_dead = {q_live:.1f} + {q_dead:.1f} kPa: "
                "both surcharges' thrust drives every check."
                if q_live > 0 and q_dead > 0 else ""),
     ))
+    z_t = ep.get("z_tension", 0.0) or 0.0
+    if z_t > 0:
+        # GM-288: no negative pressure in the tension zone; the step above
+        # is replaced by the triangle below it
+        ep_items[-1] = CalcStep(
+            title="Total Active Thrust (tension zone)",
+            equation=("z_0 = (2c√K_a - K_a q) / (K_a γ),  "
+                      "P_a = 0.5 × K_a × γ × (H - z_0)²"),
+            substitution=(
+                f"z_0 = (2 × {c:.1f} × √{Ka_val:.4f} - "
+                f"{Ka_val:.4f} × {q:.1f}) / ({Ka_val:.4f} × "
+                f"{gamma:.1f}) = {z_t:.3f} m; P_a = 0.5 × "
+                f"{Ka_val:.4f} × {gamma:.1f} × ({H:.3f} - "
+                f"{z_t:.3f})²" if z_t < H else
+                f"2c√K_a ≥ K_a (q + γ H): no pressure over "
+                f"the whole height H = {H:.3f} m"),
+            result_name="P_a",
+            result_value=f"{Pa_total:.1f}",
+            result_unit="kN/m",
+            reference="UFC 3-220-20 Eq. 4-6 and Fig. 4-5; FHWA NHI-06-089 "
+                      "p. 10-15",
+            notes=("The pressure K_a (q + γz) - 2c√K_a is negative "
+                   "above z_0 and taken as zero there, never a pull on the "
+                   "wall (UFC 3-220-20 Fig. 4-5: 'In no case should negative "
+                   "pressure be considered'); the pull over it, "
+                   f"{ep['Pa_tension_zone']:.1f} kN/m, is not counted. P_a "
+                   "acts at (H - z_0)/3. "
+                   "Water in the tension crack is not modelled."),
+        )
 
     # Thrust inclination & components (cantilever._active_thrust, RW-1):
-    # Coulomb -> delta = 2/3*phi; sloped Rankine -> delta = beta; else horizontal.
+    # Coulomb -> the wall friction on the plane through the heel (beta by
+    # default, GM-288); sloped Rankine -> delta = beta; else horizontal.
     delta_incl = ep["delta_deg"]
     Ph = ep["Ph"]
     Pv = ep["Pv"]
@@ -527,7 +577,10 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                    "left out of sliding, overturning and the eccentricity "
                    "check." if Pv_left_out > 0 else "")
             ),
-            reference="Coulomb wall friction \u03b4 = 2/3\u03c6" if method == "coulomb"
+            reference=("Coulomb wall friction \u03b4 on the plane through "
+                       "the heel" + ("" if ep.get("delta_given") else
+                                     " = \u03b2, FHWA NHI-06-089 p. 10-20"))
+            if method == "coulomb"
             else "Rankine thrust parallel to backfill slope",
         ))
 
@@ -653,6 +706,40 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                    "bearing pressure method; NHI-06-089 Fig. 10-17 takes "
                    "the full B.")))
 
+    # The passive resistance in front of the wall, as the analysis took it
+    # (GM-288: over the embedment Df, and cu under the undrained rule)
+    if Pp > 0:
+        D, D_top, Kp = sl["D_passive"], sl["D_passive_top"], sl["Kp"]
+        gf = sl["gamma_foundation"]
+        Ppc = sl.get("Pp_cohesion", 0.0) or 0.0
+        slide_items.append(CalcStep(
+            title="Passive Resistance in Front of the Wall",
+            equation=("P_p = 0.5 \u00d7 K_p \u00d7 \u03b3_f \u00d7 "
+                      "(D\u00b2 - D_top\u00b2)"
+                      + (" + 2c_u\u221aK_p \u00d7 (D - D_top)"
+                         if Ppc > 0 else "")),
+            substitution=(
+                f"P_p = 0.5 \u00d7 {Kp:.3f} \u00d7 {gf:.1f} \u00d7 "
+                f"({D:.2f}\u00b2 - {D_top:.2f}\u00b2)"
+                + (f" + 2 \u00d7 {sl['c_foundation']:.1f} \u00d7 "
+                   f"\u221a{Kp:.3f} \u00d7 {D - D_top:.2f}"
+                   if Ppc > 0 else "")),
+            result_name="P_p",
+            result_value=f"{Pp:.1f}",
+            result_unit="kN/m",
+            reference=("UFC 3-220-20 Eq. 4-7, Figs. 4-27 and 4-29; GEC-6 "
+                       "Eq. 5-41"),
+            notes=(f"{passive_name}; "
+                   + (f"over the shear key, from the underside of the base "
+                      f"(D_top = {D_top:.2f} m below the ground in front) to "
+                      f"the key's bottom (D = {D:.2f} m). "
+                      if D_top else
+                      f"over the embedment, the ground in front {D:.2f} m "
+                      "above the underside of the base. ")
+                   + ("c_foundation counted as cu (the undrained rule)."
+                      if Ppc > 0 else "")),
+        ))
+
     R_sliding = sl["resisting"]
     if rule == "undrained":
         equation = "R = c_a \u00d7 B"
@@ -663,7 +750,10 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                         if sl["ca_given"] else
                         "c_foundation as the undrained shear strength")
                      + ", no base friction (GEC-6: Eqs. 5-38 and 5-39 "
-                     "'should not be combined'). ")
+                     "'should not be combined'). "
+                     + (f"Held to 0.4 V = {sl['R_adhesion']:.1f} kN/m "
+                        "(EN 1997-1 Eq. 6.5: water or air can reach the "
+                        "interface). " if sl.get("gap_limited") else ""))
     elif rule == "friction_plus_adhesion":
         equation = "R = V \u00d7 tan(\u03b4_b) + C_a \u00d7 B_e"
         substitution = (f"R = {sl['V']:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
@@ -689,14 +779,6 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN/m",
         reference=reference,
         notes=rule_note
-              + ((f"P_p: {passive_name} over the depth of the "
-                  "shear key only, below the toe from the underside of the "
-                  f"base ({sl['D_passive_top']:.2f} m) to the level of the "
-                  f"bottom of the key ({sl['D_passive']:.2f} m), "
-                  "UFC 3-220-20 Fig. 4-29. "
-                  if sl.get("D_passive_top") else
-                  f"P_p: {passive_name} in front of the base. ")
-                 if Pp > 0 else "")
               + (f"V leaves out {sl['V_left_out']:.1f} kN/m of surcharge "
                  "over the heel, not a resisting force (see Choices)."
                  if sl.get("V_left_out", 0.0) > 0 else ""),
@@ -715,7 +797,8 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             substitution=f"FOS_sliding = {R_sliding:.1f} / {sl['driving']:.1f}",
             result_name="FOS_sliding",
             result_value=f"{result.FOS_sliding:.3f}",
-            reference="AASHTO 11.6.3 (min 1.5)",
+            reference=("GEC-6 Eq. 5-40 (min 1.5); UFC 3-220-20 Fig. 4-27 "
+                       "(min 2.0 with the passive resistance)"),
             notes=("P_h = P_a × cos(δ) — horizontal thrust component."
                    if delta_incl > 0 else ""),
         ))
@@ -773,7 +856,8 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                           f"{M_over:.1f}"),
             result_name="FOS_ot",
             result_value=f"{result.FOS_overturning:.3f}",
-            reference="AASHTO 11.6.3 (min 2.0)",
+            reference=("FHWA NHI-06-089 Sec. 10.5.5; GEC-6 Sec. 7.3 (about "
+                       "2.0 on soil, 1.5 on rock)"),
         ))
 
         ot_items.append(CheckItem(
@@ -791,8 +875,11 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     brg_items = []
 
     # The eccentricity check, on the loads the overturning check counts,
-    # as the analysis worked it out (GM-157)
+    # as the analysis worked it out (GM-157); B/6, or B/4 on rock (GM-288)
     x_R_check = ot["x_resultant"]
+    within = result.within_eccentricity_limit
+    part, frac = (("middle half", "B/4") if result.founded_on_rock
+                  else ("middle third", "B/6"))
     brg_items.append(CalcStep(
         title="Resultant Location from Toe"
               + (" (sliding / overturning loads)" if split else ""),
@@ -811,8 +898,10 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_name="e",
         result_value=f"{result.eccentricity:.3f}",
         result_unit="m",
-        notes=f"B/6 = {B / 6:.3f} m. "
-              f"{'Resultant within middle third' if result.in_middle_third else 'OUTSIDE middle third'}.",
+        notes=f"{frac} = {result.eccentricity_limit:.3f} m"
+              f"{' (founded on rock)' if result.founded_on_rock else ''}. "
+              f"{'Resultant within the ' + part if within else 'OUTSIDE the ' + part}.",
+        reference="GEC-6 Sec. 6.4.1; UFC 3-220-20 Sec. 4-5.1.2",
     ))
 
     # The bearing pressures, on the bearing check's loads
@@ -880,30 +969,54 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             notes="q_toe = 0 kPa (resultant outside middle third).",
         ))
 
+    # The equivalent uniform pressure over B' = B - 2e (GM-288)
+    uniform = br.get("bearing_pressure", "linear") == "uniform"
+    if br.get("B_prime", 0.0) > 0 and "q_eq" in br:
+        brg_items.append(CalcStep(
+            title="Equivalent Uniform Bearing Pressure",
+            equation="B' = B - 2|e|,  q_eq = V / B'",
+            substitution=(f"B' = {B:.2f} - 2 \u00d7 {abs(e):.3f} = "
+                          f"{br['B_prime']:.3f} m; q_eq = {total_W:.1f} / "
+                          f"{br['B_prime']:.3f}"),
+            result_name="q_eq",
+            result_value=f"{br['q_eq']:.1f}",
+            result_unit="kPa",
+            reference=("GEC-6 Eq. 6-6 and Sec. 6.4.2; FHWA NHI-06-089 Fig. "
+                       "10-17; UFC 3-220-20 Eq. 4-27"),
+            notes=("Compared with q_allowable on soil; the trapezoid or "
+                   "triangle above is for rock and structural design."
+                   if uniform else
+                   "Reported; the larger edge pressure is the one compared "
+                   "with q_allowable (see Choices)."),
+        ))
+
     # Bearing check (GM-100): run only against a given q_allowable, on the
-    # larger edge pressure; otherwise say plainly that it was not run.
-    q_max = max(result.q_toe, result.q_heel)
+    # pressure the analysis compared; otherwise say plainly that it was
+    # not run.
+    q_max = (br["q_bearing"] if "q_bearing" in br
+             else max(result.q_toe, result.q_heel))
+    q_name = "q_eq" if uniform else "q_max"
     if q_all is None or result.FOS_bearing is None:
         brg_items.append(
             "Bearing capacity: NOT CHECKED — no allowable bearing "
-            "pressure (q_allowable) was given. The bearing pressures q_toe "
-            "and q_heel and the middle-third check above are reported; "
-            "compare the larger of q_toe and q_heel with the foundation's "
-            "allowable bearing pressure.")
+            "pressure (q_allowable) was given. The bearing pressures above "
+            f"and the eccentricity check are reported; compare {q_name} "
+            "with the foundation's allowable bearing pressure.")
     elif q_max > 0:
         brg_items.append(CalcStep(
             title="Factor of Safety Against Bearing Failure",
-            equation="FOS_bearing = q_allowable / q_max,  "
-                     "q_max = max(q_toe, q_heel)",
+            equation=(f"FOS_bearing = q_allowable / {q_name}"
+                      + ("" if uniform else ",  q_max = max(q_toe, q_heel)")),
             substitution=f"FOS_bearing = {q_all:.1f} / {q_max:.1f}",
             result_name="FOS_bearing",
             result_value=f"{result.FOS_bearing:.3f}",
-            reference="AASHTO 11.6.3",
+            reference=("GEC-6 Sec. 6.4.2; FHWA NHI-06-089 Sec. 10.5.4.1"
+                       if uniform else "UFC 3-220-20 Sec. 4-5.1.4"),
         ))
         brg_items.append(CheckItem(
             description="Bearing capacity adequacy",
             demand=q_max,
-            demand_label="q_max",
+            demand_label=q_name,
             capacity=q_all,
             capacity_label="q_allowable",
             unit="kPa",
@@ -941,16 +1054,18 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             _fos_row("Overturning", result.FOS_overturning,
                      f"{FOS_o_req:.1f}", result.passes_overturning),
             bearing_row,
-            ["Eccentricity (middle third)", "\u2014", "e \u2264 B/6",
-             "OK" if result.in_middle_third else "FAIL"],
+            [f"Eccentricity ({part})", "\u2014", f"e \u2264 {frac}",
+             "OK" if within else "FAIL"],
         ],
     )
     summary_items.append(summary_table)
 
-    eccentricity_status = "Within middle third" if result.in_middle_third else "OUTSIDE middle third"
+    eccentricity_status = (f"Within the {part}" if within
+                           else f"OUTSIDE the {part}")
     summary_items.append(
         f"Eccentricity: e = {result.eccentricity:.3f} m "
-        f"(B/6 = {B / 6:.3f} m) \u2014 {eccentricity_status}."
+        f"({frac} = {result.eccentricity_limit:.3f} m) \u2014 "
+        f"{eccentricity_status}."
     )
     # The verdict in plain words: failed checks first, then not checked.
     summary_items.append(f"Result: {result.verdict}")
@@ -1605,28 +1720,43 @@ def _cantilever_terms(result, analysis):
     c = _used(analysis, "c_backfill")
     method = _used(analysis, "pressure_method")
     gamma_c = _used(analysis, "gamma_concrete")
-    ep = cw._active_thrust_terms(geom, gamma, phi, c, method)
+    wf = _used(analysis, "wall_friction_deg")
+    gamma_f = _used(analysis, "gamma_foundation")
+    rock = bool(_used(analysis, "founded_on_rock"))
+    ep = cw._active_thrust_terms(geom, gamma, phi, c, method, wf)
     live = bool(_used(analysis, "live_load_resists"))
     dead = bool(_used(analysis, "dead_load_resists"))
     in_bearing = bool(_used(analysis, "surcharge_in_bearing"))
     return (
         ep, cw._vertical_force_items(geom, gamma, gamma_c, ep, live, dead,
-                                     in_bearing),
+                                     in_bearing, gamma_front=gamma_f),
         cw._sliding_terms(
             geom, gamma, phi, c, _used(analysis, "phi_foundation"),
             _used(analysis, "c_foundation"), gamma_c, method,
-            bool(_used(analysis, "include_passive")),
-            _used(analysis, "gamma_foundation"),
+            bool(_used(analysis, "include_passive")), gamma_f,
             delta_base=_used(analysis, "delta_base"),
             base_adhesion=_used(analysis, "base_adhesion"),
             live_load_resists=live, dead_load_resists=dead,
-            sliding_cohesion=_used(analysis, "sliding_cohesion")),
+            sliding_cohesion=_used(analysis, "sliding_cohesion"),
+            passive_theory=_used(analysis, "passive_theory"),
+            log_spiral_source=_used(analysis, "log_spiral_source"),
+            passive_wall_friction_deg=_used(analysis,
+                                            "passive_wall_friction_deg"),
+            wall_friction_deg=wf,
+            interface_gap_possible=bool(
+                _used(analysis, "interface_gap_possible"))),
         cw._overturning_terms(geom, gamma, phi, c, gamma_c, method,
                               live_load_resists=live,
-                              dead_load_resists=dead),
+                              dead_load_resists=dead,
+                              wall_friction_deg=wf, gamma_foundation=gamma_f,
+                              founded_on_rock=rock),
         cw._bearing_terms(geom, gamma, phi, c,
                           _used(analysis, "q_allowable"), gamma_c, method,
-                          surcharge_in_bearing=in_bearing))
+                          surcharge_in_bearing=in_bearing,
+                          wall_friction_deg=wf, gamma_foundation=gamma_f,
+                          bearing_pressure=_used(analysis,
+                                                 "bearing_pressure"),
+                          founded_on_rock=rock))
 
 
 def _loads_differ(ot, br) -> bool:
@@ -1691,27 +1821,6 @@ def _mse_terms(result, analysis):
             _mse_used(analysis, "surcharge_in_bearing")))
 
 
-def _Ka_value(phi, method, geom):
-    """Compute Ka exactly as the cantilever analysis does, so the rendered calc
-    package matches the analysis.
-
-    Mirrors retaining_walls.cantilever: Coulomb uses wall friction delta = 2/3*phi
-    with the backfill slope; Rankine uses the sloped coefficient when the
-    backfill slopes and the level coefficient otherwise. (Previously this always
-    returned the level Rankine value, so the package disagreed with the analysis
-    for sloped backfills — CS-1.)
-    """
-    from retaining_walls.earth_pressure import (
-        rankine_Ka, rankine_Ka_sloped, coulomb_Ka,
-    )
-    if method == "coulomb":
-        delta = 2.0 / 3.0 * phi  # matches analysis delta_wall
-        return coulomb_Ka(phi, delta, beta_deg=geom.backfill_slope)
-    if geom.backfill_slope > 0:
-        return rankine_Ka_sloped(phi, geom.backfill_slope)
-    return rankine_Ka(phi)
-
-
 def _plot_cantilever_section(result, analysis):
     """Create a schematic cross-section of a cantilever retaining wall."""
     import matplotlib
@@ -1744,11 +1853,14 @@ def _plot_cantilever_section(result, analysis):
     )
     ax.add_patch(base)
 
-    # Stem (trapezoid: wider at base, narrower at top)
+    # Stem (trapezoid: wider at base, narrower at top), its battered face
+    # as the analysis has it (GM-288: the back, or the front)
+    batter = t_stem_b - t_stem_t
+    front_top = t_toe + (batter if geom.stem_batter == "front" else 0.0)
     stem_x = [
         t_toe,                              # bottom-left (front face)
-        t_toe,                              # top-left (front face)
-        t_toe + t_stem_t,                   # top-right
+        front_top,                          # top-left (front face)
+        front_top + t_stem_t,               # top-right
         t_toe + t_stem_b,                   # bottom-right
     ]
     stem_y = [
@@ -1780,10 +1892,12 @@ def _plot_cantilever_section(result, analysis):
     # at the top of the base: H is measured from the underside of the
     # base, the wall retains H less the base thickness above the top of
     # the footing, and passive resistance is taken on the base's
-    # embedment (``cantilever._sliding_terms``).
+    # embedment (``cantilever._sliding_terms``), Df below the ground in
+    # front (GM-288: the base thickness unless embedment_depth is given).
     x_left, x_right = -B * 0.4, B + w_diagram + B * 0.3
     slope = math.tan(math.radians(geom.backfill_slope or 0.0))
-    x_back_top = t_toe + t_stem_t
+    x_back_top = front_top + t_stem_t
+    y_front = geom.Df
     x_heel = t_toe + t_stem_b
 
     def _backfill_surface(x):
@@ -1824,8 +1938,13 @@ def _plot_cantilever_section(result, analysis):
     # Foundation soil under the base and the soil in front of the toe
     y_bottom = -B * 0.45 - key_depth
     ax.fill([x_left, x_right, x_right, 0.0, 0.0, x_left],
-            [y_bottom, y_bottom, 0.0, 0.0, t_base, t_base],
+            [y_bottom, y_bottom, 0.0, 0.0, y_front, y_front],
             facecolor='#e8dcc8', edgecolor='none', alpha=0.5, zorder=0)
+    if y_front > t_base and t_toe > 0:
+        # the soil over the toe, behind the stem where it meets it
+        ax.add_patch(patches.Rectangle(
+            (0.0, t_base), t_toe + t_stem_b, y_front - t_base,
+            facecolor='#e8dcc8', edgecolor='none', alpha=0.5, zorder=0))
 
     # The pressure diagram on the plane through the back of the heel, from
     # the underside of the base to H_active, where the analysis applies it
@@ -1891,10 +2010,14 @@ def _plot_cantilever_section(result, analysis):
     _dimension(0, B, 20, f'B = {B:.2f} m', fontsize=9, fontweight='bold')
 
     # Ground surface lines: the backfill behind the stem, the ground in
-    # front at the top of the base
+    # front Df above the underside of the base, to the stem's front face
     ax.plot([x_back_top, x_heel, x_right],
             [H, H, _backfill_surface(x_right)], 'g-', linewidth=2)
-    ax.plot([x_left, 0.0], [t_base, t_base], 'g-', linewidth=2)
+    x_front = 0.0
+    if y_front > t_base:
+        x_front = t_toe + (front_top - t_toe) * min(
+            (y_front - t_base) / h_stem, 1.0) if h_stem > 0 else t_toe
+    ax.plot([x_left, x_front], [y_front, y_front], 'g-', linewidth=2)
 
     # Resultant location marker, its point on the base's underside, and
     # its label beside it inside the base (under the base it ran into B)
@@ -1918,8 +2041,11 @@ def _plot_cantilever_section(result, analysis):
         f'\u03b3 = {gamma:.1f} kN/m\u00b3, \u03c6 = {phi:.1f}\u00b0, '
         f'Ka = {Ka_val:.3f}']
     if ep.get("Pa_cohesion"):
-        lines.append(f"The backfill's cohesion takes "
-                     f"{-ep['Pa_cohesion']:.0f} kN/m off P_a (not drawn).")
+        # net of the tension zone, where no negative pressure is counted
+        # (GM-288)
+        cut = -(ep["Pa_cohesion"] + (ep.get("Pa_tension_zone") or 0.0))
+        lines.append(f"The backfill's cohesion takes {cut:.0f} kN/m off "
+                     f"P_a (not drawn).")
     lines.append(
         f"FOS_slide = {_fos_text(result.FOS_sliding, 'no driving force')}, "
         f"FOS_OT = {_fos_text(result.FOS_overturning, 'no driving force')}, "

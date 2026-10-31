@@ -68,7 +68,9 @@ def horizontal_force_active(gamma: float, H: float, Ka: float,
 
     For a wall of height H with uniform backfill:
     Pa = 0.5 * Ka * gamma * H² + Ka * q * H - 2*c*sqrt(Ka)*H
-    Applied at H/3 from base (triangular) or adjusted for surcharge.
+    Applied at H/3 from base (triangular) or adjusted for surcharge. Where
+    cohesion takes the pressure below zero near the top it is taken as zero
+    there (the tension zone, GM-288: :func:`active_force_components`).
 
     Note
     ----
@@ -109,32 +111,53 @@ def active_force_components(gamma: float, H: float, Ka: float,
     """The parts of :func:`horizontal_force_active` (GM-143):
     ``Pa_earth`` (0.5 Ka gamma H^2, at H/3), ``Pa_surcharge`` (Ka q H, at
     H/2), ``Pa_cohesion`` (-2 c sqrt(Ka) H, at H/2), their total ``Pa``
-    (not below zero) and its height ``z_Pa`` above the base (m), as that
-    function works them out (it returns this ``Pa`` and ``z_Pa``)."""
+    and its height ``z_Pa`` above the base (m), as that function works
+    them out (it returns this ``Pa`` and ``z_Pa``).
+
+    The pressure at depth z is Ka (q + gamma z) - 2 c sqrt(Ka) (UFC
+    3-220-20 Eq. 4-6, p. 178; FHWA NHI-06-089 Eq. 10-10, p. 10-14), and
+    where cohesion takes it below zero it is zero, never a suction pulling
+    on the wall (GM-288): UFC 3-220-20 Fig. 4-5 (p. 183), "In no case
+    should negative pressure be considered"; NHI-06-089 p. 10-15, "The
+    active earth pressure acting against the wall within the depth of the
+    tension crack is assumed to be zero". ``z_tension`` is the depth of
+    that zone below the top of the pressure plane (0 without one) and
+    ``Pa_tension_zone`` the negative thrust over it that ``Pa`` leaves out
+    (>= 0), so Pa = Pa_earth + Pa_surcharge + Pa_cohesion +
+    Pa_tension_zone."""
     # Triangular earth pressure component
     Pa_earth = 0.5 * Ka * gamma * H ** 2
-    z_earth = H / 3.0
 
     # Surcharge component (rectangular)
     Pa_surcharge = Ka * q * H
-    z_surcharge = H / 2.0
 
     # Cohesion component (reduces active, rectangular)
     Pa_cohesion = -2.0 * c * math.sqrt(Ka) * H
-    z_cohesion = H / 2.0
 
-    Pa_total = Pa_earth + Pa_surcharge + Pa_cohesion
-    Pa_total = max(Pa_total, 0.0)
-
-    if Pa_total > 0:
-        z_Pa = (Pa_earth * z_earth + Pa_surcharge * z_surcharge +
-                Pa_cohesion * z_cohesion) / Pa_total
-        z_Pa = max(z_Pa, 0.0)
+    # The pressure at the top of the plane, sigma_0, and its gradient
+    sigma_0 = Ka * q - 2.0 * c * math.sqrt(Ka)
+    grad = Ka * gamma
+    if sigma_0 >= 0:
+        # Pressure everywhere: the trapezoid, as the three parts sum
+        z_tension = 0.0
+        Pa_total = Pa_earth + Pa_surcharge + Pa_cohesion
+        z_Pa = ((Pa_earth * H / 3.0 + (Pa_surcharge + Pa_cohesion) * H / 2.0)
+                / Pa_total if Pa_total > 0 else H / 3.0)
+    elif grad > 0 and -sigma_0 / grad < H:
+        # Zero over the tension zone, a triangle below it
+        z_tension = -sigma_0 / grad
+        Pa_total = 0.5 * grad * (H - z_tension) ** 2
+        z_Pa = (H - z_tension) / 3.0
     else:
+        # Cohesion holds the whole height: no thrust
+        z_tension = H
+        Pa_total = 0.0
         z_Pa = H / 3.0
+    Pa_tension_zone = Pa_total - (Pa_earth + Pa_surcharge + Pa_cohesion)
 
     return {"Pa_earth": Pa_earth, "Pa_surcharge": Pa_surcharge,
-            "Pa_cohesion": Pa_cohesion, "Pa": Pa_total, "z_Pa": z_Pa}
+            "Pa_cohesion": Pa_cohesion, "Pa_tension_zone": Pa_tension_zone,
+            "z_tension": z_tension, "Pa": Pa_total, "z_Pa": z_Pa}
 
 
 def horizontal_force_passive(gamma: float, D: float, Kp: float,

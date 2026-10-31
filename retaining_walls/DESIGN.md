@@ -1358,12 +1358,16 @@ top level, one level, the refusal, the choice and the calc package),
 `funhouse_agent/tests/test_mse_level_depths_adapter.py`.
 
 ## Key Notes
-- CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
+- CantileverWallGeometry auto-sizes the base thickness, toe and stem from
+  the wall height, H/10 each, and B = 0.6 H (FHWA NHI-06-089 Fig. 10-16(a);
+  GM-288, below)
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):
-  Coulomb thrust acts at δ = 2/3·φ from horizontal, sloped-Rankine thrust
-  parallel to the slope (β). Only P_h = Pa·cos(δ) drives sliding/overturning;
-  P_v = Pa·sin(δ) is applied downward at the back of the heel (x = B) and is
-  stabilizing. Rankine + level backfill is unchanged (δ = 0).
+  Coulomb thrust acts at the wall friction on the plane through the heel,
+  the backfill slope β by default (GM-288; it was 2/3·φ), sloped-Rankine
+  thrust parallel to the slope (β). Only P_h = Pa·cos(δ) drives
+  sliding/overturning; P_v = Pa·sin(δ) is applied downward at the back of
+  the heel (x = B) and is stabilizing. Rankine + level backfill is
+  unchanged (δ = 0).
 - Sloped backfill adds the triangular soil wedge above the heel to the
   weight/moment tally (RW-4)
 - MSE internal: Kr/Ka stress ratio varies with depth (AASHTO method).
@@ -1455,7 +1459,9 @@ base_adhesion_kPa actually used, and the funhouse adapter returns a
 GM-157 (2026-10-18): that free body counted the 7.5 kPa surcharge over the
 heel as resisting. By default the module no longer does (section above),
 so the session numbers are reproduced with `live_load_resists=True`, and
-the defaults are 0.566 / 1.339 / 0.978.
+the defaults were 0.566 / 1.339 / 0.978. GM-288 (concrete 23.6, Coulomb's
+delta = beta = 0 on the vertical plane, the tension zone not counted) made
+them 0.392 / 0.945 / 0.945.
 
 GM-173 (2026-10-19): the result's `choices` state the base friction used,
 first in the list (`cantilever.base_friction_choice`,
@@ -1633,3 +1639,48 @@ Before and after, on a wall with H 5 m, B 3.0 m, backfill gamma 19 and phi
 | Default `drained` now | 90.0 | 1.233 | fails |
 | `friction_plus_adhesion` (Ca 10 kPa on Be 2.33 m) | 113.3 | 1.553 | passes |
 
+## Checked against GEC-6 and UFC 3-220-20 as printed (GM-288, 2026-10-31)
+
+Every equation, default and limit of the cantilever checks was read
+against GEC-6 ch. 5-7, UFC 3-220-20 Sec. 4-5.1 and App. B-1, FHWA
+NHI-06-089 Sec. 10.5 and EN 1997-1 6.5.3, the GM-282 way; the item by item
+record is `module_work/gm288/CHECK.md`, the hand checks
+`tests/test_gm288_printed_check.py`, and two printed worked examples are
+V-061 (UFC App. B-1 and NHI Example 10-3, both to the printed digit or
+within the examples' rounded Ka). Takes in GM-32 and GM-235.
+
+Fixed to the print:
+
+- Trial proportions: base thickness, toe and stem base H/10 (NHI Fig.
+  10-16(a)); they were 0.60 m, 0.1 B and 0.08 H + 0.2 m.
+- Concrete 23.6 kN/m3 (150 pcf, UFC App. B-1.3; NHI Example 10-3); it was
+  24.
+- Coulomb's wall friction on the vertical plane through the heel is the
+  backfill slope (NHI p. 10-20, soil on soil); it was 2/3 phi. At that
+  default Coulomb's Ka is Rankine's sloped Ka, so `pressure_method` moves
+  the result only with `wall_friction_deg` given.
+- The tension zone: no negative active pressure (UFC Fig. 4-5 Note A; NHI
+  p. 10-15). Pa = 0.5 Ka gamma (H - z0)^2 below z0; the choices give c
+  neglected and NHI's 5z kN/m2 minimum as alternatives.
+- The soil over a battered back face and over the toe counts as resisting
+  weight (UFC Fig. 4-27). New `stem_batter` ("back" or "front", the
+  examples' wall) and `embedment_depth` (Df, default the base thickness).
+- The passive resistance acts over Df (with a key from Df to Df + key
+  depth), and counts cu under the undrained rule (UFC Eq. 4-7, p. 181).
+- Required FS: sliding 2.0 with the passive resistance counted (UFC Fig.
+  4-27, Sec. 4-5.1.3); overturning 2.0 on soil, 1.5 on rock (NHI p. 10-44).
+- `founded_on_rock`: e <= B/4 in place of B/6 (GEC-6 6.4.1; UFC 4-5.1.2).
+- The bearing pressure compared with q_allowable is the uniform q_eq =
+  V / (B - 2e) on soil (GEC-6 Eq. 6-6; NHI Fig. 10-17; UFC Eq. 4-27), the
+  trapezoid's q_max on rock (`bearing_pressure` "linear").
+- A descending backfill is refused (GM-32); it was taken as level.
+
+Added as an option: EN 1997-1 6.5.3(12)P's Rd <= 0.4 Vd for an undrained
+clay where water or air can reach the base (`interface_gap_possible`).
+
+Noted, kept: UFC Fig. 4-27 prints F_OT = W a / (P_H b - P_V f); the module
+counts P_V f as a resisting moment, the smaller FOT when P_V > 0 and the
+same eccentricity. GEC-6 Eq. 5-41's a1b (toe to the key) is taken as 0.
+
+Not modelled: water behind the wall (UFC 4-4.1; NHI 10.5.3); the backfill
+is taken as drained, as the tool's brief now says.

@@ -1048,11 +1048,20 @@ class TestWallSlidingBasis:
                   "base_friction_angle": 22.0})   # alias -> delta_base
         out = _run_cantilever_wall(p)
         assert out["sliding_basis"]["delta_base_deg"] == 22.0
+        # GM-288: Coulomb's wall friction on the plane through the heel is
+        # the backfill slope, 0 here (FHWA NHI-06-089 p. 10-20), so the
+        # thrust is horizontal; the session took 2/3 phi = 22 deg
+        assert out["sliding_basis"]["thrust_inclination_deg"] == 0.0
+        assert out["FOS_sliding"] == pytest.approx(0.945, abs=0.002)
+        # the session's free body: delta 22 deg, concrete 24 kN/m3
+        p.update({"wall_friction_deg": 22.0, "gamma_concrete": 24.0})
+        out = _run_cantilever_wall(p)
         # GM-157: the surcharge over the heel does not resist by default;
-        # the session's free body (1.42) counted it
-        assert out["FOS_sliding"] == pytest.approx(1.339, abs=0.002)
+        # the session's free body (1.42) counted it, and the tension zone
+        # (GM-288) takes it to 1.383
+        assert out["FOS_sliding"] == pytest.approx(1.306, abs=0.002)
         out = _run_cantilever_wall({**p, "live_load_resists": True})
-        assert out["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
+        assert out["FOS_sliding"] == pytest.approx(1.383, abs=0.002)
 
 
 class TestWallChecksReported:
@@ -1124,8 +1133,12 @@ class TestWallChecksReported:
         assert out["bearing_checked"] is True
         assert out["passes_bearing"] is True
         assert out["checks_not_run"] == []
+        # GM-288: on soil the uniform q_eq = V / (B - 2e), GEC-6 Eq. 6-6
+        assert out["bearing_pressure"] == "uniform"
         assert out["FOS_bearing"] == pytest.approx(
-            150.0 / max(out["q_toe_kPa"], out["q_heel_kPa"]), abs=0.01)
+            150.0 / out["q_bearing_kPa"], abs=0.01)
+        assert out["q_bearing_kPa"] < max(out["q_toe_kPa"],
+                                          out["q_heel_kPa"])
 
     def test_mse_wall_bearing_not_checked(self):
         from funhouse_agent.dispatch import call_agent

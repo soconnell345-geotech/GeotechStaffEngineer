@@ -50,10 +50,11 @@ def _text(path) -> str:
 _NEXT = "Values Used"
 
 #: The wall's and the bearing tool's defaults, as the packages print them:
-#: none may appear under Given Inputs.
+#: none may appear under Given Inputs. (The earth pressure theory is no
+#: longer among the wall's: at Coulomb's default wall friction, delta =
+#: beta, its Ka is Rankine's, GM-288.)
 _WALL_DEFAULTS = ("Concrete unit weight", "Required sliding FOS",
-                  "Required overturning FOS", "Earth pressure theory",
-                  "rankine")
+                  "Required overturning FOS")
 _BEARING = {"width": 2.0, "depth": 1.0, "friction_angle": 32,
             "unit_weight": 19}
 _BEARING_DEFAULTS = ("Soil cohesion", "Ngamma", "vesic", "Factor of safety")
@@ -70,15 +71,14 @@ def test_defaults_used_print_as_assumed(tmp_path):
                    dict(_WALL, output_path=out, given=list(_WALL)))
     assert r["status"] == "success", r
     used = r["defaults_used"]
-    assert used["gamma_concrete"] == 24.0
+    assert used["gamma_concrete"] == 23.6
     assert used["FOS_sliding_required"] == 1.5
     text = _text(out)
     assumed = _section(text, "Assumed Inputs", _NEXT)
     assert assumed.startswith("Assumed Inputs Assumed, not given:")
-    for words, value in (("Concrete unit weight (kN/m3)", "24"),
+    for words, value in (("Concrete unit weight (kN/m3)", "23.6"),
                          ("Required sliding FOS", "1.5"),
-                         ("Required overturning FOS", "2"),
-                         ("Earth pressure theory", "rankine")):
+                         ("Required overturning FOS", "2")):
         assert f"{words} {value} the analysis's default" in assumed, words
     # a default whose basis the result's choices give points there
     assert "its basis is under Method Choices" in assumed
@@ -143,9 +143,9 @@ def test_a_callers_assumptions_print_with_their_basis(tmp_path):
     assert ("Foundation soil friction angle (deg) 32 not given; "
             "taken equal to the backfill") in assumed
     # a stated assumption replaces the default's row, keeping its value
-    assert "Concrete unit weight (kN/m3) 24 not given; normal-weight " \
+    assert "Concrete unit weight (kN/m3) 23.6 not given; normal-weight " \
         "concrete" in assumed
-    assert "Concrete unit weight (kN/m3) 24 the analysis's default" \
+    assert "Concrete unit weight (kN/m3) 23.6 the analysis's default" \
         not in assumed
     # the stated ones come first
     assert assumed.index("Foundation soil") < assumed.index("Required "
