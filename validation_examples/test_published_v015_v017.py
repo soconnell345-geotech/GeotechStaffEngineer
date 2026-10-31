@@ -41,25 +41,29 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   source's own table to convergence gives 0.96, matching the module. The module is
   the more-correct value; the published 0.90 is not converged.
 
-- V-017 fixed-head Mmax is a PASS; the head deflection is a CONVENTION whose root
-  cause (v5.3 A4) is the section BENDING STIFFNESS (composite/nonlinear EI), NOT the
-  p-y construction. The lateral_pile FD beam-column solver is verified EXACT: with a
-  linear p = k*z*y soil law it reproduces the Reese-Matlock characteristic-length
-  (T-method) closed form to 4 figures (fixed-head groundline y and head moment).
-  With the module's `SandReese` p-y curves and the LPILE inputs (D=0.19685 m,
-  I=3.58667e-5 m4, E=199,948 MPa; two sand layers phi=32/30, k=24430/16287 kN/m3,
-  gamma'=18.84/17.64; V=44.482 kN, axial P=1423.4 kN, head 0.305 m below grade),
-  the fixed-head Mmax = -39.3 kN-m vs the published -37.3 (+5.4%, within +/-10%) and
-  the head deflection = 3.92 mm vs 3.3 (+19%). A4 root-cause: the published LPILE
-  run used NONLINEAR/composite EI (casing+grout+bar; extract "Computed Pile Response
-  Using Nonlinear EI") while the test uses the casing-only elastic EI; a modest
-  EI x1.3 lands the simplified curve on exactly 3.28 mm ~ 3.3. The FULL Reese (1974)
-  four-segment construction (now available, construction="reese1974") is SOFTER
-  (5.02 mm), disproving the "simplified is too soft a p-y" hypothesis -- the working
-  deflection sits at the m-point ym=b/60 where Reese fixes pm=B*pu (B->0.5), softer
-  than the simplified 1/3-power parabola. k (24430/16287) is the source's documented
-  value. Solver, fixed-head BC, axial P-delta, multilayer are all correct; the axial
-  load raises y from 3.60 to 3.92 mm and Mmax from -36.8 to -39.3 (P-delta captured).
+- V-017 fixed-head Mmax and head deflection are both a PASS. The lateral_pile FD
+  beam-column solver is verified EXACT: with a linear p = k*z*y soil law it
+  reproduces the Reese-Matlock characteristic-length (T-method) closed form to 4
+  figures (fixed-head groundline y and head moment). With the module's `SandReese`
+  p-y curves (GEC 9 App. A.4's four-segment construction, the default since
+  GM-287) and the LPILE inputs (D=0.19685 m, I=3.58667e-5 m4, E=199,948 MPa; two
+  sand layers phi=32/30, k=24430/16287 kN/m3, gamma'=18.84/17.64; V=44.482 kN,
+  axial P=1423.4 kN, head 0.305 m below grade), the fixed-head Mmax = -36.8 kN-m vs
+  the published -37.3 (-1.2%) and the head deflection = 3.57 mm vs 3.3 (+8%) with
+  the casing-only EI; with the grout-filled casing's uncracked transformed EI
+  (composite_section_ei) 3.32 mm (+0.6%) and -37.4 kN-m (+0.2%). The published
+  LPILE run used NONLINEAR/composite EI (casing+grout+bar; extract "Computed Pile
+  Response Using Nonlinear EI"). k (24430/16287) is the source's documented value.
+  Solver, fixed-head BC, axial P-delta, multilayer are all correct; the axial load
+  raises y from 3.32 to 3.57 mm and Mmax from -34.8 to -36.8 (P-delta captured).
+
+  Before GM-287 the sand's p_s took C1, C2, C3 from a table no page prints (about
+  half the wedge resistance of GEC 9 Eqs. A-22 to A-24 near the surface) and the
+  default construction was the module's 'simplified' curve: 3.92 mm and -39.3
+  kN-m (casing only), 3.60 mm (composite); the four-segment curve then read 5.14
+  mm. The four-segment curve is still softer than the 'simplified' one (now 2.83
+  mm): the working deflection sits near the m-point ym=b/60 where Reese fixes
+  pm=B*p_s (B->0.5), below the simplified 1/3-power parabola.
 
   NOTE on the head datum: the LPILE echo lists "ground surface 0.305 m below top of
   pile = -0.30 m" -- i.e. the micropile head/cap is 0.305 m BELOW grade (the manual
@@ -387,42 +391,39 @@ def test_v017_solver_is_exact_vs_reese_matlock_T_method():
 
 
 def test_v017_fixed_head_mmax_pass():
-    """PASS: fixed-head maximum bending moment Mmax = -39.3 kN-m vs the published
-    LPILE -37.3 kN-m (+5.4%, within +/-10%). Mmax occurs at the head (fixed-head
+    """PASS: fixed-head maximum bending moment Mmax = -36.8 kN-m vs the published
+    LPILE -37.3 kN-m (-1.2%, within +/-10%). Mmax occurs at the head (fixed-head
     negative moment), as in LPILE. Built with `SandReese` static p-y, the two-layer
     profile, the 0.305 m overburden offset, V=44.482 kN, slope=0 (fixed), and axial
-    P=1423.4 kN with P-delta."""
+    P=1423.4 kN with P-delta. (-39.3 kN-m before GM-287: unprinted sand
+    coefficients and the 'simplified' construction.)"""
     res = LateralPileAnalysis(_v017_pile(), _v017_layers()).solve(
         Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
     assert res.converged
     Mmax = res.moment[int(np.argmax(np.abs(res.moment)))]
-    assert Mmax == pytest.approx(-39.3, rel=0.05)        # our value, pinned
+    assert Mmax == pytest.approx(-36.85, rel=0.01)       # our value, pinned
     assert Mmax == pytest.approx(-37.3, rel=0.10)        # pub Mmax, within +/-10%
     # max moment is at the head (fixed-head condition)
     assert res.moment[0] == pytest.approx(Mmax, rel=1e-6)
 
 
 def test_v017_fixed_head_deflection_convention():
-    """CONVENTION (section stiffness, NOT the p-y construction): fixed-head head
-    deflection = 3.92 mm (simplified SandReese) vs the published LPILE 3.3 mm
-    (+19%). Root cause identified in v5.3 A4: the gap is the BENDING STIFFNESS, not
-    the p-y curve. The published LPILE run used NONLINEAR (composite) EI -- the
-    micropile section is a steel casing + grout + bar -- while this test uses the
-    casing-only elastic EI (I=3.58667e-5, per the LPILE echo's linear section). A
-    modest, physically-expected composite-section stiffening (EI x1.3) lands the
-    simplified curve on exactly 3.28 mm ~ 3.3. The FULL Reese (1974) construction
-    (available since A4, next test) is actually SOFTER (5.02 mm), disproving the old
-    'simplified is too soft a p-y' hypothesis. The documented k (24430.244 /
-    16286.830 kN/m3) is used verbatim from the source, so it is not a k-selection
-    issue either. Not tuned; reproducing 3.3 mm needs a composite/nonlinear-EI
-    capability (flagged as an A4 follow-up in V5.3_PLAN)."""
+    """PASS with the casing-only EI: fixed-head head deflection = 3.57 mm
+    (SandReese, GEC 9's four-segment construction) vs the published LPILE 3.3 mm
+    (+8%). The published LPILE run used NONLINEAR (composite) EI -- the micropile
+    section is a steel casing + grout + bar -- while this test uses the
+    casing-only elastic EI (I=3.58667e-5, per the LPILE echo's linear section);
+    the composite EI (next test) closes the rest. The documented k (24430.244 /
+    16286.830 kN/m3) is used verbatim from the source. Before GM-287: 3.92 mm
+    (+19%), with unprinted sand coefficients and the 'simplified' curve."""
     res = LateralPileAnalysis(_v017_pile(), _v017_layers()).solve(
         Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
     assert res.converged
     y_head_mm = res.deflection[0] * 1000.0
-    assert y_head_mm == pytest.approx(3.92, abs=0.1)     # our value, pinned
-    # documented overshoot vs the published 3.3 mm (section-stiffness difference)
-    assert (y_head_mm - 3.3) / 3.3 == pytest.approx(0.19, abs=0.05)
+    assert y_head_mm == pytest.approx(3.57, abs=0.05)    # our value, pinned
+    # within +/-10% of the published 3.3 mm, a little soft (casing-only EI)
+    assert y_head_mm == pytest.approx(3.3, rel=0.10)
+    assert y_head_mm > 3.3
 
 
 def test_v017_composite_ei_upgrades_deflection_to_pass():
@@ -435,16 +436,14 @@ def test_v017_composite_ei_upgrades_deflection_to_pass():
     E=199,948 MPa). The casing-only elastic EI (I=3.58667e-5) is 7171 kN-m^2;
     the composite transformed EI (steel annulus + grout core, ACI Ec) is
     8109 kN-m^2 (x1.13). Feeding that EI through the SAME p-y model / loads /
-    overburden offset gives a fixed-head head deflection of 3.60 mm vs the
-    published LPILE 3.3 mm — +9.2%, inside the +/-10% band the V-017 Mmax test
-    already uses. NOT tuned: the EI comes purely from the published section
-    geometry + the ACI 318 Ec correlation + the published steel modulus.
+    overburden offset gives a fixed-head head deflection of 3.32 mm vs the
+    published LPILE 3.3 mm (+0.6%) and Mmax -37.4 kN-m vs -37.3 (+0.2%). NOT
+    tuned: the EI comes purely from the published section geometry + the ACI
+    318 Ec correlation + the published steel modulus. Before GM-287 (unprinted
+    sand coefficients, 'simplified' curve): 3.60 mm, +9.2%.
 
-    This confirms the A4 root cause (the gap is the composite/nonlinear section
-    stiffness, not the p-y construction): the uncracked composite EI closes
-    ~half the gap; the residual is the cracked / moment-curvature EI LPILE used
-    ("Nonlinear EI"), which is genuinely softer and is out of scope here (the
-    uncracked composite is an upper-bound stiffness — owner decision pending).
+    The uncracked composite is an upper-bound stiffness; LPILE used the
+    cracked / moment-curvature EI ("Nonlinear EI"), out of scope here.
     """
     # composite (transformed-section) EI from the published section geometry
     sec = composite_section_ei('filled_pipe', outer_diameter=0.1969,
@@ -460,26 +459,24 @@ def test_v017_composite_ei_upgrades_deflection_to_pass():
         Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
     assert res.converged
     y_head_mm = res.deflection[0] * 1000.0
-    assert y_head_mm == pytest.approx(3.60, abs=0.1)         # our value, pinned
+    assert y_head_mm == pytest.approx(3.32, abs=0.05)        # our value, pinned
     # UPGRADE: composite EI lands within +/-10% of the published 3.3 mm
     assert y_head_mm == pytest.approx(3.3, rel=0.10)
-    # moved the right way: between the published 3.3 and the casing-only 3.92
-    assert 3.3 < y_head_mm < 3.92
+    # stiffer than the casing-only EI (3.57 mm)
+    assert y_head_mm < 3.57
     # Mmax stays a PASS vs the published -37.3 kN-m (+/-10%)
     Mmax = res.moment[int(np.argmax(np.abs(res.moment)))]
     assert Mmax == pytest.approx(-37.3, rel=0.10)
 
 
 def test_v017_full_reese_construction_is_softer_not_stiffer():
-    """A4 finding (v5.3): the FULL Reese (1974) four-segment sand p-y
-    (construction='reese1974') is now available as an additive option, but for
-    V-017 it gives ~5.02 mm -- SOFTER than the simplified 3.92 mm and further from
-    the published 3.3 mm, NOT closer. This is faithful to Reese: the working
-    deflection sits at the m-point ym = b/60 = 3.28 mm, where Reese fixes the
-    resistance at pm = B*pu (B->0.50 at depth), genuinely softer than the
-    simplified 1/3-power parabola. So the V-017 deflection gap is the section
-    stiffness (composite/nonlinear EI), not the p-y construction. The A/B
-    asymptotes were NOT tuned to force 3.3 mm."""
+    """The FULL Reese (1974) four-segment sand p-y (construction='reese1974',
+    GEC 9 App. A.4, the default since GM-287) gives 3.57 mm for V-017, SOFTER
+    than the module's 'simplified' curve (2.83 mm). This is faithful to Reese:
+    the working deflection sits near the m-point ym = b/60 = 3.28 mm, where
+    Reese fixes the resistance at pm = B*p_s (B->0.50 at depth), below the
+    simplified 1/3-power parabola. The A/B asymptotes were NOT tuned to force
+    3.3 mm. (Before GM-287's printed C1, C2, C3: 5.14 and 3.92 mm.)"""
     def _layers(construction):
         off = _V017_HEAD_BELOW_GRADE
         return [
@@ -498,16 +495,17 @@ def test_v017_full_reese_construction_is_softer_not_stiffer():
         Vt=_V017_V, Q=_V017_P, head_condition='fixed', n_elements=400)
     y_full = full.deflection[0] * 1000.0
     y_simp = simp.deflection[0] * 1000.0
-    assert y_full == pytest.approx(5.02, abs=0.15)       # full construction, pinned
+    assert y_full == pytest.approx(3.57, abs=0.05)       # full construction, pinned
     assert y_full > y_simp                                # full is SOFTER, not stiffer
-    assert y_simp == pytest.approx(3.92, abs=0.1)         # simplified unchanged
+    assert y_simp == pytest.approx(2.83, abs=0.05)        # simplified
 
 
 def test_v017_axial_load_p_delta_effect():
     """The axial load (P=1423.4 kN) is material and correctly applied: it increases
-    the fixed-head deflection from 3.60 to 3.92 mm and Mmax from -36.8 to -39.3 kN-m
+    the fixed-head deflection from 3.32 to 3.57 mm and Mmax from -34.8 to -36.8 kN-m
     (P-delta captured by the beam-column solver). The published case has P-delta on,
-    so the axial result is the one compared to LPILE."""
+    so the axial result is the one compared to LPILE. (3.60 to 3.92 mm before
+    GM-287.)"""
     common = dict(Vt=_V017_V, head_condition='fixed', n_elements=400)
     res_no_axial = LateralPileAnalysis(_v017_pile(), _v017_layers()).solve(
         Q=0.0, **common)
@@ -515,8 +513,8 @@ def test_v017_axial_load_p_delta_effect():
         Q=_V017_P, **common)
     y0 = res_no_axial.deflection[0] * 1000.0
     y1 = res_axial.deflection[0] * 1000.0
-    assert y0 == pytest.approx(3.60, abs=0.1)
-    assert y1 == pytest.approx(3.92, abs=0.1)
+    assert y0 == pytest.approx(3.32, abs=0.05)
+    assert y1 == pytest.approx(3.57, abs=0.05)
     assert y1 > y0                                       # axial increases deflection
     m0 = res_no_axial.moment[0]
     m1 = res_axial.moment[0]
@@ -526,10 +524,10 @@ def test_v017_axial_load_p_delta_effect():
 def test_v017_above_grade_stickup_interpretation_is_wrong():
     """Documents the head-datum subtlety: modeling the 0.305 m as an above-grade
     STICKUP (the INVENTORY's wording) puts the head 0.305 m ABOVE the soil and
-    gives ~9 mm head deflection -- far from the published 3.3 mm. The LPILE echo
+    gives ~7.7 mm head deflection -- far from the published 3.3 mm. The LPILE echo
     sign ("ground surface 0.305 m below top of pile = -0.30 m") and the manual text
     ("cap embedded 0.305 m below the ground surface") both mean the head is BELOW
-    grade, which the overburden-offset model honors (3.9 mm). This test pins that
+    grade, which the overburden-offset model honors (3.6 mm). This test pins that
     the stickup reading is the wrong one."""
     # stickup model: layers measured from grade, head 0.305 m above grade
     pile = Pile(length=12.192 - 0.305, diameter=_V017_D, E=_V017_E,

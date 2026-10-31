@@ -317,6 +317,12 @@ NOT_REACHED = {
         "the probe's depth is more than 3 b below the rock top either way",
     ("lateral_pile|lateral_pile_analysis", "max_iterations"): _CONVERGES,
     ("calc_package|lateral_pile_package", "max_iterations"): _CONVERGES,
+    # GM-287: with API Fig. 6.8.6-1's C1-C3 the probe's sand stays near
+    # its initial line at 100 kN
+    **{(k, "tolerance"): "the probe converges in the same three "
+       "iterations at 1e-5 and 1.5e-5" for k in (
+           "lateral_pile|lateral_pile_analysis",
+           "calc_package|lateral_pile_package")},
     **{(k, "i_c_limit"): "every Ic in the probe is below 2.6, so a higher "
        "limit adds no point" for k in (
            "liquefaction|liquefaction_analysis", "liquepy|cpt_liquefaction")},

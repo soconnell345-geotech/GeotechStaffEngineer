@@ -10,16 +10,22 @@ applications.
 - Matlock (1970) — soft clay p-y curves, static and cyclic, as printed in
   the COM624P manual (FHWA-SA-91-048) pp. 323-327 and GEC 9 App. A.1,
   pp. 216-219
-- Reese et al. (1974) — sand p-y curves
-- API RP2A (2000) — sand simplified p-y
+- Reese et al. (1974) — sand p-y curves, as printed in GEC 9 App. A.4,
+  pp. 226-230 (Eqs. A-22 to A-32, Figs. A-9 to A-11, Table A-3), and the
+  COM624P manual pp. 340-347 (Eqs. 3.30-3.40, Figs. 3.11-3.13, Tables
+  3.4-3.5)
+- API RP 2A-WSD, 21st ed. with Supplement 3 (2007), Secs. 6.8.6-6.8.7,
+  pp. 70-71 — sand (API), C1/C2/C3 from Fig. 6.8.6-1, k from Fig. 6.8.7-1
 - Reese, Cox & Koop (1975) — stiff clay below the water table, static and
   cyclic, as printed in the COM624P manual pp. 328-335 and GEC 9 App. A.2,
   pp. 219-224
 - Welch and Reese (1972) — stiff clay above the water table, static and
   cyclic, as printed in the COM624P manual (FHWA-SA-91-048) pp. 336-340 and
   GEC 9 App. A.3, pp. 224-226
-- Jeanjean (2009) — soft clay updated model
-- Rollins et al. (2005) — liquefied sand p-y curves
+- Jeanjean (2009) — soft clay updated model. NOT CHECKED: neither Jeanjean
+  (2009) nor API RP 2GEO is in the reference library (GM-287)
+- Rollins et al. (2005) — liquefied sand p-y curves, as printed in GEC 9
+  App. A.6, pp. 232-233 (Eqs. A-43, A-44)
 - Reese (1997) — weak rock p-y curves, as printed in FHWA GEC 9
   (FHWA-HIF-18-031, 2018) Appendix A.5, pp. 230-232, and GEC 10
   (FHWA-NHI-18-024, 2018) Section 9.3.3.4.4, pp. 9-31 to 9-33
@@ -80,6 +86,17 @@ results.summary()
   stopped, not the soil. The push takes about 3 s, on these paths only.
   Load control cannot pass the peak of a softening system; the push can.
 - **Sign convention**: M = EI*y'', V = EI*y''' + Q*y'. Positive Vt -> positive y.
+  V is the shear on a horizontal plane, COM624P's V_y; COM624P Eq. 2.10
+  (p. 300) and GEC 9 Eq. 6-2 print V = EI y''', the shear normal to the
+  deflected axis, V_n = V_y - P_x dy/dx (COM624P Eq. 2.9, p. 299). They
+  differ by Q times the slope: 0.003 kip in GEC 9 Example B.1, nothing at a
+  fixed head (GM-287, noted, not changed).
+- **Partial head fixity (GM-287)**: `head_condition='partial'` holds the
+  head with a rotational spring, M = Kr x slope (kN-m/rad), so a stiffer
+  spring moves the head from free toward fixed (GEC 9 6.7.3). Before
+  GM-287 the solver's row read M = -Kr x slope, which drove the rotation:
+  at Kr 1e4 the head deflected more than a free one, and at 1e5 the result
+  was nonsense. The agent tool offers free and fixed heads only.
 - **Moment equilibrium**: integral(p*z*dz) = -Mt (soil reaction opposes applied moment)
 - **Matlock cyclic (GM-208, 2026-10-19)**: as printed in COM624P
   pp. 326-327 (Eq. 3.13, Fig. 3.5b) and GEC 9 Eq. A-6: the static curve
@@ -191,20 +208,52 @@ results.summary()
     `test_soft_clay_regression_case_source_unknown`, pinned to the
     module's own 34.4 mm, and `test_com624p_example_1` checks the real
     Example 1 (p. 126) beside it.
-- **API sand**: tanh model is linear at small loads
-- **SandReese construction (v5.3)**: `SandReese(construction=...)` selects the
-  sand p-y curve build. `"simplified"` (**default**, byte-identical to prior):
-  initial linear (k*z*y) + a 1/3-power softening parabola anchored at the ultimate
-  point (yu=3b/80) + plateau, with A = max(0.9, 3-0.8 z/b). `"reese1974"`: the FULL
-  four-segment Reese (1974) curve — initial linear -> parabola (p=C*y^(1/n)) ->
-  straight m-segment (pm..pu_curve) -> plateau — with the A/B chart coefficients
+- **Sand p_s (GM-287, 2026-10-31)**: Reese sand takes p_s as the smaller of
+  GEC 9 Eqs. A-23 and A-24 (COM624P Eqs. 3.31, 3.32), collected as
+  p_st = (C1 z + C2 D) gamma z and p_sd = C3 D gamma z in
+  `_reese_sand_coefficients(phi)`: at 30 deg 1.912 / 2.667 / 28.7. GEC 9
+  prints A-23's third term without its z; COM624P Eq. 3.31 prints it with
+  one, and API Fig. 6.8.6-1 (1.914 at 30 deg) agrees only with it. API sand
+  takes C1/C2/C3 off API RP 2A Fig. 6.8.6-1 (`_API_SAND_*`, read off the
+  figure's vector curves at each degree from 20 to 40; outside, the nearer
+  end with a warning): at 30 deg 1.914 / 2.679 / 28.56. Before GM-287 both
+  took one table cited "COM624P Table 2.1" that no held page prints (1.00 /
+  1.25 / 67 at 30 deg, 2.28 / 2.98 / 180 at 35), so the wedge resistance
+  was about half the printed one at 30 deg and about 0.8 of it at 35, and
+  the deep resistance 2.3 and 3.3 times it.
+- **API sand**: p_u and the tanh curve with A = (3 - 0.8 H/D) >= 0.9 (static)
+  or 0.9 (cyclic) as printed (API Eqs. 6.8.6-1, 6.8.6-2, 6.8.7-1). API's D is the
+  average diameter from the surface to the depth; the module takes b at the
+  depth (the same for a uniform pile; noted, not changed).
+- **Sand k (GM-287)**: GEC 9 Table A-3 (COM624P Tables 3.4/3.5) gives k by
+  relative density only: loose / medium / dense 20 / 60 / 125 lb/in^3
+  submerged and 25 / 90 / 225 above the water (`SAND_K_TABLE_A3`,
+  `_sand_k_recommendation(density, below_wt)`). API Fig. 6.8.7-1 gives k by
+  phi' (with relative density on the same gridlines): `SoilProfile` reads it
+  there when it builds an API sand layer and states it in `choices`. Every
+  sand layer's k is reported in `choices` with the printed alternatives.
+  Before GM-287 `_sand_k_recommendation` mapped phi 25 / 30 / 35 to loose /
+  medium / dense and gave phi 40 values no page prints, and `SoilProfile`
+  used an unprinted step table cited "API RP2A Table 6.8-1".
+- **SandReese construction**: `SandReese(construction=...)` selects the
+  sand p-y curve build. `"reese1974"` (**default since GM-287**): GEC 9
+  App. A.4's four-segment curve — initial line p = (k z) y -> parabola
+  (p = C y^(1/n)) -> straight m-segment (p_m = B p_s at y_m = b/60 to
+  p_u = A p_s at y_u = 3b/80) -> p_u — with the A/B chart coefficients
   (`_REESE_A_*`/`_REESE_B_*`, RE-DIGITIZED 2026-07-18 from COM624P FHWA-SA-91-048
   Figures 3.12/3.13, printed pp. 344-345, source PDF in the owner's library;
   printed asymptotes A=0.88 at x/b>5 — ONE annotation, static and cyclic merge at
-  depth — and B_s=0.50 / B_c=0.55), the m-point pm=B*pu at ym=b/60, and
-  pu_curve=A*pu at yu=3b/80. NOTE: the full construction is SOFTER than the
-  simplified at the working deflection, so it is not a drop-in "stiffer"
-  replacement — see the V-017 note in `validation_examples/RESULTS.md`.
+  depth — and B_s=0.50 / B_c=0.55; they match GEC 9's redraws, Figs. A-10
+  and A-11, within about 0.05). `"simplified"` (the default before GM-287):
+  the module's own curve, initial line + a 1/3-power parabola through the
+  ultimate point (y_u = 3b/80) + plateau, with API's A = max(0.9, 3 - 0.8
+  z/b); no held page prints it, and `choices` says so. The four-segment
+  curve is SOFTER than the simplified one at the working deflection (V-017:
+  3.57 against 2.83 mm). GEC 9's step 10 names p_s (Step 3) as the
+  plateau; its Fig. A-9 and Step 6 put it at A p_s, used here. GEC 9 says the
+  initial line runs until it meets the Step 10 branch; the module keeps the
+  smaller of the line and the curve (they differ only where the line misses
+  the parabola, rare; noted, not changed).
   - **Source basis (Reese A/B tables) — VERIFIED-PRIMARY 2026-07-18** (wiki
     verification, `module_work/wiki_verification/reese_sand_com624p.md`): all
     four tables now carry page-calibrated marker read-offs of COM624P Figs
@@ -216,9 +265,21 @@ results.summary()
     the printed charts as-is. The old "Figs 2.19/2.20 / Table 2.2" citations
     were stale (this manual's charts are Figs 3.12/3.13; k tables are Tables
     3.4/3.5). k-table submerged medium/dense corrected to the printed anchors
-    (60/125 lb/in^3); the phi=40 k points are extrapolations beyond the manual
-    (flagged non-primary). The earlier audit RED-FLAG on chart ordinates is
-    CLOSED.
+    (60/125 lb/in^3). The earlier audit RED-FLAG on chart ordinates is
+    CLOSED. (GM-287 retired the phi-keyed k mapping; see "Sand k".)
+- **Liquefied sand (`SandLiquefied`, GM-287)**: Rollins et al. (2005) as
+  printed in GEC 9 App. A.6 (pp. 232-233): p = A (B y)^C P_d with y in mm,
+  p in kN/m and z in m (Eq. A-43), A = 3e-7 (z + 1)^6.05, B = 2.80 (z +
+  1)^0.11, C = 2.85 (z + 1)^-0.41, P_d = 3.81 ln D + 5.6 (Eq. A-44, D in m,
+  printed for about 0.3 to 1 m; a warning outside). Printed limits: p up
+  to about 85 lb/in (14.9 kN/m), y up to 6 in, depth up to 20 ft, D_r
+  about 50 %, gamma' about 61.8 pcf. Beyond 150 mm the module holds p at
+  its 150 mm value (no page prints the curve there). Before GM-287 y
+  entered in metres, so p was 1000^C times too small (C runs from 2.85
+  at the surface to 1.3 at 20 ft). GEC 9 says A-43 holds for D = 324 mm and P_d corrects other
+  diameters, yet P_d is 1.31 at 0.324 m (1 at 0.30 m); P_d is applied at
+  every diameter as printed (noted, not changed). Not offered on the agent
+  tool.
 - **Weak rock (`WeakRock`, GM-159, 2026-10-18)**: Reese (1997) as printed
   in GEC 9 App. A.5 (Eqs. A-33 to A-42). p_ur = alpha_r qu b (1 + 1.4 z_r/b)
   to z_r = 3b, 5.2 alpha_r qu b below; alpha_r = 1 - (2/3) RQD/100 (1/3 at
@@ -266,6 +327,14 @@ results.summary()
   0.2 % (`tests/test_stiff_clay_above_wt.py`)
 - `validation.py`'s soft-clay case is a regression case, source unknown
   (GM-209): not a published check (see above)
+- GEC 9 Example B.1 (pp. 235-242, the ITS pole on a 54 in shaft; Reese
+  sand and Matlock soft clay, LPILE): with the uncracked transformed
+  section, 0.0333 in against the printed 0.03 in, 735.6 kip-ft against 727
+  (+1.2 %), 36.8 kip against 35.5 (+3.6 %); LPILE took the nonlinear EI
+  (GM-287, `validation.py::test_gec9_example_b1_its_pole`)
+- GEC 9 Eqs. A-22 to A-24 and API Fig. 6.8.6-1 at 30 deg, API's chart
+  read-off, Table A-3, Rollins' units, partial head between free and fixed
+  (GM-287, `validation.py`); the full check is `module_work/gm287/CHECK.md`
 - Hetenyi closed-form: <2% error
 - Force/moment equilibrium: <0.01% error
 - validation.py (97 tests) + tests/ (12 regression tests) + composite-section

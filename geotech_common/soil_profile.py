@@ -1224,7 +1224,8 @@ class SoilProfile:
                          ) -> Dict[str, Any]:
         """Select a p-y model and its parameters for a layer, with what was
         chosen for it ("choices"): a clay layer's criterion and the eps50
-        and k estimated for it. A clay is stiff from ``stiff_clay_cu``."""
+        and k estimated for it, a sand layer's k. A clay is stiff from
+        ``stiff_clay_cu``."""
         from geotech_common.choices import MODULE, choice
         mid = (z_top + z_bot) / 2.0
         below_gwt = mid >= gwt
@@ -1368,12 +1369,28 @@ class SoilProfile:
 
         # Granular soil
         if layer.phi is not None and layer.phi > 0:
-            k = layer.k_py if layer.k_py is not None else _estimate_k_sand(layer.phi, below_gwt)
+            sand_choices = []
+            if layer.k_py is not None:
+                k = layer.k_py
+            else:
+                k = _estimate_k_sand(layer.phi, below_gwt)
+                where = "below" if below_gwt else "above"
+                sand_choices.append(choice(
+                    f"k of the API sand curve {span}", round(k), MODULE,
+                    f"API RP 2A-WSD Fig. 6.8.7-1 (p. 70) at phi' "
+                    f"{layer.phi:g} deg, sand {where} the water table"
+                    + ("; phi' is off the chart's curves, so their end value"
+                       if not 28.83 <= layer.phi <= 40.0 else ""),
+                    ["k_py from a lateral load test or the engineer's own "
+                     "reading", "GEC 9 Table A-3 by relative density for "
+                     "Reese sand: loose / medium / dense 5,429 / 16,287 / "
+                     "33,931 kN/m3 submerged, 6,786 / 24,430 / 61,076 above "
+                     "the water"]))
             return {
                 "type": "SandAPI",
                 "params": {"phi": layer.phi, "gamma": gamma_eff,
                            "k": k, "loading": loading},
-                "choices": [],
+                "choices": sand_choices,
             }
 
         raise ValueError(
@@ -2467,38 +2484,42 @@ def _n_cycles_choice(n_cycles: float, spans: List[str]) -> dict:
          "more cycles: a softer curve, more deflection and moment"])
 
 
-def _estimate_k_sand(phi: float, below_gwt: bool) -> float:
-    """Estimate initial modulus of subgrade reaction k for sand (kN/m3).
+#: API RP 2A-WSD, 21st ed. with Supplement 3 (2007), Fig. 6.8.7-1, printed
+#: p. 70: k (lb/in^3) against phi', read off the figure's vector curves at
+#: each whole degree (GM-287). The chart's phi' scale is marked 28, 29, 30,
+#: 36, 40, 45 on its gridlines; between two marks phi' is taken as linear
+#: across the chart. Each curve starts at its first drawn point (phi' 28.83
+#: below the water table, 28.88 above) and ends at 40.
+_API_SAND_K = {
+    True: ([28.83, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+           [8.7, 10.1, 34.1, 42.3, 51.2, 60.7, 70.9, 82.0, 94.1, 106.9,
+            121.1, 137.4, 156.6]),
+    False: ([28.88, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+            [8.7, 10.1, 46.6, 60.8, 76.9, 94.9, 114.7, 136.2, 159.8, 185.0,
+             212.6, 243.1, 277.3]),
+}
 
-    Based on API RP2A Table 6.8-1 (Reese, 1974):
-        phi=25-28: k ~ 5400 (submerged) / 6800 (dry)
-        phi=29-30: k ~ 11000 / 16300
-        phi=31-32: k ~ 22000 / 24400
-        phi=33-36: k ~ 33200 / 35300
-        phi=37-40: k ~ 50000 / 56800
+
+def _estimate_k_sand(phi: float, below_gwt: bool) -> float:
+    """k for API sand (kN/m3) from API RP 2A-WSD Fig. 6.8.7-1 (p. 70) by
+    phi', below or above the water table, linear between the whole degrees
+    read off the chart. Off the curves' ends (phi' below about 28.9 or above
+    40) the end value is used: no page prints one there.
+
+    Before GM-287 this was a step table cited as "API RP2A Table 6.8-1",
+    which no held page prints (phi' 36 below the water table: 33,200 against
+    25,500 here; 40 above it: 56,800 against 75,300).
     """
-    if below_gwt:
-        if phi < 29:
-            return 5400.0
-        elif phi < 31:
-            return 11000.0
-        elif phi < 33:
-            return 22000.0
-        elif phi < 37:
-            return 33200.0
-        else:
-            return 50000.0
+    phis, ks = _API_SAND_K[bool(below_gwt)]
+    if phi <= phis[0]:
+        k = ks[0]
+    elif phi >= phis[-1]:
+        k = ks[-1]
     else:
-        if phi < 29:
-            return 6800.0
-        elif phi < 31:
-            return 16300.0
-        elif phi < 33:
-            return 24400.0
-        elif phi < 37:
-            return 35300.0
-        else:
-            return 56800.0
+        i = next(j for j in range(1, len(phis)) if phi <= phis[j])
+        t = (phi - phis[i - 1]) / (phis[i] - phis[i - 1])
+        k = ks[i - 1] + t * (ks[i] - ks[i - 1])
+    return k * 271.447
 
 
 #: COM624P Table 3.2 (FHWA-SA-91-048 p. 331; GEC 9 Table A-1), Reese,

@@ -402,6 +402,7 @@ REFERENCE_GAPS = {
     ("gec_9", "eq", "A-9"): "Appendix A, p. 222",
     ("gec_9", "eq", "A-20"): "Appendix A, p. 226",
     ("gec_9", "eq", "A-21"): "Appendix A, p. 226",
+    ("gec_9", "eq", "A-27"): "Appendix A, p. 228 (GM-287)",
     ("gec_9", "table", "A-1"): "Appendix A, p. 222",
     ("gec_9", "table", "A-2"): "Appendix A, p. 222",
     ("gec_10", "eq", "A-2"): "Appendix A, p. A-8 (phi' from (N1)60, "

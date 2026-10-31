@@ -443,8 +443,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "for free or fixed heads and above-ground stickup.",
         "methods": [
             "**p&ndash;y curve** soil models (COM624P / LPILE family): Matlock soft clay, Reese stiff clay "
-            "above/below water table, **Reese (1974) sand** (simplified and full four-segment "
-            "construction), API sand, and others.",
+            "above/below water table, **Reese (1974) sand** (GEC 9's four-segment construction by "
+            "default, a simplified one on request), API sand, and others.",
             "Banded finite-difference beam-column solver with P-&Delta; (axial-load) effects.",
             "Free/fixed head conditions, above-ground stickup, and H-pile strong/weak-axis or "
             "concrete-filled-pipe sections.",
@@ -452,9 +452,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "COM624P oracle suite and the FHWA Micropile LPILE benchmark (V-017).",
         ],
         "limits": [
-            "Section stiffness is a single linear EI &mdash; a composite/nonlinear-EI section (casing + "
-            "grout + bar) is not yet modelled, which is the ~19% deflection gap in the micropile "
-            "benchmark (V-017); the solver and p&ndash;y construction themselves are verified exact.",
+            "Section stiffness is a linear EI (an uncracked composite section by transformed "
+            "section) or Branson's cracked EI for reinforced concrete; no moment&ndash;curvature "
+            "analysis. In the micropile benchmark (V-017) the uncracked composite EI gives 3.32 mm "
+            "against LPILE's 3.3 mm.",
         ],
     },
 
@@ -1082,7 +1083,7 @@ VALIDATION_ROWS = [
     ("V-014", "soe", "Basal heave &mdash; Caltrans force balance w/ side shear", "Caltrans T&amp;S Ex 10-2", "PASS"),
     ("V-015", "slope_stability", "Fellenius &amp; Bishop FOS on a specified circle", "Caltrans T&amp;S Ex 10-3/4", "PASS"),
     ("V-016", "soe", "Two-tier anchored wall &mdash; apparent envelope, anchor loads", "GEC-4 Ex 1", "PASS / CONVENTION"),
-    ("V-017", "lateral_pile", "Laterally loaded micropile (LPILE benchmark)", "FHWA Micropile Ex 2", "PASS / CONVENTION"),
+    ("V-017", "lateral_pile", "Laterally loaded micropile (LPILE benchmark)", "FHWA Micropile Ex 2", "PASS"),
     ("V-018", "ground_improvement", "Rammed aggregate pier settlement + baseline consolidation", "GEC-13 Ex 1", "PASS / N/A"),
     ("V-019", "ground_improvement", "Stone-column settlement (Priebe curve)", "GEC-13 Ex 2", "PASS"),
     ("V-020", "ground_improvement", "PVD time to 90% consolidation (Barron&ndash;Hansbo)", "GEC-13 Ch 2", "PASS"),

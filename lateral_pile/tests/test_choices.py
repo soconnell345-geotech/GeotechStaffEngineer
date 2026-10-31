@@ -19,14 +19,18 @@ def _solve(sand_loading="static"):
 
 def test_each_layer_names_its_model_and_source():
     r = _solve()
-    clay, sand, loading = r.choices
+    clay, sand, sand_k, loading = r.choices
     assert clay["what"] == "p-y curves 0-5 m"
     assert clay["chosen"] == "SoftClayMatlock" and clay["how"] == "given"
     assert "Matlock (1970)" in clay["basis"] and "J = 0.5" in clay["basis"]
     assert "SoftClayJeanjean" in clay["alternatives"]
     assert sand["chosen"] == "SandReese"
-    assert "construction simplified" in sand["basis"]
+    assert "construction reese1974" in sand["basis"]
     assert sand["alternatives"] == ["SandAPI"]
+    # GM-287: the sand k's printed alternatives, GEC 9 Table A-3
+    assert sand_k["what"] == "k of the initial line 5-20 m"
+    assert "Table A-3" in sand_k["basis"]
+    assert "33,931 kN/m3: dense sand, submerged" in sand_k["alternatives"]
     assert loading == {**loading, "chosen": "static, every layer",
                        "how": "default", "alternatives": ["cyclic"]}
     assert r.to_dict()["choices"] == r.choices

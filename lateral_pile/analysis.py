@@ -23,7 +23,8 @@ import numpy as np
 
 from lateral_pile.pile import Pile
 from lateral_pile.py_curves import (
-    STIFF_CLAY_K_TABLE, StiffClayBelowWT, WeakRock,
+    PCI_TO_KNM3, SAND_K_TABLE_A3, STIFF_CLAY_K_TABLE, SandAPI, SandReese,
+    StiffClayBelowWT, WeakRock,
 )
 from lateral_pile.soil import SoilLayer, get_layer_at_depth, validate_layers
 from lateral_pile.solver import solve_lateral_pile
@@ -51,13 +52,28 @@ _PY_SOURCE = {
                         "below the water table where the groundwater is at "
                         "depth and free water is not at or near the ground "
                         "surface",
-    "SoftClayJeanjean": "Jeanjean (2009), OTC-20158-MS, soft clay",
-    "SandReese": "Reese, Cox & Koop (1974), OTC 2080, sand",
-    "SandAPI": "API RP2A-WSD (2000) / O'Neill & Murchison (1983), sand",
+    "SoftClayJeanjean": "Jeanjean (2009), OTC-20158-MS, soft clay; not "
+                        "checked against a print (neither the paper nor "
+                        "API RP 2GEO is in the reference library); GEC 9's "
+                        "soft clay criterion is Matlock (SoftClayMatlock, "
+                        "App. A.1)",
+    "SandReese": "Reese, Cox & Koop (1974), OTC 2080, sand, as printed in "
+                 "GEC 9 App. A.4: p_s the smaller of Eqs. A-23 and A-24, "
+                 "A and B from Figs. A-10 and A-11",
+    "SandAPI": "API RP 2A-WSD (21st ed., 2007) Secs. 6.8.6-6.8.7 / O'Neill "
+               "& Murchison (1983), sand: C1, C2, C3 from Fig. 6.8.6-1",
     "WeakRock": "Reese (1997), JGGE 123(11), weak rock, as printed in "
                 "FHWA GEC 9 App. A.5",
-    "SandLiquefied": "Rollins et al. (2005), liquefied sand",
+    "SandLiquefied": "Rollins et al. (2005), liquefied sand, as printed in "
+                     "GEC 9 App. A.6 (Eqs. A-43, A-44), for p up to about "
+                     "14.9 kN/m, y up to 152 mm, depths to 6.1 m and sand "
+                     "of about 50 % relative density; held at its 150 mm "
+                     "value beyond, where no page prints it",
 }
+#: SandReese's construction other than GEC 9's printed curve.
+_REESE_SIMPLIFIED = ("construction 'simplified' is the module's own "
+                     "three-part curve, which no held page prints; GEC 9's "
+                     "curve is 'reese1974'")
 _PY_FAMILIES = (
     ("SoftClayMatlock", "StiffClayBelowWT", "StiffClayAboveWT",
      "SoftClayJeanjean"),
@@ -96,12 +112,19 @@ def py_choices(layers, within: str = "layers") -> list:
         basis = _PY_SOURCE.get(name, "")
         if notes:
             basis += "; default " + ", ".join(notes)
+        if getattr(model, "construction", None) == "simplified":
+            basis += "; " + _REESE_SIMPLIFIED
+        if isinstance(model, SandAPI) and not 20.0 <= model.phi <= 40.0:
+            basis += (f"; phi' {model.phi:g} deg is off the chart's 20-40 "
+                      "deg, so C1, C2, C3 are its end values")
         if isinstance(model, WeakRock):
             basis += _weak_rock_note(model)
         family = next((f for f in _PY_FAMILIES if name in f), ())
         out.append(choice(f"p-y curves {layer.top:g}-{layer.bottom:g} m",
                           name, how_given(name, None, within=within),
                           basis, family))
+        if isinstance(model, (SandReese, SandAPI)):
+            out.append(_sand_k_choice(model, layer, within))
         if isinstance(model, WeakRock):
             out += _weak_rock_choices(model, layer, within)
         if getattr(model, "n_cycles", None) is not None:
@@ -163,6 +186,47 @@ def _cycles_choice(model, layer, within: str = "layers") -> dict:
         ["N = 1: the static curve, the stiffest"]
         + [text for n_alt, text in others if abs(n_alt - n) > 1e-9]
         + ["more cycles: a softer curve, more deflection and moment"])
+
+
+def _sand_k_choice(model, layer, within: str = "layers") -> dict:
+    """The k of a sand layer's initial line (GM-287), always given: GEC 9
+    Table A-3 by relative density for Reese sand, API RP 2A Fig. 6.8.7-1 by
+    phi' for API sand."""
+    from geotech_common.choices import choice, how_given
+    span = f"{layer.top:g}-{layer.bottom:g} m"
+    if isinstance(model, SandAPI):
+        from geotech_common.soil_profile import _API_SAND_K, _estimate_k_sand
+
+        def read(below):
+            # off the curve's ends the end value is held: the chart prints
+            # none there (GM-287 review)
+            phis = _API_SAND_K[below][0]
+            where = "below the water table" if below else "above it"
+            if phis[0] <= model.phi <= phis[-1]:
+                return f"Fig. 6.8.7-1 at phi' {model.phi:g} deg, {where}"
+            end = phis[0] if model.phi < phis[0] else phis[-1]
+            return (f"Fig. 6.8.7-1's curve end value (phi' {end:g} deg), "
+                    f"held at phi' {model.phi:g} deg where the chart prints "
+                    f"none, {where}")
+        basis = ("the initial slope k H of API's tanh curve (API RP 2A-WSD "
+                 "Eq. 6.8.7-1), k from Fig. 6.8.7-1 by phi' (relative "
+                 "density on the same chart)")
+        others = [(_estimate_k_sand(model.phi, w), read(w))
+                  for w in (True, False)]
+    else:
+        basis = ("the initial line p = (k z) y (GEC 9 Eq. A-27), k from GEC "
+                 "9 Table A-3 by relative density, not by phi")
+        others = [(v * PCI_TO_KNM3, f"{density} sand, {where}")
+                  for where, key in (("submerged", "submerged"),
+                                     ("above the water", "above"))
+                  for density, v in SAND_K_TABLE_A3[key].items()]
+    return choice(
+        f"k of the initial line {span}", f"{model.k:g} kN/m3",
+        how_given(model.k, None, within=within), basis,
+        [f"{k:,.0f} kN/m3: {text}" for k, text in others
+         if abs(k - model.k) > 0.5 * PCI_TO_KNM3]
+        + ["a smaller k: a softer start to the curve, more deflection at "
+           "small loads"])
 
 
 def _stiff_clay_k_choice(model, layer, within: str = "layers") -> dict:
