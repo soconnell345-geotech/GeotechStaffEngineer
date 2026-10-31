@@ -2609,5 +2609,34 @@
       "BACKLOG.md OWN-111",
       "module_work/gm290/CHECK.md"
     ]
+  },
+  "OWN-112": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Which overburden correction C_N should the SPT correction tool use by default: Liao & Whitman capped at 1.7 (today), Liao & Whitman capped at 2.0, or Peck capped at 2.0?",
+    "why": "C_N turns N60 into (N1)60, which feeds friction angle, liquefaction and the pile and footing correlations. The forms differ by up to about 15 % at shallow depth (at 50 kPa: 1.41 Liao & Whitman, 1.22 Peck), and the cap only bites below about 25-35 kPa.",
+    "background": "Today's default caps Liao & Whitman at 1.7, a cap from Youd et al. (2001), which the reference library does not hold. GEC-6 Fig. 5-18 draws Liao & Whitman with a 2.0 cap; GEC-12 p. 108 and FHWA NHI-06-088 Eq. 3-3 give Peck's correction (cap 2.0) as AASHTO's. All three are offered by `overburden_method` since GM-295. soil_profile follows the same default.",
+    "options": [
+      {
+        "label": "Liao & Whitman, cap 1.7 (as now)",
+        "effect": "Results unchanged; the cap's source is not one we hold."
+      },
+      {
+        "label": "Liao & Whitman, cap 2.0 (GEC-6)",
+        "effect": "Changes only very shallow tests (below about 35 kPa), which get a larger C_N."
+      },
+      {
+        "label": "Peck, cap 2.0 (AASHTO per GEC-12 and NHI)",
+        "effect": "Shallow (N1)60 about 10-15 % lower, deep about 5 % higher than today."
+      }
+    ],
+    "recommendation": "Peck capped at 2.0, since GEC-12 and NHI-06-088 both print it as AASHTO's correction and the module's other FHWA methods follow those manuals.",
+    "if_no_answer": "Liao & Whitman capped at 1.7 stays, with the result saying the cap is from a source the library does not hold.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-112",
+      "module_work/gm295/CHECK.md"
+    ]
   }
 }
