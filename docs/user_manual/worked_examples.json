@@ -2060,15 +2060,15 @@
       "q_allowable": 250.0
     },
     "result": {
-      "verdict": "FAILS: sliding (FOS 1.17 < 1.50 required). Passes: overturning (FOS 2.67 >= 2.00 required); bearing (q_max 200.1 kPa <= q_allowable 250.0 kPa, FOS 1.25); eccentricity (resultant within the middle third: e = 0.580 m <= B/6 = 0.600 m).",
+      "verdict": "FAILS: sliding (FOS 1.14 < 1.50 required). Passes: overturning (FOS 2.69 >= 2.00 required); bearing (q_eq 142.8 kPa <= q_allowable 250.0 kPa, FOS 1.75); eccentricity (resultant within the middle third: e = 0.537 m <= B/6 = 0.600 m).",
       "checks_failed": [
         "sliding"
       ],
       "checks_not_run": [],
       "all_checks_pass": false,
-      "FOS_sliding": 1.169,
-      "FOS_overturning": 2.674,
-      "FOS_bearing": 1.25,
+      "FOS_sliding": 1.143,
+      "FOS_overturning": 2.695,
+      "FOS_bearing": 1.751,
       "FOS_sliding_required": 1.5,
       "FOS_overturning_required": 2.0,
       "passes_sliding": false,
@@ -2076,13 +2076,16 @@
       "passes_bearing": true,
       "bearing_checked": true,
       "q_allowable_kPa": 250.0,
-      "q_toe_kPa": 200.1,
-      "q_heel_kPa": 19.3,
-      "eccentricity_m": 0.58,
+      "q_toe_kPa": 187.4,
+      "q_heel_kPa": 26.4,
+      "eccentricity_m": 0.537,
       "in_middle_third": true,
+      "eccentricity_limit_m": 0.6,
       "wall_height_m": 6.0,
       "base_width_m": 3.6,
-      "eccentricity_bearing_m": 0.494,
+      "bearing_pressure": "uniform",
+      "q_bearing_kPa": 142.8,
+      "eccentricity_bearing_m": 0.452,
       "choices": [
         {
           "what": "base friction delta_b (sliding)",
@@ -2116,6 +2119,15 @@
           "alternatives": [
             "left out (surcharge_in_bearing=False): left out of the base pressures, the surcharge taken as located behind the heel (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41)"
           ]
+        },
+        {
+          "what": "bearing pressure compared with q_allowable (bearing_pressure)",
+          "chosen": "uniform: q_eq = V / B' = 385.0 / 2.70 = 142.8 kPa, B' = B - 2e, FOS_bearing 1.75",
+          "how": "default",
+          "basis": "the equivalent uniform pressure V / B' over the effective width B' = B - 2e: GEC-6 Eq. 6-6 (p. 118) and Sec. 6.4.2 (p. 119), 'sizing the footing such that the applied bearing stress over the effective footing area, A', assuming a rectangular pressure distribution, is less than the allowable bearing pressure'; FHWA NHI-06-089 Fig. 10-17 (p. 10-39), 'Use uniform stress, qeq, for soils' and Sec. 10.5.4.1 (p. 10-41); UFC 3-220-20 Eq. 4-27 (p. 221), Sec. 4-5.1.4 (p. 224), 'A uniform pressure distribution can be used to determine qmax if the soil below the wall is relatively ductile', and App. B-1.6 (p. 602), q = R/(2 x0)",
+          "alternatives": [
+            "linear: the larger edge pressure q_max = 187.4 kPa (trapezoidal), FOS_bearing 1.33. the larger edge pressure of the trapezoid or triangle (q_toe, q_heel): UFC 3-220-20 Eqs. 4-23 and 4-25 (p. 221) and Sec. 4-5.1.4 (p. 224), 'For more brittle materials, such as rock and sensitive clays, the triangular or trapezoidal pressure distribution should be used to find qmax'; FHWA NHI-06-089 Fig. 10-17 (p. 10-39), 'use trapezoidal distribution with qmax and qmin for rocks and structural analysis', as its Example 10-3 (p. 10-55) divides qult by qmax; GEC-6 Eqs. 6-9 to 6-13 (pp. 121-122) give it for structural design"
+          ]
         }
       ],
       "geometry": {
@@ -2124,10 +2136,12 @@
         "stem_height_m": 5.4,
         "base_thickness_m": 0.6,
         "base_width_m": 3.6,
-        "toe_length_m": 0.36,
-        "heel_length_m": 2.56,
+        "toe_length_m": 0.6,
+        "heel_length_m": 2.4,
         "stem_thickness_top_m": 0.3,
-        "stem_thickness_base_m": 0.68
+        "stem_thickness_base_m": 0.6,
+        "stem_batter": "back",
+        "embedment_depth_m": 0.6
       },
       "sliding_basis": {
         "sliding_cohesion": "drained",
@@ -2135,17 +2149,19 @@
         "base_adhesion_kPa": 0.0,
         "adhesion_width_m": null,
         "driving_force_kN_per_m": 121.7,
-        "resisting_force_kN_per_m": 142.2,
+        "resisting_force_kN_per_m": 139.1,
         "Pa_kN_per_m": 121.7,
         "Pa_vertical_kN_per_m": 0.0,
         "thrust_inclination_deg": 0.0
       },
       "defaults_used": {
         "base_width": "B = 0.6 H, sized by the module: a trial proportion; give it for the wall as designed",
-        "toe_length": "0.1 B, sized by the module: a trial proportion; give it for the wall as designed",
+        "toe_length": "H/10, sized by the module: a trial proportion; give it for the wall as designed",
         "stem_thickness_top": 0.3,
-        "stem_thickness_base": "the larger of 0.08 H + 0.2 m and the stem thickness at the top, sized by the module: a trial proportion; give it for the wall as designed",
-        "base_thickness": 0.6,
+        "stem_thickness_base": "the larger of H/10 and the stem thickness at the top, sized by the module: a trial proportion; give it for the wall as designed",
+        "base_thickness": "H/10, sized by the module: a trial proportion; give it for the wall as designed",
+        "stem_batter": "back",
+        "embedment_depth": "the base thickness: the ground in front of the wall at the top of the base: no soil over the toe, and include_passive's passive resistance over the base thickness; give embedment_depth for the wall as designed",
         "dead_load_surcharge": 0.0,
         "live_load_resists": false,
         "surcharge_in_bearing": true,
@@ -2154,10 +2170,11 @@
         "phi_foundation": 32.0,
         "delta_base": "2/3 of the foundation soil friction angle: the sliding check's base friction delta_b = (2/3) phi_foundation; give delta_base to set it directly",
         "include_passive": false,
-        "gamma_concrete": 24.0,
+        "gamma_concrete": 23.6,
         "FOS_sliding_required": 1.5,
         "FOS_overturning_required": 2.0,
-        "pressure_method": "rankine"
+        "founded_on_rock": false,
+        "bearing_pressure": "uniform"
       }
     }
   },
