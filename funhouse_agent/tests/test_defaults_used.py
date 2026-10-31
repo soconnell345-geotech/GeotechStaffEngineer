@@ -640,7 +640,8 @@ def test_axial_gec12_options_reach_the_module():
 _VOLATILE = frozenset({
     "defaults_used", "output_note", "output_path", "file_size_bytes",
     "size_bytes",
-    "html_length", "elapsed_s", "runtime_s", "seconds_per_evaluation",
+    "html_length", "elapsed_s", "runtime_s", "wall_time_s",
+    "seconds_per_evaluation",
     "dxf_base64", "notes", "warnings", "note"})
 _STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?|\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d")
 
@@ -743,18 +744,20 @@ def _cases(agent: str, method: str, params: dict = None) -> dict:
 
 def test_every_method_has_a_probe_or_a_reason():
     methods = _analysis_methods()
-    probed = {key.split("#")[0] for key in MP.PROBES}
-    assert sorted(methods - probed - set(MP.EXCLUDED)) == []
+    probed = {key.split("#")[0] for key in MP.listed(MP.PROBES)}
+    excluded = set(MP.listed(MP.EXCLUDED))
+    assert sorted(methods - probed - excluded) == []
     assert sorted(probed - methods) == []
-    assert sorted(set(MP.EXCLUDED) & probed) == []
-    assert sorted(set(MP.EXCLUDED) - methods) == []
+    assert sorted(excluded & probed) == []
+    assert sorted(excluded - methods) == []
 
 
 def test_a_probe_names_only_declared_parameters_and_every_required_one():
     """Each probe runs, so every parameter a method declares required is
     in it; and every name in it is one the method declares."""
     problems = []
-    for key, probe in MP.PROBES.items():
+    for key in MP.listed(MP.PROBES):
+        probe = MP.PROBES[key]
         agent, method = key.split("#")[0].split("|")
         mod = D._load_adapter(agent)
         info = mod.METHOD_INFO[method]
@@ -793,12 +796,12 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     """GM-158: give a run its own defaults_used by name and the result
     does not move; where the result echoes a listed default, it echoes
     the same value."""
+    if MP.skip_reason(key):
+        pytest.skip(MP.skip_reason(key))
     monkeypatch.chdir(tmp_path)
     base = key.split("#")[0]
     agent, method = base.split("|")
     probe = MP.PROBES[key]
-    if probe.get("needs"):
-        pytest.importorskip(probe["needs"])
     for before in probe.get("before", ()):
         D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
     params = probe["params"]
@@ -854,6 +857,8 @@ def test_a_choice_is_given_only_by_an_input_the_call_named(key, tmp_path,
     passes assumed, GM-167), so no choice may read "given": one that does
     was written "given" by the module itself, or asked about a name the
     tool does not take."""
+    if MP.skip_reason(key):
+        pytest.skip(MP.skip_reason(key))
     from contextlib import contextmanager
     import geotech_common.choices as gc
     real = gc.call_inputs
@@ -1017,6 +1022,8 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     does not reach are in ``MP.NOT_REACHED``, each with why; a left-out
     input listed as the case it stands for (GM-165) has no value to
     change. The probes of :data:`MP.FROZEN` are left to their review."""
+    if MP.skip_reason(key):
+        pytest.skip(MP.skip_reason(key))
     base = key.split("#")[0]
     agent, method = base.split("|")
     frozen = MP.FROZEN.get(agent) or MP.FROZEN.get(base)
@@ -1024,8 +1031,6 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
         pytest.skip(frozen)
     monkeypatch.chdir(tmp_path)
     probe = MP.PROBES[key]
-    if probe.get("needs"):
-        pytest.importorskip(probe["needs"])
 
     def run(params):
         for before in probe.get("before", ()):
@@ -1058,6 +1063,8 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
 def test_the_allow_lists_name_declared_inputs_of_probed_methods():
     for table in (MP.LABEL_ONLY, MP.NOT_REACHED, MP.KNOWN):
         for (key, name), why in table.items():
+            if not MP.listed([key]):
+                continue
             assert key in MP.PROBES or key in {
                 k.split("#")[0] for k in MP.PROBES}, key
             agent, method = key.split("#")[0].split("|")
@@ -1359,7 +1366,7 @@ def test_a_left_out_input_that_moves_the_result_states_its_case(
     monkeypatch.chdir(tmp_path)
     where, moved = str(tmp_path), []
     for key, probe in sorted(MP.PROBES.items()):
-        if key in MP.SLOW:
+        if key in MP.SLOW or MP.skip_reason(key):
             continue
         agent, method = key.split("#")[0].split("|")
         info = D._load_adapter(agent).METHOD_INFO[method]

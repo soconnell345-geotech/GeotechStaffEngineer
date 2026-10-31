@@ -247,8 +247,8 @@ def test_method_info_declares_only_what_the_adapter_accepts(monkeypatch,
             monkeypatch.setattr(mod, "reject_unknown_params", _capture)
         for method in mod.METHOD_REGISTRY:
             calls[f"{agent}|{method}"] = [{}]
-    for key, probe in MP.PROBES.items():
-        calls[key.split("#")[0]].append(probe["params"])
+    for key in MP.listed(MP.PROBES):
+        calls[key.split("#")[0]].append(MP.PROBES[key]["params"])
     accepted = {}
     for key, inputs in calls.items():
         agent, method = key.split("|")

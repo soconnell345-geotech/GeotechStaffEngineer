@@ -92,6 +92,24 @@ _REFRESH = (
     "changed.")
 
 
+def _absent_module_prompt_only(diff):
+    """BACKLOG INF-61: the module table in the geotech prompt lists the
+    modules the registry has, so where an optional package is missing
+    (PyNiteFEA on numpy 1.26: 90 characters, the pynite row) only the
+    prompt's hash and length differ. Returns the skip reason for that
+    case, else None; a difference anywhere else still fails."""
+    from funhouse_agent.adapters import ABSENT_MODULES
+    if ABSENT_MODULES and diff and all(
+            d.rsplit("/", 1)[-1].startswith(("system_prompt:",
+                                             "system_prompt_chars:"))
+            for d in diff):
+        return ("the module table in the system prompt omits "
+                + ", ".join(f"{m} ({p} is not installed)"
+                            for m, p in sorted(ABSENT_MODULES.items()))
+                + "; every other part of the build matches")
+    return None
+
+
 @pytest.mark.parametrize("name", sorted(page_builds.BUILDS))
 def test_app_fingerprint_unchanged(name, golden, current):
     diff = page_builds.differences(golden["builds"][name]["app"],
@@ -101,9 +119,12 @@ def test_app_fingerprint_unchanged(name, golden, current):
     library = []
     if env != recorded_env:
         library, diff = page_builds.split_library_differences(diff)
-    assert not diff, (
+    absent = _absent_module_prompt_only(diff)
+    assert absent or not diff, (
         f"The {name} build changed ({len(diff)} differences):\n  "
         + "\n  ".join(diff[:40]) + _REFRESH)
+    if absent:
+        pytest.skip(absent)
     if library:
         message = (
             f"The {name} build's {' and '.join(page_builds.LIBRARY_TOOLS)} "

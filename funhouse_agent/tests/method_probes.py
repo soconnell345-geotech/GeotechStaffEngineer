@@ -21,6 +21,7 @@ skips it where that is not installed.
 Each method either has a probe or is in :data:`EXCLUDED` with the reason.
 """
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -47,6 +48,33 @@ def _with_samples(x):
 PROBES = _with_samples(json.loads(
     (Path(__file__).with_name("method_probes.json")).read_text(
         encoding="utf-8")))
+
+
+#: Import name -> the package to install, for a probe's ``"needs"``.
+_PACKAGE_OF = {"python_ags4": "python-ags4", "pydiggs": "pydiggs"}
+
+
+def skip_reason(key: str):
+    """Why this probe cannot run here, naming the package, or None
+    (BACKLOG INF-61, as INF-13 names a missing dependency): its module is
+    left out of the registry because its package is not installed (Pynite
+    on numpy 1.26), or its method needs an optional backend that is not."""
+    from funhouse_agent.adapters import ABSENT_MODULES
+    agent = key.split("#")[0].split("|")[0]
+    if agent in ABSENT_MODULES:
+        return (f"{ABSENT_MODULES[agent]} is not installed, so the "
+                f"{agent} tool is not listed")
+    needs = (PROBES.get(key) or {}).get("needs")
+    if needs and importlib.util.find_spec(needs) is None:
+        return f"{_PACKAGE_OF.get(needs, needs)} is not installed"
+    return None
+
+
+def listed(keys):
+    """The keys whose module is in the registry here."""
+    from funhouse_agent.adapters import ABSENT_MODULES
+    return [k for k in keys if k.split("#")[0].split("|")[0]
+            not in ABSENT_MODULES]
 
 _FILE = "reads a file the call names; no file fixture here"
 _HANDLE = "works on a handle an earlier file read returned"
@@ -120,7 +148,8 @@ LABEL_ONLY = {
        for n in ("hammer_type", "hammer_custom_name")},
     **{(f"fem2d|{m}", "t"): _PLANE_STRAIN
        for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
-                 "fem2d_slope_srm", "fem2d_excavation", "fem2d_staged")},
+                 "fem2d_slope_srm", "fem2d_excavation", "fem2d_staged",
+                 "fem2d_srm_mesh_refinement_study")},
 }
 
 #: Declared inputs that act, but not on their probe's inputs or not in
@@ -324,6 +353,13 @@ NOT_REACHED = {
     ("fem2d|fem2d_slope_srm", "blowup_factor"): _BLOWUP,
     ("fem2d|fem2d_local_fos", "tol"): _ITERATIONS,
     ("fem2d|fem2d_staged", "tol"): _ITERATIONS,
+    **{("fem2d|fem2d_srm_mesh_refinement_study", n): (
+        "the study reports only each mesh's FOS, found to the SRF "
+        "tolerance, and the probe's FOS does not move with it")
+       for n in ("max_iter", "blowup_factor", "tol", "n_load_steps")},
+    ("fem2d|fem2d_srm_mesh_refinement_study", "conv_tol"):
+        "the probe's two meshes differ by 4.8 %, beyond both 3 % and 4.5 %, "
+        "so the converged flag reads the same",
     ("fem2d|fem2d_slope_srm", "mesh_check"):
         "it adds the result's mesh_check block, which shares the input's "
         "name, so the guard leaves it out with the echo",
