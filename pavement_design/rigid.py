@@ -18,12 +18,18 @@ from geotech_references.aashto_1993 import tables as _tb
 
 from .common import (add_ref, midpoint_range, resolve_delta_psi,
                      resolve_reliability, resolve_so, round_up)
+from .composite_k import effective_k as _effective_k
 from .results import RigidPavementResult
 
-try:  # Section 3.2 composite-k worksheet (built as a follow-on module)
+try:  # Figures 3.4-3.6 for the Section 3.2 worksheet (refs follow-on module)
     from geotech_references.aashto_1993 import composite_k as _ck_mod
 except ImportError:  # pragma: no cover - depends on refs version
     _ck_mod = None
+
+# Section 3.2.1 (printed II-37, continued II-44): for unbound subbase
+# materials the ratio of subbase to roadbed modulus should not exceed 4.
+# (The guide's own Table 3.3 has 6.0 in March, Esb 15,000 on MR 2,500.)
+_UNBOUND_ESB_MR_MAX = 4.0
 
 
 def _resolve_j(j, pavement_type, shoulder_type, load_transfer_devices,
@@ -64,13 +70,14 @@ def _resolve_cd(cd, drainage_quality, pct_saturation_time, references, notes):
         )
         return val, f"Table 2.5 midpoint ({r['cd_min']}-{r['cd_max']})"
     notes.append(
-        "Cd defaulted to 1.0 (AASHO Road Test drainage conditions, "
-        "Table 2.5 'fair')."
+        "Cd defaulted to 1.0: the value for conditions at the AASHO Road "
+        "Test (Section 2.4.1, printed II-25)."
     )
-    return 1.0, "default 1.0 (AASHO Road Test conditions)"
+    return 1.0, "default 1.0 (AASHO Road Test conditions, II-25)"
 
 
-def _resolve_k(k_pci, mr_psi, composite_k, slab_d_in, references, notes):
+def _resolve_k(k_pci, mr_psi, composite_k, slab_d_in, references, notes,
+               warnings=None):
     """Effective k for one trial slab thickness; returns (k, basis dict)."""
     supplied = [x is not None for x in (k_pci, mr_psi, composite_k)]
     if sum(supplied) != 1:
@@ -98,11 +105,31 @@ def _resolve_k(k_pci, mr_psi, composite_k, slab_d_in, references, notes):
         )
     spec = dict(composite_k)
     spec["slab_d_in"] = slab_d_in
-    r = _ck_mod.effective_modulus_subgrade_reaction(**spec)
+    r = _effective_k(**spec)
     add_ref(references, r.get("reference"))
+    if any("esb_psi" in row for row in r["rows"]):
+        add_ref(references, r["figure_3_3_reference"])
+    if warnings is not None:
+        for note in r.get("notes", []):
+            msg = f"Figure 3.3: {note}"
+            if msg not in warnings:
+                warnings.append(msg)
+        high = [row for row in r["rows"] if "esb_psi" in row
+                and row["esb_psi"] > _UNBOUND_ESB_MR_MAX * row["mr_psi"]]
+        if high:
+            ratio = max(row["esb_psi"] / row["mr_psi"] for row in high)
+            msg = (
+                f"Esb/MR exceeds {_UNBOUND_ESB_MR_MAX:g} in {len(high)} "
+                f"season(s) (up to {ratio:.1f}); for an UNBOUND subbase the "
+                "guide limits the ratio to 4 'to prevent an artificial "
+                "condition' (Section 3.2.1, printed II-37/44). A treated "
+                "subbase is not limited."
+            )
+            if msg not in warnings:
+                warnings.append(msg)
     basis = {"basis": "composite_section_3.2", "slab_d_in": slab_d_in}
     basis.update({key: val for key, val in r.items()
-                  if key not in ("equation",)})
+                  if key not in ("equation", "notes", "figure_3_3_reference")})
     # The DESIGN k is the loss-of-support-corrected value (Figure 3.6,
     # the worksheet's final step); fall back to the uncorrected effective
     # k when no LS correction applies (ls=0).
@@ -151,8 +178,9 @@ def design_rigid_pavement(
     ec_psi : float
         PCC elastic modulus, psi.
     reliability_pct, zr, so : float, optional
-        Reliability inputs; So defaults to 0.35 (midpoint of the rigid
-        0.30-0.40 range).
+        Reliability inputs; So defaults to 0.35, the guide's overall
+        standard deviation for rigid pavements with traffic variance
+        (Section 2.1.3, printed II-9/10; range 0.30-0.40, printed I-62).
     pt, po, delta_psi : float, optional
         Serviceability (po defaults to 4.5; pt default 2.5). pt also enters
         the Figure 3.7 strength-term exponent.
@@ -163,21 +191,25 @@ def design_rigid_pavement(
         (midpoint of the printed range).
     cd : float, optional
         Drainage coefficient directly; otherwise Table 2.5 via
-        drainage_quality + pct_saturation_time (midpoint), else 1.0.
+        drainage_quality + pct_saturation_time (midpoint), else 1.0 (the
+        AASHO Road Test value, II-25).
     k_pci, mr_psi, composite_k : optional (exactly one)
         Effective modulus of subgrade reaction: direct value; simplified
         k = MR/19.4 (slab directly on roadbed, no subbase); or the full
         Section 3.2 worksheet spec (dict of keyword arguments for
-        ``geotech_references.aashto_1993.composite_k.
-        effective_modulus_subgrade_reaction``, e.g. seasonal entries,
+        ``pavement_design.composite_k.effective_k``: seasonal entries,
         subbase thickness/modulus, depth to rigid foundation, loss of
         support -- ``slab_d_in`` is injected and iterated by this
-        function).
+        function). Figure 3.3 is read off the printed chart (see
+        ``composite_k``); Figures 3.4-3.6 come from the reference layer.
     slab_thickness_in : float, optional
         Give a slab thickness to run a CHECK instead of a design.
     thickness_increment_in : float, optional
         Practical rounding increment for the designed slab (default 0.5 in,
-        rounded UP).
+        rounded UP). The guide (Section 3.2.2, printed II-44): "generally,
+        the layer thickness is rounded to the nearest inch, but the use of
+        controlled grade slip form pavers may permit 1/2-inch increments";
+        give 1.0 for whole inches.
     max_k_iterations : int, optional
         Cap on the composite-k <-> D fixed-point iteration.
     swelling, frost : dict, optional
@@ -247,7 +279,7 @@ def design_rigid_pavement(
     d_required = None
     for iterations in range(1, max_k_iterations + 1):
         k_val, k_basis = _resolve_k(k_pci, mr_psi, composite_k, d_trial,
-                                    references, notes)
+                                    references, notes, warnings)
         if mode == "check":
             d_required_r = _eq.rigid_d_from_w18(
                 w18, zr_val, so_val, dpsi, sc_psi, cd_val, j_val, ec_psi,

@@ -15,10 +15,14 @@ import math
 from geotech_references.aashto_1993 import equations as _eq
 from geotech_references.aashto_1993 import tables as _tb
 
-# Defaults follow the guide's recommended ranges (Part I Section 4.3):
-# flexible So 0.40-0.50, rigid So 0.30-0.40; midpoints used when the caller
-# does not choose.
+# So defaults: the AASHO Road Test performance prediction error (0.25 rigid,
+# 0.35 flexible) "corresponds to a total standard deviation for traffic of
+# 0.35 and 0.45 for rigid and flexible pavements" (Part II Section 2.1.3
+# step 3, printed II-9/10); the guide's ranges are flexible 0.40-0.50 and
+# rigid 0.30-0.40 (Part I Section 4.3, printed I-62).
 SO_DEFAULT = {"flexible": 0.45, "rigid": 0.35}
+_SO_BASIS = ("the guide's total standard deviation with traffic for "
+             "{pt} pavements (Section 2.1.3 step 3, printed II-9/10)")
 PO_DEFAULT = {"flexible": 4.2, "rigid": 4.5}
 
 
@@ -50,8 +54,9 @@ def resolve_reliability(reliability_pct=None, zr=None):
 
 
 def resolve_so(pavement_type, so=None):
-    """Overall standard deviation So; defaults to the midpoint of the
-    guide's recommended range for the pavement type.
+    """Overall standard deviation So; defaults to the guide's total
+    standard deviation with traffic for the pavement type (0.45 flexible,
+    0.35 rigid; printed II-9/10), the middle of its recommended range.
 
     Returns (so, reference, notes).
     """
@@ -60,8 +65,10 @@ def resolve_so(pavement_type, so=None):
     if so is None:
         so = SO_DEFAULT[pavement_type]
         notes.append(
-            f"So defaulted to {so} (midpoint of the guide's "
-            f"{rng['so_min']}-{rng['so_max']} range for {pavement_type})."
+            f"So defaulted to {so}: "
+            + _SO_BASIS.format(pt=pavement_type)
+            + f"; the recommended range is {rng['so_min']}-{rng['so_max']} "
+            "(printed I-62)."
         )
     elif not (rng["so_min"] - 0.05 <= so <= rng["so_max"] + 0.05):
         notes.append(

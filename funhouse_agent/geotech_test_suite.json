@@ -1452,10 +1452,10 @@
       "values": [
         {
           "name": "required_total_in",
-          "value": 6.9,
+          "value": 8.3,
           "rtol": 0.05,
           "alt": [
-            7.0
+            8.5
           ]
         },
         {
@@ -1469,7 +1469,7 @@
           "rtol": 0.05
         }
       ],
-      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+      "source": "by hand 2026-10-31 (GM-298): UFC 3-250-01 Figure E-1 (printed 192) read on the print at CBR 8: 7.7 in on the 100,000-pass curve, 8.5 in on the 1,000,000-pass curve, 8.3 in at 500,000 passes (log passes); Table 7-2 (printed 21), 150,001 to 500,000 passes on a CBR 80 base: 2.5 in surface, 4 in base. Was 6.9 (v5.8.0 module value from the reference layer's Figure E-1 digitization, which runs up to 1.7 in under the curves between its Appendix G anchors)"
     }
   },
   {
@@ -1481,14 +1481,11 @@
       "values": [
         {
           "name": "hd_required_in",
-          "value": 5.7,
-          "rtol": 0.08,
-          "alt": [
-            6.0
-          ]
+          "value": 7.0,
+          "rtol": 0.05
         }
       ],
-      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+      "source": "by hand 2026-10-31 (GM-298): UFC 3-250-01 Figure F-1 (printed 224) worked as para 13-3 (printed 37) says, on the print: 650 psi across to the k 100 curve, down to the pass-level lines, 6.7 in at 100,000 and 7.35 in at 1,000,000 passes, 7.0 in at 300,000 (log passes); provided 7.0 in (half-inch steps up, above the 6 in minimum of para 13-3). Was 5.7 / 6.0 (v5.8.0 module value from the reference layer's Figure F-1, which barely moves with flexural strength away from its two Appendix G anchors)"
     }
   },
   {
@@ -1505,22 +1502,22 @@
         },
         {
           "name": "aashto_total_in",
-          "value": 13.5,
+          "value": 16.0,
           "rtol": 0.08
         },
         {
           "name": "ufc_total_in",
-          "value": 9.5,
+          "value": 11.0,
           "rtol": 0.08,
           "alt": [
-            9.1
+            10.3
           ]
         }
       ],
       "keywords": [
         "UFC"
       ],
-      "source": "v5.8.0 master ground truth (pavement_design via call_agent, 2026-07-17)"
+      "source": "AASHTO side by hand 2026-10-31 (GM-298): Mr 2555 x 6^0.64 = 8,043 psi (FHWA-NHI-05-037 Table 5-34); ZR -1.282 (Table 4.1), So 0.45, dPSI 4.2 - 2.5 = 1.7, SN 3.383 by the flexible design equation (Figure 3.1); base CBR 80 -> EBS 28,300 psi read across Figure 2.6 (II-19), subbase CBR 30 -> ESB 14,800 psi across Figure 2.7 (II-21); a1 0.42, a2 0.1315, a3 0.1076 (II-18, II-20, II-22), m 1.0; Figure 3.2 split with Section 3.1.4 minimums (3.0 in AC, 6 in base, II-35), half-inch steps up: SN1 2.082 -> 5.0 in, SN2 2.676 -> 6.0 in, 5.0 in subbase = 16.0 in. Was 13.5 (v5.8.0 module value, base and subbase moduli from the FHWA correlation: EBS 42,205 psi, a2 0.175 where Figure 2.6 reads about 0.13 at CBR 80). UFC side by hand 2026-10-31 (GM-298): Figure E-1 read on the print, CBR 6 at 1,000,000 passes 10.3 in (alt, the required total); Table 7-2, 500,001 to 2 million passes on a CBR 80 base: 3 in surface, 4 in base; subbase 10.3 - 7 = 3.3 in, raised to the 4 in minimum of UFC 3-250-01 p. 20 (as Appendix G-3 ends) = 11.0 in. Was 9.5 / 9.1 (v5.8.0 module, reference-layer E-1 9.1 in, no subbase minimum)"
     }
   },
   {
