@@ -2189,7 +2189,7 @@
           "how": "default",
           "basis": "unit cell under equal strain, the stress split by the given n (GEC-13 Eq. 5-4, the stress reduction method); S = SRF x the unreinforced settlement",
           "alternatives": [
-            "settlement_method 'weighted_modulus' with E_column: GEC-13 Fig. 5-21 curve (2), n' = 1 + a_s (E_c/E_s - 1)",
+            "settlement_method 'weighted_modulus' with E_column: GEC-13 Fig. 5-21 curve (2), settlement ratio = 1 + a_s (E_c/E_s - 1)",
             "settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or 'balaam_flexible' (E_c/E_s = 10) with E_column: GEC-13 Fig. 5-21 Balaam curves (5); p. 5-37: the FHWA (1983) Equilibrium Method, 'roughly equivalent to the Balaam relationships', 'represents an average or lower bound estimate suitable for preliminary analyses'",
             "the settlement ratio off GEC-13's printed Priebe curve, Fig. 5-21 curve (4), phi = 37.5 deg (priebe_improvement_factor); GEC-13 p. 5-37: the Priebe curve 'may be used to evaluate the upper bound effectiveness'"
           ]
@@ -2198,7 +2198,7 @@
           "what": "stress concentration ratio n",
           "chosen": "5",
           "how": "default",
-          "basis": "n = sigma_c / sigma_s, taken as given and not worked out from the moduli; GEC-13 (FHWA-NHI-16-027): for stone columns n is 'between 2.0 and 5.0' (Sec. 4.1.2.4); for rammed aggregate piers '4 to 45 for rigid footings' and 5 to 10 under embankments (p. 5-45). It sets the settlement reduction factor 1 / [1 + a_s (n - 1)], the improved bearing and the composite modulus",
+          "basis": "n = sigma_c / sigma_s, taken as given and not worked out from the moduli; GEC-13 (FHWA-NHI-16-027) for stone columns: measured 'between 2.0 and 5.0' (p. 5-31), and 'For preliminary design, a ratio of 2.5 is often conservatively used for stability and bearing resistance calculations' (p. 5-32); for rammed aggregate piers 'a stress ratio of 5 to 10 for area ground improvement applications under flexible embankment loading', 'a somewhat higher stress ratio (10)' under rigid footings (p. 5-43); 'stress concentration ratios range from 4 to 45 for rigid footings' (p. 5-45). It sets the settlement reduction factor 1 / [1 + a_s (n - 1)], the improved bearing and the composite modulus",
           "alternatives": [
             "n from the moduli, n = E_c / E_s (equal-strain modular ratio; settlement_method 'weighted_modulus')",
             "the settlement ratio off GEC-13's printed Priebe curve, Fig. 5-21 curve (4) (priebe_improvement_factor)"
