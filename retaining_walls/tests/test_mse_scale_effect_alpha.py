@@ -60,17 +60,18 @@ def test_table_3_6_by_type():
 
 
 def test_a_geogrid_wall_before_and_after():
-    """FOS_pullout 10.493 to 25.792 at the alpha 1.0 taken before; 8.394 to
-    20.633 at Table 3-6's 0.8. Rupture does not take alpha: 0.862 on E1's
-    GG-I since GM-271 (1.192 on the retired built-in geogrid's 21.9
-    kN/m)."""
+    """FOS_pullout 10.441 to 25.663 at the alpha 1.0 taken before; 8.353 to
+    20.531 at Table 3-6's 0.8 (10.493 to 25.792 and 8.394 to 20.633 before
+    GM-297 took F* = (2/3) tan phi, Eq. 3-8, not 0.67 tan phi). Rupture
+    does not take alpha: 0.862 on E1's GG-I since GM-271 (1.192 on the
+    retired built-in geogrid's 21.9 kN/m)."""
     lo, hi, ru = _pullout(GEOGRID_GEC11_E1_GG1)
-    assert (lo, hi) == (pytest.approx(8.394, abs=1e-3),
-                        pytest.approx(20.633, abs=1e-3))
+    assert (lo, hi) == (pytest.approx(8.353, abs=1e-3),
+                        pytest.approx(20.531, abs=1e-3))
     assert ru == pytest.approx(0.862, abs=1e-3)
     lo1, hi1, ru1 = _pullout(GEOGRID_GEC11_E1_GG1, alpha_tested=1.0)
-    assert (lo1, hi1) == (pytest.approx(10.493, abs=1e-3),
-                          pytest.approx(25.792, abs=1e-3))
+    assert (lo1, hi1) == (pytest.approx(10.441, abs=1e-3),
+                          pytest.approx(25.663, abs=1e-3))
     assert ru1 == ru
     r = analyze_mse_wall(_wall(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1)
     c = _alpha_choice(r)
@@ -84,16 +85,16 @@ def test_a_geogrid_wall_before_and_after():
     (alt,) = c["alternatives"]
     assert alt.startswith("alpha from pullout tests (alpha_tested), which "
                           "note (ii) recommends; at alpha 1.0")
-    assert "lowest 10.5 (here 8.39)" in alt
+    assert "lowest 10.4 (here 8.35)" in alt
 
 
 def test_a_geotextile_wall_before_and_after():
-    """The same wall with a geotextile of the same strength: 10.493 to
-    25.792 as a 'geosynthetic' before, 6.296 to 15.475 at Table 3-6's
-    0.6."""
+    """The same wall with a geotextile of the same strength: 10.441 to
+    25.663 as a 'geosynthetic' before, 6.264 to 15.398 at Table 3-6's
+    0.6 (6.296 to 15.475 before GM-297's F* = (2/3) tan phi)."""
     lo, hi, ru = _pullout(_geotextile())
-    assert (lo, hi) == (pytest.approx(6.296, abs=1e-3),
-                        pytest.approx(15.475, abs=1e-3))
+    assert (lo, hi) == (pytest.approx(6.264, abs=1e-3),
+                        pytest.approx(15.398, abs=1e-3))
     assert ru == pytest.approx(1.192, abs=1e-3)
     r = analyze_mse_wall(_wall(), 19.0, 34.0, _geotextile())
     assert _alpha_choice(r)["chosen"].startswith(

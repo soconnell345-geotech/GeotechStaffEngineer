@@ -142,8 +142,10 @@ def test_the_choice_says_where_the_mats_Tal_comes_from():
     for words in ("p. E4-18", "0.48 Fy", "p. 4-77", "rigid facing",
                   "0.65 / 1.35", "4W15 mats from Level 5", "138.4 kN/m"):
         assert words in tal["basis"], words
+    # GM-297: a grid takes its t/St (GEC-11 Vol I Eqs. 3-6, 3-7)
     custom = Reinforcement("a mat", "metallic_grid", 100.0, width=0.5,
-                           horizontal_spacing=1.5)
+                           horizontal_spacing=1.5, thickness=0.01,
+                           transverse_spacing=0.15)
     r = analyze_mse_wall(_e4_wall(), 125 * PCF, 34.0, custom)
     assert _tal_choice(r)["how"] == "given"      # it fails rupture deeper
     passing = dataclasses.replace(custom, Tallowable=1000.0)

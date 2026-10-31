@@ -73,6 +73,9 @@ Q_LL = 0.25 * KSF          # live-load surcharge (heq = 2 ft of soil)
 # "for each panel of 5 ft width" (Rc = 0.30). The external checks and the
 # internal Kr/Ka and F* pinned here do not depend on it.
 _E4_MAT = {"width": 1.5 * FT, "horizontal_spacing": 5.0 * FT}
+# GM-297: a grid given no t/St is refused (GEC-11 Vol I Eqs. 3-6, 3-7);
+# E4's W11 transverse wires are at St = 6 in. (p. E4-15)
+_E4_ST = 0.5 * FT
 
 
 # ── V-009 : MSE external stability — unfactored loads + LRFD CDRs ────────────
@@ -214,7 +217,7 @@ def test_v009_highlevel_api_reports_asd_fos_not_lrfd_cdr():
                            reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
     rebar = Reinforcement(name="bar mat", type="metallic_grid",
                           Tallowable=200.0, Fy=448000.0, thickness=0.0095,
-                          **_E4_MAT)
+                          transverse_spacing=_E4_ST, **_E4_MAT)
     res = analyze_mse_wall(
         geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
         gamma_foundation=GAMMA, phi_foundation=PHI_FD,
@@ -296,7 +299,7 @@ def test_v009_analyze_mse_wall_lrfd_flag_attaches_cdrs():
                            reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
     rebar = Reinforcement(name="bar mat", type="metallic_grid",
                           Tallowable=200.0, Fy=448000.0, thickness=0.0095,
-                          **_E4_MAT)
+                          transverse_spacing=_E4_ST, **_E4_MAT)
     # default: LRFD not requested -> external_lrfd absent, ASD FOS unchanged
     res_default = analyze_mse_wall(
         geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
@@ -627,6 +630,9 @@ def test_v010_e4_mats_per_level():
         _, Tmax, phiTn, _, Ng, _ = E4_TABLE_7_4[level]
         assert r["F_star"] == pytest.approx(F, abs=0.001), level
         assert r["Le_m"] / FT == pytest.approx(Le_ft, abs=0.03), level
+        # GM-297: GEC-11 Vol I Eq. 4-36, Le at least 3 ft; E4's least is
+        # 10.31 ft, L - 0.3 H over the upper half (p. E4-16)
+        assert r["Le_at_least_3ft"] and Le_ft >= 3.0, level
         assert 0.90 * r["Pr_kN_per_m"] / r["Rc"] / KFT == pytest.approx(
             phiPr, rel=0.003), level
         assert r["FOS_rupture"] == pytest.approx(

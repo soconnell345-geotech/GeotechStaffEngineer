@@ -77,14 +77,15 @@ def test_which_reinforcement_takes_the_strip_curve():
     assert uses_strip_F_star(RIBBED_STEEL_STRIP_50x4)
     assert not uses_strip_F_star(WELDED_WIRE_GRID_W11)
     assert not uses_strip_F_star(GEOGRID_GEC11_E1_GG1)
+    # GM-297: a grid given no t/St is refused, not given the strip curve
     bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
                               Tallowable=100.0)
-    assert uses_strip_F_star(bare_grid)
+    assert not uses_strip_F_star(bare_grid)
 
 
 @pytest.mark.parametrize("reinforcement, words", [
     (_GRID, "20 t/St at the top to 10 t/St"),
-    (GEOGRID_GEC11_E1_GG1, "0.67 tan phi_backfill")])
+    (GEOGRID_GEC11_E1_GG1, "(2/3) tan phi_backfill (Eq. 3-8)")])
 def test_where_the_F_star_takes_no_Cu_a_given_Cu_is_checked_by_note_i(
         reinforcement, words):
     """GEC-11 Table 3-6 note (i) (p. 3-17) accepts every empirical F* in
@@ -164,15 +165,20 @@ def test_a_Cu_below_4_is_computed_and_flagged():
     assert "tests must be run" in c["chosen"]
 
 
-def test_a_grid_with_no_bar_geometry_says_it_took_the_strip_curve():
+def test_a_grid_with_no_bar_geometry_is_refused():
+    """GM-297: a grid's empirical F* is 20 t/St to 10 t/St (GEC-11 Vol I
+    Eqs. 3-6, 3-7, p. 3-21); with no t/St it took the strip curve before.
+    Now it is refused, unless F* is from tests, whose choice says the
+    empirical F* could not be worked out."""
     bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
                               Tallowable=100.0, coverage_ratio=0.3)
-    (c,) = [c for c in pullout_factor_choices(_geom(), 20.0, 34.0, bare_grid)
-            if "(Cu_backfill)" in c["what"]]
-    assert "no transverse-bar geometry (t/St)" in c["basis"]
-    assert check_internal_stability(_geom(), 20.0, 34.0, bare_grid,
-                                    Cu_backfill=7.0)[0]["F_star"] > \
-        check_internal_stability(_geom(), 20.0, 34.0, bare_grid)[0]["F_star"]
+    with pytest.raises(ValueError, match="t/St"):
+        pullout_factor_choices(_geom(), 20.0, 34.0, bare_grid)
+    (c,) = [c for c in pullout_factor_choices(_geom(), 20.0, 34.0, bare_grid,
+                                              F_star_tested=1.0)
+            if "(F_star_tested)" in c["what"]]
+    (alt,) = c["alternatives"]
+    assert "20 t/St at the top" in alt and "not worked out here" in alt
 
 
 def test_the_calc_steps_show_the_Cu_and_the_F_star_curve():

@@ -20,14 +20,16 @@ def _lowest(r):
     return min(lv["FOS_pullout"] for lv in r["internal_results"])
 
 
+# GM-297: F* = (2/3) tan phi (GEC-11 Vol I Eq. 3-8); 8.394, 6.296 and
+# 10.493 at 0.67 tan phi before
 @pytest.mark.parametrize("params, alpha, lowest", [
-    ({"reinforcement_name": "geogrid_gec11_e1_gg1"}, 0.8, 8.394),
+    ({"reinforcement_name": "geogrid_gec11_e1_gg1"}, 0.8, 8.353),
     ({"reinforcement_type": "geogrid", "reinforcement_Tallowable": 21.9},
-     0.8, 8.394),
+     0.8, 8.353),
     ({"reinforcement_type": "geotextile", "reinforcement_Tallowable": 21.9},
-     0.6, 6.296),
+     0.6, 6.264),
     ({"reinforcement_type": "geosynthetic", "reinforcement_Tallowable": 21.9,
-      "alpha_tested": 1.0}, 1.0, 10.493),
+      "alpha_tested": 1.0}, 1.0, 10.441),
 ])
 def test_alpha_by_type_or_test(params, alpha, lowest):
     r = _mse(**params)
