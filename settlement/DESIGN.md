@@ -92,10 +92,14 @@ analyze_consolidation(layers, delta_sigma, ...) -> ConsolidationResult
 
 Per item page, printed form, module form and verdict in
 `module_work/gm285/CHECK.md`. What changed:
-- **Westergaard.** The closed form used was about 28 % low (I = 0.083
-  where UFS Fig. 4-10 reads 0.116 at m = n = 1). The influence factor is
-  now read off Fig. 4-10 (`stress_distribution.westergaard_influence_factor`,
-  the chart's curves digitised, bilinear in log m and log n).
+- **Westergaard.** The formula used, I = atan(m n / sqrt(1 + m^2 + n^2))
+  / 2 pi, was not a Westergaard form: it is the first (arctangent) term of
+  UFS Table 4-2's Boussinesq corner formula alone, up to about half below
+  UFS Fig. 4-10 (I = 0.083 where the figure reads 0.116 at m = n = 1, 0.124
+  against 0.151 at m = 1, n = 10). The influence factor is now read off Fig.
+  4-10 (`stress_distribution.westergaard_influence_factor`, the chart's
+  curves digitised, bilinear in m and n); stresses rise 11 % to 81 % in the
+  recorded runs, toward double deep below a small area.
 - **Boussinesq** below a corner is written as UFS Table 4-2 prints it (the
   same numbers).
 - **Schmertmann.** `gamma_soil` is required (sigma'_vp at the peak was

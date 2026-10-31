@@ -250,7 +250,7 @@ _WESTERGAARD_I_INF = (
 WESTERGAARD_READING = (
     "UFS 3-220-10 Fig. 4-10 (p. 194), Westergaard theory with nu = 0, "
     "digitised; between the printed curves (m and n from 0.1 to 10, and "
-    "m = infinity) interpolated linearly in log m and log n; beyond n = 10 "
+    "m = infinity) interpolated linearly in m and n; beyond n = 10 "
     "toward the m = infinity curve in 10/n, with I = 0.25 when both m and n "
     "are infinite (the corner of the loaded area at the surface, where the "
     "module takes sigma_z = q0 under the centre); below 0.1 in proportion "
@@ -265,8 +265,9 @@ def _westergaard_node(v: float):
         return len(nodes) - 1, len(nodes), 1.0 - nodes[-1] / v
     for i in range(len(nodes) - 1):
         if v <= nodes[i + 1]:
-            return i, i + 1, (math.log(v / nodes[i])
-                              / math.log(nodes[i + 1] / nodes[i]))
+            # linear in v: in log v the reading ran up to 11 % above the
+            # printed curves where m and n both lie between 0.1 and 0.3
+            return i, i + 1, (v - nodes[i]) / (nodes[i + 1] - nodes[i])
     raise AssertionError("unreachable")
 
 

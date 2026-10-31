@@ -312,6 +312,13 @@ def test_westergaard_between_and_beyond_the_curves():
     assert f(1e9, 1e9) == pytest.approx(0.25, abs=1e-6)
     # below 0.1 in proportion to zero
     assert f(0.05, 2.0) == pytest.approx(0.5 * f(0.1, 2.0))
+    # read between the grid points: 0.0191 off the figure at m = 0.5,
+    # n = 0.15 (linear in n between the n = 0.1 and 0.2 nodes: 0.0189)
+    assert f(0.5, 0.15) == pytest.approx(0.0191, abs=0.0004)
+    # B = L = 2 m, centre, z = 7 m: four corners at m = n = 1/7; the figure
+    # gives about 2.50 kPa under 100 kPa (log m, log n read 2.77)
+    assert stress_at_depth(100.0, 2.0, 2.0, 7.0, method="westergaard") \
+        == pytest.approx(2.50, rel=0.015)
     # the strip is the limit of a long rectangle
     assert westergaard_center_strip(100.0, 2.0, 1.0) == pytest.approx(
         stress_at_depth(100.0, 2.0, 1e9, 1.0, method="westergaard"))

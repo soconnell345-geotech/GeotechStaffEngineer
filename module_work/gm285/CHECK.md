@@ -44,14 +44,21 @@ of the UFS mu0 mu1 kind (below). It has no settlement worked example.
   factor I below the corner of a rectangle (nu = 0), sigma_z = I q0, m = x/z
   and n = y/z interchangeable, as curves of m from 0.1 to 10 and infinity
   against n from 0.1 to 10. The module had I = atan(m n / sqrt(1 + m^2 +
-  n^2)) / 2 pi, which no reference in the library prints and which is about
-  28 % below the figure (I(1, 1) 0.083 against 0.116 read; I(1, 10) 0.115
-  against 0.151). **Disagrees; fixed**: the figure is digitised
-  (`stress_distribution.WESTERGAARD_M`, `_WESTERGAARD_I`,
-  `_WESTERGAARD_I_INF`) and read bilinearly in log m and log n
+  n^2)) / 2 pi. That is not a Westergaard form at all: it is the first
+  (arctangent) term of UFS Table 4-2's Boussinesq corner formula, (1 / 2
+  pi)[atan(x y / z R3) + ...], with the second term left out. It sits below
+  the figure by up to about half, meeting it only near the surface (I(10,
+  10) 0.228 against 0.234; I(1, 10) 0.124 against 0.151; I(1, 1) 0.083
+  against 0.116; I(0.1, 0.1) 0.0016 against 0.0032). **Disagrees;
+  fixed**: the figure is digitised (`stress_distribution.WESTERGAARD_M`,
+  `_WESTERGAARD_I`, `_WESTERGAARD_I_INF`) and read bilinearly in m and n
   (`westergaard_influence_factor`, the reading stated in
   `WESTERGAARD_READING` and in the stress choice's basis). The centre is
-  four corners; the strip is the curve m = infinity.
+  four corners; the strip is the curve m = infinity. (The first reading,
+  bilinear in log m and log n, ran up to 11 % above the printed curves
+  where m and n both lie between 0.1 and 0.3: B = L = 2 m, centre, z = 7 m
+  read 2.77 kPa under 100 kPa where the figure gives about 2.50; linear in
+  m and n gives 2.48. Found in review.)
   - *How it was read.* The figure was rendered from the PDF at high
     resolution and the curves traced by colour along each vertical grid
     line; the axes were calibrated on the printed grid (I = 0 to 0.25
@@ -64,7 +71,9 @@ of the UFS mu0 mu1 kind (below). It has no settlement worked example.
     with I = 0.25 when both are infinite; below 0.1 it scales to zero.
     These are module readings and say so.
   - Pinned: nine figure readings (I(0.1, 10) 0.0223, I(1, 1) 0.116,
-    I(1, 10) 0.1514, I(2, 2) 0.1741, I(inf, 10) 0.2383, ...).
+    I(1, 10) 0.1514, I(2, 2) 0.1741, I(inf, 10) 0.2383, ...), one between
+    the grid points (I(0.5, 0.15) 0.0191 read; 0.0189 interpolated) and the
+    B = L = 2 m, z = 7 m centre (2.50 kPa within 1.5 %).
 
 ## Immediate settlement, elastic (GEC-6 Eq. 5-36, Table 5-12, pp. 96, 97)
 
@@ -210,9 +219,11 @@ and after (4,102 inputs in common; 267 moved, the rest unchanged, and the
 moves below explain every one; tests whose inputs had to change are paired
 by order). By cause:
 
-- **Westergaard stress: +27 % to +46 %** (e.g. 100 kPa, 2 m strip, z 3 m:
-  20.48 -> 28.15 kPa; B = L = 2 m, z 3 m, centre: 6.38 -> 11.72 kPa). The
-  old closed form against UFS Fig. 4-10.
+- **Westergaard stress: +11 % to +81 %** over the recorded runs, rising
+  toward double deep below a small area (100 kPa, 2 m strip: z 0.5 m 70.48
+  -> 78.28 kPa, z 3 m 20.48 -> 27.91; B = L = 2 m, centre: z 3 m 6.38 ->
+  11.53, z 7 m 1.27 -> 2.48). The old form (Table 4-2's arctangent term
+  alone) against UFS Fig. 4-10, read linearly in m and n.
 - **Secondary compression with cv: +7.7 % to +12.4 %** (e.g. 15.5 -> 16.9
   mm): t1 = t90 (NHI-06-088 Eq. 7-10) for t95, a shorter t1 and a longer
   log(t2 / t1). Without cv (t1 = 1 year) nothing moves.
