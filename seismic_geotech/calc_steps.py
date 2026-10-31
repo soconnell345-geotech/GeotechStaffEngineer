@@ -221,7 +221,7 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
             result_name="Vs30",
             result_value=f"{result.vs30:.0f}",
             result_unit="m/s",
-            reference="FHWA GEC-12 Vol I Table 7-26 (p. 379); GEC-12 p. 378 (upper 100 ft)",
+            reference="FHWA GEC-12 Vol I Table 7-26 and p. 379 (upper 100 ft)",
             notes="Weighted harmonic average of shear wave velocity in top 30 m",
         ))
     if result.n_bar is not None:
@@ -232,7 +232,7 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
             result_name="N-bar",
             result_value=f"{result.n_bar:.0f}",
             result_unit="blows/ft",
-            reference="FHWA GEC-12 Vol I Table 7-26 (p. 379); GEC-7 p. 93 (field N, 100 bpf at most)",
+            reference="FHWA GEC-12 Vol I Table 7-26 (p. 379); GEC-7 p. 93 (field N, limited to 100 bpf where refusal is encountered)",
         ))
     if result.su_bar is not None:
         param_items.append(CalcStep(

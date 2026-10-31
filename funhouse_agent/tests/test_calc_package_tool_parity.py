@@ -478,8 +478,8 @@ def _mononobe_okabe():
     KA = math.tan(math.radians(45.0 - phi / 2.0)) ** 2
     # PAE carries (1 - kv), UFC 3-220-20 Eq. 4-16 (GM-149)
     f = seismic_earth_pressure(19.0, 5.0, KAE, KA, kv=kv)
-    # KPE takes its own wall friction, phi / 2 when not given (GM-293)
-    delta_p = phi / 2.0
+    # KPE takes its own wall friction, 0.4 phi when not given (GM-293)
+    delta_p = 0.4 * phi
     return SeismicEarthPressureResult(
         KAE=KAE, KPE=mononobe_okabe_KPE(phi, delta_p, kh, kv),
         PAE_total=f["PAE_total_kN_per_m"],

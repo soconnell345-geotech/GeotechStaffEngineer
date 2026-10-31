@@ -95,13 +95,13 @@ def run_seismic_earth_pressure(params: dict, *,
     # wall friction; GM-120)
     ka_given = params.get("KA") is not None
     KA = float(params["KA"]) if ka_given else rankine_Ka(phi)
-    # KPE's wall friction: as given, else phi / 2, the most NHI-06-089
-    # p. 10-17 suggests on the passive side (GM-293; it took the active
-    # delta, 2/3 phi by default)
+    # KPE's wall friction: as given, else 0.4 phi, the most UFC 3-220-20
+    # Fig. 4-8 allows a planar passive wedge (GM-293 and its review; it took
+    # the active delta, 2/3 phi by default, then phi / 2)
     delta_p = params.get("delta_passive")
     delta_p_given = delta_p is not None
     if not delta_p_given:
-        delta_p = phi / 2.0
+        delta_p = 0.4 * phi
     KPE = (mononobe_okabe_KPE(phi, delta_p, kh, kv, beta, i)
            if include_passive else 0.0)
     gamma = params.get("gamma")
@@ -358,7 +358,7 @@ METHOD_INFO = {
             "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees), positive when the back face leans toward the backfill (lowers KAE). UFC 3-220-20 Eq. 4-15 and Fig. 4-8 measure their theta the other way: theta = -beta."},
             "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees); UFC 3-220-20 Eq. 4-15's beta."},
             "include_passive": {"type": "bool", "required": False, "default": False, "description": "Also return KPE (passive seismic coefficient, GEC-4 Eq. 44)."},
-            "delta_passive": {"type": "float", "required": False, "description": "Wall friction angle behind KPE (deg). Not given: phi/2, the most NHI-06-089 p. 10-17 suggests on the passive side; above 0.4 phi the result warns (UFC 3-220-20 Fig. 4-8: a planar passive wedge is unconservative there)."},
+            "delta_passive": {"type": "float", "required": False, "description": "Wall friction angle behind KPE (deg). Not given: 0.4 phi, the most UFC 3-220-20 Fig. 4-8 (p. 187) allows a planar (Coulomb) passive wedge (\"unconservative for delta/phi' > 0.4\"); FHWA NHI-06-089 p. 10-19 finds a planar passive wedge unreliable above phi'/3 and recommends log-spiral charts, with which its p. 10-17 maximum of phi/2 goes. Above 0.4 phi the result warns."},
             "gamma": {"type": "float", "required": False, "description": "Soil unit weight (kN/m3) for force calculation."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) for force calculation."},
             "KA": {"type": "float", "required": False, "description": "Static active coefficient behind PA and delta-PAE. Not given: Rankine Ka from phi (vertical wall, level backfill, no wall friction)."},
@@ -429,10 +429,9 @@ declare_when_absent(METHOD_INFO, {
     "seismic_earth_pressure": {
         "delta": ("2/3 of phi", "wall friction delta = (2/3) phi; give "
                   "delta for the wall's interface"),
-        "delta_passive": ("phi / 2", "the most NHI-06-089 p. 10-17 "
-                          "suggests on the passive side; above 0.4 phi UFC "
-                          "3-220-20 Fig. 4-8 finds a planar passive wedge "
-                          "unconservative"),
+        "delta_passive": ("0.4 phi", "the most UFC 3-220-20 Fig. 4-8 "
+                          "allows a planar passive wedge; NHI-06-089 "
+                          "p. 10-19 finds it unreliable above phi/3"),
         "KA": ("Rankine Ka from phi",
                "a vertical wall, level backfill and no wall friction; give "
                "KA for another case")},
