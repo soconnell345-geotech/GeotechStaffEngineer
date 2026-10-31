@@ -638,16 +638,16 @@ CONCRETE_FC_BASIS = (
     "drilled shaft concrete. If, however, load testing can be used to "
     "demonstrate side resistances greater than would be calculated using "
     "the concrete design strength, the load test-validated values should "
-    "be allowed'. Example 10-4 (pp. 10-27, 10-28) checks it: qu 360 ksf "
-    "against f'c 4,000 psi = 576 ksf. FHWA NHI-06-089 Eq. 9-47 (p. 9-140) "
+    "be allowed'. Example 10-4 (pp. 10-27, 10-28) gives both: qu 360 ksf "
+    "and f'c 4,000 psi = 576 ksf. FHWA NHI-06-089 Eq. 9-47 (p. 9-140) "
     "limits Eq. 10-22's form the same way, by 0.65 pa (f'c / pa)^0.5. "
     "Taken in Eq. 10-22 as in Eq. 10-21")
 
 
-def rock_side_choice(C: float, values=None, extra=()) -> dict:
+def rock_side_choice(C: float, values=None) -> dict:
     """The choice made for the rock side resistance coefficient C (GM-221):
     1.0, GEC-10 Eq. 10-21 for a normal socket, by default (GM-244); the
-    other values GEC-10 names are the alternatives, then ``extra``.
+    other values GEC-10 names are the alternatives.
     ``values``, where given, maps a C to the run's values with it, in
     words."""
     from geotech_common.choices import choice, how_given
@@ -659,7 +659,7 @@ def rock_side_choice(C: float, values=None, extra=()) -> dict:
                   f"{float(C)!r}: {named}" if named else f"{C:g}",
                   how_given(C, ROCK_SIDE_C, name="rock_side_C"),
                   basis=ROCK_SIDE_C_BASIS,
-                  alternatives=alternatives + list(extra))
+                  alternatives=alternatives)
 
 
 def top_of_rock(soil: ShaftSoilProfile) -> Optional[float]:
@@ -882,6 +882,13 @@ class DrillShaftAnalysis:
                 "alpha_E pa sqrt(qu / pa) with alpha_E from Table 10-3 (p. "
                 "10-21), which takes no C. Leave rock_side_C out, or name "
                 "rock_side_method 'normal'")
+        if self.rock_side_method == "normal" and self.rock_joints != "closed":
+            raise ValueError(
+                f"rock_joints = {self.rock_joints!r} is the joint condition of "
+                "GEC-10 Table 10-3, which gives alpha_E in Eq. 10-22 "
+                "(rock_side_method 'caving', p. 10-21); rock_side_method "
+                "'normal' is Eq. 10-21, which takes no joint condition. Leave "
+                "rock_joints out, or name rock_side_method 'caving'")
         if not 0 < self.K_over_Ko <= 1:
             raise ValueError(
                 f"K_over_Ko must be more than 0 and at most 1, got "

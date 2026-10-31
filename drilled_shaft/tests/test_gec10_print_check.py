@@ -257,6 +257,16 @@ def test_caving_takes_no_c():
         _caving(method="rough")
 
 
+def test_a_normal_socket_takes_no_joint_condition():
+    """Table 10-3's joint condition gives alpha_E in Eq. 10-22 only: 'open'
+    under Eq. 10-21 is refused, not passed over."""
+    soil = ShaftSoilProfile(layers=[
+        ShaftSoilLayer(10.0, "rock", 23.0, qu=8000.0, RQD=60.0)])
+    with pytest.raises(ValueError, match="takes no joint condition"):
+        DrillShaftAnalysis(shaft=DrillShaft(diameter=1.2, length=5.0),
+                           soil=soil, rock_joints="open")
+
+
 # -- Example 10-5: the factored resistance -----------------------------------
 
 def test_example_10_5_factored_resistance():
