@@ -78,13 +78,16 @@ _SURCHARGE_ALIASES = {"surcharge_pressure": "surcharge_kPa",
                       "S_ult": "S_ultimate", "settlement_m": "S_ultimate"}
 _VIBRO_ALIASES = {"initial_N": "initial_N_spt",
                   "target_Dr": "target_relative_density"}
-# GM-291: GEC-13 prints no D50 screen and no probe spacing by SPT N; the
-# spacing is read off its Fig. 4-34 by the target relative density.
+# GM-291: GEC-13 screens the soil in place by fines, not by D50 (its D50 is
+# in Eq. 4-3's backfill suitability number), and prints no probe spacing by
+# SPT N; the spacing is read off its Fig. 4-34 by the target relative density.
 _NO_D50 = (
-    "GEC-13 prints no D50 limit for vibro-compaction: it screens the "
-    "gradation by Fig. 4-27's zones and the fines content (p. 4-65: 'more "
-    "than 12 to 15 percent silt OR more than 2 percent clay'; Table 4-5 by "
-    "soil type), and the tool screens the fines_content")
+    "GEC-13 uses D50 for vibro-compaction only in Eq. 4-3's backfill "
+    "suitability number (p. 4-73, rated by Table 4-7), which rates the "
+    "backfill, not the soil in place. It screens the soil in place by Fig. "
+    "4-27's zones and the fines content (p. 4-65: 'more than 12 to 15 "
+    "percent silt OR more than 2 percent clay'; Table 4-5 by soil type), "
+    "and the tool screens the fines_content")
 _NO_TARGET_N = (
     "GEC-13 prints the probe spacing by the target relative density, not "
     "by a target SPT N: give target_relative_density (%), 55 to 90, read "
@@ -276,7 +279,7 @@ METHOD_INFO = {
             "time": {"type": "float", "required": True, "description": "Analysis time (years)."},
             "dw": {"type": "float", "required": False, "default": 0.0635, "description": "Equivalent drain diameter (m). Default 2.5 in (0.0635 m), GEC-13 p. 2-35: 'Various diameters ranging from 1.5 inch to 5.5 inch have been used, but the most common is to use 2.5 inch.' A band drain's is 2(a + b)/pi (Eq. 2-3)."},
             "pattern": _PATTERN,
-            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor F_s = 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
+            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor Fs ≈ 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
             "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "n_time_points": {"type": "int", "required": False, "default": 50, "description": "Points in the time-settlement curve."},
         },
@@ -293,7 +296,7 @@ METHOD_INFO = {
             "Hdr": {"type": "float", "required": True, "description": "Vertical drainage path (m)."},
             "dw": {"type": "float", "required": False, "default": 0.0635, "description": "Equivalent drain diameter (m). Default 2.5 in (0.0635 m), GEC-13 p. 2-35: 'Various diameters ranging from 1.5 inch to 5.5 inch have been used, but the most common is to use 2.5 inch.' A band drain's is 2(a + b)/pi (Eq. 2-3)."},
             "pattern": _PATTERN,
-            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor F_s = 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
+            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor Fs ≈ 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
             "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "spacing_range": {"type": "array", "required": False, "default": [1.0, 3.5], "description": "Spacing search range [min, max] (m)."},
         },
@@ -312,7 +315,7 @@ METHOD_INFO = {
             "drain_spacing": {"type": "float", "required": False, "description": "Wick drain spacing (m), if drains are used."},
             "pattern": _PATTERN,
             "dw": {"type": "float", "required": False, "default": 0.0635, "description": "Equivalent drain diameter (m). Default 2.5 in (0.0635 m), GEC-13 p. 2-35: 'Various diameters ranging from 1.5 inch to 5.5 inch have been used, but the most common is to use 2.5 inch.' A band drain's is 2(a + b)/pi (Eq. 2-3). With drains."},
-            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw, with drains. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor F_s = 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
+            "smear_ratio": {"type": "float", "required": False, "description": "Smear zone ratio s = ds/dw, with drains. Not given: smear ignored (F_s = 0), GEC-13 p. 2-35, 'The effects of both soil disturbance and well resistance are often ignored for typical projects.' Above 1, F_s = (kh/ks) ln(s) is added to F(n), as UFC 3-220-10 (2026) Eq. 5-25 prints it; GEC-13 prints no F_s formula, only 'a sample disturbance factor Fs ≈ 2 may be considered' in highly plastic, sensitive soils whose ch is accurately determined."},
             "kh_ks_ratio": {"type": "float", "required": False, "default": 1.0, "description": "Permeability ratio kh/ks, with drains, used only with smear_ratio above 1 (UFC 3-220-10 Eq. 5-25)."},
             "sigma_v0": {"type": "float", "required": False, "default": 0.0, "description": "Current effective stress at layer center (kPa)."},
             "n_time_points": {"type": "int", "required": False, "default": 50, "description": "Points in the time-settlement curve."},
@@ -390,7 +393,6 @@ _NO_SMEAR = ("smear ignored (F_s = 0)",
              "well resistance are often ignored for typical projects'")
 declare_when_absent(METHOD_INFO, {
     "feasibility": {"cv_m2_per_year": _NO_TIME, "Hdr_m": _NO_TIME},
-    # GM-291: the spacing is read off GEC-13 Fig. 4-34 by the target
     # GM-291: smear ignored unless a smear ratio is given (GEC-13 p. 2-35)
     **{m: {"smear_ratio": _NO_SMEAR} for m in (
         "wick_drains", "design_drain_spacing", "surcharge_preloading")},

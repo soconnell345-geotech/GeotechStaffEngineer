@@ -76,7 +76,7 @@ over the figure sit on the curve. Nodes (D_r % → m): 55 → 2.50, 60 → 2.30,
   and BALAAM_FLEXIBLE_10 agree from A/A_c 5.0 and are within 0.04 at 4.0 to
   4.5, where the printed (4) and (5a) run on one line.
 - Example 1 (rammed aggregate piers, pp. 5-46, 5-47; q_g 6,383 psf, s_uz
-  about 0.7 in, as V-018 records them): the two-layer stiffness-modulus method (Eqs. 5-11 to 5-13) is
+  0.68 in, as p. 5-47 prints them): the two-layer stiffness-modulus method (Eqs. 5-11 to 5-13) is
   not in the module, as V-018 and the manual say. Example 2 (pp. 5-48,
   5-49): pinned since GM-276.
 
