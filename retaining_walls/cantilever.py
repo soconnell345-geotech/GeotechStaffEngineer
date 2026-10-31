@@ -41,16 +41,18 @@ the water pressure gamma_w z is added, horizontal, with a coefficient of 1
 (UFC 3-220-20 Sec. 4-4.1 and Fig. 4-16(a), pp. 199-202; FHWA NHI-06-089
 Fig. 10-12, p. 10-27); the backfill below it weighs gamma_sat
 (``gamma_sat_backfill``, by default gamma_backfill) and the water lifts
-the base. No reference held prints the water pressure under a wall's
-base: the module takes it from gamma_w h_w at the heel to none at the toe,
-with no water in front of the wall (``base_uplift`` "linear"), or
-gamma_w h_w under the whole base ("uniform", as UFC Fig. 5-40, p. 346,
-takes U = gamma_w h L). The uplift reduces V in sliding; its moment about
-the toe is an overturning moment; the bearing pressures leave it out by
-default (``uplift_in_bearing``; UFC Sec. 5-3.2, p. 292: "Its effect on
-the bearing pressure can be conservatively ignored unless sliding or
-uplift is a concern"). The choices state each, with the other readings'
-numbers (:func:`water_choices`).
+the base. The water pressure under the base varies in a straight line
+between the heads at the heel and the toe, as EM 1110-2-2104 para. E-12
+(p. 115) prints a wall's uplift: gamma_w h_w at the heel to none at the
+toe, with no water in front of the wall (``base_uplift`` "linear"), or
+gamma_w h_w under the whole base, the same head at both ("uniform", as
+UFC Fig. 5-40, p. 346, takes U = gamma_w h L). The uplift reduces V in
+sliding; its moment about the toe is an overturning moment (the module's
+assumption); the bearing pressures leave it out by default
+(``uplift_in_bearing``; UFC Sec. 5-3.2, p. 292: "Its effect on the
+bearing pressure can be conservatively ignored unless sliding or uplift
+is a concern", on the safe side while e <= B/6). The choices state each,
+with the other readings' numbers (:func:`water_choices`).
 
 A surcharge over the heel (GM-157). The geometry's ``surcharge`` is a live
 load (traffic) and ``dead_load_surcharge`` a permanent one. Both thrusts
@@ -289,25 +291,32 @@ DRAINED_BASIS = (
 GAMMA_SAT_BASIS = (
     "the backfill's unit weight (gamma_backfill) taken below the water "
     "table too, as UFC 3-220-20 Fig. 4-16(a) (p. 202) takes gamma = 125 "
-    "pcf above it and gamma_b = 62.5 pcf below it, about gamma - gamma_w; "
-    "give gamma_sat_backfill for the saturated unit weight")
+    "pcf above it and gamma_b = 62.5 pcf below it, about gamma - gamma_w. "
+    "Against a larger gamma_sat it errs on the safe side for sliding, "
+    "overturning and the eccentricity where the heel carries soil below "
+    "the water table (the heel's extra weight resists more than the extra "
+    "thrust drives), and on the unsafe side for the bearing pressures (a "
+    "few per cent) and for a wall with little or no heel; give "
+    "gamma_sat_backfill for the saturated unit weight")
 
 #: The water pressure under the base (GM-292), by ``base_uplift``.
 BASE_UPLIFT = ("linear", "uniform")
 BASE_UPLIFT_BASIS = {
     "linear": (
-        "the module's assumption: no reference held prints the water "
-        "pressure under a retaining wall's base. UFC 3-220-20 p. 203: "
-        "'Water pressures can add an uplift force on the base of retaining "
-        "walls which can be detrimental to the wall stability'; its "
-        "Fig. 4-27 (p. 220) and FHWA NHI-06-089 Fig. 10-17 (p. 10-39) draw "
-        "none. The pressure falls in a straight line from the head behind "
-        "the wall, gamma_w h_w at the heel, to none at the toe, with no "
-        "water in front of the wall above the underside of the base"),
+        "EM 1110-2-2104 (2023) para. E-12 (p. 115), for a wall: "
+        "'Uplift across base varying uniformly from tailwater at heel to a "
+        "value midway between tailwater and jump profile at toe', a "
+        "straight line between the heads at the heel and the toe. Here the "
+        "head behind the wall, gamma_w h_w at the heel, to none at the toe, "
+        "with no water in front of the wall above the underside of the "
+        "base. UFC 3-220-20 p. 203: 'Water pressures can add an uplift "
+        "force on the base of retaining walls which can be detrimental to "
+        "the wall stability'"),
     "uniform": (
-        "the full head gamma_w h_w under the whole base, as UFC 3-220-20 "
-        "Fig. 5-40 (p. 346) takes the uplift on a structure below the water "
-        "table, U = gamma_w h L: the larger uplift"),
+        "the full head gamma_w h_w under the whole base, the same head at "
+        "the heel and the toe (EM 1110-2-2104 para. E-12, p. 116: 'Uplift "
+        "equal to tailwater'; UFC 3-220-20 Fig. 5-40, p. 346, U = gamma_w h "
+        "L for a structure below the water table): the larger uplift"),
 }
 
 #: Where the uplift's moment about the toe goes in the overturning check
@@ -326,9 +335,14 @@ UPLIFT_BEARING_BASIS = {
             "bearing elevation. Its effect on the bearing pressure can be "
             "conservatively ignored unless sliding or uplift is a concern' "
             "(sliding, overturning and the eccentricity check count it "
-            "here)"),
+            "here). On the safe side while the resultant is in the middle "
+            "third (e <= B/6): counted, the linear uplift takes nothing off "
+            "q_toe and lowers q_eq; past B/6, where the eccentricity check "
+            "fails, counting it can raise them"),
     True: ("counted: the effective pressure under the base, the weights "
-           "less the uplift"),
+           "less the uplift, as EN 1997-1 Sec. 6.5.2.1(3)P (p. 63): 'Water "
+           "pressures not caused by the foundation load shall be included "
+           "as actions'"),
 }
 
 

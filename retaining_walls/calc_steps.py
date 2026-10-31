@@ -721,7 +721,7 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             result_unit="kN/m",
             reference=("UFC 3-220-20 Fig. 5-40 (uniform)"
                        if f.get("base_uplift") == "uniform" else
-                       "the module's assumption (see Choices)"),
+                       "EM 1110-2-2104 para. E-12 (p. 115)"),
             notes=(f"At x_U = {f['x']:.3f} m from the toe: "
                    + ("γ_w h_w at the heel to zero at the toe, no water in "
                       "front of the wall."

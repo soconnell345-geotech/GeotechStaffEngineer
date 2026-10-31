@@ -1708,21 +1708,35 @@ checks `tests/test_gm292_water_table.py` and
 - `gamma_sat_backfill` (default gamma_backfill, as UFC Fig. 4-16(a) takes
   125 pcf above and gamma_b 62.5 pcf below): the soil on the heel and over
   a battered back below the water table adds its excess weight
-  (gamma_sat - gamma).
-- The uplift (`base_uplift`), the module's assumption, since no reference
-  held prints a wall's: "linear" (default) gamma_w h_w at the heel to 0 at
-  the toe, U = gamma_w h_w B / 2 at 2B/3 from the toe, no water in front of
-  the wall; "uniform" gamma_w h_w under the whole base at B/2, as UFC Fig.
-  5-40 (p. 346) takes U for a structure below the water table. U comes off
+  (gamma_sat - gamma), the total weight with the uplift counted apart
+  (EM 1110-2-2104 p. 18: vertical earth is the "weight of moist or buoyant
+  soil"; the hydrostatic load includes the "weight of water within soil on
+  a structure, and uplift"). Against a larger gamma_sat the default errs
+  on the safe side for sliding, overturning and the eccentricity where the
+  heel carries soil below the water table, on the unsafe side for the
+  bearing pressures (q_toe 1.4 % low on the hand-check wall of
+  `module_work/gm292/CHECK.md`) and for a wall with little or no heel.
+- The uplift (`base_uplift`), a straight line between the heads at the
+  heel and the toe, as EM 1110-2-2104 para. E-12 (p. 115) prints a wall's
+  ("Uplift across base varying uniformly from tailwater at heel to a value
+  midway between tailwater and jump profile at toe"): "linear" (default)
+  gamma_w h_w at the heel to 0 at the toe, U = gamma_w h_w B / 2 at 2B/3
+  from the toe, no water in front of the wall; "uniform" gamma_w h_w under
+  the whole base at B/2, the same head at both (para. E-12, p. 116,
+  "Uplift equal to tailwater"; UFC Fig. 5-40, p. 346, for a structure below
+  the water table). U comes off
   V in sliding (the friction on max(V - U, 0)); its moment about the toe is
   added to the overturning moment (the module's assumption; the choice gives
   FOS with it taken off the stabilizing moment). The eccentricity check
   counts it.
 - `uplift_in_bearing` (default False, UFC Sec. 5-3.2, p. 292: "can be
   conservatively ignored unless sliding or uplift is a concern"): True
-  counts it in q_toe, q_heel and q_eq. The linear uplift, while the
-  pressure stays a trapezoid, takes exactly gamma_w h_w off q_heel and
-  nothing off q_toe.
+  counts it in q_toe, q_heel and q_eq (EN 1997-1 Sec. 6.5.2.1(3)P,
+  p. 63: "Water pressures not caused by the foundation load shall be
+  included as actions"). The linear uplift, while the pressure stays a
+  trapezoid, takes exactly gamma_w h_w off q_heel and nothing off q_toe, so
+  leaving it out is on the safe side while e <= B/6; past B/6, where the
+  eccentricity check fails, counting it can raise q_toe and q_eq.
 - Each is a `choices` entry with the other reading's numbers (the drained
   backfill's FOS beside the water table's). The calc package prints the
   effective thrust, the water's thrust and the uplift steps, and the

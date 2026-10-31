@@ -6,7 +6,9 @@ an optional water table. Read from the PDFs in `geotech-references/docs/`,
 each page rendered and read: UFC 3-220-20 (16 January 2025) Sec. 4-4.1,
 Figs. 4-5, 4-16 and 4-27, Sec. 5-3.2 and Fig. 5-40; FHWA NHI-06-089 (2006)
 Vol II Sec. 10.3, Fig. 10-12, Example 10-1, Sec. 10.5.3 and Fig. 10-17;
-GEC-6 (FHWA-IF-02-054) Sec. 5.2.3.2. Page numbers are the printed ones.
+GEC-6 (FHWA-IF-02-054) Sec. 5.2.3.2; at review, EM 1110-2-2104 (1 November
+2023) pp. 18 and 115-116 and EN 1997-1:2004 Sec. 6.5.2.1. Page numbers are
+the printed ones.
 gamma_w is `geotech_common.water.GAMMA_W`, 9.81 kN/m3.
 
 The wall analysis covers cantilever walls and gravity walls alike ("a
@@ -79,11 +81,22 @@ cantilever (or gravity) wall"); the calc package runs the same code.
 - **Module now.** `gamma_sat_backfill`, default `gamma_backfill` (the UFC
   figure's reading), stated in `defaults_used` and the choices. The soil on
   the heel and over a battered back below the water table adds its excess
-  weight (γsat − γ) to the resisting weights, as UFC Fig. 5-40 (p. 346)
-  says "The buoyant unit weight of soils should be used for soils below the
-  water table" and the uplift is counted separately.
+  weight (γsat − γ) to the resisting weights: the total weight, with the
+  uplift counted separately. EM 1110-2-2104 (2023) p. 18: vertical earth
+  "is expected weight of moist or buoyant soil on a structure. Water in the
+  soil is included under hydrostatic load, Hs", and Hs "includes water
+  pressure above and below the ground line. It also includes water forces
+  above or in a structure, including weight of water within soil on a
+  structure, and uplift."
+- **The default's direction (review).** Against γsat = γ + 2 the default
+  errs on the safe side for sliding, overturning and the eccentricity where
+  the heel carries soil below the water table (hand-check wall: FOS_sliding
+  0.710 against 0.725, FOS_overturning 1.708 against 1.770, e 0.657 against
+  0.617), and on the unsafe side for the bearing pressures (q_toe 157.2
+  against 159.4 kPa, 1.4 % low) and for a wall with no heel (B 1.0 m:
+  FOS_sliding 0.166 against 0.162). The choice says so.
 
-## The uplift on the base (the module's assumption)
+## The uplift on the base (as printed; its moment the module's assumption)
 
 - **Print.** UFC p. 203: "Water pressures can add an uplift force on the
   base of retaining walls which can be detrimental to the wall stability.
@@ -91,15 +104,21 @@ cantilever (or gravity) wall"); the calc package runs the same code.
   and UFC Fig. 4-27 (p. 220) and NHI Fig. 10-17 (p. 10-39) draw none. UFC
   Fig. 5-40 (p. 346, Sec. 5-5.2.4, a structure below the water table): "U =
   Total Uplift Force = γw·h·L ... The uplift force should be calculated
-  based on the maximum elevation of the water table."
-- **Module now.** No reference held prints a retaining wall's uplift, so
-  the distribution is the module's assumption, with the printed alternative
-  in the choices:
+  based on the maximum elevation of the water table." Found at review:
+  EM 1110-2-2104 (2023) para. E-12, spillway stilling basin walls, Load
+  Cases 3A and 3B (p. 115): "Uplift across base varying uniformly from
+  tailwater at heel to a value midway between tailwater and jump profile
+  at toe", a straight line between the heads at the heel and the toe; Load
+  Case 3C (p. 116), the same water both sides: "Uplift equal to tailwater".
+  UFS 3-220-10 Sec. 6-2.6.3.2 (p. 294) integrates a flow net's pore
+  pressures along the base for the general case.
+- **Module now.** The distribution follows EM 1110-2-2104 para. E-12, with
+  the other printed case in the choices:
   - "linear" (default): γw h_w at the heel falling to none at the toe, no
     water in front of the wall above the underside of the base; U = γw h_w
     B / 2 at 2B/3 from the toe.
-  - "uniform": γw h_w under the whole base, as UFC Fig. 5-40; U = γw h_w B
-    at B/2.
+  - "uniform": γw h_w under the whole base, the same head at both (EM
+    1110-2-2104 p. 116; UFC Fig. 5-40); U = γw h_w B at B/2.
   The uplift comes off V in sliding (the friction on max(V − U, 0)); its
   moment about the toe is added to the overturning moment (the module's
   assumption: UFC Fig. 4-27's F_OT = W a / (P_H b − P_V f) has no uplift;
@@ -116,9 +135,17 @@ cantilever (or gravity) wall"); the calc package runs the same code.
 - **GEC-6 Sec. 5.2.3.2 "Location of the Ground Water Table"** (p. 56): the
   effective stresses below the water table control the bearing resistance.
 - **Module now.** `uplift_in_bearing` False by default (q_toe, q_heel, q_eq
-  on the total weights); True counts it. The tool text tells the agent to
-  give q_allowable for the water table at that level (GEC-6 p. 56). The
-  choice gives the other reading's q values.
+  on the total weights); True counts it, as EN 1997-1 Sec. 6.5.2.1(3)P
+  (p. 63) has it: "Water pressures not caused by the foundation load shall
+  be included as actions". The tool text tells the agent to give
+  q_allowable for the water table at that level (GEC-6 p. 56). The choice
+  gives the other reading's q values.
+- **The default's direction (review).** Leaving the uplift out is on the
+  safe side while the resultant is in the middle third: the linear uplift
+  counted takes nothing off q_toe and lowers q_eq (B 3.6 m, d_w 3 m: q_toe
+  123.15 both ways, q_eq 100.75 left out against 96.11 counted). Past B/6
+  counting it raises them (hand-check wall, e 0.617: q_toe 161.6 against
+  159.4), but that wall fails the eccentricity check already.
 
 ## Printed examples reproduced
 
@@ -127,7 +154,10 @@ water table 6 ft down, γ 115 pcf above, γsat 120 pcf below, φ 30°, Coulomb
 Ka 0.374 at δ 0. Run as a wall with no heel (the pressure plane is the
 face), in kN/m and converted back:
 
-| | printed | module |
+The first three rows are printed; the last three are worked by hand from
+the printed pressures (the diagrams' areas and centroid), not printed.
+
+| | printed, or from the printed pressures | module |
 |---|---|---|
 | p'a at 6 ft (psf) | 258.1 | 257.8 |
 | p'a at 18 ft (psf) | 516.6 | 515.9 |
@@ -236,17 +266,16 @@ Each in the foreground, by exit code, at least 3 GB free:
 
 ## Owner questions
 
-1. The uplift under the base: from the head at the heel to none at the toe
-   (default, no water in front), or the full head under the whole base (UFC
-   Fig. 5-40's structure below the water table)? On the hand-check wall
-   FOS_sliding 0.725 against 0.576.
-2. The uplift's moment: added to the overturning moment (default, the
-   smaller FOS: 1.77) or taken off the stabilizing moment (2.20)?
-3. The bearing pressures leave the uplift out by default (UFC p. 292,
-   conservative); keep, or count it?
-4. With no saturated unit weight given, the backfill's own unit weight below
-   the water table (UFC Fig. 4-16(a)'s reading)? NHI Example 10-1 gives a
-   larger γsat.
+1. The uplift's moment: added to the overturning moment (default, the
+   smaller FOS: 1.77) or taken off the stabilizing moment (2.20)? No page
+   held prints it; the resultant and the eccentricity are the same either
+   way.
+
+Settled by the print at review, so not asked: the uplift's distribution
+(EM 1110-2-2104 para. E-12, p. 115), leaving it out of the bearing
+pressures (UFC p. 292, on the safe side while e <= B/6) and γsat = γ when
+none is given (UFC Fig. 4-16(a), γb = γ − γw; its direction stated in the
+choice).
 
 ## Noted, not fixed
 
@@ -259,3 +288,24 @@ Each in the foreground, by exit code, at least 3 GB free:
 - The water table is level; NHI Example 10-1 draws it parallel to a sloping
   backfill, which at the wall face is the same.
 - The MSE wall's external checks have no water table.
+- A wall the uplift floats (net V <= 0, e.g. uniform uplift under a light
+  wall with the water at the top) reports e = 0 and passes the eccentricity
+  check; sliding and overturning still fail, so the wall still fails.
+
+## Review (2026-10-31)
+
+Every page above re-read from the PDFs. The four owner questions checked
+against the held manuals: three are settled by a printed page (above), the
+uplift's moment is not. Fixed at review, wording only (no number changes):
+the uplift's basis (EM 1110-2-2104 para. E-12 in place of "no reference
+held prints"), the bearing default's direction and EN 1997-1 Sec.
+6.5.2.1(3)P for the counted option, the γsat default's direction, the
+saturated weight's basis (EM 1110-2-2104 p. 18; UFC Fig. 5-40's
+buoyant-weight sentence is about soil under an anchored structure and did
+not support it), and Example 10-1's worked thrusts labelled. A wall with no
+water table replayed independently: 205 recorded `analyze_cantilever_wall`
+calls and 23 recorded `cantilever_wall` / `retaining_wall_package` calls,
+plus the method probes, on 474e5e3 and on c25b5f2: identical but for the
+new keys, the `defaults_used` line and the package's input row; the figures
+byte for byte. Trial merge on master 001526b clean (1,406 passed), and with
+GM-297 on top clean (1,470 passed).
