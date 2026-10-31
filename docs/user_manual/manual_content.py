@@ -555,8 +555,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "**Rankine / Coulomb** active and passive coefficients (with wall friction), and a "
             "**Caquot&ndash;Kerisel log-spiral** passive option that avoids Coulomb&rsquo;s over-prediction "
             "at high &delta;.",
-            "Free-earth-support solution for cantilever and anchored walls; layered active-pressure "
-            "builder with hydrostatic water; embedment-increase factor and a FOS on passive resistance.",
+            "The cantilever by the Caltrans T&amp;S Simplified Method (moments about the pivot O give "
+            "D<sub>0</sub>; D = 1.2&nbsp;D<sub>0</sub> (Caltrans 7-5.02, UFC 3-220-20 Fig.&nbsp;4-41) beside a "
+            "FOS on the passive pressure (Caltrans Ex 7-3; UFC Fig.&nbsp;4-41 step 2); the moment on that diagram to O); free earth "
+            "support for the anchored wall; layered active-pressure builder with hydrostatic water.",
             "References: Rankine; Coulomb; Caquot&ndash;Kerisel; NAVFAC DM7.2; validated against Caltrans "
             "T&amp;S Ex 7-2 / 8-1 (V-025/V-013) and, for the anchored wall&rsquo;s maximum moment, the USS "
             "Steel Sheet Piling Design Manual&rsquo;s Design Example No. 2 (within 1&nbsp;%).",
@@ -574,7 +576,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "(basal heave, blowout, piping).",
         "methods": [
             "**FHWA apparent-pressure** envelopes (Terzaghi&ndash;Peck / Peck) for braced cuts and "
-            "anchored walls, with tributary strut/anchor loads and hinge moments.",
+            "anchored walls; braced-wall support loads by the Caltrans hinge method (or GEC-4's, or "
+            "UFC 3-220-20's simple spans) and the GEC-4 tributary area method for anchored walls.",
             "Cantilever and single-anchor free-earth solutions; ground-anchor design; wall-section "
             "sizing.",
             "Basal heave &mdash; **Bjerrum&ndash;Eide** bearing ratio and a **Caltrans** force balance with "
@@ -583,9 +586,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "T&amp;S; validated V-014/V-016.",
         ],
         "limits": [
-            "The single-anchor FHWA apparent-diagram embedment solver and a multi-anchor apparent-envelope "
-            "helper are documented gaps; the primitives (K, p<sub>e</sub>, tributary loads, hinge "
-            "moments) reproduce the worked examples (V-016).",
+            "The apparent-pressure envelopes, anchor loads and moments reproduce the worked examples "
+            "(V-016, Caltrans Ex 8-2); the embedment below the lowest support is free earth support "
+            "about it (Caltrans T&amp;S 8-4).",
             "Where no moment balance exists within six times the excavation depth, the free-earth "
             "solution returns no embedment (and nothing computed from it) with a plain note, never a "
             "depth without a solution.",
@@ -1093,7 +1096,7 @@ VALIDATION_ROWS = [
     ("V-013", "sheet_pile", "Single-anchor wall &mdash; log-spiral K<sub>p</sub>, FHWA apparent diagram", "Caltrans T&amp;S Ex 8-1", "PASS"),
     ("V-014", "soe", "Basal heave &mdash; Caltrans force balance w/ side shear", "Caltrans T&amp;S Ex 10-2", "PASS"),
     ("V-015", "slope_stability", "Fellenius &amp; Bishop FOS on a specified circle", "Caltrans T&amp;S Ex 10-3/4", "PASS"),
-    ("V-016", "soe", "Two-tier anchored wall &mdash; apparent envelope, anchor loads", "GEC-4 Ex 1", "PASS / CONVENTION"),
+    ("V-016", "soe", "Two-tier anchored wall &mdash; apparent envelope, anchor loads", "GEC-4 Ex 1", "PASS"),
     ("V-017", "lateral_pile", "Laterally loaded micropile (LPILE benchmark)", "FHWA Micropile Ex 2", "PASS"),
     ("V-018", "ground_improvement", "Rammed aggregate pier settlement + baseline consolidation", "GEC-13 Ex 1", "PASS / N/A"),
     ("V-019", "ground_improvement", "Stone-column settlement (Priebe curve)", "GEC-13 Ex 2", "PASS"),

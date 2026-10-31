@@ -217,21 +217,28 @@ class TestCantileverWall:
         assert "embedment_depth_m" in d
         assert d["embedment_depth_m"] > 0
 
-    def test_single_safety_basis_default(self):
-        """SP-3: the default safety basis is FOS_passive alone — the design
-        embedment equals the converged embedment (embedment_increase = 1.0),
-        with no hidden 1.2x increase stacked on top of FOS_passive = 1.5."""
-        result = analyze_cantilever(
-            excavation_depth=5.0,
-            soil_layers=[WallSoilLayer(20.0, 18.0, friction_angle=30)],
-            FOS_passive=1.5,
-        )
-        assert result.embedment_increase == 1.0
+    def test_default_is_factored_passive_and_1_2(self):
+        """GM-290: D = 1.2 D0 beside a factor of safety on the passive
+        side, as the Caltrans manual (7-5.02 step 3, Example 7-3) and UFC
+        3-220-20 (Fig. 4-41 steps 2 and 6, Fig. 4-43) print it; here
+        FOS_passive = 1.5 on the passive pressure (SP-3 had made the default
+        increase 1.0). The moment is the factored body's to D0, whatever the
+        increase."""
+        layers = [WallSoilLayer(20.0, 18.0, friction_angle=30)]
+        result = analyze_cantilever(excavation_depth=5.0,
+                                    soil_layers=layers, FOS_passive=1.5)
+        assert result.embedment_increase == 1.2
         assert result.embedment_depth == pytest.approx(
-            result.embedment_converged)
+            1.2 * result.embedment_converged)
         d = result.to_dict()
-        assert d["embedment_increase"] == 1.0
-        assert d["embedment_converged_m"] == d["embedment_depth_m"]
+        assert d["embedment_increase"] == 1.2
+        none = analyze_cantilever(excavation_depth=5.0, soil_layers=layers,
+                                  FOS_passive=1.5, embedment_increase=1.0)
+        assert none.embedment_depth == pytest.approx(
+            result.embedment_converged)
+        assert none.max_moment == pytest.approx(result.max_moment)
+        assert none.max_moment_depth == pytest.approx(
+            result.max_moment_depth)
 
     def test_embedment_increase_basis(self):
         """SP-3: the depth-increase basis (FOS = 1.0, +20%) is available as
@@ -567,16 +574,18 @@ class TestWallFrictionDefault:
 
     def test_the_probe_sand_cantilever(self):
         """The GM-242 probe: 4 m in sand, phi' 32, water at the excavation
-        level: 7.21 m of embedment at Rankine's Kp (delta 0, the old
-        default), 5.06 m at the clean sand row."""
+        level: D0 7.21 m at Rankine's Kp (delta 0, the old default), 5.06
+        m at the clean sand row; D = 1.2 D0 (GM-290)."""
         layers = self._sand()
         r = analyze_cantilever(4.0, layers, gwt_depth_active=4.0,
                                pressure_method="log_spiral")
         old = analyze_cantilever(4.0, self._sand(wall_friction_deg=0.0),
                                  gwt_depth_active=4.0,
                                  pressure_method="log_spiral")
-        assert old.embedment_depth == pytest.approx(7.21, abs=0.01)
-        assert r.embedment_depth == pytest.approx(5.06, abs=0.01)
+        assert old.embedment_converged == pytest.approx(7.21, abs=0.01)
+        assert r.embedment_converged == pytest.approx(5.06, abs=0.01)
+        assert r.embedment_depth == pytest.approx(
+            1.2 * r.embedment_converged)
 
     def test_cap_cohesion_and_coulomb(self):
         from sheet_pile.cantilever import wall_friction

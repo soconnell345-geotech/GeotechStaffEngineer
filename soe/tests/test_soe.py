@@ -283,11 +283,12 @@ class TestApparentPressure:
         assert p == pytest.approx(expected, rel=0.01)
 
     def test_soft_clay_envelope(self):
-        """Uniform envelope for N > 4."""
+        """Soft to medium clay, N > 4: the envelope rises over the top 0.25H
+        and is constant below (GEC-4 Fig. 23c; UFC 3-220-20 Fig. 4-52)."""
         gamma, H, cu = 18.0, 10.0, 30.0
         N = gamma * H / cu  # = 6.0 > 4
         shape, p = apparent_pressure_soft_clay(gamma, H, cu)
-        assert shape == "uniform"
+        assert shape == "ramped_top"
         Ka_app = 1.0 - 1.0 * (4.0 * cu / (gamma * H))
         assert p == pytest.approx(Ka_app * gamma * H, rel=0.01)
 
@@ -320,7 +321,7 @@ class TestApparentPressure:
                                soil_type="soft_clay")]
         result = select_apparent_pressure(layers, H=10.0)
         assert result["type"] == "soft_clay"
-        assert result["shape"] == "uniform"
+        assert result["shape"] == "ramped_top"
 
     def test_select_pressure_stiff_clay(self):
         layers = [SOEWallLayer(thickness=10.0, unit_weight=18.0,
@@ -395,13 +396,18 @@ class TestBracedExcavation:
         Rankine pressure 4c - gamma*H - q = -34 kPa never turns resisting,
         so free earth support has no moment balance (GM-20). Until
         2026-10-14 this test passed on a moment computed at the 6H search
-        limit; the tributary loads are still real, the embedment and the
-        wall moment are not reported."""
+        limit; the embedment and the wall moment are not reported, nor the
+        single strut's load by the hinge method (free earth support about
+        it, GM-290); the simple spans' load is."""
         geo = _clay_geometry(H=8.0, cu=30.0, soil_type="soft_clay")
         result = analyze_braced_excavation(geo)
 
         assert result.apparent_pressure_type == "soft_clay"
-        assert result.support_reactions[0]["load_kN_per_m"] > 0
+        assert result.support_reactions[0]["load_kN_per_m"] is None
+        assert result.support_reactions[0]["from_above_kN_per_m"] > 0
+        assert analyze_braced_excavation(
+            geo, support_load_method="simple_spans").support_reactions[0][
+                "load_kN_per_m"] > 0
         assert result.converged is False
         assert result.required_embedment_m is None
         assert result.max_moment_kNm_per_m is None
@@ -831,12 +837,13 @@ class TestBasalHeaveBjerrumEide:
         assert r_square.FOS > r_strip.FOS
 
     def test_textbook_Nc_square_H_Be_1(self):
-        """At H/Be=1, Be/Le=1: Nc should be ~6.80."""
+        """At H/Be=1, Be/Le=1: Nc is the Caltrans Fig. 10-15 square curve's,
+        read as 7.68 (GM-290; the former unprinted table had 6.80)."""
         result = check_basal_heave_bjerrum_eide(
             H=6.0, cu=50.0, gamma=18.0, Be=6.0, Le=6.0
         )
         Nc = result.parameters["Nc"]
-        assert Nc == pytest.approx(6.80, abs=0.05)
+        assert Nc == pytest.approx(7.68, abs=0.05)
 
     def test_invalid_dimensions(self):
         with pytest.raises(ValueError):

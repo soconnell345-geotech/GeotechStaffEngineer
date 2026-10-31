@@ -71,7 +71,8 @@ class TestDefaultStaysRankine:
                                      abs=1e-4)
 
     def test_the_choice_says_so(self):
-        (c,) = _cantilever().choices
+        (c,) = [c for c in _cantilever().choices
+                if "passive_theory" in c["what"]]
         assert c["how"] == "default"
         assert c["chosen"] == "rankine: layer 1: Kp 3.39; embedment 5.58 m"
         assert "since the wall friction (delta) is zero" in c["basis"]
@@ -87,7 +88,7 @@ class TestLogSpiral:
         r = _cantilever(passive_theory="log_spiral")
         assert r.Kp == pytest.approx(6.392, abs=1e-3)   # Eq. 4-12, 0.66 phi'
         assert r.required_embedment_m == pytest.approx(3.78, abs=0.005)
-        theory, source, friction = r.choices
+        theory, source, friction = r.choices[:3]
         assert theory["how"] == "given"
         assert "embedment 5.58 m" in theory["alternatives"][0]
         assert source["chosen"] == "ufc_3_220_20"

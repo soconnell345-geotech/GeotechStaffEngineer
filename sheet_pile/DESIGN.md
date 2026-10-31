@@ -25,22 +25,30 @@ analyze_sheet_pile(wall_type, excavation_depth, layers, ...) -> SheetPileResult
 - earth_pressure module reused by retaining_walls/earth_pressure.py
 - Layers are dicts with phi, c, gamma, thickness
 
-## Cantilever safety basis (SP-3, changed in v5.1)
-The classic simplified cantilever method uses ONE of two safety bases:
-1. **FS on passive resistance** (~1.5-2.0) with NO embedment increase, or
-2. **Unfactored passive (FS ≈ 1.0)** with a 20-40% embedment increase.
+## Cantilever safety basis (SP-3 v5.1; GM-290)
+As printed, a factor of safety on the passive side AND D = 1.2 D0: the
+Caltrans T&S Manual Sec. 7-5.02 (p. 7-11: "The 20 percent increase is not a
+factor of safety"; no FS printed there) with its Example 7-3 (p. 7-41: FS 1.3
+on the moments, then 1.2 D0), and UFC 3-220-20 Fig. 4-41 (p. 242: step 2 Kp
+from phi'allow or, alternatively, an FS on Kp; step 6 "Increase D by 20% to
+allow for dredging, scour, etc.") with its example Fig. 4-43 (p. 245:
+phi'allow = atan(tan 35°/1.5) = 25°, Kp 3.6, then 1.2 D0). The module
+divides the passive pressure by `FOS_passive` (UFC's alternative). The default
+is `FOS_passive = 1.5`, `embedment_increase = 1.2` (GM-290,
+`module_work/gm290/CHECK.md`).
 
-Prior to v5.1 `analyze_cantilever` applied both (FOS_passive = 1.5 AND a
-hardcoded 1.2× depth increase) — a double safety margin. Since v5.1 the
-default is basis 1: `FOS_passive = 1.5`, `embedment_increase = 1.0` (a new,
-documented parameter). Pass `FOS_passive = 1.0, embedment_increase = 1.2-1.4`
-for basis 2. Result records both `embedment_converged` and
-`embedment_increase`; calc_steps renders whichever basis was used.
-**Behavior change:** default design embedment is 1/1.2 of the pre-v5.1 value
-(the old default combination was conservative double-counting); max moment is
-computed over the (shorter) design embedment accordingly.
-Anchored walls (free earth support) are unchanged: factored passive, no
-depth increase.
+History: before v5.1 the function applied both, hard-coded; SP-3 (v5.1) made
+the increase a parameter defaulting to 1.0, reading the classic method as one
+basis or the other (USS, EM 1110-2-2504, Das). GM-290 restored 1.2 from the
+three printed references above, and the maximum moment is now integrated on
+the factored body to D0 (UFC Fig. 4-41 step 5, Fig. 4-42), not to the design
+depth past O. The Caltrans Example 7-3 takes the moment at FS = 1.0 instead;
+`soe.analyze_cantilever_excavation` follows that one.
+Anchored walls (free earth support, UFC Fig. 4-37 scenario 1 steps 2-4) are
+unchanged: factored passive, no depth increase. UFC's step 5 (D + 20 % for
+dredging or scour) and Rowe's moment reduction (Fig. 4-36) are not applied;
+the Caltrans 8-4.01 takes the anchor load from the FS = 1.0 diagram with no
+increase. Noted in CHECK.md, not changed.
 
 ## Log-spiral passive coefficient (SP-4, v5.3)
 `earth_pressure.caquot_kerisel_Kp(phi, delta, Kp_initial=None)` adds the

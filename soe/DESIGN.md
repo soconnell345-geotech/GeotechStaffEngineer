@@ -23,10 +23,28 @@ empirical apparent pressure envelopes from field measurements:
 | Soil Type | Shape | Max Ordinate |
 |-----------|-------|--------------|
 | Sand | Uniform (rectangular) | p = 0.65 × Ka × γ × H |
-| Soft-medium clay (N > 4) | Uniform | p = Ka × γ × H, Ka = 1 − m(4cu/γH) |
-| Stiff clay (N ≤ 4) | Trapezoidal | p = (0.2 to 0.4) × γ × H |
+| Soft-medium clay (N > 4) | Rising over the top 0.25H, constant below (`ramped_top`) | p = Ka × γ × H, Ka = 1 − m(4cu/γH) ≥ 0.25 |
+| Stiff clay (N ≤ 4) | Trapezoidal (constant 0.25H to 0.75H) | p = k × γ × H, k = `stiff_clay_coefficient`, 0.2 to 0.4, default 0.4 |
 
-Where N = γH/cu is the stability number and m = 1.0 for most cases.
+Where N = γH/cu is the stability number and m = 1.0 (GEC-4 Eq. 11).
+
+As printed (GM-290, `module_work/gm290/CHECK.md`):
+- Soft to medium clay: GEC-4 Fig. 23(c) (p. 50) and UFC 3-220-20 Fig. 4-52
+  (p. 255) ramp the envelope over the top 0.25H; until GM-290 it was uniform
+  over the whole height. The 0.25 floor is the Caltrans T&S Manual's Eq.
+  8-3-4 (p. 8-6, "not to be less than 0.25"); for 4 < N < 6 the ordinate is
+  the larger of Ka·γ·H and the stiff clay ordinate (Sec. 8-3.02), reported as
+  `governed_by`. GEC-4 (p. 59) and UFC (externally supported walls) use Ka =
+  0.22 for 4 < N ≤ 5.14 and Henkel's equation above it instead; they need the
+  depth to a firm layer below the base and are given in the choices only.
+  The Caltrans Fig. 8-4 ramps over 2/3 of H1 for all cohesive soils; noted,
+  not offered.
+- Stiff clay: UFC Fig. 4-53 (p. 256) takes 0.4 γH, and 0.2 γH "when
+  movements are minimal and the construction period is short"; the Caltrans
+  Eq. 8-3-2 leaves 0.2 to 0.4 to judgment. Until GM-290 the module
+  interpolated 0.2 + 0.2 N/4, which none of the three prints.
+- N averages cu over the excavated depth (the Caltrans "average"); GEC-4 reads
+  Su below the base for Henkel's equation. Noted, not changed.
 
 The envelope is the sand one where the layers marked `sand` are the
 thicker over the excavation depth, else a clay one by the average N.
@@ -48,18 +66,32 @@ explicitly to the diagram" — so the braced design pressure
   water table; K = envelope Ka; hydrostatic water u added below `gwt_depth`.
 - Clay envelopes: total stress; K = 1.0 (undrained, φ = 0); no water added.
 
-### Tributary Area Method
+### Support loads and span moments (`support_load_method`, GM-290)
 
-From the California Trenching and Shoring Manual and GEC-4 Sec 5.4:
-1. Divide the wall into spans between support levels
-2. Load each span with the design pressure p(z) above
-3. The span above the first support is a **cantilever** (moment p·d1²/2 for a
-   uniform envelope); the spans below are simply supported (hinge method)
-4. Support reactions = tributary loads; the bottom span's load goes wholly to
-   the lowest support (conservative for that support — the free-earth-support
-   load from below is reported alongside in `free_earth`)
-5. Max moment = the larger of the span moments and the embedded-portion moment
-   from the free-earth-support body
+The spans between support levels carry the design pressure p(z) above.
+- **`hinge` (default)**, the Caltrans T&S Manual's hinge method (Sec 8-4.02,
+  Fig. 8-7, p. 8-10; Example 8-2): the load above the first support goes to
+  it (T1U) and its moment M1 there is carried by the span below (T1L = P/2 +
+  M1/L, T2U = P/2 − M1/L; the figure prints S1, the span below in Example
+  8-2, both 10 ft); the other spans between supports are simply supported;
+  the lowest support's load from below (TnL) is free earth support's about it
+  (step 3, MR = MD). One support: the whole wall about it (8-4.01 step 5).
+  With no FS = 1 balance that load, and the lowest support's total, are
+  `None` with a note. **Pinned to Example 8-2**: T1U 77,474, M1 279,729,
+  T1L 86,093, T2 88,267, T3 116,240, T4U 58,120 lb (within 0.2 %).
+- **`hinge_subgrade`**, GEC-4's hinge method (Fig. 38, p. 79): the same
+  above, the spans down to the excavation base simply supported, the base
+  taking a subgrade reaction R (`subgrade_reaction_kN_per_m`).
+- **`simple_spans`**, UFC 3-220-20 Fig. 4-54 (p. 257): simple spans between
+  supports, the span above the first all to it and the span below the lowest
+  a cantilever on it (moment F·c at the strut). UFC's 80 % reduction of the
+  inner span moments and its unbalanced force P′H on the buried length are
+  not applied (notes).
+- Max moment = the larger of the span moments and the free earth body's.
+
+Until GM-290 the module took simple spans, the span below the lowest support
+all to it but with a simple span's moment, which is none of the three, and
+the free earth support load from below was in a note only.
 
 ### Embedment (free earth support about the lowest support)
 
@@ -87,10 +119,17 @@ below O and is **not** a factor of safety, so it sits alongside
 `FOS_passive`; this differs from `sheet_pile.analyze_cantilever`, which since
 v5.1 carries safety on FOS alone). The net horizontal force to O is reported;
 a positive value means embedment must increase (step 4). Max moment and shear
-come from the same diagram. Ka/Kp in the result are those of the embedment
+come from the same method at FS = 1.0, to its own O (`moment_body_D0_m`):
+Example 7-3 (p. 7-41) takes the embedment at FS 1.3, then "Calculate
+embedment depth using a factor of safety (FS) equal to 1.0 for the purposes of
+calculating the shear and moments" (GM-290; until then from the factored
+body, as UFC 3-220-20 Fig. 4-41 step 5 and its chart Fig. 4-42 take it, which
+the choices give as the alternative). The pressure table stays on the
+factored body. Ka/Kp in the result are those of the embedment
 layer; every depth uses its own layer. A note is added past H = 5.5 m (18 ft,
 Caltrans 7-1). **Pinned** to the closed form for uniform dry sand and to
-`sheet_pile.analyze_cantilever` (layered, wet, surcharge; D0 within 0.5 %).
+`sheet_pile.analyze_cantilever` (layered, wet, surcharge; D0 within 0.5 %, the
+factored moment within 1 %).
 
 ### No moment balance within 6H
 
@@ -110,8 +149,9 @@ at any depth — the result says so instead of reporting a depth:
   `analyze_cantilever_excavation` and `analyze_braced_excavation` return
   `None` for the embedment, wall length and (with no FS = 1 body) the moment,
   shear and Sx, with `converged=False` in `to_dict()` and the warning as the
-  first note; the braced tributary support loads stay (they do not depend on
-  the embedment) and a note gives the span moment above the excavation. The
+  first note; the braced support loads from above stay (they do not depend
+  on the embedment; under the hinge method the lowest support's load from
+  below is `None`) and a note gives the span moment above the excavation. The
   single-anchor `fhwa_apparent_pressure_anchored_wall` returns `None` for the
   anchor load, design load, D, D′ and moment, and keeps `TH_upper` (the
   tributary load above the anchor).
@@ -168,7 +208,10 @@ Section databases include manufacturer data:
 - **W sections**: AISC 16th Ed (common wale/strut sizes W14–W24)
 
 Selection uses Allowable Stress Design (ASD):
-- Fb = 0.66 × Fy (compact sections)
+- Fb = `Fb_ratio` × Fy, default 0.60 as the Caltrans T&S Manual's examples
+  take it (Example 7-3, p. 7-43; Example 8-1); GEC-4 p. 81 recommends 0.55
+  for permanent and critical temporary walls; the Caltrans railroad example
+  compares with 0.66 (p. 9-20). Until GM-290, 0.66 everywhere.
 - Required Sx = M_max / Fb
 
 ## References
@@ -176,7 +219,8 @@ Selection uses Allowable Stress Design (ASD):
 1. Terzaghi, K. & Peck, R.B. (1967). *Soil Mechanics in Engineering Practice*, 2nd Ed.
 2. Peck, R.B. (1969). "Deep Excavation and Tunneling in Soft Ground." SOA Report, 7th ICSMFE.
 3. FHWA-IF-99-015: *Ground Anchors and Anchored Systems* (GEC-4).
-4. California Dept. of Transportation (2011). *Trenching and Shoring Manual*.
+4. California Dept. of Transportation (2025). *Trenching and Shoring Manual*.
+4a. UFC 3-220-20 (2025). *Foundations and Earth Structures*.
 5. USACE EM 1110-2-2504: *Design of Sheet Pile Walls*.
 6. AISC (2017). *Steel Construction Manual*, 16th Edition.
 7. Nucor Skyline. *Steel Sheet Pile Catalog*.
@@ -185,18 +229,32 @@ Selection uses Allowable Stress Design (ASD):
 
 ## Basal heave — three methods (v5.3)
 `stability.py` offers three basal-heave checks; all are additive/independent:
-- `check_basal_heave_terzaghi` — Terzaghi (1943) inverted-footing bearing.
+- `check_basal_heave_terzaghi` — Terzaghi's mechanism as GEC-4 prints it:
+  Eq. 35 (p. 106), FS = Nc·Su/(γH + q − √2·Su·H/B), a cut of infinite length
+  with Nc from GEC-4 Fig. 51(c)'s B/L = 0 curve (read from its vector paths);
+  with no width, Eq. 37, FS = Nc·Su/(γH + q), Nc 5.14. When the side shear is
+  at least γH + q the FS is not found (a note). Eq. 36 (a stiff layer) is not
+  offered. With a width, UFC 3-220-20 Fig. 2-7(b) (p. 75) is given beside it
+  (`parameters["FOS_ufc_fig_2_7b"]` and a note): FBH = (5.7 Su B1 + Su H) /
+  ((γH + q) B1), B1 = 0.7B, the side strength added to the resistance; UFC p.
+  73 note 10 says Terzaghi's subtraction "can lead to unreasonably high
+  factors of safety for narrow excavations" (B 4 m, H 6 m, Su 50 kPa: Eq. 35
+  173, Fig. 2-7(b) 3.63). Until GM-290: cu·Nc/(γH+q) with an unprinted Nc table at
+  H/min(B, √2H) and no side shear.
 - `check_basal_heave_bjerrum_eide` — Bjerrum-Eide (1956) bearing ratio
-  FOS = cu·Nc/(γH+q), Nc from the H/Be, Be/Le table. NO sidewall shear.
+  FOS = cu·Nc/(γH+q), Nc from the Caltrans Fig. 10-15 square curve (read from
+  the printed chart) times Eq. 10-3-4's 0.84 + 0.16 B/L. NO sidewall shear.
+  Until GM-290 an unprinted table.
 - `check_basal_heave_caltrans` (NEW) — the Caltrans T&S / Terzaghi limiting-
   equilibrium force balance that INCLUDES the sidewall-shear resistance
   S = cu·H on the vertical failure plane:
   resisting F_RS = cu·Nc·(0.7B); driving F_dr = 0.7B·H·γ + 0.7B·q − cu·H;
-  FS = F_RS/F_dr. Nc from the Skempton/Bjerrum-Eide form
-  5.14(1+0.2 B/L)(1+0.2 H/B) (H/B capped at 2.5; ~7.7 at H/B=2, L/B=3), or a
-  chart-read `Nc`. The 0.7B block width and the side-shear term make it less
-  conservative than the bearing-ratio method — it reproduces Caltrans Ex 10-2
-  (FS=1.54). Validated in `validation_examples` (V-014).
+  FS = F_RS/F_dr. Nc as `check_basal_heave_bjerrum_eide` takes it (7.575 at
+  H/B = 2, L/B = 3 against the printed 7.6; Skempton's formula until GM-290),
+  or a chart-read `Nc`. A hard layer D below the base: `width_factor` = D/B
+  (Sec 10-3.01 steps 1-6). The 0.7B block width and the side-shear term make it
+  less conservative than the bearing-ratio method — it reproduces Caltrans Ex
+  10-2 (FS 1.533 against 1.54). Validated in `validation_examples` (V-014).
 
 ## FHWA/GEC-4 apparent-pressure anchored wall (v5.3)
 `earth_pressure.fhwa_apparent_pressure_anchored_wall(H, anchor_depths, γ, φ, …)`
@@ -205,18 +263,26 @@ anchors by the tributary (hinge) method:
 pe = 0.65·Ka·γ·H²/(H − H1/3 − Hn+1/3) (H1 = depth to top anchor, Hn+1 = lowest
 anchor to base; total load = 1.3× the triangular Rankine total). Returns pe, the
 surcharge term ps = Ka·q, per-anchor tributary loads TH_i (top/interior/bottom
-formulas), subgrade reaction R, hinge moments, and anchor design loads
-DL = TH·s/cos(incl). Reproduces GEC-4 Design Example 1 (V-016, 2-anchor) natively
+formulas), subgrade reaction R, moments (M1 = 13/54 H1² pe + ps H1²/2 at the
+upper anchor, as App. A Example 1 prints it, p. A-6; (pe + ps) L²/10 below;
+until GM-290 M1 was 13/54 H1² (pe + ps), 70.4 against the printed 76), and
+anchor design loads DL = TH·s/cos(incl). Reproduces GEC-4 Design Example 1
+(V-016, 2-anchor) natively
 and Caltrans Ex 8-1 for a single anchor. With ONE anchor level the tributary
 formulas do not apply: the wall is solved by free earth support about the anchor
 (`free_earth.solve_about_support`; `Kp` override for a log-spiral passive,
 `FOS_embedment` default 1.3), returning the total TH, D, D′ and the wall moment —
 D = 6.09 ft, T1 = 14,254 lb/ft, M = 22,494 ft-lb/ft (V-013). Until 2026-09-15 the
 single-anchor result stopped at the upper tributary load without saying so (N3).
-`Kp` and `FOS_embedment` are read on the single-anchor route only: its result
-carries them as `choices`, and with two or more anchors the tool refuses them
-and `defaults_used` leaves them out (GM-182). The multi-anchor route works out
-no embedment; `braced_excavation` does, about the lowest support.
+With two or more anchors (GM-193, GM-290) the embedment below the lowest
+anchor is free earth support about it, the Caltrans 8-4.02 hinge method steps
+3-4 (the trapezoid + ps from the lowest anchor down, Rankine active below the
+excavation against `Kp`): `embedment_D_m`, `embedment_D_FS1_m`,
+`lowest_anchor_load_from_below_kN_per_m` and the body's moment
+(`free_earth_max_moment_kN_m_per_m`, with a note when larger than the
+tributary one, which stays `max_moment_kN_m_per_m`). `Kp` and
+`FOS_embedment` are read on both routes and carried as `choices`; until
+GM-290 the tool refused them with two or more anchors (GM-182).
 
 ## Log-spiral passive coefficient (v5.3)
 `earth_pressure.caquot_kerisel_Kp(phi, delta)` — the Caquot-Kerisel (1948)
@@ -313,7 +379,7 @@ package runs the tool's own `run_<tool>` and prints the result: for that the
 cantilever result carries `layers_used` (each layer's Ka, Kp), the
 `pressure_points` at the break depths and the `diagram` (net pressure, shear,
 moment to O); the braced result carries the `apparent_pressure` envelope, the
-`spans` (tributary split) and both diagrams. These fields are not in
+`spans` (the split by `support_load_method`) and both diagrams. These fields are not in
 `to_dict()`, so the tools' outputs are unchanged.
 
 ## Ground anchor design (built — provenance)

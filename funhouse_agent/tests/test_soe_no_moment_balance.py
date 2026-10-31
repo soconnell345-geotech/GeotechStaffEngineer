@@ -32,7 +32,10 @@ def test_braced_excavation_reports_no_solution():
     assert out["converged"] is False
     assert out["required_embedment_m"] is None
     assert out["free_earth"]["embedment_D_FS1_m"] is None
-    assert out["support_reactions"][0]["load_kN_per_m"] > 0
+    # the hinge method's single support takes free earth support's load,
+    # not found here (GM-290); its load from above is
+    assert out["support_reactions"][0]["load_kN_per_m"] is None
+    assert out["support_reactions"][0]["from_above_kN_per_m"] > 0
     json.dumps(out)
 
 

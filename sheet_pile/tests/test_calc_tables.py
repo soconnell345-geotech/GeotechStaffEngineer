@@ -32,14 +32,16 @@ def test_profile_table_holds_the_maximum_moment(cantilever):
 
 
 def test_profile_ends_at_the_toe_in_equilibrium(cantilever):
+    """The moment's body ends at D0, the depth moment equilibrium gave
+    (GM-290; the design depth is 1.2 D0 past it)."""
     t = _by_name(cantilever.get_tables())["wall_pressures"]
-    assert t.column("Depth z")[-1] == pytest.approx(
-        cantilever.total_wall_length, abs=0.05)
+    length = cantilever.excavation_depth + cantilever.embedment_converged
+    assert t.column("Depth z")[-1] == pytest.approx(length, abs=0.05)
     # no passive pressure above the excavation level
     above = [r for r in t.rows if r[0] <= cantilever.excavation_depth]
     assert all(r[2] == 0.0 for r in above)
     # shear is the running sum of net pressure x step
-    dz = cantilever.total_wall_length / t.n_rows
+    dz = length / t.n_rows
     v = np.cumsum(np.array(t.column("Net pressure p")) * dz)
     np.testing.assert_allclose(t.column("Shear V"), v, rtol=1e-9, atol=1e-9)
 

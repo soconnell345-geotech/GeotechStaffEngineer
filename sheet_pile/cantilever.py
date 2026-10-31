@@ -395,6 +395,7 @@ class CantileverWallResult:
     ``embedment_depth`` is the design embedment
     (= ``embedment_converged`` x ``embedment_increase``); the safety
     basis is recorded by ``FOS_passive`` and ``embedment_increase``.
+    The moment is the factored diagram's to D0 (``embedment_converged``).
     """
     embedment_depth: float = 0.0
     total_wall_length: float = 0.0
@@ -403,8 +404,8 @@ class CantileverWallResult:
     FOS_passive: float = 1.0
     excavation_depth: float = 0.0
     embedment_converged: float = 0.0
-    embedment_increase: float = 1.0
-    #: The moment integration's own points, top to toe: [z, p_a, p_p/FOS,
+    embedment_increase: float = 1.2
+    #: The moment integration's own points, top to D0: [z, p_a, p_p/FOS,
     #: net water pressure, net pressure p, shear V, moment M] (kPa, kN/m,
     #: kN-m/m). Not in to_dict; read by get_tables.
     profile: List[list] = field(default_factory=list, repr=False)
@@ -435,8 +436,9 @@ class CantileverWallResult:
                          ("Shear V", "kN/m", ".2f"),
                          ("Bending moment M", "kN-m/m", ".2f")],
                 rows=[list(r) for r in self.profile],
-                note=(f"Free earth support, wall {self.total_wall_length:.2f}"
-                      f" m long, excavation {self.excavation_depth:.2f} m; "
+                note=(f"Free earth support to D0 = "
+                      f"{self.embedment_converged:.2f} m below the excavation"
+                      f" {self.excavation_depth:.2f} m; "
                       f"passive divided by FOS = {self.FOS_passive:g}; V and "
                       "M integrated from the top at the midpoint of each of "
                       f"{len(self.profile)} steps; the maximum |M| is "
@@ -551,28 +553,40 @@ def analyze_cantilever(
     FOS_passive: float = 1.5,
     gamma_w: float = GAMMA_W,
     pressure_method: str = "rankine",
-    embedment_increase: float = 1.0,
+    embedment_increase: float = 1.2,
     log_spiral_source: str = "ufc_3_220_20",
 ) -> CantileverWallResult:
     """Analyze a cantilever sheet pile wall.
 
     Uses the simplified free earth support method:
     1. Compute active and passive pressure diagrams
-    2. Sum moments about the base to find required embedment D
-    3. Compute maximum moment
+    2. Sum moments about the base to find the embedment D0
+    3. Compute maximum moment (the factored diagram to D0)
+    4. D = embedment_increase x D0
 
     Safety basis
     ------------
-    The classic simplified method applies EITHER a factor of safety on
-    the passive resistance (FS ~ 1.5-2.0, no depth increase) OR an
-    unfactored passive diagram (FS ~ 1.0) with a 20-40% embedment
-    increase — not both (USS Sheet Piling Manual; USACE EM 1110-2-2504;
-    Das Ch. 9). The default here is the FOS basis: ``FOS_passive = 1.5``
-    with ``embedment_increase = 1.0``. To use the depth-increase basis
-    instead, pass ``FOS_passive = 1.0`` and ``embedment_increase`` of
-    1.2-1.4. (Prior to v5.1 this function applied BOTH FOS 1.5 and a
-    1.2x increase — a double safety margin; see SP-3 in the QC review
-    and DESIGN.md.)
+    As printed, a factor of safety on the passive side AND the 20 %
+    increase. The Caltrans Trenching and Shoring Manual's Simplified Method
+    (Sec. 7-5.02, p. 7-11) takes D = 1.2 D0 ("The 20 percent increase is
+    not a factor of safety"; AASHTO 3.11.5.6) and prints no FS there; its
+    Example 7-3 (p. 7-41) solves D0 with the resisting moment 1.3 times
+    the driving moment, then takes 1.2 D0. UFC 3-220-20 Fig. 4-41 (p. 242)
+    takes Kp from phi'allow (Sec. 4-7.1) or, "alternatively", applies a
+    factor of safety to Kp (step 2), and, step 6, "Increase D by 20% to
+    allow for dredging, scour, etc." (p. 243: "to design against future
+    dredging or scour"); its example, Fig. 4-43 (p. 245), factors the
+    strength, phi'allow = atan(tan 35 deg / 1.5) = 25 deg, Kp 3.6, then
+    takes 1.2 D0. The module divides the passive pressure by FOS_passive:
+    UFC's alternative, and Caltrans' moment ratio where the passive side
+    carries the whole resisting moment. The default is
+    ``FOS_passive = 1.5`` with ``embedment_increase = 1.2`` (GM-290). From v5.1 to GM-290 the default
+    increase was 1.0, on the reading that the classic method applies one
+    or the other (SP-3); the three references here apply both. The moment
+    comes from the factored diagram to D0 (UFC Fig. 4-41 step 5, Fig.
+    4-42); until GM-290 it was integrated to the design depth, past O.
+    The Caltrans Example 7-3 takes the moment at FS = 1.0 instead
+    (``soe.analyze_cantilever_excavation`` does).
 
     Parameters
     ----------
@@ -596,10 +610,9 @@ def analyze_cantilever(
         "rankine" (default), "coulomb" or "log_spiral" (Coulomb active and
         the log-spiral passive Kp).
     embedment_increase : float, optional
-        Multiplier applied to the converged embedment to obtain the
-        design embedment. Default 1.0 (no increase — safety carried by
-        FOS_passive). Use 1.2-1.4 with FOS_passive = 1.0 for the
-        depth-increase basis. Must be >= 1.0.
+        Multiplier applied to the converged embedment D0 to obtain the
+        design embedment. Default 1.2 (Caltrans T&S 7-5.02 step 3; UFC
+        3-220-20 Fig. 4-41 step 6). Must be >= 1.0.
     log_spiral_source : str, optional
         With pressure_method "log_spiral", the printed source of the
         passive Kp (``geotech_common.log_spiral.SOURCES``). Default
@@ -637,18 +650,17 @@ def analyze_cantilever(
         surcharge, FOS_passive, gamma_w, pressure_method, n_points=500
     )
 
-    # Design embedment. Default embedment_increase = 1.0: safety is carried
-    # entirely by FOS_passive (single, explicit safety basis — see docstring).
-    # A 1.2-1.4 increase is only appropriate with FOS_passive ~ 1.0.
+    # Design embedment: D = 1.2 D0 by default, beside the factored passive
+    # (Caltrans 7-5.02 step 3; UFC Fig. 4-41 step 6 -- see docstring).
     D_design = D_converged * embedment_increase
 
     total_wall = excavation_depth + D_design
 
-    # Compute maximum moment (and keep the integration's points for the
-    # calculation tables)
+    # Compute maximum moment on the body the embedment was solved on, to
+    # D0 (and keep the integration's points for the calculation tables)
     profile = []
     max_moment, max_moment_depth = _compute_max_moment(
-        excavation_depth, D_design, soil_layers,
+        excavation_depth, D_converged, soil_layers,
         gwt_depth_active, gwt_depth_passive,
         surcharge, FOS_passive, gamma_w, pressure_method, n_points=500,
         profile=profile,

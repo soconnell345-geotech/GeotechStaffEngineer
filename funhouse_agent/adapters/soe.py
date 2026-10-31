@@ -118,6 +118,12 @@ _PASSIVE_THEORY = {"type": "str", "required": False, "default": "rankine", "allo
 _LOG_SPIRAL_SOURCE = {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With passive_theory 'log_spiral', the printed source of Kp, as earth_pressure_coefficient takes it: 'ufc_3_220_20' (default) = UFC 3-220-20 Eq. 4-12 (p. 191), its log-spiral Kp for a vertical face and level ground at any wall friction; 'caquot_kerisel_1948' = the Caltrans Trenching and Shoring Manual Fig. 4-20 chart (its Example 8-1), and 'dm7_2_eq_4_12' = UFC Eq. 4-12 by name, both needing passive_wall_friction_deg given; 'dm7_2_fig_4_12' / 'dm7_2_fig_4_13' = UFC's charts, drawn for delta/phi' 0.66 only."}
 _PASSIVE_WALL_FRICTION = {"type": "float", "required": False, "description": "With passive_theory 'log_spiral', the wall friction delta (deg) in every layer below the excavation, at most its phi': the engineer's call (UFC 3-220-20 Table 4-1, p. 184; Caltrans Example 8-1 takes 15 deg on phi 30). Left out: delta/phi' = 0.66 (UFC p. 191, 'a common assumption') in a layer without cohesion, none in a layer with cohesion (UFC Fig. 4-37 step 1, p. 237: 'Passive pressures for clean coarse grained soils include wall friction'; in other soils it ignores wall friction); refused with 'caquot_kerisel_1948' or 'dm7_2_eq_4_12', which need it given (Caltrans p. 4-29: 'Given delta'). For soldier piles in coarse-grained soil UFC p. 249 takes KP 'without wall friction': give 0."}
 _PASSIVE_CHOICES = "How the passive pressure below the excavation was taken: passive_theory with each layer's Kp and the embedment, the other theory's as the alternative, the Caltrans basis; with 'log_spiral' its source (with the other sources' Kp) and each layer's wall friction. Tell the user."
+# GM-290: the braced wall's support loads, clay envelope and allowable stress
+_SUPPORT_LOAD_METHOD = {"type": "str", "required": False, "default": "hinge", "allowed_values": ["hinge", "hinge_subgrade", "simple_spans"], "description": "How the support loads and span moments are taken: 'hinge' (default) = the Caltrans Trenching and Shoring Manual's hinge method (Sec. 8-4.02, Fig. 8-7, p. 8-10; Example 8-2): the load above the first support to it, its moment M1 there carried by the span below (T1L = P/2 + M1/L, T2U = P/2 - M1/L), simple spans between supports, and the lowest support's load from below by free earth support about it (FS = 1; one support: the whole wall about it); 'hinge_subgrade' = GEC-4's hinge method (Fig. 38, p. 79): the same above, simple spans down to the excavation base, which takes a subgrade reaction R; 'simple_spans' = UFC 3-220-20 Fig. 4-54 (p. 257): simple spans between supports, the span below the lowest support a cantilever on it (UFC's 80 % moment reduction not applied). Choices give the other methods' loads."}
+_STIFF_CLAY_COEFFICIENT = {"type": "float", "required": False, "default": 0.4, "description": "The stiff clay envelope's ordinate as a multiple of gamma H, 0.2 to 0.4: 0.4 (default) per UFC 3-220-20 Fig. 4-53 (p. 256, internally supported walls, N0 <= 4); 0.2 'when movements are minimal and the construction period is short' (UFC); the Caltrans Trenching and Shoring Manual (Eq. 8-3-2, p. 8-5) leaves it between 0.2 and 0.4 to judgment. Read for stiff fissured clay (N <= 4) and, for 4 < N < 6, as the ordinate soft clay must reach (Caltrans Sec. 8-3.02: the larger of the two)."}
+_FB_RATIO = {"type": "float", "required": False, "default": 0.60, "description": "Allowable bending stress / Fy for the required section: 0.60 (default) as the Caltrans Trenching and Shoring Manual's examples take it (Example 7-3, p. 7-43; Example 8-1); GEC-4 (p. 81) recommends 0.55 for permanent walls and temporary walls that are critical; 0.66 the Caltrans railroad example (p. 9-20). Choices give the section at each."}
+_BRACED_CHOICES = _PASSIVE_CHOICES[:-len(" Tell the user.")] + " Also support_load_method with each method's support loads, the stiff clay ordinate (stiff_clay_coefficient) and, for 4 < N < 6, the soft clay envelope's ordinate rule, and Fb_ratio with the section at each printed value. Tell the user."
+_CANTILEVER_CHOICES = _PASSIVE_CHOICES[:-len(" Tell the user.")] + " Also the diagram the moment and shear come from (the FS = 1.0 body, Caltrans Example 7-3; the factored body's moment, UFC 3-220-20 Fig. 4-41, as the alternative) and Fb_ratio with the section at each printed value. Tell the user."
 
 _GEOM_PARAMS = ("excavation_depth", "layers", "supports", "surcharge",
                 "gwt_depth", "gwt_depth_excavation")
@@ -142,16 +148,24 @@ def _passive(p):
 
 def run_braced_excavation(p, *, method="braced_excavation"):
     """The braced_excavation tool's run: (result, the inputs it used)."""
-    reject_unknown_params(p, _GEOM_PARAMS + ("Fy", "FOS_passive", "embedment_increase")
+    reject_unknown_params(p, _GEOM_PARAMS + ("Fy", "FOS_passive", "embedment_increase",
+                                             "support_load_method",
+                                             "stiff_clay_coefficient", "Fb_ratio")
                           + _PASSIVE_PARAMS, method=method)
     geometry = _build_geometry(p, method=method, envelope=True)
     used = {"geometry": geometry, "Fy": p.get("Fy", 345.0),
             "FOS_passive": p.get("FOS_passive", 1.5),
             "embedment_increase": p.get("embedment_increase", 1.0),
+            "support_load_method": p.get("support_load_method", "hinge"),
+            "stiff_clay_coefficient": p.get("stiff_clay_coefficient", 0.4),
+            "Fb_ratio": p.get("Fb_ratio", 0.60),
             **_passive(p)}
     result = analyze_braced_excavation(
         geometry, Fy=used["Fy"], FOS_passive=used["FOS_passive"],
         embedment_increase=used["embedment_increase"],
+        support_load_method=used["support_load_method"],
+        stiff_clay_coefficient=used["stiff_clay_coefficient"],
+        Fb_ratio=used["Fb_ratio"],
         **{k: used[k] for k in _PASSIVE_PARAMS})
     return result, used
 
@@ -165,16 +179,19 @@ def run_cantilever_excavation(p, *, method="cantilever_excavation"):
     # No supports: a cantilever has none (GM-110).
     reject_unknown_params(
         p, tuple(k for k in _GEOM_PARAMS if k != "supports")
-        + ("FOS_passive", "Fy", "embedment_increase") + _PASSIVE_PARAMS,
+        + ("FOS_passive", "Fy", "embedment_increase", "Fb_ratio")
+        + _PASSIVE_PARAMS,
         method=method)
     geometry = _build_geometry(p, method=method)
     used = {"geometry": geometry, "FOS_passive": p.get("FOS_passive", 1.5),
             "Fy": p.get("Fy", 345.0),
             "embedment_increase": p.get("embedment_increase", 1.2),
+            "Fb_ratio": p.get("Fb_ratio", 0.60),
             **_passive(p)}
     result = analyze_cantilever_excavation(
         geometry, FOS_passive=used["FOS_passive"], Fy=used["Fy"],
         embedment_increase=used["embedment_increase"],
+        Fb_ratio=used["Fb_ratio"],
         **{k: used[k] for k in _PASSIVE_PARAMS})
     return result, used
 
@@ -184,12 +201,14 @@ def _run_cantilever_excavation(p):
 
 
 def _run_apparent_pressure(params):
-    reject_unknown_params(params, ("excavation_depth", "layers", "surcharge", "gwt_depth"),
+    reject_unknown_params(params, ("excavation_depth", "layers", "surcharge", "gwt_depth",
+                                   "stiff_clay_coefficient"),
                           method="apparent_pressure")
     require_params(params, ["excavation_depth"], method="apparent_pressure")
     layers = _build_layers(params, method="apparent_pressure", envelope=True)
     return select_apparent_pressure(layers, params["excavation_depth"], params.get("surcharge", 0.0),
-                                    gwt_depth=params.get("gwt_depth"))
+                                    gwt_depth=params.get("gwt_depth"),
+                                    stiff_clay_coefficient=params.get("stiff_clay_coefficient", 0.4))
 
 
 def _run_select_wall_section(params):
@@ -240,10 +259,6 @@ def _run_check_basal_heave(params):
     return {"error": f"Unknown method '{m}'. Allowed: ['terzaghi', 'bjerrum_eide', 'caltrans']."}
 
 
-#: The FHWA anchored-wall inputs the single-anchor route alone reads.
-_SINGLE_ANCHOR_ONLY = ("FOS_embedment", "Kp")
-
-
 def run_fhwa_apparent_pressure_anchored_wall(
         p, *, method="fhwa_apparent_pressure_anchored_wall"):
     """The FHWA anchored-wall tool's run: (result dict, the inputs it used)."""
@@ -252,19 +267,6 @@ def run_fhwa_apparent_pressure_anchored_wall(
             "inclination_deg", "Ka", "Kp", "FOS_embedment"),
         method=method)
     require_params(p, ["H", "anchor_depths", "gamma", "phi"], method=method)
-    depths = p["anchor_depths"]
-    single = [k for k in _SINGLE_ANCHOR_ONLY if k in p]
-    if single and isinstance(depths, (list, tuple)) and len(depths) > 1:
-        # GM-182: the tributary area method does not read them
-        raise ValueError(
-            f"{method}: {' and '.join(single)} apply to a single anchor "
-            "only (free earth support about the anchor, Caltrans Trenching "
-            "and Shoring Manual Sec. 8-4). With two or more anchor levels "
-            "the tributary area method (GEC-4 Figure 39) carries the load "
-            "below the lowest anchor as the subgrade reaction R and works "
-            "out no embedment; leave them out. For the embedment below the "
-            "lowest anchor, run braced_excavation with the anchors as "
-            "supports (FOS_passive about the lowest support).")
     used = {"H": p["H"], "anchor_depths": p["anchor_depths"],
             "gamma": p["gamma"], "phi": p["phi"],
             "surcharge": p.get("surcharge", 0.0),
@@ -377,23 +379,23 @@ _ANCHOR_INFO = {
 
 METHOD_INFO = {
     "braced_excavation": {"category": "Braced Excavation", "brief": "Multi-level braced excavation analysis (Terzaghi-Peck).",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "supports": {"type": "array", "required": False, "description": "Support levels [{depth (m), support_type ('strut' or 'anchor'), spacing (m), angle_deg}]."}, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa); added to the envelope as Ka*q (sand) or q (clay)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m); water pressure is added for sand envelopes."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "Embedment FS, MR = FS*MD about the lowest support (Caltrans uses 1.3)."}, "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the free-earth-support embedment."}, "passive_theory": _PASSIVE_THEORY, "log_spiral_source": _LOG_SPIRAL_SOURCE, "passive_wall_friction_deg": _PASSIVE_WALL_FRICTION, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
-        "returns": {"support_reactions": "Support loads (kN/m of wall).", "max_moment_kNm_per_m": "Max wall moment (spans and embedded portion).", "required_embedment_m": "Free-earth-support embedment below the excavation; null when no moment balance within 6H.", "free_earth": "Embedment detail: D at FS and at 1.0, lowest-support load from below.", "converged": "False when free earth support found no moment balance: the depths (and what follows from them) are null and the first note says why.", "notes": "What pressure was applied and how.", "choices": _PASSIVE_CHOICES}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "supports": {"type": "array", "required": False, "description": "Support levels [{depth (m), support_type ('strut' or 'anchor'), spacing (m), angle_deg}]."}, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa); added to the envelope as Ka*q (sand) or q (clay)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m); water pressure is added for sand envelopes."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "Embedment FS, MR = FS*MD about the lowest support (Caltrans uses 1.3)."}, "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the free-earth-support embedment."}, "support_load_method": _SUPPORT_LOAD_METHOD, "stiff_clay_coefficient": _STIFF_CLAY_COEFFICIENT, "passive_theory": _PASSIVE_THEORY, "log_spiral_source": _LOG_SPIRAL_SOURCE, "passive_wall_friction_deg": _PASSIVE_WALL_FRICTION, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}, "Fb_ratio": _FB_RATIO},
+        "returns": {"support_reactions": "Support loads (kN/m of wall), each with its parts from above and from below; a load is null when free earth support found no balance for the lowest support's part.", "support_load_method": "The method the loads were taken by.", "subgrade_reaction_kN_per_m": "The excavation base's reaction R ('hinge_subgrade' only).", "max_moment_kNm_per_m": "Max wall moment (spans and embedded portion).", "required_embedment_m": "Free-earth-support embedment below the excavation; null when no moment balance within 6H.", "free_earth": "Embedment detail: D at FS and at 1.0, lowest-support load from below.", "converged": "False when free earth support found no moment balance: the depths (and what follows from them) are null and the first note says why.", "notes": "What pressure was applied and how.", "choices": _BRACED_CHOICES}},
     "cantilever_excavation": {"category": "Cantilever Excavation", "brief": "Cantilever (unbraced) excavation wall analysis.",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS_CANTILEVER, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m)."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."}, "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0 (Caltrans/AASHTO 1.2; use 1.0 to carry all safety on FOS_passive)."}, "passive_theory": _PASSIVE_THEORY, "log_spiral_source": _LOG_SPIRAL_SOURCE, "passive_wall_friction_deg": _PASSIVE_WALL_FRICTION, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
-        "returns": {"required_embedment_m": "Embedment D = embedment_increase x D0 (Caltrans T&S Simplified Method, layered Rankine pressures with water; the log-spiral passive Kp with passive_theory 'log_spiral').", "Kp": "The passive coefficient of the layer the wall is embedded in.", "choices": _PASSIVE_CHOICES, "embedment_converged_m": "D0.", "max_moment_kNm_per_m": "Maximum moment (below the excavation).", "max_moment_depth_m": "Depth of the maximum moment.", "converged": "False when no D0 within 6H balances the moments: the wall cannot stand as a cantilever, embedment/moment/shear are null and the first note says why.", "notes": "Applicability notes."}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS_CANTILEVER, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m)."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."}, "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0 (Caltrans/AASHTO 1.2; use 1.0 to carry all safety on FOS_passive)."}, "passive_theory": _PASSIVE_THEORY, "log_spiral_source": _LOG_SPIRAL_SOURCE, "passive_wall_friction_deg": _PASSIVE_WALL_FRICTION, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}, "Fb_ratio": _FB_RATIO},
+        "returns": {"required_embedment_m": "Embedment D = embedment_increase x D0 (Caltrans T&S Simplified Method, layered Rankine pressures with water; the log-spiral passive Kp with passive_theory 'log_spiral').", "Kp": "The passive coefficient of the layer the wall is embedded in.", "choices": _CANTILEVER_CHOICES, "embedment_converged_m": "D0.", "moment_body_D0_m": "D0 at FS = 1.0, the body the moment and shear come from (Caltrans Example 7-3).", "max_moment_kNm_per_m": "Maximum moment (below the excavation), of the FS = 1.0 body.", "max_moment_depth_m": "Depth of the maximum moment.", "converged": "False when no D0 within 6H balances the moments: the wall cannot stand as a cantilever, embedment/moment/shear are null and the first note says why.", "notes": "Applicability notes."}},
     "apparent_pressure": {"category": "Earth Pressure", "brief": "Terzaghi-Peck apparent earth pressure envelope.",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa); not part of the envelope (braced_excavation adds it)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m); the sand envelope uses the effective unit weight below it."}},
-        "returns": {"type": "Envelope type.", "max_pressure_kPa": "Maximum pressure."}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa); not part of the envelope (braced_excavation adds it)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m); the sand envelope uses the effective unit weight below it."}, "stiff_clay_coefficient": _STIFF_CLAY_COEFFICIENT},
+        "returns": {"type": "Envelope type.", "shape": "'uniform' (sand), 'ramped_top' (soft to medium clay: rising over the top 0.25H, constant below; GEC-4 Fig. 23(c), UFC 3-220-20 Fig. 4-52) or 'trapezoidal' (stiff clay: constant from 0.25H to 0.75H).", "max_pressure_kPa": "Maximum pressure.", "governed_by": "Soft clay with 4 < N < 6: 'soft_clay' or 'stiff_clay_ordinate', the larger (Caltrans Sec. 8-3.02)."}},
     "select_wall_section": {"category": "Section Selection", "brief": "Select lightest HP/sheet/W section for demand.",
         "parameters": {"required_Sx_cm3": {"type": "float", "required": True, "description": "Required section modulus (cm3)."}, "section_type": {"type": "str", "required": False, "default": "hp", "allowed_values": ["hp", "sheet_pile", "w"], "description": "Section family."}},
         "returns": {"designation": "Section designation.", "Sx_cm3": "Section modulus."}},
     "check_basal_heave": {"category": "Stability", "brief": "Basal heave stability check (Terzaghi, Bjerrum-Eide, or Caltrans force-balance).",
-        "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide", "caltrans"], "description": "Check method. bjerrum_eide requires Be+Le (inverted-footing bearing ratio, NO side shear). caltrans requires B (Caltrans/Terzaghi force-balance with sidewall shear S=cu*H and the 0.7B block; optional L for the rectangular Nc correction)."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m); terzaghi and caltrans methods."}, "L": {"type": "float", "required": False, "description": "Excavation length (m) for the caltrans rectangular Nc correction (default square)."}, "Nc": {"type": "float", "required": False, "description": "Explicit chart-read bearing factor Nc (caltrans); default Skempton's (1951) Nc = 5.14 (1 + 0.2 B/L)(1 + 0.2 H/B), H/B capped at 2.5."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "width_factor": {"type": "float", "required": False, "default": 0.7, "description": "Failure-block width as a fraction of B (caltrans). Default 0.7 (Terzaghi)."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
+        "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide", "caltrans"], "description": "Check method. terzaghi = GEC-4 Eq. 35 (p. 106), FS = Nc Su / (gamma H + q - sqrt(2) Su H / B), a cut of infinite length with Nc from GEC-4 Fig. 51(c) (B/L = 0); with B left out (0), Eq. 37, FS = Nc Su / (gamma H + q), Nc 5.14; with B, parameters.FOS_ufc_fig_2_7b and a note give UFC 3-220-20 Fig. 2-7(b)'s FBH = (5.7 Su B1 + Su H) / ((gamma H + q) B1), B1 = 0.7B, which adds the side strength to the resistance and stays finite in a narrow cut where Eq. 35 runs high (UFC p. 73 note 10). bjerrum_eide requires Be+Le (inverted-footing bearing ratio, NO side shear; Nc from the Caltrans Fig. 10-15 and Eq. 10-3-4). caltrans requires B (Caltrans Sec. 10-3 force balance with sidewall shear S=cu*H and the 0.7B block; optional L for Eq. 10-3-4's rectangular Nc)."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m); terzaghi (0 = a very wide cut, GEC-4 Eq. 37) and caltrans methods."}, "L": {"type": "float", "required": False, "description": "Excavation length (m) for the caltrans rectangular Nc (Eq. 10-3-4; default square)."}, "Nc": {"type": "float", "required": False, "description": "Explicit chart-read bearing factor Nc (caltrans); default Bjerrum and Eide's, the Caltrans Fig. 10-15 square curve at H/B times 0.84 + 0.16 B/L (Eq. 10-3-4)."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "width_factor": {"type": "float", "required": False, "default": 0.7, "description": "Failure-block width as a fraction of B (caltrans). Default 0.7 (Terzaghi). A hard layer D below the base within 0.7B: give D / B (Caltrans Sec. 10-3.01, p. 10-19)."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety.", "is_stable": "Pass/fail."}},
     "fhwa_apparent_pressure_anchored_wall": {"category": "Earth Pressure", "brief": "FHWA/GEC-4 apparent-pressure anchored-wall design (tributary method): apparent envelope pe + tributary anchor loads + subgrade reaction + hinge moments + anchor design loads.",
-        "parameters": {"H": {"type": "float", "required": True, "description": "Total wall height (m)."}, "anchor_depths": {"type": "array", "required": True, "description": "Depths of the anchor levels below the top of wall (m), e.g. [2.5, 6.25]."}, "gamma": {"type": "float", "required": True, "description": "Retained-soil unit weight (kN/m3)."}, "phi": {"type": "float", "required": True, "description": "Retained-soil friction angle (deg)."}, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surface surcharge q (kPa); adds ps = Ka*q."}, "spacing": {"type": "float", "required": False, "default": 1.0, "description": "Horizontal anchor spacing (m) for the design loads."}, "inclination_deg": {"type": "float", "required": False, "default": 0.0, "description": "Anchor inclination from horizontal (deg)."}, "Ka": {"type": "float", "required": False, "description": "Active coefficient override (default Rankine Ka)."}, "Kp": {"type": "float", "required": False, "description": "Single anchor only (refused with two or more anchors): passive coefficient below the excavation (default Rankine; pass a log-spiral value)."}, "FOS_embedment": {"type": "float", "required": False, "default": 1.3, "description": "Single anchor only (refused with two or more anchors): embedment FS, MR = FS*MD about the anchor (Caltrans T&S Manual Sec. 8-4)."}},
-        "returns": {"pe_kPa": "Max apparent-pressure ordinate.", "anchors": "Per-anchor {depth, TH (horizontal load), design_load}.", "subgrade_reaction_kN_per_m": "Base reaction R (two or more anchors; None for one).", "max_moment_kN_m_per_m": "Governing wall moment.", "embedment_D_m": "Single anchor: free-earth-support embedment (Caltrans Ex 8-1 method); null with no moment balance (converged false, see notes)."}},
+        "parameters": {"H": {"type": "float", "required": True, "description": "Total wall height (m)."}, "anchor_depths": {"type": "array", "required": True, "description": "Depths of the anchor levels below the top of wall (m), e.g. [2.5, 6.25]."}, "gamma": {"type": "float", "required": True, "description": "Retained-soil unit weight (kN/m3)."}, "phi": {"type": "float", "required": True, "description": "Retained-soil friction angle (deg)."}, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surface surcharge q (kPa); adds ps = Ka*q."}, "spacing": {"type": "float", "required": False, "default": 1.0, "description": "Horizontal anchor spacing (m) for the design loads."}, "inclination_deg": {"type": "float", "required": False, "default": 0.0, "description": "Anchor inclination from horizontal (deg)."}, "Ka": {"type": "float", "required": False, "description": "Active coefficient override (default Rankine Ka)."}, "Kp": {"type": "float", "required": False, "description": "Passive coefficient below the excavation, for the embedment (default Rankine; pass a log-spiral value)."}, "FOS_embedment": {"type": "float", "required": False, "default": 1.3, "description": "Embedment FS, MR = FS*MD about the anchor, the lowest with two or more (Caltrans T&S Manual Secs. 8-4.01 and 8-4.02)."}},
+        "returns": {"pe_kPa": "Max apparent-pressure ordinate.", "anchors": "Per-anchor {depth, TH (horizontal load), design_load}.", "subgrade_reaction_kN_per_m": "Base reaction R (two or more anchors; None for one).", "max_moment_kN_m_per_m": "Governing wall moment (two or more anchors: the tributary area method's, M1 = 13/54 H1^2 pe + ps H1^2/2 at the upper anchor, GEC-4 App. A Example 1).", "embedment_D_m": "Free-earth-support embedment below the anchor (single anchor, Caltrans Ex 8-1) or the lowest anchor (two or more, Caltrans 8-4.02 hinge method steps 3-4); null with no moment balance (converged false, see notes).", "lowest_anchor_load_from_below_kN_per_m": "Two or more anchors: the free earth body's load on the lowest anchor (FS = 1).", "free_earth_max_moment_kN_m_per_m": "Two or more anchors: the free earth body's maximum moment below the lowest anchor (a note when larger than the tributary one)."}},
     "check_bottom_blowout": {"category": "Stability", "brief": "Bottom blowout (hydraulic uplift) check.",
         "parameters": {"D_embed": {"type": "float", "required": True, "description": "Wall embedment below excavation (m)."}, "hw_excess": {"type": "float", "required": True, "description": "Excess water head (m)."}, "gamma_soil": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Water unit weight (kN/m3)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety."}},
@@ -433,11 +435,7 @@ declare_applies_when(METHOD_INFO, {
     # GM-242: the log-spiral passive Kp's inputs
     **{name: {"log_spiral_source": {"passive_theory": _LOG_SPIRAL},
               "passive_wall_friction_deg": {"passive_theory": _LOG_SPIRAL}}
-       for name in ("braced_excavation", "cantilever_excavation")},
-    # GM-182: a single anchor's alone; that run's choices call them
-    # "default" when left out, so defaults_used lists them there only
-    "fhwa_apparent_pressure_anchored_wall": {
-        name: False for name in _SINGLE_ANCHOR_ONLY}})
+       for name in ("braced_excavation", "cantilever_excavation")}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):
@@ -463,10 +461,10 @@ declare_when_absent(METHOD_INFO, {
     "apparent_pressure": {"gwt_depth": _NO_WATER},
     "check_basal_heave": {
         "L": "B",
-        "Nc": ("Skempton's (1951) Nc from H/B and B/L",
-               "Nc = 5.14 (1 + 0.2 B/L)(1 + 0.2 H/B), H/B capped at 2.5, "
-               "the chart the Caltrans heave method reads; give Nc for "
-               "another chart reading")},
+        "Nc": ("Bjerrum and Eide's Nc from H/B and B/L",
+               "the Caltrans Fig. 10-15 square curve at H/B (read to H/B 5) "
+               "times 0.84 + 0.16 B/L (Eq. 10-3-4), the chart the Caltrans "
+               "heave method reads; give Nc for another chart reading")},
     "fhwa_apparent_pressure_anchored_wall": {
         "Ka": ("Rankine Ka from phi",
                "a vertical wall and level ground; give Ka for another case"),

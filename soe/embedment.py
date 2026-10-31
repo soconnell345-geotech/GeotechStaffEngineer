@@ -43,6 +43,7 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
                      passive_theory: str = "rankine",
                      log_spiral_source: Optional[str] = None,
                      passive_wall_friction_deg: Optional[float] = None,
+                     stiff_clay_coefficient: Optional[float] = None,
                      ) -> Union[CantileverSolution, SupportSolution]:
     """Full free-earth-support solution behind :func:`compute_embedment`.
 
@@ -53,7 +54,9 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
     ``converged`` is False and the first note says why. ``passive_theory``,
     ``log_spiral_source`` and ``passive_wall_friction_deg``: the passive
     coefficient below the excavation, Rankine's by default
-    (``soe.free_earth.passive_by_layer``, GM-242).
+    (``soe.free_earth.passive_by_layer``, GM-242). ``stiff_clay_coefficient``:
+    the stiff clay envelope's ordinate / gamma H above the excavation
+    (``soe.free_earth.apparent_pressure_profile``; None: 0.4, GM-290).
     """
     geometry.validate()
     prof = profile_for(geometry, passive_theory=passive_theory,
@@ -62,7 +65,8 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
     if not geometry.support_levels:
         return solve_cantilever(prof, FS_passive=FOS_passive,
                                 embedment_increase=1.2)
-    _, p = apparent_pressure_profile(geometry)
+    _, p = apparent_pressure_profile(
+        geometry, stiff_clay_coefficient=stiff_clay_coefficient)
     depths = [s.depth for s in geometry.support_levels]
     pivot = max(depths)
     body_top = 0.0 if len(depths) == 1 else pivot
@@ -76,6 +80,7 @@ def compute_embedment(geometry: ExcavationGeometry,
                       passive_theory: str = "rankine",
                       log_spiral_source: Optional[str] = None,
                       passive_wall_friction_deg: Optional[float] = None,
+                      stiff_clay_coefficient: Optional[float] = None,
                       ) -> Optional[float]:
     """Compute required wall embedment below excavation level (m).
 
@@ -92,6 +97,8 @@ def compute_embedment(geometry: ExcavationGeometry,
     passive_theory, log_spiral_source, passive_wall_friction_deg : optional
         The passive coefficient below the excavation, as
         :func:`embedment_detail` takes them (GM-242).
+    stiff_clay_coefficient : float, optional
+        The stiff clay envelope's ordinate / gamma H (None: 0.4; GM-290).
 
     Returns
     -------
@@ -103,7 +110,8 @@ def compute_embedment(geometry: ExcavationGeometry,
     detail = embedment_detail(
         geometry, FOS_passive=FOS_passive, passive_theory=passive_theory,
         log_spiral_source=log_spiral_source,
-        passive_wall_friction_deg=passive_wall_friction_deg)
+        passive_wall_friction_deg=passive_wall_friction_deg,
+        stiff_clay_coefficient=stiff_clay_coefficient)
     if isinstance(detail, CantileverSolution):
         inc = 1.2 if embedment_increase is None else embedment_increase
         base = detail.D0

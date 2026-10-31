@@ -4,8 +4,9 @@
   default to sand unstated: braced_excavation and apparent_pressure now
   refuse a layer above the excavation base without one; the cantilever
   does not read it;
-* ``FOS_embedment`` and ``Kp`` belong to the FHWA wall's single-anchor
-  route: with two or more anchors they are neither listed nor accepted;
+* ``FOS_embedment`` and ``Kp`` belonged to the FHWA wall's single-anchor
+  route; since GM-290 (GM-193) two or more anchors have an embedment below
+  the lowest anchor too, so both routes list, accept and state them;
 * the ``gwt_depth_excavation`` default is in ``defaults_used``.
 """
 
@@ -70,29 +71,34 @@ def test_the_package_refuses_a_braced_wall_without_it(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# FOS_embedment and Kp: a single anchor's alone
+# FOS_embedment and Kp: both routes (GM-290; a single anchor's alone before)
 # ---------------------------------------------------------------------------
 
 _TWO = {"H": 8.0, "anchor_depths": [2.0, 5.0], "gamma": 18.0, "phi": 32.0}
 _ONE = {"H": 6.0, "anchor_depths": [2.0], "gamma": 18.0, "phi": 32.0}
 
 
-def test_two_anchors_list_neither():
+def test_two_anchors_list_both():
     out = call_agent("soe", "fhwa_apparent_pressure_anchored_wall", _TWO)
     assert "error" not in out, out
-    assert "FOS_embedment" not in out["defaults_used"]
-    assert "Kp" not in out["defaults_used"]
+    assert out["defaults_used"]["FOS_embedment"] == 1.3
+    assert out["defaults_used"]["Kp"].startswith("Rankine Kp from phi")
     assert "Ka" in out["defaults_used"]          # both routes read Ka
-    assert "choices" not in out
+    how = {c["what"]: c["how"] for c in out["choices"]}
+    assert how == {"embedment factor of safety": "default",
+                   "passive coefficient below the excavation": "default"}
+    assert out["embedment_D_m"] > 0
 
 
 @pytest.mark.parametrize("name, value", [("FOS_embedment", 1.5),
                                          ("Kp", 4.0)])
-def test_two_anchors_refuse_them(name, value):
+def test_two_anchors_take_them(name, value):
     out = call_agent("soe", "fhwa_apparent_pressure_anchored_wall",
                      {**_TWO, name: value})
-    assert name in out["error"] and "single anchor" in out["error"]
-    assert "braced_excavation" in out["error"]
+    assert "error" not in out, out
+    assert name not in out.get("defaults_used", {})
+    base = call_agent("soe", "fhwa_apparent_pressure_anchored_wall", _TWO)
+    assert out["embedment_D_m"] != base["embedment_D_m"]
 
 
 def test_one_anchor_lists_them_and_states_them():
@@ -115,12 +121,11 @@ def test_the_package_follows_the_route(tmp_path):
     two = call_agent("calc_package", "soe_package", {**out, **_TWO})
     one = call_agent("calc_package", "soe_package", {**out, **_ONE})
     assert two["status"] == "success" and one["status"] == "success"
-    assert "FOS_embedment" not in two["defaults_used"]
-    assert "Kp" not in two["defaults_used"]
+    assert two["defaults_used"]["FOS_embedment"] == 1.3
     assert one["defaults_used"]["FOS_embedment"] == 1.3
-    refused = call_agent("calc_package", "soe_package",
-                         {**out, **_TWO, "FOS_embedment": 1.3})
-    assert "single anchor" in refused["error"]
+    given = call_agent("calc_package", "soe_package",
+                       {**out, **_TWO, "FOS_embedment": 1.3})
+    assert given["status"] == "success"
 
 
 # ---------------------------------------------------------------------------

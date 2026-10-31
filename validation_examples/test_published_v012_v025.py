@@ -26,12 +26,12 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   total driving force (24,611 lb/ft) to <0.5% (0.00% with the source-rounded Ka).
   This is the earth-pressure builder shared by sheet_pile/soe.
 
-- V-016 (GEC-4 2-tier anchored) is largely PASS via `soe.rankine_Ka` + the FHWA
-  trapezoid formulas: Ka, pe, ps, TH1, TH2, M2/M3, subgrade reaction R, and both
-  anchor design loads all reproduce to <=3%. The one soft spot is M1 (upper hinge):
-  the inventory's compact formula (13/54)*H1^2*(pe+ps) gives 70.4 vs the published
-  76 kN-m/m because GEC-4 applies the uniform surcharge over a *larger* tributary
-  than the apparent-pressure term in the top region — documented CONVENTION.
+- V-016 (GEC-4 2-tier anchored) is PASS via `soe.rankine_Ka` + the FHWA
+  trapezoid formulas: Ka, pe, ps, TH1, TH2, M1, M2/M3, subgrade reaction R, and
+  both anchor design loads all reproduce to <=3%. M1 (upper anchor) is printed
+  as 13/54 H1^2 pe + ps H1^2/2 = 76 kN-m/m (p. A-6: the surcharge's uniform
+  pressure on the cantilever); until GM-290 the module used (13/54) H1^2
+  (pe+ps) = 70.4, filed here as a CONVENTION.
 
 - V-012 (Caltrans simplified soldier pile): the published Rankine Ka=0.271 / Kp=3.69
   match the module `rankine_Ka`/`rankine_Kp` EXACTLY. But the *simplified soldier-pile
@@ -441,9 +441,10 @@ def test_v014_caltrans_force_balance_high_level():
     """PASS (v5.3): the new `check_basal_heave_caltrans` reproduces the Caltrans
     force-balance FS through the high-level path — INCLUDING the sidewall-shear
     resistance term S = cu*H that the Bjerrum-Eide bearing-ratio method omits.
-    Nc from the Skempton/Bjerrum-Eide form (7.68 vs the chart's 7.6); the block
-    balance F_RS=40.3, W=37.8, surcharge=3.15, S=15.0, F_dr=25.95 -> FS=1.55
-    (pub 1.54, within the +/-0.1 chart-read tolerance)."""
+    Nc from Fig. 10-15 as read (GM-290): 8.48 square at H/B = 2 (pub 8.5) x
+    (0.84 + 0.16/3) = 7.575 (pub 7.6); the block balance F_RS=39.8, W=37.8,
+    surcharge=3.15, S=15.0, F_dr=25.95 -> FS=1.533 (pub 1.54). Until GM-290 Nc
+    was Skempton's formula, 7.68, FS 1.55."""
     H_m = _V014_H * FT
     B_m = _V014_B * FT
     L_m = _V014_L * FT
@@ -453,12 +454,12 @@ def test_v014_caltrans_force_balance_high_level():
     res = check_basal_heave_caltrans(H=H_m, cu=cu, gamma=gamma_si, B=B_m, L=L_m,
                                      q_surcharge=q_si)
     p = res.parameters
-    assert p["Nc"] == pytest.approx(7.6, abs=0.15)                 # chart 7.6
+    assert p["Nc"] == pytest.approx(7.6, abs=0.05)                 # chart 7.6
     assert res.resistance / KFT == pytest.approx(40.0, abs=0.6)    # F_RS 40.0 k/ft
     assert p["W_kN_per_m"] / KFT == pytest.approx(37.8, abs=0.2)   # W
     assert p["side_shear_S_kN_per_m"] / KFT == pytest.approx(15.0, abs=0.2)  # S=cu*H
     assert res.demand / KFT == pytest.approx(26.0, abs=0.3)        # F_dr 26.0 k/ft
-    assert res.FOS == pytest.approx(1.54, abs=0.1)                 # pub FS 1.54
+    assert res.FOS == pytest.approx(1.54, abs=0.01)                # pub FS 1.54
     # explicit chart Nc reproduces 1.54 nearly exactly
     res_chart = check_basal_heave_caltrans(H=H_m, cu=cu, gamma=gamma_si, B=B_m,
                                            L=L_m, q_surcharge=q_si, Nc=7.6)
@@ -468,9 +469,10 @@ def test_v014_caltrans_force_balance_high_level():
 def test_v014_module_method_differs_from_caltrans():
     """N/A (scope): the module's `check_basal_heave_bjerrum_eide` computes the
     inverted-footing bearing FOS = cu*Nc/(gamma*H + q), with NO sidewall-shear term
-    and NOT the 0.7B force block. For these inputs it returns FOS ~ 0.86 -- a
-    different (and here far more conservative) basal-heave formulation. Its Nc table
-    also reads ~6.71 at H/B=2, Be/Le=1/3 vs the Caltrans chart's 7.6. Documented gap."""
+    and NOT the 0.7B force block. For these inputs it returns FOS ~ 0.97 -- a
+    different (and here far more conservative) basal-heave formulation. Its Nc is
+    the Caltrans chart's (Fig. 10-15 and Eq. 10-3-4, GM-290): 7.575 against the
+    printed 7.6 (until GM-290 an unprinted table, 6.71). Documented gap."""
     H_m = _V014_H * FT
     B_m = _V014_B * FT
     L_m = _V014_L * FT
@@ -479,19 +481,18 @@ def test_v014_module_method_differs_from_caltrans():
     q_si = 300 * PSF
     res = check_basal_heave_bjerrum_eide(H_m, cu, gamma_si, Be=B_m, Le=L_m,
                                          q_surcharge=q_si)
-    # module FOS is the bearing-capacity ratio, ~0.86 -- not the Caltrans 1.54
-    assert res.FOS == pytest.approx(0.86, abs=0.05)
+    # module FOS is the bearing-capacity ratio, ~0.97 -- not the Caltrans 1.54
+    assert res.FOS == pytest.approx(0.97, abs=0.01)
     assert abs(res.FOS - 1.54) > 0.3
-    # module Nc table value at this geometry differs from the Caltrans chart 7.6
+    # the module's Nc is the Caltrans chart's (GM-290)
     Nc_module = _interpolate_Nc_bjerrum(H_m / B_m, B_m / L_m)
-    assert Nc_module == pytest.approx(6.71, abs=0.1)
-    assert abs(Nc_module - 7.6) > 0.5
+    assert Nc_module == pytest.approx(7.6, abs=0.05)
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # V-016 : GEC-4 Design Example 1 — two-tier anchored soldier-beam wall (SI)
-#   Largely PASS via soe.rankine_Ka + the FHWA trapezoid formulas; M1 is a
-#   documented surcharge-tributary CONVENTION delta.
+#   PASS via soe.rankine_Ka + the FHWA trapezoid formulas, M1 included
+#   (GM-290).
 # ════════════════════════════════════════════════════════════════════════════
 
 # Given (SI as published): H = 10 m; anchors at H1 = 2.5 m and 6.25 m below top
@@ -540,22 +541,16 @@ def test_v016_tributary_anchor_loads():
 
 def test_v016_hinge_moments():
     """M2/M3 (lower span) PASS exactly: (1/10)*H2^2*(pe+ps) = 66 kN-m/m.
-    M1 (upper hinge) CONVENTION: the inventory's compact form
-    (13/54)*H1^2*(pe+ps) = 70.4, while GEC-4 publishes 76 because the uniform
-    surcharge ps is applied over a larger tributary than the apparent term in the
-    top region. The dominant earth-pressure part (13/54)*pe*H1^2 = 65.6 is exact;
-    Mmax for design = max(M1,M2,M3) = 76 (governed by M1)."""
+    M1 (upper anchor) PASS: as printed (p. A-6), M1 = 13/54 H1^2 pe + ps H1^2/2
+    = 65.6 + 10.0 = 75.6, "use 76" -- the surcharge's uniform pressure on the
+    cantilever, not 13/54 of it. Mmax for design = max(M1,M2,M3) = 76 (governed
+    by M1). Until GM-290 the module took (13/54)*H1^2*(pe+ps) = 70.4."""
     pe, ps = 43.6, 3.2
     M23 = (1.0 / 10.0) * _V016_H2 ** 2 * (pe + ps)
     assert M23 == pytest.approx(66.0, rel=0.02)       # pub M2,3 = 66 kN-m/m
 
-    M1_earth = (13.0 / 54.0) * pe * _V016_H1 ** 2     # dominant apparent-pressure part
-    assert M1_earth == pytest.approx(65.6, rel=0.01)
-
-    M1_compact = (13.0 / 54.0) * _V016_H1 ** 2 * (pe + ps)
-    assert M1_compact == pytest.approx(70.4, rel=0.01)   # inventory compact form
-    # documented delta vs the published 76 (surcharge-tributary convention)
-    assert abs(M1_compact - 76.0) / 76.0 < 0.08          # within 8% (CONVENTION)
+    M1 = (13.0 / 54.0) * pe * _V016_H1 ** 2 + ps * _V016_H1 ** 2 / 2.0
+    assert M1 == pytest.approx(75.6, abs=0.05)        # pub 75.6, use 76
 
 
 def test_v016_subgrade_reaction():
@@ -578,9 +573,8 @@ def test_v016_fhwa_apparent_pressure_high_level():
     """PASS (v5.3): the new `fhwa_apparent_pressure_anchored_wall` reproduces the
     GEC-4 two-anchor design example NATIVELY through the high-level path — pe, ps,
     the tributary anchor loads TH1/TH2, subgrade reaction R, and the anchor design
-    loads DL1/DL2 — no hand-assembled tributary formulas. (Mmax uses the compact
-    (13/54)H1^2(pe+ps) top-hinge form = 70.4, the documented CONVENTION vs the
-    published 76 surcharge-tributary value.)"""
+    loads DL1/DL2, and Mmax = M1 = 76 (GM-290) — no hand-assembled tributary
+    formulas."""
     r = fhwa_apparent_pressure_anchored_wall(
         H=_V016_H, anchor_depths=[_V016_H1, _V016_H1 + _V016_H2],
         gamma=_V016_GAMMA, phi=_V016_PHI, surcharge=_V016_QS,
@@ -593,3 +587,4 @@ def test_v016_fhwa_apparent_pressure_high_level():
     assert r["subgrade_reaction_kN_per_m"] == pytest.approx(37.0, rel=0.03)
     assert r["anchors"][0]["design_load_kN"] == pytest.approx(435.0, rel=0.02)
     assert r["anchors"][1]["design_load_kN"] == pytest.approx(445.0, rel=0.02)
+    assert r["max_moment_kN_m_per_m"] == pytest.approx(76.0, rel=0.01)  # pub 76

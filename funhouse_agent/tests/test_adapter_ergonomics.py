@@ -654,10 +654,16 @@ class TestSheetPileEmbedmentIncrease:
     def test_multiplier_applied(self):
         from funhouse_agent.adapters.sheet_pile import METHOD_REGISTRY as R
         layers = [{"thickness": 12, "unit_weight": 18, "friction_angle": 32}]
-        base = R["cantilever_wall"]({"excavation_depth": 4.0, "layers": layers})
+        # the default is 1.2 since GM-290 (Caltrans T&S 7-5.02 step 3)
+        base = R["cantilever_wall"]({"excavation_depth": 4.0, "layers": layers,
+                                     "embedment_increase": 1.0})
         inc = R["cantilever_wall"]({"excavation_depth": 4.0, "layers": layers,
-                                    "embedment_increase": 1.2})
+                                    "embedment_increase": 1.4})
         assert inc["embedment_depth_m"] == pytest.approx(
+            1.4 * base["embedment_depth_m"], rel=1e-3)
+        default = R["cantilever_wall"]({"excavation_depth": 4.0,
+                                        "layers": layers})
+        assert default["embedment_depth_m"] == pytest.approx(
             1.2 * base["embedment_depth_m"], rel=1e-3)
 
 
