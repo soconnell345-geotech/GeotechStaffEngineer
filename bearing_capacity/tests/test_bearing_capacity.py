@@ -414,7 +414,8 @@ class TestClayPhiZero:
     Problem: Square footing 2m x 2m, Df=1m
     Clay: cu=50 kPa, phi=0, gamma=18 kN/m³
 
-    For phi=0: qult = cu*Nc*sc*dc + q
+    For phi=0: qult = cu*Nc*(sc + dc - 1) + q, d_c added as UFC 3-220-20
+    Eq. 5-21 adds Table 5-7's 0.4 k (p. 295; GM-281: it was multiplied)
     Nc = 5.14, sc = 1 + 0.2*(B/L) = 1.2, dc = 1 + 0.4*k
     """
 
@@ -447,9 +448,10 @@ class TestClayPhiZero:
         # q = 18 * 1 = 18 kPa
         assert result.q_overburden == pytest.approx(18.0, rel=1e-4)
 
-        # Cohesion term = cu * Nc * sc * dc = 50 * 5.14 * 1.2 * 1.2 = 370.08
-        expected_coh = 50.0 * 5.14 * 1.2 * 1.2
-        assert result.term_cohesion == pytest.approx(expected_coh, rel=0.01)
+        # Cohesion term = cu * Nc * (1 + 0.2 B/L + 0.4 k) = 50 * 5.14 * 1.4
+        # = 359.8 (Eq. 5-21; it was 50 * 5.14 * 1.2 * 1.2 = 370.08)
+        expected_coh = 50.0 * 5.14 * (1.0 + 0.2 + 0.4 * 0.5)
+        assert result.term_cohesion == pytest.approx(expected_coh, rel=1e-9)
 
         # Overburden term = q * Nq * sq * dq = 18 * 1 * sq * dq
         # For phi=0: sq=1+0*tan(0)=1, dq=1.0

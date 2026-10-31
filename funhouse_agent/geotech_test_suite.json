@@ -29,16 +29,16 @@
       "values": [
         {
           "name": "q_ult_kPa",
-          "value": 582,
+          "value": 567,
           "rtol": 0.1
         },
         {
           "name": "q_allow_kPa",
-          "value": 194,
+          "value": 189,
           "rtol": 0.1
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (bearing_capacity.bearing_capacity_analysis)"
+      "source": "75 x 5.14 x (1 + 0.2 + 0.4 x 0.5) + 18 x 1.5 = 566.7 kPa: UFC 3-220-20 Eq. 5-21 and Table 5-7 (p. 295), as its Example B-3 works it (Table B-17, p. 622); 2026-10-30 (GM-281; was 582, the depth factor multiplied)"
     }
   },
   {

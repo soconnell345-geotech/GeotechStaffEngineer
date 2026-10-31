@@ -158,6 +158,10 @@ class BearingCapacityResult:
     # Method info
     ngamma_method: str = "vesic"
     factor_method: str = "vesic"
+    #: The cohesion term adds d_c - 1 to s_c i_c b_c g_c instead of
+    #: multiplying by d_c: Vesic's factors at phi = 0, whose d_c is Brinch
+    #: Hansen's (UFC 3-220-20 Table 5-7, added in Eq. 5-21; GM-281).
+    c_term_adds_dc: bool = False
 
     # Two-layer info
     is_two_layer: bool = False
@@ -384,11 +388,18 @@ class BearingCapacityResult:
         ]
         method = ("Terzaghi (1943)" if self.factor_method == "terzaghi"
                   else f"{self.factor_method} factors")
-        note = (f"q_ult = c Nc sc dc ic bc gc + q Nq sq dq iq bq gq + "
+        # at phi = 0 Vesic's c term adds d_c, as UFC 3-220-20 Eq. 5-21 does
+        # (GM-281)
+        c_term = ("c Nc (sc ic bc gc + dc - 1)" if self.c_term_adds_dc
+                  else "c Nc sc dc ic bc gc")
+        note = (f"q_ult = {c_term} + q Nq sq dq iq bq gq + "
                 f"0.5 γ' B' Nγ sγ dγ iγ bγ "
                 f"gγ ({method}, Nγ by {self.ngamma_method}); "
                 f"q = {self.q_overburden:.2f} kPa, γ' = "
                 f"{self.gamma_eff:.2f} kN/m³, B' = {self.B_eff:.3f} m")
+        if self.c_term_adds_dc:
+            note += ("; at phi = 0 the cohesion term adds d_c - 1 = 0.4 k, "
+                     "as UFC 3-220-20 Eq. 5-21 adds Table 5-7's d_c")
         if self.is_two_layer:
             note += ("; two-layer case: the terms are those of the upper "
                      "layer, q_ult is the load-spread combination")

@@ -368,13 +368,18 @@ class BearingCapacityAnalysis:
                      "Df/B = 1 and Brinch Hansen's k = arctan(Df/B) beyond "
                      "it (Tables 5-7 and 5-8 note B), the smaller factors")
         elif dm == "hansen" and phi == 0:
-            # Table 5-7's d_c at phi = 0; the note C formula and the
-            # printed Table 5-8 d_c do not bear (GM-230)
+            # Table 5-7's d_c at phi = 0, added as Eq. 5-21 adds it
+            # (GM-281); the note C formula and the printed Table 5-8 d_c do
+            # not bear (GM-230)
             basis = (DEPTH_K_BASIS + "; at phi = 0 Table 5-7 (p. 295) "
                      "prints d_c = 0.4 k, added in Eq. 5-21's 1 + s_c + "
-                     "d_c - i_c - b_c - g_c; the module multiplies by 1 + "
-                     "0.4 k. d_q = 1, as Table 5-7 puts no correction on "
-                     "the q term, and d_gamma = 1")
+                     "d_c - i_c - b_c - g_c. The cohesion term adds it the "
+                     "same way, c N_c (s_c i_c b_c g_c + 0.4 k), the other "
+                     "factors multiplied as GEC-6 Eq. 5-14 (p. 63) and EN "
+                     "1997-1 D.1 (p. 158) print them; with the shape factor "
+                     "alone that is Eq. 5-21, as UFC 3-220-20 Example B-3 "
+                     "works it (Table B-17, p. 622). d_q = 1, as Table 5-7 "
+                     "puts no correction on the q term, and d_gamma = 1")
         elif dm == "hansen" and self._no_cohesion():
             basis = (DEPTH_K_BASIS + "; d_q = 1 + 2 k tan phi (1 - sin "
                      "phi)^2, Table 5-8; d_gamma = 1; d_c does not enter "
@@ -483,6 +488,11 @@ class BearingCapacityAnalysis:
             qult = c*Nc*sc*dc*ic*bc*gc
                  + q*Nq*sq*dq*iq*bq*gq
                  + 0.5*gamma*B'*Ng*sg*dg*ig*bg*gg
+        except that at phi = 0 Vesic's cohesion term adds Brinch Hansen's
+        d_c, as UFC 3-220-20 Eq. 5-21 (p. 295) adds its Table 5-7 d_c = 0.4 k:
+            c*Nc*(sc*ic*bc*gc + dc - 1)
+        the other factors multiplied as GEC-6 Eq. 5-14 (p. 63) and EN 1997-1
+        D.1 (p. 158) print them (GM-281).
         """
         if self.factor_method == "terzaghi":
             return self._compute_terzaghi()
@@ -528,8 +538,14 @@ class BearingCapacityAnalysis:
         gamma = self.soil.gamma_below_footing(Df, B)
 
         # General bearing capacity equation
-        # Term 1: cohesion term
-        term_c = c * Nc * sc * dc * ic * bc * gc
+        # Term 1: cohesion term. At phi = 0 Vesic's d_c is Brinch Hansen's
+        # 0.4 k, which Eq. 5-21 adds (UFC 3-220-20 p. 295; GM-281: it was
+        # multiplied). Meyerhof's d_c multiplies (Table 5-6, Eq. 5-18)
+        dc_added = phi == 0 and self.factor_method == "vesic"
+        if dc_added:
+            term_c = c * Nc * (sc * ic * bc * gc + dc - 1.0)
+        else:
+            term_c = c * Nc * sc * dc * ic * bc * gc
         # Term 2: overburden term
         term_q = q * Nq * sq * dq * iq * bq * gq
         # Term 3: self-weight term
@@ -561,6 +577,7 @@ class BearingCapacityAnalysis:
             term_selfweight=term_g,
             ngamma_method=self.ngamma_method,
             factor_method=self.factor_method,
+            c_term_adds_dc=dc_added,
         )
 
     def _compute_terzaghi(self) -> BearingCapacityResult:
