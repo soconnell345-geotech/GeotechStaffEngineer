@@ -56,10 +56,11 @@ SOIL_CLASSES = ("silt", "sand", "gravel")
 
 def fellenius_table(soil: str, phi_deg: float) -> tuple:
     """(beta, Nt, phi') from :data:`FELLENIUS_TABLE` for ``soil`` at phi'
-    (degrees), as GEC-12 Steps 2b and 5b read it ("use Table 7-9 to
-    estimate beta coefficient from phi' angle", p. 257): linear in phi'
-    across the soil type's phi' range, the low beta and Nt at its low phi'
-    (UFC Table 6-15 prints them as those pairs). A phi' outside the range
+    (degrees), for GEC-12 Steps 2b and 5b ("use Table 7-9 to estimate beta
+    coefficient from phi' angle", p. 257): a straight line in phi' between
+    the soil type's range ends, the low beta and Nt at its low phi' (UFC
+    Table 6-15 pairs beta's ends with phi' that way). The line is this
+    module's reading; neither manual prints it. A phi' outside the range
     takes the range's end; the phi' used is returned third."""
     (p0, p1), (b0, b1), (n0, n1) = FELLENIUS_TABLE[soil]
     phi = min(max(phi_deg, p0), p1)

@@ -97,6 +97,16 @@ class TestTheToe:
                                                f"Table 6-17, p. 421, Cheng "
                                                f"(2004) equation")
         assert c["alternatives"][0].endswith("Nt_method 'cheng'")
+        # the line between Table 6-17's ends is the module's, not printed;
+        # the ends are the printed alternatives (GM-283 review)
+        assert ("(sand: Nt 30 to 150 over phi' 32 to 40 deg)"
+                in c["basis"])
+        assert "this module's reading, not printed" in c["basis"]
+        assert c["alternatives"][1:3] == [
+            "Nt 30, the sand range's low end in Table 6-17 (phi' 32 deg): "
+            "give Nt 30",
+            "Nt 150, the sand range's high end in Table 6-17 (phi' 40 deg): "
+            "give Nt 150"]
 
     def test_cheng_on_request(self):
         a = _toe_in_sand(a_Nt_method="cheng")
@@ -182,9 +192,18 @@ class TestTheSandBeta:
         assert c["chosen"] == "beta 0.450 at 8-12 m (sand, phi' 34 deg)"
         assert c["how"] == "default"
         for text in ("Table 7-9 (p. 256; Step 2b, p. 257)",
-                     "Table 6-15 prints for driven piles (p. 414)",
-                     "§6-7.4 step 2, p. 476"):
+                     "Table 6-15 (p. 414) pairs beta's ends with phi'",
+                     "(sand: beta 0.30 at phi' 32 deg, 0.90 at 40 deg)",
+                     "this module's reading; neither manual prints it",
+                     "§6-7.4 step 2 (p. 476)"):
             assert text in c["basis"], text
+        # the printed range ends, as given betas (GM-283 review)
+        assert c["alternatives"][:2] == [
+            "beta 0.30, the sand range's low end in Table 6-15 (phi' 32 "
+            "deg), conservative for resistance: give the layer beta 0.30",
+            "beta 0.90, the sand range's high end in Table 6-15 (phi' 40 "
+            "deg), conservative for negative skin friction: give the layer "
+            "beta 0.90"]
 
     def test_a_given_beta_is_kept(self):
         a = _toe_in_sand(beta=0.33)

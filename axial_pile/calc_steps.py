@@ -679,8 +679,10 @@ def _factored_steps(result) -> list:
 def _beta_notes(result, analysis=None) -> str:
     """Where the beta method's beta came from, for the method step."""
     text = ("\u03b2 from local experience where a layer gives one "
-            "(Step 2a), else GEC-12 Table 7-9 by soil type, linear in "
-            "\u03c6' across the type's \u03c6' range (Step 2b).")
+            "(Step 2a), else GEC-12 Table 7-9 by soil type (Step 2b), a "
+            "straight line in \u03c6' between the type's range ends: the "
+            "line is this module's reading; Table 7-9 prints only the "
+            "ranges.")
     parts = [f"{lb['depth_top_m']:.1f}-{lb['depth_bottom_m']:.1f} m: "
              f"\u03b2 = {lb['beta']:.3f} ({lb['beta_source']})"
              for lb in result.layer_breakdown or [] if "beta_source" in lb]

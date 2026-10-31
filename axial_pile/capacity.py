@@ -235,7 +235,8 @@ class AxialPileAnalysis:
     beta_coefficients : str, optional
         The beta method's beta and Nt where a layer gives none (Steps 2b,
         5b): "table_7_9" (default and only value: Table 7-9 by the layer's
-        soil type, linear in phi' across the type's phi' range). A clay toe
+        soil type, a straight line in phi' between the type's range ends,
+        this module's reading; Table 7-9 prints only the ranges). A clay toe
         takes ``cohesive_Nt``. "from_phi" (beta = (1 - sin phi') tan phi')
         was removed in GM-282: GEC-12 does not print it; give a layer's
         ``beta`` and ``Nt`` from local experience instead (Steps 2a, 5a).
@@ -1480,6 +1481,10 @@ class AxialPileAnalysis:
                 if soil not in soils:
                     soils.append(soil)
         soils.sort(key=list(TABLE_7_9).index)
+        pairs = "; ".join(
+            f"{s} beta {TABLE_7_9[s][1][0]:.2f} at {TABLE_7_9[s][0][0]:g} "
+            f"deg, {TABLE_7_9[s][1][1]:.2f} at {TABLE_7_9[s][0][1]:g} deg"
+            for s in soils)
         chosen = ("Table 7-9 by soil type, linear in phi' across the "
                   "type's phi' range: " + "; ".join(
                       f"{s} beta {TABLE_7_9[s][1][0]:g}-"
@@ -1493,13 +1498,28 @@ class AxialPileAnalysis:
                       name="beta_coefficients"),
             "GEC-12 Steps 2b and 5b (pp. 257-258): in the absence of local "
             "experience, use Table 7-9 (after Fellenius 2014) to estimate "
-            "beta and Nt from phi'; the table gives ranges by soil type "
-            "(clay, silt, sand, gravel), read here linearly in phi' across "
-            "the type's phi' range (a layer's soil_class, else clay or "
-            "sand); a clay toe takes cohesive_Nt (p. 256); GEC-12 prints no "
-            "formula for beta or Nt from phi' alone",
-            ["a layer's own beta and Nt from local experience (Steps 2a, "
-             "5a)"])
+            "beta and Nt from phi'. Table 7-9 (p. 256) prints only each "
+            "soil type's range of phi', beta and Nt (clay, silt, sand, "
+            "gravel); UFC 3-220-20 Table 6-15 (p. 414) pairs beta's ends "
+            "with phi' for driven piles" + (f" ({pairs})" if pairs else "")
+            + ". The straight line in phi' between the ends, and a phi' "
+            "outside the range held at its end, is this module's reading, "
+            "not printed; GEC-12 prints no formula for beta or Nt from "
+            "phi'. The soil type is a layer's soil_class, else clay or "
+            "sand; a clay toe takes cohesive_Nt (p. 256). UFC 3-220-20 "
+            "§6-7.4 step 2 (p. 476): lower alpha and beta are conservative "
+            "for resistance, higher alpha and beta for negative skin "
+            "friction",
+            [f"the {s} range's {end} end in Table 7-9, beta "
+             f"{TABLE_7_9[s][1][i]:.2f} and Nt {TABLE_7_9[s][2][i]:g} (phi' "
+             f"{TABLE_7_9[s][0][i]:g} deg), {use}: give the layers beta "
+             f"{TABLE_7_9[s][1][i]:.2f} and the toe layer Nt "
+             f"{TABLE_7_9[s][2][i]:g}"
+             for s in soils for i, end, use in (
+                 (0, "low", "the least resistance"),
+                 (1, "high", "the most resistance"))]
+            + ["a layer's own beta and Nt from local experience (Steps 2a, "
+               "5a)"])
 
     def _layer_skin_friction(self, layer: AxialSoilLayer, layer_bottom: float,
                              z_top: float, z_bottom: float, perimeter: float,

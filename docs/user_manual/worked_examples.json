@@ -1227,9 +1227,11 @@
           "what": "toe bearing capacity factor Nt",
           "chosen": "Nt 60.0 (UFC 3-220-20 Table 6-17, p. 421, Fellenius (2021) column = GEC-12 Table 7-9; sand, phi' 34 deg)",
           "how": "default",
-          "basis": "The module's default. The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, p. 258), sigma'v final (skin_friction_stress); the drag procedures leave the method to the engineer (UFC \u00a76-7.4 step 2; GEC-12 \u00a77.3.6.1 Step 2).",
+          "basis": "The module's default. The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, p. 258), sigma'v final (skin_friction_stress); the drag procedures leave the method to the engineer (UFC \u00a76-7.4 step 2; GEC-12 \u00a77.3.6.1 Step 2). Table 6-17's Fellenius (2021) column, like GEC-12 Table 7-9 (p. 256), prints only each soil type's Nt range beside its phi' range (sand: Nt 30 to 150 over phi' 32 to 40 deg); the straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading, not printed. UFC \u00a76-7.4 step 2's advice on lower and higher values is for side friction (alpha and beta); for the toe, neutral_plane_comparison gives the neutral plane at 0 %, 50 % and 100 % of the toe resistance.",
           "alternatives": [
             "Nt 39.0 (UFC 3-220-20 Table 6-17, p. 421, Cheng (2004) equation; phi' 34 deg, Z/b 45.0): Nt_method 'cheng'",
+            "Nt 30, the sand range's low end in Table 6-17 (phi' 32 deg): give Nt 30",
+            "Nt 150, the sand range's high end in Table 6-17 (phi' 40 deg): give Nt 150",
             "Nt given: local experience (GEC-12 Step 5a) or a mobilized value"
           ]
         },
@@ -1246,8 +1248,10 @@
           "what": "beta in the cohesionless soil, 6-18 m",
           "chosen": "beta 0.450 at 6-18 m (sand, phi' 34 deg)",
           "how": "default",
-          "basis": "The module's default: GEC-12 Table 7-9 (p. 256; Step 2b, p. 257), the pairs UFC 3-220-20 Table 6-15 prints for driven piles (p. 414), by soil_class (sand unless given), linear in phi' and held at the range's ends. Higher beta is conservative for drag, lower for resistance (UFC \u00a76-7.4 step 2, p. 476).",
+          "basis": "The module's default, by soil_class (sand unless given). GEC-12 Table 7-9 (p. 256; Step 2b, p. 257) prints only each soil type's range of phi', beta and Nt; UFC 3-220-20 Table 6-15 (p. 414) pairs beta's ends with phi' for driven piles (sand: beta 0.30 at phi' 32 deg, 0.90 at 40 deg). The straight line in phi' between the ends, and a phi' outside the range held at its end, is this module's reading; neither manual prints it. UFC 3-220-20 \u00a76-7.4 step 2 (p. 476): lower alpha and beta are conservative for resistance, higher alpha and beta for negative skin friction.",
           "alternatives": [
+            "beta 0.30, the sand range's low end in Table 6-15 (phi' 32 deg), conservative for resistance: give the layer beta 0.30",
+            "beta 0.90, the sand range's high end in Table 6-15 (phi' 40 deg), conservative for negative skin friction: give the layer beta 0.90",
             "beta given: local experience (GEC-12 Step 2a), or UFC 3-220-20 Eq 6-6, K tan delta (Fig 6-13, Table 6-14)",
             "soil_class 'silt' or 'gravel'"
           ]

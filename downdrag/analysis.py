@@ -2700,19 +2700,34 @@ class DowndragAnalysis:
                            ["Nt given: a mobilized value"])]
         other_nt, other_src = r["other"]
         other_how = "cheng" if r["how"] == "fellenius" else "fellenius"
+        soil = self.soil.layer_at_depth(self.pile_length).table_soil
+        (p0, p1), _, (n0, n1) = FELLENIUS_TABLE[soil]
         basis = (
             ("The module's default. " if r["how"] == "fellenius" else "")
             + "The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 "
             "Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, "
             f"p. 258), sigma'v {self.skin_friction_stress} "
             "(skin_friction_stress); the drag procedures leave the method "
-            "to the engineer (UFC §6-7.4 step 2; GEC-12 §7.3.6.1 Step 2).")
+            "to the engineer (UFC §6-7.4 step 2; GEC-12 §7.3.6.1 Step 2). "
+            "Table 6-17's Fellenius (2021) column, like GEC-12 Table 7-9 "
+            "(p. 256), prints only each soil type's Nt range beside its "
+            f"phi' range ({soil}: Nt {n0:g} to {n1:g} over phi' {p0:g} to "
+            f"{p1:g} deg); the straight line in phi' between the ends, and "
+            "a phi' outside the range held at its end, is this module's "
+            "reading, not printed. UFC §6-7.4 step 2's advice on lower and "
+            "higher values is for side friction (alpha and beta); for the "
+            "toe, neutral_plane_comparison gives the neutral plane at 0 %, "
+            "50 % and 100 % of the toe resistance.")
         return [choice(NT_CHOICE, f"Nt {r['Nt']:.1f} ({r['source']})",
                        how_given(self.Nt_method, "fellenius",
                                  name="Nt_method"),
                        basis,
                        [f"Nt {other_nt:.1f} ({other_src}): Nt_method "
                         f"'{other_how}'",
+                        f"Nt {n0:g}, the {soil} range's low end in Table "
+                        f"6-17 (phi' {p0:g} deg): give Nt {n0:g}",
+                        f"Nt {n1:g}, the {soil} range's high end in Table "
+                        f"6-17 (phi' {p1:g} deg): give Nt {n1:g}",
                         "Nt given: local experience (GEC-12 Step 5a) or a "
                         "mobilized value"])]
 
@@ -2773,17 +2788,34 @@ class DowndragAnalysis:
             text = "beta " + "; ".join(
                 f"{s['beta']:.3f} at {s['top_m']:g}-{s['bottom_m']:g} m "
                 f"({s['soil']}, phi' {s['phi_used']:g} deg)" for s in table)
+            ends = {soil: FELLENIUS_TABLE[soil] for soil in sorted(
+                {s["soil"] for s in table}, key=list(FELLENIUS_TABLE).index)}
+            pairs = "; ".join(
+                f"{soil}: beta {b0:.2f} at phi' {p0:g} deg, {b1:.2f} at "
+                f"{p1:g} deg"
+                for soil, ((p0, p1), (b0, b1), _) in ends.items())
             out.append(choice(
                 f"{BETA_CHOICE}, {_depths(table)}", text, "default",
-                "The module's default: GEC-12 Table 7-9 (p. 256; Step 2b, "
-                "p. 257), the pairs UFC 3-220-20 Table 6-15 prints for "
-                "driven piles (p. 414), by soil_class (sand unless given), "
-                "linear in phi' and held at the range's ends. Higher beta "
-                "is conservative for drag, lower for resistance (UFC "
-                "§6-7.4 step 2, p. 476).",
-                ["beta given: local experience (GEC-12 Step 2a), or UFC "
-                 "3-220-20 Eq 6-6, K tan delta (Fig 6-13, Table 6-14)",
-                 "soil_class 'silt' or 'gravel'"]))
+                "The module's default, by soil_class (sand unless given). "
+                "GEC-12 Table 7-9 (p. 256; Step 2b, p. 257) prints only each "
+                "soil type's range of phi', beta and Nt; UFC 3-220-20 Table "
+                "6-15 (p. 414) pairs beta's ends with phi' for driven piles "
+                f"({pairs}). The straight line in phi' between the ends, "
+                "and a phi' outside the range held at its end, is this "
+                "module's reading; neither manual prints it. UFC 3-220-20 "
+                "§6-7.4 step 2 (p. 476): lower alpha and beta are "
+                "conservative for resistance, higher alpha and beta for "
+                "negative skin friction.",
+                [f"beta {b:.2f}, the {soil} range's {end} end in Table 6-15 "
+                 f"(phi' {p:g} deg), {use}: give the layer beta {b:.2f}"
+                 for soil, ((p0, p1), (b0, b1), _) in ends.items()
+                 for b, p, end, use in (
+                     (b0, p0, "low", "conservative for resistance"),
+                     (b1, p1, "high",
+                      "conservative for negative skin friction"))]
+                + ["beta given: local experience (GEC-12 Step 2a), or UFC "
+                   "3-220-20 Eq 6-6, K tan delta (Fig 6-13, Table 6-14)",
+                   "soil_class 'silt' or 'gravel'"]))
         return out
 
     def skin_friction_choices(self) -> list:

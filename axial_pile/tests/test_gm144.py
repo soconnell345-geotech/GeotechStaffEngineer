@@ -274,6 +274,13 @@ def test_beta_from_table_7_9_by_soil_type():
     c = _by_what(r)["beta and Nt (beta method)"]
     assert "Steps 2b and 5b" in c["basis"]
     assert "gravel beta 0.35-0.8" in c["chosen"]
+    # the line between Table 7-9's ends is the module's reading; the
+    # printed ends are the alternatives (GM-283 review)
+    assert "this module's reading, not printed" in c["basis"]
+    assert "gravel beta 0.35 at 35 deg, 0.80 at 45 deg" in c["basis"]
+    assert ("the gravel range's low end in Table 7-9, beta 0.35 and Nt 60 "
+            "(phi' 35 deg), the least resistance: give the layers beta 0.35 "
+            "and the toe layer Nt 60") in c["alternatives"]
     # GM-282: Table 7-9 is the default; the unprinted 'from_phi' is gone
     assert c["how"] == "default"
     assert (base.Q_skin, base.Q_tip) == (r.Q_skin, r.Q_tip)

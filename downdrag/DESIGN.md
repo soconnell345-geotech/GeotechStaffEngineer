@@ -444,7 +444,7 @@ curve was the one GM-282 removed from axial_pile. Now:
 
 | What | Route | Source |
 |---|---|---|
-| β, cohesionless, not given | Table 7-9 by `soil_class` (silt 0.25-0.50 over 28-34°, sand 0.30-0.90 over 32-40°, the default, gravel 0.35-0.80 over 35-45°), linear in φ' and held at the range's ends (a warning) | GEC-12 §7.2.1.3.4 Step 2b (p. 257) and Table 7-9 (p. 256); UFC 3-220-20 Table 6-15 (p. 414) prints the same values for driven piles as pairs ("β = 0.30 for φ' = 32°, β = 0.90 for φ' = 40°") |
+| β, cohesionless, not given | Table 7-9 by `soil_class` (silt 0.25-0.50 over 28-34°, sand 0.30-0.90 over 32-40°, the default, gravel 0.35-0.80 over 35-45°), a straight line in φ' between the range's ends and held at them (a warning); the line is this module's reading, not printed | GEC-12 §7.2.1.3.4 Step 2b (p. 257) and Table 7-9 (p. 256); UFC 3-220-20 Table 6-15 (p. 414) prints the same values for driven piles as pairs ("β = 0.30 for φ' = 32°, β = 0.90 for φ' = 40°") |
 | Nt, cohesionless toe, not given, `Nt_method="fellenius"` (default) | Table 6-17's Fellenius (2021) column = Table 7-9's Nt (silt 20-40, sand 30-150, gravel 60-300), the same reading | UFC 3-220-20 §6-5.4.3.1, Eq 6-20 and Table 6-17 (p. 421); GEC-12 Eq. 7-20, Step 5b (p. 258) |
 | Nt, `Nt_method="cheng"` | Nq ≈ 1.2 (Z/b)^-0.437 exp[6.34 (Z/b)^0.0486 tan φ'], at most 200 "unless supported by project-specific information" (a warning); Z the pile length, b `pile_diameter` | the equation under UFC Table 6-17 (p. 421, after Cheng 2004); it reproduces all 18 Cheng cells the table prints (`tests/test_toe_and_beta.py`) |
 | Nt, clay toe | 9 (× cu) | UFC 3-220-20 §6-5.4.3.3, p. 424 (Brinch Hansen 1957; Eq 6-27, p. 423); App. B-5.4, p. 637 |
