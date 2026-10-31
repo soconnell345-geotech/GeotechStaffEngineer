@@ -86,11 +86,11 @@ specific check, the governing reference, and the corrective action.
    modeled matches the design scenario.
 
 6. **FEM strength reduction — SRM vs LE (`fem2d`).** The SRM FOS is the strength-
-   reduction factor at which the FE model fails (non-convergence). Since the
-   2026-10-14 fixes it no longer depends much on the mesh (coarse to fine
-   agree within about 2 % on the validation problems) and sits close to the
-   LE FOS; on a new kind of problem still check a mesh-refinement sequence
-   (`srm_mesh_refinement_study`) before trusting a single mesh. Use **T6**
+   reduction factor at which the FE model fails (non-convergence). In this
+   module it depends little on the mesh (coarse to fine agree within about
+   2 % on its validation problems) and sits close to the LE FOS; on a new
+   kind of problem still check a mesh-refinement sequence
+   (`fem2d_srm_mesh_refinement_study`) before trusting a single mesh. Use **T6**
    elements: **CST LOCKS** on collapse / FOS problems (overpredicts, never
    collapses) — do not use CST for FOS or bearing-capacity limit loads.
 

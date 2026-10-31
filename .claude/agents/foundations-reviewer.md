@@ -79,8 +79,9 @@ specific check, the governing reference, and the corrective action.
 5. **Driven-pile method matches the layer (`axial_pile`).** Nordlund
    (cohesionless), Tomlinson / α (cohesive), or β / effective-stress — the method
    must match each layer's soil type; skin + toe are summed; the effective-
-   overburden integration is split at the GWT; a critical-depth limit applies in
-   sand. Uplift/tension uses SKIN only (no toe) with the tension factor. A per-
+   overburden integration is split at the GWT; a Nordlund toe in sand takes
+   sigma'p at most 3 ksf (GEC-12 Sec. 7.2.1.3.1, Step 8, p. 244) unless the
+   run says otherwise, and the side resistance has no limit. Uplift/tension uses SKIN only (no toe) with the tension factor. A per-
    layer `toe_friction_angle` should reflect the actual bearing stratum.
 
 6. **Drilled shaft (`drilled_shaft`, GEC-10).** α (cohesive side), β
@@ -116,17 +117,15 @@ specific check, the governing reference, and the corrective action.
    or rock unless `top_exclusion` is given) carries no side resistance.
 
 7. **Pile group (`pile_group`).** ONE right-hand sign convention end-to-end —
-   the module's +Mx sense is a DOCUMENTED convention (an intentional change vs
-   the 5.0 line); confirm the applied-moment sense matches it before flagging a
-   sign. A group efficiency (Converse-Labarre or the chosen rule) is applied to
+   the module's +Mx sense is its DOCUMENTED convention; confirm the
+   applied-moment sense matches it before flagging a sign. A group efficiency (Converse-Labarre or the chosen rule) is applied to
    the group capacity; block failure is checked for closely-spaced groups in
    clay; group settlement (Meyerhof / equivalent-raft) exceeds the single-pile
    value.
 
 8. **Wave equation / drivability (`wave_equation`).** Smith elasto-plastic
    springs (quake, damping); the damping model (`smith` vs `smith_viscous`) is a
-   documented choice whose DEFAULT changed vs the 5.0 line — confirm it matches
-   the intent. The bearing graph relates blow count to ULTIMATE capacity (apply
+   documented choice — confirm the one the run used matches the intent. The bearing graph relates blow count to ULTIMATE capacity (apply
    the FS / resistance factor separately); check driving stresses vs allowable.
 
 9. **Downdrag (`downdrag`).** Fellenius neutral-plane method: negative skin

@@ -27,7 +27,7 @@ from funhouse_agent.deep.prompt import (  # noqa: E402
     build_domain_prompt, judgment_calls_section)
 from funhouse_agent.dispatch import ANALYSIS_MODULES  # noqa: E402
 from funhouse_agent.reviewer import (  # noqa: E402
-    CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT)
+    CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT)
 
 
 class _Quiet(BaseChatModel):
@@ -77,7 +77,7 @@ def _spec(captured, name):
 
 
 def _references_prompt(options: bool, consult: bool = False) -> str:
-    return (CONSULTANT_FRAMING + agent_mod._REFERENCES_CONCISION
+    return (CONSULTANT_ROLE + agent_mod._REFERENCES_CONCISION
             + (agent_mod._REFERENCES_OPTIONS if options else "")
             + (agent_mod._REFERENCES_JUDGMENT_CALLS if consult else "")
             + agent_mod._REFERENCES_BUDGET.format(

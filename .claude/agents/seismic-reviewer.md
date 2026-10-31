@@ -81,7 +81,7 @@ specific check, the governing reference, and the corrective action.
    overburden, and fines correction applied to (N1)60 → (N1)60cs consistently.
 
 4. **Mononobe-Okabe earth pressure (`seismic_geotech`).** Sign conventions
-   (DESIGN SG-3): wall batter `beta` is POSITIVE when the back face leans toward
+   (the module's own): wall batter `beta` is POSITIVE when the back face leans toward
    the backfill (Coulomb α = 90° + β). At `kh = kv = 0`, `KAE → Coulomb Ka` and
    `KPE → Coulomb Kp` exactly (a computed KAE/KPE that does not collapse to the
    static Coulomb value at zero acceleration is wrong). Active case uses inertia
