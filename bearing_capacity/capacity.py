@@ -370,8 +370,11 @@ class BearingCapacityAnalysis:
         elif dm == "hansen" and phi == 0:
             # Table 5-7's d_c at phi = 0; the note C formula and the
             # printed Table 5-8 d_c do not bear (GM-230)
-            basis = (DEPTH_K_BASIS + "; at phi = 0, d_c = 1 + 0.4 k, Table "
-                     "5-7, and d_q = d_gamma = 1")
+            basis = (DEPTH_K_BASIS + "; at phi = 0 Table 5-7 (p. 295) "
+                     "prints d_c = 0.4 k, added in Eq. 5-21's 1 + s_c + "
+                     "d_c - i_c - b_c - g_c; the module multiplies by 1 + "
+                     "0.4 k. d_q = 1, as Table 5-7 puts no correction on "
+                     "the q term, and d_gamma = 1")
         elif dm == "hansen" and self._no_cohesion():
             basis = (DEPTH_K_BASIS + "; d_q = 1 + 2 k tan phi (1 - sin "
                      "phi)^2, Table 5-8; d_gamma = 1; d_c does not enter "

@@ -241,8 +241,9 @@ DEPTH_FACTOR_BASIS = {
                "d_gamma = 1. Table 5-8 prints d_c = 1 + k (1 - sin phi)^2 "
                "N_q/N_c, half of that, while its printed s_c and i_c follow "
                "the note C formula term for term; the formula's d_c tends to 1 + "
-               "0.39 k as phi goes to 0, Table 5-7's 1 + 0.4 k, the printed "
-               "one to 1 + 0.19 k"),
+               "0.39 k as phi goes to 0, against 1 + 0.4 k from Table 5-7's "
+               "d_c = 0.4 k (p. 295, added in Eq. 5-21), the printed one to "
+               "1 + 0.19 k"),
     "gec6": ("FHWA GEC-6 Eq. 5-14 (p. 63): the depth factor on the "
              "surcharge term alone (d_c = d_gamma = 1); d_q of Table 5-4 "
              "(Brinch Hansen 1970, p. 57) for Df/B from 1, which k = "
@@ -319,7 +320,8 @@ def depth_factors(phi_deg: float, Df: float, B: float,
     Vesic/Hansen: UFC 3-220-20 Table 5-8 (p. 296); GEC-6 Table 5-4 (p. 57).
         dq = 1 + 2*tan(phi)*(1-sin(phi))² * k
         dc = dq - (1-dq)/(Nc*tan(phi))   for phi > 0 (Table 5-8 note C)
-        dc = 1 + 0.4*k                    for phi = 0 (UFC Table 5-7)
+        dc = 1 + 0.4*k                    for phi = 0 (Table 5-7's 0.4 k,
+                                          added in Eq. 5-21)
         dgamma = 1.0
     Table 5-8's printed d_c is half of its note C formula's
     (:func:`ufc_table_5_8_printed_dc`); the note C form is used (GM-214).
