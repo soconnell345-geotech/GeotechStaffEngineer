@@ -2,14 +2,20 @@
 Hammer models and database for wave equation analysis.
 
 Provides data classes for impact hammers (single-acting, diesel, hydraulic)
-and a built-in database of common hammers used in North American practice.
+and a built-in database of common hammers used in North American practice,
+with the ram weights, strokes and rated energies of GEC-12 Vol 2 Appendix C,
+"Pile Hammer Information" (pp. 519-541), converted to SI.
 
 All units are SI: kN, m, seconds, kg.
 
+Every hammer is a rigid ram striking at v = sqrt(2 g h efficiency): GEC-12
+Vol 2 Eq. 15-1 (p. 358) with the stroke times the hammer efficiency, the
+"portion of the potential ram energy that is available in the form of
+kinetic ram energy" (Sec. 12.6.2, p. 205). A diesel hammer's combustion
+is not modelled.
+
 References:
-    FHWA GEC-12, Chapter 12
-    WEAP87 Manual (FHWA, Goble & Rausche)
-    Manufacturer specifications (Vulcan, Delmag, ICE, APE)
+    FHWA GEC-12 Vol 2, Chapters 12 and 15, and Appendix C (pp. 519-541)
 """
 
 from dataclasses import dataclass
@@ -29,11 +35,14 @@ class Hammer:
     stroke : float
         Rated stroke height (m).
     efficiency : float
-        Energy transfer efficiency (0 to 1). Accounts for losses in
-        the hammer mechanism. Typical: 0.67 for air/steam, 0.80 for
-        diesel, 0.95 for hydraulic.
+        Hammer efficiency (0 to 1): the share of the potential ram energy
+        that reaches the ram as kinetic energy at impact (GEC-12 Vol 2
+        p. 205). GEC-12 Vol 2 prints 0.67 for an air hammer and 0.80 for
+        an open end diesel (Example 6, p. 185), and "relatively high (say
+        0.95)" for a hydraulic hammer whose ram kinetic energy is
+        measured and displayed (p. 205).
     hammer_type : str
-        One of 'single_acting', 'diesel', 'hydraulic'.
+        One of 'single_acting', 'diesel', 'hydraulic': a label only.
     rated_energy : float, optional
         Rated energy (kN-m). If None, computed as ram_weight * stroke.
     ram_stiffness : float, optional
@@ -79,31 +88,41 @@ class Hammer:
 
 # ─── Built-in Hammer Database ───────────────────────────────────────
 
+# Ram weight, stroke and rated energy as GEC-12 Vol 2 Appendix C prints
+# them (kips, ft, kip-ft; hammer number and page in each comment), in kN, m
+# and kN-m. Efficiencies: 0.67 air/steam, 0.80 open end diesel (GEC-12 Vol 2
+# Example 6, p. 185). Before GM-294 the Vulcan 08 and 010 strokes were
+# 0.914 m, and the diesels' strokes and rated energies (and the D19-32 and
+# D62-22 rams) were not the print's.
 _HAMMER_DB = {
-    # Vulcan single-acting air/steam hammers
-    "Vulcan 06": Hammer("Vulcan 06", 28.9, 0.914, 0.67, "single_acting"),
-    "Vulcan 08": Hammer("Vulcan 08", 35.6, 0.914, 0.67, "single_acting"),
-    "Vulcan 010": Hammer("Vulcan 010", 44.5, 0.914, 0.67, "single_acting"),
-    "Vulcan 012": Hammer("Vulcan 012", 53.4, 0.991, 0.67, "single_acting"),
-    "Vulcan 014": Hammer("Vulcan 014", 62.3, 0.914, 0.67, "single_acting"),
-    "Vulcan 020": Hammer("Vulcan 020", 89.0, 0.914, 0.67, "single_acting"),
-    "Vulcan 060": Hammer("Vulcan 060", 267.0, 0.914, 0.67, "single_acting"),
+    # Vulcan single-acting air/steam hammers (ECH; Nos. 206-215, pp. 522-523)
+    "Vulcan 06": Hammer("Vulcan 06", 28.9, 0.914, 0.67, "single_acting"),    # 6.5 k, 3.00 ft
+    "Vulcan 08": Hammer("Vulcan 08", 35.6, 0.991, 0.67, "single_acting"),    # 8 k, 3.25 ft
+    "Vulcan 010": Hammer("Vulcan 010", 44.5, 0.991, 0.67, "single_acting"),  # 10 k, 3.25 ft
+    "Vulcan 012": Hammer("Vulcan 012", 53.4, 0.991, 0.67, "single_acting"),  # 12 k, 3.25 ft
+    "Vulcan 014": Hammer("Vulcan 014", 62.3, 0.914, 0.67, "single_acting"),  # 14 k, 3.00 ft
+    "Vulcan 020": Hammer("Vulcan 020", 89.0, 0.914, 0.67, "single_acting"),  # 20 k, 3.00 ft
+    "Vulcan 060": Hammer("Vulcan 060", 266.9, 0.914, 0.67, "single_acting"), # 60 k, 3.00 ft
 
-    # Delmag diesel hammers
-    "Delmag D12": Hammer("Delmag D12", 12.2, 2.50, 0.80, "diesel",
-                         rated_energy=30.5),
-    "Delmag D19-32": Hammer("Delmag D19-32", 19.0, 2.80, 0.80, "diesel",
-                            rated_energy=53.2),
-    "Delmag D30-32": Hammer("Delmag D30-32", 29.4, 2.80, 0.80, "diesel",
-                            rated_energy=82.3),
-    "Delmag D46-32": Hammer("Delmag D46-32", 45.1, 2.80, 0.80, "diesel",
-                            rated_energy=126.3),
-    "Delmag D62-22": Hammer("Delmag D62-22", 61.5, 2.50, 0.80, "diesel",
-                            rated_energy=153.8),
+    # Delmag open end diesel hammers (OED)
+    "Delmag D12": Hammer("Delmag D12", 12.2, 2.505, 0.80, "diesel",
+                         rated_energy=30.7),     # No. 3, p. 519: 2.75 k, 8.22 ft, 22.61 k-ft
+    "Delmag D19-32": Hammer("Delmag D19-32", 17.8, 3.234, 0.80, "diesel",
+                            rated_energy=57.5),  # No. 40, p. 520: 4.00 k, 10.61 ft, 42.44 k-ft
+    "Delmag D30-32": Hammer("Delmag D30-32", 29.4, 3.484, 0.80, "diesel",
+                            rated_energy=102.3), # No. 15, p. 519: 6.60 k, 11.43 ft, 75.44 k-ft
+    "Delmag D46-32": Hammer("Delmag D46-32", 45.1, 3.673, 0.80, "diesel",
+                            rated_energy=165.7), # No. 26, p. 519: 10.14 k, 12.05 ft, 122.19 k-ft
+    "Delmag D62-22": Hammer("Delmag D62-22", 60.8, 3.673, 0.80, "diesel",
+                            rated_energy=223.2), # No. 30, p. 519: 13.66 k, 12.05 ft, 164.60 k-ft
 
-    # ICE hydraulic hammers
-    "ICE I-30V2": Hammer("ICE I-30V2", 29.4, 1.22, 0.95, "hydraulic"),
-    "ICE I-46V2": Hammer("ICE I-46V2", 45.1, 1.22, 0.95, "hydraulic"),
+    # ICE I-series open end diesels, with stepwise fuel pump settings (GEC-12
+    # Vol 2 Sec. 12.6.3, p. 206). Listed as hydraulic, 1.22 m stroke and 0.95
+    # efficiency, before GM-294.
+    "ICE I-30V2": Hammer("ICE I-30V2", 29.4, 3.505, 0.80, "diesel",
+                         rated_energy=103.1),    # No. 1504, p. 536: 6.61 k, 11.50 ft, 76.05 k-ft
+    "ICE I-46V2": Hammer("ICE I-46V2", 45.1, 3.600, 0.80, "diesel",
+                         rated_energy=162.4),    # No. 1506, p. 536: 10.14 k, 11.81 ft, 119.77 k-ft
 }
 
 
@@ -139,3 +158,26 @@ def list_hammers() -> list:
         Sorted hammer names.
     """
     return sorted(_HAMMER_DB.keys())
+
+
+def diesel_warning(hammer: Hammer) -> Optional[str]:
+    """The warning a run with a diesel hammer carries, or None (GM-294
+    review). A diesel is run here as a rigid ram at its rated energy at
+    every resistance; GEC-12 Vol 2 Sec. 12.6.3 (p. 206) says its stroke
+    rises with the soil resistance and that an optimistic stroke gives
+    non-conservative nominal resistances. On GEC-12 Example 6 (p. 182)
+    this model gives the ICE 42-S 50 and 103 blows/ft where GEC-12's
+    wave equation analysis gives 99 and 209."""
+    if hammer.hammer_type != "diesel":
+        return None
+    return (f"{hammer.name} is a diesel hammer, run here as a rigid ram "
+            f"striking with {hammer.energy:.1f} kN-m times efficiency "
+            f"{hammer.efficiency:.2f} at every resistance: no combustion, "
+            "and no stroke that changes with the resistance (GEC-12 Vol 2 "
+            "Sec. 12.6.3, p. 206: \"The diesel hammer stroke increases when "
+            "the soil resistance ... increases\"). An optimistic stroke "
+            "\"could lead to high stroke predictions and, therefore, "
+            "non-conservative predictions of nominal resistance\" (p. 206): "
+            "the blow counts here are likely low. On GEC-12's Example 6 "
+            "(p. 182) this model gives the ICE 42-S 50 and 103 blows/ft "
+            "where GEC-12's wave equation analysis gives 99 and 209.")

@@ -13,8 +13,8 @@ Methods:
 
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
-    FHWA GEC-12, Chapter 12
-    WEAP87 Manual (FHWA, Goble & Rausche)
+    FHWA GEC-12 (FHWA-NHI-16-009) Vol 2, Chapter 12
+    UFC 3-220-20 (2025), Sec. 6-9.2
 """
 
 from wave_equation.hammer import Hammer, get_hammer, list_hammers

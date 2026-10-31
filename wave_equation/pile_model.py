@@ -9,7 +9,7 @@ All units are SI: kN, m, kg, seconds.
 
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
-    WEAP87 Manual, Chapter 3
+    FHWA GEC-12 Vol 2, Sec. 12.3 (p. 155) and 12.6.8 (pp. 213-214)
 """
 
 import math
@@ -32,12 +32,13 @@ class PileSegment:
     elastic_modulus : float
         Elastic modulus (kPa).
     unit_weight_material : float
-        Material unit weight (kN/m^3). Steel: 78.5, concrete: 23.6.
+        Material unit weight (kN/m^3). Steel: 77.3 (492 lb/ft^3, GEC-12
+        Vol 2 p. 462), concrete: 23.6.
     """
     length: float
     area: float
     elastic_modulus: float
-    unit_weight_material: float = 78.5
+    unit_weight_material: float = 77.3
 
     @property
     def mass(self) -> float:
@@ -101,7 +102,7 @@ def discretize_pile(
     area: float,
     elastic_modulus: float,
     segment_length: float = 1.0,
-    unit_weight_material: float = 78.5,
+    unit_weight_material: float = 77.3,
 ) -> PileModel:
     """Discretize a uniform pile into mass-spring segments.
 
@@ -112,12 +113,17 @@ def discretize_pile(
     area : float
         Cross-sectional area (m^2).
     elastic_modulus : float
-        Elastic modulus (kPa). Steel: 200e6, concrete: 30e6.
+        Elastic modulus (kPa). Steel: 200e6 (29,000 ksi, GEC-12 Vol 1
+        p. 317). Concrete: varies with the compression strength, on the
+        order of 4,000 ksi (27.6e6 kPa) (Vol 1 p. 317); its dynamic
+        modulus is usually higher than the static (Vol 2 p. 213).
     segment_length : float
         Target segment length (m). Actual may differ slightly to
-        evenly divide the pile.
+        evenly divide the pile. About 1 m (GEC-12 Vol 2 p. 155;
+        GRLWEAP's default 3.3 ft, p. 213).
     unit_weight_material : float
-        Material unit weight (kN/m^3). Default 78.5 (steel).
+        Material unit weight (kN/m^3). Default 77.3, steel (492 lb/ft^3,
+        GEC-12 Vol 2 p. 462).
 
     Returns
     -------

@@ -29,6 +29,7 @@ from calc_package.data_model import (
     InputItem, CalcStep, CheckItem, FigureData, CalcSection, TableData,
 )
 from calc_package.renderer import figure_to_base64
+from wave_equation.hammer import diesel_warning
 
 DISPLAY_NAME = "Wave Equation Analysis (Smith 1-D Model)"
 
@@ -37,9 +38,11 @@ REFERENCES = [
     'of a Pile Driving Analysis by the Wave Equation." ASCE, Vol. 86, No. EM4.',
     'Goble, G.G. & Rausche, F. (1976). "Wave Equation Analysis of Pile '
     'Driving — WEAP Program." FHWA IP-76-14.',
-    'FHWA GEC-12 (FHWA-NHI-16-009): Design and Construction of Driven '
-    'Pile Foundations, Chapter 12 — Wave Equation Analysis.',
-    'WEAP87 Manual (FHWA, Goble & Rausche) — Hammer, Cushion, and Soil Models.',
+    'FHWA GEC-12 (FHWA-NHI-16-009/010): Design and Construction of Driven '
+    'Pile Foundations, Vol 2 Chapter 12 — Wave Equation Analysis; Vol 1 '
+    'Chapter 8 — driving stress limits.',
+    'UFC 3-220-20 (2025): Foundations and Earth Structures, Sec. 6-9.2 — '
+    'Wave Mechanics Basics (quake, Smith and Smith viscous damping).',
 ]
 
 
@@ -152,7 +155,7 @@ def get_input_summary(result, analysis) -> List[InputItem]:
             InputItem("E_pile", "Pile elastic modulus",
                       f"{pile_params.get('E', 0):,.0f}", "kPa"),
             InputItem("\u03b3_pile", "Pile unit weight",
-                      f"{pile_params.get('unit_weight', 78.5):.1f}", "kN/m\u00b3"),
+                      f"{pile_params.get('unit_weight', 77.3):.1f}", "kN/m\u00b3"),
         ])
 
     # ── Soil ──
@@ -260,7 +263,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="v_impact",
             result_value=f"{hammer.impact_velocity:.3f}",
             result_unit="m/s",
-            reference="FHWA GEC-12 Eq. 15-1 (p. 358), stroke times efficiency",
+            reference=("FHWA GEC-12 Vol 2 Eq. 15-1 (p. 358), with the "
+                       "stroke times the hammer efficiency (Sec. 12.6.2, "
+                       "p. 205)"),
+            # A diesel run as a drop ram at its rated energy (GM-294 review)
+            notes=diesel_warning(hammer) or "",
         ))
 
     # Courant condition
@@ -279,12 +286,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         ))
         model_items.append(CalcStep(
             title="Courant Stability Condition",
-            equation="\u0394t \u2264 \u0394L / c  (applied with safety factor 0.8)",
+            equation=("\u0394t \u2264 \u0394L / c, divided by Smith's safety "
+                      "factor against numerical instability, 1.6"),
             substitution=f"\u0394t \u2264 {seg_len:.3f} / {c_wave:,.0f}",
             result_name="\u0394t_Courant",
             result_value=f"{seg_len / c_wave * 1000:.4f}",
             result_unit="ms",
-            reference="WEAP87 Manual, Chapter 5",
+            reference=("FHWA GEC-12 Vol 2 Sec. 12.6.8 (p. 213): the factor "
+                       "is normally 1.6 in GRLWEAP"),
         ))
 
     sections.append(CalcSection(
@@ -300,23 +309,24 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         equation=(
             "Loading:   R_static = (R_ult / Q) \u00d7 (d - d_plastic) \u2264 R_ult\n"
             "Unloading: elastic slope R_ult / Q from the peak \u2014 a plastic\n"
-            "offset d_plastic remains (= permanent set for the toe spring)"
+            "offset d_plastic remains"
         ),
         substitution="Q = quake (elastic limit displacement)",
         result_name="Model",
         result_value="Smith elasto-plastic spring (kinematic, with memory)",
-        reference="Smith (1960); FHWA GEC-12 Sec. 12.3 (p. 156)",
+        reference="Smith (1960); FHWA GEC-12 Vol 2 Sec. 12.3 (p. 156)",
     ))
 
-    damping_model = getattr(soil, "damping_model", "smith") if soil is not None else "smith"
+    damping_model = (getattr(soil, "damping_model", "smith") if soil is not None
+                     else _used(analysis, "damping_model"))
     if damping_model == "smith_viscous":
         damping_step = CalcStep(
             title="Dynamic Soil Resistance (Smith-Viscous Damping)",
-            equation="R_total = R_static + J \u00d7 R_ultimate \u00d7 v  (loading only)",
+            equation="R_total = R_static + J \u00d7 R_ultimate \u00d7 v",
             substitution="J = Smith damping factor (s/m), v = pile segment velocity",
             result_name="Model",
-            result_value="Damping proportional to ultimate resistance (Smith-viscous variant)",
-            reference="Smith (1960); GRLWEAP Manual (Smith-viscous damping option)",
+            result_value="Damping proportional to the fully mobilized static resistance (Smith viscous)",
+            reference="UFC 3-220-20 (2025) Sec. 6-9.2 (pp. 487-488)",
         )
     else:
         damping_step = CalcStep(
@@ -324,10 +334,46 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             equation="R_total = R_static + J \u00d7 |R_static| \u00d7 v",
             substitution="J = Smith damping factor (s/m), v = pile segment velocity",
             result_name="Model",
-            result_value="Damping proportional to mobilized static resistance (Smith 1960 / GRLWEAP default)",
-            reference="Smith (1960); FHWA GEC-12 Sec. 12.3 (p. 156)",
+            result_value="Damping proportional to the mobilized static resistance (Smith damping)",
+            reference=("Smith (1960); FHWA GEC-12 Vol 2 Sec. 12.3 (p. 156); "
+                       "UFC 3-220-20 (2025) p. 487"),
         )
     soil_items.append(damping_step)
+
+    # The permanent set, as GEC-12 prints it (the soil's quakes as run)
+    if soil is not None:
+        f_s, q_s, q_t = soil.skin_fraction, soil.quake_side, soil.quake_toe
+    elif analysis.get("quake_side") is not None:
+        f_s, q_s, q_t = (_used(analysis, "skin_fraction"),
+                         _used(analysis, "quake_side"),
+                         _used(analysis, "quake_toe"))
+    else:
+        f_s = None
+    soil_items.append(CalcStep(
+        title="Permanent Set per Blow",
+        equation=("s = D_toe,max - Q_avg,  Q_avg = f_skin \u00d7 Q_side + "
+                  "(1 - f_skin) \u00d7 Q_toe"),
+        substitution=("" if f_s is None else
+                      f"Q_avg = {f_s:.2f} \u00d7 {q_s * 1000:.2f} + "
+                      f"{1 - f_s:.2f} \u00d7 {q_t * 1000:.2f}"),
+        result_name="Q_avg",
+        result_value=("" if f_s is None else
+                      f"{(f_s * q_s + (1 - f_s) * q_t) * 1000:.2f}"),
+        result_unit="" if f_s is None else "mm",
+        reference=("FHWA GEC-12 Vol 2 Sec. 12.3 (p. 158); the weights are "
+                   "the module's assumption"),
+        notes=("D_toe,max = maximum pile toe displacement. GEC-12 prints "
+               "'a weighted average of the shaft and toe quakes' and names "
+               "no weights; the shares of R_ult on the shaft and at the toe "
+               "are this module's assumption, not printed. Other weightings: "
+               "a plain average"
+               + ("" if f_s is None else
+                  f", Q_avg = {(q_s + q_t) / 2 * 1000:.2f} mm")
+               + ", or the toe quake alone"
+               + ("" if f_s is None else f", Q_avg = {q_t * 1000:.2f} mm")
+               + "; where the quakes differ, the choices list the blow "
+                 "counts each gives."),
+    ))
 
     if soil is not None:
         skin_R = soil.R_ultimate * soil.skin_fraction
@@ -341,7 +387,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             ),
             result_name="R_skin, R_toe",
             result_value=f"{skin_R:,.0f} kN, {toe_R:,.0f} kN",
-            reference="WEAP87 Manual, Chapter 4",
+            reference=("Input; the skin spread evenly over the pile. FHWA "
+                       "GEC-12 Vol 2 p. 212: stresses, tension above all, "
+                       "are sensitive to the resistance distribution and "
+                       "the percentage at the toe"),
         ))
 
         soil_items.append(TableData(
@@ -355,8 +404,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                  f"{soil.damping_side:.2f}",
                  f"{soil.damping_toe:.2f}", "s/m"],
             ],
-            notes="Typical values: Q = 2.5 mm (FHWA GEC-12 Sec. 12.6.7, p. 211). "
-                  "J_side: 0.16 (sand), 0.65 (clay). J_toe: 0.50 (sand/clay).",
+            notes=("FHWA GEC-12 Vol 2 Sec. 12.6.7 (pp. 211-212): shaft "
+                   "quake 2.5 mm (0.10 in); toe quake 2.5 mm for a "
+                   "non-displacement pile (p. 171), D/120 to D/60 for a "
+                   "displacement pile, 1 mm (0.04 in) on hard rock. "
+                   "J_side 0.16 s/m non-cohesive soils, 0.33 silty and "
+                   "clayey sands and sandy silts, 0.49 cohesive silts and "
+                   "sandy clays, 0.66 cohesive soils; J_toe about 0.49 "
+                   "s/m for most soils."),
         ))
 
     sections.append(CalcSection(
@@ -425,7 +480,7 @@ def _bearing_graph_steps(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="N_analyses",
         result_value=str(len(result.R_values)),
-        reference="FHWA GEC-12 Section 12.5",
+        reference="FHWA GEC-12 Vol 2 Sec. 12.3 (p. 158) and 12.5.1",
     ))
 
     valid = result.blow_counts < 1e5
@@ -479,34 +534,24 @@ def _bearing_graph_steps(result, analysis) -> List[CalcSection]:
         notes=f"= {max_tens / 1000:,.1f} MPa",
     ))
 
-    # Stress limits (if pile data available)
-    pile = analysis.get("pile")
-    if pile is not None and pile.n_segments > 0:
-        # Estimate modulus from wave speed and density
-        # c = sqrt(E*1000/rho), so E = rho * c^2 / 1000 (kPa)
-        c_wave = pile.wave_speeds[0]
-        area = pile.segment_areas[0]
-        seg_mass = pile.masses[0]
-        seg_len = pile.segment_lengths[0]
-        rho = seg_mass / (area * seg_len)  # kg/m^3
-        E_kPa = rho * c_wave**2 / 1000  # kPa
-
-        # FHWA limits: 0.90*fy for steel (fy ~ 250 MPa), 0.85*f'c for concrete
-        # We show the stress ratio to yield
-        comp_ratio = max_comp / E_kPa * 100 if E_kPa > 0 else 0
-        stress_items.append(CalcStep(
-            title="Compressive Stress Ratio",
-            equation="\u03c3_comp / E_pile \u00d7 100 (strain, %)",
-            substitution=f"{max_comp:,.0f} / {E_kPa:,.0f} \u00d7 100",
-            result_name="\u03b5_comp",
-            result_value=f"{comp_ratio:.4f}",
-            result_unit="%",
-            notes=(
-                "For steel piles (fy = 250 MPa = 250,000 kPa): "
-                f"stress ratio = {max_comp / 250000 * 100:.1f}% of fy. "
-                "FHWA limit: 0.90 \u00d7 fy."
-            ),
-        ))
+    # The steel driving stress limit, as the yield stress this stress needs
+    # (the pile's grade is not an input; GEC-12 Vol 1 Eq. 8-33)
+    stress_items.append(CalcStep(
+        title="Steel Driving Stress Limit",
+        equation=("\u03c3_dr = \u03c6_da \u00d7 0.9 \u00d7 F_y \u2265 "
+                  "\u03c3_comp,max with \u03c6_da = 1.0, so "
+                  "F_y \u2265 \u03c3_comp,max / 0.9"),
+        substitution=f"F_y \u2265 {max_comp / 1000:,.1f} / 0.9",
+        result_name="F_y,needed",
+        result_value=f"{max_comp / 1000 / 0.9:,.0f}",
+        result_unit="MPa",
+        reference="FHWA GEC-12 Vol 1 Eq. 8-33 (p. 445)",
+        notes=("For a steel pile. New steel H-piles have a minimum yield "
+               "stress of 50 ksi (345 MPa) (GEC-12 Vol 3 p. 38). A "
+               "concrete pile's limits are 0.85 f'c - f_pe in compression "
+               "and 0.095 \u221af'c + f_pe in tension, ksi (Vol 1 Eqs. 8-62 "
+               "and 8-63, p. 459)."),
+    ))
 
     sections.append(CalcSection(
         title="Driving Stress Summary", items=stress_items
@@ -569,7 +614,7 @@ def _drivability_steps(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="N_depths",
         result_value=str(len(result.points)),
-        reference="FHWA GEC-12 Section 12.6",
+        reference="FHWA GEC-12 Vol 2 Sec. 12.5.3 (pp. 167-172)",
     ))
 
     # Results table
@@ -599,22 +644,31 @@ def _drivability_steps(result, analysis) -> List[CalcSection]:
 
     # ── Drivability Assessment ──
     assess_items = []
+    limit = getattr(result, "refusal_blow_count", None)
+    limit_eq = ("Pile can be driven if blow count ≤ refusal limit at all "
+                "depths" + ("" if limit is None else
+                            f" ({limit:,.1f} blows/m)"))
+    limit_ref = ("FHWA GEC-12 Vol 2 Sec. 12.4 (p. 161): 120 blows/ft "
+                 "(393.7 blows/m); 240 blows/ft (787.4 blows/m) for piles "
+                 "seated on hard rock")
     if result.can_drive:
         assess_items.append(CalcStep(
             title="Drivability Assessment",
-            equation="Pile can be driven if blow count < refusal limit at all depths",
+            equation=limit_eq,
             substitution="",
             result_name="Result",
             result_value="PILE CAN BE DRIVEN to all specified depths",
+            reference=limit_ref,
             notes="No refusal encountered at any depth.",
         ))
     else:
         assess_items.append(CalcStep(
             title="Drivability Assessment",
-            equation="Pile can be driven if blow count < refusal limit at all depths",
+            equation=limit_eq,
             substitution="",
             result_name="Result",
             result_value=f"REFUSAL at depth {result.refusal_depth:.1f} m",
+            reference=limit_ref,
             notes="Consider a larger hammer, pre-drilling, or jetting.",
         ))
 
@@ -639,7 +693,9 @@ def _drivability_steps(result, analysis) -> List[CalcSection]:
                 ["Max compression", f"{max_comp:,.0f}", f"{max_comp / 1000:.1f}"],
                 ["Max tension", f"{max_tens:,.0f}", f"{max_tens / 1000:.1f}"],
             ],
-            notes="Check against allowable driving stresses per FHWA GEC-12.",
+            notes=("Check against the driving stress limits: steel "
+                   "0.9 F_y (FHWA GEC-12 Vol 1 Eq. 8-33); concrete Eqs. "
+                   "8-62 and 8-63."),
         ))
 
     sections.append(CalcSection(

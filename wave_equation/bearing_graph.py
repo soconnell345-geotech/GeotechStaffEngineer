@@ -7,8 +7,7 @@ resistances to produce a bearing graph (blow count vs capacity).
 All units are SI: kN, m, seconds.
 
 References:
-    FHWA GEC-12, Section 12.5
-    WEAP87 Manual, Chapter 7
+    FHWA GEC-12 Vol 2, Sec. 12.3 (p. 158) and 12.5.1 (pp. 162-166)
 """
 
 from dataclasses import dataclass, field
@@ -16,10 +15,10 @@ from typing import List, Optional
 
 import numpy as np
 
-from wave_equation.hammer import Hammer
+from wave_equation.hammer import Hammer, diesel_warning
 from wave_equation.cushion import Cushion
 from wave_equation.pile_model import PileModel
-from wave_equation.soil_model import SoilSetup
+from wave_equation.soil_model import SoilSetup, quake_weighting_choice
 from wave_equation.time_integration import BlowResult, simulate_blow
 
 
@@ -43,6 +42,12 @@ class BearingGraphResult:
         Maximum compression force (kN) for each R_ultimate.
     blow_results : list of BlowResult
         Full results for each R_ultimate analyzed.
+    choices : list of dict
+        What the run assumed that no page prints: the weights of the
+        quakes in the permanent set, with the other weightings' blow
+        counts (``quake_weighting_choice``; none with equal quakes).
+    warnings : list of str
+        A diesel hammer's (``diesel_warning``).
     """
     R_values: np.ndarray = field(default_factory=lambda: np.array([]))
     blow_counts: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -51,6 +56,8 @@ class BearingGraphResult:
     max_tens_stresses: np.ndarray = field(default_factory=lambda: np.array([]))
     max_comp_forces: np.ndarray = field(default_factory=lambda: np.array([]))
     blow_results: List[BlowResult] = field(default_factory=list)
+    choices: list = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def capacity_at_blow_count(self, target_blow_count: float) -> float:
         """Interpolate capacity for a given blow count.
@@ -63,16 +70,15 @@ class BearingGraphResult:
         Returns
         -------
         float
-            Interpolated ultimate capacity (kN). Returns 0 if
-            blow count is outside the range.
+            Interpolated ultimate capacity (kN). Outside the analysed
+            blow counts the end value is returned (np.interp); 0 when
+            no blow count is positive.
         """
         valid = self.blow_counts > 0
         if not np.any(valid):
             return 0.0
         bc = self.blow_counts[valid]
         rv = self.R_values[valid]
-        if target_blow_count < bc.min() or target_blow_count > bc.max():
-            return float(np.interp(target_blow_count, bc, rv))
         return float(np.interp(target_blow_count, bc, rv))
 
     def summary(self) -> str:
@@ -99,13 +105,18 @@ class BearingGraphResult:
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
-        return {
+        out = {
             "R_values_kN": self.R_values.tolist(),
             "blow_counts_per_m": self.blow_counts.tolist(),
             "permanent_sets_m": self.permanent_sets.tolist(),
             "max_comp_stresses_kPa": self.max_comp_stresses.tolist(),
             "max_tens_stresses_kPa": self.max_tens_stresses.tolist(),
         }
+        if self.choices:
+            out["choices"] = list(self.choices)
+        if self.warnings:
+            out["warnings"] = list(self.warnings)
+        return out
 
     def get_tables(self) -> list:
         """The bearing graph as GRLWEAP prints it: for each assumed
@@ -138,7 +149,11 @@ class BearingGraphResult:
                      ("Maximum tension stress", "kPa", ".0f")],
             rows=rows,
             note=("One Smith-model wave equation blow per assumed R_ult "
-                  "(GEC-12 Section 12.5; WEAP87); blow count = 1/set, "
+                  "(GEC-12 Vol 2 Sec. 12.3 and 12.5.1); set = maximum "
+                  "pile toe displacement less an average of the shaft "
+                  "and toe quakes weighted by the shares of R_ult (p. 158 "
+                  "names no weights; the module's assumption); blow "
+                  "count = 1/set, "
                   "1,000,000 meaning refusal (set under 0.001 mm)"),
             name="bearing_graph",
         )]
@@ -152,7 +167,7 @@ def generate_bearing_graph(
     quake_side: float = 0.0025,
     quake_toe: float = 0.0025,
     damping_side: float = 0.16,
-    damping_toe: float = 0.50,
+    damping_toe: float = 0.49,
     R_min: float = 200.0,
     R_max: float = 2000.0,
     R_step: float = 200.0,
@@ -173,9 +188,9 @@ def generate_bearing_graph(
     skin_fraction : float
         Fraction of Rult as skin friction.
     quake_side, quake_toe : float
-        Quake values (m).
+        Quake values (m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     damping_side, damping_toe : float
-        Smith damping values (s/m).
+        Smith damping values (s/m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     R_min, R_max, R_step : float
         Range of ultimate resistances to analyze (kN).
     helmet_weight : float
@@ -184,9 +199,9 @@ def generate_bearing_graph(
         Maximum simulation time per blow (s).
     damping_model : str
         "smith" (default): damping proportional to the mobilized static
-        resistance, R_d = J*R_static*v (Smith 1960 / GRLWEAP default).
-        "smith_viscous": damping proportional to R_ultimate, loading
-        only (pre-v5.1 behavior). See wave_equation.soil_model.
+        resistance, R_d = J*R_static*v. "smith_viscous": damping
+        proportional to R_ultimate (UFC 3-220-20 pp. 487-488). See
+        wave_equation.soil_model.
 
     Returns
     -------
@@ -232,6 +247,12 @@ def generate_bearing_graph(
 
         blow_results.append(result)
 
+    quakes = quake_weighting_choice(
+        quake_side, quake_toe,
+        [(skin_fraction, r.max_toe_displacement) for r in blow_results],
+        " at R_ult " + " / ".join(f"{R:,.0f}" for R in R_values) + " kN"
+        if n_runs > 1 else "")
+    warning = diesel_warning(hammer)
     return BearingGraphResult(
         R_values=R_values,
         blow_counts=blow_counts,
@@ -240,4 +261,6 @@ def generate_bearing_graph(
         max_tens_stresses=tens_stresses,
         max_comp_forces=comp_forces,
         blow_results=blow_results,
+        choices=[quakes] if quakes else [],
+        warnings=[warning] if warning else [],
     )

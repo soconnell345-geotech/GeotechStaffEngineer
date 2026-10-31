@@ -354,8 +354,10 @@ def test_v003_simplified_diesel_does_not_reproduce_bearing_graph():
     energy 89.3 ft-kips) with GRLWEAP-style Smith params and a generic cushion
     does NOT reproduce the published bearing-graph point. At the published
     nominal driving resistance Rndr = 746 kips the module predicts ~48 blows/ft
-    (published 120 bpf — outside +/-25%) and ~48 ksi compression (published
-    40.1 ksi — outside +/-10%). The module's diesel hammer is a simple
+    (published 120 bpf — outside +/-25%). The compression stress, 48.5 ksi
+    (+21%) until GM-294's review took the pile-top force without the
+    helmet's inertia, is 39.0 ksi (published 40.1 ksi), on a blow count that
+    is not reproduced. The module's diesel hammer is a simple
     energy/efficiency velocity conversion, not a diesel combustion + ram-cycle
     GRLWEAP model. Documented coverage gap; module not modified.
     """
@@ -376,9 +378,11 @@ def test_v003_simplified_diesel_does_not_reproduce_bearing_graph():
     pt = res.points[0]
     blows_per_ft = pt.blow_count * FT
     comp_ksi = pt.max_comp_stress / 6895.0
-    # Both the published blow count and stress are OUT of the inventory tolerance
+    # The published blow count is OUT of the inventory tolerance
     assert abs(blows_per_ft - 120.0) / 120.0 > 0.25      # bpf not within +/-25%
-    assert abs(comp_ksi - 40.1) / 40.1 > 0.10            # stress not within +/-10%
+    assert comp_ksi == pytest.approx(39.0, abs=0.5)      # 40.1 published
+    # the diesel run as a drop ram says so (GEC-12 Vol 2 p. 206)
+    assert res.warnings and "p. 206" in res.warnings[0]
 
 
 # ── V-004 : downdrag neutral-plane location and drag force (Block 17) ────────

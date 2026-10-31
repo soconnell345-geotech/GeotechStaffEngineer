@@ -7,9 +7,21 @@ depth and capacity.
 
 All units are SI: kN, m, seconds.
 
+Refusal: a blow count above ``refusal_blow_count``. The default is 120
+blows/ft (393.7 blows/m): GEC-12 Vol 2 Sec. 12.4, p. 161, "Hammer size,
+energy setting, and cushion materials should always be chosen such that
+the maximum expected penetration resistance is less than 120 blows/ft",
+and the drivability study of Vol 3 (p. 43) calls 120 blows/ft "practical
+refusal". The one exception p. 161 prints, piles through soft soils
+seated on hard rock at 5 blows per 1/4 inch, is 240 blows/ft (787.4
+blows/m), the refusal of the Vol 2 examples (pp. 171, 177, 188).
+
+The pile analysed at each depth is as long as the depth (no stick-up),
+with the skin resistance spread evenly over it.
+
 References:
-    FHWA GEC-12, Section 12.6
-    WEAP87 Manual, Chapter 8
+    FHWA GEC-12 Vol 2, Sec. 12.4 (p. 161) and 12.5.3 (pp. 167-172)
+    FHWA GEC-12 Vol 3, Sec. D.10.3 (pp. 37-43)
 """
 
 from dataclasses import dataclass, field
@@ -17,11 +29,15 @@ from typing import List, Optional
 
 import numpy as np
 
-from wave_equation.hammer import Hammer
+from wave_equation.hammer import Hammer, diesel_warning
 from wave_equation.cushion import Cushion
 from wave_equation.pile_model import discretize_pile, PileModel
-from wave_equation.soil_model import SoilSetup
+from wave_equation.soil_model import SoilSetup, quake_weighting_choice
 from wave_equation.time_integration import simulate_blow, BlowResult
+
+#: 120 blows/ft in blows per metre, 120 / 0.3048 (GEC-12 Vol 2 p. 161;
+#: Vol 3 p. 43).
+REFUSAL_BLOWS_PER_M = 393.7
 
 
 @dataclass
@@ -63,10 +79,21 @@ class DrivabilityResult:
         True if pile can be driven to all specified depths.
     refusal_depth : float
         Depth (m) at which refusal occurs, if any. 0 if no refusal.
+    refusal_blow_count : float
+        The blow count (blows/m) above which the study called refusal.
+    choices : list of dict
+        The weights of the quakes in the permanent set, with the other
+        weightings' blow counts (``quake_weighting_choice``; none with
+        equal quakes).
+    warnings : list of str
+        A diesel hammer's (``diesel_warning``).
     """
     points: List[DrivabilityPoint] = field(default_factory=list)
     can_drive: bool = True
     refusal_depth: float = 0.0
+    refusal_blow_count: float = REFUSAL_BLOWS_PER_M
+    choices: list = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Text summary of drivability study."""
@@ -87,6 +114,8 @@ class DrivabilityResult:
                 f"{pt.max_tens_stress:>12,.0f}"
             )
         lines.append("")
+        lines.append(f"  Refusal: more than {self.refusal_blow_count:.1f} "
+                     "blows/m")
         if self.can_drive:
             lines.append("  Result: PILE CAN BE DRIVEN to all specified depths.")
         else:
@@ -98,9 +127,10 @@ class DrivabilityResult:
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
-        return {
+        out = {
             "can_drive": self.can_drive,
             "refusal_depth_m": self.refusal_depth,
+            "refusal_blow_count_per_m": self.refusal_blow_count,
             "points": [
                 {
                     "depth_m": p.depth,
@@ -113,6 +143,11 @@ class DrivabilityResult:
                 for p in self.points
             ],
         }
+        if self.choices:
+            out["choices"] = list(self.choices)
+        if self.warnings:
+            out["warnings"] = list(self.warnings)
+        return out
 
 
 def drivability_study(
@@ -128,9 +163,9 @@ def drivability_study(
     quake_side: float = 0.0025,
     quake_toe: float = 0.0025,
     damping_side: float = 0.16,
-    damping_toe: float = 0.50,
+    damping_toe: float = 0.49,
     helmet_weight: float = 5.0,
-    refusal_blow_count: float = 3000.0,
+    refusal_blow_count: float = REFUSAL_BLOWS_PER_M,
     damping_model: str = "smith",
 ) -> DrivabilityResult:
     """Run drivability analysis at multiple depths.
@@ -156,18 +191,20 @@ def drivability_study(
     segment_length : float
         Pile segment length (m).
     quake_side, quake_toe : float
-        Quake values (m).
+        Quake values (m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     damping_side, damping_toe : float
-        Smith damping values (s/m).
+        Smith damping values (s/m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     helmet_weight : float
         Helmet weight (kN).
     refusal_blow_count : float
-        Blow count (blows/m) considered as refusal.
+        Blow count (blows/m) above which the pile has refused. Default
+        393.7 (120 blows/ft, GEC-12 Vol 2 p. 161); 787.4 (240 blows/ft)
+        for a pile seated on hard rock (p. 161). See the module docstring.
     damping_model : str
         "smith" (default): damping proportional to the mobilized static
-        resistance, R_d = J*R_static*v (Smith 1960 / GRLWEAP default).
-        "smith_viscous": damping proportional to R_ultimate, loading
-        only (pre-v5.1 behavior). See wave_equation.soil_model.
+        resistance, R_d = J*R_static*v. "smith_viscous": damping
+        proportional to R_ultimate (UFC 3-220-20 pp. 487-488). See
+        wave_equation.soil_model.
 
     Returns
     -------
@@ -180,6 +217,7 @@ def drivability_study(
         skin_fractions = [0.5] * len(depths)
 
     points = []
+    toe_peaks = []
     can_drive = True
     refusal_depth = 0.0
 
@@ -217,13 +255,22 @@ def drivability_study(
             max_tens_stress=result.max_tension_stress,
         )
         points.append(pt)
+        toe_peaks.append((skin_fractions[i], result.max_toe_displacement))
 
         if bc > refusal_blow_count and can_drive:
             can_drive = False
             refusal_depth = depth
 
+    quakes = quake_weighting_choice(
+        quake_side, quake_toe, toe_peaks,
+        " at depths " + " / ".join(f"{d:g}" for d in depths) + " m"
+        if len(depths) > 1 else "")
+    warning = diesel_warning(hammer)
     return DrivabilityResult(
         points=points,
         can_drive=can_drive,
         refusal_depth=refusal_depth,
+        refusal_blow_count=refusal_blow_count,
+        choices=[quakes] if quakes else [],
+        warnings=[warning] if warning else [],
     )
