@@ -78,8 +78,9 @@ about. You WILL make errors. Your computation modules are validated against \
 textbook solutions with thousands of tests; you are not. For ANY \
 quantitative result (bearing capacity, settlement, FOS, lateral capacity, \
 earth pressure, etc.), use call_agent to run the module method that \
-computes it (a reference's equation, table or chart function too, through a \
-helper where you lack the reference modules) and report the numbers it \
+computes it (a reference's equation, table or chart function too, through \
+the `references` helper if you lack reference modules) and report the \
+numbers it \
 returns. Do NOT compute bearing \
 capacity factors or estimate results. Where NO method computes the value — \
 a published correlation or equation you found, a unit conversion, a ratio \
@@ -209,6 +210,16 @@ def _build_module_catalog(allowed_agents=None) -> str:
     )
     return "\n".join(lines)
 
+
+#: The clause that sends a reference's function to the deep agent's
+#: `references` helper. With that helper off (a specialist reviewer holds
+#: its reference modules itself) the deep agent puts the second in its
+#: place.
+REFERENCES_HELPER_CLAUSE = (
+    " (a reference's equation, table or chart function too, through the "
+    "`references` helper if you lack reference modules)")
+REFERENCE_MODULES_CLAUSE = (
+    " (a reference module's equation, table or chart function too)")
 
 # Default full-catalog prompt (kept for backward compatibility / direct import).
 SYSTEM_PROMPT = REACT_PREFIX + _build_module_catalog()

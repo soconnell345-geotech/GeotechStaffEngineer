@@ -47,6 +47,8 @@ except ImportError:                                       # deepagents >= 0.7.2
 
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 from funhouse_agent.reviewer import CONSULTANT_ROLE, REVIEWER_DEEP_PROMPT
+from funhouse_agent.system_prompt import (REFERENCE_MODULES_CLAUSE,
+                                          REFERENCES_HELPER_CLAUSE)
 
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
@@ -770,8 +772,6 @@ def build_calc_subagent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
-    # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
-    # preamble ("Do NOT perform engineering calculations"). See _CALC_PREAMBLE.
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
     if max_model_calls:     # the budget, stated (GM-101; unswitched)
         system_prompt = system_prompt + _CALC_BUDGET.format(
@@ -1456,6 +1456,10 @@ def build_deep_agent(
     if system_prompt is None:
         system_prompt = build_domain_prompt(allowed_agents,
                                             memory_enabled=enable_memory)
+        if reference_mode == "off":
+            # no references helper to run a reference's function through
+            system_prompt = system_prompt.replace(
+                REFERENCES_HELPER_CLAUSE, REFERENCE_MODULES_CLAUSE)
         from funhouse_agent import review_flags as _flags
         if _flags.judgment_calls() and not review_page:
             # The judgment calls put in front of the user (GM-116), behind

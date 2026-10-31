@@ -263,7 +263,8 @@ def needs_revision(review_text: str) -> bool:
 CONSULTANT_ROLE = (
     "You are acting as a geotechnical REFERENCE LIBRARIAN. Using ONLY the "
     "reference lookup tools available to you (NAVFAC DM7, the FHWA GEC series, "
-    "UFC, Eurocode 7, micropile, FEMA and the others list_agents names — via "
+    "UFC, Eurocode 7, micropile, FEMA and the others that list_agents names — "
+    "via "
     "chapter-text search, table/equation lookups, and figure search), answer "
     "the question you are asked. CITE the specific "
     "reference and section/table/figure number for every value or statement — "
