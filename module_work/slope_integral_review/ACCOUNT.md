@@ -57,40 +57,49 @@ departures that matter most:
    produce exactly this layout.
 2. **D23/D30. Circular searches with Spencer or Morgenstern-Price still
    accept the old approximate solver's value** where the rigorous solution
-   fails; noncircular searches refuse such a surface. EM C-10d (p. C-37) and
-   UFC 3-220-10 p. 362 treat non-convergence as something the engineer
-   must see.
-3. **D20. Surfaces with m_alpha below 0.2 are dropped from every search
-   without a trace on the result.** Whitman & Bailey (1967, p. 487, Eq. 5),
-   the source of the 0.2, prints a warning and an instruction to examine
-   the surface, not a rejection. EM C-10b (pp. C-34 to C-36) prints the
-   remedies for the steep exit that causes it.
+   fails, without a warning; noncircular searches refuse such a surface.
+   On #85 a 6 × 6 Spencer search calls the old solver 267 times. UFC
+   3-220-10 p. 362: "The engineer should be able to identify when
+   convergence issues are present."
+3. **D20. Surfaces with m_alpha below 0.2 are refused in every search.**
+   The search reports how many it left out, but not which surface or slice
+   had the low m_alpha, and it makes no check against the OMS. Whitman &
+   Bailey (1967, p. 487, Eq. 5), the source of the 0.2, prints a warning
+   and an instruction to examine the surface, not a rejection. EM C-10b
+   (pp. C-34 to C-36) prints the remedies for the steep exit that causes
+   it, and Duncan (1996, p. 580) prints the check against the OMS.
 4. **D39. Tension cracks: the default keeps the cracked wedge as driving
    soil, and the crack side defaults to the low-x end.** EM 2-2f (p. 2-6),
    EM C-10c (p. C-36) and the Slide tutorial (p. 16-1) all end the slip
    surface at the crack. ACADS 1(b) reads 1.485 against Slide2's 1.596 (-7 %).
 5. **D24. Reverse-curvature circles are closed with a dry crack and
    searched by default.** On #85 this gives Bishop 1.372 against the
-   printed 1.531 (Duncan & Wright 1.51). The crack depth comes from the
+   printed 1.531 (Duncan & Wright 1.51). The same circle reads 0.937
+   without the anchor, so the 1.372 also depends on Bishop's method
+   counting 29 % of the anchor (D36). The crack depth comes from the
    circle's geometry, not from the tension test EM C-10c prints.
 6. **D38. The rapid-drawdown stages do not follow EM 1110-2-1902 App. G.**
-   Stage 1 defaults to a flat pool with no seepage, and stages 2 and 3 are
-   merged. The stage-3 drained check uses an OMS normal stress where Eq.
-   G-13 (p. G-8) uses the stage-2 normal force. #96 reads 1.273 against the
-   printed 1.443.
+   The stage-3 drained check uses an OMS normal stress where Eq. G-13
+   (p. G-8) uses the stage-2 normal force, and stages 2 and 3 are merged.
+   #96 reads 1.235 with the default flat pool against the printed 1.443.
+   The printed G-13/G-14 rule closes about half the gap. The rest is
+   already present at stage 2: the EM's worked example of this dam prints
+   stage 1 = 2.20 and stage 2 = 1.52, against the module's 2.194 and
+   1.372 on the same inputs.
 7. **D42. Families of surfaces are scored by different methods and compared
    as one.** Planes are scored by Janbu, toe circles are screened by Bishop,
    and a noncircular search scores with Spencer when Bishop is named.
-   UFC 3-220-10 Table 7-7 (p. 374) and EM 4-3 (p. 4-8) expect one stated
-   method.
+   EM 4-3b(9)(a) (p. 4-8) asks the engineer to state the method used. No
+   printed rule on comparing surfaces solved by different methods was
+   found; the case rests on the search minimising one method's F.
 8. **D2. No cos² correction for a sloping water table.** FHWA NHI-06-088
    Eq. 6-16 (p. 6-14) prints u = h_w γ_w cos²α_w; UFC 3-220-10 p. 355 says
    to correct the water table to a piezometric surface by its slope.
 
-The nine single-case fixes of 2026-10-15 to 10-18 are assessed in §9. Most
+The nine single-case fixes of 2026-10-15 to 10-18 are assessed in §10. Most
 of them are sound and in line with print. Two, the m_alpha rejection (GM-127)
 and the dry crack on reverse-curvature circles (inherited, GM-59), are
-departures to settle. The plan in §11 has ten ordered steps. Step 1 is the
+departures to settle. The plan in §12 has ten ordered steps. Step 1 is the
 weight error, because every number taken on a sloping boundary depends on
 it.
 
@@ -175,9 +184,12 @@ everything about SLOPE/W.
   approximate piezometric surface based on the slope".
 * All external loads are to be represented, including structures, anchors
   and hawser forces (EM 2-2e, p. 2-6).
-* Pseudo-static seismic is a horizontal and/or vertical force at the
-  centroid of each slice equal to the coefficient times the total slice
-  weight (GEC 11 Vol. II §9.2.8, p. 9-18). UFC 3-220-10 p. 360 applies a
+* Pseudo-static seismic: "adding a horizontal and/or vertical force at the
+  centroid of each slice to the moment equilibrium equation ... equal to
+  the seismic coefficient times the total weight of the sliding mass. It
+  is assumed that this force has no influence on the normal force and
+  resisting moment, so that only the driving moment is affected" (GEC 11
+  Vol. II §9.2.8, pp. 9-18 to 9-19). UFC 3-220-10 p. 360 applies a
   horizontal force to the free body. EM 2-6 (p. 2-12) defers earthquake
   analysis to another manual.
 
@@ -245,14 +257,17 @@ everything about SLOPE/W.
 * *Consequence:* structures, footings and inclined loads cannot be
   modelled as printed.
 
-**D6. Seismic force on soil weight only, horizontal only, at mid-height.**
+**D6. Seismic force horizontal only, on the soil weight, at mid-height.**
 
-* *Module:* kh × soil weight, with no inertia from surcharge or ponded water
-  and no vertical coefficient.
-* *Print:* coefficient × total slice weight, horizontal and/or vertical,
-  at the slice centroid (GEC 11 Vol. II p. 9-18).
-* *Consequence:* surcharge inertia is left out, which is unconservative
-  under heavy surcharge. No vertical coefficient can be given.
+* *Module:* kh × each slice's soil weight, at the slice's mid-height, with
+  no vertical coefficient. Surcharge and ponded water carry no seismic
+  force.
+* *Print:* a horizontal and/or vertical force at each slice's centroid,
+  equal to the coefficient times "the total weight of the sliding mass"
+  (GEC 11 Vol. II pp. 9-18 to 9-19). Whether surcharge or ponded water
+  count is not stated; not found in print.
+* *Consequence:* no vertical coefficient can be given. Leaving out
+  surcharge inertia is a choice the result should state.
 
 **D7. Bishop's method is used with a seismic force and no warning.**
 
@@ -372,9 +387,9 @@ when the governing surface ends there.
   sliding-wedge surfaces through the toe, through the face at several
   elevations, and deep below the toe (GEC 11 Vol. II §9.2.5, p. 9-6).
 * Spencer and Morgenstern-Price with "very robust search routines" for
-  circular and noncircular surfaces (UFC p. 352). Search face exits,
-  circular and noncircular, then compound and global surfaces (Table 7-7,
-  p. 374).
+  circular and noncircular surfaces (UFC p. 352). For MSE slopes, search
+  face exits, circular and noncircular, then compound and global surfaces
+  (Table 7-7, steps 13 and 14, p. 374).
 * Noncircular search approaches: random generators of kinematically
   admissible surfaces, dynamic programming, moving one point at a time, and
   simplex (Duncan 1996, p. 581). Unless geology constrains it, the critical
@@ -453,7 +468,8 @@ profile end.**
 
 * *Module:* a noncircular mechanism that would carry on past the profile
   end is checked only through a circle (GM-89).
-* *Print:* EM C-10e(2) (p. C-38) warns about near-vertical boundaries.
+* *Print:* not found in print. (EM C-10e(2), p. C-38, concerns
+  near-vertical material boundaries and slope faces, not slip surfaces.)
 * *Consequence:* small, and the end is warned.
 
 ### Backlog items folded here
@@ -505,8 +521,9 @@ profile end.**
 * "Take l as the secant to the arc" (FHWA p. 6-16).
 * Slices split at the phreatic surface and at layer boundaries (UFC p. 353,
   slices 2A and 6A).
-* Avoid surfaces that cross boundaries at very flat angles, for numerical
-  reasons (EM C-10e(3), pp. C-38 to C-39).
+* Avoid slip surfaces that cross material boundaries at extremely flat
+  angles, because the computed intersection can be far from the true one
+  (EM C-10e(3), pp. C-38 to C-39).
 
 The module's slicing is in line with this print.
 
@@ -525,7 +542,9 @@ The module's slicing is in line with this print.
 
 * *Module:* a crossing near the vertical end of a circle can be missed
   (GM-140 extra).
-* *Print:* EM C-10e(3), pp. C-38 to C-39.
+* *Print:* not found in print. (EM C-10e(3), pp. C-38 to C-39, is about
+  slip surfaces crossing material boundaries at very flat angles, a
+  different numerical problem.)
 * *Consequence:* rare wrong entry or exit points.
 
 **D19. The model-base limits differ between families and are not in
@@ -603,16 +622,20 @@ print.**
   p. 580).
 * Non-convergence: reject the unrealistic one of multiple solutions, use a
   sensible starting F, and use a realistic initial surface (EM C-10d,
-  pp. C-37 to C-38). "Non-convergence ... can cause critical surfaces to
-  be missed"; the engineer should identify convergence issues (UFC p. 362).
+  pp. C-37 to C-38, which lists ways to avoid non-convergence). "Critical
+  failure surfaces can be missed as a result of non-convergence. The
+  engineer should be able to identify when convergence issues are
+  present" (UFC p. 362).
 
 ### Departures
 
-**D20. m_alpha below 0.2 is a silent refusal in searches.**
+**D20. m_alpha below 0.2 is a refusal in searches, not a warning.**
 
-* *Module:* the surface is left out and counted, but the result does not
-  say where the low m_alpha was. φ′ = 0 slices are exempt by default. The
-  check against the OMS is not made.
+* *Module:* the surface is left out and counted. The search summary prints
+  "Left out, m_alpha < 0.2 on a slice: N", and the count is in the result's
+  data and the calculation steps. What is missing is where the low m_alpha
+  was (which surface, which slice) and the check against the OMS. φ′ = 0
+  slices are exempt by default.
 * *Print:* warn and examine, for any slice (Whitman & Bailey p. 487); fix
   the exit (EM C-10b); compare with the OMS (Duncan 1996 p. 580). The
   φ′ = 0 exemption is reasoned in the code (on such a slice m_alpha = cos α
@@ -628,8 +651,9 @@ print.**
 * *Module:* where u·b exceeds W, the slice's frictional term is set to
   zero. The calculation steps state the rule; the result does not say
   which slices it applied to.
-* *Print:* Bishop (1955) Eq. 13, p. 10 has no clamp. Whitman & Bailey p. 487
-  ask for a warning when the numerator is negative.
+* *Print:* Bishop (1955) Eq. 13 (p. 10) writes the term as W(1 − B̄), that
+  is W − ub, with no clamp. Whitman & Bailey p. 487 ask for a warning when
+  the numerator is negative.
 * *Consequence:* artesian slices pass without notice.
 
 **D22. The noncircular screens are numerical stand-ins for the printed
@@ -646,12 +670,13 @@ checks.**
 **D23. Circular searches accept the old approximate solver's value.**
 
 * *Module:* without supports, a Spencer or Morgenstern-Price circle whose
-  rigorous solution fails is scored by the old approximate solver.
-  Noncircular searches refuse such a surface.
-* *Print:* EM C-10d, p. C-37; UFC p. 362.
+  rigorous solution fails is scored by the old approximate solver, with no
+  warning. Noncircular searches refuse such a surface.
+* *Print:* UFC p. 362 (show non-convergence to the engineer). EM C-10d
+  (pp. C-37 to C-38) lists ways to avoid it.
 * *Consequence:*
-  * On #85 without its support, a 6 × 6 Spencer search called the old
-    solver 415 times (GM-81).
+  * On #85 without its support, a 6 × 6 Spencer search calls the old
+    solver 267 times today, with no warning (415 before GM-134; GM-81).
   * A single odd circle can report a false Spencer FOS near 0.05 (GM-139).
   * The two kinds of surface are treated differently.
 
@@ -664,7 +689,10 @@ checks.**
   the circle's geometry was found. Slide2's default is from its help
   pages, not in hand.
 * *Consequence:* #85 with its support: Bishop 1.372 on such a circle,
-  against the printed 1.531 (D&W 1.51). With "discard": 1.508.
+  against the printed 1.531 (D&W 1.51). With "discard": 1.508. The same
+  circle reads 0.937 without the anchor, so the 1.372 also depends on
+  Bishop's method counting 29 % of the anchor, which crosses near the
+  centre's level (D36).
 
 **D25 (not a departure). Multi-stretch surfaces are refused (GM-122).**
 This matches Slide2's documented behaviour as quoted in the code; no
@@ -700,8 +728,9 @@ GM-126, parked.
 
 * m_alpha = cos α + sin α tan φ′/F (Bishop 1955 Eq. 12, p. 10; UFC Fig. 7-4,
   p. 353).
-* F = Σ[(c′b + (W − ub) tan φ′)/m_alpha] / ΣW sin α (Eq. 13 with
-  X_n − X_{n+1} = 0, p. 11).
+* F = Σ[(c′b + (W − ub) tan φ′)/m_alpha] / ΣW sin α: Eq. 13 (p. 10) with
+  X_n − X_{n+1} = 0, the assumption Bishop uses for the first trial value
+  of F (p. 11).
 * The sign of α is taken positive in the sliding direction (the code's fix
   SS-4; UFC p. 353 prints the sign rule).
 * The starting F is the OMS value. The tolerance is 1e-4 and the limit is
@@ -779,7 +808,7 @@ GM-126, parked.
 
 * *Module:* only a program warning is raised; the result does not carry it
   (GM-81).
-* *Print:* EM C-10d.
+* *Print:* UFC p. 362.
 * *Consequence:* an unconverged value can be reported or win a search.
 
 **D28. Janbu's f0 is not found in print.**
@@ -809,7 +838,7 @@ GM-126, parked.
 * *Module:* their values reach single-surface results (labelled since
   GM-81), circular searches (D23) and the Newmark yield coefficient
   (GM-81).
-* *Print:* EM C-10d.
+* *Print:* UFC p. 362.
 
 **D32. Methods not built.**
 
@@ -953,8 +982,11 @@ which convention was used (it does).
 
 * *Module:* the "normal" direction of a pile is unresolved; the OMS on a
   polyline leaves the support's normal component out of N; Bishop counts
-  little of a support crossing near the centre's level (warned, as printed
-  in Duncan 1996 p. 583's terms).
+  little of a support crossing near the centre's level (warned). Duncan
+  (1996, p. 583) reports that Bishop's method, with the force in the
+  vertical and moment equations, gives essentially the same F as the
+  complete methods; a rule for how much of such a support Bishop should
+  count was not found in print.
 * A support whose pull assists sliding: the owner decided on 2026-10-20
   (OWN-59) to offer both readings with slack as the stated default. This
   is not built yet; it belongs to this review.
@@ -966,16 +998,43 @@ which convention was used (it does).
 **D38. The rapid-drawdown stages are not as printed.**
 
 * *Module:*
-  * Stage 1 defaults to a flat pool with no seepage.
+  * Stage 1 defaults to a flat pool; a seepage line can be given.
   * Stages 2 and 3 are merged: the substitution is decided before any
     solve.
   * The drained check uses an OMS normal (default) or a drained GLE normal,
     not the stage-2 N of Eq. G-13.
   * If stage 1 does not converge, it falls back to OMS estimates (warned).
-* *Print:* EM Table 2-1 (p. 2-2); G-3d and G-3e (pp. G-8 to G-9).
-* *Consequence:*
-  * #96: 1.273 with the default, 1.370 with "gle", against the printed
-    1.443.
+* *Print:*
+  * Stage-1 pore pressures are steady-seepage pressures (EM Table 2-1,
+    p. 2-2). The EM's worked example of this dam assumes, for simplicity,
+    a horizontal piezometric line at maximum pool (103 ft) and another at
+    the drawn-down pool (24 ft), and says seepage analyses would often be
+    appropriate (G-4b, p. G-9). So the module's flat default is the
+    example's assumption.
+  * G-3d and G-3e (pp. G-8 to G-9): the drained check takes N from the
+    stage-2 solve (Eq. G-13) and the pore pressure after seepage is
+    re-established (G-14); stage 3 is solved only if a slice needs it.
+  * The example prints each stage (Bishop's method, 12 slices): stage 1
+    F = 2.20 (p. G-15), stage 2 F = 1.52 (p. G-18), stage 3 F = 1.44 with
+    drained strength on 3 of 12 slices (p. G-20).
+* *Consequence (measured in this review on the test's #96 section and
+  circle; scratch substitution, no code changed):*
+  * Default, flat pool at the test's 110 ft: 1.235. With the test's
+    representative seepage line, which is not printed: 1.273 (the pinned
+    value). With "gle": 1.370. Printed: 1.443.
+  * With the printed G-13/G-14 rule substituted: 1.303 flat, 1.356 with the
+    seepage line. This closes about half of the gap from 1.273.
+  * The rest is already present before any drained check. At the
+    example's 103 ft flat pool, the module's stage 1 is 2.194 (printed
+    2.20) but its stage 2 is 1.372 (printed 1.52, -10 %). So the stage-2
+    undrained strengths from Eq. G-12 are where to look next. The example
+    uses Bishop's method and 12 slices against the module's GLE and 50,
+    which accounts for some of the difference, but for a φ = 0 stage the
+    methods should agree closely (EM C-2b, p. C-16). The example's slice
+    tables (Figs. G-10 and G-11, pp. G-16 and G-19) allow a slice-by-slice
+    check.
+  * The Slide2 problem text gives the maximum pool as 110 ft; the EM gives
+    103 ft.
   * #98 search: 0.837 against 0.931 (Corps) and 0.938 against 1.039 (DWW),
     on a recovered section that is about 10 % low.
   * OWN-17 (the stage-3 default) is still open.
@@ -1029,8 +1088,9 @@ which convention was used (it does).
 
 ### What the references print
 
-* State the method used (EM 4-3b(9)(a), p. 4-8). Use one method,
-  Spencer or Morgenstern-Price, for all surfaces (UFC Table 7-7, p. 374).
+* State the method used (EM 4-3b(9)(a), p. 4-8). For MSE slopes, select
+  Spencer's or the Morgenstern-Price method "to analyses failure surfaces"
+  (UFC Table 7-7, step 5, p. 374).
 * Run several independently started searches (EM 4-2e(1)(b), p. 4-3), or a
   suite of centres and radii examined by contours (4-2e(1)(c), p. 4-7;
   Duncan et al. 1987, PDF p. 75).
@@ -1039,7 +1099,10 @@ which convention was used (it does).
 
 **D42. Families are compared across different methods.**
 
-* *Print:* UFC p. 374; EM p. 4-8.
+* *Print:* EM 4-3b(9)(a), p. 4-8 (state the method). No printed rule on
+  comparing surfaces solved by different methods was found. The argument
+  is the one behind GM-138: a search must minimise the F of the method it
+  reports.
 * *Consequence:* a family can win because its method differs (Janbu planes
   against Spencer circles), not because its mechanism is more critical.
   The result names the governing family and the method of each, but the
@@ -1208,7 +1271,7 @@ tests. "Printed" is the published answer.
 | B5 | Duncan, Wright & Brandon textbook suite (19 tests) | Mixed cases | all pass; Ex. 6 assertion inverted (pond buttress); Ex. 5 skipped (curved envelope) | book not in hand |
 | B6 | ACADS 1(a), LE against fem2d SRM | Cross-check | LE 0.985 to 0.989; SRM 1.053 | 1.00 |
 | B7 | #95, EM 1110-2-1902 dam, Corps 2-stage (V-037) | Drawdown, given surface | 1.34 (seepage stage 1) | 1.347 |
-| B7 | #96, same dam, DWW 3-stage (V-038) | Drawdown stage 3 | 1.273 default; 1.370 "gle" | 1.443 |
+| B7 | #96, same dam, DWW 3-stage (V-038) | Drawdown stage 3 | 1.235 default (flat pool); 1.273 with a representative seepage line (not printed, pinned); 1.370 "gle" | 1.443; EM example stages 2.20 / 1.52 / 1.44 |
 | B7 | #98, search (V-041), recovered section | Drawdown search | Corps 0.837, DWW 0.938 | 0.931, 1.039 |
 | B8 | Pore-pressure grid (V-029) | Interpolation | identical to the line; 1.25 on the reconstruction | not pinned to print |
 | B9/B16 | ACADS 1(b) (Slide2 #2), crack (V-026) | Crack models | strength 1.485/1.486/1.482; truncation 1.603/1.599/1.600 | Slide2 1.596/1.592/1.592 |
@@ -1285,9 +1348,9 @@ started until the owner agrees the plan. Owner decisions are marked
    the tension test (D24, D39).
 5. **Water and loads as printed.** The cos² correction (default [owner]),
    ru on overburden stress, the pond edge as a slice boundary, u = 0 on
-   total-stress layers. Line, inclined and varying loads. Seismic force on
-   the total slice weight with an optional vertical coefficient, and a
-   warning for Bishop with kh (D2 to D7, D16).
+   total-stress layers. Line, inclined and varying loads. An optional
+   vertical seismic coefficient, a stated choice on surcharge inertia, and
+   a warning for Bishop with kh (D2 to D7, D16).
 6. **One method across the search.** Every family is scored, or at least
    re-scored for the final comparison, by the method named, with the named
    interslice function. Report a family that only another method can solve
@@ -1304,11 +1367,13 @@ started until the owner agrees the plan. Owner decisions are marked
    the nail's front term, both readings of a pull that assists sliding
    with slack the default (OWN-59), a legacy force without an elevation
    refused, and the GM-82 directions (D34 to D37).
-9. **Rapid drawdown as EM App. G prints it.** Seepage stage 1 as the
-   default when a seepage line is given or can be derived; stage 2 solved;
-   the drained check from stage 2's N (Eq. G-13); stage 3 solved only if
-   needed. This settles OWN-17. Re-measure #95, #96 and #98, and GM-15
-   (D38).
+9. **Rapid drawdown as EM App. G prints it.** First check the module
+   slice by slice against the EM's worked example (Figs. G-10, G-11), to
+   find why stage 2 reads 1.372 against 1.52. Then: stage 2 solved; the
+   drained check from stage 2's N (Eq. G-13); stage 3 solved only if
+   needed; stage 1 from a seepage line when one is given, otherwise the
+   example's flat pool, stated in the result. This settles OWN-17.
+   Re-measure #95, #96 and #98, and GM-15 (D38).
 10. **Reporting as printed.** A contour plot of minimum F over the centres,
     an ordered list of the lowest surfaces, the method actually used per
     family, and the slice table first in the report. Remove or wire the
