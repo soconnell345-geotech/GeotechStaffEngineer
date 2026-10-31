@@ -831,6 +831,16 @@ def _level_alphas(reinforcement, rs, alpha_tested) -> List[float]:
     return out
 
 
+def _check_grid_geometry(rs, F_star_tested) -> None:
+    """Refuse a steel grid given no t/St unless F* is from tests (GM-297,
+    :data:`GRID_NEEDS_T_ST`)."""
+    if F_star_tested is not None:
+        return
+    for r in rs:
+        if r.is_grid and r.t_over_St is None:
+            raise ValueError(f"{r.name}: {GRID_NEEDS_T_ST}")
+
+
 def _check_tested(F_star_tested, alpha_tested) -> None:
     """Refuse a tested F* or alpha that is not one (GM-256)."""
     if alpha_tested is not None and not 0 < alpha_tested <= 1:
@@ -894,9 +904,11 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
       4-10, p. 4-37; the text, p. 4-35, says "20 ft (6 m)").
     - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
       "metallic_grid"): 2.5 at z=0 -> 1.2 at z>=20 ft (6.096 m), constant below
-      (GEC-11 Fig. E4-5 / AASHTO Fig. 11.10.6.2.1-3).
+      (GEC-11 Fig. 4-10's "Metal Bar Mats & Welded Wire Grids" line, p.
+      4-37; Vol II Fig. E4-5).
     - geosynthetic / extensible ("geosynthetic", "geogrid", "geotextile"):
-      constant 1.0.
+      constant 1.0 (Fig. 4-10, whose footnote reads "Does not apply to
+      polymer strip reinforcement").
 
     Parameters
     ----------
@@ -914,7 +926,7 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
 
     References
     ----------
-    FHWA GEC-11, Figures 4-10 and E4-5; AASHTO LRFD Fig. 11.10.6.2.1-3
+    FHWA GEC-11 Vol I Figure 4-10 (p. 4-37); Vol II Figure E4-5
     """
     if reinforcement_type in ("geosynthetic", "geogrid", "geotextile"):
         return 1.0
@@ -929,7 +941,8 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
             return 2.5 - (2.5 - 1.2) / _Z20_FT_M * z
 
     # Ribbed metallic strip (default): linear 1.7 at z=0 to 1.2 at z=20 ft
-    # (6.096 m), as GEC-11 Fig. 4-10 draws it for strips and bar mats alike
+    # (6.096 m), GEC-11 Fig. 4-10's "Metal Strips" line (GM-297: the figure
+    # draws bar mats and welded wire grids on their own line, above)
     if z <= 0:
         return 1.7
     elif z >= _Z20_FT_M:
@@ -993,8 +1006,10 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0,
 
     References
     ----------
-    FHWA GEC-11 Vol I Eqs. 3-4 and 3-5 (ribbed steel strips) and Figure
-    E4-5 (bar mats)
+    FHWA GEC-11 Vol I Eqs. 3-4 and 3-5 (ribbed steel strips, p. 3-20) and
+    Eqs. 3-6 and 3-7 (steel grids, p. 3-21: F* = Fq alpha_beta = 20 (t/St)
+    at the top of the structure, 10 (t/St) at 20 ft (6 m) and below); Vol II
+    Figure E4-5 (bar mats)
     """
     if reinforcement_type in ("bar_mat", "welded_grid", "metallic_grid"):
         if t_over_St is None:
@@ -1460,10 +1475,10 @@ def _backslope_summary(ld: Dict[str, Any],
 
 def uses_strip_F_star(reinforcement: Reinforcement) -> bool:
     """Whether the pullout check takes the ribbed steel strip F* curve,
-    which the backfill's Cu sets: a metallic strip, or a steel grid given
-    no transverse-bar geometry (t/St), which falls back to it."""
-    return reinforcement.is_metallic and not (
-        reinforcement.is_grid and reinforcement.t_over_St is not None)
+    which the backfill's Cu sets: a metallic strip. A steel grid takes its
+    own, from t/St, and one given no t/St is refused (GM-297,
+    :data:`GRID_NEEDS_T_ST`); it took the strip curve before."""
+    return reinforcement.is_metallic and not reinforcement.is_grid
 
 
 def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
@@ -1612,19 +1627,24 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
                        f"checks: {role}: "
                        + (_NOTE_I_WITHIN if Cu_backfill >= CU_UNKNOWN
                           else _NOTE_I_OUTSIDE))
+        if any(r.is_grid and r.t_over_St is None for r in rs):
+            # GM-297: a grid's empirical F* needs its t/St (Eqs. 3-6, 3-7)
+            empirical_run = (", not worked out here: " + GRID_NEEDS_T_ST)
+        else:
+            empirical_run = against(check_internal_stability(
+                *args, Cu_backfill=Cu_backfill, alpha_tested=alpha_tested))
         out.append(choice(
             "Pullout resistance factor F* (F_star_tested)", chosen,
             how_given(F_star_tested, None, name="F_star_tested"),
             F_STAR_TESTED_BASIS,
-            ["the empirical F*, " + empirical + against(
-                check_internal_stability(*args, Cu_backfill=Cu_backfill,
-                                         alpha_tested=alpha_tested))]))
+            ["the empirical F*, " + empirical + empirical_run]))
         return out
     if not any_strip:
         if Cu_backfill is None:
             return out
-        own = ("20 t/St at the top to 10 t/St at 20 ft (GEC-11 Fig. E4-5)"
-               if rs[0].is_metallic else "0.67 tan phi_backfill")
+        own = ("20 t/St at the top to 10 t/St at 20 ft (GEC-11 Vol I Eqs. "
+               "3-6, 3-7)" if rs[0].is_metallic
+               else "(2/3) tan phi_backfill (Eq. 3-8)")
         return out + [choice(
             "Backfill uniformity coefficient (Cu_backfill) against the "
             "empirical pullout factor F*",
@@ -1661,14 +1681,39 @@ def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
                "backfill's Cu is unknown: F* 1.8 at the top")
     alt += against(check_internal_stability(
         *args, Cu_backfill=alt_cu, alpha_tested=alpha_tested))
-    basis = F_STAR_STRIP_BASIS
-    if any(r.is_grid and uses_strip_F_star(r) for r in rs):
-        basis += (". This steel grid was given no transverse-bar geometry "
-                  "(t/St), so its pullout takes the ribbed strip curve")
     return out + [choice(
         "Pullout resistance factor F* of ribbed steel strips, from the "
         "backfill's uniformity coefficient (Cu_backfill)", chosen,
-        how_given(Cu_backfill, None, name="Cu_backfill"), basis, [alt])]
+        how_given(Cu_backfill, None, name="Cu_backfill"), F_STAR_STRIP_BASIS,
+        [alt])]
+
+
+#: The least embedment length in the resistant zone, GEC-11 Vol I Eq. 4-36
+#: (p. 4-51), read on the rendered page: "Le >= TMAX / (phi F* alpha sigma_v
+#: C Rc) >= 3 ft (1 m)" (GM-297). A level whose Le = L - La is shorter fails
+#: pullout. The 3 ft is taken, the manual's unit, as 20 ft is for Kr/Ka.
+LE_MIN_M = 3.0 * 0.3048        # 0.914 m
+
+LE_MIN_BASIS = (
+    "GEC-11 Vol I Eq. 4-36 (p. 4-51): the embedment length in the resistant "
+    "zone 'Le >= TMAX / (phi F* alpha sigma_v C Rc) >= 3 ft (1 m)'")
+
+#: GEC-11 Vol I Eq. 3-8 (p. 3-21), read on the rendered page: "In the
+#: absence of test data, the F* value for geosynthetic reinforcement should
+#: conservatively be taken as F* = 2/3 tan phi" (0.67 before GM-297).
+F_STAR_GEOSYNTHETIC = 2.0 / 3.0
+
+#: A steel grid's empirical F* is GEC-11 Vol I Eqs. 3-6 and 3-7 (p. 3-21),
+#: which need the transverse bars' thickness and spacing (GM-297).
+GRID_NEEDS_T_ST = (
+    "a steel grid or bar mat's empirical pullout factor is F* = Fq alpha_beta "
+    "= 20 (t/St) at the top of the structure and 10 (t/St) at 20 ft (6 m) "
+    "and below, GEC-11 Vol I Eqs. 3-6 and 3-7 (p. 3-21), t the thickness "
+    "(diameter) of the transverse bar and St their spacing. Give "
+    "reinforcement_thickness (t, m) and reinforcement_transverse_spacing "
+    "(St, m), or F_star_tested from pullout tests (Table 3-6 note (i)). "
+    "The ribbed steel strip's F* (Eqs. 3-4, 3-5), which a grid with neither "
+    "took before, is not printed for grids")
 
 
 def check_internal_stability(
@@ -1751,6 +1796,12 @@ def check_internal_stability(
         (:func:`coverage_ratios`, GM-261); ``Tallowable_kN_per_m`` is Tal
         per metre of reinforcement width. With a reinforcement per level
         each level also gives ``reinforcement``, its name (GM-266).
+        ``Le_m`` is L - La, the reinforcement's length beyond the failure
+        surface (GEC-11 Vol I Eq. 4-37), and ``Le_at_least_3ft`` whether it
+        is at least the 3 ft (1 m) of Eq. 4-36 (:data:`LE_MIN_M`); a level
+        with less fails (``passes`` False) whatever its FOS_pullout
+        (GM-297). A steel grid given no t/St is refused unless
+        ``F_star_tested`` is given (:data:`GRID_NEEDS_T_ST`).
 
     Notes
     -----
@@ -1802,6 +1853,7 @@ def check_internal_stability(
     # GEC-11 Eq. 3-1 (GM-256), one value a level (GM-261)
     Rcs = coverage_ratios(reinforcement, geom.reinforcement_depths, source)
     _check_tested(F_star_tested, alpha_tested)
+    _check_grid_geometry(rs, F_star_tested)
     alphas = _level_alphas(reinforcement, rs, alpha_tested)
     if sloping:
         _check_backslope(geom, None, geom.surcharge)
@@ -1814,7 +1866,7 @@ def check_internal_stability(
     #    F* 20(t/St)->10(t/St))
     #  - ribbed metallic strip       -> strip curves (Kr/Ka 1.7->1.2,
     #    F* 1.2 + log Cu (2.0 at most) -> tan-phi)  [the default]
-    #  - geosynthetic                -> Kr/Ka 1.0, F* 0.67*tan-phi
+    #  - geosynthetic                -> Kr/Ka 1.0, F* (2/3) tan-phi
     # each level by its own reinforcement (GM-266)
     if Cu_backfill is not None:
         # a grid with t/St or a geosynthetic takes no Cu in its F*; GEC-11
@@ -1875,21 +1927,26 @@ def check_internal_stability(
             La = 0.3 * H if z <= H / 2.0 else 0.6 * (H - z)
         else:
             La = (H - z) * math.tan(math.radians(45 - phi_backfill / 2))
-        Le = max(L - La, 1.0)  # minimum 1m effective length
+        # Le = L - La (Eq. 4-37), the reinforcement's own length beyond the
+        # failure surface; Eq. 4-36 asks at least 3 ft (1 m) of it, which
+        # the check below requires (GM-297: max(L - La, 1.0) credited 1 m
+        # where the reinforcement had less)
+        Le = max(L - La, 0.0)
 
         # Pullout resistance
         if F_star_tested is not None:
             # from pullout tests (GEC-11 Table 3-6 note (i))
             F_star = F_star_from_tests(F_star_tested, z)
-        elif r.is_grid and t_over_St is not None:
-            # Steel bar-mat / welded-grid F* = 20(t/St) -> 10(t/St)
+        elif r.is_grid:
+            # Steel bar-mat / welded-grid F* = 20(t/St) -> 10(t/St), Eqs.
+            # 3-6, 3-7 (t/St checked given, _check_grid_geometry)
             F_star = F_star_metallic(z, phi_backfill, "metallic_grid", t_over_St)
         elif r.is_metallic:
-            # Ribbed strip F* = 1.2 + log Cu -> tan(phi) (also the fallback
-            # for a grid whose transverse geometry t/St was not supplied)
+            # Ribbed strip F* = 1.2 + log Cu -> tan(phi), Eqs. 3-4, 3-5
             F_star = F_star_metallic(z, phi_backfill, Cu=Cu_backfill)
         else:
-            F_star = 0.67 * math.tan(math.radians(phi_backfill))
+            # Eq. 3-8
+            F_star = F_STAR_GEOSYNTHETIC * math.tan(math.radians(phi_backfill))
 
         # Pullout sigma_v is "the unfactored vertical stress at the
         # reinforcement level in the resistant zone, including distributed
@@ -1912,8 +1969,10 @@ def check_internal_stability(
         # times the coverage ratio (GEC-11 p. 4-47, Eqs. 4-33 and 4-34)
         FOS_po = Pr / T if T > 0 else 99.9
         FOS_ru = Tal_Rc / T if T > 0 else 99.9
+        # Eq. 4-36: Le at least 3 ft (1 m) whatever the pullout FOS (GM-297)
+        Le_ok = Le >= LE_MIN_M - 1e-9
 
-        passes = (FOS_po >= FOS_pullout) and (FOS_ru >= FOS_rupture)
+        passes = (FOS_po >= FOS_pullout) and (FOS_ru >= FOS_rupture) and Le_ok
 
         level = {"depth_m": round(z, 2)}
         if per_level:
@@ -1926,6 +1985,7 @@ def check_internal_stability(
             "Pr_kN_per_m": round(Pr, 2),
             "La_m": round(La, 2),
             "Le_m": round(Le, 2),
+            "Le_at_least_3ft": Le_ok,
             "Kr_Ka": round(kr_ka, 3),
             "F_star": round(F_star, 3),
             "alpha": alpha,
@@ -1944,6 +2004,143 @@ def check_internal_stability(
     return results
 
 
+#: How the sliding check counts the foundation soil's cohesion (GM-297),
+#: by ``sliding_cohesion``. GEC-11 Vol I Eqs. 4-12 and 4-13 (p. 4-21) print
+#: the sliding resistance as V mu with no cohesion term; Step 3(i) names
+#: cu for a cohesive foundation and gives no form for it. Before GM-297
+#: the module added ca = 2/3 c_foundation over L, which nothing held
+#: prints (GM-212 took the same term out of the cantilever wall).
+MSE_SLIDING_COHESION = ("drained", "undrained")
+
+MSE_SLIDING_COHESION_BASIS = {
+    "drained": (
+        "R = V mu, mu = min(tan phi'_f, tan phi'_r), the foundation "
+        "cohesion not counted: GEC-11 Vol I Eqs. 4-12 and 4-13 (p. 4-21), "
+        "Rr = phi_tau gamma_EV V1 mu, mu the 'minimum soil friction angle "
+        "[tan phi'f, tan phi'r, or (for continuous reinforcement) tan rho]' "
+        "(p. 4-22), with no cohesion term; GEC-6 Sec. 5.4 (p. 100) Eq. "
+        "5-38, FR = (W + Pv) tan delta 'for footings with planar bearing "
+        "surfaces on frictional (drained) materials', and 'Because drained "
+        "and undrained conditions will not occur simultaneously, Equations "
+        "5-38 and 5-39 should not be combined for use at the same time'"),
+    "undrained": (
+        "R = min(cu L, V tan phi'_r), no base friction: GEC-11 Vol I p. 4-21 "
+        "Step 3 takes the weaker of (i) 'Sliding along the foundation soil, "
+        "if its shear strength (based on c'f + tan phi'f and/or cu for "
+        "cohesive soils) is smaller than that of the reinforced fill "
+        "material shear strength (tan phi'r)' and (ii) 'Sliding along the "
+        "reinforced fill (phi'r)'. Eq. 4-12 prints no form for cu; the "
+        "foundation's resistance is cu over the base, as GEC-6 Sec. 5.4 "
+        "(p. 100) Eq. 5-39 gives it, FR = ca Bf 'for footings with planar "
+        "bearing surfaces on cohesive (undrained) materials', 'In practice, "
+        "ca is typically taken as equal to the undrained shear strength "
+        "(cohesion, cu) of the clay', and not combined with Eq. 5-38"),
+}
+
+MSE_SLIDING_COHESION_SHORT = {
+    "drained": ("R = V min(tan phi'_f, tan phi'_r), c_foundation not "
+                "counted (GEC-11 Eq. 4-12; GEC-6 Eq. 5-38)"),
+    "undrained": ("R = min(cu L, V tan phi'_r), c_foundation read as cu, no "
+                  "base friction (GEC-11 p. 4-21 Step 3; GEC-6 Eq. 5-39)"),
+}
+
+
+def mse_sliding_rule(sliding_cohesion: Optional[str],
+                     phi_foundation: float, c_foundation: float) -> str:
+    """The rule for the foundation cohesion in sliding (GM-297): the one
+    given, else ``"undrained"`` for phi_foundation 0 and ``"drained"``
+    otherwise, as the cantilever wall's (GM-212,
+    :func:`retaining_walls.cantilever.default_sliding_cohesion`). The
+    undrained rule needs c_foundation = cu > 0; UFC 3-220-20's friction
+    plus adhesion, for a rigid wall's concrete base, is refused."""
+    from retaining_walls.cantilever import default_sliding_cohesion
+    rule = (default_sliding_cohesion(phi_foundation)
+            if sliding_cohesion is None else sliding_cohesion)
+    if rule == "friction_plus_adhesion":
+        raise ValueError(
+            "sliding_cohesion 'friction_plus_adhesion' is the cantilever "
+            "wall's rule, UFC 3-220-20 Fig. 4-27, V tan delta + Ca Be with Ca "
+            "the adhesion of a concrete base (Table 4-1); GEC-11 prints no "
+            "such sum for an MSE wall, whose base is soil (Eqs. 4-12, 4-13: "
+            "V mu). Give 'drained' or 'undrained'.")
+    if rule not in MSE_SLIDING_COHESION:
+        raise ValueError(f"sliding_cohesion must be one of "
+                         f"{MSE_SLIDING_COHESION}; got {rule!r}")
+    if rule == "undrained" and not (c_foundation and c_foundation > 0):
+        raise ValueError(
+            "the undrained sliding resistance (sliding_cohesion 'undrained': "
+            "cu over the base, GEC-11 p. 4-21 Step 3(i), GEC-6 Eq. 5-39) "
+            "needs c_foundation = cu > 0. It is the rule taken when "
+            "phi_foundation is 0; for a drained strength give "
+            "phi_foundation > 0.")
+    return rule
+
+
+def _sliding_resistance(rule: str, N: float, phi_backfill: float,
+                        phi_foundation: float, c_foundation: float,
+                        L: float) -> Dict[str, Any]:
+    """The base's sliding resistance under the normal force ``N`` (kN/m,
+    factored on the LRFD path) by ``rule`` (:func:`mse_sliding_rule`):
+    drained N min(tan phi_f, tan phi_r) (GEC-11 Eq. 4-12, mu p. 4-22);
+    undrained the smaller of cu L along the foundation and N tan phi_r
+    along the reinforced fill (p. 4-21 Step 3). ``R`` with its parts."""
+    if rule == "drained":
+        delta_b = min(phi_backfill, phi_foundation)
+        R = N * math.tan(math.radians(delta_b))
+        return {"R": R, "delta_b": delta_b, "R_foundation": None,
+                "R_fill": None, "along": None}
+    R_found = c_foundation * L
+    R_fill = N * math.tan(math.radians(phi_backfill))
+    return {"R": min(R_found, R_fill), "delta_b": None,
+            "R_foundation": R_found, "R_fill": R_fill,
+            "along": ("the foundation soil" if R_found <= R_fill
+                      else "the reinforced fill")}
+
+
+def sliding_cohesion_choice(rule: str, rule_default: str,
+                            phi_foundation: float, c_foundation: float,
+                            others: Dict[str, Any], what: str) -> list:
+    """How the sliding check counted the foundation cohesion (GM-297), as
+    at most one entry of a result's ``choices``: none when there is no
+    cohesion and the drained rule was in force by default. ``others`` maps
+    the other rule to its sliding result on the same wall (``what``, e.g.
+    'FOS_sliding'), or why it did not run."""
+    from geotech_common.choices import choice, how_given
+    if rule == "drained" and not c_foundation and rule == rule_default:
+        return []
+    if rule == "drained":
+        chosen = ("drained: R = V min(tan phi'_f, tan phi'_r)"
+                  + (f", c_foundation = {c_foundation:g} kPa not counted"
+                     if c_foundation else ""))
+    else:
+        chosen = (f"undrained: R = min(cu L, V tan phi'_r), cu = "
+                  f"c_foundation = {c_foundation:g} kPa, no base friction")
+    basis = MSE_SLIDING_COHESION_BASIS[rule]
+    if rule == rule_default:
+        basis = ((f"phi_foundation 0 is an undrained strength, so "
+                  f"c_foundation is cu: " if rule == "undrained" else
+                  f"phi_foundation {phi_foundation:g} deg is taken as a "
+                  f"drained strength, so c_foundation is c': ") + basis)
+    alts = []
+    for name in MSE_SLIDING_COHESION:
+        if name == rule:
+            continue
+        got = others.get(name)
+        if isinstance(got, str):
+            alts.append(f"{name}: not run here ({got}). "
+                        + MSE_SLIDING_COHESION_SHORT[name])
+        else:
+            alts.append(f"{name} ({what} {got:.3f}): "
+                        + MSE_SLIDING_COHESION_SHORT[name])
+    alts.append(
+        "the module's rule before GM-297, R = V tan delta_b + (2/3) "
+        "c_foundation L: no reference held prints it")
+    return [choice(
+        "foundation cohesion in the sliding resistance (sliding_cohesion)",
+        chosen, how_given(rule, rule_default, name="sliding_cohesion"),
+        basis, alts)]
+
+
 def check_external_stability(
     geom: MSEWallGeometry,
     gamma_backfill: float,
@@ -1959,10 +2156,13 @@ def check_external_stability(
     traffic_vertical_resists: bool = False,
     live_load_resists: bool = False,
     surcharge_in_bearing: bool = True,
+    sliding_cohesion: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Check external stability of MSE wall as rigid block (ASD).
 
-    FOS_sliding = (V tan(delta_b) + ca L) / P_a, FOS_overturning =
+    FOS_sliding = R / P_a, R by ``sliding_cohesion`` (drained V
+    min(tan phi_f, tan phi_r), undrained min(cu L, V tan phi_r); GM-297,
+    :data:`MSE_SLIDING_COHESION_BASIS`), FOS_overturning =
     M_stabilizing / M_overturning, both about the toe of the reinforced
     zone, and the Meyerhof bearing pressure sigma_v = V_b / (L - 2 e_B).
     V and M_stabilizing count the live-load surcharge over the reinforced
@@ -1986,15 +2186,19 @@ def check_external_stability(
     phi_foundation : float
         Foundation friction angle (degrees).
     c_foundation : float, optional
-        Foundation cohesion (kPa). Default 0.
+        Foundation cohesion (kPa). Default 0. Counted in sliding only by
+        the undrained rule, as cu (``sliding_cohesion``).
     q_allowable : float, optional
         Allowable bearing (kPa). Default None: the bearing check is NOT RUN
         (FOS_bearing and passes_bearing are None, bearing_checked False);
         sigma_v is still reported.
     FOS_sliding_req : float, optional
-        Required sliding FOS. Default 1.5.
+        Required sliding FOS. Default 1.5, the module's ASD value: GEC-11
+        (2009) designs by LRFD and does not update the ASD procedure (Vol
+        II App. F.1, p. F-2).
     FOS_overturning_req : float, optional
-        Required overturning FOS. Default 2.0.
+        Required overturning FOS. Default 2.0, the module's ASD value, as
+        FOS_sliding_req.
     phi_retained : float, optional
         Retained soil friction angle (degrees). If None, uses phi_backfill.
     gamma_retained : float, optional
@@ -2015,6 +2219,10 @@ def check_external_stability(
     surcharge_in_bearing : bool, optional
         Count that surcharge in the bearing pressure and its eccentricity
         e_B. Default True (:data:`BEARING_BASIS`).
+    sliding_cohesion : str, optional
+        'drained' or 'undrained' (:data:`MSE_SLIDING_COHESION`). Default
+        None: :func:`mse_sliding_rule`, undrained for phi_foundation 0,
+        else drained (GM-297).
 
     Returns
     -------
@@ -2045,7 +2253,7 @@ def check_external_stability(
         _external_terms(geom, gamma_backfill, phi_backfill, phi_foundation,
                         c_foundation, phi_retained, gamma_retained,
                         traffic_vertical_resists, live_load_resists,
-                        surcharge_in_bearing),
+                        surcharge_in_bearing, sliding_cohesion),
         q_allowable, FOS_sliding_req, FOS_overturning_req)
 
 
@@ -2060,6 +2268,7 @@ def _external_terms(
     traffic_vertical_resists: bool = False,
     live_load_resists: bool = False,
     surcharge_in_bearing: bool = True,
+    sliding_cohesion: Optional[str] = None,
 ) -> Dict[str, Any]:
     """The ASD external-stability terms, unrounded (GM-164), as
     :func:`check_external_stability` sums them.
@@ -2075,12 +2284,16 @@ def _external_terms(
     ``phi_foundation`` used; ``V`` and ``M_stabilizing`` (sliding and
     overturning), ``V_left_out``, ``V_bearing`` and ``M_bearing``, ``Pa``
     and ``M_overturning``;
-    ``delta_b``, ``ca``, ``resisting``; and the bearing resultant
+    ``sliding_cohesion`` (the rule, GM-297), ``c_foundation``,
+    ``delta_b`` (None by the undrained rule), ``R_foundation`` and
+    ``R_fill`` (cu L and V tan phi_r by the undrained rule, else None),
+    ``resisting``; and the bearing resultant
     ``x_resultant``, ``eccentricity`` (e_B), ``L_eff``, ``sigma_v``.
     With a sloping backfill ``backslope_loads`` (:func:`backslope_loads`),
     else None."""
     H = geom.wall_height
     L = geom.reinforcement_length
+    rule = mse_sliding_rule(sliding_cohesion, phi_foundation, c_foundation)
 
     # Use retained fill properties for external active pressure if provided
     phi_ext = phi_retained if phi_retained is not None else phi_backfill
@@ -2151,11 +2364,12 @@ def _external_terms(
     Pa = sum(f["P"] for f in horizontal)                  # horizontal driving
     M_over = sum(f["M"] for f in horizontal)
 
-    # Sliding: soil-on-soil interface, use min(phi_backfill, phi_foundation)
-    # per GEC-11 Section 4.3 (no 2/3 reduction for soil-on-soil)
-    delta_b = min(phi_backfill, phi_foundation)
-    ca = 2.0 / 3.0 * c_foundation
-    R_sliding = V * math.tan(math.radians(delta_b)) + ca * L
+    # Sliding: soil on soil, mu = min(tan phi_f, tan phi_r) (GEC-11 Eq.
+    # 4-12, p. 4-22), or by the undrained rule the smaller of cu L and
+    # V tan phi_r (p. 4-21 Step 3; GM-297: 2/3 c L added before)
+    sl = _sliding_resistance(rule, V, phi_backfill, phi_foundation,
+                             c_foundation, L)
+    R_sliding = sl["R"]
 
     # Bearing — Meyerhof uniform pressure over the effective width
     # (AASHTO 11.10.5.4 / GEC-11 Eq. 4-13): sigma_v = V_b / (L - 2e_B).
@@ -2178,7 +2392,10 @@ def _external_terms(
         "V_bearing": V_bearing, "M_bearing": M_bearing,
         "Pa": Pa, "M_overturning": M_over,
         "phi_backfill": phi_backfill, "phi_foundation": phi_foundation,
-        "delta_b": delta_b, "ca": ca, "L": L, "resisting": R_sliding,
+        "sliding_cohesion": rule, "c_foundation": c_foundation,
+        "delta_b": sl["delta_b"], "R_foundation": sl["R_foundation"],
+        "R_fill": sl["R_fill"], "sliding_along": sl["along"], "L": L,
+        "resisting": R_sliding,
         "x_resultant": x_R, "eccentricity": e, "L_eff": L_eff,
         "sigma_v": sigma_v,
         "traffic_vertical_resists": bool(traffic_vertical_resists),
@@ -2363,6 +2580,7 @@ def _external_dict(t: Dict[str, Any], q_allowable: float = None,
         "sigma_v_kPa": round(sigma_v, 1),
         "L_eff_m": round(max(L_eff, 0.0), 3),
         "eccentricity_m": round(e, 3),
+        "sliding_cohesion": t["sliding_cohesion"],      # GM-297
         "passes": passes,
     }
     if backslope is not None:
@@ -2456,6 +2674,7 @@ def check_external_stability_lrfd(
     traffic_vertical_resists: bool = False,
     gamma_foundation: float = None,
     phi_bearing: float = 0.65,
+    sliding_cohesion: Optional[str] = None,
 ) -> Dict[str, Any]:
     """AASHTO/GEC-11 LRFD external stability for an MSE wall (rigid block).
 
@@ -2515,7 +2734,15 @@ def check_external_stability_lrfd(
         Service bearing resistance (kPa). If given, the Service I bearing CDR is
         reported.
     c_foundation : float, optional
-        Foundation cohesion (kPa) for sliding adhesion (2/3 c). Default 0.
+        Foundation cohesion (kPa), c_f in qn when ``gamma_foundation`` is
+        given, and in sliding only by the undrained rule, as cu
+        (``sliding_cohesion``). Default 0.
+    sliding_cohesion : str, optional
+        'drained' (Rr = phi_tau gamma_EV V min(tan phi_f, tan phi_r),
+        GEC-11 Eqs. 4-12, 4-13) or 'undrained' (phi_tau min(cu L,
+        gamma_EV V tan phi_r), p. 4-21 Step 3; GEC-6 Eq. 5-39). Default
+        None: undrained for phi_foundation 0, else drained
+        (:func:`mse_sliding_rule`, GM-297; before it 2/3 c L was added).
     gamma_EV_max, gamma_EV_min : float, optional
         Vertical earth (EV) load factors. Defaults 1.35 / 1.00 (AASHTO Str I).
     gamma_EH_max, gamma_EH_min : float, optional
@@ -2525,8 +2752,11 @@ def check_external_stability_lrfd(
     phi_sliding : float, optional
         Sliding resistance factor. Default 1.0 (AASHTO 11.10.5.3).
     ecc_limit_ratio : float, optional
-        Limiting-eccentricity ratio e_max/L. Default 0.25 (L/4, MSE on soil;
-        use 1/6 for foundations on rock).
+        Limiting-eccentricity ratio e_max/L. Default 0.25: GEC-11 Vol I p.
+        4-23, the resultant 'within the middle one-half of the base width
+        for soil foundations (i.e., emax = L / 4) and middle three-fourths
+        of the base width for rock foundations (i.e., emax = 3/8 L)', so
+        0.375 on rock (GM-297: 'use 1/6 for rock' before).
     traffic_vertical_resists : bool, optional
         Broken backslope with traffic behind the crest only: count the
         traffic thrust's vertical component F2 sin(I) as sliding and
@@ -2583,13 +2813,14 @@ def check_external_stability_lrfd(
                              f"{phi_bearing}")
     soil = (None if gamma_foundation is None else
             (gamma_foundation, phi_foundation, c_foundation, phi_bearing, L))
+    rule = mse_sliding_rule(sliding_cohesion, phi_foundation, c_foundation)
     if geom.backfill_slope > 0:
         return _external_lrfd_sloping(
             geom, gamma_backfill, phi_backfill, phi_foundation, phi_ext,
             gamma_ext, q, bearing_resistance_strength,
             bearing_resistance_service, c_foundation, gamma_EV_max,
             gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL, phi_sliding,
-            ecc_limit_ratio, traffic_vertical_resists, soil)
+            ecc_limit_ratio, traffic_vertical_resists, soil, rule)
     Ka = rankine_Ka(phi_ext)
 
     # Unfactored load components about the toe (Point A). Vertical loads V*
@@ -2603,19 +2834,20 @@ def check_external_stability_lrfd(
     MF1 = F1 * (H / 3.0)
     MF2 = F2 * (H / 2.0)
 
-    delta_b = min(phi_backfill, phi_foundation)
-    tan_d = math.tan(math.radians(delta_b))
-    ca = (2.0 / 3.0) * c_foundation
+    # --- Sliding (LL excluded from resistance; Eq. 4-12, or by the
+    #     undrained rule cu L along the foundation, GM-297) ----------------
+    def _sliding_cdrs(sliding_rule):
+        def cdr(ev, eh):
+            demand = eh * F1 + gamma_LL * F2
+            resist = phi_sliding * _sliding_resistance(
+                sliding_rule, ev * V1, phi_backfill, phi_foundation,
+                c_foundation, L)["R"]
+            return (resist / demand) if demand > 0 else 99.9
+        return (cdr(gamma_EV_max, gamma_EH_max),    # all-max
+                cdr(gamma_EV_min, gamma_EH_min),    # all-min
+                cdr(gamma_EV_min, gamma_EH_max))    # min V, max H
 
-    # --- Sliding (LL excluded from resistance) -----------------------------
-    def _sliding_cdr(ev, eh):
-        demand = eh * F1 + gamma_LL * F2
-        resist = phi_sliding * (ev * V1 * tan_d + ca * L)
-        return (resist / demand) if demand > 0 else 99.9
-
-    cdr_slide_max = _sliding_cdr(gamma_EV_max, gamma_EH_max)   # all-max
-    cdr_slide_min = _sliding_cdr(gamma_EV_min, gamma_EH_min)   # all-min
-    cdr_slide_crit = _sliding_cdr(gamma_EV_min, gamma_EH_max)  # min V, max H
+    cdr_slide_max, cdr_slide_min, cdr_slide_crit = _sliding_cdrs(rule)
 
     # --- Limiting eccentricity (LL excluded from resistance) ---------------
     MOA = gamma_EH_max * MF1 + gamma_LL * MF2   # max overturning about toe
@@ -2663,7 +2895,30 @@ def check_external_stability_lrfd(
          "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
          "LL": gamma_LL, "phi_sliding": phi_sliding,
          "ecc_limit_ratio": ecc_limit_ratio},
-        soil, Bp_crit)
+        soil, Bp_crit,
+        _lrfd_sliding_choice(rule, phi_foundation, c_foundation,
+                             _sliding_cdrs), rule)
+
+
+def _lrfd_sliding_choice(rule, phi_foundation, c_foundation,
+                         sliding_cdrs) -> list:
+    """The LRFD sliding rule's choice (GM-297), the other rule's governing
+    CDR beside it (``sliding_cdrs(rule)`` gives a rule's three CDRs)."""
+    others = {}
+    for name in MSE_SLIDING_COHESION:
+        if name == rule:
+            continue
+        if name == "drained" and phi_foundation == 0:
+            others[name] = ("phi_foundation 0 is an undrained strength, so "
+                            "there is no base friction to count")
+        elif name == "undrained" and not (c_foundation and c_foundation > 0):
+            others[name] = "no c_foundation (cu) given"
+        else:
+            others[name] = min(sliding_cdrs(name))
+    from retaining_walls.cantilever import default_sliding_cohesion
+    return sliding_cohesion_choice(
+        rule, default_sliding_cohesion(phi_foundation), phi_foundation,
+        c_foundation, others, "sliding CDR_governing")
 
 
 def _external_lrfd_sloping(
@@ -2671,6 +2926,7 @@ def _external_lrfd_sloping(
     q, bearing_resistance_strength, bearing_resistance_service, c_foundation,
     gamma_EV_max, gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL,
     phi_sliding, ecc_limit_ratio, traffic_vertical_resists=False, soil=None,
+    rule="drained",
 ) -> Dict[str, Any]:
     """``check_external_stability_lrfd`` with a sloping backfill (GEC-11 Vol
     I §4.4.6; Vol II Examples E3 and E1). Same combinations and result as the
@@ -2680,8 +2936,6 @@ def _external_lrfd_sloping(
     ld = backslope_loads(geom, gamma_backfill, phi_ext, gamma_ext, q)
     V12 = ld["V1"] + ld["V2"]                       # EV
     M12 = ld["MV1"] + ld["MV2"]
-    tan_d = math.tan(math.radians(min(phi_backfill, phi_foundation)))
-    ca = (2.0 / 3.0) * c_foundation
     # The traffic thrust's vertical component F2V resists sliding and
     # eccentricity only by choice: Example E1 counts it; the general text
     # counts resisting loads "only if those loads are permanent" (p. 4-22).
@@ -2690,13 +2944,18 @@ def _external_lrfd_sloping(
 
     # Sliding (Eqs. 4-11, 4-13): F_TH drives and F_TV resists with the same
     # EH factor; the traffic thrust F2H drives with the LL factor (Example
-    # E1); live load over the reinforced zone (Vs) excluded.
-    def _sliding_cdr(ev, eh):
-        demand = eh * ld["FTH"] + gamma_LL * ld["F2H"]
-        resist = phi_sliding * (
-            (ev * V12 + eh * ld["FTV"] + ll_v * ld["F2V"]) * tan_d
-            + ca * L)
-        return (resist / demand) if demand > 0 else 99.9
+    # E1); live load over the reinforced zone (Vs) excluded. The resistance
+    # by the rule for the foundation cohesion (GM-297).
+    def _sliding_cdrs(sliding_rule):
+        def cdr(ev, eh):
+            demand = eh * ld["FTH"] + gamma_LL * ld["F2H"]
+            resist = phi_sliding * _sliding_resistance(
+                sliding_rule, ev * V12 + eh * ld["FTV"] + ll_v * ld["F2V"],
+                phi_backfill, phi_foundation, c_foundation, L)["R"]
+            return (resist / demand) if demand > 0 else 99.9
+        return (cdr(gamma_EV_max, gamma_EH_max),
+                cdr(gamma_EV_min, gamma_EH_min),
+                cdr(gamma_EV_min, gamma_EH_max))
 
     # Resultant on the base about the toe (Eq. 4-16, Eqs. 4-19 to 4-21);
     # ll / ll_vert = the factors on F2H / F2V, vs = the factor on the live
@@ -2712,9 +2971,7 @@ def _external_lrfd_sloping(
         sigma = (SV / Bp) if Bp > 0 else 1.0e6
         return sigma, eL, Bp
 
-    cdr_slide_max = _sliding_cdr(gamma_EV_max, gamma_EH_max)
-    cdr_slide_min = _sliding_cdr(gamma_EV_min, gamma_EH_min)
-    cdr_slide_crit = _sliding_cdr(gamma_EV_min, gamma_EH_max)
+    cdr_slide_max, cdr_slide_min, cdr_slide_crit = _sliding_cdrs(rule)
     eL_max = _base(gamma_EV_max, gamma_EH_max, gamma_LL, ll_v, 0.0)[1]
     eL_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL, ll_v, 0.0)[1]
     sig_str, eL_bear, Bp_str = _base(gamma_EV_max, gamma_EH_max, gamma_LL,
@@ -2740,7 +2997,9 @@ def _external_lrfd_sloping(
          "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
          "LL": gamma_LL, "phi_sliding": phi_sliding,
          "ecc_limit_ratio": ecc_limit_ratio},
-        soil, Bp_crit)
+        soil, Bp_crit,
+        _lrfd_sliding_choice(rule, phi_foundation, c_foundation,
+                             _sliding_cdrs), rule)
     out["backslope"] = _backslope_summary(ld, traffic_vertical_resists)
     return out
 
@@ -2749,14 +3008,16 @@ def _lrfd_result(
     cdr_slide_max, cdr_slide_min, cdr_slide_crit, eL_max, eL_crit, e_limit,
     sig_str, eL_bear, Bp_str, sig_crit, sig_svc,
     bearing_resistance_strength, bearing_resistance_service,
-    unfactored, load_factors, soil=None, Bp_crit=None,
+    unfactored, load_factors, soil=None, Bp_crit=None, sliding_choice=None,
+    sliding_rule=None,
 ) -> Dict[str, Any]:
     """The LRFD external-stability result from its CDRs, eccentricities and
     bearing stresses (shared by the level and sloping-backfill cases).
     ``soil`` = (gamma_f, phi_f, c_f, phi_b, L) works the strength bearing
     resistance out by GEC-11 Eq. 4-22 over each combination's L'
     (``Bp_str``, ``Bp_crit``; L' = L when eB < 0, p. 4-28) instead of
-    taking it given (GM-179)."""
+    taking it given (GM-179). ``sliding_choice``: the rule for the
+    foundation cohesion in sliding, as choices (GM-297)."""
     cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
     eL_gov = max(eL_max, eL_crit)
 
@@ -2838,6 +3099,7 @@ def _lrfd_result(
             "CDR_critical": round(cdr_slide_crit, 3),
             "CDR_governing": round(cdr_slide_gov, 3),
             "passes": cdr_slide_gov >= 1.0,
+            "sliding_cohesion": sliding_rule,           # GM-297
         },
         "eccentricity": {
             "eL_strength_max_m": round(eL_max, 4),
@@ -2853,8 +3115,10 @@ def _lrfd_result(
         "unfactored_kN_m": unfactored,
         "load_factors": load_factors,
     }
-    if worked_out:
-        out["choices"] = bearing_resistance_choices(soil[3])
+    choices = (list(sliding_choice or [])
+               + (bearing_resistance_choices(soil[3]) if worked_out else []))
+    if choices:
+        out["choices"] = choices
     return out
 
 
@@ -2880,6 +3144,7 @@ def analyze_mse_wall(
     F_star_tested=None,
     alpha_tested: float = None,
     sigma_H_average: Optional[str] = None,
+    sliding_cohesion: Optional[str] = None,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -2905,7 +3170,13 @@ def analyze_mse_wall(
     phi_foundation : float, optional
         Foundation friction angle. If None, uses phi_backfill.
     c_foundation : float, optional
-        Foundation cohesion (kPa). Default 0.
+        Foundation cohesion (kPa). Default 0. Counted in sliding only by
+        the undrained rule, as cu (``sliding_cohesion``).
+    sliding_cohesion : str, optional
+        'drained' or 'undrained', how sliding counts the foundation
+        cohesion, on both paths (:data:`MSE_SLIDING_COHESION_BASIS`).
+        Default None: undrained for phi_foundation 0, else drained
+        (:func:`mse_sliding_rule`, GM-297).
     q_allowable : float, optional
         Allowable bearing pressure (kPa). Default None: the bearing check is
         NOT RUN and the result says so (``checks_not_run``), never a pass.
@@ -2956,8 +3227,11 @@ def analyze_mse_wall(
         broken backslope) ``result.backslope`` carries the GEC-11 basis;
         see ``check_external_stability`` and ``check_internal_stability``.
         ``external_terms`` holds the ASD terms as the checks used them
-        (:func:`_external_terms`) and ``choices`` how a live load over the
-        reinforced zone was counted (:func:`live_load_choices`), the
+        (:func:`_external_terms`) and ``choices`` the rule for the
+        foundation cohesion in sliding when there is cohesion or the rule
+        was given (:func:`sliding_cohesion_choice`, GM-297), how a live
+        load over the reinforced zone was counted
+        (:func:`live_load_choices`), the
         coverage ratio Rc (:func:`coverage_choice`), a built-in's Tal and
         a FOS_rupture below 1.0 (:func:`tensile_strength_choice`), and for
         ribbed steel strips the F* at the top of the wall, or a tested F*
@@ -2980,6 +3254,7 @@ def analyze_mse_wall(
                               source)
     coverage_ratios(reinforcement, geom.reinforcement_depths, source)
     _check_tested(F_star_tested, alpha_tested)
+    _check_grid_geometry(rs, F_star_tested)
     _level_alphas(reinforcement, rs, alpha_tested)
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
@@ -2987,14 +3262,35 @@ def analyze_mse_wall(
     if phi_foundation is None:
         phi_foundation = phi_backfill
 
-    terms = _external_terms(
-        geom, gamma_backfill, phi_backfill, phi_foundation, c_foundation,
-        phi_retained=phi_retained, gamma_retained=gamma_retained,
-        traffic_vertical_resists=traffic_vertical_resists,
-        live_load_resists=live_load_resists,
-        surcharge_in_bearing=surcharge_in_bearing,
-    )
+    def ext_terms(rule):
+        return _external_terms(
+            geom, gamma_backfill, phi_backfill, phi_foundation, c_foundation,
+            phi_retained=phi_retained, gamma_retained=gamma_retained,
+            traffic_vertical_resists=traffic_vertical_resists,
+            live_load_resists=live_load_resists,
+            surcharge_in_bearing=surcharge_in_bearing,
+            sliding_cohesion=rule)
+
+    terms = ext_terms(sliding_cohesion)
     external = _external_dict(terms, q_allowable)
+    # the other rule for the foundation cohesion on the same wall (GM-297)
+    others = {}
+    for name in MSE_SLIDING_COHESION:
+        if name == terms["sliding_cohesion"]:
+            continue
+        if name == "drained" and phi_foundation == 0:
+            others[name] = ("phi_foundation 0 is an undrained strength, so "
+                            "there is no base friction to count")
+            continue
+        try:
+            others[name] = _external_dict(ext_terms(name),
+                                          q_allowable)["FOS_sliding"]
+        except ValueError as exc:
+            others[name] = str(exc)
+    from retaining_walls.cantilever import default_sliding_cohesion
+    slide_choice = sliding_cohesion_choice(
+        terms["sliding_cohesion"], default_sliding_cohesion(phi_foundation),
+        phi_foundation, c_foundation, others, "FOS_sliding")
 
     internal = check_internal_stability(
         geom, gamma_backfill, phi_backfill, reinforcement,
@@ -3026,6 +3322,7 @@ def analyze_mse_wall(
             gamma_foundation=(gamma_foundation
                               if bearing_resistance_strength is None
                               else None),
+            sliding_cohesion=sliding_cohesion,
         )
 
     return MSEWallResult(
@@ -3045,8 +3342,8 @@ def analyze_mse_wall(
         external_lrfd=external_lrfd,
         backslope=backslope,
         external_terms=terms,
-        choices=live_load_choices(geom, live_load_resists,
-                                  surcharge_in_bearing)
+        choices=slide_choice
+        + live_load_choices(geom, live_load_resists, surcharge_in_bearing)
         + [coverage_choice(reinforcement, internal)]
         + tensile_strength_choice(reinforcement, internal)
         + pullout_factor_choices(geom, gamma_backfill, phi_backfill,

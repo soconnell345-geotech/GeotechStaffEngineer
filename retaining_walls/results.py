@@ -479,7 +479,8 @@ class MSEWallResult:
     @property
     def checks_failed(self) -> List[str]:
         """The checks that were run and FAILED: 'sliding', 'overturning',
-        'bearing', 'internal' (pullout or rupture at some level)."""
+        'bearing', 'internal' (pullout, rupture or Le under 3 ft at some
+        level)."""
         failed = []
         if self.passes_sliding is False:
             failed.append("sliding")
@@ -522,7 +523,8 @@ class MSEWallResult:
                         if not self.bearing_checked
                         else f"bearing (FOS {self.FOS_bearing:.2f})"),
             "external": "external stability",
-            "internal": ("internal stability (pullout or rupture at z = "
+            "internal": ("internal stability (pullout, rupture or Le under "
+                         "3 ft at z = "
                          + ", ".join(f"{z:.2f}" for z in self.failed_levels)
                          + " m)"),
         }

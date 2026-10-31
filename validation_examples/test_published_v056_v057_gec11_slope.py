@@ -663,7 +663,10 @@ def test_v057_e1_in_one_run_at_its_layers():
     it is 1.4 % over the printed 1,366 lb/ft, the safe side (at Z it was
     3.0 % over; test_v057_rupture_cdr_by_layer). The rupture CDRs follow
     within 0.6 % (Layer 10 1.5 % under), and the module's own La, Le and
-    Zp give the pullout CDRs of Table E1-7.5 within 1.1 %."""
+    Zp give the pullout CDRs of Table E1-7.5 within 0.6 % (Layer 10 1.3 %
+    under, its TMAX over as above), at F* = (2/3) tan 34 deg = 0.450, the
+    0.45 Table E1-7.5 prints (GEC-11 Vol I Eq. 3-8; GM-297, 0.67 tan phi
+    before)."""
     z = [lv[0] for lv in E1_TABLE_7_5]
     grades = [lv[3] for lv in E1_TABLE_7_4]
     geom = MSEWallGeometry(wall_height=20 * FT, reinforcement_length=18 * FT,
@@ -687,6 +690,8 @@ def test_v057_e1_in_one_run_at_its_layers():
         assert lv["Le_m"] / FT == pytest.approx(Le, abs=0.03), layer
         assert lv["Zp_m"] / FT == pytest.approx(Zp, abs=0.02), layer
         assert lv["FOS_pullout"] * 0.90 / 1.35 == pytest.approx(
-            po, rel=0.011), layer
+            po, rel=0.014 if layer == 10 else 0.006), layer
+        assert lv["F_star"] == pytest.approx(0.45, abs=0.001), layer
+        assert lv["Le_at_least_3ft"], layer
     assert 1.35 * rows[9]["Tmax_kN_per_m"] * 1000 / KFT == pytest.approx(
         1386, abs=1)

@@ -1141,19 +1141,22 @@ class TestBarMatCurves:
             round(Kr_Ka_ratio(top["depth_m"], "metallic"), 3), abs=0.002)
         assert top["Kr_Ka"] < 1.75   # strip top, not the 2.43 bar-mat value
 
-    def test_grid_without_geometry_falls_back_to_strip_Fstar(self):
-        """A metallic_grid with no transverse geometry (t/St unknown) must not
-        crash: F* falls back to the ribbed-strip curve (additive safety)."""
+    def test_grid_without_geometry_is_refused(self):
+        """GM-297: a metallic_grid with no transverse geometry (t/St
+        unknown) is refused. GEC-11 Vol I Eqs. 3-6 and 3-7 (p. 3-21) give a
+        grid's F* = 20 t/St to 10 t/St; the ribbed-strip curve it took
+        before (Eqs. 3-4, 3-5) is for strips."""
         geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6,
                                reinforcement_length=5.0)
         bare_grid = Reinforcement(name="bare grid", type="metallic_grid",
                                   Tallowable=100.0, coverage_ratio=0.3)
-        results = check_internal_stability(geom, 18.0, 34.0, bare_grid)
-        top = results[0]
-        # Kr/Ka still bar-mat (geometry not needed for Kr), F* strip fallback
+        with pytest.raises(ValueError, match="t/St"):
+            check_internal_stability(geom, 18.0, 34.0, bare_grid)
+        # a tested F* stands in for the missing geometry
+        top = check_internal_stability(geom, 18.0, 34.0, bare_grid,
+                                       F_star_tested=1.2)[0]
         assert top["Kr_Ka"] > 2.0
-        assert top["F_star"] == pytest.approx(
-            round(F_star_metallic(top["depth_m"], 34.0), 3), abs=0.002)
+        assert top["F_star"] == pytest.approx(1.2)
 
 
 class TestBaseInterfaceOverrides:

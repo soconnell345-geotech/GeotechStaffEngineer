@@ -116,7 +116,8 @@ def test_the_geogrid_wall_fails_rupture_at_1_5_where_it_passed_at_1_0():
     assert [lv["depth_m"] for lv in before if not lv["passes"]] == [5.1, 5.7]
     assert {lv["FOS_rupture_required"] for lv in before} == {1.0}
     r = analyze_mse_wall(_geogrid_wall(), 19.0, 34.0, GEOGRID_GEC11_E1_GG1)
-    assert "rupture at z = 3.30, 3.90, 4.50, 5.10, 5.70 m" in r.verdict
+    assert "rupture or Le under 3 ft at z = 3.30, 3.90, 4.50, 5.10, " \
+           "5.70 m" in r.verdict
     # E1's GG-II, twice GG-I's Tal, passes at every level (lowest 1.723)
     two = check_internal_stability(_geogrid_wall(), 19.0, 34.0,
                                    GEOGRID_GEC11_E1_GG2)

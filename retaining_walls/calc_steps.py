@@ -1112,7 +1112,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         substitution=f"K_a = tan²(45° - {phi_b:.1f}°/2)",
         result_name="K_a",
         result_value=f"{Ka:.4f}",
-        reference="Rankine (1857); GEC-11 uses Rankine for MSE walls",
+        reference="GEC-11 Vol I Eq. 4-1 (p. 4-15), vertical wall, level "
+                  "backfill",
     ))
 
     # Active force: the thrusts the analysis summed
@@ -1181,26 +1182,43 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         notes=notes,
     ))
 
-    delta_b = t["delta_b"]
-    ca = t["ca"]
+    # GM-297: the rule for the foundation cohesion; 2/3 c L added before
     R_slide = t["resisting"]
-    ext_items.append(CalcStep(
-        title="Sliding Resistance",
-        equation=("R = V × tan(δ_b) + c_a × L,  "
-                  "δ_b = min(φ_r, φ_f)"),
-        substitution=(
-            f"δ_b = min({phi:.1f}°, {phi_f:.1f}°); "
-            f"R = {V:.1f} × tan({delta_b:.2f}°)"
-            + (f" + {ca:.1f} × {L:.2f}" if ca > 0 else "")
-        ),
-        result_name="R",
-        result_value=f"{R_slide:.1f}",
-        result_unit="kN/m",
-        reference="GEC-11 Vol I Eq. 4-12 (soil on soil)",
-        notes=(f"V leaves out the live load over the reinforced zone, "
-               f"{left_out:.1f} kN/m (GEC-11 p. 4-19)."
-               if left_out > 0 else ""),
-    ))
+    slide_notes = (f"V leaves out the live load over the reinforced zone, "
+                   f"{left_out:.1f} kN/m (GEC-11 p. 4-19)."
+                   if left_out > 0 else "")
+    if t.get("sliding_cohesion", "drained") == "drained":
+        delta_b = t["delta_b"]
+        c_f = t.get("c_foundation") or 0.0
+        ext_items.append(CalcStep(
+            title="Sliding Resistance",
+            equation="R = V × tan(δ_b),  δ_b = min(φ_r, φ_f)",
+            substitution=(
+                f"δ_b = min({phi:.1f}°, {phi_f:.1f}°); "
+                f"R = {V:.1f} × tan({delta_b:.2f}°)"),
+            result_name="R",
+            result_value=f"{R_slide:.1f}",
+            result_unit="kN/m",
+            reference="GEC-11 Vol I Eq. 4-12 (p. 4-21), μ p. 4-22",
+            notes=(slide_notes + (
+                f" c_foundation = {c_f:g} kPa is not counted: Eq. 4-12 has "
+                f"no cohesion term (drained rule; see Choices)."
+                if c_f > 0 else "")).strip(),
+        ))
+    else:
+        ext_items.append(CalcStep(
+            title="Sliding Resistance (undrained foundation)",
+            equation="R = min(c_u × L, V × tan φ_r)",
+            substitution=(
+                f"R = min({t['c_foundation']:.1f} × {L:.2f}, {V:.1f} × "
+                f"tan {phi:.1f}°) = min({t['R_foundation']:.1f}, "
+                f"{t['R_fill']:.1f}): along {t['sliding_along']}"),
+            result_name="R",
+            result_value=f"{R_slide:.1f}",
+            result_unit="kN/m",
+            reference="GEC-11 Vol I p. 4-21 Step 3; GEC-6 Eq. 5-39",
+            notes=slide_notes,
+        ))
 
     ext_items.append(CalcStep(
         title="Factor of Safety Against Sliding",
@@ -1208,7 +1226,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         substitution=f"FOS_sliding = {R_slide:.1f} / {Pa_total:.1f}",
         result_name="FOS_sliding",
         result_value=f"{result.FOS_sliding:.3f}",
-        reference="GEC-11 (min 1.5)",
+        reference=(f"ASD, required {result.FOS_sliding_required:g} "
+                   f"(FOS_sliding_req)"),
     ))
 
     # Overturning: the thrusts' moments as the analysis summed them
@@ -1240,7 +1259,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         substitution=f"FOS_ot = {M_stab:.1f} / {M_over:.1f}",
         result_name="FOS_ot",
         result_value=f"{result.FOS_overturning:.3f}",
-        reference="GEC-11 (min 2.0)",
+        reference=(f"ASD, required {result.FOS_overturning_required:g} "
+                   f"(FOS_overturning_req)"),
     ))
 
     # Bearing — Meyerhof uniform pressure over effective width (RW-3), on
@@ -1545,6 +1565,8 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                      "FOS_po", "FOS_ru", "Status"],
             rows=int_rows,
             notes=(
+                "L_e = L - L_a, at least 3 ft (0.91 m) (GEC-11 Eq. 4-36): "
+                "a level with less fails. "
                 f"FOS_pullout required: 1.5. FOS_rupture required: "
                 + ("1.0 (T_al the steel allowable, 0.55 or 0.48 F_y). "
                    if FS_ru == 1.0 else
@@ -1818,7 +1840,8 @@ def _mse_terms(result, analysis):
             _mse_used(analysis, "traffic_vertical_resists")),
         live_load_resists=bool(_mse_used(analysis, "live_load_resists")),
         surcharge_in_bearing=bool(
-            _mse_used(analysis, "surcharge_in_bearing")))
+            _mse_used(analysis, "surcharge_in_bearing")),
+        sliding_cohesion=_mse_used(analysis, "sliding_cohesion"))
 
 
 def _plot_cantilever_section(result, analysis):
