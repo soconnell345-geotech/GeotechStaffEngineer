@@ -565,7 +565,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "(basal heave, blowout, piping).",
         "methods": [
             "**FHWA apparent-pressure** envelopes (Terzaghi&ndash;Peck / Peck) for braced cuts and "
-            "anchored walls, with tributary strut/anchor loads and hinge moments.",
+            "anchored walls; braced-wall support loads by the Caltrans hinge method (or GEC-4's, or "
+            "UFC 3-220-20's simple spans) and the GEC-4 tributary area method for anchored walls.",
             "Cantilever and single-anchor free-earth solutions; ground-anchor design; wall-section "
             "sizing.",
             "Basal heave &mdash; **Bjerrum&ndash;Eide** bearing ratio and a **Caltrans** force balance with "
@@ -574,9 +575,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "T&amp;S; validated V-014/V-016.",
         ],
         "limits": [
-            "The single-anchor FHWA apparent-diagram embedment solver and a multi-anchor apparent-envelope "
-            "helper are documented gaps; the primitives (K, p<sub>e</sub>, tributary loads, hinge "
-            "moments) reproduce the worked examples (V-016).",
+            "The apparent-pressure envelopes, anchor loads and moments reproduce the worked examples "
+            "(V-016, Caltrans Ex 8-2); the embedment below the lowest support is free earth support "
+            "about it (Caltrans T&amp;S 8-4).",
             "Where no moment balance exists within six times the excavation depth, the free-earth "
             "solution returns no embedment (and nothing computed from it) with a plain note, never a "
             "depth without a solution.",
@@ -1081,7 +1082,7 @@ VALIDATION_ROWS = [
     ("V-013", "sheet_pile", "Single-anchor wall &mdash; log-spiral K<sub>p</sub>, FHWA apparent diagram", "Caltrans T&amp;S Ex 8-1", "PASS"),
     ("V-014", "soe", "Basal heave &mdash; Caltrans force balance w/ side shear", "Caltrans T&amp;S Ex 10-2", "PASS"),
     ("V-015", "slope_stability", "Fellenius &amp; Bishop FOS on a specified circle", "Caltrans T&amp;S Ex 10-3/4", "PASS"),
-    ("V-016", "soe", "Two-tier anchored wall &mdash; apparent envelope, anchor loads", "GEC-4 Ex 1", "PASS / CONVENTION"),
+    ("V-016", "soe", "Two-tier anchored wall &mdash; apparent envelope, anchor loads", "GEC-4 Ex 1", "PASS"),
     ("V-017", "lateral_pile", "Laterally loaded micropile (LPILE benchmark)", "FHWA Micropile Ex 2", "PASS / CONVENTION"),
     ("V-018", "ground_improvement", "Rammed aggregate pier settlement + baseline consolidation", "GEC-13 Ex 1", "PASS / N/A"),
     ("V-019", "ground_improvement", "Stone-column settlement (Priebe curve)", "GEC-13 Ex 2", "PASS"),

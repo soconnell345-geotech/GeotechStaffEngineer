@@ -6,11 +6,12 @@ Three walls, each the SOE tool's own result (BACKLOG GM-41):
 * ``cantilever`` -- ``analyze_cantilever_excavation``: Caltrans T&S Manual
   Simplified Method (Sec 7-5.02) on layered Rankine pressures with water;
 * ``braced`` -- ``analyze_braced_excavation``: Terzaghi-Peck apparent
-  pressure envelope, tributary support loads, free earth support below the
-  lowest support;
+  pressure envelope, support loads by the Caltrans hinge method (or GEC-4's,
+  or UFC 3-220-20's simple spans), free earth support below the lowest
+  support;
 * ``fhwa_anchored`` -- ``fhwa_apparent_pressure_anchored_wall``: the FHWA
   GEC-4 apparent-pressure envelope and tributary anchor loads (free earth
-  support about a single anchor).
+  support about a single anchor, and below the lowest of two or more).
 
 Every number printed is the result's (or the inputs the run used); nothing
 here works a value out again (GM-141 / GM-143). An equation is shown with
@@ -31,12 +32,17 @@ DISPLAY_NAME = "Support of Excavation Wall Analysis"
 
 REFERENCES = [
     "California Department of Transportation (2025). Trenching and Shoring "
-    "Manual, Section 7-5.02 (cantilever walls, Simplified Method) and "
-    "Chapter 8 (anchored walls, Example 8-1).",
+    "Manual, Section 7-5.02 (cantilever walls, Simplified Method; Example "
+    "7-3) and Chapter 8 (apparent pressures, Sec. 8-3; anchored and braced "
+    "walls, Sec. 8-4, Figure 8-7, hinge method; Examples 8-1 and 8-2).",
     "FHWA-IF-99-015 (1999). Geotechnical Engineering Circular No. 4: Ground "
     "Anchors and Anchored Systems, Section 5.2 (apparent pressure envelopes, "
-    "Figure 24), Figure 34 (anchor loads, hinge method), Equation 20 and "
-    "Figure 39 (anchor loads and moments, tributary area method).",
+    "Figures 23 and 24, Equation 11), Figure 38 (hinge method), Equation 20 "
+    "and Figure 39 (anchor loads and moments, tributary area method), "
+    "Appendix A Example 1.",
+    "UFC 3-220-20 (2025). Foundations and Earth Structures, Figures 4-52 and "
+    "4-53 (apparent pressures, internally supported walls), Figure 4-54 "
+    "(strut loads), Figures 4-41 and 4-42 (cantilever walls).",
     "Terzaghi, K. and Peck, R.B. (1967). Soil Mechanics in Engineering "
     "Practice, 2nd ed. Wiley.",
     "Peck, R.B. (1969). Deep Excavations and Tunneling in Soft Ground. "
@@ -289,6 +295,18 @@ def _cantilever_steps(r, analysis) -> List[CalcSection]:
         substitution=f"L = {H:g} + {r.required_embedment_m:.2f}",
         result_name="L", result_value=r.total_wall_length_m,
         result_unit="m"))
+    if r.moment_body_D0_m is not None:
+        emb.append(CalcStep(
+            title="Depth to O at FS = 1.0 (the body for the shear and moment)",
+            equation="Σ M<sub>O</sub>(driving) = Σ M<sub>O</sub>(passive)",
+            substitution="the same pressures with the passive pressure "
+                         "unfactored",
+            result_name="D0 (FS = 1)", result_value=r.moment_body_D0_m,
+            result_unit="m",
+            reference="Caltrans T&S Example 7-3, p. 7-41",
+            notes="The shear and moment below come from this body; the "
+                  "choices give the factored body's moment (UFC 3-220-20 "
+                  "Fig. 4-41)."))
     sections.append(CalcSection(title="Embedment", items=emb))
     sections.append(CalcSection(title="Wall Demands",
                                 items=_demand_items(r, analysis)))
@@ -316,13 +334,18 @@ def _demand_items(r, analysis) -> list:
         result_unit="kN/m"))
     fy = _get(analysis, "Fy")
     if fy is not None:
+        fb = getattr(r, "Fb_ratio", 0.60)
         items.append(CalcStep(
             title="Required section modulus (ASD)",
-            equation="S<sub>x</sub> = M<sub>max</sub> / (0.66 F<sub>y</sub>)",
-            substitution=f"S<sub>x</sub> = {M:.2f} / (0.66 × {fy:g} × 1000)"
-                         " × 10⁶",
+            equation=f"S<sub>x</sub> = M<sub>max</sub> / ({fb:g} "
+                     "F<sub>y</sub>)",
+            substitution=f"S<sub>x</sub> = {M:.2f} / ({fb:g} × {fy:g} × "
+                         "1000) × 10⁶",
             result_name="Sx", result_value=r.required_Sx_cm3,
-            result_unit="cm³/m"))
+            result_unit="cm³/m",
+            reference="Caltrans T&S Example 7-3, p. 7-43 (Fb = 0.60 Fy)"
+            if fb == 0.60 else
+            "Fb as given (the choices give the printed values)"))
     return items
 
 
@@ -330,12 +353,44 @@ _ENVELOPE = {
     "sand": ("p = 0.65 K<sub>a</sub> γ H",
              "Terzaghi & Peck (1967); FHWA GEC-4 Eq. 10b, p. 51"),
     "soft_clay": ("p = (1 − m·4c<sub>u</sub>/(γH)) γ H, "
-                  "K<sub>a,app</sub> ≥ 0.25, m = 1",
-                  "Peck (1969); FHWA GEC-4 5.2.6"),
-    "stiff_clay": ("p = (0.2 + 0.2 N/4) γ H ≤ 0.4 γ H, N = γH/c<sub>u</sub>"
-                   " (trapezoid, 0.25H-0.75H)",
-                   "Peck (1969); FHWA GEC-4 5.2.5"),
+                  "K<sub>a,app</sub> ≥ 0.25, m = 1 (rising over the top "
+                  "0.25H, constant below)",
+                  "FHWA GEC-4 Eq. 11 and Figure 23(c); UFC 3-220-20 Figure "
+                  "4-52; Caltrans T&S Eq. 8-3-4 (Ka ≥ 0.25)"),
+    "stiff_clay": ("p = k γ H, k = 0.2 to 0.4 (trapezoid, constant from "
+                   "0.25H to 0.75H)",
+                   "UFC 3-220-20 Figure 4-53; Caltrans T&S Eq. 8-3-2; FHWA "
+                   "GEC-4 5.2.5"),
 }
+
+#: How each support load method splits the spans (GM-290).
+_SPAN_NOTES = {
+    "hinge": "The Caltrans T&S hinge method (Sec. 8-4.02, Figure 8-7, p. "
+             "8-10): the span above the first support is a cantilever (all "
+             "to that support), and its moment M1 there is carried by the "
+             "span below (T1L = P/2 + M1/L, T2U = P/2 − M1/L); the other "
+             "spans between supports are simply supported; the lowest "
+             "support's load from below is free earth support's (FS = 1), "
+             "the last row's 'to support above'.",
+    "hinge_subgrade": "GEC-4's hinge method (Figure 38, p. 79): the span "
+                      "above the first support is a cantilever, its moment "
+                      "M1 carried by the span below; the spans down to the "
+                      "excavation base are simply supported, the base "
+                      "taking the subgrade reaction R.",
+    "simple_spans": "UFC 3-220-20 Figure 4-54 (p. 257): the span above the "
+                    "first support all to it, simple spans between "
+                    "supports, and the span below the lowest support a "
+                    "cantilever on it (all to it).",
+}
+_SPAN_REFS = {
+    "hinge": "Caltrans T&S Figure 8-7, p. 8-10 (hinge method); Example 8-2",
+    "hinge_subgrade": "FHWA GEC-4 Figure 38, p. 79 (hinge method)",
+    "simple_spans": "UFC 3-220-20 Figure 4-54, p. 257",
+}
+
+
+def _kn(x) -> str:
+    return "—" if x is None else f"{x:.2f}"
 
 
 def _braced_steps(r, analysis) -> List[CalcSection]:
@@ -351,15 +406,26 @@ def _braced_steps(r, analysis) -> List[CalcSection]:
     elif ap.get("cu_avg") is not None:
         sub = (f"γ = {ap.get('gamma_avg', 0):.2f} kN/m³, c<sub>u</sub> = "
                f"{ap['cu_avg']:.1f} kPa, H = {H:g} m, N = "
-               f"{ap.get('stability_number')}")
+               f"{ap.get('stability_number')}"
+               + (f", k = {ap['stiff_clay_coefficient']:g}"
+                  if t == "stiff_clay" else ""))
     else:
         sub = f"H = {H:g} m"
+    governed = ap.get("governed_by")
     items.append(CalcStep(
         title=f"Apparent pressure envelope ({t.replace('_', ' ')}, "
               f"{ap.get('shape', '')})",
         equation=eq, substitution=sub,
         result_name="p_max", result_value=r.max_apparent_pressure_kPa,
-        result_unit="kPa", reference=ref))
+        result_unit="kPa", reference=ref,
+        notes="" if governed is None else (
+            f"4 < N < 6: the larger of Ka γ H (Ka "
+            f"{ap['Ka']:.3f}) and the stiff clay ordinate "
+            f"{ap['stiff_clay_ordinate_kPa']:.2f} kPa (k = "
+            f"{ap['stiff_clay_coefficient']:g}), governed by the "
+            + ("stiff clay ordinate" if governed == "stiff_clay_ordinate"
+               else "soft clay one")
+            + " (Caltrans T&S Sec. 8-3.02, p. 8-6).")))
     k_q = "K<sub>a</sub>" if t == "sand" else "1.0"
     items.append(CalcStep(
         title="Surcharge pressure added over the excavated height",
@@ -375,32 +441,38 @@ def _braced_steps(r, analysis) -> List[CalcSection]:
            "envelope)."))
     sections.append(CalcSection(title="Design Pressure", items=items))
 
+    method = getattr(r, "support_load_method", "hinge")
     loads = []
     if r.spans:
         loads.append(TableData(
-            title="Spans and tributary loads",
+            title="Spans and support loads",
             headers=["Span", "Top (m)", "Bottom (m)", "Load (kN/m)",
                      "Centroid below top (m)", "To support above (kN/m)",
                      "To support below (kN/m)"],
             rows=[[k, f"{s['z_top_m']:.2f}", f"{s['z_bot_m']:.2f}",
                    f"{s['load_kN_per_m']:.2f}",
                    f"{s['centroid_below_top_m']:.3f}",
-                   f"{s['to_upper_kN_per_m']:.2f}",
-                   f"{s['to_lower_kN_per_m']:.2f}"]
+                   _kn(s["to_upper_kN_per_m"]),
+                   _kn(s["to_lower_kN_per_m"])]
                   for k, s in enumerate(r.spans, 1)],
-            notes="The hinge method of FHWA GEC-4 Figure 34 (p. 67): the "
-                  "span above the first support is a cantilever (all to "
-                  "that support); interior spans split by their load's "
-                  "centroid; the bottom span goes wholly to the lowest "
-                  "support, with no subgrade reaction."))
+            notes=_SPAN_NOTES[method]))
     for k, rx in enumerate(r.support_reactions, 1):
+        up, lo = rx.get("from_above_kN_per_m"), rx.get("from_below_kN_per_m")
         loads.append(CalcStep(
             title=f"Support {k} load ({rx['type']}, z = {rx['depth_m']:g} m)",
-            equation="R<sub>i</sub> = Σ tributary span loads",
-            substitution="sum of the span shares above",
-            result_name=f"R{k}", result_value=rx["load_kN_per_m"],
-            result_unit="kN/m",
-            reference="FHWA GEC-4 Figure 34, p. 67 (hinge method)"))
+            equation="T<sub>i</sub> = T<sub>i,U</sub> + T<sub>i,L</sub>",
+            substitution=(f"T = {_kn(up)} + {_kn(lo)}" if up is not None
+                          else "sum of the span shares"),
+            result_name=f"T{k}", result_value=rx["load_kN_per_m"],
+            result_unit="kN/m", reference=_SPAN_REFS[method],
+            notes="" if rx["load_kN_per_m"] is not None else
+            "Not found: free earth support found no balance at FS = 1."))
+    if getattr(r, "subgrade_reaction_kN_per_m", None) is not None:
+        loads.append(CalcStep(
+            title="Subgrade reaction at the excavation base",
+            equation="R", substitution="the lowest span's share at H",
+            result_name="R", result_value=r.subgrade_reaction_kN_per_m,
+            result_unit="kN/m", reference=_SPAN_REFS[method]))
     sections.append(CalcSection(title="Support Loads", items=loads))
 
     fe = r.free_earth or {}
@@ -449,8 +521,11 @@ def _braced_steps(r, analysis) -> List[CalcSection]:
             result_name="T_below",
             result_value=fe["lowest_support_load_from_below_kN_per_m"],
             result_unit="kN/m",
-            notes="Not added to the tabulated support load, which takes the "
-                  "whole bottom span; see the notes."))
+            notes=("The lowest support's load from below in the tabulated "
+                   "support load (the hinge method, Caltrans T&S 8-4.02 step "
+                   "3)." if method == "hinge" else
+                   "Not added to the tabulated support load, which takes "
+                   "the support load method's; see the notes.")))
     sections.append(CalcSection(title="Embedment", items=emb))
     sections.append(CalcSection(title="Wall Demands",
                                 items=_demand_items(r, analysis)))
@@ -528,31 +603,58 @@ def _fhwa_steps(r, analysis) -> List[CalcSection]:
     sections.append(CalcSection(title="Anchor Loads", items=loads))
 
     dem = []
+    multi = r.get("n_anchors", 1) > 1
     if r.get("embedment_D_m") is not None:
         dem.append(CalcStep(
-            title="Embedment (free earth support, single anchor)",
+            title=("Embedment (free earth support about the lowest anchor)"
+                   if multi else
+                   "Embedment (free earth support, single anchor)"),
             equation="M<sub>R</sub> = FS · M<sub>D</sub>",
             substitution=f"FS = {r.get('FOS_embedment')}; Kp = "
                          f"{r.get('Kp')}",
             result_name="D", result_value=r["embedment_D_m"],
-            result_unit="m", reference="Caltrans T&S Example 8-1, p. 8-11"))
+            result_unit="m",
+            reference=("Caltrans T&S 8-4.02, hinge method steps 3-4, p. 8-9"
+                       if multi else "Caltrans T&S Example 8-1, p. 8-11")))
         if r.get("embedment_D_FS1_m") is not None:
             dem.append(CalcStep(
                 title="Embedment at FS = 1", equation="M<sub>R</sub> = "
                 "M<sub>D</sub>", substitution="same body", result_name="D'",
                 result_value=r["embedment_D_FS1_m"], result_unit="m"))
+    if multi and r.get("lowest_anchor_load_from_below_kN_per_m") is not None:
+        dem.append(CalcStep(
+            title="Lowest anchor's load from below (free earth support, FS = 1)",
+            equation="T = ∫ driving − ∫ passive, lowest anchor to tip",
+            substitution="the same body",
+            result_name="T_below",
+            result_value=r["lowest_anchor_load_from_below_kN_per_m"],
+            result_unit="kN/m",
+            reference="Caltrans T&S 8-4.02 step 3, p. 8-9",
+            notes="Beside the tributary loads above, which carry the load "
+                  "below the lowest anchor as R."))
     if r.get("max_moment_kN_m_per_m") is not None:
         dem.append(CalcStep(
             title="Maximum wall moment",
             equation="M<sub>max</sub>",
-            substitution=("the largest of the span moments, 13/54 H1² p and "
-                          "p l²/10 (tributary area method)"
-                          if r["n_anchors"] > 1 else
+            substitution=("the largest of M1 = 13/54 H1² p<sub>e</sub> + "
+                          "p<sub>s</sub> H1²/2 and (p<sub>e</sub> + "
+                          "p<sub>s</sub>) l²/10 (tributary area method)"
+                          if multi else
                           f"at zero shear, z = {r.get('zero_shear_depth_m')} m"),
             result_name="M_max", result_value=r["max_moment_kN_m_per_m"],
             result_unit="kN·m/m",
-            reference="FHWA GEC-4 Figure 39, p. 80" if r["n_anchors"] > 1
-            else "Caltrans T&S 8-4, Example 8-1"))
+            reference=("FHWA GEC-4 Figure 39, p. 80; Appendix A Example 1, "
+                       "p. A-6" if multi else
+                       "Caltrans T&S 8-4, Example 8-1")))
+    if multi and r.get("free_earth_max_moment_kN_m_per_m") is not None:
+        dem.append(CalcStep(
+            title="Moment in the free earth body below the lowest anchor",
+            equation="M<sub>max</sub> (FS = 1 body)",
+            substitution=f"at z = {r.get('free_earth_max_moment_depth_m')} m",
+            result_name="M_fe",
+            result_value=r["free_earth_max_moment_kN_m_per_m"],
+            result_unit="kN·m/m",
+            reference="Caltrans T&S 8-4.02, p. 8-9"))
     if dem:
         sections.append(CalcSection(title="Embedment and Wall Moment",
                                     items=dem))
@@ -653,7 +755,7 @@ def get_tables(result, analysis) -> list:
         return tables
     if result.spans:
         tables.append(CalcTable(
-            title="Spans and tributary loads",
+            title="Spans and support loads",
             columns=[("Top", "m"), ("Bottom", "m"), ("Load", "kN/m"),
                      ("Centroid below top", "m"),
                      ("To support above", "kN/m"),
@@ -661,7 +763,7 @@ def get_tables(result, analysis) -> list:
             rows=[[s["z_top_m"], s["z_bot_m"], s["load_kN_per_m"],
                    s["centroid_below_top_m"], s["to_upper_kN_per_m"],
                    s["to_lower_kN_per_m"]] for s in result.spans],
-            note="Tributary area method above the excavation",
+            note=_SPAN_REFS[getattr(result, "support_load_method", "hinge")],
             name="spans", printed=False))
     if result.diagram:
         tables.append(CalcTable(

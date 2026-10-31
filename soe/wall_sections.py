@@ -215,7 +215,8 @@ def select_w_section(required_Sx_cm3: float) -> Optional[Dict]:
 
 
 def check_flexural_demand(Sx_cm3: float, M_demand_kNm: float,
-                          Fy_MPa: float = 345.0) -> Dict:
+                          Fy_MPa: float = 345.0,
+                          Fb_ratio: float = 0.60) -> Dict:
     """Check flexural utilization ratio for a steel section.
 
     Parameters
@@ -226,6 +227,10 @@ def check_flexural_demand(Sx_cm3: float, M_demand_kNm: float,
         Maximum bending moment demand (kN·m).
     Fy_MPa : float
         Steel yield strength (MPa). Default 345.
+    Fb_ratio : float
+        Allowable bending stress / Fy. Default 0.60, as the Caltrans T&S
+        Manual's examples take it (``soe.beam_analysis.FB_RATIO``; GM-290,
+        until then 0.66).
 
     Returns
     -------
@@ -233,7 +238,7 @@ def check_flexural_demand(Sx_cm3: float, M_demand_kNm: float,
         "Fb_MPa" (allowable bending stress), "fb_MPa" (actual stress),
         "utilization_ratio", "adequate" (bool).
     """
-    Fb = 0.66 * Fy_MPa  # ASD allowable bending stress
+    Fb = Fb_ratio * Fy_MPa  # ASD allowable bending stress
     Sx_m3 = Sx_cm3 * 1e-6  # cm³ to m³
     M_Nm = M_demand_kNm * 1000.0  # kN·m to N·m
     fb = M_Nm / Sx_m3 / 1e6 if Sx_m3 > 0 else float("inf")  # MPa

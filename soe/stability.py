@@ -23,37 +23,46 @@ from soe.results import StabilityCheckResult
 
 
 # ============================================================================
-# Bearing capacity factor Nc for basal heave (Terzaghi)
+# Bearing capacity factors Nc for basal heave, read from the printed charts
 # ============================================================================
 
-# Nc values for strip (infinite length) excavation as function of H/Be
-# From Terzaghi (1943) and FHWA GEC-4 Table 5-1
-# H/Be:  0     1     2     3     4     >=5
-# Nc:   5.14  5.70  6.30  7.00  7.70  8.60 (strip)
-_NC_STRIP = {
-    0.0: 5.14,
-    1.0: 5.70,
-    2.0: 6.30,
-    3.0: 7.00,
-    4.0: 7.70,
-    5.0: 8.60,
-}
+#: GEC-4 Fig. 51(c) (p. 106), the curve for B/L = 0 (a cut of infinite
+#: length), read from the figure's vector paths (GM-290): H/B -> Nc. The
+#: curve is drawn from 5.18 at H/B = 0; it is taken from 5.14 there (the
+#: strip's value, GEC-4 Eq. 12's 5.14), so a cut with no width given keeps
+#: Eq. 37's Nc. Until GM-290 the module read an unprinted table (5.14 to
+#: 8.6) at H / min(B, sqrt(2) H).
+_NC_GEC4_STRIP_HB = (0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0,
+                     4.5, 5.0)
+_NC_GEC4_STRIP = (5.14, 5.50, 5.81, 6.07, 6.31, 6.69, 6.97, 7.18, 7.32, 7.42,
+                  7.46, 7.47, 7.44)
 
-# Correction for finite excavation length (Be/Le ratio)
-# Nc_rect = Nc_strip * (1 + 0.2 * Be/Le) per Skempton (1951)
-# For square (Be/Le = 1.0): multiply by 1.2
+#: The Caltrans Trenching and Shoring Manual Fig. 10-15 (p. 10-18, after
+#: Bjerrum and Eide 1956), the curve for L/B = 1 (square), read from the
+#: printed chart to about +/- 0.03 (GM-290): H/B -> Nc(square). Its curve
+#: for L/B = infinity agrees with 0.84 x this within about 1 %, as Eq.
+#: 10-3-4 has it.
+_NC_CALTRANS_SQUARE_HB = (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0,
+                          2.25, 2.5, 2.75, 3.0, 3.5, 4.0, 4.5, 5.0)
+_NC_CALTRANS_SQUARE = (6.23, 6.66, 7.05, 7.39, 7.68, 7.94, 8.16, 8.34, 8.48,
+                       8.59, 8.70, 8.78, 8.86, 8.95, 8.99, 9.00, 9.00)
 
 
-def _interpolate_Nc_strip(H_Be: float) -> float:
-    """Interpolate Nc for strip excavation from H/Be ratio.
-
-    Uses the module's shared clamped linear interpolation (``earth_pressure.
-    _lininterp``); bit-identical to the former inline formula on the _NC_STRIP
-    table (verified) — this is a dedup, not a numeric change.
-    """
+def _interpolate_Nc_strip(H_B: float) -> float:
+    """Nc for a cut of infinite length, GEC-4 Fig. 51(c)'s B/L = 0 curve
+    (H/B clamped to the chart, 0 to 5)."""
     from soe.earth_pressure import _lininterp
-    keys = sorted(_NC_STRIP.keys())
-    return _lininterp(H_Be, keys, [_NC_STRIP[k] for k in keys])
+    return _lininterp(H_B, list(_NC_GEC4_STRIP_HB), list(_NC_GEC4_STRIP))
+
+
+def _interpolate_Nc_bjerrum(H_B: float, B_L: float) -> float:
+    """Bjerrum and Eide's Nc as the Caltrans T&S Manual gives it: Fig.
+    10-15's square curve at H/B (clamped to the chart, 0 to 5) times Eq.
+    10-3-4's 0.84 + 0.16 B/L (B/L clamped to 0 to 1)."""
+    from soe.earth_pressure import _lininterp
+    square = _lininterp(H_B, list(_NC_CALTRANS_SQUARE_HB),
+                        list(_NC_CALTRANS_SQUARE))
+    return square * (0.84 + 0.16 * max(0.0, min(B_L, 1.0)))
 
 
 # ============================================================================
@@ -68,13 +77,35 @@ def check_basal_heave_terzaghi(
     B: float = 0.0,
     FOS_required: float = 1.5,
 ) -> StabilityCheckResult:
-    """Check for basal heave failure using Terzaghi (1943) method.
+    """Basal heave by Terzaghi's mechanism as GEC-4 prints it (Sec. 5.8.2.2).
 
-    Basal heave occurs when the weight of soil behind the wall plus
-    surcharge exceeds the bearing capacity of the soil at the
-    excavation base. This is primarily a concern in soft clay.
+    A cut of infinite length B wide (GEC-4 p. 107: "the design should be
+    based on the assumption that the contractor will remove the entire
+    length of each lift of excavation"):
 
-    FOS = cu * Nc / (gamma * H + q)
+        B > 0:  FS = Nc Su / (gamma H + q - sqrt(2) Su H / B)   (GEC-4 Eq. 35)
+        B = 0:  FS = Nc Su / (gamma H + q)                      (GEC-4 Eq. 37)
+
+    Eq. 35 is Eq. 34 with B' at its largest, B/sqrt(2) (Fig. 51(a)): the
+    block's weight less the shear on its side over the strip B' it bears
+    on. Eq. 37 is the limit for a very wide cut ("the contribution of the
+    shearing resistance along the exterior of the failure block is
+    negligible"); a width left out (B = 0) takes it. Nc is GEC-4 Fig.
+    51(c)'s curve for B/L = 0 at H/B (5.14 at B = 0). GEC-4's equations
+    have no surcharge; the surcharge q adds to the block's pressure, as the
+    Caltrans T&S Manual's Eq. 10-3-2 adds it. Eq. 36 (a stiff layer at D
+    below the base, B' = D) is not offered. GEC-4 (p. 107) takes a minimum
+    FS of 1.5 for support of excavation and 2.5 for permanent facilities.
+
+    With a width, a note and ``parameters["FOS_ufc_fig_2_7b"]`` give UFC
+    3-220-20 Fig. 2-7(b) (p. 75, a flexible wall), which adds the side
+    strength to the resistance instead: FBH = (5.7 Su B1 + Su H) / ((gamma
+    H + q) B1), B1 = 0.7 B, Su the same above and below the base and the
+    surcharge over B1. UFC p. 73, note 10: Terzaghi's subtraction "can lead
+    to unreasonably high factors of safety for narrow excavations".
+
+    Until GM-290 this was cu Nc / (gamma H + q) with Nc from an unprinted
+    table at H / min(B, sqrt(2) H) and no side shear.
 
     Parameters
     ----------
@@ -87,8 +118,7 @@ def check_basal_heave_terzaghi(
     q_surcharge : float
         Surface surcharge (kPa). Default 0.
     B : float
-        Excavation width (m). 0 = strip (infinite length).
-        Used to compute H/Be for Nc.
+        Excavation width (m). 0 = not given: Eq. 37, a very wide cut.
     FOS_required : float
         Minimum required factor of safety. Default 1.5.
 
@@ -102,28 +132,43 @@ def check_basal_heave_terzaghi(
         raise ValueError("Undrained shear strength cu must be positive")
     if gamma <= 0:
         raise ValueError("Unit weight gamma must be positive")
+    if B < 0:
+        raise ValueError("Excavation width B must not be negative")
 
-    # Effective width for Nc lookup
-    # Be = min(B, sqrt(2)*H) per Terzaghi; if B=0 use strip
-    if B > 0:
-        Be = min(B, math.sqrt(2) * H)
-        H_Be = H / Be
-    else:
-        Be = float("inf")
-        H_Be = 0.0  # strip → lowest Nc
-
-    Nc = _interpolate_Nc_strip(H_Be)
-
-    # For finite length, apply Skempton correction: Nc *= (1 + 0.2*Be/Le)
-    # For strip excavation (B=0 or Le>>Be), no correction needed
-    # We assume strip (Le >> Be) unless B is given as a square
-    # (Le = B); user should pass Le explicitly if needed
+    H_B = H / B if B > 0 else 0.0
+    Nc = _interpolate_Nc_strip(H_B)
+    side = math.sqrt(2.0) * cu * H / B if B > 0 else 0.0
 
     resistance = cu * Nc
-    demand = gamma * H + q_surcharge
-    FOS = resistance / demand if demand > 0 else float("inf")
-
+    demand = gamma * H + q_surcharge - side
     notes = []
+    if demand > 0:
+        FOS = resistance / demand
+        passes = FOS >= FOS_required
+    else:
+        FOS = float("inf")
+        passes = False
+        notes.append(
+            f"The side shear sqrt(2) Su H / B ({side:.1f} kPa) is at least "
+            "the block's pressure gamma H + q: GEC-4 Eq. 35 gives no factor "
+            "of safety here, and basal heave adequacy is NOT demonstrated by "
+            "it. GEC-4 p. 107: below the target factors of safety, use more "
+            "rigorous procedures such as limit equilibrium methods or "
+            "Henkel's method.")
+
+    FOS_ufc = None
+    if B > 0:
+        B1 = 0.7 * B
+        FOS_ufc = (5.7 * cu * B1 + cu * H) / ((gamma * H + q_surcharge) * B1)
+        notes.append(
+            "UFC 3-220-20 Fig. 2-7(b) (p. 75, a flexible wall) adds the side "
+            "strength to the resistance instead of taking it off the load: "
+            "FBH = (5.7 Su B1 + Su H) / ((gamma H + q) B1), B1 = 0.7B, = "
+            f"{FOS_ufc:.2f} here (Su the same above and below the base, the "
+            "surcharge over B1). UFC p. 73, note 10: the two give similar "
+            "results below 1.5, and Terzaghi's subtraction 'can lead to "
+            "unreasonably high factors of safety for narrow excavations'.")
+
     N_stability = gamma * H / cu if cu > 0 else float("inf")
     if N_stability > 6:
         notes.append(f"Stability number N = {N_stability:.1f} > 6: "
@@ -136,7 +181,7 @@ def check_basal_heave_terzaghi(
         check_type="basal_heave_terzaghi",
         FOS=round(FOS, 3),
         FOS_required=FOS_required,
-        passes=FOS >= FOS_required,
+        passes=passes,
         resistance=round(resistance, 2),
         demand=round(demand, 2),
         parameters={
@@ -145,9 +190,12 @@ def check_basal_heave_terzaghi(
             "gamma_kNm3": gamma,
             "q_surcharge_kPa": q_surcharge,
             "B_m": B,
-            "Be_m": round(Be, 3) if Be != float("inf") else "inf",
-            "H_Be": round(H_Be, 3),
+            "H_B": round(H_B, 3),
             "Nc": round(Nc, 3),
+            "side_shear_kPa": round(side, 2),
+            "equation": "GEC-4 Eq. 35" if B > 0 else "GEC-4 Eq. 37",
+            "FOS_ufc_fig_2_7b": (None if FOS_ufc is None
+                                 else round(FOS_ufc, 3)),
             "stability_number_N": round(N_stability, 2),
         },
         notes=notes,
@@ -157,86 +205,6 @@ def check_basal_heave_terzaghi(
 # ============================================================================
 # Basal heave — Bjerrum & Eide (1956) method
 # ============================================================================
-
-# Nc values for Bjerrum-Eide, which accounts for both H/Be and Be/Le
-# From Bjerrum & Eide (1956), also in FHWA GEC-4 Figure 5-6
-# This method treats the excavation base as an inverted footing
-_NC_BJERRUM_EIDE = {
-    # (H_Be, Be_Le): Nc
-    # Be/Le = 0 (strip)
-    (0.0, 0.0): 5.14, (0.5, 0.0): 5.14, (1.0, 0.0): 5.53,
-    (2.0, 0.0): 6.14, (3.0, 0.0): 6.78, (4.0, 0.0): 7.44,
-    (5.0, 0.0): 7.94,
-    # Be/Le = 0.5
-    (0.0, 0.5): 5.14, (0.5, 0.5): 5.73, (1.0, 0.5): 6.33,
-    (2.0, 0.5): 7.00, (3.0, 0.5): 7.54, (4.0, 0.5): 8.06,
-    (5.0, 0.5): 8.50,
-    # Be/Le = 1.0 (square)
-    (0.0, 1.0): 5.14, (0.5, 1.0): 6.05, (1.0, 1.0): 6.80,
-    (2.0, 1.0): 7.65, (3.0, 1.0): 8.30, (4.0, 1.0): 8.70,
-    (5.0, 1.0): 9.00,
-}
-
-# Available Be/Le ratios in the table
-_BE_LE_VALUES = [0.0, 0.5, 1.0]
-# Available H/Be ratios in the table
-_H_BE_VALUES = [0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
-
-
-def _interpolate_Nc_bjerrum(H_Be: float, Be_Le: float) -> float:
-    """Bilinear interpolation of Nc from Bjerrum-Eide table."""
-    # Clamp inputs to table range
-    H_Be = max(0.0, min(H_Be, 5.0))
-    Be_Le = max(0.0, min(Be_Le, 1.0))
-
-    # Find bounding H/Be values
-    h_lo = _H_BE_VALUES[0]
-    h_hi = _H_BE_VALUES[-1]
-    for i in range(len(_H_BE_VALUES) - 1):
-        if _H_BE_VALUES[i] <= H_Be <= _H_BE_VALUES[i + 1]:
-            h_lo = _H_BE_VALUES[i]
-            h_hi = _H_BE_VALUES[i + 1]
-            break
-
-    # Find bounding Be/Le values
-    b_lo = _BE_LE_VALUES[0]
-    b_hi = _BE_LE_VALUES[-1]
-    for i in range(len(_BE_LE_VALUES) - 1):
-        if _BE_LE_VALUES[i] <= Be_Le <= _BE_LE_VALUES[i + 1]:
-            b_lo = _BE_LE_VALUES[i]
-            b_hi = _BE_LE_VALUES[i + 1]
-            break
-
-    # Get corner values
-    Q11 = _NC_BJERRUM_EIDE[(h_lo, b_lo)]
-    Q21 = _NC_BJERRUM_EIDE[(h_hi, b_lo)]
-    Q12 = _NC_BJERRUM_EIDE[(h_lo, b_hi)]
-    Q22 = _NC_BJERRUM_EIDE[(h_hi, b_hi)]
-
-    # Bilinear interpolation
-    dh = h_hi - h_lo
-    db = b_hi - b_lo
-
-    if dh == 0 and db == 0:
-        return Q11
-
-    if dh == 0:
-        t = (Be_Le - b_lo) / db
-        return Q11 + (Q12 - Q11) * t
-
-    if db == 0:
-        t = (H_Be - h_lo) / dh
-        return Q11 + (Q21 - Q11) * t
-
-    th = (H_Be - h_lo) / dh
-    tb = (Be_Le - b_lo) / db
-
-    Nc = (Q11 * (1 - th) * (1 - tb)
-          + Q21 * th * (1 - tb)
-          + Q12 * (1 - th) * tb
-          + Q22 * th * tb)
-    return Nc
-
 
 def check_basal_heave_bjerrum_eide(
     H: float,
@@ -249,10 +217,14 @@ def check_basal_heave_bjerrum_eide(
 ) -> StabilityCheckResult:
     """Check for basal heave using Bjerrum & Eide (1956) method.
 
-    Treats the excavation base as an inverted footing problem.
-    Nc depends on both H/Be (depth ratio) and Be/Le (shape ratio).
+    Treats the excavation base as an inverted footing problem, with no side
+    shear (GEC-4 Eq. 37's form):
 
-    FOS = cu * Nc / (gamma * H + q)
+        FOS = cu * Nc / (gamma * H + q)
+
+    Nc from the Caltrans T&S Manual's Fig. 10-15 (after Bjerrum and Eide
+    1956), its square curve at H/Be, times Eq. 10-3-4's 0.84 + 0.16 Be/Le
+    (GM-290; until then an unprinted table).
 
     Parameters
     ----------
@@ -287,7 +259,7 @@ def check_basal_heave_bjerrum_eide(
         raise ValueError("Excavation length Le must be positive")
 
     H_Be = H / Be
-    Be_Le = Be / Le if Le > 0 else 0.0
+    Be_Le = min(Be / Le, 1.0)
 
     Nc = _interpolate_Nc_bjerrum(H_Be, Be_Le)
 
@@ -316,22 +288,6 @@ def check_basal_heave_bjerrum_eide(
     )
 
 
-def _nc_skempton(H_over_B: float, B_over_L: float) -> float:
-    """Skempton (1951) bearing-capacity factor Nc for basal heave.
-
-        Nc = 5.14 * (1 + 0.2*B/L) * (1 + 0.2*H/B),   with H/B capped at 2.5.
-
-    This is the Nc chart the Caltrans force-balance heave method reads: it gives
-    ~8.6 for a square excavation at H/B=2 and ~7.7 after the L/B=3 rectangular
-    correction — matching the Caltrans Figure 10-17 chart (8.5 -> 7.6) to ~1.5%.
-    (Distinct from the module's Terzaghi/Bjerrum-Eide ``_interpolate_Nc_bjerrum``
-    table used by ``check_basal_heave_bjerrum_eide``.)
-    """
-    depth_factor = 1.0 + 0.2 * min(max(H_over_B, 0.0), 2.5)
-    shape_factor = 1.0 + 0.2 * max(min(B_over_L, 1.0), 0.0)
-    return 5.14 * shape_factor * depth_factor
-
-
 def check_basal_heave_caltrans(
     H: float,
     cu: float,
@@ -355,9 +311,15 @@ def check_basal_heave_caltrans(
                         = (width_factor*B)*H*gamma + (width_factor*B)*q - cu*H
         FS = F_RS / F_dr
 
-    The failure block width is ``width_factor * B`` (Terzaghi's 0.7B). Nc is the
-    Skempton/Bjerrum-Eide bearing factor for the excavation depth/shape
-    (``_nc_skempton``; H/B capped at 2.5), or an explicit chart-read ``Nc``.
+    The failure block width is ``width_factor * B`` (Terzaghi's 0.7B; Eqs.
+    10-3-2 and 10-3-3). With a hard layer within 0.7B of the base, D below
+    it, Sec. 10-3.01 steps 1-6 (p. 10-19) change the width to D: give
+    ``width_factor`` = D / B. Nc is Bjerrum and Eide's (Fig. 10-15's square
+    curve at H/B times Eq. 10-3-4's 0.84 + 0.16 B/L), or an explicit
+    chart-read ``Nc``. Example 10-2 (p. 10-20) reads 8.5 and 7.6 at H/B = 2,
+    L/B = 3; the module reads 8.48 and 7.575 (FS 1.533 against the
+    printed 1.54). Until GM-290 Nc was Skempton's formula, 5.14 (1 + 0.2
+    B/L)(1 + 0.2 H/B).
 
     Parameters
     ----------
@@ -375,7 +337,8 @@ def check_basal_heave_caltrans(
     q_surcharge : float, optional
         Surface surcharge (kPa). Default 0.
     Nc : float, optional
-        Bearing-capacity factor. If None, computed from ``_nc_skempton``.
+        Bearing-capacity factor. If None, Bjerrum and Eide's from the
+        Caltrans Fig. 10-15 and Eq. 10-3-4.
     width_factor : float, optional
         Failure-block width as a fraction of B. Default 0.7 (Terzaghi).
     FOS_required : float, optional
@@ -387,8 +350,8 @@ def check_basal_heave_caltrans(
 
     References
     ----------
-    Caltrans Trenching & Shoring Manual, Ch. 10, Example 10-2 / Figure 10-17;
-    Terzaghi (1943); Bjerrum & Eide (1956); Skempton (1951).
+    Caltrans Trenching & Shoring Manual, Sec. 10-3, Eqs. 10-3-2 to 10-3-5,
+    Fig. 10-15, Example 10-2; Terzaghi (1943); Bjerrum & Eide (1956).
     """
     if H <= 0:
         raise ValueError("Excavation depth H must be positive")
@@ -401,7 +364,7 @@ def check_basal_heave_caltrans(
 
     B_over_L = (B / L) if (L and L > 0) else 1.0
     if Nc is None:
-        Nc = _nc_skempton(H / B, B_over_L)
+        Nc = _interpolate_Nc_bjerrum(H / B, B_over_L)
 
     width = width_factor * B
     qu = cu * Nc

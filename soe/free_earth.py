@@ -16,6 +16,8 @@ Both procedures follow the Caltrans Trenching and Shoring Manual (2025):
   give D0; D = 1.2 D0 (AASHTO 3.11.5.6 -- the increase accounts for rotation
   below O and is not a factor of safety); the net horizontal force at O is
   reported so a positive value (more push than resistance) can be flagged.
+  The shear and moment come from the same body at FS = 1.0 (Example 7-3,
+  p. 7-41), since GM-290.
 * **Braced / anchored walls, free earth support about the lowest support
   (Sec 8-4.02, hinge method).** Embedment D from MR = FS x MD (FS = 1.3 in
   the manual); the support load T from MR = MD at D' and horizontal
@@ -311,20 +313,34 @@ class CantileverSolution:
     max_shear: Optional[float]
     converged: bool
     notes: List[str] = field(default_factory=list)
-    #: The net pressure, shear and moment the solution integrated, top of
-    #: the wall to O: {"z", "p_net", "V", "M"} (lists; m, kPa, kN/m,
-    #: kN-m/m). None without a moment balance.
+    #: The net pressure, shear and moment of the FS = 1.0 body, top of the
+    #: wall to its point O (``D0_FS1`` below the excavation): {"z", "p_net",
+    #: "V", "M"} (lists; m, kPa, kN/m, kN-m/m). None without a moment
+    #: balance.
     diagram: Optional[dict] = None
+    #: D0 at FS = 1.0, the body the moment and shear come from (GM-290).
+    D0_FS1: Optional[float] = None
+    #: The maximum moment (and its depth) of the passive/FS body to O, as
+    #: UFC 3-220-20 Fig. 4-41 (p. 242) takes it, for the choice (GM-290).
+    max_moment_factored: Optional[float] = None
+    max_moment_factored_depth: Optional[float] = None
 
 
 def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
                      embedment_increase: float = 1.2) -> CantileverSolution:
     """Cantilever wall by the Caltrans Simplified Method (Sec 7-5.02).
 
-    Passive pressure is divided by ``FS_passive``; D = ``embedment_increase``
-    x D0. Moment and shear come from the pressure diagram to point O. When
-    no D0 within 6H balances the moments the result carries None for the
-    embedment, moment and shear, ``converged=False`` and a warning note.
+    Passive pressure is divided by ``FS_passive`` for D0 (moments about O);
+    D = ``embedment_increase`` x D0. The moment and shear come from the same
+    body at FS = 1.0, to its own point O: Example 7-3 (p. 7-41) takes the
+    embedment at FS 1.3 and then "Calculate embedment depth using a factor
+    of safety (FS) equal to 1.0 for the purposes of calculating the shear
+    and moments" (Mmax at zero shear, p. 7-42). Until GM-290 they came from
+    the passive/FS body, as UFC 3-220-20 Fig. 4-41 step 5 (p. 242) and its
+    chart, Fig. 4-42, take them; that moment is kept as
+    ``max_moment_factored``. When no D0 within 6H balances the moments the
+    result carries None for the embedment, moment and shear,
+    ``converged=False`` and a warning note.
     """
     if FS_passive <= 0:
         raise ValueError("FS_passive must be positive")
@@ -337,10 +353,11 @@ def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
     def resist(z):
         return profile.passive(z) / FS_passive
 
-    def net(D):
+    def net(D, fs=FS_passive):
         O = H + D
         md = _integrate(lambda z: drive(z) * (O - z), 0.0, O, brk)
-        mr = _integrate(lambda z: resist(z) * (O - z), H, O, brk + [O])
+        mr = _integrate(lambda z: profile.passive(z) / fs * (O - z), H, O,
+                        brk + [O])
         return mr - md
 
     D0, ok = _first_root(net, 1e-3, _SEARCH_H * H)
@@ -359,14 +376,31 @@ def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
         notes.append("Net horizontal force at O is toward the excavation "
                      f"({net_force:.1f} kN/m): increase embedment (Caltrans "
                      "7-5.02 step 4).")
-    z, V, M = _shear_moment(lambda zz: drive(zz) - resist(zz), 0.0, O, brk)
+    zf, Vf, Mf = _shear_moment(lambda zz: drive(zz) - resist(zz), 0.0, O, brk)
+    kf = int(np.argmax(np.abs(Mf)))
+    # The shear and moment at FS = 1.0 (Caltrans Example 7-3): the same
+    # method's body to its own O
+    D1, ok1 = (D0, True) if FS_passive == 1.0 else _first_root(
+        lambda d: net(d, 1.0), 1e-3, _SEARCH_H * H)
+    if ok1:
+        O1 = H + D1
+        z, V, M = _shear_moment(lambda zz: drive(zz) - profile.passive(zz),
+                                0.0, O1, brk)
+        p_net = drive(z) - profile.passive(z)
+    else:
+        D1 = None
+        z, V, M, p_net = zf, Vf, Mf, drive(zf) - resist(zf)
+        notes.append("No moment balance at FS = 1.0 within 6H: the moment "
+                     "and shear are the passive/FS body's.")
     k = int(np.argmax(np.abs(M)))
     return CantileverSolution(
         D0=D0, D=D0 * embedment_increase, embedment_increase=embedment_increase,
         net_force_at_O=float(net_force), max_moment=float(abs(M[k])),
         max_moment_depth=float(z[k]), max_shear=float(np.max(np.abs(V))),
         converged=True, notes=notes,
-        diagram=_diagram(z, drive(z) - resist(z), V, M))
+        diagram=_diagram(z, p_net, V, M), D0_FS1=D1,
+        max_moment_factored=float(abs(Mf[kf])),
+        max_moment_factored_depth=float(zf[kf]))
 
 
 @dataclass
@@ -639,7 +673,7 @@ def profile_for(geometry, Ka: Optional[float] = None,
         Ka=Ka, Kp=Kp)
 
 
-def apparent_pressure_profile(geometry):
+def apparent_pressure_profile(geometry, stiff_clay_coefficient=None):
     """Design pressure above the excavation for a braced wall.
 
     The apparent-pressure envelope plus the surcharge and water pressures
@@ -654,14 +688,20 @@ def apparent_pressure_profile(geometry):
     Returns ``(envelope, p)``: the ``select_apparent_pressure`` dict
     (with ``surcharge_pressure_kPa`` and ``water_pressure_added`` added) and
     a vectorized ``p(z)`` in kPa, zero outside 0 <= z <= H.
+    ``stiff_clay_coefficient``: the stiff clay ordinate / gamma H (None:
+    ``soe.earth_pressure.STIFF_CLAY_COEFFICIENT``, 0.4).
     """
-    from soe.earth_pressure import select_apparent_pressure
+    from soe.earth_pressure import (STIFF_CLAY_COEFFICIENT,
+                                    select_apparent_pressure)
 
     H = float(geometry.excavation_depth)
     q = float(geometry.surcharge or 0.0)
     gwt = geometry.gwt_depth
-    ap = dict(select_apparent_pressure(geometry.soil_layers, H, q,
-                                       gwt_depth=gwt))
+    ap = dict(select_apparent_pressure(
+        geometry.soil_layers, H, q, gwt_depth=gwt,
+        stiff_clay_coefficient=(STIFF_CLAY_COEFFICIENT
+                                if stiff_clay_coefficient is None
+                                else stiff_clay_coefficient)))
     shape, p_max = ap["shape"], float(ap["max_pressure_kPa"])
     sand = ap["type"] == "sand"
     ps = (float(ap.get("Ka", 1.0)) if sand else 1.0) * q
@@ -676,6 +716,9 @@ def apparent_pressure_profile(geometry):
             env = np.where(z <= 0.25 * H, p_max * z / (0.25 * H),
                            np.where(z <= 0.75 * H, p_max,
                                     p_max * (H - z) / (0.25 * H)))
+        elif shape == "ramped_top":
+            # soft to medium clay (GM-290): a 0.25H ramp at the top only
+            env = np.where(z <= 0.25 * H, p_max * z / (0.25 * H), p_max)
         else:
             env = np.full_like(z, p_max)
         total = env + ps

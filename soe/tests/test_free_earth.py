@@ -98,7 +98,9 @@ class TestCaltransExample8_1:
 class TestCantileverClosedForm:
     """Moments about O: Ka g (H+D0)^3 / 6 = (Kp/FS) g D0^3 / 6, so
     D0 = H / (r - 1) with r = (Kp / (FS Ka))^(1/3). Zero shear at y below the
-    excavation where Ka (H+y)^2 = (Kp/FS) y^2."""
+    excavation where Ka (H+y)^2 = (Kp/FS) y^2. The moment and shear come from
+    the same body at FS = 1 (Caltrans Example 7-3, GM-290); the factored
+    body's moment is kept for the choice."""
 
     H, G, PHI, FS = 5.0, 18.0, 30.0, 1.5
 
@@ -114,11 +116,26 @@ class TestCantileverClosedForm:
         D0 = self.H / (k ** (1 / 3) - 1)
         y = self.H / (math.sqrt(k) - 1)
         M = (Ka * self.G * (self.H + y) ** 3 - Kp / self.FS * self.G * y ** 3) / 6
+        k1 = Kp / Ka
+        D0_1 = self.H / (k1 ** (1 / 3) - 1)
+        y1 = self.H / (math.sqrt(k1) - 1)
+        M1 = (Ka * self.G * (self.H + y1) ** 3 - Kp * self.G * y1 ** 3) / 6
         r = analyze_cantilever_excavation(self._geometry(), FOS_passive=self.FS)
         assert r.embedment_converged_m == pytest.approx(D0, rel=0.002)
         assert r.required_embedment_m == pytest.approx(1.2 * D0, rel=0.005)
-        assert r.max_moment_kNm_per_m == pytest.approx(M, rel=0.005)
-        assert r.max_moment_depth_m == pytest.approx(self.H + y, rel=0.01)
+        assert r.moment_body_D0_m == pytest.approx(D0_1, rel=0.002)
+        assert r.max_moment_kNm_per_m == pytest.approx(M1, rel=0.005)
+        assert r.max_moment_depth_m == pytest.approx(self.H + y1, rel=0.01)
+        sol = solve_cantilever(
+            LayeredProfile([_sand(40.0, self.G, self.PHI)], self.H,
+                           surcharge=0.0), FS_passive=self.FS)
+        assert sol.max_moment_factored == pytest.approx(M, rel=0.005)
+        assert sol.max_moment_factored_depth == pytest.approx(self.H + y,
+                                                              rel=0.01)
+        (moment,) = [c for c in r.choices
+                     if c["what"] == "cantilever moment and shear"]
+        assert "Example 7-3 (p. 7-41)" in moment["basis"]
+        assert f"Mmax {M:.1f} kN-m/m" in moment["alternatives"][0]
         assert r.net_force_at_O_kN_per_m < 0  # resistance exceeds push: OK
         assert r.Ka == pytest.approx(Ka, abs=1e-4)
         assert r.Kp == pytest.approx(Kp, abs=1e-3)
@@ -156,7 +173,11 @@ def test_cantilever_matches_sheet_pile(layers, gwt):
         6.3, [WallSoilLayer(t, g, p, c) for t, g, p, c in layers],
         gwt_depth_active=gwt, surcharge=7.2, FOS_passive=1.5)
     assert ours.D0 == pytest.approx(theirs.embedment_converged, rel=0.005)
-    assert ours.max_moment == pytest.approx(theirs.max_moment, rel=0.01)
+    # sheet_pile takes the moment from the factored diagram (UFC 3-220-20
+    # Fig. 4-41); soe from the FS = 1 body (Caltrans Example 7-3, GM-290)
+    assert ours.max_moment_factored == pytest.approx(theirs.max_moment,
+                                                     rel=0.01)
+    assert ours.max_moment < ours.max_moment_factored
 
 
 # ---------------------------------------------------------------------------
@@ -230,11 +251,21 @@ class TestBracedLoads:
         g_eff = (self.G * gwt + (self.G - GW) * (self.H - gwt)) / self.H
         expected = (0.65 * Ka * g_eff * self.H + Ka * q) * self.H \
             + 0.5 * GW * (self.H - gwt) ** 2
-        r = analyze_braced_excavation(self._geo(q=q, gwt=gwt))
+        # UFC 3-220-20 Fig. 4-54: the spans above and below the strut all
+        # to it
+        r = analyze_braced_excavation(self._geo(q=q, gwt=gwt),
+                                      support_load_method="simple_spans")
         assert r.support_reactions[0]["load_kN_per_m"] == pytest.approx(
             expected, rel=0.003)
         assert r.water_pressure_included is True
         assert r.surcharge_pressure_kPa == pytest.approx(Ka * q, abs=0.01)
+        # the Caltrans hinge method (default): one support takes free earth
+        # support's load, the whole wall about it (8-4.01 step 5)
+        h = analyze_braced_excavation(self._geo(q=q, gwt=gwt))
+        fe = h.free_earth["lowest_support_load_from_below_kN_per_m"]
+        assert h.support_reactions[0]["load_kN_per_m"] == pytest.approx(
+            fe, abs=0.01)
+        assert h.support_load_method == "hinge"
 
     def test_top_span_is_a_cantilever(self):
         """Uniform envelope p, support at 3 m in a 6 m cut: the span above the
@@ -414,8 +445,17 @@ class TestNoMomentBalance:
                     "lowest_support_load_from_below_kN_per_m",
                     "max_moment_kNm_per_m", "max_moment_depth_m"):
             assert d["free_earth"][key] is None, key
-        # the tributary support load does not depend on the embedment
-        assert d["support_reactions"][0]["load_kN_per_m"] > 0
+        # the hinge method's single support takes free earth support's load:
+        # not found here; the load from above is, and the choice gives the
+        # other methods'
+        assert d["support_reactions"][0]["load_kN_per_m"] is None
+        assert d["support_reactions"][0]["from_above_kN_per_m"] > 0
+        (m,) = [c for c in d["choices"] if "support_load_method" in c["what"]]
+        assert "not found" in m["chosen"]
+        s = analyze_braced_excavation(self._geo(supports=(2.0,)),
+                                      FOS_passive=1.3,
+                                      support_load_method="simple_spans")
+        assert s.support_reactions[0]["load_kN_per_m"] > 0
         assert "MR = MD is never reached" in d["notes"][0]
         assert any("undefined without a moment balance" in n for n in d["notes"])
         assert "not found" in r.summary()

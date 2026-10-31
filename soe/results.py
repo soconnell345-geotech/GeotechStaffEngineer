@@ -269,7 +269,9 @@ class BracedExcavationResult:
     max_apparent_pressure_kPa : float
         Peak ordinate of the apparent pressure envelope (kPa).
     support_reactions : list
-        List of dicts with "depth_m", "load_kN_per_m", "type".
+        List of dicts with "depth_m", "load_kN_per_m" (None when the
+        lowest support's load from below is not found), "from_above_kN_per_m",
+        "from_below_kN_per_m", "type".
     max_moment_kNm_per_m : float
         Maximum wall bending moment (kN·m/m of wall).
     max_moment_depth_m : float
@@ -304,9 +306,17 @@ class BracedExcavationResult:
     free_earth: Dict[str, Any] = field(default_factory=dict)
     converged: bool = True
     notes: List[str] = field(default_factory=list)
-    #: How the passive pressure below the excavation was taken (GM-242,
-    #: ``geotech_common.choices``).
+    #: How the passive pressure below the excavation, the support loads,
+    #: the clay envelope and the allowable stress were taken (GM-242,
+    #: GM-290; ``geotech_common.choices``).
     choices: List[Dict[str, Any]] = field(default_factory=list)
+    #: How the support loads and span moments were taken (GM-290,
+    #: ``soe.beam_analysis.SUPPORT_LOAD_METHODS``).
+    support_load_method: str = "hinge"
+    #: The excavation base's reaction, "hinge_subgrade" only (kN/m).
+    subgrade_reaction_kN_per_m: Optional[float] = None
+    #: The allowable bending stress / Fy the section was sized with.
+    Fb_ratio: float = 0.60
     # What the analysis used, for its calc package (BACKLOG GM-41); not in
     # to_dict, so the tool's output is as before.
     #: The apparent-pressure envelope (select_apparent_pressure's dict, with
@@ -319,7 +329,9 @@ class BracedExcavationResult:
                                               repr=False)
     #: One entry per span above the excavation: z_top_m, z_bot_m,
     #: load_kN_per_m, centroid_below_top_m, to_upper_kN_per_m,
-    #: to_lower_kN_per_m (the tributary split).
+    #: to_lower_kN_per_m (the split by ``support_load_method``; under
+    #: "hinge" the span below the lowest support has to_lower None and its
+    #: to_upper is free earth support's, None without one).
     spans: List[Dict[str, Any]] = field(default_factory=list, repr=False)
     #: The design pressure, shear and moment over the spans above the
     #: excavation: {"z", "p", "V", "M"}, V and M in the free earth body's
@@ -345,10 +357,16 @@ class BracedExcavationResult:
             "  Support Reactions:",
         ]
         for rxn in self.support_reactions:
+            load = rxn["load_kN_per_m"]
             lines.append(
                 f"    z = {rxn['depth_m']:.2f} m  |  "
-                f"{rxn['load_kN_per_m']:.1f} kN/m  |  {rxn['type']}"
+                + (_NOT_FOUND if load is None else f"{load:.1f} kN/m")
+                + f"  |  {rxn['type']}"
             )
+        lines.append(f"  Support loads by:            {self.support_load_method}")
+        if self.subgrade_reaction_kN_per_m is not None:
+            lines.append(f"  Subgrade reaction at H:      "
+                         f"{self.subgrade_reaction_kN_per_m:.1f} kN/m")
         if self.max_moment_kNm_per_m is None:
             lines.extend([
                 "",
@@ -392,6 +410,9 @@ class BracedExcavationResult:
             "surcharge_pressure_kPa": self.surcharge_pressure_kPa,
             "water_pressure_included": self.water_pressure_included,
             "support_reactions": self.support_reactions,
+            "support_load_method": self.support_load_method,
+            **({"subgrade_reaction_kN_per_m": self.subgrade_reaction_kN_per_m}
+               if self.subgrade_reaction_kN_per_m is not None else {}),
             "max_moment_kNm_per_m": self.max_moment_kNm_per_m,
             "max_moment_depth_m": self.max_moment_depth_m,
             "max_shear_kN_per_m": self.max_shear_kN_per_m,
@@ -399,6 +420,7 @@ class BracedExcavationResult:
             "embedment_FS": self.embedment_FS,
             "total_wall_length_m": self.total_wall_length_m,
             "required_Sx_cm3": self.required_Sx_cm3,
+            "Fb_ratio": self.Fb_ratio,
             "free_earth": self.free_earth,
             "converged": self.converged,
             "notes": self.notes,
@@ -426,13 +448,16 @@ class CantileverExcavationResult:
     total_wall_length_m : float
         H + embedment (m).
     max_moment_kNm_per_m : float
-        Maximum wall bending moment (kN·m/m).
+        Maximum wall bending moment (kN·m/m), of the FS = 1.0 body
+        (Caltrans Example 7-3; GM-290).
     max_shear_kN_per_m : float
-        Maximum wall shear (kN/m).
+        Maximum wall shear (kN/m), of the same body.
     required_Sx_cm3 : float
-        Required section modulus for ASD (cm³).
+        Required section modulus for ASD (cm³), M / (Fb_ratio Fy).
     embedment_converged_m : float
         D0, the depth of the rotation point O below the excavation (m).
+    moment_body_D0_m : float
+        D0 at FS = 1.0, the body the moment and shear come from (m).
     embedment_increase : float
         required_embedment_m / D0 (1.2 per Caltrans / AASHTO 3.11.5.6).
     max_moment_depth_m : float
@@ -465,9 +490,13 @@ class CantileverExcavationResult:
     net_force_at_O_kN_per_m: Optional[float] = 0.0
     converged: bool = True
     notes: List[str] = field(default_factory=list)
-    #: How the passive pressure below the excavation was taken (GM-242,
+    #: How the passive pressure below the excavation, the moment's diagram
+    #: and the allowable stress were taken (GM-242, GM-290;
     #: ``geotech_common.choices``).
     choices: List[Dict[str, Any]] = field(default_factory=list)
+    moment_body_D0_m: Optional[float] = None
+    #: The allowable bending stress / Fy the section was sized with.
+    Fb_ratio: float = 0.60
     # What the analysis used, for its calc package (BACKLOG GM-41); not in
     # to_dict, so the tool's output is as before.
     #: Per layer: top_m, bottom_m, unit_weight, friction_angle, cohesion,
@@ -479,8 +508,8 @@ class CantileverExcavationResult:
     #: sv_excavation_kPa, passive_over_FS_kPa, net_kPa.
     pressure_points: List[Dict[str, Any]] = field(default_factory=list,
                                                   repr=False)
-    #: Net pressure, shear and moment, top of wall to O: {"z", "p_net",
-    #: "V", "M"}, or None without a moment balance.
+    #: Net pressure, shear and moment of the FS = 1.0 body, top of wall to
+    #: its O: {"z", "p_net", "V", "M"}, or None without a moment balance.
     diagram: Optional[Dict[str, Any]] = field(default=None, repr=False)
 
     def summary(self) -> str:
@@ -528,12 +557,14 @@ class CantileverExcavationResult:
             "required_embedment_m": self.required_embedment_m,
             "embedment_converged_m": self.embedment_converged_m,
             "embedment_increase": self.embedment_increase,
+            "moment_body_D0_m": self.moment_body_D0_m,
             "total_wall_length_m": self.total_wall_length_m,
             "max_moment_kNm_per_m": self.max_moment_kNm_per_m,
             "max_moment_depth_m": self.max_moment_depth_m,
             "max_shear_kN_per_m": self.max_shear_kN_per_m,
             "net_force_at_O_kN_per_m": self.net_force_at_O_kN_per_m,
             "required_Sx_cm3": self.required_Sx_cm3,
+            "Fb_ratio": self.Fb_ratio,
             "method": "Caltrans T&S Manual 7-5.02 Simplified Method, layered "
                       + ("Rankine pressures" if not any(
                           "passive_wall_friction_deg" in l
