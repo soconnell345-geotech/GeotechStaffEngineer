@@ -313,12 +313,15 @@ _LAYER_DESC = (
     "List of layer dicts, TOP-DOWN; first must be layer_type 'asphalt'. "
     "Each: {layer_type: asphalt|granular_base|granular_subbase|"
     "cement_treated_base|bituminous_treated_base; modulus_psi (EAC/EBS/ESB "
-    "-- required on non-surface layers in design mode); ucs_7day_psi "
-    "(cement-treated); marshall_stability_lb (bituminous-treated); a "
-    "(direct coefficient override); m (drainage, unbound layers) or "
+    "-- required on granular layers below the surface in design mode); "
+    "ucs_7day_psi (cement-treated, Fig 2.8 scale 200-1000 psi); "
+    "marshall_stability_lb (bituminous-treated, Fig 2.9 scale 200-1800 lb); "
+    "a (direct coefficient override); m (drainage, unbound layers) or "
     "drainage_quality + pct_saturation_time ('<1%'|'1-5%'|'5-25%'|'>25%'); "
     "thickness_in (set on EVERY layer for a check instead of a design); "
-    "min_thickness_in}."
+    "min_thickness_in (over a layer stiffer than 40,000 psi, e.g. a treated "
+    "base, no SN is solved (II-37) and the layer above takes this or the "
+    "Sec 3.1.4 minimum)}."
 )
 
 METHOD_INFO = {
@@ -370,7 +373,8 @@ METHOD_INFO = {
         "returns": {"sn_required": "SN over the roadbed",
                     "sn_provided": "SN of the final section",
                     "layers": "per-layer a, m, thickness_in, basis",
-                    "sn_stack": "SN required over each foundation",
+                    "sn_stack": "SN required and provided over each "
+                                "foundation (Fig 3.2), with adequate",
                     "w18_capacity": "forward-check capacity",
                     "adequate": "bool"},
     },
@@ -447,7 +451,10 @@ METHOD_INFO = {
                                            "{seasonal: [{mr_psi, ...}], "
                                            "dsb_in, esb_psi, dsg_ft, ls}; "
                                            "slab_d_in is iterated "
-                                           "automatically."},
+                                           "automatically. Fig 3.3 is read "
+                                           "off the printed chart: dsb_in "
+                                           "6-18, esb_psi 15,000-1,000,000, "
+                                           "mr_psi 1,000-20,000."},
             "slab_thickness_in": {"type": "number", "required": False,
                                   "description": "Give to CHECK a slab "
                                                  "instead of designing."},
@@ -534,17 +541,21 @@ METHOD_INFO = {
             "passes_18kip": {"type": "number", "required": True,
                              "description": "Design-life passes of the "
                                             "18-kip single axle (design "
-                                            "lane). NOT interchangeable "
-                                            "with AASHTO W18 conceptually "
-                                            "— same count, different "
-                                            "damage model."},
+                                            "lane), 10 to 10,000,000 (the "
+                                            "range Figure E-1 prints). NOT "
+                                            "interchangeable with AASHTO "
+                                            "W18 conceptually — same "
+                                            "count, different damage "
+                                            "model."},
             "cbr_subgrade": {"type": "number", "required": True,
-                             "description": "Subgrade design CBR (%)."},
+                             "description": "Subgrade design CBR (%), 1 "
+                                            "or more."},
             "cbr_base": {"type": "number", "required": False, "default": 80,
                          "description": "Base course design CBR."},
             "cbr_subbase": {"type": "number", "required": False,
                             "description": "Subbase CBR (omit for a "
-                                           "2-layer section)."},
+                                           "2-layer section). A subbase "
+                                           "is at least 4 in (UFC p. 20)."},
             "frost": {"type": "object", "required": False,
                       "description": "{uscs_class, finer_than_0_02mm_pct} "
                                      "-> Ch 19 reduced-subgrade-strength "
@@ -567,13 +578,20 @@ METHOD_INFO = {
                   "stabilized-foundation reduction. US customary."),
         "parameters": {
             "passes_18kip": {"type": "number", "required": True,
-                             "description": "18-kip single-axle passes."},
+                             "description": "18-kip single-axle passes, "
+                                            "1,000 to 50,000,000 (Figure "
+                                            "F-1's pass-level lines)."},
             "flexural_strength_psi": {"type": "number", "required": True,
-                                      "description": "Concrete flexural "
-                                                     "strength R (psi)."},
+                                      "description": "Concrete 28-day "
+                                                     "flexural strength R "
+                                                     "(psi), 100-1,000. For "
+                                                     "a parking area para "
+                                                     "13-3 enters R / 0.75."},
             "k_pci": {"type": "number", "required": False,
-                      "description": "Modulus of subgrade reaction (or "
-                                     "give subgrade for Table 10-1)."},
+                      "description": "Modulus of subgrade reaction, 25 pci "
+                                     "or more; above 500 taken as 500 "
+                                     "(Table 10-1 note 2). Or give "
+                                     "subgrade for Table 10-1."},
             "subgrade": {"type": "object", "required": False,
                          "description": "{uscs_group, moisture_pct} -> "
                                         "Table 10-1 k."},
@@ -586,8 +604,9 @@ METHOD_INFO = {
                                                       "to this increment "
                                                       "(in)."},
         },
-        "returns": {"hd_required_in": "F-1 solve",
-                    "slab_provided_in": "rounded design slab"},
+        "returns": {"hd_required_in": "F-1 read",
+                    "slab_provided_in": "rounded design slab, at least "
+                                        "6 in (para 13-3)"},
     },
     "compare_pavement_methods": {
         "category": "pavement design",
@@ -616,10 +635,15 @@ METHOD_INFO = {
                    "description": "AASHTO terminal serviceability."},
             "cbr_base": {"type": "number", "required": False, "default": 80,
                          "description": "Base CBR (both sides; AASHTO EBS "
-                                        "derived unless ebs_psi given)."},
+                                        "read across the guide's Figure "
+                                        "2.6, CBR 20-100, unless ebs_psi "
+                                        "given)."},
             "cbr_subbase": {"type": "number", "required": False,
                             "default": 30,
-                            "description": "Subbase CBR (both sides)."},
+                            "description": "Subbase CBR (both sides; "
+                                           "AASHTO ESB read across Figure "
+                                           "2.7, CBR about 9-100, unless "
+                                           "esb_psi given)."},
             "eac_psi": {"type": "number", "required": False,
                         "default": 400000,
                         "description": "AASHTO asphalt modulus."},

@@ -24,6 +24,60 @@ from .results import FlexiblePavementResult
 LAYER_TYPES = ("asphalt", "granular_base", "granular_subbase",
                "cement_treated_base", "bituminous_treated_base")
 _UNBOUND = ("granular_base", "granular_subbase")
+_TREATED = ("cement_treated_base", "bituminous_treated_base")
+
+# Figures 2.8 and 2.9 are parallel scales: a2 on the left, the strength
+# scale beside it, read straight across. Read off the printed pages
+# (GM-298) at each labelled strength tick; linear between ticks. The
+# reference layer's three-point tables put a2 = 0.10 at 200 psi / 200 lb,
+# where the print gives about 0.126 (0.10 sits near 30 psi / 120 lb), and
+# hold 0.22 above 800 psi where the print rises to 0.25 at 1,000 psi.
+_A2_CEMENT_SCALE = ((200, 0.126), (400, 0.155), (600, 0.188), (800, 0.220),
+                    (1000, 0.250))
+_A2_CEMENT_REF = "AASHTO 1993 Guide, Figure 2.8 (pdf_page 112, printed II-23)"
+_A2_BITUMINOUS_SCALE = ((200, 0.126), (400, 0.161), (600, 0.180),
+                        (800, 0.204), (1000, 0.230), (1200, 0.250),
+                        (1400, 0.275), (1600, 0.300), (1800, 0.320))
+_A2_BITUMINOUS_REF = ("AASHTO 1993 Guide, Figure 2.9 (pdf_page 113, "
+                      "printed II-24)")
+_HIGH_MODULUS_REF = ("AASHTO 1993 Guide, Section 3.1.5 (pdf_page 126, "
+                     "printed II-37)")
+
+# Section 3.1.5 (printed II-37): the Figure 3.2 procedure "should not be
+# applied to determine the SN required above subbase or base materials
+# having a modulus greater than 40,000 psi".
+HIGH_MODULUS_PSI = 40_000.0
+
+
+def _a2_from_scale(value, scale, what, unit, warnings):
+    """a2 read straight across a printed parallel scale (Figs 2.8/2.9)."""
+    lo, hi = scale[0][0], scale[-1][0]
+    if value < lo:
+        raise ValueError(
+            f"{what} {value} {unit} is below the lowest labelled tick of the "
+            f"printed scale ({lo} {unit}); give the layer coefficient 'a' "
+            "directly."
+        )
+    if value > hi:
+        warnings.append(
+            f"{what} {value} {unit} is above the printed scale's top tick "
+            f"({hi} {unit}); a2 = {scale[-1][1]} at {hi} {unit} used."
+        )
+        return scale[-1][1]
+    for (x0, a0), (x1, a1) in zip(scale, scale[1:]):
+        if x0 <= value <= x1:
+            return round(a0 + (a1 - a0) * (value - x0) / (x1 - x0), 4)
+    return scale[-1][1]  # pragma: no cover
+
+
+def _is_high_modulus(layer):
+    """True when the layer is a base/subbase stiffer than 40,000 psi: its
+    modulus says so, or, with no modulus given, it is a cement- or
+    bituminous-treated base (every modulus on the Figure 2.8 and 2.9
+    scales is above 40,000 psi)."""
+    if layer.modulus_psi is not None:
+        return layer.modulus_psi > HIGH_MODULUS_PSI
+    return layer.layer_type in _TREATED
 
 
 @dataclass
@@ -38,9 +92,13 @@ class PavementLayer:
     (Table 2.4); give it directly or via ``drainage_quality`` +
     ``pct_saturation_time`` (midpoint of the table range is used).
     ``thickness_in`` set on every layer switches the analysis to check
-    mode. In design mode, non-surface layers also need ``modulus_psi``
-    (used as the foundation modulus for the Figure 3.2 re-solve above
-    that layer).
+    mode. In design mode, granular layers below the surface also need
+    ``modulus_psi`` (used as the foundation modulus for the Figure 3.2
+    re-solve above that layer). Above a layer stiffer than 40,000 psi (a
+    treated base with no ``modulus_psi`` counts as one) no SN is solved
+    (Section 3.1.5, printed II-37): the layer above takes its minimum
+    practical thickness, ``min_thickness_in`` or the Section 3.1.4
+    minimum, whichever is larger.
     """
 
     layer_type: str
@@ -95,26 +153,21 @@ def _resolve_a(layer: PavementLayer, references, warnings):
                 "cement_treated_base layer needs ucs_7day_psi (7-day UCS) "
                 "or a direct 'a'."
             )
-        r = _tb.layer_coefficient_a2_cement_treated(layer.ucs_7day_psi)
-        add_ref(references, r["reference"])
-        warnings.append(
-            "a2 (cement-treated) is a sparse 3-point chart read (Figure 2.8)."
-        )
-        return r["a2"], "Figure 2.8 chart read (UCS)"
+        a2 = _a2_from_scale(layer.ucs_7day_psi, _A2_CEMENT_SCALE,
+                            "7-day UCS", "psi", warnings)
+        add_ref(references, _A2_CEMENT_REF)
+        return a2, "Figure 2.8 read across from the 7-day UCS scale"
     if lt == "bituminous_treated_base":
         if layer.marshall_stability_lb is None:
             raise ValueError(
                 "bituminous_treated_base layer needs marshall_stability_lb "
                 "or a direct 'a'."
             )
-        r = _tb.layer_coefficient_a2_bituminous_treated(
-            layer.marshall_stability_lb)
-        add_ref(references, r["reference"])
-        warnings.append(
-            "a2 (bituminous-treated) is a sparse 3-point chart read "
-            "(Figure 2.9)."
-        )
-        return r["a2"], "Figure 2.9 chart read (Marshall)"
+        a2 = _a2_from_scale(layer.marshall_stability_lb,
+                            _A2_BITUMINOUS_SCALE, "Marshall stability", "lb",
+                            warnings)
+        add_ref(references, _A2_BITUMINOUS_REF)
+        return a2, "Figure 2.9 read across from the Marshall stability scale"
     raise ValueError(
         f"Unknown layer_type '{lt}'. Use one of: {', '.join(LAYER_TYPES)}"
     )
@@ -146,10 +199,11 @@ def _resolve_m(layer: PavementLayer, references, notes):
         return m, (f"Table 2.4 midpoint ({r['mi_min']}-{r['mi_max']}, "
                    f"quality={r['quality']}, {pct})")
     notes.append(
-        f"Drainage m defaulted to 1.0 for the {layer.layer_type} (AASHO "
-        "Road Test conditions, Table 2.4 'fair')."
+        f"Drainage m defaulted to 1.0 for the {layer.layer_type}: the value "
+        "for conditions at the AASHO Road Test, whatever the material "
+        "(Section 2.4.1, printed II-25)."
     )
-    return 1.0, "default 1.0 (AASHO Road Test conditions)"
+    return 1.0, "default 1.0 (AASHO Road Test conditions, II-25)"
 
 
 def design_flexible_pavement(
@@ -177,9 +231,15 @@ def design_flexible_pavement(
       over the roadbed (Figure 3.1), re-solves over each intermediate
       foundation (base/subbase modulus) per Figure 3.2, splits thicknesses
       top-down with round-as-you-go practical rounding, and enforces the
-      Section 3.1.4 traffic-based minimums.
+      Section 3.1.4 traffic-based minimums. Over a base or subbase stiffer
+      than 40,000 psi (a treated base with no modulus counts as one) no SN
+      is solved (Section 3.1.5, printed II-37): the layers above it take
+      their minimum practical thickness.
     - **check** -- every layer has ``thickness_in``: computes the provided
-      SN and compares to the requirement; no thicknesses are changed.
+      SN and compares to the requirement over the roadbed and, where a
+      layer's modulus (at most 40,000 psi) is given, over that layer too
+      (Figure 3.2: SN1* >= SN1, SN1* + SN2* >= SN2); no thicknesses are
+      changed.
 
     Parameters
     ----------
@@ -191,8 +251,9 @@ def design_flexible_pavement(
     zr : float, optional
         Standard normal deviate directly (overrides reliability_pct).
     so : float, optional
-        Overall standard deviation; defaults to 0.45 (midpoint of the
-        guide's flexible range 0.40-0.50).
+        Overall standard deviation; defaults to 0.45, the guide's value for
+        flexible pavements with traffic variance (Section 2.1.3, printed
+        II-9/10; range 0.40-0.50, printed I-62).
     mr_psi : float, optional
         Effective roadbed resilient modulus, psi.
     monthly_mr_psi : list, optional
@@ -206,8 +267,10 @@ def design_flexible_pavement(
         Section top-down; first layer must be 'asphalt'. 1-3 layers
         (full-depth AC / AC+base / AC+base+subbase).
     thickness_increment_in : float, optional
-        Practical rounding increment for design mode (default 0.5 in,
-        rounded UP, guide practice).
+        Practical rounding increment for design mode (default 0.5 in). The
+        guide rounds flexible layers "to the nearest 1/2 inch" (Section
+        3.1.4, printed II-34); the module rounds UP, since Figure 3.2 asks
+        the value used to be at least the value required.
     enforce_minimums : bool, optional
         Apply the Section 3.1.4 minimum AC/base thicknesses (design mode).
     swelling, frost : dict, optional
@@ -315,18 +378,25 @@ def design_flexible_pavement(
 
     # Required SN over each successive foundation (Figure 3.2): the SN over
     # layer i+1 uses that layer's modulus as the design "roadbed"; the last
-    # solve uses the actual roadbed effective MR. Design mode requires the
-    # full stack; in check mode intermediate solves are informational and
-    # included only where a modulus is available.
+    # solve uses the actual roadbed effective MR. Over a base or subbase
+    # stiffer than 40,000 psi no SN is solved (Section 3.1.5, printed
+    # II-37); in design mode the layers above it take their minimum
+    # practical thickness. In check mode an intermediate solve needs that
+    # layer's modulus.
     def _solve_sn(foundation_mr):
         r = _eq.flexible_sn_from_w18(w18, zr_val, so_val, dpsi, foundation_mr)
         add_ref(references, r["reference"])
         return r["sn"]
 
-    sn_stack = []
+    sn_over = []      # per layer: the SN required over the layer below it
+    high_below = []   # layers stiffer than 40,000 psi with layers above
     for i, entry in enumerate(resolved[:-1]):
         below = resolved[i + 1]
         found_mr = below["layer"].modulus_psi
+        if _is_high_modulus(below["layer"]):
+            sn_over.append(None)
+            high_below.append(below["layer_type"])
+            continue
         if found_mr is None:
             if mode == "design":
                 raise ValueError(
@@ -336,16 +406,35 @@ def design_flexible_pavement(
                     "modulus_psi, or supply thickness_in on every layer for "
                     "a check instead."
                 )
+            sn_over.append(None)
             continue
-        sn_stack.append({
+        sn_over.append({
             "over": below["layer_type"], "foundation_mr_psi": found_mr,
             "sn_required": _solve_sn(found_mr),
         })
     sn_roadbed = _solve_sn(mr_eff)
-    sn_stack.append({
+    sn_over.append({
         "over": "roadbed", "foundation_mr_psi": mr_eff,
         "sn_required": sn_roadbed,
     })
+    if high_below:
+        add_ref(references, _HIGH_MODULUS_REF)
+        notes.append(
+            f"No SN solved over the {' / '.join(high_below)}: modulus above "
+            "40,000 psi (a treated base with no modulus given counts as "
+            "one; every modulus on Figures 2.8 and 2.9 is higher). The "
+            "guide: the Figure 3.2 procedure 'should not be applied to "
+            "determine the SN required above subbase or base materials "
+            "having a modulus greater than 40,000 psi' (Section 3.1.5, "
+            "printed II-37). "
+            + ("The layer above is set at its minimum practical thickness "
+               "(Section 3.1.4 minimum or min_thickness_in, the larger); "
+               "the guide leaves it to cost effectiveness, so give "
+               "min_thickness_in for a thicker one."
+               if mode == "design" else
+               "Only the SN over the roadbed and over the layers at or "
+               "below 40,000 psi is checked.")
+        )
 
     minimums_applied = {}
     if mode == "design":
@@ -364,10 +453,6 @@ def design_flexible_pavement(
         # rounding surplus carries down as extra capacity).
         sn_carried = 0.0
         for i, entry in enumerate(resolved):
-            sn_req_here = sn_stack[i]["sn_required"]
-            need = max(sn_req_here - sn_carried, 0.0)
-            d_raw = need / (entry["a"] * entry["m"])
-            d = round_up(d_raw, thickness_increment_in)
             floor = 0.0
             if entry["layer_type"] == "asphalt":
                 floor = max(min_ac, entry["layer"].min_thickness_in or 0.0)
@@ -375,11 +460,34 @@ def design_flexible_pavement(
                 floor = max(min_base, entry["layer"].min_thickness_in or 0.0)
             elif entry["layer"].min_thickness_in:
                 floor = entry["layer"].min_thickness_in
-            if floor > d:
+            if sn_over[i] is None:
+                # Above a layer stiffer than 40,000 psi (II-37).
+                if floor <= 0:
+                    raise ValueError(
+                        f"The {entry['layer_type']} sits on a layer stiffer "
+                        "than 40,000 psi, so the guide sets its thickness by "
+                        "cost effectiveness and minimum practical thickness, "
+                        "not by an SN solve (Section 3.1.5, printed II-37). "
+                        "Give min_thickness_in on it"
+                        + (" or keep enforce_minimums on"
+                           if entry["layer_type"] in ("asphalt",
+                                                      "granular_base")
+                           else "") + "."
+                    )
+                d_raw = floor
                 d = round_up(floor, thickness_increment_in)
-                minimums_applied[entry["layer_type"]] = floor
-            if d <= 0 and need > 0:
-                d = thickness_increment_in
+                entry["thickness_basis"] = (
+                    "minimum practical thickness over a layer stiffer than "
+                    "40,000 psi (II-37)")
+            else:
+                need = max(sn_over[i]["sn_required"] - sn_carried, 0.0)
+                d_raw = need / (entry["a"] * entry["m"])
+                d = round_up(d_raw, thickness_increment_in)
+                if floor > d:
+                    d = round_up(floor, thickness_increment_in)
+                    minimums_applied[entry["layer_type"]] = floor
+                if d <= 0 and need > 0:
+                    d = thickness_increment_in
             entry["thickness_in"] = d
             entry["d_unrounded_in"] = round(d_raw, 3)
             sn_carried += entry["a"] * d * entry["m"]
@@ -400,6 +508,28 @@ def design_flexible_pavement(
             sn_carried += entry["a"] * entry["thickness_in"] * entry["m"]
             entry["sn_cumulative"] = round(sn_carried, 3)
 
+    # Figure 3.2 note 2 (printed II-36): the SN provided above each
+    # foundation must be at least the SN required over it (SN1* >= SN1,
+    # SN1* + SN2* >= SN2, ...).
+    sn_stack = []
+    sn_above = 0.0
+    for i, entry in enumerate(resolved):
+        sn_above += entry["a"] * entry["thickness_in"] * entry["m"]
+        row = sn_over[i]
+        if row is None:
+            continue
+        ok = sn_above >= row["sn_required"] - 1e-9
+        sn_stack.append(dict(row, sn_provided_above=round(sn_above, 3),
+                             adequate=ok))
+        if not ok and row["over"] != "roadbed":
+            warnings.append(
+                f"SN provided above the {row['over']} is "
+                f"{sn_above:.2f}, below the {row['sn_required']:.2f} "
+                f"required over it (Figure 3.2, MR = "
+                f"{row['foundation_mr_psi']:,.0f} psi): the layers above it "
+                "are too thin for its modulus."
+            )
+
     # Provided SN (Section 3.1.4 composition) and forward adequacy check.
     kw = {"a1": resolved[0]["a"], "d1": resolved[0]["thickness_in"]}
     if len(resolved) > 1:
@@ -415,7 +545,9 @@ def design_flexible_pavement(
     fwd = _eq.flexible_w18_from_sn(sn_provided, zr_val, so_val, dpsi, mr_eff)
     add_ref(references, fwd["reference"])
     w18_capacity = fwd["w18"]
-    adequate = (sn_provided >= sn_roadbed - 1e-9) and (w18_capacity >= w18)
+    adequate = ((sn_provided >= sn_roadbed - 1e-9)
+                and w18_capacity >= w18
+                and all(row["adequate"] for row in sn_stack))
 
     layer_rows = [{k: v for k, v in entry.items() if k != "layer"}
                   for entry in resolved]

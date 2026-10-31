@@ -34,8 +34,9 @@ def growth_factor(growth_rate_pct, design_period_yr) -> dict:
         GF = [(1+g)^n - 1] / g      (g > 0; GF = n for g = 0)
 
     Annual traffic in year 1 multiplied by GF gives the cumulative total
-    over n years of compound growth (AASHTO 1993 Guide, Appendix D
-    traffic-analysis procedure; e.g. 4%/yr over 20 yr -> GF = 29.78).
+    over n years of compound growth. The equation and the zero-growth rule
+    are printed under AASHTO 1993 Guide Table D.20 (pdf_page 383, printed
+    D-24), which tabulates GF (e.g. 4%/yr over 20 yr -> 29.78).
 
     Parameters
     ----------
@@ -64,8 +65,8 @@ def growth_factor(growth_rate_pct, design_period_yr) -> dict:
         "design_period_yr": design_period_yr,
         "growth_factor": round(gf, 4),
         "equation": "GF = [(1+g)^n - 1]/g  (GF = n when g = 0)",
-        "reference": ("AASHTO 1993 Guide, Appendix D traffic analysis "
-                      "(growth of a uniform annual volume)"),
+        "reference": ("AASHTO 1993 Guide, Table D.20 (pdf_page 383, "
+                      "printed D-24)"),
     }
 
 

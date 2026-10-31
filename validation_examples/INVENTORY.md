@@ -1088,6 +1088,60 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Verdict: **PASS** (RESULTS.md). Tests:
   test_published_v061_cantilever_wall.py.
 
+## V-074 AASHTO 1993 composite modulus of subgrade reaction (Figure 3.3, Table 3.3)
+- Source: AASHTO Guide for Design of Pavement Structures (1993), Part II,
+  Figure 3.3 and its example (pdf_page 128, printed II-39), Table 3.3
+  worksheet (pdf_page 132, printed II-43), the loss-of-support correction
+  (Figure 3.6, printed II-42) and k = MR/19.4 (printed II-44), read from
+  `geotech-references/docs/aashto1993.pdf`.
+- Target: `pavement_design.composite_k.composite_k_inf` / `effective_k`
+  and `design_rigid_pavement(composite_k=...)` (GM-298).
+- Inputs: Figure 3.3 example Dsb 6 in, Esb 20,000 psi, MR 7,000 psi;
+  Table 3.3: twelve months of roadbed MR (20,000 / 2,500 / 4,000 /
+  7,000 psi) and subbase Esb (50,000 / 15,000 / 20,000 psi), Dsb 6 in,
+  depth to rigid foundation 5 ft, projected slab 9 in, LS 1.0.
+- Published answer: Figure 3.3 example k_inf 400 pci; Table 3.3 composite
+  k 1,100 / 160 / 230 / 410 pci by row type, sum of u_r 7.25, average
+  0.60, effective k 540 pci, corrected for LS 1.0 to 170 pci.
+- Verdict: **PASS** (RESULTS.md). The guide's own example gives 400 pci
+  for the case Table 3.3 lists as 410. Tests:
+  test_published_v074_v076_aashto1993.py.
+
+## V-075 AASHTO 1993 traffic growth and truck-factor worksheet (Tables D.20, D.21)
+- Source: AASHTO 1993 Guide, Appendix D, Table D.20 growth factors
+  (pdf_page 383, printed D-24) and the Table D.21 worksheet (pdf_page 384,
+  printed D-25), with the text on printed D-22.
+- Target: `pavement_design.growth_factor` and
+  `compute_design_esals(vehicles=...)` (GM-298).
+- Inputs: Table D.20 cells at 0-10 % growth and 5-35 years; Table D.21:
+  13 vehicle classes with their daily counts and truck factors, 2 %
+  growth over 20 years (growth factor 24.30), DD 0.5, DL 1.0.
+- Published answer: Table D.20 e.g. 4 % over 20 years 29.78, 0 % over 12
+  years 12.0, 10 % over 35 years 271.02; Table D.21 per-class design
+  ESALs and the total line 43,772,314 (text D-22: 43.8 million).
+- Verdict: **PASS** (RESULTS.md). Table D.21's column of design ESALs
+  sums to 43,797,514; the printed total is 25,200 (0.06 %) lower. Tests:
+  test_published_v074_v076_aashto1993.py.
+
+## V-076 AASHTO 1993 Appendix H flexible design example
+- Source: AASHTO 1993 Guide, Appendix H (pdf_pages 406-412, printed H-1
+  to H-7): traffic, Figure H.3 effective roadbed modulus, Table H.1
+  swelling inputs, Table H.2 performance-period iteration, and the layer
+  thicknesses.
+- Target: `compute_design_esals`, `effective_roadbed_modulus`,
+  `estimate_performance_period` and `design_flexible_pavement` (GM-298).
+- Inputs: first-year two-way traffic 2.5 million ESALs, DD 0.50, DL 0.80,
+  3 % growth over 15 years; the 24 half-month roadbed moduli of Figure
+  H.3; R 95 % (two stages), So 0.35, po 4.6, pt 2.5; swelling VR 1.2 in,
+  Ps 84 %, theta 0.075 (Table H.2); EAC 400,000, EBS 30,000, ESB 11,000
+  psi with a 0.42 / 0.14 / 0.08 and drainage m 1.20.
+- Published answer: 18.6 million ESALs; sum of uf 5.446, effective MR
+  5,700 psi; performance period 13.2 years; SN1 3.2, SN2 4.5, SN3 5.6;
+  D1 7.6, D2 6.8, D3 11.04 in (taken as 11).
+- Verdict: **PASS** (RESULTS.md). The module rounds each layer up to the
+  increment (Figure 3.2 note 2), so D3 11.10 becomes 12 where the
+  example takes 11.04 to 11. Tests: test_published_v074_v076_aashto1993.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

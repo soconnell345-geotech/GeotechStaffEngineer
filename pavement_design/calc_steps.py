@@ -90,7 +90,7 @@ def _ufc_flexible_sections(result):
             result_name="t required",
             result_value=sec["required_total_thickness_in"],
             result_unit="in",
-            reference="UFC 3-250-01, Figure E-1 (Appendix E)",
+            reference="UFC 3-250-01, Figure E-1 (pdf_page 211, printed 192)",
         ),
         TableData(title="Layered section (cover cascade + Table 7-2 minimums)",
                   headers=["Layer", "CBR", "D (in)"], rows=rows,
@@ -136,7 +136,7 @@ def _ufc_rigid_sections(result):
             result_name="hd required",
             result_value=result["hd_required_in"],
             result_unit="in",
-            reference="UFC 3-250-01, Figure F-1 (Appendix F)",
+            reference="UFC 3-250-01, Figure F-1 (pdf_page 243, printed 224)",
         ),
     ]
     if "ho_on_stabilized_in" in result:
@@ -256,7 +256,13 @@ def _flexible_sections(res: FlexiblePavementResult):
             TableData(title="Layer coefficients and thicknesses",
                       headers=headers, rows=rows,
                       notes="Thicknesses rounded UP; drainage m applies to "
-                            "unbound layers only (Table 2.4)."),
+                            "unbound layers only (Table 2.4)." + "".join(
+                                f" The {lay['layer_type']} is set at its "
+                                "minimum practical thickness: it sits on a "
+                                "layer stiffer than 40,000 psi, over which "
+                                "no SN is solved (Section 3.1.5, II-37)."
+                                for lay in res.layers
+                                if "thickness_basis" in lay)),
             CalcStep(
                 title="Structural number of the section",
                 equation=("SN = a<sub>1</sub>D<sub>1</sub> + a<sub>2</sub>D<sub>2</sub>m<sub>2</sub> + "
@@ -271,7 +277,19 @@ def _flexible_sections(res: FlexiblePavementResult):
             ),
         ]))
 
+    # Figure 3.2 note 2: SN provided above each solved foundation.
     checks = [
+        CheckItem(
+            description=f"SN above the {row['over']} (Figure 3.2)",
+            demand=row["sn_required"], demand_label="SN required",
+            capacity=row["sn_provided_above"],
+            capacity_label="SN provided above", unit="",
+            passes=row["adequate"],
+        )
+        for row in res.sn_stack
+        if row["over"] != "roadbed" and "sn_provided_above" in row
+    ]
+    checks += [
         CheckItem(
             description="Structural number adequacy",
             demand=res.sn_required, demand_label="SN required",
@@ -438,14 +456,15 @@ def get_figures(result, analysis=None):
     if _is_ufc_flexible(result):
         _add(_plots.plot_ufc_flexible_design_chart(result),
              "UFC flexible design chart",
-             "Computed Figure E-1 (Corps CBR method) with the design point "
-             "and provided thickness overlaid.")
+             "Figure E-1 (Corps CBR method) read off the print, with the "
+             "design point and provided thickness overlaid.")
         return figures
     if _is_ufc_rigid(result):
         _add(_plots.plot_ufc_rigid_design_chart(result),
              "UFC rigid design chart",
-             "Computed Figure F-1 slice at the design flexural strength "
-             "and k, with the required and provided slab overlaid.")
+             "Figure F-1 slice, read off the print, at the design flexural "
+             "strength and k, with the required and provided slab "
+             "overlaid.")
         return figures
     if isinstance(result, FlexiblePavementResult):
         _add(_plots.plot_flexible_design_chart(result),

@@ -5,9 +5,10 @@ The UFC method characterizes traffic as equivalent passes of an 18-kip
 single-axle, dual-tire load (controlling-vehicle procedure, Guide Ch 4 /
 Appendix G) and designs flexible sections by the Corps CBR method (Figure
 E-1 cover curves) and rigid slabs by the Westergaard-based Figure F-1
-family (+ Eq 13-1 on stabilized foundations). All physics comes from
-``geotech_references.ufc_pavement`` (Appendix-G-anchored digitization);
-chart-read tolerances propagate to the results.
+family (+ Eq 13-1 on stabilized foundations). Figure E-1 is read off the
+print in ``ufc_e1`` (GM-298); the other charts and tables come from
+``geotech_references.ufc_pavement`` (Appendix-G-anchored digitization),
+whose chart-read tolerances propagate to the results.
 
 COMPARISON BASIS (``compare_flexible_pavement_methods``): both guides
 accept "passes of an 18-kip single axle" as the traffic number — AASHTO's
@@ -26,6 +27,19 @@ from geotech_references.ufc_pavement import equations as _ueq
 from geotech_references.ufc_pavement import tables as _utb
 
 from .common import add_ref, round_up
+from .ufc_e1 import figure_e1_thickness as _e1
+from .ufc_f1 import (PARA_13_3_REF, TABLE_10_1_NOTE_REF,
+                     figure_f1_thickness as _f1)
+
+# UFC 3-250-01 p. 20 (pdf_page 39): the drainage criteria require "a
+# minimum of 4 in (100 mm) of drainage layer and 4 in (100 mm) of subbase
+# (separation) course for most pavements"; Appendix G-3 (printed 259-260)
+# ends with a 4 in subbase where its cover arithmetic left 4.4 in.
+_MIN_SUBBASE_IN = 4.0
+_MIN_SUBBASE_REF = "UFC 3-250-01, para 7-5 (pdf_page 39, printed 20)"
+# Para 13-3 (pdf_page 56, printed 37): "The minimum thickness of plain
+# concrete is 6 in (150 mm)."
+_MIN_PLAIN_CONCRETE_IN = 6.0
 
 
 def _cbr_to_mr(cbr, references, notes):
@@ -37,6 +51,72 @@ def _cbr_to_mr(cbr, references, notes):
         "direct modulus if you have one)."
     )
     return r["mr"]
+
+
+# AASHTO 1993 Figures 2.6 (base, pdf_page 108, printed II-19) and 2.7
+# (subbase, pdf_page 110, printed II-21) set a CBR scale and a modulus
+# scale side by side, read straight across. Heights (scan pixels, ~305
+# dpi) of each labelled tick, read off the print (GM-298). The guide's
+# AASHO Road Test materials sit on them: base CBR 100 with EBS 30,000 psi,
+# subbase CBR 30 with ESB 15,000 psi (printed II-20).
+_FIG_CBR_SCALES = {
+    "granular_base": (
+        "AASHTO 1993 Guide, Figure 2.6 (pdf_page 108, printed II-19)",
+        ((100, 1467.0), (70, 1527.5), (60, 1561.0), (50, 1618.5),
+         (40, 1675.0), (30, 1746.5), (20, 1897.0)),
+        ((40000, 1256.5), (30000, 1463.5), (25000, 1589.0),
+         (20000, 1730.5), (15000, 1897.5))),
+    "granular_subbase": (
+        "AASHTO 1993 Guide, Figure 2.7 (pdf_page 110, printed II-21)",
+        ((100, 1246.0), (70, 1309.5), (50, 1338.5), (40, 1374.5),
+         (30, 1442.5), (20, 1533.0), (10, 1620.0), (5, 1809.5)),
+        ((20000, 1261.5), (15000, 1432.5), (14000, 1477.5),
+         (13000, 1521.5), (12000, 1563.5), (11000, 1598.0),
+         (10000, 1639.5))),
+}
+
+
+def _cbr_to_layer_modulus(cbr, layer_type, references, notes):
+    """A granular base's or subbase's modulus from its CBR, read across
+    the guide's own Figure 2.6 / 2.7 scales."""
+    import math
+
+    import numpy as np
+
+    ref, cbr_ticks, mod_ticks = _FIG_CBR_SCALES[layer_type]
+    which = "base" if layer_type == "granular_base" else "subbase"
+    lo, hi = cbr_ticks[-1][0], cbr_ticks[0][0]
+    if not lo <= cbr <= hi:
+        raise ValueError(
+            f"{which} CBR {cbr} is off the printed CBR scale of {ref} "
+            f"({lo}-{hi}); give the {which} modulus directly."
+        )
+    c_log = [math.log10(c) for c, _ in reversed(cbr_ticks)]
+    c_y = [y for _, y in reversed(cbr_ticks)]
+    y = float(np.interp(math.log10(cbr), c_log, c_y))
+    m_y = [yy for _, yy in mod_ticks]
+    # The two scales' end ticks sit up to ~15 px apart where the guide
+    # lines them up (CBR 100 with 20,000 psi on Figure 2.7).
+    if y > m_y[-1] + 20 or y < m_y[0] - 20:
+        raise ValueError(
+            f"{which} CBR {cbr} reads past the end of the modulus scale of "
+            f"{ref}; give the {which} modulus directly."
+        )
+    y = min(max(y, m_y[0]), m_y[-1])
+    mod = 10 ** float(np.interp(y, m_y, [math.log10(m) for m, _ in
+                                         mod_ticks]))
+    mod = round(mod, -2)
+    add_ref(references, ref)
+    symbol = "EBS" if which == "base" else "ESB"
+    figure = "Figure 2.6" if which == "base" else "Figure 2.7"
+    notes.append(
+        f"{which.capitalize()} CBR {cbr} -> {symbol} {mod:,.0f} psi read "
+        f"across the AASHTO guide's {figure} (its own CBR and modulus "
+        "scales); the NCHRP 1-37A correlation Mr = 2555*CBR^0.64 "
+        f"(FHWA-NHI-05-037 Table 5-34) would give {2555 * cbr ** 0.64:,.0f}"
+        " psi. Give the modulus directly to use another."
+    )
+    return mod
 
 
 def _mr_to_cbr(mr_psi, notes):
@@ -61,7 +141,7 @@ def design_flexible_pavement_ufc(
     Layered cover logic (Guide Ch 5-9 / Figure E-1): the thickness of
     material above ANY layer must equal the E-1 curve read at that layer's
     CBR and the design passes. Surface and base minimums come from Table
-    7-2. Mixed traffic reduces to ``passes_18kip`` via the reference
+    7-2; a subbase is at least 4 in (p. 20, as Appendix G-3 ends). Mixed traffic reduces to ``passes_18kip`` via the reference
     ``mixed_traffic_equivalent_esal`` (controlling-vehicle procedure).
 
     Parameters
@@ -98,29 +178,21 @@ def design_flexible_pavement_ufc(
 
     def _cover_over(cbr_layer, label):
         """E-1 cover requirement above a layer of the given CBR; 0.0 when
-        the CBR is off the high end of the chart (no structural cover
+        the CBR is off the end of the curve (no structural cover
         needed — Table 7-2 minimums govern instead)."""
-        try:
-            r = _utb.figure_e1_flexible_thickness(cbr=cbr_layer,
-                                                  passes=passes_18kip)
-        except ValueError:
+        r = _e1(cbr=cbr_layer, passes=passes_18kip)
+        add_ref(references, r["reference"])
+        if r["thickness_in"] <= 0.0:
             notes.append(
                 f"E-1 cover over the {label} (CBR {cbr_layer}) is off the "
                 "high-CBR end of the curve — no structural cover required; "
                 "Table 7-2 minimum thicknesses govern that interface."
             )
-            return 0.0
-        add_ref(references, r["reference"])
-        if "tolerance" in r:
-            warnings.append(f"E-1 ({label}): {r['tolerance']}")
         return r["thickness_in"]
 
     def _section(cbr_sg, label):
-        total_r = _utb.figure_e1_flexible_thickness(cbr=cbr_sg,
-                                                    passes=passes_18kip)
+        total_r = _e1(cbr=cbr_sg, passes=passes_18kip)
         add_ref(references, total_r["reference"])
-        if "tolerance" in total_r:
-            warnings.append(f"E-1 ({label}): {total_r['tolerance']}")
         t_total = total_r["thickness_in"]
 
         mins = _utb.table_7_2_min_thickness(esal=passes_18kip,
@@ -138,6 +210,16 @@ def design_flexible_pavement_ufc(
                     min_base), thickness_increment_in)
             subbase = round_up(max(t_total - surface - base, 0.0),
                                thickness_increment_in)
+            if subbase < _MIN_SUBBASE_IN:
+                add_ref(references, _MIN_SUBBASE_REF)
+                notes.append(
+                    f"Subbase {subbase} in from the cover curves raised to "
+                    f"the {_MIN_SUBBASE_IN:g} in the drainage criteria ask "
+                    "of a subbase (separation) course 'for most pavements' "
+                    "(UFC 3-250-01 p. 20; Appendix G-3 ends the same way). "
+                    "Leave cbr_subbase out for a surface-and-base section."
+                )
+                subbase = _MIN_SUBBASE_IN
             layers = [
                 {"layer": "asphalt_surface", "thickness_in": surface},
                 {"layer": "base", "cbr": cbr_base, "thickness_in": base},
@@ -164,6 +246,9 @@ def design_flexible_pavement_ufc(
         "passes_18kip": passes_18kip,
         "section": _section(cbr_subgrade, "subgrade"),
     }
+    notes.insert(0, "Figure E-1: " + _e1(cbr=cbr_subgrade,
+                                         passes=passes_18kip)["tolerance"]
+                 + ".")
 
     if frost:
         fc = _utb.table_19_2_frost_classification(**frost)
@@ -185,6 +270,14 @@ def design_flexible_pavement_ufc(
                 f"CBR {cbr_subgrade}; "
                 + ("FROST GOVERNS." if governs else "non-frost governs.")
             )
+        elif str(group).upper() == "PFS":
+            warnings.append(
+                "Frost classification PFS: Table 19-2 footnote *** prints "
+                "it as \"possibly frost-susceptible, but requires "
+                "laboratory test to determine frost design soils "
+                "classification\". No frost section is computed; give the "
+                "frost group the laboratory test sets."
+            )
         else:
             notes.append(f"Frost classification: {group} — no frost "
                          "adjustment required.")
@@ -204,10 +297,11 @@ def design_rigid_pavement_ufc(
 ) -> dict:
     """UFC 3-250-01 rigid (plain concrete) design for roads/parking.
 
-    Slab thickness from the Figure F-1 family (flexural strength R x
-    modulus of subgrade reaction k x equivalent 18-kip passes), reduced
-    per Eq 13-1 when placed on a bound/stabilized foundation
-    (``stabilized_foundation`` = {'ef_psi': ..., 'hs_in': ...}).
+    Slab thickness from Figure F-1 read off the print (``ufc_f1``:
+    flexural strength R x modulus of subgrade reaction k x equivalent
+    18-kip passes), reduced per Eq 13-1 when placed on a bound/stabilized
+    foundation (``stabilized_foundation`` = {'ef_psi': ..., 'hs_in': ...}),
+    rounded up to the increment and to the 6 in minimum of para 13-3.
     ``k_pci`` directly, or ``subgrade`` = {'uscs_group': ...,
     'moisture_pct': ...} for the Table 10-1 lookup.
     """
@@ -225,22 +319,16 @@ def design_rigid_pavement_ufc(
             )
         kr = _utb.table_10_1_k_subgrade(**subgrade)
         add_ref(references, kr["reference"])
-        k_pci = kr.get("k_pci") or kr.get("k_pci_mid")
-        notes.append(f"k = {k_pci} pci from Table 10-1 for {subgrade}.")
+        k_pci = kr["k_psi_in"]
+        notes.append(f"k = {k_pci:g} pci from Table 10-1 for {subgrade}.")
 
-    f1 = getattr(_utb, "figure_f1_rigid_thickness", None)
-    if f1 is None:
-        raise NotImplementedError(
-            "The Figure F-1 rigid design curve is not available in this "
-            "geotech-references install — upgrade the reference package "
-            "for the UFC rigid path (the flexible UFC path and Eq 13-1 "
-            "remain available)."
-        )
-    hd_r = f1(flexural_psi=flexural_strength_psi, k_psi_in=k_pci,
-              passes=passes_18kip)
+    hd_r = _f1(flexural_psi=flexural_strength_psi, k_pci=k_pci,
+               passes=passes_18kip)
     add_ref(references, hd_r["reference"])
-    if "tolerance" in hd_r:
-        warnings.append(f"F-1: {hd_r['tolerance']}")
+    if hd_r["k_pci"] != k_pci:
+        add_ref(references, TABLE_10_1_NOTE_REF)
+    notes.append(f"Figure F-1: {hd_r['tolerance']}.")
+    notes.extend(hd_r["notes"])
     hd = hd_r["thickness_in"]
 
     result = {
@@ -256,15 +344,22 @@ def design_rigid_pavement_ufc(
             hs_in=stabilized_foundation["hs_in"])
         add_ref(references, ho_r["reference"])
         result["ho_on_stabilized_in"] = ho_r["ho_in"]
-        result["slab_provided_in"] = round_up(ho_r["ho_in"],
-                                              thickness_increment_in)
+        slab = round_up(ho_r["ho_in"], thickness_increment_in)
         notes.append(
             f"Eq 13-1 stabilized-foundation reduction: hd {hd} -> ho "
             f"{ho_r['ho_in']} in (Ef {stabilized_foundation['ef_psi']:,} "
             f"psi, hs {stabilized_foundation['hs_in']} in)."
         )
     else:
-        result["slab_provided_in"] = round_up(hd, thickness_increment_in)
+        slab = round_up(hd, thickness_increment_in)
+    if slab < _MIN_PLAIN_CONCRETE_IN:
+        add_ref(references, PARA_13_3_REF)
+        notes.append(
+            f"Slab {slab} in raised to the {_MIN_PLAIN_CONCRETE_IN:g} in "
+            "minimum thickness of plain concrete (para 13-3)."
+        )
+        slab = _MIN_PLAIN_CONCRETE_IN
+    result["slab_provided_in"] = slab
 
     result.update({"notes": notes, "warnings": warnings,
                    "references": references})
@@ -310,8 +405,7 @@ def ufc_mixed_traffic(
     def _thickness(vehicle, passes):
         if str(vehicle).strip().lower() in ("e-1", "e1", "18kip",
                                             "18_kip_esal"):
-            r = _utb.figure_e1_flexible_thickness(cbr=representative_cbr,
-                                                  passes=passes)
+            r = _e1(cbr=representative_cbr, passes=passes)
         else:
             r = _utb.figure_e_vehicle_thickness(vehicle,
                                                 cbr=representative_cbr,
@@ -328,9 +422,8 @@ def ufc_mixed_traffic(
             for _ in range(60):
                 mid = 0.5 * (lo + hi)
                 try:
-                    t = _utb.figure_e1_flexible_thickness(
-                        cbr=representative_cbr,
-                        passes=10 ** mid)["thickness_in"]
+                    t = _e1(cbr=representative_cbr,
+                            passes=10 ** mid)["thickness_in"]
                 except ValueError:
                     hi = mid
                     continue
@@ -416,8 +509,11 @@ def compare_flexible_pavement_methods(
     count — the same physical count under two different damage models.
     Subgrade: give ``cbr_subgrade`` (Mr derived via the FHWA correlation)
     or ``mr_psi`` (CBR derived by inversion); both derivations are stated
-    in ``notes``. AASHTO layer moduli default from the layer CBRs via the
-    same correlation unless given directly.
+    in ``notes``. The AASHTO base and subbase moduli default from their
+    CBRs read across the guide's own Figure 2.6 / 2.7 scales (base CBR
+    20-100, subbase CBR about 9-100) unless given directly; the
+    correlation above, applied to a base, gives a modulus the guide's
+    scales put at a higher CBR (CBR 80: 42,200 psi against 28,200).
     """
     from .flexible import PavementLayer, design_flexible_pavement
 
@@ -432,8 +528,10 @@ def compare_flexible_pavement_methods(
         mr = mr_psi
         cbr = _mr_to_cbr(mr_psi, notes)
 
-    ebs = ebs_psi or _cbr_to_mr(cbr_base, references, notes)
-    esb = esb_psi or _cbr_to_mr(cbr_subbase, references, notes)
+    ebs = ebs_psi or _cbr_to_layer_modulus(cbr_base, "granular_base",
+                                           references, notes)
+    esb = esb_psi or _cbr_to_layer_modulus(cbr_subbase, "granular_subbase",
+                                           references, notes)
 
     aashto = design_flexible_pavement(
         w18=passes_18kip, reliability_pct=reliability_pct, so=so, pt=pt,

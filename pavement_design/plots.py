@@ -191,12 +191,13 @@ def plot_seasonal_mr(result):
 
 
 def plot_ufc_flexible_design_chart(ufc_result):
-    """Computed Figure E-1: thickness vs CBR curves at pass levels around
-    the design traffic, with the design point overlaid.
+    """Figure E-1 as read off the print (``ufc_e1``): thickness vs CBR
+    at pass levels around the design traffic, with the design point
+    overlaid.
 
     ``ufc_result`` : dict from ``design_flexible_pavement_ufc``.
     """
-    from geotech_references.ufc_pavement import tables as utb
+    from .ufc_e1 import figure_e1_thickness
     plt = _plt()
     passes = ufc_result["passes_18kip"]
     sec = ufc_result["section"]
@@ -208,10 +209,12 @@ def plot_ufc_flexible_design_chart(ufc_result):
         ts = []
         for c in cbrs:
             try:
-                ts.append(utb.figure_e1_flexible_thickness(
-                    cbr=c, passes=p_lvl)["thickness_in"])
+                t = figure_e1_thickness(c, p_lvl)["thickness_in"]
+                ts.append(t if t > 0 else float("nan"))
             except ValueError:
                 ts.append(float("nan"))
+        if all(math.isnan(t) for t in ts):
+            continue          # this pass level is off Figure E-1
         ax.plot(cbrs, ts, style, lw=1.4 if p_lvl == passes else 1.0,
                 label=f"{p_lvl:,.0f} passes"
                       + (" (design)" if p_lvl == passes else ""))
@@ -228,7 +231,7 @@ def plot_ufc_flexible_design_chart(ufc_result):
     ax.set_xlabel("CBR (log scale)")
     ax.set_ylabel("Total thickness above layer (in)")
     ax.set_title("UFC 3-250-01 flexible design curve "
-                 "(computed Figure E-1, 18-kip single axle)")
+                 "(Figure E-1, 18-kip single axle)")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -236,28 +239,26 @@ def plot_ufc_flexible_design_chart(ufc_result):
 
 
 def plot_ufc_rigid_design_chart(ufc_result):
-    """Computed Figure F-1 slice: slab thickness vs passes at the design
-    flexural strength and k, with the design point overlaid.
+    """Figure F-1 slice as read off the print (``ufc_f1``): slab
+    thickness vs passes at the design flexural strength and k, with the
+    design point overlaid.
 
     ``ufc_result`` : dict from ``design_rigid_pavement_ufc``.
     """
-    from geotech_references.ufc_pavement import tables as utb
-    f1 = getattr(utb, "figure_f1_rigid_thickness", None)
-    if f1 is None:
-        return None
+    from .ufc_f1 import figure_f1_thickness
     plt = _plt()
     passes = ufc_result["passes_18kip"]
     r_psi = ufc_result["flexural_strength_psi"]
     k = ufc_result["k_pci"]
     fig, ax = plt.subplots(figsize=(7.2, 4.2))
-    import math as _m
     pgrid = [10 ** (3 + 0.15 * i)
              for i in range(int((7.7 - 3) / 0.15) + 1)]
     ts = []
     for p in pgrid:
         try:
-            ts.append(f1(flexural_psi=r_psi, k_psi_in=k,
-                         passes=p)["thickness_in"])
+            r = figure_f1_thickness(r_psi, k, p)
+            ts.append(float("nan") if r["below_chart"]
+                      else r["thickness_in"])
         except ValueError:
             ts.append(float("nan"))
     ax.plot(pgrid, ts, lw=1.6,
@@ -273,7 +274,7 @@ def plot_ufc_rigid_design_chart(ufc_result):
     ax.set_xscale("log")
     ax.set_xlabel("18-kip single-axle passes (log scale)")
     ax.set_ylabel("Slab thickness (in)")
-    ax.set_title("UFC 3-250-01 rigid design (computed Figure F-1 slice)")
+    ax.set_title("UFC 3-250-01 rigid design (Figure F-1 slice)")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()

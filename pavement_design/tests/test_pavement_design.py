@@ -513,8 +513,67 @@ class TestEnvironmentalLoss:
 
 
 class TestUfcAlternative:
-    """UFC 3-250-01 alt method (refs digitization is Appendix-G-anchored;
-    these tests exercise the module-side orchestration)."""
+    """UFC 3-250-01 alt method (Figure E-1 read off the print in ufc_e1;
+    the other charts from the refs digitization, Appendix-G-anchored)."""
+
+    def test_figure_e1_appendix_g_reads(self):
+        from pavement_design.ufc_e1 import figure_e1_thickness as e1
+        # G-1 (printed 256): CBR 3, 1,000,000 passes 16.4 in; CBR 4,
+        # 1,395,400 passes 14 in. G-3 (printed 259): 5,000,000 passes.
+        for cbr, passes, printed in ((3, 1e6, 16.4), (4, 1395400, 14.0),
+                                     (10, 5e6, 7.8), (7, 5e6, 9.8),
+                                     (4, 5e6, 14.5), (25, 5e6, 3.4)):
+            assert e1(cbr, passes)["thickness_in"] == pytest.approx(
+                printed, abs=0.15)
+        # Between the anchors the curves are evenly spaced: CBR 10 reads
+        # 7.4 in at 1,000,000 and 8.0 at 10,000,000 passes.
+        assert e1(10, 1e6)["thickness_in"] == pytest.approx(7.4, abs=0.15)
+        assert e1(10, 1e7)["thickness_in"] == pytest.approx(8.0, abs=0.15)
+        assert e1(40, 1e6)["thickness_in"] == 0.0
+        with pytest.raises(ValueError, match="outside Figure E-1"):
+            e1(10, 2e7)
+        with pytest.raises(ValueError, match="below Figure E-1"):
+            e1(0.5, 1e5)
+
+    def test_figure_f1_appendix_g_reads(self):
+        from pavement_design.ufc_f1 import figure_f1_thickness as f1
+        # G-7 (printed 264) and G-8.11 (printed 267); G-8.12 reads "a
+        # pavement slab 8 in thick" at k 50.
+        assert f1(650, 100, 2e7)["thickness_in"] == pytest.approx(8.1, abs=0.1)
+        assert f1(650, 325, 1.2e6)["thickness_in"] == pytest.approx(6.3, abs=0.1)
+        assert 7.5 < f1(650, 50, 1.2e6)["thickness_in"] <= 8.0
+        # Flexural strength moves the slab: k 100, 1,000,000 passes.
+        assert f1(400, 100, 1e6)["thickness_in"] >             f1(900, 100, 1e6)["thickness_in"] + 3.0
+        r = f1(650, 600, 1e6)
+        assert r["k_pci"] == 500 and "note 2" in r["notes"][0]
+        with pytest.raises(ValueError, match="below Figure F-1"):
+            f1(650, 20, 1e6)
+        with pytest.raises(ValueError, match="pass-level lines"):
+            f1(650, 100, 1e8)
+
+    def test_rigid_ufc_minimum_and_table_10_1(self):
+        from pavement_design import design_rigid_pavement_ufc
+        r = design_rigid_pavement_ufc(passes_18kip=1e3,
+                                      flexural_strength_psi=900, k_pci=400)
+        assert r["slab_provided_in"] == 6.0
+        assert any("para 13-3" in n for n in r["notes"])
+        # Table 10-1: CL at 9-12 % moisture -> k 175 pci.
+        r = design_rigid_pavement_ufc(
+            passes_18kip=1e6, flexural_strength_psi=650,
+            subgrade={"uscs_group": "CL", "moisture_pct": 10})
+        assert r["k_pci"] == 175
+
+    def test_appendix_g3_section(self):
+        """G-3 (printed 258-260): 5,000,000 passes, base CBR 80, subbase
+        CBR 25, compacted subgrade CBR 10 -> 3.5 in AC, 4 in base, 4 in
+        subbase."""
+        from pavement_design import design_flexible_pavement_ufc
+        r = design_flexible_pavement_ufc(passes_18kip=5e6, cbr_subgrade=10,
+                                         cbr_base=80, cbr_subbase=25)
+        sec = r["section"]
+        assert sec["required_total_thickness_in"] == pytest.approx(7.8)
+        assert [l["thickness_in"] for l in sec["layers"]] == [3.5, 4.0, 4.0]
+        assert any("p. 20" in n for n in r["notes"])
 
     def test_flexible_ufc_section(self):
         from pavement_design import design_flexible_pavement_ufc
@@ -545,6 +604,17 @@ class TestUfcAlternative:
         assert r["frost_governs"] is True
         assert (r["frost_section"]["provided_total_thickness_in"]
                 > r["section"]["provided_total_thickness_in"])
+
+    def test_pfs_subgrade_asks_for_the_lab_test(self):
+        from pavement_design import design_flexible_pavement_ufc
+        # Table 19-2: SW with 3-10 % finer than 0.02 mm is PFS, which
+        # footnote *** says needs a laboratory test for its frost group.
+        r = design_flexible_pavement_ufc(
+            passes_18kip=1e6, cbr_subgrade=6,
+            frost={"uscs_class": "SW", "finer_than_0_02mm_pct": 5})
+        assert r["frost_group"] == "PFS"
+        assert "frost_section" not in r
+        assert any("laboratory test" in w for w in r["warnings"])
 
     def test_high_cbr_off_curve_handled(self):
         from pavement_design import design_flexible_pavement_ufc
@@ -719,3 +789,166 @@ class TestPerformancePeriod:
             estimate_performance_period(
                 "flexible", delta_psi_design=1.9, base_year_w18=1e5,
                 swelling=SWELL_G4, mr_psi=None, sn=None, zr=-1.645, so=0.35)
+
+
+# ---------------------------------------------------------------------------
+# GM-298: values read off the printed pages
+# ---------------------------------------------------------------------------
+
+class TestTreatedBaseScales:
+    """Figures 2.8 / 2.9 read straight across their printed scales."""
+
+    def _a2(self, **layer):
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", a=0.44, thickness_in=4.0),
+                    PavementLayer(thickness_in=8.0, **layer)],
+            **FLEX_EXAMPLE)
+        return res.layers[1]["a"], res
+
+    def test_cement_scale(self):
+        # The dashed 0.22 line passes UCS 800 psi; 1,000 psi reads 0.25.
+        assert self._a2(layer_type="cement_treated_base",
+                        ucs_7day_psi=800)[0] == pytest.approx(0.22)
+        assert self._a2(layer_type="cement_treated_base",
+                        ucs_7day_psi=1000)[0] == pytest.approx(0.25)
+        a, res = self._a2(layer_type="cement_treated_base",
+                          ucs_7day_psi=1200)
+        assert a == pytest.approx(0.25)
+        assert any("above the printed scale" in w for w in res.warnings)
+        with pytest.raises(ValueError, match="lowest labelled tick"):
+            self._a2(layer_type="cement_treated_base", ucs_7day_psi=150)
+
+    def test_bituminous_scale(self):
+        assert self._a2(layer_type="bituminous_treated_base",
+                        marshall_stability_lb=1600)[0] == pytest.approx(0.30)
+        a = self._a2(layer_type="bituminous_treated_base",
+                     marshall_stability_lb=500)[0]
+        assert 0.161 < a < 0.180
+        with pytest.raises(ValueError, match="lowest labelled tick"):
+            self._a2(layer_type="bituminous_treated_base",
+                     marshall_stability_lb=100)
+
+
+class TestHighModulusFoundation:
+    """Section 3.1.5 (printed II-37): no SN solved over a layer stiffer
+    than 40,000 psi; the layer above takes its minimum thickness."""
+
+    def test_ac_over_cement_treated_base(self):
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", modulus_psi=400000),
+                    PavementLayer("cement_treated_base", ucs_7day_psi=800)],
+            **FLEX_EXAMPLE)
+        # W18 5e6 -> Section 3.1.4 minimum AC 3.5 in.
+        assert res.layers[0]["thickness_in"] == pytest.approx(3.5)
+        assert "II-37" in res.layers[0]["thickness_basis"]
+        assert [row["over"] for row in res.sn_stack] == ["roadbed"]
+        assert res.sn_provided >= res.sn_required - 1e-9
+        assert res.adequate
+        assert any("II-37" in n for n in res.notes)
+
+    def test_min_thickness_in_sets_the_layer(self):
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", modulus_psi=400000,
+                                  min_thickness_in=5.0),
+                    PavementLayer("cement_treated_base", ucs_7day_psi=800)],
+            **FLEX_EXAMPLE)
+        assert res.layers[0]["thickness_in"] == pytest.approx(5.0)
+
+    def test_no_minimum_raises(self):
+        with pytest.raises(ValueError, match="minimum practical thickness"):
+            design_flexible_pavement(
+                enforce_minimums=False,
+                layers=[PavementLayer("asphalt", modulus_psi=400000),
+                        PavementLayer("cement_treated_base",
+                                      ucs_7day_psi=800)],
+                **FLEX_EXAMPLE)
+
+    def test_stiff_granular_base_counts(self):
+        res = design_flexible_pavement(
+            layers=[PavementLayer("asphalt", modulus_psi=400000),
+                    PavementLayer("granular_base", modulus_psi=45000)],
+            **FLEX_EXAMPLE)
+        assert [row["over"] for row in res.sn_stack] == ["roadbed"]
+
+
+class TestLayeredCheck:
+    """Figure 3.2 note 2 in check mode: SN1* >= SN1 as well as the total."""
+
+    def test_thin_surface_on_a_known_base_fails(self):
+        layers = [PavementLayer("asphalt", a=0.44, thickness_in=3.0),
+                  PavementLayer("granular_base", a=0.14, m=1.0,
+                                modulus_psi=30000, thickness_in=30.0)]
+        res = design_flexible_pavement(layers=layers, **FLEX_EXAMPLE)
+        # Total SN 0.44*3 + 0.14*30 = 5.52 covers the roadbed's ~4.98 ...
+        assert res.sn_provided > res.sn_required
+        base_row = res.sn_stack[0]
+        assert base_row["over"] == "granular_base"
+        # ... but 1.32 above the base is short of the ~2.9 required over it.
+        assert base_row["sn_provided_above"] == pytest.approx(1.32)
+        assert not base_row["adequate"]
+        assert not res.adequate
+        assert any("too thin for its modulus" in w for w in res.warnings)
+
+
+class TestFigure33:
+    def test_printed_anchors(self):
+        from pavement_design.composite_k import composite_k_inf
+        # Figure 3.3 example and the four Table 3.3 rows, all at Dsb 6 in.
+        for mr, esb, printed in ((7000, 20000, 400), (20000, 50000, 1100),
+                                 (2500, 15000, 160), (4000, 15000, 230)):
+            k = composite_k_inf(mr, esb, 6)["k_inf_pci"]
+            assert k == pytest.approx(printed, rel=0.05)
+
+    def test_thicker_subbase_raises_k(self):
+        from pavement_design.composite_k import composite_k_inf
+        ks = [composite_k_inf(5000, 50000, d)["k_inf_pci"]
+              for d in (6, 10, 14, 18)]
+        assert ks == sorted(ks)
+        assert ks[-1] > 1.3 * ks[0]
+
+    def test_outside_the_printed_curves(self):
+        from pavement_design.composite_k import composite_k_inf
+        with pytest.raises(ValueError, match="Dsb scale"):
+            composite_k_inf(5000, 50000, 4)
+        with pytest.raises(ValueError, match="lowest"):
+            composite_k_inf(5000, 10000, 6)
+        r = composite_k_inf(5000, 50000, 24)
+        assert "understates" in r["note"]
+        assert r["k_inf_pci"] == composite_k_inf(5000, 50000, 18)["k_inf_pci"]
+
+    def test_esb_over_four_mr_warns(self):
+        pytest.importorskip("geotech_references.aashto_1993.composite_k")
+        params = {k: v for k, v in RIGID_EXAMPLE.items() if k != "k_pci"}
+        spec = {"seasonal": [{"mr_psi": 3000}] * 12, "dsb_in": 6.0,
+                "esb_psi": 20000, "ls": 1.0}
+        res = design_rigid_pavement(composite_k=spec, **params)
+        assert any("Esb/MR exceeds 4" in w for w in res.warnings)
+        assert any("Figure 3.3" in r for r in res.references)
+
+
+class TestCbrScales:
+    """Figures 2.6 / 2.7 read straight across from CBR to modulus."""
+
+    def test_road_test_pairs(self):
+        from pavement_design.ufc import _cbr_to_layer_modulus
+        # Printed II-20: base CBR 100 with EBS 30,000 psi; subbase CBR 30
+        # with ESB 15,000 psi.
+        assert _cbr_to_layer_modulus(100, "granular_base", [], []) == \
+            pytest.approx(30000, rel=0.02)
+        assert _cbr_to_layer_modulus(30, "granular_subbase", [], []) == \
+            pytest.approx(15000, rel=0.02)
+
+    def test_off_the_scale_raises(self):
+        from pavement_design.ufc import _cbr_to_layer_modulus
+        with pytest.raises(ValueError, match="give the base modulus"):
+            _cbr_to_layer_modulus(15, "granular_base", [], [])
+        with pytest.raises(ValueError, match="give the subbase modulus"):
+            _cbr_to_layer_modulus(6, "granular_subbase", [], [])
+
+    def test_compare_uses_the_figures(self):
+        from pavement_design import compare_flexible_pavement_methods
+        c = compare_flexible_pavement_methods(passes_18kip=1e6,
+                                              cbr_subgrade=6)
+        joined = " ".join(c["notes"])
+        assert "Figure 2.6" in joined and "Figure 2.7" in joined
+        assert any("Figure 2.6" in r for r in c["references"])

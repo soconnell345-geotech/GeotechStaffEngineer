@@ -1989,7 +1989,7 @@
    "CBR to Mr correlation",
    "military roads"
   ],
-  "source": "UFC 3-250-01 (2016), Pavement Design for Roads and Parking Areas: Section 4-3.3 mixed-traffic procedure with worked example Table G-1 (printed p. 257), Appendix E vehicle curves; AASHTO 1993 Guide for the comparison leg; FHWA-NHI-05-037 Table 5-34 Mr = 2555*CBR^0.64 bridge correlation",
+  "source": "UFC 3-250-01 (2016), Pavement Design for Roads and Parking Areas: Section 4-3.3 mixed-traffic procedure with worked example Table G-1 (printed p. 257), Appendix E vehicle curves; AASHTO 1993 Guide for the comparison leg; FHWA-NHI-05-037 Table 5-34 Mr = 2555*CBR^0.64 bridge correlation for the subgrade; AASHTO 1993 Figures 2.6 and 2.7 for the base and subbase moduli",
   "problem": "(a) Comparison: for 1,000,000 passes of the 18-kip single axle on a subgrade with CBR = 6 (Mr = 2555*6^0.64 = 8,043 psi via the FHWA correlation), base CBR 80 and subbase CBR 30, design the flexible section by BOTH the AASHTO 1993 procedure (R = 95%, So = 0.45, pt = 2.5) and the UFC 3-250-01 CBR cover-curve procedure, and compare totals. (b) Mixed traffic (Table G-1 example): traffic of 1,000,000 passes of the 18-kip ESAL (E-1), 100,000 passes of a 5-axle truck (E-28), 500,000 passes of a 3-axle truck (E-26), and 20,000,000 passenger cars (E-2) at representative subgrade CBR = 3; find the controlling vehicle and the total equivalent 18-kip passes.",
   "dispatch_calls": [
    {
@@ -2033,14 +2033,14 @@
   "published_result": "Table G-1 printed worked example: the 18-kip ESAL (E-1) controls at 16.4 in required thickness; light vehicles whose required thickness falls below the controlling thickness contribute unlimited allowable passes (negligible equivalent contribution); total equivalent 18-kip passes = 1,395,400. The comparison leg has no single printed answer — differing AASHTO vs UFC sections are expected because the damage models differ.",
   "computed_result": {
    "aashto_sn_required": 3.598,
-   "aashto_total_thickness_in": 14.5,
-   "ufc_total_thickness_in": 9.5,
-   "ufc_required_total_thickness_in": 9.1,
-   "delta_total_thickness_in": -5.0,
+   "aashto_total_thickness_in": 16.5,
+   "ufc_total_thickness_in": 11.0,
+   "ufc_required_total_thickness_in": 10.3,
+   "delta_total_thickness_in": -5.5,
    "mixed_controlling_vehicle": "18-kip ESAL",
    "mixed_controlling_thickness_in": 16.4,
    "mixed_total_equivalent_esal_passes": 1316228,
-   "notes": "Comparison: same physical 18-kip pass count on both sides (AASHTO LEF(18k single) = 1.0 by definition); reliability exists only in AASHTO (R = 95%, So = 0.45) — the UFC procedure is deterministic; CBR<->Mr bridged via Mr = 2555*CBR^0.64. Mixed traffic: 1,316,228 computed vs printed 1,395,400 (-5.7%, within the stated 6% inversion tolerance; the near-flat E-28 5-axle curve inversion dominates the residual); E-26 and E-2 drop out as unlimited."
+   "notes": "Comparison: same physical 18-kip pass count on both sides (AASHTO LEF(18k single) = 1.0 by definition); reliability exists only in AASHTO (R = 95%, So = 0.45) — the UFC procedure is deterministic; subgrade CBR<->Mr bridged via Mr = 2555*CBR^0.64, base and subbase moduli read across the AASHTO guide's own Figure 2.6 / 2.7 CBR scales (EBS 28,300 psi, ESB 14,800 psi). UFC side: Figure E-1 read off the print (10.3 in at CBR 6), Table 7-2 minimums 3 in AC and 4 in base, subbase raised to the 4 in of UFC p. 20. Mixed traffic: 1,316,228 computed vs printed 1,395,400 (-5.7%, within the stated 6% inversion tolerance; the near-flat E-28 5-axle curve inversion dominates the residual); E-26 and E-2 drop out as unlimited."
   },
   "report_notes": "A good report keeps the two guides' results side by side and explicitly states the cross-guide assumptions the module echoes in notes: the shared 18-kip traffic basis, the CBR-to-Mr correlation used for the bridge, and that reliability is an AASHTO-only concept (UFC is deterministic) — so a thinner/thicker UFC section is a damage-model difference, not an error. For the mixed-traffic leg, reproduce the Table G-1 worksheet (per-vehicle required thickness at the representative CBR, controlling vehicle, allowable passes at the controlling thickness, equivalent-pass ratios), note which light vehicles drop out as unlimited, and state the curve-inversion tolerance (within ~6% of the printed total); the resulting equivalent E-1 passes then feed flexible_pavement_design_ufc at the real site CBR.",
   "provenance": "pavement_design/ufc.py::compare_flexible_pavement_methods + ufc_mixed_traffic; pavement_design/tests/test_pavement_design.py::test_ufc_mixed_traffic_table_g1, test_compare_methods",
