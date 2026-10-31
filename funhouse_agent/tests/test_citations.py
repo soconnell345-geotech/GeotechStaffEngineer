@@ -9,8 +9,8 @@ that build a result's ``choices`` (every call to ``choice(``) and the
 adapters (``funhouse_agent/adapters/``), finds each citation of the form
 "<manual> Eq./Table/Figure x-y" and checks that the manual's chapter files
 in ``geotech-references`` (``geotech_references/<manual>/text/*.json``: the
-equations, tables and figures each section lists and the numbers its text
-names) or its figure catalog carry that number.
+equations, tables and figures each section and nested subsection lists and
+the numbers its text names) or its figure catalog carry that number.
 
 Manuals checked: the GECs, DM 7.1 (UFS/UFC 3-220-10) and DM 7.2
 (UFC 3-220-20), and the UFCs the reference library holds. A table, figure
@@ -232,6 +232,15 @@ def _kind_of(word):
         "tab") else "figure"
 
 
+def _walk(sections):
+    """Every section and nested subsection (GEC-12 7.10.7 holds Eqs. 7-88
+    to 7-90, 7.2.1.3.2 holds Eq. 7-10)."""
+    for sec in sections or []:
+        if isinstance(sec, dict):
+            yield sec
+            yield from _walk(sec.get("subsections"))
+
+
 @lru_cache(maxsize=None)
 def library_index(package):
     """``{kind: set(number)}`` for one reference package, or None when the
@@ -243,12 +252,13 @@ def library_index(package):
     for path in sorted(glob.glob(os.path.join(base, "text", "*.json"))):
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
-        for sec in data.get("sections", []):
+        for sec in _walk(data.get("sections", [])):
             for key, kind in (("equations", "eq"), ("tables", "table"),
                               ("figures", "figure")):
                 for entry in sec.get(key) or []:
-                    name = entry.get("id", "") if isinstance(entry, dict) \
-                        else str(entry)
+                    name = (entry.get("id") or entry.get("eq_id")
+                            or entry.get("table_id") or entry.get("figure_id")
+                            or "") if isinstance(entry, dict) else str(entry)
                     m = _LISTED.match(name)
                     if m:
                         idx[_kind_of(m.group("k"))].add(_norm(m.group("n")))
@@ -401,16 +411,6 @@ REFERENCE_GAPS = {
     ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-23"): "Vol I p. 4-30",
     ("gec_11", "table", "4-6"): "Vol I p. 4-29",
-    ("gec_12", "eq", "7-8"): "Vol I p. 244",
-    ("gec_12", "eq", "7-9"): "Vol I p. 244",
-    ("gec_12", "eq", "7-11"): "Vol I p. 248",
-    ("gec_12", "eq", "7-19"): "Vol I p. 255",
-    ("gec_12", "eq", "7-20"): "Vol I p. 255",
-    ("gec_12", "eq", "7-38"): "Vol I p. 289",
-    ("gec_12", "eq", "7-70"): "Vol I p. 346",
-    ("gec_12", "eq", "15-1"): "Vol II p. 358",
-    ("gec_12", "table", "7-6"): "Vol I p. 240",
-    ("gec_12", "table", "7-9"): "Vol I p. 256",
     ("gec_12", "table", "D-6"): "Vol III p. 28",
     ("gec_12", "table", "D-51"): "Vol III p. 100",
     ("gec_12", "table", "D-100"): "Vol III p. 179",
