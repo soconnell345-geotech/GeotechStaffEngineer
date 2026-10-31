@@ -6,10 +6,16 @@ equation for a hammer-cushion-pile-soil system.
 
 All units are SI: kN, m, kg, seconds.
 
+The model (GEC-12 Vol 2 Fig. 12-2, p. 157, simplified): a rigid ram,
+one cushion spring, the helmet's mass lumped with the first pile
+segment, the pile as lumped masses and springs about 1 m long (p. 155),
+and Smith soil springs and dashpots on every segment and at the toe.
+GEC-12's model has a hammer cushion, a separate helmet mass and a pile
+cushion; this one has a single cushion and no separate helmet.
+
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
-    WEAP87 Manual, Chapter 5
-    FHWA GEC-12, Section 12.3
+    FHWA GEC-12 Vol 2, Sec. 12.3 (pp. 155-158) and 12.6.8 (p. 213)
 """
 
 import math
@@ -31,7 +37,9 @@ class BlowResult:
     Attributes
     ----------
     permanent_set : float
-        Permanent pile penetration per blow (m).
+        Permanent pile penetration per blow (m): the maximum pile toe
+        displacement less the weighted average of the shaft and toe
+        quakes (GEC-12 Vol 2 p. 158).
     max_compression_stress : float
         Maximum compressive stress in pile (kPa).
     max_tension_stress : float
@@ -66,13 +74,21 @@ class BlowResult:
     R_ultimate: float = 0.0
 
 
+#: Smith's "safety factor against numerical instability": the critical
+#: time increment is divided by it. GRLWEAP's normal value, GEC-12 Vol 2
+#: Sec. 12.6.8, p. 213 (which allows 3 or even 5 when unusual systems
+#: warn of instability).
+NUMERICAL_SAFETY_FACTOR = 1.6
+
+
 def compute_time_step(pile: PileModel, cushion_stiffness: float,
                       ram_mass: float) -> float:
     """Compute stable time step satisfying the Courant condition.
 
     dt <= min(segment_length / wave_speed) for pile segments,
     and also dt <= 2*pi*sqrt(m/k) / (2*pi) = sqrt(m/k) for the
-    cushion spring.
+    cushion spring; the smaller is divided by NUMERICAL_SAFETY_FACTOR
+    (1.6, GEC-12 Vol 2 p. 213).
 
     Parameters
     ----------
@@ -105,7 +121,7 @@ def compute_time_step(pile: PileModel, cushion_stiffness: float,
     else:
         dt_cushion = dt_pile
 
-    dt = 0.8 * min(dt_pile, dt_cushion)  # Safety factor 0.8
+    dt = min(dt_pile, dt_cushion) / NUMERICAL_SAFETY_FACTOR
     return dt
 
 
@@ -136,7 +152,10 @@ def simulate_blow(
     soil : SoilSetup
         Soil resistance model and parameters.
     helmet_weight : float
-        Helmet (drive cap) weight (kN). Default 5 kN.
+        Helmet (drive cap) weight (kN), lumped with the first pile
+        segment. Default 5 kN (not printed in a held reference; GEC-12
+        Vol 2's examples give 1.0 to 4.07 kips, 4.4 to 18.1 kN, pp. 163,
+        167, 174, 179, 183).
     max_time : float
         Maximum simulation time (s). Default 0.10 s.
     dt : float, optional
@@ -294,19 +313,15 @@ def simulate_blow(
         if step > 100 and np.all(vel[1:] < 0.01) and vel[0] < 0:
             break
 
-    # Permanent set per blow = the PLASTIC (residual) displacement of the
-    # elasto-plastic toe spring — the displacement at which its unloading
-    # branch reaches zero force. This is the physical quantity (WE-2): the
-    # toe spring yields whenever d - d_plastic > Q_toe, advancing the offset
-    # to d - Q_toe, so for the no-tension toe spring the offset equals
-    #     max(D_max,toe - Q_toe, 0)
-    # exactly — i.e. it coincides with the previous (WE-1) peak-minus-quake
-    # approximation under monotonic loading, but remains correct if the toe
-    # re-loads in later oscillations. Without subtracting the elastic quake
-    # the set is overestimated and the blow count (1/set) underestimated —
-    # unconservative on a bearing graph.
-    # (Smith, 1960; FHWA GEC-12, Hannigan et al.)
-    permanent_set = max(float(toe_model.plastic_displacement), 0.0)
+    # Permanent set per blow, as GEC-12 Vol 2 Sec. 12.3, p. 158 prints it:
+    # "calculated by subtracting a weighted average of the shaft and toe
+    # quakes from the maximum pile toe displacement". The weights are the
+    # shares of R_ult on the shaft and at the toe (the reading taken; the
+    # page names no weights): soil.weighted_quake. With equal quakes this
+    # is the toe spring's plastic offset, max(D_max,toe - Q_toe, 0), which
+    # the module took before GM-294; that offset is zero for a pile with
+    # no toe resistance, whatever it penetrated.
+    permanent_set = max(max_toe_disp - soil.weighted_quake, 0.0)
 
     # Trim stored arrays
     time_arr = time_arr[:store_idx]

@@ -6,8 +6,8 @@ time integration, bearing graphs, and drivability.
 
 References:
     [1] Smith, E.A.L. (1960) "Bearing Capacity of Piles"
-    [2] FHWA GEC-12, Chapter 12
-    [3] WEAP87 Manual (FHWA, Goble & Rausche)
+    [2] FHWA GEC-12 Vol 2, Chapter 12 and Appendix C
+    [3] UFC 3-220-20 (2025), Sec. 6-9.2
 """
 
 import math
@@ -42,10 +42,39 @@ class TestHammer:
         assert h.ram_weight == pytest.approx(44.5, abs=0.5)
 
     def test_get_hammer_delmag(self):
-        """Look up Delmag D30-32 from database."""
+        """Look up Delmag D30-32 from database: GEC-12 Vol 2 Appendix C
+        No. 15 (p. 519), 75.44 kip-ft = 102.3 kN-m."""
         h = get_hammer("Delmag D30-32")
         assert h.hammer_type == "diesel"
-        assert h.rated_energy == pytest.approx(82.3, abs=1.0)
+        assert h.rated_energy == pytest.approx(102.3, abs=0.1)
+
+    @pytest.mark.parametrize("name, kips, ft, kip_ft", [
+        ("Vulcan 06", 6.5, 3.00, None), ("Vulcan 08", 8.0, 3.25, None),
+        ("Vulcan 010", 10.0, 3.25, None), ("Vulcan 012", 12.0, 3.25, None),
+        ("Vulcan 014", 14.0, 3.00, None), ("Vulcan 020", 20.0, 3.00, None),
+        ("Vulcan 060", 60.0, 3.00, None),
+        ("Delmag D12", 2.75, 8.22, 22.61), ("Delmag D19-32", 4.00, 10.61, 42.44),
+        ("Delmag D30-32", 6.60, 11.43, 75.44),
+        ("Delmag D46-32", 10.14, 12.05, 122.19),
+        ("Delmag D62-22", 13.66, 12.05, 164.60),
+        ("ICE I-30V2", 6.61, 11.50, 76.05), ("ICE I-46V2", 10.14, 11.81, 119.77),
+    ])
+    def test_hammers_are_gec12_appendix_c(self, name, kips, ft, kip_ft):
+        """Ram weight, stroke and rated energy as GEC-12 Vol 2 Appendix C
+        prints them (pp. 519-536), to the SI rounding of the database."""
+        h = get_hammer(name)
+        assert h.ram_weight == pytest.approx(kips * 4.4482216, abs=0.06)
+        assert h.stroke == pytest.approx(ft * 0.3048, abs=6e-4)
+        if kip_ft is not None:
+            assert h.rated_energy == pytest.approx(kip_ft * 1.3558179, abs=0.06)
+
+    def test_ice_i_series_are_diesels(self):
+        """GEC-12 Vol 2 p. 206 counts the ICE I-Series among the diesels;
+        Appendix C lists them OED. Efficiency 0.80 (p. 185)."""
+        for name in ("ICE I-30V2", "ICE I-46V2"):
+            h = get_hammer(name)
+            assert h.hammer_type == "diesel"
+            assert h.efficiency == 0.80
 
     def test_hammer_not_found(self):
         """Unknown hammer raises KeyError."""
@@ -233,16 +262,15 @@ class TestSoilModel:
             SoilSetup(R_ultimate=1000, damping_model="case")
 
     def test_damping_at_zero_displacement(self):
-        """Damping force is zero when nothing is mobilized yet.
-
-        smith: R_s = 0 -> J*|R_s|*v = 0. smith_viscous: loading gate
-        (d > 0) fails at d = 0. Both give R = 0.
-        """
+        """At zero displacement smith damping is zero (R_s = 0, so
+        J*|R_s|*v = 0); smith_viscous damps with the fully mobilized
+        resistance, J*R_u*v = 0.5*100*3 = 150 (UFC 3-220-20 pp. 487-488;
+        GM-294: it was gated to zero)."""
         m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5)
         assert m.total_resistance(0.0, 3.0) == pytest.approx(0.0, abs=1e-10)
         mv = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
                             damping_model="smith_viscous")
-        assert mv.total_resistance(0.0, 3.0) == pytest.approx(0.0, abs=1e-10)
+        assert mv.total_resistance(0.0, 3.0) == pytest.approx(150.0)
 
     def test_damping_beyond_quake(self):
         """Beyond quake: R = R_u + J * R_u * v = R_u * (1 + J*v).
@@ -256,14 +284,25 @@ class TestSoilModel:
             # R_s = 100 (capped at Ru), R_d = 0.5 * 100 * 3 = 150
             assert R_total == pytest.approx(250.0, rel=0.01), model
 
-    def test_smith_viscous_no_damping_during_rebound(self):
-        """smith_viscous keeps the loading-only gate: during rebound
-        (v < 0, d > 0) only the static resistance acts."""
+    def test_smith_viscous_damps_during_rebound(self):
+        """smith_viscous damps throughout the blow, in proportion to the
+        velocity (UFC 3-220-20 pp. 487-488): on rebound (v < 0, d > 0)
+        R = 100 + 0.5*100*(-2) = 0. Before GM-294 it damped only while
+        loading and gave the static 100."""
         m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
                            damping_model="smith_viscous")
         m.static_resistance(0.005)  # load past quake (sets plastic offset)
         R_total = m.total_resistance(0.005, -2.0)
-        assert R_total == pytest.approx(100.0, rel=0.01)
+        assert R_total == pytest.approx(0.0, abs=1e-9)
+
+    def test_open_toe_gap_carries_no_damping(self):
+        """A no-tension (toe) spring whose gap is open carries nothing,
+        static or damping: the toe has left the soil (GM-294)."""
+        for model in ("smith", "smith_viscous"):
+            m = SmithSoilModel(R_ultimate=100, quake=0.0025, damping=0.5,
+                               damping_model=model, no_tension=True)
+            m.static_resistance(0.010)          # plastic offset 0.0075
+            assert m.total_resistance(0.006, -2.0) == pytest.approx(0.0), model
 
     def test_smith_damping_dissipative_on_rebound(self):
         """smith damping acts throughout the blow with signed velocity:
@@ -455,27 +494,24 @@ class TestTimeIntegration:
         assert result.permanent_set > 0.05  # > 50 mm
 
     def test_permanent_set_excludes_toe_quake(self):
-        """Permanent set is the toe spring's plastic (residual) displacement
-        (WE-2). For this monotonic-toe-loading case it must agree with the
-        v5.0 (WE-1) approximation: peak toe penetration minus the toe quake
-        — the two formulations are reconciled within tolerance."""
+        """Permanent set = maximum pile toe displacement less the weighted
+        average of the shaft and toe quakes (GEC-12 Vol 2 p. 158); with
+        equal quakes, the peak toe penetration minus the toe quake."""
         import numpy as np
         h, c, p, s = self._make_system(800)  # hard driving: quake matters most
         result = simulate_blow(h, c, p, s)
         peak_toe = float(np.asarray(result.pile_toe_displacement).max())
         # Permanent set must be strictly below the peak penetration ...
         assert result.permanent_set < peak_toe
-        # ... by the toe quake (the recovered elastic rebound). This is the
-        # WE-1 max-minus-quake value; the plastic toe offset (primary, WE-2)
-        # equals it exactly under monotonic loading of the no-tension toe.
+        # ... by the quake (the recovered elastic rebound).
         assert (peak_toe - result.permanent_set) == pytest.approx(
             s.quake_toe, abs=5e-4)
 
     def test_permanent_set_matches_toe_plastic_offset(self):
-        """The reported permanent set IS the plastic offset of an
-        equivalently-loaded no-tension toe spring: replaying the recorded
-        toe displacement history through a fresh toe spring reproduces
-        result.permanent_set (WE-2 reconciliation)."""
+        """With equal shaft and toe quakes the permanent set is the plastic
+        offset of an equivalently-loaded no-tension toe spring: replaying
+        the recorded toe displacement history through a fresh toe spring
+        reproduces result.permanent_set."""
         import numpy as np
         h, c, p, s = self._make_system(500)
         result = simulate_blow(h, c, p, s, store_interval=1)
@@ -485,6 +521,42 @@ class TestTimeIntegration:
             replay.static_resistance(float(d))
         assert result.permanent_set == pytest.approx(
             replay.plastic_displacement, abs=5e-5)
+
+    def test_permanent_set_subtracts_the_weighted_quake(self):
+        """GEC-12 Vol 2 p. 158: the set is the maximum pile toe displacement
+        less a weighted average of the shaft and toe quakes, weighted here
+        by the shares of R_ult (made-up case: half on the shaft, quakes 2.5
+        and 5 mm, so 3.75 mm)."""
+        import numpy as np
+        h, c, p, _ = self._make_system()
+        s = SoilSetup(R_ultimate=500, skin_fraction=0.5, quake_side=0.0025,
+                      quake_toe=0.005)
+        assert s.weighted_quake == pytest.approx(0.00375)
+        result = simulate_blow(h, c, p, s, store_interval=1)
+        peak_toe = float(np.asarray(result.pile_toe_displacement).max())
+        assert peak_toe - result.permanent_set == pytest.approx(0.00375,
+                                                                abs=5e-5)
+
+    def test_friction_pile_has_a_set(self):
+        """A pile with all its resistance on the shaft still penetrates:
+        before GM-294 the set was the toe spring's plastic offset, zero
+        with no toe resistance, and the blow count read refusal."""
+        h, c, p, _ = self._make_system()
+        s = SoilSetup(R_ultimate=500, skin_fraction=1.0)
+        result = simulate_blow(h, c, p, s)
+        assert 0.0 < result.permanent_set < 0.1
+
+    def test_time_step_divides_by_smiths_safety_factor(self):
+        """The Courant step divided by 1.6 (GEC-12 Vol 2 p. 213); with no
+        cushion spring the pile's segment / wave speed governs."""
+        from wave_equation.time_integration import (
+            NUMERICAL_SAFETY_FACTOR, compute_time_step)
+        h, c, p, _ = self._make_system()
+        assert NUMERICAL_SAFETY_FACTOR == 1.6
+        dt_pile = float(min(p.segment_lengths / p.wave_speeds))
+        assert compute_time_step(p, 0.0, h.ram_mass) == pytest.approx(
+            dt_pile / 1.6)
+        assert compute_time_step(p, c.stiffness, h.ram_mass) <= dt_pile / 1.6
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -545,28 +617,26 @@ class TestBearingGraph:
 
     def test_blow_count_regression_smith_default(self):
         """Regression: blow counts on the standard test system with the
-        default ("smith") damping model (WE-2 + WE-3 baseline, v5.1).
+        default ("smith") damping model.
 
-        vs the v5.0 model (reversible spring + viscous damping) the shift
-        is ~2%: e.g. 59.9 -> 58.4 blows/m at R_ult = 800 kN. The mobilized-
-        static damping dissipates slightly less energy early in the blow,
-        giving marginally larger sets / lower blow counts.
+        GM-294 moved them 6 to 9 % down (58.4 -> 54.0 blows/m at R_ult =
+        800 kN), almost all from the Vulcan 010's printed stroke, 3.25 ft
+        (0.991 m) for 0.914 m (GEC-12 Vol 2 Appendix C, p. 522).
         """
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000, R_step=200)
-        expected = [14.5, 28.7, 43.3, 58.4, 75.8]  # blows/m at 200..1000 kN
+        expected = [13.6, 26.8, 40.1, 54.0, 69.2]  # blows/m at 200..1000 kN
         for bc, exp in zip(bg.blow_counts, expected):
             assert bc == pytest.approx(exp, rel=0.05)
 
     def test_blow_count_regression_smith_viscous(self):
-        """Regression: damping_model="smith_viscous" reproduces the v5.0
-        blow counts (the elasto-plastic spring alone does not shift the
-        monotonic-toe-loading bearing graph; cf. WE-1 fix log: 60 blows/m
-        at hard driving, R_ult = 800 kN)."""
+        """Regression: damping_model="smith_viscous" on the standard test
+        system (before GM-294, with the 0.914 m Vulcan 010 stroke and
+        damping on loading only: 59.9 blows/m at R_ult = 800 kN)."""
         h, c, p = self._make_system()
         bg = generate_bearing_graph(h, c, p, R_min=200, R_max=1000,
                                     R_step=200, damping_model="smith_viscous")
-        expected = [14.7, 29.0, 44.3, 59.9, 77.7]  # v5.0 values
+        expected = [13.6, 27.1, 40.9, 55.3, 70.9]
         for bc, exp in zip(bg.blow_counts, expected):
             assert bc == pytest.approx(exp, rel=0.05)
 
@@ -637,6 +707,29 @@ class TestDrivability:
         d = result.to_dict()
         assert "can_drive" in d
         assert len(d["points"]) == 1
+        assert d["refusal_blow_count_per_m"] == pytest.approx(393.7)
+
+    def test_refusal_is_120_blows_per_ft_by_default(self):
+        """GEC-12 Vol 2 p. 161 (and Vol 3 p. 43): penetration resistance
+        under 120 blows/ft, 393.7 blows/m; 240 blows/ft is the hard-rock
+        exception. Made-up case: a blow count between the two refuses by
+        default and drives with the hard-rock limit."""
+        import inspect
+        from wave_equation.drivability import REFUSAL_BLOWS_PER_M
+        assert REFUSAL_BLOWS_PER_M == pytest.approx(120 / 0.3048, abs=0.05)
+        assert inspect.signature(drivability_study).parameters[
+            "refusal_blow_count"].default == REFUSAL_BLOWS_PER_M
+        hammer = get_hammer("Vulcan 010")
+        cushion = Cushion(stiffness=500000, cor=0.80)
+        kw = dict(pile_area=0.01, pile_E=200e6, pile_unit_weight=77.3,
+                  depths=[15.0], R_at_depth=[2100])
+        bc = drivability_study(hammer, cushion, **kw).points[0].blow_count
+        assert 393.7 < bc < 787.4
+        assert not drivability_study(hammer, cushion, **kw).can_drive
+        rock = drivability_study(hammer, cushion, refusal_blow_count=787.4,
+                                 **kw)
+        assert rock.can_drive
+        assert "393.7" in drivability_study(hammer, cushion, **kw).summary()
 
 
 # ═══════════════════════════════════════════════════════════════════════

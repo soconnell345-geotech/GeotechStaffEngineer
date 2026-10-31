@@ -6,9 +6,12 @@ of restitution (COR) to account for energy losses on unloading.
 
 All units are SI: kN, m, seconds.
 
+The COR: 1.0 for a perfectly elastic collision, 0.0 for a perfectly
+plastic one (GEC-12 Vol 2 Sec. 12.3, p. 156). The unloading path that
+gives an energy return of COR squared is not printed in a held reference.
+
 References:
-    WEAP87 Manual (FHWA, Goble & Rausche)
-    FHWA GEC-12, Chapter 12
+    FHWA GEC-12 Vol 2, Sec. 12.3 (p. 156) and 12.6.6 (pp. 209-210)
 """
 
 from dataclasses import dataclass
@@ -25,7 +28,10 @@ class Cushion:
         Cushion stiffness (kN/m).
     cor : float
         Coefficient of restitution (0 to 1). 1.0 = perfectly elastic.
-        Typical: 0.80 for hammer cushion, 0.50 for pile cushion.
+        GEC-12 Vol 2: wood 0.50 by default, a badly worn softwood
+        cushion 0.25 (p. 156); the hammer cushions of its examples 0.90
+        to 0.92 (pp. 174, 183). The default 0.80 is not printed in a
+        held reference.
     thickness : float, optional
         Cushion thickness (m). Informational only.
     material : str, optional
@@ -52,7 +58,10 @@ def make_cushion_from_properties(
 ) -> Cushion:
     """Create a cushion from material properties.
 
-    Stiffness = E * A / t
+    Stiffness = E * A / t (GEC-12 Vol 2 p. 155). Two materials in series:
+    1/k = 1/k1 + 1/k2 (p. 209). Plywood pile cushions: E = 30 ksi
+    (207 MPa) new and 75 ksi (517 MPa) used; oak boards 60 and 90 ksi;
+    always with the nominal (uncompressed) thickness (p. 209).
 
     Parameters
     ----------

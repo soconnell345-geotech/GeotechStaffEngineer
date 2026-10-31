@@ -7,8 +7,7 @@ resistances to produce a bearing graph (blow count vs capacity).
 All units are SI: kN, m, seconds.
 
 References:
-    FHWA GEC-12, Section 12.5
-    WEAP87 Manual, Chapter 7
+    FHWA GEC-12 Vol 2, Sec. 12.3 (p. 158) and 12.5.1 (pp. 162-166)
 """
 
 from dataclasses import dataclass, field
@@ -63,16 +62,15 @@ class BearingGraphResult:
         Returns
         -------
         float
-            Interpolated ultimate capacity (kN). Returns 0 if
-            blow count is outside the range.
+            Interpolated ultimate capacity (kN). Outside the analysed
+            blow counts the end value is returned (np.interp); 0 when
+            no blow count is positive.
         """
         valid = self.blow_counts > 0
         if not np.any(valid):
             return 0.0
         bc = self.blow_counts[valid]
         rv = self.R_values[valid]
-        if target_blow_count < bc.min() or target_blow_count > bc.max():
-            return float(np.interp(target_blow_count, bc, rv))
         return float(np.interp(target_blow_count, bc, rv))
 
     def summary(self) -> str:
@@ -138,7 +136,9 @@ class BearingGraphResult:
                      ("Maximum tension stress", "kPa", ".0f")],
             rows=rows,
             note=("One Smith-model wave equation blow per assumed R_ult "
-                  "(GEC-12 Section 12.5; WEAP87); blow count = 1/set, "
+                  "(GEC-12 Vol 2 Sec. 12.3 and 12.5.1); set = maximum "
+                  "pile toe displacement less the weighted average of "
+                  "the shaft and toe quakes (p. 158); blow count = 1/set, "
                   "1,000,000 meaning refusal (set under 0.001 mm)"),
             name="bearing_graph",
         )]
@@ -152,7 +152,7 @@ def generate_bearing_graph(
     quake_side: float = 0.0025,
     quake_toe: float = 0.0025,
     damping_side: float = 0.16,
-    damping_toe: float = 0.50,
+    damping_toe: float = 0.49,
     R_min: float = 200.0,
     R_max: float = 2000.0,
     R_step: float = 200.0,
@@ -173,9 +173,9 @@ def generate_bearing_graph(
     skin_fraction : float
         Fraction of Rult as skin friction.
     quake_side, quake_toe : float
-        Quake values (m).
+        Quake values (m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     damping_side, damping_toe : float
-        Smith damping values (s/m).
+        Smith damping values (s/m); GEC-12 Vol 2 p. 211 (see SoilSetup).
     R_min, R_max, R_step : float
         Range of ultimate resistances to analyze (kN).
     helmet_weight : float
@@ -184,9 +184,9 @@ def generate_bearing_graph(
         Maximum simulation time per blow (s).
     damping_model : str
         "smith" (default): damping proportional to the mobilized static
-        resistance, R_d = J*R_static*v (Smith 1960 / GRLWEAP default).
-        "smith_viscous": damping proportional to R_ultimate, loading
-        only (pre-v5.1 behavior). See wave_equation.soil_model.
+        resistance, R_d = J*R_static*v. "smith_viscous": damping
+        proportional to R_ultimate (UFC 3-220-20 pp. 487-488). See
+        wave_equation.soil_model.
 
     Returns
     -------
