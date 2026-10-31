@@ -116,6 +116,28 @@ def test_meyerhof_and_phi_above_zero_multiply():
         37.0 * v.Nc * v.sc * v.dc, rel=1e-12)
 
 
+@pytest.mark.parametrize("phi", [0.0, 28.0])
+def test_meyerhof_refuses_a_tilted_base_or_sloping_ground(phi):
+    # UFC 3-220-20 Table 5-3 (p. 291) and p. 294: Meyerhof's set has no
+    # base-tilt or ground-slope factors; p. 292: factors are not carried
+    # across methods (it had multiplied in GEC-6's and Vesic's)
+    for footing, kw, what in (({"base_tilt": 6.0}, {}, "base_tilt"),
+                              ({}, {"ground_slope": 4.0}, "ground_slope")):
+        with pytest.raises(ValueError, match=what) as err:
+            _clay(phi=phi, footing=footing, factor_method="meyerhof", **kw)
+        assert "factor_method='vesic'" in str(err.value)
+        assert "Table 5-3" in str(err.value) or "Sec. 5-3.4" in str(err.value)
+        # the Vesic set takes them
+        r = _clay(phi=phi, footing=footing, **kw).compute()
+        assert min(r.bc, r.gc) < 1.0
+
+
+def test_the_meyerhof_basis_says_so():
+    r = _clay(factor_method="meyerhof").compute()
+    m = [c for c in r.choices if c["what"] == "bearing capacity method"][0]
+    assert "no base-tilt or ground-slope factors (p. 294)" in m["basis"]
+
+
 def test_a_strip_is_unchanged():
     # s_c = 1: (1)(1 + 0.4 k) = 1 + 0.4 k either way (a strip's L is 1e6 m,
     # so s_c is 1 to 1e-6)

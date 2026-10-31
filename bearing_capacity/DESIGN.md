@@ -316,3 +316,16 @@ s_u = 75 kPa: 582.1 -> 566.7 kPa (-2.6 %); a 2 m square 2 m deep with
 s_u = 50 kPa: 441.3 -> 425.1 kPa. A strip changes only with a load
 inclination, base tilt or ground slope; phi > 0, Meyerhof and Terzaghi do
 not change.
+
+**Meyerhof with a tilted base or sloping ground is refused.** It used to
+multiply in GEC-6 Table 5-5's base-tilt factors and Vesic's (1975) ground
+factors. UFC 3-220-20 Table 5-3 (p. 291) excludes Meyerhof for a tilted
+base; p. 294: "Meyerhof (1963) did not provide base or inclination factors
+in this form. Meyerhof developed a separate solution for sloping ground"
+(the N_cq and N_gamma-q charts, Sec. 5-3.4; GEC-6 Fig. 5-7); p. 292: "the
+correction factors cannot usually be applied across methods". The message
+names `factor_method="vesic"`, which has both, as Terzaghi's refusal does.
+
+**Release note:** `factor_method="meyerhof"` with `base_tilt` or
+`ground_slope` now raises instead of returning a capacity with another
+method's factors.

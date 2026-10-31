@@ -64,7 +64,9 @@ METHOD_BASIS = {
     "meyerhof": ("UFC 3-220-20 Sec. 5-3.3.2, Table 5-6 (p. 294): Meyerhof "
                  "(1963) bearing, shape, depth and inclination factors; "
                  "Table 5-3 (p. 291): any conditions except a tilted base, "
-                 "shear strength dominated by friction"),
+                 "shear strength dominated by friction; no base-tilt or "
+                 "ground-slope factors (p. 294), so it is not for a tilted "
+                 "base or sloping ground"),
     "terzaghi": ("UFC 3-220-20 Table 5-2 (p. 289) and Table 5-5 (p. 294): "
                  "Terzaghi (1943); Table 5-3 (p. 291): undrained soils, "
                  "Df/B <= 1, no inclined load, slope or tilted base"),
@@ -111,7 +113,9 @@ class BearingCapacityAnalysis:
         say so.
     factor_method : str, optional
         Method for shape/depth/inclination factors: "vesic" (default) or
-        "meyerhof"; or "terzaghi" for Terzaghi (1943): his own Nc, Nq,
+        "meyerhof" (no base-tilt or ground-slope factors, UFC 3-220-20 p.
+        294 and Table 5-3: it raises on them); or "terzaghi" for Terzaghi
+        (1943): his own Nc, Nq,
         Ngamma and shape coefficients (1.3 c Nc, 0.4 / 0.3 gamma B Ngamma),
         no depth or inclination factors. Terzaghi is not for inclined loads,
         sloping ground or tilted bases (UFC 3-220-20 Table 5-3) and raises
@@ -209,6 +213,30 @@ class BearingCapacityAnalysis:
                     "(UFC 3-220-20 Table 5-3: do not use it for inclined "
                     "loads, slopes or tilted bases); use factor_method="
                     "'vesic' or 'meyerhof'.")
+        if self.factor_method == "meyerhof":
+            # Meyerhof's set has no base-tilt or ground-slope factors (UFC
+            # 3-220-20 p. 294; Table 5-3, p. 291), and factors are not
+            # carried across methods (p. 292). GM-281: it multiplied in
+            # GEC-6's b factors and Vesic's g factors.
+            bad = []
+            if self.footing.base_tilt:
+                bad.append(
+                    "base_tilt: Meyerhof (1963) gives no base-tilt factor "
+                    "and UFC 3-220-20 Table 5-3 (p. 291) excludes his method "
+                    "for a tilted base. factor_method='vesic' has them (GEC-6 "
+                    "Table 5-5, after Brinch Hansen 1970).")
+            if self.ground_slope:
+                bad.append(
+                    "ground_slope: Meyerhof (1963) gives no ground-slope "
+                    "factor; his sloping-ground solution is a separate one, "
+                    "the N_cq and N_gamma-q charts (Meyerhof 1957; UFC "
+                    "3-220-20 Sec. 5-3.4, GEC-6 Fig. 5-7). factor_method="
+                    "'vesic' has ground-slope factors (Vesic 1975).")
+            if bad:
+                raise ValueError(
+                    "factor_method='meyerhof' has no factors for "
+                    + " ".join(bad) + " UFC 3-220-20 p. 292: correction "
+                    "factors are not carried from one method to another.")
 
     def compute(self) -> BearingCapacityResult:
         """Run the bearing capacity analysis.

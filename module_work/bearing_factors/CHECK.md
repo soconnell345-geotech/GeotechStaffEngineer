@@ -43,8 +43,9 @@ are the printed ones.
 |---|---|---|---|---|
 | Vesic set (`vesic`) | phi > 0 | Multiplied: GEC-6 Eq. 5-14 (p. 63), EN 1997-1 D.2 (p. 158), and UFC Eq. 5-18 to 5-20 (p. 293) for Brinch Hansen's phi' > 0 factors (Table 5-8, p. 296), whose d_q and d_c the module takes | c N_c s_c d_c i_c b_c g_c + q N_q s_q d_q i_q b_q g_q + 0.5 gamma B' N_gamma s_gamma d_gamma i_gamma b_gamma g_gamma | Yes |
 | Vesic set | phi = 0 | s_c, b_c (GEC-6 Eq. 5-14) and s_c, b_c, i_c (EN 1997-1 D.1) multiplied, no d_c in either. The module's d_c = 1 + 0.4 k is Brinch Hansen's Table 5-7 d_c = 0.4 k (p. 295), which Eq. 5-21 adds | Was c N_c s_c d_c i_c b_c g_c: d_c multiplied | **No, fixed:** now c N_c (s_c i_c b_c g_c + d_c - 1) |
-| Meyerhof (`meyerhof`) | phi = 0 | Table 5-6 (p. 294) factors multiplied (Eq. 5-18); Example B-3 Table B-16 (p. 621) | c N_c s_c d_c i_c (b_c g_c); shape 1 under an inclined load (note A) | Yes (pinned to Example B-3, L = 10.84 ft) |
+| Meyerhof (`meyerhof`) | phi = 0 | Table 5-6 (p. 294) factors multiplied (Eq. 5-18); Example B-3 Table B-16 (p. 621) | c N_c s_c d_c i_c; shape 1 under an inclined load (note A) | Yes (pinned to Example B-3, L = 10.84 ft) |
 | Meyerhof | phi > 0 | Multiplied (Eq. 5-18 to 5-20); Table B-16 drained Psi_q = Psi_gamma = [1 + 0.1(B/L)K_P][1 + 0.1(Df/B)K_P^0.5] | Multiplied | Yes |
+| Meyerhof | base tilt or ground slope | None in his set: Table 5-3 (p. 291) excludes a tilted base; p. 294 "did not provide base or inclination factors in this form", sloping ground by a separate solution (Sec. 5-3.4); p. 292 factors "cannot usually be applied across methods" | Was: GEC-6 Table 5-5's b and Vesic's g factors multiplied in | **No, fixed:** refused, naming `factor_method="vesic"` |
 | Terzaghi (`terzaghi`) | any | Table 5-5 shape factors only, the rest 1 (p. 294): c N_c s_c + q N_q + 0.5 gamma B N_gamma s_gamma | Same | Yes |
 | Brinch Hansen (1970) | any | UFC Tables 5-7 and 5-8, Eq. 5-21 | Not offered as a factor set: only his N-gamma (`ngamma_method="hansen"`, a mixed method), his k and depth factors, and GEC-6's base factors after him | n/a |
 | Vesic (1973, 1975) own papers | any | Not in the library. UFC p. 288: Vesic's N factors "are nearly identical to those proposed by Meyerhof and Hansen". The module's Vesic set is GEC-6's (AASHTO 1996) with EN 1997-1's inclination factors; its phi = 0 i_c and its g factors cite Vesic (1975), not printed in the library (already stated in the choices and DESIGN) | n/a | Not checkable |
@@ -103,13 +104,16 @@ shape factor and depth.
   drained one uses Table 5-8's s_q = 1 + sin phi' (B/L), not the Vesic set's
   GEC-6 s_q = 1 + (B/L) tan phi.
 
-## Proposed BACKLOG item (changes what a live run returns)
+## Meyerhof with a base tilt or ground slope (follow-up, fixed)
 
-- **Meyerhof with a base tilt or ground slope borrows another method's
-  factors.** `factor_method="meyerhof"` multiplies GEC-6 Table 5-5's b
-  factors and Vesic's (1975) g factors into Meyerhof's. UFC 3-220-20 Table
-  5-3 (p. 291) excludes Meyerhof for a tilted base, p. 294 says "Meyerhof
-  (1963) did not provide base or inclination factors in this form", and
-  p. 292 says correction factors "cannot usually be applied across
-  methods". Terzaghi already refuses these inputs. Either refuse (base tilt)
-  and point to Sec. 5-3.4 (slope), or state the borrowing in the choices.
+`factor_method="meyerhof"` multiplied GEC-6 Table 5-5's b factors and
+Vesic's (1975) g factors into Meyerhof's. UFC 3-220-20 Table 5-3 (p. 291)
+excludes Meyerhof for a tilted base; p. 294 says "Meyerhof (1963) did not
+provide base or inclination factors in this form. Meyerhof developed a
+separate solution for sloping ground" (Sec. 5-3.4; the N_cq and N_gamma-q
+charts of GEC-6 Fig. 5-7, after Meyerhof 1957); p. 292 says correction
+factors "cannot usually be applied across methods". Both inputs are now
+refused under Meyerhof, as Terzaghi already refused them, with a message
+naming `factor_method="vesic"` (GEC-6 Table 5-5 base factors, Vesic 1975
+ground factors). No test, validation example, eval key or worked example in
+the repo used Meyerhof with either input.
