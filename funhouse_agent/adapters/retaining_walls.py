@@ -577,7 +577,8 @@ def run_mse_wall(params, *, method="mse_wall"):
          "phi_retained", "gamma_retained", "traffic_vertical_resists",
          "live_load_resists", "surcharge_in_bearing", "Cu_backfill",
          "F_star_tested", "alpha_tested", "reinforcement_per_level",
-         "level_depths", "sigma_H_average", "sliding_cohesion"),
+         "level_depths", "sigma_H_average", "sliding_cohesion",
+         "interface_gap_possible", "rho_tested"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -619,6 +620,9 @@ def run_mse_wall(params, *, method="mse_wall"):
         "alpha_tested": params.get("alpha_tested"),
         "sigma_H_average": params.get("sigma_H_average"),
         "sliding_cohesion": params.get("sliding_cohesion"),
+        "interface_gap_possible": bool(params.get("interface_gap_possible",
+                                                  False)),
+        "rho_tested": params.get("rho_tested"),
     }
     result = analyze_mse_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -635,6 +639,8 @@ def run_mse_wall(params, *, method="mse_wall"):
         alpha_tested=used["alpha_tested"],
         sigma_H_average=used["sigma_H_average"],
         sliding_cohesion=used["sliding_cohesion"],
+        interface_gap_possible=used["interface_gap_possible"],
+        rho_tested=used["rho_tested"],
     )
     return result, used
 
@@ -667,8 +673,16 @@ def _run_mse_lrfd_external_stability(params):
          "gamma_foundation", "phi_bearing",
          "c_foundation", "gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
          "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio",
-         "traffic_vertical_resists", "sliding_cohesion"),
+         "traffic_vertical_resists", "sliding_cohesion",
+         "interface_gap_possible", "lowest_sheet_depth", "rho_tested"),
         method="mse_lrfd_external_stability")
+    if (params.get("rho_tested") is not None
+            and params.get("lowest_sheet_depth") is None):
+        raise ValueError(
+            "rho_tested is the interface friction angle of the lowest sheet "
+            "(geosynthetic) reinforcement, for sliding along it; it needs "
+            "lowest_sheet_depth, the depth of that layer below the top of "
+            "the wall (GEC-11 Vol I p. 4-21 Step 3(iii)).")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="mse_lrfd_external_stability")
     if (params.get("gamma_foundation") is not None
@@ -701,6 +715,10 @@ def _run_mse_lrfd_external_stability(params):
         traffic_vertical_resists=bool(
             params.get("traffic_vertical_resists", False)),
         sliding_cohesion=params.get("sliding_cohesion"),
+        interface_gap_possible=bool(params.get("interface_gap_possible",
+                                               False)),
+        lowest_sheet_depth=params.get("lowest_sheet_depth"),
+        rho_tested=params.get("rho_tested"),
         **factors,
     )
     result["reinforcement_length_m"] = geom.reinforcement_length
@@ -1283,10 +1301,12 @@ METHOD_INFO = {
             "surcharge_in_bearing": {"type": "bool", "required": False, "default": True, "description": "Count the live-load surcharge over the reinforced zone in the bearing pressure sigma_v and its eccentricity. Default true: GEC-11 Vol I p. 4-26, 'The bearing check applies live load above both the reinforced zone and the retained backfill' (Fig. 4-2; Eqs. 4-19, 4-20). false = the live load taken as not over the zone."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg). Sliding takes mu = min(tan phi_foundation, tan phi_backfill) (GEC-11 Vol I Eq. 4-12, p. 4-22). phi_foundation = 0 gives an undrained strength (c_foundation = cu): sliding_cohesion then defaults to 'undrained'."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa). The sliding check counts it only by sliding_cohesion 'undrained', as the undrained shear strength cu; with 'drained' (the default unless phi_foundation is 0) it is not counted, as GEC-11 Eq. 4-12 prints no cohesion term."},
-            "sliding_cohesion": {"type": "str", "required": False, "default_depends_on": {"parameter": "phi_foundation", "values": {0: "undrained"}, "otherwise": "drained"}, "allowed_values": ["drained", "undrained"], "description": "How the sliding check counts the foundation soil's cohesion. Default depends on phi_foundation: 'undrained' when phi_foundation is 0 (c_foundation is then cu), else 'drained'. 'drained': R = V min(tan phi_foundation, tan phi_backfill), c_foundation NOT counted (GEC-11 Vol I Eqs. 4-12, 4-13, p. 4-21: Rr = V mu, no cohesion term; GEC-6 Eq. 5-38). 'undrained': R = min(cu L, V tan phi_backfill), cu = c_foundation, no base friction: GEC-11 p. 4-21 Step 3 takes the weaker of sliding along the foundation soil ('based on c'f + tan phi'f and/or cu for cohesive soils') and along the reinforced fill; the foundation's resistance cu over the base as GEC-6 Eq. 5-39 gives it ('ca is typically taken as equal to the undrained shear strength'). Before GM-297 the tool added 2/3 c_foundation x L to the friction, which no reference held prints. The result's choices give the rule used, its basis and the other rule's FOS_sliding on the same wall."},
+            "sliding_cohesion": {"type": "str", "required": False, "default_depends_on": {"parameter": "phi_foundation", "values": {0: "undrained"}, "otherwise": "drained"}, "allowed_values": ["drained", "undrained"], "description": "How the sliding check counts the foundation soil's cohesion. Default depends on phi_foundation: 'undrained' when phi_foundation is 0 (c_foundation is then cu), else 'drained'. 'drained': R = V min(tan phi_foundation, tan phi_backfill), c_foundation NOT counted (GEC-11 Vol I Eqs. 4-12, 4-13, p. 4-21: Rr = V mu, no cohesion term; GEC-6 Eq. 5-38). 'undrained': R = min(cu L, V tan phi_backfill), cu = c_foundation, no base friction: GEC-11 p. 4-21 Step 3 takes the weaker of sliding along the foundation soil ('based on c'f + tan phi'f and/or cu for cohesive soils') and along the reinforced fill; the foundation's resistance cu over the base as GEC-6 Eq. 5-39 gives it ('ca is typically taken as equal to the undrained shear strength'). GEC-11 Vol I p. 4-19 evaluates sliding on the base 'using the same procedures as for spread footings on soil as per Article 10.6.3.4 (AASHTO, 2007)', which is not held; UFC 3-220-20 Sec. 4-5.1.3 (p. 223) takes the lowest of the resistance at the interface between the base and a bearing layer and 'the resistance within the clay using the full undrained shear strength'. Before GM-297 the tool added 2/3 c_foundation x L to the friction, which no reference held prints. The result's choices give the rule used, its basis and the other rule's FOS_sliding on the same wall."},
+            "interface_gap_possible": {"type": "bool", "required": False, "default": False, "description": "Whether water or air can reach the interface between the base and an undrained clay foundation. With sliding_cohesion 'undrained' the foundation's resistance is then held to 0.4 V (EN 1997-1 Sec. 6.5.3(12)P, Eq. 6.5, p. 65: 'If it is possible for water or air to reach the interface between a foundation and an undrained clay subgrade, the following check shall be made: Rd <= 0,4 Vd'). GEC-11, GEC-6 and UFC 3-220-20 print no such limit. Refused with the drained rule. The result's choices give FOS_sliding under the other reading."},
+            "rho_tested": {"type": "float", "required": False, "description": "For a geosynthetic at the lowest level, sliding is also checked along it. Sheet reinforcement (GEC-11 Vol I p. 4-21 Step 3(iii): 'For sheet type reinforcement, sliding along the weaker of the upper and lower soil-reinforcement interfaces'; Vol II Example E1 p. E1-7: 'sliding should also be checked at the elevation of the first layer of soil reinforcement'): the block above the lowest layer, its own weight and thrust, slides on tan rho, and the lesser of that and the base governs. The soil-reinforcement interface friction angle rho (deg) from interface direct shear tests, which p. 4-21 prefers ('should preferably be measured by means of interface direct shear tests'). Default 2/3 tan phi_backfill for tan rho ('In absence of testing, it may be taken as 2/3 tan phi'r'; Eq. 3-9, p. 3-21, 'for geotextiles, geogrids and geonet type drainage composites'). Refused when the lowest level's reinforcement is steel."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How the sliding check counted the foundation cohesion (sliding_cohesion, when there is cohesion or the rule was given: the rule, its basis and the other rule's FOS_sliding); how a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing; the coverage ratio Rc (given, b/Sh, or 1 for a continuous geosynthetic) and the tensile resistance Tal x Rc per metre of wall; a built-in reinforcement's Tal and where it comes from (the built-in grid: the rigid facing it assumes, with the flexible-facing value beside it); for a geosynthetic, the factor of safety 1.5 its rupture check requires (each level's FOS_rupture_required: 1.0 for steel, 1.5 for a geosynthetic); where FOS_rupture is below it, the levels, and a stronger reinforcement at those levels (reinforcement_per_level) or a closer spacing; with reinforcement_per_level each level's Tal by runs of the same reinforcement; a tested F* or alpha with FOS_pullout at the empirical value; and for ribbed steel strips the pullout factor F* at the top of the wall (Cu_backfill, given or the Cu = 4 GEC-11 p. 3-20 says to assume when unknown; for another reinforcement a given Cu checked against GEC-11 Table 3-6 note (i)); with level_depths each level's contributory height and how sigma_H was averaged over it (sigma_H_average), without them the levels equally spaced at reinforcement_spacing, each over its contributory height (the bottom level's to the base) with sigma_H at its middle; each with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout, rupture or Le under 3 ft at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "reinforcement_name": "The reinforcement's name; with reinforcement_per_level, a list of each level's from the top.", "internal_results": "Each level from the top: depth_m, Tmax, the pullout resistance Pr and the tensile resistance Tal x Rc per metre of wall, F*, alpha, Rc, FOS_pullout and FOS_rupture with FOS_rupture_required; La_m and Le_m = L - La, the length beyond the failure surface, with Le_at_least_3ft (GEC-11 Vol I Eq. 4-36: Le '>= 3 ft (1 m)'; a level with less fails whatever its FOS_pullout); with reinforcement_per_level also its reinforcement; with level_depths also Svt_m, its contributory height, and sigma_H_kPa, the unfactored sigma_H averaged over it (Tmax = sigma_H x Svt).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How the sliding check counted the foundation cohesion (sliding_cohesion, when there is cohesion or the rule was given: the rule, its basis and the other rule's FOS_sliding); with the undrained rule, whether EN 1997-1's 0.4 V limit was applied (interface_gap_possible) and FOS_sliding the other way; with a geosynthetic at the lowest level, sliding along it: tan rho (tested or 2/3 tan phi_backfill), FOS_sliding there and at the base, and which governs; how a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing; the coverage ratio Rc (given, b/Sh, or 1 for a continuous geosynthetic) and the tensile resistance Tal x Rc per metre of wall; a built-in reinforcement's Tal and where it comes from (the built-in grid: the rigid facing it assumes, with the flexible-facing value beside it); for a geosynthetic, the factor of safety 1.5 its rupture check requires (each level's FOS_rupture_required: 1.0 for steel, 1.5 for a geosynthetic); where FOS_rupture is below it, the levels, and a stronger reinforcement at those levels (reinforcement_per_level) or a closer spacing; with reinforcement_per_level each level's Tal by runs of the same reinforcement; a tested F* or alpha with FOS_pullout at the empirical value; and for ribbed steel strips the pullout factor F* at the top of the wall (Cu_backfill, given or the Cu = 4 GEC-11 p. 3-20 says to assume when unknown; for another reinforcement a given Cu checked against GEC-11 Table 3-6 note (i)); with level_depths each level's contributory height and how sigma_H was averaged over it (sigma_H_average), without them the levels equally spaced at reinforcement_spacing, each over its contributory height (the bottom level's to the base) with sigma_H at its middle; each with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout, rupture or Le under 3 ft at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "reinforcement_name": "The reinforcement's name; with reinforcement_per_level, a list of each level's from the top.", "internal_results": "Each level from the top: depth_m, Tmax, the pullout resistance Pr and the tensile resistance Tal x Rc per metre of wall, F*, alpha, Rc, FOS_pullout and FOS_rupture with FOS_rupture_required; La_m and Le_m = L - La, the length beyond the failure surface, with Le_at_least_3ft (GEC-11 Vol I Eq. 4-36: Le '>= 3 ft (1 m)'; a level with less fails whatever its FOS_pullout); with reinforcement_per_level also its reinforcement; with level_depths also Svt_m, its contributory height, and sigma_H_kPa, the unfactored sigma_H averaged over it (Tmax = sigma_H x Svt).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS: the base's, or along the lowest sheet where that is less (sliding_surfaces).", "sliding_surfaces": "With a geosynthetic at the lowest level only: governing ('base' or 'lowest sheet'), FOS_base, FOS_lowest_sheet, lowest_sheet_depth_m and tan_rho (GEC-11 Vol I p. 4-21 Step 3(iii)).", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
@@ -1309,7 +1329,10 @@ METHOD_INFO = {
             "phi_bearing": {"type": "float", "required": False, "default": 0.65, "description": "Bearing resistance factor phi_b for the qn worked out from gamma_foundation (GEC-11 Table 4-5: 0.65)."},
             "bearing_resistance_service": {"type": "float", "required": False, "description": "Service bearing resistance (kPa); enables the Service I bearing CDR."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation cohesion (kPa): c_f in qn when gamma_foundation is given, and in sliding only by sliding_cohesion 'undrained', as the undrained shear strength cu; with 'drained' (the default unless phi_foundation is 0) sliding does not count it, as GEC-11 Eq. 4-12 prints no cohesion term."},
-            "sliding_cohesion": {"type": "str", "required": False, "default_depends_on": {"parameter": "phi_foundation", "values": {0: "undrained"}, "otherwise": "drained"}, "allowed_values": ["drained", "undrained"], "description": "How the sliding check counts the foundation soil's cohesion. Default depends on phi_foundation: 'undrained' when phi_foundation is 0 (c_foundation is then cu), else 'drained'. 'drained': Rr = phi_sliding x gamma_EV x V x min(tan phi_foundation, tan phi_backfill), c_foundation NOT counted (GEC-11 Vol I Eqs. 4-12, 4-13, p. 4-21; GEC-6 Eq. 5-38). 'undrained': Rr = phi_sliding x min(cu L, gamma_EV x V x tan phi_backfill), cu = c_foundation, no base friction (GEC-11 p. 4-21 Step 3: the weaker of sliding along the foundation soil, 'based on c'f + tan phi'f and/or cu for cohesive soils', and along the reinforced fill; cu over the base as GEC-6 Eq. 5-39 gives it). Before GM-297 the tool added 2/3 c_foundation x L, which no reference held prints. The result's choices give the rule used, its basis and the other rule's governing sliding CDR."},
+            "sliding_cohesion": {"type": "str", "required": False, "default_depends_on": {"parameter": "phi_foundation", "values": {0: "undrained"}, "otherwise": "drained"}, "allowed_values": ["drained", "undrained"], "description": "How the sliding check counts the foundation soil's cohesion. Default depends on phi_foundation: 'undrained' when phi_foundation is 0 (c_foundation is then cu), else 'drained'. 'drained': Rr = phi_sliding x gamma_EV x V x min(tan phi_foundation, tan phi_backfill), c_foundation NOT counted (GEC-11 Vol I Eqs. 4-12, 4-13, p. 4-21; GEC-6 Eq. 5-38). 'undrained': Rr = phi_sliding x min(cu L, gamma_EV x V x tan phi_backfill), cu = c_foundation, no base friction (GEC-11 p. 4-21 Step 3: the weaker of sliding along the foundation soil, 'based on c'f + tan phi'f and/or cu for cohesive soils', and along the reinforced fill; cu over the base as GEC-6 Eq. 5-39 gives it). GEC-11 Vol I p. 4-19 evaluates sliding on the base 'using the same procedures as for spread footings on soil as per Article 10.6.3.4 (AASHTO, 2007)', which is not held; UFC 3-220-20 Sec. 4-5.1.3 (p. 223) takes the lowest of the resistance at the interface between the base and a bearing layer and 'the resistance within the clay using the full undrained shear strength'. Before GM-297 the tool added 2/3 c_foundation x L, which no reference held prints. The result's choices give the rule used, its basis and the other rule's governing sliding CDR."},
+            "interface_gap_possible": {"type": "bool", "required": False, "default": False, "description": "Whether water or air can reach the interface between the base and an undrained clay foundation. With sliding_cohesion 'undrained' the foundation's resistance is then held to 0.4 V gamma_EV (EN 1997-1 Sec. 6.5.3(12)P, Eq. 6.5, p. 65: 'If it is possible for water or air to reach the interface between a foundation and an undrained clay subgrade, the following check shall be made: Rd <= 0,4 Vd'). GEC-11, GEC-6 and UFC 3-220-20 print no such limit. Refused with the drained rule. The result's choices give the governing sliding CDR under the other reading."},
+            "lowest_sheet_depth": {"type": "float", "required": False, "description": "For sheet (geosynthetic) reinforcement, the depth (m) below the top of the wall of its lowest layer: sliding is then also checked along it with the same load combinations. Sheet reinforcement (GEC-11 Vol I p. 4-21 Step 3(iii): 'For sheet type reinforcement, sliding along the weaker of the upper and lower soil-reinforcement interfaces'; Vol II Example E1 p. E1-7: 'sliding should also be checked at the elevation of the first layer of soil reinforcement'): the block above the lowest layer, its own weight and thrust, slides on tan rho, and the lesser of that and the base governs. Give it for geogrid or geotextile reinforcement; leave it out for steel strips or grids. Not given: sliding is checked at the base only."},
+            "rho_tested": {"type": "float", "required": False, "description": "With lowest_sheet_depth, sliding along the lowest sheet: The soil-reinforcement interface friction angle rho (deg) from interface direct shear tests, which p. 4-21 prefers ('should preferably be measured by means of interface direct shear tests'). Default 2/3 tan phi_backfill for tan rho ('In absence of testing, it may be taken as 2/3 tan phi'r'; Eq. 3-9, p. 3-21, 'for geotextiles, geogrids and geonet type drainage composites'). Needs lowest_sheet_depth."},
             "gamma_EV_max": {"type": "float", "required": False, "default": 1.35, "description": "Max vertical-earth (EV) load factor (AASHTO Strength I)."},
             "gamma_EV_min": {"type": "float", "required": False, "default": 1.00, "description": "Min vertical-earth (EV) load factor."},
             "gamma_EH_max": {"type": "float", "required": False, "default": 1.50, "description": "Max horizontal-earth (EH) load factor."},
@@ -1318,7 +1341,7 @@ METHOD_INFO = {
             "phi_sliding": {"type": "float", "required": False, "default": 1.0, "description": "Sliding resistance factor (AASHTO 11.10.5.3)."},
             "ecc_limit_ratio": {"type": "float", "required": False, "default": 0.25, "description": "Limiting-eccentricity ratio e_max/L: 0.25 (L/4) on soil, 0.375 (3L/8) on rock. GEC-11 Vol I p. 4-23: the resultant 'within the middle one-half of the base width for soil foundations (i.e., emax = L / 4) and middle three-fourths of the base width for rock foundations (i.e., emax = 3/8 L)'."},
         },
-        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing) and sliding_cohesion, the rule for the foundation cohesion used.", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given. With gamma_foundation: qn and qR for Strength I max and the critical combination, Nc, Ngamma, phi_bearing and resistance_basis (GEC-11 Eq. 4-22).", "choices": "How sliding counted the foundation cohesion (sliding_cohesion, when there is cohesion or the rule was given: the rule, its basis and the other rule's governing CDR); with gamma_foundation: how the factored bearing resistance qR was worked out (phi_b, given or default, and the Eq. 4-22 basis) and the other way (a given bearing_resistance_strength). Tell the user.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
+        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing) and sliding_cohesion, the rule for the foundation cohesion used; with lowest_sheet_depth the CDRs are the governing surface's, and surface ('base' or 'lowest sheet'), CDR_base_governing, CDR_lowest_sheet_governing, lowest_sheet_depth_m and tan_rho are added.", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given. With gamma_foundation: qn and qR for Strength I max and the critical combination, Nc, Ngamma, phi_bearing and resistance_basis (GEC-11 Eq. 4-22).", "choices": "How sliding counted the foundation cohesion (sliding_cohesion, when there is cohesion or the rule was given: the rule, its basis and the other rule's governing CDR); with the undrained rule, whether EN 1997-1's 0.4 V limit was applied (interface_gap_possible) and the governing CDR the other way; with lowest_sheet_depth, tan rho (tested or 2/3 tan phi_backfill) with both surfaces' governing CDRs; with gamma_foundation: how the factored bearing resistance qR was worked out (phi_b, given or default, and the Eq. 4-22 basis) and the other way (a given bearing_resistance_strength). Tell the user.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
     },
     "list_reinforcement": {
         "category": "MSE Wall",
@@ -1463,6 +1486,16 @@ declare_applies_when(METHOD_INFO, {
         # result only with a cohesion; the cohesion counts only as cu
         "sliding_cohesion": {"c_foundation": "set"},
         "c_foundation": {"sliding_cohesion": ["undrained"]},
+        # GM-297 review: EN 1997-1's limit on the undrained resistance; the
+        # interface friction of a geosynthetic at the lowest level
+        "interface_gap_possible": {"sliding_cohesion": ["undrained"]},
+        "rho_tested": [
+            {"reinforcement_name": [k for k, r in _REINFORCEMENT_DB.items()
+                                    if not r.is_metallic]},
+            {"reinforcement_Tallowable": "set", "reinforcement_name": "unset",
+             "reinforcement_type": ["geogrid", "geotextile",
+                                    "geosynthetic"]},
+            {"reinforcement_per_level": "set"}],
         # GM-246: the ribbed steel strip F* (a steel grid given no t/St is
         # refused since GM-297); the choices report the Cu it took
         "Cu_backfill": [
@@ -1479,7 +1512,9 @@ declare_applies_when(METHOD_INFO, {
         # GM-297: as mse_wall's; the cohesion is also c_f in qn
         "sliding_cohesion": {"c_foundation": "set"},
         "c_foundation": [{"sliding_cohesion": ["undrained"]},
-                         {"gamma_foundation": "set"}]},
+                         {"gamma_foundation": "set"}],
+        "interface_gap_possible": {"sliding_cohesion": ["undrained"]},
+        "rho_tested": {"lowest_sheet_depth": "set"}},
 })
 
 # What a left-out input with no default stands for (GM-165): a part the
@@ -1587,6 +1622,10 @@ declare_when_absent(METHOD_INFO, {
         "gamma_retained": "gamma_backfill",
         "broken_backslope_height": _SLOPE_CONTINUES,
         "phi_foundation": "phi_backfill",
+        "rho_tested": ("2/3 tan phi_backfill",
+                       "tan rho in absence of interface tests, GEC-11 Vol I "
+                       "p. 4-21 Step 3(iii) and Eq. 3-9 (p. 3-21); give "
+                       "rho_tested from interface direct shear tests"),
         "q_allowable": ("bearing not checked",
                         "with no allowable bearing pressure the external "
                         "bearing check is not run (checks_not_run lists "
@@ -1608,5 +1647,14 @@ declare_when_absent(METHOD_INFO, {
             "bearing not checked at the service limit",
             "with no service bearing resistance the Service I bearing CDR "
             "is not computed (checks_not_run lists it)"),
+        "lowest_sheet_depth": (
+            "sliding checked at the base only",
+            "GEC-11 Vol I p. 4-21 Step 3(iii): for sheet reinforcement give "
+            "the depth of its lowest layer, and sliding is also checked "
+            "along it"),
+        "rho_tested": ("2/3 tan phi_backfill",
+                       "tan rho in absence of interface tests, GEC-11 Vol I "
+                       "p. 4-21 Step 3(iii) and Eq. 3-9 (p. 3-21); give "
+                       "rho_tested from interface direct shear tests"),
     },
 })

@@ -4,7 +4,8 @@ Checked against FHWA GEC-11, *Design and Construction of Mechanically
 Stabilized Earth Walls and Reinforced Soil Slopes* (FHWA-NHI-10-024 Vol I and
 NHI-10-025 Vol II, November 2009), as printed. UFC 3-220-20 (16 January 2025)
 was searched as well. Its MSE section ends at p. 228: "Further discussion of
-MSE is beyond the scope of this manual". So it gives nothing to check against.
+MSE is beyond the scope of this manual". So it gives nothing to check against,
+except the general sliding rule of Sec. 4-5.1.3 (p. 223) cited in E1.
 
 Scope:
 - `retaining_walls/mse.py` and `reinforcement.py`;
@@ -113,6 +114,23 @@ verdict.
     (Eq. 4-12; GEC-6 Eq. 5-38).
   - 'undrained': R = min(cu L, V tan φ'r), with no base friction (Step 3 (i)
     and (ii); cu over the base as GEC-6 Eq. 5-39 gives it).
+    - GEC-11 p. 4-19 prints no form of its own: "Sliding resistance along
+      the base of the wall is evaluated using the same procedures as for
+      spread footings on soil as per Article 10.6.3.4 (AASHTO, 2007)". That
+      article is not held.
+    - UFC 3-220-20 Sec. 4-5.1.3 (p. 223), for a coarse-grained bearing
+      layer under the wall: "Sliding should be checked at two locations.
+      The shear resistance, Τ, should be taken as the lowest of (1) the
+      resistance at the interface between the base of the wall and the
+      bearing material and (2) the resistance within the clay using the
+      full undrained shear strength." The basis now cites it beside GEC-6
+      Eq. 5-39 (review).
+    - Alternative offered (review): EN 1997-1 Eq. 6.5, Rd ≤ 0.4 Vd where
+      water or air can reach the interface, as the cantilever's
+      `interface_gap_possible` (GM-288). Default false. It has its own
+      choice entry when the undrained rule is in force. On the 6 m wall at
+      cu 120 it gives ASD 3.340 → 1.981 (191.52 / 96.69) and LRFD 2.227 →
+      1.3205 (191.52 / (1.5 × 96.69), the critical combination).
   - The default is undrained when phi_foundation is 0, drained otherwise.
   - UFC's 'friction_plus_adhesion' is refused, because it is a concrete
     base's rule.
@@ -162,6 +180,57 @@ verdict.
   auto-size already took max(0.7H, 2.5 m). Both tools said "0.7H minimum";
   they now cite the page.
 
+### E7. Sliding along the lowest sheet. Fixed (review)
+- Vol I p. 4-21 Step 3(iii): "For sheet type reinforcement, sliding along
+  the weaker of the upper and lower soil-reinforcement interfaces. The
+  soil-reinforcement friction angle ρ, should preferably be measured by
+  means of interface direct shear tests. In absence of testing, it may be
+  taken as ⅔ tan φ'r."
+- Vol I p. 4-22: μ includes "(for continuous reinforcement) tan ρ".
+- Vol I Sec. 3.4.3, Eq. 3-9 (p. 3-21): the interface friction coefficient
+  "can be conservatively taken as" ⅔ tan φ "for geotextiles, geogrids and
+  geonet type drainage composites" (tests per ASTM D 5321).
+- Vol II E1 p. E1-7: "Since this is a sheet type of reinforcement, sliding
+  should also be checked at the elevation of the first layer of soil
+  reinforcement (and applicable height)." E1 prints no value for it.
+- Module before: the base only.
+- Now, where the lowest level's reinforcement is not steel:
+  - the wall above the lowest level slides on tan ρ: its height is that
+    level's depth, with the same L, slope and surcharge; its own weight and
+    thrust as at the base;
+  - tan ρ from `rho_tested` (deg), else ⅔ tan φ'r;
+  - on the ASD, LRFD level and LRFD sloping paths;
+  - the lesser of base and sheet governs, and the result names it:
+    - ASD: `sliding_surfaces` with FOS_base, FOS_lowest_sheet, the depth and
+      tan ρ;
+    - LRFD: the sliding dict's `surface`, CDR_base_governing and
+      CDR_lowest_sheet_governing;
+    - the verdict says "along the lowest sheet, z = … m" when it governs
+      and fails;
+  - a choice entry gives tan ρ, both values, which governs, and the other
+    way (tests, or ⅔ tan φ'r when tested);
+  - the calc package adds a "Sliding Along the Lowest Sheet" step, and the
+    FOS step takes the lesser.
+- mse_wall finds the lowest level itself. The LRFD tool has no
+  reinforcement, so it takes `lowest_sheet_depth`; left out, it checks the
+  base only and says so in defaults_used.
+- `rho_tested` is refused on a steel lowest level, and on the LRFD tool
+  without `lowest_sheet_depth`.
+
+Before → after, the 6 m wall (L 4.2 m, γ 19, φr 34, Sv 0.6 m, lowest
+level at z = 5.7 m), geogrid:
+
+| Case | Before (base only) | After: base | After: sheet | Governs |
+|---|---|---|---|---|
+| ASD, φf 28 | 2.633 | 2.633 | 2.344 | sheet |
+| ASD, φf 34 | 3.340 | 3.340 | 2.344 | sheet |
+| ASD, 15° slope, φf 28 | 2.066 | 2.066 | 1.812 | sheet |
+| LRFD CDR, φf 28 (critical, EV 1.0, EH 1.5) | 1.755 | 1.755 | 1.563 | sheet |
+| ASD, φf 0, cu 40 | 1.738 | 1.738 | 2.344 | base |
+| V-056 test path (E3 geometry, a geogrid) | CDR 1.07 | 1.07 | 0.852 | sheet |
+
+The sheet's ASD 2.344 by hand: V 454.86 × tan ρ 0.4497 / Pa 87.26.
+
 ## Worked examples
 - V-057 (E1, one run at its eleven layers):
   - F* is now 0.450 at every layer, the 0.45 Table E1-7.5 prints. It was
@@ -173,12 +242,15 @@ verdict.
   - Every level has Le ≥ 3 ft; the least is 10.31 ft, L − 0.3H.
   - The two external-stability tests with a custom mat now give E4's
     St = 6 in. (p. E4-15).
-- V-056 (E3): unchanged.
+- V-056 (E3): unchanged at the base. One test runs E3's geometry with a
+  geogrid; its 1.07 is now asserted as the base CDR, and the sheet governs
+  (E7).
 
 ## What moved (made-up walls)
 
-Cases 3 to 8 are a 6 m wall with L 4.2 m, γ 19 and φr 34; case 9 is a
-6 m wall with L 5 m.
+Cases 3 to 8 are a 6 m wall with L 4.2 m, γ 19 and φr 34, at the base;
+case 9 is a 6 m wall with L 5 m. With geosynthetic reinforcement the lowest
+sheet may now govern instead (E7).
 
 | Case | Before | After |
 |---|---|---|
@@ -197,14 +269,6 @@ GG-I wall test goes from 8.394 to 8.353.
 
 ## Noted, not fixed
 
-- **Sliding on the lowest sheet of reinforcement.**
-  - Vol I p. 4-21 Step 3(iii): sliding along a sheet's interface, at ⅔ tan
-    φ'r.
-  - Eq. 3-9: ρ = 2/3 tan φ for geotextiles, geogrids and geonets.
-  - Vol II E1 p. E1-7: "Since this is a sheet type of reinforcement, sliding
-    should also be checked at the elevation of the first layer".
-  - The module checks the base only. This changes a saved report's sliding
-    result for geosynthetic walls. **Proposed BACKLOG item.**
 - **Service-limit eccentricity.** Vol II E4 Table E4-6.3 (p. E4-9) shows an
   L/6 limit at Service I. The module checks the strength limit only.
   Possible BACKLOG item, if the owner wants Service I eccentricity reported.
@@ -241,5 +305,10 @@ forms.
 One change the lead may want to show the owner: on a cohesive foundation
 (φf 0), cu now counts in full, so FOS_sliding rises by about 50 % where the
 foundation governs. Case 4 now passes where it failed. The reinforced fill
-still caps the resistance at V tan φr. GEC-11 prints no cu form, so the full
-cu rests on GEC-6 Eq. 5-39.
+still caps the resistance at V tan φr. GEC-11 prints no cu form (p. 4-19
+defers to AASHTO 2007 Art. 10.6.3.4, not held), so the full cu rests on
+GEC-6 Eq. 5-39 and UFC 3-220-20 p. 223 ("the full undrained shear
+strength"). EN 1997-1's 0.4 V limit is offered as `interface_gap_possible`.
+
+Geosynthetic walls' sliding falls where the lowest sheet governs (E7): by
+about 11 % on the 6 m wall at φf 28, 30 % at φf 34.

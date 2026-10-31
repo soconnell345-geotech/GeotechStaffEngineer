@@ -367,8 +367,13 @@ def test_v056_analyze_mse_wall_reports_the_basis():
     # Figure E3-2b: sigma_2 = 1/2 (0.7 * 30 ft) tan(26.56) (0.125) = 0.656 ksf
     assert b["sigma_2_kPa"] / KSF == pytest.approx(0.656, abs=0.002)
     assert b["H1_m"] / FT == pytest.approx(35.29, abs=0.01)
-    assert r.external_lrfd["sliding"]["CDR_critical"] == pytest.approx(
-        1.07, abs=0.005)
+    # E3's steel strips slide on the base, Table E3-6.1's 1.07; this
+    # geogrid also slides along its lowest sheet, on 2/3 tan 34, which
+    # governs (GEC-11 Vol I p. 4-21 Step 3(iii); GM-297 review)
+    s = r.external_lrfd["sliding"]
+    assert s["CDR_base_governing"] == pytest.approx(1.07, abs=0.005)
+    assert s["surface"] == "lowest sheet"
+    assert s["CDR_governing"] == s["CDR_lowest_sheet_governing"] < 1.07
 
 
 # ── V-057: Example E1, a broken backslope with traffic behind the crest ─────

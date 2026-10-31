@@ -502,6 +502,22 @@ class MSEWallResult:
         return [] if self.bearing_checked else ["bearing"]
 
     @property
+    def sliding_surfaces(self) -> Optional[Dict[str, Any]]:
+        """With sheet reinforcement at the lowest level (GM-297 review,
+        GEC-11 Vol I p. 4-21 Step 3(iii)): FOS_sliding at the base and
+        along the lowest sheet, its depth, tan rho and which governs;
+        None otherwise."""
+        t = self.external_terms
+        if not t or not t.get("sheet"):
+            return None
+        s = t["sheet"]
+        return {"governing": t["sliding_surface"],
+                "FOS_base": round(t["FOS_base"], 3),
+                "FOS_lowest_sheet": round(s["FOS"], 3),
+                "lowest_sheet_depth_m": s["depth"],
+                "tan_rho": round(s["tan_rho"], 4)}
+
+    @property
     def all_checks_pass(self) -> Optional[bool]:
         """True only when every check was run and passed; False when any
         check failed; None when none failed but a check was not run."""
@@ -514,8 +530,13 @@ class MSEWallResult:
     @property
     def verdict(self) -> str:
         """The result in plain words: failed checks first, then not run."""
+        surfaces = self.sliding_surfaces
+        along = ""
+        if surfaces and surfaces["governing"] == "lowest sheet":
+            along = (" along the lowest sheet, z = "
+                     f"{surfaces['lowest_sheet_depth_m']:g} m")
         words = {
-            "sliding": (f"sliding (FOS {self.FOS_sliding:.2f}, "
+            "sliding": (f"sliding (FOS {self.FOS_sliding:.2f}{along}, "
                         f"{self.FOS_sliding_required:.2f} required)"),
             "overturning": (f"overturning (FOS {self.FOS_overturning:.2f}, "
                             f"{self.FOS_overturning_required:.2f} required)"),
@@ -635,6 +656,8 @@ class MSEWallResult:
             "reinforcement_length_m": self.reinforcement_length,
             "internal_results": self.internal_results,
         }
+        if self.sliding_surfaces is not None:
+            d["sliding_surfaces"] = self.sliding_surfaces
         if self.external_lrfd is not None:
             d["external_lrfd"] = self.external_lrfd
         if self.backslope is not None:

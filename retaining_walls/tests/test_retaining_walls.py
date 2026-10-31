@@ -1601,7 +1601,9 @@ class TestMSELRFDBearingNotChecked:
                                  gamma_foundation=18.0, lrfd_external=True,
                                  bearing_resistance_strength=500.0)
         assert "qn_strength_max_kPa" not in given.external_lrfd["bearing"]
-        assert "choices" not in given.external_lrfd
+        # only the geogrid's sliding along its lowest sheet (GM-297 review)
+        assert [c["what"].split()[0] for c in
+                given.external_lrfd["choices"]] == ["interface"]
 
     def test_the_resistance_takes_the_foundation_soils_own_phi(self):
         # GM-179 review: never the reinforced fill's phi_backfill
