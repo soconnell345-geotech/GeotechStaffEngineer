@@ -2576,7 +2576,7 @@
       "site_class": "D",
       "vs30_m_per_s": 350.0,
       "n_bar": null,
-      "Fpga": 1.02,
+      "Fpga": null,
       "Fa": 1.02,
       "Fv": 1.5,
       "Ss_g": 1.2,
@@ -2601,7 +2601,8 @@
     "result": {
       "KAE": 0.454,
       "KA_static": 0.3333,
-      "KPE": 4.9753,
+      "KPE": 3.7307,
+      "delta_passive_deg": 12.0,
       "PAE_total_kN_per_m": 147.08,
       "PA_static_kN_per_m": 108.0,
       "delta_PAE_kN_per_m": 39.08,
@@ -2615,7 +2616,7 @@
           "what": "KAE",
           "chosen": "Mononobe-Okabe",
           "how": "module",
-          "basis": "pseudo-static wedge, inertia toward the wall (UFC 3-220-20 Eq. 4-15; GEC-11 Vol I Eq. 7-6)"
+          "basis": "pseudo-static wedge, inertia toward the wall (UFC 3-220-20 Eq. 4-15; GEC-11 Vol I Eq. 7-6); the wall batter beta is positive leaning toward the backfill, so UFC's theta = -beta, and the backfill slope i is UFC's beta"
         },
         {
           "what": "kh",
@@ -2652,11 +2653,22 @@
           "alternatives": [
             "PAE at h/2 (GEC-11 Vol I Sec. 7.1.1, MSE walls)"
           ]
+        },
+        {
+          "what": "wall friction delta for KPE",
+          "chosen": "12.0 deg (0.4 phi)",
+          "how": "default",
+          "basis": "the most UFC 3-220-20 Fig. 4-8 allows a planar passive wedge; a planar-wedge passive coefficient is \"unconservative for delta/phi' > 0.4 and, therefore, should not be used\" there (UFC 3-220-20 Fig. 4-8, p. 187); FHWA NHI-06-089 p. 10-19 finds it \"unreliable ... for wall friction angle values greater than phi'/3\" and recommends the log-spiral charts",
+          "alternatives": [
+            "delta = phi / 3 = 10.0 deg (FHWA NHI-06-089 p. 10-19)",
+            "a log-spiral passive coefficient (UFC 3-220-20 pp. 189-190; NHI-06-089 Figs. 10-9 and 10-10), which takes up to phi / 2 (NHI-06-089 p. 10-17)"
+          ]
         }
       ],
       "defaults_used": {
         "beta": 0.0,
         "i": 0.0,
+        "delta_passive": "0.4 phi: the most UFC 3-220-20 Fig. 4-8 allows a planar passive wedge; NHI-06-089 p. 10-19 finds it unreliable above phi/3",
         "KA": "Rankine Ka from phi: a vertical wall, level backfill and no wall friction; give KA for another case"
       }
     }
