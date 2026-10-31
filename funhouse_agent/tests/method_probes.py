@@ -325,9 +325,9 @@ NOT_REACHED = {
         "rounding",
     ("pavement_design|rigid_pavement_design", "thickness_increment_in"):
         "D = 8.985 in rounds up to 9.0 in at either increment",
-    **{("settlement|schmertmann_settlement", n):
-       "the strain factor diagram changes only for a strip or L / B over "
-       "10; the probe is a square" for n in ("L", "shape")},
+    ("settlement|schmertmann_settlement", "shape"):
+        "the strain factor diagram changes for a strip only; other shapes "
+        "take it from L / B, and the probe is a square",
     **{(k, "units"): "sets the DXF header's $INSUNITS only; the result "
        "carries the file, not its header" for k in (
            "dxf_export|export_geometry_to_dxf",

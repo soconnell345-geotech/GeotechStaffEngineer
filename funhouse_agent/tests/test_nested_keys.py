@@ -208,7 +208,7 @@ class TestSettlement:
 
     def test_schmertmann_and_hough_and_combined_refused(self):
         _refused("settlement", "schmertmann_settlement",
-                 {"q_net": 150, "B": 2,
+                 {"q_net": 150, "B": 2, "gamma_soil": 18,
                   "layers": [{"depth_top": 0, "depth_bottom": 2, "E": 9000}]},
                  r"layers\[0\].*\['E'\]", r"E -> Es")
         _refused("settlement", "hough_settlement",

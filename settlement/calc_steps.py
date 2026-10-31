@@ -5,11 +5,9 @@ Provides input summaries, step-by-step equation output, and figures
 for Mathcad-style calc package generation.
 
 References:
-    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3 (Settlement Estimation)
-    Terzaghi, K. (1925) — Theory of 1-D consolidation
-    Schmertmann, J.H. et al. (1978) — Improved strain influence factors
-    Timoshenko & Goodier — Elastic settlement theory
-    Mesri, G. (1973) — Secondary compression
+    FHWA GEC-6 (FHWA-SA-02-054), Ch. 5 (Settlement Estimation)
+    FHWA NHI-06-088 Ch. 7 and NHI-06-089 Sec. 8.5
+    UFS 3-220-10 (2026), Chs. 4 and 5
 """
 
 import math
@@ -23,16 +21,12 @@ from calc_package.renderer import figure_to_base64
 DISPLAY_NAME = "Settlement Analysis"
 
 REFERENCES = [
-    "FHWA GEC-6 (FHWA-SA-02-054): Shallow Foundations, Sec. 5.3.",
-    'Terzaghi, K. (1925). "Erdbaumechanik auf Bodenphysikalischer Grundlage." '
-    "Deuticke, Vienna.",
+    "FHWA GEC-6 (FHWA-SA-02-054): Shallow Foundations, Ch. 5.",
+    "FHWA NHI-06-088: Soils and Foundations, Vol. I, Ch. 7.",
+    "FHWA NHI-06-089: Soils and Foundations, Vol. II, Sec. 8.5.",
+    "UFS 3-220-10 (2026): Soil Mechanics, Chs. 4 and 5.",
     'Schmertmann, J.H. et al. (1978). "Improved Strain Influence Factor '
     'Diagrams." JGED, ASCE, Vol. 104, No. GT8, pp. 1131-1135.',
-    "Timoshenko, S.P. & Goodier, J.N. (1970). Theory of Elasticity, 3rd Ed. "
-    "McGraw-Hill.",
-    'Mesri, G. (1973). "Coefficient of Secondary Compression." '
-    "JSMFE, ASCE, Vol. 99, No. SM1, pp. 123-137.",
-    "USACE EM 1110-1-1904: Settlement Analysis.",
 ]
 
 
@@ -130,7 +124,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="q_net",
         result_value=f"{analysis.q_net:.1f}",
         result_unit="kPa",
-        reference="FHWA GEC-6, Section 8.2",
+        reference="FHWA NHI-06-089 Fig. 8-21b (\u0394p = p - p_o)",
     ))
     sections.append(CalcSection(title="Applied Loading", items=pressure_items))
 
@@ -145,13 +139,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="S_e",
             result_value=f"{result.immediate * 1000:.2f}",
             result_unit="mm",
-            reference="Timoshenko & Goodier; FHWA GEC-6, Eq. 8-1",
+            reference="FHWA GEC-6 Eq. 5-36 (the elastic half-space form) "
+                      "and Table 5-12",
             notes=(
                 f"I_w = {_immediate_Iw(analysis, result):.3f} "
                 + ("(user-supplied)"
                    if getattr(analysis, "Iw_immediate", None) is not None
-                   else "(Schleicher flexible-footing value; 1.12 for a square, "
-                        "grows with L/B; a circular footing uses 1.0)")
+                   else "(GEC-6 Table 5-12, the centre of a flexible "
+                        "footing: 1.00 for a circle, 1.12 for a square, by "
+                        "L/B for a rectangle)")
                 if result.immediate > 0 else ""),
         ))
     elif analysis.immediate_method == "schmertmann":
@@ -162,7 +158,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="S_e",
             result_value=f"{result.immediate * 1000:.2f}",
             result_unit="mm",
-            reference="Schmertmann et al. (1978); FHWA GEC-6, Section 8.3.2",
+            reference="FHWA NHI-06-089 Eq. 8-16; UFS 3-220-10 Eq. 5-7",
         ))
 
         # Schmertmann correction factors, as the analysis used them (GM-143)
@@ -178,7 +174,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 ),
                 result_name="C_1",
                 result_value=f"{C1:.3f}",
-                reference="Schmertmann et al. (1978), Eq. 2",
+                reference="FHWA NHI-06-089 Eq. 8-17; UFS 3-220-10 Eq. 5-8",
             ))
 
             C2 = terms["C2"]
@@ -192,7 +188,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 ) if C2 > 1.0 else "",
                 result_name="C_2",
                 result_value=f"{C2:.3f}",
-                reference="Schmertmann et al. (1978), Eq. 3",
+                reference="FHWA NHI-06-089 Eq. 8-18; UFS 3-220-10 Eq. 5-9",
             ))
             imm_items.append(_schmertmann_peak_step(analysis, terms))
 
@@ -227,7 +223,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="S_c",
             result_value=f"{result.consolidation * 1000:.2f}",
             result_unit="mm",
-            reference="Terzaghi (1925); FHWA GEC-6, Eqs. 5-20 and 5-22",
+            reference="FHWA GEC-6 Eqs. 5-20 and 5-22; UFS 3-220-10 Eqs. "
+                      "5-12 to 5-14",
         ))
 
         # Stress distribution note
@@ -297,11 +294,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="S_s",
             result_value=f"{result.secondary * 1000:.2f}",
             result_unit="mm",
-            reference="Mesri (1973)",
+            reference="FHWA NHI-06-088 Eq. 7-10; UFS 3-220-10 Eq. 5-18",
             notes="t_1 = time at end of primary consolidation, "
                   "t_2 = t_1 + t_secondary. "
-                  + ("t_1 estimated as t₉₅ from c_v with the whole "
-                     "consolidating zone treated as one "
+                  + ("t_1 = t₉₀ from c_v (NHI-06-088 Eq. 7-10) with the "
+                     "whole consolidating zone treated as one "
                      f"{analysis.drainage}-drained layer."
                      if analysis.cv is not None else
                      "t_1 = 1.0 yr ASSUMED (no c_v provided); S_s scales "
@@ -321,7 +318,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 ),
                 result_name="C_\u03b1\u03b5",
                 result_value=f"{C_alpha_eps:.5f}",
-                reference="Mesri (1973)",
+                reference="UFS 3-220-10 Eq. 5-18",
             ))
         elif sec:
             sec_items.append(TableData(
@@ -472,7 +469,7 @@ def get_figures(result, analysis) -> List[FigureData]:
                 plot_figure_5_16,
                 Tv=Tv50,
                 caption=(
-                    f"UFC Figure 5-16: Average degree of consolidation vs time "
+                    f"UFS 3-220-10 Fig. 5-16: Average degree of consolidation vs time "
                     f"factor. Tv = {Tv50:.3f} at U = 50% "
                     f"(cv = {analysis.cv:.4f} m\u00b2/yr, "
                     f"Hdr = {Hdr:.2f} m, t\u2085\u2080 = {t50:.1f} yr)."
@@ -556,28 +553,33 @@ def _schmertmann_peak_step(analysis, terms) -> CalcStep:
     """The peak strain influence factor as the analysis used it."""
     dq = analysis.q_net
     sig = terms["sigma_vp"]
-    diagram = ("plane strain (strip): peak at z = B, to 4B"
-               if terms["strip"] else
-               "axisymmetric: peak at z = B/2, to 2B")
+    share = terms.get("plane_strain_share", 1.0 if terms["strip"] else 0.0)
+    if share >= 1:
+        diagram = "plane strain (L/B \u2265 10): peak at z = B, to 4B"
+    elif share <= 0:
+        diagram = "axisymmetric (L/B = 1): peak at z = B/2, to 2B"
+    else:
+        diagram = (f"L/B = {terms['L_over_B']:.3g}, between the axisymmetric "
+                   "and plane-strain diagrams by linear interpolation: "
+                   f"I_z = {terms['Iz_0']:.3f} at the base, peak at z = "
+                   f"{terms['z_peak']:.2f} m, to {terms['z_max']:.2f} m")
     return CalcStep(
         title="Peak Strain Influence Factor I_zp",
-        equation="I_zp = 0.5 + 0.1 \u00d7 \u221a(q_net / \u03c3'_vp) \u2264 1.0",
-        substitution=(f"I_zp = 0.5 + 0.1 \u00d7 \u221a({dq:.1f} / {sig:.1f})"
-                      if sig > 0 else "\u03c3'_vp = 0; I_zp = 0.5"),
+        equation="I_zp = 0.5 + 0.1 \u00d7 \u221a(q_net / \u03c3'_vp)",
+        substitution=f"I_zp = 0.5 + 0.1 \u00d7 \u221a({dq:.1f} / {sig:.1f})",
         result_name="I_zp",
         result_value=f"{terms['Iz_peak']:.3f}",
-        reference="Schmertmann et al. (1978)",
-        notes=(f"{diagram}; \u03c3'_vp at z = {terms['z_peak']:.2f} m"
-               + ("" if analysis.gamma_soil is not None else
-                  " taken as q_0 (no unit weight given)")),
+        reference="FHWA NHI-06-089 Fig. 8-21; UFS 3-220-10 Fig. 5-7",
+        notes=f"{diagram}; \u03c3'_vp at z = {terms['z_peak']:.2f} m",
     )
 
 
 def _immediate_Iw(analysis, result=None) -> float:
     """The elastic influence factor actually used for immediate settlement:
     the result's own ``Iw`` (GM-143); without one, the explicit
-    ``Iw_immediate`` when supplied, else the Schleicher shape/aspect-ratio
-    value from ``elastic_influence_factor`` (~1.12 for a square).
+    ``Iw_immediate`` when supplied, else GEC-6 Table 5-12's value at the
+    centre of a flexible footing from ``elastic_influence_factor`` (1.12
+    for a square).
     """
     if result is not None and getattr(result, "Iw", None) is not None:
         return result.Iw
@@ -626,19 +628,20 @@ def _stress_method_equation(method: str, strip: bool = False) -> str:
                     "\u03b1 = 2 atan(B / 2z) (Boussinesq, below the centre "
                     "of a strip)")
         if m == "westergaard":
-            return ("\u0394\u03c3_z = (2 q_net / \u03c0) atan(B / 2z) "
-                    "(Westergaard, below the centre of a strip)")
+            return ("\u0394\u03c3_z = 4 q_net I(B / 2z, \u221e), I from "
+                    "UFS 3-220-10 Fig. 4-10's curve m = \u221e (Westergaard, "
+                    "below the centre of a strip)")
     if m == "2:1" or m == "2to1":
         return "\u0394\u03c3_z = q_net \u00d7 B \u00d7 L / [(B + z)(L + z)]"
     elif m == "boussinesq":
         return (
-            "\u0394\u03c3_z = Boussinesq elastic solution "
-            "(Newmark integration under center of rectangle)"
+            "\u0394\u03c3_z = Boussinesq elastic solution, four corner "
+            "rectangles of B/2 \u00d7 L/2 (UFS 3-220-10 Table 4-2)"
         )
     elif m == "westergaard":
         return (
-            "\u0394\u03c3_z = Westergaard layered solution "
-            "(alternating rigid/elastic layers)"
+            "\u0394\u03c3_z = 4 q_net I(B / 2z, L / 2z), I from UFS "
+            "3-220-10 Fig. 4-10 (Westergaard, \u03bd = 0)"
         )
     return f"\u0394\u03c3_z computed using '{method}' method"
 
@@ -647,11 +650,11 @@ def _stress_method_reference(method: str) -> str:
     """Return the reference for a stress distribution method."""
     m = method.lower().replace(" ", "")
     if m == "2:1" or m == "2to1":
-        return "FHWA Soils & Foundations Reference Manual, Vol II, Section 8.3"
+        return "FHWA GEC-6 Eq. 5-17 and Fig. 5-12"
     elif m == "boussinesq":
-        return "Boussinesq (1885); Newmark (1935)"
+        return "UFS 3-220-10 Table 4-2"
     elif m == "westergaard":
-        return "Westergaard (1938)"
+        return "UFS 3-220-10 Fig. 4-10"
     return ""
 
 
@@ -700,7 +703,8 @@ def _consolidation_layer_step(layer, used) -> CalcStep:
         result_name="S_c",
         result_value=f"{used['Sc'] * 1000:.2f}",
         result_unit="mm",
-        reference="FHWA GEC-6, Eqs. 5-20 and 5-22",
+        reference="FHWA GEC-6 Eqs. 5-20 and 5-22; UFS 3-220-10 Eqs. 5-12 "
+                  "to 5-14",
     )
 
 

@@ -1150,16 +1150,20 @@ class TestSchmertmannGammaSoil:
                        {"depth_top": 6.10, "depth_bottom": 9.76, "Es": 9998}]}
 
     def test_gamma_soil_lowers_izp_and_settlement(self):
-        """gamma_soil (sigma_vp at the PEAK depth) is now exposed on the flat
-        schmertmann_settlement adapter; without it sigma_vp falls back to the
-        base overburden, overstating Izp (Das 5.18: 0.744 vs 0.651)."""
+        """gamma_soil (sigma_vp at the peak depth) is on the flat
+        schmertmann_settlement adapter; a heavier soil raises sigma_vp and
+        lowers Izp. GM-285: it is required (without it sigma_vp fell back
+        to the base overburden, printed nowhere)."""
         from funhouse_agent.adapters.settlement import METHOD_REGISTRY as R
-        no_g = R["schmertmann_settlement"](dict(self.BASE))
-        with_g = R["schmertmann_settlement"](dict(self.BASE, gamma_soil=18.1))
-        assert (with_g["schmertmann_settlement_mm"]
-                < no_g["schmertmann_settlement_mm"])
+        light = R["schmertmann_settlement"](dict(self.BASE, gamma_soil=15.0))
+        heavy = R["schmertmann_settlement"](dict(self.BASE, gamma_soil=18.1))
+        assert (heavy["schmertmann_settlement_mm"]
+                < light["schmertmann_settlement_mm"])
+        with pytest.raises(ValueError, match="gamma_soil"):
+            R["schmertmann_settlement"](dict(self.BASE))
 
     def test_gamma_soil_documented(self):
         from funhouse_agent.adapters.settlement import METHOD_INFO
         p = METHOD_INFO["schmertmann_settlement"]["parameters"]
-        assert "gamma_soil" in p and "PEAK" in p["gamma_soil"]["description"]
+        assert "gamma_soil" in p and "peak" in p["gamma_soil"]["description"]
+        assert p["gamma_soil"]["required"] is True

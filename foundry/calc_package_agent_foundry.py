@@ -250,6 +250,7 @@ def _generate_settlement_package(params: dict) -> dict:
         nu=params.get("nu", 0.3),
         schmertmann_layers=schm_layers,
         time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
+        gamma_soil=params.get("gamma_soil"),
         consolidation_layers=consol_layers,
         cv=params.get("cv"),
         Hdr=params.get("Hdr"),
@@ -886,6 +887,7 @@ METHOD_INFO = {
             "stress_method": "'2:1','boussinesq','westergaard', default '2:1'",
             "immediate_method": "'elastic' or 'schmertmann', default 'elastic'",
             "Es_immediate": "Elastic modulus for immediate method (kPa)",
+            "gamma_soil": "Effective unit weight below the base (kN/m3), required for 'schmertmann'",
             "consolidation_layers": (
                 "List of dicts: thickness, depth_to_center, e0, Cc, Cr, "
                 "sigma_v0, sigma_p, description"

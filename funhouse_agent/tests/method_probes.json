@@ -183,7 +183,7 @@
 "settlement|consolidation_settlement": {"params": {"delta_sigma": 50, "layers": [{"Cc": 0.3, "Cr": 0.05, "depth_to_center": 4.0, "e0": 0.9, "sigma_v0": 60.0, "thickness": 4.0}]}},
 "settlement|elastic_settlement": {"params": {"B": 2.0, "Es": 15000.0, "q": 100.0}},
 "settlement|hough_settlement": {"params": {"B": 2, "layers": [{"C": 50, "depth_to_mid": 1, "sigma_vo": 20, "thickness": 2}], "q_net": 150}},
-"settlement|schmertmann_settlement": {"params": {"B": 2.44, "layers": [{"Es": 6033, "depth_bottom": 1.83, "depth_top": 0}, {"Es": 11997, "depth_bottom": 6.1, "depth_top": 1.83}, {"Es": 9998, "depth_bottom": 9.76, "depth_top": 6.1}], "q_net": 164.0}},
+"settlement|schmertmann_settlement": {"params": {"B": 2.44, "gamma_soil": 18.0, "layers": [{"Es": 6033, "depth_bottom": 1.83, "depth_top": 0}, {"Es": 11997, "depth_bottom": 6.1, "depth_top": 1.83}, {"Es": 9998, "depth_bottom": 9.76, "depth_top": 6.1}], "q_net": 164.0}},
 "sheet_pile|anchored_wall": {"params": {"anchor_depth": 1.0, "excavation_depth": 5.0, "layers": [{"friction_angle": 32.0, "thickness": 12.0, "unit_weight": 18.0}]}},
 "sheet_pile|cantilever_wall": {"params": {"excavation_depth": 4, "layers": [{"gamma": 18, "phi": 32, "thickness": 12}]}},
 "sheet_pile|cantilever_wall#log_spiral": {"params": {"excavation_depth": 4, "layers": [{"gamma": 18, "phi": 30, "thickness": 12, "wall_friction_deg": 19.8}], "pressure_method": "log_spiral"}},

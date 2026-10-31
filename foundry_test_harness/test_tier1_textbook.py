@@ -223,6 +223,7 @@ class TestSettlement:
         r = H.call(settlement_agent, "schmertmann_settlement", {
             "q_net": 100.0,
             "B": 2.0,
+            "gamma_soil": 18.0,
             "layers": [
                 {"depth_top": 0.0, "depth_bottom": 1.0, "Es": 8000.0},
                 {"depth_top": 1.0, "depth_bottom": 2.0, "Es": 12000.0},

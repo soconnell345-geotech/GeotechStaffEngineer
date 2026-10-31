@@ -6,10 +6,19 @@ foundations, matching CSETT program output. Includes Schmertmann CPT method,
 1-D consolidation, and time-rate analysis.
 
 ## References
-- Schmertmann (1970, 1978) — CPT-based immediate settlement
-- Hough (1959) — granular (sand/gravel) C'-index settlement
-- Terzaghi 1-D consolidation theory
-- FHWA GEC-6 (Shallow Foundations)
+Every equation, chart and default is read from these as printed
+(`module_work/gm285/CHECK.md`, GM-285):
+- FHWA GEC-6 (FHWA-SA-02-054), Ch. 5 and Appendix B: 2:1 stress (Eq.
+  5-17), consolidation (Eqs. 5-20, 5-22), Hough (Eq. 5-24, Figs. 5-18,
+  5-19), elastic (Eq. 5-36, Table 5-12)
+- FHWA NHI-06-089 Sec. 8.5: Schmertmann (Eqs. 8-16 to 8-18, Fig. 8-21,
+  Table 8-11, Examples 8-2, 8-3)
+- FHWA NHI-06-088 Ch. 7: time rate (Eq. 7-8, Table 7-4), secondary
+  compression (Eq. 7-10)
+- UFS 3-220-10 (2026) Chs. 4 and 5: Boussinesq (Table 4-2), Westergaard
+  (Fig. 4-10), consolidation (Eqs. 5-12 to 5-14), time rate (Fig. 5-16),
+  secondary (Eq. 5-18)
+- UFC 3-220-20 sends settlement to UFS 3-220-10 Ch. 5
 
 ## Files
 - `immediate.py` — elastic_settlement(), schmertmann_settlement()
@@ -66,8 +75,9 @@ analyze_consolidation(layers, delta_sigma, ...) -> ConsolidationResult
   states the value and the table's other points in `choices`. Note the
   table prints a rigid square (0.99) above the flexible square's average
   (0.95), where the rigid circle (0.79) is below the flexible circle's
-  (0.85). `SettlementAnalysis` keeps Schleicher's closed form for the
-  centre of a flexible footing (1.122 for a square).
+  (0.85). `SettlementAnalysis` without `Iw_immediate` takes the table's
+  centre of a flexible footing (GM-285: it kept Schleicher's closed form,
+  1.122 for a square, which no reference in the library prints).
 - **The rigid square, 0.99 (GM-214, 2026-10-19).** Kept as printed. The
   library was searched for another printed value: FHWA NHI-06-089 Table
   8-13 (p. 8-59) prints the same Winterkorn & Fang table with 0.99; UFC
@@ -77,6 +87,34 @@ analyze_consolidation(layers, delta_sigma, ...) -> ConsolidationResult
   in the library. So there is no cited alternative to offer; a square's
   `choices` basis carries the note (`immediate.GEC6_RIGID_SQUARE_NOTE`)
   and says to give Iw for another value. No number changes.
+
+## Checked against the print (GM-285, 2026-10-31)
+
+Per item page, printed form, module form and verdict in
+`module_work/gm285/CHECK.md`. What changed:
+- **Westergaard.** The closed form used was about 28 % low (I = 0.083
+  where UFS Fig. 4-10 reads 0.116 at m = n = 1). The influence factor is
+  now read off Fig. 4-10 (`stress_distribution.westergaard_influence_factor`,
+  the chart's curves digitised, bilinear in log m and log n).
+- **Boussinesq** below a corner is written as UFS Table 4-2 prints it (the
+  same numbers).
+- **Schmertmann.** `gamma_soil` is required (sigma'_vp at the peak was
+  taken as q0 without it); the diagram for 1 < L/B < 10 is interpolated
+  linearly between the axisymmetric and plane-strain ones (NHI-06-089
+  Example 8-2, Table 8-11; it was one or the other); no cap on Izp (it
+  was held to 1.0; none is printed).
+- **Elastic Iw** in `SettlementAnalysis`: GEC-6 Table 5-12 (above).
+- **Consolidation.** A layer within 5 % of sigma'_p is no longer taken as
+  normally consolidated (the recompression part runs into the NC form as
+  sigma'_p falls to sigma'_v0); sigma'_p below sigma'_v0 reads as
+  underconsolidated (UFS Sec. 5-2.3) and the analysis warns (the
+  arithmetic is as before).
+- **Time rate.** U(T) switches form at T = 0.2 as UFS Fig. 5-16 prints
+  (it switched at U = 60 %, T = 0.283, where the two forms differ by
+  0.0035 in U; at T = 0.2 by 0.0005).
+- **Secondary.** t1 = t90 from cv (NHI-06-088 Eq. 7-10; it was t95);
+  `secondary_settlement` has no default e0 (it was 1.0). t2 = t1 +
+  `t_secondary`: the print's t is counted from loading.
 
 ## The values the analysis used (GM-143)
 

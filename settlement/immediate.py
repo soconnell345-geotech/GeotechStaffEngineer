@@ -5,16 +5,18 @@ Computes elastic settlement for foundations on granular soils or
 elastic settlements in clay.
 
 Methods:
-1. Elastic method (Timoshenko & Goodier) — simple closed-form
+1. Elastic method — Se = q B (1 - nu^2) Iw / Es on an elastic half space
+   (the form of GEC-6 Eq. 5-36), Iw from GEC-6 Table 5-12
 2. Schmertmann (1970, 1978) — strain influence factor method
 
-All units are SI: kPa, meters.
+All units are SI: kPa, meters (any consistent set works).
 
 References:
-    Schmertmann, J.H. (1970) — Static cone to compute static settlement
+    FHWA GEC-6 (FHWA-SA-02-054), Eq. 5-36 and Table 5-12 (pp. 96, 97)
+    FHWA NHI-06-089, Sec. 8.5.1.1, Eqs. 8-16 to 8-18 and Fig. 8-21
+        (pp. 8-45 to 8-47), Example 8-2 (pp. 8-48 to 8-52)
+    UFS 3-220-10 (2026), Eqs. 5-7 to 5-9 and Fig. 5-7 (pp. 232, 233)
     Schmertmann, J.H. et al. (1978) — Improved strain influence factor diagrams
-    FHWA Soils & Foundations Reference Manual, Vol II, Ch 8
-    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.4
 """
 
 import math
@@ -77,8 +79,8 @@ def gec6_influence_factor(shape: str = "square", rigidity: str = "flexible",
 
     ``shape``: "square", "circular" or "rectangular" (needs ``B`` and
     ``L``; between the printed length/width rows the factor is
-    interpolated in log(L/B), as Schleicher's closed form for the centre
-    runs). ``rigidity``: "flexible" or "rigid" (the table prints a rigid
+    interpolated in log(L/B), a module reading: the rows from 10 up are
+    spaced by factors of ten). ``rigidity``: "flexible" or "rigid" (the table prints a rigid
     circle and square only, the same at every point). ``point``: one of
     :data:`GEC6_TABLE_5_12_POINTS`, or for a circle also "edge" (the
     table prints 0.64 under the corner and both middle-of-side columns).
@@ -187,8 +189,12 @@ def elastic_settlement(q: float, B: float, Es: float,
 
     References
     ----------
-    Timoshenko & Goodier, "Theory of Elasticity".
-    FHWA GEC-6 Eq. 5-36 (p. 96) and Table 5-12 (p. 97).
+    FHWA GEC-6 Eq. 5-36 (p. 96) and Table 5-12 (p. 97), the same as
+    FHWA NHI-06-089 Eq. 8-19 and Table 8-13 (pp. 8-58, 8-59): both print
+    the form for a footing on rock, with the rock mass modulus; here Es is
+    the soil's. UFS 3-220-10 Eq. 5-5 (p. 229) prints another elastic form
+    for soil, s = q0 B mu0 mu1 / Es with its Fig. 5-6, which the module
+    does not offer.
     """
     if Es <= 0:
         raise ValueError(f"Elastic modulus must be positive, got {Es}")
@@ -199,39 +205,30 @@ def elastic_settlement(q: float, B: float, Es: float,
 
 def elastic_influence_factor(shape: str = "square",
                              L: float = 1.0, B: float = 1.0) -> float:
-    """Influence factor Iw for the elastic settlement of a flexible footing.
-
-    Settlement at the CENTER of a uniformly loaded flexible rectangle on an
-    elastic half-space (Schleicher, 1926):
-
-        Iw = (2/pi) * [ m*ln((1+sqrt(1+m^2))/m) + ln(m+sqrt(1+m^2)) ],  m = L/B
-
-    This gives Iw = 1.122 for a square (GEC-6 Table 5-12 prints 1.12) and
-    grows with L/B (2.54 at L/B = 10; printed 2.53). A circular footing
-    uses Iw = 1.0. For a rigid footing, or another point, see
+    """Influence factor Iw for the elastic settlement at the centre of a
+    flexible footing: GEC-6 Table 5-12's C_d (p. 97), 1.00 for a circle,
+    1.12 for a square, and a rectangle by L/B between the printed rows,
+    interpolated in log(L/B) (:func:`gec6_influence_factor`). GM-285: it
+    was Schleicher's closed form, which no reference in the library prints
+    (1.122 for a square, 1.53 at L/B = 2 against the printed 1.12 and
+    1.52). For a rigid footing, or another point, see
     :func:`gec6_influence_factor`.
 
     Parameters
     ----------
     shape : str
-        "circular"/"circle" -> 1.0; otherwise rectangular (square when L == B).
+        "circular"/"circle"; otherwise a rectangle (square when L == B).
     L, B : float
-        Footing length and width (m); the ratio L/B (>= 1) drives the factor.
-
-    References
-    ----------
-    Schleicher (1926); Timoshenko & Goodier, "Theory of Elasticity";
-    Bowles, "Foundation Analysis and Design," 5th ed.
+        Footing length and width (m); the ratio of the longer to the
+        shorter drives the factor.
     """
     if (shape or "").lower() in ("circular", "circle"):
-        return 1.0
+        return gec6_influence_factor("circular")[0]
     if B <= 0:
         raise ValueError(f"Footing width B must be positive, got {B}")
-    m = max(L / B, 1.0)
-    return (2.0 / math.pi) * (
-        m * math.log((1.0 + math.sqrt(1.0 + m * m)) / m)
-        + math.log(m + math.sqrt(1.0 + m * m))
-    )
+    if L is None or abs(L - B) <= 1e-9 * B:
+        return gec6_influence_factor("square")[0]
+    return gec6_influence_factor("rectangular", B=B, L=L)[0]
 
 
 @dataclass
@@ -245,8 +242,11 @@ class SchmertmannLayer:
     depth_bottom : float
         Depth from footing base to bottom of sublayer (m).
     Es : float
-        Elastic modulus of sublayer (kPa). Can be estimated from CPT:
-        Es = 2.5*qc (square/circular) or Es = 3.5*qc (strip).
+        Elastic modulus of sublayer (kPa). From CPT, Es = 2.5 qc for
+        axisymmetric (L = B) and 3.5 qc for plane strain (L/B > 10)
+        conditions (UFS 3-220-10 Sec. 5-4.1.2, Fig. 5-7). NHI-06-089 uses
+        X E, X = 1.25 (L/B = 1) to 1.75 (L/B >= 10) for a modulus
+        correlated with N or qc (Eq. 8-16): give the product here.
     """
     depth_top: float
     depth_bottom: float
@@ -296,15 +296,20 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
         "strip" (peak Iz at B, influence to 4B). Default "square".
     time_years : float, optional
         Time since load application (years) for creep correction C2.
-        Default 0 (no creep).
+        Default 0: C2 = 1, as at t = 0.1 year, immediately after
+        construction (NHI-06-089 Sec. 8.5.1.2).
     L : float, optional
-        Footing length (m). If provided and L/B > 10, treat as strip.
-    gamma_soil : float, optional
-        Effective soil unit weight (kN/m^3) used to evaluate the effective
-        overburden at the peak-influence depth for the peak strain-influence
-        factor Izp = 0.5 + 0.1*sqrt(delta_q/sigma'_vp). If None, sigma'_vp
-        falls back to q0 (the overburden at the footing base) -- an
-        approximation.
+        Footing length (m); not given, L = B. The diagram is the
+        axisymmetric one at L/B = 1 and the plane-strain one at
+        L/B >= 10, linearly interpolated between (NHI-06-089 Sec.
+        8.5.1.1, Fig. 8-21a); B is the lesser side.
+    gamma_soil : float
+        Effective soil unit weight (kN/m^3) below the base, for the
+        vertical effective stress at the depth of the peak,
+        sigma'_vp = q0 + gamma_soil z_peak, in
+        Izp = 0.5 + 0.1 sqrt(delta_q / sigma'_vp) (NHI-06-089 Fig. 8-21b;
+        UFS Fig. 5-7). Required (GM-285: without it sigma'_vp was taken as
+        q0, printed nowhere, and Izp as 0.5 when q0 = 0).
 
     Returns
     -------
@@ -313,9 +318,12 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
 
     References
     ----------
+    FHWA NHI-06-089 Eqs. 8-16 to 8-18 and Fig. 8-21 (pp. 8-45 to 8-47),
+    worked in its Example 8-2; UFS 3-220-10 Eqs. 5-7 to 5-9 and Fig. 5-7
+    (pp. 232, 233). (GEC-6 gives no Schmertmann method; it refers to
+    Munfakh 2000.)
     Schmertmann, J.H. et al. (1978), "Improved Strain Influence Factor
     Diagrams", JGED, ASCE, Vol. 104, No. GT8.
-    FHWA GEC-6, Section 8.3.2.
     """
     if q_net <= 0:
         return 0.0
@@ -331,23 +339,41 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
                       gamma_soil: Optional[float] = None) -> dict:
     """The terms of :func:`schmertmann_settlement` as it works them out
     (it returns this ``Se``): ``strip`` (the plane-strain diagram),
+    ``L_over_B`` (infinite for a strip), ``plane_strain_share`` (0 for the
+    axisymmetric diagram, 1 for the plane-strain one, linear between),
     ``C1``, ``C2``, ``C3``, ``z_peak``, ``z_max``, ``Iz_0``,
     ``sigma_vp`` (kPa), ``Iz_peak``, ``sum_Iz_dz_over_Es`` (m/kPa) and
     ``Se`` (m). Same parameters; ``q_net`` must be positive."""
+    if gamma_soil is None:
+        raise ValueError(
+            "Schmertmann's peak strain influence factor Izp = 0.5 + 0.1 "
+            "sqrt(delta_q / sigma'_vp) needs the vertical effective stress "
+            "at the depth of the peak (NHI-06-089 Fig. 8-21b; UFS 3-220-10 "
+            "Fig. 5-7): give gamma_soil, the effective unit weight below "
+            "the footing base (kN/m3).")
 
-    # Determine shape behavior
-    is_strip = footing_shape.lower() == "strip"
-    if L is not None and L / B > 10:
-        is_strip = True
+    # The diagram (NHI-06-089 Fig. 8-21a): axisymmetric at L/B = 1,
+    # plane strain at L/B >= 10, linearly interpolated between; B is the
+    # least lateral dimension.
+    if footing_shape.lower() == "strip" or (L is not None and math.isinf(L)):
+        lb = math.inf
+    else:
+        Lx = B if L is None else L
+        lb = max(Lx, B) / min(Lx, B)
+        B = min(Lx, B)
+    share = 1.0 if lb >= 10.0 else (lb - 1.0) / 9.0
+    is_strip = share >= 1.0
 
-    # C1: depth correction (embedment effect)
+    # C1: depth correction (embedment effect), NHI-06-089 Eq. 8-17,
+    # UFS Eq. 5-8
     if q_net > 0:
         C1 = 1.0 - 0.5 * (q0 / q_net)
         C1 = max(C1, 0.5)  # minimum 0.5
     else:
         C1 = 1.0
 
-    # C2: creep (secondary) correction
+    # C2: creep correction, NHI-06-089 Eq. 8-18, UFS Eq. 5-9; t = 0.1 year
+    # (C2 = 1) immediately after construction (NHI-06-089 Sec. 8.5.1.2)
     if time_years > 0.1:
         C2 = 1.0 + 0.2 * math.log10(time_years / 0.1)
     else:
@@ -360,26 +386,24 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
     # has been removed -- SET-2.)
     C3 = 1.0
 
-    # Strain-influence diagram geometry (Schmertmann 1978): axisymmetric
-    # (square/circular) peaks at z = B/2 and dies out at 2B; plane-strain
-    # (strip) peaks at z = B and dies out at 4B. Iz at the footing base is 0.1
-    # (axisymmetric) or 0.2 (plane strain).
-    if is_strip:
-        z_peak = B
-        z_max = 4.0 * B
-        Iz_0 = 0.2
-    else:
-        z_peak = 0.5 * B
-        z_max = 2.0 * B
-        Iz_0 = 0.1
+    # Strain-influence diagram geometry (NHI-06-089 Fig. 8-21a, UFS
+    # Fig. 5-7): axisymmetric peaks at z = B/2 and dies out at 2B;
+    # plane strain peaks at z = B and dies out at 4B. Iz at the footing
+    # base is 0.1 (axisymmetric) or 0.2 (plane strain).
+    z_peak = (0.5 + 0.5 * share) * B
+    z_max = (2.0 + 2.0 * share) * B
+    Iz_0 = 0.1 + 0.1 * share
 
     # Peak strain influence factor Izp = 0.5 + 0.1*sqrt(delta_q / sigma'_vp),
     # where sigma'_vp is the effective overburden at the PEAK-influence depth
-    # (z_peak below the footing base) -- not at the base (SET-1). Use
-    # q0 + gamma*z_peak when the unit weight is supplied; otherwise q0.
-    sigma_vp = q0 + gamma_soil * z_peak if gamma_soil is not None else q0
-    Iz_peak = 0.5 + 0.1 * math.sqrt(q_net / sigma_vp) if sigma_vp > 0 else 0.5
-    Iz_peak = min(Iz_peak, 1.0)
+    # (z_peak below the footing base) -- not at the base (SET-1). No cap:
+    # the print gives none (GM-285; it was held to 1.0).
+    sigma_vp = q0 + gamma_soil * z_peak
+    if sigma_vp <= 0:
+        raise ValueError(
+            "the vertical effective stress at the depth of the peak, "
+            f"q0 + gamma_soil z_peak = {sigma_vp:g}, must be positive")
+    Iz_peak = 0.5 + 0.1 * math.sqrt(q_net / sigma_vp)
 
     def strain_influence(z: float) -> float:
         """Triangular strain influence factor Iz at depth z below footing."""
@@ -411,7 +435,8 @@ def schmertmann_terms(q_net: float, q0: float, B: float,
             total += strain_influence(z_mid) / layer.Es * (zc - za)
 
     Se = C1 * C2 * C3 * q_net * total
-    return {"strip": is_strip, "C1": C1, "C2": C2, "C3": C3,
+    return {"strip": is_strip, "L_over_B": lb, "plane_strain_share": share,
+            "C1": C1, "C2": C2, "C3": C3,
             "z_peak": z_peak, "z_max": z_max, "Iz_0": Iz_0,
             "sigma_vp": sigma_vp, "Iz_peak": Iz_peak,
             "sum_Iz_dz_over_Es": total, "Se": Se}

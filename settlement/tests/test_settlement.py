@@ -19,7 +19,8 @@ from settlement.stress_distribution import (
     approximate_2to1, boussinesq_center_rectangular, stress_at_depth,
 )
 from settlement.immediate import (
-    elastic_settlement, schmertmann_settlement, SchmertmannLayer,
+    elastic_settlement, schmertmann_settlement, schmertmann_terms,
+    SchmertmannLayer,
 )
 from settlement.consolidation import (
     ConsolidationLayer, consolidation_settlement_layer,
@@ -136,7 +137,8 @@ class TestSchmertmannSettlement:
             SchmertmannLayer(depth_top=2.0, depth_bottom=3.0, Es=10000),
             SchmertmannLayer(depth_top=3.0, depth_bottom=4.0, Es=10000),
         ]
-        Se = schmertmann_settlement(100, 20, 2.0, layers, footing_shape="square")
+        Se = schmertmann_settlement(100, 20, 2.0, layers, footing_shape="square",
+                                    gamma_soil=18.0)
         # Should give a reasonable positive settlement
         assert Se > 0
         # Typical range: 5-30 mm for this loading
@@ -145,8 +147,9 @@ class TestSchmertmannSettlement:
     def test_schmertmann_C1_correction(self):
         """C1 increases with depth of embedment (lower q0/q_net)."""
         layers = [SchmertmannLayer(0, 4, 10000)]
-        Se_shallow = schmertmann_settlement(100, 10, 2.0, layers)
-        Se_deep = schmertmann_settlement(100, 80, 2.0, layers)
+        Se_shallow = schmertmann_settlement(100, 10, 2.0, layers,
+                                            gamma_soil=18.0)
+        Se_deep = schmertmann_settlement(100, 80, 2.0, layers, gamma_soil=18.0)
         # Higher q0/q_net → higher C1 correction → less settlement
         assert Se_deep < Se_shallow
 
@@ -159,8 +162,10 @@ class TestSchmertmannSettlement:
     def test_schmertmann_creep(self):
         """Settlement with creep (C2) should exceed no-creep."""
         layers = [SchmertmannLayer(0, 4, 10000)]
-        Se_0 = schmertmann_settlement(100, 20, 2.0, layers, time_years=0)
-        Se_10 = schmertmann_settlement(100, 20, 2.0, layers, time_years=10)
+        Se_0 = schmertmann_settlement(100, 20, 2.0, layers, time_years=0,
+                                      gamma_soil=18.0)
+        Se_10 = schmertmann_settlement(100, 20, 2.0, layers, time_years=10,
+                                       gamma_soil=18.0)
         assert Se_10 > Se_0
 
     def test_schmertmann_layering_invariant(self):
@@ -172,17 +177,19 @@ class TestSchmertmannSettlement:
         fine = [SchmertmannLayer(0, 1.0, 10000),             # split at z_peak=1
                 SchmertmannLayer(1.0, 2.5, 10000),
                 SchmertmannLayer(2.5, 4.0, 10000)]
-        Se_c = schmertmann_settlement(100, 20, 2.0, coarse)
-        Se_f = schmertmann_settlement(100, 20, 2.0, fine)
+        Se_c = schmertmann_settlement(100, 20, 2.0, coarse, gamma_soil=18.0)
+        Se_f = schmertmann_settlement(100, 20, 2.0, fine, gamma_soil=18.0)
         assert Se_c == pytest.approx(Se_f, rel=1e-12)
         # Strip diagram too (peak at B, tail to 4B).
         coarse_s = [SchmertmannLayer(0, 8.0, 10000)]
         fine_s = [SchmertmannLayer(0, 2.0, 10000),
                   SchmertmannLayer(2.0, 8.0, 10000)]
         assert schmertmann_settlement(100, 20, 2.0, coarse_s,
-                                      footing_shape="strip") == pytest.approx(
+                                      footing_shape="strip",
+                                      gamma_soil=18.0) == pytest.approx(
             schmertmann_settlement(100, 20, 2.0, fine_s,
-                                   footing_shape="strip"), rel=1e-12)
+                                   footing_shape="strip", gamma_soil=18.0),
+            rel=1e-12)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -325,11 +332,12 @@ class TestTimeRate:
         assert t == pytest.approx(expected, rel=1e-4)
 
     def test_time_for_90_percent(self):
-        """Time for 90% consolidation.
-        Tv = -0.9332*log10(0.1) - 0.0851 = 0.9332 - 0.0851 = 0.848."""
+        """Time for 90% consolidation, UFS 3-220-10 Fig. 5-16 for T > 0.2:
+        U = 1 - (8/pi^2) exp(-pi^2 T / 4), so T = 0.848 at U = 0.9."""
         t = time_for_consolidation(90.0, cv=1.0, Hdr=1.0)
-        Tv_90 = -0.9332 * math.log10(0.1) - 0.0851
-        assert t == pytest.approx(Tv_90, rel=0.01)
+        Tv_90 = -4 / math.pi**2 * math.log(math.pi**2 / 8 * 0.1)
+        assert t == pytest.approx(Tv_90, rel=1e-9)
+        assert t == pytest.approx(0.848, abs=5e-4)
 
     def test_settlement_at_time(self):
         """Settlement at time t = U(t) * S_ultimate."""
@@ -357,12 +365,17 @@ class TestSecondaryCompression:
 
     def test_secondary_zero_calpha(self):
         """Zero C_alpha → zero secondary settlement."""
-        assert secondary_settlement(0.0, 3.0, 1.0, 10.0) == 0.0
+        assert secondary_settlement(0.0, 3.0, 1.0, 10.0, e0=1.0) == 0.0
 
     def test_secondary_no_time_elapsed(self):
         """t2 <= t1 → zero secondary settlement."""
-        assert secondary_settlement(0.02, 3.0, 5.0, 5.0) == 0.0
-        assert secondary_settlement(0.02, 3.0, 5.0, 3.0) == 0.0
+        assert secondary_settlement(0.02, 3.0, 5.0, 5.0, e0=1.0) == 0.0
+        assert secondary_settlement(0.02, 3.0, 5.0, 3.0, e0=1.0) == 0.0
+
+    def test_secondary_needs_e0(self):
+        """GM-285: no default void ratio (it was 1.0, printed nowhere)."""
+        with pytest.raises(TypeError):
+            secondary_settlement(0.02, 3.0, 1.0, 10.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -438,7 +451,7 @@ class TestCombinedAnalysis:
         """G6 (live smoke SE-4): the time curve was computed and documented
         but to_dict dropped it, so t90 was hand-calculated. The live input:
         cv = 3 m2/yr, Hdr = 2 m -> t90 = Tv90 Hdr^2 / cv with Tv90 = 0.848
-        (Terzaghi; -0.9332 log10(0.1) - 0.0851 = 0.8481) = 1.131 yr;
+        (UFS 3-220-10 Fig. 5-16, 0.8481) = 1.131 yr;
         t50 = (pi/4)(0.5^2) x 4 / 3 = 0.2618 yr."""
         analysis = SettlementAnalysis(
             q_applied=100, B=3.0, L=3.0,
@@ -536,7 +549,7 @@ class TestSettlementQCFixes:
 
     def test_elastic_influence_factor_square(self):
         from settlement.immediate import elastic_influence_factor
-        # Schleicher flexible-center square = 1.12
+        # GEC-6 Table 5-12, the centre of a flexible square = 1.12
         assert elastic_influence_factor("square", 2.0, 2.0) == pytest.approx(
             1.122, abs=0.005)
 
@@ -567,23 +580,33 @@ class TestSettlementQCFixes:
             elastic_settlement(130, 2.0, 10000, nu=0.3, Iw=1.0), rel=1e-3)
 
     def test_schmertmann_Izp_uses_peak_overburden(self):
-        """SET-1: supplying gamma_soil raises sigma'_vp at the peak depth, which
-        lowers Izp and hence the settlement."""
+        """SET-1: sigma'_vp at the peak depth is q0 + gamma_soil z_peak; a
+        heavier soil raises it, which lowers Izp and hence the settlement.
+        GM-285: gamma_soil is required (sigma'_vp was taken as q0 without
+        it, printed nowhere)."""
         layers = [SchmertmannLayer(0, 4, 10000)]
-        Se_base = schmertmann_settlement(100, 20, 2.0, layers,
-                                         footing_shape="square")
-        Se_gamma = schmertmann_settlement(100, 20, 2.0, layers,
-                                          footing_shape="square", gamma_soil=18.0)
-        assert Se_gamma < Se_base
+        Se_light = schmertmann_settlement(100, 20, 2.0, layers,
+                                          footing_shape="square",
+                                          gamma_soil=15.0)
+        Se_heavy = schmertmann_settlement(100, 20, 2.0, layers,
+                                          footing_shape="square",
+                                          gamma_soil=20.0)
+        assert Se_heavy < Se_light
+        t = schmertmann_terms(100, 20, 2.0, layers, gamma_soil=20.0)
+        assert t["sigma_vp"] == pytest.approx(20 + 20.0 * 1.0)
+        with pytest.raises(ValueError, match="gamma_soil"):
+            schmertmann_settlement(100, 20, 2.0, layers)
 
     def test_schmertmann_strip_not_reduced_by_C3(self):
         """SET-2: with the spurious C3 removed, a strip (plane-strain diagram)
         settles more than a square, not less."""
         layers = [SchmertmannLayer(0, 8, 10000)]
         Se_strip = schmertmann_settlement(100, 20, 2.0, layers,
-                                          footing_shape="strip")
+                                          footing_shape="strip",
+                                          gamma_soil=18.0)
         Se_square = schmertmann_settlement(100, 20, 2.0, layers,
-                                           footing_shape="square")
+                                           footing_shape="square",
+                                           gamma_soil=18.0)
         assert Se_strip > Se_square
 
 
@@ -675,7 +698,7 @@ class TestSecondaryAssumptionsDocumented:
             if isinstance(it, CalcStep) and getattr(it, "notes", None))
         assert "ASSUMED" in notes and "1.0 yr" in notes
 
-    def test_calc_steps_note_flags_t95_when_cv_given(self):
+    def test_calc_steps_note_flags_t90_when_cv_given(self):
         from settlement.calc_steps import get_calc_steps
         from calc_package.data_model import CalcStep
         a = self._analysis(cv=5.0)
@@ -685,6 +708,7 @@ class TestSecondaryAssumptionsDocumented:
             it.notes for sec in sections for it in sec.items
             if isinstance(it, CalcStep) and getattr(it, "notes", None))
         assert "one" in notes and "drained layer" in notes
+        assert "t₉₀" in notes and "Eq. 7-10" in notes
 
 
 # ═══════════════════════════════════════════════════════════════════════
