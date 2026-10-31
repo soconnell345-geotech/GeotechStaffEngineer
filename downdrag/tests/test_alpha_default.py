@@ -106,9 +106,10 @@ class TestUFCDragExampleReadsItsOwnAlphas:
 class TestTheDefault:
 
     def test_a_soft_clay_keeps_alpha_1(self):
-        """F67's clay, su 25 kPa, is soft: unchanged at 543.7 kN."""
+        """F67's clay, su 25 kPa, is soft: unchanged by GM-255 at 543.7
+        kN, 545.1 kN since GM-283 (the sand on top at Table 7-9's beta)."""
         r = _f67().compute()
-        assert r.drag_force == pytest.approx(543.7, abs=0.1)
+        assert r.drag_force == pytest.approx(545.1, abs=0.1)
 
     def test_a_stiff_clay_reads_fig_6_14(self):
         """su 150 kPa over sand-free ground, Z/b 55: curve A."""

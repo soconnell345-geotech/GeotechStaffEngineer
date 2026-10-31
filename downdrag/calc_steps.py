@@ -375,14 +375,16 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_unit="kN",
     ))
 
+    # the toe's Nt and where it came from (GM-283)
+    toe = analysis.toe_reading()
     res_items.append(CalcStep(
         title="Toe Bearing Resistance",
         equation="R_t = N_t \u00d7 q_t \u00d7 A_tip  (cohesionless) or  N_c \u00d7 c_u \u00d7 A_tip  (cohesive)",
-        substitution="",
+        substitution=(f"N = {toe['Nt']:.1f}" if toe else ""),
         result_name="R_t",
         result_value=f"{r.toe_resistance:.1f}",
         result_unit="kN",
-        reference="Fellenius (1991); UFC 3-220-20",
+        reference=(toe["source"] if toe else "UFC 3-220-20 \u00a76-5.4.3"),
     ))
 
     res_items.append(CalcStep(
@@ -845,17 +847,19 @@ def _vertical(result, analysis):
     return y, label, at, note
 
 
-def _tip_label(ax, pile_length, y=None):
+def _tip_label(ax, pile_length, y=None, right=False):
     """The pile tip's label just under its line at ``y`` (written in data
     units under it, the line ran through it at the printed width;
-    GM-194); on an elevation axis it names the tip's elevation."""
+    GM-194); on an elevation axis it names the tip's elevation. At the
+    right with ``right``."""
     text = f'Pile tip (L = {pile_length:.1f} m)'
     if y is not None and abs(y - pile_length) > 1e-9:
         text = f'Pile tip El. {y:.2f} m (L = {pile_length:.1f} m)'
-    ax.annotate(text, (0.02, pile_length if y is None else y),
+    ax.annotate(text, (0.98 if right else 0.02,
+                       pile_length if y is None else y),
                 xycoords=('axes fraction', 'data'), xytext=(0, -2),
-                textcoords='offset points', va='top', fontsize=7,
-                color='#666')
+                textcoords='offset points', va='top',
+                ha='right' if right else 'left', fontsize=7, color='#666')
 
 
 def _plot_axial_load(result, analysis):
@@ -1046,10 +1050,9 @@ def _plot_settlement_profile(result, analysis):
                   edgecolor='#333'),
     )
 
-    # Pile tip
+    # Pile tip (its label after the axis limits, below)
     ax.axhline(y=float(y(L)), color='#666', linestyle=':',
                linewidth=1, alpha=0.6)
-    _tip_label(ax, L, float(y(L)))
 
     # Surface settlement annotation, over the surface left of its point
     if s_soil[0] > 0:
@@ -1070,6 +1073,12 @@ def _plot_settlement_profile(result, analysis):
     # depth down the axis, elevation up it; room over the surface for its
     # note (GM-194)
     ax.set_ylim(bottom=float(y(L * 1.05)), top=float(y(-L * 0.06)))
+    # a plane at the tip puts the settlement markers on the tip's line:
+    # the label goes right when they sit in its left third (GM-283)
+    x0, x1 = ax.get_xlim()
+    at_tip = abs(z_np - L) < 0.04 * L
+    left = [(v - x0) / (x1 - x0) < 0.4 for v in (s_at_np, s_pile)]
+    _tip_label(ax, L, float(y(L)), right=at_tip and any(left))
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=9)
     from geotech_common.plotting import key_under_axes

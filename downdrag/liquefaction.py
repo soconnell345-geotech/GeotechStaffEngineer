@@ -42,7 +42,8 @@ from typing import Any, List, Optional, Sequence
 import numpy as np
 
 from downdrag.analysis import (
-    ALPHA_CHOICE, SKIN_FRICTION_CHOICE, DowndragAnalysis,
+    ALPHA_CHOICE, BETA_CHOICE, NT_CHOICE, SKIN_FRICTION_CHOICE,
+    DowndragAnalysis,
 )
 from downdrag.results import DowndragResult
 
@@ -1371,16 +1372,16 @@ def post_liquefaction_downdrag(
         "states'; checked after liquefaction: structural (UFC 3-220-20 "
         "Eq 6-80), geotechnical without the drag, settlement",
         ["AASHTO (2017) Extreme Event I, load factor 1.0 on the drag"]))
-    # the skin friction method of the cohesive layers (GM-249) and their
-    # alpha (GM-255), always
-    out_choices += analysis.skin_friction_choices()
+    # the toe's Nt and beta in the sand (GM-283), the skin friction method
+    # of the cohesive layers (GM-249) and their alpha (GM-255), always
+    out_choices += analysis.toe_choices() + analysis.skin_friction_choices()
     # the static analysis's own (GM-228): the rule for the depth below the
     # toe and the difference between the two rules that is warned about,
     # where the rule moved a pile head settlement or drag force (the
     # result is held to its size; DESIGN.md "When the two rules disagree")
     if any(_rule_moved(r) for r in (before, after)):
         out_choices += [c for c in after.choices if not c["what"].startswith(
-            (SKIN_FRICTION_CHOICE, ALPHA_CHOICE))]
+            (NT_CHOICE, SKIN_FRICTION_CHOICE, BETA_CHOICE, ALPHA_CHOICE))]
 
     after.below_toe = dict(after.below_toe)
     if below_toe > 0:

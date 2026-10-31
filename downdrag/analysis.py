@@ -36,8 +36,8 @@ from typing import Optional, List
 import numpy as np
 
 from downdrag.soil import (
-    BETA_IN_CLAY_CITE, BETA_IN_CLAY_VALUES, DowndragSoilProfile,
-    DowndragSoilLayer,
+    BETA_IN_CLAY_CITE, BETA_IN_CLAY_VALUES, FELLENIUS_TABLE,
+    DowndragSoilProfile, DowndragSoilLayer, fellenius_table,
 )
 from downdrag.results import DowndragResult
 from downdrag.cgpr56 import ENDO_NEUTRAL_PLANE_RATIOS
@@ -155,6 +155,33 @@ _ALPHA_CHART_NAME = {
 ALPHA_CHOICE = "alpha in the cohesive soil"
 #: The sources of an alpha read in a transition zone (UFC pp. 416-417).
 _ZONE_SOURCES = (UFC_EQ_6_9, UFC_SAND_ZONE)
+
+#: Accepted values of ``DowndragAnalysis.Nt_method`` (GM-283): where a
+#: cohesionless toe's bearing capacity factor comes from when Nt is not
+#: given. Both are UFC 3-220-20 Table 6-17 (p. 421; qb = Nq sigma'zD, Eq
+#: 6-20): "fellenius", its Fellenius (2021) column by soil type, the same
+#: as FHWA GEC-12 Table 7-9's Nt (Eq. 7-20); "cheng", its equation after
+#: Cheng (2004) by phi' and Z/b, at most 200.
+NT_METHODS = ("fellenius", "cheng")
+#: The choices of the toe's Nt and of beta in the cohesionless soil.
+NT_CHOICE = "toe bearing capacity factor Nt"
+BETA_CHOICE = "beta in the cohesionless soil"
+#: UFC 3-220-20 Table 6-17's limit on the Cheng (2004) Nq, "unless
+#: supported by project-specific information" (p. 421).
+CHENG_NQ_LIMIT = 200.0
+#: N*c = 9 in clay, after Brinch Hansen (1957), "for typical deep
+#: foundations with Z/b of at least 2.5" (UFC 3-220-20 §6-5.4.3.3, p. 424;
+#: qb = N*c su, Eq 6-27, p. 423);
+#: UFC's drag example takes Rb = 9 su B^2 (App. B-5.4, p. 637).
+NC_CLAY = 9.0
+
+
+def cheng_Nq(z_over_b: float, phi_deg: float) -> float:
+    """UFC 3-220-20 Table 6-17's equation (p. 421, after Cheng 2004),
+    without its limit of 200: Nq ~= 1.2 (Z/b)^-0.437 exp[6.34 (Z/b)^0.0486
+    tan phi']."""
+    return 1.2 * z_over_b ** -0.437 * math.exp(
+        6.34 * z_over_b ** 0.0486 * math.tan(math.radians(phi_deg)))
 
 
 def _span_at(spans: list, z: float) -> Optional[dict]:
@@ -290,7 +317,24 @@ class DowndragAnalysis:
     gw_drawdown : float
         Groundwater drawdown from original GWT (m). Default 0.
     Nt : float, optional
-        Toe bearing capacity factor. If None, estimated from tip layer phi.
+        Toe bearing capacity factor: the toe resistance is Nt x sigma'v x
+        area in cohesionless soil, Nt x cu x area in cohesive soil. If None,
+        the ultimate value: 9 in clay (UFC 3-220-20 p. 424), and in
+        cohesionless soil from the toe layer's phi' by ``Nt_method``.
+    Nt_method : str
+        Where a cohesionless toe's Nt comes from when ``Nt`` is not given
+        (GM-283), both UFC 3-220-20 Table 6-17 (p. 421; Eq 6-20):
+
+        - ``"fellenius"`` (default): its Fellenius (2021) column, the same
+          values as FHWA GEC-12 Table 7-9 (Eq. 7-20), by the toe layer's
+          ``soil_class`` (silt 20-40, sand 30-150, gravel 60-300), linear
+          in phi' across the class's phi' range and held at its ends;
+        - ``"cheng"``: its equation after Cheng (2004), Nq ~= 1.2
+          (Z/b)^-0.437 exp[6.34 (Z/b)^0.0486 tan phi'] with Z the pile
+          length and b ``pile_diameter``, at most 200 ("unless supported by
+          project-specific information"; give ``Nt`` for that).
+
+        The result's ``choices`` give the other route's value.
     n_sublayers : int
         Number of sublayers per soil layer for discretization. Default 10.
     neutral_plane_method : str
@@ -448,6 +492,7 @@ class DowndragAnalysis:
     alpha_chart: str = "ufc_fig_6_14"
     fig_7_17_curve: Optional[str] = None
     alpha_transition_zone: Optional[bool] = None
+    Nt_method: str = "fellenius"
 
     def __post_init__(self):
         if self.pile_length <= 0:
@@ -500,6 +545,11 @@ class DowndragAnalysis:
             raise ValueError(
                 f"skin_friction_stress must be 'initial' or 'final', got "
                 f"'{self.skin_friction_stress}'")
+        if self.Nt_method not in NT_METHODS:
+            raise ValueError(
+                f"Nt_method must be one of {list(NT_METHODS)} (UFC 3-220-20 "
+                f"Table 6-17: its Fellenius (2021) column, or its equation "
+                f"after Cheng (2004)), got '{self.Nt_method}'")
         try:
             tip_layer = self.soil.layer_at_depth(self.pile_length)
         except ValueError:
@@ -856,6 +906,13 @@ class DowndragAnalysis:
         # what an alpha read off its chart held or left to judgment (GM-255)
         result.warnings.extend(n for n in self.alpha_readings()["notes"]
                                if n not in result.warnings)
+        # a phi' held at the end of its Table 7-9 range, the Cheng Nt held
+        # at 200 (GM-283)
+        toe = self.toe_reading()
+        result.warnings.extend(
+            n for n in self.beta_readings()["notes"]
+            + ([toe["note"]] if toe and toe["note"] else [])
+            if n not in result.warnings)
         result.choices = self._choices(result)
         return result
 
@@ -1621,8 +1678,9 @@ class DowndragAnalysis:
             # it (GM-249); else the Alpha method, alpha as given or read off
             # the chart (GM-255)
             if layer.fs_method == "beta":
-                beta = layer.beta if layer.beta is not None else 0.3
-                fs[i] = beta * sigma_v[i]
+                # given, or from phi' by GEC-12 Table 7-9 (sand; a Beta-
+                # method clay must give it)
+                fs[i] = layer.beta * sigma_v[i]
                 continue
             span = _span_at(spans, z)
             if span is None:
@@ -1644,8 +1702,7 @@ class DowndragAnalysis:
         above = self.soil.layers[k]
         if above.fs_method == "beta":
             base = sum(layer.thickness for layer in self.soil.layers[:k + 1])
-            beta = above.beta if above.beta is not None else 0.3
-            return beta * float(np.interp(base, z_nodes, sigma_v))
+            return above.beta * float(np.interp(base, z_nodes, sigma_v))
         own = [s for s in spans if s["layer"] == k]
         return (own[-1]["alpha"] if own else 1.0) * above.cu
 
@@ -1934,27 +1991,61 @@ class DowndragAnalysis:
         float
             Toe resistance (kN).
         """
-        tip_area = self.pile_area
-
-        # Get tip layer
-        try:
-            tip_layer = self.soil.layer_at_depth(self.pile_length)
-        except ValueError:
+        reading = self.toe_reading()
+        if reading is None:
             return 0.0
-
-        if self.Nt is not None:
-            Nt = self.Nt
-        elif tip_layer.soil_type == "cohesive":
-            Nt = 9.0  # Nc for deep clay
-        elif tip_layer.phi > 0:
-            Nt = _Nt_from_phi(tip_layer.phi)
-        else:
-            Nt = 0.0
-
+        tip_layer = self.soil.layer_at_depth(self.pile_length)
         if tip_layer.soil_type == "cohesive":
-            return Nt * tip_layer.cu * tip_area
-        else:
-            return Nt * sigma_v_tip * tip_area
+            return reading["Nt"] * tip_layer.cu * self.pile_area
+        return reading["Nt"] * sigma_v_tip * self.pile_area
+
+    def toe_reading(self) -> Optional[dict]:
+        """Nt at the toe and where it came from (GM-283): ``Nt``, ``how``
+        ("given", "clay", "fellenius" or "cheng"), ``source`` (the
+        reference, with the soil type and phi' or Z/b read), ``other``
+        (the other Table 6-17 route's value, for a cohesionless toe whose
+        Nt is not given) and ``note`` (a phi' held at the end of its
+        range, or the Cheng value held at 200). None with no layer at the
+        toe."""
+        try:
+            tip = self.soil.layer_at_depth(self.pile_length)
+        except ValueError:
+            return None
+        if self.Nt is not None:
+            return {"Nt": float(self.Nt), "how": "given",
+                    "source": "Nt as given", "other": None, "note": None}
+        if tip.soil_type == "cohesive":
+            return {"Nt": NC_CLAY, "how": "clay",
+                    "source": ("N*c = 9 in clay: UFC 3-220-20 p. 424 "
+                               "(Brinch Hansen 1957), as App. B-5.4 takes "
+                               "it (p. 637)"),
+                    "other": None, "note": None}
+        soil = tip.table_soil
+        (p0, p1), _, _ = FELLENIUS_TABLE[soil]
+        _, nt_f, phi_used = fellenius_table(soil, tip.phi)
+        zb = self.pile_length / self.pile_diameter
+        nt_c_raw = cheng_Nq(zb, tip.phi)
+        nt_c = min(nt_c_raw, CHENG_NQ_LIMIT)
+        fell = (f"UFC 3-220-20 Table 6-17, p. 421, Fellenius (2021) column "
+                f"= GEC-12 Table 7-9; {soil}, phi' {phi_used:g} deg")
+        cheng = (f"UFC 3-220-20 Table 6-17, p. 421, Cheng (2004) equation; "
+                 f"phi' {tip.phi:g} deg, Z/b {zb:.1f}"
+                 + (f", held at 200 (the equation gives {nt_c_raw:.0f})"
+                    if nt_c_raw > CHENG_NQ_LIMIT else ""))
+        if self.Nt_method == "cheng":
+            note = (f"The toe's Nt by Cheng (2004) is {nt_c_raw:.0f} at phi' "
+                    f"{tip.phi:g} deg and Z/b {zb:.1f}; it was held at 200, "
+                    f"UFC 3-220-20 Table 6-17's limit 'unless supported by "
+                    f"project-specific information' (give Nt for more)."
+                    if nt_c_raw > CHENG_NQ_LIMIT else None)
+            return {"Nt": nt_c, "how": "cheng", "source": cheng,
+                    "other": (nt_f, fell), "note": note}
+        note = (f"The toe layer's phi' ({tip.phi:g} deg) is outside GEC-12 "
+                f"Table 7-9's {soil} range ({p0:g}-{p1:g} deg); its Nt was "
+                f"taken at {phi_used:g} deg, the range's end."
+                if phi_used != tip.phi else None)
+        return {"Nt": nt_f, "how": "fellenius", "source": fell,
+                "other": (nt_c, cheng), "note": note}
 
     def _compute_axial_load_distribution(self, z_nodes: np.ndarray,
                                           dz: float, fs: np.ndarray,
@@ -2583,14 +2674,125 @@ class DowndragAnalysis:
                    "default, 25 %, is a round figure). A check that passes "
                    "with one rule and fails with the other is always warned "
                    "about; the rule used is not changed."),
-        ] + self.skin_friction_choices()
+        ] + self.toe_choices() + self.skin_friction_choices()
+
+    def toe_choices(self) -> list:
+        """The toe's Nt (GM-283): as given, 9 in clay, or by ``Nt_method``
+        from UFC 3-220-20 Table 6-17 with the other route's value."""
+        from geotech_common.choices import choice, how_given
+        r = self.toe_reading()
+        if r is None:
+            return []
+        if r["how"] == "given":
+            return [choice(NT_CHOICE, f"Nt {r['Nt']:g}",
+                           how_given(self.Nt, None, name="Nt"),
+                           "As given, the toe resistance the run takes; "
+                           "neutral_plane_comparison gives 0 %, 50 % and "
+                           "100 % of it (UFC 3-220-20 §6-5.8.4.2; GEC-12 "
+                           "§7.3.6.1).",
+                           ["leave Nt out: the ultimate, 9 in clay, else "
+                            "UFC 3-220-20 Table 6-17 (Nt_method)"])]
+        if r["how"] == "clay":
+            return [choice(NT_CHOICE, f"Nt {r['Nt']:g} ({r['source']})",
+                           "default",
+                           "The ultimate toe resistance in clay, Nt x cu "
+                           "x the toe area.",
+                           ["Nt given: a mobilized value"])]
+        other_nt, other_src = r["other"]
+        other_how = "cheng" if r["how"] == "fellenius" else "fellenius"
+        basis = (
+            ("The module's default. " if r["how"] == "fellenius" else "")
+            + "The ultimate toe resistance, qb = Nq sigma'zD (UFC 3-220-20 "
+            "Eq 6-20; GEC-12 Eq. 7-20 with Table 7-9 for its beta method, "
+            f"p. 258), sigma'v {self.skin_friction_stress} "
+            "(skin_friction_stress); the drag procedures leave the method "
+            "to the engineer (UFC §6-7.4 step 2; GEC-12 §7.3.6.1 Step 2).")
+        return [choice(NT_CHOICE, f"Nt {r['Nt']:.1f} ({r['source']})",
+                       how_given(self.Nt_method, "fellenius",
+                                 name="Nt_method"),
+                       basis,
+                       [f"Nt {other_nt:.1f} ({other_src}): Nt_method "
+                        f"'{other_how}'",
+                        "Nt given: local experience (GEC-12 Step 5a) or a "
+                        "mobilized value"])]
+
+    def beta_readings(self) -> dict:
+        """beta in the cohesionless layers the shaft passes (GM-283):
+        ``spans`` (``top_m``, ``bottom_m``, ``beta``, ``given``, ``soil``,
+        ``phi``, ``phi_used``) and ``notes`` (a phi' outside its soil
+        type's range in GEC-12 Table 7-9, held at the range's end)."""
+        spans = []
+        top = 0.0
+        for layer in self.soil.layers:
+            bottom = top + layer.thickness
+            if layer.soil_type == "cohesionless" and top < self.pile_length:
+                table = layer.beta_from_table
+                span = {
+                    "top_m": top, "bottom_m": min(bottom, self.pile_length),
+                    "beta": layer.beta, "given": table is None,
+                    "soil": table[0] if table else None, "phi": layer.phi,
+                    "phi_used": table[1] if table else None}
+                last = spans[-1] if spans else None
+                if (last and abs(last["bottom_m"] - top) < 1e-9 and all(
+                        last[k] == span[k] for k in
+                        ("beta", "given", "soil", "phi", "phi_used"))):
+                    # contiguous layers alike read as one span
+                    last["bottom_m"] = span["bottom_m"]
+                else:
+                    spans.append(span)
+            top = bottom
+        notes = []
+        for s in spans:
+            if not s["given"] and s["phi_used"] != s["phi"]:
+                (p0, p1), _, _ = FELLENIUS_TABLE[s["soil"]]
+                notes.append(
+                    f"phi' = {s['phi']:g} deg at {s['top_m']:g}-"
+                    f"{s['bottom_m']:g} m is outside GEC-12 Table 7-9's "
+                    f"{s['soil']} range ({p0:g}-{p1:g} deg); its beta was "
+                    f"taken at {s['phi_used']:g} deg, the range's end "
+                    f"({s['beta']:.3f}).")
+        return {"spans": spans, "notes": notes}
+
+    def beta_choices(self) -> list:
+        """beta in the cohesionless soil (GM-283): one entry for the beta
+        the layers give and one for the beta from GEC-12 Table 7-9."""
+        from geotech_common.choices import choice, how_given
+        spans = self.beta_readings()["spans"]
+        out = []
+        given = [s for s in spans if s["given"]]
+        table = [s for s in spans if not s["given"]]
+        if given:
+            out.append(choice(
+                f"{BETA_CHOICE}, {_depths(given)}",
+                "beta " + "; ".join(f"{s['beta']:.3f} at {s['top_m']:g}-"
+                                    f"{s['bottom_m']:g} m" for s in given),
+                how_given(given[0]["beta"], None, within="layers"),
+                "As the layers give it.",
+                ["leave beta out: GEC-12 Table 7-9, the default"]))
+        if table:
+            text = "beta " + "; ".join(
+                f"{s['beta']:.3f} at {s['top_m']:g}-{s['bottom_m']:g} m "
+                f"({s['soil']}, phi' {s['phi_used']:g} deg)" for s in table)
+            out.append(choice(
+                f"{BETA_CHOICE}, {_depths(table)}", text, "default",
+                "The module's default: GEC-12 Table 7-9 (p. 256; Step 2b, "
+                "p. 257), the pairs UFC 3-220-20 Table 6-15 prints for "
+                "driven piles (p. 414), by soil_class (sand unless given), "
+                "linear in phi' and held at the range's ends. Higher beta "
+                "is conservative for drag, lower for resistance (UFC "
+                "§6-7.4 step 2, p. 476).",
+                ["beta given: local experience (GEC-12 Step 2a), or UFC "
+                 "3-220-20 Eq 6-6, K tan delta (Fig 6-13, Table 6-14)",
+                 "soil_class 'silt' or 'gravel'"]))
+        return out
 
     def skin_friction_choices(self) -> list:
         """The skin friction method of the cohesive layers (GM-249): one
         entry a method and how it was chosen (default or given), with the
-        depths, its coefficients, its basis and the other method. No entry
-        without cohesive soil (a cohesionless layer takes the Beta method
-        only)."""
+        depths, its coefficients, its basis and the other method; no such
+        entry without cohesive soil (a cohesionless layer takes the Beta
+        method only). Then beta in the cohesionless soil (GM-283) and
+        alpha in the Alpha-method clays (GM-255)."""
         from geotech_common.choices import choice, how_given
         groups = {}
         top = 0.0
@@ -2650,7 +2852,7 @@ class DowndragAnalysis:
             chosen = f"{name}, {coef_text}" if method == "beta" else name
             out.append(choice(f"{SKIN_FRICTION_CHOICE}, {where}",
                               chosen, how, basis, [other]))
-        return out + self.alpha_choices()
+        return out + self.beta_choices() + self.alpha_choices()
 
     def alpha_choices(self) -> list:
         """alpha in the Alpha-method clays (GM-255): one entry for the
@@ -2979,34 +3181,3 @@ def _consolidation_settlement(H: float, e0: float, Cc: float, Cr: float,
     C_ec = Cc / (1.0 + e0) if e0 > 0 else 0.0
     C_er = Cr / (1.0 + e0) if e0 > 0 else 0.0
     return _settlement_clay(H, C_ec, C_er, sigma_v0, sigma_p, delta_sigma)
-
-
-def _Nt_from_phi(phi_deg: float) -> float:
-    """Estimate toe bearing capacity factor Nt from friction angle.
-
-    Parameters
-    ----------
-    phi_deg : float
-        Friction angle (degrees).
-
-    Returns
-    -------
-    float
-        Bearing capacity factor Nt.
-
-    References
-    ----------
-    Fellenius (1991), FHWA GEC-12 Table 7-9.
-    """
-    if phi_deg <= 0:
-        return 3.0
-    elif phi_deg <= 20:
-        return 3.0 + (phi_deg / 20) * 7
-    elif phi_deg <= 28:
-        return 10 + (phi_deg - 20) * 2.5
-    elif phi_deg <= 33:
-        return 30 + (phi_deg - 28) * 8
-    elif phi_deg <= 38:
-        return 70 + (phi_deg - 33) * 16
-    else:
-        return 150 + (phi_deg - 38) * 20

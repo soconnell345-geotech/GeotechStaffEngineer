@@ -125,7 +125,8 @@ Drag-load assumptions the references state:
 
 | Assumption | Source | In the module |
 |---|---|---|
-| Unit negative friction = the nominal side resistance (alpha / beta); higher alpha, beta conservative for drag, lower for resistance | UFC §6-7.4 steps 2-3 (pp. 476-477); GEC-10 §10.6.2 (p. 10-48, unit drag f_DN by the side-resistance methods); GEC-12 §7.3.6.1 step 2 | Yes; alpha given per layer or read off the chart UFC prints (GM-255), beta given or from phi |
+| Unit negative friction = the nominal side resistance (alpha / beta); higher alpha, beta conservative for drag, lower for resistance | UFC §6-7.4 steps 2-3 (pp. 476-477); GEC-10 §10.6.2 (p. 10-48, unit drag f_DN by the side-resistance methods); GEC-12 §7.3.6.1 step 2 | Yes; alpha given per layer or read off the chart UFC prints (GM-255), beta given or from phi' by GEC-12 Table 7-9 (GM-283) |
+| Toe resistance: qb = Nq sigma'zD in drained soil, N*c su in clay | UFC §6-5.4.3 (pp. 420-424: Eq 6-20 with Table 6-17; Eq 6-27 with N*c = 9 for Z/b of 2.5 or more); GEC-12 Eq. 7-20 with Table 7-9 (pp. 256-258) | Yes (GM-283): Table 6-17's Fellenius (2021) column (= Table 7-9) by default, its Cheng (2004) equation with `Nt_method="cheng"`, 9 cu in clay; a given `Nt` wins |
 | Side and base resistance on the effective-stress profile that INCLUDES the settlement-causing change (Siegel et al. 2013) | UFC §6-7.4 step 2 (p. 476); GEC-12 §7.3.6.1 (p. 348) points the same way without a rule (next section) | Default since 2026-10-14: `skin_friction_stress="final"` (beta friction and the toe in sand); `"initial"` on request |
 | Transient load excluded from the head load (it reverses the friction while it acts) | UFC §6-7.4 step 4 (p. 477) | Yes (Q_dead only) |
 | Drag excluded from the geotechnical strength check, included in structural strength and in settlement | UFC Table 6-30 (p. 437); GEC-12 §7.3.6 (pp. 336-337); GEC-10 §10.6.1 (p. 10-46; notes AASHTO treats DD as a load in geotechnical strength) | Yes (UFC / FHWA) |
@@ -372,8 +373,8 @@ against the PDF.
    resistance exceeds everything the pile can carry to its toe
    (`Q_dead + the whole shaft in negative skin friction < R_toe`, + W when
    `include_pile_weight=True`). This is
-   the common case with the default ULTIMATE toe (`Nt` from phi, 100-150 in
-   dense sand): the base cannot be fully mobilized. The plane is where the
+   the common case with the default ULTIMATE toe (`Nt` from UFC Table 6-17,
+   60-120 in dense sand at 34-38°): the base cannot be fully mobilized. The plane is where the
    soil and the pile settle equally (Fig 6-19): the soil settlement there =
    the settlement under the toe force the pile actually delivers + the
    elastic compression of the pile below the plane. The toe carries
@@ -426,12 +427,52 @@ and passed only through the toe default.
 
 ## Skin Friction Methods
 
-- **Cohesionless (beta method, UFC Eq 6-7)**: `fs = β · σ'v`
-  where β = (1 - sin φ) · tan φ for NC soil (Fellenius 1991)
+- **Cohesionless (beta method, UFC Eq 6-7)**: `fs = β · σ'v`, β as given,
+  else from φ' by GEC-12 Table 7-9 for the layer's `soil_class` (GM-283,
+  below)
 - **Cohesive (alpha method, UFC Eq 6-8)**: `fs = α · cu`
   with α as the layer gives it, else read off `alpha_chart` (GM-255, below)
 - **Cohesive with `skin_friction_method="beta"` (GM-249)**: `fs = β · σ'v`,
   β given (required), σ'v as `skin_friction_stress` sets.
+
+### Sand β and the toe's Nt as printed (GM-283, 2026-10-31)
+
+Until GM-283 a sand's β was (1 - sin φ') tan φ' (cited to Fellenius 1991)
+and a sand toe's Nt came off a piecewise curve in φ' (3-10 over 0-20°, ...,
++20 a degree above 38°). Neither manual prints either for driven piles; the
+curve was the one GM-282 removed from axial_pile. Now:
+
+| What | Route | Source |
+|---|---|---|
+| β, cohesionless, not given | Table 7-9 by `soil_class` (silt 0.25-0.50 over 28-34°, sand 0.30-0.90 over 32-40°, the default, gravel 0.35-0.80 over 35-45°), linear in φ' and held at the range's ends (a warning) | GEC-12 §7.2.1.3.4 Step 2b (p. 257) and Table 7-9 (p. 256); UFC 3-220-20 Table 6-15 (p. 414) prints the same values for driven piles as pairs ("β = 0.30 for φ' = 32°, β = 0.90 for φ' = 40°") |
+| Nt, cohesionless toe, not given, `Nt_method="fellenius"` (default) | Table 6-17's Fellenius (2021) column = Table 7-9's Nt (silt 20-40, sand 30-150, gravel 60-300), the same reading | UFC 3-220-20 §6-5.4.3.1, Eq 6-20 and Table 6-17 (p. 421); GEC-12 Eq. 7-20, Step 5b (p. 258) |
+| Nt, `Nt_method="cheng"` | Nq ≈ 1.2 (Z/b)^-0.437 exp[6.34 (Z/b)^0.0486 tan φ'], at most 200 "unless supported by project-specific information" (a warning); Z the pile length, b `pile_diameter` | the equation under UFC Table 6-17 (p. 421, after Cheng 2004); it reproduces all 18 Cheng cells the table prints (`tests/test_toe_and_beta.py`) |
+| Nt, clay toe | 9 (× cu) | UFC 3-220-20 §6-5.4.3.3, p. 424 (Brinch Hansen 1957; Eq 6-27, p. 423); App. B-5.4, p. 637 |
+| Nt given | as given (the mobilized value, or local experience, GEC-12 Step 5a) | |
+
+The result's `choices` carry the toe's Nt with the other Table 6-17 route's
+value, and the cohesionless layers' β (given or from the table). The (1 -
+sin φ') tan φ' route is UFC Eq 6-6 with K/K0 = 1 and δ/φ' = 1, which UFC
+prints only for non-displacement columns at low relative density (Fig 6-13,
+p. 413, the dashed Dr = 20 % line about 0.85-1.0; Table 6-14, δ/φ' = 1 for
+formed-in-place columns); for displacement piles Fig 6-13's solid lines
+give K/K0 from about 1.1 (Dr 20 %, σ'z/Pa = 3) to above 6 (Dr 80 % near
+the surface). A β worked out that way (Eq 6-6 with Fig 6-13's printed fit
+and Table 6-14) is given on the layer. Vesic's
+N*q (Eq 6-23, needs the rigidity index) and the SPT and CPT base methods
+(Tables 6-20, 6-23) are not offered; give `Nt` for them. Table 6-15's
+β rows are for driven piles; a drilled shaft's β (Table 6-15's FHWA rows
+by depth) is given on the layer. The check, every value that moves and
+how it was checked: `module_work/downdrag_print/CHECK.md`.
+
+The defaults move results most where dense sand lies above the neutral
+plane: the manual's worked example (clay over sand at 34°, β and Nt
+left out) had a toe of 2,387 kN that the load could never reach, so the
+curves did not meet and settlement compatibility put the neutral plane at
+5.99 m with 226 kN of drag; with β 0.45 and Nt 60 (toe 1,665 kN) they meet
+at 17.66 m with the full toe and the headline is 1,308 kN (UFC §6-7.4 step
+3's conservative full mobilization), with the warning that the
+intersection lies below where the soil settles more than the pile.
 
 ### β in clay: an option, α the default (GM-249, 2026-10-20)
 
@@ -454,9 +495,10 @@ What the manuals print (each page rendered from the PDF):
 
 Neither drag procedure prints β as the method for clay, so α stays the
 default and β is a named option on the layer: `skin_friction_method="beta"`
-with `beta` given. β is not derived from φ' in clay: the module's sand rule
-(1 - sin φ') tan φ' gives 0.27-0.29 across φ' 25-30°, where Table 7-9
-and UFC Table 6-15 go from 0.15 to 0.35, so the engineer gives β.
+with `beta` given. β is not derived from φ' in clay: a clay layer takes no
+φ' (its strength for the α method is cu), and Table 7-9 and UFC Table 6-15
+go from 0.15 to 0.35 over φ' 25-30°, so the engineer gives β. (Until GM-283
+the module's sand rule was (1 - sin φ') tan φ', 0.27-0.29 over 25-30°.)
 
 Inputs a layer would not use are refused, naming the input that takes
 effect (GM-179 wording, "does not take"): `beta` on a clay with the α
@@ -470,7 +512,8 @@ at 30° for driven piles in clay).
 
 The toe in clay stays 9 cu whatever the method above it: Nc "usually taken
 as 9 for deep foundations" (GEC-12 Eq. 7-11, p. 248) and N*c = 9 for Z/b
-of at least 2.5 (UFC 3-220-20 Eq 6-22, p. 424, after Brinch Hansen). The
+of at least 2.5 (UFC 3-220-20 p. 424, after Brinch Hansen, for Eq 6-27,
+qb = N*c su, p. 423; p. 424 calls it Equation 6-22). The
 effective-stress toe, Nt · σ'p (GEC-12 Eq. 7-20, Table 7-9 clay Nt 3-30;
 UFC Eq 6-21, N*q · σ'm, for drained conditions), is not offered: GEC-12
 p. 256 notes that Fellenius' Nt of 3 in clay gives about the toe
@@ -1274,6 +1317,20 @@ it too. The noisy CPT
 cannot reach 8,000 without losing what only it has: the warnings on a toe
 in a liquefied layer, readings left out and load and resistance curves
 that do not meet, and the choice of the CPT's strain.
+
+**GM-283 (2026-10-31): the toe's Nt and the sand's beta in the choices.**
+The result keeps each as what, chosen and how (the value and the table or
+equation it came from); their basis and alternatives (the other Table 6-17
+route's Nt) are in `detail='full'`, and so is the whole entry where the
+call gave Nt or beta (it adds only what the default would have been).
+`result_note` says "the toe's Nt and the beta choices whole". With Nt and
+beta given, as the size tests give them, one zone is 7,634 and the noisy
+CPT up to 10,469 (seeds 1-30, E_s none, 10 and 30 MPa). With both left to
+the defaults the ultimate toe leaves the curves apart and the warning that
+says so is on top: one zone 7,856 (a test holds it under 8,000), the noisy
+CPT 10,593 to 11,096, over the budget; before GM-283 those runs were
+10,239 to 10,745 (60 of the 90 over). Not fixed: the default-strength
+noisy CPT was over the budget before this change.
 
 ### Hand check HC-1 (a hand check from the printed equations, NOT a published anchor)
 

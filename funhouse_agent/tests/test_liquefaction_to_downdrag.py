@@ -10,7 +10,7 @@ import pytest
 
 from funhouse_agent import dispatch as D
 from downdrag.analysis import (
-    RULE_CHOICE, RULES_WARNING_LEAD, THRESHOLD_CHOICE,
+    BETA_CHOICE, NT_CHOICE, RULE_CHOICE, RULES_WARNING_LEAD, THRESHOLD_CHOICE,
 )
 from downdrag.liquefaction import (
     FS_LIQ_CHOICE, MAX_ZONES_LISTED, READINGS_LEFT_OUT,
@@ -196,18 +196,26 @@ def _choices_kept(r, full):
     """GM-240: every choice of the whole result is in the result but one a
     warning in it states: the rule for the depth below the toe and its
     warning threshold (the warning that the two rules disagree), and
-    fs_liq_threshold (the warning on readings above it). The note says
-    so."""
+    fs_liq_threshold (the warning on readings above it). GM-283: the toe's
+    Nt and the cohesionless soil's beta keep what, chosen and how, and are
+    left out where the call gave them. The note says so."""
     stated = set()
     if any(RULES_WARNING_LEAD in w for w in r["warnings"]):
         stated |= {RULE_CHOICE, THRESHOLD_CHOICE}
     if any(READINGS_LEFT_OUT in w for w in r["warnings"]):
         stated.add(FS_LIQ_CHOICE)
-    assert r["choices"] == [c for c in full["choices"]
-                            if c["what"] not in stated]
+    strength = (NT_CHOICE, BETA_CHOICE)
+    assert r["choices"] == [
+        {k: c[k] for k in ("what", "chosen", "how")}
+        if c["what"].startswith(strength) else c
+        for c in full["choices"] if c["what"] not in stated
+        and not (c["how"] == "given" and c["what"].startswith(strength))]
     left = stated & {c["what"] for c in full["choices"]}
     assert ("the choices the warnings state" in r["result_note"]) == \
         bool(left)
+    assert ("the toe's Nt and the beta choices whole" in
+            r["result_note"]) == any(c["what"].startswith(strength)
+                                     for c in full["choices"])
 
 
 class TestOneZone:
@@ -234,6 +242,47 @@ class TestOneZone:
         assert "'Drag loads imposed by previously liquefied layers" in \
             full["side_resistance_comparison"][0]["source"]
         assert "detail" not in r.get("defaults_used", {})
+
+    def test_the_toe_and_beta_from_the_defaults_fit(self):
+        """GM-283: with Nt and the sands' beta left to the defaults the
+        result names each (what, chosen, how), its basis and alternatives
+        in detail='full', and stays under the general cap."""
+        static = {k: v for k, v in _STATIC.items() if k != "Nt"}
+        layers = [{k: v for k, v in x.items() if k != "beta"}
+                  for x in _LAYERS]
+        params = {**static, "layers": layers, "liquefied_layers": _HC1}
+        r = D.call_agent("downdrag", "post_liquefaction_downdrag", params)
+        full = D.call_agent("downdrag", "post_liquefaction_downdrag",
+                            {**params, "detail": "full"})
+        assert "error" not in r, r
+        assert len(json.dumps(r)) < RESULT_CAP
+        _every_number_kept(r, full)
+        (nt,) = [c for c in r["choices"] if c["what"] == NT_CHOICE]
+        assert set(nt) == {"what", "chosen", "how"}
+        assert nt["how"] == "default"
+        # sand at phi' 36 deg: 30 + 4/8 x 120 (GEC-12 Table 7-9)
+        assert nt["chosen"].startswith("Nt 90.0 (UFC 3-220-20 Table 6-17")
+        (beta,) = [c for c in r["choices"] if c["what"].startswith(
+            BETA_CHOICE)]
+        # phi' 30 deg held at the sand row's 32 deg over both upper layers
+        assert beta["chosen"] == ("beta 0.300 at 0-10 m (sand, phi' 32 "
+                                  "deg); 0.600 at 10-20 m (sand, phi' 36 "
+                                  "deg)")
+        (whole,) = [c for c in full["choices"] if c["what"] == NT_CHOICE]
+        assert whole["alternatives"][0].endswith("Nt_method 'cheng'")
+
+    def test_an_nt_method_given_keeps_the_toe_it_read(self):
+        """GM-283: Nt_method given is a route, not a value; the Nt the
+        module read by it stays in the result."""
+        static = {k: v for k, v in _STATIC.items() if k != "Nt"}
+        r = D.call_agent("downdrag", "post_liquefaction_downdrag", {
+            **static, "Nt_method": "cheng", "liquefied_layers": _HC1})
+        assert "error" not in r, r
+        (nt,) = [c for c in r["choices"] if c["what"] == NT_CHOICE]
+        assert nt["how"] == "given"
+        assert "Cheng (2004) equation" in nt["chosen"]
+        assert not [c for c in r["choices"]
+                    if c["what"].startswith(BETA_CHOICE)]
 
     def test_the_note_says_what_only_the_whole_result_has(self):
         r = _post(liquefied_layers=_HC1)

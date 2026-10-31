@@ -11,8 +11,8 @@ from downdrag import (
     LIQUEFIED_SIDE_RESISTANCE,
 )
 from downdrag.analysis import (
-    INFLUENCE_DEPTH_WARNING_PERCENT, RULE_CHOICE, RULES_WARNING_LEAD,
-    THRESHOLD_CHOICE,
+    BETA_CHOICE, INFLUENCE_DEPTH_WARNING_PERCENT, NT_CHOICE, RULE_CHOICE,
+    RULES_WARNING_LEAD, THRESHOLD_CHOICE,
 )
 from downdrag.liquefaction import (
     FS_LIQ_CHOICE, LIQUEFIED_LAYER_KEYS, MAX_ZONES_LISTED, READINGS_LEFT_OUT,
@@ -62,7 +62,7 @@ _VALID_PARAMS = (
     "neutral_plane_method", "toe_mobilization", "endo_bearing_condition",
     "skin_friction_stress", "include_pile_weight",
     "influence_depth_criterion", "influence_depth_warning_percent",
-    "alpha_chart", "fig_7_17_curve", "alpha_transition_zone",
+    "alpha_chart", "fig_7_17_curve", "alpha_transition_zone", "Nt_method",
 )
 
 
@@ -115,6 +115,7 @@ def _build_analysis(params, method, valid):
                 E_s=l.get("E_s"), nu_s=l.get("nu_s", 0.3),
                 settling=l.get("settling", False), description=l.get("description", ""),
                 skin_friction_method=l.get("skin_friction_method"),
+                soil_class=l.get("soil_class"),
             ))
         except ValueError as exc:
             raise ValueError(
@@ -143,6 +144,7 @@ def _build_analysis(params, method, valid):
         alpha_chart=params.get("alpha_chart", "ufc_fig_6_14"),
         fig_7_17_curve=params.get("fig_7_17_curve"),
         alpha_transition_zone=params.get("alpha_transition_zone"),
+        Nt_method=params.get("Nt_method", "fellenius"),
     )
     return analysis
 
@@ -210,7 +212,7 @@ def _run_post_liquefaction(params):
     except ValueError as exc:
         raise ValueError(f"{method}: {exc}") from None
     d = clean_result(result.to_dict())
-    return d if params.get("detail") == "full" else _compact(d)
+    return d if params.get("detail") == "full" else _compact(d, params)
 
 
 #: What a post_liquefaction_downdrag result is held to, in JSON characters
@@ -224,7 +226,14 @@ def _run_post_liquefaction(params):
 #: detail='full'): its warnings and choices (a toe in a liquefied layer,
 #: readings left out, curves that do not meet, the CPT's strain) are its
 #: own, not repeats. detail='full' gives about 20,000 to 22,000 and
-#: 30,000 to 34,000 (DESIGN.md "What the result holds").
+#: 30,000 to 34,000 (DESIGN.md "What the result holds"). GM-283 added the
+#: toe's Nt and the cohesionless soil's beta to the choices
+#: (``_STRENGTH_CHOICES``): with both given (as the tests give them) one
+#: zone is 7,634 and the noisy CPT up to 10,469 (seeds 1-30, E_s none, 10
+#: and 30 MPa). With both from the defaults the ultimate toe leaves the
+#: curves apart and the warning that says so comes on top: one zone 7,856,
+#: the noisy CPT 10,593 to 11,096, over the budget (it was 10,239 to
+#: 10,745 before GM-283, 60 of the 90 over).
 RESULT_BUDGET_CHARS = 10_500
 
 #: How many of more than MAX_ZONES_LISTED zones are listed in full (GM-211):
@@ -257,11 +266,38 @@ _STATED_BY_WARNING = (
     (READINGS_LEFT_OUT, (FS_LIQ_CHOICE,)),
 )
 
+#: The toe's Nt and the cohesionless soil's beta, by the start of their
+#: choices' ``what`` (GM-283): the result keeps the value and where it came
+#: from (what, chosen and how), its basis and alternatives left to
+#: detail='full'; where the call gave the value (Nt, or beta on the
+#: layers), the whole entry is left there (it adds only what the default
+#: would have been). Nt_method given still leaves an Nt the module read.
+_STRENGTH_CHOICES = (NT_CHOICE, BETA_CHOICE)
+
 #: What only the whole result has, as result_note says it.
 _LEFT_OUT = (
     "the sources and assumptions, neutral_plane_basis, Q_np (= Q_dead + "
     "drag force), toe forces, settlement parts, the methods each zone lies "
     "below and, after liquefaction, below_toe and the depth profiles")
+
+
+def _strength_short(c: dict) -> dict:
+    """A choice as the compact result keeps it: the toe's Nt and the
+    cohesionless soil's beta as what, chosen and how (GM-283), the rest
+    whole."""
+    if c.get("what", "").startswith(_STRENGTH_CHOICES):
+        return {k: c[k] for k in ("what", "chosen", "how")}
+    return c
+
+
+def _value_given(c: dict, params: dict) -> bool:
+    """Whether ``c`` is the toe's Nt or a beta the call gave as a value
+    (GM-283): Nt given (not only Nt_method), or beta on the layers."""
+    if c.get("how") != "given":
+        return False
+    if c.get("what") == NT_CHOICE:
+        return params.get("Nt") is not None
+    return c.get("what", "").startswith(BETA_CHOICE)
 
 
 def _table(columns, rows) -> dict:
@@ -335,26 +371,36 @@ def _reasons(row: dict, headline: dict) -> str:
                      in (("before", b), ("after", a)) if why) + "."
 
 
-def _compact(d: dict) -> dict:
+def _compact(d: dict, params: dict) -> dict:
     """The post_liquefaction_downdrag result as the tool returns it unless
     ``detail='full'`` (GM-207): the headline, every neutral plane, drag
     force and pile settlement (each method before and after, each
     side-resistance option), the zones (summarised past MAX_ZONES_LISTED),
     the warnings, basis and choices; result_note says what is left out.
     A choice a warning states is left to detail='full' where the warning
-    is given (``_STATED_BY_WARNING``, GM-240)."""
+    is given (``_STATED_BY_WARNING``, GM-240); the toe's Nt and the
+    cohesionless soil's beta keep what, chosen and how, and are left out
+    where the call gave them (``_STRENGTH_CHOICES``, :func:`_value_given`,
+    GM-283; ``params``: the call's)."""
     zones = d.get("liquefied_zones") or []
     warnings = d.get("warnings") or []
+    choices = d.get("choices") or []
     stated = {what for words, whats in _STATED_BY_WARNING
               if any(words in w for w in warnings) for what in whats}
-    stated &= {c.get("what") for c in d.get("choices") or []}
+    stated &= {c.get("what") for c in choices}
+    strength = any(c.get("what", "").startswith(_STRENGTH_CHOICES)
+                   for c in choices)
+    more = ((["the toe's Nt and the beta choices whole"] if strength
+             else [])
+            + (["the choices the warnings state"] if stated else []))
     note = ("Every neutral plane, drag force and pile settlement is here"
             + (f"; the {len(zones)} liquefied zones are summarised"
                if len(zones) > MAX_ZONES_LISTED else "")
             + ". detail='full' adds "
             + ("each zone, " if len(zones) > MAX_ZONES_LISTED else "")
             + _LEFT_OUT
-            + (", and the choices the warnings state" if stated else "")
+            + "".join(", " + ("and " if i == len(more) - 1 else "") + m
+                      for i, m in enumerate(more))
             + ".")
     out = {}
     for key, value in d.items():
@@ -376,8 +422,10 @@ def _compact(d: dict) -> dict:
             value = _table(_METHOD_COLUMNS, [
                 [r[c] for c in _METHOD_COLUMNS[:-1]] + [_reasons(r, headline)]
                 for r in value])
-        elif key == "choices" and stated:
-            value = [c for c in value if c.get("what") not in stated]
+        elif key == "choices":
+            value = [_strength_short(c) for c in value
+                     if c.get("what") not in stated
+                     and not _value_given(c, params)]
         out[key] = value
         if key == "warnings":
             out["result_note"] = note
@@ -644,7 +692,7 @@ METHOD_INFO = {
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, skin_friction_method, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Skin friction: cohesionless = beta x sigma'v (Beta method, UFC 3-220-20 Eq 6-7), beta given or from phi; cohesive = alpha x cu (Alpha method, Eq 6-8, the default; alpha as given, else read off alpha_chart: UFC 3-220-20 Table 6-16 and Fig 6-14 by default), or with skin_friction_method 'beta' beta x sigma'v for long-term, drained conditions (UFC 3-220-20 6-5.4.1; GEC-12 7.2.1.3.4), beta required (GEC-12 Table 7-9: clay 0.15-0.35; cu then only for a toe in the layer). A cohesive layer takes no phi, and beta only with skin_friction_method 'beta'; a cohesionless layer takes no alpha. Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
+            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, skin_friction_method, soil_class, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Skin friction: cohesionless = beta x sigma'v (Beta method, UFC 3-220-20 Eq 6-7), beta as given, else from phi' by GEC-12 Table 7-9 (UFC 3-220-20 Table 6-15, driven piles) for the layer's soil_class ('silt' 0.25-0.50 over 28-34 deg, 'sand' 0.30-0.90 over 32-40 deg, the default, 'gravel' 0.35-0.80 over 35-45 deg), linear in phi' and held at the range's ends; soil_class also picks the toe's Nt row (Nt_method); cohesive = alpha x cu (Alpha method, Eq 6-8, the default; alpha as given, else read off alpha_chart: UFC 3-220-20 Table 6-16 and Fig 6-14 by default), or with skin_friction_method 'beta' beta x sigma'v for long-term, drained conditions (UFC 3-220-20 6-5.4.1; GEC-12 7.2.1.3.4), beta required (GEC-12 Table 7-9: clay 0.15-0.35; cu then only for a toe in the layer). A cohesive layer takes no phi, and beta only with skin_friction_method 'beta'; a cohesionless layer takes no alpha. Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
             "fill_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Fill thickness causing downdrag (m)."},
             "fill_unit_weight": {"type": "float", "required": False, "default": 19.0, "description": "Fill unit weight (kN/m3)."},
@@ -655,7 +703,8 @@ METHOD_INFO = {
             "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2). Computed from diameter if omitted."},
             "structural_capacity": {"type": "float", "required": False, "description": "Pile structural capacity (kN) for the max-load check."},
             "allowable_settlement": {"type": "float", "required": False, "description": "Allowable pile settlement (m) for the settlement check."},
-            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not intersect and the neutral plane is where the pile and soil settle equally, the toe force compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
+            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value: 9 in clay (UFC 3-220-20 6-5.4.3.3), and in cohesionless soil from the toe layer's phi' by Nt_method (60-120 in dense sand at 34-38 deg by the default); then the load and resistance curves often do not intersect and the neutral plane is where the pile and soil settle equally, the toe force compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
+            "Nt_method": {"type": "string", "required": False, "default": "fellenius", "allowed_values": ["fellenius", "cheng"], "description": "Where a cohesionless toe's ultimate Nt comes from when Nt is not given, both UFC 3-220-20 Table 6-17 (p. 421; qb = Nq sigma'zD, Eq 6-20): 'fellenius' (default) = its Fellenius (2021) column, the same values as GEC-12 Table 7-9, by the toe layer's soil_class (silt 20-40 over 28-34 deg, sand 30-150 over 32-40 deg, gravel 60-300 over 35-45 deg), linear in phi' and held at the range's ends; 'cheng' = its equation after Cheng (2004), Nq ~= 1.2 (Z/b)^-0.437 exp[6.34 (Z/b)^0.0486 tan phi'], Z the pile length and b pile_diameter, at most 200 unless project-specific information supports more (give Nt then). The result's choices give the other route's value."},
             "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3), times pile_area for the pile's own weight; used only when include_pile_weight is true. Default 78.5 = steel, the same material as the pile_E default (concrete is about 24). For an H or pipe pile give pile_area as the steel area (pile_area defaults to the solid circle)."},
             "include_pile_weight": {"type": "bool", "required": False, "default": False, "description": "Whether the load curve carries the pile's own weight. Default false: left out, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 7.3.6.1 (and their worked examples) do. True adds the weight of the pile above the neutral plane to Q_np and the drag force."},
             "n_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers per soil layer for the depth discretization."},
@@ -692,7 +741,7 @@ METHOD_INFO = {
             "geotechnical_ok": "Q_dead <= total resistance (when checked).",
             "structural_ok": "LRFD demand <= structural_capacity (when given).",
             "z_m": "Depth profile (m); with axial_load_kN, soil_settlement_mm and unit_skin_friction_kPa at the same depths.",
-            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option), influence_depth_warning_percent, the engineer's call, and the skin friction method of the cohesive layers (Alpha by default, Beta the option) with their depths and beta, and the alpha of the Alpha-method clays, as given or read off alpha_chart, with each reading's source. Report them.",
+            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option), influence_depth_warning_percent, the engineer's call, the toe's Nt (given, 9 in clay, or by Nt_method with the other route's value), the skin friction method of the cohesive layers (Alpha by default, Beta the option) with their depths and beta, the beta of the cohesionless layers (given or from GEC-12 Table 7-9) and the alpha of the Alpha-method clays, as given or read off alpha_chart, with each reading's source. Report them.",
         },
     },
     "endo_downdrag": {
@@ -893,18 +942,19 @@ _NP_METHOD["description"] = _NP_METHOD["description"].replace(
 # runs with pile_width, bearing_E and a free-field settlement profile; the
 # FS_liq threshold only for a liquefaction result. The alpha chart
 # (GM-255) only where a clay's alpha is read off it, which the module
-# reports in its choices (a condition on the layers cannot be declared).
+# reports in its choices (a condition on the layers cannot be declared);
+# so is Nt_method (GM-283), used only for a cohesionless toe with no Nt.
 _EQ_FOOTING = {"consolidation": "set"}
 declare_applies_when(METHOD_INFO, {
     "downdrag_analysis": {
         "pile_unit_weight": {"include_pile_weight": [True]},
         "fill_unit_weight": {"fill_thickness": "set"},
-        "alpha_chart": False},
+        "alpha_chart": False, "Nt_method": False},
     "post_liquefaction_downdrag": {
         "pile_unit_weight": {"include_pile_weight": [True]},
         "fill_unit_weight": {"fill_thickness": "set"},
         "fs_liq_threshold": {"liquefaction_result": "set"},
-        "alpha_chart": False},
+        "alpha_chart": False, "Nt_method": False},
     "fellenius_cgpr56": {"eq_footing_load": _EQ_FOOTING,
                          "eq_footing_length": _EQ_FOOTING},
     "downdrag_method_comparison": {
@@ -928,9 +978,8 @@ _SECTION_CASES = {
                   "the solid circle; give the steel area for an H or "
                   "pipe pile"),
     "Nt": ("the ultimate value from the toe layer",
-           "Nt from the toe layer's friction angle (Fellenius 1991; "
-           "GEC-12 Table 7-9), 9 in clay: the ultimate, not the "
-           "mobilized, toe resistance")}
+           "9 in clay, else UFC 3-220-20 Table 6-17 (Nt_method): the "
+           "ultimate, not the mobilized, toe resistance")}
 declare_when_absent(METHOD_INFO, {
     "downdrag_analysis": dict(_SECTION_CASES),
     "post_liquefaction_downdrag": dict(_SECTION_CASES),

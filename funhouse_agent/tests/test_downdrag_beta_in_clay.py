@@ -42,11 +42,12 @@ def test_a_beta_the_tool_would_ignore_is_refused():
 def test_the_beta_method_is_taken_by_name():
     r = _run(skin_friction_method="beta", beta=0.25)
     assert "error" not in r, r
-    assert round(r["drag_force_kN"], 1) == 654.6
+    # 654.6 until GM-283: the top sand's beta 0.294 -> 0.300 (Table 7-9)
+    assert round(r["drag_force_kN"], 1) == 656.0
     (c,) = _friction(r)
     assert c["how"] == "given" and c["chosen"].endswith("beta 0.25")
     default = _run()
-    assert round(default["drag_force_kN"], 1) == 543.7
+    assert round(default["drag_force_kN"], 1) == 545.1
     (c,) = _friction(default)
     assert c["how"] == "default" and c["chosen"].startswith("Alpha method")
 
