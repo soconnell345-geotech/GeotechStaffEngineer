@@ -2468,5 +2468,30 @@
       "BACKLOG.md OWN-106",
       "module_work/gm287/CHECK.md"
     ]
+  },
+  "OWN-107": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When a clay layer's preconsolidation stress is below its current effective stress (underconsolidated), should settlement run it with a warning, or refuse it?",
+    "why": "Such a layer is still consolidating under its own weight. The print takes its current effective stress from measured or estimated pore pressures, and gives no formula otherwise. Running it as given can give a negative recompression term.",
+    "background": "UFS 3-220-10 Sec. 5-2.3 (pp. 224-225). Since GM-285 the module warns with the print's reason and marks the layer `is_underconsolidated`, and the arithmetic is unchanged. A refusal would also stop soil profiles whose sublayer centres sit a little below sigma'_p (for example 60 against 60.07 kPa), which an old unprinted 5 % rule used to treat as normally consolidated. Detail: module_work/gm285/CHECK.md.",
+    "options": [
+      {
+        "label": "Run it with a warning (as now)",
+        "effect": "Numbers come out as given; the warning says the layer's sigma'_v0 should come from its measured pore pressures."
+      },
+      {
+        "label": "Refuse it",
+        "effect": "The engineer must give the layer's sigma'_v0 from pore pressures (or a sigma'_p at or above it) before settlement runs."
+      }
+    ],
+    "recommendation": "Run it with the warning, since the fix is the engineer's input and the warning says so.",
+    "if_no_answer": "It runs with the warning.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-107",
+      "module_work/gm285/CHECK.md"
+    ]
   }
 }
