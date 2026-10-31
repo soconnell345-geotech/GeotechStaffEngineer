@@ -2713,5 +2713,30 @@
       "BACKLOG.md OWN-115",
       "module_work/gm298/CHECK.md"
     ]
+  },
+  "OWN-117": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Retaining walls with a water table: should the uplift under the base count as an overturning moment (as now), or be taken off the resisting moment?",
+    "why": "The overturning factor of safety depends on it: on a made-up 5 m wall with water 2 m down it is 1.77 one way and 2.20 the other. The resultant's position and the eccentricity check come out the same either way, and so do sliding and bearing.",
+    "background": "No page we hold prints where the uplift's moment goes. The module follows the layout of UFC 3-220-20 Fig. 4-27, which lists the driving moments and the resisting moments separately; adding the uplift to the driving side gives the smaller factor of safety.",
+    "options": [
+      {
+        "label": "Overturning moment (as now)",
+        "effect": "Results unchanged; the smaller FOS (1.77 on the made-up wall)."
+      },
+      {
+        "label": "Off the resisting moment",
+        "effect": "A higher overturning FOS where there is water (2.20 on the made-up wall); dry walls unchanged."
+      }
+    ],
+    "recommendation": "Keep it as an overturning moment and state the other way beside the result: it is the safe side, and the eccentricity check, which no choice here moves, is the one GEC-6 and NHI-06-089 use for overturning.",
+    "if_no_answer": "The uplift stays an overturning moment, with the other way stated.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-117",
+      "module_work/gm292/CHECK.md"
+    ]
   }
 }
