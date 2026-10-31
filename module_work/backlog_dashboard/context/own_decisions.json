@@ -2301,5 +2301,122 @@
       "module_work/FOUNDRY_BRIEF_MODEL_FIRST.md stop point 7, D2",
       "AI FDE probe setup/probe_haiku_ratelimits.py (workspace e50d8bf)"
     ]
+  },
+  "OWN-101": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Do you agree with the ten-step order for the slope_stability work, or do you want to reorder or cut steps?",
+    "why": "The slope module took nine fixes in three days, each started by one case. You asked for one review of the whole chain first. The written account is that review, and no slope code changes until you agree the order.",
+    "background": "The account sets the chain (surfaces, slicing, admission, solving, reporting) against the printed references and the published benchmarks. Its five headline findings were checked independently; two were corrected. The ten steps: (1) one material per point, the weight error on a sloping boundary (one slice is 39.1 kN/m by hand against the module's 116.0); (2) a method's own solution or no number; (3) the printed acceptability checks; (4) tension cracks and reverse curvature as printed; (5) water and loads as printed; (6) one method across the search; (7) search coverage; (8) supports; (9) rapid drawdown as EM 1110-2-1902 App. G prints it (settles OWN-17); (10) reporting. Each step changes one rule everywhere and re-pins the validation values against the printed answers. The account is at https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2 and in module_work/slope_integral_review/ACCOUNT.md (section 12 is the plan).",
+    "options": [
+      {
+        "label": "Agree the ten steps in this order",
+        "effect": "Step 1 (the weight error) starts first; each later step follows after the one before it is pinned."
+      },
+      {
+        "label": "Agree with changes: reorder or cut steps",
+        "effect": "Say which; the plan is rewritten before any code."
+      },
+      {
+        "label": "Not yet: ask about specific findings first",
+        "effect": "Nothing changes in the slope module; the account answers the questions you raise."
+      }
+    ],
+    "recommendation": "Agree the order. Step 1 is a plain arithmetic error with the largest effect on the numbers, and the later steps depend on it.",
+    "if_no_answer": "No slope code changes; GM-140 stays open and the slope work waits.",
+    "message_to_send": null,
+    "unblocks": [
+      "GM-140"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-101",
+      "module_work/slope_integral_review/ACCOUNT.md",
+      "The slope account page: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2",
+      "BACKLOG.md GM-140"
+    ]
+  },
+  "OWN-102": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When a slope search finds a surface where the normal-force term (m_alpha) falls below 0.2, should the module keep refusing it or keep it with a flag?",
+    "why": "Today every search leaves these surfaces out (they are counted, not located). That can hide the surface that governs, and the engineer is never told where it was.",
+    "background": "The 0.2 limit comes from Whitman and Bailey (1967, p. 487), who print a warning and an instruction to examine the surface, not a ban. EM 1110-2-1902 C-10b (pp. C-34 to C-36) prints remedies for the steep exit that causes it. Duncan (1996, p. 580) prints a check of Bishop against the ordinary method of slices. The code's own comment says Slide2 refuses them. Account item D20, plan step 3: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2.",
+    "options": [
+      {
+        "label": "(a) Keep refusing them, and report where the low m_alpha was",
+        "effect": "The numbers stay as they are; the engineer sees the location and can examine it."
+      },
+      {
+        "label": "(b) Keep them, flagged with the location and the Bishop against ordinary-method check, as the references print",
+        "effect": "Some factors of safety fall where today's search skips a surface; each carries its flag."
+      }
+    ],
+    "recommendation": "(b), because the references print a warning and a check, not a refusal. Also say whether the exemption for slices with phi' = 0 stays.",
+    "if_no_answer": "Surfaces stay refused, as now.",
+    "message_to_send": null,
+    "unblocks": [
+      "GM-140"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-102",
+      "module_work/slope_integral_review/ACCOUNT.md",
+      "The slope account page: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2"
+    ]
+  },
+  "OWN-103": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the slope search discard circles that curve back on themselves (reverse curvature), or keep closing them with a tension crack sized from the circle's geometry?",
+    "why": "Today these circles are searched by default and closed with a dry crack whose depth comes from the circle itself. On the Slide2 example #85 that gives Bishop 1.372 against the printed 1.531.",
+    "background": "With the circles discarded the same example gives 1.508, close to the printed value. EM 1110-2-1902 C-10c prints a tension test for sizing a crack. Account item D24, plan step 4: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2.",
+    "options": [
+      {
+        "label": "(a) Discard them",
+        "effect": "Matches the printed answer most closely (1.508 against 1.531 on #85); a few unusual surfaces are no longer searched."
+      },
+      {
+        "label": "(b) Close them with a crack sized by EM C-10c's tension test",
+        "effect": "Keeps the surfaces, with the crack taken from the printed test instead of the circle's geometry."
+      }
+    ],
+    "recommendation": "(a) as the simple rule; (b) only if you want those surfaces kept.",
+    "if_no_answer": "Today's behaviour stays: searched, closed with the geometry-sized crack.",
+    "message_to_send": null,
+    "unblocks": [
+      "GM-140"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-103",
+      "module_work/slope_integral_review/ACCOUNT.md",
+      "The slope account page: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2"
+    ]
+  },
+  "OWN-104": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Once built, should the water-table slope correction (cos squared) be on by default?",
+    "why": "With a sloping water table the module takes the full vertical head as the pore pressure. That is higher than the references print, so the factor of safety comes out lower under steep water tables.",
+    "background": "FHWA NHI-06-088 Eq. 6-16 (p. 6-14) prints u = h_w x gamma_w x cos squared of the water table's slope angle. UFC 3-220-10 p. 355 says to correct the water table by its slope. Account item D2, plan step 5: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2.",
+    "options": [
+      {
+        "label": "On by default",
+        "effect": "Matches the printed equation; factors of safety rise under steep water tables."
+      },
+      {
+        "label": "Off by default, available as an option",
+        "effect": "Numbers stay as today; the engineer must ask for the correction."
+      }
+    ],
+    "recommendation": "On by default, since both references print it and the result says when it applied.",
+    "if_no_answer": "Off until you answer; nothing is built before step 5.",
+    "message_to_send": null,
+    "unblocks": [
+      "GM-140"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-104",
+      "module_work/slope_integral_review/ACCOUNT.md",
+      "The slope account page: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2"
+    ]
   }
 }
