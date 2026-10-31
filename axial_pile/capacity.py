@@ -1474,24 +1474,49 @@ class AxialPileAnalysis:
         nt = toe_details.get("N_t_source")
         if sources <= {"given"} and nt in ("given", "cohesive_Nt"):
             return None
-        soils = []
-        for s in list(sources) + [nt]:
-            if s and s.startswith("Table 7-9 ("):
-                soil = s[len("Table 7-9 ("):-1]
-                if soil not in soils:
-                    soils.append(soil)
-        soils.sort(key=list(TABLE_7_9).index)
+        table = "Table 7-9 ("
+        # beta by the soil types of the layers that took it from the table;
+        # Nt for the toe's soil only, and only when the table gave it
+        beta_soils = sorted({s[len(table):-1] for s in sources
+                             if s and s.startswith(table)},
+                            key=list(TABLE_7_9).index)
+        toe_soil = (nt[len(table):-1] if nt and nt.startswith(table)
+                    else None)
+        if not beta_soils and toe_soil is None:
+            return None
         pairs = "; ".join(
             f"{s} beta {TABLE_7_9[s][1][0]:.2f} at {TABLE_7_9[s][0][0]:g} "
             f"deg, {TABLE_7_9[s][1][1]:.2f} at {TABLE_7_9[s][0][1]:g} deg"
-            for s in soils)
-        chosen = ("Table 7-9 by soil type, linear in phi' across the "
-                  "type's phi' range: " + "; ".join(
-                      f"{s} beta {TABLE_7_9[s][1][0]:g}-"
-                      f"{TABLE_7_9[s][1][1]:g}, Nt {TABLE_7_9[s][2][0]:g}-"
-                      f"{TABLE_7_9[s][2][1]:g} over phi' "
-                      f"{TABLE_7_9[s][0][0]:g}-{TABLE_7_9[s][0][1]:g} deg"
-                      for s in soils))
+            for s in beta_soils)
+        parts = [f"the {s} layers' beta {TABLE_7_9[s][1][0]:g}-"
+                 f"{TABLE_7_9[s][1][1]:g} over phi' {TABLE_7_9[s][0][0]:g}-"
+                 f"{TABLE_7_9[s][0][1]:g} deg" for s in beta_soils]
+        if toe_soil is not None:
+            t = TABLE_7_9[toe_soil]
+            parts.append(f"the toe in {toe_soil}, Nt {t[2][0]:g}-"
+                         f"{t[2][1]:g} over phi' {t[0][0]:g}-{t[0][1]:g} deg")
+        chosen = ("Table 7-9 by soil type, by this module's reading of it "
+                  "(a straight line in phi' between the type's printed "
+                  "range ends, not printed): " + "; ".join(parts))
+        ends = ((0, "low", "the least resistance"),
+                (1, "high", "the most resistance"))
+        alternatives = [
+            f"the {s} range's {end} end in Table 7-9, beta "
+            f"{TABLE_7_9[s][1][i]:.2f} (phi' {TABLE_7_9[s][0][i]:g} deg), "
+            f"{use}: give the {s} layers beta {TABLE_7_9[s][1][i]:.2f}"
+            for s in beta_soils for i, end, use in ends]
+        if toe_soil is not None:
+            t = TABLE_7_9[toe_soil]
+            alternatives += [
+                f"the {toe_soil} range's {end} end in Table 7-9 at the toe, "
+                f"Nt {t[2][i]:g} (phi' {t[0][i]:g} deg), {use}: give the "
+                f"toe layer Nt {t[2][i]:g}" for i, end, use in ends]
+        own, steps = (("beta and Nt", "Steps 2a, 5a")
+                      if beta_soils and toe_soil is not None else
+                      ("beta", "Step 2a") if beta_soils else
+                      ("Nt", "Step 5a"))
+        alternatives.append(
+            f"a layer's own {own} from local experience ({steps})")
         return choice(
             "beta and Nt (beta method)", chosen,
             how_given(self.beta_coefficients, "table_7_9",
@@ -1510,16 +1535,7 @@ class AxialPileAnalysis:
             "§6-7.4 step 2 (p. 476): lower alpha and beta are conservative "
             "for resistance, higher alpha and beta for negative skin "
             "friction",
-            [f"the {s} range's {end} end in Table 7-9, beta "
-             f"{TABLE_7_9[s][1][i]:.2f} and Nt {TABLE_7_9[s][2][i]:g} (phi' "
-             f"{TABLE_7_9[s][0][i]:g} deg), {use}: give the layers beta "
-             f"{TABLE_7_9[s][1][i]:.2f} and the toe layer Nt "
-             f"{TABLE_7_9[s][2][i]:g}"
-             for s in soils for i, end, use in (
-                 (0, "low", "the least resistance"),
-                 (1, "high", "the most resistance"))]
-            + ["a layer's own beta and Nt from local experience (Steps 2a, "
-               "5a)"])
+            alternatives)
 
     def _layer_skin_friction(self, layer: AxialSoilLayer, layer_bottom: float,
                              z_top: float, z_bottom: float, perimeter: float,
