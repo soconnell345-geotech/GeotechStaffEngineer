@@ -1046,7 +1046,19 @@ def _run_compute_trend(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
+#: Each overburden correction spt_correction offers, as a choice names it.
+_CN_TEXT = {
+    "liao_whitman": ("Liao & Whitman (1986), C_N = (100 kPa / sigma'v)^0.5, "
+                     "at most 1.7 (overburden_method 'liao_whitman')"),
+    "peck": ("Peck et al. (1974), C_N = 0.77 log10(20 / sigma'v in tsf), at "
+             "most 2.0 (overburden_method 'peck')"),
+    "iso": ("EN ISO 22476-3, C_N = (98 kPa / sigma'v)^0.5, at most 2.0 "
+            "(overburden_method 'iso')"),
+}
+
+
 def _run_spt_correction(params: dict) -> dict:
+    from geotech_common.choices import choice, how_given
     from geotech_common.soil_properties import spt_n1_60
     _valid = ("N_field", "sigma_vo_eff", "energy_ratio_pct", "rod_length_m",
               "borehole_diameter_mm", "sampler_correction", "overburden_method")
@@ -1054,15 +1066,31 @@ def _run_spt_correction(params: dict) -> dict:
     reject_unknown_params(params, _valid, method="spt_correction")
     require_params(params, ["N_field", "sigma_vo_eff"],
                    method="spt_correction", valid=_valid)
+    er = params.get("energy_ratio_pct", 60.0)
+    method = params.get("overburden_method", "liao_whitman")
     r = spt_n1_60(
         params["N_field"], params["sigma_vo_eff"],
-        energy_ratio_pct=params.get("energy_ratio_pct", 60.0),
+        energy_ratio_pct=er,
         rod_length_m=params.get("rod_length_m", 10.0),
         borehole_diameter_mm=params.get("borehole_diameter_mm", 100.0),
         sampler_correction=params.get("sampler_correction", 1.0),
-        overburden_method=params.get("overburden_method", "liao_whitman"),
+        overburden_method=method,
     )
-    return {k: round(v, 4) for k, v in r.items()}
+    out = {k: round(v, 4) for k, v in r.items()}
+    out["choices"] = [
+        choice("hammer energy ratio", f"{er:g} %",
+               how_given(er, 60.0, name="energy_ratio_pct"),
+               basis=("CE = ER/60 (NHI-06-088 Eq 3-2); without a measurement "
+                      "AASHTO takes 60 for rope and cathead and 80 for "
+                      "automatic hammers (NHI-06-088 p. 3-55)")),
+        choice("overburden correction", _CN_TEXT.get(method, method),
+               how_given(method, "liao_whitman", name="overburden_method"),
+               basis=("GEC-12 (p. 108) gives Peck et al. (1974), Eq. 5-3, as "
+                      "the recommended correction in AASHTO specifications, "
+                      "and Liao & Whitman, Eq. 5-4, as an alternate"),
+               alternatives=[t for m, t in _CN_TEXT.items() if m != method]),
+    ]
+    return out
 
 
 def _run_stress_dilatancy(params: dict) -> dict:
@@ -1111,21 +1139,21 @@ _SITE_DATA_DOC = "Nested dict with project_name, investigations. Alternative to 
 METHOD_INFO = {
     "spt_correction": {
         "category": "Field Test Corrections",
-        "brief": "Raw field SPT N -> N60 -> (N1)60 (energy + overburden corrections, Youd et al. 2001 / Liao-Whitman).",
+        "brief": "Raw field SPT N -> N60 -> (N1)60: N60 = N ER/60 (NHI-06-088 Eq 3-2), then the overburden correction C_N (Liao & Whitman by default; Peck et al. 1974, AASHTO's; or EN ISO 22476-3).",
         "parameters": {
             "N_field": {"type": "float", "required": True, "description": "Raw field SPT blow count."},
             "sigma_vo_eff": {"type": "float", "required": True, "description": "Vertical effective stress at test depth (kPa)."},
-            "energy_ratio_pct": {"type": "float", "required": False, "default": 60.0, "description": "Hammer energy ratio ER (%). Donut 45-60, safety 55-72, automatic 80-100."},
-            "rod_length_m": {"type": "float", "required": False, "default": 10.0, "description": "Rod length (m); sets CR band (0.75 below 3 m up to 1.0 beyond 10 m)."},
-            "borehole_diameter_mm": {"type": "float", "required": False, "default": 100.0, "description": "Borehole diameter (mm); CB = 1.0/1.05/1.15."},
-            "sampler_correction": {"type": "float", "required": False, "default": 1.0, "description": "CS: 1.0 standard sampler, 1.1-1.3 without liners."},
-            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "iso"], "description": "C_N form: Liao & Whitman (1986, cap 1.7) or EN ISO 22476-3 (cap 2.0)."},
+            "energy_ratio_pct": {"type": "float", "required": False, "default": 60.0, "description": "Hammer energy ratio ER (%). NHI-06-088 p. 3-55: about 35-85 for cathead systems (donut or safety hammer), about 60 on average; 80-100 for automatic trip hammers; unmeasured, AASHTO takes 60 for rope and cathead and 80 for automatic."},
+            "rod_length_m": {"type": "float", "required": False, "default": 10.0, "description": "Rod length (m); sets CR band (0.75 below 3 m up to 1.0 beyond 10 m; Youd et al. 2001 Table 2)."},
+            "borehole_diameter_mm": {"type": "float", "required": False, "default": 100.0, "description": "Borehole diameter (mm); CB = 1.0/1.05/1.15 (Youd et al. 2001 Table 2)."},
+            "sampler_correction": {"type": "float", "required": False, "default": 1.0, "description": "CS: 1.0 standard sampler, 1.1-1.3 without liners (Youd et al. 2001 Table 2)."},
+            "overburden_method": {"type": "str", "required": False, "default": "liao_whitman", "allowed_values": ["liao_whitman", "peck", "iso"], "description": "C_N: 'liao_whitman' (100 kPa/sigma'v)^0.5, at most 1.7 (Youd et al. 2001); 'peck' 0.77 log10(20/sigma'v in tsf), at most 2.0, the correction GEC-12 (Eq. 5-3) and NHI-06-088 (Eq 3-3) give as AASHTO's; 'iso' EN ISO 22476-3, (98 kPa/sigma'v)^0.5, at most 2.0."},
         },
-        "returns": {"N60": "Energy-corrected blow count.", "N1_60": "Fully corrected (N1)60.", "CN": "Overburden factor."},
+        "returns": {"N60": "Energy-corrected blow count.", "N1_60": "Fully corrected (N1)60.", "CN": "Overburden factor.", "choices": "The energy ratio and overburden correction used, with the alternatives."},
     },
     "stress_dilatancy": {
         "category": "Strength Correlations",
-        "brief": "Bolton (1986) dilatancy: peak-friction excess and dilation angle from Dr and p'.",
+        "brief": "Bolton (1986) dilatancy: peak-friction excess and dilation angle from Dr and p' (the paper is not in the reference library, so not checked against its print).",
         "parameters": {
             "relative_density": {"type": "float", "required": True, "description": "Relative density Dr as a FRACTION (0-1)."},
             "p_eff": {"type": "float", "required": True, "description": "Mean effective stress p' (kPa)."},
