@@ -2713,30 +2713,5 @@
       "BACKLOG.md OWN-115",
       "module_work/gm298/CHECK.md"
     ]
-  },
-  "OWN-116": {
-    "kind": "decision",
-    "ask_who": null,
-    "question": "AASHTO 1993 composite k: when the subbase modulus is more than 4 times the subgrade's, should the module only warn (as now) or cap the subbase modulus at 4 times the subgrade's?",
-    "why": "The ratio feeds the composite k and so the slab thickness; capping it lowers k and thickens the slab where the subbase is much stiffer than the subgrade.",
-    "background": "The Guide's text says the ratio should not exceed 4 (pp. II-37, II-44), but its own Table 3.3 worked example uses 6.0; the warning fires on that example.",
-    "options": [
-      {
-        "label": "Warn only (as now)",
-        "effect": "Results unchanged; the Guide's Table 3.3 reproduces."
-      },
-      {
-        "label": "Cap at 4",
-        "effect": "Lower composite k and a thicker slab where the ratio is above 4; Table 3.3 would no longer reproduce."
-      }
-    ],
-    "recommendation": "Warn only: the Guide's own example goes past 4, so the text reads as advice, and the warning puts it in front of the engineer.",
-    "if_no_answer": "Warn only.",
-    "message_to_send": null,
-    "unblocks": [],
-    "sources": [
-      "BACKLOG.md OWN-116",
-      "module_work/gm298/CHECK.md"
-    ]
   }
 }
