@@ -464,7 +464,8 @@ specific check, the governing reference, and the corrective action.
 8. **Seismic earth pressure — Mononobe-Okabe ONLY (`seismic_geotech`).** At
    `kh = kv = 0`, `KAE → Coulomb Ka` and `KPE → Coulomb Kp` EXACTLY — a KAE/KPE
    that does not collapse to the static Coulomb value at zero acceleration is
-   wrong. Battered walls use Coulomb α = 90° + β. The seismic thrust INCREMENT
+   wrong. Battered walls use Coulomb α = 90° + the wall batter (seismic_geotech's
+   `beta`, from vertical; its backfill slope, item 2's β, is `i`). The seismic thrust INCREMENT
    ΔPAE acts at 0.6H above the base (Seed & Whitman 1970) and the static PA at
    H/3 — do not conflate them. NOTE: only M-O seismic earth pressure is in this reviewer's scope;
    liquefaction, site classification and Newmark slope displacement belong to the
