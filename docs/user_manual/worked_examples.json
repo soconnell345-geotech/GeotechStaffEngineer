@@ -1953,8 +1953,8 @@
       "embedment_converged_m": 4.926,
       "embedment_increase": 1.2,
       "total_wall_length_m": 9.911,
-      "max_moment_kNm_per_m": 299.8,
-      "max_moment_depth_m": 9.9,
+      "max_moment_kNm_per_m": 218.1,
+      "max_moment_depth_m": 6.72,
       "FOS_passive": 1.5,
       "excavation_depth_m": 4.0,
       "defaults_used": {
@@ -2001,22 +2001,28 @@
       "support_reactions": [
         {
           "depth_m": 2.0,
-          "load_kN_per_m": 123.2,
+          "load_kN_per_m": 146.66,
+          "from_above_kN_per_m": 70.4,
+          "from_below_kN_per_m": 76.27,
           "type": "strut"
         },
         {
           "depth_m": 5.0,
-          "load_kN_per_m": 158.4,
+          "load_kN_per_m": 102.06,
+          "from_above_kN_per_m": 29.33,
+          "from_below_kN_per_m": 72.73,
           "type": "strut"
         }
       ],
+      "support_load_method": "hinge",
       "max_moment_kNm_per_m": 75.13,
       "max_moment_depth_m": 7.06,
-      "max_shear_kN_per_m": 72.73,
+      "max_shear_kN_per_m": 76.27,
       "required_embedment_m": 2.99,
       "embedment_FS": 1.5,
       "total_wall_length_m": 10.99,
-      "required_Sx_cm3": 329.9,
+      "required_Sx_cm3": 362.9,
+      "Fb_ratio": 0.6,
       "free_earth": {
         "embedment_D_m": 2.991,
         "embedment_D_FS1_m": 1.918,
@@ -2028,7 +2034,7 @@
       "converged": true,
       "notes": [
         "Pressure above the excavation: sand apparent envelope (max 31.20 kPa) + surcharge 4.00 kPa (GEC-4 5.2.4 adds surcharge and water explicitly).",
-        "The bottom span's load is assigned wholly to the lowest support; free earth support gives that support 72.7 kN/m from the wall below it.",
+        "Support loads by the Caltrans T&S hinge method (8-4.02, Fig. 8-7): the load above the first support and its moment M1 to that support and the span below it, simple spans between supports, and the lowest support's load from below by free earth support about it (FS = 1): 72.7 kN/m.",
         "Embedment: free earth support about the lowest support, MR = FS x MD with FS = 1.5 (Caltrans T&S 8-4 uses 1.3)."
       ],
       "choices": [
@@ -2040,14 +2046,37 @@
           "alternatives": [
             "log_spiral (passive_theory 'log_spiral'), UFC 3-220-20 Eq. 4-12, with passive_wall_friction_deg left out: delta/phi' 0.66, none with cohesion: layer 1: Kp 3; embedment 2.99 m"
           ]
+        },
+        {
+          "what": "support loads and span moments (support_load_method)",
+          "chosen": "hinge: support loads 146.7, 102.1 kN/m",
+          "how": "default",
+          "basis": "The Caltrans Trenching and Shoring Manual's hinge method (Sec. 8-4.02 and Fig. 8-7, p. 8-10; Example 8-2), which the embedment below the lowest support follows too: the load above the first support and its moment M1 go to that support and the span below it (T1L = P/2 + M1/S, T2U = P/2 - M1/S), the spans between supports are simply supported, and the lowest support's load from below is free earth support's (moments about it, MR = MD); one support takes the whole wall about it (Sec. 8-4.01 step 5)",
+          "alternatives": [
+            "hinge_subgrade (support_load_method 'hinge_subgrade'), GEC-4's hinge method, Fig. 38 (p. 79): the span below the lowest support simply supported on it and a subgrade reaction R at the excavation base: support loads 146.7, 82.1 kN/m, R 52.8 kN/m",
+            "simple_spans (support_load_method 'simple_spans'), UFC 3-220-20 Fig. 4-54 (p. 257): simple spans between supports, the span below the lowest support a cantilever on it: support loads 123.2, 158.4 kN/m"
+          ]
+        },
+        {
+          "what": "allowable bending stress (Fb_ratio)",
+          "chosen": "Fb = 0.6 Fy, Sx 363 cm3/m",
+          "how": "default",
+          "basis": "Fb = 0.60 Fy, as the Caltrans Trenching and Shoring Manual's examples take it (Example 7-3, p. 7-43; Example 8-1, p. 8-19); its Sec. 6-2.02 (p. 6-3) refers steel members to the AISC ASD requirements and says Fb depends on whether the section is compact",
+          "alternatives": [
+            "Fb = 0.55 Fy, Sx 396 cm3/m: GEC-4 Sec. 5.4.1 (p. 81), for permanent walls and temporary walls that are considered critical (20 % more allowed for temporary SOE walls at positive moments between anchors)",
+            "Fb = 0.66 Fy, Sx 330 cm3/m: the Caltrans manual's railroad example (p. 9-20)"
+          ]
         }
       ],
       "defaults_used": {
         "gwt_depth_excavation": 10.0,
         "FOS_passive": 1.5,
         "embedment_increase": 1.0,
+        "support_load_method": "hinge",
+        "stiff_clay_coefficient": 0.4,
         "passive_theory": "rankine",
-        "Fy": 345.0
+        "Fy": 345.0,
+        "Fb_ratio": 0.6
       }
     }
   },
