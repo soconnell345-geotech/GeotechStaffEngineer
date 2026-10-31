@@ -425,7 +425,7 @@ _F8 = [
          FOUNDATIONS_REVIEWER_SCOPE, FOUNDATIONS_MODULES, FOUNDATIONS_REFERENCES,
          FOUNDATIONS_CHECKLIST, FOUNDATIONS_REVIEWER_PREAMBLE,
          "FOUNDATIONS REVIEW MODE", "bearing_capacity", "slope_stability",
-         ("GWT", "Converse-Labarre", "neutral plane", "Nordlund"),
+         ("GWT", "Table 6-26", "neutral plane", "Nordlund"),
          "foundations-reviewer.md"),
     _Rev("earth_retention", make_earth_retention_reviewer,
          make_earth_retention_reviewer_deep,

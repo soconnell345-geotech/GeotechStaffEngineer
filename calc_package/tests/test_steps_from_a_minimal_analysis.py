@@ -106,6 +106,9 @@ CASES = {
     "wave_quakes_only": lambda: _wave({"quake_side": 0.0025}),
     "pile_group": lambda: _group({}),
     "pile_group_efficiency": lambda: _group({
+        "n_rows": 3, "n_cols": 3, "spacing": 1.5, "pile_diameter": 0.4,
+        "soil_type": "cohesive", "cu": 50.0}),
+    "pile_group_efficiency_no_soil": lambda: _group({
         "n_rows": 3, "n_cols": 3, "spacing": 1.5, "pile_diameter": 0.4}),
     "cantilever_wall": _wall,
 }

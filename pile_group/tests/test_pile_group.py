@@ -6,8 +6,9 @@ analysis, and hand-verifiable symmetric loading cases.
 
 References:
     [1] CPGA User's Guide (USACE ITL-89-4)
-    [2] FHWA GEC-12, Chapter 9
+    [2] FHWA GEC-12 (FHWA-NHI-16-009), Vol. I ch. 7
     [3] USACE EM 1110-2-2906
+    [4] UFC 3-220-20 (2025), ch. 6
 """
 
 import math
@@ -16,7 +17,8 @@ import numpy as np
 
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
-    converse_labarre, block_failure_capacity, p_multiplier,
+    group_efficiency_factor, block_failure_resistance,
+    block_failure_capacity, group_plan_dimensions, p_multiplier,
     group_settlement_equivalent_raft, meyerhof_group_settlement,
 )
 from pile_group.rigid_cap import (
@@ -81,90 +83,174 @@ class TestPileLayout:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestGroupEfficiency:
-    """Test group efficiency calculations."""
+    """eta_g: GEC-12 Secs. 7.2.2.1-7.2.2.2 (driven piles, pp. 282, 284) and
+    UFC 3-220-20 Table 6-26 (p. 432)."""
 
-    def test_converse_labarre_3x3(self):
-        """3x3 group, D=0.3m, s=1.5m: Eg ≈ 0.83."""
-        Eg = converse_labarre(3, 3, 0.3, 1.5)
-        assert 0.7 < Eg < 1.0
+    def test_cohesionless_driven_is_one(self):
+        """GEC-12 p. 282 item 1: the sum of the individual resistances."""
+        r = group_efficiency_factor("cohesionless", 3.0)
+        assert r["eta_g"] == 1.0
+        assert r["alternative"] is None
+        assert not r["cap_in_contact_taken"] and not r["su_taken"]
 
-    def test_converse_labarre_wide_spacing(self):
-        """Wide spacing: Eg approaches 1.0."""
-        Eg = converse_labarre(3, 3, 0.3, 5.0)
-        assert Eg > 0.94
+    def test_soft_clay_cap_free_runs_0_65_to_1(self):
+        """GEC-12 p. 284 step 1: 0.65 at 2.5D, 1.0 at 6D, linear between,
+        1.0 beyond."""
+        def eta(sb):
+            return group_efficiency_factor(
+                "cohesive", sb, cap_in_contact=False, su_kPa=50.0)["eta_g"]
+        assert eta(2.5) == pytest.approx(0.65)
+        assert eta(3.0) == pytest.approx(0.70)
+        assert eta(4.25) == pytest.approx(0.825)
+        assert eta(6.0) == pytest.approx(1.0)
+        assert eta(8.0) == 1.0
 
-    def test_converse_labarre_close_spacing(self):
-        """Close spacing: Eg is lower."""
-        Eg_close = converse_labarre(3, 3, 0.3, 0.6)
-        Eg_wide = converse_labarre(3, 3, 0.3, 3.0)
-        assert Eg_close < Eg_wide
+    def test_soft_clay_cap_in_contact_is_one(self):
+        """GEC-12 p. 284 step 2."""
+        r = group_efficiency_factor("cohesive", 2.5, cap_in_contact=True,
+                                    su_kPa=50.0)
+        assert r["eta_g"] == 1.0
 
-    def test_converse_labarre_single_pile(self):
-        """1x1 group: Eg = 1.0 (no group effect)."""
-        Eg = converse_labarre(1, 1, 0.3, 1.0)
-        assert Eg == pytest.approx(1.0, abs=0.01)
+    def test_stiff_clay_is_one(self):
+        """GEC-12 p. 284 step 3: su above 2 ksf (95.76 kPa); UFC Table
+        6-26's row is su >= 2 ksf."""
+        for su in (95.76, 120.0):
+            r = group_efficiency_factor("cohesive", 2.5,
+                                        cap_in_contact=False, su_kPa=su)
+            assert r["eta_g"] == 1.0
+            assert r["su_below_2ksf"] is False
+        assert group_efficiency_factor(
+            "cohesive", 2.5, cap_in_contact=False,
+            su_kPa=95.0)["eta_g"] == pytest.approx(0.65)
 
-    def test_block_failure_positive(self):
-        """Block failure capacity should be positive."""
-        Qb = block_failure_capacity(3, 3, 1.5, 1.5, 15.0, 50.0, 0.3)
-        assert Qb > 0
+    def test_contact_left_out_takes_the_lower(self):
+        r = group_efficiency_factor("cohesive", 3.0, su_kPa=50.0)
+        assert r["cap_in_contact_taken"] and r["cap_in_contact"] is False
+        assert r["eta_g"] == pytest.approx(0.70)
+        assert r["alternative"] == pytest.approx(1.0)
 
-    def test_p_multiplier_leading_row(self):
-        """Leading row at 3D spacing: pm ≈ 0.8."""
-        pm = p_multiplier(1, 3.0)
-        assert pm == pytest.approx(0.8, abs=0.1)
+    def test_su_left_out_takes_the_lower(self):
+        r = group_efficiency_factor("cohesive", 2.5, cap_in_contact=False)
+        assert r["su_taken"] and r["su_below_2ksf"] is True
+        assert r["eta_g"] == pytest.approx(0.65)
+        assert r["alternative"] == pytest.approx(1.0)
 
-    def test_p_multiplier_trailing_row(self):
-        """Trailing rows get lower p-multiplier."""
-        pm1 = p_multiplier(1, 3.0)
-        pm3 = p_multiplier(3, 3.0)
-        assert pm3 < pm1
+    def test_cap_in_contact_needs_no_su(self):
+        r = group_efficiency_factor("cohesive", 3.0, cap_in_contact=True)
+        assert r["eta_g"] == 1.0 and not r["su_taken"]
 
-    def test_p_multiplier_wide_spacing(self):
-        """At 5D+ spacing, all rows get pm=1.0."""
-        for row in [1, 2, 3]:
-            assert p_multiplier(row, 5.0) == 1.0
+    def test_ufc_table_6_26_other_columns(self):
+        """UFC 3-220-20 Table 6-26, read off the print."""
+        f = group_efficiency_factor
+        # drilled shafts, coarse-grained, cap not in contact
+        for sb, eta in ((2.5, 0.65), (3.0, 0.80), (3.5, 0.90), (4.0, 1.0)):
+            assert f("cohesionless", sb, cap_in_contact=False,
+                     pile_type="drilled_shaft")["eta_g"] == pytest.approx(eta)
+        assert f("cohesionless", 3.0, cap_in_contact=True,
+                 pile_type="drilled_shaft")["eta_g"] == 1.0
+        assert f("cohesive", 3.0, cap_in_contact=False, su_kPa=50.0,
+                 pile_type="drilled_shaft")["eta_g"] == 1.0
+        # CFAs, coarse-grained, either cap condition: 0.65 at 2.5 to 1.0 at 6
+        for contact in (False, True):
+            assert f("cohesionless", 6.0, cap_in_contact=contact,
+                     pile_type="cfa")["eta_g"] == pytest.approx(1.0)
+            assert f("cohesionless", 3.0, cap_in_contact=contact,
+                     pile_type="cfa")["eta_g"] == pytest.approx(0.70)
+        # DDPs, fine-grained su < 2 ksf, cap not in contact: 0.7 at 3
+        assert f("cohesive", 3.0, cap_in_contact=False, su_kPa=50.0,
+                 pile_type="ddp")["eta_g"] == pytest.approx(0.7)
+        assert f("cohesive", 4.5, cap_in_contact=False, su_kPa=50.0,
+                 pile_type="ddp")["eta_g"] == pytest.approx(0.85)
+        # micropiles: 0.70 at 3, 1.0 at 6
+        assert f("cohesive", 3.0, cap_in_contact=False, su_kPa=50.0,
+                 pile_type="micropile")["eta_g"] == pytest.approx(0.70)
+        assert f("cohesive", 4.5, cap_in_contact=False, su_kPa=50.0,
+                 pile_type="micropile")["eta_g"] == pytest.approx(0.85)
 
-    def test_converse_labarre_capped_at_1(self):
-        """Efficiency must never exceed 1.0 (AASHTO LRFD 10.7.2.3)."""
-        # Very wide spacing -> formula approaches 1.0 but should not exceed it
-        Eg = converse_labarre(2, 2, 0.01, 100.0)
-        assert Eg <= 1.0
-        assert Eg == pytest.approx(1.0, abs=0.001)
+    def test_below_the_printed_minimum_spacing_refused(self):
+        with pytest.raises(ValueError, match="Table 6-26"):
+            group_efficiency_factor("cohesive", 2.4, cap_in_contact=False,
+                                    su_kPa=50.0)
+        with pytest.raises(ValueError, match="Table 6-26"):
+            group_efficiency_factor("cohesive", 2.9, pile_type="ddp")
 
-    def test_converse_labarre_symmetric(self):
-        """Formula is symmetric: swapping rows/cols gives same result."""
-        Eg_3x5 = converse_labarre(3, 5, 0.356, 1.07)
-        Eg_5x3 = converse_labarre(5, 3, 0.356, 1.07)
-        assert Eg_3x5 == pytest.approx(Eg_5x3, abs=1e-10)
+    def test_unknown_types_refused(self):
+        with pytest.raises(ValueError, match="soil_type"):
+            group_efficiency_factor("sand", 3.0)
+        with pytest.raises(ValueError, match="pile_type"):
+            group_efficiency_factor("cohesionless", 3.0, pile_type="auger")
 
-    def test_converse_labarre_hand_calc_2x2(self):
-        """2x2 group with arctan = 18.3 deg -> Eg ≈ 0.80 (textbook example)."""
-        # arctan(d/s) = 18.3 deg => d/s = tan(18.3 deg) => s/d ≈ 3.024
-        # Use d=0.3, s = 0.3 * 3.024 = 0.9072
-        d = 0.3
-        theta_target = 18.3
-        s = d / math.tan(math.radians(theta_target))
-        Eg = converse_labarre(2, 2, d, s)
-        # Eg = 1 - 18.3/(90*2*2) * [2*1 + 2*1] = 1 - 18.3/360 * 4 = 0.797
-        assert Eg == pytest.approx(0.797, abs=0.01)
 
-    def test_converse_labarre_3x3_exact(self):
-        """3x3, D=0.3m, s=1.5m: exact Eg = 1 - arctan(0.2)*12/(90*9)."""
-        theta = math.degrees(math.atan(0.3 / 1.5))  # 11.31 deg
-        expected = 1.0 - theta / (90 * 3 * 3) * (3 * 2 + 3 * 2)
-        Eg = converse_labarre(3, 3, 0.3, 1.5)
-        assert Eg == pytest.approx(expected, abs=1e-10)
+class TestBlockFailure:
+    """GEC-12 Eqs. 7-36 and 7-37 (p. 286); UFC 3-220-20 Eqs. 6-38, 6-39."""
 
-    def test_converse_labarre_raises_negative_spacing(self):
-        """Negative spacing should raise ValueError."""
-        with pytest.raises(ValueError):
-            converse_labarre(3, 3, 0.3, -1.0)
+    def test_eq_7_36_hand_calc(self):
+        """Made-up group: B 3.3 m, Z 4.8 m, D 15 m, su1 40, su2 60 kPa.
+        Nc = 5(1 + 15/16.5)(1 + 3.3/24) = 10.86 -> 9."""
+        r = block_failure_resistance(3.3, 4.8, 15.0, 40.0, 60.0)
+        nc = 5 * (1 + 15 / (5 * 3.3)) * (1 + 3.3 / (5 * 4.8))
+        assert r["Nc_eq_7_37"] == pytest.approx(nc)
+        assert r["Nc"] == 9.0
+        assert r["side_kN"] == pytest.approx(2 * 15 * (3.3 + 4.8) * 40)
+        assert r["base_kN"] == pytest.approx(3.3 * 4.8 * 60 * 9)
+        assert r["R_ng_kN"] == pytest.approx(9720.0 + 8553.6)
 
-    def test_converse_labarre_raises_zero_diameter(self):
-        """Zero diameter should raise ValueError."""
-        with pytest.raises(ValueError):
-            converse_labarre(3, 3, 0.0, 1.0)
+    def test_nc_below_9_for_a_shallow_wide_group(self):
+        """Eq. 7-37 for small embedment and/or large widths: B = Z = 10 m,
+        D = 5 m: 5 (1.1)(1.2) = 6.6."""
+        r = block_failure_resistance(10.0, 10.0, 5.0, 30.0, 30.0)
+        assert r["Nc"] == pytest.approx(6.6)
+
+    def test_b_is_the_smaller_dimension(self):
+        a = block_failure_resistance(6.0, 3.0, 4.0, 30.0, 30.0)
+        b = block_failure_resistance(3.0, 6.0, 4.0, 30.0, 30.0)
+        assert a == b and a["B_m"] == 3.0
+
+    def test_layout_to_the_outer_pile_faces(self):
+        """Fig. 7-31: B and Z to the outer faces, (n - 1) s + d."""
+        assert group_plan_dimensions(3, 4, 1.5, 1.2, 0.3) == pytest.approx(
+            (2.7, 4.8))
+        assert block_failure_capacity(3, 3, 1.5, 1.5, 15.0, 50.0, 0.3) == \
+            pytest.approx(block_failure_resistance(
+                3.3, 3.3, 15.0, 50.0, 50.0)["R_ng_kN"])
+        assert block_failure_capacity(3, 3, 1.5, 1.5, 15.0, 50.0, 0.3,
+                                      su2=80.0) == pytest.approx(
+            block_failure_resistance(3.3, 3.3, 15.0, 50.0, 80.0)["R_ng_kN"])
+
+
+class TestPMultiplier:
+    """AASHTO as GEC-12 prints it (pp. 367, 370) and UFC 3-220-20 Table
+    6-38 extends it; Mokwa (1999), UFC Table 6-38."""
+
+    def test_aashto_at_3b_and_5b(self):
+        assert [p_multiplier(r, 3.0) for r in (1, 2, 3, 4)] == \
+            pytest.approx([0.8, 0.4, 0.3, 0.3])
+        assert [p_multiplier(r, 5.0) for r in (1, 2, 3, 4)] == \
+            pytest.approx([1.0, 0.85, 0.7, 0.7])
+
+    def test_aashto_beyond_5b_to_1_at_6b(self):
+        assert [p_multiplier(r, 5.5) for r in (1, 2, 3)] == \
+            pytest.approx([1.0, 0.925, 0.85])
+        assert all(p_multiplier(r, sd) == 1.0
+                   for r in (1, 2, 3, 6) for sd in (6.0, 8.0))
+
+    def test_mokwa_ufc_table_b_32(self):
+        """UFC 3-220-20 Table B-32 at s/b = 3: 0.82, 0.67, 0.58, 0.52."""
+        assert [p_multiplier(r, 3.0, "mokwa") for r in (1, 2, 3, 4, 7)] == \
+            pytest.approx([0.82, 0.67, 0.58, 0.52, 0.52])
+
+    def test_mokwa_held_at_1(self):
+        assert p_multiplier(1, 7.0, "mokwa") == 1.0
+
+    def test_below_3_diameters_refused(self):
+        with pytest.raises(ValueError, match="below 3"):
+            p_multiplier(1, 2.5)
+
+    def test_row_and_method_checked(self):
+        with pytest.raises(ValueError, match="row_position"):
+            p_multiplier(0, 3.0)
+        with pytest.raises(ValueError, match="method"):
+            p_multiplier(1, 3.0, "brown")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -172,7 +258,8 @@ class TestGroupEfficiency:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestGroupSettlement:
-    """Tests for group_settlement_equivalent_raft (FHWA GEC-12 Sec 9.8)."""
+    """Tests for group_settlement_equivalent_raft (GEC-12 Sec. 7.3.5.3;
+    UFC 3-220-20 Sec. 6-5.8.4)."""
 
     def test_raft_dimensions_3x4(self):
         """Bg = (n_cols-1)*s + d, Lg = (n_rows-1)*s + d."""
@@ -201,14 +288,24 @@ class TestGroupSettlement:
         )
         assert result["raft_depth_m"] == pytest.approx(16.0, abs=0.01)
 
-    def test_influence_depth_5Bg(self):
-        """Influence depth = 5 * Bg."""
+    def test_influence_depth_to_10_percent(self):
+        """UFC 3-220-20 p. 449: to where the stress is 10 % of the
+        footing's bearing stress, (Bg + z)(Lg + z) = 10 Bg Lg."""
         result = group_settlement_equivalent_raft(
             n_rows=3, n_cols=4, spacing=1.5, pile_diameter=0.3,
             pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
         )
-        Bg = 4.8
-        assert result["influence_depth_m"] == pytest.approx(5 * Bg, abs=0.01)
+        z = result["influence_depth_m"]
+        assert (4.8 + z) * (3.3 + z) == pytest.approx(10 * 4.8 * 3.3,
+                                                      rel=1e-4)
+
+    def test_influence_depth_given(self):
+        result = group_settlement_equivalent_raft(
+            n_rows=3, n_cols=4, spacing=1.5, pile_diameter=0.3,
+            pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000,
+            influence_depth_m=6.0,
+        )
+        assert result["influence_depth_m"] == 6.0
 
     def test_max_stress_at_raft(self):
         """Stress at z=0: Q / (Bg * Lg)."""
@@ -277,23 +374,25 @@ class TestGroupSettlement:
         """Hand-calculated settlement for 2x2 group.
 
         Bg = Lg = (2-1)*1.5 + 0.3 = 1.8 m
-        Q = 1000 kN, Es = 20000 kPa
-        Influence depth = 5 * 1.8 = 9.0 m
-        Using 1 sublayer (midpoint at z=4.5):
-            delta_sigma = 1000 / ((1.8+4.5)*(1.8+4.5)) = 1000 / 39.69 = 25.19 kPa
-            S = 25.19 * 9.0 / 20000 = 0.01134 m = 11.34 mm
+        Q = 1000 kN, M = 20000 kPa
+        Influence depth: (1.8 + z)^2 = 10 * 1.8^2 -> z = 1.8 (sqrt(10) - 1)
+        = 3.892 m
+        Using 1 sublayer (midpoint at z = 1.946 m):
+            delta_sigma = 1000 / (3.746^2) = 71.26 kPa
+            S = 71.26 * 3.892 / 20000 = 0.01387 m = 13.87 mm
         """
         result = group_settlement_equivalent_raft(
             n_rows=2, n_cols=2, spacing=1.5, pile_diameter=0.3,
             pile_length=12.0, load_kN=1000, soil_modulus_kPa=20000,
             num_sublayers=1,
         )
-        # With 1 sublayer, midpoint at z = 4.5 m
         Bg = 1.8
         Lg = 1.8
-        z_mid = 4.5
+        depth = 1.8 * (math.sqrt(10.0) - 1.0)
+        z_mid = depth / 2
         delta_sigma = 1000 / ((Bg + z_mid) * (Lg + z_mid))
-        expected = delta_sigma * 9.0 / 20000 * 1000  # mm
+        expected = delta_sigma * depth / 20000 * 1000  # mm
+        assert expected == pytest.approx(13.87, abs=0.01)
         assert result["settlement_mm"] == pytest.approx(expected, rel=0.01)
 
     def test_raises_negative_load(self):
@@ -345,14 +444,14 @@ class TestGroupSettlement:
         Q, Es = 3000, 40000
         Bg = (n_cols - 1) * s + d  # 4.4
         Lg = (n_rows - 1) * s + d  # 4.4
-        depth = 5 * Bg  # 22.0
+        depth = Bg * (math.sqrt(10.0) - 1.0)  # to 10 % of the stress
 
         result = group_settlement_equivalent_raft(
             n_rows=n_rows, n_cols=n_cols, spacing=s, pile_diameter=d,
             pile_length=L, load_kN=Q, soil_modulus_kPa=Es,
             num_sublayers=1,
         )
-        z_mid = depth / 2  # 11.0
+        z_mid = depth / 2
         expected_stress = Q / ((Bg + z_mid) * (Lg + z_mid))
         expected_settle = expected_stress * depth / Es * 1000  # mm
         assert result["settlement_mm"] == pytest.approx(expected_settle, rel=0.01)
@@ -504,6 +603,16 @@ class TestMeyerhofGroupSettlement:
         with pytest.raises(ValueError, match="group_width must be positive"):
             meyerhof_group_settlement(
                 group_width=-3.0, group_length=6.0, N160=20, pf_kPa=200.0)
+
+    def test_silty_sand_eq_7_51_doubles_eq_7_50(self):
+        """GEC-12 Eq. 7-51 (p. 319): 8 in place of 4 for silty sand."""
+        kw = dict(group_width=3.0, group_length=6.0, N160=20, pf_kPa=200.0,
+                  embedment_DB=6.0)
+        sand = meyerhof_group_settlement(**kw)
+        silty = meyerhof_group_settlement(silty_sand=True, **kw)
+        assert (sand["equation"], silty["equation"]) == ("7-50", "7-51")
+        assert silty["settlement_mm"] == pytest.approx(
+            2 * sand["settlement_mm"], abs=0.002)
 
 
 # ═══════════════════════════════════════════════════════════════════════

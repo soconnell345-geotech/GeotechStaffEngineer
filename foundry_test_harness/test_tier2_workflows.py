@@ -224,8 +224,9 @@ class TestDeepFoundationWorkflow:
             "n_cols": 3,
             "pile_diameter": 0.356,
             "spacing": 1.07,
+            "soil_type": "cohesionless",
         })
-        eta = r_eff["converse_labarre_Eg"]
+        eta = r_eff["group_efficiency"]
         assert 0 < eta <= 1.0
 
         # Step 3: Group capacity = n * Q_single * eta

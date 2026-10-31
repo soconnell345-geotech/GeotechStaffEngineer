@@ -1041,6 +1041,28 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Verdict: **PASS** (RESULTS.md). Tests:
   test_published_v059_gec12_pier2.py.
 
+## V-060 GEC-12 Vol 3 North Abutment and UFC 3-220-20 Appendix B: pile groups
+- Source: GEC-12 (FHWA-NHI-16-009) Vol 3 Tables D-11 to D-14 (pp. 47-49),
+  Fig. D-25, pp. 50, 56, 136, 137 and 203, Table D-23 (p. 64); UFC 3-220-20
+  (2025) Appendix B-5.4 (pp. 636-638) and Table B-32 (p. 643); read from
+  `geotech-references/docs/`.
+- Target: `pile_group`: `analyze_vertical_group_simple` and
+  `analyze_group_6dof` (equal springs), `p_multiplier` (AASHTO and Mokwa),
+  `group_efficiency_factor`, `meyerhof_group_settlement`,
+  `block_failure_resistance`.
+- Inputs: 2 rows of 9, 11 or 13 piles, rows 4.0 ft apart; Strength I Q 2505
+  kips, Muy 6625 kip-ft, Vuy 846 kips; Service I 1838 / 4600; Service I
+  without LL 1540 / 4162. Table D-23: B 5 ft, Z 41 or 37 ft, Q 1540 kips, DB
+  and N1(60) at five penetrations. UFC B-5.4: 7x7 group of 1 ft piles, 60
+  ft, B = Z = 18 ft, su1 1.33 ksf, su2 3 ksf. Table B-32: s/b = 3, 7 rows.
+- Published answer: row reactions 2908 / -406, 2069 / -231, 1811 / -271
+  kips; per pile 323 / 265 / 224 kips (Strength I), Vuy 47 / 39 / 33 kips;
+  p-multipliers 0.90 / 0.625 / 0.5 at 4b, 1.0 / 0.85 / 0.7 at 5b;
+  settlements 2.63 / 1.11 / 1.13 / 1.04 / 0.95 in (Configurations 1 and 2)
+  and 2.92 / 1.22 / 1.25 / 1.16 / 1.05 in (3); block failure 14,494 kips,
+  factored 8,696; Mokwa 0.82 / 0.67 / 0.58 / 0.52, weighted 0.593.
+- Verdict: **PASS** (RESULTS.md). Tests: test_published_v060_pile_group.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

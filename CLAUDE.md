@@ -1996,7 +1996,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | sheet_pile | 60 | Cantilever/anchored walls (Rankine/Coulomb w/ wall friction; single FOS basis) |
 | soe | 149 | Support of excavation (braced/cantilever, stability, anchors) |
 | lateral_pile | 132 | Lateral pile (COM624P p-y models, banded FD solver, above-ground stickup; validation.py oracle suite) |
-| pile_group | 102 | Rigid cap groups (6-DOF, one RH sign convention end-to-end, Converse-Labarre) |
+| pile_group | 111 | Rigid cap groups (6-DOF, one RH sign convention end-to-end); group efficiency factor, block failure, p-multipliers and group settlement as GEC-12 ch. 7 and UFC 3-220-20 ch. 6 print them (GM-286) |
 | wave_equation | 61 | Smith 1-D wave equation (elasto-plastic springs, smith/smith_viscous damping, bearing graph) |
 | drilled_shaft | 79 | GEC-10 alpha/beta/rock socket (clay end-bearing cap, N60 side reduction) |
 | seismic_geotech | 100 | Site class, M-O pressures (battered-wall-correct), Fpga(PGA), SPT liquefaction (NCEER/Youd-2001) |

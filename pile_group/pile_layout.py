@@ -8,7 +8,7 @@ All units are SI: meters, kN, radians.
 
 References:
     USACE EM 1110-2-2906, Chapter 4
-    FHWA GEC-12, Chapter 9
+    FHWA GEC-12 (FHWA-NHI-16-009), Vol. I Sec. 8.8 (pile group layout)
     CPGA User's Guide (ITL-89-4)
 """
 

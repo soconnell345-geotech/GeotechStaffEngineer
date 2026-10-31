@@ -7,7 +7,7 @@ Register these three functions as tools in AIP Agent Studio:
   3. pile_group_describe_method - Get detailed parameter docs
 
 Covers rigid cap pile group analysis (simplified and 6-DOF),
-group efficiency (Converse-Labarre), and block failure.
+the group efficiency factor (GEC-12 Sec. 7.2.2), and block failure.
 
 FOUNDRY SETUP:
   - pip install geotech-staff-engineer (PyPI)
@@ -26,7 +26,7 @@ except ImportError:
 
 from pile_group.pile_layout import GroupPile, create_rectangular_layout
 from pile_group.group_efficiency import (
-    converse_labarre, block_failure_capacity, p_multiplier,
+    group_efficiency_factor, block_failure_capacity, p_multiplier,
 )
 from pile_group.rigid_cap import (
     GroupLoad, analyze_vertical_group_simple, analyze_group_6dof,
@@ -139,13 +139,13 @@ def _run_group_efficiency(params: dict) -> dict:
     """Group efficiency calculations."""
     results = {}
 
-    # Converse-Labarre
-    if "n_rows" in params and "n_cols" in params:
-        Eg = converse_labarre(
-            params["n_rows"], params["n_cols"],
-            params["pile_diameter"], params["spacing"],
-        )
-        results["converse_labarre_Eg"] = round(Eg, 4)
+    # Group efficiency factor (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26)
+    if "soil_type" in params:
+        r = group_efficiency_factor(
+            params["soil_type"], params["spacing"] / params["pile_diameter"],
+            cap_in_contact=params.get("cap_in_contact"),
+            su_kPa=params.get("cu"))
+        results["group_efficiency"] = round(r["eta_g"], 4)
 
     # Block failure
     if "pile_length" in params and "cu" in params:
@@ -257,25 +257,28 @@ METHOD_INFO = {
     },
     "group_efficiency": {
         "category": "Group Efficiency",
-        "brief": "Converse-Labarre efficiency, block failure capacity, and lateral p-multiplier.",
+        "brief": "Group efficiency factor, block failure capacity, and lateral p-multiplier.",
         "description": (
-            "Calculates pile group efficiency factor using the Converse-Labarre formula, "
-            "block failure capacity for cohesive soils, and lateral p-multiplier for "
-            "group effects on lateral resistance."
+            "Reads the pile group efficiency factor from GEC-12 Sec. 7.2.2 "
+            "(with soil_type), block failure capacity for cohesive soils "
+            "(GEC-12 Eqs. 7-36, 7-37), and the lateral p-multiplier for "
+            "group effects on lateral resistance (GEC-12 p. 370)."
         ),
-        "reference": "FHWA GEC-12, Eq 9-1; Brown et al. (1988)",
+        "reference": "FHWA GEC-12 Secs. 7.2.2, 7.3.7.6",
         "parameters": {
             "n_rows": {"type": "int", "required": True, "description": "Number of rows."},
             "n_cols": {"type": "int", "required": True, "description": "Number of columns."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter or width (m)."},
             "spacing": {"type": "float", "required": True, "description": "Center-to-center spacing (m)."},
+            "soil_type": {"type": "str", "required": False, "description": "'cohesionless' or 'cohesive'. For the group efficiency factor."},
+            "cap_in_contact": {"type": "bool", "required": False, "description": "Pile cap in firm contact with the ground. For the group efficiency factor."},
             "pile_length": {"type": "float", "required": False, "description": "Pile length (m). For block failure."},
             "cu": {"type": "float", "required": False, "description": "Undrained shear strength (kPa). For block failure."},
             "row_position": {"type": "int", "required": False, "description": "Row position (1=leading). For p-multiplier."},
             "spacing_diameter_ratio": {"type": "float", "required": False, "description": "s/D ratio. For p-multiplier."},
         },
         "returns": {
-            "converse_labarre_Eg": "Group efficiency (0-1).",
+            "group_efficiency": "Group efficiency factor eta_g (0-1).",
             "block_failure_kN": "Block failure capacity (kN).",
             "p_multiplier": "Lateral p-multiplier (0-1).",
         },
