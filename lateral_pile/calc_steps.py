@@ -6,7 +6,7 @@ for Mathcad-style calc package generation (LPILE-style output).
 
 References:
     COM624P Manual: FHWA-SA-91-048 (Wang & Reese, 1993)
-    FHWA GEC-13: FHWA-HIF-18-031
+    FHWA GEC 9: FHWA-HIF-18-031 (2018)
 """
 
 from typing import List
@@ -27,10 +27,14 @@ REFERENCES = [
     'in Soft Clay. OTC-1204.',
     'Reese, L.C. et al. (1974). Analysis of Laterally Loaded Piles in Sand. '
     'OTC-2080.',
-    'API RP 2GEO (2014). Geotechnical and Foundation Design Considerations.',
+    'API RP 2A-WSD, 21st ed. with Supplement 3 (2007). Recommended Practice '
+    'for Planning, Designing and Constructing Fixed Offshore Platforms, '
+    'Secs. 6.8.6-6.8.7.',
     'Jeanjean, P. (2009). Re-Assessment of p-y Curves for Soft Clays from '
     'Centrifuge Testing and Finite Element Modeling. OTC-20158.',
-    'FHWA GEC-13 (FHWA-HIF-18-031): Ground Modification Methods.',
+    'FHWA GEC 9 (FHWA-HIF-18-031, 2018): Design, Analysis, and Testing of '
+    'Laterally Loaded Deep Foundations that Support Transportation '
+    'Facilities.',
 ]
 
 

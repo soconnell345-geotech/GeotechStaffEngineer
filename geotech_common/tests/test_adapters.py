@@ -329,8 +329,10 @@ class TestLateralPileAdapter:
                                              pile_diameter=0.9)
         assert [l["py_model_type"] for l in r["layers"]] == [
             "SandAPI", "StiffClayAboveWT"]
-        assert "below a sand stratum" in r["choices"][0]["basis"]
-        assert "unless scour removed" in r["choices"][0]["basis"]
+        # choices[0] is the sand's k (GM-287)
+        assert r["choices"][1]["what"] == "p-y criterion 3-12 m"
+        assert "below a sand stratum" in r["choices"][1]["basis"]
+        assert "unless scour removed" in r["choices"][1]["basis"]
         r = under_sand.to_lateral_pile_input(
             pile_length=12.0, pile_diameter=0.9, free_water_at_surface=True)
         assert r["layers"][1]["py_model_type"] == "StiffClayBelowWT"
@@ -460,7 +462,9 @@ class TestLateralPileAdapter:
 
     def test_no_clay_no_boundary_choice(self):
         r = _sand_only_profile().to_lateral_pile_input(10.0, 0.6)
-        assert r["choices"] == []
+        # only the sand k read off API RP 2A Fig. 6.8.7-1 (GM-287)
+        assert [c["what"][:24] for c in r["choices"]] == [
+            "k of the API sand curve "] * len(r["choices"])
 
     def test_free_water_given_but_not_used_is_said(self):
         """GM-217: free_water_at_surface picks the criterion for stiff
@@ -711,17 +715,29 @@ class TestAdapterIntegration:
 
 class TestHelperFunctions:
 
+    # API RP 2A-WSD Fig. 6.8.7-1 (p. 70), read off its vector curves
+    # (GM-287): k in lb/in^3 times 271.447.
+
     def test_k_sand_below_gwt(self):
         k = _estimate_k_sand(30, below_gwt=True)
-        assert k == 11000.0
+        assert k == pytest.approx(34.1 * 271.447)
 
     def test_k_sand_above_gwt(self):
         k = _estimate_k_sand(30, below_gwt=False)
-        assert k == 16300.0
+        assert k == pytest.approx(46.6 * 271.447)
 
     def test_k_sand_high_phi(self):
         k = _estimate_k_sand(40, below_gwt=True)
-        assert k == 50000.0
+        assert k == pytest.approx(156.6 * 271.447)
+
+    def test_k_sand_off_the_chart_takes_its_end(self):
+        assert _estimate_k_sand(45, below_gwt=False) == pytest.approx(
+            277.3 * 271.447)
+        assert _estimate_k_sand(25, below_gwt=True) == pytest.approx(
+            8.7 * 271.447)
+        # between two whole degrees, linear
+        assert _estimate_k_sand(35.5, below_gwt=True) == pytest.approx(
+            (82.0 + 94.1) / 2 * 271.447)
 
     def test_k_stiff_clay_moderate(self):
         # COM624P Table 3.2: 1-2 ton/ft^2 (95.8-191.5 kPa), ks 1,000 lb/in^3

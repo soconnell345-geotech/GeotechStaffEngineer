@@ -18,7 +18,8 @@ References
 - Hetenyi, M. (1946). "Beams on Elastic Foundation."
 - Matlock, H. (1970). OTC 1204.
 - Reese, L.C., Cox, W.R. & Koop, F.D. (1974). OTC 2080.
-- API RP2A-WSD, 21st Edition (2000).
+- API RP2A-WSD, 21st Edition with Supplement 3 (2007).
+- FHWA GEC 9, FHWA-HIF-18-031 (2018).
 - Reese, L.C. & Van Impe, W.F. (2001). "Single Piles and Pile Groups
   Under Lateral Loading." Balkema.
 """
@@ -302,9 +303,10 @@ class TestPYCurves:
         assert model.get_p(0.01, 0.0, 0.6) == 0.0
 
     def test_sand_reese_three_part_curve(self):
-        """SandReese must be a genuine 3-part curve (linear -> parabola ->
-        plateau), not bilinear (LP-1)."""
-        model = SandReese(phi=35.0, gamma=9.0, k=22000.0, loading='static')
+        """SandReese's 'simplified' construction must be a genuine 3-part
+        curve (linear -> parabola -> plateau), not bilinear (LP-1)."""
+        model = SandReese(phi=35.0, gamma=9.0, k=22000.0, loading='static',
+                          construction='simplified')
         z, b = 3.0, 0.6
         yu = 3.0 * b / 80.0
         pus, pud = model.get_pu(z, b)
@@ -331,17 +333,18 @@ class TestPYCurves:
         k_init = 22000.0 * z
         assert np.sum((interior > 1e-6) & (interior < 0.5 * k_init)) >= 3
 
-    def test_sand_reese_construction_default_is_simplified(self):
-        """construction defaults to 'simplified'; the two constructions differ."""
-        simp = SandReese(phi=35.0, gamma=9.0, k=22000.0)
-        assert simp.construction == 'simplified'
-        full = SandReese(phi=35.0, gamma=9.0, k=22000.0, construction='reese1974')
+    def test_sand_reese_construction_default_is_reese1974(self):
+        """construction defaults to 'reese1974', GEC 9 App. A.4's printed
+        curve (GM-287; 'simplified' before); the two constructions differ."""
+        full = SandReese(phi=35.0, gamma=9.0, k=22000.0)
+        assert full.construction == 'reese1974'
+        simp = SandReese(phi=35.0, gamma=9.0, k=22000.0, construction='simplified')
         z, b = 3.0, 0.6
         ym = b / 60.0
-        # default vs explicit simplified are identical; full differs at the m-point
-        assert simp.get_p(ym, z, b) == pytest.approx(
+        # default vs explicit reese1974 are identical; simplified differs at the m-point
+        assert full.get_p(ym, z, b) == pytest.approx(
             SandReese(phi=35.0, gamma=9.0, k=22000.0,
-                      construction='simplified').get_p(ym, z, b), rel=1e-12)
+                      construction='reese1974').get_p(ym, z, b), rel=1e-12)
         assert full.get_p(ym, z, b) != pytest.approx(simp.get_p(ym, z, b), rel=1e-6)
         with pytest.raises(ValueError):
             SandReese(phi=35.0, gamma=9.0, k=22000.0, construction='bogus')
@@ -425,6 +428,62 @@ class TestPYCurves:
         assert np.all(np.diff(p5) >= -1e-9)
         assert model.get_p(3.0 * yu, z5, b) == pytest.approx(0.88 * pu5, rel=1e-9)
 
+    def test_reese_sand_ps_as_printed_gec9(self):
+        """p_s of Reese sand from GEC 9 Eqs. A-22 to A-24 (p. 227), GM-287.
+        At phi = 30 deg: alpha 15, beta 60, K0 0.4 and Ka 1/3, so C2 =
+        tan 60 / tan 30 - 1/3 and C3 = (1/3)(tan^8 60 - 1) + 0.4 tan 30
+        tan^4 60. A-23's third term carries a z, as COM624P Eq. 3.31 (p.
+        341) prints it; GEC 9 prints it without. API RP 2A Fig. 6.8.6-1
+        plots the same coefficients, 1.914 / 2.679 / 28.56 read at 30 deg,
+        which only the term with its z reproduces."""
+        import math
+        from lateral_pile.py_curves import _reese_sand_coefficients
+        t, r = math.tan, math.radians
+        C1, C2, C3 = _reese_sand_coefficients(30.0)
+        c1 = (0.4 * t(r(30)) * math.sin(r(60)) / (t(r(30)) * math.cos(r(15)))
+              + t(r(60)) ** 2 * t(r(15)) / t(r(30))
+              + 0.4 * t(r(60)) * (t(r(30)) * math.sin(r(60)) - t(r(15))))
+        assert C1 == pytest.approx(c1, rel=1e-12)
+        assert C1 == pytest.approx(1.912, abs=0.001)
+        assert C2 == pytest.approx(3.0 - 1.0 / 3.0, rel=1e-12)
+        assert C3 == pytest.approx(80.0 / 3.0 + 0.4 * t(r(30)) * 9.0, rel=1e-12)
+        assert (C1, C2, C3) == pytest.approx((1.914, 2.679, 28.56), rel=0.01)
+        # in the model: p_st = gamma z (C1 z + C2 D), p_sd = C3 D gamma z
+        pst, psd = SandReese(phi=30.0, gamma=10.0, k=20000.0).get_pu(2.0, 0.6)
+        assert pst == pytest.approx(10.0 * 2.0 * (c1 * 2.0 + C2 * 0.6), rel=1e-12)
+        assert psd == pytest.approx(C3 * 0.6 * 10.0 * 2.0, rel=1e-12)
+
+    def test_api_sand_coefficients_read_off_fig_6_8_6_1(self):
+        """API sand C1, C2, C3 from API RP 2A-WSD Fig. 6.8.6-1 (p. 70), read
+        off its vector curves at whole degrees, linear between (GM-287)."""
+        from lateral_pile.py_curves import (
+            _api_sand_coefficients, _API_SAND_PHI, _API_SAND_C1,
+            _API_SAND_C2, _API_SAND_C3)
+        assert _api_sand_coefficients(30.0) == pytest.approx(
+            (1.914, 2.679, 28.56), rel=0.002)
+        i = list(_API_SAND_PHI).index(35.0)
+        assert _api_sand_coefficients(35.5) == pytest.approx(
+            tuple((c[i] + c[i + 1]) / 2.0
+                  for c in (_API_SAND_C1, _API_SAND_C2, _API_SAND_C3)))
+        with pytest.warns(UserWarning):
+            assert _api_sand_coefficients(45.0) == pytest.approx(
+                _api_sand_coefficients(40.0))
+        C1, C2, C3 = _api_sand_coefficients(30.0)
+        pu = SandAPI(phi=30.0, gamma=10.0, k=20000.0).get_pu(2.0, 0.6)
+        assert pu == pytest.approx(min((C1 * 2.0 + C2 * 0.6) * 10.0 * 2.0,
+                                       C3 * 0.6 * 10.0 * 2.0))
+
+    def test_sand_k_table_a3_by_relative_density(self):
+        """GEC 9 Table A-3 (p. 228) gives sand k by relative density only:
+        no friction angle is mapped to it, and no phi 40 value (GM-287)."""
+        from lateral_pile.py_curves import _sand_k_recommendation
+        assert _sand_k_recommendation("medium", below_wt=True) == pytest.approx(
+            60.0 * 271.447)
+        assert _sand_k_recommendation("dense", below_wt=False) == pytest.approx(
+            225.0 * 271.447)
+        with pytest.raises((ValueError, KeyError, AttributeError)):
+            _sand_k_recommendation(35.0)
+
     def test_stiff_clay_below_wt_basics(self):
         """StiffClayBelowWT should produce reasonable results."""
         model = StiffClayBelowWT(c=100.0, gamma=9.0, eps50=0.005, ks=270000.0)
@@ -463,6 +522,22 @@ class TestPYCurves:
         pu_1 = model.get_pu(1.0, 0.6)
         pu_5 = model.get_pu(5.0, 0.6)
         assert pu_5 > pu_1 > 0
+
+    def test_liquefied_sand_as_printed_gec9(self):
+        """GEC 9 Eq. A-43 (p. 232) takes y in mm and gives p in kN/m, times
+        P_d of Eq. A-44 (p. 233); before GM-287 y entered in metres. At
+        z = 1 m, y = 50 mm, D = 0.6 m: about 3.4 kN/m, inside the printed
+        range (p up to about 85 lb/in, 14.9 kN/m)."""
+        import math
+        model = SandLiquefied(diameter=0.6)
+        z = 1.0
+        A = 3e-7 * (z + 1.0) ** 6.05
+        B = 2.80 * (z + 1.0) ** 0.11
+        C = 2.85 * (z + 1.0) ** -0.41
+        Pd = 3.81 * math.log(0.6) + 5.6
+        p = model.get_p(0.050, z, 0.6)
+        assert p == pytest.approx(A * (B * 50.0) ** C * Pd, rel=1e-12)
+        assert 1.0 < p < 14.9
 
     def test_liquefied_sand_concave_up_shape(self):
         """Liquefied sand curve should be concave-up (stiffness increases)."""
@@ -703,6 +778,26 @@ class TestParametricBehavior:
         assert r_fixed.moment[0] < 0, (
             f"Fixed head moment M(0) = {r_fixed.moment[0]:.1f}, should be negative"
         )
+
+    def test_partial_head_between_free_and_fixed(self):
+        """A rotational spring at the head (head_condition='partial') gives a
+        deflection and head moment between the free and fixed heads, moving
+        toward fixed as the spring stiffens (GEC 9 6.7.3: deflection grows
+        as fixity falls), with M = Kr x rotation. Before GM-287 the spring's
+        sign was reversed and drove the rotation: at Kr 1e4 kN-m/rad the
+        head deflected more than a free one."""
+        analysis = _make_soft_clay_case()
+        free = analysis.solve(Vt=100.0, head_condition='free')
+        fixed = analysis.solve(Vt=100.0, head_condition='fixed')
+        prev_y, prev_m = free.y_top, 0.0
+        for kr in (1e3, 1e4, 1e5, 1e6):
+            r = analysis.solve(Vt=100.0, head_condition='partial',
+                               rotational_stiffness=kr)
+            assert r.converged
+            assert fixed.y_top < r.y_top < prev_y
+            assert fixed.moment[0] < r.moment[0] < prev_m
+            assert r.moment[0] == pytest.approx(kr * r.rotation_top, rel=1e-3)
+            prev_y, prev_m = r.y_top, r.moment[0]
 
     def test_load_proportionality_small_loads(self):
         """At small loads (near-linear), doubling load should ~double deflection.
@@ -947,19 +1042,21 @@ class TestPublishedBenchmarks:
         """API sand benchmark: 0.610m pipe pile, phi=39, Vt=89 kN.
 
         Reference values (n=400, verified equilibrium < 0.01%):
-          y_top  = 3.62 mm
-          Mmax   = 97.7 kN-m at ~1.9 m
+          y_top  = 3.68 mm
+          Mmax   = 98.9 kN-m at ~1.9 m
+        (3.62 mm and 97.7 kN-m before GM-287 took C1, C2, C3 off API RP 2A
+        Fig. 6.8.6-1 in place of a table no page prints.)
         """
         analysis = _make_api_sand_case()
         results = analysis.solve(Vt=89.0, Mt=0.0, Q=0.0,
                                  head_condition='free', n_elements=200)
 
         assert results.converged
-        assert abs(results.y_top * 1000 - 3.62) / 3.62 < 0.05, (
-            f"y_top = {results.y_top*1000:.2f} mm, expected ~3.62 mm"
+        assert abs(results.y_top * 1000 - 3.68) / 3.68 < 0.05, (
+            f"y_top = {results.y_top*1000:.2f} mm, expected ~3.68 mm"
         )
-        assert abs(results.max_moment - 97.7) / 97.7 < 0.05, (
-            f"Mmax = {results.max_moment:.1f} kN-m, expected ~97.7 kN-m"
+        assert abs(results.max_moment - 98.9) / 98.9 < 0.05, (
+            f"Mmax = {results.max_moment:.1f} kN-m, expected ~98.9 kN-m"
         )
 
     def test_soft_clay_fixed_head_benchmark(self):
@@ -1021,6 +1118,65 @@ class TestPublishedBenchmarks:
         r3 = analysis.solve(Vt=89.0, head_condition='free', n_elements=200)
         assert r3.converged
         assert abs(r3.y_top * 1000 - 31.5) / 31.5 < 0.05
+
+    def test_gec9_example_b1_its_pole(self):
+        """FHWA GEC 9 (2018) App. B.1, pp. 235-242: the ITS pole on a 54 in
+        drilled shaft 45 ft long, its top 1.5 ft above the ground, free
+        head, loads at the top. Table B-1 (p. 236, depths from the top): Reese sand,
+        phi 30 deg, to 15 ft (gamma' 115 pcf, k 90 pci); Reese sand below
+        the water table to 30 ft (52.6 pcf, 60 pci); soft clay to 40 ft (su
+        300 psf, 47.6 pcf, eps50 0.02; Matlock with J 0.5, GEC 9 p. 218);
+        Reese sand to the tip (57.6 pcf, 80 pci). f'c 4,000 psi, 20 #10
+        bars, 3 in of cover to the bars. Printed (LPILE, p. 239): service loads
+        (144 kip-ft, 3 kip, 9 kip axial) give a head deflection of 0.03 in;
+        strength loads (672 kip-ft, 14 kip, 12 kip) a maximum moment of 727
+        kip-ft and a maximum shear of 35.5 kip.
+
+        LPILE took the shaft's nonlinear EI; here the shaft keeps its
+        uncracked transformed section (composite_section_ei), so above the
+        cracking moment (608 kip-ft) it is a little stiff and its moment a
+        little high: 735.6 kip-ft (+1.2 %), shear 36.8 kip (+3.6 %). Before
+        GM-287, with sand coefficients from a table no page prints: 0.0333
+        in, 744.7 kip-ft, 35.2 kip."""
+        from lateral_pile.composite_section import composite_section_ei
+        FT, IN, PCF, PSF = 0.3048, 0.0254, 0.157087, 0.0478803
+        PCI, KIP, PSI = 271.447, 4.448222, 6.894757
+        bar = rebar_diameter("#10")
+        sec = composite_section_ei(
+            "reinforced_concrete", fc=4000 * PSI, diameter=54 * IN,
+            n_bars=20, bar_diameter=bar,
+            bar_circle_diameter=54 * IN - 2 * (3 * IN + bar / 2))
+        Ec = ReinforcedConcreteSection(diameter=54 * IN, fc=4000 * PSI).Ec
+        pile = Pile(length=43.5 * FT, diameter=54 * IN, E=Ec,
+                    moment_of_inertia=sec.EI / Ec)
+        layers = [
+            SoilLayer(0.0, 13.5 * FT,
+                      SandReese(phi=30.0, gamma=115 * PCF, k=90 * PCI)),
+            SoilLayer(13.5 * FT, 28.5 * FT,
+                      SandReese(phi=30.0, gamma=52.6 * PCF, k=60 * PCI)),
+            SoilLayer(28.5 * FT, 38.5 * FT,
+                      SoftClayMatlock(c=300 * PSF, gamma=47.6 * PCF,
+                                      eps50=0.02, J=0.5)),
+            SoilLayer(38.5 * FT, 43.5 * FT,
+                      SandReese(phi=30.0, gamma=57.6 * PCF, k=80 * PCI)),
+        ]
+        analysis = LateralPileAnalysis(pile, layers)
+        service = analysis.solve(Vt=3 * KIP, Mt=144 * KIP * FT, Q=9 * KIP,
+                                 stickup=1.5 * FT)
+        strength = analysis.solve(Vt=14 * KIP, Mt=672 * KIP * FT,
+                                  Q=12 * KIP, stickup=1.5 * FT)
+        assert service.converged and strength.converged
+        y_in = service.y_top / IN
+        m_kft = strength.max_moment / (KIP * FT)
+        v_kip = strength.max_shear / KIP
+        # the module's own values
+        assert y_in == pytest.approx(0.0333, rel=0.01)
+        assert m_kft == pytest.approx(735.6, rel=0.005)
+        assert v_kip == pytest.approx(36.78, rel=0.005)
+        # against the print: 0.03 in to two places, 727 kip-ft, 35.5 kip
+        assert 0.025 <= y_in < 0.035
+        assert m_kft == pytest.approx(727.0, rel=0.02)
+        assert v_kip == pytest.approx(35.5, rel=0.05)
 
     @pytest.mark.parametrize("v_kip, y_top_in, m_max_in_kip", [
         (20.0, 0.145, 661.0),     # printed summary table, p. 126
@@ -1084,15 +1240,17 @@ class TestPublishedBenchmarks:
         """API sand at higher load level.
 
         Reference (n=400, equilibrium verified):
-          V=178 kN: y_top = 8.61 mm, Mmax = 217.5 kN-m
+          V=178 kN: y_top = 9.06 mm, Mmax = 225.1 kN-m
+        (8.61 mm and 217.5 kN-m before GM-287 took C1, C2, C3 off API RP 2A
+        Fig. 6.8.6-1 in place of a table no page prints.)
         """
         analysis = _make_api_sand_case()
         results = analysis.solve(Vt=178.0, Mt=0.0, Q=0.0,
                                  head_condition='free', n_elements=200)
 
         assert results.converged
-        assert abs(results.y_top * 1000 - 8.61) / 8.61 < 0.05
-        assert abs(results.max_moment - 217.5) / 217.5 < 0.05
+        assert abs(results.y_top * 1000 - 9.06) / 9.06 < 0.05
+        assert abs(results.max_moment - 225.1) / 225.1 < 0.05
 
     def test_applied_moment_benchmark(self):
         """Soft clay with applied moment at head.

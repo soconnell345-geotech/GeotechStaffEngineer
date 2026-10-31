@@ -566,13 +566,18 @@ def _assemble_banded(
         add(1, 3, 1.0)
         F[1] = 0.0
     elif head_condition == 'partial':
-        # M = -Kr * slope
-        # EI[0]*(Y[1]-2Y[2]+Y[3])/h^2 = -Kr*(Y[3]-Y[1])/(2h)
-        # => EI[0]*(Y[1]-2Y[2]+Y[3])/h^2 + Kr*(Y[3]-Y[1])/(2h) = 0
+        # A rotational spring at the head resists its rotation: M = Kr *
+        # slope. Under these signs (M = EI y'', z down) a head shear Vt > 0
+        # gives a negative slope and the fixed head's moment is negative, so
+        # the restraining moment has the slope's sign. Before GM-287 this
+        # row read M = -Kr * slope, a spring that drove the rotation: a
+        # partly fixed head deflected more than a free one (GEC 9 6.7.3:
+        # deflection grows as fixity falls, so it lies between the two).
+        # EI[0]*(Y[1]-2Y[2]+Y[3])/h^2 - Kr*(Y[3]-Y[1])/(2h) = 0
         Kr = rotational_stiffness
-        add(1, 1, EI[0] / h2 - Kr / (2.0 * h))
+        add(1, 1, EI[0] / h2 + Kr / (2.0 * h))
         add(1, 2, -2.0 * EI[0] / h2)
-        add(1, 3, EI[0] / h2 + Kr / (2.0 * h))
+        add(1, 3, EI[0] / h2 - Kr / (2.0 * h))
         F[1] = 0.0
 
     # --- Tip boundary conditions ---

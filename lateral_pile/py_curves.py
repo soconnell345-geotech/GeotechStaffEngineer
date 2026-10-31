@@ -644,6 +644,12 @@ class SoftClayJeanjean:
     Now standard practice for offshore applications and recommended by
     API RP 2GEO (2014) as an alternative to Matlock.
 
+    NOT CHECKED against a print (GM-287): neither Jeanjean (2009) nor API
+    RP 2GEO is in the reference library, so N_p = 12, the tanh curve and
+    f = 4 / 8 below are as first coded, unverified. GEC 9's soft clay
+    criterion is Matlock (``SoftClayMatlock``, App. A.1). A result's
+    ``choices`` says so.
+
     Parameters
     ----------
     su : float
@@ -749,76 +755,105 @@ class SoftClayJeanjean:
 # Sand p-y curve coefficient tables
 # =============================================================================
 
-def _sand_coefficients(phi: float) -> Tuple[float, float, float]:
-    """Compute sand p-y curve coefficients C1, C2, C3 from friction angle.
+def _reese_sand_coefficients(phi: float) -> Tuple[float, float, float]:
+    """C1, C2, C3 of the Reese et al. (1974) ultimate resistance of sand,
+    from FHWA GEC 9 (FHWA-HIF-18-031, 2018) App. A.4, Eqs. A-22 to A-24,
+    p. 227 (GM-287):
 
-    Interpolated from the tables in Reese, Cox & Koop (1974) and
-    COM624P Manual Table 2.1.
+        alpha = phi/2, beta = 45 + phi/2, K0 = 0.4,
+        Ka = tan^2(45 - phi/2)                                     (A-22)
+        p_st = gamma z [K0 z tan(phi) sin(beta) / (tan(beta-phi) cos(alpha))
+               + tan(beta)/tan(beta-phi) (D + z tan(beta) tan(alpha))
+               + K0 z tan(beta) (tan(phi) sin(beta) - tan(alpha)) - Ka D]
+                                                                    (A-23)
+        p_sd = Ka D gamma z (tan^8(beta) - 1)
+               + K0 D gamma z tan(phi) tan^4(beta)                  (A-24)
 
-    Parameters
-    ----------
-    phi : float
-        Friction angle (degrees).
+    collected as p_st = (C1 z + C2 D) gamma z and p_sd = C3 D gamma z:
 
-    Returns
-    -------
-    C1, C2, C3 : float
-        Coefficients for sand p-y curves.
+        C1 = K0 tan(phi) sin(beta) / (tan(beta-phi) cos(alpha))
+             + tan^2(beta) tan(alpha) / tan(beta-phi)
+             + K0 tan(beta) (tan(phi) sin(beta) - tan(alpha))
+        C2 = tan(beta) / tan(beta-phi) - Ka
+        C3 = Ka (tan^8(beta) - 1) + K0 tan(phi) tan^4(beta)
+
+    GEC 9 prints A-23's third term without its z. COM624P (FHWA-SA-91-048)
+    Eq. 3.31, p. 341, prints it with one (K_o x tan(beta) (tan(phi)
+    sin(beta) - tan(alpha))), every other term in the bracket is a length,
+    and API RP 2A-WSD Fig. 6.8.6-1, which plots the same C1, reads 1.914 at
+    phi = 30 deg: 1.912 with the z, 1.751 without. Before GM-287 the module took C1, C2, C3 from a table
+    no held page prints (1.00 / 1.25 / 67 at 30 deg against 1.912 / 2.667 /
+    28.7 here), so the wedge resistance near the surface was about half.
     """
-    # Tabulated values from COM624P Manual / Reese et al. (1974)
-    phi_tab = [20, 25, 28, 29, 30, 33, 36, 38, 40, 45]
-    C1_tab = [0.20, 0.41, 0.70, 0.85, 1.00, 1.65, 2.60, 3.50, 4.70, 10.0]
-    C2_tab = [0.18, 0.45, 0.82, 1.00, 1.25, 2.05, 3.45, 4.65, 6.30, 14.0]
-    C3_tab = [17, 28, 46, 55, 67, 120, 210, 310, 460, 1200]
-
-    if phi < 20:
-        warnings.warn(f"phi = {phi}° is below minimum tabulated value (20°)")
-        phi = 20
-    if phi > 45:
-        warnings.warn(f"phi = {phi}° is above maximum tabulated value (45°)")
-        phi = 45
-
-    C1 = float(np.interp(phi, phi_tab, C1_tab))
-    C2 = float(np.interp(phi, phi_tab, C2_tab))
-    C3 = float(np.interp(phi, phi_tab, C3_tab))
-
+    phi_r = math.radians(phi)
+    alpha = phi_r / 2.0
+    beta = math.radians(45.0 + phi / 2.0)
+    K0 = 0.4
+    Ka = math.tan(math.radians(45.0 - phi / 2.0)) ** 2
+    t_bp = math.tan(beta - phi_r)
+    C1 = (K0 * math.tan(phi_r) * math.sin(beta) / (t_bp * math.cos(alpha))
+          + math.tan(beta) ** 2 * math.tan(alpha) / t_bp
+          + K0 * math.tan(beta) * (math.tan(phi_r) * math.sin(beta)
+                                   - math.tan(alpha)))
+    C2 = math.tan(beta) / t_bp - Ka
+    C3 = Ka * (math.tan(beta) ** 8 - 1.0) + K0 * math.tan(phi_r) * math.tan(beta) ** 4
     return C1, C2, C3
 
 
-def _sand_k_recommendation(phi: float, below_wt: bool = True) -> float:
-    """Recommended initial modulus of subgrade reaction k for sand.
+#: API RP 2A-WSD, 21st ed. with Supplement 3 (2007), Fig. 6.8.6-1, printed
+#: p. 70: C1, C2 and C3 against phi' at every degree on the chart's 20-40 deg,
+#: read off the figure's own vector curves with each axis calibrated on its
+#: drawn ticks (GM-287). Sec. 6.8.6 gives no equation for them: the
+#: coefficients are "determined from Figure 6.8.6-1".
+_API_SAND_PHI = list(range(20, 41))
+_API_SAND_C1 = [0.743, 0.811, 0.893, 0.984, 1.083, 1.193, 1.314, 1.446,
+                1.589, 1.745, 1.914, 2.097, 2.295, 2.509, 2.739, 2.988,
+                3.262, 3.560, 3.885, 4.243, 4.642]
+_API_SAND_C2 = [1.578, 1.632, 1.708, 1.800, 1.904, 2.016, 2.137, 2.265,
+                2.398, 2.536, 2.679, 2.825, 2.976, 3.134, 3.295, 3.461,
+                3.629, 3.800, 3.976, 4.158, 4.348]
+_API_SAND_C3 = [8.42, 9.16, 10.13, 11.35, 12.83, 14.60, 16.67, 19.07,
+                21.83, 24.98, 28.56, 32.44, 36.72, 41.70, 47.65, 54.03,
+                61.06, 69.68, 79.24, 90.11, 100.00]
 
-    From COM624P Manual (FHWA-SA-91-048) Tables 3.4 (submerged) and 3.5 (above
-    water table), printed p. 346 — verified against the source PDF 2026-07-18
-    (ledger: module_work/wiki_verification/reese_sand_com624p.md). The manual
-    keys k by RELATIVE DENSITY (Loose/Medium/Dense); the phi keying here maps
-    Loose=25 / Medium=30 / Dense=35 deg (an interpretation, applied identically
-    to both branches). Printed anchors, converted at 1 lb/in^3 = 271.45 kN/m^3:
-    submerged 20/60/125 lb/in^3 -> 5,400/16,300/33,900 kN/m^3; above-WT
-    25/90/225 -> 6,800/24,400/61,100. The phi=40 points are NOT in the manual
-    (extrapolations retained for continuity; flagged non-primary).
 
-    Parameters
-    ----------
-    phi : float
-        Friction angle (degrees).
-    below_wt : bool
-        True if sand is below water table. Default True.
+def _api_sand_coefficients(phi: float) -> Tuple[float, float, float]:
+    """C1, C2, C3 for the API sand ultimate resistance (API RP 2A-WSD
+    Fig. 6.8.6-1, p. 70), linear between the whole degrees read off the
+    chart. The chart spans phi' 20 to 40 deg; outside it the value at its
+    nearer end is used, with a warning (no page prints one there)."""
+    if phi < 20.0 or phi > 40.0:
+        warnings.warn(
+            f"API sand: phi' = {phi:g} deg is outside API RP 2A Fig. 6.8.6-1 "
+            f"(20-40 deg); C1, C2, C3 are taken at {min(max(phi, 20.0), 40.0):g} "
+            "deg, the chart's end")
+    p = min(max(phi, 20.0), 40.0)
+    return (float(np.interp(p, _API_SAND_PHI, _API_SAND_C1)),
+            float(np.interp(p, _API_SAND_PHI, _API_SAND_C2)),
+            float(np.interp(p, _API_SAND_PHI, _API_SAND_C3)))
 
-    Returns
-    -------
-    float
-        Recommended k value (kN/m^3).
-    """
-    if below_wt:
-        phi_tab = [25, 30, 35, 40]
-        k_tab = [5400, 16300, 33900, 45000]
-    else:
-        phi_tab = [25, 30, 35, 40]
-        k_tab = [6800, 24400, 61100, 170000]
 
-    phi_clamped = max(25, min(40, phi))
-    return float(np.interp(phi_clamped, phi_tab, k_tab))
+#: FHWA GEC 9 (2018) Table A-3, p. 228 (COM624P Tables 3.4 and 3.5,
+#: FHWA-SA-91-048 p. 346): representative k for sand under static and
+#: cyclic loading, lb/in^3, by relative density only.
+SAND_K_TABLE_A3 = {"submerged": {"loose": 20.0, "medium": 60.0, "dense": 125.0},
+                   "above": {"loose": 25.0, "medium": 90.0, "dense": 225.0}}
+#: 1 lb/in^3 in kN/m^3.
+PCI_TO_KNM3 = 271.447
+
+
+def _sand_k_recommendation(density: str, below_wt: bool = True) -> float:
+    """k of the initial line p = (k z) y for Reese (1974) sand (kN/m^3),
+    from GEC 9 Table A-3 (p. 228) by relative density: ``density`` is
+    'loose', 'medium' or 'dense'. The table gives k by relative density
+    only, so no friction angle is mapped to it (GM-287: before, phi 25 /
+    30 / 35 stood for loose / medium / dense and phi 40 took 45,000 and
+    170,000 kN/m^3, values no page prints; GM-28)."""
+    row = SAND_K_TABLE_A3["submerged" if below_wt else "above"]
+    if density not in row:
+        raise ValueError(f"density must be 'loose', 'medium' or 'dense', "
+                         f"got {density!r}")
+    return row[density] * PCI_TO_KNM3
 
 
 # =============================================================================
@@ -862,19 +897,23 @@ def _reese_B(zb: float, cyclic: bool) -> float:
 
 @dataclass
 class SandReese:
-    """p-y curves for sand per Reese, Cox & Koop (1974).
+    """p-y curves for sand per Reese, Cox & Koop (1974), as printed in FHWA
+    GEC 9 (FHWA-HIF-18-031, 2018) App. A.4, pp. 226-229.
+
+    The ultimate resistance p_s is the smaller of the wedge and flow-around
+    values of GEC 9 Eqs. A-22 to A-24 (``_reese_sand_coefficients``).
 
     Two curve constructions are available (``construction``):
-    - ``"simplified"`` (**default**) — an initial linear branch (k*z*y), a
-      1/3-power softening parabola anchored at the ultimate point (yu = 3b/80),
-      and the ultimate plateau p_ult = A*min(pus,pud) with A = max(0.9, 3-0.8 z/b)
-      (static). Chart-free; the historical module behavior.
-    - ``"reese1974"`` — the FULL four-segment Reese (1974) construction: initial
-      linear (k*z*y) up to yk, a parabola p = C*y^(1/n), a straight m-segment from
-      the m-point (ym = b/60, pm = B*pu) to the ultimate point (yu = 3b/80,
-      pu_curve = A*pu), then the plateau. A and B come from the Reese charts
-      (``_reese_A``/``_reese_B``). This is stiffer in the working range than the
-      simplified curve (it tracks the initial linear further before softening).
+    - ``"reese1974"`` (**default**) — the four-segment curve of GEC 9 Steps
+      6-10 and Fig. A-9: the initial line p = (k z) y (A-27) up to y_k
+      (A-32), the parabola p = C y^(1/n) (A-28 to A-31), the straight line
+      from the m-point (y_m = D/60, p_m = B p_s, A-26) to the ultimate point
+      (y_u = 3D/80, p_u = A p_s, A-25), then p_u. A and B from GEC 9 Figs.
+      A-10 and A-11 (``_reese_A``/``_reese_B``).
+    - ``"simplified"`` — the initial line, a 1/3-power parabola through the
+      ultimate point at y_u = 3D/80 and the plateau A p_s with API's A =
+      max(0.9, 3 - 0.8 z/D). No held page prints this curve: it is the
+      module's own, kept as an option (the default before GM-287).
 
     Parameters
     ----------
@@ -883,25 +922,28 @@ class SandReese:
     gamma : float
         Effective unit weight (kN/m^3). Typical: 8-11 kN/m^3 submerged.
     k : float
-        Initial modulus of subgrade reaction (kN/m^3).
-        See _sand_k_recommendation() for typical values.
+        k of the initial line p = (k z) y (kN/m^3). GEC 9 Table A-3 gives
+        it by relative density (``SAND_K_TABLE_A3``): loose / medium /
+        dense 20 / 60 / 125 lb/in^3 submerged and 25 / 90 / 225 above the
+        water.
     loading : str
         'static' or 'cyclic'. Default 'static'.
     construction : str
-        'simplified' (default) or 'reese1974' (full four-segment curve).
+        'reese1974' (default, the printed curve) or 'simplified'.
 
     References
     ----------
     Reese, L.C., Cox, W.R. & Koop, F.D. (1974). OTC 2080.
-    Reese, L.C. & Van Impe, W.F. (2001). Single Piles and Pile Groups Under
-    Lateral Loading, Figs 3.30/3.31.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.4, Figs 2.19/2.20.
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), App. A.4, Eqs. A-22 to A-32,
+    Table A-3, Figs. A-9 to A-11, pp. 226-229.
+    COM624P Manual (FHWA-SA-91-048), Figs. 3.12 and 3.13, pp. 344-345, and
+    Tables 3.4 and 3.5, p. 346.
     """
     phi: float
     gamma: float
     k: float
     loading: str = 'static'
-    construction: str = 'simplified'
+    construction: str = 'reese1974'
 
     def __post_init__(self):
         if self.phi <= 0 or self.phi > 50:
@@ -916,28 +958,18 @@ class SandReese:
             raise ValueError(
                 f"construction must be 'simplified' or 'reese1974', got '{self.construction}'")
 
-        self.C1, self.C2, self.C3 = _sand_coefficients(self.phi)
-
-        alpha = self.phi / 2.0  # angle for passive wedge
-        beta = 45.0 + self.phi / 2.0
-        K0 = 0.4  # at-rest coefficient
-        Ka = math.tan(math.radians(45.0 - self.phi / 2.0)) ** 2
-
-        self._alpha_rad = math.radians(alpha)
-        self._beta_rad = math.radians(beta)
-        self._phi_rad = math.radians(self.phi)
-        self._K0 = K0
-        self._Ka = Ka
+        self.C1, self.C2, self.C3 = _reese_sand_coefficients(self.phi)
 
     def get_pu(self, z: float, b: float) -> Tuple[float, float]:
-        """Compute ultimate resistance from shallow and deep mechanisms.
+        """Ultimate resistance by the wedge and flow-around mechanisms, GEC
+        9 Eqs. A-23 and A-24; p_s is the smaller.
 
         Returns
         -------
         pus : float
-            Shallow (wedge) ultimate resistance (kN/m).
+            Wedge (shallow) ultimate resistance p_st (kN/m).
         pud : float
-            Deep (flow-around) ultimate resistance (kN/m).
+            Flow-around (deep) ultimate resistance p_sd (kN/m).
         """
         C1, C2, C3 = self.C1, self.C2, self.C3
 
@@ -947,24 +979,9 @@ class SandReese:
         return pus, pud
 
     def get_p(self, y: float, z: float, b: float) -> float:
-        """Compute soil resistance using the Reese (1974) sand p-y curve.
-
-        Three-part construction: an initial linear branch with slope k*z, a
-        1/3-power parabolic softening branch, and the ultimate plateau
-        p_ult = A * min(pus, pud) reached at yu = 3b/80 (Reese 1974). The
-        returned resistance is the lower envelope of the three branches, which
-        is monotonic, concave, and continuous.
-
-        Notes
-        -----
-        The full Reese (1974) construction additionally fixes an intermediate
-        m-point (pm = B*pu) from the B-factor charts and derives a variable
-        parabola exponent. This implementation anchors the softening parabola
-        at the ultimate point with a 1/3-power exponent -- a recognized,
-        chart-free simplification. For the smooth API / O'Neill & Murchison
-        equivalent, use ``SandAPI``. (Previously this method was bilinear
-        despite the three-part docstring -- LP-1.)
-        """
+        """Soil resistance on the Reese (1974) sand p-y curve, by
+        ``construction``: 'reese1974' is GEC 9's four-segment curve,
+        'simplified' the module's own three-part one (see the class)."""
         if z <= 0:
             return 0.0
 
@@ -983,9 +1000,8 @@ class SandReese:
         if self.construction == 'reese1974':
             return sign * self._p_reese1974(y_abs, z, b, pu, k_init)
 
-        # --- simplified (default) construction ---------------------------------
-        # Adjustment factor A (COM624P): static A = max(0.9, 3 - 0.8 z/b),
-        # cyclic A = 0.9.
+        # --- simplified construction (the module's own, not printed) --------
+        # API RP 2A's A: static A = max(0.9, 3 - 0.8 z/b), cyclic A = 0.9.
         A = 0.9 if self.loading == 'cyclic' else max(0.9, 3.0 - 0.8 * z / b)
         p_ult = A * pu
         # Deflection at ultimate resistance (Reese 1974).
@@ -1000,12 +1016,16 @@ class SandReese:
 
     def _p_reese1974(self, y_abs: float, z: float, b: float,
                      pu: float, k_init: float) -> float:
-        """Full four-segment Reese (1974) sand p-y resistance (magnitude).
+        """Four-segment Reese (1974) sand p-y resistance (magnitude), GEC 9
+        App. A.4 Steps 6-10 and Fig. A-9.
 
-        Initial linear (k*z*y) -> parabola (C*y^(1/n)) -> straight m-segment
-        (pm..pu_curve) -> plateau. The A/B chart coefficients set the ultimate and
-        m-point resistances; the initial linear governs (via the lower envelope)
-        below yk where it undercuts the parabola.
+        Initial line (k z) y (A-27) -> parabola C y^(1/n) (A-28 to A-31)
+        -> straight line p_m..p_u (A-31) -> p_u = A p_s. The initial line
+        governs up to y_k (A-32), where it meets the parabola; the lower
+        envelope gives that crossing. GEC 9's Step 10 says p beyond 3D/80
+        is "the ultimate resistance ... calculated in Step 3" (p_s), but its
+        Fig. A-9 and Step 6 put the curve at p_u = A p_s at y_u, so p_u
+        holds beyond it, as here.
         """
         cyclic = self.loading == 'cyclic'
         zb = z / b if b > 0 else 0.0
@@ -1066,13 +1086,19 @@ class SandReese:
 
 @dataclass
 class SandAPI:
-    """p-y curves for sand per API RP2A (O'Neill & Murchison, 1983).
+    """p-y curves for sand per API RP 2A-WSD (O'Neill & Murchison, 1983),
+    as printed in API RP 2A-WSD, 21st ed. with Supplement 3 (2007), Secs.
+    6.8.6 and 6.8.7, pp. 70-71:
 
-    Simplified hyperbolic tangent formulation widely used for offshore
-    and transportation piles. Uses the same ultimate resistance as
-    Reese sand but with a smooth tanh transition.
+        p_us = (C1 H + C2 D) gamma H,  p_ud = C3 D gamma H,
+        p_u the smaller                                  (6.8.6-1, -2)
+        P = A p_u tanh(k H y / (A p_u))                    (6.8.7-1)
+        A = 0.9 cyclic; A = (3.0 - 0.8 H/D) >= 0.9 static
 
-    p = A * pu * tanh(k * z * y / (A * pu))
+    C1, C2, C3 from Fig. 6.8.6-1 (``_api_sand_coefficients``) and k from
+    Fig. 6.8.7-1, both by phi'. API's D is the average diameter from the
+    surface to the depth; the module takes the diameter at the depth (the
+    same for a pile of one diameter).
 
     Parameters
     ----------
@@ -1081,15 +1107,16 @@ class SandAPI:
     gamma : float
         Effective unit weight (kN/m^3).
     k : float
-        Initial modulus of subgrade reaction (kN/m^3).
+        Initial modulus of subgrade reaction (kN/m^3): API Fig. 6.8.7-1
+        by phi', above or below the water table.
     loading : str
         'static' or 'cyclic'. Default 'static'.
 
     References
     ----------
     O'Neill, M.W. & Murchison, J.M. (1983). Report to API.
-    API RP2A-WSD, 21st Edition (2000), Section 6.8.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.5.
+    API RP 2A-WSD, 21st ed. with Supplement 3 (2007), Secs. 6.8.6-6.8.7,
+    Figs. 6.8.6-1 and 6.8.7-1, pp. 70-71.
     """
     phi: float
     gamma: float
@@ -1106,13 +1133,11 @@ class SandAPI:
         if self.loading not in ('static', 'cyclic'):
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
 
-        self.C1, self.C2, self.C3 = _sand_coefficients(self.phi)
+        self.C1, self.C2, self.C3 = _api_sand_coefficients(self.phi)
 
     def get_pu(self, z: float, b: float) -> float:
-        """Compute ultimate resistance at depth z.
-
-        Uses the same two mechanisms as Reese sand.
-        """
+        """Ultimate resistance at depth z, the smaller of API Eqs.
+        6.8.6-1 and 6.8.6-2."""
         if z <= 0:
             return 0.0
         pus = (self.C1 * z + self.C2 * b) * self.gamma * z
@@ -1329,43 +1354,52 @@ class WeakRock:
 
 @dataclass
 class SandLiquefied:
-    """p-y curves for liquefied sand per Rollins et al. (2005).
+    """p-y curves for liquefied sand per Rollins et al. (2005), as printed
+    in FHWA GEC 9 (FHWA-HIF-18-031, 2018) App. A.6, pp. 232-233.
 
-    Concave-up formulation for piles in fully liquefied sand, based on
-    full-scale blast-induced liquefaction tests.  The curve is very soft
-    (near-zero initial stiffness) and caps at y = 150 mm.
+    Concave-up curve for piles in liquefied sand from full-scale blast
+    tests; no soil parameter enters it. With p in kN/m, y in mm and z in m
+    (GEC 9 p. 232):
 
-    No soil strength parameters are needed — the model is purely empirical.
+        p = A (B y)^C                                      (A-43)
+        A = 3e-7 (z + 1)^6.05, B = 2.80 (z + 1)^0.11,
+        C = 2.85 (z + 1)^-0.41
+        P_d = 3.81 ln D + 5.6, D in m, multiplies p         (A-44)
 
-    p = A * (B * y)^C * pd       for y < 0.15 m
-    p = pu                        for y >= 0.15 m
-
-    where:
-        A = 3e-7 * (z + 1)^6.05
-        B = 2.8  * (z + 1)^0.11
-        C = 2.85 * (z + 1)^-0.41
-        pd = 3.81 * ln(D) + 5.6     (diameter correction)
+    GEC 9 limits A-43 to p of about 85 lb/in (14.9 kN/m) or less, y of
+    6 in (152 mm) or less, depths of 20 ft (6.1 m) or less and sands of
+    about 50 % initial relative density, from a site with the groundwater
+    near the surface; and A-44 to diameters of about 0.3 to 1 m. Beyond
+    y = 150 mm the module holds p at its 150 mm value: no page prints the
+    curve there. Before GM-287 y entered in metres, so p came out 1000^C
+    times too small (C runs from 2.85 at the surface to 1.3 at 20 ft).
+    GEC 9 says A-43 holds for D = 324 mm and P_d corrects other diameters,
+    yet P_d is 1.31 at 0.324 m (1 at 0.30 m); P_d is applied at every
+    diameter, as printed.
 
     Parameters
     ----------
     diameter : float
-        Pile diameter (m).  Valid range: 0.3 to 2.6 m.
+        Pile diameter D (m), for P_d.
 
     References
     ----------
     Rollins, K.M., Gerber, T.M., Lane, J.D., & Ashford, S.A. (2005).
     "Lateral Resistance of a Full-Scale Pile Group in Liquefied Sand."
     J. Geotech. Geoenviron. Eng., 131(1), 115-125.
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), App. A.6, Eqs. A-43 and A-44,
+    pp. 232-233.
     """
     diameter: float
 
     def __post_init__(self):
         if self.diameter <= 0:
             raise ValueError(f"diameter must be positive, got {self.diameter}")
-        if self.diameter < 0.3 or self.diameter > 2.6:
+        if self.diameter < 0.3 or self.diameter > 1.0:
             warnings.warn(
-                f"SandLiquefied: diameter {self.diameter} m outside validated "
-                f"range (0.3-2.6 m). Results may be unreliable.")
+                f"SandLiquefied: diameter {self.diameter} m is outside the "
+                "about 0.3-1 m GEC 9 (p. 233) gives for the diameter factor "
+                "P_d (Eq. A-44)")
 
     # --- Internal coefficients ---
 
@@ -1388,7 +1422,8 @@ class SandLiquefied:
     # --- Public interface (duck-typing, matches all other models) ---
 
     def get_pu(self, z: float, b: float) -> float:
-        """Ultimate resistance at depth z (at y = 0.15 m cap).
+        """Resistance at depth z at y = 150 mm, where the module holds the
+        curve (kN/m).
 
         Parameters
         ----------
@@ -1403,7 +1438,7 @@ class SandLiquefied:
         B = self._coeff_B(z)
         C = self._coeff_C(z)
         pd = self._pd()
-        return A * (B * 0.15) ** C * pd
+        return A * (B * 150.0) ** C * pd
 
     def get_p(self, y: float, z: float, b: float) -> float:
         """Compute soil resistance for liquefied sand.
@@ -1436,7 +1471,8 @@ class SandLiquefied:
         C = self._coeff_C(z)
         pd = self._pd()
 
-        p = A * (B * y_abs) ** C * pd
+        # Eq. A-43 takes y in mm (GEC 9 p. 232).
+        p = A * (B * y_abs * 1000.0) ** C * pd
         return sign * min(p, pu)
 
     def get_py_curve(self, z: float, b: float, n_points: int = 50,
