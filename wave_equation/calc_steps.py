@@ -71,6 +71,32 @@ def _used(analysis, key):
     return inspect.signature(generate_bearing_graph).parameters[key].default
 
 
+def _shaft_items(distribution, embedded, pile_length) -> List[InputItem]:
+    """The shaft resistance's distribution and the embedded length the
+    run took (GM-301); ``embedded`` None is the whole pile."""
+    if embedded is None:
+        emb = (f"{pile_length:.2f} (the whole pile)"
+               if pile_length is not None else "the whole pile")
+    else:
+        emb = f"{embedded:.2f}"
+    return [InputItem("Shaft distribution",
+                      "Shaft resistance over the embedded length",
+                      distribution, ""),
+            InputItem("L_emb", "Embedded length (below grade)", emb, "m")]
+
+
+def _shaft_words(distribution, embedded) -> str:
+    """The shaft resistance's spread, in words, for a step's reference."""
+    where = ("the whole pile" if embedded is None
+             else f"the embedded {embedded:.2f} m")
+    if distribution == "triangular":
+        return (f"the skin rising linearly from none at grade to its "
+                f"largest at the toe over {where} (GEC-12 Vol 2 Examples 1 "
+                f"and 6, pp. 162, 182)")
+    return (f"the skin spread evenly over {where} (GEC-12 Vol 2 Example 5, "
+            f"p. 179)")
+
+
 def get_input_summary(result, analysis) -> List[InputItem]:
     """Build input parameter table for wave equation calc package.
 
@@ -165,6 +191,9 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         items.extend([
             InputItem("f_skin", "Skin friction fraction",
                       f"{_used(analysis, 'skin_fraction'):.2f}", ""),
+            *_shaft_items(_used(analysis, "shaft_distribution"),
+                          _used(analysis, "embedded_length"),
+                          getattr(pile, "total_length", None)),
             InputItem("Q_side", "Side quake",
                       f"{_used(analysis, 'quake_side') * 1000:.1f}", "mm"),
             InputItem("Q_toe", "Toe quake",
@@ -186,6 +215,9 @@ def get_input_summary(result, analysis) -> List[InputItem]:
                       f"{soil.R_ultimate:,.0f}", "kN"),
             InputItem("f_skin", "Skin friction fraction",
                       f"{soil.skin_fraction:.2f}", ""),
+            *_shaft_items(getattr(soil, "shaft_distribution", "uniform"),
+                          getattr(soil, "embedded_length", None),
+                          getattr(pile, "total_length", None)),
             InputItem("Q_side", "Side quake",
                       f"{soil.quake_side * 1000:.1f}", "mm"),
             InputItem("Q_toe", "Toe quake",
@@ -387,10 +419,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             ),
             result_name="R_skin, R_toe",
             result_value=f"{skin_R:,.0f} kN, {toe_R:,.0f} kN",
-            reference=("Input; the skin spread evenly over the pile. FHWA "
-                       "GEC-12 Vol 2 p. 212: stresses, tension above all, "
-                       "are sensitive to the resistance distribution and "
-                       "the percentage at the toe"),
+            reference=("Input; "
+                       + _shaft_words(
+                           getattr(soil, "shaft_distribution", "uniform"),
+                           getattr(soil, "embedded_length", None))
+                       + ". FHWA GEC-12 Vol 2 p. 212: stresses, tension "
+                       "above all, are sensitive to the resistance "
+                       "distribution and the percentage at the toe"),
         ))
 
         soil_items.append(TableData(
@@ -615,6 +650,17 @@ def _drivability_steps(result, analysis) -> List[CalcSection]:
         result_name="N_depths",
         result_value=str(len(result.points)),
         reference="FHWA GEC-12 Vol 2 Sec. 12.5.3 (pp. 167-172)",
+        notes=(("The pile at each depth as long as the depth"
+                if getattr(result, "pile_length", None) is None else
+                f"The pile {result.pile_length:.2f} m long at every depth, "
+                "embedded to the depth (GEC-12 Vol 2 p. 224)"
+                + ("" if getattr(result, "pile_length_given", True) else
+                   "; pile_length left out, the deepest depth analysed, "
+                   "the shortest pile that reaches it (p. 227)"))
+               + "; " + _shaft_words(
+                   getattr(result, "shaft_distribution", "uniform"),
+                   None).replace("the whole pile", "the embedded length")
+               + "."),
     ))
 
     # Results table

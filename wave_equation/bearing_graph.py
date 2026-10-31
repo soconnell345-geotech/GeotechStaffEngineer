@@ -174,6 +174,8 @@ def generate_bearing_graph(
     helmet_weight: float = 5.0,
     max_time: float = 0.10,
     damping_model: str = "smith",
+    shaft_distribution: str = "uniform",
+    embedded_length: Optional[float] = None,
 ) -> BearingGraphResult:
     """Generate a bearing graph by running wave equation at multiple Rult.
 
@@ -202,6 +204,12 @@ def generate_bearing_graph(
         resistance, R_d = J*R_static*v. "smith_viscous": damping
         proportional to R_ultimate (UFC 3-220-20 pp. 487-488). See
         wave_equation.soil_model.
+    shaft_distribution : str
+        "uniform" (default) or "triangular" over the embedded length
+        (GM-301; GEC-12 Vol 2 pp. 162, 179, 182). See SoilSetup.
+    embedded_length : float, optional
+        The pile's penetration below grade (m), the shaft resistance only
+        below grade; None, the whole pile (GM-301). See SoilSetup.
 
     Returns
     -------
@@ -226,6 +234,8 @@ def generate_bearing_graph(
             damping_side=damping_side,
             damping_toe=damping_toe,
             damping_model=damping_model,
+            shaft_distribution=shaft_distribution,
+            embedded_length=embedded_length,
         )
 
         result = simulate_blow(

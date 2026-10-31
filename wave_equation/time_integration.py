@@ -175,7 +175,8 @@ def simulate_blow(
     n = pile.n_segments
 
     # Create soil models
-    side_models, toe_model = soil.create_segment_models(n)
+    side_models, toe_model = soil.create_segment_models(
+        n, pile.segment_lengths)
 
     # Compute time step
     if dt is None:

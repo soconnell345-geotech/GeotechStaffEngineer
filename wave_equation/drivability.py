@@ -16,8 +16,18 @@ refusal". The one exception p. 161 prints, piles through soft soils
 seated on hard rock at 5 blows per 1/4 inch, is 240 blows/ft (787.4
 blows/m), the refusal of the Vol 2 examples (pp. 171, 177, 188).
 
-The pile analysed at each depth is as long as the depth (no stick-up),
-with the skin resistance spread evenly over it.
+The pile analysed at each depth: the pile in the leads at every depth,
+embedded to the depth, the shaft resistance only below grade (GM-301):
+GEC-12 Vol 2 p. 224, "Length is the total pile length in the leads",
+"Penetration refers to ... final penetration for Drivability Analyses",
+and p. 236, the depths to be analyzed with the pile's length. That pile is
+``pile_length``; left out, the deepest depth analysed, the shortest pile
+that reaches it (p. 227: the penetration "cannot be greater than the pile
+length"), stated in the result's choices. Before the GM-300 review the
+left-out pile was as long as each depth (no stick-up), which no page
+prints; at shallow depths it read far less tension. The shaft resistance
+is spread over the embedded length by ``shaft_distribution`` ("uniform" by
+default, or "triangular"; see wave_equation.soil_model).
 
 References:
     FHWA GEC-12 Vol 2, Sec. 12.4 (p. 161) and 12.5.3 (pp. 167-172)
@@ -84,9 +94,17 @@ class DrivabilityResult:
     choices : list of dict
         The weights of the quakes in the permanent set, with the other
         weightings' blow counts (``quake_weighting_choice``; none with
-        equal quakes).
+        equal quakes), and the pile length analysed
+        (``pile_length_choice``).
     warnings : list of str
         A diesel hammer's (``diesel_warning``).
+    pile_length : float, optional
+        The pile's length in the leads at every depth (m) (GM-301): the
+        given ``pile_length``, else the deepest depth analysed.
+    pile_length_given : bool
+        Whether ``pile_length`` was given.
+    shaft_distribution : str
+        How the shaft resistance was spread over the embedded length.
     """
     points: List[DrivabilityPoint] = field(default_factory=list)
     can_drive: bool = True
@@ -94,6 +112,9 @@ class DrivabilityResult:
     refusal_blow_count: float = REFUSAL_BLOWS_PER_M
     choices: list = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    pile_length: Optional[float] = None
+    pile_length_given: bool = False
+    shaft_distribution: str = "uniform"
 
     def summary(self) -> str:
         """Text summary of drivability study."""
@@ -114,6 +135,11 @@ class DrivabilityResult:
                 f"{pt.max_tens_stress:>12,.0f}"
             )
         lines.append("")
+        if self.pile_length is not None:
+            lines.append(f"  Pile length {self.pile_length:.2f} m at every "
+                         "depth, embedded to the depth"
+                         + ("" if self.pile_length_given else
+                            " (the deepest depth; pile_length left out)"))
         lines.append(f"  Refusal: more than {self.refusal_blow_count:.1f} "
                      "blows/m")
         if self.can_drive:
@@ -143,6 +169,10 @@ class DrivabilityResult:
                 for p in self.points
             ],
         }
+        if self.pile_length is not None:
+            out["pile_length_m"] = self.pile_length
+        if self.shaft_distribution != "uniform":
+            out["shaft_distribution"] = self.shaft_distribution
         if self.choices:
             out["choices"] = list(self.choices)
         if self.warnings:
@@ -167,6 +197,8 @@ def drivability_study(
     helmet_weight: float = 5.0,
     refusal_blow_count: float = REFUSAL_BLOWS_PER_M,
     damping_model: str = "smith",
+    pile_length: Optional[float] = None,
+    shaft_distribution: str = "uniform",
 ) -> DrivabilityResult:
     """Run drivability analysis at multiple depths.
 
@@ -205,6 +237,14 @@ def drivability_study(
         resistance, R_d = J*R_static*v. "smith_viscous": damping
         proportional to R_ultimate (UFC 3-220-20 pp. 487-488). See
         wave_equation.soil_model.
+    pile_length : float, optional
+        The pile's total length in the leads (m), the same at every depth,
+        embedded to the depth (GM-301; GEC-12 Vol 2 pp. 224, 236). No depth
+        may pass it (p. 227). None (default): the deepest depth analysed,
+        the shortest pile that reaches it (p. 227), stated in the choices.
+    shaft_distribution : str
+        "uniform" (default) or "triangular" over the embedded length
+        (GM-301; GEC-12 Vol 2 pp. 162, 179, 182). See SoilSetup.
 
     Returns
     -------
@@ -212,6 +252,19 @@ def drivability_study(
     """
     if len(depths) != len(R_at_depth):
         raise ValueError("depths and R_at_depth must have same length")
+    if pile_length is not None:
+        deeper = [d for d in depths if d > pile_length * (1.0 + 1e-9)]
+        if deeper:
+            raise ValueError(
+                f"depths {deeper} are deeper than the pile_length "
+                f"{pile_length:g} m (GEC-12 Vol 2 p. 227: the penetration "
+                f"'cannot be greater than the pile length')")
+
+    length_given = pile_length is not None
+    if not length_given and len(depths):
+        # The pile in the leads, the same at every depth (p. 224), no
+        # shorter than the deepest penetration (p. 227).
+        pile_length = float(max(depths))
 
     if skin_fractions is None:
         skin_fractions = [0.5] * len(depths)
@@ -223,7 +276,7 @@ def drivability_study(
 
     for i, (depth, R_ult) in enumerate(zip(depths, R_at_depth)):
         pile = discretize_pile(
-            depth, pile_area, pile_E, segment_length, pile_unit_weight
+            pile_length, pile_area, pile_E, segment_length, pile_unit_weight
         )
 
         soil = SoilSetup(
@@ -234,6 +287,8 @@ def drivability_study(
             damping_side=damping_side,
             damping_toe=damping_toe,
             damping_model=damping_model,
+            shaft_distribution=shaft_distribution,
+            embedded_length=depth,
         )
 
         result = simulate_blow(
@@ -265,12 +320,51 @@ def drivability_study(
         quake_side, quake_toe, toe_peaks,
         " at depths " + " / ".join(f"{d:g}" for d in depths) + " m"
         if len(depths) > 1 else "")
+    choices = [quakes] if quakes else []
+    if pile_length is not None:
+        choices.append(pile_length_choice(
+            pile_length, float(max(depths)), length_given))
     warning = diesel_warning(hammer)
     return DrivabilityResult(
         points=points,
         can_drive=can_drive,
         refusal_depth=refusal_depth,
         refusal_blow_count=refusal_blow_count,
-        choices=[quakes] if quakes else [],
+        choices=choices,
         warnings=[warning] if warning else [],
+        pile_length=pile_length,
+        pile_length_given=length_given,
+        shaft_distribution=shaft_distribution,
     )
+
+
+def pile_length_choice(pile_length: float, deepest: float,
+                       given: bool) -> dict:
+    """The pile length a drivability study analysed at every depth, as a
+    result's ``choices`` entry (GM-300 review): ``pile_length`` when
+    ``given``, else the deepest depth analysed. GEC-12 Vol 2 prints no
+    per-depth length but a Temporary Length before splicing (p. 236),
+    which is not offered."""
+    from geotech_common.choices import choice, how_given
+
+    basis = ("GEC-12 Vol 2 p. 224: \"Length is the total pile length in "
+             "the leads\", and a drivability analysis takes the final "
+             "penetration; p. 236 analyses each depth with that length")
+    if abs(pile_length - deepest) <= 1e-9 * max(deepest, 1.0):
+        chosen = (f"{pile_length:g} m, the deepest depth analysed, the same "
+                  f"pile at every depth, embedded to each depth")
+        basis += ("; p. 227: the penetration \"cannot be greater than the "
+                  "pile length\", so the deepest depth is the shortest pile "
+                  "that reaches it")
+    else:
+        chosen = (f"{pile_length:g} m, the same pile at every depth, "
+                  f"embedded to each depth")
+    return choice(
+        "pile length in the leads (pile_length)", chosen,
+        how_given(pile_length if given else None, None, name="pile_length",
+                  took=pile_length),
+        basis,
+        ["a longer pile in the leads (give pile_length): p. 224, \"if plans "
+         "require a pile of 50 feet in length but the contractor is driving "
+         "60 long piles, the proper analysis length would be the full 60 "
+         "feet\""])
