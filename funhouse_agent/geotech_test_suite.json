@@ -243,14 +243,14 @@
       "values": [
         {
           "name": "embedment_m",
-          "value": 7.28,
+          "value": 8.65,
           "rtol": 0.25,
           "alt": [
-            8.73
+            7.21
           ]
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (sheet_pile.cantilever_wall, FOS_passive=1.5; alt = +20% traditional rule)"
+      "source": "GM-290 ground truth, 2026-10-31 (sheet_pile.cantilever_wall defaults: FOS_passive=1.5 and D = 1.2 D0, as the Caltrans T&S Manual 7-5.02 and UFC 3-220-20 Fig. 4-41 print it; alt = D0, the v5.1 default 7.28 then)"
     }
   },
   {

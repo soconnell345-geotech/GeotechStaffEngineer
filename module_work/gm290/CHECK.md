@@ -191,3 +191,92 @@ Nothing else moved in soe. Within one function's outputs, the records also
 showed paired-input moves from the new choice and default parameters
 (`support_load_method`, `stiff_clay_coefficient`, `Fb_ratio`). Those come
 from the tests that exercise them, not from a value change.
+
+## sheet_pile
+
+### P1. Cantilever: D = 1.2 D0 beside the factored passive pressure. Fixed. Owner question
+- Caltrans Sec. 7-5.02, pp. 7-11 to 7-12, the Simplified Method:
+  - "Take moments about point O ... and determine embedment depth DO";
+  - "Increase DO by 20 percent (D = 1.2 DO)";
+  - "The 20 percent increase is not a factor of safety. It accounts for the
+    rotation of the length of vertical wall element below point O" (AASHTO
+    3.11.5.6).
+- UFC Fig. 4-41 (p. 242):
+  - step 2 factors Kp;
+  - step 6: "Increase D by 20% to allow for dredging, scour, etc."
+- UFC Fig. 4-43 (p. 245) uses Kp / 1.5 and then 1.2 D0.
+- Module: SP-3 (v5.1) set the default `embedment_increase` to 1.0, reading
+  the classic method as using one safety measure or the other. The module
+  is the Caltrans Simplified Method: moments about O, with R standing in
+  for everything below O. With 1.0, the wall stops at the pivot.
+- Now the default is 1.2, with `FOS_passive` 1.5 unchanged.
+- Pinned to the closed forms for uniform dry sand:
+  - D0 = H / ((Kp/FS·Ka)^(1/3) − 1);
+  - D = 1.2 D0.
+
+### P2. Cantilever maximum moment: on the body to D0. Fixed
+- Caltrans step 5 and UFC Fig. 4-41 step 5: Mmax is at zero shear, on the
+  diagram that gave D0.
+- Module: integrated over the design depth. With an increase above 1, the
+  integration ran past O, and the largest |M| below O was reported.
+  - WE-SOE-1: 223.1, now 178.0 kN-m/m.
+  - An increase of 1.5: 743.0, now 151.7.
+- Now integrated to D0. At the default the moment is unchanged, because the
+  old default stopped at D0.
+- Pinned to the closed-form moment at zero shear.
+
+### P3. Cantilever moment basis. Kept. Owner question
+- The moment stays on the factored diagram, as UFC Fig. 4-41 step 5 and its
+  chart Fig. 4-42 take it.
+- Caltrans Example 7-3 takes it at FS = 1.0, which gives a smaller moment.
+  That is soe's default (S7).
+- The calc step and the tool text state both. It is not a `choices` entry:
+  adding one to every cantilever result would change every result's
+  `choices`.
+
+### P4. Simplified Method against UFC's full method. Noted
+- UFC Fig. 4-41 solves for the toe region with Z: for uniform soil,
+  Z = (Kp D² − Ka (H + D)²) / ((Kp − Ka)(H + 2D)), then moments about F.
+- The module uses Caltrans' Simplified Method instead. Dry sand with Ka 0.25
+  and Kp 3.6 (made-up values):
+  - Simplified D0/H = 0.698, so D/H = 0.838;
+  - UFC full method D/H = 0.754, then 0.905 after UFC's own 20 %.
+- Both are printed methods. Not changed.
+
+### P5. Water standing on the excavated side. Noted. Follow-up proposed
+- UFC Fig. 4-41 (p. 242): "Water levels can be different on opposite sides".
+- UFC Fig. 4-43 has water 5 ft below the top on both sides of a 15 ft wall,
+  so water stands above the dredge line.
+- Module: `gwt_depth_passive` above the dredge line is taken at the dredge
+  line, so the water standing on the excavated side is left out. The net
+  water pressure below the dredge line is then γw (H − h), which is
+  conservative.
+- An unset `gwt_depth_passive` copies the active level. Honouring an
+  explicit level above the dredge line would therefore also change the
+  default for an excavation, unless the default became the excavation
+  level.
+- Fig. 4-43 cannot be reproduced until this is decided.
+
+### P6. Anchored wall. Matches; two items noted
+- UFC Fig. 4-37, scenario 1, steps 2-4: factored passive pressure, free
+  earth support about the anchor, the anchor force by summing horizontal
+  forces. The module matches.
+- Not applied, as before:
+  - UFC step 5 (D + 20 % for dredging or scour);
+  - Rowe's moment reduction (Fig. 4-36).
+- Caltrans Sec. 8-4.01 takes the anchor load from the FS = 1.0 diagram.
+
+### P7. sheet_pile Coulomb Kp. Matches
+- It is the printed Eq. 4-3-24 form (see S1).
+
+### Results before and after (sheet_pile)
+
+| What | Before | After | Cause |
+|---|---|---|---|
+| Default cantilever embedment, every run | D0 | 1.2 D0 (e.g. 3.828 → 4.594 m, 7.211 → 8.654 m) | P1 |
+| Default cantilever moment | – | unchanged (e.g. 357.0, 251.7) | P2 changes nothing at the old default |
+| Moment with an increase given: one wall at 1.2 and 1.3; another at 1.5 | 372.2, 630.9; 743.0 | 281.3, 281.3; 151.7 | P2: no longer past O |
+| WE-SOE-1 (FS 1.0, × 1.2) moment | 223.1 | 178.0 | P2 |
+| Suite question SP-1 ground truth | 7.28 (alt 8.73) | 8.65 (alt 7.21) | P1 |
+
+The anchored wall did not move.

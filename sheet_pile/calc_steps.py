@@ -397,9 +397,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         ))
     else:
         # Mirror the analysis: D_calc is the converged embedment and the
-        # design value applies the (defaulted 1.0) embedment_increase.
+        # design value applies the (defaulted 1.2) embedment_increase.
         D_calc = getattr(result, "embedment_converged", 0.0) or result.embedment_depth
-        increase = getattr(result, "embedment_increase", 1.0)
+        increase = getattr(result, "embedment_increase", 1.2)
         embed_items.append(
             "Simplified Method: Embedment depth is found by summing moments "
             "about the wall base until factored passive moment equals or "
@@ -425,9 +425,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 result_name="D_design",
                 result_value=f"{result.embedment_depth:.2f}",
                 result_unit="m",
-                reference="USACE EM 1110-2-2504",
-                notes=("20-40% increase basis: appropriate with FS_p \u2248 1.0 "
-                       "(do not combine a large FS_p with a depth increase)"),
+                reference=("Caltrans T&S 7-5.02 step 3, p. 7-11; UFC 3-220-20 "
+                           "Figure 4-41 step 6, p. 242"),
+                notes=("The Caltrans manual: 'The 20 percent increase is not "
+                       "a factor of safety'; UFC: to allow for dredging, "
+                       "scour, etc. Both apply it beside the factored "
+                       "passive pressure (UFC Figure 4-43)."
+                       if increase == 1.2 else
+                       "Increase as given; Caltrans and UFC print 1.2."),
             ))
         else:
             embed_items.append(CalcStep(
@@ -438,8 +443,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 result_value=f"{result.embedment_depth:.2f}",
                 result_unit="m",
                 reference="USACE EM 1110-2-2504",
-                notes=("Single safety basis: passive resistance divided by FS_p; "
-                       "no additional embedment increase applied"),
+                notes=("No embedment increase, as given; the Caltrans "
+                       "manual (7-5.02 step 3) and UFC 3-220-20 (Figure "
+                       "4-41 step 6) take D = 1.2 D0 beside the factored "
+                       "passive pressure."),
             ))
 
     # Total wall length
@@ -467,6 +474,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{result.max_moment:.1f}",
         result_unit="kN\u00b7m/m",
         reference="USACE EM 1110-2-2504",
+        notes="" if wall_type == "anchored" else (
+            "On the factored diagram (passive / FS_p) to D0, as UFC 3-220-20 "
+            "Figure 4-41 step 5 takes it; the Caltrans Example 7-3 takes "
+            "the moment at FS = 1.0 instead"),
     ))
 
     moment_items.append(CalcStep(
