@@ -5,7 +5,7 @@ Provides input summaries, step-by-step equation output, and figures
 for Mathcad-style calc package generation.
 
 Handles three result types:
-    - SiteClassResult: AASHTO/NEHRP site classification and coefficients
+    - SiteClassResult: AASHTO site classification and coefficients
     - SeismicEarthPressureResult: Mononobe-Okabe seismic earth pressures
     - LiquefactionResult: SPT-based liquefaction triggering evaluation
 
@@ -15,7 +15,9 @@ The `analysis` parameter should be a dict with:
     - Plus type-specific keys echoing the analysis inputs.
 
 References:
-    AASHTO LRFD Bridge Design Specifications, 9th Ed., Section 3.10.3
+    FHWA GEC-12 Vol I (FHWA-NHI-16-009) Sec. 7.4.2.1, after AASHTO (2014)
+    UFC 3-220-20 (2025) Sec. 4-4.4.1, Eqs. 4-15 to 4-17
+    FHWA GEC-13 Vol I (FHWA-NHI-16-027) Eq. 5-9
     Mononobe & Matsuo (1929); Okabe (1926)
     Youd et al. (2001), ASCE JGGE, Vol 127, No 10
     Seed & Idriss (1971), ASCE JSMFED
@@ -36,8 +38,14 @@ from seismic_geotech.results import (
 DISPLAY_NAME = "Seismic Geotechnical Analysis"
 
 REFERENCES = [
+    'FHWA (2016). Design and Construction of Driven Pile Foundations, '
+    'Vol. I. GEC-12, FHWA-NHI-16-009. Sec. 7.4.2.1 (site class, site '
+    'factors and design response spectrum, after AASHTO 2014).',
+    'UFC 3-220-20 (16 January 2025). Sec. 4-4.4.1 (Mononobe-Okabe, Eqs. '
+    '4-15 to 4-17).',
+    'FHWA (2017). Ground Modification Methods Reference Manual, Vol. I. '
+    'GEC-13, FHWA-NHI-16-027. Eq. 5-9 and its r_d (pp. 5-40 and 5-41).',
     'AASHTO LRFD Bridge Design Specifications, 9th Ed., Section 3.10.3.',
-    'NEHRP Recommended Seismic Provisions (FEMA P-1050).',
     'Mononobe, N. & Matsuo, H. (1929). "On the Determination of Earth '
     'Pressures During Earthquakes." Proc. World Engineering Congress, Tokyo.',
     'Okabe, S. (1926). "General Theory of Earth Pressure." '
@@ -213,7 +221,7 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
             result_name="Vs30",
             result_value=f"{result.vs30:.0f}",
             result_unit="m/s",
-            reference="AASHTO LRFD Table 3.10.3.1-1",
+            reference="FHWA GEC-12 Vol I Table 7-26 and p. 379 (upper 100 ft)",
             notes="Weighted harmonic average of shear wave velocity in top 30 m",
         ))
     if result.n_bar is not None:
@@ -224,7 +232,7 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
             result_name="N-bar",
             result_value=f"{result.n_bar:.0f}",
             result_unit="blows/ft",
-            reference="AASHTO LRFD Table 3.10.3.1-1",
+            reference="FHWA GEC-12 Vol I Table 7-26 (p. 379); GEC-7 p. 93 (field N, limited to 100 bpf where refusal is encountered)",
         ))
     if result.su_bar is not None:
         param_items.append(CalcStep(
@@ -234,7 +242,7 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
             result_name="su-bar",
             result_value=f"{result.su_bar:.0f}",
             result_unit="kPa",
-            reference="AASHTO LRFD Table 3.10.3.1-1",
+            reference="FHWA GEC-12 Vol I Table 7-26 (p. 379)",
         ))
 
     if param_items:
@@ -247,27 +255,33 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
 
     # Classification criteria table
     class_table = TableData(
-        title="AASHTO/NEHRP Site Classification Criteria",
+        title="AASHTO Site Classification Criteria (GEC-12 Table 7-26)",
         headers=["Site Class", "Vs30 (m/s)", "N-bar", "su-bar (kPa)"],
         rows=[
-            ["A", "> 1500", "\u2014", "\u2014"],
-            ["B", "760 \u2013 1500", "\u2014", "\u2014"],
-            ["C", "360 \u2013 760", "> 50", "> 100"],
-            ["D", "180 \u2013 360", "15 \u2013 50", "50 \u2013 100"],
-            ["E", "< 180", "< 15", "< 50"],
+            ["A", "> 1524", "\u2014", "\u2014"],
+            ["B", "762 \u2013 1524", "\u2014", "\u2014"],
+            ["C", "365.76 \u2013 762", "> 50", "> 95.76"],
+            ["D", "182.88 \u2013 365.76", "15 \u2013 50",
+             "47.88 \u2013 95.76"],
+            ["E", "< 182.88", "< 15", "< 47.88"],
             ["F", "Site-specific", "Site-specific", "Site-specific"],
         ],
-        notes="Priority: Vs30 > N-bar > su-bar per AASHTO LRFD 3.10.3.1",
+        notes=("Printed in ft/s and ksf (5,000, 2,500, 1,200 and 600 ft/s; "
+               "2.0 and 1.0 ksf), converted exactly. Priority here: "
+               "Vs30 > N-bar > su-bar. Also Site Class E: any profile with "
+               "more than 10 ft of soft clay (PI > 20, w > 40 %, su < 0.5 "
+               "ksf); Site Class F: peat, very high plasticity or very "
+               "thick soft clay. Neither is checked by the tool."),
     )
     class_items.append(class_table)
 
     class_items.append(CalcStep(
         title="Site Classification Result",
-        equation="Classify based on Vs30, N-bar, or su-bar per AASHTO Table 3.10.3.1-1",
+        equation="Classify based on Vs30, N-bar, or su-bar per GEC-12 Table 7-26",
         substitution=_site_class_substitution(result),
         result_name="Site Class",
         result_value=result.site_class,
-        reference="AASHTO LRFD Table 3.10.3.1-1",
+        reference="FHWA GEC-12 Vol I Table 7-26 (p. 379)",
     ))
     sections.append(CalcSection(title="Site Classification", items=class_items))
 
@@ -278,40 +292,36 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
     # Section: Site Coefficients
     coeff_items = []
 
-    # Fpga is read against PGA when it is given, else against Ss
-    # (site_coefficients, SG-2).
-    pga = a.get("pga")
-    coeff_items.append(CalcStep(
-        title="Site Coefficient Fpga (PGA amplification)",
-        equation=("Fpga = f(Site Class, PGA) from AASHTO Table 3.10.3.2-1"
-                  if pga is not None else
-                  "Fpga = f(Site Class, Ss) from AASHTO Table 3.10.3.2-1"),
-        substitution=(f"Site Class {result.site_class}, PGA = {pga:.3f} g"
-                      if pga is not None else
-                      f"Site Class {result.site_class}, Ss = {result.Ss:.3f} g"),
-        result_name="Fpga",
-        result_value=f"{result.Fpga:.3f}",
-        reference="AASHTO LRFD Table 3.10.3.2-1",
-        notes=("" if pga is not None else
-               "PGA not given: Fpga read against Ss, the same table values"),
-    ))
+    # Fpga is read against PGA only; without it there is no Fpga and no As
+    # (site_coefficients, GM-293).
+    pga = result.pga if result.pga is not None else a.get("pga")
+    if result.Fpga is not None:
+        coeff_items.append(CalcStep(
+            title="Site Coefficient Fpga (PGA amplification)",
+            equation="Fpga = f(Site Class, PGA) from GEC-12 Table 7-27",
+            substitution=f"Site Class {result.site_class}, PGA = {pga:.3f} g",
+            result_name="Fpga",
+            result_value=f"{result.Fpga:.3f}",
+            reference="FHWA GEC-12 Vol I Table 7-27 (p. 380)",
+            notes="Straight-line interpolation between the columns (p. 379)",
+        ))
 
     coeff_items.append(CalcStep(
         title="Site Coefficient Fa (short-period amplification)",
-        equation="Fa = f(Site Class, Ss) from AASHTO Table 3.10.3.2-1",
+        equation="Fa = f(Site Class, Ss) from GEC-12 Table 7-28",
         substitution=f"Site Class {result.site_class}, Ss = {result.Ss:.3f} g",
         result_name="Fa",
         result_value=f"{result.Fa:.3f}",
-        reference="AASHTO LRFD Table 3.10.3.2-1",
+        reference="FHWA GEC-12 Vol I Table 7-28 (p. 380)",
     ))
 
     coeff_items.append(CalcStep(
         title="Site Coefficient Fv (long-period amplification)",
-        equation="Fv = f(Site Class, S1) from AASHTO Table 3.10.3.2-3",
+        equation="Fv = f(Site Class, S1) from GEC-12 Table 7-29",
         substitution=f"Site Class {result.site_class}, S1 = {result.S1:.3f} g",
         result_name="Fv",
         result_value=f"{result.Fv:.3f}",
-        reference="AASHTO LRFD Table 3.10.3.2-3",
+        reference="FHWA GEC-12 Vol I Table 7-29 (p. 380)",
     ))
 
     sections.append(CalcSection(title="Site Coefficients", items=coeff_items))
@@ -328,7 +338,7 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
         result_name="SDS",
         result_value=f"{SDS:.4f}",
         result_unit="g",
-        reference="AASHTO LRFD Eq. 3.10.4.2-1",
+        reference="FHWA GEC-12 Vol I Eq. 7-79 (p. 381)",
     ))
 
     design_items.append(CalcStep(
@@ -338,21 +348,39 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
         result_name="SD1",
         result_value=f"{SD1:.4f}",
         result_unit="g",
-        reference="AASHTO LRFD Eq. 3.10.4.2-2",
+        reference="FHWA GEC-12 Vol I p. 382 (SD1 = FvS1)",
     ))
 
+    if result.As is not None:
+        design_items.append(CalcStep(
+            title="Peak Ground Acceleration Modified by Fpga",
+            equation="As = Fpga \u00d7 PGA",
+            substitution=f"As = {result.Fpga:.3f} \u00d7 {pga:.3f}",
+            result_name="As",
+            result_value=f"{result.As:.4f}",
+            result_unit="g",
+            reference="FHWA GEC-12 Vol I Eq. 7-78 (p. 381)",
+        ))
+
     # Summary table
+    rows = [["Site Class", result.site_class, ""]]
+    if result.Fpga is not None:
+        rows.append(["Fpga", f"{result.Fpga:.3f}", ""])
+    rows += [
+        ["Fa", f"{result.Fa:.3f}", ""],
+        ["Fv", f"{result.Fv:.3f}", ""],
+        ["SDS = Fa \u00d7 Ss", f"{SDS:.4f}", "g"],
+        ["SD1 = Fv \u00d7 S1", f"{SD1:.4f}", "g"],
+    ]
+    if result.As is not None:
+        rows.append(["As = Fpga \u00d7 PGA", f"{result.As:.4f}", "g"])
     design_items.append(TableData(
         title="Design Spectral Parameters Summary",
         headers=["Parameter", "Value", "Unit"],
-        rows=[
-            ["Site Class", result.site_class, ""],
-            ["Fpga", f"{result.Fpga:.3f}", ""],
-            ["Fa", f"{result.Fa:.3f}", ""],
-            ["Fv", f"{result.Fv:.3f}", ""],
-            ["SDS = Fa \u00d7 Ss", f"{SDS:.4f}", "g"],
-            ["SD1 = Fv \u00d7 S1", f"{SD1:.4f}", "g"],
-        ],
+        rows=rows,
+        notes=("" if result.As is not None else
+               "PGA not given: no Fpga and no As (GEC-12 Table 7-27 reads "
+               "Fpga against the PGA)"),
     ))
 
     sections.append(CalcSection(
@@ -463,13 +491,13 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
                 "(cos(\u03b4+\u03b8+\u03b2)\u00d7cos(i+\u03b2))))\u00b2]"
             ),
             substitution=(
-                f"\u03c6 = {r.phi:.1f}\u00b0, \u03b4 = {r.delta:.1f}\u00b0, "
+                f"\u03c6 = {r.phi:.1f}\u00b0, \u03b4 = {r.delta_passive if r.delta_passive is not None else r.delta:.1f}\u00b0, "
                 f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}, "
                 f"\u03b2 = {beta_deg:.1f}\u00b0, i = {i_deg:.1f}\u00b0"
             ),
             result_name="KPE",
             result_value=f"{r.KPE:.4f}",
-            reference="AASHTO LRFD Eq. 11.6.5.2; Mononobe-Okabe (1929)",
+            reference="FHWA GEC-4 Eq. 44 (p. 114); Mononobe-Okabe (1929)",
         ))
         sections.append(CalcSection(
             title="Seismic Passive Earth Pressure Coefficient", items=kpe_items
@@ -570,7 +598,7 @@ def _steps_liquefaction(result, analysis) -> List[CalcSection]:
         substitution=f"a_max = {r.amax_g:.3f}g, M_w = {r.magnitude:.1f}",
         result_name="CSR",
         result_value="(computed per layer)",
-        reference="Seed & Idriss (1971); Youd et al. (2001) Eq. 1",
+        reference="FHWA GEC-13 Vol I Eq. 5-9 (p. 5-40); Seed & Idriss (1971)",
         notes="CSR adjusted to M=7.5 using magnitude scaling factor (MSF)",
     ))
 
@@ -590,13 +618,16 @@ def _steps_liquefaction(result, analysis) -> List[CalcSection]:
     method_items.append(CalcStep(
         title="Stress Reduction Factor (r_d)",
         equation=(
-            "r_d = 1.0 - 0.00765\u00d7z  (z \u2264 9.15 m)\n"
-            "r_d = 1.174 - 0.0267\u00d7z  (9.15 < z \u2264 23 m)"
+            "r_d = 1.0 - 0.00765\u00d7z  (z \u2264 9.144 m, 30 ft)\n"
+            "r_d = 1.174 - 0.0267\u00d7z  (9.144 < z \u2264 22.86 m, 75 ft)\n"
+            "r_d = 0.744 - 0.008\u00d7z  (22.86 < z \u2264 30.48 m, 100 ft)\n"
+            "r_d = 0.5  (z > 30.48 m)"
         ),
-        substitution="",
+        substitution="z in m (the coefficients are metric)",
         result_name="r_d",
         result_value="(depth dependent)",
-        reference="Liao & Whitman (1986); Youd et al. (2001) Eq. 4",
+        reference=("FHWA GEC-13 Vol I pp. 5-40 and 5-41; Liao & Whitman "
+                   "(1986)"),
     ))
 
     method_items.append(CalcStep(
@@ -743,9 +774,13 @@ def _figures_site_class(result, analysis) -> List[FigureData]:
             title="Design Response Spectrum",
             image_base64=b64,
             caption=(
-                f"Figure 1: AASHTO design response spectrum for Site Class "
-                f"{result.site_class}. SDS = {result.Fa * result.Ss:.4f} g, "
-                f"SD1 = {result.Fv * result.S1:.4f} g."
+                f"Figure 1: Design response spectrum (GEC-12 Fig. 7-77, "
+                f"after AASHTO 2014) for Site Class {result.site_class}. "
+                f"SDS = {result.Fa * result.Ss:.4f} g, "
+                f"SD1 = {result.Fv * result.S1:.4f} g"
+                + (f", As = {result.As:.4f} g." if result.As is not None
+                   else "; no PGA given, so no As and the line below T0 "
+                   "is not drawn.")
             ),
             width_percent=80,
         ))
@@ -756,7 +791,14 @@ def _figures_site_class(result, analysis) -> List[FigureData]:
 
 
 def _plot_design_spectrum(result):
-    """Plot AASHTO/ASCE design response spectrum."""
+    """The design response spectrum of GEC-12 Vol I Fig. 7-77 (p. 381,
+    after AASHTO 2014): Csm = As + (SDS - As)(Tm / T0) below T0 (Eq. 7-77,
+    As = Fpga PGA, Eq. 7-78), SDS from T0 to Ts, SD1 / Tm beyond, with
+    T0 = 0.2 Ts and Ts = SD1 / SDS.
+
+    Until GM-293 the line below T0 was the ASCE 7 form SDS (0.4 + 0.6 T /
+    T0), starting from 0.4 Fpga Ss rather than As. Without the PGA there
+    is no As, and the line below T0 is not drawn."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -764,24 +806,23 @@ def _plot_design_spectrum(result):
 
     SDS = result.Fa * result.Ss
     SD1 = result.Fv * result.S1
+    As = result.As
 
-    # Build spectrum per AASHTO
+    # GEC-12 Fig. 7-77
     T0 = 0.2 * SD1 / SDS if SDS > 0 else 0.1
     Ts = SD1 / SDS if SDS > 0 else 0.5
 
-    # Period array
+    # Period array; from T0 when there is no As to start from
     periods = np.concatenate([
-        np.array([0.0, T0]),
+        np.array([0.0]) if As is not None else np.array([]),
         np.linspace(T0, Ts, 20),
         np.linspace(Ts, 4.0, 100),
     ])
 
     Sa = np.zeros_like(periods)
     for i, T in enumerate(periods):
-        if T <= 0:
-            Sa[i] = result.Fpga * result.Ss * 0.4 + 0.6 * SDS * T / T0 if T0 > 0 else SDS
-        elif T <= T0:
-            Sa[i] = SDS * (0.4 + 0.6 * T / T0) if T0 > 0 else SDS
+        if T < T0:
+            Sa[i] = As + (SDS - As) * T / T0      # Eq. 7-77
         elif T <= Ts:
             Sa[i] = SDS
         else:
@@ -791,7 +832,8 @@ def _plot_design_spectrum(result):
     ax.plot(periods, Sa, 'b-', linewidth=2, label='Design spectrum')
 
     # Mark key points
-    ax.plot(0, Sa[0], 'ro', markersize=6)
+    if As is not None:
+        ax.plot(0, As, 'ro', markersize=6, label=f'As = {As:.3f} g')
     ax.plot(T0, SDS, 'go', markersize=8, label=f'T0 = {T0:.2f} s')
     ax.plot(Ts, SDS, 'ms', markersize=8, label=f'Ts = {Ts:.2f} s')
 
@@ -816,7 +858,8 @@ def _plot_design_spectrum(result):
     ax.set_xlabel('Period T (s)', fontsize=11)
     ax.set_ylabel('Spectral Acceleration Sa (g)', fontsize=11)
     ax.set_title(
-        f'AASHTO Design Response Spectrum \u2014 Site Class {result.site_class}',
+        f'Design Response Spectrum (GEC-12 Fig. 7-77) \u2014 Site Class '
+        f'{result.site_class}',
         fontsize=12, fontweight='bold'
     )
     ax.set_xlim(0, 4.0)

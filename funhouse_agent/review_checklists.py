@@ -77,8 +77,9 @@ specific check, the governing reference, and the corrective action.
    wave inversion or HVSR (processed externally; this toolkit consumes the
    resulting Vs values) carries inversion /
    non-uniqueness uncertainty — re-run the characterization and check the Vs
-   profile before trusting a class that hinges on it. ASCE 7 boundaries at Vs30 =
-   180, 360, 760, 1500 m/s (E<180<D<360<C<760<B<1500≤A) — recheck any site whose
+   profile before trusting a class that hinges on it. `seismic_geotech` uses the
+   AASHTO classes (GEC-12 Vol I Table 7-26): Vs30 = 600, 1,200, 2,500, 5,000
+   ft/s, which it takes as 182.88, 365.76, 762, 1524 m/s — recheck any site whose
    Vs30 lands within ~5% of a boundary (small data changes flip the class and
    the design spectrum). `fema_p2082` (2020 NEHRP) adds the INTERMEDIATE classes
    BC / CD / DE and a two-period spectrum — confirm which classification system
@@ -86,9 +87,9 @@ specific check, the governing reference, and the corrective action.
 
 6. **Site coefficients / spectrum.** `Fpga`, `Fa`, `Fv` interpolated against the
    correct abscissa: `seismic_geotech.site_coefficients(pga=...)` interpolates
-   Fpga vs PGA (AASHTO 3.10.3.2-1); WITHOUT `pga` it returns Fpga ≈ Fa(Ss), a
-   documented approximation that is exact only when Ss = 2.5·PGA. Flag a design
-   PGA/spectrum built on the approximation when the true PGA was available.
+   Fpga vs PGA (GEC-12 Vol I Table 7-27) and gives As = Fpga·PGA (Eq. 7-78);
+   WITHOUT `pga` it gives no Fpga and no As. Flag a design PGA or a spectrum
+   start (As) taken from Fa or Ss instead of Fpga and the PGA.
 
 7. **Pseudo-static & Newmark (`slope_stability`).** `kh` (and `kv`) applied to
    the slope as a pseudo-static body force; check `kh` magnitude vs the design

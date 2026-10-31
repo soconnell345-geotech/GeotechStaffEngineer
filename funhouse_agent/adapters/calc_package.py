@@ -1879,6 +1879,8 @@ def _seismic_numbers(tool: str, result) -> dict:
                        Ss_g=result.Ss, S1_g=result.S1,
                        SDS_g=round(result.Fa * result.Ss, 4),
                        SD1_g=round(result.Fv * result.S1, 4))
+            if result.As is not None:
+                out.update(PGA_g=result.pga, As_g=round(result.As, 4))
         return out
     if tool == "seismic_earth_pressure":
         out = result.to_dict()
@@ -3253,7 +3255,7 @@ METHOD_INFO = {
     "seismic_package": {
         "category": "Calculation Package",
         "brief": "Run seismic geotechnical analysis and generate calc package.",
-        "returns": {**_COMMON_RETURNS, "seismic_analysis_type": "Which sub-analysis was performed.", "(numbers)": "The numbers the PDF shows, at the top level by the sub-analysis: site_classification gives site_class, vs30_m_per_s / n_bar / su_bar_kPa as given, and with Ss and S1 Fpga, Fa, Fv, SDS_g and SD1_g; seismic_earth_pressure gives KAE, KPE, PAE_total_kN_per_m, PA_static_kN_per_m, delta_PAE_kN_per_m, height_of_application_m, kh, kv and its choices; liquefaction gives amax_g, magnitude, gwt_depth_m, n_liquefiable, min_FOS_liq, critical_depth_m, each layer's depth, CSR, CRR and FOS_liq (more than 30 layers: the liquefiable depths) and its choices. Report them to the user."},
+        "returns": {**_COMMON_RETURNS, "seismic_analysis_type": "Which sub-analysis was performed.", "(numbers)": "The numbers the PDF shows, at the top level by the sub-analysis: site_classification gives site_class, vs30_m_per_s / n_bar / su_bar_kPa as given, and with Ss and S1 Fa, Fv, SDS_g and SD1_g, with pga also Fpga and As_g (Fpga is null without it); seismic_earth_pressure gives KAE, KPE, PAE_total_kN_per_m, PA_static_kN_per_m, delta_PAE_kN_per_m, height_of_application_m, kh, kv and its choices; liquefaction gives amax_g, magnitude, gwt_depth_m, n_liquefiable, min_FOS_liq, critical_depth_m, each layer's depth, CSR, CRR and FOS_liq (more than 30 layers: the liquefiable depths) and its choices. Report them to the user."},
     },
     "retaining_wall_package": {
         "category": "Calculation Package",

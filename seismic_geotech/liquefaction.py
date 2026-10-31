@@ -6,6 +6,12 @@ Implements the NCEER / Youd et al. (2001) SPT-based simplified procedure
 workshops): NCEER CRR fit, NCEER MSF, Youd et al. fines correction, and the
 Liao & Whitman (1986) rd stress-reduction factor.
 
+Checked against the print held (GM-293, module_work/gm293/CHECK.md): CSR
+is FHWA GEC-13 Vol I Eq. 5-9 (p. 5-40) and rd its four lines (pp. 5-40 and
+5-41). Youd et al. (2001) is not held: the CRR curve and the fines
+correction were compared with its chart as FHWA GEC-5 Fig. 5-19 (p. 5-32)
+reprints it; MSF is printed on no held page.
+
 This is NOT the Boulanger & Idriss (2014) procedure. For B&I-2014 triggering
 (the default in the unified agent layer) use ``liquepy_agent`` — CPT B&I-2014
 via ``analyze_cpt_liquefaction`` and SPT B&I-2014 via ``analyze_spt_liquefaction``.
@@ -39,15 +45,25 @@ def stress_reduction_rd(z: float) -> float:
 
     References
     ----------
-    Liao & Whitman (1986); Youd et al. (2001) Eq. 4
+    FHWA GEC-13 Vol I (FHWA-NHI-16-027) pp. 5-40 and 5-41, under Eq. 5-9
+    ("for preliminary designs"; the coefficients "developed for metric
+    units", z in m, the depth limits printed in feet):
+    1.0 - 0.00765 z for z <= 30 ft (9.144 m); 1.174 - 0.0267 z for
+    30 < z <= 75 ft (22.86 m); 0.744 - 0.008 z for 75 < z <= 100 ft
+    (30.48 m); 0.5 below 100 ft (printed "for z < 100 ft", a slip: the
+    other three cover the depths above it). Liao & Whitman (1986);
+    Youd et al. (2001) Eq. 4.
+
+    Until GM-293 the limits were 9.15 and 23 m and the third line ran on
+    below 30.48 m with no floor, reaching 0.42 at 40 m.
     """
-    if z <= 9.15:
+    if z <= 9.144:
         return 1.0 - 0.00765 * z
-    elif z <= 23.0:
+    elif z <= 22.86:
         return 1.174 - 0.0267 * z
-    else:
-        # Extended per Idriss (1999)
-        return 0.744 - 0.008 * z  # approximate for z > 23m
+    elif z <= 30.48:
+        return 0.744 - 0.008 * z
+    return 0.5
 
 
 def magnitude_scaling_factor(M: float) -> float:
@@ -301,7 +317,9 @@ def liquefaction_choices(layer_results: List[Dict[str, Any]],
     out = [
         choice("triggering procedure",
                "NCEER / Youd et al. (2001) SPT simplified procedure", MODULE,
-               "rd by Liao & Whitman (1986); MSF = 10^2.24 / M^2.56 = "
+               "CSR = 0.65 (amax/g)(sigma_v/sigma'_v) rd (FHWA GEC-13 Vol I "
+               "Eq. 5-9); rd by Liao & Whitman (1986) as GEC-13 pp. 5-40 and "
+               "5-41 print it, 0.5 below 30.48 m; MSF = 10^2.24 / M^2.56 = "
                f"{_msf_applied(M):.3f} at M {M:g}; fines by Youd et al. "
                "(2001); rd and MSF are listed for each layer "
                "(layer_results)"),

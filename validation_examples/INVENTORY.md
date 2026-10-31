@@ -1088,6 +1088,23 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Verdict: **PASS** (RESULTS.md). Tests:
   test_published_v061_cantilever_wall.py.
 
+## V-062 FHWA GEC-11 Vol II Example E7 — site factor, kmax and Mononobe-Okabe
+- Source: FHWA GEC-11 Vol II (FHWA NHI-10-025, November 2009) Example E7,
+  Seismic Loading (pp. E7-3 to E7-6), read from
+  `geotech-references/docs/GEC 11 VOL 2.pdf`.
+- Target: `seismic_geotech.site_class.site_coefficients`,
+  `seismic_geotech.mononobe_okabe.mononobe_okabe_KAE` and
+  `seismic_earth_pressure`, and the `site_classification` and
+  `seismic_earth_pressure` tools (GM-293).
+- Inputs: Site Class B, PGA 0.206 g, S1 0.177 g (no Ss given; Class B's Fa
+  is 1.0 at every Ss); kh = kmax = 0.206, kv = 0, phi'_b 30 deg, delta
+  30 deg, level backfill, vertical face, 125 pcf, h 25.64 ft.
+- Published answer: Fpga 1.00, Fv 1.0; kmax = Fpga (PGA) = 0.206 g; xi
+  11.64 deg; KAE = 0.9008 / (0.7320 [1 + 0.6042]^2) = 0.4782; PAE = 19.65
+  k/lft.
+- Verdict: **PASS** (RESULTS.md). Tests:
+  test_published_v062_seismic_mse_e7.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only
