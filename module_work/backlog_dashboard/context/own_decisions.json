@@ -2418,5 +2418,30 @@
       "module_work/slope_integral_review/ACCOUNT.md",
       "The slope account page: https://claude.ai/artifact/7sFKMA5D3hpzRX5QfwWoL2"
     ]
+  },
+  "OWN-105": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When downdrag's load and resistance curves meet in soil that settles no more than the pile, which neutral plane should be the headline?",
+    "why": "Since the printed beta and Nt went in, the curves meet at full toe resistance. In the worked example they meet at 17.66 m, 11.7 m below the 5.99 m where the soil stops settling more than the pile. So the headline drag (1,308 kN) counts drag over sand that does not move down past the pile. Settlement compatibility gives 5.99 m and 226 kN.",
+    "background": "UFC 3-220-20 Sec. 6-7.4 step 3 (p. 477) takes full side and toe resistance as \"a conservative approach\"; steps 4-5 take the curves' intersection, and where they do not meet, settlement compatibility (Sec. 6-5.8.4.3, p. 449). The module warns when the intersection lies in non-settling soil, and every method stays side by side in neutral_plane_comparison. Detail: module_work/downdrag_print/CHECK.md.",
+    "options": [
+      {
+        "label": "Keep the intersection as the headline, with the warning",
+        "effect": "As UFC's conservative step prints it; the larger drag is the headline and the settlement-compatible value sits beside it."
+      },
+      {
+        "label": "Take settlement compatibility as the headline in that case",
+        "effect": "The headline counts drag only where the soil settles past the pile; the full-resistance intersection sits beside it."
+      }
+    ],
+    "recommendation": "Keep the intersection with the warning, since it is the printed conservative step and the other value is shown beside it.",
+    "if_no_answer": "The intersection stays the headline, with the warning.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-105",
+      "module_work/downdrag_print/CHECK.md"
+    ]
   }
 }
