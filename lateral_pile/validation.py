@@ -1137,7 +1137,8 @@ class TestPublishedBenchmarks:
         cracking moment (608 kip-ft) it is a little stiff and its moment a
         little high: 735.6 kip-ft (+1.2 %), shear 36.8 kip (+3.6 %). Before
         GM-287, with sand coefficients from a table no page prints: 0.0333
-        in, 744.7 kip-ft, 35.2 kip."""
+        in, 745.4 kip-ft, 37.5 kip on the then-default 'simplified' curve
+        (744.7 kip-ft, 35.2 kip with 'reese1974')."""
         from lateral_pile.composite_section import composite_section_ei
         FT, IN, PCF, PSF = 0.3048, 0.0254, 0.157087, 0.0478803
         PCI, KIP, PSI = 271.447, 4.448222, 6.894757

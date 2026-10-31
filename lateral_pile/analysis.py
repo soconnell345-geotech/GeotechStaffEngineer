@@ -195,15 +195,24 @@ def _sand_k_choice(model, layer, within: str = "layers") -> dict:
     from geotech_common.choices import choice, how_given
     span = f"{layer.top:g}-{layer.bottom:g} m"
     if isinstance(model, SandAPI):
-        from geotech_common.soil_profile import _estimate_k_sand
-        below, above = (_estimate_k_sand(model.phi, w) for w in (True, False))
+        from geotech_common.soil_profile import _API_SAND_K, _estimate_k_sand
+
+        def read(below):
+            # off the curve's ends the end value is held: the chart prints
+            # none there (GM-287 review)
+            phis = _API_SAND_K[below][0]
+            where = "below the water table" if below else "above it"
+            if phis[0] <= model.phi <= phis[-1]:
+                return f"Fig. 6.8.7-1 at phi' {model.phi:g} deg, {where}"
+            end = phis[0] if model.phi < phis[0] else phis[-1]
+            return (f"Fig. 6.8.7-1's curve end value (phi' {end:g} deg), "
+                    f"held at phi' {model.phi:g} deg where the chart prints "
+                    f"none, {where}")
         basis = ("the initial slope k H of API's tanh curve (API RP 2A-WSD "
                  "Eq. 6.8.7-1), k from Fig. 6.8.7-1 by phi' (relative "
                  "density on the same chart)")
-        others = [(below, f"Fig. 6.8.7-1 at phi' {model.phi:g} deg, below "
-                          "the water table"),
-                  (above, f"Fig. 6.8.7-1 at phi' {model.phi:g} deg, above "
-                          "it")]
+        others = [(_estimate_k_sand(model.phi, w), read(w))
+                  for w in (True, False)]
     else:
         basis = ("the initial line p = (k z) y (GEC 9 Eq. A-27), k from GEC "
                  "9 Table A-3 by relative density, not by phi")

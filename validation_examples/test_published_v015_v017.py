@@ -60,7 +60,7 @@ KEY FINDINGS (details in each test docstring and RESULTS.md):
   Before GM-287 the sand's p_s took C1, C2, C3 from a table no page prints (about
   half the wedge resistance of GEC 9 Eqs. A-22 to A-24 near the surface) and the
   default construction was the module's 'simplified' curve: 3.92 mm and -39.3
-  kN-m (casing only), 3.60 mm (composite); the four-segment curve then read 5.02
+  kN-m (casing only), 3.60 mm (composite); the four-segment curve then read 5.14
   mm. The four-segment curve is still softer than the 'simplified' one (now 2.83
   mm): the working deflection sits near the m-point ym=b/60 where Reese fixes
   pm=B*p_s (B->0.5), below the simplified 1/3-power parabola.
@@ -476,7 +476,7 @@ def test_v017_full_reese_construction_is_softer_not_stiffer():
     the working deflection sits near the m-point ym = b/60 = 3.28 mm, where
     Reese fixes the resistance at pm = B*p_s (B->0.50 at depth), below the
     simplified 1/3-power parabola. The A/B asymptotes were NOT tuned to force
-    3.3 mm. (Before GM-287's printed C1, C2, C3: 5.02 and 3.92 mm.)"""
+    3.3 mm. (Before GM-287's printed C1, C2, C3: 5.14 and 3.92 mm.)"""
     def _layers(construction):
         off = _V017_HEAD_BELOW_GRADE
         return [

@@ -202,10 +202,10 @@ moved result holds a sand model or a sand k: no clay or rock result moved.
 | `SoilProfile` API sand k, phi 33 below the water | 33,200 | 16,477 | the same |
 | `_sand_k_recommendation(30)` | 16,300 (phi 30 read as medium) | refused: takes 'loose', 'medium', 'dense' | GEC 9 Table A-3 |
 | partial head, validation.py soft clay case, 100 kN, K_r 1e4 | 24.57 mm (free 19.24) | 16.24 mm (fixed 5.10) | the solver's sign |
-| GEC 9 B.1, transformed section | 0.0333 in, 744.7 kip-ft, 35.2 kip | 0.0333 in, 735.6, 36.8 | Reese p_s, default construction |
+| GEC 9 B.1, transformed section | 0.0333 in, 745.4 kip-ft, 37.5 kip (the default 'simplified'; 744.7, 35.2 with 'reese1974') | 0.0333 in, 735.6, 36.8 | Reese p_s, default construction |
 | V-017, casing-only EI | 3.92 mm, -39.3 kN-m | 3.57 mm, -36.8 (print 3.3, -37.3) | the same |
 | V-017, composite EI | 3.60 mm | 3.32 mm (print 3.3) | the same |
-| V-017, 'reese1974' / 'simplified' | 5.02 / 3.92 mm | 3.57 / 2.83 mm | Reese p_s |
+| V-017, 'reese1974' / 'simplified' | 5.14 / 3.92 mm | 3.57 / 2.83 mm | Reese p_s |
 | API sand benchmark (validation.py), 89 kN | 3.62 mm, 97.7 kN-m | 3.68 mm, 98.9 | API Fig. 6.8.6-1 |
 | the same, 178 kN | 8.61 mm, 217.5 kN-m | 9.06 mm, 225.1 | the same |
 | lateral_pile_package probe (API sand, phi 32, 100 kN) | 2.507 mm, 267.1 kN-m | 2.502 mm, 266.8 | the same |
