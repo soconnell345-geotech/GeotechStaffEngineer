@@ -30,8 +30,29 @@ through the heel is the backfill slope; the passive resistance in front
 acts over the embedment and counts cu under the undrained rule (GEC-6
 Eq. 5-41 with a key); EN 1997-1's 0.4 V limit on request; FOS_sliding 2.0
 with the passive resistance counted; the eccentricity limit B/4 and FOS
-1.5 on rock. The module has no water table: the backfill is taken as
-drained (NHI-06-089 Sec. 10.5.3; UFC 3-220-20 App. B-1.1).
+1.5 on rock. Without a water table the backfill is taken as drained
+(NHI-06-089 Sec. 10.5.3; UFC 3-220-20 App. B-1.1).
+
+A water table behind the wall (GM-292, module_work/gm292/CHECK.md).
+``CantileverWallGeometry.water_table_depth`` puts a level water table that
+depth below the top of the backfill at the stem. Below it the earth
+pressure is on the buoyant unit weight gamma_b = gamma_sat - gamma_w and
+the water pressure gamma_w z is added, horizontal, with a coefficient of 1
+(UFC 3-220-20 Sec. 4-4.1 and Fig. 4-16(a), pp. 199-202; FHWA NHI-06-089
+Fig. 10-12, p. 10-27); the backfill below it weighs gamma_sat
+(``gamma_sat_backfill``, by default gamma_backfill) and the water lifts
+the base. The water pressure under the base varies in a straight line
+between the heads at the heel and the toe, as EM 1110-2-2104 para. E-12
+(p. 115) prints a wall's uplift: gamma_w h_w at the heel to none at the
+toe, with no water in front of the wall (``base_uplift`` "linear"), or
+gamma_w h_w under the whole base, the same head at both ("uniform", as
+UFC Fig. 5-40, p. 346, takes U = gamma_w h L). The uplift reduces V in
+sliding; its moment about the toe is an overturning moment (the module's
+assumption); the bearing pressures leave it out by default
+(``uplift_in_bearing``; UFC Sec. 5-3.2, p. 292: "Its effect on the
+bearing pressure can be conservatively ignored unless sliding or uplift
+is a concern", on the safe side while e <= B/6). The choices state each,
+with the other readings' numbers (:func:`water_choices`).
 
 A surcharge over the heel (GM-157). The geometry's ``surcharge`` is a live
 load (traffic) and ``dead_load_surcharge`` a permanent one. Both thrusts
@@ -67,10 +88,11 @@ from typing import Dict, Any, List, Optional
 from retaining_walls.geometry import CantileverWallGeometry
 from retaining_walls.earth_pressure import (
     rankine_Ka, rankine_Ka_sloped, rankine_Kp, coulomb_Ka,
-    active_force_components, horizontal_force_active,
-    horizontal_force_passive,
+    active_force_components, active_force_components_water,
+    horizontal_force_active, horizontal_force_passive,
 )
 from retaining_walls.results import CantileverWallResult
+from geotech_common.water import GAMMA_W
 
 #: Whether the live-load surcharge resists sliding and overturning (GM-157),
 #: by ``live_load_resists``: the basis of each reading.
@@ -240,12 +262,96 @@ COULOMB_DELTA_BASIS = (
     "backfill', delta = beta, as its Example 10-3 (p. 10-53) takes it for "
     "Coulomb's Ka (Sec. 10.5.3, p. 10-37: Coulomb on that plane)")
 
+#: How the water table behind the wall loads it (GM-292), for the choice.
+WATER_PRESSURE_BASIS = (
+    "UFC 3-220-20 Sec. 4-4.1 (pp. 199-200): 'Water applies a triangular "
+    "pressure distribution equivalent to a soil with a unit weight of 62.4 "
+    "pcf and an earth pressure coefficient of unity', and 'Instead of the "
+    "total unit weight (gamma), the buoyant or effective unit weight "
+    "(gamma_b) is used in the earth pressure equations for soils below the "
+    "water table. The second effect is that an additional load, supplied "
+    "by the water pressure, is applied to the wall' (Fig. 4-16(a), "
+    "p. 202); FHWA NHI-06-089 Fig. 10-12 (p. 10-27), pa = Ka [gamma hw + "
+    "gamma' zw] and pw = gamma_w zw, 'lateral water pressure coefficient = "
+    "1.0', and Sec. 10.5.3 (p. 10-41): 'The wall must be designed for the "
+    "full hydrostatic pressure when it is necessary to maintain the "
+    "groundwater level behind the wall'")
+
+#: The drained backfill, the reading without a water table (GM-292).
+DRAINED_BASIS = (
+    "FHWA NHI-06-089 Sec. 10.5.3 (p. 10-41): 'If adequate drainage measures "
+    "are provided, the hydrostatic pressure due to groundwater behind the "
+    "wall generally need not be considered. However, hydrostatic pressure "
+    "must be considered for portions of the wall below the level of the "
+    "weep holes unless a deeper drainage system is provided behind the base "
+    "of the wall'")
+
+#: The saturated unit weight below the water table when none is given
+#: (GM-292).
+GAMMA_SAT_BASIS = (
+    "the backfill's unit weight (gamma_backfill) taken below the water "
+    "table too, as UFC 3-220-20 Fig. 4-16(a) (p. 202) takes gamma = 125 "
+    "pcf above it and gamma_b = 62.5 pcf below it, about gamma - gamma_w. "
+    "Against a larger gamma_sat it errs on the safe side for sliding, "
+    "overturning and the eccentricity where the heel carries soil below "
+    "the water table (the heel's extra weight resists more than the extra "
+    "thrust drives), and on the unsafe side for the bearing pressures (a "
+    "few per cent) and for a wall with little or no heel; give "
+    "gamma_sat_backfill for the saturated unit weight")
+
+#: The water pressure under the base (GM-292), by ``base_uplift``.
+BASE_UPLIFT = ("linear", "uniform")
+BASE_UPLIFT_BASIS = {
+    "linear": (
+        "EM 1110-2-2104 (2023) para. E-12 (p. 115), for a wall: "
+        "'Uplift across base varying uniformly from tailwater at heel to a "
+        "value midway between tailwater and jump profile at toe', a "
+        "straight line between the heads at the heel and the toe. Here the "
+        "head behind the wall, gamma_w h_w at the heel, to none at the toe, "
+        "with no water in front of the wall above the underside of the "
+        "base. UFC 3-220-20 p. 203: 'Water pressures can add an uplift "
+        "force on the base of retaining walls which can be detrimental to "
+        "the wall stability'"),
+    "uniform": (
+        "the full head gamma_w h_w under the whole base, the same head at "
+        "the heel and the toe (EM 1110-2-2104 para. E-12, p. 116: 'Uplift "
+        "equal to tailwater'; UFC 3-220-20 Fig. 5-40, p. 346, U = gamma_w h "
+        "L for a structure below the water table): the larger uplift"),
+}
+
+#: Where the uplift's moment about the toe goes in the overturning check
+#: (GM-292), for the choice.
+UPLIFT_MOMENT_BASIS = (
+    "the module's assumption: no reference held prints it (UFC 3-220-20 "
+    "Fig. 4-27, p. 220, FOT = W a / (PH b - PV f), has no uplift). Added to "
+    "the overturning moment it gives the smaller FOS; the resultant and "
+    "the eccentricity are the same either way")
+
+#: Whether the uplift counts in the bearing pressures (GM-292), by
+#: ``uplift_in_bearing``.
+UPLIFT_BEARING_BASIS = {
+    False: ("UFC 3-220-20 Sec. 5-3.2 (p. 292): 'Uplift is present on the "
+            "base of the foundation when the groundwater table is above the "
+            "bearing elevation. Its effect on the bearing pressure can be "
+            "conservatively ignored unless sliding or uplift is a concern' "
+            "(sliding, overturning and the eccentricity check count it "
+            "here). On the safe side while the resultant is in the middle "
+            "third (e <= B/6): counted, the linear uplift takes nothing off "
+            "q_toe and lowers q_eq; past B/6, where the eccentricity check "
+            "fails, counting it can raise them"),
+    True: ("counted: the effective pressure under the base, the weights "
+           "less the uplift, as EN 1997-1 Sec. 6.5.2.1(3)P (p. 63): 'Water "
+           "pressures not caused by the foundation load shall be included "
+           "as actions'"),
+}
+
 
 def _active_thrust_terms(geom: CantileverWallGeometry,
                          gamma_backfill: float, phi_backfill: float,
                          c_backfill: float = 0.0,
                          pressure_method: str = "rankine",
-                         wall_friction_deg: Optional[float] = None
+                         wall_friction_deg: Optional[float] = None,
+                         gamma_sat_backfill: Optional[float] = None
                          ) -> Dict[str, Any]:
     """The active thrust and every term of it (GM-143), as
     :func:`_active_thrust` uses them: ``method``, ``Ka``, ``H_active``,
@@ -263,7 +369,18 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
     Coulomb's Ka (UFC 3-220-20 Eq. 4-10, p. 186, theta = 0) takes the wall
     friction on the pressure plane ``wall_friction_deg``, by default the
     backfill slope beta (:data:`COULOMB_DELTA_BASIS`, GM-288; it was
-    2/3 phi_backfill, which no reference read prints for soil on soil)."""
+    2/3 phi_backfill, which no reference read prints for soil on soil).
+
+    With a water table above the underside of the base
+    (``geom.water_table_depth``, GM-292) Pa is the effective earth
+    pressure's, on the buoyant unit weight ``gamma_b`` = ``gamma_sat`` -
+    gamma_w below the water table (``gamma_sat_backfill``, default
+    gamma_backfill; :func:`active_force_components_water`), and the water
+    pressure's thrust ``Pw`` = gamma_w h_w^2 / 2 acts horizontally at
+    ``z_Pw`` = h_w / 3, ``h_w`` the water's height above the underside of
+    the base and ``z_w`` the water table's depth below the top of the
+    pressure plane; ``u_heel`` = gamma_w h_w is the water pressure at the
+    back of the heel. Without one ``Pw`` is 0 and the others None."""
     H = geom.H_active
     if wall_friction_deg is not None:
         if pressure_method != "coulomb":
@@ -292,8 +409,34 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
 
     q_live = geom.surcharge
     q_dead = geom.dead_load_surcharge
-    parts = active_force_components(gamma_backfill, H, Ka, c_backfill,
-                                    q_live + q_dead)
+    if gamma_sat_backfill is not None and geom.water_table_depth is None:
+        raise ValueError(
+            f"gamma_sat_backfill {gamma_sat_backfill:g} kN/m3 is the "
+            "backfill's unit weight below a water table behind the wall; "
+            "with no water_table_depth there is none. Give "
+            "water_table_depth, or leave gamma_sat_backfill out.")
+    h_w = geom.water_height
+    gamma_sat = gamma_b = z_w = None
+    if h_w > 0:
+        # GM-292: the effective earth pressure on gamma_b below the water
+        # table (UFC 3-220-20 p. 200 and Fig. 4-16(a); NHI Fig. 10-12)
+        gamma_sat = (gamma_backfill if gamma_sat_backfill is None
+                     else gamma_sat_backfill)
+        gamma_b = gamma_sat - GAMMA_W
+        if gamma_b <= 0:
+            raise ValueError(
+                f"the saturated unit weight {gamma_sat:g} kN/m3 "
+                f"(gamma_sat_backfill, or gamma_backfill when it is not "
+                f"given) must exceed the unit weight of water, "
+                f"{GAMMA_W:g} kN/m3: the buoyant unit weight below the "
+                f"water table is their difference")
+        z_w = H - h_w
+        parts = active_force_components_water(
+            gamma_backfill, gamma_b, H, z_w, Ka, c_backfill,
+            q_live + q_dead)
+    else:
+        parts = active_force_components(gamma_backfill, H, Ka, c_backfill,
+                                        q_live + q_dead)
     Pa, z_Pa = parts["Pa"], parts["z_Pa"]
     delta_rad = math.radians(delta_deg)
     Ph = Pa * math.cos(delta_rad)
@@ -313,7 +456,12 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
             "delta_given": (pressure_method == "coulomb"
                             and wall_friction_deg is not None),
             "Ph": Ph, "Pv": Pv,
-            "Pa_live": Pa_live, "Pv_live": Pa_live * math.sin(delta_rad)}
+            "Pa_live": Pa_live, "Pv_live": Pa_live * math.sin(delta_rad),
+            # GM-292: the water table behind the wall
+            "water_table_depth": geom.water_table_depth, "h_w": h_w,
+            "z_w": z_w, "gamma_sat": gamma_sat, "gamma_b": gamma_b,
+            "gamma_w": GAMMA_W, "Pw": 0.5 * GAMMA_W * h_w ** 2,
+            "z_Pw": h_w / 3.0, "u_heel": GAMMA_W * h_w}
 
 
 def _active_thrust(geom: CantileverWallGeometry,
@@ -463,19 +611,32 @@ def _vertical_force_items(geom: CantileverWallGeometry,
                           live_load_resists: bool = False,
                           dead_load_resists: bool = False,
                           surcharge_in_bearing: bool = True,
-                          gamma_front: Optional[float] = None
+                          gamma_front: Optional[float] = None,
+                          base_uplift: Optional[str] = None,
+                          uplift_in_bearing: bool = False
                           ) -> List[Dict[str, Any]]:
     """Every vertical force on the base, in the order the checks sum them,
     as ``{"component", "kind", "W", "x", "M", "resists", "bearing"}``
     (GM-143): the weights, the surcharges on the heel and the vertical
     component of the active thrust at the pressure plane (x = B). ``kind``
-    is "weight", "surcharge" or "thrust". ``resists``: counted in the
-    sliding, overturning and eccentricity checks; ``bearing``: counted in
-    the bearing pressures (GM-157, the choices in the module docstring).
-    ``gamma_front`` weighs the soil over the toe (:func:`_wall_weight_items`)."""
+    is "weight", "surcharge", "thrust" or "uplift". ``resists``: counted in
+    the sliding, overturning and eccentricity checks; ``bearing``: counted
+    in the bearing pressures (GM-157, the choices in the module docstring).
+    ``gamma_front`` weighs the soil over the toe (:func:`_wall_weight_items`).
+
+    With a water table above the underside of the base (``thrust["h_w"]``,
+    GM-292) the backfill below it weighs gamma_sat: the excess over
+    gamma_backfill is a weight of its own where it is not zero, and the
+    water pressure under the base, by ``base_uplift`` (None: "linear",
+    :data:`BASE_UPLIFT_BASIS`), is an "uplift" item with W = -U, counted
+    in the bearing pressures as ``uplift_in_bearing`` says."""
     items = [{**i, "kind": "weight", "resists": True, "bearing": True}
              for i in _wall_weight_items(geom, gamma_backfill,
                                          gamma_concrete, gamma_front)]
+    h_w = thrust.get("h_w", 0.0) or 0.0
+    if h_w > 0:
+        items += _saturated_items(geom, thrust["gamma_sat"] - gamma_backfill,
+                                  h_w)
     heel = geom.heel_length
     x_q = geom.toe_length + geom.stem_thickness_base + heel / 2.0
     for q, name, resists in (
@@ -504,9 +665,71 @@ def _vertical_force_items(geom: CantileverWallGeometry,
         items.append({"component": "Active thrust vert. comp. (P_v)",
                       "kind": "thrust", "W": Pv, "x": geom.base_width,
                       "resists": True, "bearing": True})
+    if h_w > 0:
+        items.append(_uplift_item(geom, thrust["u_heel"], base_uplift,
+                                  uplift_in_bearing))
     for i in items:
         i["M"] = i["W"] * i["x"]
     return items
+
+
+def _saturated_items(geom: CantileverWallGeometry, excess: float,
+                     h_w: float) -> List[Dict[str, Any]]:
+    """The backfill's extra weight below the water table (GM-292),
+    (gamma_sat - gamma_backfill) = ``excess`` over the part of the soil on
+    the heel and over a battered back below it, ``h_w`` above the underside
+    of the base; none where the excess or that part is zero. The sloped
+    wedge over the heel is above the top of the stem, so above the water
+    table; in front of the wall the module takes no water."""
+    s_w = min(h_w, geom.wall_height) - geom.base_thickness
+    if excess == 0 or s_w <= 0:
+        return []
+    x_back = geom.toe_length + geom.stem_thickness_base
+    items = []
+    t_taper = max(geom.stem_thickness_base - geom.stem_thickness_top, 0.0)
+    h_stem = geom.stem_height
+    if t_taper > 0 and geom.stem_batter != "front" and h_stem > 0:
+        # the battered back's soil triangle widens upward from the back of
+        # the stem's base; below the water table, a triangle s_w high
+        w = t_taper * s_w / h_stem
+        items.append({"component": "Soil over battered stem back, below "
+                                   "the water table (gamma_sat - gamma)",
+                      "W": excess * 0.5 * w * s_w, "x": x_back - w / 3.0})
+    heel = geom.heel_length
+    if heel > 0:
+        items.append({"component": "Soil on heel, below the water table "
+                                   "(gamma_sat - gamma)",
+                      "W": excess * heel * s_w, "x": x_back + heel / 2.0})
+    return [{**i, "kind": "weight", "resists": True, "bearing": True}
+            for i in items]
+
+
+def _uplift_item(geom: CantileverWallGeometry, u_heel: float,
+                 base_uplift: Optional[str],
+                 uplift_in_bearing: bool) -> Dict[str, Any]:
+    """The water pressure under the base as a vertical force (GM-292): W =
+    -U, by ``base_uplift`` (:data:`BASE_UPLIFT_BASIS`): "linear" (None),
+    from ``u_heel`` at the heel to 0 at the toe, U = u_heel B / 2 at 2B/3
+    from the toe; "uniform", U = u_heel B at B/2."""
+    rule = "linear" if base_uplift is None else base_uplift
+    if rule not in BASE_UPLIFT:
+        raise ValueError(f"base_uplift must be one of {list(BASE_UPLIFT)}, "
+                         f"got {base_uplift!r}")
+    B = geom.base_width
+    if rule == "linear":
+        U, x, name = 0.5 * u_heel * B, 2.0 * B / 3.0, (
+            "Uplift on the base (linear, heel to toe)")
+    else:
+        U, x, name = u_heel * B, B / 2.0, "Uplift on the base (uniform)"
+    return {"component": name, "kind": "uplift", "W": -U, "x": x,
+            "base_uplift": rule, "resists": True,
+            "bearing": bool(uplift_in_bearing)}
+
+
+def _uplift(items: List[Dict[str, Any]]) -> tuple:
+    """(U, its moment about the toe), both >= 0, of the uplift items."""
+    up = [i for i in items if i["kind"] == "uplift"]
+    return -sum(i["W"] for i in up), -sum(i["M"] for i in up)
 
 
 def _sum(items: List[Dict[str, Any]], key: str, flag: str) -> float:
@@ -763,7 +986,9 @@ def _sliding_terms(geom: CantileverWallGeometry,
                    log_spiral_source: str = None,
                    passive_wall_friction_deg: float = None,
                    wall_friction_deg: float = None,
-                   interface_gap_possible: bool = False
+                   interface_gap_possible: bool = False,
+                   gamma_sat_backfill: float = None,
+                   base_uplift: str = None
                    ) -> Dict[str, Any]:
     """The sliding check's terms, unrounded (GM-143): ``V`` and its parts
     (``V_weights``, ``V_surcharge`` the surcharge over the heel counted,
@@ -793,7 +1018,10 @@ def _sliding_terms(geom: CantileverWallGeometry,
     the key's front face, taken here as 0 (ca B + Pp: the same when ca =
     cu, the default, and smaller when base_adhesion is below cu); with
     ``interface_gap_possible`` the undrained base resistance is held to
-    0.4 V (EN 1997-1 Eq. 6.5, ``gap_limited``)."""
+    0.4 V (EN 1997-1 Eq. 6.5, ``gap_limited``).
+
+    GM-292: with a water table the water's thrust ``Pw`` drives the wall
+    with Ph (``driving`` = Ph + Pw) and the uplift ``U`` is taken off V."""
     if sliding_cohesion is None:
         sliding_cohesion = default_sliding_cohesion(phi_foundation)
     if sliding_cohesion not in SLIDING_COHESION:
@@ -822,16 +1050,19 @@ def _sliding_terms(geom: CantileverWallGeometry,
     # Active thrust, decomposed per the chosen method (RW-1)
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
                                   c_backfill, pressure_method,
-                                  wall_friction_deg)
+                                  wall_friction_deg, gamma_sat_backfill)
     Pa, delta_deg, Ph = thrust["Pa"], thrust["delta_deg"], thrust["Ph"]
 
     # The vertical forces the check counts: the weights, the surcharges
     # over the heel it counts (GM-157) and the thrust's vertical component
-    # (stabilizing), the live load's share of it only when counted
+    # (stabilizing), the live load's share of it only when counted; less
+    # the uplift under a water table (GM-292)
     items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
                                   thrust, live_load_resists,
                                   dead_load_resists,
-                                  gamma_front=gamma_foundation)
+                                  gamma_front=gamma_foundation,
+                                  base_uplift=base_uplift)
+    U = _uplift(items)[0]
     V = _sum(items, "W", "resists")
     V_weights = sum(i["W"] for i in items if i["kind"] == "weight")
     V_surcharge = sum(i["W"] for i in items
@@ -851,7 +1082,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
     if sliding_cohesion != "undrained":
         delta_b = (delta_base if delta_base is not None
                    else 2.0 / 3.0 * phi_foundation)
-        R_friction = V * math.tan(math.radians(delta_b))
+        # (V > 0 but for an uplift that floats the wall, GM-292)
+        R_friction = max(V, 0.0) * math.tan(math.radians(delta_b))
     ca, ca_from, width, e = 0.0, None, None, None
     if sliding_cohesion == "undrained":
         ca, ca_from = ((base_adhesion, "base_adhesion")
@@ -866,7 +1098,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
         # Be by the uniform bearing pressure method, on the loads this
         # check counts (Pp left out, as UFC Fig. 4-27's resultant is)
         M = (_sum(items, "M", "resists")
-             - thrust["Ph"] * thrust["z_Pa"])
+             - thrust["Ph"] * thrust["z_Pa"]
+             - thrust["Pw"] * thrust["z_Pw"])
         e = B / 2.0 - (M / V if V > 0 else B / 2.0)
         width = max(B - 2.0 * abs(e), 0.0)
     R_adhesion = ca * width if width is not None else 0.0
@@ -916,7 +1149,8 @@ def _sliding_terms(geom: CantileverWallGeometry,
             Pp += Pp_cohesion
         resisting += Pp
 
-    driving = Ph
+    # with the water's thrust under a water table (GM-292)
+    driving = Ph + thrust["Pw"]
 
     # No driving force: nothing pushes the wall, so it cannot slide. Report
     # that, not a placeholder FOS (GM-100).
@@ -949,13 +1183,14 @@ def _sliding_terms(geom: CantileverWallGeometry,
             "gamma_foundation": gamma_foundation,
             "Pp": Pp, "resisting": resisting, "driving": driving,
             "Pa": Pa, "delta_deg": delta_deg,
+            "Pw": thrust["Pw"], "U": U, "h_w": thrust["h_w"],
             "no_driving_force": no_driving_force, "FOS": FOS}
 
 
 def _sliding_dict(t: Dict[str, Any], FOS_required: float) -> Dict[str, Any]:
     """:func:`check_sliding`'s dict from its terms."""
     FOS = t["FOS"]
-    return {
+    out = {
         "FOS_sliding": None if FOS is None else round(FOS, 3),
         "no_driving_force": t["no_driving_force"],
         "driving_force_kN_per_m": round(t["driving"], 1),
@@ -972,6 +1207,11 @@ def _sliding_dict(t: Dict[str, Any], FOS_required: float) -> Dict[str, Any]:
                              else round(t["adhesion_width"], 3)),
         "passes": True if FOS is None else FOS >= FOS_required,
     }
+    if t.get("h_w"):
+        # GM-292: the water's thrust in the driving force, and the uplift
+        out["water_thrust_kN_per_m"] = round(t["Pw"], 1)
+        out["uplift_kN_per_m"] = round(t["U"], 1)
+    return out
 
 
 def check_sliding(geom: CantileverWallGeometry,
@@ -993,7 +1233,9 @@ def check_sliding(geom: CantileverWallGeometry,
                   log_spiral_source: str = None,
                   passive_wall_friction_deg: float = None,
                   wall_friction_deg: float = None,
-                  interface_gap_possible: bool = False
+                  interface_gap_possible: bool = False,
+                  gamma_sat_backfill: float = None,
+                  base_uplift: str = None
                   ) -> Dict[str, Any]:
     """Check sliding stability.
 
@@ -1098,6 +1340,13 @@ def check_sliding(geom: CantileverWallGeometry,
         Under the undrained rule, hold the base resistance to 0.4 V where
         water or air can reach the interface (EN 1997-1 Eq. 6.5,
         :data:`UNDRAINED_GAP_BASIS`). Default False.
+    gamma_sat_backfill : float, optional
+        With ``geom.water_table_depth``, the backfill's unit weight below
+        the water table (kN/m3). None: gamma_backfill (GM-292,
+        :data:`GAMMA_SAT_BASIS`).
+    base_uplift : str, optional
+        With ``geom.water_table_depth``, the water pressure under the base:
+        "linear" (None) or "uniform" (:data:`BASE_UPLIFT_BASIS`).
 
     Returns
     -------
@@ -1116,7 +1365,7 @@ def check_sliding(geom: CantileverWallGeometry,
         gamma_foundation, delta_base, base_adhesion, live_load_resists,
         dead_load_resists, sliding_cohesion, passive_theory,
         log_spiral_source, passive_wall_friction_deg, wall_friction_deg,
-        interface_gap_possible),
+        interface_gap_possible, gamma_sat_backfill, base_uplift),
         default_FOS_sliding(include_passive) if FOS_required is None
         else FOS_required)
 
@@ -1130,7 +1379,9 @@ def _overturning_terms(geom: CantileverWallGeometry,
                        dead_load_resists: bool = False,
                        wall_friction_deg: float = None,
                        gamma_foundation: float = None,
-                       founded_on_rock: bool = False) -> Dict[str, Any]:
+                       founded_on_rock: bool = False,
+                       gamma_sat_backfill: float = None,
+                       base_uplift: str = None) -> Dict[str, Any]:
     """The overturning check's terms, unrounded (GM-143):
     ``M_stabilizing``, ``M_overturning`` (= Ph z_Pa), ``Ph``, ``z_Pa``
     and ``FOS`` (None with no overturning moment); and the eccentricity
@@ -1138,17 +1389,18 @@ def _overturning_terms(geom: CantileverWallGeometry,
     ``eccentricity`` (B/2 - x_R), ``in_middle_third``, and (GM-288)
     ``eccentricity_limit`` (B/6 on soil, B/4 on rock,
     :data:`ECCENTRICITY_BASIS`) with ``within_eccentricity_limit``.
-    ``gamma_foundation`` weighs the soil over the toe."""
+    ``gamma_foundation`` weighs the soil over the toe.
+
+    GM-292: with a water table the overturning moment adds the water's
+    thrust, Pw z_Pw, and the uplift's moment about the toe ``M_uplift``
+    (U x_U, :data:`UPLIFT_MOMENT_BASIS`); V is net of the uplift ``U``."""
     B = geom.base_width
 
     # Active thrust, decomposed per the chosen method (RW-1)
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
                                   c_backfill, pressure_method,
-                                  wall_friction_deg)
+                                  wall_friction_deg, gamma_sat_backfill)
     Ph, z_Pa = thrust["Ph"], thrust["z_Pa"]
-
-    # Overturning moment about toe: horizontal component only
-    M_overturning = Ph * z_Pa
 
     # Stabilizing moments about the toe: the weights, the surcharges over
     # the heel the check counts (GM-157) and the thrust's vertical
@@ -1156,8 +1408,15 @@ def _overturning_terms(geom: CantileverWallGeometry,
     items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
                                   thrust, live_load_resists,
                                   dead_load_resists,
-                                  gamma_front=gamma_foundation)
-    M_stabilizing = _sum(items, "M", "resists")
+                                  gamma_front=gamma_foundation,
+                                  base_uplift=base_uplift)
+    M_stabilizing = sum(i["M"] for i in items
+                        if i["resists"] and i["kind"] != "uplift")
+    U, M_uplift = _uplift(items)
+
+    # Overturning moment about toe: horizontal component only; under a
+    # water table the water's thrust and the uplift's moment too (GM-292)
+    M_overturning = Ph * z_Pa + thrust["Pw"] * thrust["z_Pw"] + M_uplift
 
     # The eccentricity check (middle third), on the loads the overturning
     # check counts: UFC 3-220-20 B-1.4, NHI-06-089 Sec. 10.5.5 (the
@@ -1181,7 +1440,9 @@ def _overturning_terms(geom: CantileverWallGeometry,
             "eccentricity_limit": limit,
             "within_eccentricity_limit": abs(eccentricity) <= limit + 1e-12,
             "live_load_resists": live_load_resists,
-            "dead_load_resists": dead_load_resists}
+            "dead_load_resists": dead_load_resists,
+            "Pw": thrust["Pw"], "z_Pw": thrust["z_Pw"], "U": U,
+            "M_uplift": M_uplift, "h_w": thrust["h_w"]}
 
 
 def check_overturning(geom: CantileverWallGeometry,
@@ -1194,7 +1455,9 @@ def check_overturning(geom: CantileverWallGeometry,
                       dead_load_resists: bool = False,
                       wall_friction_deg: float = None,
                       gamma_foundation: float = None,
-                      founded_on_rock: bool = False) -> Dict[str, Any]:
+                      founded_on_rock: bool = False,
+                      gamma_sat_backfill: float = None,
+                      base_uplift: str = None) -> Dict[str, Any]:
     """Check overturning stability about the toe, and the eccentricity
     (middle-third) check on the same loads.
 
@@ -1228,6 +1491,9 @@ def check_overturning(geom: CantileverWallGeometry,
     founded_on_rock : bool, optional
         The eccentricity limit is B/4, not B/6 (:data:`ECCENTRICITY_BASIS`),
         and the default FOS_required 1.5. Default False.
+    gamma_sat_backfill, base_uplift : optional
+        With ``geom.water_table_depth``, as in :func:`check_sliding`
+        (GM-292).
 
     Returns
     -------
@@ -1241,7 +1507,8 @@ def check_overturning(geom: CantileverWallGeometry,
     return _overturning_dict(_overturning_terms(
         geom, gamma_backfill, phi_backfill, c_backfill, gamma_concrete,
         pressure_method, live_load_resists, dead_load_resists,
-        wall_friction_deg, gamma_foundation, founded_on_rock),
+        wall_friction_deg, gamma_foundation, founded_on_rock,
+        gamma_sat_backfill, base_uplift),
         default_FOS_overturning(founded_on_rock) if FOS_required is None
         else FOS_required)
 
@@ -1276,7 +1543,10 @@ def _bearing_terms(geom: CantileverWallGeometry,
                    wall_friction_deg: float = None,
                    gamma_foundation: float = None,
                    bearing_pressure: str = None,
-                   founded_on_rock: bool = False) -> Dict[str, Any]:
+                   founded_on_rock: bool = False,
+                   gamma_sat_backfill: float = None,
+                   base_uplift: str = None,
+                   uplift_in_bearing: bool = False) -> Dict[str, Any]:
     """The bearing check's terms, unrounded (GM-143): ``V``, ``M_stab``,
     ``M_over``, ``x_resultant``, ``eccentricity`` (the eccentricity for
     bearing, GM-157), ``in_middle_third``, ``distribution``
@@ -1297,7 +1567,12 @@ def _bearing_terms(geom: CantileverWallGeometry,
     component counts. So the eccentricity here can differ from the
     eccentricity check's (:func:`_overturning_terms`): GEC-11 Vol I
     p. 4-26, "eB = eccentricity for bearing calculation (not equal to
-    eccentricity check e)"."""
+    eccentricity check e)".
+
+    GM-292: with a water table ``M_over`` adds the water's thrust, Pw
+    z_Pw; the uplift counts as ``uplift_in_bearing`` says (default: it does
+    not, :data:`UPLIFT_BEARING_BASIS`), taken off V with its moment in
+    ``M_over``, as the overturning check counts it."""
     B = geom.base_width
 
     bearing_pressure_given = bearing_pressure is not None
@@ -1310,21 +1585,25 @@ def _bearing_terms(geom: CantileverWallGeometry,
     # Active thrust, decomposed per the chosen method (RW-1)
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
                                   c_backfill, pressure_method,
-                                  wall_friction_deg)
+                                  wall_friction_deg, gamma_sat_backfill)
     Pa, z_Pa, delta_deg = thrust["Pa"], thrust["z_Pa"], thrust["delta_deg"]
     Ph, Pv = thrust["Ph"], thrust["Pv"]
 
     # Weights, the surcharges over the heel the check counts and the
     # vertical thrust component (at the pressure plane, x = B), with their
-    # moments about the toe
+    # moments about the toe; the uplift as uplift_in_bearing says (GM-292)
     items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
                                   thrust,
                                   surcharge_in_bearing=surcharge_in_bearing,
-                                  gamma_front=gamma_foundation)
+                                  gamma_front=gamma_foundation,
+                                  base_uplift=base_uplift,
+                                  uplift_in_bearing=uplift_in_bearing)
     V = _sum(items, "W", "bearing")
-    M_stab = _sum(items, "M", "bearing")
+    M_stab = sum(i["M"] for i in items
+                 if i["bearing"] and i["kind"] != "uplift")
+    U, M_uplift = _uplift([i for i in items if i["bearing"]])
 
-    M_over = Ph * z_Pa
+    M_over = Ph * z_Pa + thrust["Pw"] * thrust["z_Pw"] + M_uplift
 
     # Location of resultant from toe
     x_resultant = (M_stab - M_over) / V if V > 0 else B / 2.0
@@ -1387,7 +1666,10 @@ def _bearing_terms(geom: CantileverWallGeometry,
             "q_bearing": q_bearing,
             "q_allowable": q_allowable, "FOS": FOS_bearing,
             "passes": passes, "Pa": Pa, "Pv": Pv, "delta_deg": delta_deg,
-            "surcharge_in_bearing": surcharge_in_bearing}
+            "surcharge_in_bearing": surcharge_in_bearing,
+            "Pw": thrust["Pw"], "U": U, "M_uplift": M_uplift,
+            "uplift_in_bearing": bool(uplift_in_bearing),
+            "h_w": thrust["h_w"]}
 
 
 def _bearing_dict(t: Dict[str, Any]) -> Dict[str, Any]:
@@ -1421,7 +1703,10 @@ def check_bearing(geom: CantileverWallGeometry,
                   wall_friction_deg: float = None,
                   gamma_foundation: float = None,
                   bearing_pressure: str = None,
-                  founded_on_rock: bool = False) -> Dict[str, Any]:
+                  founded_on_rock: bool = False,
+                  gamma_sat_backfill: float = None,
+                  base_uplift: str = None,
+                  uplift_in_bearing: bool = False) -> Dict[str, Any]:
     """Check bearing pressure, with the eccentricity for bearing.
 
     The surcharges over the heel load the base as ``surcharge_in_bearing``
@@ -1459,6 +1744,12 @@ def check_bearing(geom: CantileverWallGeometry,
         with founded_on_rock (GM-288).
     founded_on_rock : bool, optional
         Default False.
+    gamma_sat_backfill, base_uplift : optional
+        With ``geom.water_table_depth``, as in :func:`check_sliding`
+        (GM-292).
+    uplift_in_bearing : bool, optional
+        With ``geom.water_table_depth``, count the uplift in the bearing
+        pressures. Default False (:data:`UPLIFT_BEARING_BASIS`).
 
     Returns
     -------
@@ -1471,7 +1762,8 @@ def check_bearing(geom: CantileverWallGeometry,
         geom, gamma_backfill, phi_backfill, c_backfill, q_allowable,
         gamma_concrete, pressure_method, surcharge_in_bearing,
         wall_friction_deg, gamma_foundation, bearing_pressure,
-        founded_on_rock))
+        founded_on_rock, gamma_sat_backfill, base_uplift,
+        uplift_in_bearing))
 
 
 def analyze_cantilever_wall(geom: CantileverWallGeometry,
@@ -1499,7 +1791,10 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             wall_friction_deg: float = None,
                             interface_gap_possible: bool = False,
                             founded_on_rock: bool = False,
-                            bearing_pressure: str = None
+                            bearing_pressure: str = None,
+                            gamma_sat_backfill: float = None,
+                            base_uplift: str = None,
+                            uplift_in_bearing: bool = False
                             ) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
@@ -1589,6 +1884,17 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         "uniform" (q_eq = V / B', B' = B - 2e) or "linear" (the larger edge
         pressure), compared with q_allowable (:data:`BEARING_PRESSURE_BASIS`,
         GM-288). None: "uniform" on soil, "linear" on rock.
+    gamma_sat_backfill : float, optional
+        With a water table (``geom.water_table_depth``), the backfill's
+        unit weight below it (kN/m3), more than gamma_w. None:
+        gamma_backfill (:data:`GAMMA_SAT_BASIS`, GM-292).
+    base_uplift : str, optional
+        With a water table, the water pressure under the base: "linear"
+        (None; gamma_w h_w at the heel to 0 at the toe) or "uniform"
+        (gamma_w h_w under the whole base); :data:`BASE_UPLIFT_BASIS`.
+    uplift_in_bearing : bool, optional
+        With a water table, count the uplift in the bearing pressures.
+        Default False (:data:`UPLIFT_BEARING_BASIS`).
 
     Returns
     -------
@@ -1602,8 +1908,16 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         friction delta_b when friction is counted (GM-173) and how the
         surcharges over the heel were counted when there are any (GM-157),
         and with include_passive the passive coefficient in front of the
-        wall (GM-242, :func:`toe_passive_choices`).
+        wall (GM-242, :func:`toe_passive_choices`); with a water table how
+        it loads the wall (GM-292, :func:`water_choices`).
     """
+    if geom.water_table_depth is None and (base_uplift is not None
+                                           or uplift_in_bearing):
+        raise ValueError(
+            "base_uplift and uplift_in_bearing are the water pressure under "
+            "the base below a water table behind the wall; with no "
+            "water_table_depth there is none. Give water_table_depth, or "
+            "leave them out.")
     rule_default = default_sliding_cohesion(phi_foundation)
     FOS_sliding_given = FOS_sliding is not None
     FOS_overturning_given = FOS_overturning is not None
@@ -1613,9 +1927,10 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         FOS_overturning = default_FOS_overturning(founded_on_rock)
 
     def slide(rule, delta_base=delta_base, base_adhesion=base_adhesion,
-              gap=interface_gap_possible):
+              gap=interface_gap_possible, g=geom, gamma_sat=gamma_sat_backfill,
+              uplift=base_uplift):
         return _sliding_terms(
-            geom, gamma_backfill, phi_backfill, c_backfill,
+            g, gamma_backfill, phi_backfill, c_backfill,
             phi_foundation, c_foundation, gamma_concrete,
             pressure_method, include_passive, gamma_foundation,
             delta_base=delta_base, base_adhesion=base_adhesion,
@@ -1625,7 +1940,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
             log_spiral_source=log_spiral_source,
             passive_wall_friction_deg=passive_wall_friction_deg,
             wall_friction_deg=wall_friction_deg,
-            interface_gap_possible=gap)
+            interface_gap_possible=gap, gamma_sat_backfill=gamma_sat,
+            base_uplift=uplift)
 
     s_terms = slide(sliding_cohesion)
     sliding = _sliding_dict(s_terms, FOS_sliding)
@@ -1657,32 +1973,59 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         except ValueError as exc:
             others[rule] = str(exc)
 
-    o_terms = _overturning_terms(
-        geom, gamma_backfill, phi_backfill, c_backfill,
-        gamma_concrete, pressure_method,
-        live_load_resists=live_load_resists,
-        dead_load_resists=dead_load_resists,
-        wall_friction_deg=wall_friction_deg,
-        gamma_foundation=gamma_foundation,
-        founded_on_rock=founded_on_rock,
-    )
+    def overturn(g=geom, gamma_sat=gamma_sat_backfill, uplift=base_uplift):
+        return _overturning_terms(
+            g, gamma_backfill, phi_backfill, c_backfill,
+            gamma_concrete, pressure_method,
+            live_load_resists=live_load_resists,
+            dead_load_resists=dead_load_resists,
+            wall_friction_deg=wall_friction_deg,
+            gamma_foundation=gamma_foundation,
+            founded_on_rock=founded_on_rock,
+            gamma_sat_backfill=gamma_sat, base_uplift=uplift)
+
+    o_terms = overturn()
     overturning = _overturning_dict(o_terms, FOS_overturning)
 
-    def bear(pressure):
+    def bear(pressure, in_bearing=uplift_in_bearing):
         return _bearing_terms(
             geom, gamma_backfill, phi_backfill, c_backfill,
             q_allowable, gamma_concrete, pressure_method,
             surcharge_in_bearing=surcharge_in_bearing,
             wall_friction_deg=wall_friction_deg,
             gamma_foundation=gamma_foundation,
-            bearing_pressure=pressure, founded_on_rock=founded_on_rock)
+            bearing_pressure=pressure, founded_on_rock=founded_on_rock,
+            gamma_sat_backfill=gamma_sat_backfill, base_uplift=base_uplift,
+            uplift_in_bearing=in_bearing)
 
     b_terms = bear(bearing_pressure)
     bearing = _bearing_dict(b_terms)
 
     thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
                                   c_backfill, pressure_method,
-                                  wall_friction_deg)
+                                  wall_friction_deg, gamma_sat_backfill)
+
+    # GM-292: the water table's choices, with the other readings' numbers:
+    # the drained backfill, the other uplift and the uplift in bearing
+    water = []
+    if geom.water_table_depth is not None:
+        others_w = {}
+        if thrust["h_w"] > 0:
+            import dataclasses
+            dry = dataclasses.replace(geom, water_table_depth=None)
+            others_w["dry"] = (slide(sliding_cohesion, g=dry, gamma_sat=None,
+                                     uplift=None),
+                               overturn(g=dry, gamma_sat=None, uplift=None))
+            other = ("uniform" if (base_uplift or "linear") == "linear"
+                     else "linear")
+            others_w["uplift"] = (other, slide(sliding_cohesion, uplift=other),
+                                  overturn(uplift=other))
+            others_w["bearing"] = bear(bearing_pressure,
+                                       in_bearing=not uplift_in_bearing)
+        water = water_choices(geom, thrust, s_terms, o_terms, b_terms,
+                              others_w, gamma_sat_backfill=gamma_sat_backfill,
+                              base_uplift=base_uplift,
+                              gamma_backfill=gamma_backfill)
 
     return CantileverWallResult(
         FOS_sliding=sliding["FOS_sliding"],
@@ -1707,7 +2050,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         vertical_forces=_vertical_force_items(
             geom, gamma_backfill, gamma_concrete, thrust,
             live_load_resists, dead_load_resists, surcharge_in_bearing,
-            gamma_front=gamma_foundation),
+            gamma_front=gamma_foundation, base_uplift=base_uplift,
+            uplift_in_bearing=uplift_in_bearing),
         sliding_terms=s_terms,
         overturning_terms=o_terms,
         bearing_terms=b_terms,
@@ -1727,7 +2071,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
             FOS_sliding=FOS_sliding, FOS_sliding_given=FOS_sliding_given,
             FOS_overturning=FOS_overturning,
             FOS_overturning_given=FOS_overturning_given,
-            founded_on_rock=founded_on_rock),
+            founded_on_rock=founded_on_rock)
+        + water,
     )
 
 
@@ -1959,17 +2304,21 @@ NHI_MIN_ACTIVE_PRESSURE_PER_M = 5.0
 
 def _thrust_with_floor(Ka: float, gamma: float, H: float, c: float,
                        q: float, floor_per_m: float,
-                       n: int = 2000) -> float:
+                       n: int = 2000, gamma_b: float = None,
+                       z_w: float = None) -> float:
     """The active thrust (kN/m) with the pressure at no depth below
     ``floor_per_m`` z (kPa): FHWA NHI-06-089 p. 10-15's "the effective
     pressure on the wall at any depth should not be less than ... 5z
-    kN/m2", by the midpoint rule over ``n`` slices."""
+    kN/m2", by the midpoint rule over ``n`` slices; below a water table
+    ``z_w`` deep on ``gamma_b`` (GM-292)."""
     dz = H / n
     root = math.sqrt(Ka)
     total = 0.0
     for i in range(n):
         z = (i + 0.5) * dz
-        total += max(Ka * (q + gamma * z) - 2.0 * c * root,
+        sigma = (q + gamma * z if z_w is None else
+                 q + gamma * min(z, z_w) + gamma_b * max(z - z_w, 0.0))
+        total += max(Ka * sigma - 2.0 * c * root,
                      floor_per_m * z) * dz
     return total
 
@@ -2035,9 +2384,19 @@ def wall_basis_choices(thrust: Dict[str, Any], s_terms: Dict[str, Any],
     if z_t > 0:
         Ka, H = thrust["Ka"], thrust["H_active"]
         q = thrust["q_live"] + thrust["q_dead"]
-        Pa_c0 = active_force_components(gamma_backfill, H, Ka, 0.0, q)["Pa"]
-        Pa_5z = _thrust_with_floor(Ka, gamma_backfill, H, c_backfill, q,
-                                   NHI_MIN_ACTIVE_PRESSURE_PER_M)
+        if thrust.get("h_w"):
+            # on the effective stress below a water table (GM-292)
+            g_b, z_w = thrust["gamma_b"], thrust["z_w"]
+            Pa_c0 = active_force_components_water(
+                gamma_backfill, g_b, H, z_w, Ka, 0.0, q)["Pa"]
+            Pa_5z = _thrust_with_floor(Ka, gamma_backfill, H, c_backfill, q,
+                                       NHI_MIN_ACTIVE_PRESSURE_PER_M,
+                                       gamma_b=g_b, z_w=z_w)
+        else:
+            Pa_c0 = active_force_components(gamma_backfill, H, Ka, 0.0,
+                                            q)["Pa"]
+            Pa_5z = _thrust_with_floor(Ka, gamma_backfill, H, c_backfill, q,
+                                       NHI_MIN_ACTIVE_PRESSURE_PER_M)
         out.append(choice(
             "active pressure where the backfill cohesion takes it below "
             "zero (tension zone)",
@@ -2173,4 +2532,120 @@ def wall_basis_choices(thrust: Dict[str, Any], s_terms: Dict[str, Any],
             "0.4 Vd (interface_gap_possible)", chosen,
             how_given(flag, False, name="interface_gap_possible"),
             UNDRAINED_GAP_BASIS, alts))
+    return out
+
+
+def water_choices(geom: CantileverWallGeometry, thrust: Dict[str, Any],
+                  s_terms: Dict[str, Any], o_terms: Dict[str, Any],
+                  b_terms: Dict[str, Any], others: Dict[str, Any],
+                  gamma_sat_backfill: float = None,
+                  base_uplift: str = None,
+                  gamma_backfill: float = None) -> list:
+    """How the water table behind the wall loads it (GM-292), as a
+    result's ``choices`` (``geotech_common.choices``): the water table,
+    with the drained backfill's FOS beside it; and with the water above
+    the underside of the base the unit weight below it, the water pressure
+    under the base (the other distribution's numbers beside it), where the
+    uplift's moment goes in the overturning check, and whether the bearing
+    pressures count the uplift. ``others``: "dry", the (sliding,
+    overturning) terms with no water table; "uplift", (the other
+    distribution, its sliding and overturning terms); "bearing", the
+    bearing terms with ``uplift_in_bearing`` the other way. A
+    ``gamma_sat_backfill`` given equal to ``gamma_backfill`` keeps the
+    default's basis."""
+    from geotech_common.choices import choice, how_given
+
+    def fos_s(t):
+        return ("no driving force" if t["FOS"] is None
+                else f"FOS_sliding {t['FOS']:.3g}")
+
+    def fos_o(t):
+        return ("no overturning moment" if t["FOS"] is None
+                else f"FOS_overturning {t['FOS']:.3g}")
+
+    d_w, h_w = geom.water_table_depth, thrust["h_w"]
+    what = "water table behind the wall (water_table_depth)"
+    how = how_given(d_w, None, name="water_table_depth")
+    if not h_w > 0:
+        return [choice(
+            what, f"{d_w:g} m below the top of the backfill, at or below the "
+            f"underside of the base (wall_height {geom.wall_height:g} m): no "
+            "water pressure on the wall and no uplift", how, DRAINED_BASIS)]
+    dry_s, dry_o = others["dry"]
+    basis = WATER_PRESSURE_BASIS
+    if b_terms["q_allowable"] is not None:
+        basis += (". q_allowable is the input's: give it for the water "
+                  "table at this level (GEC-6 Sec. 5.2.3.2, p. 56; UFC "
+                  "3-220-20 Sec. 5-3.2, p. 291)")
+    out = [choice(
+        what,
+        f"{d_w:g} m below the top of the backfill, h_w = {h_w:.2f} m above "
+        f"the underside of the base: the earth pressure below it on "
+        f"gamma_b = {thrust['gamma_b']:.2f} kN/m3 (Pa = {thrust['Pa']:.1f} "
+        f"kN/m), and the water pressure added, Pw = gamma_w h_w^2 / 2 = "
+        f"{thrust['Pw']:.1f} kN/m at h_w / 3 = {thrust['z_Pw']:.2f} m: "
+        f"{fos_s(s_terms)}, {fos_o(o_terms)}", how, basis,
+        [f"the backfill drained, no water table (water_table_depth left "
+         f"out): {fos_s(dry_s)}, {fos_o(dry_o)}. " + DRAINED_BASIS])]
+
+    g_sat, g_b = thrust["gamma_sat"], thrust["gamma_b"]
+    out.append(choice(
+        "backfill unit weight below the water table (gamma_sat_backfill)",
+        f"gamma_sat = {g_sat:g} kN/m3, gamma_b = gamma_sat - gamma_w = "
+        f"{g_sat:g} - {GAMMA_W:g} = {g_b:.2f} kN/m3",
+        how_given(gamma_sat_backfill, None, name="gamma_sat_backfill",
+                  took=g_sat),
+        GAMMA_SAT_BASIS if gamma_sat_backfill in (None, gamma_backfill)
+        else "the value given"))
+
+    rule = "linear" if base_uplift is None else base_uplift
+    B, u = geom.base_width, thrust["u_heel"]
+
+    def uplift_words(name, U):
+        if name == "linear":
+            return (f"linear: gamma_w h_w = {u:.1f} kPa at the heel to 0 at "
+                    f"the toe, U = gamma_w h_w B / 2 = {U:.1f} kN/m at 2B/3 "
+                    f"= {2.0 * B / 3.0:.2f} m from the toe")
+        return (f"uniform: gamma_w h_w = {u:.1f} kPa under the whole base, "
+                f"U = gamma_w h_w B = {U:.1f} kN/m at B/2 = {B / 2.0:.2f} m")
+    other, s_o, o_o = others["uplift"]
+    out.append(choice(
+        "water pressure under the base, uplift (base_uplift)",
+        uplift_words(rule, s_terms["U"]) + f": {fos_s(s_terms)}, "
+        f"{fos_o(o_terms)}",
+        how_given(rule, "linear", name="base_uplift"),
+        BASE_UPLIFT_BASIS[rule],
+        [f"{uplift_words(other, s_o['U'])} (base_uplift '{other}'): "
+         f"{fos_s(s_o)}, {fos_o(o_o)}, e = {o_o['eccentricity']:.3f} m. "
+         + BASE_UPLIFT_BASIS[other]]))
+
+    M_s, M_U = o_terms["M_stabilizing"], o_terms["M_uplift"]
+    M_ot = o_terms["M_overturning"] - M_U
+    if M_ot > 0 and M_U > 0:
+        out.append(choice(
+            "uplift moment about the toe, in the overturning check",
+            f"an overturning moment: FOS_overturning = M_stab / (M_ot + U "
+            f"x_U) = {M_s:.1f} / ({M_ot:.1f} + {M_U:.1f}) = "
+            f"{M_s / (M_ot + M_U):.3g}", "module", UPLIFT_MOMENT_BASIS,
+            [f"taken off the stabilizing moment: FOS_overturning = (M_stab "
+             f"- U x_U) / M_ot = ({M_s:.1f} - {M_U:.1f}) / {M_ot:.1f} = "
+             f"{(M_s - M_U) / M_ot:.3g}"]))
+
+    flag = b_terms["uplift_in_bearing"]
+
+    def bearing_words(t):
+        words = (f"q_toe {t['q_toe']:.1f} kPa, q_heel {t['q_heel']:.1f} kPa, "
+                 f"q_eq {t['q_eq']:.1f} kPa")
+        if t["FOS"] is not None:
+            words += f", FOS_bearing {t['FOS']:.3g}"
+        return words
+    out.append(choice(
+        "uplift on the base, in the bearing pressures (uplift_in_bearing)",
+        f"{'counted' if flag else 'left out'} (uplift_in_bearing={flag}): "
+        + bearing_words(b_terms),
+        how_given(flag, False, name="uplift_in_bearing"),
+        UPLIFT_BEARING_BASIS[flag],
+        [f"{'left out' if flag else 'counted'} (uplift_in_bearing="
+         f"{not flag}): " + bearing_words(others["bearing"]) + ". "
+         + UPLIFT_BEARING_BASIS[not flag]]))
     return out

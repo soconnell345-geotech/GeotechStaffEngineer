@@ -77,6 +77,15 @@ class CantileverWallGeometry:
         a pavement or an approach slab. Default 0. Its thrust drives every
         check, as the live load's does; how its weight over the heel counts
         is a separate choice (``cantilever``, GM-157).
+    water_table_depth : float, optional
+        Depth of a level water table behind the wall below the top of the
+        backfill at the stem (m), >= 0 (GM-292). Default None: no water
+        table, the backfill drained (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41:
+        with adequate drainage the hydrostatic pressure "generally need not
+        be considered"). Given, the earth pressure below it is on the
+        buoyant unit weight, the water pressure is added and the water
+        lifts the base (``cantilever``); at or below the underside of the
+        base (wall_height or deeper) it changes nothing.
     """
     wall_height: float
     base_width: Optional[float] = None
@@ -91,6 +100,7 @@ class CantileverWallGeometry:
     dead_load_surcharge: float = 0.0
     stem_batter: str = "back"
     embedment_depth: Optional[float] = None
+    water_table_depth: Optional[float] = None
 
     def __post_init__(self):
         if self.wall_height <= 0:
@@ -132,6 +142,13 @@ class CantileverWallGeometry:
                 f"embedment_depth {self.embedment_depth:g} m (the depth of "
                 "the underside of the base below the ground in front of the "
                 f"wall) must be from 0 to wall_height {self.wall_height:g} m")
+        if self.water_table_depth is not None and self.water_table_depth < 0:
+            raise ValueError(
+                f"water_table_depth {self.water_table_depth:g} m: the depth "
+                "of the water table below the top of the backfill at the "
+                "stem must be 0 or more (0 = water at the top of the "
+                "backfill); water standing above the backfill is not "
+                "modelled")
 
     @property
     def Df(self) -> float:
@@ -160,6 +177,16 @@ class CantileverWallGeometry:
             i_rad = math.radians(self.backfill_slope)
             return self.wall_height + self.heel_length * math.tan(i_rad)
         return self.wall_height
+
+    @property
+    def water_height(self) -> float:
+        """Height of the water table above the underside of the base (m),
+        the head on the base at the back of the heel over gamma_w (GM-292):
+        wall_height - water_table_depth, 0 without a water table or with
+        one at or below the underside of the base."""
+        if self.water_table_depth is None:
+            return 0.0
+        return max(self.wall_height - self.water_table_depth, 0.0)
 
 
 @dataclass

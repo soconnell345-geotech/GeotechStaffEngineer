@@ -83,7 +83,9 @@ class CantileverWallResult:
     earth_pressure : dict or None
         method, Ka, H_active, q_live, q_dead (kPa), Pa_earth, Pa_surcharge,
         Pa_cohesion, Pa (kN/m), z_Pa (m above the base), delta_deg, Ph, Pv,
-        and the live load's share Pa_live, Pv_live.
+        and the live load's share Pa_live, Pv_live; and the water table
+        (GM-292): water_table_depth, h_w, z_w, gamma_sat, gamma_b, Pw,
+        z_Pw, u_heel (Pw 0 without one).
     vertical_forces : list of dict or None
         Each vertical force on the base, in the checks' order: component,
         kind, W (kN/m), x (arm from the toe, m), M, and the checks that
@@ -135,6 +137,21 @@ class CantileverWallResult:
             return None
         e = round(b["eccentricity"], 3)
         return None if e == round(self.eccentricity, 3) else e
+
+    @property
+    def water(self) -> Optional[Dict[str, Any]]:
+        """With a water table behind the wall (GM-292): its depth below
+        the top of the backfill, the water's height above the underside of
+        the base, its thrust and the uplift the sliding check counts; else
+        None."""
+        ep = self.earth_pressure
+        if not ep or ep.get("water_table_depth") is None:
+            return None
+        s = self.sliding_terms or {}
+        return {"water_table_depth_m": ep["water_table_depth"],
+                "water_height_m": round(ep["h_w"], 3),
+                "water_thrust_kN_per_m": round(ep["Pw"], 1),
+                "uplift_kN_per_m": round(s.get("U", 0.0), 1)}
 
     @property
     def bearing_checked(self) -> bool:
@@ -299,6 +316,13 @@ class CantileverWallResult:
             lines.append(f"  Eccentricity for bearing = "
                          f"{self.eccentricity_bearing:.3f} m (on the "
                          "bearing check's loads)")
+        w = self.water
+        if w is not None:
+            lines.append(
+                f"  Water table:  {w['water_table_depth_m']:g} m below the "
+                f"top of the backfill; water thrust "
+                f"{w['water_thrust_kN_per_m']:.1f} kN/m, uplift "
+                f"{w['uplift_kN_per_m']:.1f} kN/m")
         lines.extend([
             "",
             "  Failed checks: " + (", ".join(failed) if failed else "none"),
@@ -346,6 +370,8 @@ class CantileverWallResult:
             d["q_bearing_kPa"] = _round(self.q_bearing, 1)
         if self.eccentricity_bearing is not None:
             d["eccentricity_bearing_m"] = self.eccentricity_bearing
+        if self.water is not None:
+            d.update(self.water)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         return d

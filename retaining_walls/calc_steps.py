@@ -23,7 +23,8 @@ The `analysis` parameter should be a dict with:
     - "FOS_overturning": float (default 2.0, 1.5 on rock)
     - and the other inputs of ``analyze_cantilever_wall`` (GM-288:
       "wall_friction_deg", "interface_gap_possible", "founded_on_rock",
-      "bearing_pressure"), each at its default when left out
+      "bearing_pressure"; GM-292: "gamma_sat_backfill", "base_uplift",
+      "uplift_in_bearing"), each at its default when left out
   MSE-specific:
     - "reinforcement": Reinforcement dataclass
     - "gamma_foundation": float (kN/m3, optional)
@@ -174,6 +175,27 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
     if getattr(geom, "dead_load_surcharge", 0.0) > 0:
         items.append(InputItem("q_D", "Dead-load surcharge",
                                f"{geom.dead_load_surcharge:.1f}", "kPa"))
+    # GM-292: the water table behind the wall
+    d_w = getattr(geom, "water_table_depth", None)
+    if d_w is not None:
+        items.append(InputItem("d_w", "Water table behind the wall, below "
+                               "the top of the backfill", f"{d_w:.2f}", "m"))
+        if geom.water_height > 0:
+            g_sat = _used(analysis, "gamma_sat_backfill")
+            items.append(InputItem(
+                "\u03b3_sat", "Backfill unit weight below the water table",
+                f"{gamma if g_sat is None else g_sat:.1f}"
+                + (" (= \u03b3_backfill)" if g_sat is None else ""),
+                "kN/m\u00b3"))
+            uplift = _used(analysis, "base_uplift") or "linear"
+            items.append(InputItem(
+                "u", "Water pressure under the base",
+                "linear, heel to toe" if uplift == "linear"
+                else "uniform", ""))
+            items.append(InputItem(
+                "U_brg", "Uplift in the bearing pressures",
+                "counted" if _used(analysis, "uplift_in_bearing")
+                else "left out", ""))
 
     items.extend([
         InputItem("\u03b3_backfill", "Backfill unit weight", f"{gamma:.1f}", "kN/m\u00b3"),
@@ -545,6 +567,60 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                    "acts at (H - z_0)/3. "
                    "Water in the tension crack is not modelled."),
         )
+    h_w = ep.get("h_w") or 0.0
+    if h_w > 0:
+        # GM-292: the effective earth pressure below the water table, and
+        # the water's own; the steps above are replaced by these
+        z_w, g_b = ep["z_w"], ep["gamma_b"]
+        closed = not z_t > 0
+        ep_items[-1] = CalcStep(
+            title="Active Thrust with a Water Table (effective stress)",
+            equation=(
+                "σ'_v = q + γz above the water table (z ≤ z_w), q + γz_w + "
+                "γ_b(z - z_w) below it, γ_b = γ_sat - γ_w; "
+                + ("P_a = K_a [q H + ½γz_w² + γz_w(H - z_w) + ½γ_b(H - z_w)²]"
+                   + (" - 2c√K_a H" if c > 0 else "") if closed else
+                   "p_a = K_a σ'_v - 2c√K_a, zero where negative; P_a = ∫p_a dz")),
+            substitution=(
+                f"z_w = {z_w:.3f} m below the top of the pressure plane, "
+                f"γ_b = {ep['gamma_sat']:.2f} - {ep['gamma_w']:.2f} = "
+                f"{g_b:.2f} kN/m³; "
+                + (f"P_a = {Ka_val:.4f} × [{q:.1f} × {H:.3f} + 0.5 × "
+                   f"{gamma:.1f} × {z_w:.3f}² + {gamma:.1f} × {z_w:.3f} × "
+                   f"{H - z_w:.3f} + 0.5 × {g_b:.2f} × {H - z_w:.3f}²]"
+                   + (f" - 2 × {c:.1f} × √{Ka_val:.4f} × {H:.3f}"
+                      if c > 0 else "") if closed else
+                   f"zero over the top {z_t:.3f} m")),
+            result_name="P_a",
+            result_value=f"{Pa_total:.1f}",
+            result_unit="kN/m",
+            reference=("UFC 3-220-20 Sec. 4-4.1 and Figs. 4-5, 4-16(a); FHWA "
+                       "NHI-06-089 Fig. 10-12"),
+            notes=(f"The effective earth pressure's thrust, {ep['z_Pa']:.3f} m "
+                   "above the underside of the base; the water's is the "
+                   "next step. UFC 3-220-20 p. 200: 'the buoyant or "
+                   "effective unit weight (γb) is used in the earth "
+                   "pressure equations for soils below the water table'."
+                   + ("" if closed else " Water in the tension crack is not "
+                      "modelled.")),
+        )
+        ep_items.append(CalcStep(
+            title="Water Pressure Thrust",
+            equation="P_w = 0.5 × γ_w × h_w²,  z_Pw = h_w / 3",
+            substitution=(f"h_w = {geom.wall_height:.2f} - "
+                          f"{geom.water_table_depth:.2f} = {h_w:.3f} m; "
+                          f"P_w = 0.5 × {ep['gamma_w']:.2f} × {h_w:.3f}²"),
+            result_name="P_w",
+            result_value=f"{ep['Pw']:.1f}",
+            result_unit="kN/m",
+            reference=("UFC 3-220-20 Sec. 4-4.1 (an earth pressure "
+                       "coefficient of unity); FHWA NHI-06-089 Fig. 10-12"),
+            notes=(f"Horizontal, at z_Pw = {ep['z_Pw']:.3f} m above the "
+                   "underside of the base; it drives sliding and overturning "
+                   "with P_h. h_w is the water table's height above the "
+                   "underside of the base; no water is taken in front of "
+                   "the wall."),
+        ))
 
     # Thrust inclination & components (cantilever._active_thrust, RW-1):
     # Coulomb -> the wall friction on the plane through the heel (beta by
@@ -613,6 +689,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                  "over the heel that is not a resisting force is left out "
                  "of sliding, overturning and the eccentricity check "
                  "(see Choices).")
+    uplift = [f for f in forces if f.get("kind") == "uplift"]
+    if uplift:
+        # GM-292: the uplift comes off V; its moment is in M_ot, so the
+        # totals' moments leave it out
+        notes += (" The uplift (negative) comes off V; its moment about "
+                  "the toe is counted in the overturning moment M_ot, so "
+                  "the TOTAL moments leave it out (see Choices).")
     if split:
         weight_rows.append(["TOTAL, sliding / overturning / eccentricity",
                             f"{ot['V']:.1f}", "\u2014",
@@ -623,6 +706,32 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         weight_rows.append(["TOTAL", f"{total_W:.1f}", "\u2014",
                             f"{M_stab:.1f}"]
                            + ([""] if len(headers) == 5 else []))
+
+    if uplift:
+        f = uplift[0]
+        uplift_step = CalcStep(
+            title="Uplift on the Base",
+            equation=("U = 0.5 × γ_w × h_w × B,  x_U = 2B/3"
+                      if f.get("base_uplift", "linear") == "linear" else
+                      "U = γ_w × h_w × B,  x_U = B/2"),
+            substitution=(f"U = {'0.5 × ' if f.get('base_uplift', 'linear') == 'linear' else ''}"
+                          f"{ep['gamma_w']:.2f} × {ep['h_w']:.3f} × {B:.2f}"),
+            result_name="U",
+            result_value=f"{-f['W']:.1f}",
+            result_unit="kN/m",
+            reference=("UFC 3-220-20 Fig. 5-40 (uniform)"
+                       if f.get("base_uplift") == "uniform" else
+                       "EM 1110-2-2104 para. E-12 (p. 115)"),
+            notes=(f"At x_U = {f['x']:.3f} m from the toe: "
+                   + ("γ_w h_w at the heel to zero at the toe, no water in "
+                      "front of the wall."
+                      if f.get("base_uplift", "linear") == "linear" else
+                      "γ_w h_w under the whole base.")
+                   + " It comes off V in sliding, its moment U x_U is an "
+                   "overturning moment, and the bearing pressures "
+                   + ("count it." if f.get("bearing") else "leave it out.")),
+        )
+        weight_items.append(uplift_step)
 
     weight_items.append(TableData(
         title="Wall Component Weights and Moments about Toe",
@@ -781,7 +890,9 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         notes=rule_note
               + (f"V leaves out {sl['V_left_out']:.1f} kN/m of surcharge "
                  "over the heel, not a resisting force (see Choices)."
-                 if sl.get("V_left_out", 0.0) > 0 else ""),
+                 if sl.get("V_left_out", 0.0) > 0 else "")
+              + (f" V is net of the uplift U = {sl['U']:.1f} kN/m."
+                 if (sl.get("U") or 0.0) > 0 else ""),
     ))
 
     if result.FOS_sliding is None:
@@ -791,10 +902,14 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             "so nothing pushes the wall. The check passes; there is no "
             "finite factor of safety to report.")
     else:
+        Pw_s = sl.get("Pw", 0.0) or 0.0
         slide_items.append(CalcStep(
             title="Factor of Safety Against Sliding",
-            equation="FOS_sliding = R / P_h",
-            substitution=f"FOS_sliding = {R_sliding:.1f} / {sl['driving']:.1f}",
+            equation=("FOS_sliding = R / (P_h + P_w)" if Pw_s > 0
+                      else "FOS_sliding = R / P_h"),
+            substitution=(f"FOS_sliding = {R_sliding:.1f} / ({Ph:.1f} + "
+                          f"{Pw_s:.1f})" if Pw_s > 0 else
+                          f"FOS_sliding = {R_sliding:.1f} / {sl['driving']:.1f}"),
             result_name="FOS_sliding",
             result_value=f"{result.FOS_sliding:.3f}",
             reference=("GEC-6 Eq. 5-40 (min 1.5); UFC 3-220-20 Fig. 4-27 "
@@ -820,16 +935,24 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     z_Pa = ot["z_Pa"]
     M_over = ot["M_overturning"]
 
+    Pw_o, M_U = ot.get("Pw", 0.0) or 0.0, ot.get("M_uplift", 0.0) or 0.0
     ot_items.append(CalcStep(
         title="Overturning Moment about Toe",
-        equation="M_ot = P_h \u00d7 z_Pa",
-        substitution=f"M_ot = {ot['Ph']:.1f} \u00d7 {z_Pa:.3f}",
+        equation=("M_ot = P_h \u00d7 z_Pa + P_w \u00d7 z_Pw + U \u00d7 x_U"
+                  if Pw_o > 0 else "M_ot = P_h \u00d7 z_Pa"),
+        substitution=(f"M_ot = {ot['Ph']:.1f} \u00d7 {z_Pa:.3f} + "
+                      f"{Pw_o:.1f} \u00d7 {ot['z_Pw']:.3f} + {M_U:.1f}"
+                      if Pw_o > 0 else
+                      f"M_ot = {ot['Ph']:.1f} \u00d7 {z_Pa:.3f}"),
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
         result_unit="kN\u00b7m/m",
         notes=("P_h = P_a \u00d7 cos(\u03b4); the vertical component P_v "
                "appears as a stabilizing entry in the weight table."
-               if delta_incl > 0 else ""),
+               if delta_incl > 0 else "")
+              + (" U \u00d7 x_U is the uplift's moment about the toe, "
+                 "counted as overturning, the module's assumption (see "
+                 "Choices)." if M_U > 0 else ""),
     ))
 
     ot_items.append(CalcStep(
@@ -919,7 +1042,9 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             result_unit="m",
             notes=("The eccentricity for bearing is not the eccentricity "
                    "check's (GEC-11 Vol I p. 4-26): the bearing pressures "
-                   "count the surcharge over the heel as the Choices say."),
+                   "count the surcharge over the heel"
+                   + (" and the uplift" if uplift else "")
+                   + " as the Choices say."),
         ))
 
     # Bearing pressures, by the distribution the analysis used
@@ -1804,13 +1929,19 @@ def _cantilever_terms(result, analysis):
     wf = _used(analysis, "wall_friction_deg")
     gamma_f = _used(analysis, "gamma_foundation")
     rock = bool(_used(analysis, "founded_on_rock"))
-    ep = cw._active_thrust_terms(geom, gamma, phi, c, method, wf)
+    # GM-292: the water table's inputs
+    g_sat = _used(analysis, "gamma_sat_backfill")
+    uplift = _used(analysis, "base_uplift")
+    up_brg = bool(_used(analysis, "uplift_in_bearing"))
+    ep = cw._active_thrust_terms(geom, gamma, phi, c, method, wf, g_sat)
     live = bool(_used(analysis, "live_load_resists"))
     dead = bool(_used(analysis, "dead_load_resists"))
     in_bearing = bool(_used(analysis, "surcharge_in_bearing"))
     return (
         ep, cw._vertical_force_items(geom, gamma, gamma_c, ep, live, dead,
-                                     in_bearing, gamma_front=gamma_f),
+                                     in_bearing, gamma_front=gamma_f,
+                                     base_uplift=uplift,
+                                     uplift_in_bearing=up_brg),
         cw._sliding_terms(
             geom, gamma, phi, c, _used(analysis, "phi_foundation"),
             _used(analysis, "c_foundation"), gamma_c, method,
@@ -1825,19 +1956,22 @@ def _cantilever_terms(result, analysis):
                                             "passive_wall_friction_deg"),
             wall_friction_deg=wf,
             interface_gap_possible=bool(
-                _used(analysis, "interface_gap_possible"))),
+                _used(analysis, "interface_gap_possible")),
+            gamma_sat_backfill=g_sat, base_uplift=uplift),
         cw._overturning_terms(geom, gamma, phi, c, gamma_c, method,
                               live_load_resists=live,
                               dead_load_resists=dead,
                               wall_friction_deg=wf, gamma_foundation=gamma_f,
-                              founded_on_rock=rock),
+                              founded_on_rock=rock, gamma_sat_backfill=g_sat,
+                              base_uplift=uplift),
         cw._bearing_terms(geom, gamma, phi, c,
                           _used(analysis, "q_allowable"), gamma_c, method,
                           surcharge_in_bearing=in_bearing,
                           wall_friction_deg=wf, gamma_foundation=gamma_f,
                           bearing_pressure=_used(analysis,
                                                  "bearing_pressure"),
-                          founded_on_rock=rock))
+                          founded_on_rock=rock, gamma_sat_backfill=g_sat,
+                          base_uplift=uplift, uplift_in_bearing=up_brg))
 
 
 def _loads_differ(ot, br) -> bool:
@@ -1852,6 +1986,9 @@ def _counted_in(force, resisting="sliding, overturning, eccentricity") -> str:
     """The checks a vertical force is counted in (GM-157); ``resisting``
     names the checks its ``resists`` flag stands for."""
     resists, bearing = force.get("resists", True), force.get("bearing", True)
+    if force.get("kind") == "uplift":
+        # GM-292: its moment is in M_ot
+        return ("all checks" if bearing else resisting) + ", moment in M_ot"
     if resists and bearing:
         return "all checks"
     if bearing:
@@ -1967,9 +2104,18 @@ def _plot_cantilever_section(result, analysis):
     q = (ep.get("q_live") or 0.0) + (ep.get("q_dead") or 0.0)
     p_q = Ka_val * q                       # the surcharge's, kPa
     p_soil = Ka_val * gamma * H_a          # the earth's, at the base
+    # GM-292: under a water table the earth's on the effective stress, the
+    # water's beside it
+    h_w = ep.get("h_w") or 0.0
+    p_w = 0.0
+    if h_w > 0:
+        z_w = ep["z_w"]
+        p_wt = Ka_val * gamma * z_w        # the earth's at the water table
+        p_soil = p_wt + Ka_val * ep["gamma_b"] * (H_a - z_w)
+        p_w = ep["gamma_w"] * h_w          # the water's, at the base
     # the diagram's widest, a set share of B, and the room right of it
-    p_scale = B * 0.5 / max(p_q + p_soil, 1e-9)
-    w_diagram = (p_q + p_soil) * p_scale
+    p_scale = B * 0.5 / max(p_q + p_soil + p_w, 1e-9)
+    w_diagram = (p_q + p_soil + p_w) * p_scale
 
     # The ground on each side, as the analysis has it (GM-200: the toe
     # side's ground was drawn at H, level with the backfill). Behind the
@@ -2044,8 +2190,28 @@ def _plot_cantilever_section(result, analysis):
             (B, 0.0), p_q * p_scale, H_a, facecolor='#fdba74',
             edgecolor='#c2410c', hatch='..', **press))
     x_q = B + p_q * p_scale
-    ax.fill([x_q, x_q + p_soil * p_scale, x_q], [0.0, 0.0, H_a],
-            facecolor='#fca5a5', edgecolor='#dc2626', **press)
+    if h_w > 0:
+        # the earth's kinks at the water table; the water's on its edge
+        x_wt, x_b = x_q + p_wt * p_scale, x_q + p_soil * p_scale
+        ax.fill([x_q, x_wt, x_b, x_q], [H_a, h_w, 0.0, 0.0],
+                facecolor='#fca5a5', edgecolor='#dc2626', **press)
+        ax.fill([x_wt, x_b, x_b + p_w * p_scale], [h_w, 0.0, 0.0],
+                facecolor='#93c5fd', edgecolor='#1d4ed8', **press)
+        # the water table behind the wall, over the heel
+        from matplotlib.transforms import offset_copy as _offset
+        ax.plot([x_heel, B], [h_w, h_w], color='#1d4ed8', lw=1.0, ls='--',
+                zorder=2)
+        ax.plot(x_heel + 0.5 * (B - x_heel), h_w, marker='v',
+                color='#1d4ed8', markersize=7, zorder=3,
+                transform=_offset(ax.transData, fig=fig, y=5,
+                                  units='points'))
+        ax.annotate('', xy=(B, ep["z_Pw"]),
+                    xytext=(B + w_diagram + 0.12 * B, ep["z_Pw"]),
+                    arrowprops=dict(arrowstyle='-|>', color='#1d4ed8',
+                                    lw=1.6, mutation_scale=12), zorder=4)
+    else:
+        ax.fill([x_q, x_q + p_soil * p_scale, x_q], [0.0, 0.0, H_a],
+                facecolor='#fca5a5', edgecolor='#dc2626', **press)
     # The thrust, at its height above the base and inclination as the
     # analysis has them, named in the key (written at its tail it ran
     # past the frame at the printed width)
@@ -2145,9 +2311,29 @@ def _plot_cantilever_section(result, analysis):
         label=(f'P_a = {ep["Pa"]:.0f} kN/m, {z_pa:.2f} m above the base'
                + (f', at {ep["delta_deg"]:.0f}° to horizontal'
                   if ep.get("delta_deg") else '')))]
-    handles += [patches.Patch(
-        facecolor='#fca5a5', edgecolor='#dc2626', alpha=0.5,
-        label=f'Earth, K_a\u03b3z: {p_soil:.1f} kPa at the base')]
+    if h_w > 0:
+        # GM-292
+        handles += [patches.Patch(
+            facecolor='#fca5a5', edgecolor='#dc2626', alpha=0.5,
+            label=f"Earth, K_a\u03c3'_v (\u03b3_b below the water table): "
+                  f"{p_soil:.1f} kPa at the base"),
+            Line2D([], [], color='#1d4ed8', lw=1.6, marker='<', markersize=6,
+                   label=f'P_w = {ep["Pw"]:.0f} kN/m, {ep["z_Pw"]:.2f} m '
+                         f'above the base'),
+            patches.Patch(
+            facecolor='#93c5fd', edgecolor='#1d4ed8', alpha=0.5,
+            label=f'Water, \u03b3_w \u00d7 depth below the water table: '
+                  f'{p_w:.1f} kPa at the base, {h_w:.2f} m below it')]
+        up = [f for f in _cantilever_terms(result, analysis)[1]
+              if f.get("kind") == "uplift"]
+        if up:
+            lines.insert(2, f"Uplift on the base U = {-up[0]['W']:.0f} kN/m "
+                            f"({up[0].get('base_uplift', 'linear')}; not "
+                            "drawn).")
+    else:
+        handles += [patches.Patch(
+            facecolor='#fca5a5', edgecolor='#dc2626', alpha=0.5,
+            label=f'Earth, K_a\u03b3z: {p_soil:.1f} kPa at the base')]
     if p_q > 0:
         handles.append(patches.Patch(
             facecolor='#fdba74', edgecolor='#c2410c', hatch='..', alpha=0.5,
