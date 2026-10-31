@@ -42,10 +42,12 @@ get_resistance_factors(method, condition) -> dict
   (`apply_lrfd` takes it from `result.base_steps` and refuses a
   `tip_soil_type` that differs; GM-244 review: the adapter's default
   "cohesive" factored a base in rock at 0.40). Table 8-4 prints no row for
-  Eq. 10-22 (C = 0.65) or for the 'rqd' base; `lrfd_capacity` says so in
-  its choices when either is used.
+  Eq. 10-22 or for the 'rqd' base: the rock side choice's basis says so
+  under `rock_side_method="caving"` (0.50 taken, the table's Eq. 10-21
+  row), `lrfd_capacity`'s choices under the 'rqd' base.
 - A cohesionless tip needs its N60 (GM-142, 2026-10-18): q_b = 57.5 N60
-  kPa (N60 capped at 50) has no other input, so `require_tip_N60` refuses a
+  kPa (N60 the mean over 2B below the base since GM-284, limited to 50)
+  starts from it, so `require_tip_N60` refuses a
   tip layer with none, in `compute`, the calc steps and
   `capacity_vs_depth` (which used to leave those depths out). Before, N60 =
   15 was taken without saying so. On the side, under the depth beta, a
@@ -62,8 +64,9 @@ get_resistance_factors(method, condition) -> dict
   0.135 sqrt(z, ft) with no N60 term; the N60/15 reduction is O'Neill &
   Reese (1999), which neither that manual nor GEC-10 (2018, rational beta
   only, Sec. 10.3.5.1, pp. 10-10 to 10-12) prints, so N60 is stated rather
-  than required. `concrete_fc` is not an input of the tools (refused with
-  the reason): the capacity never used it (GM-160).
+  than required. `concrete_fc` was refused by the tools while the capacity
+  never used it (GM-160); since GM-284 it limits qu in the rock side
+  resistance (GEC-10 p. 10-21), see below.
 - Rock not considered part of the socket (GM-220, 2026-10-20):
   `DrillShaft.fractured_rock_thickness` (m, default 0) is decomposed or
   fractured rock below the top of the first rock layer that GEC-10
@@ -92,10 +95,11 @@ get_resistance_factors(method, condition) -> dict
   print A_tip on that diameter. The rock side resistance's C is
   `rock_side_C` (f_s = C pa sqrt(qu/pa)): default 1.0 since GM-244, Eq.
   10-21 as GEC-10 recommends it for routine design of a "normal" socket
-  (pp. 10-20, 10-21); 0.65, the default before, is Eq. 10-22 (O'Neill and
-  Reese 1999, where caving is anticipated) with alpha_E = 1.0 (give 0.65
-  alpha_E by Table 10-3 for lower RQD or open joints), and C = 1.9 is for
-  roughened sockets verified by load tests or local experience (p. 10-22).
+  (pp. 10-20, 10-21); 0.65, the default before, is the value of Eq.
+  10-22 (O'Neill and Reese 1999, where caving is anticipated) with alpha_E
+  = 1.0 (`rock_side_method="caving"` takes alpha_E from Table 10-3 since
+  GM-284), and C = 1.9 is for roughened sockets verified by load tests or
+  local experience (p. 10-22).
   The result states the choice with each alternative's numbers
   (`capacity.rock_side_choice`). The tools reproduce Example 10-4 by
   default: R_SN 5,202 kips, R_BN 25,447 kips, phi R_BN 12,723 kips
@@ -186,8 +190,38 @@ line through its first two rows is the alternative); su(CIUC)/pa outside
 Fig. 10-6's 0.25 to 5; whether the rock below the base meets Eq. 10-23's
 three conditions; B in Eq. 10-20 taken as the bell's diameter; the
 Hoek-Brown base's GSI and m_i taken as the tip rock layer's; where the
-profile ends short of 2B below a clay base. Not built: the sand base's N60
-averaged over 2B below the base.
+profile ends short of 2B below a clay or sand base; alpha_E between
+Table 10-3's rows (linear) and below RQD 20 (held at 0.45).
+
+## Checked against the print (GM-284, 2026-10-31)
+
+Every side and base method, checked against GEC-10 (FHWA-NHI-18-024) as
+printed, method by method with page cites, in
+`module_work/drilled_shaft_print/CHECK.md`. What it moved:
+
+- Sand base: N60 in Eq. 10-14 is "the average value between the base and
+  two diameters beneath the base" (p. 10-15). `_n60_zone` takes the mean
+  by thickness of the cohesionless layers' N60 between the base and 2B
+  below it (B the base's diameter), limited to 50 after the mean (30 tsf);
+  a layer there with no N60, or cohesive or rock, is left out, and a
+  profile ending short of 2B gives the mean over what it has. Before, the
+  tip layer's N60 alone, now the choice's alternative ("base resistance in
+  cohesionless soil"). p. 10-15 also prints that N is the field value with
+  no overburden correction, so the base does not depend on sigma'v (GM-27's
+  DS-2 flag: printed, not a fault).
+- Rock side, qu against the concrete: "the value of qu used in Equation
+  10-21 should not exceed the compressive strength of the drilled shaft
+  concrete" (p. 10-21). `DrillShaft.concrete_fc` (kPa, default None, the
+  tools' `concrete_fc`) limits qu in the rock side resistance (not the
+  base) in Eqs. 10-21 and 10-22; left out, the choice says the limit was
+  not checked. Example 10-4 (qu 360 ksf, f'c 576 ksf) is unchanged.
+- Rock side, caving rock: `rock_side_method="caving"` is Eq. 10-22, f_s =
+  0.65 alpha_E pa sqrt(qu/pa), alpha_E from Table 10-3 by each rock layer's
+  RQD and `rock_joints` ("closed" default, "open" for open or gouge-filled
+  joints); `rock_side_C` other than 1.0 is refused with it. Before, Eq.
+  10-22 was reachable only as `rock_side_C=0.65` with alpha_E = 1.0.
+- Example 10-5 (p. 10-29) is pinned: 853.0 kips against the printed 855.4
+  (0.3 % under, Example 10-1's rounding).
 
 ## Side-resistance methods
 

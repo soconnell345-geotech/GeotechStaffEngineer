@@ -149,6 +149,17 @@ def get_input_summary(result, analysis) -> List[InputItem]:
             items.append(InputItem(
                 "K/K_o", "K/K_o, construction's effect on the horizontal "
                 "stress", analysis.K_over_Ko, ""))
+    if any(lay.soil_type == "rock" for lay in soil.layers):
+        items.append(InputItem(
+            "Rock side", "Side resistance in rock",
+            f"GEC-10 (2018) Eq. 10-22, Table 10-3, {analysis.rock_joints} "
+            "joints" if analysis.rock_side_method == "caving"
+            else f"GEC-10 (2018) Eq. 10-21, C = {analysis.rock_side_C:g}",
+            ""))
+        if shaft.concrete_fc is not None:
+            items.append(InputItem(
+                "f'c", "Concrete strength (limits q_u in the rock side "
+                "resistance)", f"{shaft.concrete_fc:,.0f}", "kPa"))
 
     # Factor of safety
     items.append(InputItem("FS", "Factor of safety", analysis.factor_of_safety, ""))
@@ -408,7 +419,32 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                        "(1999) for the N_60/15 reduction"),
         ))
 
-    if has_rock:
+    fc = shaft.concrete_fc
+    fc_note = (f" q_u is taken no higher than f'c = {fc:,.0f} kPa (GEC-10 "
+               "p. 10-21)." if fc is not None else
+               " q_u is not checked against the concrete strength (no "
+               "concrete_fc given; GEC-10 p. 10-21 limits it to f'c).")
+    if has_rock and analysis.rock_side_method == "caving":
+        method_steps.append(CalcStep(
+            title="Rock Socket Method, Eq. 10-22 (caving rock)",
+            equation=(
+                "f_s = 0.65 × α_E × p_a × "
+                "√(q_u / p_a)\n"
+                "Q_s = f_s × P_socket × Δz\n"
+                "where p_a = 101.325 kPa and α_E from Table 10-3 by "
+                f"RQD, {analysis.rock_joints} joints (rock_joints)"
+            ),
+            substitution="",
+            result_name="",
+            result_value="",
+            reference=("GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, Eq. 10-22 "
+                       "and Table 10-3 (p. 10-21)"),
+            notes=("Where caving or instability of the socket is "
+                   "anticipated (O'Neill & Reese 1999); α_E linear "
+                   "between Table 10-3's rows, held at 0.45 below RQD 20 %."
+                   + fc_note),
+        ))
+    elif has_rock:
         method_steps.append(CalcStep(
             title="Rock Socket Method",
             equation=(
@@ -425,13 +461,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                        "(p. 10-20) and Eq. 10-22 (p. 10-21)"),
             notes=("C = 1.0 is Eq. 10-21 as GEC-10 recommends it for "
                    "routine design of a 'normal' socket (pp. 10-20, "
-                   "10-21); C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, "
-                   "where caving is anticipated) with \u03b1_E = 1.0"
+                   "10-21); where caving is anticipated, Eq. 10-22 with "
+                   "\u03b1_E from Table 10-3 (rock_side_method 'caving')"
                    if analysis.rock_side_C == 1.0 else
-                   "C = 0.65 is Eq. 10-22 (O'Neill & Reese 1999, where "
-                   "caving is anticipated) with \u03b1_E = 1.0; GEC-10 "
-                   "recommends Eq. 10-21 with C = 1.0 for routine design "
-                   "of a 'normal' socket (pp. 10-20, 10-21)"),
+                   "C = 0.65 is the value of Eq. 10-22 (O'Neill & Reese "
+                   "1999, where caving is anticipated) with \u03b1_E = "
+                   "1.0; GEC-10 recommends Eq. 10-21 with C = 1.0 for "
+                   "routine design of a 'normal' socket (pp. 10-20, 10-21)")
+            + "." + fc_note,
         ))
 
     if method_steps:
@@ -519,15 +556,28 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
             else:  # rock
                 socket_perim = shaft.socket_perimeter
-                qu = soil.layer_at_depth(0.5 * (z_top + z_bot)).qu
+                # the analysis's own steps (GM-284): qu as used, C, alpha_E
+                st = lb["rock_steps"]
+                qu = st["qu_used_kPa"]
+                caving = st["equation"] == "10-22"
+                coef = (f"0.65 \u00d7 {st['alpha_E']:.3f}" if caving
+                        else f"{st['C']:g}")
+                limit_note = (f"; q_u {st['qu_kPa']:,.0f} kPa limited to "
+                              f"f'c = {qu:,.0f} kPa (GEC-10 p. 10-21)"
+                              if st["qu_limited"] else "")
+                aE_note = (f"; \u03b1_E = {st['alpha_E']:.3f} at RQD "
+                           f"{st['RQD']:g} %, {st['rock_joints']} joints "
+                           "(Table 10-3)" if caving else "")
                 layer_items.append(CalcStep(
                     title=f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m) -- Rock Socket",
                     equation=(
-                        f"f_s = C \u00d7 \u221a(q_u \u00d7 p_a)\n"
-                        f"Q_s = f_s \u00d7 P_socket \u00d7 \u0394z"
+                        (f"f_s = 0.65 \u00d7 \u03b1_E \u00d7 "
+                         f"\u221a(q_u \u00d7 p_a) (Eq. 10-22)\n" if caving
+                         else f"f_s = C \u00d7 \u221a(q_u \u00d7 p_a)\n")
+                        + f"Q_s = f_s \u00d7 P_socket \u00d7 \u0394z"
                     ),
                     substitution=(
-                        f"f_s = {analysis.rock_side_C:g} \u00d7 "
+                        f"f_s = {coef} \u00d7 "
                         f"\u221a({qu:,.0f} \u00d7 {_PA:g}) = {fs:.1f} kPa\n"
                         f"Q_s = {fs:.1f} \u00d7 {socket_perim:.3f} "
                         f"\u00d7 {eff_thickness:.2f}"
@@ -536,6 +586,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     result_value=f"{Qs_layer:,.1f}",
                     result_unit="kN",
                     notes=f"Effective zone: {eff_top:.1f}-{eff_bot:.1f} m"
+                    + aE_note + limit_note
                     + ("; the rock above it is not considered part of the "
                        "socket (GEC-10 p. 8-15)" if in_not_socket else ""),
                 ))
@@ -742,10 +793,25 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         ))
 
     elif tip_layer.soil_type == "cohesionless":
-        from drilled_shaft.capacity import require_tip_N60
-        N60 = require_tip_N60(tip_layer, shaft.length)
-        u = unit_end_bearing_cohesionless(N60, base_D,
+        from drilled_shaft.capacity import (_n60_zone_steps, _n60_zone_words,
+                                            require_tip_N60)
+        require_tip_N60(tip_layer, shaft.length)
+        # the same code as the analysis, unrounded (GM-148): N60 the mean
+        # over 2B below the base (GEC-10 p. 10-15, GM-284)
+        zone = analysis._n60_zone(tip_layer, base_D)
+        u = unit_end_bearing_cohesionless(zone["N60"], base_D,
                                           analysis.large_base_reduction)
+        eb_items.append(CalcStep(
+            title="N_60 of Eq. 10-14 (mean over 2B below the base)",
+            equation=("N_60 = mean of the field N_60 (60 % energy, no "
+                      "overburden correction) between the base and 2B "
+                      "below it"),
+            substitution=_n60_zone_words(_n60_zone_steps(zone)),
+            result_name="N_60",
+            result_value=f"{zone['N60']:.1f}",
+            result_unit="",
+            reference="GEC-10 (FHWA-NHI-18-024) p. 10-15",
+        ))
         large_dia_note = ""
         if u["reduction"] is not None:
             large_dia_note = (
@@ -757,7 +823,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         eb_items.append(CalcStep(
             title="Unit End Bearing (Cohesionless Tip)",
             equation="q_b = 57.5 × N_60 (N_60 capped at 50)",
-            substitution=f"q_b = 57.5 × {u['N60_capped']:.0f}",
+            substitution=f"q_b = 57.5 × {u['N60_capped']:.1f}",
             result_name="q_b",
             result_value=f"{u['qb']:,.1f}",
             result_unit="kPa",

@@ -221,7 +221,8 @@ NOT_REACHED = {
         "drilled_shaft|lrfd_capacity",
         "drilled_shaft|lrfd_capacity#sand")
        for n, why in (("socket_diameter", _NO_ROCK),
-                      ("rock_side_C", _NO_ROCK))},
+                      ("rock_side_C", _NO_ROCK),
+                      ("rock_side_method", _NO_ROCK))},
     # casing_depth: these probes have clay over the top 1.5 m; the
     # all-sand probes take side resistance from the ground surface, so
     # their casing reaches the result (GM-241 review)
@@ -230,8 +231,9 @@ NOT_REACHED = {
         "drilled_shaft|drilled_shaft_capacity",
         "drilled_shaft|drilled_shaft_capacity#sand",
         "drilled_shaft|lrfd_capacity")},
-    ("calc_package|drilled_shaft_package", "rock_side_C"): _NO_ROCK,
-    ("calc_package|drilled_shaft_package#sand", "rock_side_C"): _NO_ROCK,
+    **{(k, n): _NO_ROCK for k in ("calc_package|drilled_shaft_package",
+                                  "calc_package|drilled_shaft_package#sand")
+       for n in ("rock_side_C", "rock_side_method")},
     **{(k, n): _ALL_SAND for k in (
         "drilled_shaft|capacity_vs_depth#sand",
         "drilled_shaft|drilled_shaft_capacity#large_base",
@@ -239,7 +241,7 @@ NOT_REACHED = {
         "calc_package|drilled_shaft_package#sand")
        for n in ("alpha_method", "su_test_type")},
     **{("drilled_shaft|drilled_shaft_capacity#large_base", n): _NO_ROCK
-       for n in ("socket_diameter", "rock_side_C")},
+       for n in ("socket_diameter", "rock_side_C", "rock_side_method")},
     # GM-221: the rock probe's soil is clay over rock
     **{(k, n): "the probe's soil is clay over rock: the beta method is "
        "for sand" for k in ("drilled_shaft|drilled_shaft_capacity#rock",
