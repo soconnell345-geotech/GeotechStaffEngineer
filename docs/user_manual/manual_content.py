@@ -466,13 +466,21 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "methods": [
             "**Rigid-cap 6-DOF** stiffness analysis &mdash; per-pile axial and lateral stiffness, batter, "
             "and one right-hand sign convention carried end to end.",
-            "**Converse&ndash;Labarre** group efficiency.",
-            "**Meyerhof (1976)** SPT group settlement and an elastic equivalent-raft (2V:1H) settlement.",
-            "References: Converse&ndash;Labarre; Meyerhof (1976); validated against GEC-12 Table D-23 (V-005).",
+            "**Group efficiency factor** &eta;<sub>g</sub> read from the printed rows by soil, the cap's "
+            "contact with the ground and the spacing (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26 for "
+            "drilled shafts, CFA, displacement piles and micropiles); **block failure** by GEC-12 "
+            "Eqs. 7-36 and 7-37; lateral **p-multipliers** by row (AASHTO as GEC-12 prints it, or "
+            "Mokwa, UFC 3-220-20 Table 6-38).",
+            "**Meyerhof (1976)** SPT group settlement as GEC-12 Eqs. 7-50 to 7-52 print it, and an "
+            "elastic equivalent-footing settlement (GEC-12 Sec. 7.3.5.3, 2V:1H spread, to where the "
+            "stress falls to 10 % of the footing's).",
+            "References: FHWA GEC-12 Vol. I ch. 7; UFC 3-220-20 ch. 6; validated against GEC-12 "
+            "Vol. III Tables D-13, D-14 and D-23 and UFC 3-220-20 Appendix B-5.4 (V-005, V-060).",
         ],
         "limits": [
             "The cap is treated as rigid; pile&ndash;soil&ndash;pile interaction (p-multipliers) is not "
             "part of the 6-DOF stiffness distribution.",
+            "No group uplift method (GEC-12 Sec. 7.2.3.2) is offered.",
         ],
     },
 

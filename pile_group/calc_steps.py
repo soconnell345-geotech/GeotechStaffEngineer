@@ -8,9 +8,10 @@ References:
     CPGA User's Guide (USACE ITL-89-4, Hartman et al., 1989)
     USACE EM 1110-2-2906: Design of Pile Foundations
     FHWA GEC-12 (FHWA-NHI-16-009), Secs. 7.2.2 and 7.3 (pile groups)
-    Converse, F.J. (1962). "Foundations Subjected to Dynamic Forces."
+    UFC 3-220-20 (2025), Sec. 6-5.4 (groups of elements), Table 6-26
 """
 
+import html
 import math
 from typing import List
 
@@ -28,12 +29,8 @@ REFERENCES = [
     'USACE EM 1110-2-2906: Design of Pile Foundations.',
     'CPGA User\'s Guide (USACE ITL-89-4, Hartman et al., 1989). '
     'Computer Program for the Analysis of Pile Groups with Rigid Caps.',
-    'Converse, F.J. (1962). "Foundations Subjected to Dynamic Forces." '
-    'In Foundation Engineering, G.A. Leonards (ed.), McGraw-Hill.',
-    'Reese, L.C. & Van Impe, W.F. (2001). Single Piles and Pile Groups '
-    'Under Lateral Loading. Balkema.',
-    'Brown, D.A., Morrison, C. & Reese, L.C. (1988). "Lateral Load '
-    'Behavior of Pile Group in Sand." JGED, ASCE, Vol. 114, No. 11.',
+    'UFC 3-220-20 (2025): Foundations, Sec. 6-5 (groups of elements: '
+    'Eq. 6-37, Table 6-26 group efficiency factors).',
 ]
 
 
@@ -257,17 +254,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     sections.append(CalcSection(title="Pile Layout", items=layout_items))
 
     # =================================================================
-    # Section 2: Group Efficiency (Converse-Labarre)
+    # Section 2: Group Efficiency (GEC-12 Sec. 7.2.2; UFC Table 6-26)
     # =================================================================
     efficiency_items = []
 
-    n_rows = _get(analysis, 'n_rows', None)
-    n_cols = _get(analysis, 'n_cols', None)
     pile_diameter = _get(analysis, 'pile_diameter', None)
-    # One spacing for Converse-Labarre: the rows' and columns' spacings as
-    # the layout took them (a single 'spacing' for a direction not given),
-    # and where they differ the smaller, where the piles are closer and
-    # E_g is lower
+    # One spacing for eta_g: the rows' and columns' spacings as the layout
+    # took them (a single 'spacing' for a direction not given), and where
+    # they differ the smaller, where the piles are closer and eta_g lower
     s_one = _get(analysis, 'spacing', None)
     s_x = _get(analysis, 'spacing_x', None)
     s_y = _get(analysis, 'spacing_y', None)
@@ -279,43 +273,69 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         spacing = min(s_xy)
     spacing_note = ""
     if s_x is not None and s_y is not None and s_x != s_y:
-        spacing_note = (f"Converse-Labarre takes one spacing; of s_x = "
-                        f"{s_x:.3f} m and s_y = {s_y:.3f} m the smaller is "
-                        "used (the closer piles, the lower E_g). ")
-    # E_g as the run worked it out (the group_efficiency tool), else by
-    # the same function, never by a formula of the steps' own (GM-141);
-    # theta below only shows the substitution
+        spacing_note = (f"One spacing is read; of s_x = {s_x:.3f} m and "
+                        f"s_y = {s_y:.3f} m the smaller is used (the closer "
+                        "piles, the lower η_g). ")
+    soil_type = _get(analysis, 'soil_type', None)
+    # eta_g as the run read it (the group_efficiency tool), else by the
+    # same function, never by a rule of the steps' own (GM-141)
+    detail = None
+    if pile_diameter and spacing and soil_type:
+        from pile_group.group_efficiency import group_efficiency_factor
+        detail = group_efficiency_factor(
+            soil_type, spacing / pile_diameter,
+            cap_in_contact=_get(analysis, 'cap_in_contact', None),
+            su_kPa=_get(analysis, 'cu', None),
+            pile_type=_get(analysis, 'pile_type', None) or 'driven')
     efficiency = _get(analysis, 'efficiency', None)
+    if efficiency is None and detail is not None:
+        efficiency = detail['eta_g']
 
-    if n_rows and n_cols and pile_diameter and spacing:
-        if efficiency is None:
-            from pile_group.group_efficiency import converse_labarre
-            efficiency = converse_labarre(n_rows, n_cols, pile_diameter,
-                                          spacing)
-        theta = math.degrees(math.atan(pile_diameter / spacing))
-        m, n = n_rows, n_cols
-        Eg = efficiency
-
+    if efficiency is not None and detail is not None:
+        sb = spacing / pile_diameter
+        pts = detail['points']
+        # the substitution is raw markup (calc_package data_model)
+        row = html.escape(detail['row'], quote=False)
+        if not pts:
+            substitution = (f"{row}: η_g = {efficiency:.2f} "
+                            "at every spacing")
+        elif sb <= pts[0][0]:
+            substitution = (f"{row}: η_g = {pts[0][1]:.2f} "
+                            f"at s/b = {pts[0][0]:g}")
+        elif sb >= pts[-1][0]:
+            substitution = (f"{row}: η_g = {pts[-1][1]:.2f} "
+                            f"at s/b = {pts[-1][0]:g} and beyond")
+        else:
+            (s0, e0), (s1, e1) = next(
+                (a, b) for a, b in zip(pts, pts[1:]) if sb <= b[0])
+            substitution = (
+                f"{row}: η_g = {e0:.2f} at s/b = {s0:g}, "
+                f"{e1:.2f} at s/b = {s1:g}\n"
+                f"η_g = {e0:.2f} + ({e1:.2f} - {e0:.2f})"
+                f"×({sb:.2f} - {s0:g})/({s1:g} - {s0:g})")
+        taken = []
+        if detail['cap_in_contact_taken']:
+            taken.append("The cap's contact with the ground was not given: "
+                         "not in contact (the lower η_g) is taken; in "
+                         f"contact, η_g = {detail['alternative']:.2f}.")
+        if detail['su_taken']:
+            taken.append("The clay's su was not given: su < 2 ksf (the "
+                         "lower η_g) is taken.")
+        driven = detail['pile_type'] == 'driven'
         efficiency_items.append(CalcStep(
-            title="Converse-Labarre Group Efficiency",
-            equation="E_g = 1 - \u03b8 / (90\u00b7m\u00b7n) \u00d7 "
-                     "[n\u00b7(m-1) + m\u00b7(n-1)]",
-            substitution=(
-                f"\u03b8 = arctan(D/s) = arctan({pile_diameter:.3f}/{spacing:.3f}) "
-                f"= {theta:.2f}\u00b0\n"
-                f"E_g = 1 - {theta:.2f}/(90\u00d7{m}\u00d7{n}) \u00d7 "
-                f"[{n}\u00d7({m}-1) + {m}\u00d7({n}-1)]"
-            ),
-            result_name="E_g",
-            result_value=f"{Eg:.3f}",
+            title="Group Efficiency Factor",
+            equation="η_g = R_ng / (n·R_n), read from the printed "
+                     "row; linear between the printed spacings",
+            substitution=substitution,
+            result_name="η_g",
+            result_value=f"{efficiency:.3f}",
             result_unit="",
-            reference="Converse-Labarre formula (Converse 1962)",
-            notes=(
-                spacing_note +
-                f"D = {pile_diameter:.3f} m, s = {spacing:.3f} m, "
-                f"s/D = {spacing/pile_diameter:.1f}. "
-                "Group efficiency should typically be > 0.7 for driven piles."
-            ),
+            reference=("FHWA GEC-12 Secs. 7.2.2.1-7.2.2.2 (pp. 282, 284), "
+                       "Eq. 7-35; UFC 3-220-20 Table 6-26" if driven else
+                       "UFC 3-220-20 Table 6-26 (p. 432)"),
+            notes=(spacing_note +
+                   f"D = {pile_diameter:.3f} m, s = {spacing:.3f} m, "
+                   f"s/D = {sb:.2f}. " + " ".join(taken)).strip(),
         ))
 
         # Reduced group capacity
@@ -325,27 +345,42 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             cap_comp = _get(piles_list[0], 'axial_capacity_compression', None) if piles_list else None
             if cap_comp:
                 Q_group_ind = n_piles * cap_comp
-                Q_group_eff = Eg * Q_group_ind
+                Q_group_eff = efficiency * Q_group_ind
                 efficiency_items.append(CalcStep(
                     title="Reduced Group Capacity",
-                    equation="Q_group = E_g \u00d7 n \u00d7 Q_individual",
+                    equation="Q_group = η_g × n × Q_individual",
                     substitution=(
-                        f"Q_group = {Eg:.3f} \u00d7 {n_piles} \u00d7 "
+                        f"Q_group = {efficiency:.3f} × {n_piles} × "
                         f"{cap_comp:,.1f}"
                     ),
                     result_name="Q_group",
                     result_value=f"{Q_group_eff:,.1f}",
                     result_unit="kN",
-                    reference="FHWA GEC-12, Section 9.4",
+                    reference="FHWA GEC-12 Eq. 7-35; UFC 3-220-20 Eq. 6-37",
+                    notes=("The group resistance is the lesser of this and "
+                           "the resistance to block failure (GEC-12 p. 284, "
+                           "Eq. 7-36), not worked here."),
                 ))
 
+    elif efficiency is not None:
+        efficiency_items.append(CalcStep(
+            title="Group Efficiency Factor",
+            equation="η_g = R_ng / (n·R_n)",
+            substitution="η_g as given",
+            result_name="η_g",
+            result_value=f"{efficiency:.3f}",
+            result_unit="",
+            reference="FHWA GEC-12 Eq. 7-35",
+        ))
     else:
-        missing = [k for k, v in (("n_rows", n_rows), ("n_cols", n_cols),
-                                  ("pile_diameter", pile_diameter),
-                                  ("spacing", spacing)) if not v]
+        missing = [k for k, v in (("pile_diameter", pile_diameter),
+                                  ("spacing", spacing),
+                                  ("soil_type", soil_type)) if not v]
         efficiency_items.append(
-            "Group efficiency not computed (Converse-Labarre needs "
-            + ", ".join(missing) + ")."
+            "Group efficiency factor not read: GEC-12 Sec. 7.2.2 and UFC "
+            "3-220-20 Table 6-26 give η_g by the soil, the pile cap's "
+            "contact with the ground and the spacing; it needs "
+            + ", ".join(missing) + "."
         )
 
     sections.append(CalcSection(
@@ -479,7 +514,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="UR_max",
         result_value=f"{max_util:.3f}",
-        reference="FHWA GEC-12, Section 9.5",
+        reference=("each pile's load over the per-pile capacity given; "
+                   "FHWA GEC-12 Eq. 7-3 gives a factored resistance"),
         notes="Utilization < 1.0 required for adequacy." if max_util > 0 else
               "Capacity not specified; utilization ratio not computed.",
     ))

@@ -406,7 +406,7 @@ MODULE_REGISTRY = {
     },
     "pile_group": {
         "adapter": "funhouse_agent.adapters.pile_group",
-        "brief": "Rigid cap, 6-DOF, Converse-Labarre",
+        "brief": "Rigid cap, 6-DOF, group efficiency, block failure",
     },
     "ground_improvement": {
         "adapter": "funhouse_agent.adapters.ground_improvement",

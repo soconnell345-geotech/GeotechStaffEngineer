@@ -192,7 +192,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `drilled_shaft` | Drilled shaft capacity (GEC-10 alpha/beta/rock socket, LRFD) |
 | `sheet_pile` | Sheet pile walls (cantilever and anchored) |
 | `lateral_pile` | Lateral pile analysis (COM624P, 8 p-y models, FD solver) |
-| `pile_group` | Pile group analysis (rigid cap, 6-DOF, Converse-Labarre) |
+| `pile_group` | Pile group analysis (rigid cap, 6-DOF, group efficiency factor, block failure) |
 | `ground_improvement` | Ground improvement (aggregate piers, wick drains, vibro, GEC-13) |
 | `wave_equation` | Smith 1-D wave equation (bearing graph, drivability) |
 | `downdrag` | Pile downdrag (Fellenius neutral plane, UFC 3-220-20) |
@@ -574,7 +574,7 @@ Funhouse factory (`make_*_reviewer` + a `_deep` variant), a
 | Reviewer | Factory | Analysis scope | Reference scope | Key checks |
 |----------|---------|----------------|-----------------|-----------|
 | **seismic** | `make_seismic_reviewer` | seismic_geotech, liquefaction, liquepy, slope_stability, opensees, pystrata, seismic_signals, hvsrpy, swprocess, fem2d | fema_p2082, dm7, gec5/7/11 | g vs m/s², total/effective stress, NCEER-vs-B&I chain, M-O KAE→Ka, Vs30 boundaries, Newmark polarity |
-| **foundations** | `make_foundations_reviewer` | bearing_capacity, settlement, axial_pile, drilled_shaft, pile_group, lateral_pile, wave_equation, downdrag, ground_improvement | dm7, gec6/8/9/10/12/13, micropile, ufc_expansive | GWT-in-wedge bearing, method-per-soil settlement/pile, pile-group RH sign + Converse-Labarre, drivability damping default, downdrag neutral plane |
+| **foundations** | `make_foundations_reviewer` | bearing_capacity, settlement, axial_pile, drilled_shaft, pile_group, lateral_pile, wave_equation, downdrag, ground_improvement | dm7, gec6/8/9/10/12/13, micropile, ufc_expansive | GWT-in-wedge bearing, method-per-soil settlement/pile, pile-group RH sign + printed group efficiency, drivability damping default, downdrag neutral plane |
 | **earth-retention** | `make_earth_retention_reviewer` | sheet_pile, soe, retaining_walls, seismic_geotech (M-O only) | dm7, gec4/7/11, california_trenching | Ka/K0/Kp state, single-FOS embedment basis, apparent-vs-triangular envelope, MSE LRFD CDRs, battered-wall M-O |
 | **slope / FEM** | `make_slope_fem_reviewer` | slope_stability, fem2d, reliability, dxf_import, pdf_import, drawing_ir | dm7, gec7/11 | LE method ordering + Bishop fixed point, noncircular rejection diagnostics, SRM-vs-LE + mesh convergence, T6-not-CST, reliability COV basis, ingest scale/provenance |
 

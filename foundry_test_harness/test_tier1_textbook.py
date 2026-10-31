@@ -529,11 +529,10 @@ class TestPileGroup:
         assert r["max_tension_kN"] == pytest.approx(0.0, abs=1.0)
 
     def test_group_efficiency(self):
-        """Converse-Labarre efficiency: 0 < eta < 1 for typical spacing."""
+        """GEC-12 Sec. 7.2.2.2: 0.65 at s = 2.5D to 1.0 at 6D -> 0.70 at 3D."""
         r = H.call(pile_group_agent, "group_efficiency",
                     S.GROUP_EFFICIENCY["params"])
-        assert r["converse_labarre_Eg"] > 0
-        assert r["converse_labarre_Eg"] < 1.0
+        assert r["group_efficiency"] == pytest.approx(0.70)
 
 
 # ============================================================================

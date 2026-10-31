@@ -52,6 +52,9 @@ def _make_analysis_and_result(method='simple', n_rows=3, n_cols=3,
     analysis.spacing = spacing
     analysis.pile_diameter = 0.3
     analysis.pile_length = 15.0
+    analysis.soil_type = 'cohesive'
+    analysis.cu = 50.0
+    analysis.cap_in_contact = False
 
     return result, analysis
 
@@ -162,12 +165,27 @@ class TestGetCalcSteps:
         assert tables[0].title == "Pile Coordinates (relative to cap centroid)"
         assert len(tables[0].rows) == 9  # 3x3
 
-    def test_efficiency_has_converse_labarre(self):
-        result, analysis = _make_analysis_and_result()
+    def test_efficiency_read_from_the_printed_row(self):
+        """GEC-12 Sec. 7.2.2.2: soft clay, cap not in contact, s/D = 3:
+        0.65 + 0.35 x 0.5/3.5 = 0.70."""
+        result, analysis = _make_analysis_and_result(spacing=0.9)
         sections = get_calc_steps(result, analysis)
-        eff_section = sections[1]
-        eff_steps = [i for i in eff_section.items if isinstance(i, CalcStep)]
-        assert any("Converse-Labarre" in s.title for s in eff_steps)
+        eff_steps = [i for i in sections[1].items if isinstance(i, CalcStep)]
+        step = next(s for s in eff_steps
+                    if s.title == "Group Efficiency Factor")
+        assert step.result_value == "0.700"
+        assert "GEC-12" in step.reference and "7.2.2" in step.reference
+        assert "2.5" in step.substitution and "6" in step.substitution
+        # the substitution is raw markup: the row's "<" as an entity
+        assert "su &lt; 2 ksf" in step.substitution
+        assert not any("Converse" in s.title for s in eff_steps)
+
+    def test_efficiency_without_soil_type_gives_text(self):
+        result, analysis = _make_analysis_and_result()
+        del analysis.soil_type
+        sections = get_calc_steps(result, analysis)
+        text = [i for i in sections[1].items if isinstance(i, str)]
+        assert text and "soil_type" in text[0]
 
     def test_efficiency_missing_params_gives_text(self):
         """When efficiency parameters not provided, show info note."""
@@ -281,4 +299,5 @@ class TestCalcPackageIntegration:
         )
         assert '<html' in html.lower()
         assert 'Pile Group Analysis' in html
-        assert 'Converse-Labarre' in html
+        assert 'Group Efficiency Factor' in html
+        assert 'Converse' not in html

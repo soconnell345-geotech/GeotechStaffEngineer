@@ -128,7 +128,7 @@ FOUNDATIONS_MODULES = frozenset({
     "settlement",        # consolidation + immediate (CSETT/Schmertmann/Hough)
     "axial_pile",        # driven pile capacity (Nordlund/Tomlinson/Beta)
     "drilled_shaft",     # GEC-10 alpha/beta/rock socket
-    "pile_group",        # rigid-cap 6-DOF groups, Converse-Labarre efficiency
+    "pile_group",        # rigid-cap 6-DOF groups, group efficiency (GEC-12 7.2.2)
     "lateral_pile",      # COM624P p-y lateral analysis
     "wave_equation",     # Smith 1-D wave equation / drivability
     "downdrag",          # Fellenius neutral plane / negative skin friction

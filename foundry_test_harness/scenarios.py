@@ -408,12 +408,16 @@ PILE_GROUP_3X3 = {
 }
 
 GROUP_EFFICIENCY = {
-    "description": "Group efficiency for 3x3 group",
+    "description": "Group efficiency for 3x3 group in soft clay, cap not "
+                   "in contact (GEC-12 Sec. 7.2.2.2: 0.70 at s/D = 3)",
     "params": {
         "n_rows": 3,
         "n_cols": 3,
         "pile_diameter": 0.3,
         "spacing": 0.9,
+        "soil_type": "cohesive",
+        "cu": 50.0,
+        "cap_in_contact": False,
     },
 }
 

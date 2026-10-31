@@ -20,7 +20,7 @@ Foundations review only:
 - **`settlement`** — consolidation (CSETT) + immediate (elastic, Schmertmann, Hough).
 - **`axial_pile`** — driven-pile capacity (Nordlund/Tomlinson-α/β, GWT split, uplift).
 - **`drilled_shaft`** — GEC-10 α/β/rock socket, N*c end-bearing cap.
-- **`pile_group`** — rigid-cap 6-DOF, Converse-Labarre efficiency, block failure.
+- **`pile_group`** — rigid-cap 6-DOF, group efficiency factor (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26), block failure.
 - **`lateral_pile`** — COM624P p-y lateral analysis (deflection, moment).
 - **`wave_equation`** — Smith 1-D wave equation / drivability / bearing graph.
 - **`downdrag`** — Fellenius neutral plane / negative skin friction.
@@ -118,9 +118,10 @@ specific check, the governing reference, and the corrective action.
 
 7. **Pile group (`pile_group`).** ONE right-hand sign convention end-to-end —
    the module's +Mx sense is its DOCUMENTED convention; confirm the
-   applied-moment sense matches it before flagging a sign. A group efficiency (Converse-Labarre or the chosen rule) is applied to
+   applied-moment sense matches it before flagging a sign. The group efficiency factor is read from the printed rows (GEC-12 Sec. 7.2.2;
+   UFC 3-220-20 Table 6-26: by soil, cap contact and spacing) and applied to
    the group capacity; block failure is checked for closely-spaced groups in
-   clay; group settlement (Meyerhof / equivalent-raft) exceeds the single-pile
+   clay and the lesser taken; group settlement (Meyerhof / equivalent-raft) exceeds the single-pile
    value.
 
 8. **Wave equation / drivability (`wave_equation`).** Smith elasto-plastic

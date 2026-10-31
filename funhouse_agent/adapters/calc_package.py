@@ -688,15 +688,48 @@ _PACKAGE_TOOLS = {
         "tools": {False: "pile_group_simple", True: "pile_group_6dof"},
         "own": {"pile_diameter": {
             "type": "float", "required": False,
-            "description": "Pile diameter or width (m). With n_rows, n_cols "
-                           "and spacing, the package adds the "
-                           "Converse-Labarre group efficiency, as the "
-                           "group_efficiency tool works it out. The plan "
-                           "view draws the piles to scale at it.",
+            "description": "Pile diameter or width (m). With n_rows, n_cols, "
+                           "spacing and soil_type, the package adds the "
+                           "group efficiency factor eta_g, as the "
+                           "group_efficiency tool reads it (GEC-12 Sec. "
+                           "7.2.2; UFC 3-220-20 Table 6-26). The plan view "
+                           "draws the piles to scale at it.",
             "when_absent": {
                 "case": "no diameter",
                 "basis": "the plan view draws the piles as symbols, not "
                          "to scale, and says so; no group efficiency"}},
+                "soil_type": {
+            "type": "str", "required": False,
+            "allowed_values": ["cohesionless", "cohesive"],
+            "description": "For the group efficiency factor eta_g, with "
+                           "pile_diameter and the spacing: the stratum "
+                           "giving most of the resistance, as the "
+                           "group_efficiency tool takes it. Not given: no "
+                           "eta_g, and the package says what it needs.",
+            "when_absent": {
+                "case": "no group efficiency",
+                "basis": "eta_g depends on the soil (GEC-12 Sec. 7.2.2; "
+                         "UFC 3-220-20 Table 6-26), so none is read"}},
+                "cap_in_contact": {
+            "type": "bool", "required": False,
+            "description": "For eta_g: whether the pile cap is in firm "
+                           "contact with the ground, as the "
+                           "group_efficiency tool takes it (left out where "
+                           "the row depends on it: not in contact, the "
+                           "lower eta_g, said in the choices)."},
+                "cu": {
+            "type": "float", "required": False,
+            "description": "For eta_g with soil_type 'cohesive': the clay's "
+                           "undrained shear strength (kPa), set against 2 "
+                           "ksf, as the group_efficiency tool takes it."},
+                "pile_type": {
+            "type": "str", "required": False, "default": "driven",
+            "allowed_values": ["driven", "drilled_shaft", "cfa", "ddp",
+                               "micropile"],
+            "description": "For eta_g: the column of UFC 3-220-20 Table "
+                           "6-26, as the group_efficiency tool takes it "
+                           "(driven piles when not given).",
+            "applies_when": {"soil_type": "set", "pile_diameter": "set"}},
                 "north_deg": {
             "type": "float", "required": False,
             "description": "Direction of north on the plan view, degrees "
@@ -2128,10 +2161,11 @@ def _generate_pile_group_package(params: dict) -> dict:
     result, used = run.out
     analysis = {**used, "method": "6dof" if run.value else "simple",
                 **drawn}
-    # The Converse-Labarre efficiency, as the group_efficiency tool works
-    # it out from the layout run and the diameter given. It takes one
-    # spacing: where the rows and columns are spaced differently, the
-    # smaller, where the piles are closer and E_g is lower.
+    # The group efficiency factor eta_g, as the group_efficiency tool
+    # reads it (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26) from the
+    # layout run, the diameter and the soil given. It takes one spacing:
+    # where the rows and columns are spaced differently, the smaller,
+    # where the piles are closer and eta_g is lower.
     d = run.own.get("pile_diameter")
     sx = used.get("spacing_x", used.get("spacing"))
     sy = used.get("spacing_y", used.get("spacing"))
@@ -2139,23 +2173,30 @@ def _generate_pile_group_package(params: dict) -> dict:
     extra = {"n_piles": result.n_piles, "group_efficiency": None}
     if north is not None:
         analysis["north_deg"] = north
+    eta_inputs = {k: run.own[k] for k in ("soil_type", "cap_in_contact",
+                                          "cu", "pile_type")
+                  if run.own.get(k) is not None}
+    analysis.update(eta_inputs)
     if d is not None:
         analysis["pile_diameter"] = d
         if (used.get("n_rows") and used.get("n_cols")
-                and spacing is not None):
+                and spacing is not None and "soil_type" in eta_inputs):
+            eff = _run_group_efficiency({
+                "pile_diameter": d, "spacing_x": sx, "spacing_y": sy,
+                **eta_inputs})
             analysis["efficiency_spacing"] = spacing
-            analysis["efficiency"] = _run_group_efficiency({
-                "n_rows": used["n_rows"], "n_cols": used["n_cols"],
-                "pile_diameter": d, "spacing": spacing,
-            })["converse_labarre_Eg"]
+            analysis["efficiency"] = eff["group_efficiency"]
             extra["group_efficiency"] = analysis["efficiency"]
+            extra["group_efficiency_row"] = eff["group_efficiency_row"]
+            # the package's Method Choices section reads result.choices
+            result.choices = (list(getattr(result, "choices", None) or [])
+                              + eff["choices"])
             if sx != sy:
                 extra["group_efficiency_spacing_m"] = spacing
                 extra["group_efficiency_note"] = (
-                    f"Converse-Labarre takes one spacing; with spacing_x "
-                    f"{sx:g} m and spacing_y {sy:g} m the smaller, "
-                    f"{spacing:g} m, is used (the closer piles, the lower "
-                    f"E_g).")
+                    f"eta_g takes one spacing; with spacing_x {sx:g} m and "
+                    f"spacing_y {sy:g} m the smaller, {spacing:g} m, is "
+                    f"used (the closer piles, the lower eta_g).")
     return _build_response(
         "pile_group", result, analysis, params,
         run=run,
@@ -3223,7 +3264,7 @@ METHOD_INFO = {
     "pile_group_package": {
         "category": "Calculation Package",
         "brief": "Run rigid-cap pile group analysis (CPGA stiffness method) and generate calc package; with method_6dof, tables (CSV + printed) of the force and displacement at every pile head.",
-        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "Converse-Labarre group efficiency (with n_rows, n_cols, spacing and pile_diameter), else null."},
+        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "The group efficiency factor eta_g (GEC-12 Sec. 7.2.2; UFC 3-220-20 Table 6-26; with n_rows, n_cols, spacing, pile_diameter and soil_type), else null.", "group_efficiency_row": "The printed row eta_g was read from."},
     },
     "sheet_pile_package": {
         "category": "Calculation Package",

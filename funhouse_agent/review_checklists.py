@@ -262,7 +262,7 @@ judging it by eye. Reference lookups anchor every code/convention call.
 
 #: Shallow + deep foundation and ground-improvement review checklist. Grounded in
 #: the modules' documented conventions (bearing_capacity GWT-in-wedge, pile_group
-#: right-hand sign / Converse-Labarre, axial_pile method-per-soil, wave_equation
+#: right-hand sign / printed group efficiency, axial_pile method-per-soil, wave_equation
 #: damping default, downdrag neutral plane).
 FOUNDATIONS_CHECKLIST = """\
 ## Foundations Review Checklist
@@ -338,9 +338,10 @@ specific check, the governing reference, and the corrective action.
 
 7. **Pile group (`pile_group`).** ONE right-hand sign convention end-to-end —
    the module's +Mx sense is its DOCUMENTED convention; confirm the
-   applied-moment sense matches it before flagging a sign. A group efficiency (Converse-Labarre or the chosen rule) is applied to
+   applied-moment sense matches it before flagging a sign. The group efficiency factor is read from the printed rows (GEC-12 Sec. 7.2.2;
+   UFC 3-220-20 Table 6-26: by soil, cap contact and spacing) and applied to
    the group capacity; block failure is checked for closely-spaced groups in
-   clay; group settlement (Meyerhof / equivalent-raft) exceeds the single-pile
+   clay and the lesser taken; group settlement (Meyerhof / equivalent-raft) exceeds the single-pile
    value.
 
 8. **Wave equation / drivability (`wave_equation`).** Smith elasto-plastic

@@ -693,16 +693,20 @@ def test_the_html_prints_the_results_numbers(tmp_path):
 
 
 def test_group_efficiency_takes_the_smaller_spacing(tmp_path):
-    from pile_group import converse_labarre
+    from pile_group import group_efficiency_factor
 
-    def e_g(s):     # the group_efficiency tool prints E_g to four places
-        return round(converse_labarre(2, 3, 0.4, s), 4)
+    def e_g(s):     # the group_efficiency tool prints eta_g to four places
+        return round(group_efficiency_factor(
+            "cohesive", s / 0.4, cap_in_contact=False,
+            su_kPa=50.0)["eta_g"], 4)
+    soil = {"soil_type": "cohesive", "cu": 50.0, "cap_in_contact": False}
     out = D.call_agent("calc_package", "pile_group_package", {
         "n_rows": 2, "n_cols": 3, "spacing_x": 1.2, "spacing_y": 1.5,
-        "Vz": 1800.0, "pile_diameter": 0.4,
+        "Vz": 1800.0, "pile_diameter": 0.4, **soil,
         "output_path": str(tmp_path / "pg.html")})
     assert out["status"] == "success", out
-    assert out["group_efficiency"] == e_g(1.2)
+    # GEC-12 Sec. 7.2.2.2: 0.65 at 2.5D to 1.0 at 6D -> 0.70 at s = 3D
+    assert out["group_efficiency"] == e_g(1.2) == pytest.approx(0.70)
     assert out["group_efficiency_spacing_m"] == 1.2
     assert "the smaller, 1.2 m, is used" in out["group_efficiency_note"]
     html = (tmp_path / "pg.html").read_text(encoding="utf-8")
@@ -710,9 +714,18 @@ def test_group_efficiency_takes_the_smaller_spacing(tmp_path):
     # one spacing both ways: nothing to say
     out = D.call_agent("calc_package", "pile_group_package", {
         "n_rows": 2, "n_cols": 3, "spacing": 1.5, "Vz": 1800.0,
-        "pile_diameter": 0.4, "output_path": str(tmp_path / "pg2.html")})
+        "pile_diameter": 0.4, **soil,
+        "output_path": str(tmp_path / "pg2.html")})
     assert out["group_efficiency"] == e_g(1.5)
     assert "group_efficiency_note" not in out
+    # no soil_type: no eta_g, and the package says what it needs
+    out = D.call_agent("calc_package", "pile_group_package", {
+        "n_rows": 2, "n_cols": 3, "spacing": 1.5, "Vz": 1800.0,
+        "pile_diameter": 0.4, "output_path": str(tmp_path / "pg3.html")})
+    assert out["status"] == "success", out
+    assert out["group_efficiency"] is None
+    html = (tmp_path / "pg3.html").read_text(encoding="utf-8")
+    assert "needs soil_type" in html
 
 
 def test_package_messages_use_the_callers_names():
