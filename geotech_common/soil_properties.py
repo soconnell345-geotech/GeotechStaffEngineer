@@ -101,9 +101,11 @@ def spt_to_phi(N: float, method: str = "peck",
           band edges N = 4, 10, 30 and 50, read linearly between them (the
           reading is this function's). The table gives only "< 30" below
           N = 4 and "> 45" above 50, so those are refused. UFC takes N60,
-          GEC-5 the uncorrected N; both take 5 deg less for a clayey sand
-          and 5 more for a gravelly sand, and N = 15 + (N' - 15)/2 for
-          N' > 15 in a saturated very fine or silty sand.
+          GEC-5 the uncorrected N. UFC's note under Table 8-3 takes 5 deg
+          less for a clayey sand and 5 more for a gravelly sand (GEC-12
+          p. 123 credits it to GEC-5's 2002 edition); GEC-5's own note
+          gives only N = 15 + (N' - 15)/2 for N' > 15 in a saturated very
+          fine or silty sand.
     sigma_v : float, optional
         Vertical effective stress at the test depth (kPa), for
         "kulhawy_mayne".

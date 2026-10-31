@@ -48,9 +48,11 @@ EN ISO 22476-3; Bolton (1986); Hara et al.'s paper (checked through UFC
 - Module: 25 + 0.3 N60, capped at 50 deg. No held manual prints that form.
 - Now the band edges (30, 35, 40, 45 deg at N = 4, 10, 30, 50), linear
   between them (that reading is the function's). Below 4 and above 50 the
-  table gives only a bound, so those are refused. The table's own notes
-  (5 deg less for clayey sand, 5 more for gravelly sand, the N' correction
-  in saturated fine or silty sand) are in the docstring, not applied.
+  table gives only a bound, so those are refused. The notes (UFC's under
+  Table 8-3: 5 deg less for clayey sand, 5 more for gravelly sand, which
+  GEC-12 p. 123 credits to GEC-5's 2002 edition; GEC-5 2016's: only the N'
+  correction in saturated fine or silty sand) are in the docstring, not
+  applied. Moves +3.8 to +7.0 deg over N 4 to 50 (table below).
 
 ### C3. SPT to phi', the other printed correlations. Added as options
 - `hatanaka_uchida`: GEC-5 Eq 7.23, p. 7-55, sqrt(15.4 (N1)60) + 20 "for
