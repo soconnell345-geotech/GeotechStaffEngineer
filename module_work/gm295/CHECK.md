@@ -35,7 +35,7 @@ EN ISO 22476-3; Bolton (1986); Hara et al.'s paper (checked through UFC
   UFC: "this correlation is conservative" (Ameratunga et al. 2016).
 - Module: a hand-drawn piecewise line on N60 (26 deg at 0 to 42 deg at 50,
   then +0.1 deg a blow to a 50 deg cap). Its own comment said the slopes were
-  "author-chosen" and not checked. It ran up to 2.4 deg above Eq 8-5 (at 30).
+  "author-chosen" and not checked. It ran up to 2.4 deg above Eq 8-5 (at 30). Through a soil profile's fill, which now also passes N1,60, the drop is larger (dense sand at 17 m: 40.0 to 35.3 deg).
 - Now Eq 8-5 on N1,60. Past the chart's N1,60 = 60 the angle is held at
   60's (43.2 deg) with a warning.
 - GEC-12 Table 5-5 (p. 123, AASHTO 2014) gives ranges by (N1)60; Eq 8-5
@@ -48,11 +48,11 @@ EN ISO 22476-3; Bolton (1986); Hara et al.'s paper (checked through UFC
 - Module: 25 + 0.3 N60, capped at 50 deg. No held manual prints that form.
 - Now the band edges (30, 35, 40, 45 deg at N = 4, 10, 30, 50), linear
   between them (that reading is the function's). Below 4 and above 50 the
-  table gives only a bound, so those are refused. The notes (UFC's under
-  Table 8-3: 5 deg less for clayey sand, 5 more for gravelly sand, which
-  GEC-12 p. 123 credits to GEC-5's 2002 edition; GEC-5 2016's: only the N'
-  correction in saturated fine or silty sand) are in the docstring, not
-  applied. Moves +3.8 to +7.0 deg over N 4 to 50 (table below).
+  table gives only a bound, so those are refused. The notes (5 deg
+  less for clayey sand and 5 more for gravelly sand: UFC p. 396 and GEC-12
+  p. 123, citing GEC-5 2002, not GEC-5 2016; N = 15 + (N' - 15)/2 in a
+  saturated very fine or silty sand: all three) are in the docstring, not
+  applied. Moves +3.8 deg at N = 4 to +7.0 deg at N = 10 (table below).
 
 ### C3. SPT to phi', the other printed correlations. Added as options
 - `hatanaka_uchida`: GEC-5 Eq 7.23, p. 7-55, sqrt(15.4 (N1)60) + 20 "for
