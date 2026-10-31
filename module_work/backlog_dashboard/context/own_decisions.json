@@ -2522,5 +2522,92 @@
       "BACKLOG.md OWN-108",
       "module_work/gm291/CHECK.md"
     ]
+  },
+  "OWN-109": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Which method should a braced excavation (soe) use by default for its support loads: the Caltrans hinge method, GEC-4's method with a subgrade reaction, or UFC's simple spans?",
+    "why": "The three printed methods give different support loads. The hinge method (the default) takes the moment carried from above the first support, which raises the first support's load 15-25 % over simple tributary areas and lowers the lowest support's.",
+    "background": "Caltrans Trenching and Shoring Manual Fig. 8-7 (hinge method, the default since GM-290); GEC-4 Fig. 38 (a subgrade reaction below the base); UFC 3-220-20 Fig. 4-54 (simple spans). All three are offered by `support_load_method`. On the manual's example the first support is 146.7 kN/m by the hinge method against 123.2 before.",
+    "options": [
+      {
+        "label": "Caltrans hinge method (as now)",
+        "effect": "Keeps today's results; the other two stay as options."
+      },
+      {
+        "label": "GEC-4 with subgrade reaction",
+        "effect": "The FHWA manual's method by default."
+      },
+      {
+        "label": "UFC simple spans",
+        "effect": "The simplest; the UFC's 80 % inner-span moment reduction is not applied (noted)."
+      }
+    ],
+    "recommendation": "Keep the Caltrans hinge method, with the other two named in each result.",
+    "if_no_answer": "The hinge method stays the default.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-109",
+      "module_work/gm290/CHECK.md"
+    ]
+  },
+  "OWN-110": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "What allowable bending stress should soe and sheet_pile size wall sections with: 0.60 Fy, 0.55 Fy or 0.66 Fy?",
+    "why": "It sets the required section modulus. 0.60 Fy asks for about 10 % more section than 0.66 Fy; 0.55 Fy about 9 % more than 0.60.",
+    "background": "Caltrans Trenching and Shoring Manual examples use 0.60 Fy (the default since GM-290); GEC-4 p. 81 uses 0.55 Fy for permanent or critical walls; Caltrans p. 9-20 compares against 0.66 Fy. Caltrans Sec. 6-2.02 prints no value and says Fb depends on whether the section is compact. Offered by `Fb_ratio`.",
+    "options": [
+      {
+        "label": "0.60 Fy (as now)",
+        "effect": "The Caltrans examples' value."
+      },
+      {
+        "label": "0.55 Fy for permanent or critical walls",
+        "effect": "GEC-4's value; would need the wall to be marked permanent or critical."
+      },
+      {
+        "label": "0.66 Fy",
+        "effect": "The compact-section value Caltrans p. 9-20 compares against; smaller sections."
+      }
+    ],
+    "recommendation": "Keep 0.60 Fy for temporary shoring and use 0.55 Fy when the wall is marked permanent, as GEC-4 prints.",
+    "if_no_answer": "0.60 Fy stays for every wall.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-110",
+      "module_work/gm290/CHECK.md"
+    ]
+  },
+  "OWN-111": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "For a cantilever wall's design moment, should both tools use the moment at FS = 1.0 (Caltrans) or the moment from the factored diagram (UFC)? soe and sheet_pile now differ.",
+    "why": "soe's cantilever moment now follows Caltrans Example 7-3 (FS = 1.0), 12-53 % lower than before; sheet_pile follows UFC Fig. 4-41 step 5 (the factored diagram). The same wall gets different moments from the two tools.",
+    "background": "Caltrans Trenching and Shoring Manual Example 7-3 takes the moment on the FS = 1.0 body and applies 1.3 to resisting over driving moment; UFC 3-220-20 Fig. 4-41 takes it on the diagram with the passive side factored. Both tools give the other moment in their choices.",
+    "options": [
+      {
+        "label": "Both at FS = 1.0 (Caltrans)",
+        "effect": "sheet_pile's default moment drops to match soe."
+      },
+      {
+        "label": "Both on the factored diagram (UFC)",
+        "effect": "soe's default moment rises back to the factored value."
+      },
+      {
+        "label": "Leave them different",
+        "effect": "Each tool follows its own manual; the result says which basis and gives the other."
+      }
+    ],
+    "recommendation": "Make both use the FS = 1.0 moment with the factored one shown beside it, so the two tools agree.",
+    "if_no_answer": "They stay different, each naming its basis.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-111",
+      "module_work/gm290/CHECK.md"
+    ]
   }
 }
