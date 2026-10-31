@@ -25,10 +25,15 @@ compared under "What moved".
   toe resistance (skin_fraction 1.0) the offset was zero, so a friction pile
   read refusal (blow count 1,000,000) whatever it penetrated.
 - **Now.** s = D_toe,max - (f Q_side + (1 - f) Q_toe), f the share of R_ult on
-  the shaft (`SoilSetup.weighted_quake`). The weights are the reading taken;
-  on Example 6 with the 0.40 in toe quake it gives 92.6 blows/ft against
-  GRLWEAP's 94 (Table 12-2 text, p. 183), where the old rule gave 305. The
-  calc package prints the step, with the reading stated.
+  the shaft (`SoilSetup.weighted_quake`). The weights are the module's
+  assumption: no held page settles them (p. 158 names none). Each result
+  states it in its choices, with the blow counts a plain average of the
+  quakes and the toe quake alone give on the same blows
+  (`quake_weighting_choice`; none when the quakes are equal). On Example 6
+  with the 0.40 in toe quake: 92.6 blows/ft with the R_ult shares, 63 with a
+  plain average, 303 with the toe quake alone (the old rule gave 305);
+  GRLWEAP 94 (p. 182). The calc package's step calls the weights the
+  module's assumption and gives the other two averages.
 
 ## Smith damping (fixed)
 
@@ -104,7 +109,7 @@ compared under "What moved".
   soft soils seated on hard rock, 5 blows per 1/4 in (240 blows/ft). Vol 3
   p. 43: "The recommended blow count limit is 120 blows per foot" for
   practical refusal in the drivability study. The Vol 2 examples call
-  refusal over 240 blows/ft (pp. 172, 177, 188).
+  refusal over 240 blows/ft (pp. 171, 177, 188).
 - **Module before.** 3000 blows/m (914 blows/ft), no source.
 - **Now.** 393.7 blows/m (120 blows/ft) by default; the description gives
   787.4 (240 blows/ft) for a pile seated on hard rock. The result, its
@@ -156,9 +161,50 @@ unless named; half the resistance on the shaft unless given.
 | Bearing graph 300 to 1500 kN | 22.0/44.4/68.2/107.7/191.0 -> 20.4/41.0/62.5/95.6/163.5 |
 | GEC-12 Ex 6, Vulcan 014, 400 kips, 30 % shaft, J_side 0.05 s/ft (GRLWEAP 56 and 94 blows/ft) | toe quake 0.12 in: 52.9 -> 51.7; 0.40 in: 305 -> 92.6 |
 
-Ex 6 is run with the full 66 ft embedded and Table 12-2's Nycast hammer
-cushion as the one cushion (the module has no stick-up or pile cushion), so
-it is a comparison, not a validation.
+Ex 6 (p. 182; Table 12-2, p. 183) is run with the full 66 ft embedded and
+Table 12-2's Nycast hammer cushion as the one cushion (the module has no
+stick-up or pile cushion), so it is a comparison, not a validation. The
+stresses in this table are from before the review's pile-top fix (below).
+
+## Review fixes (gm230-review)
+
+- **Quake weights** stated as the module's assumption, in the tool text,
+  the calc step, DESIGN.md and above; the results' choices carry the
+  alternatives with their blow counts.
+- **Diesel hammers warn.** A named or custom diesel runs as a rigid ram at
+  its rated energy x 0.80 at every resistance. GEC-12 Vol 2 Sec. 12.6.3
+  (p. 206): "The diesel hammer stroke increases when the soil resistance
+  ... increases", and an optimistic stroke "could lead to high stroke
+  predictions and, therefore, non-conservative predictions of nominal
+  resistance". The results (single blow, bearing graph, drivability), the
+  calc package response and its impact-velocity step now say so
+  (`diesel_warning`). On Ex 6 the ICE 42-S (4.09 kips, 10.3 ft, 0.80) gives
+  50 and 103 blows/ft against 99 and 209 (p. 182). The diesel cycle stays
+  on the backlog (GM-29).
+- **Pile-top stress without the helmet's inertia (fixed).** The helmet
+  rides on the first segment; the pile-top force is now the cushion force
+  less the helmet's mass times that segment's acceleration, the pile's own
+  force, as Fig. 12-15 (p. 184) plots it. The solver is unchanged; set and
+  blow count do not move. GEC-12 Vol 2 Sec. 10.5 (p. 63): with no
+  resistance the force is the particle velocity times EA/c, so the pile top
+  carries at most EA/c x v_impact; a test checks it (made-up pile, 100 kN:
+  the Vulcan 010 read 2,064 kN with a 5 kN helmet and 2,929 kN with 15 kN,
+  against EA/c v = 1,395 kN; now 1,247 and 1,269).
+
+| Case | Before -> after (compression) |
+|---|---|
+| Ex 6, Vulcan 014, 0.40 in toe quake (Fig. 12-15: about 29 ksi at 94 blows/ft) | 52.5 -> 28.8 ksi |
+| Ex 6, Vulcan 014, 0.12 in | 52.5 -> 32.2 ksi |
+| Defaults, Vulcan 010, 900 kN | 212.5 -> 137.2 MPa |
+| Delmag D30-32, 1500 kN | 418.5 -> 267.2 MPa |
+| ICE I-30V2, 900 kN | 419.3 -> 259.3 MPa |
+| Bearing graph 300 to 1500 kN | 212.1/212.3/212.5/213.8/221.8 -> 130.2/133.5/137.2/161.0/191.9 MPa |
+| Drivability 6/12/18 m at 900/1500/2000 kN | 214.1/218.2/219.5 -> 168.5/222.7/224.0 MPa (at hard driving the decelerating helmet now pushes on the pile top) |
+| V-003, hand-built D36-52 (GEC-12 Vol 3, published 40.1 ksi) | 48.5 -> 39.0 ksi; 47.5 blows/ft unchanged against 120, so still N/A (scope) |
+
+Tension does not move. Citations: Ex 6 is on p. 182 (was given as p. 183
+for its text) and the first example refusal over 240 blows/ft on p. 171
+(was p. 172).
 
 ## Noted, not fixed
 
@@ -170,9 +216,9 @@ it is a comparison, not a validation.
   every run that leaves the cushion or helmet out.
 - **One cushion, helmet lumped.** GEC-12 Fig. 12-2 (p. 157) has a hammer
   cushion, a helmet mass and a pile cushion; the module has one cushion and
-  the helmet's weight on the first segment, so its head stress carries the
-  helmet's inertia. Two cushions in series can be given as one (1/k = 1/k1 +
-  1/k2, p. 209).
+  the helmet's weight on the first segment (its inertia now left out of the
+  pile-top force, above). Two cushions in series can be given as one (1/k =
+  1/k1 + 1/k2, p. 209).
 - **No embedment input.** The pile is taken as embedded over its full
   length, the shaft resistance uniform (Ex 1 is triangular; Ex 6 embeds 52.5
   of 66 ft). Drivability takes the pile as long as each depth.
@@ -180,7 +226,8 @@ it is a comparison, not a validation.
   does); it runs the defaults. Backlog candidate if a displacement pile's
   D/60 toe quake should be reachable there.
 - **Diesel hammers** are a rigid ram at rated energy x 0.80; GRLWEAP's
-  combustion cycle and fuel settings (p. 206) are not modelled.
+  combustion cycle and fuel settings (p. 206) are not modelled. The results
+  warn (above); the cycle is GM-29.
 - **Cushion unloading** with energy return COR^2 is not printed in a held
   reference (p. 156 defines the COR only).
 - **Steel wave speed** is 5,038 m/s from E and 77.3 kN/m3; UFC p. 487 says
@@ -193,6 +240,29 @@ it is a comparison, not a validation.
 
 ## Owner questions
 
-None. The weighted-quake weights are a reading (the page names none); the
-R_ult shares reproduce Example 6's 94 blows/ft. 120 against 240 blows/ft is
-the printed rule against its printed exception.
+None. The quake weights are the module's assumption, stated in each
+result with the other weightings' blow counts; the R_ult shares come
+nearest Example 6's 94 blows/ft. 120 against 240 blows/ft is the printed
+rule against its printed exception.
+
+## Gates for the review fixes (targeted; own TMP; at >= 1000 MB free, one at a time)
+
+- wave_equation/tests: 94 passed (nine new: the choice's blow counts, none
+  with equal quakes, bearing graph and drivability choices, Ex 6's three
+  weightings, Ex 6's pile-top stress, the EA/c v bound, the diesel warning,
+  Ex 6's ICE 42-S, the tool's choice and warning).
+- validation_examples/test_published_v001_v005.py (V-003 updated: the
+  stress now 39.0 ksi, the blow count still out), wave_equation/tests,
+  test_choices_stated_defaults: 115 passed.
+- test_gm205_bearing_graph, test_anchor_gm185, test_calc_package_tool_parity,
+  geotech_common test_engineering_checks, foundry_test_harness,
+  test_steps_from_a_minimal_analysis: passed. test_citations: 1 failure, not
+  this change: the installed reference library (newer than this branch's
+  base) leaves out GEC-9 Table A-3, which master put on the gap list in
+  aaf900d.
+- test_defaults_used, test_adapter_ergonomics, test_top_level_params,
+  test_calc_package_adapter, test_calc_package_figure_layout, `-k` wave,
+  bearing, drivability, blow, hammer: 70 passed.
+- webapp/tests/test_page_fingerprints.py: 15 passed.
+- test_public_text on every changed file: clean.
+- Not run: the full suites. The manual is regenerated at merge.

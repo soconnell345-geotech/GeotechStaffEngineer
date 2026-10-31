@@ -779,5 +779,153 @@ class TestElasticImpact:
         assert result.max_pile_force == pytest.approx(F_theory, rel=0.30)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# GM-294 review: quake weights stated, diesel warning, pile-top force
+# ═══════════════════════════════════════════════════════════════════════
+
+def _ex6(hammer, toe_quake_in):
+    """GEC-12 Vol 2 Example 6 (p. 182; Table 12-2, p. 183) as the module
+    can take it: 14 in x 0.375 in closed end pipe, 66 ft all embedded, the
+    hammer cushion as the one cushion, 400 kips, 30 % on the shaft,
+    J_side 0.05 s/ft, toe 0.15 s/ft, shaft quake 0.10 in."""
+    IN, KSI, KIP = 0.0254, 6894.757, 4.448222
+    area = math.pi / 4 * (14**2 - 13.25**2) * IN**2
+    pile = discretize_pile(66 * 0.3048, area, 200e6, 1.0, 77.3)
+    E, A, t, cor, helmet = {"Vulcan 014": (208, 234, 6.0, 0.91, 1.67),
+                            "ICE 42-S": (175, 398, 2.0, 0.92, 2.05)}[
+                                hammer.name]
+    cushion = make_cushion_from_properties(A * IN**2, t * IN, E * KSI, cor)
+    soil = SoilSetup(400 * KIP, skin_fraction=0.30, quake_side=0.10 * IN,
+                     quake_toe=toe_quake_in * IN, damping_side=0.05 / 0.3048,
+                     damping_toe=0.15 / 0.3048)
+    return simulate_blow(hammer, cushion, pile, soil,
+                         helmet_weight=helmet * KIP), soil
+
+
+def _ice_42s():
+    """Table 12-2: 4.09 kips, rated stroke 10.3 ft; 0.80 (p. 185)."""
+    return Hammer("ICE 42-S", 4.09 * 4.448222, 10.3 * 0.3048, 0.80,
+                  "diesel")
+
+
+class TestGM294Review:
+    """The quake weights are the module's assumption, stated with the
+    other weightings' blow counts; a diesel run as a drop ram warns; the
+    pile-top force leaves out the helmet's inertia."""
+
+    def _system(self):
+        h = get_hammer("Vulcan 010")
+        c = Cushion(stiffness=500000, cor=0.80)
+        p = discretize_pile(18.0, math.pi / 4 * (0.32**2 - 0.30**2), 200e6,
+                            1.0, 77.3)
+        return h, c, p
+
+    def test_choice_gives_each_weighting_its_blow_count(self):
+        """Made-up case: 30 % shaft, quakes 2.5 and 5 mm: the shares give
+        4.25 mm, a plain average 3.75 mm, the toe quake 5 mm."""
+        from wave_equation.soil_model import quake_weighting_choice
+        h, c, p = self._system()
+        s = SoilSetup(900, skin_fraction=0.3, quake_side=0.0025,
+                      quake_toe=0.005)
+        r = simulate_blow(h, c, p, s)
+        d = r.max_toe_displacement
+        assert d - r.permanent_set == pytest.approx(0.00425)
+        ch = quake_weighting_choice(0.0025, 0.005, [(0.3, d)])
+        assert ch["how"] == "module"
+        assert "assumption" in ch["basis"] and "p. 158" in ch["basis"]
+        assert f"{1 / (d - 0.00425):.1f} blows/m" in ch["chosen"]
+        plain, toe = ch["alternatives"]
+        assert f"{1 / (d - 0.00375):.1f} blows/m" in plain
+        assert f"{1 / (d - 0.005):.1f} blows/m" in toe
+
+    def test_no_choice_with_equal_quakes(self):
+        from wave_equation.soil_model import quake_weighting_choice
+        assert quake_weighting_choice(0.0025, 0.0025, [(0.5, 0.01)]) is None
+        h, c, p = self._system()
+        bg = generate_bearing_graph(h, c, p, R_min=300, R_max=600,
+                                    R_step=300)
+        assert "choices" not in bg.to_dict()
+
+    def test_bearing_graph_and_drivability_state_the_weights(self):
+        h, c, p = self._system()
+        bg = generate_bearing_graph(h, c, p, quake_toe=0.005, R_min=300,
+                                    R_max=900, R_step=300)
+        ch = bg.to_dict()["choices"][0]
+        assert ch["what"].startswith("weights of the shaft and toe quakes")
+        assert "R_ult 300 / 600 / 900 kN" in ch["chosen"]
+        assert all(a.count(" / ") >= 2 for a in ch["alternatives"])
+        dr = drivability_study(h, c, p.segment_areas[0], 200e6, 77.3,
+                               [6.0, 12.0], [600.0, 900.0], quake_toe=0.005)
+        assert "depths 6 / 12 m" in dr.to_dict()["choices"][0]["chosen"]
+
+    def test_example_6_three_weightings(self):
+        """At the 0.40 in toe quake, R_ult shares 92.6 blows/ft, a plain
+        average 63, the toe quake alone 303; GRLWEAP 94 (p. 182). A
+        comparison: the module has no stick-up or pile cushion."""
+        r, s = _ex6(get_hammer("Vulcan 014"), 0.40)
+        d = r.max_toe_displacement
+        bpf = [0.3048 / (d - q) for q in
+               (s.weighted_quake, (s.quake_side + s.quake_toe) / 2,
+                s.quake_toe)]
+        assert bpf == pytest.approx([92.6, 63.3, 302.7], abs=0.5)
+
+    def test_example_6_pile_top_stress(self):
+        """GEC-12 Vol 2 Fig. 12-15 (p. 184) plots the Vulcan 014's
+        compression stress at about 29 ksi at 94 blows/ft; with the
+        helmet's inertia in the pile-top force it read 52.5 ksi."""
+        r, _ = _ex6(get_hammer("Vulcan 014"), 0.40)
+        assert r.max_compression_stress / 6894.757 == pytest.approx(29.0,
+                                                                     abs=1.0)
+
+    @pytest.mark.parametrize("name", ["Vulcan 010", "Delmag D30-32"])
+    @pytest.mark.parametrize("helmet", [5.0, 15.0])
+    def test_pile_force_within_impedance_times_impact_velocity(self, name,
+                                                               helmet):
+        """With little resistance the force in the pile is its particle
+        velocity times EA/c (GEC-12 Vol 2 Sec. 10.5, p. 63), the pile top
+        moving no faster than the ram struck: so at most EA/c v_impact,
+        whatever the helmet weighs (made-up pile, 100 kN). Until the
+        review the cushion force, which also accelerates the helmet, was
+        taken: 2,064 and 2,929 kN for the Vulcan 010 against 1,395."""
+        h = get_hammer(name)
+        _, c, p = self._system()
+        r = simulate_blow(h, c, p, SoilSetup(100.0), helmet_weight=helmet)
+        Z = 200e6 * p.segment_areas[0] / p.wave_speeds[0]
+        assert r.max_pile_force <= Z * h.impact_velocity
+
+    def test_diesel_warns(self):
+        from wave_equation.hammer import diesel_warning
+        h, c, p = self._system()
+        assert diesel_warning(h) is None
+        assert "warnings" not in generate_bearing_graph(
+            h, c, p, R_min=300, R_max=300).to_dict()
+        d = get_hammer("ICE I-30V2")
+        w = generate_bearing_graph(d, c, p, R_min=300, R_max=300).warnings
+        assert len(w) == 1 and "p. 206" in w[0]
+        assert "non-conservative" in w[0]
+        assert diesel_warning(_ice_42s()) is not None
+
+    def test_example_6_ice_42s_as_a_drop_ram(self):
+        """The ICE 42-S at its rated stroke: 50 and 103 blows/ft where
+        GEC-12's analysis gives 99 and 209 (p. 182), the low side p. 206
+        warns of."""
+        bpf = [0.3048 / _ex6(_ice_42s(), q)[0].permanent_set
+               for q in (0.12, 0.40)]
+        assert bpf == pytest.approx([50.3, 103.3], abs=0.5)
+
+    def test_tool_states_choice_and_warning(self):
+        from funhouse_agent.adapters.wave_equation import METHOD_REGISTRY
+        base = {"pile_length": 18.0, "pile_area": 0.00974, "R_total": 900.0}
+        r = METHOD_REGISTRY["single_blow"]({**base,
+                                            "hammer_name": "Vulcan 010"})
+        assert "choices" not in r and "warnings" not in r
+        r = METHOD_REGISTRY["single_blow"]({**base,
+                                            "hammer_name": "ICE I-30V2",
+                                            "quake_toe": 0.005,
+                                            "skin_fraction": 0.3})
+        assert r["choices"][0]["how"] == "module"
+        assert "p. 206" in r["warnings"][0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

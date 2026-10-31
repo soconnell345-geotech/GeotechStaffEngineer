@@ -10,8 +10,11 @@ memory: it loads linearly to the quake, yields at R_ultimate, and
 unloads along the same elastic slope R_ultimate/quake from the
 maximum displacement, leaving a permanent (plastic) offset (GEC-12
 Vol 2 Fig. 12-2, p. 157). The permanent set per blow is GEC-12's: the
-maximum pile toe displacement less the weighted average of the shaft
-and toe quakes (``SoilSetup.weighted_quake``; Sec. 12.3, p. 158).
+maximum pile toe displacement less a weighted average of the shaft and
+toe quakes (Sec. 12.3, p. 158). The page names no weights; the shares of
+R_ult are this module's assumption (``SoilSetup.weighted_quake``), and
+``quake_weighting_choice`` states it with the other weightings' blow
+counts.
 
 Two Smith damping variants are provided (``damping_model``), as UFC
 3-220-20 (2025) Sec. 6-9.2, pp. 487-488 prints them:
@@ -283,9 +286,10 @@ class SoilSetup:
     def weighted_quake(self) -> float:
         """The shaft and toe quakes averaged with the share of R_ult each
         carries (m): what the permanent set subtracts from the maximum
-        pile toe displacement (GEC-12 Vol 2 Sec. 12.3, p. 158, prints "a
+        pile toe displacement. GEC-12 Vol 2 Sec. 12.3, p. 158, prints "a
         weighted average of the shaft and toe quakes" without the
-        weights; the resistance shares are the reading taken)."""
+        weights; the resistance shares are this module's assumption (see
+        quake_weighting_choice)."""
         f = self.skin_fraction
         return f * self.quake_side + (1.0 - f) * self.quake_toe
 
@@ -327,3 +331,67 @@ class SoilSetup:
         )
 
         return side_models, toe_model
+
+
+def quake_weighting_choice(quake_side: float, quake_toe: float,
+                           points: list, label: str = "") -> Optional[dict]:
+    """The weights of the shaft and toe quakes in the permanent set, as a
+    result's ``choices`` entry (GM-294 review). GEC-12 Vol 2 Sec. 12.3,
+    p. 158, subtracts "a weighted average of the shaft and toe quakes" from
+    the maximum pile toe displacement and names no weights; the shares of
+    R_ult (``SoilSetup.weighted_quake``) are this module's assumption. The
+    alternatives, a plain average and the toe quake alone (the toe
+    spring's plastic offset), carry the blow counts they give on the same
+    blows. On GEC-12 Example 6 (p. 182; 0.40 in toe quake, 30 % shaft) the
+    three give 92.6, 63 and 303 blows/ft, GRLWEAP 94.
+
+    Parameters
+    ----------
+    quake_side, quake_toe : float
+        Quakes (m).
+    points : list of (float, float)
+        One (skin_fraction, maximum pile toe displacement in m) per blow.
+    label : str
+        What the blows are at, e.g. " at R_ult 300 / 600 kN", when there
+        is more than one.
+
+    Returns
+    -------
+    dict or None
+        None when the quakes are equal: every weighting gives the same set.
+    """
+    if not points or abs(quake_side - quake_toe) < 1e-12:
+        return None
+    from geotech_common.choices import MODULE, choice
+
+    def blows(q_avgs):
+        out = []
+        for (_, d_max), q in zip(points, q_avgs):
+            s = d_max - q
+            out.append("refusal" if s <= 1e-6 else f"{1.0 / s:.1f}")
+        return " / ".join(out)
+
+    n = len(points)
+    shares = [f * quake_side + (1.0 - f) * quake_toe for f, _ in points]
+    plain = (quake_side + quake_toe) / 2.0
+    fractions = {round(f, 9) for f, _ in points}
+    if len(fractions) == 1:
+        f = points[0][0]
+        q_avg = (f"Q_avg = {f:.2f} x {quake_side * 1000:.2f} + "
+                 f"{1.0 - f:.2f} x {quake_toe * 1000:.2f} = "
+                 f"{shares[0] * 1000:.2f} mm")
+    else:
+        q_avg = "Q_avg = f_skin x Q_side + (1 - f_skin) x Q_toe"
+    return choice(
+        "weights of the shaft and toe quakes in the permanent set",
+        f"the shares of R_ult on the shaft and at the toe, {q_avg}: "
+        f"{blows(shares)} blows/m{label}",
+        MODULE,
+        "GEC-12 Vol 2 Sec. 12.3 (p. 158) subtracts \"a weighted average of "
+        "the shaft and toe quakes\" from the maximum pile toe displacement "
+        "and names no weights; the shares of R_ult are this module's "
+        "assumption, not printed",
+        [f"a plain average, Q_avg = {plain * 1000:.2f} mm: "
+         f"{blows([plain] * n)} blows/m{label}",
+         f"the toe quake alone, Q_avg = {quake_toe * 1000:.2f} mm: "
+         f"{blows([quake_toe] * n)} blows/m{label}"])

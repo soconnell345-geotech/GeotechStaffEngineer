@@ -29,6 +29,7 @@ from calc_package.data_model import (
     InputItem, CalcStep, CheckItem, FigureData, CalcSection, TableData,
 )
 from calc_package.renderer import figure_to_base64
+from wave_equation.hammer import diesel_warning
 
 DISPLAY_NAME = "Wave Equation Analysis (Smith 1-D Model)"
 
@@ -265,6 +266,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             reference=("FHWA GEC-12 Vol 2 Eq. 15-1 (p. 358), with the "
                        "stroke times the hammer efficiency (Sec. 12.6.2, "
                        "p. 205)"),
+            # A diesel run as a drop ram at its rated energy (GM-294 review)
+            notes=diesel_warning(hammer) or "",
         ))
 
     # Courant condition
@@ -357,11 +360,19 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=("" if f_s is None else
                       f"{(f_s * q_s + (1 - f_s) * q_t) * 1000:.2f}"),
         result_unit="" if f_s is None else "mm",
-        reference="FHWA GEC-12 Vol 2 Sec. 12.3 (p. 158)",
+        reference=("FHWA GEC-12 Vol 2 Sec. 12.3 (p. 158); the weights are "
+                   "the module's assumption"),
         notes=("D_toe,max = maximum pile toe displacement. GEC-12 prints "
-               "'a weighted average of the shaft and toe quakes' without "
-               "the weights; they are taken as the shares of R_ult on the "
-               "shaft and at the toe."),
+               "'a weighted average of the shaft and toe quakes' and names "
+               "no weights; the shares of R_ult on the shaft and at the toe "
+               "are this module's assumption, not printed. Other weightings: "
+               "a plain average"
+               + ("" if f_s is None else
+                  f", Q_avg = {(q_s + q_t) / 2 * 1000:.2f} mm")
+               + ", or the toe quake alone"
+               + ("" if f_s is None else f", Q_avg = {q_t * 1000:.2f} mm")
+               + "; where the quakes differ, the choices list the blow "
+                 "counts each gives."),
     ))
 
     if soil is not None:

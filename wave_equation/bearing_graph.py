@@ -15,10 +15,10 @@ from typing import List, Optional
 
 import numpy as np
 
-from wave_equation.hammer import Hammer
+from wave_equation.hammer import Hammer, diesel_warning
 from wave_equation.cushion import Cushion
 from wave_equation.pile_model import PileModel
-from wave_equation.soil_model import SoilSetup
+from wave_equation.soil_model import SoilSetup, quake_weighting_choice
 from wave_equation.time_integration import BlowResult, simulate_blow
 
 
@@ -42,6 +42,12 @@ class BearingGraphResult:
         Maximum compression force (kN) for each R_ultimate.
     blow_results : list of BlowResult
         Full results for each R_ultimate analyzed.
+    choices : list of dict
+        What the run assumed that no page prints: the weights of the
+        quakes in the permanent set, with the other weightings' blow
+        counts (``quake_weighting_choice``; none with equal quakes).
+    warnings : list of str
+        A diesel hammer's (``diesel_warning``).
     """
     R_values: np.ndarray = field(default_factory=lambda: np.array([]))
     blow_counts: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -50,6 +56,8 @@ class BearingGraphResult:
     max_tens_stresses: np.ndarray = field(default_factory=lambda: np.array([]))
     max_comp_forces: np.ndarray = field(default_factory=lambda: np.array([]))
     blow_results: List[BlowResult] = field(default_factory=list)
+    choices: list = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def capacity_at_blow_count(self, target_blow_count: float) -> float:
         """Interpolate capacity for a given blow count.
@@ -97,13 +105,18 @@ class BearingGraphResult:
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
-        return {
+        out = {
             "R_values_kN": self.R_values.tolist(),
             "blow_counts_per_m": self.blow_counts.tolist(),
             "permanent_sets_m": self.permanent_sets.tolist(),
             "max_comp_stresses_kPa": self.max_comp_stresses.tolist(),
             "max_tens_stresses_kPa": self.max_tens_stresses.tolist(),
         }
+        if self.choices:
+            out["choices"] = list(self.choices)
+        if self.warnings:
+            out["warnings"] = list(self.warnings)
+        return out
 
     def get_tables(self) -> list:
         """The bearing graph as GRLWEAP prints it: for each assumed
@@ -137,8 +150,10 @@ class BearingGraphResult:
             rows=rows,
             note=("One Smith-model wave equation blow per assumed R_ult "
                   "(GEC-12 Vol 2 Sec. 12.3 and 12.5.1); set = maximum "
-                  "pile toe displacement less the weighted average of "
-                  "the shaft and toe quakes (p. 158); blow count = 1/set, "
+                  "pile toe displacement less an average of the shaft "
+                  "and toe quakes weighted by the shares of R_ult (p. 158 "
+                  "names no weights; the module's assumption); blow "
+                  "count = 1/set, "
                   "1,000,000 meaning refusal (set under 0.001 mm)"),
             name="bearing_graph",
         )]
@@ -232,6 +247,12 @@ def generate_bearing_graph(
 
         blow_results.append(result)
 
+    quakes = quake_weighting_choice(
+        quake_side, quake_toe,
+        [(skin_fraction, r.max_toe_displacement) for r in blow_results],
+        " at R_ult " + " / ".join(f"{R:,.0f}" for R in R_values) + " kN"
+        if n_runs > 1 else "")
+    warning = diesel_warning(hammer)
     return BearingGraphResult(
         R_values=R_values,
         blow_counts=blow_counts,
@@ -240,4 +261,6 @@ def generate_bearing_graph(
         max_tens_stresses=tens_stresses,
         max_comp_forces=comp_forces,
         blow_results=blow_results,
+        choices=[quakes] if quakes else [],
+        warnings=[warning] if warning else [],
     )

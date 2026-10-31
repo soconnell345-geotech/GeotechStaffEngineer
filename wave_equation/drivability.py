@@ -14,7 +14,7 @@ the maximum expected penetration resistance is less than 120 blows/ft",
 and the drivability study of Vol 3 (p. 43) calls 120 blows/ft "practical
 refusal". The one exception p. 161 prints, piles through soft soils
 seated on hard rock at 5 blows per 1/4 inch, is 240 blows/ft (787.4
-blows/m), the refusal of the Vol 2 examples (pp. 172, 177, 188).
+blows/m), the refusal of the Vol 2 examples (pp. 171, 177, 188).
 
 The pile analysed at each depth is as long as the depth (no stick-up),
 with the skin resistance spread evenly over it.
@@ -29,10 +29,10 @@ from typing import List, Optional
 
 import numpy as np
 
-from wave_equation.hammer import Hammer
+from wave_equation.hammer import Hammer, diesel_warning
 from wave_equation.cushion import Cushion
 from wave_equation.pile_model import discretize_pile, PileModel
-from wave_equation.soil_model import SoilSetup
+from wave_equation.soil_model import SoilSetup, quake_weighting_choice
 from wave_equation.time_integration import simulate_blow, BlowResult
 
 #: 120 blows/ft in blows per metre, 120 / 0.3048 (GEC-12 Vol 2 p. 161;
@@ -81,11 +81,19 @@ class DrivabilityResult:
         Depth (m) at which refusal occurs, if any. 0 if no refusal.
     refusal_blow_count : float
         The blow count (blows/m) above which the study called refusal.
+    choices : list of dict
+        The weights of the quakes in the permanent set, with the other
+        weightings' blow counts (``quake_weighting_choice``; none with
+        equal quakes).
+    warnings : list of str
+        A diesel hammer's (``diesel_warning``).
     """
     points: List[DrivabilityPoint] = field(default_factory=list)
     can_drive: bool = True
     refusal_depth: float = 0.0
     refusal_blow_count: float = REFUSAL_BLOWS_PER_M
+    choices: list = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Text summary of drivability study."""
@@ -119,7 +127,7 @@ class DrivabilityResult:
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
-        return {
+        out = {
             "can_drive": self.can_drive,
             "refusal_depth_m": self.refusal_depth,
             "refusal_blow_count_per_m": self.refusal_blow_count,
@@ -135,6 +143,11 @@ class DrivabilityResult:
                 for p in self.points
             ],
         }
+        if self.choices:
+            out["choices"] = list(self.choices)
+        if self.warnings:
+            out["warnings"] = list(self.warnings)
+        return out
 
 
 def drivability_study(
@@ -204,6 +217,7 @@ def drivability_study(
         skin_fractions = [0.5] * len(depths)
 
     points = []
+    toe_peaks = []
     can_drive = True
     refusal_depth = 0.0
 
@@ -241,14 +255,22 @@ def drivability_study(
             max_tens_stress=result.max_tension_stress,
         )
         points.append(pt)
+        toe_peaks.append((skin_fractions[i], result.max_toe_displacement))
 
         if bc > refusal_blow_count and can_drive:
             can_drive = False
             refusal_depth = depth
 
+    quakes = quake_weighting_choice(
+        quake_side, quake_toe, toe_peaks,
+        " at depths " + " / ".join(f"{d:g}" for d in depths) + " m"
+        if len(depths) > 1 else "")
+    warning = diesel_warning(hammer)
     return DrivabilityResult(
         points=points,
         can_drive=can_drive,
         refusal_depth=refusal_depth,
         refusal_blow_count=refusal_blow_count,
+        choices=[quakes] if quakes else [],
+        warnings=[warning] if warning else [],
     )

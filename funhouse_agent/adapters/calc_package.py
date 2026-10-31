@@ -2067,12 +2067,16 @@ def _thin_curves(d: dict, limit: int = None) -> None:
 def _generate_wave_equation_package(params: dict) -> dict:
     run = _run_tool("wave_equation_package", params)
     result, analysis = run.out
+    extra = {"n_points": len(result.blow_counts),
+             **_bearing_graph_numbers(result)}
+    # A diesel hammer's warning travels with the package (GM-294 review)
+    if getattr(result, "warnings", None):
+        extra["warnings"] = list(result.warnings)
     return _build_response(
         "wave_equation", result, analysis, params,
         run=run,
         analysis_type="Wave Equation",
-        extra={"n_points": len(result.blow_counts),
-               **_bearing_graph_numbers(result)},
+        extra=extra,
     )
 
 

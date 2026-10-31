@@ -40,12 +40,18 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
 ## Key Notes
 - The model simplifies GEC-12 Vol 2 Fig. 12-2 (p. 157): one cushion spring
   and the helmet's weight lumped with the first pile segment, where GEC-12
-  has a hammer cushion, a helmet mass and a pile cushion. The head stress
-  therefore carries the helmet's inertia.
+  has a hammer cushion, a helmet mass and a pile cushion. The pile-top
+  force is the cushion force less the helmet's inertia (GM-294 review; it
+  was the cushion force, and Example 6's Vulcan 014 read 52.5 ksi against
+  Fig. 12-15's about 29; now 28.8).
 - `hammer_type` is a label (result, calc package): every hammer is a rigid
   ram striking at sqrt(2 g h efficiency) (GEC-12 Vol 2 Eq. 15-1, p. 358,
   with the stroke times the efficiency, p. 205); diesel combustion is not
-  modelled. Efficiencies: 0.67 air, 0.80 diesel (p. 185). Ram weights,
+  modelled, so a diesel strikes with its rated energy at every resistance
+  and its result warns (`diesel_warning`): p. 206 calls an optimistic
+  stroke non-conservative, and Example 6's ICE 42-S gives 50 and 103
+  blows/ft here against 99 and 209 (p. 182). The diesel cycle is GM-29.
+  Efficiencies: 0.67 air, 0.80 diesel (p. 185). Ram weights,
   strokes and rated energies are GEC-12 Vol 2 Appendix C's (pp. 519-536),
   since GM-294: the Vulcan 08 and 010 strokes were 0.914 m for 3.25 ft, the
   diesels' strokes and energies were lower, and the ICE I-30V2 and I-46V2
@@ -62,8 +68,11 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
   stateful per blow; `simulate_blow` creates fresh springs each blow.
 - Permanent set per blow, GEC-12 Vol 2 p. 158: the maximum pile toe
   displacement less a weighted average of the shaft and toe quakes. The page
-  gives no weights; the shares of R_ult on the shaft and at the toe are
-  taken (`SoilSetup.weighted_quake`). Before GM-294 the set was the toe
+  gives no weights; the shares of R_ult on the shaft and at the toe are the
+  module's assumption (`SoilSetup.weighted_quake`), stated in the results'
+  choices with the blow counts of a plain average and of the toe quake
+  alone (`quake_weighting_choice`; Example 6 at 0.40 in: 92.6, 63 and 303
+  blows/ft, GRLWEAP 94, p. 182). Before GM-294 the set was the toe
   spring's plastic offset, max(D_max,toe − Q_toe, 0): the same with equal
   quakes, but zero (refusal) for a pile with no toe resistance.
 - Smith damping (`damping_model` on SoilSetup / generate_bearing_graph /

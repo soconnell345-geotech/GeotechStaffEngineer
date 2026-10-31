@@ -11,7 +11,8 @@ one cushion spring, the helmet's mass lumped with the first pile
 segment, the pile as lumped masses and springs about 1 m long (p. 155),
 and Smith soil springs and dashpots on every segment and at the toe.
 GEC-12's model has a hammer cushion, a separate helmet mass and a pile
-cushion; this one has a single cushion and no separate helmet.
+cushion; this one has a single cushion and no separate helmet. The
+pile-top force is the cushion force less the helmet's inertia.
 
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
@@ -60,6 +61,9 @@ class BlowResult:
         Number of time steps computed.
     R_ultimate : float
         Ultimate resistance used (kN).
+    max_toe_displacement : float
+        Maximum pile toe displacement (m), from which the permanent set
+        subtracts the weighted quake.
     """
     permanent_set: float = 0.0
     max_compression_stress: float = 0.0
@@ -72,6 +76,7 @@ class BlowResult:
     pile_toe_displacement: np.ndarray = field(default_factory=lambda: np.array([]))
     n_steps: int = 0
     R_ultimate: float = 0.0
+    max_toe_displacement: float = 0.0
 
 
 #: Smith's "safety factor against numerical instability": the critical
@@ -185,7 +190,8 @@ def simulate_blow(
     # Mass array (kg)
     mass = np.zeros(n_dof)
     mass[0] = hammer.ram_mass  # Ram
-    mass[1] = pile.masses[0] + helmet_weight / 9.81 * 1000  # Helmet + first pile segment
+    m_helmet = helmet_weight / 9.81 * 1000  # kg
+    mass[1] = pile.masses[0] + m_helmet  # Helmet + first pile segment
     mass[2:] = pile.masses[1:]
 
     # State arrays
@@ -292,10 +298,15 @@ def simulate_blow(
         if disp[n] > max_toe_disp:
             max_toe_disp = disp[n]
 
-        # Cushion check: pile head must track with head force
-        # Also track the first pile spring force for stress
+        # The force at the pile top: the cushion force less the helmet's
+        # inertia (the helmet moves with the first segment), so the pile-top
+        # stress is the pile's own, as GEC-12 Vol 2 Fig. 12-15 (p. 184)
+        # plots it. Until GM-294's review it was the cushion force, which
+        # also accelerates the helmet: GEC-12 Example 6's Vulcan 014 read
+        # 52.5 ksi against the figure's about 29.
+        F_top = F_cushion - m_helmet * accel[1]  # N
         if n > 0:
-            F_head = F_cushion / 1000  # N -> kN
+            F_head = F_top / 1000  # N -> kN
             if F_head > max_comp_force:
                 max_comp_force = F_head
                 stress = F_head / pile.segment_areas[0]  # kN / m^2 = kPa
@@ -304,7 +315,7 @@ def simulate_blow(
         # Store results at intervals
         if step % store_interval == 0 and store_idx < n_store:
             time_arr[store_idx] = t
-            head_force_arr[store_idx] = F_cushion / 1000  # N -> kN
+            head_force_arr[store_idx] = F_top / 1000  # N -> kN
             head_vel_arr[store_idx] = vel[1]
             toe_disp_arr[store_idx] = disp[n]
             store_idx += 1
@@ -315,9 +326,10 @@ def simulate_blow(
 
     # Permanent set per blow, as GEC-12 Vol 2 Sec. 12.3, p. 158 prints it:
     # "calculated by subtracting a weighted average of the shaft and toe
-    # quakes from the maximum pile toe displacement". The weights are the
-    # shares of R_ult on the shaft and at the toe (the reading taken; the
-    # page names no weights): soil.weighted_quake. With equal quakes this
+    # quakes from the maximum pile toe displacement". The page names no
+    # weights; the shares of R_ult on the shaft and at the toe are this
+    # module's assumption (soil.weighted_quake; the results' choices give
+    # the blow counts of the other weightings). With equal quakes this
     # is the toe spring's plastic offset, max(D_max,toe - Q_toe, 0), which
     # the module took before GM-294; that offset is zero for a pile with
     # no toe resistance, whatever it penetrated.
@@ -341,4 +353,5 @@ def simulate_blow(
         pile_toe_displacement=toe_disp_arr,
         n_steps=step + 1,
         R_ultimate=soil.R_ultimate,
+        max_toe_displacement=max_toe_disp,
     )

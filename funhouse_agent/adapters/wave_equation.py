@@ -7,6 +7,8 @@ from wave_equation import (
     discretize_pile, SoilSetup, simulate_blow, generate_bearing_graph, drivability_study,
 )
 from wave_equation.drivability import REFUSAL_BLOWS_PER_M
+from wave_equation.hammer import diesel_warning
+from wave_equation.soil_model import quake_weighting_choice
 
 #: Steel, 492 lb/ft3 (GEC-12 Vol 2 p. 462), the module's default.
 _STEEL_UNIT_WEIGHT = 77.3
@@ -170,13 +172,24 @@ def _run_single_blow(params):
     )
     perm_set = result.permanent_set
     blow_count = round(1.0 / perm_set, 1) if perm_set > 0 else float("inf")
-    return {
+    out = {
         "permanent_set_mm": round(perm_set * 1000, 3),
         "blow_count_per_m": blow_count,
         "max_pile_stress_MPa": round(result.max_compression_stress / 1000, 2),
         "max_tension_stress_MPa": round(result.max_tension_stress / 1000, 2),
         "max_pile_force_kN": round(result.max_pile_force, 1),
     }
+    # The quake weights no page prints, with the other weightings' blow
+    # counts, and a diesel's warning (GM-294 review).
+    quakes = quake_weighting_choice(
+        soil.quake_side, soil.quake_toe,
+        [(soil.skin_fraction, result.max_toe_displacement)])
+    if quakes:
+        out["choices"] = [quakes]
+    warning = diesel_warning(hammer)
+    if warning:
+        out["warnings"] = [warning]
+    return out
 
 
 METHOD_REGISTRY = {
@@ -193,7 +206,7 @@ _HAMMER_CUSHION_DOC = {
     "stroke": {"type": "float", "required": False, "description": "Custom hammer stroke (m)."},
     "efficiency": {"type": "float", "required": False, "default": 0.67, "description": "Custom hammer efficiency: the share of the potential ram energy (ram weight x stroke) that reaches the ram as kinetic energy at impact (GEC-12 Vol 2 (FHWA-NHI-16-009) Sec. 12.6.2, p. 205). GEC-12 Vol 2 prints 0.67 for an air hammer and 0.80 for an open end diesel (Example 6, p. 185), and say 0.95 for a hydraulic hammer whose ram kinetic energy is measured (p. 205). Default 0.67."},
     "hammer_custom_name": {"type": "str", "required": False, "default": "Custom", "description": "Custom hammer label."},
-    "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type: a label in the result and calc package only. Every type is modelled as a rigid ram striking at v = sqrt(2 g stroke efficiency); a diesel hammer's combustion pressure is not modelled. Give the type's losses through efficiency (GEC-12 Vol 2 (FHWA-NHI-16-009) Sec. 12.6.2, p. 205: relatively high, say 0.95, for a hydraulic hammer whose ram kinetic energy is measured and displayed)."},
+    "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type: a label in the result and calc package only. Every type is modelled as a rigid ram striking at v = sqrt(2 g stroke efficiency); a diesel hammer's combustion pressure is not modelled, and its result carries a warning (GEC-12 Vol 2 p. 206: its stroke rises with the resistance, and too high a stroke gives non-conservative nominal resistances). Give the type's losses through efficiency (GEC-12 Vol 2 (FHWA-NHI-16-009) Sec. 12.6.2, p. 205: relatively high, say 0.95, for a hydraulic hammer whose ram kinetic energy is measured and displayed)."},
     "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m): about 1 m (GEC-12 Vol 2 Sec. 12.3, p. 155; GRLWEAP's 3.3 ft, p. 213). Shorter segments for stiff, uncushioned driving systems (p. 210)."},
     "cushion_stiffness": {"type": "float", "required": False, "default": 500000.0, "description": "Cushion stiffness (kN/m). Or give cushion_area + cushion_thickness + cushion_E. The model has one cushion spring, between the ram and the helmet (whose weight is lumped with the pile head); GEC-12 Vol 2 Fig. 12-2 (p. 157) has a hammer cushion and a pile cushion with the helmet between. Two materials in series: 1/k = 1/k1 + 1/k2 (p. 209). Default 500,000 kN/m when neither is given (not printed in a held reference)."},
     "cushion_area": {"type": "float", "required": False, "description": "Cushion area (m2) — with cushion_thickness and cushion_E."},
@@ -238,10 +251,12 @@ METHOD_INFO = {
         },
         "parameter_aliases": {"R_ultimate": "R_total"},
         "returns": {
-            "permanent_set_mm": "Pile penetration per blow (mm): maximum pile toe displacement less the weighted average of the shaft and toe quakes (GEC-12 Vol 2 p. 158).",
+            "permanent_set_mm": "Pile penetration per blow (mm): maximum pile toe displacement less an average of the shaft and toe quakes (GEC-12 Vol 2 p. 158), weighted by the shares of R_ult on the shaft and at the toe: the module's assumption, since the page names no weights (choices gives the blow counts of a plain average and of the toe quake alone).",
             "blow_count_per_m": "Blows per meter.",
-            "max_pile_stress_MPa": "Max compressive stress (MPa).",
+            "max_pile_stress_MPa": "Max compressive stress in the pile (MPa), the pile top's without the helmet's inertia.",
             "max_tension_stress_MPa": "Max tensile stress (MPa).",
+            "choices": "The quake weights (when the quakes differ).",
+            "warnings": "A diesel hammer's (it is run at its rated energy).",
         },
     },
     "bearing_graph": {
@@ -259,7 +274,7 @@ METHOD_INFO = {
             **_SOIL_DOC,
             **_HAMMER_CUSHION_DOC,
         },
-        "returns": {"R_values_kN": "Ultimate resistances analysed.", "blow_counts_per_m": "Blow count per R_ult (1/set; 1,000,000 = refusal).", "permanent_sets_m": "Set per blow: maximum pile toe displacement less the weighted average of the shaft and toe quakes (GEC-12 Vol 2 p. 158).", "max_comp_stresses_kPa": "Maximum compression stress per R_ult.", "max_tens_stresses_kPa": "Maximum tension stress per R_ult."},
+        "returns": {"R_values_kN": "Ultimate resistances analysed.", "blow_counts_per_m": "Blow count per R_ult (1/set; 1,000,000 = refusal).", "permanent_sets_m": "Set per blow: maximum pile toe displacement less an average of the shaft and toe quakes (GEC-12 Vol 2 p. 158), weighted by the shares of R_ult on the shaft and at the toe: the module's assumption, since the page names no weights (choices gives the blow counts of a plain average and of the toe quake alone).", "max_comp_stresses_kPa": "Maximum compression stress in the pile per R_ult.", "max_tens_stresses_kPa": "Maximum tension stress per R_ult.", "choices": "The quake weights (when the quakes differ).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
     },
     "drivability": {
         "category": "Wave Equation",
@@ -274,7 +289,7 @@ METHOD_INFO = {
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": _DAMPING_MODEL_DOC},
             **_HAMMER_CUSHION_DOC,
         },
-        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data."},
+        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "warnings": "A diesel hammer's (it is run at its rated energy)."},
     },
     "list_available_hammers": {
         "category": "Wave Equation",

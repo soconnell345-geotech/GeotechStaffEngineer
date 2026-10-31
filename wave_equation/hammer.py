@@ -158,3 +158,26 @@ def list_hammers() -> list:
         Sorted hammer names.
     """
     return sorted(_HAMMER_DB.keys())
+
+
+def diesel_warning(hammer: Hammer) -> Optional[str]:
+    """The warning a run with a diesel hammer carries, or None (GM-294
+    review). A diesel is run here as a rigid ram at its rated energy at
+    every resistance; GEC-12 Vol 2 Sec. 12.6.3 (p. 206) says its stroke
+    rises with the soil resistance and that an optimistic stroke gives
+    non-conservative nominal resistances. On GEC-12 Example 6 (p. 182)
+    this model gives the ICE 42-S 50 and 103 blows/ft where GEC-12's
+    wave equation analysis gives 99 and 209."""
+    if hammer.hammer_type != "diesel":
+        return None
+    return (f"{hammer.name} is a diesel hammer, run here as a rigid ram "
+            f"striking with {hammer.energy:.1f} kN-m times efficiency "
+            f"{hammer.efficiency:.2f} at every resistance: no combustion, "
+            "and no stroke that changes with the resistance (GEC-12 Vol 2 "
+            "Sec. 12.6.3, p. 206: \"The diesel hammer stroke increases when "
+            "the soil resistance ... increases\"). An optimistic stroke "
+            "\"could lead to high stroke predictions and, therefore, "
+            "non-conservative predictions of nominal resistance\" (p. 206): "
+            "the blow counts here are likely low. On GEC-12's Example 6 "
+            "(p. 182) this model gives the ICE 42-S 50 and 103 blows/ft "
+            "where GEC-12's wave equation analysis gives 99 and 209.")
