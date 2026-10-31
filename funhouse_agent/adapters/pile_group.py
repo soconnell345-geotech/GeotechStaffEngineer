@@ -327,6 +327,25 @@ def _run_group_efficiency(params):
                       "and/or large widths)")
                    + f"; B = {B:.2f} m and Z = {Z:.2f} m to the outer faces "
                      "of the outer piles (GEC-12 Fig. 7-31)")))
+        # UFC App. B-5.4 measures the block centre to centre of the outer
+        # piles; given as the other reading, with its resistance
+        b_cc = sorted(((params["n_cols"] - 1) * sx,
+                       (params["n_rows"] - 1) * sy))
+        centres = ("centre to centre of the outer piles, as UFC 3-220-20 "
+                   "App. B-5.4 (pp. 637-638) takes them (18 ft for its 7x7 "
+                   "group of 1 ft piles at 3 ft)")
+        if b_cc[0] > 0:
+            r_cc = block_failure_resistance(b_cc[0], b_cc[1],
+                                            params["pile_length"], su1, su2)
+            centres += (f": B = {b_cc[0]:.2f} m, Z = {b_cc[1]:.2f} m, "
+                        f"nominal {r_cc['R_ng_kN']:.1f} kN")
+        choices.append(choice(
+            "group width and length B and Z (block failure)",
+            f"to the outer faces of the outer piles: B = {B:.2f} m, "
+            f"Z = {Z:.2f} m", MODULE,
+            basis="GEC-12 Fig. 7-31; GEC-12 Vol. III p. 62 takes them "
+                  "'from exterior pile edge to exterior pile edge'",
+            alternatives=[centres]))
         one = [n for n in ("su1", "su2") if params.get(n) is None]
         if one:
             choices.append(choice(
@@ -348,9 +367,14 @@ def _run_group_efficiency(params):
         basis = (
             "AASHTO as GEC-12 prints it (pp. 367, 370): 0.8, 0.4 and 0.3 "
             "for the lead, second and third and later rows at 3b, 1.0, "
-            "0.85 and 0.7 at 5b, interpolated between; to 1.00 at 6b, UFC "
-            "3-220-20 Table 6-38's extension (p. 465). GEC-12 p. 365: "
-            "consider whether lower values, as in its Table 7-23, apply"
+            "0.85 and 0.7 at 5b, interpolated between. From 5b, a straight "
+            "line to 1.00 at 6b: the module's reading of UFC 3-220-20 p. "
+            "465, 'AASHTO (2020) guidance, extrapolated to a pile spacing "
+            "of 6·b' (Table 6-38, p. 466, prints 1.00 for s/b > 6). The "
+            "sentence could also mean AASHTO's 3b-5b line carried on to "
+            "6b, which gives 0.9 for the third and later rows at 6b (rows "
+            "1 and 2 reach 1.0 by then). GEC-12 p. 365: consider whether "
+            "lower values, as in its Table 7-23, apply"
             if method == "aashto" else
             "Mokwa (1999), UFC 3-220-20 Table 6-38: p_m = a (s/b) + c "
             "<= 1 by row")
@@ -361,9 +385,23 @@ def _run_group_efficiency(params):
             basis=basis,
             alternatives=[f"p_multiplier_method '{m}': "
                           f"{p_multiplier(params['row_position'], sd, m):.3f}"
-                          for m in P_MULTIPLIER_METHODS if m != method]))
+                          for m in P_MULTIPLIER_METHODS if m != method]
+            + _pm_line_to_6b(params["row_position"], sd, pm, method)))
     results["choices"] = choices
     return results
+
+
+def _pm_line_to_6b(row: int, sd: float, pm: float, method: str) -> list:
+    """The other reading of UFC p. 465 between 5b and 6b, AASHTO's 3b-5b
+    line carried on (at most 1), where it differs from the module's."""
+    if method != "aashto" or not 5.0 < sd <= 6.0:
+        return []
+    p3, p5 = p_multiplier(row, 3.0), p_multiplier(row, 5.0)
+    line = min(p5 + (p5 - p3) / 2.0 * (sd - 5.0), 1.0)
+    if abs(line - pm) < 5e-4:
+        return []
+    return [f"AASHTO's 3b-5b line carried on to s/D = {sd:.2f} (the other "
+            f"reading of UFC 3-220-20 p. 465): {line:.3f}"]
 
 
 # Meyerhof (1976) SPT group-settlement aliases (accept a few common synonyms

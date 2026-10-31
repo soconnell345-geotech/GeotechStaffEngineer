@@ -5,25 +5,27 @@ ch. 6) print them (checked against the print in GM-286,
 ``module_work/gm286/CHECK.md``).
 
 - :func:`group_efficiency_factor`: the group efficiency factor eta_g,
-  GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (driven piles, pp. 282-284) and UFC
-  3-220-20 Table 6-26 (p. 432; driven piles, drilled shafts, CFAs, DDPs,
-  micropiles).
+  GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (driven piles, pp. 282-284) and
+  UFC 3-220-20 Table 6-26 (p. 432; driven piles, drilled shafts, CFAs,
+  DDPs, micropiles).
 - :func:`block_failure_resistance`: the group's nominal resistance to
-  block failure, GEC-12 Eqs. 7-36 and 7-37 (p. 286); UFC Eqs. 6-38 and
-  6-39 print the same.
+  block failure, GEC-12 Eqs. 7-36 and 7-37 (p. 286); UFC 3-220-20 Eqs.
+  6-38 and 6-39 print the same.
 - :func:`p_multiplier`: the lateral p-multiplier of a row, as AASHTO
-  prints it (GEC-12 pp. 367 and 370; UFC Table 6-38, p. 466), or by
-  Mokwa's (1999) equations (UFC Table 6-38).
+  prints it (GEC-12 pp. 367 and 370; UFC 3-220-20 Table 6-38, p. 466),
+  or by Mokwa's (1999) equations (UFC 3-220-20 Table 6-38).
 - :func:`group_settlement_equivalent_raft`: the equivalent footing,
   GEC-12 Sec. 7.3.5.3 (Eq. 7-55, Fig. 7-44); UFC Sec. 6-5.8.4.
 - :func:`meyerhof_group_settlement`: Meyerhof (1976), GEC-12 Eqs. 7-50
-  to 7-52 (p. 319); UFC Eqs. 6-46, 6-47.
+  to 7-52 (p. 319); UFC 3-220-20 Eqs. 6-46, 6-47.
 
 All units are SI: meters, kPa, kN.
 """
 
 import math
 from typing import Optional
+
+from geotech_common.choices import choice
 
 #: 1 ksf in kPa: GEC-12 and UFC set the eta_g rows at su = 2 ksf.
 _KPA_PER_KSF = 47.88
@@ -120,15 +122,16 @@ def group_efficiency_factor(soil_type: str, s_over_b: float,
 
     eta_g = R_ng / (n R_n) (GEC-12 Eq. 7-35); the group's resistance is
     the lesser of n eta_g R_n and its resistance to block failure (GEC-12
-    p. 284 step 4; UFC Eq. 6-37), see :func:`block_failure_resistance`.
+    p. 284 step 4; UFC 3-220-20 Eq. 6-37), see
+    :func:`block_failure_resistance`.
 
     Driven piles, GEC-12 Secs. 7.2.2.1 and 7.2.2.2 (pp. 282, 284):
     cohesionless soil not underlain by a weak deposit, 1.0 (jetting or
     predrilling "can result in group efficiencies less than 1", no value
     printed); clay with su < 2 ksf and the cap not in firm contact with
     the ground, 0.65 at s = 2.5 diameters to 1.0 at 6, linear between;
-    su < 2 ksf with the cap in firm contact, or su above 2 ksf, 1.0. UFC
-    3-220-20 Table 6-26 (p. 432) prints the same for driven piles and
+    su < 2 ksf with the cap in firm contact, or su above 2 ksf, 1.0.
+    UFC 3-220-20 Table 6-26 (p. 432) prints the same for driven piles and
     the other pile types' columns.
 
     Parameters
@@ -150,7 +153,7 @@ def group_efficiency_factor(soil_type: str, s_over_b: float,
         lower eta_g) is taken and the result says so (``su_taken``).
     pile_type : str
         'driven' (default; GEC-12's subject), 'drilled_shaft', 'cfa',
-        'ddp' or 'micropile': the column of UFC Table 6-26.
+        'ddp' or 'micropile': the column of UFC 3-220-20 Table 6-26.
 
     Returns
     -------
@@ -258,7 +261,10 @@ def block_failure_resistance(B: float, Z: float, D: float,
     B, Z : float
         Width and length of the pile group (m), to the outer faces of the
         outer piles (GEC-12 Fig. 7-31; Vol. III p. 62 takes them "from
-        exterior pile edge to exterior pile edge"). B is the smaller; given
+        exterior pile edge to exterior pile edge"). UFC 3-220-20 App. B-5.4
+        (pp. 637-638) takes them centre to centre of the outer piles
+        instead (18 ft for its 7x7 group of 1 ft piles at 3 ft), the
+        smaller block; give those to follow it. B is the smaller; given
         the other way round, they are swapped.
     D : float
         Pile embedded length (m).
@@ -318,7 +324,9 @@ def group_plan_dimensions(n_rows: int, n_cols: int, spacing_x: float,
                           spacing_y: float, pile_diameter: float) -> tuple:
     """Width and length of a rectangular group (m), to the outer faces of
     the outer piles (GEC-12 Fig. 7-31): (n_cols - 1) s_x + d along x and
-    (n_rows - 1) s_y + d along y, the smaller first."""
+    (n_rows - 1) s_y + d along y, the smaller first. UFC 3-220-20 App.
+    B-5.4 (pp. 637-638) takes them centre to centre of the outer piles,
+    (n - 1) s."""
     if pile_diameter <= 0:
         raise ValueError(f"Pile diameter must be positive, got {pile_diameter}")
     bx = (n_cols - 1) * spacing_x + pile_diameter
@@ -346,8 +354,9 @@ def block_failure_capacity(n_rows: int, n_cols: int,
 # as GEC-12 prints them (pp. 367, 370: "0.8 for the lead row, 0.4 for the
 # second row, and 0.3 for the third and subsequent rows" at 3b; 1.0, 0.85
 # and 0.7 at 5b; "Interpolate for center to center pile spacing between 3b
-# and 5b"), and 1.00 at s/b = 6, UFC Table 6-38's "AASHTO (2020) guidance,
-# extrapolated to a pile spacing of 6 b" (p. 465).
+# and 5b"), and 1.00 at s/b = 6, the module's reading of UFC p. 465's
+# "AASHTO (2020) guidance, extrapolated to a pile spacing of 6 b" (Table
+# 6-38, p. 466); see p_multiplier for the other reading.
 _PM_AASHTO = ((3.0, (0.80, 0.40, 0.30, 0.30)),
               (5.0, (1.00, 0.85, 0.70, 0.70)),
               (6.0, (1.00, 1.00, 1.00, 1.00)))
@@ -364,8 +373,13 @@ def p_multiplier(row_position: int, spacing_diameter_ratio: float,
     'aashto' (default): AASHTO's p_m as GEC-12 prints it (pp. 367, 370)
     at s/b = 3 (0.80, 0.40, 0.30 for rows 1, 2, 3 and higher) and 5
     (1.00, 0.85, 0.70), interpolated linearly between; from 5 to 6
-    interpolated to 1.00 at 6 and 1.00 beyond, UFC 3-220-20 Table 6-38's
-    extension to 6b (p. 465), Table 6-38 printing 1.00 for s/b > 6.
+    interpolated to 1.00 at 6 and 1.00 beyond. That is the module's
+    reading of UFC 3-220-20 p. 465, "AASHTO (2020) guidance, extrapolated
+    to a pile spacing of 6 b, is provided in Table 6-38" (p. 466, printing
+    1.00 for s/b > 6). The sentence could also mean AASHTO's 3b-5b line
+    carried on to 6b, which gives 0.90 for the third and later rows at 6b
+    (rows 1 and 2 reach 1.00 by then); the two readings differ only
+    between 5b and 6b.
     GEC-12 Vol. III takes 0.90, 0.625 and 0.5 at 4b (pp. 56, 137).
 
     'mokwa': Mokwa (1999), UFC Table 6-38: p_m = 0.06 (s/b) + 0.64,
@@ -433,9 +447,9 @@ def group_settlement_equivalent_raft(
 
         Bg = (n_cols - 1) * s + d,   Lg = (n_rows - 1) * s + d
 
-    The load spreads at 2V:1H (Fig. 7-44's 1H:2V; GEC-12 Eq. 7-55, UFC
-    Eq. 6-51; the text of p. 320 says "side slopes at 30 deg", which the
-    figure and the equation do not take):
+    The load spreads at 2V:1H (Fig. 7-44's 1H:2V; GEC-12 Eq. 7-55,
+    UFC 3-220-20 Eq. 6-51; the text of p. 320 says "side slopes at 30
+    deg", which the figure and the equation do not take):
 
         delta_sigma(z) = Q / [(Bg + z) * (Lg + z)]
 
@@ -450,7 +464,12 @@ def group_settlement_equivalent_raft(
     typically selected where the change in stress is less than 10% of the
     bearing stress of the equivalent footing"), or to
     ``influence_depth_m`` where given (the compressible layer's base, for
-    one). GEC-12 Fig. 7-46 and UFC Table 6-32 place the footing elsewhere
+    one). GEC-12's own step 1c (Sec. 7.3.5.3, p. 324) and UFC App. B-5.7
+    (p. 641, "as recommended by FHWA (2016)") sum instead to where the
+    stress increase is less than 10 % of the existing vertical effective
+    stress; this function takes no effective-stress profile, so that depth
+    is given as ``influence_depth_m``. ``choices`` says which was taken.
+    GEC-12 Fig. 7-46 and UFC 3-220-20 Table 6-32 place the footing elsewhere
     for other profiles (soft over firm clay, toe-bearing piles over soft
     clay, sand over clay, layered soils); this function takes the uniform
     case.
@@ -484,7 +503,8 @@ def group_settlement_equivalent_raft(
         ``settlement_m``, ``settlement_mm``, ``Bg_m``, ``Lg_m``,
         ``raft_depth_m`` (below the top of the embedded length),
         ``influence_depth_m``, ``max_stress_kPa`` (the footing's bearing
-        stress).
+        stress), ``choices`` (the depth summed to: its rule, given or
+        default, and the other rule).
 
     References
     ----------
@@ -534,6 +554,28 @@ def group_settlement_equivalent_raft(
     # Bearing stress of the equivalent footing (z = 0)
     max_stress = load_kN / (Bg * Lg)
 
+    # --- The depth's rule: UFC p. 449 by default, GEC-12 step 1c the other ---
+    ufc_rule = (f"{_influence_depth_10pct(Bg, Lg):.2f} m, where the stress "
+                f"increase falls below 10 % of the equivalent footing's "
+                f"bearing stress (UFC 3-220-20 Sec. 6-5.8.4.3, p. 449)")
+    gec_rule = ("where the stress increase falls below 10 % of the existing "
+                "vertical effective stress (FHWA GEC-12 Sec. 7.3.5.3 step "
+                "1c, p. 324; UFC 3-220-20 App. B-5.7, p. 641): work that "
+                "depth out from the effective-stress profile and give it as "
+                "influence_depth_m")
+    given = influence_depth_m is not None
+    choices = [choice(
+        "depth below the equivalent footing summed to",
+        f"{influence_depth:.2f} m, as given" if given else ufc_rule,
+        "given" if given else "default",
+        basis=("UFC 3-220-20's rule is the default. GEC-12's step 1c, the "
+               "procedure this method follows, and UFC's own worked example "
+               "(App. B-5.7, 'as recommended by FHWA (2016)') take 10 % of "
+               "the existing vertical effective stress instead; this "
+               "function takes no effective-stress profile, so that depth "
+               "is given as influence_depth_m"),
+        alternatives=([ufc_rule] if given else []) + [gec_rule])]
+
     return {
         "settlement_m": round(settlement, 6),
         "settlement_mm": round(settlement * 1000.0, 3),
@@ -542,6 +584,7 @@ def group_settlement_equivalent_raft(
         "raft_depth_m": round(raft_depth, 4),
         "influence_depth_m": round(influence_depth, 4),
         "max_stress_kPa": round(max_stress, 3),
+        "choices": choices,
     }
 
 

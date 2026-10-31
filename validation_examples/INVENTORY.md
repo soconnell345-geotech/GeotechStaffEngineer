@@ -1044,7 +1044,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 ## V-060 GEC-12 Vol 3 North Abutment and UFC 3-220-20 Appendix B: pile groups
 - Source: GEC-12 (FHWA-NHI-16-009) Vol 3 Tables D-11 to D-14 (pp. 47-49),
   Fig. D-25, pp. 50, 56, 136, 137 and 203, Table D-23 (p. 64); UFC 3-220-20
-  (2025) Appendix B-5.4 (pp. 636-638) and Table B-32 (p. 643); read from
+  (2025) Appendix B-5.4 (pp. 636-638) and Table B-32 (p. 646); read from
   `geotech-references/docs/`.
 - Target: `pile_group`: `analyze_vertical_group_simple` and
   `analyze_group_6dof` (equal springs), `p_multiplier` (AASHTO and Mokwa),

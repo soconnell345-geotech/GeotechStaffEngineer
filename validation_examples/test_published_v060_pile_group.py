@@ -25,7 +25,7 @@ Sources, read from ``geotech-references/docs/``:
 * UFC 3-220-20 (2025) Appendix B-5.4 (pp. 636-638): block failure of a 7x7
   group of 1 ft square piles, 60 ft long, su1 = 1.33 ksf along the sides,
   su2 = 3 ksf below, B = Z = 18 ft, Nc = 10 limited to 9: R = 14,494 kips,
-  0.6 R = 8,696 kips. Table B-32 (p. 643): Mokwa's (1999) p-multipliers at
+  0.6 R = 8,696 kips. Table B-32 (p. 646): Mokwa's (1999) p-multipliers at
   s/b = 3, rows 1 to 4 and beyond, weighted over 7 rows.
 
 Print discrepancies, kept as printed: Table D-13's Strength I back row is
@@ -193,8 +193,9 @@ def test_ufc_b_5_4_block_failure():
 
 
 def test_ufc_table_b_32_mokwa():
-    """UFC 3-220-20 Table B-32 at s/b = 3: 0.82, 0.67, 0.58 and 0.52 for
-    rows 4 to 7; their average over the 7 rows 0.593."""
+    """UFC 3-220-20 Table B-32 (p. 646) at s/b = 3: 0.82, 0.67 and 0.58
+    for rows 1 to 3 and 0.52 for rows 4 to 7; their average over the 7
+    rows 0.593."""
     pm = [p_multiplier(r, 3.0, "mokwa") for r in range(1, 8)]
     assert pm == pytest.approx([0.82, 0.67, 0.58, 0.52, 0.52, 0.52, 0.52])
     assert sum(pm) / 7 == pytest.approx(0.593, abs=0.0005)

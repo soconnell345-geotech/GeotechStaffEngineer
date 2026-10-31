@@ -327,6 +327,25 @@ class TestGroupSettlement:
         )
         assert result["influence_depth_m"] == 6.0
 
+    def test_influence_depth_rule_in_choices(self):
+        """UFC p. 449's rule the default; GEC-12 step 1c's (10 % of the
+        existing vertical effective stress) the other, given as
+        influence_depth_m."""
+        kw = dict(n_rows=3, n_cols=4, spacing=1.5, pile_diameter=0.3,
+                  pile_length=15.0, load_kN=2000, soil_modulus_kPa=30000)
+        c = group_settlement_equivalent_raft(**kw)["choices"][0]
+        assert c["how"] == "default"
+        assert "bearing stress" in c["chosen"] and "p. 449" in c["chosen"]
+        other = c["alternatives"][-1]
+        assert "existing vertical effective stress" in other
+        assert "p. 324" in other and "p. 641" in other
+        assert "influence_depth_m" in other
+        c = group_settlement_equivalent_raft(
+            **kw, influence_depth_m=6.0)["choices"][0]
+        assert c["how"] == "given" and c["chosen"] == "6.00 m, as given"
+        assert any("p. 449" in a for a in c["alternatives"])
+        assert any("p. 324" in a for a in c["alternatives"])
+
     def test_max_stress_at_raft(self):
         """Stress at z=0: Q / (Bg * Lg)."""
         result = group_settlement_equivalent_raft(

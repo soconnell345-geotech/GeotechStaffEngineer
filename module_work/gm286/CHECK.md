@@ -52,7 +52,12 @@ block failure in clay; the lateral p-multiplier; group settlement by Meyerhof
   "Block Failure, phi_bl | Cohesive | 0.60"; UFC Table 6-27 (p. 433, AASHTO
   2020): driven piles 0.60, drilled shafts 0.55, micropiles 0.60 (reduced
   by 20 % in marginal ground), each with fine-grained soil below the group.
-  No held page prints one for CFA or drilled displacement piles.
+  No held page prints one for CFA or drilled displacement piles. UFC App.
+  B-5.4 takes B = L = 18 ft (p. 638, in Nc) for its 7x7 group of 1 ft piles
+  at 3 ft: centre to centre of the outer piles, not the 19 ft to their
+  outer faces (App. B-5.7, p. 641, gives its equivalent footing the same 18
+  ft "based on the 7x7 square arrangement of piles on a 3-ft
+  center-to-center spacing").
 - **Module before.** One cu for both su1 and su2, Nc fixed at 9.
 - **Module now.** `block_failure_resistance(B, Z, D, su1, su2)` by Eqs.
   7-36 and 7-37 (B taken as the smaller plan dimension), returning the side
@@ -62,15 +67,19 @@ block failure in clay; the lateral p-multiplier; group settlement by Meyerhof
   `pile_type` the factored resistance phi_bl R_ng is given by the printed
   factor (`block_failure_factored_kN`); for CFA and DDP groups it is null
   and the result says no held page prints one. The micropile 20 %
-  reduction for marginal ground is stated, not applied.
-- **Verdict.** Fixed to the print. UFC Appendix B-5.4 pinned (V-060).
+  reduction for marginal ground is stated, not applied. B and Z to the
+  outer faces (Fig. 7-31), with UFC B-5.4's centre-to-centre block and its
+  resistance given as the alternative in `choices`.
+- **Verdict.** Fixed to the print. UFC Appendix B-5.4 pinned (V-060) at its
+  printed 18 ft.
 
 ## Lateral p-multiplier (GEC-12 Sec. 7.3.7.6; UFC Table 6-38)
 
 - **Printed.** AASHTO, as GEC-12 prints it (pp. 367, 370): 0.8, 0.4, 0.3 for
   rows 1, 2, 3 and higher at 3b; 1.0, 0.85, 0.7 at 5b; interpolate between.
   Table 7-23 lists lower soil-specific values to consider (p. 365). UFC Table
-  6-38 (p. 466) extends it: 1.0 for s/b > 6; and gives Mokwa (1999): 0.06
+  6-38 (p. 466) extends it ("AASHTO (2020) guidance, extrapolated to a pile
+  spacing of 6·b", p. 465): 1.0 for s/b > 6; and gives Mokwa (1999): 0.06
   s/b + 0.64, 0.11 s/b + 0.34, 0.14 s/b + 0.16, 0.16 s/b + 0.04 for rows 1,
   2, 3 and 4+, each <= 1. Interaction insignificant at 6b; closer than 3b
   not advisable (p. 465). Batter piles (GEC-12 pp. 396-397): qualitative
@@ -82,7 +91,12 @@ block failure in clay; the lateral p-multiplier; group settlement by Meyerhof
 - **Module now.** `p_multiplier(row, s/b, method)`: 'aashto' interpolated
   3 to 5 to 1.0 at 6, then 1.0; 'mokwa' by the printed lines. Below 3b
   refused. Vol III's 0.90 / 0.625 / 0.5 at 4b and 1.0 / 0.85 / 0.7 at 5b
-  (pp. 56, 137) and UFC Table B-32 pinned (V-060).
+  (pp. 56, 137) and UFC Table B-32 pinned (V-060). The straight line from
+  5b to 1.0 at 6b is the module's reading of p. 465's "extrapolated"; the
+  sentence could also mean AASHTO's 3b-5b line carried on to 6b (rows 3+
+  0.9 at 6b; rows 1 and 2 reach 1.0 by then). The tool's `choices` say so,
+  with the other reading's value between 5b and 6b; the numbers are
+  unchanged.
 - **Verdict.** Fixed to the print.
 
 ## Group settlement, Meyerhof (1976) (GEC-12 Eqs. 7-50 to 7-52; UFC Eqs. 6-46, 6-47)
@@ -110,11 +124,17 @@ block failure in clay; the lateral p-multiplier; group settlement by Meyerhof
   7-45 and 7-46 and UFC Table 6-32 place it elsewhere for other profiles;
   elastic compression (Eq. 7-48; UFC Eq. 6-54, constrained modulus); to
   where delta_sigma is under 10 % of the footing's bearing stress (UFC p.
-  449). The GEC-12 text (p. 320) says "side slopes at 30 deg", which the
-  figure and equation do not take.
+  449). GEC-12's own procedure (Sec. 7.3.5.3 step 1c, p. 324) and UFC's
+  worked example (App. B-5.7, p. 641, "as recommended by FHWA (2016)") sum
+  instead to where the increase is less than 10 % of the existing vertical
+  effective stress. The GEC-12 text (p. 320) says "side slopes at 30 deg",
+  which the figure and equation do not take.
 - **Module before.** Influence to 5 Bg, printed nowhere.
 - **Module now.** To the 10 % depth, (B + z)(L + z) = 10 B L, or to a given
-  `influence_depth_m`; citations fixed; the uniform case only.
+  `influence_depth_m`; citations fixed; the uniform case only. UFC's rule is
+  the default, as the owner ruled for downdrag (OWN-62); the result's
+  `choices` name GEC-12's rule as the alternative, given as
+  `influence_depth_m` (the function takes no effective-stress profile).
 - **Verdict.** Fixed to the print.
 
 ## Rigid-cap load distribution (simple and 6-DOF)
