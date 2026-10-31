@@ -398,7 +398,8 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
          "passive_theory", "log_spiral_source",
          "passive_wall_friction_deg", "stem_batter", "embedment_depth",
          "wall_friction_deg", "interface_gap_possible", "founded_on_rock",
-         "bearing_pressure"),
+         "bearing_pressure", "water_table_depth", "gamma_sat_backfill",
+         "base_uplift", "uplift_in_bearing"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -415,6 +416,7 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         dead_load_surcharge=params.get("dead_load_surcharge", 0.0),
         stem_batter=params.get("stem_batter", "back"),
         embedment_depth=params.get("embedment_depth"),
+        water_table_depth=params.get("water_table_depth"),
     )
     include_passive = params.get("include_passive", False)
     rock = bool(params.get("founded_on_rock", False))
@@ -458,6 +460,10 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         "founded_on_rock": rock,
         "bearing_pressure": (params.get("bearing_pressure")
                              or default_bearing_pressure(rock)),
+        # GM-292: the water table behind the wall
+        "gamma_sat_backfill": params.get("gamma_sat_backfill"),
+        "base_uplift": params.get("base_uplift"),
+        "uplift_in_bearing": bool(params.get("uplift_in_bearing", False)),
     }
     result = analyze_cantilever_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -484,6 +490,9 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         interface_gap_possible=used["interface_gap_possible"],
         founded_on_rock=rock,
         bearing_pressure=params.get("bearing_pressure"),
+        gamma_sat_backfill=used["gamma_sat_backfill"],
+        base_uplift=used["base_uplift"],
+        uplift_in_bearing=used["uplift_in_bearing"],
     )
     return result, used
 
@@ -532,6 +541,12 @@ def _run_cantilever_wall(params):
         if terms.get("Pp_cohesion"):
             output["sliding_basis"]["Pp_cohesion_kN_per_m"] = round(
                 terms["Pp_cohesion"], 1)
+    if terms.get("h_w"):
+        # GM-292: the water's thrust drives the wall with Pa; the uplift
+        # comes off V
+        output["sliding_basis"]["water_thrust_kN_per_m"] = \
+            sl["water_thrust_kN_per_m"]
+        output["sliding_basis"]["uplift_kN_per_m"] = sl["uplift_kN_per_m"]
     if terms.get("gap_limited"):
         # EN 1997-1 Eq. 6.5 held the undrained resistance (GM-288)
         output["sliding_basis"]["base_resistance_held_to_0_4V"] = True
@@ -1188,7 +1203,7 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "cantilever_wall": {
         "category": "Cantilever Wall",
-        "brief": "Full cantilever retaining wall stability analysis (sliding, overturning, eccentricity, bearing); the backfill is taken as drained, with no water table.",
+        "brief": "Full cantilever retaining wall stability analysis (sliding, overturning, eccentricity, bearing); the backfill is taken as drained unless water_table_depth puts a water table behind the wall.",
         "parameters": {
             "wall_height": {"type": "float", "required": True, "description": "TOTAL wall height H (m), measured from the UNDERSIDE of the base slab (footing) to the top of the stem: H = base_thickness + stem height. The active thrust acts over H on the vertical plane through the back of the heel. If you know the height retained above the top of the footing, add base_thickness (4.0 m retained on a 0.5 m footing is wall_height 4.5)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
@@ -1227,9 +1242,13 @@ METHOD_INFO = {
             "wall_friction_deg": {"type": "float", "required": False, "description": "Wall friction delta on the vertical plane through the back of the heel (deg), with pressure_method 'coulomb', 0 to phi_backfill. Left out: the backfill slope (FHWA NHI-06-089 p. 10-20: on that plane 'there is soil-to-soil contact ... it is generally conservative to assume that the earth pressure is parallel to the slope of the backfill'). Refused with 'rankine'. The result's choices give the delta used and the other reading's Ka."},
             "interface_gap_possible": {"type": "bool", "required": False, "default": False, "description": "Whether water or air can reach the base-clay interface. With sliding_cohesion 'undrained' (an undrained clay under the base) the base resistance is then held to 0.4 V (EN 1997-1 Sec. 6.5.3(12)P, Eq. 6.5, p. 65). GEC-6 and UFC 3-220-20 print no such limit. Refused with the other rules. The result's choices give FOS_sliding under the other reading."},
             "founded_on_rock": {"type": "bool", "required": False, "default": False, "description": "Whether the wall is founded on rock. On rock the eccentricity limit is B/4, the middle half, in place of B/6 (GEC-6 Sec. 6.4.1, p. 119; UFC 3-220-20 Sec. 4-5.1.2, p. 223; FHWA NHI-06-089 Fig. 10-17), FOS_overturning_required defaults to 1.5 and bearing_pressure to 'linear'."},
+            "water_table_depth": {"type": "float", "required": False, "description": "Depth of a level water table behind the wall below the top of the backfill at the stem (m), 0 or more (0 = water at the top of the backfill). Left out: no water table, the backfill drained (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41: 'If adequate drainage measures are provided, the hydrostatic pressure due to groundwater behind the wall generally need not be considered. However, hydrostatic pressure must be considered for portions of the wall below the level of the weep holes unless a deeper drainage system is provided behind the base of the wall'). Given: below it the earth pressure is on the buoyant unit weight gamma_sat - gamma_w and the water pressure gamma_w z is added, horizontal (UFC 3-220-20 Sec. 4-4.1 and Fig. 4-16(a), pp. 199-202; FHWA NHI-06-089 Fig. 10-12, p. 10-27: 'should consider the greatest unbalanced water head anticipated'); the water pressure under the base (base_uplift) comes off V in sliding and adds to the overturning moment. In front of the wall no water is taken above the underside of the base. At or below the underside of the base (wall_height or deeper) it changes nothing. The result's choices give the drained backfill's FOS beside it."},
+            "gamma_sat_backfill": {"type": "float", "required": False, "description": "With water_table_depth, the backfill's saturated unit weight below the water table (kN/m3), more than gamma_w (9.81). Left out: gamma_backfill, as UFC 3-220-20 Fig. 4-16(a) (p. 202) takes gamma 125 pcf above the water table and gamma_b 62.5 pcf below it. Refused without water_table_depth."},
+            "base_uplift": {"type": "str", "required": False, "default": "linear", "allowed_values": ["linear", "uniform"], "description": "With water_table_depth, the water pressure under the base (uplift), h_w being the water's height above the underside of the base: 'linear' (default) = gamma_w h_w at the heel to 0 at the toe, no water in front of the wall, the module's assumption (no reference held prints a wall's uplift; UFC 3-220-20 p. 203 only says it 'can be detrimental to the wall stability'); 'uniform' = gamma_w h_w under the whole base, as UFC 3-220-20 Fig. 5-40 (p. 346) takes the uplift on a structure below the water table. The uplift comes off V in sliding and its moment about the toe adds to the overturning moment (the choices give the FOS with it taken off the stabilizing moment instead, and the other distribution's). Refused without water_table_depth."},
+            "uplift_in_bearing": {"type": "bool", "required": False, "default": False, "description": "With water_table_depth, count the uplift in the bearing pressures (q_toe, q_heel, q_eq, FOS_bearing). Default false: UFC 3-220-20 Sec. 5-3.2 (p. 292), 'Uplift is present on the base of the foundation when the groundwater table is above the bearing elevation. Its effect on the bearing pressure can be conservatively ignored unless sliding or uplift is a concern'. true = the effective pressure under the base, the weights less the uplift. Give q_allowable for the water table at that level (GEC-6 Sec. 5.2.3.2, p. 56). Refused without water_table_depth."},
             "bearing_pressure": {"type": "str", "required": False, "default_depends_on": {"parameter": "founded_on_rock", "values": {True: "linear"}, "otherwise": "uniform"}, "allowed_values": ["uniform", "linear"], "description": "The bearing pressure compared with q_allowable. Default depends on founded_on_rock: 'uniform' on soil, 'linear' on rock. 'uniform' (the default on soil): q_eq = V / B', B' = B - 2e (GEC-6 Eq. 6-6 and Sec. 6.4.2, p. 119; FHWA NHI-06-089 Fig. 10-17: 'Use uniform stress, qeq, for soils'; UFC 3-220-20 Eq. 4-27 and Sec. 4-5.1.4, p. 224, for soil that is 'relatively ductile'). 'linear' (the default with founded_on_rock): the larger edge pressure of the trapezoid or triangle, q_toe or q_heel (UFC Sec. 4-5.1.4: 'For more brittle materials, such as rock and sensitive clays'; FHWA NHI-06-089 Fig. 10-17). The result's choices give the other pressure's FOS_bearing."},
         },
-        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third, or with founded_on_rock the middle half). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / q_bearing_kPa; null when the bearing check was not run.", "q_bearing_kPa": "The bearing pressure compared with q_allowable, by bearing_pressure: the uniform q_eq = V / (B - 2e) on soil, the larger of q_toe and q_heel with 'linear' (the default on rock).", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "eccentricity_m": "Eccentricity of the resultant on the loads the overturning check counts (the eccentricity check: at most eccentricity_limit_m, B/6, or B/4 with founded_on_rock).", "eccentricity_bearing_m": "Present when it differs: the eccentricity on the bearing check's loads (the surcharge over the heel counted), which gives q_toe / q_heel.", "choices": "How the sliding check counted the foundation cohesion (sliding_cohesion, when there is cohesion or adhesion: the rule, its quoted basis and each other rule's FOS_sliding), the base friction delta_b it used (2/3 phi_f by default, or delta_base; none with the undrained rule), how the surcharges over the heel were counted in sliding / overturning / eccentricity and in bearing, and with include_passive the passive coefficient in front of the wall (passive_theory, with the other theory's and no passive's FOS_sliding; with 'log_spiral' its source and wall friction) and whether it counts c_foundation; with Coulomb the wall friction on the heel plane; with c_backfill the tension zone; the required FOS_sliding with the passive counted and FOS_overturning on rock; the bearing pressure compared with q_allowable (with the other pressure's FOS_bearing); with the undrained rule EN 1997-1's 0.4 V limit; each with the basis and the other reading. Tell the user.", "geometry": "The geometry analysed, auto-sized parts included, with stem_batter and embedment_depth_m (Df); wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: sliding_cohesion (the rule for the foundation cohesion), delta_base_deg (null with the undrained rule), base_adhesion_kPa (0 with the drained rule) and adhesion_width_m (B, or Be = B - 2e with friction_plus_adhesion; null with drained), driving/resisting forces, Pa and its vertical component + inclination, and with include_passive the passive resistance Pp_kN_per_m counted (Pp_cohesion_kN_per_m its cu part under the undrained rule), its passive_theory and Kp (with 'log_spiral' its log_spiral_source and passive_wall_friction_deg), and base_resistance_held_to_0_4V when interface_gap_possible held it — verify these match your intended assumptions."},
+        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third, or with founded_on_rock the middle half). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / q_bearing_kPa; null when the bearing check was not run.", "q_bearing_kPa": "The bearing pressure compared with q_allowable, by bearing_pressure: the uniform q_eq = V / (B - 2e) on soil, the larger of q_toe and q_heel with 'linear' (the default on rock).", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "eccentricity_m": "Eccentricity of the resultant on the loads the overturning check counts (the eccentricity check: at most eccentricity_limit_m, B/6, or B/4 with founded_on_rock).", "eccentricity_bearing_m": "Present when it differs: the eccentricity on the bearing check's loads (the surcharge over the heel counted), which gives q_toe / q_heel.", "choices": "How the sliding check counted the foundation cohesion (sliding_cohesion, when there is cohesion or adhesion: the rule, its quoted basis and each other rule's FOS_sliding), the base friction delta_b it used (2/3 phi_f by default, or delta_base; none with the undrained rule), how the surcharges over the heel were counted in sliding / overturning / eccentricity and in bearing, and with include_passive the passive coefficient in front of the wall (passive_theory, with the other theory's and no passive's FOS_sliding; with 'log_spiral' its source and wall friction) and whether it counts c_foundation; with Coulomb the wall friction on the heel plane; with c_backfill the tension zone; the required FOS_sliding with the passive counted and FOS_overturning on rock; the bearing pressure compared with q_allowable (with the other pressure's FOS_bearing); with the undrained rule EN 1997-1's 0.4 V limit; with water_table_depth the water table (with the drained backfill's FOS), the unit weight below it, the uplift's distribution (with the other's numbers), where its moment goes in overturning and whether bearing counts it; each with the basis and the other reading. Tell the user.", "water_table_depth_m": "Present with water_table_depth: the depth given; water_height_m the water's height above the underside of the base, water_thrust_kN_per_m the water pressure's thrust (driving sliding and overturning with Pa) and uplift_kN_per_m the uplift on the base.", "geometry": "The geometry analysed, auto-sized parts included, with stem_batter and embedment_depth_m (Df); wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: sliding_cohesion (the rule for the foundation cohesion), delta_base_deg (null with the undrained rule), base_adhesion_kPa (0 with the drained rule) and adhesion_width_m (B, or Be = B - 2e with friction_plus_adhesion; null with drained), driving/resisting forces, Pa and its vertical component + inclination, and with include_passive the passive resistance Pp_kN_per_m counted (Pp_cohesion_kN_per_m its cu part under the undrained rule), its passive_theory and Kp (with 'log_spiral' its log_spiral_source and passive_wall_friction_deg), and base_resistance_held_to_0_4V when interface_gap_possible held it, and with a water table water_thrust_kN_per_m (in the driving force) and uplift_kN_per_m (off V) — verify these match your intended assumptions."},
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",
@@ -1438,7 +1457,11 @@ declare_applies_when(METHOD_INFO, {
         "pressure_method": {"wall_friction_deg": "set"},
         "wall_friction_deg": {"pressure_method": ["coulomb"]},
         "interface_gap_possible": {"sliding_cohesion": ["undrained"]},
-        "bearing_pressure": {"q_allowable": "set"}},
+        "bearing_pressure": {"q_allowable": "set"},
+        # GM-292: the water table's inputs
+        "gamma_sat_backfill": {"water_table_depth": "set"},
+        "base_uplift": {"water_table_depth": "set"},
+        "uplift_in_bearing": {"water_table_depth": "set"}},
     "mse_wall": {**{
         name: {"reinforcement_Tallowable": "set",
                "reinforcement_name": "unset"}
@@ -1521,6 +1544,15 @@ declare_when_absent(METHOD_INFO, {
             "delta/phi' = 0.66 (UFC 3-220-20 p. 191, 'a common "
             "assumption'); refused with 'caquot_kerisel_1948' or "
             "'dm7_2_eq_4_12', which need it given"),
+        # GM-292
+        "water_table_depth": (
+            "no water table",
+            "the backfill drained: no water pressure on the wall and no "
+            "uplift (FHWA NHI-06-089 Sec. 10.5.3, p. 10-41: with adequate "
+            "drainage the hydrostatic pressure 'generally need not be "
+            "considered'); give water_table_depth for water behind the "
+            "wall"),
+        "gamma_sat_backfill": "gamma_backfill",
     },
     "earth_pressure_coefficient": {
         # GM-257: what a left-out wall friction means depends on the

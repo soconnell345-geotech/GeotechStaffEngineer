@@ -1684,3 +1684,53 @@ same eccentricity. GEC-6 Eq. 5-41's a1b (toe to the key) is taken as 0.
 
 Not modelled: water behind the wall (UFC 4-4.1; NHI 10.5.3); the backfill
 is taken as drained, as the tool's brief now says.
+GM-292 added it (below).
+
+## A water table behind the cantilever wall (GM-292, 2026-10-31)
+
+The record, with the pages quoted, is `module_work/gm292/CHECK.md`; the
+checks `tests/test_gm292_water_table.py` and
+`funhouse_agent/tests/test_gm292_wall_water_adapter.py`.
+
+- `CantileverWallGeometry.water_table_depth` (m below the top of the
+  backfill at the stem; None, the default, no water table and the backfill
+  drained as before, NHI-06-089 p. 10-41). The water's height above the
+  underside of the base is h_w = H - d_w (0 at or below the base, which
+  then changes nothing).
+- Below the water table the active pressure is on the buoyant unit weight
+  gamma_b = gamma_sat - gamma_w and the water pressure gamma_w z is added,
+  horizontal, coefficient 1 (UFC 3-220-20 Sec. 4-4.1 and Fig. 4-16(a),
+  pp. 199-202; NHI Fig. 10-12, p. 10-27, and p. 10-15).
+  `earth_pressure.active_force_components_water` integrates the clipped
+  piecewise-linear pressure exactly (surcharge, cohesion and the tension
+  zone as in the dry case). Pw = gamma_w h_w^2 / 2 at h_w / 3 drives
+  sliding and overturning with P_h.
+- `gamma_sat_backfill` (default gamma_backfill, as UFC Fig. 4-16(a) takes
+  125 pcf above and gamma_b 62.5 pcf below): the soil on the heel and over
+  a battered back below the water table adds its excess weight
+  (gamma_sat - gamma).
+- The uplift (`base_uplift`), the module's assumption, since no reference
+  held prints a wall's: "linear" (default) gamma_w h_w at the heel to 0 at
+  the toe, U = gamma_w h_w B / 2 at 2B/3 from the toe, no water in front of
+  the wall; "uniform" gamma_w h_w under the whole base at B/2, as UFC Fig.
+  5-40 (p. 346) takes U for a structure below the water table. U comes off
+  V in sliding (the friction on max(V - U, 0)); its moment about the toe is
+  added to the overturning moment (the module's assumption; the choice gives
+  FOS with it taken off the stabilizing moment). The eccentricity check
+  counts it.
+- `uplift_in_bearing` (default False, UFC Sec. 5-3.2, p. 292: "can be
+  conservatively ignored unless sliding or uplift is a concern"): True
+  counts it in q_toe, q_heel and q_eq. The linear uplift, while the
+  pressure stays a trapezoid, takes exactly gamma_w h_w off q_heel and
+  nothing off q_toe.
+- Each is a `choices` entry with the other reading's numbers (the drained
+  backfill's FOS beside the water table's). The calc package prints the
+  effective thrust, the water's thrust and the uplift steps, and the
+  figure draws the water table, the effective and water pressures and Pw.
+- NHI Example 10-1 (pp. 10-28, 10-29) reproduced: the effective earth
+  diagram's thrust 5416 against 5422.5 lb/ft printed, its height 6.571
+  against 6.570 ft, the water's 4496 against 4493 lb/ft (gamma_w 9.81
+  kN/m3 is 62.45 pcf; Ka 0.3737 against 0.374).
+- Not modelled: water in front of the wall (tailwater) and seepage under
+  the wall (UFC Fig. 4-16(c)); water in a tension crack (NHI p. 10-15);
+  the MSE wall's external checks.

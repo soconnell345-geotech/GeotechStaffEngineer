@@ -160,6 +160,65 @@ def active_force_components(gamma: float, H: float, Ka: float,
             "z_tension": z_tension, "Pa": Pa_total, "z_Pa": z_Pa}
 
 
+def active_force_components_water(gamma: float, gamma_b: float, H: float,
+                                  z_w: float, Ka: float, c: float = 0.0,
+                                  q: float = 0.0) -> dict:
+    """:func:`active_force_components` with a water table ``z_w`` below the
+    top of the pressure plane (0 <= z_w < H; GM-292): the effective
+    vertical stress is q + gamma z above it and q + gamma z_w + gamma_b
+    (z - z_w) below it, gamma_b the buoyant unit weight, and the active
+    pressure Ka sigma'_v - 2 c sqrt(Ka), zero where that is negative, as
+    UFC 3-220-20 Figs. 4-5 and 4-16(a) (pp. 183, 202) and FHWA NHI-06-089
+    Fig. 10-12 (p. 10-27) draw it: "Instead of the total unit weight
+    (gamma), the buoyant or effective unit weight (gamma_b) is used in the
+    earth pressure equations for soils below the water table" (UFC
+    p. 200). The water's own pressure is not in it.
+
+    The same keys: ``Pa_earth`` is the soil weight's part, Ka [gamma z_w^2
+    / 2 + gamma z_w (H - z_w) + gamma_b (H - z_w)^2 / 2], ``Pa_surcharge``
+    Ka q H, ``Pa_cohesion`` -2 c sqrt(Ka) H, ``Pa_tension_zone`` what the
+    zero pressure in the tension zone adds back, ``z_tension`` that
+    zone's depth below the top, and ``Pa`` with its height ``z_Pa`` above
+    the base, the integral of the two straight-line pieces."""
+    root = math.sqrt(Ka)
+
+    def p(z):
+        sigma = q + gamma * min(z, z_w) + gamma_b * max(z - z_w, 0.0)
+        return Ka * sigma - 2.0 * c * root
+
+    Pa_earth = Ka * (0.5 * gamma * z_w ** 2 + gamma * z_w * (H - z_w)
+                     + 0.5 * gamma_b * (H - z_w) ** 2)
+    Pa_surcharge = Ka * q * H
+    Pa_cohesion = -2.0 * c * root * H
+
+    # The pressure rises with depth on both pieces (gamma, gamma_b >= 0),
+    # so the zero zone runs from the top down to z_tension
+    total = moment = 0.0
+    z_tension = H
+    for z0, z1 in ((0.0, z_w), (z_w, H)):
+        if z1 <= z0:
+            continue
+        p0, p1 = p(z0), p(z1)
+        if p1 <= 0.0:
+            continue
+        if p0 < 0.0:
+            z0 = z0 + (z1 - z0) * (-p0) / (p1 - p0)
+            p0 = 0.0
+        z_tension = min(z_tension, z0)
+        L = z1 - z0
+        F = 0.5 * (p0 + p1) * L
+        depth = z0 + L * (p0 + 2.0 * p1) / (3.0 * (p0 + p1))
+        total += F
+        moment += F * (H - depth)
+    z_Pa = moment / total if total > 0 else H / 3.0
+    return {"Pa_earth": Pa_earth, "Pa_surcharge": Pa_surcharge,
+            "Pa_cohesion": Pa_cohesion,
+            "Pa_tension_zone": total - (Pa_earth + Pa_surcharge
+                                        + Pa_cohesion),
+            "z_tension": z_tension,
+            "Pa": total, "z_Pa": z_Pa}
+
+
 def horizontal_force_passive(gamma: float, D: float, Kp: float,
                              c: float = 0.0) -> Tuple[float, float]:
     """Resultant passive horizontal force and its location.
