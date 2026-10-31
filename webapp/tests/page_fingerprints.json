@@ -109,7 +109,7 @@
          }
         ],
         "name": "references",
-        "system_prompt": "fa410123358c74fd",
+        "system_prompt": "5e1eeec88131afa2",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -197,7 +197,7 @@
          }
         ],
         "name": "reviewer",
-        "system_prompt": "82a8a5889ca75332",
+        "system_prompt": "195594fc21772abf",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -278,7 +278,7 @@
          }
         ],
         "name": "calc",
-        "system_prompt": "2f9d72f08c42d566",
+        "system_prompt": "47dde8faedec917e",
         "tool_order": [
          "list_agents",
          "list_methods",
@@ -496,8 +496,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "1d46f7677c186a5e",
-      "system_prompt_chars": 26217,
+      "system_prompt": "d789f5fe6df6d73f",
+      "system_prompt_chars": 26207,
       "tool_order": [
        "list_agents",
        "list_methods",
