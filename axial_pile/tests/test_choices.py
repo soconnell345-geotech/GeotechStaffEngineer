@@ -332,4 +332,5 @@ def test_numbers_unchanged_by_the_choices():
     assert set(d) == {"Q_ultimate_kN", "Q_skin_kN", "Q_tip_kN",
                       "Q_allowable_kN", "factor_of_safety", "pile_length_m",
                       "pile_name", "method", "sigma_v_tip_kPa",
-                      "toe_details", "warnings"}
+                      "toe_details", "warnings", "Q_factored_kN",
+                      "resistance_factors"}

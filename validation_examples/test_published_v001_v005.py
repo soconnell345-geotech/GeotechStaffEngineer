@@ -23,8 +23,10 @@ Summary of verdicts (details in each test docstring and RESULTS.md):
   charts: Fig. 7-9, Tables 7-6/7-7, Fig. 7-14); toe PASS with the example's
   separate Layer-3 toe phi=40 when sigma'p is not limited (429.3 kips, +0.3 %
   vs the 428.1 plateau). With GEC-12 Step 8's 3 ksf limit on sigma'p (the
-  module's default since GM-121) the toe is 359.7 kips (-16 %): the example
-  (DrivenPiles) did not apply Step 8.
+  module's default since GM-121) the toe is 371.5 kips (-13 %): the example
+  (DrivenPiles) did not apply Step 8. Below the plateau the toe follows Table
+  D-6 within 0.7 % at phi 33 and 40 and 2.3 % at phi 36 (GM-282: N'q read
+  again off Fig. 7-16; it was 2-5 % low).
 - V-002 axial_pile alpha (clay): toe (9*cu) PASS; shaft PASS within 1 % with the
   example's two Fig. 7-17 choices (smooth steel curves for the H-pile, Ca held at
   the chart's end); with the module's defaults (corrugated curve for H-piles,
@@ -149,8 +151,9 @@ def test_v001_overburden_above_the_footing_counts():
 def test_v001_toe_with_design_limit_phi40_matches():
     """Toe resistance reproduces the Table D-6 Layer-3 plateau (428.1 kips) to
     within 1 % with the example's separate Layer-3 toe phi = 40 deg, when
-    sigma'p is not limited: q_L (Fig. 7-15) at phi = 40 governs at 60 and
-    70 ft (429.3 kips) and Eq. 7-9 at 50 ft (425.9)."""
+    sigma'p is not limited: q_L (Fig. 7-15) at phi = 40 governs at 50, 60
+    and 70 ft (429.3 kips; Eq. 7-9 gives 439.9 at 50 ft since GM-282, 425.9
+    before)."""
     pile = make_h_pile("HP12x74")
     soil = _v001_profile(toe_phi=40)
     for D_ft in (50, 60, 70):           # depths where the tip is in Layer 3
@@ -174,11 +177,29 @@ def test_v001_toe_single_phi_api_is_default_behaviour():
     assert abs(Rt_single_phi - 428.1) / 428.1 > 0.15         # off vs published
 
 
+def test_v001_toe_below_the_plateau_follows_table_d6():
+    """Below the q_L plateau Table D-6's toe is alpha_t N'q sigma'p x box area
+    with sigma'p not limited (Eq. 7-9, Fig. 7-16): the module, with the limit
+    off, is within 0.7 % of it in Layer 1 (toe phi 33) and Layer 3 (toe phi
+    40) and 1.9-2.3 % low in Layer 2 (toe phi 36). GM-282 read N'q again off
+    Fig. 7-16's own image: the earlier nodes gave 2.0-2.3 %, 4.6-4.9 % and
+    2.7 % low."""
+    published = {0.01: 16.4, 2: 23.0, 5: 32.8, 8: 42.6, 10.01: 49.2,
+                 23: 118.1, 26: 126.2, 30: 136.9, 34: 147.6,
+                 46: 406.4, 47: 414.1, 48: 421.8}
+    for D_ft, Rp_pub in published.items():
+        r = _v001_run(D_ft, toe_phi=40 if D_ft > 45 else None,
+                      toe_stress_limit=None)
+        tol = 0.025 if 20 < D_ft < 45 else 0.008
+        assert r.Q_tip / KIP == pytest.approx(Rp_pub, rel=tol), (
+            f"D={D_ft} ft: toe {r.Q_tip / KIP:.1f} vs published {Rp_pub}")
+
+
 def test_v001_highlevel_api_toe_phi40_matches_plateau():
     """The high-level API with the Layer-3 toe phi=40:
 
     - with GEC-12 Step 8's limit on sigma'p (3 ksf, the module's default since
-      GM-121) the toe is alpha_t N'q x 3 ksf x box area = 359.7 kips, -16 %
+      GM-121) the toe is alpha_t N'q x 3 ksf x box area = 371.5 kips, -13 %
       vs the 428.1 plateau. Table D-6 (DrivenPiles) did not apply Step 8:
       sigma'v at its Layer-3 toe is 3.6-4.8 ksf and its plateau is q_L(40)
       times the box area;
@@ -187,7 +208,7 @@ def test_v001_highlevel_api_toe_phi40_matches_plateau():
     The shaft is unaffected (still phi=36)."""
     for D_ft in (50, 60, 70):           # depths where the tip is in Layer 3
         r = _v001_run(D_ft, toe_phi=40)
-        assert r.Q_tip / KIP == pytest.approx(359.7, rel=0.005)
+        assert r.Q_tip / KIP == pytest.approx(371.5, rel=0.005)
         assert r.toe_details["sigma_p_kPa"] == pytest.approx(3 * KSF, rel=1e-3)
         r = _v001_run(D_ft, toe_phi=40, toe_stress_limit=None)
         assert r.Q_tip / KIP == pytest.approx(428.1, rel=0.01), (

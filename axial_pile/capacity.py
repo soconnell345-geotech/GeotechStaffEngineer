@@ -18,12 +18,15 @@ open-end pipe pile as the lesser of the plugged and unplugged cases (Eqs.
 the soil plug weight subtracted and Tomlinson's 105 ksf limiting unit toe
 resistance in cohesionless soil, or Tomlinson's Eq. 7-90 for a pipe under
 24 inches in predominantly cohesive soil (Sec. 7.10.7); uplift as the whole
-shaft resistance (Sec. 7.2.3.1). Where GEC-12 leaves a judgment (a range or
+shaft resistance (Sec. 7.2.3.1); the beta method's beta and Nt from Table
+7-9 by soil type where a layer gives none (Steps 2b, 5b); the factored
+resistance with Table 7-1's factors by method (Eq. 7-3, Eq. 7-38; none
+where AASHTO gives none). Where GEC-12 leaves a judgment (a range or
 "local experience"), it is an input with a cited default and the result's
 ``choices`` say what was used. Options beside the defaults (GM-144): Figure
 7-18's stratigraphy cases or the smaller of Figures 7-17 and 7-18 (p. 246),
-a shrink-swell zone (p. 247), Table 7-9's beta and Nt by soil type, and the
-toe phi averaged from the toe to 3b below (Step 7c).
+a shrink-swell zone (p. 247), and the toe phi averaged from the toe to 3b
+below (Step 7c).
 
 All units are SI: kN, m, kPa.
 
@@ -48,9 +51,7 @@ from axial_pile.nordlund import (
     FIG_7_9_CURVE, KSF, SIGMA_P_LIMIT, delta_phi_ratio_fig_7_9,
     displaced_volume, end_bearing_cohesionless, nordlund_side_factors,
 )
-from axial_pile.beta_method import (
-    TABLE_7_9, Nt_from_phi, beta_from_phi, end_bearing_beta, table_7_9,
-)
+from axial_pile.beta_method import TABLE_7_9, end_bearing_beta, table_7_9
 from axial_pile.results import AxialPileResult
 
 #: Side-resistance method names in a result's ``choices`` (plain text: the
@@ -77,6 +78,15 @@ COHESIVE_NT = 3.0
 #: GEC-12 Sec. 7.2.3.1 (Eq. 7-38): uplift is the whole shaft resistance.
 UPLIFT_SKIN_FRACTION = 1.0
 
+#: GEC-12 Table 7-1 (p. 224, modified from AASHTO 2014): resistance factors
+#: of the static analysis methods, in compression (phi_stat, shaft and toe)
+#: and in tension (phi_up), by the method a part of the resistance was
+#: worked out with. None: no factor (Table 7-1's "Differs in Manual" for
+#: the beta method; p. 258 says to use the field verification method's
+#: phi_dyn, Table 7-2).
+PHI_STAT = {"nordlund": 0.45, "tomlinson": 0.35, "beta": None}
+PHI_UP = {"nordlund": 0.35, "tomlinson": 0.25, "beta": 0.20}
+
 _INCH = 0.0254
 #: GEC-12 p. 407: Tomlinson's Eq. 7-90 for open-end pipes under 24 inches.
 _EQ_7_90_MAX_OD = 24 * _INCH
@@ -98,7 +108,10 @@ _H_TOE_AREAS = ("box", "steel")
 #: GEC-12 p. 246: Figure 7-17 generally, Figure 7-18 for its stratigraphy
 #: cases, and the smaller of the two for the inexperienced user.
 _ADHESION_CHARTS = ("fig_7_17", "fig_7_18", "smaller")
-_BETA_COEFFICIENTS = ("from_phi", "table_7_9")
+_BETA_COEFFICIENTS = ("table_7_9",)
+#: GM-282: the beta method's former default, beta = (1 - sin phi') tan phi'
+#: and Nt from a piecewise curve in phi', is not printed in GEC-12.
+_UNPRINTED_BETA = "from_phi"
 _TOE_PHI_ZONES = ("toe_layer", "average_3b")
 
 
@@ -221,10 +234,11 @@ class AxialPileAnalysis:
         Default None: no zone.
     beta_coefficients : str, optional
         The beta method's beta and Nt where a layer gives none (Steps 2b,
-        5b): "from_phi" (default; beta = (1 - sin phi') tan phi', Fellenius
-        1991, and Nt within Table 7-9's ranges by phi') or "table_7_9"
-        (Table 7-9 by the layer's soil type, linear in phi' across the
-        type's phi' range). A clay toe keeps ``cohesive_Nt`` either way.
+        5b): "table_7_9" (default and only value: Table 7-9 by the layer's
+        soil type, linear in phi' across the type's phi' range). A clay toe
+        takes ``cohesive_Nt``. "from_phi" (beta = (1 - sin phi') tan phi')
+        was removed in GM-282: GEC-12 does not print it; give a layer's
+        ``beta`` and ``Nt`` from local experience instead (Steps 2a, 5a).
     toe_phi_zone : str, optional
         The phi near the toe for the Nordlund toe (Steps 7 and 9):
         "toe_layer" (default; the toe layer's toe_friction_angle or
@@ -276,7 +290,7 @@ class AxialPileAnalysis:
     displaced_volume: Optional[float] = None
     adhesion_chart: str = "fig_7_17"
     shrink_swell_depth: Optional[float] = None
-    beta_coefficients: str = "from_phi"
+    beta_coefficients: str = "table_7_9"
     toe_phi_zone: str = "toe_layer"
 
     def __post_init__(self):
@@ -291,6 +305,13 @@ class AxialPileAnalysis:
                 f"head_depth must be >= 0 (depth of the pile head below the "
                 f"ground surface), got {self.head_depth}"
             )
+        if self.beta_coefficients == _UNPRINTED_BETA:
+            raise ValueError(
+                "beta_coefficients 'from_phi' (beta = (1 - sin phi') tan "
+                "phi') was removed: GEC-12 does not print it. Steps 2b and 5b "
+                "(pp. 257-258) take beta and Nt from Table 7-9 by phi' "
+                "('table_7_9', the default); give a layer's beta and Nt from "
+                "local experience (Steps 2a, 5a) to use other values.")
         for name, allowed in (("open_pipe_method", _OPEN_PIPE_METHODS),
                               ("adhesion_curve", _ADHESION_CURVES),
                               ("adhesion_beyond_chart", _BEYOND_CHART),
@@ -508,6 +529,11 @@ class AxialPileAnalysis:
             if self.pile_weight is not None:
                 Q_uplift += self.pile_weight
 
+        factors = self._resistance_factors(
+            layer_results, tip_layer, plug_case, Qt, plug_weight,
+            open_pipe_info["Qs_inside"] if plug_case == "unplugged" else 0.0,
+            Qs_outside)
+
         return AxialPileResult(
             Q_ultimate=Q_ultimate,
             Q_skin=total_Qs,
@@ -523,10 +549,94 @@ class AxialPileAnalysis:
             warnings=notes,
             choices=self._choices(layer_results, shaft_layers, tip_layer,
                                   plug_case, sigma_v_tip, toe_details, V,
-                                  open_pipe_info),
+                                  open_pipe_info, factors),
             plug_weight=plug_weight,
             toe_details=toe_details,
+            Q_factored=factors["compression"]["R_r_kN"],
+            Q_uplift_factored=(factors["uplift"]["R_r_kN"]
+                               if "uplift" in factors else None),
+            resistance_factors=factors,
         )
+
+    def _resistance_factors(self, layer_results, tip_layer, plug_case,
+                            Qt: float, plug_weight: float, Qs_inside: float,
+                            Qs_outside: float) -> dict:
+        """The factored resistance by GEC-12 Table 7-1 (p. 224): Eq. 7-3 in
+        compression, each layer's side resistance times its method's
+        phi_stat plus the toe resistance times the toe method's (GEC-12's
+        worked example factors a layered profile so, Vol 3 p. 111), and Eq.
+        7-38 in tension, each layer's nominal side resistance times its
+        method's phi_up (Vol 3 p. 115). R_r is None, with the reason, where
+        Table 7-1 gives no factor for a part's method."""
+        by_method: dict = {}
+        for lb in layer_results:
+            by_method[lb["method"]] = (by_method.get(lb["method"], 0.0)
+                                       + lb["skin_friction_kN"])
+        if self.method == "beta":
+            toe_method, toe_text = "beta", "Nt sigma'p (beta method)"
+        elif plug_case == "eq_7_90":
+            toe_method, toe_text = None, "4.5 su (Eq. 7-90)"
+        elif tip_layer.soil_type == "cohesionless":
+            toe_method, toe_text = "nordlund", "Nordlund (Eq. 7-9)"
+        else:
+            toe_method, toe_text = "tomlinson", "9 su (alpha method, Eq. 7-11)"
+
+        missing = []
+        if plug_case == "eq_7_90":
+            missing.append("Table 7-1 has no factor for Tomlinson's Eq. 7-90 "
+                           "(GEC-12 p. 407)")
+        elif any(PHI_STAT[m] is None for m in by_method) or (
+                toe_method is not None and PHI_STAT[toe_method] is None):
+            missing.append("AASHTO gives no factor for the beta method by "
+                           "Fellenius (GEC-12 p. 258; Table 7-1 'Differs in "
+                           "Manual')")
+        shaft = {m: {"phi": PHI_STAT[m], "R_s_kN": r}
+                 for m, r in by_method.items()}
+        compression = {"shaft": shaft,
+                       "toe": {"method": toe_text,
+                               "phi": (PHI_STAT[toe_method]
+                                       if toe_method else None),
+                               "R_p_kN": Qt}}
+        if Qs_inside:
+            compression["inside_kN"] = Qs_inside
+        if plug_weight:
+            compression["plug_weight_kN"] = plug_weight
+        if missing:
+            compression["R_r_kN"] = None
+            compression["not_factored"] = "; ".join(missing) + (
+                ": use the field verification method's phi_dyn (Table 7-2)")
+        else:
+            shaft_r = sum(PHI_STAT[m] * r for m, r in by_method.items())
+            # the inside friction is the outside's, layer by layer, on the
+            # inner perimeter and scaled (inside_friction_ratio): it takes
+            # the same factors; Eq. 7-89 gives none for the plug weight,
+            # which is subtracted in full
+            if Qs_inside and Qs_outside > 0:
+                shaft_r *= 1.0 + Qs_inside / Qs_outside
+            compression["R_r_kN"] = (shaft_r + PHI_STAT[toe_method] * Qt
+                                     - plug_weight)
+        out = {"basis": "GEC-12 Table 7-1 (p. 224), Eq. 7-3; Eq. 7-38",
+               "compression": compression}
+        if self.include_uplift:
+            uplift = {"shaft": {m: {"phi": PHI_UP[m], "R_s_kN": r}
+                                for m, r in by_method.items()}}
+            if plug_case == "eq_7_90":
+                uplift["R_r_kN"] = None
+                uplift["not_factored"] = (
+                    "Table 7-1 has no factor for Tomlinson's Eq. 7-90 (GEC-12 "
+                    "p. 407): use a field method's (p. 289: up to 0.60 from a "
+                    "tension static load test, 0.50 from a dynamic test with "
+                    "signal matching)")
+            else:
+                uplift["R_r_kN"] = sum(PHI_UP[m] * r
+                                       for m, r in by_method.items())
+            if "beta" in by_method:
+                uplift["note"] = (
+                    "Table 7-1 prints phi_up 0.20 for the beta method (1991), "
+                    "though AASHTO gives no compression factor for the beta "
+                    "method by Fellenius (p. 258)")
+            out["uplift"] = uplift
+        return out
 
     def _shaft(self, V: float, notes: List[str],
                chart: Optional[str] = None) -> Tuple[list, list, float]:
@@ -586,17 +696,14 @@ class AxialPileAnalysis:
                 notes: Optional[List[str]] = None) -> Tuple[float, str]:
         """(Nt, its source) of the toe layer for the beta method (GEC-12
         Step 5): the layer's own (local experience, Step 5a), else, in clay,
-        ``cohesive_Nt`` (p. 256), else Table 7-9 by soil type with
-        ``beta_coefficients`` 'table_7_9', else estimated from phi'."""
+        ``cohesive_Nt`` (p. 256), else Table 7-9 by soil type (Step 5b)."""
         if tip_layer.Nt is not None:
             return tip_layer.Nt, "given"
         soil = tip_layer.table_7_9_soil
-        if self.beta_coefficients == "table_7_9" and soil != "clay":
-            return (table_7_9(soil, self._beta_phi(tip_layer, toe=True),
-                              notes)[1], f"Table 7-9 ({soil})")
-        if tip_layer.soil_type != "cohesionless":
+        if soil == "clay":
             return self.cohesive_Nt, "cohesive_Nt"
-        return Nt_from_phi(tip_layer.toe_phi), "from phi'"
+        return (table_7_9(soil, self._beta_phi(tip_layer, toe=True),
+                          notes)[1], f"Table 7-9 ({soil})")
 
     def _beta_phi(self, layer: AxialSoilLayer, toe: bool = False) -> float:
         """phi' of a layer for the beta method: a cohesionless layer's own
@@ -727,7 +834,8 @@ class AxialPileAnalysis:
                 "be evaluated.")
 
     def _choices(self, layer_results, shaft_layers, tip_layer, plug_case,
-                 sigma_v_tip, toe_details, V, open_pipe_info) -> List[dict]:
+                 sigma_v_tip, toe_details, V, open_pipe_info,
+                 factors: Optional[dict] = None) -> List[dict]:
         """What this analysis chose (GM-115, GM-121): the side and toe
         resistance methods, the GEC-12 charts and limits each used and the
         judgments GEC-12 leaves to the engineer, with their basis."""
@@ -1056,6 +1164,88 @@ class AxialPileAnalysis:
                 ["0.7 x, the customary uplift share in free-draining soils "
                  "De Nicola and Randolph (1993) report "
                  "(uplift_skin_fraction 0.7)"]))
+        if factors:
+            out.extend(self._factor_choices(factors, layer_results))
+        out.append(choice(
+            "factor of safety (allowable capacity)",
+            f"{self.factor_of_safety:g}",
+            how_given(self.factor_of_safety, 2.5, name="factor_of_safety"),
+            "GEC-12 (2016) designs by resistance factors (Sec. 7.1.5, Table "
+            "7-1) and gives no factor of safety; for allowable stress design "
+            "FHWA NHI-06-089 (2006, p. 9-25, Table 9-5) bases the factor of "
+            "safety of a static analysis on the construction control "
+            "method; 2.5 is its row for indicator piles with wave equation "
+            "analysis",
+            ["2.00: static load test with wave equation analysis",
+             "2.25: dynamic testing with wave equation analysis",
+             "2.75: wave equation analysis",
+             "3.50: Gates dynamic formula"]))
+        return out
+
+    def _factor_choices(self, factors: dict, layer_results) -> List[dict]:
+        """The resistance factors used (GEC-12 Table 7-1) and the factored
+        resistance, in compression and, with uplift, in tension."""
+        from geotech_common.choices import MODULE, choice
+        names = {"nordlund": "Nordlund", "tomlinson": "alpha method",
+                 "beta": "beta method"}
+        api = any(lb.get("adhesion_source") == "API alpha"
+                  for lb in layer_results)
+        common = (
+            "; in a layered profile each layer takes its method's factor, as "
+            "GEC-12's worked example does (Vol 3 p. 111: 0.45 on the Nordlund "
+            "layers, 0.35 on the alpha-method layers; p. 115 in tension: 0.35 "
+            "and 0.25)"
+            + ("; a clay layer on API alpha past the chart's curves keeps the "
+               "alpha method's factor, since p. 247 takes API alpha within "
+               "the alpha method (the API method itself has no factor, p. "
+               "255)" if api else "")
+            + "; for a small group (fewer than 3 piles per substructure unit) "
+            "AASHTO reduces the factors by 20 % (p. 225); the AASHTO "
+            "calibration considered few large diameter pipe piles (p. 223)")
+        out = []
+
+        def phi_text(phi):
+            return "none" if phi is None else f"{phi:g}"
+
+        comp = factors["compression"]
+        parts = [f"{phi_text(v['phi'])} {names[m]} shaft"
+                 for m, v in comp["shaft"].items()]
+        parts.append(f"{phi_text(comp['toe']['phi'])} toe, "
+                     f"{comp['toe']['method']}")
+        r = comp["R_r_kN"]
+        chosen = "phi_stat " + ", ".join(parts) + (
+            f": R_r = {r:,.1f} kN" if r is not None
+            else f": R_r not computed ({comp['not_factored']})")
+        out.append(choice(
+            "resistance factors, compression (LRFD)", chosen, MODULE,
+            "GEC-12 Table 7-1 (p. 224, modified from AASHTO 2014) and Eq. "
+            "7-3: the shaft resistance times the factor of its method plus "
+            "the toe resistance times the factor of its method: Nordlund "
+            "(sand) 0.45, alpha method (clay and mixed soils) 0.35; AASHTO "
+            "gives none for the beta method by Fellenius (p. 258), the API "
+            "method (p. 255) or Tomlinson's Eq. 7-90; the soil plug weight of "
+            "Eq. 7-89 is subtracted unfactored" + common,
+            ["the field verification method's phi_dyn (Table 7-2), which "
+             "AASHTO C10.5.5.2.3 uses to set the number of piles (p. 225)"]))
+        if "uplift" in factors:
+            up = factors["uplift"]
+            parts = [f"{phi_text(v['phi'])} {names[m]}"
+                     for m, v in up["shaft"].items()]
+            r = up["R_r_kN"]
+            chosen = "phi_up " + ", ".join(parts) + (
+                f": R_r = {r:,.1f} kN" if r is not None
+                else f": R_r not computed ({up['not_factored']})")
+            out.append(choice(
+                "resistance factors, uplift (LRFD)", chosen, MODULE,
+                "GEC-12 Eq. 7-38 (pp. 288-289): the nominal shaft resistance "
+                "times phi_up of Table 7-1: Nordlund 0.35, alpha method 0.25, "
+                "beta method (1991) 0.20 (AASHTO C10.7.3.10 takes it as 80 % "
+                "of the compression factor, so the shaft resistance is not "
+                "reduced further: uplift_skin_fraction and pile_weight are "
+                "not applied to R_r)"
+                + (f"; {up['note']}" if "note" in up else "") + common,
+                ["up to 0.60 with a tension static load test, 0.50 with a "
+                 "dynamic test with signal matching (p. 289)"]))
         return out
 
     def _adhesion_choices(self, clay: List[dict],
@@ -1141,10 +1331,9 @@ class AxialPileAnalysis:
                 "fs = Ca (Eq. 7-10), with no limit; the figure's D = 40b "
                 "concrete, timber and corrugated curve passes above Ca = su "
                 "below su of about 1.5 ksf (alpha about 1.1 at su = 1.0 "
-                "ksf). The limit alpha <= 1.0 is API RP 2A's, part of the "
-                "API method (Sec. 7.2.1.3.3; p. 252 recommends alpha 1.0 for "
-                "unconsolidated clays), and applies where API alpha is "
-                "taken"))
+                "ksf). API RP 2A's alpha (Sec. 7.2.1.3.3, Eqs. 7-13/7-14) "
+                "is taken at most 1.0, the value p. 252 recommends for "
+                "unconsolidated clays, where API alpha is taken"))
 
         read_18 = [lb for lb in clay if "fig_7_18_case" in lb]
         if chart != "fig_7_17" and not eq_7_90:
@@ -1284,40 +1473,33 @@ class AxialPileAnalysis:
         nt = toe_details.get("N_t_source")
         if sources <= {"given"} and nt in ("given", "cohesive_Nt"):
             return None
-        if self.beta_coefficients == "table_7_9":
-            soils = []
-            for s in list(sources) + [nt]:
-                if s and s.startswith("Table 7-9 ("):
-                    soil = s[len("Table 7-9 ("):-1]
-                    if soil not in soils:
-                        soils.append(soil)
-            soils.sort(key=list(TABLE_7_9).index)
-            chosen = ("Table 7-9 by soil type, linear in phi' across the "
-                      "type's phi' range: " + "; ".join(
-                          f"{s} beta {TABLE_7_9[s][1][0]:g}-"
-                          f"{TABLE_7_9[s][1][1]:g}, Nt {TABLE_7_9[s][2][0]:g}-"
-                          f"{TABLE_7_9[s][2][1]:g} over phi' "
-                          f"{TABLE_7_9[s][0][0]:g}-{TABLE_7_9[s][0][1]:g} deg"
-                          for s in soils))
-        else:
-            chosen = ("from phi': beta = (1 - sin phi') tan phi' (Fellenius "
-                      "1991), Nt within Table 7-9's ranges by phi'")
+        soils = []
+        for s in list(sources) + [nt]:
+            if s and s.startswith("Table 7-9 ("):
+                soil = s[len("Table 7-9 ("):-1]
+                if soil not in soils:
+                    soils.append(soil)
+        soils.sort(key=list(TABLE_7_9).index)
+        chosen = ("Table 7-9 by soil type, linear in phi' across the "
+                  "type's phi' range: " + "; ".join(
+                      f"{s} beta {TABLE_7_9[s][1][0]:g}-"
+                      f"{TABLE_7_9[s][1][1]:g}, Nt {TABLE_7_9[s][2][0]:g}-"
+                      f"{TABLE_7_9[s][2][1]:g} over phi' "
+                      f"{TABLE_7_9[s][0][0]:g}-{TABLE_7_9[s][0][1]:g} deg"
+                      for s in soils))
         return choice(
             "beta and Nt (beta method)", chosen,
-            how_given(self.beta_coefficients, "from_phi",
+            how_given(self.beta_coefficients, "table_7_9",
                       name="beta_coefficients"),
             "GEC-12 Steps 2b and 5b (pp. 257-258): in the absence of local "
             "experience, use Table 7-9 (after Fellenius 2014) to estimate "
             "beta and Nt from phi'; the table gives ranges by soil type "
-            "(clay, silt, sand, gravel), which 'table_7_9' reads linearly in "
-            "phi' (a layer's soil_class, else clay or sand); (1 - sin phi') "
-            "tan phi' is about 0.27-0.30 for phi' 25-40 deg: inside Table "
-            "7-9's clay and silt ranges, the low end of its sand range "
-            "(0.30-0.90) and below its gravel range (0.35-0.80); a clay toe "
-            "takes cohesive_Nt either way (p. 256)",
-            ["from phi' (beta_coefficients 'from_phi')"
-             if self.beta_coefficients == "table_7_9" else
-             "Table 7-9 by soil type (beta_coefficients 'table_7_9')"])
+            "(clay, silt, sand, gravel), read here linearly in phi' across "
+            "the type's phi' range (a layer's soil_class, else clay or "
+            "sand); a clay toe takes cohesive_Nt (p. 256); GEC-12 prints no "
+            "formula for beta or Nt from phi' alone",
+            ["a layer's own beta and Nt from local experience (Steps 2a, "
+             "5a)"])
 
     def _layer_skin_friction(self, layer: AxialSoilLayer, layer_bottom: float,
                              z_top: float, z_bottom: float, perimeter: float,
@@ -1373,13 +1555,10 @@ class AxialPileAnalysis:
                 # fallback for layers without one.
                 if layer.beta is not None:
                     beta, source = layer.beta, "given"
-                elif self.beta_coefficients == "table_7_9":
+                else:
                     soil = layer.table_7_9_soil
                     beta = table_7_9(soil, self._beta_phi(layer), notes)[0]
                     source = f"Table 7-9 ({soil})"
-                else:
-                    beta = beta_from_phi(self._beta_phi(layer))
-                    source = "from phi'"
                 Qs += share * beta * sigma_v * perimeter * seg_thickness
                 method_used = "beta"
                 info = {"beta": beta, "beta_source": source}
@@ -1609,7 +1788,10 @@ class AxialPileAnalysis:
         Returns
         -------
         list of dict
-            Each dict has 'depth_m', 'Q_ultimate_kN', 'Q_skin_kN', 'Q_tip_kN'.
+            Each dict has 'depth_m', 'Q_ultimate_kN', 'Q_skin_kN', 'Q_tip_kN'
+            and, where Table 7-1 gives the factors, 'Q_factored_kN' (the
+            factored resistance against depth of GEC-12's design charts,
+            Vol 3 Fig. D-54).
         """
         if depth_max is None:
             depth_max = min(self.pile_length, self.soil.total_thickness)
@@ -1630,6 +1812,8 @@ class AxialPileAnalysis:
                     "Q_ultimate_kN": round(r.Q_ultimate, 1),
                     "Q_skin_kN": round(r.Q_skin, 1),
                     "Q_tip_kN": round(r.Q_tip, 1),
+                    **({"Q_factored_kN": round(r.Q_factored, 1)}
+                       if r.Q_factored is not None else {}),
                     **({"warnings": r.warnings} if r.warnings else {}),
                 })
             except JudgmentNeeded as e:

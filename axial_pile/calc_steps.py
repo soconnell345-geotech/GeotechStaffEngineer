@@ -375,6 +375,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                    "left out."),
         ))
 
+    cap_items.extend(_factored_steps(result))
+
     sections.append(CalcSection(
         title="Ultimate & Allowable Capacity", items=cap_items
     ))
@@ -603,16 +605,82 @@ def _auto_method_notes(result, analysis=None) -> str:
     return (text + (" " + "; ".join(parts) + "." if parts else "")).strip()
 
 
+_FACTOR_NAMES = {"nordlund": "Nordlund", "tomlinson": "α-method",
+                 "beta": "β-method"}
+
+
+def _factored_steps(result) -> list:
+    """The factored resistance steps (GEC-12 Eq. 7-3 and Eq. 7-38 with the
+    Table 7-1 factors), or a step saying why there is none."""
+    factors = getattr(result, "resistance_factors", None) or {}
+    steps = []
+    comp = factors.get("compression")
+    if comp:
+        toe = comp["toe"]
+        names = ", ".join(f"{_FACTOR_NAMES[m]} shaft"
+                          for m in comp["shaft"])
+        if comp["R_r_kN"] is not None:
+            sub = " + ".join(f"{v['phi']:g} × {v['R_s_kN']:,.1f}"
+                             for v in comp["shaft"].values())
+            if comp.get("inside_kN"):
+                sub = f"({sub}) × (1 + Q_s,in / Q_s,out)"
+            sub += f" + {toe['phi']:g} × {toe['R_p_kN']:,.1f}"
+            if comp.get("plug_weight_kN"):
+                sub += f" - {comp['plug_weight_kN']:,.1f}"
+            steps.append(CalcStep(
+                title="Factored Axial Resistance (LRFD)",
+                equation="R_r = Σ φ_stat R_s + φ_stat R_p",
+                substitution=f"R_r = {sub}",
+                result_name="R_r",
+                result_value=f"{comp['R_r_kN']:,.1f}",
+                result_unit="kN",
+                reference="FHWA GEC-12 Eq. 7-3, Table 7-1",
+                notes=(f"φ_stat of each part's method ({names}; toe "
+                       f"{toe['method']}). Reduce by 20 % for a small group "
+                       f"(fewer than 3 piles per substructure unit, p. 225)."),
+            ))
+        else:
+            steps.append(CalcStep(
+                title="Factored Axial Resistance (LRFD)",
+                equation="R_r = Σ φ_stat R_s + φ_stat R_p",
+                substitution="not computed",
+                result_name="R_r",
+                result_value="–",
+                result_unit="",
+                reference="FHWA GEC-12 Eq. 7-3, Table 7-1",
+                notes=comp["not_factored"] + ".",
+            ))
+    up = factors.get("uplift")
+    if up:
+        if up["R_r_kN"] is not None:
+            sub = " + ".join(f"{v['phi']:g} × {v['R_s_kN']:,.1f}"
+                             for v in up["shaft"].values())
+            value, unit = f"{up['R_r_kN']:,.1f}", "kN"
+            note = ("φ_up of each layer's method on its nominal shaft "
+                    "resistance (Eq. 7-38 needs no further reduction).")
+        else:
+            sub, value, unit = "not computed", "–", ""
+            note = up["not_factored"] + "."
+        if "note" in up:
+            note += " " + up["note"] + "."
+        steps.append(CalcStep(
+            title="Factored Uplift Resistance (LRFD)",
+            equation="R_r = Σ φ_up R_s",
+            substitution=f"R_r = {sub}" if up["R_r_kN"] is not None else sub,
+            result_name="R_r,up",
+            result_value=value,
+            result_unit=unit,
+            reference="FHWA GEC-12 Eq. 7-38, Table 7-1",
+            notes=note,
+        ))
+    return steps
+
+
 def _beta_notes(result, analysis=None) -> str:
     """Where the beta method's beta came from, for the method step."""
-    if getattr(analysis, "beta_coefficients", "from_phi") == "table_7_9":
-        text = ("\u03b2 from local experience where a layer gives one "
-                "(Step 2a), else GEC-12 Table 7-9 by soil type, linear in "
-                "\u03c6' across the type's \u03c6' range (Step 2b).")
-    else:
-        text = ("\u03b2 from local experience where a layer gives one "
-                "(Step 2a), else (1 - sin \u03c6') tan \u03c6' "
-                "(Fellenius 1991).")
+    text = ("\u03b2 from local experience where a layer gives one "
+            "(Step 2a), else GEC-12 Table 7-9 by soil type, linear in "
+            "\u03c6' across the type's \u03c6' range (Step 2b).")
     parts = [f"{lb['depth_top_m']:.1f}-{lb['depth_bottom_m']:.1f} m: "
              f"\u03b2 = {lb['beta']:.3f} ({lb['beta_source']})"
              for lb in result.layer_breakdown or [] if "beta_source" in lb]

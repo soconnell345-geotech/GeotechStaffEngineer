@@ -23,8 +23,10 @@ for highly overconsolidated clays. :func:`adhesion` takes API alpha there
 (``beyond_chart="api"``) or holds Ca at the curve's end
 (``"chart_end"``, as GEC-12's worked example, Vol 3 Table D-100, did);
 which clays count as highly overconsolidated is the engineer's call, made
-in :class:`~axial_pile.capacity.AxialPileAnalysis`. API alpha is at most
-1.0, API RP 2A's own limit, so it applies on that route only.
+in :class:`~axial_pile.capacity.AxialPileAnalysis`. API alpha is taken at
+most 1.0, the value GEC-12 p. 252 recommends for unconsolidated clays
+(Eq. 7-13 gives more where su / sigma'vo is below 0.25); the limit applies
+on that route only.
 
 Toe resistance qp = 9 su (Eq. 7-11). Figure 7-17's curves were measured off
 the printed figure on 2026-10-18; they live in
@@ -60,9 +62,9 @@ def curve_for_pile(pile_type: str) -> str:
 def api_alpha(su: float, sigma_v: float) -> float:
     """Adhesion factor alpha of the API method (GEC-12 Sec. 7.2.1.3.3,
     Eqs. 7-13 to 7-15, p. 251): 0.5 psi^-0.5 for psi <= 1.0 and
-    0.5 psi^-0.25 for psi > 1.0, psi = su / sigma'vo. At most 1.0, API RP
-    2A's limit (GEC-12 p. 252: "An alpha value of 1.0 is recommended for
-    unconsolidated clays")."""
+    0.5 psi^-0.25 for psi > 1.0, psi = su / sigma'vo. Taken at most 1.0
+    (GEC-12 p. 252: "An alpha value of 1.0 is recommended for
+    unconsolidated clays"; Eq. 7-13 gives more below psi = 0.25)."""
     if sigma_v <= 0:
         return 1.0
     psi = su / sigma_v

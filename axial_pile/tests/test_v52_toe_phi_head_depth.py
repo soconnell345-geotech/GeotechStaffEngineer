@@ -197,10 +197,11 @@ class TestV001ToePhi40:
 
     def test_step_8_limit_lowers_the_published_plateau(self):
         """With GEC-12's Step 8 limit (the module's default) the toe is
-        alpha_t N'q 3 ksf x box area, 359.7 kips (-16 %)."""
+        alpha_t N'q 3 ksf x box area, 371.5 kips (-13 %; 359.7 before
+        GM-282 read N'q again off Fig. 7-16)."""
         for D_ft in (50, 60, 70):
             r = self._run(D_ft)
-            assert r.Q_tip / KIP == pytest.approx(359.7, rel=0.005), D_ft
+            assert r.Q_tip / KIP == pytest.approx(371.5, rel=0.005), D_ft
             assert r.toe_details["governs"] == "Eq. 7-9"
 
     def test_highlevel_toe_phi40_beats_single_phi(self):
