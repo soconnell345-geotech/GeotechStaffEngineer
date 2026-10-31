@@ -1024,6 +1024,23 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Verdict: **PASS** (RESULTS.md). Tests:
   test_published_v058_gec10_ex10_1.py.
 
+## V-059 GEC-12 Vol 3 Appendix D — Pier 2, HP 12x74, layered profile
+- Source: GEC-12 (FHWA-NHI-16-009) Vol 3, Sec. D.22.1, Table D-51 (p. 100);
+  profile from Tables D-49 and D-50 and Figs. D-37 and D-39 (pp. 95-98),
+  read from `geotech-references/docs/GEC 12 Vol 3.pdf`.
+- Target: `axial_pile.axial_pile_capacity`, method "auto" (Nordlund in
+  sand and gravel, the alpha method in clay), with the example's
+  DrivenPiles choices (smooth steel curves, Ca held at the chart's end, no
+  limit on sigma'p).
+- Inputs: pile cap 10 ft below the ground surface, water table at the
+  surface; Layer 1 0-7 ft, gamma_sat 95 pcf, phi' 32; Layer 2 7-20 ft, 130
+  pcf, phi' 36 shaft / 43 toe; Layer 3 20-50 ft, 128 pcf, sublayers 3a-3f
+  su 3.10-3.40 ksf; Layer 4 50-70 ft, 125 pcf, phi' 36 / 38.
+- Published answer: nominal shaft and toe against depth below the cap,
+  0.01 to 60 ft (Table D-51).
+- Verdict: **PASS** (RESULTS.md). Tests:
+  test_published_v059_gec12_pier2.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

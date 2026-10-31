@@ -120,21 +120,22 @@ class TestCohesivePhiOverride:
         pile = make_pipe_pile(0.3239, 0.00953, closed_end=True)
         soil_explicit = AxialSoilProfile(layers=[
             AxialSoilLayer(12.0, "cohesive", 17.0, cohesion=60.0,
-                           friction_angle=20.0)])
-        # Per-layer 20 under the default global (25) == global forced to 20.
+                           friction_angle=28.0)])
+        # Per-layer 28 under the default global (25) == global forced to 28
+        # (inside Table 7-9's clay range, 25-30 deg, GM-282).
         r_layer = AxialPileAnalysis(
             pile=pile, soil=soil_explicit, pile_length=12.0,
             method="beta").compute()
-        r_global20 = AxialPileAnalysis(
+        r_global28 = AxialPileAnalysis(
             pile=pile, soil=self._clay_profile(), pile_length=12.0,
-            method="beta", cohesive_phi=20.0).compute()
-        assert r_layer.Q_skin == pytest.approx(r_global20.Q_skin, rel=1e-12)
-        assert r_layer.Q_tip == pytest.approx(r_global20.Q_tip, rel=1e-12)
+            method="beta", cohesive_phi=28.0).compute()
+        assert r_layer.Q_skin == pytest.approx(r_global28.Q_skin, rel=1e-12)
+        assert r_layer.Q_tip == pytest.approx(r_global28.Q_tip, rel=1e-12)
         # And it is NOT the old (global-25) answer.
         r_old25 = AxialPileAnalysis(
             pile=pile, soil=self._clay_profile(), pile_length=12.0,
             method="beta").compute()
-        assert r_layer.Q_skin < r_old25.Q_skin
+        assert r_layer.Q_skin > r_old25.Q_skin
 
     def test_layers_without_phi_still_use_global(self):
         """No per-layer angle -> the global fallback behaviour is unchanged."""

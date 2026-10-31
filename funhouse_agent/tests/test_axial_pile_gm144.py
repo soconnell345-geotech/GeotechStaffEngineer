@@ -164,8 +164,12 @@ def test_the_gm144_options_reach_the_module():
     beta = {**clay, "method": "beta"}
     r = _call("axial_pile_capacity", {**beta,
                                       "beta_coefficients": "table_7_9"})
-    assert r["Q_skin_kN"] != _call("axial_pile_capacity",
+    assert r["Q_skin_kN"] == _call("axial_pile_capacity",
                                    dict(beta))["Q_skin_kN"]
+    # GM-282: the unprinted beta from phi' is gone
+    r = _call("axial_pile_capacity", {**beta,
+                                      "beta_coefficients": "from_phi"})
+    assert "error" in r and "table_7_9" in r["error"]
     layers = [dict(_SAND_CLAY[0]),
               dict(_SAND_CLAY[1], fig_7_18_case="stiff_clay")]
     r = _call("axial_pile_capacity", {**clay, "layers": layers,
@@ -188,7 +192,7 @@ def test_the_new_defaults_are_listed_where_the_run_uses_them():
     beta = _call("axial_pile_capacity", {
         "pile_type": "pipe_closed", "diameter": 0.6, "wall_thickness": 0.012,
         "pile_length": 15, "layers": _SAND_CLAY, "method": "beta"})
-    assert beta["defaults_used"]["beta_coefficients"] == "from_phi"
+    assert beta["defaults_used"]["beta_coefficients"] == "table_7_9"
     assert "adhesion_chart" not in beta["defaults_used"]
 
 
@@ -228,12 +232,10 @@ def test_capacity_vs_depth_takes_the_gec12_options():
                         ("adhesion_curve", "smooth_steel")):
         r = _call("capacity_vs_depth", {**clay, name: value})
         assert curve(r) != curve(_call("capacity_vs_depth", dict(clay))), name
-    # the beta method's cohesive_phi and Table 7-9
+    # the beta method's cohesive_phi (Table 7-9 is its only route, GM-282)
     beta = {**clay, "method": "beta"}
-    for name, value in (("cohesive_phi", 30.0),
-                        ("beta_coefficients", "table_7_9")):
-        r = _call("capacity_vs_depth", {**beta, name: value})
-        assert curve(r) != curve(_call("capacity_vs_depth", dict(beta))), name
+    r = _call("capacity_vs_depth", {**beta, "cohesive_phi": 30.0})
+    assert curve(r) != curve(_call("capacity_vs_depth", dict(beta)))
     assert "cohesive_phi" in _call("capacity_vs_depth",
                                    dict(beta))["defaults_used"]
 

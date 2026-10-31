@@ -10,6 +10,15 @@ _METHOD_NAMES = {"nordlund": "Nordlund", "tomlinson": "Tomlinson α",
                  "beta": "β"}
 
 
+def _rounded(value):
+    """``value`` with its floats rounded to 0.1 (kN), recursively."""
+    if isinstance(value, dict):
+        return {k: _rounded(v) for k, v in value.items()}
+    if isinstance(value, float):
+        return round(value, 1) if abs(value) >= 1.0 else value
+    return value
+
+
 @dataclass
 class AxialPileResult:
     """Results from an axial pile capacity analysis.
@@ -54,6 +63,16 @@ class AxialPileResult:
         The toe resistance's factors: for a Nordlund toe alpha_t, N'q, D/b,
         sigma'p, q_L and which limit governed; the unit toe resistance
         q_p and the toe area for every method.
+    Q_factored : float, optional
+        Factored compression resistance R_r (kN), GEC-12 Eq. 7-3 with
+        Table 7-1's phi_stat for each part's method; None where Table 7-1
+        gives no factor (the beta method, Eq. 7-90): ``resistance_factors``
+        says why.
+    Q_uplift_factored : float, optional
+        Factored uplift resistance R_r (kN), GEC-12 Eq. 7-38 with Table
+        7-1's phi_up on the nominal shaft resistance (with uplift only).
+    resistance_factors : dict
+        The factors and the nominal resistances they multiply, by method.
     """
     Q_ultimate: float = 0.0
     Q_skin: float = 0.0
@@ -70,6 +89,9 @@ class AxialPileResult:
     choices: List[Dict[str, Any]] = field(default_factory=list)
     plug_weight: float = 0.0
     toe_details: Dict[str, Any] = field(default_factory=dict)
+    Q_factored: Optional[float] = None
+    Q_uplift_factored: Optional[float] = None
+    resistance_factors: Dict[str, Any] = field(default_factory=dict)
 
     def summary(self) -> str:
         """Return a formatted summary string."""
@@ -98,6 +120,13 @@ class AxialPileResult:
 
         if self.Q_uplift is not None:
             lines.append(f"  Uplift capacity:     {self.Q_uplift:>10,.1f} kN")
+        if self.Q_factored is not None:
+            lines.append(f"  Factored (LRFD) R_r: {self.Q_factored:>10,.1f} kN"
+                         "  (GEC-12 Eq. 7-3, Table 7-1)")
+        if self.Q_uplift_factored is not None:
+            lines.append(f"  Factored uplift R_r: "
+                         f"{self.Q_uplift_factored:>10,.1f} kN"
+                         "  (GEC-12 Eq. 7-38, Table 7-1)")
 
         if self.layer_breakdown:
             lines.extend(["", "  Layer Breakdown:"])
@@ -140,6 +169,14 @@ class AxialPileResult:
             d["Q_uplift_kN"] = round(self.Q_uplift, 1)
         if self.plug_weight:
             d["plug_weight_kN"] = round(self.plug_weight, 1)
+        if self.resistance_factors:
+            d["Q_factored_kN"] = (None if self.Q_factored is None
+                                  else round(self.Q_factored, 1))
+            if "uplift" in self.resistance_factors:
+                d["Q_uplift_factored_kN"] = (
+                    None if self.Q_uplift_factored is None
+                    else round(self.Q_uplift_factored, 1))
+            d["resistance_factors"] = _rounded(self.resistance_factors)
         if self.toe_details:
             d["toe_details"] = {
                 k: (round(v, 4) if isinstance(v, float) else v)
@@ -244,6 +281,12 @@ class AxialPileResult:
         ]
         if self.Q_uplift is not None:
             summary.append(["Uplift capacity", "Q_up", self.Q_uplift, "kN"])
+        if self.Q_factored is not None:
+            summary.append(["Factored resistance (Eq. 7-3)", "R_r",
+                            self.Q_factored, "kN"])
+        if self.Q_uplift_factored is not None:
+            summary.append(["Factored uplift resistance (Eq. 7-38)", "R_r,up",
+                            self.Q_uplift_factored, "kN"])
         tables.append(CalcTable(
             title="Capacity summary",
             columns=["Quantity", "Symbol", "Value", "Unit"],

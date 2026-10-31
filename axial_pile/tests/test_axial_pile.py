@@ -26,7 +26,7 @@ from axial_pile.nordlund import (
     skin_friction_cohesionless, _limiting_tip_resistance,
     toe_limit_chart_note,
 )
-from axial_pile.beta_method import beta_from_phi, skin_friction_beta, Nt_from_phi
+from axial_pile.beta_method import skin_friction_beta, table_7_9
 from axial_pile.capacity import AxialPileAnalysis
 from axial_pile.results import AxialPileResult
 
@@ -302,8 +302,9 @@ class TestNordlund:
         assert alpha_t(30, 45) == pytest.approx(0.491)
         assert alpha_t(30, 100) == pytest.approx(0.491)   # nearest curve
         assert alpha_t(40, 30) == pytest.approx(0.750)    # curves merged
-        assert n_q_prime(30) == pytest.approx(29.6, rel=1e-6)
-        assert n_q_prime(40) == pytest.approx(155.3, rel=1e-6)
+        # GM-282: read again on the figure's own image (were 29.6, 155.3)
+        assert n_q_prime(30) == pytest.approx(30.1, rel=1e-6)
+        assert n_q_prime(40) == pytest.approx(160.4, rel=1e-6)
         prev = 0
         for phi in [15, 20, 25, 30, 35, 40, 45]:
             assert n_q_prime(phi) > prev
@@ -377,34 +378,33 @@ class TestToeStressLimit:
 class TestBetaMethod:
     """Test effective stress (beta) method."""
 
-    def test_beta_NC_sand(self):
-        """NC sand phi=30: beta = (1-sin30)*tan30 = 0.5*0.577 = 0.289."""
-        beta = beta_from_phi(30, OCR=1.0)
-        expected = (1 - math.sin(math.radians(30))) * math.tan(math.radians(30))
-        assert beta == pytest.approx(expected, rel=1e-4)
+    def test_no_unprinted_beta_formula(self):
+        """GM-282: GEC-12 prints no beta or Nt from phi' alone; the former
+        default (1 - sin phi') tan phi' is gone and asking for it is
+        refused, naming the printed route."""
+        import axial_pile.beta_method as bm
+        assert not hasattr(bm, "beta_from_phi")
+        assert not hasattr(bm, "Nt_from_phi")
+        pile = make_pipe_pile(0.4, 0.01, closed_end=True)
+        soil = AxialSoilProfile([AxialSoilLayer(20, "cohesionless", 19.0,
+                                                friction_angle=33)])
+        with pytest.raises(ValueError, match="Table 7-9"):
+            AxialPileAnalysis(pile=pile, soil=soil, pile_length=10,
+                              method="beta", beta_coefficients="from_phi")
 
-    def test_beta_OC_higher(self):
-        """OC soil should have higher beta than NC (Burland OCR enhancement)."""
-        beta_nc = beta_from_phi(30, OCR=1.0, method="burland")
-        beta_oc = beta_from_phi(30, OCR=4.0, method="burland")
-        assert beta_oc > beta_nc
-
-    def test_beta_fellenius_ignores_OCR_burland_does_not(self):
-        """fellenius (NC) and burland (OCR-aware) must differ for OC soils."""
-        beta_f_nc = beta_from_phi(25, OCR=1.0, method="fellenius")
-        with pytest.warns(UserWarning):
-            beta_f_oc = beta_from_phi(25, OCR=4.0, method="fellenius")
-        beta_b_oc = beta_from_phi(25, OCR=4.0, method="burland")
-        assert beta_f_oc == pytest.approx(beta_f_nc)  # fellenius ignores OCR
-        assert beta_b_oc > beta_f_oc                   # burland enhances with OCR
-
-    def test_Nt_increases_with_phi(self):
-        """Nt should increase with phi."""
-        prev = 0
-        for phi in [0, 10, 20, 30, 40]:
-            Nt = Nt_from_phi(phi)
-            assert Nt >= prev
-            prev = Nt
+    def test_beta_method_reads_table_7_9_by_default(self):
+        """Steps 2b/5b: beta and Nt from Table 7-9 by phi' where a layer
+        gives none (sand 0.30-0.90 and Nt 30-150 over phi' 32-40)."""
+        pile = make_pipe_pile(0.4, 0.01, closed_end=True)
+        soil = AxialSoilProfile([AxialSoilLayer(20, "cohesionless", 19.0,
+                                                friction_angle=34)])
+        r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=10,
+                              method="beta").compute()
+        beta, Nt = table_7_9("sand", 34)
+        assert (beta, Nt) == pytest.approx((0.45, 60.0))
+        assert r.layer_breakdown[0]["beta"] == pytest.approx(beta)
+        assert r.layer_breakdown[0]["beta_source"] == "Table 7-9 (sand)"
+        assert r.toe_details["N_t"] == pytest.approx(Nt)
 
     def test_skin_friction_beta(self):
         """Qs = beta * sigma_v * perimeter * thickness."""
@@ -888,24 +888,6 @@ class TestHPileToeArea:
         assert box.Q_tip == pytest.approx(900 * pile.tip_area)
         assert steel.Q_tip == pytest.approx(900 * pile.area)
         assert box.Q_skin == steel.Q_skin
-
-
-def test_Nt_from_phi_consistent_with_gec12_table_7_9():
-    """Provenance pin (audit): Nt_from_phi is a piecewise Nt(phi) INTERPOLATION,
-    not a literal copy of GEC-12 Table 7-9 (which gives Nt RANGES by soil type).
-    Verified 2026-07-12 against the in-house GEC-12 reference
-    (geotech_references/gec_12/tables.py _TABLE_7_9): clay phi25-30 -> Nt 3-30,
-    silt phi28-34 -> Nt 20-40, sand phi32-40 -> Nt 30-150, gravel phi35-45 ->
-    Nt 60-300. The curve stays WITHIN those ranges in the overlapping phi bands;
-    this pins the transcription so drift is caught. (The same curve is duplicated
-    in downdrag/analysis._Nt_from_phi.)"""
-    from axial_pile.beta_method import Nt_from_phi
-    assert 20 <= Nt_from_phi(28) <= 40      # silt band
-    assert 30 <= Nt_from_phi(33) <= 150     # sand band
-    assert 30 <= Nt_from_phi(38) <= 150     # sand upper band
-    assert Nt_from_phi(25) <= 30            # within clay range top
-    # above the tabulated sand max phi it enters gravel territory (<=300)
-    assert 60 <= Nt_from_phi(40) <= 300
 
 
 if __name__ == "__main__":

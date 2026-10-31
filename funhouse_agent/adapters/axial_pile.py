@@ -47,7 +47,7 @@ _GEC12_OPTIONS = {
     # GM-144: the rest of GEC-12 chapter 7
     "adhesion_chart": "fig_7_17",
     "shrink_swell_depth": None,
-    "beta_coefficients": "from_phi",
+    "beta_coefficients": "table_7_9",
     "toe_phi_zone": "toe_layer",
 }
 
@@ -277,8 +277,11 @@ def _run_capacity_vs_depth(params):
         deepest = params.get("depth_max")
         if deepest is None:
             deepest = min(analysis.pile_length, soil.total_thickness)
-        out["choices"] = replace(analysis,
-                                 pile_length=float(deepest)).compute().choices
+        # the curve gives no allowable capacity, so no factor of safety
+        out["choices"] = [
+            c for c in replace(analysis,
+                               pile_length=float(deepest)).compute().choices
+            if c["what"] != "factor of safety (allowable capacity)"]
         section = _section_choice(params, pile)
         if section:
             out["choices"].insert(0, section)
@@ -320,7 +323,7 @@ _SECTION_INFO = {
 _GM144_INFO = {
     "adhesion_chart": {"type": "str", "required": False, "default": "fig_7_17", "allowed_values": ["fig_7_17", "fig_7_18", "smaller"], "description": "alpha-method chart (GEC-12 p. 246): 'fig_7_17' (Tomlinson's Ca, recommended generally), 'fig_7_18' (Tomlinson's alpha for each clay layer's stratigraphy case: sand or sandy gravel over stiff clay, soft clay over stiff clay, stiff clay alone) or 'smaller' (the smaller Ca of the two in each layer, which p. 246 advises the inexperienced user to take). A layer's case is its fig_7_18_case, else from the profile: cohesive layers under a cohesionless layer the sand case, from the ground surface the stiff-clay case; the soft-clay case only where a layer gives it. Eq. 7-90 (open pipe) takes Ca from Fig. 7-17 whatever this is (p. 407)."},
     "shrink_swell_depth": {"type": "float", "required": False, "description": "Depth (m below the ground surface) of a shrink-swell zone: no shaft resistance in cohesive soil above it (GEC-12 p. 247). Default none."},
-    "beta_coefficients": {"type": "str", "required": False, "default": "from_phi", "allowed_values": ["from_phi", "table_7_9"], "description": "method='beta': beta and Nt where a layer gives none. 'from_phi': beta = (1 - sin phi') tan phi' (Fellenius 1991, about 0.27-0.30), Nt within Table 7-9's ranges by phi'; 'table_7_9': GEC-12 Table 7-9 by the layer's soil_class (clay 0.15-0.35, silt 0.25-0.50, sand 0.30-0.90, gravel 0.35-0.80), linear in phi' across the class's phi' range (Steps 2b/5b). A clay toe keeps cohesive_Nt."},
+    "beta_coefficients": {"type": "str", "required": False, "default": "table_7_9", "allowed_values": ["table_7_9"], "description": "method='beta': beta and Nt where a layer gives none: GEC-12 Table 7-9 by the layer's soil_class (clay 0.15-0.35, silt 0.25-0.50, sand 0.30-0.90, gravel 0.35-0.80), linear in phi' across the class's phi' range (Steps 2b/5b). A clay toe takes cohesive_Nt. GEC-12 prints no beta formula from phi' alone; give a layer's beta and Nt for other values (local experience, Steps 2a/5a)."},
     "toe_phi_zone": {"type": "str", "required": False, "default": "toe_layer", "allowed_values": ["toe_layer", "average_3b"], "description": "Nordlund toe: the phi near the toe. 'toe_layer' (the toe layer's toe_friction_angle or friction_angle) or 'average_3b' (averaged over the cohesionless soil from the toe to 3b below, GEC-12 Step 7c's zone)."},
 }
 
@@ -343,7 +346,7 @@ METHOD_INFO = {
 
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth below ground surface (m)."},
             "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m), e.g. the bottom of a footing 1.5 m down. Layers above the head contribute no skin friction; overburden above the head still raises effective stress at the tip. Default 0 = head at the ground surface."},
-            "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
+            "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety for the allowable capacity. Default 2.5: FHWA NHI-06-089 Table 9-5 (indicator piles with wave equation analysis); 2.00 with a static load test, 2.25 with dynamic testing, 2.75 wave equation only, 3.50 Gates formula. GEC-12 itself designs by resistance factors: the result also gives the factored resistance (Table 7-1, Eq. 7-3)."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = by soil type: the Nordlund method in cohesionless soil (GEC-12 Sec. 7.2.1.3.1), the alpha method with Tomlinson's adhesion in cohesive soil (Sec. 7.2.1.3.2); beta = the beta (effective stress) method in every layer (Sec. 7.2.1.3.4)."},
             "include_uplift": {"type": "bool", "required": False, "default": False, "description": "Also report uplift (tension) capacity."},
             "cohesive_phi": {"type": "float", "required": False, "default": 25.0, "description": "FALLBACK drained phi' (deg) for cohesive layers under method='beta' (skin AND tip); a per-layer friction_angle on a cohesive layer wins over this global."},

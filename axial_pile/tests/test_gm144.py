@@ -1,7 +1,8 @@
 """BACKLOG GM-144: the GEC-12 chapter 7 parts GM-121 left, each an option
 with the old behaviour as its default: Fig. 7-18's stratigraphy cases and
 the shrink-swell zone (alpha-method), Table 7-9's beta and Nt by soil type
-(beta method), the toe phi averaged from the toe to 3b below (Nordlund Step
+(beta method; the default and only route since GM-282, which removed the
+unprinted beta from phi'), the toe phi averaged from the toe to 3b below (Nordlund Step
 7c), and Eq. 7-90's "predominantly cohesive" stated as the reading used.
 Page numbers are the printed GEC-12 Vol 1 (FHWA-NHI-16-009)."""
 
@@ -271,11 +272,12 @@ def test_beta_from_table_7_9_by_soil_type():
     # the toe in gravel at phi' 40: Nt 60 + 0.5 x 240
     assert r.toe_details["N_t"] == pytest.approx(180.0)
     c = _by_what(r)["beta and Nt (beta method)"]
-    assert c["how"] == "given" and "Steps 2b and 5b" in c["basis"]
+    assert "Steps 2b and 5b" in c["basis"]
     assert "gravel beta 0.35-0.8" in c["chosen"]
-    d = _by_what(base)["beta and Nt (beta method)"]
-    assert d["how"] == "default" and "Fellenius 1991" in d["chosen"]
-    assert base.layer_breakdown[1]["beta_source"] == "from phi'"
+    # GM-282: Table 7-9 is the default; the unprinted 'from_phi' is gone
+    assert c["how"] == "default"
+    assert (base.Q_skin, base.Q_tip) == (r.Q_skin, r.Q_tip)
+    assert base.layer_breakdown[1]["beta_source"] == "Table 7-9 (sand)"
 
 
 def test_a_clay_toe_keeps_cohesive_nt_and_a_silt_toe_takes_the_table():
@@ -422,7 +424,7 @@ def test_eq_7_90_takes_ca_from_fig_7_17_whatever_the_chart(chart):
 
 def test_every_new_option_at_its_default_is_the_old_run():
     defaults = {"adhesion_chart": "fig_7_17", "shrink_swell_depth": None,
-                "beta_coefficients": "from_phi", "toe_phi_zone": "toe_layer"}
+                "beta_coefficients": "table_7_9", "toe_phi_zone": "toe_layer"}
     for pile in (make_h_pile("HP12x74"), make_concrete_pile(0.4),
                  make_pipe_pile(0.4, 0.0127, closed_end=False)):
         for method in ("auto", "beta"):
