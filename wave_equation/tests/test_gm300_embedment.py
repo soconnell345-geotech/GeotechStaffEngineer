@@ -79,8 +79,54 @@ class TestUnsetUnchanged:
         b = drivability_study(h, c, AREA, 200e6, 77.3, [12.0], [900.0],
                               pile_length=12.0)
         assert a.points[0].blow_count == b.points[0].blow_count
-        assert "pile_length_m" not in a.to_dict()
+        assert a.to_dict()["pile_length_m"] == 12.0
         assert b.to_dict()["pile_length_m"] == 12.0
+        assert [c["what"] for c in a.choices] == [
+            "pile length in the leads (pile_length)"]
+        assert a.choices[0]["how"] == "default"
+        assert b.choices[0]["how"] == "given"
+        assert b.choices[0]["chosen"] == a.choices[0]["chosen"]
+
+
+class TestDrivabilityLeftOutPile:
+    """GM-300 review: with pile_length left out, the pile as long as the
+    deepest depth at every depth (GEC-12 Vol 2 pp. 224, 227, 236), not a
+    pile as long as each depth."""
+
+    def test_the_deepest_depth_at_every_depth(self):
+        h, c, _ = _system()
+        kw = dict(depths=[5.0, 11.0, 17.0], R_at_depth=[300.0, 700.0, 1200.0],
+                  skin_fractions=[0.8, 0.6, 0.5])
+        out = drivability_study(h, c, AREA, 200e6, 77.3, **kw)
+        full = drivability_study(h, c, AREA, 200e6, 77.3, pile_length=17.0,
+                                 **kw)
+        assert [p.permanent_set for p in out.points] == \
+            [p.permanent_set for p in full.points]
+        assert out.pile_length == 17.0 and not out.pile_length_given
+        ch = out.choices[-1]
+        assert ch["how"] == "default" and ch["chosen"].startswith("17 m")
+        assert "p. 227" in ch["basis"] and "pile_length" in \
+            ch["alternatives"][0]
+
+    def test_the_shallow_depth_drives_the_whole_pile(self):
+        """At 5 m the 17 m pile, 12 m standing above grade: not the 5 m
+        pile the old default analysed."""
+        h, c, _ = _system()
+        out = drivability_study(h, c, AREA, 200e6, 77.3, [5.0, 17.0],
+                                [300.0, 1200.0], skin_fractions=[0.8, 0.5])
+        short = drivability_study(h, c, AREA, 200e6, 77.3, [5.0], [300.0],
+                                  skin_fractions=[0.8])
+        assert out.points[0].max_tens_stress != short.points[0].max_tens_stress
+        assert short.pile_length == 5.0
+
+    def test_the_tool_states_it(self):
+        r = D.call_agent("wave_equation", "drivability", {
+            "pile_area": AREA, "hammer_name": "Vulcan 010",
+            "depths": [6.0, 12.0], "R_at_depth": [500.0, 900.0]})
+        assert r["pile_length_m"] == 12.0
+        assert r["defaults_used"]["pile_length"] == 12.0
+        assert any(ch["what"] == "pile length in the leads (pile_length)"
+                   for ch in r["choices"])
 
 
 class TestEmbedment:
@@ -195,7 +241,7 @@ class TestTools:
         used = drv["defaults_used"]
         assert used["quake_side"] == 0.0025 and used["damping_toe"] == 0.49
         assert "quake_toe" not in used
-        assert used["pile_length"].startswith("as long as each depth")
+        assert used["pile_length"] == 12.0      # the deepest depth
 
     def test_the_new_inputs_reach_the_module(self):
         r = D.call_agent("wave_equation", "single_blow", {

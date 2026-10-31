@@ -653,7 +653,10 @@ def _drivability_steps(result, analysis) -> List[CalcSection]:
         notes=(("The pile at each depth as long as the depth"
                 if getattr(result, "pile_length", None) is None else
                 f"The pile {result.pile_length:.2f} m long at every depth, "
-                "embedded to the depth (GEC-12 Vol 2 p. 224)")
+                "embedded to the depth (GEC-12 Vol 2 p. 224)"
+                + ("" if getattr(result, "pile_length_given", True) else
+                   "; pile_length left out, the deepest depth analysed, "
+                   "the shortest pile that reaches it (p. 227)"))
                + "; " + _shaft_words(
                    getattr(result, "shaft_distribution", "uniform"),
                    None).replace("the whole pile", "the embedded length")

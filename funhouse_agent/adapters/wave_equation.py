@@ -319,12 +319,12 @@ METHOD_INFO = {
             "skin_fractions": {"type": "array", "required": False, "description": "Skin friction fraction per depth station."},
             "refusal_blow_count": {"type": "float", "required": False, "default": 393.7, "description": "Blow count (blows/m) above which the pile has refused. Default 393.7 (120 blows/ft): GEC-12 Vol 2 Sec. 12.4 (p. 161) chooses hammer and cushion so the maximum expected penetration resistance is under 120 blows/ft, and the drivability study of Vol 3 (p. 43) calls it practical refusal. Piles through soft soils seated on hard rock: 787.4 (240 blows/ft, p. 161), the refusal of Vol 2's Examples 3, 4 and 7."},
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": _DAMPING_MODEL_DOC},
-            "pile_length": {"type": "float", "required": False, "description": "The pile's total length in the leads (m), the same at every depth: at each depth the pile is this long, embedded to the depth, the shaft resistance only below grade (GEC-12 Vol 2 p. 224: 'Length is the total pile length in the leads'; 'Penetration refers to ... final penetration for Drivability Analyses'; p. 236, the depths to be analyzed). No depth may be deeper (p. 227). Left out: the pile at each depth as long as the depth, embedded over its full length."},
+            "pile_length": {"type": "float", "required": False, "description": "The pile's total length in the leads (m), the same at every depth: at each depth the pile is this long, embedded to the depth, the shaft resistance only below grade (GEC-12 Vol 2 p. 224: 'Length is the total pile length in the leads'; 'Penetration refers to ... final penetration for Drivability Analyses'; p. 236, the depths to be analyzed). No depth may be deeper (p. 227). Left out: the deepest depth analysed, the shortest pile that reaches it (p. 227), the same pile at every depth; the result's choices say so."},
             "shaft_distribution": _SHAFT_DISTRIBUTION_DOC,
             **_SOIL_DOC,
             **_HAMMER_CUSHION_DOC,
         },
-        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "pile_length_m": "With pile_length: the pile's length at every depth.", "shaft_distribution": "With 'triangular': the shaft distribution used.", "choices": "The quake weights (when the quakes differ).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
+        "returns": {"can_drive": "Whether pile can be driven.", "refusal_depth_m": "First depth whose blow count passed the refusal blow count (0: none).", "refusal_blow_count_per_m": "The refusal blow count used.", "points": "Per-depth drivability data.", "pile_length_m": "The pile's length at every depth: pile_length, else the deepest depth.", "shaft_distribution": "With 'triangular': the shaft distribution used.", "choices": "The quake weights (when the quakes differ); the pile length analysed (the deepest depth when pile_length is left out).", "warnings": "A diesel hammer's (it is run at its rated energy)."},
     },
     "list_available_hammers": {
         "category": "Wave Equation",
@@ -346,11 +346,12 @@ declare_when_absent(METHOD_INFO, {
     "single_blow": {"embedded_length": "pile_length"},
     "bearing_graph": {"embedded_length": "pile_length"},
     "drivability": {"pile_length": (
-        "as long as each depth",
-        "the module's reading: at each depth a pile as long as the depth, "
-        "embedded over its full length, with no stick-up; GEC-12 Vol 2 "
-        "p. 224 analyses the total pile length in the leads (give "
-        "pile_length)")},
+        "the deepest depth analysed",
+        "the same pile at every depth, embedded to each depth: GEC-12 Vol 2 "
+        "p. 224 analyses the total pile length in the leads, and p. 227 "
+        "allows no penetration deeper than the pile, so the deepest depth "
+        "is the shortest pile that reaches it (give pile_length for a "
+        "longer pile)")},
 })
 
 # The default cushion, when no cushion is described (GM-165).

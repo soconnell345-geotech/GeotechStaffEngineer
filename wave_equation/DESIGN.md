@@ -88,8 +88,9 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
 - Drivability refusal: more than 120 blows/ft (393.7 blows/m), GEC-12 Vol 2
   p. 161 and Vol 3 p. 43; 240 blows/ft (787.4) for piles seated on hard
   rock (p. 161). It was 3000 blows/m (914 blows/ft) before GM-294. The pile
-  analysed at each depth is as long as the depth unless `pile_length` gives
-  the pile in the leads (GM-301, below). The drivability tool takes the
+  analysed at each depth is the pile in the leads, embedded to the depth:
+  `pile_length`, else the deepest depth analysed (GM-301 and its review,
+  below; before, a pile as long as each depth). The drivability tool takes the
   quakes and damping factors the other tools take (GM-300; it ran the
   defaults, so a displacement pile's D/60 toe quake could not be set).
 - Embedded length and shaft distribution (GM-301; module_work/gm300/
@@ -105,7 +106,10 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
   from a static analysis (Example 4, Fig. 12-9) is not offered.
   `drivability_study(pile_length=...)` analyses that pile at every depth,
   embedded to the depth (p. 224: "Length is the total pile length in the
-  leads"; p. 236). Example 6 with its printed 52.5 of 66 ft, triangular:
+  leads"; p. 236); left out, the deepest depth analysed, the shortest pile
+  that reaches it (p. 227), stated in the choices (GM-300 review: the old
+  pile as long as each depth, which no page prints, read far less tension
+  at shallow depths). Example 6 with its printed 52.5 of 66 ft, triangular:
   the Vulcan 014 87.5 and 51.3 blows/ft at the 0.40 and 0.12 in toe quakes
   (92.6 and 51.7 all embedded and uniform) against GRLWEAP's 94 and 56.
 - Steel: E 200e6 kPa (29,000 ksi, GEC-12 Vol 1 p. 317); unit weight 77.3

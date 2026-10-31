@@ -53,9 +53,9 @@ the printed ones.
   stick-up, so the pile analysed grows with the depth.
 - **Now.** `pile_length` (new, drivability only): that pile at every
   depth, embedded to the depth; no depth may pass it (p. 227). Left out:
-  as before, and `defaults_used` says "as long as each depth", the
-  module's reading, pointing to p. 224. A per-depth temporary length (p.
-  236) is not offered. The result gives `pile_length_m` when it was given.
+  the deepest depth analysed (the review fix below; the build kept the
+  pile as long as each depth). A per-depth temporary length (p. 236) is
+  not offered. The result gives `pile_length_m`.
 - Made-up study, Vulcan 010, 0.0098 m2 pipe, 6 / 12 / 18 m at 600 / 1,100 /
   1,700 kN: 39.1 / 76.8 / 243.6 blows/m as long as each depth; 40.1 / 83.5
   / 315.1 with a 21 m pile in the leads (more pile to drive at the shallow
@@ -120,6 +120,9 @@ diesel cycle, not the distribution.
 
 ## Unset, nothing moves
 
+(As built. The review fix below moves a drivability study with
+`pile_length` left out above its deepest depth.)
+
 - **Recorded blows.** A pytest plugin recorded every `simulate_blow` call
   (hammer, cushion, pile, soil in; set, stresses, forces, toe displacement,
   steps out) and every wave tool call through `dispatch.call_agent`, on
@@ -182,3 +185,55 @@ None. Both distributions and the embedment are printed; the default
   offered.
 - Fig. 12-14 draws Example 6's triangle from about 13 ft; the module
   follows the text.
+
+## Review fix (gm285-review): drivability's left-out pile length
+
+- **Print.** GEC-12 Vol 2 p. 224: "Length is the total pile length in the
+  leads", and the penetration is the "final penetration for Drivability
+  Analyses"; p. 236: each depth is analysed with that final length, a
+  shorter "Temporary Length" only "prior to splicing"; p. 227: the
+  penetration "cannot be greater than the pile length". No page prints a
+  pile as long as each depth.
+- **Build.** With `pile_length` left out, each depth still ran a pile as
+  long as the depth (no stick-up). A long pile at shallow penetration, the
+  case that reads high tension, was never analysed.
+- **Now.** Left out, the pile is the deepest depth analysed, the shortest
+  pile that reaches it (p. 227), the same at every depth and embedded to
+  each depth (pp. 224, 236). The result's `choices` state it (how
+  "default", the basis, and a longer pile in the leads as the
+  alternative, p. 224's 60 ft pile for a 50 ft plan length; a given
+  `pile_length` gets the same entry, how "given", so giving the default
+  back moves nothing);
+  `defaults_used` gives the length taken; `pile_length_m` is always
+  returned; the summary and the calc package's Drivability Study step say
+  "pile_length left out, the deepest depth analysed". The old per-depth
+  length is not offered as an alternative: no page prints it (p. 236's
+  temporary length is a section before splicing).
+- The deepest depth is unchanged (the pile is fully embedded there); the
+  shallower depths move. Made-up study, Delmag D30-32, 0.0155 m2 pile,
+  skin fractions 0.8 / 0.7 / 0.6 / 0.6 / 0.5:
+
+| Depth (m), R_ult (kN) | Blows/m before -> after | Compression (MPa) | Tension (MPa) |
+|---|---|---|---|
+| 5, 300 | 8.5 -> 8.7 | 211.6 -> 222.2 | **43.4 -> 150.0** |
+| 10, 700 | 21.1 -> 20.7 | 231.1 -> 225.1 | 11.2 -> 68.6 |
+| 15, 1,100 | 33.9 -> 34.6 | 230.2 -> 224.1 | 1.9 -> 1.7 |
+| 20, 1,500 | 44.5 -> 45.1 | 230.3 -> 224.0 | 0 -> 0 |
+| 25, 2,200 | 79.6 -> 79.6 | 230.2 -> 230.2 | 0 -> 0 |
+
+  Before: the build (41ff055) with `pile_length` left out; after: the
+  25 m pile at every depth.
+- **Replay** of eight made-up tool calls against 41ff055: single blows and
+  bearing graphs identical; the three drivability studies move only above
+  their deepest depth (a Vulcan 010 at 4 / 9 / 14 / 19 m: 13.0 / 39.4 /
+  69.0 -> 13.6 / 41.7 / 70.3 blows/m, 19 m unchanged) and gain the choice,
+  `pile_length_m` and the length in `defaults_used`.
+- **Expectations changed** (all in `wave_equation/tests/test_gm300_embedment.py`,
+  the build's own): `test_drivability_at_the_pile_length` (`pile_length_m`
+  is now returned when left out; the choice is listed) and
+  `test_drivability_takes_the_quakes_and_damping` (`defaults_used`
+  `pile_length` is 12.0, the deepest depth, not the text). New:
+  `TestDrivabilityLeftOutPile`. No other test, validation example or calc
+  package pinned the old default: V-003 analyses one depth (the pile is
+  the depth either way), and `test_wave_equation.py`'s drivability tests
+  check counts, order and refusal only.
