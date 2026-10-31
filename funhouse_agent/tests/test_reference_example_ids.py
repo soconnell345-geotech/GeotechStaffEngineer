@@ -81,6 +81,6 @@ def test_reference_get_examples_are_in_the_library():
 
 
 def test_examples_come_from_the_reference_itself():
-    """GEC-12 shows a number at each level, down to the static methods."""
-    assert example_section_ids("gec_12") == ["1.1", "4.2.3.1", "7.2.1.3.1"]
+    """GEC-12 shows a number at each level, the first its text holds."""
+    assert example_section_ids("gec_12") == ["1.1", "3.2.3.1", "5.2.3.1.1"]
     assert example_section_ids("no_such_reference") == []
