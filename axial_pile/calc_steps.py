@@ -332,7 +332,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="Q_ult",
         result_value=f"{result.Q_ultimate:,.1f}",
         result_unit="kN",
-        reference="FHWA GEC-12, Eq. 7-1",
+        reference="FHWA GEC-12, Eq. 7-2",
     ))
 
     cap_items.append(TableData(
