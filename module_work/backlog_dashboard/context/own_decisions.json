@@ -552,25 +552,21 @@
   "OWN-19": {
     "kind": "decision",
     "ask_who": null,
-    "question": "Should lateral_pile get a cracked or moment-curvature pile stiffness, or should the V-017 residual be closed as accepted?",
-    "why": "Reinforced-concrete piles and shafts crack under lateral load; uncracked stiffness underestimates deflection, which is unconservative. The validation case already passes, so this is about the general capability, not that test.",
-    "background": "V-017 (grout-filled casing pile vs an LPILE run): with the composite uncracked stiffness (EI 8,109 kN·m², 1.13 times the casing alone) the head deflection is 3.60 mm vs published 3.3 mm, +9.2 %, a pass within the ±10 % band. The validation note blames the residual on LPILE's nonlinear (cracked) EI. That looks backwards: a softer cracked EI would raise our 3.60 mm further above 3.3 mm, so the residual's real cause is unknown. lateral_pile today offers composite_section_ei (uncracked, an upper-bound stiffness) and no moment-curvature analysis. Pending since v5.3 (July).",
+    "question": "Should lateral_pile get a moment-curvature pile stiffness, as GEC-9 computes it, or is Branson's cracked stiffness enough?",
+    "why": "Reinforced-concrete piles and shafts crack under lateral load, and uncracked stiffness underestimates deflection. The module offers the uncracked section and Branson's cracked stiffness (ACI 318), but not GEC-9's moment-curvature analysis.",
+    "background": "Since GM-287 (sand p-y curves as GEC-9 prints them), V-017 reads 3.32 mm against LPILE's 3.3 mm with the composite stiffness, so the old +9 % residual is gone. GEC-9 Example B.1 reads 735.6 kip-ft with the uncracked section and 691.5 with Branson's, against LPILE's 727 with its nonlinear stiffness. GEC-9 Sec. 11.3.10 computes moment-curvature. Pending since v5.3 (July).",
     "options": [
       {
         "label": "Build moment-curvature EI",
-        "effect": "LPILE-style nonlinear EI for RC piles and shafts; realistic deflections at high moment. Medium build plus validation cases."
+        "effect": "GEC-9's nonlinear stiffness for RC piles and shafts; realistic deflections at high moment. Medium build plus validation cases."
       },
       {
-        "label": "Add a simple cracked-EI option",
-        "effect": "For example ACI 318's reduced moments of inertia; small build, cited basis, shown beside the uncracked result."
-      },
-      {
-        "label": "Close V-017 as accepted",
-        "effect": "No build; results keep uncracked stiffness, documented as an upper bound."
+        "label": "Close: Branson's cracked stiffness is enough",
+        "effect": "No build; the engineer picks uncracked or Branson's, and the result says which."
       }
     ],
-    "recommendation": "Option 2 now, reported beside the uncracked value with its citation; option 1 later if RC drilled-shaft work is common. Close V-017 as a pass and correct the note about the residual's cause.",
-    "if_no_answer": "lateral_pile keeps uncracked stiffness only; RC pile deflections at high load stay underestimated.",
+    "recommendation": "Close for now: Branson's brackets LPILE in Example B.1, and the result says which stiffness was used.",
+    "if_no_answer": "No build; both stiffness options stay as they are.",
     "message_to_send": null,
     "unblocks": [],
     "sources": [
@@ -2442,6 +2438,35 @@
     "sources": [
       "BACKLOG.md OWN-105",
       "module_work/downdrag_print/CHECK.md"
+    ]
+  },
+  "OWN-106": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "lateral_pile offers Jeanjean (2009) soft clay, which no document we hold prints. Get the paper so it can be checked, or remove the option?",
+    "why": "Every other p-y criterion is now checked against a printed page. Jeanjean's is the only one the agent can pick that is not, so its curves rest on the code alone.",
+    "background": "Neither Jeanjean (2009, OTC 20158) nor API RP 2GEO (2014) is in the reference library, and GEC-9 prints Matlock's soft clay, not Jeanjean's (App. A.1). Since GM-287 the result and the tool text say the criterion is not checked against a print. Detail: module_work/gm287/CHECK.md.",
+    "options": [
+      {
+        "label": "Get the paper (or API RP 2GEO)",
+        "effect": "Add it to the library and check the criterion against it the way the others were."
+      },
+      {
+        "label": "Remove the criterion",
+        "effect": "Soft clay uses Matlock's curves as GEC-9 prints them; a saved run that named Jeanjean is refused with that note."
+      },
+      {
+        "label": "Keep it, marked unchecked",
+        "effect": "As now: it runs and says it is not checked against a print."
+      }
+    ],
+    "recommendation": "Get the paper if you can; otherwise keep it marked unchecked.",
+    "if_no_answer": "It stays, marked unchecked.",
+    "message_to_send": null,
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-106",
+      "module_work/gm287/CHECK.md"
     ]
   }
 }
